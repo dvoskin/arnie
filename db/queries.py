@@ -1,9 +1,9 @@
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_, desc
+from sqlalchemy import select, and_, desc, delete
 from sqlalchemy.orm import selectinload
 from db.models import (
     User, UserPreferences, DailyLog, FoodEntry,
-    ExerciseEntry, BodyMetric, ConversationLog, MemoryUpdate,
+    ExerciseEntry, BodyMetric, ConversationLog, MemoryUpdate, HealthSnapshot,
 )
 from datetime import date, datetime, timedelta
 from typing import Optional, List
@@ -188,5 +188,108 @@ async def get_all_active_users(db: AsyncSession) -> List[User]:
         select(User)
         .where(User.onboarding_completed == True)
         .options(selectinload(User.preferences))
+    )
+    return result.scalars().all()
+
+
+async def reset_today_log(db: AsyncSession, user_id: int, user_timezone: str = "UTC") -> bool:
+    """
+    Wipe all food and exercise entries for today and zero out the daily totals.
+    Returns True if a log existed, False if there was nothing to reset.
+    """
+    log = await get_today_log(db, user_id, user_timezone)
+    if not log:
+        return False
+
+    await db.execute(delete(FoodEntry).where(FoodEntry.daily_log_id == log.id))
+    await db.execute(delete(ExerciseEntry).where(ExerciseEntry.daily_log_id == log.id))
+
+    log.total_calories = 0
+    log.total_protein = 0
+    log.total_carbs = 0
+    log.total_fats = 0
+    log.total_water_ml = 0
+    log.workout_completed = False
+    log.cardio_completed = False
+    log.status = "open"
+    await db.commit()
+    return True
+
+
+async def reset_all_user_data(db: AsyncSession, user_id: int) -> None:
+    """
+    Full account wipe — deletes all logs, metrics, conversations, and memory.
+    Resets profile fields and forces re-onboarding. Keeps the user row itself
+    (same telegram_id) so the user can start fresh without needing a new account.
+    """
+    # Cascade-delete all daily logs (and their food/exercise entries)
+    await db.execute(delete(DailyLog).where(DailyLog.user_id == user_id))
+    await db.execute(delete(BodyMetric).where(BodyMetric.user_id == user_id))
+    await db.execute(delete(ConversationLog).where(ConversationLog.user_id == user_id))
+    await db.execute(delete(MemoryUpdate).where(MemoryUpdate.user_id == user_id))
+    await db.execute(delete(HealthSnapshot).where(HealthSnapshot.user_id == user_id))
+
+    # Reset user profile fields
+    result = await db.execute(
+        select(User).where(User.id == user_id).options(selectinload(User.preferences))
+    )
+    user = result.scalar_one()
+    for field in ("name", "age", "sex", "height_cm", "current_weight_kg",
+                  "goal_weight_kg", "primary_goal", "training_experience",
+                  "dietary_preferences", "injuries", "webhook_token"):
+        setattr(user, field, None)
+    user.timezone = "UTC"
+    user.onboarding_completed = False
+
+    # Reset preferences
+    if user.preferences:
+        p = user.preferences
+        p.coaching_style = "balanced"
+        p.accountability_level = "medium"
+        p.calorie_target = None
+        p.protein_target = None
+        p.wake_time = "07:00"
+        p.sleep_time = "23:00"
+        p.proactive_messaging_enabled = False
+
+    await db.commit()
+
+
+async def get_user_by_webhook_token(db: AsyncSession, token: str) -> Optional[User]:
+    result = await db.execute(
+        select(User).where(User.webhook_token == token)
+    )
+    return result.scalar_one_or_none()
+
+
+async def upsert_health_snapshot(db: AsyncSession, user_id: int,
+                                  snapshot_date: date, **kwargs) -> HealthSnapshot:
+    """Insert or update a HealthSnapshot for (user_id, date)."""
+    result = await db.execute(
+        select(HealthSnapshot).where(
+            and_(HealthSnapshot.user_id == user_id,
+                 HealthSnapshot.date == snapshot_date)
+        )
+    )
+    snap = result.scalar_one_or_none()
+    if snap:
+        for k, v in kwargs.items():
+            if v is not None:
+                setattr(snap, k, v)
+    else:
+        snap = HealthSnapshot(user_id=user_id, date=snapshot_date, **kwargs)
+        db.add(snap)
+    await db.commit()
+    return snap
+
+
+async def get_recent_health_snapshots(db: AsyncSession, user_id: int,
+                                       days: int = 7) -> List[HealthSnapshot]:
+    since = date.today() - timedelta(days=days)
+    result = await db.execute(
+        select(HealthSnapshot)
+        .where(and_(HealthSnapshot.user_id == user_id,
+                    HealthSnapshot.date >= since))
+        .order_by(desc(HealthSnapshot.date))
     )
     return result.scalars().all()

@@ -17,6 +17,7 @@ from db.database import AsyncSessionLocal, init_db
 from db.queries import (
     get_or_create_user, get_or_create_today_log, get_today_log,
     get_recent_conversations, log_conversation, close_daily_log, reload_user,
+    reset_today_log, reset_all_user_data,
 )
 from core.llm import chat, chat_follow_up
 from core.context_builder import build_context, fmt_log
@@ -78,19 +79,30 @@ TOOL RULES (no exceptions):
 - DO NOT re-log anything already in today's log in the context
 - ALWAYS write a text response with every tool call
 
-RESPONSE STYLE — think "coach texting you," not ChatGPT essay:
-- 1–3 short lines max for simple messages. Be punchy.
-- When logging: confirm it + one useful data point (calories left, protein %, trend)
+FOOD LOGGING FORMAT — use this exact structure every time food is logged:
+Line 1: <b>[Food name]</b> — [cal]cal  [P]P / [C]C / [F]F
+Line 2: Running: [total_cal] / [target]cal  ·  [total_P]g / [target_P]g protein
+(If no calorie target set, just show the running totals without the slash.)
+Example:
+<b>Chicken breast 6oz</b> — 280cal  52P / 0C / 6F
+Running: 830 / 2400cal  ·  98g / 190g protein
+
+Keep it to 2 lines max for logging. Add one coaching note on a 3rd line only if genuinely useful (e.g. hitting a milestone, way off pace). Never write paragraphs for food logs.
+
+EXERCISE LOGGING FORMAT:
+Line 1: <b>[Exercise]</b> — [sets]×[reps] @ [weight]
+Line 2: (optional) one sharp coaching note
+
+RESPONSE STYLE — coach texting you, not a ChatGPT essay:
+- 1–3 lines max for simple messages
 - Call out wins: weight dropping, protein streak, strong training week
-- Reference real numbers: "you're 40g short on protein", "3rd push day this week"
-- End with a short follow-up question sometimes — keep it alive
+- Reference real numbers from the context
+- End with a short follow-up question occasionally
 - No filler phrases, no "Great job!", no walls of text
 
 FORMATTING — Telegram HTML only, never markdown:
 - Bold: <b>text</b>  NOT **text**
-- Line breaks for spacing, not headers or horizontal rules
-- Short bullet points with • when listing multiple items
-- Never use ##, ###, ***, ---, or markdown tables
+- Never use ##, ###, ***, ---, or tables
 
 Context is below."""
 
@@ -512,6 +524,63 @@ async def cmd_close(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(**_fmt(summary))
 
 
+async def cmd_reset(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Reset today's log or wipe the full account."""
+    args = context.args
+
+    if not args:
+        await update.message.reply_text(
+            "<b>Reset options</b>\n\n"
+            "/reset today — clear today's food &amp; exercise log\n"
+            "/reset all — wipe everything and start from scratch\n\n"
+            "⚠️ Cannot be undone.",
+            parse_mode="HTML"
+        )
+        return
+
+    async with AsyncSessionLocal() as db:
+        user = await get_or_create_user(db, str(update.effective_user.id))
+
+        if args[0].lower() == "today":
+            cleared = await reset_today_log(db, user.id, user.timezone or "UTC")
+            if cleared:
+                await update.message.reply_text(
+                    "Today's log cleared — food, exercise, and totals all wiped.\n"
+                    "Start logging fresh.",
+                    parse_mode="HTML"
+                )
+            else:
+                await update.message.reply_text("Nothing logged today yet — nothing to reset.")
+
+        elif args[0].lower() == "all":
+            # Require a second confirmation argument: /reset all confirm
+            confirm = args[1].lower() if len(args) > 1 else ""
+            if confirm != "confirm":
+                await update.message.reply_text(
+                    "⚠️ This will delete <b>all</b> your data — logs, weight history, memory, profile.\n\n"
+                    "To confirm: /reset all confirm",
+                    parse_mode="HTML"
+                )
+                return
+
+            telegram_id = user.telegram_id
+            await reset_all_user_data(db, user.id)
+
+            # Wipe memory file too
+            from memory.memory_manager import clear_memory
+            await clear_memory(telegram_id)
+
+            await update.message.reply_text(
+                "All data wiped. Fresh start.\n\nSend any message to begin setup again."
+            )
+
+        else:
+            await update.message.reply_text(
+                "Usage: /reset today  or  /reset all confirm",
+                parse_mode="HTML"
+            )
+
+
 async def cmd_remind(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Toggle proactive reminders on or off."""
     async with AsyncSessionLocal() as db:
@@ -589,6 +658,7 @@ async def _post_init(app: Application):
         BotCommand("memory",  "What I know about your habits"),
         BotCommand("close",   "Close today's log"),
         BotCommand("remind",  "Toggle proactive check-ins on/off"),
+        BotCommand("reset",   "Clear today's log or full account reset"),
         BotCommand("help",    "How to use Arnie"),
     ])
     logger.info("Arnie is ready.")
@@ -620,6 +690,7 @@ def run_bot():
     app.add_handler(CommandHandler("memory",  cmd_memory))
     app.add_handler(CommandHandler("close",   cmd_close))
     app.add_handler(CommandHandler("remind",  cmd_remind))
+    app.add_handler(CommandHandler("reset",   cmd_reset))
     # Keep old aliases so existing users aren't broken
     app.add_handler(CommandHandler("log",      cmd_today))
     app.add_handler(CommandHandler("summary",  cmd_today))

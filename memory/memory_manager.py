@@ -88,3 +88,11 @@ async def append_memory_update(telegram_id: str, update: str, reasoning: str):
     ts = datetime.now().strftime("%Y-%m-%d %H:%M")
     block = f"\n---\n*{ts} — {reasoning}*\n{update.strip()}\n"
     await write_memory(telegram_id, existing + block)
+
+
+async def clear_memory(telegram_id: str):
+    """Delete the memory file entirely (used on full account reset)."""
+    import shutil
+    p = USERS_DIR / str(telegram_id)
+    if p.exists():
+        shutil.rmtree(p)
