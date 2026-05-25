@@ -157,6 +157,32 @@ ARNIE_TOOLS = [
         },
     },
     {
+        "name": "generate_image",
+        "description": (
+            "Generate a visual image when the user EXPLICITLY asks for a visual, "
+            "drawing, illustration, infographic, or diagram. "
+            "Examples: 'show me what good squat form looks like', "
+            "'draw me a push day split', 'make a meal prep infographic', "
+            "'visualize my weekly workout plan'. "
+            "DO NOT call this proactively. DO NOT call for data viz (the user has a "
+            "/dash dashboard for that). ONLY when they explicitly request an image."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "prompt": {
+                    "type": "string",
+                    "description": "Detailed image-generation prompt. Be specific about style, content, layout. Include 'photorealistic' or 'illustration' as a style hint.",
+                },
+                "caption": {
+                    "type": "string",
+                    "description": "Short caption to send with the image (optional)",
+                },
+            },
+            "required": ["prompt"],
+        },
+    },
+    {
         "name": "update_profile",
         "description": (
             "Update user profile or preference fields. "
@@ -254,6 +280,29 @@ async def transcribe_voice(audio_data: bytes, filename: str = "voice.ogg") -> st
     buf.name = filename
     transcript = await client.audio.transcriptions.create(model="whisper-1", file=buf)
     return transcript.text
+
+
+async def generate_image(prompt: str, size: str = "1024x1024") -> Optional[str]:
+    """
+    Generate an image via OpenAI DALL-E 3. Returns a URL valid for ~1 hour,
+    or None if the API key is missing or the request fails.
+    """
+    if not OPENAI_API_KEY():
+        logger.warning("OPENAI_API_KEY not set — image generation unavailable")
+        return None
+    try:
+        client = _get_openai()
+        response = await client.images.generate(
+            model="dall-e-3",
+            prompt=prompt,
+            size=size,
+            quality="standard",
+            n=1,
+        )
+        return response.data[0].url
+    except Exception as e:
+        logger.error(f"DALL-E image generation failed: {e}")
+        return None
 
 
 async def analyze_image(image_data: bytes, prompt: str,

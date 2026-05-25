@@ -76,7 +76,9 @@ TOOL RULES (no exceptions):
 - User drinks water → log_water()
 - "close the day" → close_day()
 - User explicitly asks to change a setting or target → update_profile()
+- User explicitly asks for a visual / image / diagram / infographic → generate_image()
 - DO NOT re-log anything already in today's log in the context
+- DO NOT generate images unless the user clearly asked for one (e.g. "draw me", "show me a visual", "make me an infographic")
 - ALWAYS write a text response with every tool call
 
 FOOD LOGGING — EXACT FORMAT, no exceptions:
@@ -224,6 +226,26 @@ async def _run_pipeline(update: Update, context: ContextTypes.DEFAULT_TYPE,
         tool_results = await execute_tool_calls(
             tool_calls, user, _log_for_tools, db, source_type
         )
+
+        # ── Send any generated images, replace dict results with string for LLM ──
+        for tname, tresult in list(tool_results.items()):
+            if isinstance(tresult, dict) and tresult.get("_type") == "image":
+                try:
+                    await update.message.reply_photo(
+                        photo=tresult["url"],
+                        caption=tresult.get("caption") or None,
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to send generated image: {e}")
+                    await update.message.reply_text(
+                        "Image was generated but couldn't send. Try asking again."
+                    )
+                # Replace the dict with a string so chat_follow_up doesn't choke
+                tool_results[tname] = (
+                    f"Image generated and sent to user. "
+                    f"Caption: {tresult.get('caption', '')}"
+                )
+
         user = await reload_user(db, user.id)
         if today_log and hasattr(today_log, "id") and today_log.id:
             await db.refresh(today_log)

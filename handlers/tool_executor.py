@@ -24,8 +24,13 @@ async def execute_tool_calls(
     today_log: DailyLog,
     db: AsyncSession,
     source_type: str = "text",
-) -> Dict[str, str]:
-    """Execute each tool call and return {tool_name: result_description}."""
+) -> Dict[str, Any]:
+    """
+    Execute each tool call and return {tool_name: result}.
+    Result is usually a string (description for follow-up LLM context), but
+    can be a dict like {"_type": "image", "url": ..., "caption": ...} which
+    the pipeline detects and sends as a photo to the user.
+    """
     results = {}
 
     for tc in tool_calls:
@@ -107,6 +112,18 @@ async def _dispatch(name, inp, user, today_log, db, source_type):  # noqa: C901
     elif name == "close_day":
         await close_daily_log(db, today_log.id)
         return "Day closed"
+
+    elif name == "generate_image":
+        from core.llm import generate_image
+        url = await generate_image(inp["prompt"])
+        if not url:
+            return "Image generation failed (no API key or rate limited)."
+        # Return a special dict the pipeline can detect and send as a photo
+        return {
+            "_type": "image",
+            "url": url,
+            "caption": inp.get("caption", ""),
+        }
 
     elif name == "update_memory":
         await append_memory_update(
