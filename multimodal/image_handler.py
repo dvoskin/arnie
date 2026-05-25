@@ -3,29 +3,23 @@ from core.llm import analyze_image
 
 logger = logging.getLogger(__name__)
 
-_FOOD_PROMPT = """Analyze this food/nutrition image for a fitness tracking app.
+_FOOD_PROMPT = """You are analyzing a food image for a fitness tracking app. Reply in plain text only — no markdown, no headers, no bullet symbols, no asterisks.
 
-If it's a meal or food item:
-  List each visible food, estimate serving size, and give macros (calories, protein, carbs, fats).
-  Format: Item | Quantity | Cal | P | C | F
+If it's a meal: list each food item on its own line with estimated quantity and macros (cal, protein, carbs, fat).
+If it's a nutrition label: state the key numbers — serving size, calories, protein, carbs, fat, fiber.
+If it's a receipt or packaging: extract item names and any nutritional info shown.
 
-If it's a nutrition label:
-  Extract exactly: serving size, calories, protein, carbs, fats, fiber, sugar, sodium.
+Keep it concise and factual. Use realistic estimates."""
 
-If it's a receipt, menu, or food packaging:
-  Extract the relevant food items and any nutritional info visible.
+_SCALE_PROMPT = "Read the weight shown on this scale. Reply with just the number and unit, nothing else."
 
-Use realistic estimates. Be specific with portion sizes."""
+_WORKOUT_PROMPT = """You are analyzing a workout image for a fitness tracking app. Reply in plain text only — no markdown, no headers.
+List each exercise with sets, reps, and weight on its own line."""
 
-_SCALE_PROMPT = "Read the weight shown on this scale. State the number and unit clearly."
+_GENERAL_PROMPT = """You are analyzing an image for a fitness/nutrition coaching app. Reply in plain text only — no markdown, no headers, no asterisks, no bullet symbols.
 
-_WORKOUT_PROMPT = """Analyze this workout-related image.
-Extract: exercise names, sets, reps, weights. Describe what you see concisely."""
-
-_GENERAL_PROMPT = """Analyze this image for a fitness/nutrition coaching app.
-Determine its type (food, nutrition label, scale, workout log, body photo, other).
-Extract all relevant health/fitness information.
-Context from user: {caption}"""
+Identify what's shown, then extract all relevant fitness or nutrition information.
+Be concise. User caption: {caption}"""
 
 
 async def process_food_image(image_data: bytes) -> str:

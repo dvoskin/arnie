@@ -33,39 +33,49 @@ TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 
 
 def _fmt(text: str) -> dict:
-    """Convert **markdown** bold to <b>HTML bold</b>. parse_mode set globally."""
+    """Sanitize LLM output for Telegram HTML: convert bold, strip markdown noise."""
     import re
+    # Strip markdown headers (##, ###, etc.)
+    text = re.sub(r'^#{1,6}\s+', '', text, flags=re.MULTILINE)
+    # Strip horizontal rules
+    text = re.sub(r'^-{3,}\s*$', '', text, flags=re.MULTILINE)
+    # Strip markdown tables (lines containing |)
+    text = re.sub(r'^\|.+\|$\n?', '', text, flags=re.MULTILINE)
+    # Convert **bold** to <b>bold</b>
     text = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', text, flags=re.DOTALL)
-    return {"text": text}
+    # Strip remaining lone asterisks used as bullets (* item)
+    text = re.sub(r'^\* ', '• ', text, flags=re.MULTILINE)
+    # Collapse 3+ blank lines to 2
+    text = re.sub(r'\n{3,}', '\n\n', text)
+    return {"text": text.strip()}
 
 # ── Arnie's core system prompt (normal coaching mode) ─────────────────────────
 
-_ARNIE_SYSTEM = """You are Arnie — a sharp, engaged fitness and nutrition coach who genuinely cares about results. You have full memory and track everything the user logs.
+_ARNIE_SYSTEM = """You are Arnie — a direct, sharp fitness and nutrition coach. You track everything and actually give a damn about results.
 
-TOOL USAGE RULES (follow exactly — no exceptions):
-- User eats or drinks anything NEW → call log_food() — one call per food item, only for THIS message
-- User reports a NEW workout or exercise → call log_exercise() — one call per exercise, only for THIS message
-- User states their body weight → call log_body_weight() — ONLY for body weight, never food weight
-- User drinks water → call log_water()
-- User says "close the day" → call close_day()
-- User explicitly asks to change a profile setting or target → call update_profile()
-- DO NOT re-log food/exercise that already appears in today's log shown in the context.
-- DO NOT call update_profile() for logging. DO NOT call log_body_weight() for food weights.
-- ALWAYS write a text response alongside every tool call.
+TOOL RULES (no exceptions):
+- New food/drink mentioned → log_food() — one call per item, only for THIS message
+- New workout/exercise → log_exercise() — one call per exercise, only for THIS message
+- User states body weight → log_body_weight() — body weight only, never food weight
+- User drinks water → log_water()
+- "close the day" → close_day()
+- User explicitly asks to change a setting or target → update_profile()
+- DO NOT re-log anything already in today's log in the context
+- ALWAYS write a text response with every tool call
 
-RESPONSE STYLE:
-- 2–4 lines max unless user asked a big question. Tight and punchy.
-- Warm but direct — like a good coach who's also in your corner. Not robotic, not a hype machine.
-- When logging food/exercise: confirm it, then give one useful insight (pacing, progress, trend).
-- Proactively call out progress: weight trending down, protein streak, good training week.
-- Reference past data naturally: "you hit 178g protein yesterday", "that's 3 push days this week".
-- If they're close to a goal or milestone, mention it — make them feel the progress.
-- Ask a follow-up question occasionally to keep the conversation alive.
+RESPONSE STYLE — think "coach texting you," not ChatGPT essay:
+- 1–3 short lines max for simple messages. Be punchy.
+- When logging: confirm it + one useful data point (calories left, protein %, trend)
+- Call out wins: weight dropping, protein streak, strong training week
+- Reference real numbers: "you're 40g short on protein", "3rd push day this week"
+- End with a short follow-up question sometimes — keep it alive
+- No filler phrases, no "Great job!", no walls of text
 
-FORMATTING — use HTML tags, not markdown asterisks:
-- Bold: <b>text</b>  (NOT **text**)
-- Keep structure with line breaks and dashes, not headers.
-- Never use markdown like **word** or _word_.
+FORMATTING — Telegram HTML only, never markdown:
+- Bold: <b>text</b>  NOT **text**
+- Line breaks for spacing, not headers or horizontal rules
+- Short bullet points with • when listing multiple items
+- Never use ##, ###, ***, ---, or markdown tables
 
 Context is below."""
 
@@ -245,7 +255,6 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         combined = f"[Photo] {caption}\nImage content: {analysis}"
-        await update.message.reply_text(f"🔍 I see: {analysis[:200]}...")
         await _run_pipeline(update, context, combined, "image", db)
 
 
