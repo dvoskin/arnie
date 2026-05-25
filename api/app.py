@@ -174,93 +174,108 @@ async def telegram_webhook(token: str, request: Request):
 
 # ── Stats API ──────────────────────────────────────────────────────────────────
 
+@app.get("/api/insights/{token}")
+async def get_insights_endpoint(token: str, force: bool = False):
+    """Return 3-5 AI-generated coaching insights based on user data."""
+    from api.insights import get_insights
+    async with AsyncSessionLocal() as db:
+        user = await get_user_by_webhook_token(db, token)
+        if not user:
+            raise HTTPException(status_code=401, detail="Invalid token")
+        # Re-use the stats payload to feed the LLM
+        stats = await _build_stats_for_user(db, user)
+        insights = await get_insights(user.id, stats, force=force)
+    return {"insights": insights}
+
+
+async def _build_stats_for_user(db, user):
+    """Shared stats-building logic used by both /api/stats and /api/insights."""
+    prefs = user.preferences
+    today_log = await get_today_log(db, user.id, user.timezone or "UTC")
+    history = await get_recent_logs(db, user.id, days=30)
+    weights = await get_recent_weights(db, user.id, days=60)
+
+    today_data = None
+    if today_log:
+        food_entries = [
+            {
+                "name": e.parsed_food_name or "?",
+                "quantity": e.quantity or "",
+                "calories": round(e.calories or 0),
+                "protein": round(e.protein or 0),
+                "carbs": round(e.carbs or 0),
+                "fats": round(e.fats or 0),
+                "estimated": e.estimated_flag,
+            }
+            for e in (today_log.food_entries or [])
+        ]
+        exercise_entries = [
+            {
+                "name": e.exercise_name or "?",
+                "sets": e.sets,
+                "reps": e.reps,
+                "weight": round(e.weight * 2.20462, 1) if e.weight else None,
+                "duration_minutes": e.duration_minutes,
+            }
+            for e in (today_log.exercise_entries or [])
+        ]
+        today_data = {
+            "date": str(today_log.date),
+            "status": today_log.status,
+            "calories": round(today_log.total_calories or 0),
+            "protein": round(today_log.total_protein or 0),
+            "carbs": round(today_log.total_carbs or 0),
+            "fats": round(today_log.total_fats or 0),
+            "water_ml": round(today_log.total_water_ml or 0),
+            "workout_completed": today_log.workout_completed,
+            "cardio_completed": today_log.cardio_completed,
+            "food_entries": food_entries,
+            "exercise_entries": exercise_entries,
+        }
+
+    hist_data = []
+    for log in sorted(history, key=lambda l: l.date):
+        hist_data.append({
+            "date": str(log.date),
+            "calories": round(log.total_calories or 0),
+            "protein": round(log.total_protein or 0),
+            "carbs": round(log.total_carbs or 0),
+            "fats": round(log.total_fats or 0),
+            "workout": log.workout_completed,
+            "status": log.status,
+        })
+
+    weight_data = [
+        {"date": w.timestamp.strftime("%Y-%m-%d"),
+         "kg": round(w.weight_kg, 1),
+         "lbs": round(w.weight_kg * 2.20462, 1)}
+        for w in sorted(weights, key=lambda w: w.timestamp)
+    ]
+
+    return {
+        "user": {
+            "name": user.name or "User",
+            "goal": user.primary_goal or "—",
+            "current_weight_lbs": round(user.current_weight_kg * 2.20462, 1) if user.current_weight_kg else None,
+            "goal_weight_lbs": round(user.goal_weight_kg * 2.20462, 1) if user.goal_weight_kg else None,
+        },
+        "targets": {
+            "calories": prefs.calorie_target if prefs else None,
+            "protein": prefs.protein_target if prefs else None,
+        },
+        "today": today_data,
+        "history": hist_data,
+        "weights": weight_data,
+    }
+
+
 @app.get("/api/stats/{token}")
 async def get_stats(token: str):
     async with AsyncSessionLocal() as db:
         user = await get_user_by_webhook_token(db, token)
         if not user:
             raise HTTPException(status_code=401, detail="Invalid token")
-
-        prefs = user.preferences
-        today_log = await get_today_log(db, user.id, user.timezone or "UTC")
-        history = await get_recent_logs(db, user.id, days=30)
-        weights = await get_recent_weights(db, user.id, days=60)
-
-        # Today
-        today_data = None
-        if today_log:
-            food_entries = [
-                {
-                    "name": e.parsed_food_name or "?",
-                    "quantity": e.quantity or "",
-                    "calories": round(e.calories or 0),
-                    "protein": round(e.protein or 0),
-                    "carbs": round(e.carbs or 0),
-                    "fats": round(e.fats or 0),
-                    "estimated": e.estimated_flag,
-                }
-                for e in (today_log.food_entries or [])
-            ]
-            exercise_entries = [
-                {
-                    "name": e.exercise_name or "?",
-                    "sets": e.sets,
-                    "reps": e.reps,
-                    "weight": round(e.weight * 2.20462, 1) if e.weight else None,
-                    "duration_minutes": e.duration_minutes,
-                }
-                for e in (today_log.exercise_entries or [])
-            ]
-            today_data = {
-                "date": str(today_log.date),
-                "status": today_log.status,
-                "calories": round(today_log.total_calories or 0),
-                "protein": round(today_log.total_protein or 0),
-                "carbs": round(today_log.total_carbs or 0),
-                "fats": round(today_log.total_fats or 0),
-                "water_ml": round(today_log.total_water_ml or 0),
-                "workout_completed": today_log.workout_completed,
-                "cardio_completed": today_log.cardio_completed,
-                "food_entries": food_entries,
-                "exercise_entries": exercise_entries,
-            }
-
-        # 30-day history (closed days only)
-        hist_data = []
-        for log in sorted(history, key=lambda l: l.date):
-            hist_data.append({
-                "date": str(log.date),
-                "calories": round(log.total_calories or 0),
-                "protein": round(log.total_protein or 0),
-                "carbs": round(log.total_carbs or 0),
-                "fats": round(log.total_fats or 0),
-                "workout": log.workout_completed,
-                "status": log.status,
-            })
-
-        # Weight trend
-        weight_data = [
-            {"date": w.timestamp.strftime("%Y-%m-%d"),
-             "kg": round(w.weight_kg, 1),
-             "lbs": round(w.weight_kg * 2.20462, 1)}
-            for w in sorted(weights, key=lambda w: w.timestamp)
-        ]
-
-        return {
-            "user": {
-                "name": user.name or "User",
-                "goal": user.primary_goal or "—",
-                "current_weight_lbs": round(user.current_weight_kg * 2.20462, 1) if user.current_weight_kg else None,
-                "goal_weight_lbs": round(user.goal_weight_kg * 2.20462, 1) if user.goal_weight_kg else None,
-            },
-            "targets": {
-                "calories": prefs.calorie_target if prefs else None,
-                "protein": prefs.protein_target if prefs else None,
-            },
-            "today": today_data,
-            "history": hist_data,
-            "weights": weight_data,
-        }
+        return await _build_stats_for_user(db, user)
 
 
 # ── Dashboard HTML ─────────────────────────────────────────────────────────────
@@ -280,103 +295,195 @@ def _dashboard_html(token: str) -> str:
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Arnie Dashboard</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#0f1117">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Arnie</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
-  * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+  * {{ box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }}
   :root {{
     --bg: #0f1117; --surface: #1a1d27; --surface2: #22263a;
     --border: #2e3347; --green: #22c55e; --blue: #3b82f6;
-    --orange: #f97316; --purple: #a855f7; --red: #ef4444;
+    --orange: #f97316; --purple: #a855f7; --red: #ef4444; --yellow: #eab308;
     --text: #f1f5f9; --muted: #94a3b8; --dim: #475569;
   }}
-  body {{ font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; padding: 0; }}
+  html, body {{ background: var(--bg); }}
+  body {{
+    font-family: 'Inter', -apple-system, system-ui, sans-serif;
+    background: var(--bg); color: var(--text); min-height: 100vh;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right)
+             env(safe-area-inset-bottom) env(safe-area-inset-left);
+    -webkit-font-smoothing: antialiased;
+  }}
 
-  header {{ background: var(--surface); border-bottom: 1px solid var(--border); padding: 16px 24px;
-            display: flex; align-items: center; justify-content: space-between; }}
-  .logo {{ font-size: 20px; font-weight: 700; color: var(--green); letter-spacing: -0.5px; }}
-  .user-badge {{ display: flex; align-items: center; gap: 10px; }}
-  .goal-tag {{ background: var(--surface2); color: var(--muted); font-size: 12px;
-               padding: 4px 10px; border-radius: 20px; border: 1px solid var(--border); text-transform: capitalize; }}
-  .refresh-btn {{ background: none; border: 1px solid var(--border); color: var(--muted);
-                  padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 12px; font-family: inherit; }}
-  .refresh-btn:hover {{ background: var(--surface2); color: var(--text); }}
+  /* HEADER — sticky, compact on mobile */
+  header {{
+    background: rgba(15, 17, 23, 0.85);
+    backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border);
+    padding: 12px 16px;
+    display: flex; align-items: center; justify-content: space-between;
+    position: sticky; top: 0; z-index: 10;
+  }}
+  .logo {{ font-size: 18px; font-weight: 700; color: var(--green); letter-spacing: -0.5px; }}
+  .user-badge {{ display: flex; align-items: center; gap: 8px; }}
+  .user-name {{ font-weight: 600; font-size: 14px; }}
+  .goal-tag {{
+    background: var(--surface2); color: var(--muted); font-size: 11px;
+    padding: 4px 9px; border-radius: 20px; border: 1px solid var(--border);
+    text-transform: capitalize;
+  }}
+  .refresh-btn {{
+    background: none; border: 1px solid var(--border); color: var(--muted);
+    padding: 7px 12px; border-radius: 8px; cursor: pointer; font-size: 12px;
+    font-family: inherit; min-height: 36px; min-width: 36px;
+  }}
+  .refresh-btn:active {{ background: var(--surface2); }}
 
-  main {{ max-width: 1100px; margin: 0 auto; padding: 24px 16px; }}
+  main {{ max-width: 920px; margin: 0 auto; padding: 16px 12px 60px; }}
 
-  /* Loading state */
-  #loading {{ text-align: center; padding: 80px; color: var(--muted); }}
+  #loading {{ text-align: center; padding: 60px 20px; color: var(--muted); font-size: 14px; }}
   #content {{ display: none; }}
 
-  /* Section heading */
-  .section-title {{ font-size: 11px; font-weight: 600; color: var(--dim);
-                    text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px; margin-top: 32px; }}
-  .section-title:first-child {{ margin-top: 0; }}
+  .section-title {{
+    font-size: 10px; font-weight: 700; color: var(--dim);
+    text-transform: uppercase; letter-spacing: 1.2px;
+    margin: 24px 4px 10px; display: flex; align-items: center; gap: 8px;
+  }}
+  .section-title:first-of-type {{ margin-top: 4px; }}
+  .section-title .badge-pill {{
+    background: var(--surface2); padding: 2px 8px; border-radius: 10px;
+    font-size: 9px; letter-spacing: 0.5px; color: var(--muted);
+  }}
 
-  /* Stat cards */
-  .cards {{ display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }}
-  @media (max-width: 700px) {{ .cards {{ grid-template-columns: repeat(2, 1fr); }} }}
-  .card {{ background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px; }}
-  .card-label {{ font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }}
-  .card-value {{ font-size: 26px; font-weight: 700; line-height: 1; }}
-  .card-sub {{ font-size: 12px; color: var(--muted); margin-top: 4px; }}
-  .progress-track {{ background: var(--surface2); border-radius: 4px; height: 5px; margin-top: 10px; overflow: hidden; }}
-  .progress-fill {{ height: 100%; border-radius: 4px; transition: width 0.6s ease; }}
+  /* STAT CARDS */
+  .cards {{ display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }}
+  @media (min-width: 600px) {{ .cards {{ grid-template-columns: repeat(4, 1fr); }} }}
+  .card {{
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 14px; padding: 14px;
+  }}
+  .card-label {{ font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 6px; font-weight: 600; }}
+  .card-value {{ font-size: 24px; font-weight: 700; line-height: 1; }}
+  .card-sub {{ font-size: 11px; color: var(--muted); margin-top: 4px; }}
+  .progress-track {{ background: var(--surface2); border-radius: 999px; height: 5px; margin-top: 10px; overflow: hidden; }}
+  .progress-fill {{ height: 100%; border-radius: 999px; transition: width 0.6s ease; }}
 
-  /* Charts */
-  .charts {{ display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }}
-  @media (max-width: 700px) {{ .charts {{ grid-template-columns: 1fr; }} }}
-  .chart-card {{ background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 20px; }}
-  .chart-title {{ font-size: 13px; font-weight: 600; margin-bottom: 16px; color: var(--muted); }}
-  .chart-wrap {{ position: relative; height: 180px; }}
+  /* AI INSIGHTS */
+  .insights-card {{
+    background: linear-gradient(180deg, rgba(34,197,94,0.04), rgba(34,197,94,0)) , var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px; padding: 6px 4px;
+  }}
+  .insight-row {{
+    display: grid; grid-template-columns: 28px 1fr; gap: 12px;
+    padding: 12px 14px; border-bottom: 1px solid var(--border);
+    align-items: flex-start;
+  }}
+  .insight-row:last-child {{ border-bottom: none; }}
+  .insight-icon {{
+    font-size: 13px; line-height: 1.5;
+    width: 22px; height: 22px;
+    background: rgba(34,197,94,.12); color: var(--green);
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }}
+  .insight-text {{ font-size: 13.5px; line-height: 1.45; color: var(--text); }}
+  .insights-loading {{ padding: 18px; color: var(--muted); font-size: 13px; text-align: center; }}
+  .insights-empty {{ padding: 18px; color: var(--muted); font-size: 13px; text-align: center; }}
 
-  /* Food log */
-  .log-card {{ background: var(--surface); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }}
-  .log-row {{ display: grid; grid-template-columns: 1fr auto; align-items: center;
-              padding: 12px 16px; border-bottom: 1px solid var(--border); gap: 16px; }}
-  .log-row:last-child {{ border-bottom: none; }}
-  .log-name {{ font-size: 14px; font-weight: 500; }}
-  .log-qty {{ font-size: 12px; color: var(--muted); }}
-  .log-macros {{ display: flex; gap: 10px; font-size: 12px; }}
-  .log-macros span {{ color: var(--muted); }}
-  .log-macros b {{ color: var(--text); }}
-  .log-empty {{ padding: 24px 16px; color: var(--muted); font-size: 14px; text-align: center; }}
-
-  /* Exercise log */
-  .ex-row {{ display: grid; grid-template-columns: 1fr auto; align-items: center;
-             padding: 12px 16px; border-bottom: 1px solid var(--border); gap: 16px; }}
-  .ex-row:last-child {{ border-bottom: none; }}
-  .ex-name {{ font-size: 14px; font-weight: 500; }}
-  .ex-detail {{ font-size: 12px; color: var(--green); font-weight: 600; }}
-
-  /* Status badges */
-  .badge {{ display: inline-block; padding: 3px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; }}
+  /* BADGES ROW */
+  .status-row {{
+    display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap;
+  }}
+  .badge {{
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 6px 10px; border-radius: 8px; font-size: 12px; font-weight: 600;
+  }}
   .badge-green {{ background: rgba(34,197,94,.15); color: var(--green); }}
   .badge-gray {{ background: var(--surface2); color: var(--muted); }}
+  .badge-blue {{ background: rgba(59,130,246,.15); color: var(--blue); }}
 
-  /* Workout dots */
-  .workout-row {{ display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px; }}
-  .workout-dot {{ width: 28px; height: 28px; border-radius: 6px; display: flex; align-items: center;
-                  justify-content: center; font-size: 11px; font-weight: 600; }}
+  /* CHARTS */
+  .charts {{ display: grid; grid-template-columns: 1fr; gap: 10px; }}
+  @media (min-width: 700px) {{ .charts {{ grid-template-columns: 1fr 1fr; }} }}
+  .chart-card {{
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 14px; padding: 16px;
+  }}
+  .chart-title {{ font-size: 12px; font-weight: 600; margin-bottom: 12px; color: var(--muted); }}
+  .chart-wrap {{ position: relative; height: 160px; }}
+  @media (min-width: 700px) {{ .chart-wrap {{ height: 180px; }} }}
 
-  footer {{ text-align: center; padding: 32px 16px; color: var(--dim); font-size: 12px; }}
+  /* LOG CARDS */
+  .log-card {{
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 14px; overflow: hidden;
+  }}
+  .log-row {{
+    padding: 12px 14px; border-bottom: 1px solid var(--border);
+  }}
+  .log-row:last-child {{ border-bottom: none; }}
+  .log-name {{ font-size: 14px; font-weight: 500; line-height: 1.3; word-break: break-word; }}
+  .log-qty {{ font-size: 11px; color: var(--muted); margin-top: 2px; }}
+  .log-macros {{
+    display: flex; gap: 12px; font-size: 12px; margin-top: 6px;
+    flex-wrap: wrap;
+  }}
+  .log-macros span {{ color: var(--muted); }}
+  .log-macros b {{ color: var(--text); font-weight: 600; }}
+  .log-empty {{ padding: 20px 14px; color: var(--muted); font-size: 13px; text-align: center; }}
+
+  /* EXERCISE LOG */
+  .ex-row {{
+    display: grid; grid-template-columns: 1fr auto; align-items: center;
+    padding: 12px 14px; border-bottom: 1px solid var(--border); gap: 12px;
+  }}
+  .ex-row:last-child {{ border-bottom: none; }}
+  .ex-name {{ font-size: 14px; font-weight: 500; word-break: break-word; }}
+  .ex-detail {{ font-size: 12px; color: var(--green); font-weight: 600; white-space: nowrap; }}
+
+  /* WORKOUT DOTS */
+  .workout-row {{ display: flex; gap: 6px; flex-wrap: wrap; }}
+  .workout-dot {{
+    width: 26px; height: 26px; border-radius: 6px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 10px; font-weight: 600;
+  }}
+
+  footer {{ text-align: center; padding: 24px 16px; color: var(--dim); font-size: 11px; }}
+
+  /* Animations */
+  @keyframes fadeIn {{ from {{ opacity: 0; transform: translateY(4px); }} to {{ opacity: 1; transform: translateY(0); }} }}
+  .fade-in {{ animation: fadeIn 0.4s ease; }}
 </style>
 </head>
 <body>
 <header>
   <div class="logo">🏋️ Arnie</div>
   <div class="user-badge">
-    <span id="user-name" style="font-weight:600"></span>
+    <span class="user-name" id="user-name"></span>
     <span id="goal-tag" class="goal-tag"></span>
-    <button class="refresh-btn" onclick="load()">↻ Refresh</button>
+    <button class="refresh-btn" onclick="loadAll()" aria-label="Refresh">↻</button>
   </div>
 </header>
 
 <main>
   <div id="loading">Loading your data…</div>
   <div id="content">
+
+    <!-- INSIGHTS (AI-generated) -->
+    <div class="section-title">
+      ✨ Coach insights
+      <span class="badge-pill">AI</span>
+    </div>
+    <div class="insights-card fade-in" id="insights-card">
+      <div class="insights-loading">Analyzing your last 30 days…</div>
+    </div>
 
     <!-- TODAY -->
     <div class="section-title">Today</div>
@@ -396,29 +503,26 @@ def _dashboard_html(token: str) -> str:
       <div class="card">
         <div class="card-label">Carbs</div>
         <div class="card-value" id="carb-val">—</div>
-        <div class="card-sub"></div>
-        <div class="progress-track"><div class="progress-fill" id="carb-bar" style="background:var(--orange); width:0%"></div></div>
+        <div class="card-sub" id="carb-sub" style="color:var(--orange)">grams</div>
       </div>
       <div class="card">
         <div class="card-label">Fats</div>
         <div class="card-value" id="fat-val">—</div>
-        <div class="card-sub"></div>
-        <div class="progress-track"><div class="progress-fill" id="fat-bar" style="background:var(--purple); width:0%"></div></div>
+        <div class="card-sub" id="fat-sub" style="color:var(--purple)">grams</div>
       </div>
     </div>
 
-    <!-- WORKOUT STATUS -->
-    <div style="display:flex; gap:10px; margin-top:12px;">
+    <div class="status-row">
       <span id="workout-badge"></span>
       <span id="cardio-badge"></span>
-      <span id="water-badge" style="font-size:13px; color:var(--muted)"></span>
+      <span id="water-badge" class="badge badge-blue" style="display:none"></span>
     </div>
 
     <!-- CHARTS -->
-    <div class="section-title">30-Day Trends</div>
+    <div class="section-title">30-day trends</div>
     <div class="charts">
       <div class="chart-card">
-        <div class="chart-title">Calories / day</div>
+        <div class="chart-title">Calories</div>
         <div class="chart-wrap"><canvas id="calChart"></canvas></div>
       </div>
       <div class="chart-card">
@@ -426,41 +530,42 @@ def _dashboard_html(token: str) -> str:
         <div class="chart-wrap"><canvas id="weightChart"></canvas></div>
       </div>
       <div class="chart-card">
-        <div class="chart-title">Protein / day</div>
+        <div class="chart-title">Protein</div>
         <div class="chart-wrap"><canvas id="proChart"></canvas></div>
       </div>
       <div class="chart-card">
-        <div class="chart-title">Workout days</div>
-        <div class="chart-wrap" id="workout-dots-wrap">
+        <div class="chart-title">Workout history</div>
+        <div class="chart-wrap" style="height:auto; padding-top:8px">
           <div class="workout-row" id="workout-dots"></div>
         </div>
       </div>
     </div>
 
     <!-- TODAY'S FOOD LOG -->
-    <div class="section-title">Today's food log</div>
+    <div class="section-title">Today's food</div>
     <div class="log-card" id="food-log"></div>
 
     <!-- TODAY'S EXERCISE LOG -->
     <div class="section-title">Today's workouts</div>
     <div class="log-card" id="ex-log"></div>
 
-  </div><!-- /content -->
+  </div>
 </main>
 
-<footer>Arnie · Read-only view · Updates every 5 minutes</footer>
+<footer>Arnie · read-only · auto-refresh 5 min</footer>
 
 <script>
 const TOKEN = '{token}';
-const API = '/api/stats/' + TOKEN;
+const STATS_API = '/api/stats/' + TOKEN;
+const INSIGHTS_API = '/api/insights/' + TOKEN;
 let calChart, weightChart, proChart;
 
 const chartDefaults = {{
   responsive: true,
   maintainAspectRatio: false,
-  plugins: {{ legend: {{ display: false }}, tooltip: {{ callbacks: {{}} }} }},
+  plugins: {{ legend: {{ display: false }} }},
   scales: {{
-    x: {{ grid: {{ color: '#2e3347' }}, ticks: {{ color: '#475569', font: {{ size: 10 }} }} }},
+    x: {{ grid: {{ color: '#2e3347', display: false }}, ticks: {{ color: '#475569', font: {{ size: 9 }}, maxRotation: 0, autoSkip: true, maxTicksLimit: 8 }} }},
     y: {{ grid: {{ color: '#2e3347' }}, ticks: {{ color: '#475569', font: {{ size: 10 }} }} }},
   }}
 }};
@@ -469,35 +574,65 @@ function pct(val, target) {{
   if (!target) return 0;
   return Math.min(100, Math.round(val / target * 100));
 }}
-
 function fmt(n) {{ return n != null ? n.toLocaleString() : '—'; }}
 
-async function load() {{
+async function loadStats() {{
+  const r = await fetch(STATS_API);
+  if (!r.ok) throw new Error('stats failed');
+  return r.json();
+}}
+
+async function loadInsights() {{
   try {{
-    const r = await fetch(API);
-    if (!r.ok) throw new Error('bad response');
+    const r = await fetch(INSIGHTS_API);
+    if (!r.ok) return [];
     const d = await r.json();
-    render(d);
+    return d.insights || [];
+  }} catch(e) {{ return []; }}
+}}
+
+async function loadAll() {{
+  try {{
+    const stats = await loadStats();
+    renderStats(stats);
     document.getElementById('loading').style.display = 'none';
     document.getElementById('content').style.display = 'block';
+    // Load insights in background so dashboard doesn't wait
+    loadInsights().then(renderInsights);
   }} catch(e) {{
-    document.getElementById('loading').textContent = 'Failed to load — try refreshing.';
+    document.getElementById('loading').textContent = 'Failed to load — pull to refresh.';
   }}
 }}
 
-function render(d) {{
-  // Header
+function renderInsights(insights) {{
+  const el = document.getElementById('insights-card');
+  if (!insights || insights.length === 0) {{
+    el.innerHTML = '<div class="insights-empty">Not enough data yet — keep logging and check back tomorrow.</div>';
+    return;
+  }}
+  el.innerHTML = insights.map(text => `
+    <div class="insight-row fade-in">
+      <div class="insight-icon">▸</div>
+      <div class="insight-text">${{escapeHtml(text)}}</div>
+    </div>
+  `).join('');
+}}
+
+function escapeHtml(s) {{
+  return String(s).replace(/[&<>"']/g, c => ({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}}[c]));
+}}
+
+function renderStats(d) {{
   document.getElementById('user-name').textContent = d.user.name;
   document.getElementById('goal-tag').textContent = d.user.goal;
 
   const t = d.today || {{}};
   const targets = d.targets || {{}};
 
-  // Stat cards
   const calPct = pct(t.calories, targets.calories);
   const proPct = pct(t.protein, targets.protein);
   document.getElementById('cal-val').textContent = fmt(t.calories);
-  document.getElementById('cal-sub').textContent = targets.calories ? `/ ${{targets.calories}} kcal (${{calPct}}%)` : 'kcal';
+  document.getElementById('cal-sub').textContent = targets.calories ? `/ ${{targets.calories}} (${{calPct}}%)` : 'kcal';
   document.getElementById('cal-bar').style.width = calPct + '%';
   document.getElementById('pro-val').textContent = (t.protein ?? '—') + (t.protein != null ? 'g' : '');
   document.getElementById('pro-sub').textContent = targets.protein ? `/ ${{targets.protein}}g (${{proPct}}%)` : 'grams';
@@ -505,24 +640,23 @@ function render(d) {{
   document.getElementById('carb-val').textContent = (t.carbs ?? '—') + (t.carbs != null ? 'g' : '');
   document.getElementById('fat-val').textContent = (t.fats ?? '—') + (t.fats != null ? 'g' : '');
 
-  // Workout badges
   const wb = document.getElementById('workout-badge');
   wb.className = 'badge ' + (t.workout_completed ? 'badge-green' : 'badge-gray');
-  wb.textContent = t.workout_completed ? '💪 Workout done' : '⬜ No workout yet';
+  wb.textContent = t.workout_completed ? '💪 Workout' : '⬜ No workout';
   const cb = document.getElementById('cardio-badge');
   cb.className = 'badge ' + (t.cardio_completed ? 'badge-green' : 'badge-gray');
-  cb.textContent = t.cardio_completed ? '🏃 Cardio done' : '⬜ No cardio';
+  cb.textContent = t.cardio_completed ? '🏃 Cardio' : '⬜ No cardio';
+  const wat = document.getElementById('water-badge');
   if (t.water_ml > 0) {{
-    document.getElementById('water-badge').textContent = '💧 ' + (t.water_ml >= 1000 ? (t.water_ml/1000).toFixed(1) + 'L' : t.water_ml + 'ml') + ' water';
-  }}
+    wat.style.display = 'inline-flex';
+    wat.textContent = '💧 ' + (t.water_ml >= 1000 ? (t.water_ml/1000).toFixed(1) + 'L' : t.water_ml + 'ml');
+  }} else {{ wat.style.display = 'none'; }}
 
-  // Charts
   const hist = d.history || [];
-  const labels = hist.map(h => h.date.slice(5)); // MM-DD
+  const labels = hist.map(h => h.date.slice(5));
   const calData = hist.map(h => h.calories);
   const proData = hist.map(h => h.protein);
 
-  // Calorie bar chart
   if (calChart) calChart.destroy();
   calChart = new Chart(document.getElementById('calChart'), {{
     type: 'bar',
@@ -531,31 +665,23 @@ function render(d) {{
       datasets: [{{
         data: calData,
         backgroundColor: calData.map(v => targets.calories && v > targets.calories ? 'rgba(239,68,68,.7)' : 'rgba(34,197,94,.7)'),
-        borderRadius: 4,
+        borderRadius: 3,
       }}]
     }},
     options: {{
       ...chartDefaults,
-      plugins: {{
-        ...chartDefaults.plugins,
-        annotation: {{}}
-      }},
-      scales: {{
-        ...chartDefaults.scales,
-        y: {{ ...chartDefaults.scales.y, beginAtZero: true }}
-      }}
+      scales: {{ ...chartDefaults.scales, y: {{ ...chartDefaults.scales.y, beginAtZero: true }} }}
     }}
   }});
   if (targets.calories) {{
     calChart.data.datasets.push({{
       type: 'line', data: Array(labels.length).fill(targets.calories),
-      borderColor: 'rgba(255,255,255,.2)', borderDash: [4,4], borderWidth: 1,
-      pointRadius: 0, fill: false, label: 'Target'
+      borderColor: 'rgba(255,255,255,.25)', borderDash: [4,4], borderWidth: 1,
+      pointRadius: 0, fill: false
     }});
     calChart.update();
   }}
 
-  // Weight line chart
   if (weightChart) weightChart.destroy();
   const wData = d.weights || [];
   weightChart = new Chart(document.getElementById('weightChart'), {{
@@ -565,24 +691,20 @@ function render(d) {{
       datasets: [{{
         data: wData.map(w => w.lbs),
         borderColor: '#3b82f6', backgroundColor: 'rgba(59,130,246,.1)',
-        borderWidth: 2, pointRadius: 3, pointBackgroundColor: '#3b82f6', fill: true, tension: 0.3
+        borderWidth: 2, pointRadius: 2.5, pointBackgroundColor: '#3b82f6', fill: true, tension: 0.3
       }}]
     }},
-    options: {{
-      ...chartDefaults,
-      scales: {{ ...chartDefaults.scales, y: {{ ...chartDefaults.scales.y, beginAtZero: false }} }}
-    }}
+    options: {{ ...chartDefaults, scales: {{ ...chartDefaults.scales, y: {{ ...chartDefaults.scales.y, beginAtZero: false }} }} }}
   }});
   if (d.user.goal_weight_lbs && wData.length) {{
     weightChart.data.datasets.push({{
       type: 'line', data: Array(wData.length).fill(d.user.goal_weight_lbs),
       borderColor: 'rgba(34,197,94,.4)', borderDash: [4,4], borderWidth: 1,
-      pointRadius: 0, fill: false, label: 'Goal'
+      pointRadius: 0, fill: false
     }});
     weightChart.update();
   }}
 
-  // Protein line chart
   if (proChart) proChart.destroy();
   proChart = new Chart(document.getElementById('proChart'), {{
     type: 'line',
@@ -591,24 +713,20 @@ function render(d) {{
       datasets: [{{
         data: proData,
         borderColor: '#3b82f6', backgroundColor: 'rgba(59,130,246,.1)',
-        borderWidth: 2, pointRadius: 3, pointBackgroundColor: '#3b82f6', fill: true, tension: 0.3
+        borderWidth: 2, pointRadius: 2.5, pointBackgroundColor: '#3b82f6', fill: true, tension: 0.3
       }}]
     }},
-    options: {{
-      ...chartDefaults,
-      scales: {{ ...chartDefaults.scales, y: {{ ...chartDefaults.scales.y, beginAtZero: true }} }}
-    }}
+    options: {{ ...chartDefaults, scales: {{ ...chartDefaults.scales, y: {{ ...chartDefaults.scales.y, beginAtZero: true }} }} }}
   }});
   if (targets.protein) {{
     proChart.data.datasets.push({{
       type: 'line', data: Array(labels.length).fill(targets.protein),
-      borderColor: 'rgba(255,255,255,.2)', borderDash: [4,4], borderWidth: 1,
+      borderColor: 'rgba(255,255,255,.25)', borderDash: [4,4], borderWidth: 1,
       pointRadius: 0, fill: false
     }});
     proChart.update();
   }}
 
-  // Workout dots (last 30 days)
   const dotsEl = document.getElementById('workout-dots');
   dotsEl.innerHTML = '';
   hist.slice(-30).forEach(h => {{
@@ -622,23 +740,19 @@ function render(d) {{
     }} else {{
       dot.style.background = '#1a1d27';
       dot.style.color = '#475569';
-      dot.textContent = h.date.slice(8); // day number
-      dot.style.fontSize = '10px';
+      dot.textContent = h.date.slice(8);
     }}
     dotsEl.appendChild(dot);
   }});
 
-  // Food log
   const foodEl = document.getElementById('food-log');
   if (!t.food_entries || t.food_entries.length === 0) {{
     foodEl.innerHTML = '<div class="log-empty">Nothing logged today yet</div>';
   }} else {{
     foodEl.innerHTML = t.food_entries.map(f => `
       <div class="log-row">
-        <div>
-          <div class="log-name">${{f.name}}${{f.estimated ? ' <span style="color:var(--dim);font-size:11px">~est</span>' : ''}}</div>
-          <div class="log-qty">${{f.quantity}}</div>
-        </div>
+        <div class="log-name">${{escapeHtml(f.name)}}${{f.estimated ? ' <span style="color:var(--dim);font-size:10px;font-weight:400">~est</span>' : ''}}</div>
+        <div class="log-qty">${{escapeHtml(f.quantity)}}</div>
         <div class="log-macros">
           <span><b>${{f.calories}}</b> cal</span>
           <span><b>${{f.protein}}g</b> P</span>
@@ -649,27 +763,21 @@ function render(d) {{
     `).join('');
   }}
 
-  // Exercise log
   const exEl = document.getElementById('ex-log');
   if (!t.exercise_entries || t.exercise_entries.length === 0) {{
     exEl.innerHTML = '<div class="log-empty">No workouts logged today</div>';
   }} else {{
     exEl.innerHTML = t.exercise_entries.map(e => {{
       let detail = '';
-      if (e.sets && e.reps) detail = `${{e.sets}}×${{e.reps}}${{e.weight ? ' @ ' + e.weight + ' lbs' : ''}}`;
+      if (e.sets && e.reps) detail = `${{e.sets}}×${{e.reps}}${{e.weight ? ' @ ' + e.weight + 'lb' : ''}}`;
       else if (e.duration_minutes) detail = `${{e.duration_minutes}} min`;
-      return `
-        <div class="ex-row">
-          <div class="ex-name">${{e.name}}</div>
-          <div class="ex-detail">${{detail}}</div>
-        </div>
-      `;
+      return `<div class="ex-row"><div class="ex-name">${{escapeHtml(e.name)}}</div><div class="ex-detail">${{detail}}</div></div>`;
     }}).join('');
   }}
 }}
 
-load();
-setInterval(load, 5 * 60 * 1000); // refresh every 5 min
+loadAll();
+setInterval(loadAll, 5 * 60 * 1000);
 </script>
 </body>
 </html>"""
