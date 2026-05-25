@@ -25,6 +25,10 @@ app = FastAPI(title="Arnie API", docs_url=None, redoc_url=None)
 
 # ── Health ─────────────────────────────────────────────────────────────────────
 
+@app.get("/")
+async def root():
+    return {"status": "ok", "service": "Arnie Bot"}
+
 @app.get("/health")
 async def healthcheck():
     return {"status": "ok"}
