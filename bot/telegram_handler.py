@@ -123,6 +123,19 @@ async def _build_messages(db, user_id: int, current_text: str):
     return msgs
 
 
+def _welcome_message(name: str) -> str:
+    return (
+        f"You're all set, <b>{name}</b>. Let's get to work.\n\n"
+        "Here's how to use me:\n"
+        "• <b>Food</b> — just tell me what you ate: <i>\"had eggs and toast\"</i>\n"
+        "• <b>Workouts</b> — <i>\"bench 185 4x5, OHP 115 3x8\"</i>\n"
+        "• <b>Weight</b> — <i>\"191 lbs this morning\"</i>\n"
+        "• <b>Questions</b> — <i>\"how am I doing on protein?\"</i>\n\n"
+        "Use /today for a snapshot, /targets for your goals.\n\n"
+        "Want me to check in on you throughout the day? Send /remind on."
+    )
+
+
 async def _run_pipeline(update: Update, context: ContextTypes.DEFAULT_TYPE,
                         raw_text: str, source_type: str, db):
     """Core pipeline shared by all message types."""
@@ -132,6 +145,7 @@ async def _run_pipeline(update: Update, context: ContextTypes.DEFAULT_TYPE,
 
     # ── Onboarding ────────────────────────────────────────────────────────────
     in_onboarding = not user.onboarding_completed
+    was_onboarding = in_onboarding  # remember before tools run
 
     if not in_onboarding:
         today_log = await get_or_create_today_log(db, user.id, user.timezone or "UTC")
@@ -191,27 +205,34 @@ async def _run_pipeline(update: Update, context: ContextTypes.DEFAULT_TYPE,
         if in_onboarding:
             system = build_onboarding_system(user)
 
+    # ── Detect onboarding just completed this turn ───────────────────────────
+    just_completed = was_onboarding and not in_onboarding
+
     # ── Follow-up text after tool calls ──────────────────────────────────────
-    # During onboarding: ALWAYS do follow-up so the next question is included.
-    # Normal mode: only when the first pass had no text at all.
-    need_followup = (tool_calls and raw_content and
-                     (in_onboarding or not response_text))
-    if need_followup:
-        stop_typing2 = asyncio.Event()
-        typing_task2 = asyncio.create_task(
-            _typing_keepalive(context.bot, chat_id, stop_typing2)
-        )
-        try:
-            response_text = await chat_follow_up(
-                messages, raw_content, tool_calls, tool_results, system, max_tokens=400
+    # Onboarding just finished → send the welcome message, skip LLM follow-up
+    # Still in onboarding → ALWAYS follow-up so next question is included
+    # Normal mode → only follow-up when first pass had no text
+    if just_completed:
+        response_text = _welcome_message(user.name or "")
+    else:
+        need_followup = (tool_calls and raw_content and
+                         (in_onboarding or not response_text))
+        if need_followup:
+            stop_typing2 = asyncio.Event()
+            typing_task2 = asyncio.create_task(
+                _typing_keepalive(context.bot, chat_id, stop_typing2)
             )
-        finally:
-            stop_typing2.set()
-            typing_task2.cancel()
             try:
-                await typing_task2
-            except asyncio.CancelledError:
-                pass
+                response_text = await chat_follow_up(
+                    messages, raw_content, tool_calls, tool_results, system, max_tokens=400
+                )
+            finally:
+                stop_typing2.set()
+                typing_task2.cancel()
+                try:
+                    await typing_task2
+                except asyncio.CancelledError:
+                    pass
 
     if not response_text:
         response_text = "Got it."
