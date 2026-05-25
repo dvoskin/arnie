@@ -134,16 +134,33 @@ async def _build_messages(db, user_id: int, current_text: str):
     return msgs
 
 
-def _welcome_message(name: str) -> str:
+def _welcome_message(name: str, has_targets: bool) -> str:
+    target_note = (
+        "Your calorie and protein targets are locked in — check them anytime with /targets.\n\n"
+        if has_targets else
+        "We're skipping targets for now — once you start logging, just say <i>\"set my targets\"</i> "
+        "and I'll either calculate them with you or take whatever numbers you give me.\n\n"
+    )
     return (
-        f"You're all set, <b>{name}</b>. Let's get to work.\n\n"
-        "Here's how to use me:\n"
-        "• <b>Food</b> — just tell me what you ate: <i>\"had eggs and toast\"</i>\n"
-        "• <b>Workouts</b> — <i>\"bench 185 4x5, OHP 115 3x8\"</i>\n"
-        "• <b>Weight</b> — <i>\"191 lbs this morning\"</i>\n"
-        "• <b>Questions</b> — <i>\"how am I doing on protein?\"</i>\n\n"
-        "Use /today for a snapshot, /targets for your goals.\n\n"
-        "Want me to check in on you throughout the day? Send /remind on."
+        f"Alright <b>{name}</b> — you're set. Let's get to work. 💪\n\n"
+        f"{target_note}"
+        "<b>How we work together:</b>\n\n"
+        "🍳 <b>Food</b> → just tell me what you ate\n"
+        "<i>\"3 eggs, 2 slices of toast and a coffee\"</i>\n\n"
+        "🏋️ <b>Workouts</b> → tell me what you trained\n"
+        "<i>\"bench 185 4x5, OHP 115 3x8, lateral raises 20x4x15\"</i>\n\n"
+        "⚖️ <b>Weight</b> → drop it in whenever you weigh in\n"
+        "<i>\"191.2 this morning\"</i>\n\n"
+        "💬 <b>Ask me anything</b> → coaching, pacing, plans, ideas\n"
+        "<i>\"how am I doing on protein?\"</i> or <i>\"build me a pull day\"</i>\n\n"
+        "<b>Useful commands:</b>\n"
+        "/today — daily snapshot\n"
+        "/targets — your goals\n"
+        "/dash — open your dashboard in a browser\n"
+        "/remind on — let me check in with you through the day\n"
+        "/help — full command list\n\n"
+        "Whenever you're ready, tell me what you've eaten today or what's coming up next. "
+        "We're in this together."
     )
 
 
@@ -224,7 +241,8 @@ async def _run_pipeline(update: Update, context: ContextTypes.DEFAULT_TYPE,
     # Still in onboarding → ALWAYS follow-up so next question is included
     # Normal mode → only follow-up when first pass had no text
     if just_completed:
-        response_text = _welcome_message(user.name or "")
+        has_targets = bool(user.preferences and user.preferences.calorie_target)
+        response_text = _welcome_message(user.name or "", has_targets)
     else:
         need_followup = (tool_calls and raw_content and
                          (in_onboarding or not response_text))
@@ -312,22 +330,30 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user = await get_or_create_user(db, str(update.effective_user.id))
         if user.onboarding_completed:
             today_log = await get_today_log(db, user.id, user.timezone or "UTC")
-            msg = (f"Hey {user.name}, welcome back.\n"
-                   f"{'No log yet today — start typing.' if not today_log else fmt_log(today_log)}")
+            msg = (
+                f"Welcome back, <b>{user.name}</b>. 💪\n\n"
+                + ("Nothing logged today yet — what's first up?"
+                   if not today_log else fmt_log(today_log))
+            )
             await update.message.reply_text(**_fmt(msg))
         elif user.name:
-            onb_sys = build_onboarding_system(user)
-            for line in onb_sys.splitlines():
-                if line.startswith('NEXT REQUIRED QUESTION:'):
-                    q = line.split('"')[1] if '"' in line else "What's next?"
-                    await update.message.reply_text(**_fmt(f"Hey {user.name}, still setting you up. {q}"))
-                    break
+            # Mid-onboarding — pick up where they left off
+            await update.message.reply_text(
+                f"Hey {user.name}, we're mid-setup. Just keep going — answer the last question I asked, "
+                "or type anything and I'll guide us back."
+            )
         else:
             await update.message.reply_text(
-                "Hey — I'm Arnie. Your no-BS fitness and nutrition coach.\n\n"
-                "I'll remember what matters, track your food and training, "
-                "and hold you accountable.\n\n"
-                "Let's get you set up. What's your name?"
+                "Hey — I'm <b>Arnie</b>. 💪\n\n"
+                "I'm your fitness and nutrition coach. I track everything you eat, every workout you do, "
+                "your weight, your trends — and I actually pay attention so I can help you hit your goals.\n\n"
+                "<b>Here's how we'll start:</b>\n"
+                "1. Quick evaluation — your stats, your goals, what you're working with (~3 min)\n"
+                "2. We'll set your calorie and protein targets together — I can calculate them, "
+                "you can tell me what you want, or we can come back to it later\n"
+                "3. Then we get to work. Every meal, every session.\n\n"
+                "Ready? What's your first name?",
+                parse_mode="HTML",
             )
 
 

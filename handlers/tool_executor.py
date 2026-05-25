@@ -164,22 +164,22 @@ async def _dispatch(name, inp, user, today_log, db, source_type):  # noqa: C901
         await db.commit()
         user = await reload_user(db, user.id)
 
-        # Auto-complete onboarding if all essential fields now set
-        if not user.onboarding_completed and is_onboarding_complete(user):
-            user.onboarding_completed = True
-            # Set sensible preference defaults if not already set
-            if user.preferences:
-                p = user.preferences
-                if not p.coaching_style:
-                    p.coaching_style = "balanced"
-                if not p.accountability_level:
-                    p.accountability_level = "medium"
-                if not p.wake_time:
-                    p.wake_time = "07:00"
-                if not p.sleep_time:
-                    p.sleep_time = "23:00"
+        # When onboarding completes, set sensible preference defaults + init memory
+        # NOTE: we no longer auto-flip onboarding_completed when essentials are
+        # set — the LLM must call it explicitly after the targets step.
+        if user.onboarding_completed and user.preferences:
+            p = user.preferences
+            if not p.coaching_style:
+                p.coaching_style = "balanced"
+            if not p.accountability_level:
+                p.accountability_level = "medium"
+            if not p.wake_time:
+                p.wake_time = "07:00"
+            if not p.sleep_time:
+                p.sleep_time = "23:00"
             await db.commit()
             user = await reload_user(db, user.id)
+            # init_memory is idempotent — safe to call on every update
             await init_memory(user)
 
         return f"Profile updated: {list(fields.keys())}"
