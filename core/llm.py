@@ -1,0 +1,369 @@
+"""
+Lightweight LLM wrapper. Supports Anthropic (default) and OpenAI.
+All public functions are async.
+"""
+import os
+import json
+import logging
+from typing import Any, Dict, List, Optional, Tuple
+
+logger = logging.getLogger(__name__)
+
+def _env(key: str, default: str = "") -> str:
+    return os.environ.get(key) or default
+
+
+def LLM_PROVIDER() -> str:
+    return _env("LLM_PROVIDER", "anthropic")
+
+
+def ANTHROPIC_API_KEY() -> str:
+    return _env("ANTHROPIC_API_KEY")
+
+
+def OPENAI_API_KEY() -> str:
+    return _env("OPENAI_API_KEY")
+
+
+def DEFAULT_MODEL() -> str:
+    return _env("DEFAULT_MODEL", "claude-sonnet-4-6")
+
+_anthropic = None
+_openai = None
+
+
+def _get_anthropic():
+    global _anthropic
+    key = ANTHROPIC_API_KEY()
+    if _anthropic is None or not key:
+        from anthropic import AsyncAnthropic
+        _anthropic = AsyncAnthropic(api_key=key or None)
+    return _anthropic
+
+
+def _get_openai():
+    global _openai
+    key = OPENAI_API_KEY()
+    if _openai is None:
+        from openai import AsyncOpenAI
+        _openai = AsyncOpenAI(api_key=key or None)
+    return _openai
+
+
+# ── Tool definitions (Anthropic schema format) ────────────────────────────────
+
+ARNIE_TOOLS = [
+    {
+        "name": "log_food",
+        "description": (
+            "Log ONE food or meal item to the daily nutrition log. "
+            "Call this whenever the user mentions eating or drinking anything (except plain water). "
+            "Call ONCE per distinct food item — do NOT split one item across multiple calls. "
+            "If the user mentions multiple foods, call this once per food (e.g. eggs AND toast = 2 calls)."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "food_name": {"type": "string"},
+                "quantity": {"type": "string", "description": "e.g. '1 cup', '200g', '2 slices'"},
+                "calories": {"type": "number"},
+                "protein": {"type": "number", "description": "grams"},
+                "carbs": {"type": "number", "description": "grams"},
+                "fats": {"type": "number", "description": "grams"},
+                "fiber": {"type": "number", "description": "grams, optional"},
+                "confidence": {
+                    "type": "number",
+                    "description": "0.0–1.0. 0.9+ for well-known foods, 0.6–0.8 for estimates",
+                },
+                "estimated": {"type": "boolean"},
+            },
+            "required": ["food_name", "quantity", "calories", "protein", "carbs", "fats",
+                         "confidence"],
+        },
+    },
+    {
+        "name": "log_exercise",
+        "description": (
+            "Log ONE exercise to today's workout. "
+            "Call once per exercise when the user reports completing a workout or individual sets. "
+            "For multiple exercises, make one call per exercise."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "exercise_name": {"type": "string"},
+                "sets": {"type": "integer"},
+                "reps": {"type": "string", "description": "e.g. '5' or '5,5,5,4'"},
+                "weight": {"type": "number", "description": "in the unit the user specified"},
+                "weight_unit": {"type": "string", "enum": ["lbs", "kg"], "default": "lbs"},
+                "rir": {"type": "integer", "description": "reps in reserve"},
+                "duration_minutes": {"type": "number"},
+                "cardio_type": {"type": "string", "description": "e.g. 'incline walk', 'HIIT'"},
+                "is_cardio": {"type": "boolean"},
+            },
+            "required": ["exercise_name"],
+        },
+    },
+    {
+        "name": "log_body_weight",
+        "description": (
+            "Log a body-weight measurement. "
+            "Call ONLY when the user explicitly states their body weight (e.g. 'I weigh 191 lbs', "
+            "'weight 190 this morning'). Do NOT call for food weights or exercise weights."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "weight": {"type": "number"},
+                "unit": {"type": "string", "enum": ["lbs", "kg"]},
+            },
+            "required": ["weight", "unit"],
+        },
+    },
+    {
+        "name": "log_water",
+        "description": "Log water intake when user mentions drinking water.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "amount_ml": {"type": "number"},
+                "amount_oz": {"type": "number"},
+            },
+        },
+    },
+    {
+        "name": "close_day",
+        "description": (
+            "Close the current day's log. "
+            "ONLY call this when the user explicitly says 'close the day', 'close day', "
+            "'end my day', 'wrap up today', or a direct equivalent. "
+            "Do NOT call for any other reason."
+        ),
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "update_memory",
+        "description": (
+            "Persist an important behavioral pattern, preference, or coaching note "
+            "to the user's permanent memory file. Use sparingly — only for durable insights."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "updates": {"type": "string", "description": "Markdown-formatted memory note"},
+                "reasoning": {"type": "string", "description": "Why this is worth remembering"},
+            },
+            "required": ["updates", "reasoning"],
+        },
+    },
+    {
+        "name": "update_profile",
+        "description": (
+            "Update user profile or preference fields. "
+            "ONLY call this when the user explicitly asks to change their profile settings, "
+            "targets, or preferences (e.g. 'update my calorie target', 'change my goal'). "
+            "Do NOT call this for food logging, exercise logging, or weight logging — use the "
+            "dedicated log_food, log_exercise, and log_body_weight tools for those. "
+            "Exact field names: name, age, sex (male/female), height_cm, current_weight_kg, "
+            "goal_weight_kg, primary_goal (cut/bulk/maintain/performance/health), "
+            "training_experience (beginner/intermediate/advanced), dietary_preferences, "
+            "injuries, timezone, onboarding_completed (boolean). "
+            "Preference fields: coaching_style, accountability_level, calorie_target, "
+            "protein_target, wake_time, sleep_time, proactive_messaging_enabled."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "fields": {
+                    "type": "object",
+                    "description": "Key-value pairs using the exact column names listed in the description",
+                }
+            },
+            "required": ["fields"],
+        },
+    },
+]
+
+# OpenAI-format tools (converted on demand)
+_OAI_TOOLS = None
+
+
+def _oai_tools():
+    global _OAI_TOOLS
+    if _OAI_TOOLS is None:
+        _OAI_TOOLS = [
+            {
+                "type": "function",
+                "function": {
+                    "name": t["name"],
+                    "description": t["description"],
+                    "parameters": t["input_schema"],
+                },
+            }
+            for t in ARNIE_TOOLS
+        ]
+    return _OAI_TOOLS
+
+
+# ── Public API ────────────────────────────────────────────────────────────────
+
+async def chat(
+    messages: List[Dict[str, Any]],
+    system: str,
+    tools: bool = True,
+    max_tokens: int = 1024,
+) -> Dict[str, Any]:
+    """
+    Single-turn chat. Returns:
+        {text, tool_calls, raw_content}
+    raw_content is the list of Anthropic content blocks (needed for multi-turn).
+    """
+    if LLM_PROVIDER() == "anthropic" or not OPENAI_API_KEY():
+        return await _anthropic_chat(messages, system, tools, max_tokens)
+    return await _openai_chat(messages, system, tools, max_tokens)
+
+
+async def chat_follow_up(
+    messages: List[Dict[str, Any]],
+    raw_assistant_content: Any,
+    tool_calls: List[Dict],
+    tool_results: Dict[str, str],
+    system: str,
+    max_tokens: int = 512,
+) -> str:
+    """
+    Second turn after tool use — feed results back and get final text.
+    Only used when the first turn had no text response.
+    """
+    if LLM_PROVIDER() == "anthropic" or not OPENAI_API_KEY():
+        return await _anthropic_follow_up(
+            messages, raw_assistant_content, tool_calls, tool_results, system, max_tokens
+        )
+    # For OpenAI the caller already has the text; this path shouldn't be needed.
+    return "Done."
+
+
+async def transcribe_voice(audio_data: bytes, filename: str = "voice.ogg") -> str:
+    """Transcribe a voice note via OpenAI Whisper."""
+    if not OPENAI_API_KEY():
+        logger.warning("OPENAI_API_KEY not set — voice transcription unavailable")
+        return ""
+    import io
+    client = _get_openai()
+    buf = io.BytesIO(audio_data)
+    buf.name = filename
+    transcript = await client.audio.transcriptions.create(model="whisper-1", file=buf)
+    return transcript.text
+
+
+async def analyze_image(image_data: bytes, prompt: str,
+                        mime_type: str = "image/jpeg") -> str:
+    """Analyze an image with Claude vision."""
+    if not ANTHROPIC_API_KEY():
+        logger.warning("ANTHROPIC_API_KEY not set — image analysis unavailable")
+        return ""
+    import base64
+    client = _get_anthropic()
+    b64 = base64.standard_b64encode(image_data).decode()
+    response = await client.messages.create(
+        model=DEFAULT_MODEL(),
+        max_tokens=512,
+        messages=[{
+            "role": "user",
+            "content": [
+                {"type": "image", "source": {"type": "base64",
+                                              "media_type": mime_type, "data": b64}},
+                {"type": "text", "text": prompt},
+            ],
+        }],
+    )
+    return response.content[0].text
+
+
+# ── Anthropic internals ───────────────────────────────────────────────────────
+
+async def _anthropic_chat(messages, system, use_tools, max_tokens):
+    client = _get_anthropic()
+    kwargs: Dict[str, Any] = dict(
+        model=DEFAULT_MODEL(),
+        max_tokens=max_tokens,
+        system=system,
+        messages=messages,
+    )
+    if use_tools:
+        kwargs["tools"] = ARNIE_TOOLS
+
+    resp = await client.messages.create(**kwargs)
+
+    text_parts, tool_calls = [], []
+    for block in resp.content:
+        if block.type == "text":
+            text_parts.append(block.text)
+        elif block.type == "tool_use":
+            tool_calls.append({"name": block.name, "input": block.input, "id": block.id})
+
+    return {
+        "text": "\n".join(text_parts),
+        "tool_calls": tool_calls,
+        "raw_content": resp.content,
+        "stop_reason": resp.stop_reason,
+    }
+
+
+async def _anthropic_follow_up(messages, raw_assistant_content, tool_calls,
+                                tool_results, system, max_tokens):
+    client = _get_anthropic()
+
+    tool_result_blocks = [
+        {"type": "tool_result", "tool_use_id": tc["id"],
+         "content": tool_results.get(tc["name"], "Done")}
+        for tc in tool_calls
+    ]
+
+    follow_up_messages = messages + [
+        {"role": "assistant", "content": raw_assistant_content},
+        {"role": "user", "content": tool_result_blocks},
+    ]
+
+    resp = await client.messages.create(
+        model=DEFAULT_MODEL(),
+        max_tokens=max_tokens,
+        system=system,
+        messages=follow_up_messages,
+    )
+    return "".join(b.text for b in resp.content if b.type == "text")
+
+
+# ── OpenAI internals ──────────────────────────────────────────────────────────
+
+async def _openai_chat(messages, system, use_tools, max_tokens):
+    client = _get_openai()
+    oai_messages = [{"role": "system", "content": system}] + messages
+
+    kwargs: Dict[str, Any] = dict(
+        model=os.getenv("OPENAI_MODEL", "gpt-4o"),
+        max_tokens=max_tokens,
+        messages=oai_messages,
+    )
+    if use_tools:
+        kwargs["tools"] = _oai_tools()
+        kwargs["tool_choice"] = "auto"
+
+    resp = await client.chat.completions.create(**kwargs)
+    msg = resp.choices[0].message
+
+    tool_calls = []
+    if msg.tool_calls:
+        for tc in msg.tool_calls:
+            tool_calls.append({
+                "name": tc.function.name,
+                "input": json.loads(tc.function.arguments),
+                "id": tc.id,
+            })
+
+    return {
+        "text": msg.content or "",
+        "tool_calls": tool_calls,
+        "raw_content": None,
+        "stop_reason": resp.choices[0].finish_reason,
+    }

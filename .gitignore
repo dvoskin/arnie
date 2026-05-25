@@ -1,0 +1,35 @@
+# Environment & secrets
+.env
+*.env
+
+# Database (local only — prod uses mounted disk)
+arnie.db
+*.db
+*.db-shm
+*.db-wal
+
+# User memory files (runtime data)
+users/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Logs
+*.log
+nohup.out
+
+# Test artifacts
+.pytest_cache/
+.coverage
+
+# macOS
+.DS_Store

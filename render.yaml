@@ -1,0 +1,19 @@
+services:
+  - type: worker
+    name: arnie-bot
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python main.py
+    disk:
+      name: arnie-data
+      mountPath: /data
+      sizeGB: 1
+    envVars:
+      - key: DATABASE_URL
+        value: sqlite+aiosqlite:////data/arnie.db
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: DEFAULT_MODEL
+        value: claude-sonnet-4-6
