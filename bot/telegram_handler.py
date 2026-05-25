@@ -282,49 +282,192 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
 
 
-async def cmd_log(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def cmd_today(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Today's calories, protein, water, and workout status."""
     async with AsyncSessionLocal() as db:
         user = await get_or_create_user(db, str(update.effective_user.id))
         log = await get_today_log(db, user.id, user.timezone or "UTC")
-        await update.message.reply_text(**_fmt(fmt_log(log) if log else "No log today yet."))
-
-
-async def cmd_summary(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    async with AsyncSessionLocal() as db:
-        user = await get_or_create_user(db, str(update.effective_user.id))
-        log = await get_today_log(db, user.id, user.timezone or "UTC")
-        if not log:
-            await update.message.reply_text("Nothing logged today yet.")
-            return
         prefs = user.preferences
-        cal_str = f"{log.total_calories:.0f}"
-        if prefs and prefs.calorie_target:
-            rem = prefs.calorie_target - log.total_calories
-            cal_str += f" / {prefs.calorie_target}  ({rem:+.0f})"
-        pro_str = f"{log.total_protein:.0f}g"
-        if prefs and prefs.protein_target:
-            rem_p = prefs.protein_target - log.total_protein
-            pro_str += f" / {prefs.protein_target}g  ({rem_p:+.0f}g)"
+
+        if not log:
+            await update.message.reply_text("Nothing logged today yet. Start by telling me what you ate.")
+            return
+
+        def _bar(val, target, width=10):
+            if not target:
+                return ""
+            filled = min(int(val / target * width), width)
+            return "▓" * filled + "░" * (width - filled)
+
+        cal = log.total_calories
+        pro = log.total_protein
+        carb = log.total_carbs
+        fat = log.total_fats
+        water = log.total_water_ml
+        cal_t = prefs.calorie_target if prefs else None
+        pro_t = prefs.protein_target if prefs else None
+
+        cal_line = f"<b>Calories</b>  {cal:.0f}"
+        if cal_t:
+            rem = cal_t - cal
+            cal_line += f" / {cal_t}  ({rem:+.0f})\n{_bar(cal, cal_t)}"
+
+        pro_line = f"<b>Protein</b>   {pro:.0f}g"
+        if pro_t:
+            rem_p = pro_t - pro
+            pro_line += f" / {pro_t}g  ({rem_p:+.0f}g)\n{_bar(pro, pro_t)}"
+
+        workout_icon = "✅" if log.workout_completed else "⬜"
+        cardio_icon  = "✅" if log.cardio_completed  else "⬜"
+        water_line = f"{water:.0f}ml" if water else "none logged"
+
         lines = [
             f"<b>Today — {log.date}</b>",
-            f"Calories:  {cal_str}",
-            f"Protein:   {pro_str}",
-            f"Carbs:     {log.total_carbs:.0f}g  |  Fats: {log.total_fats:.0f}g",
-            f"Water:     {log.total_water_ml:.0f}ml",
-            f"Workout: {'✓' if log.workout_completed else '✗'}   Cardio: {'✓' if log.cardio_completed else '✗'}",
+            "",
+            cal_line,
+            "",
+            pro_line,
+            "",
+            f"<b>Carbs</b>     {carb:.0f}g   <b>Fats</b> {fat:.0f}g",
+            f"<b>Water</b>     {water_line}",
+            "",
+            f"{workout_icon} Workout   {cardio_icon} Cardio",
         ]
         await update.message.reply_text("\n".join(lines), parse_mode="HTML")
 
 
-async def cmd_closeday(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def cmd_targets(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Calorie and macro targets."""
+    async with AsyncSessionLocal() as db:
+        user = await get_or_create_user(db, str(update.effective_user.id))
+        p = user.preferences
+        if not p or (not p.calorie_target and not p.protein_target):
+            await update.message.reply_text(
+                "No targets set yet. Tell me your calorie and protein goals and I'll lock them in.\n"
+                'Example: "set my calorie target to 2400 and protein to 185g"'
+            )
+            return
+
+        lines = ["<b>Your targets</b>", ""]
+        if p.calorie_target:
+            lines.append(f"Calories   <b>{p.calorie_target} kcal/day</b>")
+        if p.protein_target:
+            lines.append(f"Protein    <b>{p.protein_target}g/day</b>")
+
+        # Derive carb/fat split from calories if both cal + protein known
+        if p.calorie_target and p.protein_target:
+            protein_cals = p.protein_target * 4
+            remaining_cals = p.calorie_target - protein_cals
+            fat_g = round(p.calorie_target * 0.25 / 9)
+            carb_g = round((remaining_cals - fat_g * 9) / 4)
+            if carb_g > 0:
+                lines.append(f"Carbs      ~{carb_g}g/day  (implied)")
+                lines.append(f"Fats       ~{fat_g}g/day  (implied)")
+
+        await update.message.reply_text("\n".join(lines), parse_mode="HTML")
+
+
+async def cmd_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Age, weight, goal, experience."""
+    async with AsyncSessionLocal() as db:
+        user = await get_or_create_user(db, str(update.effective_user.id))
+
+        def _v(val, unit="", fallback="not set"):
+            return f"{val}{unit}" if val is not None else fallback
+
+        w_lbs = f"{user.current_weight_kg * 2.20462:.1f} lbs" if user.current_weight_kg else "not set"
+        g_lbs = f"{user.goal_weight_kg * 2.20462:.1f} lbs" if user.goal_weight_kg else "not set"
+        h_ft = ""
+        if user.height_cm:
+            inches_total = user.height_cm / 2.54
+            h_ft = f"{int(inches_total // 12)}ft {int(inches_total % 12)}in  ({user.height_cm:.0f}cm)"
+
+        lines = [
+            f"<b>{user.name or 'Your'} profile</b>",
+            "",
+            f"Age        {_v(user.age)}",
+            f"Sex        {_v(user.sex)}",
+            f"Height     {h_ft or 'not set'}",
+            f"Weight     {w_lbs}",
+            f"Goal       {g_lbs}  ({_v(user.primary_goal)})",
+            f"Experience {_v(user.training_experience)}",
+            f"Diet       {user.dietary_preferences or 'none'}",
+            f"Injuries   {user.injuries or 'none'}",
+            f"Timezone   {_v(user.timezone)}",
+        ]
+        if user.preferences:
+            p = user.preferences
+            lines += [
+                "",
+                f"Coaching   {p.coaching_style or 'not set'}",
+                f"Accountability  {p.accountability_level or 'not set'}",
+            ]
+            if p.wake_time and p.sleep_time:
+                lines.append(f"Schedule   {p.wake_time} – {p.sleep_time}")
+
+        await update.message.reply_text("\n".join(lines), parse_mode="HTML")
+
+
+async def cmd_history(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Last 7 days recap."""
+    async with AsyncSessionLocal() as db:
+        user = await get_or_create_user(db, str(update.effective_user.id))
+        from db.queries import get_recent_logs, get_recent_weights
+        logs = await get_recent_logs(db, user.id, days=7)
+        weights = await get_recent_weights(db, user.id, days=7)
+        prefs = user.preferences
+
+        closed = [l for l in logs if l.status == "closed"]
+        if not closed and not logs:
+            await update.message.reply_text("No history yet — keep logging and it'll show up here.")
+            return
+
+        lines = ["<b>Last 7 days</b>", ""]
+        for log in sorted((closed or logs), key=lambda l: l.date, reverse=True)[:7]:
+            wo = "💪" if log.workout_completed else "  "
+            cal_str = f"{log.total_calories:.0f}"
+            if prefs and prefs.calorie_target:
+                diff = log.total_calories - prefs.calorie_target
+                cal_str += f" ({diff:+.0f})"
+            pro_str = f"{log.total_protein:.0f}g"
+            lines.append(f"{wo} <b>{log.date}</b>   {cal_str} kcal  {pro_str} protein")
+
+        if weights:
+            lines += ["", "<b>Weight</b>"]
+            for w in sorted(weights, key=lambda w: w.timestamp, reverse=True)[:5]:
+                lbs = w.weight_kg * 2.20462
+                lines.append(f"  {w.timestamp.strftime('%b %d')}   {lbs:.1f} lbs  ({w.weight_kg:.1f}kg)")
+
+        await update.message.reply_text("\n".join(lines), parse_mode="HTML")
+
+
+async def cmd_memory(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """What Arnie knows about habits and tendencies."""
+    async with AsyncSessionLocal() as db:
+        user = await get_or_create_user(db, str(update.effective_user.id))
+        from memory.memory_manager import read_memory
+        mem = await read_memory(user.telegram_id)
+        if not mem or mem.strip() == "":
+            await update.message.reply_text(
+                "Nothing stored yet — memory builds up as we talk. "
+                "The more you log, the sharper my coaching gets."
+            )
+            return
+        # Telegram message limit is 4096 chars
+        text = mem[:3800]
+        await update.message.reply_text(f"<pre>{text}</pre>", parse_mode="HTML")
+
+
+async def cmd_close(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Close the day's log."""
     async with AsyncSessionLocal() as db:
         user = await get_or_create_user(db, str(update.effective_user.id))
         log = await get_today_log(db, user.id, user.timezone or "UTC")
         if not log:
-            await update.message.reply_text("Nothing to close today.")
+            await update.message.reply_text("Nothing to close — you haven't logged anything today.")
             return
         if log.status == "closed":
-            await update.message.reply_text("Day already closed.")
+            await update.message.reply_text("Day's already closed.")
             return
         summary = await generate_closeout(user, log, db)
         await close_daily_log(db, log.id)
@@ -333,17 +476,18 @@ async def cmd_closeday(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "<b>Arnie — fitness &amp; nutrition coach</b>\n\n"
-        "Just text naturally:\n"
-        "- <i>Had chicken and rice</i>\n"
-        "- <i>Bench 225x5 for 3 sets</i>\n"
-        "- <i>Weight 191.4 this morning</i>\n"
-        "- <i>30 min incline walk</i>\n"
-        "- <i>Close the day</i>\n\n"
-        "<b>Commands:</b>\n"
-        "/log — today's log\n"
-        "/summary — macro summary\n"
-        "/closeday — close out today\n\n"
+        "<b>Arnie commands</b>\n\n"
+        "/today    — calories, protein, water, workout\n"
+        "/targets  — your calorie &amp; macro targets\n"
+        "/profile  — age, weight, goal, experience\n"
+        "/history  — last 7 days recap\n"
+        "/memory   — what I know about your habits\n"
+        "/close    — close today's log\n\n"
+        "<b>Just text naturally:</b>\n"
+        "<i>Had chicken and rice</i>\n"
+        "<i>Bench 225x5 for 3 sets</i>\n"
+        "<i>Weight 191.4 this morning</i>\n"
+        "<i>30 min incline walk</i>\n\n"
         "Voice notes and food photos work too.",
         parse_mode="HTML"
     )
@@ -354,6 +498,18 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def _post_init(app: Application):
     await init_db()
     start_scheduler()
+
+    # Register commands so Telegram shows the menu when user types "/"
+    from telegram import BotCommand
+    await app.bot.set_my_commands([
+        BotCommand("today",   "Today's calories, protein, water & workout"),
+        BotCommand("targets", "Your calorie & macro targets"),
+        BotCommand("profile", "Age, weight, goal & experience"),
+        BotCommand("history", "Last 7 days recap"),
+        BotCommand("memory",  "What I know about your habits"),
+        BotCommand("close",   "Close today's log"),
+        BotCommand("help",    "How to use Arnie"),
+    ])
     logger.info("Arnie is ready.")
 
 
@@ -373,11 +529,18 @@ def run_bot():
         .build()
     )
 
-    app.add_handler(CommandHandler("start", cmd_start))
-    app.add_handler(CommandHandler("help", cmd_help))
-    app.add_handler(CommandHandler("log", cmd_log))
-    app.add_handler(CommandHandler("summary", cmd_summary))
-    app.add_handler(CommandHandler("closeday", cmd_closeday))
+    app.add_handler(CommandHandler("start",   cmd_start))
+    app.add_handler(CommandHandler("help",    cmd_help))
+    app.add_handler(CommandHandler("today",   cmd_today))
+    app.add_handler(CommandHandler("targets", cmd_targets))
+    app.add_handler(CommandHandler("profile", cmd_profile))
+    app.add_handler(CommandHandler("history", cmd_history))
+    app.add_handler(CommandHandler("memory",  cmd_memory))
+    app.add_handler(CommandHandler("close",   cmd_close))
+    # Keep old aliases so existing users aren't broken
+    app.add_handler(CommandHandler("log",      cmd_today))
+    app.add_handler(CommandHandler("summary",  cmd_today))
+    app.add_handler(CommandHandler("closeday", cmd_close))
     app.add_handler(MessageHandler(filters.VOICE, handle_voice))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
