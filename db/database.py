@@ -64,6 +64,14 @@ async def _migrate(conn):
     # Each entry: (table_name, column_name, column_ddl)
     additions = [
         ("users", "webhook_token", "VARCHAR"),
+        ("users", "whoop_access_token", "TEXT"),
+        ("users", "whoop_refresh_token", "TEXT"),
+        ("users", "whoop_token_expires_at", "DATETIME"),
+        ("users", "whoop_user_id", "VARCHAR"),
+        ("health_snapshots", "recovery_score", "INTEGER"),
+        ("health_snapshots", "strain", "FLOAT"),
+        ("health_snapshots", "skin_temp_celsius", "FLOAT"),
+        ("health_snapshots", "spo2_percentage", "FLOAT"),
     ]
 
     for table, column, ddl in additions:

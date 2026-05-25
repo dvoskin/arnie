@@ -1,0 +1,245 @@
+"""
+Whoop OAuth2 + API client + daily data sync.
+
+Flow:
+  1. /connect command in Telegram → user gets auth URL with state=their_token
+  2. User authorizes on Whoop's site → Whoop redirects to /whoop/callback?code=...&state=...
+  3. callback() exchanges code for access+refresh tokens, saves to user record
+  4. Daily scheduler calls sync_user_whoop() → refreshes if needed, fetches data,
+     upserts into HealthSnapshot table
+
+API docs: https://developer.whoop.com/api
+"""
+import logging
+import os
+from datetime import datetime, date, timedelta, timezone
+from typing import Optional
+
+import httpx
+
+from db.models import User
+from db.queries import set_whoop_tokens, clear_whoop_tokens, upsert_health_snapshot
+
+logger = logging.getLogger(__name__)
+
+WHOOP_CLIENT_ID = os.getenv("WHOOP_CLIENT_ID", "")
+WHOOP_CLIENT_SECRET = os.getenv("WHOOP_CLIENT_SECRET", "")
+
+AUTH_URL = "https://api.prod.whoop.com/oauth/oauth2/auth"
+TOKEN_URL = "https://api.prod.whoop.com/oauth/oauth2/token"
+API_BASE = "https://api.prod.whoop.com/developer"
+
+SCOPES = " ".join([
+    "read:recovery",
+    "read:cycles",
+    "read:sleep",
+    "read:workout",
+    "read:profile",
+    "read:body_measurement",
+])
+
+
+def build_auth_url(redirect_uri: str, state: str) -> str:
+    """Build the Whoop OAuth authorize URL the user visits."""
+    from urllib.parse import urlencode
+    params = {
+        "client_id": WHOOP_CLIENT_ID,
+        "redirect_uri": redirect_uri,
+        "response_type": "code",
+        "scope": SCOPES,
+        "state": state,
+    }
+    return f"{AUTH_URL}?{urlencode(params)}"
+
+
+async def exchange_code(code: str, redirect_uri: str) -> Optional[dict]:
+    """POST to /oauth/oauth2/token with the auth code, get back tokens."""
+    async with httpx.AsyncClient(timeout=15) as client:
+        try:
+            r = await client.post(
+                TOKEN_URL,
+                data={
+                    "grant_type": "authorization_code",
+                    "code": code,
+                    "redirect_uri": redirect_uri,
+                    "client_id": WHOOP_CLIENT_ID,
+                    "client_secret": WHOOP_CLIENT_SECRET,
+                    "scope": SCOPES,
+                },
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+            )
+            r.raise_for_status()
+            return r.json()
+        except Exception as e:
+            logger.error(f"Whoop token exchange failed: {e}")
+            if hasattr(e, "response"):
+                logger.error(f"Response body: {e.response.text}")
+            return None
+
+
+async def refresh_access_token(refresh_token: str) -> Optional[dict]:
+    """Use the refresh token to get a new access token."""
+    async with httpx.AsyncClient(timeout=15) as client:
+        try:
+            r = await client.post(
+                TOKEN_URL,
+                data={
+                    "grant_type": "refresh_token",
+                    "refresh_token": refresh_token,
+                    "client_id": WHOOP_CLIENT_ID,
+                    "client_secret": WHOOP_CLIENT_SECRET,
+                    "scope": SCOPES,
+                },
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+            )
+            r.raise_for_status()
+            return r.json()
+        except Exception as e:
+            logger.error(f"Whoop token refresh failed: {e}")
+            return None
+
+
+async def _ensure_fresh_token(db, user: User) -> Optional[str]:
+    """Return a valid access token, refreshing if expired or close to expiring."""
+    if not user.whoop_refresh_token:
+        return None
+    needs_refresh = (
+        not user.whoop_access_token
+        or not user.whoop_token_expires_at
+        or user.whoop_token_expires_at <= datetime.utcnow() + timedelta(minutes=5)
+    )
+    if needs_refresh:
+        tokens = await refresh_access_token(user.whoop_refresh_token)
+        if not tokens:
+            logger.warning(f"User {user.id}: Whoop refresh failed, clearing tokens")
+            await clear_whoop_tokens(db, user.id)
+            return None
+        expires_at = datetime.utcnow() + timedelta(seconds=tokens.get("expires_in", 3600))
+        await set_whoop_tokens(
+            db, user.id,
+            access_token=tokens["access_token"],
+            refresh_token=tokens.get("refresh_token", user.whoop_refresh_token),
+            expires_at=expires_at,
+        )
+        return tokens["access_token"]
+    return user.whoop_access_token
+
+
+async def _whoop_get(token: str, path: str, params: Optional[dict] = None) -> Optional[dict]:
+    """GET a Whoop API endpoint with the bearer token."""
+    async with httpx.AsyncClient(timeout=15) as client:
+        try:
+            r = await client.get(
+                f"{API_BASE}{path}",
+                headers={"Authorization": f"Bearer {token}"},
+                params=params or {},
+            )
+            r.raise_for_status()
+            return r.json()
+        except Exception as e:
+            logger.error(f"Whoop GET {path} failed: {e}")
+            return None
+
+
+async def sync_user_whoop(db, user: User, days: int = 2) -> int:
+    """
+    Pull last `days` of Whoop data for one user and upsert into HealthSnapshot.
+    Returns number of days synced. Default 2 days catches yesterday + today.
+    """
+    token = await _ensure_fresh_token(db, user)
+    if not token:
+        return 0
+
+    # Whoop expects ISO 8601 datetimes
+    end = datetime.now(timezone.utc)
+    start = end - timedelta(days=days)
+    params = {"start": start.isoformat(), "end": end.isoformat(), "limit": 25}
+
+    # Fetch in parallel via separate calls
+    recovery_data = await _whoop_get(token, "/v1/recovery", params)
+    sleep_data = await _whoop_get(token, "/v1/activity/sleep", params)
+    cycle_data = await _whoop_get(token, "/v1/cycle", params)
+
+    # Group by date — Whoop has its own cycle/day concept tied to sleep windows.
+    # We approximate by using the cycle's `created_at` date.
+    by_date: dict = {}
+
+    def _ensure(d: date):
+        by_date.setdefault(d, {})
+
+    if recovery_data and "records" in recovery_data:
+        for rec in recovery_data["records"]:
+            score = rec.get("score") or {}
+            created = rec.get("created_at", "")[:10]
+            if not created:
+                continue
+            d = date.fromisoformat(created)
+            _ensure(d)
+            by_date[d]["recovery_score"] = score.get("recovery_score")
+            by_date[d]["hrv"] = score.get("hrv_rmssd_milli")
+            by_date[d]["resting_hr"] = score.get("resting_heart_rate")
+            by_date[d]["skin_temp_celsius"] = score.get("skin_temp_celsius")
+            by_date[d]["spo2_percentage"] = score.get("spo2_percentage")
+
+    if sleep_data and "records" in sleep_data:
+        for sleep in sleep_data["records"]:
+            # Use the sleep END date so it lands on the day the user woke up
+            end_str = sleep.get("end", "")[:10]
+            if not end_str:
+                continue
+            d = date.fromisoformat(end_str)
+            score = sleep.get("score") or {}
+            stages = score.get("stage_summary") or {}
+            _ensure(d)
+            total_in_bed_ms = stages.get("total_in_bed_time_milli", 0)
+            if total_in_bed_ms:
+                by_date[d]["sleep_hours"] = round(total_in_bed_ms / 1000 / 3600, 2)
+            deep_ms = stages.get("total_slow_wave_sleep_time_milli", 0)
+            rem_ms = stages.get("total_rem_sleep_time_milli", 0)
+            if deep_ms:
+                by_date[d]["sleep_deep_hours"] = round(deep_ms / 1000 / 3600, 2)
+            if rem_ms:
+                by_date[d]["sleep_rem_hours"] = round(rem_ms / 1000 / 3600, 2)
+
+    if cycle_data and "records" in cycle_data:
+        for cyc in cycle_data["records"]:
+            created = cyc.get("created_at", "")[:10]
+            if not created:
+                continue
+            d = date.fromisoformat(created)
+            score = cyc.get("score") or {}
+            _ensure(d)
+            if score.get("strain") is not None:
+                by_date[d]["strain"] = score.get("strain")
+            if score.get("average_heart_rate") is not None:
+                by_date[d]["avg_hr"] = score.get("average_heart_rate")
+
+    # Upsert
+    count = 0
+    for d, fields in by_date.items():
+        if not fields:
+            continue
+        fields = {k: v for k, v in fields.items() if v is not None}
+        fields["source"] = "whoop"
+        await upsert_health_snapshot(db, user.id, d, **fields)
+        count += 1
+
+    return count
+
+
+async def sync_all_whoop_users() -> int:
+    """Run a Whoop sync for every connected user. Called by the scheduler."""
+    from db.database import AsyncSessionLocal
+    from db.queries import get_users_with_whoop
+
+    total = 0
+    async with AsyncSessionLocal() as db:
+        users = await get_users_with_whoop(db)
+        for user in users:
+            try:
+                synced = await sync_user_whoop(db, user, days=2)
+                total += synced
+                logger.info(f"Whoop sync: user {user.id} → {synced} days")
+            except Exception as e:
+                logger.error(f"Whoop sync failed for user {user.id}: {e}")
+    return total

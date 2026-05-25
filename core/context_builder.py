@@ -183,10 +183,11 @@ def fmt_health(snaps: List[HealthSnapshot]) -> str:
         return ""
     latest = snaps[0]
     parts = []
-    if latest.steps is not None:
-        parts.append(f"Steps {latest.steps:,}")
-    if latest.active_calories is not None:
-        parts.append(f"Active cal {latest.active_calories:.0f}")
+    # Recovery + strain first (Whoop primary signals)
+    if latest.recovery_score is not None:
+        parts.append(f"Recovery {latest.recovery_score}%")
+    if latest.strain is not None:
+        parts.append(f"Strain {latest.strain:.1f}")
     if latest.sleep_hours is not None:
         sleep_str = f"Sleep {latest.sleep_hours:.1f}h"
         if latest.sleep_deep_hours or latest.sleep_rem_hours:
@@ -197,15 +198,20 @@ def fmt_health(snaps: List[HealthSnapshot]) -> str:
                 extras.append(f"REM {latest.sleep_rem_hours:.1f}h")
             sleep_str += f" ({', '.join(extras)})"
         parts.append(sleep_str)
-    if latest.resting_hr is not None:
-        parts.append(f"Resting HR {latest.resting_hr:.0f}bpm")
     if latest.hrv is not None:
         parts.append(f"HRV {latest.hrv:.0f}ms")
+    if latest.resting_hr is not None:
+        parts.append(f"Resting HR {latest.resting_hr:.0f}bpm")
+    if latest.steps is not None:
+        parts.append(f"Steps {latest.steps:,}")
+    if latest.active_calories is not None:
+        parts.append(f"Active cal {latest.active_calories:.0f}")
     if latest.stand_hours is not None:
         parts.append(f"Stand {latest.stand_hours}h")
     if not parts:
         return ""
-    return f"Apple Health ({latest.date}): " + "  |  ".join(parts)
+    src = "Whoop" if latest.source == "whoop" else "Apple Health"
+    return f"{src} ({latest.date}): " + "  |  ".join(parts)
 
 
 async def build_context(user: User, today_log: Optional[DailyLog], db) -> str:

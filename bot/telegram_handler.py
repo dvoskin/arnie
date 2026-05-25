@@ -628,6 +628,44 @@ async def cmd_reset(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
 
 
+async def cmd_connect(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Connect a wearable. Currently supports: whoop."""
+    args = context.args
+    target = args[0].lower() if args else ""
+
+    if target == "whoop":
+        async with AsyncSessionLocal() as db:
+            user = await get_or_create_user(db, str(update.effective_user.id))
+            if not user.onboarding_completed:
+                await update.message.reply_text("Finish setup first, then we'll connect Whoop.")
+                return
+            token = await get_or_create_webhook_token(db, user.id)
+
+        from api.whoop import build_auth_url
+        base_url = os.getenv("RENDER_EXTERNAL_URL", "http://localhost:10000").rstrip("/")
+        redirect_uri = f"{base_url}/whoop/callback"
+        auth_url = build_auth_url(redirect_uri, state=token)
+
+        await update.message.reply_text(
+            "<b>Connect your Whoop</b>\n\n"
+            "Tap the link below to authorize. After you approve, your recovery, sleep, "
+            "HRV, and strain will sync automatically every morning.\n\n"
+            f'<a href="{auth_url}">→ Authorize Whoop access</a>\n\n'
+            "<i>This is a one-time setup. You can revoke access anytime from your Whoop account settings.</i>",
+            parse_mode="HTML",
+            disable_web_page_preview=True,
+        )
+        return
+
+    # Default: show options
+    await update.message.reply_text(
+        "<b>Connect a wearable</b>\n\n"
+        "/connect whoop — link your Whoop band (recovery, sleep, strain)\n\n"
+        "<i>Apple Health coming soon via iOS Shortcut.</i>",
+        parse_mode="HTML",
+    )
+
+
 async def cmd_dash(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Send the user their personal read-only dashboard URL."""
     async with AsyncSessionLocal() as db:
@@ -728,6 +766,7 @@ async def _post_init(app: Application):
         BotCommand("remind",  "Toggle proactive check-ins on/off"),
         BotCommand("reset",   "Clear today's log or full account reset"),
         BotCommand("dash",    "Get your personal dashboard link"),
+        BotCommand("connect", "Connect Whoop or other wearables"),
         BotCommand("help",    "How to use Arnie"),
     ])
     logger.info("Arnie is ready.")
@@ -763,6 +802,7 @@ def build_app() -> Application:
     app.add_handler(CommandHandler("remind",  cmd_remind))
     app.add_handler(CommandHandler("reset",   cmd_reset))
     app.add_handler(CommandHandler("dash",    cmd_dash))
+    app.add_handler(CommandHandler("connect", cmd_connect))
     # Aliases
     app.add_handler(CommandHandler("log",      cmd_today))
     app.add_handler(CommandHandler("summary",  cmd_today))

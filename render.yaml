@@ -17,3 +17,7 @@ services:
         sync: false
       - key: DEFAULT_MODEL
         value: claude-sonnet-4-6
+      - key: WHOOP_CLIENT_ID
+        sync: false
+      - key: WHOOP_CLIENT_SECRET
+        sync: false

@@ -35,6 +35,70 @@ async def healthcheck():
     return {"status": "ok"}
 
 
+# ── Whoop OAuth ────────────────────────────────────────────────────────────────
+
+@app.get("/whoop/callback", response_class=HTMLResponse)
+async def whoop_callback(request: Request, code: str = "", state: str = "", error: str = ""):
+    """Whoop redirects here after user authorizes. Exchange code for tokens."""
+    if error:
+        return HTMLResponse(
+            f"<h2>Whoop connection failed</h2><p>Error: {error}</p>"
+            f"<p>You can try again in Telegram with /connect whoop</p>",
+            status_code=400,
+        )
+    if not code or not state:
+        return HTMLResponse("<h2>Missing code or state.</h2>", status_code=400)
+
+    from api.whoop import exchange_code, sync_user_whoop
+    from db.queries import set_whoop_tokens
+    from datetime import datetime, timedelta
+
+    base_url = os.getenv("RENDER_EXTERNAL_URL", "http://localhost:10000").rstrip("/")
+    redirect_uri = f"{base_url}/whoop/callback"
+
+    tokens = await exchange_code(code, redirect_uri)
+    if not tokens:
+        return HTMLResponse(
+            "<h2>Whoop token exchange failed.</h2>"
+            "<p>Try /connect whoop again in Telegram.</p>",
+            status_code=500,
+        )
+
+    async with AsyncSessionLocal() as db:
+        user = await get_user_by_webhook_token(db, state)
+        if not user:
+            return HTMLResponse("<h2>Invalid state — user not found.</h2>", status_code=401)
+
+        expires_at = datetime.utcnow() + timedelta(seconds=tokens.get("expires_in", 3600))
+        await set_whoop_tokens(
+            db, user.id,
+            access_token=tokens["access_token"],
+            refresh_token=tokens.get("refresh_token", ""),
+            expires_at=expires_at,
+        )
+
+        # Pull the first batch right away
+        synced = 0
+        try:
+            user_reloaded = await get_user_by_webhook_token(db, state)
+            synced = await sync_user_whoop(db, user_reloaded, days=7)
+        except Exception as e:
+            pass
+
+    return HTMLResponse(f"""<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>Whoop connected</title>
+<style>body{{font-family:system-ui;text-align:center;padding:60px;background:#0f1117;color:#f1f5f9}}
+.box{{max-width:480px;margin:auto;background:#1a1d27;border:1px solid #2e3347;border-radius:12px;padding:32px}}
+.check{{font-size:48px;color:#22c55e}}h1{{font-size:24px;margin:16px 0}}p{{color:#94a3b8}}</style>
+</head><body>
+<div class="box">
+  <div class="check">✓</div>
+  <h1>Whoop connected</h1>
+  <p>Synced {synced} days of recovery, sleep, and strain data.</p>
+  <p>You can close this window and head back to Telegram. Arnie will reference your recovery score in coaching from now on.</p>
+</div></body></html>""")
+
+
 @app.get("/privacy", response_class=HTMLResponse)
 async def privacy_policy():
     """Minimal privacy policy required by Whoop / Apple Health OAuth."""

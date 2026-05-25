@@ -25,6 +25,11 @@ class User(Base):
     injuries = Column(Text)
     onboarding_completed = Column(Boolean, default=False)
     webhook_token = Column(String, unique=True, index=True)
+    # Whoop OAuth tokens (per-user)
+    whoop_access_token = Column(Text)
+    whoop_refresh_token = Column(Text)
+    whoop_token_expires_at = Column(DateTime)
+    whoop_user_id = Column(String)
     created_at = Column(DateTime, server_default=func.now())
 
     preferences = relationship("UserPreferences", back_populates="user", uselist=False,
@@ -187,7 +192,12 @@ class HealthSnapshot(Base):
     hrv = Column(Float)
     stand_hours = Column(Integer)
     exercise_minutes = Column(Integer)
-    source = Column(String, default="apple_health")
+    # Whoop-specific fields
+    recovery_score = Column(Integer)         # 0–100, from Whoop
+    strain = Column(Float)                   # 0–21, from Whoop
+    skin_temp_celsius = Column(Float)
+    spo2_percentage = Column(Float)
+    source = Column(String, default="apple_health")  # "apple_health" or "whoop"
     received_at = Column(DateTime, server_default=func.now())
 
     user = relationship("User", back_populates="health_snapshots")

@@ -134,6 +134,16 @@ async def _run_reminders():
                 logger.error(f"Reminder error for user {user.id}: {e}")
 
 
+async def _run_whoop_sync():
+    """Pull latest Whoop data for all connected users."""
+    from api.whoop import sync_all_whoop_users
+    try:
+        synced = await sync_all_whoop_users()
+        logger.info(f"Whoop sync complete: {synced} user-days updated")
+    except Exception as e:
+        logger.error(f"Whoop sync job failed: {e}")
+
+
 def start_scheduler():
     if _scheduler.running:
         return
@@ -144,8 +154,17 @@ def start_scheduler():
         replace_existing=True,
         max_instances=1,
     )
+    # Whoop sync every 2 hours — frequent enough to catch new recovery data
+    # (Whoop scores recovery after the night's sleep, usually available by ~9am)
+    _scheduler.add_job(
+        _run_whoop_sync,
+        IntervalTrigger(hours=2),
+        id="whoop_sync",
+        replace_existing=True,
+        max_instances=1,
+    )
     _scheduler.start()
-    logger.info("Proactive scheduler started (every 30 min)")
+    logger.info("Proactive scheduler started (reminders every 30 min, Whoop sync every 2 hr)")
 
 
 def stop_scheduler():

@@ -255,6 +255,44 @@ async def reset_all_user_data(db: AsyncSession, user_id: int) -> None:
     await db.commit()
 
 
+async def get_users_with_whoop(db: AsyncSession) -> List[User]:
+    """All users who have connected Whoop (have a refresh token)."""
+    result = await db.execute(
+        select(User)
+        .where(User.whoop_refresh_token.is_not(None))
+        .options(selectinload(User.preferences))
+    )
+    return result.scalars().all()
+
+
+async def set_whoop_tokens(
+    db: AsyncSession,
+    user_id: int,
+    access_token: str,
+    refresh_token: str,
+    expires_at: datetime,
+    whoop_user_id: Optional[str] = None,
+) -> None:
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one()
+    user.whoop_access_token = access_token
+    user.whoop_refresh_token = refresh_token
+    user.whoop_token_expires_at = expires_at
+    if whoop_user_id:
+        user.whoop_user_id = whoop_user_id
+    await db.commit()
+
+
+async def clear_whoop_tokens(db: AsyncSession, user_id: int) -> None:
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one()
+    user.whoop_access_token = None
+    user.whoop_refresh_token = None
+    user.whoop_token_expires_at = None
+    user.whoop_user_id = None
+    await db.commit()
+
+
 async def get_or_create_webhook_token(db: AsyncSession, user_id: int) -> str:
     """Return existing webhook token, or generate + save a new one."""
     import secrets
