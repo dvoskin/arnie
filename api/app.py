@@ -35,6 +35,60 @@ async def healthcheck():
     return {"status": "ok"}
 
 
+@app.get("/privacy", response_class=HTMLResponse)
+async def privacy_policy():
+    """Minimal privacy policy required by Whoop / Apple Health OAuth."""
+    return HTMLResponse("""<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>Arnie — Privacy Policy</title>
+<style>body{font-family:system-ui,sans-serif;max-width:720px;margin:40px auto;padding:0 20px;line-height:1.6;color:#222}h1{font-size:24px}h2{font-size:18px;margin-top:28px}</style>
+</head><body>
+<h1>Arnie — Privacy Policy</h1>
+<p><em>Last updated: 2026</em></p>
+
+<h2>What Arnie collects</h2>
+<p>Arnie is a personal fitness and nutrition coaching bot. With your consent, Arnie collects:</p>
+<ul>
+<li>Profile information you provide during onboarding (name, age, sex, height, weight, goals, training experience, dietary preferences, injuries).</li>
+<li>Food, exercise, body-weight, and water entries you log via chat, voice, or photos.</li>
+<li>Wearable data you choose to connect (e.g. WHOOP recovery and sleep, Apple Health metrics).</li>
+<li>Conversation history with the bot, used to provide context-aware coaching.</li>
+</ul>
+
+<h2>How Arnie uses your data</h2>
+<p>Your data is used solely to:</p>
+<ul>
+<li>Track your nutrition, training, and recovery over time.</li>
+<li>Provide personalized coaching responses, pacing reminders, and progress insights.</li>
+<li>Display your data back to you via the Telegram chat and your personal dashboard.</li>
+</ul>
+<p>Your data is never sold, shared with advertisers, or used to train any external models.</p>
+
+<h2>Where your data is stored</h2>
+<p>Data is stored on a private server (Render.com) in an encrypted database accessible only by you (via your unique Telegram account and personal dashboard token). Conversation history is processed by Anthropic's Claude API to generate coaching responses; per Anthropic's policy, API data is not used for model training.</p>
+
+<h2>Third-party services Arnie uses</h2>
+<ul>
+<li><strong>Telegram</strong> — the chat platform itself.</li>
+<li><strong>Anthropic Claude</strong> — generates coaching responses.</li>
+<li><strong>OpenAI</strong> — used for voice transcription (Whisper) and optional image generation (DALL-E).</li>
+<li><strong>WHOOP</strong> (if you connect it) — fitness wearable data.</li>
+<li><strong>Apple Health</strong> (if you connect it) — fitness wearable data, sent via your own iOS Shortcut.</li>
+</ul>
+
+<h2>Your rights</h2>
+<p>You can:</p>
+<ul>
+<li>Clear today's log with <code>/reset today</code>.</li>
+<li>Permanently delete all your data with <code>/reset all confirm</code>.</li>
+<li>Disconnect WHOOP or revoke its access from your WHOOP account at any time.</li>
+<li>Stop using Arnie by blocking the bot in Telegram.</li>
+</ul>
+
+<h2>Contact</h2>
+<p>For any privacy questions or to request data deletion, contact the Arnie developer through the GitHub repository.</p>
+</body></html>""")
+
+
 # ── Telegram webhook ───────────────────────────────────────────────────────────
 
 @app.post("/webhook/{token}")
