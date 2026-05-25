@@ -8,9 +8,9 @@ import os
 import random
 
 from telegram import Update
-from telegram.constants import ChatAction
+from telegram.constants import ChatAction, ParseMode
 from telegram.ext import (
-    Application, CommandHandler, MessageHandler, ContextTypes, filters,
+    Application, CommandHandler, MessageHandler, ContextTypes, Defaults, filters,
 )
 
 from db.database import AsyncSessionLocal, init_db
@@ -33,17 +33,10 @@ TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 
 
 def _fmt(text: str) -> dict:
-    """Convert **markdown** bold to Telegram HTML. Returns kwargs for reply_text."""
+    """Convert **markdown** bold to <b>HTML bold</b>. parse_mode set globally."""
     import re
-    import html as _html
-    parts = re.split(r'(\*\*(?:.|\n)*?\*\*)', text)
-    result = []
-    for part in parts:
-        if part.startswith('**') and part.endswith('**') and len(part) > 4:
-            result.append(f'<b>{_html.escape(part[2:-2])}</b>')
-        else:
-            result.append(_html.escape(part))
-    return {"text": ''.join(result), "parse_mode": "HTML"}
+    text = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', text, flags=re.DOTALL)
+    return {"text": text}
 
 # ── Arnie's core system prompt (normal coaching mode) ─────────────────────────
 
@@ -524,6 +517,7 @@ def run_bot():
     app = (
         Application.builder()
         .token(TELEGRAM_TOKEN)
+        .defaults(Defaults(parse_mode=ParseMode.HTML))
         .post_init(_post_init)
         .post_shutdown(_post_shutdown)
         .build()
