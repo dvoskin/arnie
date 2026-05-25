@@ -690,7 +690,10 @@ async def _post_shutdown(app: Application):
 
 
 def build_app() -> Application:
-    """Build and configure the PTB Application without starting it."""
+    """Build and configure the PTB Application without starting it.
+    Note: _post_init / _post_shutdown are NOT registered here. main.py drives
+    them explicitly so the same lifecycle works for both webhook and polling modes.
+    """
     if not TELEGRAM_TOKEN:
         raise RuntimeError("TELEGRAM_BOT_TOKEN is not set in your .env")
 
@@ -698,8 +701,6 @@ def build_app() -> Application:
         Application.builder()
         .token(TELEGRAM_TOKEN)
         .defaults(Defaults(parse_mode=ParseMode.HTML))
-        .post_init(_post_init)
-        .post_shutdown(_post_shutdown)
         .build()
     )
 

@@ -2,9 +2,6 @@
 Arnie — entry point.
 Production (Render web service): Telegram webhooks + FastAPI on $PORT
 Local dev: polling + FastAPI on port 10000
-
-Webhooks eliminate the polling-conflict error when multiple instances
-or deploys overlap. Telegram pushes updates to our HTTPS endpoint.
 """
 import asyncio
 import logging
@@ -25,15 +22,13 @@ TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 async def run():
     import uvicorn
     from api.app import app as fastapi_app
-    from bot.telegram_handler import build_app
+    from bot.telegram_handler import build_app, _post_init, _post_shutdown
 
     port = int(os.getenv("PORT", 10000))
     base_url = os.getenv("RENDER_EXTERNAL_URL", "").rstrip("/")
     use_webhook = bool(base_url)
 
     ptb_app = build_app()
-
-    # Share ptb_app with FastAPI so the webhook endpoint can process updates
     fastapi_app.state.ptb_app = ptb_app
 
     config = uvicorn.Config(
@@ -44,8 +39,13 @@ async def run():
     )
     server = uvicorn.Server(config)
 
-    async with ptb_app:
-        # async with calls initialize() → triggers _post_init (init_db, scheduler, set_my_commands)
+    # NOTE: `async with ptb_app` calls initialize() but does NOT call post_init.
+    # post_init is only auto-invoked by run_polling() / run_webhook(). Since we
+    # drive the lifecycle manually here, we must call _post_init ourselves —
+    # otherwise init_db() never runs and the tables don't exist.
+    await ptb_app.initialize()
+    try:
+        await _post_init(ptb_app)
         await ptb_app.start()
 
         if use_webhook:
@@ -68,6 +68,9 @@ async def run():
             await ptb_app.updater.stop()
 
         await ptb_app.stop()
+    finally:
+        await _post_shutdown(ptb_app)
+        await ptb_app.shutdown()
 
 
 if __name__ == "__main__":
