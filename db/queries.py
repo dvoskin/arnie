@@ -268,7 +268,9 @@ async def get_or_create_webhook_token(db: AsyncSession, user_id: int) -> str:
 
 async def get_user_by_webhook_token(db: AsyncSession, token: str) -> Optional[User]:
     result = await db.execute(
-        select(User).where(User.webhook_token == token)
+        select(User)
+        .where(User.webhook_token == token)
+        .options(selectinload(User.preferences))
     )
     return result.scalar_one_or_none()
 

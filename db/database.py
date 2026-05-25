@@ -48,5 +48,31 @@ class Base(DeclarativeBase):
 
 async def init_db():
     from db import models  # noqa: F401 — import triggers model registration
+    from sqlalchemy import text
+
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # Inline migrations: ALTER TABLE for columns added after initial schema.
+        # SQLAlchemy create_all() doesn't add columns to existing tables.
+        await _migrate(conn)
+
+
+async def _migrate(conn):
+    """Add columns that were introduced after the initial schema."""
+    from sqlalchemy import text
+
+    # Each entry: (table_name, column_name, column_ddl)
+    additions = [
+        ("users", "webhook_token", "VARCHAR"),
+    ]
+
+    for table, column, ddl in additions:
+        try:
+            # SQLite: PRAGMA table_info returns rows of (cid, name, type, notnull, dflt_value, pk)
+            result = await conn.execute(text(f"PRAGMA table_info({table})"))
+            existing_cols = {row[1] for row in result.fetchall()}
+            if column not in existing_cols:
+                await conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}"))
+                logger.info(f"Migration: added {table}.{column}")
+        except Exception as e:
+            logger.warning(f"Migration check for {table}.{column} failed: {e}")
