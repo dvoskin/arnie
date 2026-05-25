@@ -5,8 +5,8 @@ Keeps retrieval deterministic (pure SQL, no vectors).
 from typing import Optional, List
 from datetime import datetime, date, timedelta
 
-from db.models import User, DailyLog, UserPreferences, BodyMetric
-from db.queries import get_recent_logs, get_recent_weights
+from db.models import User, DailyLog, UserPreferences, BodyMetric, HealthSnapshot
+from db.queries import get_recent_logs, get_recent_weights, get_recent_health_snapshots
 from memory.memory_manager import read_memory
 
 
@@ -178,15 +178,47 @@ def goal_progress(user: User) -> str:
     return f"Goal: {current:.1f}kg → {goal:.1f}kg  ({lbs_to_go:.1f} lbs to go)"
 
 
+def fmt_health(snaps: List[HealthSnapshot]) -> str:
+    if not snaps:
+        return ""
+    latest = snaps[0]
+    parts = []
+    if latest.steps is not None:
+        parts.append(f"Steps {latest.steps:,}")
+    if latest.active_calories is not None:
+        parts.append(f"Active cal {latest.active_calories:.0f}")
+    if latest.sleep_hours is not None:
+        sleep_str = f"Sleep {latest.sleep_hours:.1f}h"
+        if latest.sleep_deep_hours or latest.sleep_rem_hours:
+            extras = []
+            if latest.sleep_deep_hours:
+                extras.append(f"deep {latest.sleep_deep_hours:.1f}h")
+            if latest.sleep_rem_hours:
+                extras.append(f"REM {latest.sleep_rem_hours:.1f}h")
+            sleep_str += f" ({', '.join(extras)})"
+        parts.append(sleep_str)
+    if latest.resting_hr is not None:
+        parts.append(f"Resting HR {latest.resting_hr:.0f}bpm")
+    if latest.hrv is not None:
+        parts.append(f"HRV {latest.hrv:.0f}ms")
+    if latest.stand_hours is not None:
+        parts.append(f"Stand {latest.stand_hours}h")
+    if not parts:
+        return ""
+    return f"Apple Health ({latest.date}): " + "  |  ".join(parts)
+
+
 async def build_context(user: User, today_log: Optional[DailyLog], db) -> str:
     recent_logs = await get_recent_logs(db, user.id, days=14)
     recent_weights = await get_recent_weights(db, user.id, days=14)
+    recent_health = await get_recent_health_snapshots(db, user.id, days=3)
     memory = await read_memory(user.telegram_id)
 
     prefs = user.preferences
     pace = pacing_note(today_log, prefs, user.timezone or "UTC")
     adherence = adherence_insights(recent_logs, prefs)
     progress = goal_progress(user)
+    health_str = fmt_health(recent_health)
 
     sections = [
         "=== PROFILE ===",
@@ -196,6 +228,7 @@ async def build_context(user: User, today_log: Optional[DailyLog], db) -> str:
         "=== TODAY ===",
         fmt_log(today_log),
         (f"[PACING]\n{pace}" if pace else ""),
+        (f"[WEARABLE]\n{health_str}" if health_str else ""),
         "",
         "=== INSIGHTS ===",
         (adherence if adherence else "No adherence data yet."),

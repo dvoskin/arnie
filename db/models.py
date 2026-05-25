@@ -24,6 +24,7 @@ class User(Base):
     dietary_preferences = Column(String)
     injuries = Column(Text)
     onboarding_completed = Column(Boolean, default=False)
+    webhook_token = Column(String, unique=True, index=True)
     created_at = Column(DateTime, server_default=func.now())
 
     preferences = relationship("UserPreferences", back_populates="user", uselist=False,
@@ -34,6 +35,8 @@ class User(Base):
                                      cascade="all, delete-orphan")
     memory_updates = relationship("MemoryUpdate", back_populates="user",
                                   cascade="all, delete-orphan")
+    health_snapshots = relationship("HealthSnapshot", back_populates="user",
+                                    cascade="all, delete-orphan")
 
 
 class UserPreferences(Base):
@@ -164,6 +167,30 @@ class MemoryUpdate(Base):
     timestamp = Column(DateTime, server_default=func.now())
 
     user = relationship("User", back_populates="memory_updates")
+
+
+class HealthSnapshot(Base):
+    """One row per user per day — upserted when Apple Health webhook fires."""
+    __tablename__ = "health_snapshots"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    date = Column(Date, nullable=False)
+    steps = Column(Integer)
+    active_calories = Column(Float)
+    resting_calories = Column(Float)
+    sleep_hours = Column(Float)
+    sleep_deep_hours = Column(Float)
+    sleep_rem_hours = Column(Float)
+    resting_hr = Column(Float)
+    avg_hr = Column(Float)
+    hrv = Column(Float)
+    stand_hours = Column(Integer)
+    exercise_minutes = Column(Integer)
+    source = Column(String, default="apple_health")
+    received_at = Column(DateTime, server_default=func.now())
+
+    user = relationship("User", back_populates="health_snapshots")
 
 
 class Skill(Base):

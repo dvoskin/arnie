@@ -17,7 +17,7 @@ from db.database import AsyncSessionLocal, init_db
 from db.queries import (
     get_or_create_user, get_or_create_today_log, get_today_log,
     get_recent_conversations, log_conversation, close_daily_log, reload_user,
-    reset_today_log, reset_all_user_data,
+    reset_today_log, reset_all_user_data, get_or_create_webhook_token,
 )
 from core.llm import chat, chat_follow_up
 from core.context_builder import build_context, fmt_log
@@ -581,6 +581,27 @@ async def cmd_reset(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
 
 
+async def cmd_dash(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Send the user their personal read-only dashboard URL."""
+    async with AsyncSessionLocal() as db:
+        user = await get_or_create_user(db, str(update.effective_user.id))
+        if not user.onboarding_completed:
+            await update.message.reply_text("Finish setup first before accessing the dashboard.")
+            return
+        token = await get_or_create_webhook_token(db, user.id)
+
+    base_url = os.getenv("RENDER_EXTERNAL_URL", "http://localhost:10000")
+    url = f"{base_url}/dashboard/{token}"
+    await update.message.reply_text(
+        f"<b>Your dashboard</b>\n\n"
+        f'<a href="{url}">{url}</a>\n\n'
+        "Read-only view of your logs, trends, and macros.\n"
+        "Bookmark it — the link doesn't change.",
+        parse_mode="HTML",
+        disable_web_page_preview=False,
+    )
+
+
 async def cmd_remind(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Toggle proactive reminders on or off."""
     async with AsyncSessionLocal() as db:
@@ -659,6 +680,7 @@ async def _post_init(app: Application):
         BotCommand("close",   "Close today's log"),
         BotCommand("remind",  "Toggle proactive check-ins on/off"),
         BotCommand("reset",   "Clear today's log or full account reset"),
+        BotCommand("dash",    "Get your personal dashboard link"),
         BotCommand("help",    "How to use Arnie"),
     ])
     logger.info("Arnie is ready.")
@@ -668,7 +690,8 @@ async def _post_shutdown(app: Application):
     stop_scheduler()
 
 
-def run_bot():
+def build_app() -> Application:
+    """Build and configure the PTB Application without starting it."""
     if not TELEGRAM_TOKEN:
         raise RuntimeError("TELEGRAM_BOT_TOKEN is not set in your .env")
 
@@ -691,7 +714,8 @@ def run_bot():
     app.add_handler(CommandHandler("close",   cmd_close))
     app.add_handler(CommandHandler("remind",  cmd_remind))
     app.add_handler(CommandHandler("reset",   cmd_reset))
-    # Keep old aliases so existing users aren't broken
+    app.add_handler(CommandHandler("dash",    cmd_dash))
+    # Aliases
     app.add_handler(CommandHandler("log",      cmd_today))
     app.add_handler(CommandHandler("summary",  cmd_today))
     app.add_handler(CommandHandler("closeday", cmd_close))
@@ -699,5 +723,10 @@ def run_bot():
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
 
-    logger.info("Starting Arnie bot (polling)...")
-    app.run_polling(drop_pending_updates=True)
+    return app
+
+
+def run_bot():
+    """Standalone runner — used for local dev without FastAPI."""
+    logger.info("Starting Arnie bot (polling, standalone)...")
+    build_app().run_polling(drop_pending_updates=True)

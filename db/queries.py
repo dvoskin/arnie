@@ -255,6 +255,17 @@ async def reset_all_user_data(db: AsyncSession, user_id: int) -> None:
     await db.commit()
 
 
+async def get_or_create_webhook_token(db: AsyncSession, user_id: int) -> str:
+    """Return existing webhook token, or generate + save a new one."""
+    import secrets
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one()
+    if not user.webhook_token:
+        user.webhook_token = secrets.token_urlsafe(20)
+        await db.commit()
+    return user.webhook_token
+
+
 async def get_user_by_webhook_token(db: AsyncSession, token: str) -> Optional[User]:
     result = await db.execute(
         select(User).where(User.webhook_token == token)
