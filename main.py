@@ -1,7 +1,10 @@
 """
 Arnie — entry point.
-Runs the Telegram bot and FastAPI server concurrently in a single asyncio process.
-Render (web service type) exposes $PORT; FastAPI binds to it.
+Production (Render web service): Telegram webhooks + FastAPI on $PORT
+Local dev: polling + FastAPI on port 10000
+
+Webhooks eliminate the polling-conflict error when multiple instances
+or deploys overlap. Telegram pushes updates to our HTTPS endpoint.
 """
 import asyncio
 import logging
@@ -16,6 +19,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
+
 
 async def run():
     import uvicorn
@@ -23,7 +28,13 @@ async def run():
     from bot.telegram_handler import build_app
 
     port = int(os.getenv("PORT", 10000))
+    base_url = os.getenv("RENDER_EXTERNAL_URL", "").rstrip("/")
+    use_webhook = bool(base_url)
+
     ptb_app = build_app()
+
+    # Share ptb_app with FastAPI so the webhook endpoint can process updates
+    fastapi_app.state.ptb_app = ptb_app
 
     config = uvicorn.Config(
         fastapi_app,
@@ -34,13 +45,28 @@ async def run():
     server = uvicorn.Server(config)
 
     async with ptb_app:
+        # async with calls initialize() → triggers _post_init (init_db, scheduler, set_my_commands)
         await ptb_app.start()
-        await ptb_app.updater.start_polling(drop_pending_updates=True)
-        logger.info(f"Arnie bot + dashboard running on port {port}")
 
-        await server.serve()  # blocks until SIGINT/SIGTERM
+        if use_webhook:
+            webhook_url = f"{base_url}/webhook/{TELEGRAM_TOKEN}"
+            await ptb_app.bot.set_webhook(
+                url=webhook_url,
+                drop_pending_updates=True,
+                allowed_updates=["message", "callback_query"],
+            )
+            logger.info(f"Webhook mode: {webhook_url}")
+        else:
+            await ptb_app.updater.start_polling(drop_pending_updates=True)
+            logger.info("Polling mode (local dev)")
 
-        await ptb_app.updater.stop()
+        await server.serve()  # blocks until shutdown signal
+
+        if use_webhook:
+            await ptb_app.bot.delete_webhook()
+        else:
+            await ptb_app.updater.stop()
+
         await ptb_app.stop()
 
 

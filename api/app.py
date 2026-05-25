@@ -10,7 +10,7 @@ import os
 from datetime import date, timedelta
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
@@ -29,9 +29,29 @@ app = FastAPI(title="Arnie API", docs_url=None, redoc_url=None)
 async def root():
     return {"status": "ok", "service": "Arnie Bot"}
 
+
 @app.get("/health")
 async def healthcheck():
     return {"status": "ok"}
+
+
+# ── Telegram webhook ───────────────────────────────────────────────────────────
+
+@app.post("/webhook/{token}")
+async def telegram_webhook(token: str, request: Request):
+    """Receive updates from Telegram (production webhook mode)."""
+    if token != os.getenv("TELEGRAM_BOT_TOKEN", ""):
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+    ptb_app = getattr(request.app.state, "ptb_app", None)
+    if ptb_app is None:
+        raise HTTPException(status_code=503, detail="Bot not ready")
+
+    from telegram import Update
+    data = await request.json()
+    update = Update.de_json(data, ptb_app.bot)
+    await ptb_app.process_update(update)
+    return {"ok": True}
 
 
 # ── Stats API ──────────────────────────────────────────────────────────────────
