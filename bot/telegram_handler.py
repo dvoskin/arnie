@@ -491,6 +491,47 @@ async def cmd_close(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(**_fmt(summary))
 
 
+async def cmd_remind(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Toggle proactive reminders on or off."""
+    async with AsyncSessionLocal() as db:
+        user = await get_or_create_user(db, str(update.effective_user.id))
+        prefs = user.preferences
+        if not prefs:
+            await update.message.reply_text("Finish setup first — tell me your name to get started.")
+            return
+
+        args = context.args
+        if args and args[0].lower() in ("off", "stop", "disable", "0"):
+            prefs.proactive_messaging_enabled = False
+            await db.commit()
+            await update.message.reply_text(
+                "Reminders off. I'll only respond when you message me.",
+                parse_mode="HTML"
+            )
+        elif args and args[0].lower() in ("on", "start", "enable", "1"):
+            prefs.proactive_messaging_enabled = True
+            await db.commit()
+            await update.message.reply_text(
+                "<b>Reminders on.</b>\n\n"
+                "I'll check in at:\n"
+                "• Morning — log your weight &amp; breakfast\n"
+                "• Midday — protein pacing\n"
+                "• Afternoon — workout nudge\n"
+                "• Evening — dinner &amp; calories remaining\n"
+                "• Night — closeout nudge\n\n"
+                "All within your wake/sleep window. Turn off anytime with /remind off",
+                parse_mode="HTML"
+            )
+        else:
+            status = "on" if prefs.proactive_messaging_enabled else "off"
+            await update.message.reply_text(
+                f"Reminders are currently <b>{status}</b>.\n\n"
+                "/remind on  — enable check-ins\n"
+                "/remind off — disable",
+                parse_mode="HTML"
+            )
+
+
 async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "<b>Arnie commands</b>\n\n"
@@ -499,7 +540,8 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/profile  — age, weight, goal, experience\n"
         "/history  — last 7 days recap\n"
         "/memory   — what I know about your habits\n"
-        "/close    — close today's log\n\n"
+        "/close    — close today's log\n"
+        "/remind   — toggle proactive check-ins\n\n"
         "<b>Just text naturally:</b>\n"
         "<i>Had chicken and rice</i>\n"
         "<i>Bench 225x5 for 3 sets</i>\n"
@@ -525,6 +567,7 @@ async def _post_init(app: Application):
         BotCommand("history", "Last 7 days recap"),
         BotCommand("memory",  "What I know about your habits"),
         BotCommand("close",   "Close today's log"),
+        BotCommand("remind",  "Toggle proactive check-ins on/off"),
         BotCommand("help",    "How to use Arnie"),
     ])
     logger.info("Arnie is ready.")
@@ -555,6 +598,7 @@ def run_bot():
     app.add_handler(CommandHandler("history", cmd_history))
     app.add_handler(CommandHandler("memory",  cmd_memory))
     app.add_handler(CommandHandler("close",   cmd_close))
+    app.add_handler(CommandHandler("remind",  cmd_remind))
     # Keep old aliases so existing users aren't broken
     app.add_handler(CommandHandler("log",      cmd_today))
     app.add_handler(CommandHandler("summary",  cmd_today))
