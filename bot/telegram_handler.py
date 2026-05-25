@@ -33,21 +33,36 @@ TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 
 
 def _fmt(text: str) -> dict:
-    """Sanitize LLM output for Telegram HTML: convert bold, strip markdown noise."""
+    """
+    Prepare LLM output for Telegram HTML mode.
+    1. Strip markdown noise (headers, tables, rules)
+    2. Convert **bold** → <b>bold</b>
+    3. HTML-escape all plain text while leaving <b>/<i> tags intact
+    Always returns parse_mode="HTML" explicitly — don't rely on Defaults alone.
+    """
     import re
-    # Strip markdown headers (##, ###, etc.)
+    import html as _html
+
+    # Strip markdown headers, rules, tables
     text = re.sub(r'^#{1,6}\s+', '', text, flags=re.MULTILINE)
-    # Strip horizontal rules
     text = re.sub(r'^-{3,}\s*$', '', text, flags=re.MULTILINE)
-    # Strip markdown tables (lines containing |)
     text = re.sub(r'^\|.+\|$\n?', '', text, flags=re.MULTILINE)
-    # Convert **bold** to <b>bold</b>
+    # Convert **bold** to <b>bold</b> before escaping
     text = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', text, flags=re.DOTALL)
-    # Strip remaining lone asterisks used as bullets (* item)
+    # Convert * bullets
     text = re.sub(r'^\* ', '• ', text, flags=re.MULTILINE)
-    # Collapse 3+ blank lines to 2
+    # Collapse 3+ blank lines
     text = re.sub(r'\n{3,}', '\n\n', text)
-    return {"text": text.strip()}
+
+    # Escape plain text segments, preserving allowed HTML tags
+    _TAG = re.compile(r'(</?(?:b|i|u|s|code|pre)>)', re.IGNORECASE)
+    parts = _TAG.split(text)
+    escaped = ''.join(
+        part if _TAG.fullmatch(part) else _html.escape(part)
+        for part in parts
+    )
+
+    return {"text": escaped.strip(), "parse_mode": "HTML"}
 
 # ── Arnie's core system prompt (normal coaching mode) ─────────────────────────
 
