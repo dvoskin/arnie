@@ -53,6 +53,7 @@ Rules:
 - If wearable data is available, weave it in naturally (recovery, sleep, HRV, strain).
 - If they're on track, say so briefly with the number. If behind, say exactly what needs to happen.
 - Never sound robotic or template-like.
+- LANGUAGE: Write in the user's preferred language if provided in the context. Default to English if unknown.
 - Return ONLY the message text. No prefix, no label, no explanation."""
 
 _SLOT_INSTRUCTIONS = {
@@ -161,9 +162,11 @@ async def _llm_nudge(user, log, prefs, health_snap, slot: str, name: str) -> str
 
     instr = _SLOT_INSTRUCTIONS.get(slot, "Send a brief coaching check-in about their day.")
 
+    lang = getattr(prefs, "preferred_language", None) or "English"
     prompt = (
         f"Athlete: {name}, goal={user.primary_goal or '?'}, "
-        f"exp={user.training_experience or '?'}, diet={user.dietary_preferences or 'none'}\n"
+        f"exp={user.training_experience or '?'}, diet={user.dietary_preferences or 'none'}, "
+        f"language={lang}\n"
         f"Today: {cal} cal"
         f"{' / ' + str(cal_t) + ' target' if cal_t else ''} | "
         f"{pro}g protein"

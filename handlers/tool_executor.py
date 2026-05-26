@@ -206,6 +206,7 @@ async def _dispatch(name, inp, user, today_log, db, source_type):  # noqa: C901
             "reminder_frequency", "preferred_response_length",
             "profanity_tolerance", "proactive_messaging_enabled",
             "wake_time", "sleep_time", "calorie_target", "protein_target",
+            "preferred_language",
         }
         for field, value in fields.items():
             if field == "onboarding_completed":

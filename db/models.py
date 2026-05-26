@@ -60,6 +60,7 @@ class UserPreferences(Base):
     sleep_time = Column(String, default="23:00")
     calorie_target = Column(Integer)
     protein_target = Column(Integer)
+    preferred_language = Column(String)  # e.g. "Spanish", "French" — null means English/auto
 
     user = relationship("User", back_populates="preferences")
 
