@@ -144,29 +144,43 @@ async def refresh_access_token(refresh_token: str) -> Optional[dict]:
 
 
 async def _ensure_fresh_token(db, user: User) -> Optional[str]:
-    """Return a valid access token, refreshing if expired or close to expiring."""
-    if not user.whoop_refresh_token:
-        return None
-    needs_refresh = (
-        not user.whoop_access_token
-        or not user.whoop_token_expires_at
-        or user.whoop_token_expires_at <= datetime.utcnow() + timedelta(minutes=5)
+    """
+    Return a valid access token, refreshing if expired or close to expiring.
+    Falls back to the existing access_token if refresh isn't possible
+    (e.g. Whoop didn't issue a refresh_token in the first place).
+    """
+    now = datetime.utcnow()
+    has_fresh_access = (
+        user.whoop_access_token
+        and user.whoop_token_expires_at
+        and user.whoop_token_expires_at > now + timedelta(minutes=2)
     )
-    if needs_refresh:
+
+    # Fresh access token? Use it directly.
+    if has_fresh_access:
+        return user.whoop_access_token
+
+    # Access token expired or about to — try to refresh
+    if user.whoop_refresh_token:
         tokens = await refresh_access_token(user.whoop_refresh_token)
-        if not tokens:
-            logger.warning(f"User {user.id}: Whoop refresh failed, clearing tokens")
-            await clear_whoop_tokens(db, user.id)
-            return None
-        expires_at = datetime.utcnow() + timedelta(seconds=tokens.get("expires_in", 3600))
-        await set_whoop_tokens(
-            db, user.id,
-            access_token=tokens["access_token"],
-            refresh_token=tokens.get("refresh_token", user.whoop_refresh_token),
-            expires_at=expires_at,
-        )
-        return tokens["access_token"]
-    return user.whoop_access_token
+        if tokens:
+            expires_at = now + timedelta(seconds=tokens.get("expires_in", 3600))
+            await set_whoop_tokens(
+                db, user.id,
+                access_token=tokens["access_token"],
+                refresh_token=tokens.get("refresh_token", user.whoop_refresh_token),
+                expires_at=expires_at,
+            )
+            return tokens["access_token"]
+        logger.warning(f"User {user.id}: Whoop refresh failed")
+
+    # No refresh token, no fresh access — best we can do is try the
+    # stale access token. Whoop will reject it if truly expired.
+    if user.whoop_access_token:
+        logger.info(f"User {user.id}: using stale/no-refresh access token")
+        return user.whoop_access_token
+
+    return None
 
 
 async def _whoop_get(token: str, path: str, params: Optional[dict] = None) -> Optional[dict]:
@@ -178,8 +192,13 @@ async def _whoop_get(token: str, path: str, params: Optional[dict] = None) -> Op
                 headers={"Authorization": f"Bearer {token}"},
                 params=params or {},
             )
-            r.raise_for_status()
-            return r.json()
+            if r.status_code >= 400:
+                logger.error(f"Whoop GET {path} → HTTP {r.status_code}: {r.text[:300]}")
+                return None
+            data = r.json()
+            record_count = len(data.get("records", [])) if isinstance(data, dict) else 0
+            logger.info(f"Whoop GET {path} → {record_count} records")
+            return data
         except Exception as e:
             logger.error(f"Whoop GET {path} failed: {e}")
             return None

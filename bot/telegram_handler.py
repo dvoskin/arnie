@@ -715,18 +715,25 @@ async def cmd_whoop(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         if action == "sync":
-            if not user.whoop_refresh_token:
+            if not (user.whoop_access_token or user.whoop_refresh_token):
                 await update.message.reply_text("Not connected. Run /connect whoop first.")
                 return
             await update.message.reply_text("Syncing Whoop data…")
             from api.whoop import sync_user_whoop
             try:
                 synced = await sync_user_whoop(db, user, days=7)
-                await update.message.reply_text(
-                    f"✓ Synced <b>{synced} days</b> of Whoop data.\n\n"
-                    f"Run /whoop to see the latest snapshot.",
-                    parse_mode="HTML",
-                )
+                if synced > 0:
+                    await update.message.reply_text(
+                        f"✓ Synced <b>{synced} days</b> of Whoop data.\n\n"
+                        f"Run /whoop to see the latest snapshot.",
+                        parse_mode="HTML",
+                    )
+                else:
+                    await update.message.reply_text(
+                        "Sync returned 0 days. Either Whoop doesn't have data for the last week yet, "
+                        "or the access token expired and we don't have a refresh token to renew it.\n\n"
+                        "If your access token is showing as expired in /whoop, run /whoop disconnect and try /connect whoop again.",
+                    )
             except Exception as e:
                 await update.message.reply_text(
                     f"Sync failed: <code>{str(e)[:300]}</code>\n\n"
