@@ -152,6 +152,52 @@ DATA:
     return []
 
 
+async def generate_chat_analysis(stats: dict) -> List[str]:
+    """Richer coaching analysis for the /ai bot command — 3-5 items, each 2-3 sentences."""
+    from core.llm import _get_anthropic, DEFAULT_MODEL, ANTHROPIC_API_KEY
+
+    if not ANTHROPIC_API_KEY():
+        return []
+
+    summary = _build_summary(stats)
+    prompt = f"""You are Arnie, a direct and knowledgeable fitness and nutrition coach. A user just asked for a coaching analysis of their recent data.
+
+Write 3 to 5 coaching observations. Each one should be 2-3 sentences — specific, actionable, and grounded in the numbers. Cover different areas: calories, protein, training, trends, weight if available. Mix what's working with what needs fixing.
+
+Rules:
+- Reference real numbers every time (grams, calories, percentages, days)
+- Call out multi-day patterns when history exists, not just today
+- Give a concrete recommendation in each point, not just an observation
+- No greetings, no sign-off, no filler phrases like "great job" or "keep it up"
+- Write in second person ("you", "your")
+
+Return ONLY a valid JSON array of strings, one string per observation. No prose before or after.
+
+DATA:
+{summary}
+"""
+
+    try:
+        client = _get_anthropic()
+        response = await client.messages.create(
+            model=DEFAULT_MODEL(),
+            max_tokens=900,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        text = response.content[0].text.strip()
+        if text.startswith("```"):
+            text = text.split("\n", 1)[1].rsplit("```", 1)[0].strip()
+        if text.startswith("json"):
+            text = text[4:].strip()
+        result = json.loads(text)
+        if isinstance(result, list):
+            return [str(s) for s in result if s][:5]
+    except Exception as e:
+        logger.error(f"Chat analysis generation failed: {e}")
+
+    return []
+
+
 async def get_insights(user_id: int, stats: dict, force: bool = False) -> List[str]:
     """Cached insights — regenerates if older than 1 hour."""
     now = time.time()

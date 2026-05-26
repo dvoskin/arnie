@@ -577,11 +577,9 @@ async def cmd_ai(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("Nothing logged today yet — log some food or a workout first.")
             return
 
-        await update.message.reply_text("Analyzing…")
-
         try:
             from db.queries import get_recent_weights
-            from api.insights import generate_short_insight
+            from api.insights import generate_chat_analysis
 
             history = await get_recent_logs(db, user.id, days=30)
             weights = await get_recent_weights(db, user.id, days=30)
@@ -621,9 +619,9 @@ async def cmd_ai(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "weights": weight_data,
             }
 
-            insights = await generate_short_insight(stats)
+            insights = await generate_chat_analysis(stats)
             if insights:
-                msg = "\n".join(f"· <i>{i}</i>" for i in insights)
+                msg = "\n\n".join(f"· {i}" for i in insights)
                 await update.message.reply_text(msg, parse_mode="HTML")
             else:
                 await update.message.reply_text("Not enough data for insights yet — keep logging.")
