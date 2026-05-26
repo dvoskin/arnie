@@ -59,6 +59,27 @@ async def whoop_callback(request: Request, code: str = "", state: str = "", erro
     redirect_uri = f"{base_url}/whoop/callback"
 
     result = await exchange_code(code, redirect_uri)
+
+    # If Whoop says "code already used" but the user already has valid tokens
+    # from a previous (successful) exchange, treat this as success instead of
+    # an error. This handles browser back/refresh after a working connection.
+    if not result.get("ok") and "already been used" in (result.get("details") or "").lower():
+        async with AsyncSessionLocal() as db:
+            existing_user = await get_user_by_webhook_token(db, state)
+            if existing_user and existing_user.whoop_refresh_token:
+                return HTMLResponse("""<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>Whoop already connected</title>
+<style>body{font-family:system-ui;text-align:center;padding:60px 20px;background:#0f1117;color:#f1f5f9}
+.box{max-width:480px;margin:auto;background:#1a1d27;border:1px solid #2e3347;border-radius:12px;padding:32px}
+.check{font-size:48px;color:#22c55e}h1{font-size:24px;margin:16px 0}p{color:#94a3b8;margin:8px 0}</style>
+</head><body>
+<div class="box">
+  <div class="check">✓</div>
+  <h1>Already connected</h1>
+  <p>Your Whoop is already linked. No action needed.</p>
+  <p style="margin-top:20px">Run <b>/whoop</b> in Telegram to see your status.</p>
+</div></body></html>""")
+
     if not result.get("ok"):
         err = result.get("error", "Unknown error")
         details = result.get("details", "")

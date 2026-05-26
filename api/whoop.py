@@ -12,6 +12,7 @@ API docs: https://developer.whoop.com/api
 """
 import logging
 import os
+import time
 from datetime import datetime, date, timedelta, timezone
 from typing import Optional
 
@@ -52,14 +53,37 @@ def build_auth_url(redirect_uri: str, state: str) -> str:
     return f"{AUTH_URL}?{urlencode(params)}"
 
 
+# In-memory cache to make the callback idempotent.
+# OAuth codes are one-time use, so if the browser hits the callback URL twice
+# (refresh, prefetch, back button), the second exchange would fail with
+# "code already used". We cache successful exchanges for 5 min and replay
+# the cached tokens on duplicate hits.
+_CODE_CACHE: dict = {}
+_CODE_TTL = 300  # seconds
+
+
+def _gc_code_cache():
+    now = time.time()
+    expired = [k for k, v in _CODE_CACHE.items() if v["expires_at"] < now]
+    for k in expired:
+        _CODE_CACHE.pop(k, None)
+
+
 async def exchange_code(code: str, redirect_uri: str) -> dict:
     """
     POST to /oauth/oauth2/token with the auth code.
     Returns {"ok": True, "tokens": {...}} on success
     or {"ok": False, "error": "...", "details": "..."} on failure.
+    Idempotent: replays cached tokens on repeated calls with the same code.
     """
     if not WHOOP_CLIENT_ID or not WHOOP_CLIENT_SECRET:
         return {"ok": False, "error": "WHOOP_CLIENT_ID / WHOOP_CLIENT_SECRET env vars not set on server"}
+
+    _gc_code_cache()
+    cached = _CODE_CACHE.get(code)
+    if cached:
+        logger.info("Replaying cached token exchange for duplicate callback hit")
+        return {"ok": True, "tokens": cached["tokens"], "replayed": True}
 
     async with httpx.AsyncClient(timeout=15) as client:
         try:
@@ -81,7 +105,9 @@ async def exchange_code(code: str, redirect_uri: str) -> dict:
                     "error": f"Whoop returned HTTP {r.status_code}",
                     "details": r.text[:500],
                 }
-            return {"ok": True, "tokens": r.json()}
+            tokens = r.json()
+            _CODE_CACHE[code] = {"tokens": tokens, "expires_at": time.time() + _CODE_TTL}
+            return {"ok": True, "tokens": tokens}
         except Exception as e:
             logger.error(f"Whoop token exchange failed: {e}")
             return {"ok": False, "error": str(e)[:500]}
