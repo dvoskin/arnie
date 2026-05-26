@@ -1148,6 +1148,54 @@ main{{max-width:920px;margin:0 auto;padding:14px 12px 72px;position:relative;z-i
 .bg-n{{background:var(--sf2);color:var(--mu);border-color:var(--bd)}}
 .bg-b{{background:rgba(59,130,246,.1);color:var(--bl);border-color:rgba(59,130,246,.2)}}
 
+/* ── MACRO RING ──────────────────────────────────────────── */
+.macro-ring-wrap{{
+  display:flex;align-items:center;gap:20px;
+  background:var(--sf);border:1px solid var(--bd);border-radius:16px;padding:18px 20px;
+  backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);box-shadow:var(--sh);
+}}
+.macro-ring-canvas{{width:100px;height:100px;flex-shrink:0}}
+.macro-legend{{flex:1;display:flex;flex-direction:column;gap:9px}}
+.mleg{{display:flex;align-items:center;gap:9px;font-size:12px}}
+.mleg-dot{{width:8px;height:8px;border-radius:50%;flex-shrink:0}}
+.mleg-lbl{{color:var(--mu);flex:1;font-weight:500}}
+.mleg-val{{font-weight:700;color:var(--tx);font-size:13px}}
+.mleg-sub{{font-size:10px;color:var(--di)}}
+.macro-divider{{border:none;border-top:1px solid var(--bd);margin:2px 0}}
+
+/* ── CONSISTENCY HEATMAP ─────────────────────────────────── */
+.heat-wrap{{background:var(--sf);border:1px solid var(--bd);border-radius:16px;padding:16px 18px;backdrop-filter:blur(16px);box-shadow:var(--sh)}}
+.heat-dow{{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-bottom:4px}}
+.heat-dow span{{font-size:9px;color:var(--di);text-align:center;font-weight:600;text-transform:uppercase;letter-spacing:.4px}}
+.heat-grid{{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}}
+.hcell{{aspect-ratio:1;border-radius:5px;background:var(--sf2);position:relative;transition:transform .15s;cursor:default}}
+.hcell:hover{{transform:scale(1.2);z-index:2}}
+.hcell.h-on{{background:#22c55e}}
+.hcell.h-off{{background:#f59e0b}}
+.hcell.h-today{{box-shadow:0 0 0 2px var(--ac)}}
+.hcell-wo{{position:absolute;bottom:2px;right:2px;width:3px;height:3px;border-radius:50%;background:rgba(255,255,255,.8)}}
+.heat-legend{{display:flex;gap:12px;margin-top:8px;font-size:10px;color:var(--di);align-items:center}}
+.hleg-dot{{width:8px;height:8px;border-radius:2px;display:inline-block;flex-shrink:0}}
+
+/* ── GOAL PROGRESS ───────────────────────────────────────── */
+.goal-card{{background:var(--sf);border:1px solid var(--bd);border-radius:16px;padding:18px 20px;backdrop-filter:blur(16px);box-shadow:var(--sh)}}
+.goal-header{{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px}}
+.goal-title{{font-size:14px;font-weight:700}}
+.goal-sub{{font-size:11px;color:var(--mu);margin-top:3px}}
+.goal-current{{text-align:right}}
+.goal-lbs{{font-size:22px;font-weight:900;line-height:1;letter-spacing:-.5px}}
+.goal-lbs-lbl{{font-size:10px;color:var(--mu)}}
+.goal-track{{position:relative;height:8px;background:var(--sf2);border-radius:999px;margin:4px 0 10px}}
+.goal-fill{{height:100%;border-radius:999px;background:linear-gradient(90deg,var(--bl),var(--ac));transition:width .9s cubic-bezier(.4,0,.2,1)}}
+.goal-pin{{position:absolute;top:50%;transform:translate(-50%,-50%);width:14px;height:14px;border-radius:50%;border:2px solid var(--bg)}}
+.goal-labels{{display:flex;justify-content:space-between;font-size:10px;color:var(--mu);font-weight:600}}
+
+/* ── STREAK STATS ────────────────────────────────────────── */
+.stat-row{{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}}
+.stat-tile{{background:var(--sf);border:1px solid var(--bd);border-radius:14px;padding:16px 12px;text-align:center;backdrop-filter:blur(16px);box-shadow:var(--sh)}}
+.stat-num{{font-size:26px;font-weight:900;line-height:1;letter-spacing:-.5px}}
+.stat-lbl{{font-size:10px;color:var(--mu);text-transform:uppercase;letter-spacing:.7px;margin-top:5px;font-weight:700}}
+
 /* ── INSIGHTS ────────────────────────────────────────────── */
 .icrd{{
   background:var(--sf);border:1px solid var(--bd);border-radius:16px;overflow:hidden;
@@ -1389,6 +1437,26 @@ footer{{text-align:center;padding:20px 16px;color:var(--di);font-size:11px;posit
       <button class="share-btn" onclick="shareDay()" title="Share today&apos;s summary">&#128228; Share day</button>
     </div>
 
+    <div class="stitle">Energy breakdown</div>
+    <div class="macro-ring-wrap">
+      <canvas class="macro-ring-canvas" id="macroRing"></canvas>
+      <div class="macro-legend" id="macro-legend"></div>
+    </div>
+
+    <div class="stitle">28-day consistency</div>
+    <div class="heat-wrap">
+      <div class="heat-dow">
+        <span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span><span>S</span>
+      </div>
+      <div class="heat-grid" id="heat-grid"></div>
+      <div class="heat-legend">
+        <span class="hleg-dot" style="background:#22c55e"></span>On target &nbsp;
+        <span class="hleg-dot" style="background:#f59e0b"></span>Logged &nbsp;
+        <span class="hleg-dot" style="background:var(--sf2)"></span>Missed &nbsp;
+        <span class="hleg-dot" style="background:rgba(255,255,255,.15)"></span><span style="color:var(--di)">● workout</span>
+      </div>
+    </div>
+
     <div class="stitle">Food log</div>
     <div class="lcrd" id="food-log"><div class="lempty">Loading&hellip;</div></div>
 
@@ -1419,6 +1487,16 @@ footer{{text-align:center;padding:20px 16px;color:var(--di);font-size:11px;posit
     </div>
     <div class="stitle">Last 14 days</div>
     <div class="infocrd" id="hist-table-wrap"><div class="lempty">Loading&hellip;</div></div>
+
+    <div class="stitle">Goal progress</div>
+    <div class="goal-card" id="goal-card"></div>
+
+    <div class="stitle">Stats</div>
+    <div class="stat-row">
+      <div class="stat-tile"><div class="stat-num" id="stat-streak">—</div><div class="stat-lbl">Day streak</div></div>
+      <div class="stat-tile"><div class="stat-num" id="stat-workouts">—</div><div class="stat-lbl">Workouts / 30d</div></div>
+      <div class="stat-tile"><div class="stat-num" id="stat-avg-cal">—</div><div class="stat-lbl">Avg cal / day</div></div>
+    </div>
   </div>
 
   <!-- PROFILE TAB -->
@@ -1610,6 +1688,125 @@ async function loadDayData(d){{
 }}
 
 // ── Day tab ───────────────────────────────────────────────────────────────
+// ── Macro energy ring ─────────────────────────────────────────────────────
+var _macroRing=null;
+function renderMacroRing(day){{
+  var p=day.protein||0, c=day.carbs||0, f=day.fats||0;
+  var pCal=Math.round(p*4), cCal=Math.round(c*4), fCal=Math.round(f*9);
+  var total=pCal+cCal+fCal;
+
+  var lg=document.getElementById('macro-legend');
+  if(lg) lg.innerHTML=
+    '<div class="mleg"><div class="mleg-dot" style="background:#3b82f6"></div>'+
+      '<span class="mleg-lbl">Protein</span><div><span class="mleg-val">'+p+'g</span> <span class="mleg-sub">'+pCal+' kcal</span></div></div>'+
+    '<div class="mleg"><div class="mleg-dot" style="background:#f59e0b"></div>'+
+      '<span class="mleg-lbl">Carbs</span><div><span class="mleg-val">'+c+'g</span> <span class="mleg-sub">'+cCal+' kcal</span></div></div>'+
+    '<div class="mleg"><div class="mleg-dot" style="background:#ec4899"></div>'+
+      '<span class="mleg-lbl">Fats</span><div><span class="mleg-val">'+f+'g</span> <span class="mleg-sub">'+fCal+' kcal</span></div></div>'+
+    '<hr class="macro-divider">'+
+    '<div class="mleg"><span class="mleg-lbl" style="color:var(--tx);font-weight:700">Total</span>'+
+      '<span class="mleg-val">'+total+' kcal</span></div>';
+
+  if(_macroRing) _macroRing.destroy();
+  var canvas=document.getElementById('macroRing');if(!canvas)return;
+  var empty=!total;
+  _macroRing=new Chart(canvas,{{
+    type:'doughnut',
+    data:{{datasets:[{{
+      data:empty?[1]:[pCal||0.01,cCal||0.01,fCal||0.01],
+      backgroundColor:empty?['var(--sf2)']:['#3b82f6','#f59e0b','#ec4899'],
+      borderWidth:0,borderRadius:empty?0:4,
+    }}]}},
+    options:{{
+      cutout:'70%',
+      plugins:{{legend:{{display:false}},tooltip:{{enabled:false}}}},
+      animation:{{duration:empty?0:600,easing:'easeInOutQuart'}},
+    }}
+  }});
+}}
+
+// ── 28-day consistency heatmap ────────────────────────────────────────────
+function renderHeatmap(history,targets){{
+  var grid=document.getElementById('heat-grid');if(!grid)return;
+  var today=new Date(),calT=targets.calories,html='';
+  // Build Mon-anchored 28-day grid (pad start to Monday)
+  var cells=[];
+  for(var i=27;i>=0;i--){{
+    var d=new Date(today);d.setDate(d.getDate()-i);
+    var ds=d.toISOString().slice(0,10);
+    var log=history.find(function(h){{return h.date===ds;}})||null;
+    cells.push({{ds:ds,log:log,isToday:i===0}});
+  }}
+  cells.forEach(function(cell){{
+    var cls='hcell';
+    var tt=cell.ds;
+    if(cell.log){{
+      var onT=calT&&cell.log.calories>=calT*.85&&cell.log.calories<=calT*1.12;
+      cls+=(onT?' h-on':' h-off');
+      tt=cell.ds+': '+cell.log.calories+'cal'+(cell.log.workout?' 💪':'');
+    }}
+    if(cell.isToday)cls+=' h-today';
+    var woDot=(cell.log&&cell.log.workout)?'<div class="hcell-wo"></div>':'';
+    html+='<div class="'+cls+'" title="'+tt+'">'+woDot+'</div>';
+  }});
+  grid.innerHTML=html;
+}}
+
+// ── Goal progress tracker ─────────────────────────────────────────────────
+function renderGoalProgress(profile,weights){{
+  var card=document.getElementById('goal-card');if(!card)return;
+  var cur=profile.current_weight_lbs,goal=profile.goal_weight_lbs;
+  if(!cur||!goal){{card.style.display='none';return;}}
+  card.style.display='';
+  var startW=weights&&weights.length?weights[0].lbs:cur;
+  var totalChg=Math.abs(startW-goal);
+  var pct=totalChg>0?Math.min(100,Math.abs(startW-cur)/totalChg*100):0;
+  var lbsLeft=Math.abs(cur-goal).toFixed(1);
+  var an=profile.analytics||{{}};
+  var cutting=goal<cur;
+  var etaStr=an.weeks_to_goal?'~'+Math.round(an.weeks_to_goal)+' weeks to goal':'';
+  var paceStr=an.daily_vs_tdee?(an.daily_vs_tdee>0?'+':'')+an.daily_vs_tdee+' cal/day vs TDEE':'';
+  var subStr=[etaStr,paceStr].filter(Boolean).join(' · ');
+
+  card.innerHTML=
+    '<div class="goal-header">'+
+      '<div><div class="goal-title">'+(cutting?'⬇':'⬆')+' '+lbsLeft+' lbs to goal</div>'+
+      '<div class="goal-sub">'+esc(subStr)+'</div></div>'+
+      '<div class="goal-current"><div class="goal-lbs">'+cur+'</div>'+
+      '<div class="goal-lbs-lbl">lbs now</div></div>'+
+    '</div>'+
+    '<div class="goal-track">'+
+      '<div class="goal-fill" style="width:'+pct.toFixed(1)+'%"></div>'+
+      '<div class="goal-pin" style="left:0;background:#555"></div>'+
+      '<div class="goal-pin" style="left:'+pct.toFixed(1)+'%;background:var(--ac)"></div>'+
+      '<div class="goal-pin" style="left:100%;background:var(--bl)"></div>'+
+    '</div>'+
+    '<div class="goal-labels">'+
+      '<span>'+startW.toFixed(1)+' lb</span>'+
+      '<span style="color:var(--ac)">'+cur+' ← now</span>'+
+      '<span>'+goal+' lb</span>'+
+    '</div>';
+}}
+
+// ── Streak & stats tiles ──────────────────────────────────────────────────
+function renderStreakStats(history,targets){{
+  var today=new Date(),logDates=new Set(history.map(function(h){{return h.date;}}));
+  var streak=0,check=new Date(today);
+  while(true){{
+    var ds=check.toISOString().slice(0,10);
+    if(logDates.has(ds)){{streak++;check.setDate(check.getDate()-1);}}else break;
+  }}
+  var monthAgo=new Date(today);monthAgo.setDate(monthAgo.getDate()-30);
+  var monthStr=monthAgo.toISOString().slice(0,10);
+  var workouts=history.filter(function(h){{return h.date>=monthStr&&h.workout;}}).length;
+  var closed=history.filter(function(h){{return h.status==='closed';}});
+  var avgCal=closed.length?Math.round(closed.reduce(function(s,h){{return s+h.calories;}},0)/closed.length):null;
+
+  var el=document.getElementById('stat-streak');if(el)el.textContent=streak;
+  el=document.getElementById('stat-workouts');if(el)el.textContent=workouts;
+  el=document.getElementById('stat-avg-cal');if(el)el.textContent=avgCal?avgCal.toLocaleString():'—';
+}}
+
 function renderDayTab(d){{
   var isToday=_viewingDate===_todayStr;
   document.getElementById('day-label').textContent=isToday?'Today':fmtDate(_viewingDate);
@@ -1647,6 +1844,9 @@ function renderDayTab(d){{
   var ee=day.exercise_entries||[];
   document.getElementById('ex-log').innerHTML=ee.length?ee.map(renderExerciseRow).join('')
     :'<div class="lempty">No exercises logged'+(isToday?' yet':'')+'</div>';
+
+  renderMacroRing(day);
+  renderHeatmap(d.history||[], d.targets||{{}});
 
   var hl=d.health||[],hd=hl.find(h=>h.date===_viewingDate)||null;
   var hs=document.getElementById('health-section');
@@ -1783,6 +1983,9 @@ function renderWeekTab(d){{
           '<td class="'+pc+'">'+(h.protein!=null?h.protein+'g':'—')+'</td>'+
           '<td>'+(h.workout?'✓':'✗')+'</td></tr>';
       }}).join('')+'</tbody></table>';
+
+  renderGoalProgress(d.profile||{{}}, d.weights||[]);
+  renderStreakStats(d.history||[], d.targets||{{}});
 }}
 
 // ── Profile tab ───────────────────────────────────────────────────────────
