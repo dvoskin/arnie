@@ -1073,12 +1073,7 @@ header{{
 
 /* ── APP WRAP ────────────────────────────────────────────── */
 .app-wrap{{
-  max-width:520px;margin:0 auto;position:relative;min-height:100vh;
-}}
-@media(min-width:560px){{
-  .app-wrap{{
-    border-left:1px solid var(--bd);border-right:1px solid var(--bd);
-  }}
+  max-width:600px;margin:0 auto;position:relative;min-height:100vh;
 }}
 
 /* ── MAIN ────────────────────────────────────────────────── */
@@ -1127,8 +1122,7 @@ main{{padding:12px 12px 80px;position:relative;z-index:1}}
 [data-theme="dark"] .today-tag{{color:#000}}
 
 /* ── MACRO CARDS ─────────────────────────────────────────── */
-.cards{{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}}
-@media(min-width:480px){{.cards{{grid-template-columns:repeat(4,1fr)}}}}
+.cards{{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}}
 .card{{
   background:var(--sf);border:1px solid var(--bd);border-radius:14px;padding:12px;
   backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);
@@ -1231,7 +1225,7 @@ main{{padding:12px 12px 80px;position:relative;z-index:1}}
 
 /* ── WEARABLE ────────────────────────────────────────────── */
 .hgrid{{display:grid;gap:7px;grid-template-columns:repeat(3,1fr)}}
-@media(min-width:480px){{.hgrid{{grid-template-columns:repeat(6,1fr)}}}}
+@media(min-width:420px){{.hgrid{{grid-template-columns:repeat(6,1fr)}}}}
 .htile{{
   background:var(--sf);border:1px solid var(--bd);border-radius:12px;
   padding:10px 8px;text-align:center;backdrop-filter:blur(12px);
@@ -1338,7 +1332,7 @@ main{{padding:12px 12px 80px;position:relative;z-index:1}}
 }}
 .antitle{{font-size:10px;color:var(--mu);font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px}}
 .angrid{{display:grid;grid-template-columns:repeat(2,1fr);gap:7px}}
-@media(min-width:480px){{.angrid{{grid-template-columns:repeat(3,1fr)}}}}
+@media(min-width:420px){{.angrid{{grid-template-columns:repeat(3,1fr)}}}}
 .anitem{{background:var(--sf2);border-radius:10px;padding:10px;border:1px solid var(--bd);transition:background .3s}}
 .anval{{font-size:16px;font-weight:800;line-height:1;letter-spacing:-.3px}}
 .anlbl{{font-size:10px;color:var(--mu);margin-top:3px;font-weight:600;text-transform:uppercase;letter-spacing:.4px}}
