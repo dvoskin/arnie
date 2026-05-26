@@ -10,6 +10,7 @@ Flow:
 
 API docs: https://developer.whoop.com/api
 """
+import asyncio
 import logging
 import os
 import time
@@ -198,10 +199,13 @@ async def sync_user_whoop(db, user: User, days: int = 2) -> int:
     start = end - timedelta(days=days)
     params = {"start": start.isoformat(), "end": end.isoformat(), "limit": 25}
 
-    # Fetch in parallel via separate calls
-    recovery_data = await _whoop_get(token, "/v1/recovery", params)
-    sleep_data = await _whoop_get(token, "/v1/activity/sleep", params)
-    cycle_data = await _whoop_get(token, "/v1/cycle", params)
+    # Fetch all three endpoints in parallel — much faster than sequential
+    recovery_data, sleep_data, cycle_data = await asyncio.gather(
+        _whoop_get(token, "/v1/recovery", params),
+        _whoop_get(token, "/v1/activity/sleep", params),
+        _whoop_get(token, "/v1/cycle", params),
+        return_exceptions=False,
+    )
 
     # Group by date — Whoop has its own cycle/day concept tied to sleep windows.
     # We approximate by using the cycle's `created_at` date.

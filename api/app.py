@@ -104,6 +104,7 @@ code{{background:#0f1117;padding:2px 6px;border-radius:4px;font-size:12px;color:
 </div></div></body></html>""", status_code=400)
 
     tokens = result["tokens"]
+    user_id_for_sync = None
     async with AsyncSessionLocal() as db:
         user = await get_user_by_webhook_token(db, state)
         if not user:
@@ -116,23 +117,13 @@ code{{background:#0f1117;padding:2px 6px;border-radius:4px;font-size:12px;color:
             refresh_token=tokens.get("refresh_token", ""),
             expires_at=expires_at,
         )
+        user_id_for_sync = user.id
 
-        # Pull the first batch right away
-        synced = 0
-        sync_error = ""
-        try:
-            user_reloaded = await get_user_by_webhook_token(db, state)
-            synced = await sync_user_whoop(db, user_reloaded, days=7)
-        except Exception as e:
-            sync_error = str(e)[:300]
-
-    body = (
-        f"<p>Synced <b>{synced}</b> days of recovery, sleep, and strain data.</p>"
-        if synced > 0 else
-        f"<p>Tokens saved, but initial sync returned 0 days.</p>"
-        f"<p style='color:#94a3b8;font-size:13px'>This is usually fine — Whoop may not have new data yet. Run /whoop sync in Telegram any time to retry.</p>"
-        + (f"<code style='display:block;padding:12px;background:#0f1117;border-radius:4px;font-size:12px;color:#94a3b8'>{sync_error}</code>" if sync_error else "")
-    )
+    # Kick off the initial sync in the background — DON'T block the response.
+    # Whoop's three API calls together can take 30+ seconds and Render's
+    # load balancer will 502 if the response doesn't come back in time.
+    import asyncio
+    asyncio.create_task(_background_initial_sync(user_id_for_sync))
 
     return HTMLResponse(f"""<!DOCTYPE html>
 <html><head><meta charset="UTF-8"><title>Whoop connected</title>
@@ -143,9 +134,24 @@ code{{background:#0f1117;padding:2px 6px;border-radius:4px;font-size:12px;color:
 <div class="box">
   <div class="check">✓</div>
   <h1>Whoop connected</h1>
-  {body}
-  <p style="margin-top:20px">Close this window and head back to Telegram. Run <b>/whoop</b> any time to check status.</p>
+  <p>Tokens saved. I'm pulling your last 7 days of data in the background — should be ready in 30 seconds or so.</p>
+  <p style="margin-top:20px">Head back to Telegram and run <b>/whoop</b> to see your latest snapshot.</p>
 </div></body></html>""")
+
+
+async def _background_initial_sync(user_id: int):
+    """Run the initial Whoop data pull after the OAuth callback has returned."""
+    from api.whoop import sync_user_whoop
+    try:
+        async with AsyncSessionLocal() as db:
+            from db.queries import reload_user
+            user = await reload_user(db, user_id)
+            synced = await sync_user_whoop(db, user, days=7)
+            import logging
+            logging.getLogger(__name__).info(f"Background Whoop sync: user {user_id} → {synced} days")
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).error(f"Background Whoop sync failed for user {user_id}: {e}")
 
 
 @app.get("/privacy", response_class=HTMLResponse)
