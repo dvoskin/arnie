@@ -431,6 +431,7 @@ async def _build_stats_for_user(db, user, target_date=None):
         "calorie_target": prefs.calorie_target if prefs else None,
         "protein_target": prefs.protein_target if prefs else None,
         "whoop_connected": bool(user.whoop_access_token or user.whoop_refresh_token),
+        "apple_health_connected": any(s.source == "apple_health" for s in health_snaps),
         "analytics": analytics,
     }
 
@@ -1404,7 +1405,11 @@ function renderProfileTab(d){{
     '<div class="devrow"><span style="font-size:20px">&#8987;</span>'+
     '<span class="devname">Whoop</span>'+
     '<span class="devst '+(p.whoop_connected?'on':'off')+'">'+
-    (p.whoop_connected?'✓ Connected':'⚠ Not connected')+'</span></div>';
+    (p.whoop_connected?'✓ Connected':'⚠ Not connected')+'</span></div>'+
+    '<div class="devrow"><span style="font-size:20px">&#63743;</span>'+
+    '<span class="devname">Apple Health</span>'+
+    '<span class="devst '+(p.apple_health_connected?'on':'off')+'">'+
+    (p.apple_health_connected?'✓ Syncing':'⚠ Not connected')+'</span></div>';
 }}
 
 // ── Insights ──────────────────────────────────────────────────────────────
@@ -1604,6 +1609,213 @@ async def receive_apple_health(
                 raise HTTPException(status_code=400, detail="Use YYYY-MM-DD")
 
         data = payload.model_dump(exclude={"date"}, exclude_none=True)
+        data.setdefault("source", "apple_health")
         await upsert_health_snapshot(db, user.id, snap_date, **data)
 
     return {"status": "ok", "date": str(snap_date)}
+
+
+# ── Apple Health setup guide ───────────────────────────────────────────────────
+
+@app.get("/health/apple/guide", response_class=HTMLResponse)
+async def apple_health_guide(token: str = Query(...)):
+    async with AsyncSessionLocal() as db:
+        user = await get_user_by_webhook_token(db, token)
+        if not user:
+            return HTMLResponse("<h2>Invalid or expired link.</h2>", status_code=401)
+
+    base_url = os.getenv("RENDER_EXTERNAL_URL", "http://localhost:10000").rstrip("/")
+    endpoint = f"{base_url}/health/apple?token={token}"
+    return HTMLResponse(_apple_guide_html(endpoint))
+
+
+def _apple_guide_html(endpoint: str) -> str:
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Apple Health Setup — Arnie</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*{{box-sizing:border-box;margin:0;padding:0}}
+body{{font-family:'Inter',-apple-system,sans-serif;background:#070c18;color:#eef2ff;
+  min-height:100vh;padding:0 0 48px;-webkit-font-smoothing:antialiased}}
+header{{background:rgba(7,12,24,.95);border-bottom:1px solid rgba(255,255,255,.08);
+  padding:14px 20px;position:sticky;top:0;z-index:10;backdrop-filter:blur(16px)}}
+.logo{{font-size:17px;font-weight:800;background:linear-gradient(130deg,#00e676,#3b82f6);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}}
+main{{max-width:640px;margin:0 auto;padding:24px 16px}}
+h1{{font-size:22px;font-weight:800;margin-bottom:6px;letter-spacing:-.4px}}
+.sub{{font-size:14px;color:#6b7a99;margin-bottom:28px;line-height:1.5}}
+.section{{margin-bottom:32px}}
+.section-lbl{{font-size:10px;font-weight:700;color:#3d4a66;text-transform:uppercase;
+  letter-spacing:1.4px;margin-bottom:12px}}
+.url-box{{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);
+  border-radius:12px;padding:14px;display:flex;align-items:center;gap:10px;cursor:pointer}}
+.url-text{{font-family:monospace;font-size:12px;color:#00e676;word-break:break-all;flex:1;line-height:1.5}}
+.copy-btn{{background:rgba(0,230,118,.15);border:1px solid rgba(0,230,118,.3);color:#00e676;
+  padding:8px 14px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;
+  white-space:nowrap;font-family:inherit;transition:all .2s;flex-shrink:0}}
+.copy-btn:active{{transform:scale(.94)}}
+.steps{{display:grid;gap:12px}}
+.step{{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;padding:16px;display:grid;grid-template-columns:32px 1fr;gap:12px;align-items:start}}
+.step-num{{width:32px;height:32px;background:rgba(0,230,118,.12);border:1px solid rgba(0,230,118,.25);
+  color:#00e676;border-radius:50%;display:flex;align-items:center;justify-content:center;
+  font-size:13px;font-weight:800;flex-shrink:0}}
+.step-title{{font-size:14px;font-weight:700;color:#eef2ff;margin-bottom:4px}}
+.step-body{{font-size:13px;color:#8899aa;line-height:1.55}}
+.step-body b{{color:#c8d0e8;font-weight:600}}
+.step-body code{{background:rgba(255,255,255,.08);padding:1px 6px;border-radius:5px;
+  font-size:11px;color:#00e676;font-family:monospace}}
+.json-block{{background:rgba(0,0,0,.4);border:1px solid rgba(255,255,255,.08);
+  border-radius:10px;padding:14px;font-family:monospace;font-size:12px;
+  color:#8899aa;line-height:1.7;overflow-x:auto;margin-top:10px}}
+.json-block .k{{color:#c8d0e8}}.json-block .v{{color:#00e676}}.json-block .c{{color:#3d4a66}}
+.metrics-grid{{display:grid;grid-template-columns:1fr 1fr;gap:8px}}
+@media(min-width:480px){{.metrics-grid{{grid-template-columns:repeat(3,1fr)}}}}
+.metric{{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);
+  border-radius:10px;padding:10px}}
+.metric-key{{font-family:monospace;font-size:11px;color:#00e676;margin-bottom:3px}}
+.metric-src{{font-size:11px;color:#6b7a99}}
+.tip{{background:rgba(59,130,246,.08);border:1px solid rgba(59,130,246,.2);
+  border-radius:12px;padding:14px;font-size:13px;color:#8899aa;line-height:1.55}}
+.tip b{{color:#3b82f6}}
+footer{{text-align:center;padding:32px 16px 0;color:#3d4a66;font-size:11px}}
+</style>
+</head>
+<body>
+<header><div class="logo">&#9889; Arnie</div></header>
+<main>
+
+<h1>Apple Health Setup</h1>
+<p class="sub">Sync your iPhone's health data to Arnie automatically each morning using an iOS Shortcut.</p>
+
+<div class="section">
+  <div class="section-lbl">Your personal endpoint</div>
+  <div class="url-box" onclick="copyUrl()">
+    <div class="url-text" id="url-text">{endpoint}</div>
+    <button class="copy-btn" id="copy-btn">Copy</button>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-lbl">Create the iOS Shortcut</div>
+  <div class="steps">
+
+    <div class="step">
+      <div class="step-num">1</div>
+      <div>
+        <div class="step-title">Open Shortcuts → New Shortcut</div>
+        <div class="step-body">
+          On your iPhone open the <b>Shortcuts</b> app and tap <b>+</b> in the top right.
+          Tap the title to rename it <b>"Arnie Health Sync"</b>.
+        </div>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">2</div>
+      <div>
+        <div class="step-title">Add health data actions</div>
+        <div class="step-body">
+          Tap <b>Add Action</b>, search <b>"Find Health Samples"</b> and add one for each metric you want to sync.
+          For each action set the date range to <b>Today</b> and choose the right statistic:<br><br>
+          • <b>Step Count</b> — Summarise: Sum<br>
+          • <b>Resting Heart Rate</b> — Limit: 1, Sort: Newest first<br>
+          • <b>Heart Rate Variability</b> — Limit: 1, Sort: Newest first<br>
+          • <b>Active Energy Burned</b> — Summarise: Sum<br>
+          • <b>Sleep Analysis</b> — Summarise: Sum (gives hours × 3600 — divide by 3600 in the next step)<br><br>
+          Set a <b>variable name</b> for the result of each action (e.g. "steps", "rhr", "hrv", "cals", "sleep").
+        </div>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">3</div>
+      <div>
+        <div class="step-title">Build the request body</div>
+        <div class="step-body">
+          Add a <b>Dictionary</b> action and add keys for each metric using your variables:
+          <div class="json-block">
+<span class="c">// key → Health variable</span>
+<span class="k">date</span>         → <span class="v">Format Date (Today, "yyyy-MM-dd")</span>
+<span class="k">steps</span>        → <span class="v">steps variable</span>
+<span class="k">resting_hr</span>   → <span class="v">rhr variable</span>
+<span class="k">hrv</span>          → <span class="v">hrv variable</span>
+<span class="k">active_calories</span> → <span class="v">cals variable</span>
+<span class="k">sleep_hours</span>  → <span class="v">sleep ÷ 3600</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">4</div>
+      <div>
+        <div class="step-title">Send to Arnie</div>
+        <div class="step-body">
+          Add a <b>"Get Contents of URL"</b> action:<br><br>
+          • URL: <code>{endpoint}</code><br>
+          • Method: <b>POST</b><br>
+          • Request Body: <b>JSON</b> → set to the Dictionary from step 3
+        </div>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">5</div>
+      <div>
+        <div class="step-title">Automate it</div>
+        <div class="step-body">
+          In Shortcuts tap <b>Automation</b> (bottom tab) → <b>+</b> → <b>Time of Day</b><br><br>
+          • Time: <b>8:00 AM</b> (or whenever you wake up)<br>
+          • Repeat: <b>Daily</b><br>
+          • Run Shortcut: <b>Arnie Health Sync</b><br><br>
+          Turn off "Ask Before Running" so it runs silently in the background.
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-lbl">Supported fields</div>
+  <div class="metrics-grid">
+    <div class="metric"><div class="metric-key">date</div><div class="metric-src">yyyy-MM-dd</div></div>
+    <div class="metric"><div class="metric-key">steps</div><div class="metric-src">Step Count</div></div>
+    <div class="metric"><div class="metric-key">resting_hr</div><div class="metric-src">Resting HR (bpm)</div></div>
+    <div class="metric"><div class="metric-key">avg_hr</div><div class="metric-src">Heart Rate avg</div></div>
+    <div class="metric"><div class="metric-key">hrv</div><div class="metric-src">HRV SDNN (ms)</div></div>
+    <div class="metric"><div class="metric-key">active_calories</div><div class="metric-src">Active Energy (kcal)</div></div>
+    <div class="metric"><div class="metric-key">resting_calories</div><div class="metric-src">Basal Energy (kcal)</div></div>
+    <div class="metric"><div class="metric-key">sleep_hours</div><div class="metric-src">Sleep total (hrs)</div></div>
+    <div class="metric"><div class="metric-key">sleep_deep_hours</div><div class="metric-src">Sleep deep (hrs)</div></div>
+    <div class="metric"><div class="metric-key">sleep_rem_hours</div><div class="metric-src">Sleep REM (hrs)</div></div>
+    <div class="metric"><div class="metric-key">stand_hours</div><div class="metric-src">Stand Hours</div></div>
+    <div class="metric"><div class="metric-key">exercise_minutes</div><div class="metric-src">Exercise Minutes</div></div>
+  </div>
+</div>
+
+<div class="tip">
+  <b>Tip:</b> You only need to include the metrics you care about — all fields are optional.
+  Once your first sync arrives, the dashboard will show Apple Health as connected and your metrics
+  will appear in the Wearable section of the Day tab.
+</div>
+
+</main>
+<footer>Arnie &middot; Apple Health via iOS Shortcut</footer>
+
+<script>
+function copyUrl(){{
+  var url=document.getElementById('url-text').textContent;
+  navigator.clipboard.writeText(url).then(function(){{
+    var btn=document.getElementById('copy-btn');
+    btn.textContent='Copied!';
+    setTimeout(function(){{btn.textContent='Copy'}},2000);
+  }});
+}}
+</script>
+</body>
+</html>"""

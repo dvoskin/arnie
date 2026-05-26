@@ -809,9 +809,32 @@ async def cmd_feedback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def cmd_connect(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Connect a wearable. Currently supports: whoop."""
+    """Connect a wearable. Supports: whoop, apple."""
     args = context.args
     target = args[0].lower() if args else ""
+
+    if target in ("apple", "applehealth", "health"):
+        async with AsyncSessionLocal() as db:
+            user = await get_or_create_user(db, str(update.effective_user.id))
+            if not user.onboarding_completed:
+                await update.message.reply_text("Finish setup first, then we'll connect Apple Health.")
+                return
+            token = await get_or_create_webhook_token(db, user.id)
+
+        base_url = os.getenv("RENDER_EXTERNAL_URL", "http://localhost:10000").rstrip("/")
+        guide_url = f"{base_url}/health/apple/guide?token={token}"
+
+        await update.message.reply_text(
+            "<b>Connect Apple Health</b>\n\n"
+            "Apple Health syncs via an iOS Shortcut that runs automatically each morning "
+            "and sends your metrics (steps, HRV, resting HR, sleep, calories) to Arnie.\n\n"
+            f'<a href="{guide_url}">→ Open setup guide on your iPhone</a>\n\n'
+            "<i>The guide has your personal endpoint URL pre-filled and walks you through "
+            "the Shortcut in 5 steps. Open it on your iPhone for the best experience.</i>",
+            parse_mode="HTML",
+            disable_web_page_preview=True,
+        )
+        return
 
     if target == "whoop":
         async with AsyncSessionLocal() as db:
@@ -840,8 +863,8 @@ async def cmd_connect(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Default: show options
     await update.message.reply_text(
         "<b>Connect a wearable</b>\n\n"
-        "/connect whoop — link your Whoop band (recovery, sleep, strain)\n\n"
-        "<i>Apple Health coming soon via iOS Shortcut.</i>",
+        "/connect whoop — Whoop band (recovery, sleep, HRV, strain)\n"
+        "/connect apple — Apple Health via iOS Shortcut (steps, HR, sleep, calories)",
         parse_mode="HTML",
     )
 
