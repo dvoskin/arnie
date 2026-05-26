@@ -463,41 +463,11 @@ async def cmd_today(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("\n".join(lines), parse_mode="HTML")
 
 
-async def cmd_targets(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Calorie and macro targets."""
+async def cmd_me(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Profile + targets combined — the /me command."""
     async with AsyncSessionLocal() as db:
         user = await get_or_create_user(db, str(update.effective_user.id))
         p = user.preferences
-        if not p or (not p.calorie_target and not p.protein_target):
-            await update.message.reply_text(
-                "No targets set yet. Tell me your calorie and protein goals and I'll lock them in.\n"
-                'Example: "set my calorie target to 2400 and protein to 185g"'
-            )
-            return
-
-        lines = ["<b>Your targets</b>", ""]
-        if p.calorie_target:
-            lines.append(f"Calories   <b>{p.calorie_target} kcal/day</b>")
-        if p.protein_target:
-            lines.append(f"Protein    <b>{p.protein_target}g/day</b>")
-
-        # Derive carb/fat split from calories if both cal + protein known
-        if p.calorie_target and p.protein_target:
-            protein_cals = p.protein_target * 4
-            remaining_cals = p.calorie_target - protein_cals
-            fat_g = round(p.calorie_target * 0.25 / 9)
-            carb_g = round((remaining_cals - fat_g * 9) / 4)
-            if carb_g > 0:
-                lines.append(f"Carbs      ~{carb_g}g/day  (implied)")
-                lines.append(f"Fats       ~{fat_g}g/day  (implied)")
-
-        await update.message.reply_text("\n".join(lines), parse_mode="HTML")
-
-
-async def cmd_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Age, weight, goal, experience."""
-    async with AsyncSessionLocal() as db:
-        user = await get_or_create_user(db, str(update.effective_user.id))
 
         def _v(val, unit="", fallback="not set"):
             return f"{val}{unit}" if val is not None else fallback
@@ -507,32 +477,49 @@ async def cmd_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
         h_ft = ""
         if user.height_cm:
             inches_total = user.height_cm / 2.54
-            h_ft = f"{int(inches_total // 12)}ft {int(inches_total % 12)}in  ({user.height_cm:.0f}cm)"
+            h_ft = f"{int(inches_total // 12)}'{int(inches_total % 12)}\"  ({user.height_cm:.0f}cm)"
 
         lines = [
             f"<b>{user.name or 'Your'} profile</b>",
             "",
-            f"Age        {_v(user.age)}",
-            f"Sex        {_v(user.sex)}",
-            f"Height     {h_ft or 'not set'}",
-            f"Weight     {w_lbs}",
-            f"Goal       {g_lbs}  ({_v(user.primary_goal)})",
-            f"Experience {_v(user.training_experience)}",
-            f"Diet       {user.dietary_preferences or 'none'}",
-            f"Injuries   {user.injuries or 'none'}",
-            f"Timezone   {_v(user.timezone)}",
+            f"Age          {_v(user.age)}",
+            f"Sex          {_v(user.sex)}",
+            f"Height       {h_ft or 'not set'}",
+            f"Weight       {w_lbs}",
+            f"Goal weight  {g_lbs}  ({_v(user.primary_goal)})",
+            f"Experience   {_v(user.training_experience)}",
+            f"Diet         {user.dietary_preferences or 'none'}",
+            f"Injuries     {user.injuries or 'none'}",
         ]
-        if user.preferences:
-            p = user.preferences
-            lines += [
-                "",
-                f"Coaching   {p.coaching_style or 'not set'}",
-                f"Accountability  {p.accountability_level or 'not set'}",
-            ]
-            if p.wake_time and p.sleep_time:
-                lines.append(f"Schedule   {p.wake_time} – {p.sleep_time}")
+
+        lines += ["", "<b>Targets</b>"]
+        if p and (p.calorie_target or p.protein_target):
+            if p.calorie_target:
+                lines.append(f"Calories   <b>{p.calorie_target} kcal/day</b>")
+            if p.protein_target:
+                lines.append(f"Protein    <b>{p.protein_target}g/day</b>")
+            if p.calorie_target and p.protein_target:
+                fat_g = round(p.calorie_target * 0.25 / 9)
+                carb_g = round((p.calorie_target - p.protein_target * 4 - fat_g * 9) / 4)
+                if carb_g > 0:
+                    lines.append(f"Carbs      ~{carb_g}g/day")
+                    lines.append(f"Fats       ~{fat_g}g/day")
+        else:
+            lines.append("No targets set — tell me your calorie and protein goals to set them.")
+
+        whoop = bool(user.whoop_access_token or user.whoop_refresh_token)
+        lines += ["", f"<b>Wearable</b>  {'Whoop ✅' if whoop else '⚠️ None connected — use /connect'}"]
 
         await update.message.reply_text("\n".join(lines), parse_mode="HTML")
+
+
+# Keep /profile and /targets as aliases for /me
+async def cmd_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    return await cmd_me(update, context)
+
+
+async def cmd_targets(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    return await cmd_me(update, context)
 
 
 async def cmd_history(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -924,17 +911,16 @@ async def cmd_remind(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "<b>Arnie commands</b>\n\n"
-        "/today    — calories, protein, water, workout\n"
-        "/targets  — your calorie &amp; macro targets\n"
-        "/profile  — age, weight, goal, experience\n"
-        "/history  — last 7 days recap\n"
-        "/memory   — what I know about your habits\n"
+        "/today    — calories, macros &amp; workout status\n"
+        "/week     — last 7 days recap &amp; trends\n"
+        "/me       — profile, targets &amp; settings\n"
         "/close    — close today's log\n"
-        "/reopen   — reopen a closed day to keep logging\n"
-        "/remind   — toggle proactive check-ins\n\n"
-        "<b>Just text naturally:</b>\n"
+        "/dash     — open your personal dashboard\n"
+        "/connect  — link Whoop or Apple Health\n"
+        "/reset    — clear today's log or full reset\n\n"
+        "<b>Just talk to me naturally:</b>\n"
         "<i>Had chicken and rice</i>\n"
-        "<i>Bench 225x5 for 3 sets</i>\n"
+        "<i>Bench 225×5 for 3 sets</i>\n"
         "<i>Weight 191.4 this morning</i>\n"
         "<i>30 min incline walk</i>\n\n"
         "Voice notes and food photos work too.",
@@ -951,20 +937,14 @@ async def _post_init(app: Application):
     # Register commands so Telegram shows the menu when user types "/"
     from telegram import BotCommand
     await app.bot.set_my_commands([
-        BotCommand("today",   "Today's calories, protein, water & workout"),
-        BotCommand("targets", "Your calorie & macro targets"),
-        BotCommand("profile", "Age, weight, goal & experience"),
-        BotCommand("history", "Last 7 days recap"),
-        BotCommand("memory",  "What I know about your habits"),
+        BotCommand("today",   "Today's calories, macros & workout"),
+        BotCommand("week",    "Last 7 days — history & trends"),
+        BotCommand("me",      "Profile, targets & settings"),
         BotCommand("close",   "Close today's log"),
-        BotCommand("remind",  "Toggle proactive check-ins on/off"),
-        BotCommand("reopen",  "Reopen a closed day to keep logging"),
-        BotCommand("reset",   "Clear today's log or full account reset"),
-        BotCommand("dash",    "Get your personal dashboard link"),
-        BotCommand("connect",  "Connect Whoop or other wearables"),
-        BotCommand("whoop",    "Whoop connection status & manual sync"),
-        BotCommand("feedback", "Report a bug or suggest a feature"),
-        BotCommand("help",     "How to use Arnie"),
+        BotCommand("dash",    "Open your personal dashboard"),
+        BotCommand("connect", "Link Whoop or Apple Health"),
+        BotCommand("reset",   "Clear today's log or full reset"),
+        BotCommand("help",    "How to use Arnie"),
     ])
     logger.info("Arnie is ready.")
 
@@ -991,18 +971,21 @@ def build_app() -> Application:
     app.add_handler(CommandHandler("start",   cmd_start))
     app.add_handler(CommandHandler("help",    cmd_help))
     app.add_handler(CommandHandler("today",   cmd_today))
+    app.add_handler(CommandHandler("me",      cmd_me))
+    app.add_handler(CommandHandler("week",    cmd_history))
+    app.add_handler(CommandHandler("close",   cmd_close))
+    app.add_handler(CommandHandler("reopen",  cmd_reopen))
+    app.add_handler(CommandHandler("dash",    cmd_dash))
+    app.add_handler(CommandHandler("connect", cmd_connect))
+    app.add_handler(CommandHandler("reset",   cmd_reset))
+    # Hidden but still functional
     app.add_handler(CommandHandler("targets", cmd_targets))
     app.add_handler(CommandHandler("profile", cmd_profile))
     app.add_handler(CommandHandler("history", cmd_history))
     app.add_handler(CommandHandler("memory",  cmd_memory))
-    app.add_handler(CommandHandler("close",   cmd_close))
-    app.add_handler(CommandHandler("reopen",  cmd_reopen))
     app.add_handler(CommandHandler("remind",  cmd_remind))
-    app.add_handler(CommandHandler("reset",   cmd_reset))
-    app.add_handler(CommandHandler("dash",    cmd_dash))
-    app.add_handler(CommandHandler("connect",  cmd_connect))
-    app.add_handler(CommandHandler("whoop",    cmd_whoop))
-    app.add_handler(CommandHandler("feedback", cmd_feedback))
+    app.add_handler(CommandHandler("whoop",   cmd_whoop))
+    app.add_handler(CommandHandler("feedback",cmd_feedback))
     # Aliases
     app.add_handler(CommandHandler("log",      cmd_today))
     app.add_handler(CommandHandler("summary",  cmd_today))

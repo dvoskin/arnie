@@ -56,6 +56,19 @@ async def get_today_log(db: AsyncSession, user_id: int,
     return result.scalar_one_or_none()
 
 
+async def get_log_by_date(db: AsyncSession, user_id: int, target_date: date) -> Optional[DailyLog]:
+    """Fetch a specific day's log with food/exercise entries eagerly loaded."""
+    result = await db.execute(
+        select(DailyLog)
+        .where(and_(DailyLog.user_id == user_id, DailyLog.date == target_date))
+        .options(
+            selectinload(DailyLog.food_entries),
+            selectinload(DailyLog.exercise_entries),
+        )
+    )
+    return result.scalar_one_or_none()
+
+
 async def get_or_create_today_log(db: AsyncSession, user_id: int,
                                   user_timezone: str = "UTC") -> DailyLog:
     log = await get_today_log(db, user_id, user_timezone)
