@@ -699,12 +699,15 @@ async def cmd_history(update: Update, context: ContextTypes.DEFAULT_TYPE):
         prefs = user.preferences
 
         closed = [l for l in logs if l.status == "closed"]
-        if not closed and not logs:
-            await update.message.reply_text("No history yet — keep logging and it'll show up here.")
+        if len(closed) < 3:
+            await update.message.reply_text(
+                "Not enough history yet — /week needs at least 3 logged days to show useful trends. "
+                "Keep logging and check back."
+            )
             return
 
         lines = ["<b>Last 7 days</b>", ""]
-        for log in sorted((closed or logs), key=lambda l: l.date, reverse=True)[:7]:
+        for log in sorted(closed, key=lambda l: l.date, reverse=True)[:7]:
             wo = "💪" if log.workout_completed else "  "
             cal_str = f"{log.total_calories:.0f}"
             if prefs and prefs.calorie_target:
@@ -714,10 +717,16 @@ async def cmd_history(update: Update, context: ContextTypes.DEFAULT_TYPE):
             lines.append(f"{wo} <b>{log.date}</b>   {cal_str} kcal  {pro_str} protein")
 
         if weights:
-            lines += ["", "<b>Weight</b>"]
-            for w in sorted(weights, key=lambda w: w.timestamp, reverse=True)[:5]:
-                lbs = w.weight_kg * 2.20462
-                lines.append(f"  {w.timestamp.strftime('%b %d')}   {lbs:.1f} lbs  ({w.weight_kg:.1f}kg)")
+            # Deduplicate: keep only the latest entry per calendar date
+            seen_dates = {}
+            for w in sorted(weights, key=lambda w: w.timestamp):
+                seen_dates[w.timestamp.date()] = w
+            unique_weights = sorted(seen_dates.values(), key=lambda w: w.timestamp, reverse=True)[:5]
+            if unique_weights:
+                lines += ["", "<b>Weight</b>"]
+                for w in unique_weights:
+                    lbs = w.weight_kg * 2.20462
+                    lines.append(f"  {w.timestamp.strftime('%b %d')}   {lbs:.1f} lbs  ({w.weight_kg:.1f}kg)")
 
         await update.message.reply_text("\n".join(lines), parse_mode="HTML")
 
