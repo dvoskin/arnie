@@ -292,14 +292,16 @@ async def chat(
     system: str,
     tools: bool = True,
     max_tokens: int = 1024,
+    model: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Single-turn chat. Returns:
         {text, tool_calls, raw_content}
     raw_content is the list of Anthropic content blocks (needed for multi-turn).
+    Pass model= to override the default (e.g. use Haiku for cheap low-latency calls).
     """
     if LLM_PROVIDER() == "anthropic" or not OPENAI_API_KEY():
-        return await _anthropic_chat(messages, system, tools, max_tokens)
+        return await _anthropic_chat(messages, system, tools, max_tokens, model=model)
     return await _openai_chat(messages, system, tools, max_tokens)
 
 
@@ -385,10 +387,10 @@ async def analyze_image(image_data: bytes, prompt: str,
 
 # ── Anthropic internals ───────────────────────────────────────────────────────
 
-async def _anthropic_chat(messages, system, use_tools, max_tokens):
+async def _anthropic_chat(messages, system, use_tools, max_tokens, model=None):
     client = _get_anthropic()
     kwargs: Dict[str, Any] = dict(
-        model=DEFAULT_MODEL(),
+        model=model or DEFAULT_MODEL(),
         max_tokens=max_tokens,
         system=system,
         messages=messages,

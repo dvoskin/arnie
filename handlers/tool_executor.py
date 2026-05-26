@@ -231,6 +231,8 @@ async def _dispatch(name, inp, user, today_log, db, source_type):  # noqa: C901
                 p.wake_time = "07:00"
             if not p.sleep_time:
                 p.sleep_time = "23:00"
+            if p.proactive_messaging_enabled is None:
+                p.proactive_messaging_enabled = True
             await db.commit()
             user = await reload_user(db, user.id)
             # init_memory is idempotent — safe to call on every update
