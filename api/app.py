@@ -1154,7 +1154,7 @@ main{{max-width:520px;margin:0 auto;padding:12px 12px 80px;position:relative;z-i
   background:var(--sf);border:1px solid var(--bd);border-radius:14px;padding:14px 16px;
   backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);box-shadow:var(--sh);
 }}
-.macro-ring-canvas{{width:84px;height:84px;flex-shrink:0}}
+.macro-ring-canvas{{width:80px;height:80px;flex-shrink:0}}
 .macro-legend{{flex:1;display:flex;flex-direction:column;gap:7px}}
 .mleg{{display:flex;align-items:center;gap:8px;font-size:12px}}
 .mleg-dot{{width:8px;height:8px;border-radius:50%;flex-shrink:0}}
@@ -1165,10 +1165,10 @@ main{{max-width:520px;margin:0 auto;padding:12px 12px 80px;position:relative;z-i
 
 /* ── CONSISTENCY HEATMAP ─────────────────────────────────── */
 .heat-wrap{{background:var(--sf);border:1px solid var(--bd);border-radius:14px;padding:14px 16px;backdrop-filter:blur(16px);box-shadow:var(--sh)}}
-.heat-dow{{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-bottom:4px}}
+.heat-dow{{display:grid;grid-template-columns:repeat(7,1fr);gap:3px;margin-bottom:3px}}
 .heat-dow span{{font-size:9px;color:var(--di);text-align:center;font-weight:600;text-transform:uppercase;letter-spacing:.4px}}
-.heat-grid{{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}}
-.hcell{{aspect-ratio:1;border-radius:5px;background:var(--sf2);position:relative;transition:transform .15s;cursor:default}}
+.heat-grid{{display:grid;grid-template-columns:repeat(7,1fr);gap:3px}}
+.hcell{{height:20px;border-radius:4px;background:var(--sf2);position:relative;transition:transform .15s;cursor:default}}
 .hcell:hover{{transform:scale(1.2);z-index:2}}
 .hcell.h-on{{background:#22c55e}}
 .hcell.h-off{{background:#f59e0b}}
@@ -1437,7 +1437,7 @@ footer{{text-align:center;padding:16px 12px;color:var(--di);font-size:10px;posit
 
     <div class="stitle">Energy breakdown</div>
     <div class="macro-ring-wrap">
-      <canvas class="macro-ring-canvas" id="macroRing"></canvas>
+      <canvas class="macro-ring-canvas" id="macroRing" width="80" height="80"></canvas>
       <div class="macro-legend" id="macro-legend"></div>
     </div>
 
@@ -1716,6 +1716,7 @@ function renderMacroRing(day){{
       borderWidth:0,borderRadius:empty?0:4,
     }}]}},
     options:{{
+      responsive:false,
       cutout:'70%',
       plugins:{{legend:{{display:false}},tooltip:{{enabled:false}}}},
       animation:{{duration:empty?0:600,easing:'easeInOutQuart'}},
