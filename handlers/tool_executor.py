@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from db.models import User, DailyLog, MemoryUpdate
 from db.queries import (
     add_food_entry, add_exercise_entry, add_body_metric,
-    close_daily_log, reload_user,
+    close_daily_log, reopen_daily_log, reload_user,
     update_food_entry as q_update_food_entry,
     delete_food_entry as q_delete_food_entry,
 )
@@ -142,6 +142,13 @@ async def _dispatch(name, inp, user, today_log, db, source_type):  # noqa: C901
     elif name == "close_day":
         await close_daily_log(db, today_log.id)
         return "Day closed"
+
+    elif name == "reopen_day":
+        if not getattr(today_log, "id", None):
+            return "Skipped — no log to reopen"
+        await reopen_daily_log(db, today_log.id)
+        today_log.status = "open"
+        return "Day reopened"
 
     elif name == "generate_image":
         from core.llm import generate_image

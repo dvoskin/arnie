@@ -16,9 +16,9 @@ from telegram.ext import (
 from db.database import AsyncSessionLocal, init_db
 from db.queries import (
     get_or_create_user, get_or_create_today_log, get_today_log,
-    get_recent_conversations, log_conversation, close_daily_log, reload_user,
-    reset_today_log, reset_all_user_data, get_or_create_webhook_token,
-    add_feedback,
+    get_recent_conversations, log_conversation, close_daily_log, reopen_daily_log,
+    reload_user, reset_today_log, reset_all_user_data, get_or_create_webhook_token,
+    add_feedback, clear_today_conversations,
 )
 from core.llm import chat, chat_follow_up
 from core.context_builder import build_context, fmt_log
@@ -78,11 +78,14 @@ TOOL RULES (no exceptions):
 - User states body weight → log_body_weight() — body weight only, never food weight
 - User drinks water → log_water()
 - "close the day" → close_day()
+- Day is CLOSED and user wants to log food/exercise/water → call reopen_day() FIRST, then immediately call the logging tool. Never refuse to log because the day is closed — just reopen it.
 - User explicitly asks to change a setting or target → update_profile()
 - User explicitly asks for a visual / image / diagram / infographic → generate_image()
 - DO NOT re-log anything already in today's log
 - DO NOT generate images unless the user clearly asked for one
 - ALWAYS write a text response with every tool call
+
+CONTEXT IS GROUND TRUTH: The [TODAY] section below reflects the actual database state right now. If it shows 0 food entries, nothing is logged — ignore any prior conversation that says otherwise (the user may have reset their log). Always trust the context, not the chat history, for what's currently logged.
 
 Each food entry in the context has a [#N] tag — that's its ID for updates/deletes.
 Examples of corrections:
@@ -598,6 +601,21 @@ async def cmd_close(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(**_fmt(summary))
 
 
+async def cmd_reopen(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Reopen a closed day's log."""
+    async with AsyncSessionLocal() as db:
+        user = await get_or_create_user(db, str(update.effective_user.id))
+        log = await get_today_log(db, user.id, user.timezone or "UTC")
+        if not log:
+            await update.message.reply_text("No log for today — start by telling me what you ate.")
+            return
+        if log.status == "open":
+            await update.message.reply_text("Today's log is already open — keep logging.")
+            return
+        await reopen_daily_log(db, log.id)
+        await update.message.reply_text("Day reopened. Keep logging — what's next?")
+
+
 async def cmd_reset(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Reset today's log or wipe the full account."""
     args = context.args
@@ -617,6 +635,7 @@ async def cmd_reset(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if args[0].lower() == "today":
             cleared = await reset_today_log(db, user.id, user.timezone or "UTC")
+            await clear_today_conversations(db, user.id)
             if cleared:
                 await update.message.reply_text(
                     "Today's log cleared — food, exercise, and totals all wiped.\n"
@@ -911,6 +930,7 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/history  — last 7 days recap\n"
         "/memory   — what I know about your habits\n"
         "/close    — close today's log\n"
+        "/reopen   — reopen a closed day to keep logging\n"
         "/remind   — toggle proactive check-ins\n\n"
         "<b>Just text naturally:</b>\n"
         "<i>Had chicken and rice</i>\n"
@@ -938,6 +958,7 @@ async def _post_init(app: Application):
         BotCommand("memory",  "What I know about your habits"),
         BotCommand("close",   "Close today's log"),
         BotCommand("remind",  "Toggle proactive check-ins on/off"),
+        BotCommand("reopen",  "Reopen a closed day to keep logging"),
         BotCommand("reset",   "Clear today's log or full account reset"),
         BotCommand("dash",    "Get your personal dashboard link"),
         BotCommand("connect",  "Connect Whoop or other wearables"),
@@ -975,6 +996,7 @@ def build_app() -> Application:
     app.add_handler(CommandHandler("history", cmd_history))
     app.add_handler(CommandHandler("memory",  cmd_memory))
     app.add_handler(CommandHandler("close",   cmd_close))
+    app.add_handler(CommandHandler("reopen",  cmd_reopen))
     app.add_handler(CommandHandler("remind",  cmd_remind))
     app.add_handler(CommandHandler("reset",   cmd_reset))
     app.add_handler(CommandHandler("dash",    cmd_dash))

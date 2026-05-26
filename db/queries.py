@@ -174,6 +174,20 @@ async def close_daily_log(db: AsyncSession, log_id: int) -> DailyLog:
     return log
 
 
+async def reopen_daily_log(db: AsyncSession, log_id: int) -> DailyLog:
+    result = await db.execute(select(DailyLog).where(DailyLog.id == log_id))
+    log = result.scalar_one()
+    log.status = "open"
+    await db.commit()
+    return log
+
+
+async def clear_today_conversations(db: AsyncSession, user_id: int) -> None:
+    """Delete all conversation history for a user — called after /reset today."""
+    await db.execute(delete(ConversationLog).where(ConversationLog.user_id == user_id))
+    await db.commit()
+
+
 async def reload_user(db: AsyncSession, user_id: int) -> User:
     """Re-query a user with all relationships eagerly loaded."""
     result = await db.execute(

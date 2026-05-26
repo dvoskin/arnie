@@ -142,6 +142,16 @@ ARNIE_TOOLS = [
         "input_schema": {"type": "object", "properties": {}},
     },
     {
+        "name": "reopen_day",
+        "description": (
+            "Reopen a closed day's log so the user can continue logging. "
+            "Call this automatically when the day status is CLOSED and the user wants to log "
+            "food, exercise, or water — then immediately proceed with the logging tool. "
+            "Also call when the user says 'reopen', 'open the day back up', etc."
+        ),
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
         "name": "update_memory",
         "description": (
             "Persist an important behavioral pattern, preference, or coaching note "
