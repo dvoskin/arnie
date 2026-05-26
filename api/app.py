@@ -1071,8 +1071,18 @@ header{{
 }}
 .tab-btn.active{{color:var(--tx)}}
 
+/* ── APP WRAP ────────────────────────────────────────────── */
+.app-wrap{{
+  max-width:520px;margin:0 auto;position:relative;min-height:100vh;
+}}
+@media(min-width:560px){{
+  .app-wrap{{
+    border-left:1px solid var(--bd);border-right:1px solid var(--bd);
+  }}
+}}
+
 /* ── MAIN ────────────────────────────────────────────────── */
-main{{max-width:520px;margin:0 auto;padding:12px 12px 80px;position:relative;z-index:1}}
+main{{padding:12px 12px 80px;position:relative;z-index:1}}
 #app-load{{text-align:center;padding:80px 20px;color:var(--mu);font-size:14px}}
 .tab-panel{{display:none;animation:fadeUp .28s ease}}
 .tab-panel.active{{display:block}}
@@ -1368,6 +1378,7 @@ footer{{text-align:center;padding:16px 12px;color:var(--di);font-size:10px;posit
 </style>
 </head>
 <body>
+<div class="app-wrap">
 
 <header>
   <div class="logo">&#9889; Arnie</div>
@@ -1514,6 +1525,7 @@ footer{{text-align:center;padding:16px 12px;color:var(--di);font-size:10px;posit
 
 </main>
 <footer>Arnie &middot; auto-refresh 5 min</footer>
+</div>
 
 <script>
 // ── Constants ─────────────────────────────────────────────────────────────
