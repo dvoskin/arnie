@@ -1073,11 +1073,19 @@ header{{
 
 /* ── APP WRAP ────────────────────────────────────────────── */
 .app-wrap{{
-  max-width:600px;margin:0 auto;position:relative;min-height:100vh;
+  max-width:960px;margin:0 auto;position:relative;min-height:100vh;
 }}
 
 /* ── MAIN ────────────────────────────────────────────────── */
-main{{padding:12px 12px 80px;position:relative;z-index:1}}
+main{{padding:12px 16px 80px;position:relative;z-index:1}}
+
+/* Desktop 2-col day layout */
+@media(min-width:700px){{
+  #panel-day{{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start}}
+  .day-col-left{{min-width:0}}
+  .day-col-right{{min-width:0}}
+  #panel-day .dnav{{grid-column:1/-1}}
+}}
 #app-load{{text-align:center;padding:80px 20px;color:var(--mu);font-size:14px}}
 .tab-panel{{display:none;animation:fadeUp .28s ease}}
 .tab-panel.active{{display:block}}
@@ -1122,7 +1130,8 @@ main{{padding:12px 12px 80px;position:relative;z-index:1}}
 [data-theme="dark"] .today-tag{{color:#000}}
 
 /* ── MACRO CARDS ─────────────────────────────────────────── */
-.cards{{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}}
+.cards{{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}}
+@media(min-width:440px){{.cards{{grid-template-columns:repeat(4,1fr)}}}}
 .card{{
   background:var(--sf);border:1px solid var(--bd);border-radius:14px;padding:12px;
   backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);
@@ -1296,6 +1305,7 @@ main{{padding:12px 12px 80px;position:relative;z-index:1}}
 .ctitle{{font-size:10px;font-weight:700;margin-bottom:12px;color:var(--mu);text-transform:uppercase;letter-spacing:.8px}}
 .cwrap{{position:relative;height:150px}}
 .c2col{{display:grid;grid-template-columns:1fr;gap:8px}}
+@media(min-width:700px){{.c2col{{grid-template-columns:1fr 1fr}}}}
 
 /* ── HISTORY TABLE ───────────────────────────────────────── */
 .htbl{{width:100%;border-collapse:collapse;font-size:11px}}
@@ -1402,73 +1412,79 @@ footer{{text-align:center;padding:16px 12px;color:var(--di);font-size:10px;posit
       <button class="darr" id="date-next" onclick="navDate(1)"  aria-label="Next day">&#8250;</button>
     </div>
 
-    <div class="stitle">&#10024; Coach insights <span class="ai-pill">AI</span></div>
-    <div class="icrd fade-in" id="insights-card">
-      <div class="iload"><span class="spin">&#9675;</span> Analyzing&hellip;</div>
+    <!-- LEFT COLUMN: insights + macros + visuals -->
+    <div class="day-col-left">
+      <div class="stitle">&#10024; Coach insights <span class="ai-pill">AI</span></div>
+      <div class="icrd fade-in" id="insights-card">
+        <div class="iload"><span class="spin">&#9675;</span> Analyzing&hellip;</div>
+      </div>
+
+      <div class="stitle" id="day-label">Today</div>
+      <div class="cards">
+        <div class="card">
+          <div class="clbl">Calories</div>
+          <div class="cval" id="cal-val">&mdash;</div>
+          <div class="csub" id="cal-sub"></div>
+          <div class="ptrack"><div class="pfill" id="cal-bar" style="background:var(--ac);width:0%"></div></div>
+        </div>
+        <div class="card">
+          <div class="clbl">Protein</div>
+          <div class="cval" id="pro-val">&mdash;</div>
+          <div class="csub" id="pro-sub"></div>
+          <div class="ptrack"><div class="pfill" id="pro-bar" style="background:var(--bl);width:0%"></div></div>
+        </div>
+        <div class="card">
+          <div class="clbl">Carbs</div>
+          <div class="cval" id="carb-val">&mdash;</div>
+          <div class="csub" style="color:var(--or)">grams</div>
+        </div>
+        <div class="card">
+          <div class="clbl">Fats</div>
+          <div class="cval" id="fat-val">&mdash;</div>
+          <div class="csub" style="color:var(--pu)">grams</div>
+        </div>
+      </div>
+
+      <div class="sbrow">
+        <span id="wo-badge" class="badge bg-n"></span>
+        <span id="ca-badge" class="badge bg-n"></span>
+        <span id="wt-badge" class="badge bg-b" style="display:none"></span>
+        <button class="share-btn" onclick="shareDay()" title="Share today&apos;s summary">&#128228; Share day</button>
+      </div>
+
+      <div class="stitle">Energy breakdown</div>
+      <div class="macro-ring-wrap">
+        <canvas class="macro-ring-canvas" id="macroRing" width="80" height="80"></canvas>
+        <div class="macro-legend" id="macro-legend"></div>
+      </div>
+
+      <div class="stitle">28-day consistency</div>
+      <div class="heat-wrap">
+        <div class="heat-dow">
+          <span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span><span>S</span>
+        </div>
+        <div class="heat-grid" id="heat-grid"></div>
+        <div class="heat-legend">
+          <span class="hleg-dot" style="background:#22c55e"></span>On target &nbsp;
+          <span class="hleg-dot" style="background:#f59e0b"></span>Logged &nbsp;
+          <span class="hleg-dot" style="background:var(--sf2)"></span>Missed &nbsp;
+          <span class="hleg-dot" style="background:rgba(255,255,255,.15)"></span><span style="color:var(--di)">● workout</span>
+        </div>
+      </div>
+
+      <div id="health-section" style="display:none">
+        <div class="stitle">Wearable</div>
+        <div class="hgrid" id="health-grid"></div>
+      </div>
     </div>
 
-    <div class="stitle" id="day-label">Today</div>
-    <div class="cards">
-      <div class="card">
-        <div class="clbl">Calories</div>
-        <div class="cval" id="cal-val">&mdash;</div>
-        <div class="csub" id="cal-sub"></div>
-        <div class="ptrack"><div class="pfill" id="cal-bar" style="background:var(--ac);width:0%"></div></div>
-      </div>
-      <div class="card">
-        <div class="clbl">Protein</div>
-        <div class="cval" id="pro-val">&mdash;</div>
-        <div class="csub" id="pro-sub"></div>
-        <div class="ptrack"><div class="pfill" id="pro-bar" style="background:var(--bl);width:0%"></div></div>
-      </div>
-      <div class="card">
-        <div class="clbl">Carbs</div>
-        <div class="cval" id="carb-val">&mdash;</div>
-        <div class="csub" style="color:var(--or)">grams</div>
-      </div>
-      <div class="card">
-        <div class="clbl">Fats</div>
-        <div class="cval" id="fat-val">&mdash;</div>
-        <div class="csub" style="color:var(--pu)">grams</div>
-      </div>
-    </div>
+    <!-- RIGHT COLUMN: food + workout logs -->
+    <div class="day-col-right">
+      <div class="stitle">Food log</div>
+      <div class="lcrd" id="food-log"><div class="lempty">Loading&hellip;</div></div>
 
-    <div class="sbrow">
-      <span id="wo-badge" class="badge bg-n"></span>
-      <span id="ca-badge" class="badge bg-n"></span>
-      <span id="wt-badge" class="badge bg-b" style="display:none"></span>
-      <button class="share-btn" onclick="shareDay()" title="Share today&apos;s summary">&#128228; Share day</button>
-    </div>
-
-    <div class="stitle">Energy breakdown</div>
-    <div class="macro-ring-wrap">
-      <canvas class="macro-ring-canvas" id="macroRing" width="80" height="80"></canvas>
-      <div class="macro-legend" id="macro-legend"></div>
-    </div>
-
-    <div class="stitle">28-day consistency</div>
-    <div class="heat-wrap">
-      <div class="heat-dow">
-        <span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span><span>S</span>
-      </div>
-      <div class="heat-grid" id="heat-grid"></div>
-      <div class="heat-legend">
-        <span class="hleg-dot" style="background:#22c55e"></span>On target &nbsp;
-        <span class="hleg-dot" style="background:#f59e0b"></span>Logged &nbsp;
-        <span class="hleg-dot" style="background:var(--sf2)"></span>Missed &nbsp;
-        <span class="hleg-dot" style="background:rgba(255,255,255,.15)"></span><span style="color:var(--di)">● workout</span>
-      </div>
-    </div>
-
-    <div class="stitle">Food log</div>
-    <div class="lcrd" id="food-log"><div class="lempty">Loading&hellip;</div></div>
-
-    <div class="stitle">Workouts</div>
-    <div class="lcrd" id="ex-log"><div class="lempty">Loading&hellip;</div></div>
-
-    <div id="health-section" style="display:none">
-      <div class="stitle">Wearable</div>
-      <div class="hgrid" id="health-grid"></div>
+      <div class="stitle">Workouts</div>
+      <div class="lcrd" id="ex-log"><div class="lempty">Loading&hellip;</div></div>
     </div>
   </div>
 
