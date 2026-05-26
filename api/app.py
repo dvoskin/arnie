@@ -604,7 +604,7 @@ async def admin_dashboard(token: str = Query(...)):
 
     from sqlalchemy import select, func as sqlfunc
     from sqlalchemy.orm import selectinload
-    from db.models import User, DailyLog, ConversationLog
+    from db.models import User, DailyLog, ConversationLog, Feedback
 
     base_url = os.getenv("RENDER_EXTERNAL_URL", "http://localhost:10000").rstrip("/")
     today = date.today()
@@ -616,6 +616,14 @@ async def admin_dashboard(token: str = Query(...)):
             .order_by(User.created_at.desc())
         )
         users = users_result.scalars().all()
+
+        # Feedback — all entries newest first
+        fb_result = await db.execute(
+            select(Feedback, User.name)
+            .join(User, Feedback.user_id == User.id)
+            .order_by(Feedback.created_at.desc())
+        )
+        feedbacks = fb_result.all()
 
         rows = []
         for u in users:
@@ -695,6 +703,7 @@ async def admin_dashboard(token: str = Query(...)):
         whoop = '<span style="color:#2ecc71">●</span>' if (u.whoop_access_token or u.whoop_refresh_token) else '<span style="color:#555">○</span>'
         created = u.created_at.strftime("%b %d") if u.created_at else "—"
 
+        convo_link = f'<a href="/admin/user/{u.id}?token={token}" style="color:#f39c12">💬 convo</a>'
         tbody += f"""<tr>
           <td><b>{_esc(u.name or "?")}</b><br><span style="color:#888;font-size:10px">{_esc(u.telegram_id)}</span></td>
           <td>{onboard}</td>
@@ -704,8 +713,47 @@ async def admin_dashboard(token: str = Query(...)):
           <td style="color:#aaa;font-size:11px">{r['msg_count']}</td>
           <td style="font-size:11px">{whoop}<br><span style="color:#555">whoop</span></td>
           <td style="font-size:11px">{created}</td>
-          <td>{dash_link}</td>
+          <td style="white-space:nowrap">{dash_link}<br>{convo_link}</td>
         </tr>"""
+
+    # ── Feedback panel HTML ──────────────────────────────────────────────────
+    open_fb = [f for f, _ in feedbacks if not f.resolved]
+    done_fb = [f for f, _ in feedbacks if f.resolved]
+    user_name_map = {f.id: name for f, name in feedbacks}
+
+    def _fb_badge(kind):
+        return f'<span class="badge-{kind}">{kind}</span>'
+
+    def _fb_rows(items):
+        if not items:
+            return '<tr><td colspan="5" style="color:#555;padding:16px">None</td></tr>'
+        out = ""
+        for f in items:
+            uname = _esc(user_name_map.get(f.id, "?"))
+            ts = f.created_at.strftime("%b %d %H:%M") if f.created_at else "—"
+            resolve_ctrl = (
+                f'<form method="post" action="/admin/feedback/{f.id}/resolve?token={token}" style="display:inline">'
+                f'<button class="resolve-btn" type="submit">✓ resolve</button></form>'
+                if not f.resolved else '<span class="resolved-label">✓ resolved</span>'
+            )
+            out += (f'<tr><td>{_fb_badge(f.kind or "other")}</td>'
+                    f'<td style="font-size:12px;color:#aaa">{uname}</td>'
+                    f'<td style="max-width:600px;font-size:13px">{_esc(f.text)}</td>'
+                    f'<td style="font-size:11px;color:#666;white-space:nowrap">{ts}</td>'
+                    f'<td>{resolve_ctrl}</td></tr>')
+        return out
+
+    feedback_html = f"""
+<h2 style="margin-top:0">Open ({len(open_fb)})</h2>
+<table>
+<thead><tr><th>Type</th><th>User</th><th>Feedback</th><th>Date</th><th></th></tr></thead>
+<tbody>{_fb_rows(open_fb)}</tbody>
+</table>
+<h2>Resolved ({len(done_fb)})</h2>
+<table>
+<thead><tr><th>Type</th><th>User</th><th>Feedback</th><th>Date</th><th></th></tr></thead>
+<tbody>{_fb_rows(done_fb)}</tbody>
+</table>"""
 
     html = f"""<!DOCTYPE html>
 <html lang="en">
@@ -715,28 +763,185 @@ async def admin_dashboard(token: str = Query(...)):
 <title>Arnie Admin</title>
 <style>
   *{{box-sizing:border-box;margin:0;padding:0}}
-  body{{background:#111;color:#e0e0e0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;padding:24px}}
+  body{{background:#111;color:#e0e0e0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;padding:24px;max-width:1400px;margin:0 auto}}
   h1{{font-size:20px;font-weight:700;margin-bottom:4px}}
+  h2{{font-size:15px;font-weight:600;margin:32px 0 12px}}
   .sub{{color:#888;font-size:13px;margin-bottom:24px}}
+  .tabs{{display:flex;gap:4px;margin-bottom:20px;border-bottom:1px solid #222;padding-bottom:0}}
+  .tab{{padding:8px 16px;cursor:pointer;font-size:13px;color:#888;border-bottom:2px solid transparent;margin-bottom:-1px}}
+  .tab.active{{color:#fff;border-bottom-color:#3498db}}
+  .panel{{display:none}}.panel.active{{display:block}}
   table{{width:100%;border-collapse:collapse;font-size:13px}}
   th{{text-align:left;padding:8px 12px;border-bottom:1px solid #2a2a2a;color:#888;font-weight:500;font-size:11px;text-transform:uppercase;letter-spacing:.05em}}
   td{{padding:10px 12px;border-bottom:1px solid #1e1e1e;vertical-align:middle}}
   tr:hover td{{background:#1a1a1a}}
-  .stat{{color:#aaa;font-size:11px;margin-top:6px}}
+  .stat{{color:#aaa;font-size:11px;margin-top:16px}}
+  .badge-bug{{background:#e74c3c;color:#fff;padding:2px 7px;border-radius:10px;font-size:10px;font-weight:600}}
+  .badge-feature{{background:#9b59b6;color:#fff;padding:2px 7px;border-radius:10px;font-size:10px;font-weight:600}}
+  .badge-other{{background:#555;color:#fff;padding:2px 7px;border-radius:10px;font-size:10px;font-weight:600}}
+  .resolve-btn{{background:#1e3a1e;color:#2ecc71;border:1px solid #2ecc71;padding:3px 10px;border-radius:6px;font-size:11px;cursor:pointer}}
+  .resolved-label{{color:#555;font-size:11px}}
+  a{{color:#3498db;text-decoration:none}}a:hover{{text-decoration:underline}}
 </style>
 </head>
 <body>
 <h1>⚡ Arnie Admin</h1>
-<p class="sub">{len(rows)} users &nbsp;·&nbsp; {today}</p>
+<p class="sub">{len(rows)} users &nbsp;·&nbsp; {today} &nbsp;·&nbsp; <a href="/admin?token={token}">↻ refresh</a></p>
+
+<div class="tabs">
+  <div class="tab active" onclick="switchTab('users',this)">Users</div>
+  <div class="tab" onclick="switchTab('feedback',this)">Feedback</div>
+</div>
+
+<div id="panel-users" class="panel active">
 <table>
 <thead><tr>
   <th>User</th><th>Onboard</th><th>Goal</th>
   <th>Today</th><th>Last message</th><th>Msgs</th>
-  <th>Devices</th><th>Joined</th><th>Dashboard</th>
+  <th>Devices</th><th>Joined</th><th>Links</th>
 </tr></thead>
 <tbody>{tbody}</tbody>
 </table>
-<p class="stat">Auto-refresh: <a href="?" onclick="location.search='?token={token}'" style="color:#3498db">↻ reload</a></p>
+</div>
+
+<div id="panel-feedback" class="panel">
+{feedback_html}
+</div>
+
+<p class="stat">Arnie Admin &nbsp;·&nbsp; {today}</p>
+<script>
+function switchTab(name,el){{
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById('panel-'+name).classList.add('active');
+}}
+</script>
+</body>
+</html>"""
+    return HTMLResponse(html)
+
+
+# ── Admin: resolve feedback ────────────────────────────────────────────────────
+
+@app.post("/admin/feedback/{feedback_id}/resolve", response_class=HTMLResponse)
+async def admin_resolve_feedback(feedback_id: int, token: str = Query(...)):
+    if token != os.getenv("ADMIN_TOKEN", ""):
+        return HTMLResponse("<h2>Unauthorized</h2>", status_code=401)
+    from sqlalchemy import select
+    from db.models import Feedback
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(select(Feedback).where(Feedback.id == feedback_id))
+        fb = result.scalar_one_or_none()
+        if fb:
+            fb.resolved = True
+            await db.commit()
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(f"/admin?token={token}#feedback", status_code=303)
+
+
+# ── Admin: user conversation history ──────────────────────────────────────────
+
+@app.get("/admin/user/{user_id}", response_class=HTMLResponse)
+async def admin_user_detail(user_id: int, token: str = Query(...)):
+    if token != os.getenv("ADMIN_TOKEN", ""):
+        return HTMLResponse("<h2>Unauthorized</h2>", status_code=401)
+
+    from sqlalchemy import select
+    from sqlalchemy.orm import selectinload
+    from db.models import User, ConversationLog
+
+    async with AsyncSessionLocal() as db:
+        user_result = await db.execute(
+            select(User).where(User.id == user_id)
+            .options(selectinload(User.preferences))
+        )
+        user = user_result.scalar_one_or_none()
+        if not user:
+            return HTMLResponse("<h2>User not found</h2>", status_code=404)
+
+        convos_result = await db.execute(
+            select(ConversationLog)
+            .where(ConversationLog.user_id == user_id)
+            .order_by(ConversationLog.timestamp.desc())
+            .limit(200)
+        )
+        convos = convos_result.scalars().all()
+
+    def _esc(s):
+        return str(s or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+    def _src_badge(src):
+        colors = {"text": "#3498db", "voice": "#e67e22", "image": "#9b59b6", "photo": "#9b59b6"}
+        c = colors.get(src or "text", "#555")
+        return f'<span style="background:{c};color:#fff;padding:1px 6px;border-radius:8px;font-size:10px">{src or "text"}</span>'
+
+    rows = ""
+    prev_date = None
+    for c in convos:
+        ts = c.timestamp
+        day = ts.strftime("%A, %B %d %Y") if ts else "?"
+        time_str = ts.strftime("%H:%M") if ts else "—"
+
+        if day != prev_date:
+            rows += f'<tr><td colspan="2" style="background:#1a1a1a;color:#666;font-size:11px;padding:8px 16px;letter-spacing:.05em">{day}</td></tr>'
+            prev_date = day
+
+        user_msg = _esc(c.raw_message or "")
+        arnie_msg = _esc(c.response or "")
+        rows += f"""<tr>
+          <td style="width:50%;padding:12px 16px;vertical-align:top;border-bottom:1px solid #1a1a1a">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+              <span style="font-size:11px;color:#888">{time_str}</span>
+              {_src_badge(c.source_type)}
+            </div>
+            <div style="background:#1e2a3a;border-radius:12px 12px 12px 2px;padding:10px 14px;font-size:13px;line-height:1.5;white-space:pre-wrap">{user_msg}</div>
+          </td>
+          <td style="width:50%;padding:12px 16px;vertical-align:top;border-bottom:1px solid #1a1a1a">
+            <div style="margin-bottom:6px"><span style="font-size:11px;color:#f39c12">⚡ Arnie</span></div>
+            <div style="background:#1a2a1a;border-radius:12px 12px 2px 12px;padding:10px 14px;font-size:13px;line-height:1.5;white-space:pre-wrap">{arnie_msg}</div>
+          </td>
+        </tr>"""
+
+    base_url = os.getenv("RENDER_EXTERNAL_URL", "http://localhost:10000").rstrip("/")
+    dash_link = f'<a href="{base_url}/dashboard/{user.webhook_token}" target="_blank">↗ Dashboard</a>' if user.webhook_token else ""
+    goal = user.primary_goal or "—"
+    exp = user.training_experience or "—"
+    joined = user.created_at.strftime("%b %d, %Y") if user.created_at else "—"
+
+    html = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{_esc(user.name or "User")} — Arnie Admin</title>
+<style>
+  *{{box-sizing:border-box;margin:0;padding:0}}
+  body{{background:#111;color:#e0e0e0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}}
+  .header{{padding:20px 24px;border-bottom:1px solid #222;display:flex;align-items:center;gap:16px}}
+  .back{{color:#888;font-size:13px;text-decoration:none}}
+  .back:hover{{color:#fff}}
+  .name{{font-size:18px;font-weight:700}}
+  .meta{{font-size:12px;color:#888;margin-top:2px}}
+  table{{width:100%;border-collapse:collapse}}
+  a{{color:#3498db;text-decoration:none}}
+</style>
+</head>
+<body>
+<div class="header">
+  <a class="back" href="/admin?token={token}">← Admin</a>
+  <div>
+    <div class="name">{_esc(user.name or "Unknown")}</div>
+    <div class="meta">{goal} · {exp} · {len(convos)} messages · joined {joined} &nbsp; {dash_link}</div>
+  </div>
+</div>
+<table>
+<thead><tr>
+  <th style="padding:8px 16px;border-bottom:1px solid #222;color:#888;font-size:11px;text-transform:uppercase">User</th>
+  <th style="padding:8px 16px;border-bottom:1px solid #222;color:#888;font-size:11px;text-transform:uppercase">Arnie</th>
+</tr></thead>
+<tbody>{rows}</tbody>
+</table>
 </body>
 </html>"""
     return HTMLResponse(html)
