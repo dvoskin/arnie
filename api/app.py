@@ -1450,7 +1450,7 @@ function _inrow(l,v,fldMap,color){{
   var rawVal=v!=null?String(v):'';
   var dispVal=color?'<span class="inval" style="color:'+color+'">'+esc(rawVal)+'</span>'
                    :'<span class="inval">'+esc(rawVal)+'</span>';
-  var editBtn=fld?'<button class="ibtn" style="flex-shrink:0;margin-left:4px" onclick="editProw(\'pr-'+_pslug(l)+'\',\''+escA(fld)+'\',\''+escA(rawVal)+'\')">&#9998;</button>':'';
+  var editBtn=fld?'<button class="ibtn" style="flex-shrink:0;margin-left:4px" onclick="editProw(\\'pr-'+_pslug(l)+'\\',\\''+escA(fld)+'\\',\\''+escA(rawVal)+'\\')">&#9998;</button>':'';
   return '<div class="inrow" id="pr-'+_pslug(l)+'"><span class="inlbl">'+esc(l)+'</span>'+
     '<div style="display:flex;align-items:center">'+dispVal+editBtn+'</div></div>';
 }}
@@ -1673,7 +1673,7 @@ function editProw(rowId,field,current){{
     'style="flex:1;max-width:160px;background:var(--inp);border:1px solid var(--ac);color:var(--tx);'+
     'padding:5px 8px;border-radius:8px;font-size:12px;font-family:inherit;outline:none">'+
     '<button class="sbtn" style="flex:none;padding:5px 12px;font-size:12px;min-height:0" '+
-    'onclick="saveProw(\''+rowId+'\',\''+escA(field)+'\')">✓</button>'+
+    'onclick="saveProw(\\''+rowId+'\\',\\''+escA(field)+'\\')">✓</button>'+
     '<button class="cbtn" style="flex:none;padding:5px 10px;font-size:12px;min-height:0" '+
     'onclick="cancelProw()">✗</button></div>';
   var inp=document.getElementById('pi-'+rowId);
