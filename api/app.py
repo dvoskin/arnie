@@ -595,6 +595,153 @@ async def api_edit_profile(token: str, patch: ProfilePatch):
     return {"status": "ok", "field": field}
 
 
+# ── Admin dashboard ───────────────────────────────────────────────────────────
+
+@app.get("/admin", response_class=HTMLResponse)
+async def admin_dashboard(token: str = Query(...)):
+    if token != os.getenv("ADMIN_TOKEN", ""):
+        return HTMLResponse("<h2>Unauthorized</h2>", status_code=401)
+
+    from sqlalchemy import select, func as sqlfunc
+    from sqlalchemy.orm import selectinload
+    from db.models import User, DailyLog, ConversationLog
+
+    base_url = os.getenv("RENDER_EXTERNAL_URL", "http://localhost:10000").rstrip("/")
+    today = date.today()
+
+    async with AsyncSessionLocal() as db:
+        users_result = await db.execute(
+            select(User)
+            .options(selectinload(User.preferences))
+            .order_by(User.created_at.desc())
+        )
+        users = users_result.scalars().all()
+
+        rows = []
+        for u in users:
+            # Today's log
+            log_result = await db.execute(
+                select(DailyLog).where(DailyLog.user_id == u.id, DailyLog.date == today)
+            )
+            today_log = log_result.scalar_one_or_none()
+
+            # Last message timestamp + snippet
+            conv_result = await db.execute(
+                select(ConversationLog)
+                .where(ConversationLog.user_id == u.id)
+                .order_by(ConversationLog.timestamp.desc())
+                .limit(1)
+            )
+            last_conv = conv_result.scalar_one_or_none()
+
+            # Total message count
+            count_result = await db.execute(
+                select(sqlfunc.count()).where(ConversationLog.user_id == u.id)
+            )
+            msg_count = count_result.scalar() or 0
+
+            rows.append({
+                "user": u,
+                "today_log": today_log,
+                "last_conv": last_conv,
+                "msg_count": msg_count,
+                "dash_url": f"{base_url}/dashboard/{u.webhook_token}" if u.webhook_token else None,
+            })
+
+    def _ago(ts):
+        if not ts:
+            return "—"
+        delta = date.today() - ts.date()
+        if delta.days == 0:
+            return "today"
+        if delta.days == 1:
+            return "yesterday"
+        return f"{delta.days}d ago"
+
+    def _goal_badge(goal):
+        colors = {"cut": "#e74c3c", "bulk": "#2ecc71", "maintain": "#3498db",
+                  "performance": "#9b59b6", "health": "#1abc9c"}
+        c = colors.get(goal or "", "#888")
+        return f'<span style="background:{c};color:#fff;padding:2px 8px;border-radius:10px;font-size:11px">{goal or "—"}</span>'
+
+    def _esc(s):
+        return str(s or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+    def _cal_bar(log, target):
+        if not log or not target:
+            return "—"
+        pct = min(100, int((log.total_calories or 0) / target * 100))
+        color = "#2ecc71" if 85 <= pct <= 110 else "#e74c3c" if pct > 115 else "#f39c12"
+        return (f'<div style="display:flex;align-items:center;gap:6px">'
+                f'<div style="width:60px;height:6px;background:#333;border-radius:3px">'
+                f'<div style="width:{pct}%;height:100%;background:{color};border-radius:3px"></div></div>'
+                f'<span style="font-size:11px">{int(log.total_calories or 0)}/{target}</span></div>')
+
+    tbody = ""
+    for r in rows:
+        u = r["user"]
+        p = u.preferences
+        log = r["today_log"]
+        last = r["last_conv"]
+        dash = r["dash_url"]
+
+        last_msg_time = _ago(last.timestamp) if last else "—"
+        last_msg_snippet = (_esc(last.raw_message or "")[:50] + "…") if last and last.raw_message and len(last.raw_message) > 50 else _esc(last.raw_message if last else "")
+        today_calories = _cal_bar(log, p.calorie_target if p else None)
+        today_protein = f'{int(log.total_protein or 0)}g / {p.protein_target or "?"}g' if log else "—"
+        workout_dot = '<span style="color:#2ecc71">✓</span>' if (log and log.workout_completed) else '<span style="color:#555">✗</span>'
+        onboard = '<span style="color:#2ecc71">✓</span>' if u.onboarding_completed else '<span style="color:#e74c3c">pending</span>'
+        dash_link = f'<a href="{dash}" target="_blank" style="color:#3498db;text-decoration:none">↗ dash</a>' if dash else "—"
+        whoop = '<span style="color:#2ecc71">●</span>' if (u.whoop_access_token or u.whoop_refresh_token) else '<span style="color:#555">○</span>'
+        created = u.created_at.strftime("%b %d") if u.created_at else "—"
+
+        tbody += f"""<tr>
+          <td><b>{_esc(u.name or "?")}</b><br><span style="color:#888;font-size:10px">{_esc(u.telegram_id)}</span></td>
+          <td>{onboard}</td>
+          <td>{_goal_badge(u.primary_goal)}<br><span style="color:#888;font-size:10px">{u.training_experience or "?"}</span></td>
+          <td style="font-size:11px">{today_calories}<br><span style="color:#aaa">{today_protein} P &nbsp;{workout_dot}</span></td>
+          <td style="font-size:11px;max-width:180px;overflow:hidden">{last_msg_snippet}<br><span style="color:#888">{last_msg_time}</span></td>
+          <td style="color:#aaa;font-size:11px">{r['msg_count']}</td>
+          <td style="font-size:11px">{whoop}<br><span style="color:#555">whoop</span></td>
+          <td style="font-size:11px">{created}</td>
+          <td>{dash_link}</td>
+        </tr>"""
+
+    html = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Arnie Admin</title>
+<style>
+  *{{box-sizing:border-box;margin:0;padding:0}}
+  body{{background:#111;color:#e0e0e0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;padding:24px}}
+  h1{{font-size:20px;font-weight:700;margin-bottom:4px}}
+  .sub{{color:#888;font-size:13px;margin-bottom:24px}}
+  table{{width:100%;border-collapse:collapse;font-size:13px}}
+  th{{text-align:left;padding:8px 12px;border-bottom:1px solid #2a2a2a;color:#888;font-weight:500;font-size:11px;text-transform:uppercase;letter-spacing:.05em}}
+  td{{padding:10px 12px;border-bottom:1px solid #1e1e1e;vertical-align:middle}}
+  tr:hover td{{background:#1a1a1a}}
+  .stat{{color:#aaa;font-size:11px;margin-top:6px}}
+</style>
+</head>
+<body>
+<h1>⚡ Arnie Admin</h1>
+<p class="sub">{len(rows)} users &nbsp;·&nbsp; {today}</p>
+<table>
+<thead><tr>
+  <th>User</th><th>Onboard</th><th>Goal</th>
+  <th>Today</th><th>Last message</th><th>Msgs</th>
+  <th>Devices</th><th>Joined</th><th>Dashboard</th>
+</tr></thead>
+<tbody>{tbody}</tbody>
+</table>
+<p class="stat">Auto-refresh: <a href="?" onclick="location.search='?token={token}'" style="color:#3498db">↻ reload</a></p>
+</body>
+</html>"""
+    return HTMLResponse(html)
+
+
 # ── Dashboard HTML ─────────────────────────────────────────────────────────────
 
 @app.get("/dashboard/{token}", response_class=HTMLResponse)
