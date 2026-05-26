@@ -4,6 +4,7 @@ from sqlalchemy.orm import selectinload
 from db.models import (
     User, UserPreferences, DailyLog, FoodEntry,
     ExerciseEntry, BodyMetric, ConversationLog, MemoryUpdate, HealthSnapshot,
+    Feedback,
 )
 from datetime import date, datetime, timedelta
 from typing import Optional, List
@@ -344,3 +345,123 @@ async def get_recent_health_snapshots(db: AsyncSession, user_id: int,
         .order_by(desc(HealthSnapshot.date))
     )
     return result.scalars().all()
+
+
+# ── Feedback ──────────────────────────────────────────────────────────────────
+
+async def add_feedback(db: AsyncSession, user_id: int, kind: str, text: str) -> Feedback:
+    entry = Feedback(user_id=user_id, kind=kind, text=text)
+    db.add(entry)
+    await db.commit()
+    await db.refresh(entry)
+    return entry
+
+
+# ── Food/Exercise edit + delete (with auto totals recalc) ─────────────────────
+
+async def update_food_entry(
+    db: AsyncSession, entry_id: int, user_id: int, **changes
+) -> Optional[FoodEntry]:
+    """
+    Update a food entry and adjust the daily log totals by the delta.
+    Returns None if entry doesn't exist or doesn't belong to user_id.
+    """
+    result = await db.execute(select(FoodEntry).where(FoodEntry.id == entry_id))
+    entry = result.scalar_one_or_none()
+    if not entry:
+        return None
+    # Ownership check via the daily log
+    log_result = await db.execute(select(DailyLog).where(DailyLog.id == entry.daily_log_id))
+    log = log_result.scalar_one()
+    if log.user_id != user_id:
+        return None
+
+    # Adjust totals for nutrition deltas
+    for field in ("calories", "protein", "carbs", "fats"):
+        if field in changes:
+            old_val = getattr(entry, field) or 0
+            new_val = float(changes[field] or 0)
+            diff = new_val - old_val
+            total_attr = f"total_{field}"
+            setattr(log, total_attr, max(0.0, (getattr(log, total_attr) or 0) + diff))
+            setattr(entry, field, new_val)
+
+    # Non-nutrition fields
+    for field in ("parsed_food_name", "quantity"):
+        if field in changes and changes[field] is not None:
+            setattr(entry, field, changes[field])
+
+    await db.commit()
+    await db.refresh(entry)
+    return entry
+
+
+async def delete_food_entry(db: AsyncSession, entry_id: int, user_id: int) -> bool:
+    result = await db.execute(select(FoodEntry).where(FoodEntry.id == entry_id))
+    entry = result.scalar_one_or_none()
+    if not entry:
+        return False
+    log_result = await db.execute(select(DailyLog).where(DailyLog.id == entry.daily_log_id))
+    log = log_result.scalar_one()
+    if log.user_id != user_id:
+        return False
+
+    log.total_calories = max(0.0, (log.total_calories or 0) - (entry.calories or 0))
+    log.total_protein = max(0.0, (log.total_protein or 0) - (entry.protein or 0))
+    log.total_carbs = max(0.0, (log.total_carbs or 0) - (entry.carbs or 0))
+    log.total_fats = max(0.0, (log.total_fats or 0) - (entry.fats or 0))
+
+    await db.delete(entry)
+    await db.commit()
+    return True
+
+
+async def update_exercise_entry(
+    db: AsyncSession, entry_id: int, user_id: int, **changes
+) -> Optional[ExerciseEntry]:
+    result = await db.execute(select(ExerciseEntry).where(ExerciseEntry.id == entry_id))
+    entry = result.scalar_one_or_none()
+    if not entry:
+        return None
+    log_result = await db.execute(select(DailyLog).where(DailyLog.id == entry.daily_log_id))
+    log = log_result.scalar_one()
+    if log.user_id != user_id:
+        return None
+
+    for field in ("exercise_name", "sets", "reps", "weight",
+                  "duration_minutes", "cardio_type", "rir"):
+        if field in changes and changes[field] is not None:
+            setattr(entry, field, changes[field])
+
+    await db.commit()
+    await db.refresh(entry)
+    return entry
+
+
+async def delete_exercise_entry(db: AsyncSession, entry_id: int, user_id: int) -> bool:
+    result = await db.execute(select(ExerciseEntry).where(ExerciseEntry.id == entry_id))
+    entry = result.scalar_one_or_none()
+    if not entry:
+        return False
+    log_result = await db.execute(
+        select(DailyLog)
+        .where(DailyLog.id == entry.daily_log_id)
+        .options(selectinload(DailyLog.exercise_entries))
+    )
+    log = log_result.scalar_one()
+    if log.user_id != user_id:
+        return False
+
+    was_cardio = bool(entry.cardio_type) or (entry.duration_minutes and not entry.sets)
+    await db.delete(entry)
+    await db.commit()
+
+    # Re-evaluate workout/cardio flags from remaining entries
+    remaining_result = await db.execute(
+        select(ExerciseEntry).where(ExerciseEntry.daily_log_id == log.id)
+    )
+    remaining = remaining_result.scalars().all()
+    log.workout_completed = any(not (e.cardio_type or (e.duration_minutes and not e.sets)) for e in remaining)
+    log.cardio_completed = any((e.cardio_type or (e.duration_minutes and not e.sets)) for e in remaining)
+    await db.commit()
+    return True

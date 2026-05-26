@@ -11,6 +11,8 @@ from db.models import User, DailyLog, MemoryUpdate
 from db.queries import (
     add_food_entry, add_exercise_entry, add_body_metric,
     close_daily_log, reload_user,
+    update_food_entry as q_update_food_entry,
+    delete_food_entry as q_delete_food_entry,
 )
 from handlers.onboarding import is_onboarding_complete
 from memory.memory_manager import append_memory_update, init_memory
@@ -101,6 +103,34 @@ async def _dispatch(name, inp, user, today_log, db, source_type):  # noqa: C901
         weight_kg = weight * 0.453592 if unit == "lbs" else weight
         await add_body_metric(db, user.id, weight_kg)
         return f"Logged weight: {weight} {unit} ({weight_kg:.1f} kg)"
+
+    elif name == "update_food_entry":
+        if not getattr(today_log, "id", None):
+            return "Skipped — no log to update"
+        entry_id = inp.get("entry_id")
+        if not entry_id:
+            return "Missing entry_id"
+        changes = {k: v for k, v in inp.items() if k != "entry_id" and v is not None}
+        # Map external name → DB column
+        if "food_name" in changes:
+            changes["parsed_food_name"] = changes.pop("food_name")
+        entry = await q_update_food_entry(db, entry_id, user.id, **changes)
+        if not entry:
+            return f"No food entry #{entry_id} found in today's log."
+        await db.refresh(today_log)
+        return f"Updated entry #{entry_id}: {entry.parsed_food_name} → {entry.calories:.0f}cal"
+
+    elif name == "delete_food_entry":
+        if not getattr(today_log, "id", None):
+            return "Skipped — no log to update"
+        entry_id = inp.get("entry_id")
+        if not entry_id:
+            return "Missing entry_id"
+        ok = await q_delete_food_entry(db, entry_id, user.id)
+        if not ok:
+            return f"No food entry #{entry_id} found."
+        await db.refresh(today_log)
+        return f"Removed food entry #{entry_id}"
 
     elif name == "log_water":
         ml = inp.get("amount_ml") or (inp.get("amount_oz", 0) * 29.5735)

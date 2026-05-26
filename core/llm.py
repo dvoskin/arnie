@@ -157,6 +157,50 @@ ARNIE_TOOLS = [
         },
     },
     {
+        "name": "update_food_entry",
+        "description": (
+            "CORRECT an existing food entry that's already in today's log. "
+            "Use this when the user is fixing or updating values for a food they "
+            "already told you about — e.g. 'actually that bowl was 700 cal not 550', "
+            "'the chicken was 8oz not 4oz', 'change my breakfast eggs to 4 instead of 3'. "
+            "Find the matching entry by its [#id] in the context. "
+            "DO NOT call log_food for corrections — that creates a duplicate. "
+            "Only include fields the user is actually changing. The system "
+            "auto-adjusts the daily totals by the delta."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "entry_id": {
+                    "type": "integer",
+                    "description": "The [#id] of the food entry to update, shown in the today's log context.",
+                },
+                "food_name": {"type": "string"},
+                "quantity": {"type": "string"},
+                "calories": {"type": "number"},
+                "protein": {"type": "number"},
+                "carbs": {"type": "number"},
+                "fats": {"type": "number"},
+            },
+            "required": ["entry_id"],
+        },
+    },
+    {
+        "name": "delete_food_entry",
+        "description": (
+            "REMOVE a food entry from today's log. Use when the user says "
+            "'delete my lunch', 'remove the coffee', 'I didn't actually eat that'. "
+            "Find the matching entry by its [#id] in the context."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "entry_id": {"type": "integer"},
+            },
+            "required": ["entry_id"],
+        },
+    },
+    {
         "name": "generate_image",
         "description": (
             "Generate a visual image when the user EXPLICITLY asks for a visual, "

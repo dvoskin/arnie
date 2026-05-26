@@ -203,6 +203,18 @@ class HealthSnapshot(Base):
     user = relationship("User", back_populates="health_snapshots")
 
 
+class Feedback(Base):
+    """User-submitted bug reports and feature suggestions."""
+    __tablename__ = "feedback"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    kind = Column(String, default="other")  # bug / feature / other
+    text = Column(Text, nullable=False)
+    resolved = Column(Boolean, default=False)
+    created_at = Column(DateTime, server_default=func.now())
+
+
 class Skill(Base):
     __tablename__ = "skills"
 

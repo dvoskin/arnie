@@ -18,6 +18,7 @@ from db.queries import (
     get_or_create_user, get_or_create_today_log, get_today_log,
     get_recent_conversations, log_conversation, close_daily_log, reload_user,
     reset_today_log, reset_all_user_data, get_or_create_webhook_token,
+    add_feedback,
 )
 from core.llm import chat, chat_follow_up
 from core.context_builder import build_context, fmt_log
@@ -70,16 +71,24 @@ def _fmt(text: str) -> dict:
 _ARNIE_SYSTEM = """You are Arnie — a direct, sharp fitness and nutrition coach.
 
 TOOL RULES (no exceptions):
-- New food/drink mentioned → log_food() — one call per item, only for THIS message
+- NEW food/drink mentioned → log_food() — one call per item, only for THIS message
+- CORRECTION to an existing food (calories wrong, quantity wrong, wrong item) → update_food_entry() with the [#id] from the context. NEVER log_food() for a correction — that creates a duplicate.
+- User wants to REMOVE a food entry ("delete my coffee", "I didn't eat that") → delete_food_entry() with the [#id]
 - New workout/exercise → log_exercise() — one call per exercise, only for THIS message
 - User states body weight → log_body_weight() — body weight only, never food weight
 - User drinks water → log_water()
 - "close the day" → close_day()
 - User explicitly asks to change a setting or target → update_profile()
 - User explicitly asks for a visual / image / diagram / infographic → generate_image()
-- DO NOT re-log anything already in today's log in the context
-- DO NOT generate images unless the user clearly asked for one (e.g. "draw me", "show me a visual", "make me an infographic")
+- DO NOT re-log anything already in today's log
+- DO NOT generate images unless the user clearly asked for one
 - ALWAYS write a text response with every tool call
+
+Each food entry in the context has a [#N] tag — that's its ID for updates/deletes.
+Examples of corrections:
+- "actually that bowl was 700 cal" → update_food_entry(entry_id=N, calories=700)
+- "the chicken was 8oz not 4oz" → update_food_entry(entry_id=N, quantity="8 oz", calories=X*2, protein=Y*2, ...) — scale all macros proportionally
+- "delete the latte" → delete_food_entry(entry_id=N)
 
 FOOD LOGGING — EXACT FORMAT, no exceptions:
 <b>Food name</b> — XXXcal · XXgP / XXgC / XXgF
@@ -628,6 +637,51 @@ async def cmd_reset(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
 
 
+async def cmd_feedback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Submit a bug report or feature suggestion."""
+    args = context.args
+    if not args:
+        await update.message.reply_text(
+            "<b>Send feedback</b>\n\n"
+            "/feedback bug [what went wrong]\n"
+            "/feedback feature [what you'd like]\n"
+            "/feedback [anything else]\n\n"
+            "Examples:\n"
+            "<i>/feedback bug photos crash with multi-item meals</i>\n"
+            "<i>/feedback feature add a meal template system</i>",
+            parse_mode="HTML",
+        )
+        return
+
+    kind_arg = args[0].lower()
+    if kind_arg in ("bug", "bugs", "issue"):
+        kind, text_parts = "bug", args[1:]
+    elif kind_arg in ("feature", "suggestion", "idea"):
+        kind, text_parts = "feature", args[1:]
+    else:
+        kind, text_parts = "other", args
+
+    text = " ".join(text_parts).strip()
+    if not text:
+        await update.message.reply_text(
+            "Need a bit more — tell me what the bug is or what feature you'd like.\n\n"
+            "<i>Example: /feedback bug photo upload fails on multi-item meals</i>",
+            parse_mode="HTML",
+        )
+        return
+
+    async with AsyncSessionLocal() as db:
+        user = await get_or_create_user(db, str(update.effective_user.id))
+        entry = await add_feedback(db, user.id, kind, text)
+
+    icon = "🐛" if kind == "bug" else "💡" if kind == "feature" else "📝"
+    await update.message.reply_text(
+        f"{icon} <b>Got it.</b>\n\n"
+        f"Logged as <b>{kind}</b> (#{entry.id}). Thanks — this kind of feedback is how I get sharper.",
+        parse_mode="HTML",
+    )
+
+
 async def cmd_connect(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Connect a wearable. Currently supports: whoop."""
     args = context.args
@@ -766,8 +820,9 @@ async def _post_init(app: Application):
         BotCommand("remind",  "Toggle proactive check-ins on/off"),
         BotCommand("reset",   "Clear today's log or full account reset"),
         BotCommand("dash",    "Get your personal dashboard link"),
-        BotCommand("connect", "Connect Whoop or other wearables"),
-        BotCommand("help",    "How to use Arnie"),
+        BotCommand("connect",  "Connect Whoop or other wearables"),
+        BotCommand("feedback", "Report a bug or suggest a feature"),
+        BotCommand("help",     "How to use Arnie"),
     ])
     logger.info("Arnie is ready.")
 
@@ -802,7 +857,8 @@ def build_app() -> Application:
     app.add_handler(CommandHandler("remind",  cmd_remind))
     app.add_handler(CommandHandler("reset",   cmd_reset))
     app.add_handler(CommandHandler("dash",    cmd_dash))
-    app.add_handler(CommandHandler("connect", cmd_connect))
+    app.add_handler(CommandHandler("connect",  cmd_connect))
+    app.add_handler(CommandHandler("feedback", cmd_feedback))
     # Aliases
     app.add_handler(CommandHandler("log",      cmd_today))
     app.add_handler(CommandHandler("summary",  cmd_today))

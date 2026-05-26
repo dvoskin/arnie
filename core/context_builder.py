@@ -23,8 +23,9 @@ def fmt_log(log: Optional[DailyLog]) -> str:
             carb = f.carbs or 0
             fat = f.fats or 0
             est = "~" if f.estimated_flag else ""
+            # [#id] prefix lets the LLM reference entries for update_food_entry / delete_food_entry
             lines.append(
-                f"  • {f.parsed_food_name or '?'} ({f.quantity or '?'}): "
+                f"  • [#{f.id}] {f.parsed_food_name or '?'} ({f.quantity or '?'}): "
                 f"{est}{cal:.0f}cal  {pro:.0f}P  {carb:.0f}C  {fat:.0f}F"
             )
         foods = "\nFood:\n" + "\n".join(lines)

@@ -18,6 +18,8 @@ from db.database import AsyncSessionLocal
 from db.queries import (
     get_user_by_webhook_token, upsert_health_snapshot,
     get_today_log, get_recent_logs, get_recent_weights,
+    update_food_entry, delete_food_entry,
+    update_exercise_entry, delete_exercise_entry,
 )
 
 app = FastAPI(title="Arnie API", docs_url=None, redoc_url=None)
@@ -199,6 +201,7 @@ async def _build_stats_for_user(db, user):
     if today_log:
         food_entries = [
             {
+                "id": e.id,
                 "name": e.parsed_food_name or "?",
                 "quantity": e.quantity or "",
                 "calories": round(e.calories or 0),
@@ -211,6 +214,7 @@ async def _build_stats_for_user(db, user):
         ]
         exercise_entries = [
             {
+                "id": e.id,
                 "name": e.exercise_name or "?",
                 "sets": e.sets,
                 "reps": e.reps,
@@ -276,6 +280,81 @@ async def get_stats(token: str):
         if not user:
             raise HTTPException(status_code=401, detail="Invalid token")
         return await _build_stats_for_user(db, user)
+
+
+# ── Edit / delete entries from the dashboard ───────────────────────────────────
+
+class FoodPatch(BaseModel):
+    food_name: Optional[str] = None
+    quantity: Optional[str] = None
+    calories: Optional[float] = None
+    protein: Optional[float] = None
+    carbs: Optional[float] = None
+    fats: Optional[float] = None
+
+
+class ExercisePatch(BaseModel):
+    exercise_name: Optional[str] = None
+    sets: Optional[int] = None
+    reps: Optional[str] = None
+    weight: Optional[float] = None  # in lbs from the dashboard, converted to kg below
+    duration_minutes: Optional[float] = None
+
+
+@app.patch("/api/food/{entry_id}")
+async def api_edit_food(entry_id: int, patch: FoodPatch, token: str = Query(...)):
+    async with AsyncSessionLocal() as db:
+        user = await get_user_by_webhook_token(db, token)
+        if not user:
+            raise HTTPException(status_code=401, detail="Invalid token")
+        changes = patch.model_dump(exclude_none=True)
+        # Map external "food_name" → internal column "parsed_food_name"
+        if "food_name" in changes:
+            changes["parsed_food_name"] = changes.pop("food_name")
+        entry = await update_food_entry(db, entry_id, user.id, **changes)
+        if not entry:
+            raise HTTPException(status_code=404, detail="Entry not found")
+    return {"status": "ok", "id": entry_id}
+
+
+@app.delete("/api/food/{entry_id}")
+async def api_delete_food(entry_id: int, token: str = Query(...)):
+    async with AsyncSessionLocal() as db:
+        user = await get_user_by_webhook_token(db, token)
+        if not user:
+            raise HTTPException(status_code=401, detail="Invalid token")
+        ok = await delete_food_entry(db, entry_id, user.id)
+        if not ok:
+            raise HTTPException(status_code=404, detail="Entry not found")
+    return {"status": "ok"}
+
+
+@app.patch("/api/exercise/{entry_id}")
+async def api_edit_exercise(entry_id: int, patch: ExercisePatch, token: str = Query(...)):
+    async with AsyncSessionLocal() as db:
+        user = await get_user_by_webhook_token(db, token)
+        if not user:
+            raise HTTPException(status_code=401, detail="Invalid token")
+        changes = patch.model_dump(exclude_none=True)
+        # Dashboard sends weight in lbs; DB stores kg
+        if "weight" in changes:
+            changes["weight"] = changes["weight"] * 0.453592
+        entry = await update_exercise_entry(db, entry_id, user.id, **changes)
+        if not entry:
+            raise HTTPException(status_code=404, detail="Entry not found")
+    return {"status": "ok", "id": entry_id}
+
+
+@app.delete("/api/exercise/{entry_id}")
+async def api_delete_exercise(entry_id: int, token: str = Query(...)):
+    async with AsyncSessionLocal() as db:
+        user = await get_user_by_webhook_token(db, token)
+        if not user:
+            raise HTTPException(status_code=401, detail="Invalid token")
+        ok = await delete_exercise_entry(db, entry_id, user.id)
+        if not ok:
+            raise HTTPException(status_code=404, detail="Entry not found")
+    return {"status": "ok"}
 
 
 # ── Dashboard HTML ─────────────────────────────────────────────────────────────
@@ -426,9 +505,10 @@ def _dashboard_html(token: str) -> str:
   }}
   .log-row {{
     padding: 12px 14px; border-bottom: 1px solid var(--border);
+    position: relative;
   }}
   .log-row:last-child {{ border-bottom: none; }}
-  .log-name {{ font-size: 14px; font-weight: 500; line-height: 1.3; word-break: break-word; }}
+  .log-name {{ font-size: 14px; font-weight: 500; line-height: 1.3; word-break: break-word; padding-right: 60px; }}
   .log-qty {{ font-size: 11px; color: var(--muted); margin-top: 2px; }}
   .log-macros {{
     display: flex; gap: 12px; font-size: 12px; margin-top: 6px;
@@ -438,12 +518,52 @@ def _dashboard_html(token: str) -> str:
   .log-macros b {{ color: var(--text); font-weight: 600; }}
   .log-empty {{ padding: 20px 14px; color: var(--muted); font-size: 13px; text-align: center; }}
 
+  /* Edit / delete buttons */
+  .row-actions {{
+    position: absolute; top: 10px; right: 10px;
+    display: flex; gap: 4px;
+  }}
+  .icon-btn {{
+    background: var(--surface2); border: 1px solid var(--border); color: var(--muted);
+    width: 30px; height: 30px; border-radius: 8px; cursor: pointer; font-size: 13px;
+    display: flex; align-items: center; justify-content: center; font-family: inherit;
+    transition: all 0.15s;
+  }}
+  .icon-btn:active {{ transform: scale(0.92); }}
+  .icon-btn:hover {{ background: var(--border); color: var(--text); }}
+  .icon-btn.danger:hover {{ background: rgba(239,68,68,.15); color: var(--red); border-color: var(--red); }}
+
+  /* Edit form */
+  .edit-form {{
+    display: grid; gap: 8px; margin-top: 4px;
+  }}
+  .edit-form input {{
+    background: var(--bg); border: 1px solid var(--border); color: var(--text);
+    padding: 8px 10px; border-radius: 8px; font-size: 13px; font-family: inherit;
+    width: 100%;
+  }}
+  .edit-form input:focus {{ outline: none; border-color: var(--blue); }}
+  .edit-macros {{ display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }}
+  .edit-macro-cell label {{ font-size: 10px; color: var(--muted); display: block; margin-bottom: 2px; }}
+  .edit-actions {{ display: flex; gap: 6px; margin-top: 4px; }}
+  .save-btn {{
+    background: var(--green); color: #000; border: none; padding: 8px 16px;
+    border-radius: 8px; font-weight: 600; font-size: 13px; cursor: pointer; font-family: inherit;
+    flex: 1; min-height: 36px;
+  }}
+  .cancel-btn {{
+    background: var(--surface2); color: var(--muted); border: 1px solid var(--border);
+    padding: 8px 16px; border-radius: 8px; font-size: 13px; cursor: pointer; font-family: inherit;
+    min-height: 36px;
+  }}
+
   /* EXERCISE LOG */
   .ex-row {{
-    display: grid; grid-template-columns: 1fr auto; align-items: center;
-    padding: 12px 14px; border-bottom: 1px solid var(--border); gap: 12px;
+    padding: 12px 14px; border-bottom: 1px solid var(--border);
+    position: relative;
   }}
   .ex-row:last-child {{ border-bottom: none; }}
+  .ex-content {{ display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: center; padding-right: 70px; }}
   .ex-name {{ font-size: 14px; font-weight: 500; word-break: break-word; }}
   .ex-detail {{ font-size: 12px; color: var(--green); font-weight: 600; white-space: nowrap; }}
 
@@ -749,32 +869,166 @@ function renderStats(d) {{
   if (!t.food_entries || t.food_entries.length === 0) {{
     foodEl.innerHTML = '<div class="log-empty">Nothing logged today yet</div>';
   }} else {{
-    foodEl.innerHTML = t.food_entries.map(f => `
-      <div class="log-row">
-        <div class="log-name">${{escapeHtml(f.name)}}${{f.estimated ? ' <span style="color:var(--dim);font-size:10px;font-weight:400">~est</span>' : ''}}</div>
-        <div class="log-qty">${{escapeHtml(f.quantity)}}</div>
-        <div class="log-macros">
-          <span><b>${{f.calories}}</b> cal</span>
-          <span><b>${{f.protein}}g</b> P</span>
-          <span><b>${{f.carbs}}g</b> C</span>
-          <span><b>${{f.fats}}g</b> F</span>
-        </div>
-      </div>
-    `).join('');
+    foodEl.innerHTML = t.food_entries.map(f => renderFoodRow(f)).join('');
   }}
 
   const exEl = document.getElementById('ex-log');
   if (!t.exercise_entries || t.exercise_entries.length === 0) {{
     exEl.innerHTML = '<div class="log-empty">No workouts logged today</div>';
   }} else {{
-    exEl.innerHTML = t.exercise_entries.map(e => {{
-      let detail = '';
-      if (e.sets && e.reps) detail = `${{e.sets}}×${{e.reps}}${{e.weight ? ' @ ' + e.weight + 'lb' : ''}}`;
-      else if (e.duration_minutes) detail = `${{e.duration_minutes}} min`;
-      return `<div class="ex-row"><div class="ex-name">${{escapeHtml(e.name)}}</div><div class="ex-detail">${{detail}}</div></div>`;
-    }}).join('');
+    exEl.innerHTML = t.exercise_entries.map(renderExerciseRow).join('');
   }}
 }}
+
+function renderFoodRow(f) {{
+  return `
+    <div class="log-row" id="food-row-${{f.id}}" data-id="${{f.id}}">
+      <div class="log-name">${{escapeHtml(f.name)}}${{f.estimated ? ' <span style="color:var(--dim);font-size:10px;font-weight:400">~est</span>' : ''}}</div>
+      <div class="log-qty">${{escapeHtml(f.quantity)}}</div>
+      <div class="log-macros">
+        <span><b>${{f.calories}}</b> cal</span>
+        <span><b>${{f.protein}}g</b> P</span>
+        <span><b>${{f.carbs}}g</b> C</span>
+        <span><b>${{f.fats}}g</b> F</span>
+      </div>
+      <div class="row-actions">
+        <button class="icon-btn" onclick="editFood(${{f.id}})" aria-label="Edit">✎</button>
+        <button class="icon-btn danger" onclick="deleteFood(${{f.id}}, '${{escapeJs(f.name)}}')" aria-label="Delete">×</button>
+      </div>
+    </div>
+  `;
+}}
+
+function renderExerciseRow(e) {{
+  let detail = '';
+  if (e.sets && e.reps) detail = `${{e.sets}}×${{e.reps}}${{e.weight ? ' @ ' + e.weight + 'lb' : ''}}`;
+  else if (e.duration_minutes) detail = `${{e.duration_minutes}} min`;
+  return `
+    <div class="ex-row" id="ex-row-${{e.id}}" data-id="${{e.id}}">
+      <div class="ex-content">
+        <div class="ex-name">${{escapeHtml(e.name)}}</div>
+        <div class="ex-detail">${{detail}}</div>
+      </div>
+      <div class="row-actions">
+        <button class="icon-btn" onclick="editExercise(${{e.id}})" aria-label="Edit">✎</button>
+        <button class="icon-btn danger" onclick="deleteExercise(${{e.id}}, '${{escapeJs(e.name)}}')" aria-label="Delete">×</button>
+      </div>
+    </div>
+  `;
+}}
+
+function escapeJs(s) {{ return String(s).replace(/'/g, "\\\\'").replace(/"/g, '\\\\"'); }}
+
+// ── Edit food ───────────────────────────────────────────────────────────────
+let _lastStats = null;
+const _origLoadAll = loadAll;
+loadAll = async function() {{
+  const stats = await loadStats();
+  _lastStats = stats;
+  renderStats(stats);
+  document.getElementById('loading').style.display = 'none';
+  document.getElementById('content').style.display = 'block';
+  loadInsights().then(renderInsights);
+}};
+
+function findFood(id) {{
+  return (_lastStats?.today?.food_entries || []).find(f => f.id === id);
+}}
+function findExercise(id) {{
+  return (_lastStats?.today?.exercise_entries || []).find(e => e.id === id);
+}}
+
+function editFood(id) {{
+  const f = findFood(id);
+  if (!f) return;
+  const row = document.getElementById('food-row-' + id);
+  row.innerHTML = `
+    <div class="edit-form">
+      <input type="text" id="ef-name-${{id}}" value="${{escapeAttr(f.name)}}" placeholder="Food name">
+      <input type="text" id="ef-qty-${{id}}" value="${{escapeAttr(f.quantity)}}" placeholder="Quantity">
+      <div class="edit-macros">
+        <div class="edit-macro-cell"><label>Cal</label><input type="number" id="ef-cal-${{id}}" value="${{f.calories}}" inputmode="numeric"></div>
+        <div class="edit-macro-cell"><label>P (g)</label><input type="number" id="ef-pro-${{id}}" value="${{f.protein}}" inputmode="numeric"></div>
+        <div class="edit-macro-cell"><label>C (g)</label><input type="number" id="ef-carb-${{id}}" value="${{f.carbs}}" inputmode="numeric"></div>
+        <div class="edit-macro-cell"><label>F (g)</label><input type="number" id="ef-fat-${{id}}" value="${{f.fats}}" inputmode="numeric"></div>
+      </div>
+      <div class="edit-actions">
+        <button class="save-btn" onclick="saveFood(${{id}})">Save</button>
+        <button class="cancel-btn" onclick="loadAll()">Cancel</button>
+      </div>
+    </div>
+  `;
+}}
+
+async function saveFood(id) {{
+  const body = {{
+    food_name: document.getElementById('ef-name-' + id).value,
+    quantity:  document.getElementById('ef-qty-' + id).value,
+    calories:  parseFloat(document.getElementById('ef-cal-' + id).value) || 0,
+    protein:   parseFloat(document.getElementById('ef-pro-' + id).value) || 0,
+    carbs:     parseFloat(document.getElementById('ef-carb-' + id).value) || 0,
+    fats:      parseFloat(document.getElementById('ef-fat-' + id).value) || 0,
+  }};
+  const r = await fetch(`/api/food/${{id}}?token=${{TOKEN}}`, {{
+    method: 'PATCH', headers: {{'Content-Type': 'application/json'}},
+    body: JSON.stringify(body),
+  }});
+  if (!r.ok) {{ alert('Save failed — please try again.'); return; }}
+  await loadAll();
+}}
+
+async function deleteFood(id, name) {{
+  if (!confirm(`Delete "${{name}}"?`)) return;
+  const r = await fetch(`/api/food/${{id}}?token=${{TOKEN}}`, {{ method: 'DELETE' }});
+  if (!r.ok) {{ alert('Delete failed — please try again.'); return; }}
+  await loadAll();
+}}
+
+function editExercise(id) {{
+  const e = findExercise(id);
+  if (!e) return;
+  const row = document.getElementById('ex-row-' + id);
+  row.innerHTML = `
+    <div class="edit-form">
+      <input type="text" id="ee-name-${{id}}" value="${{escapeAttr(e.name)}}" placeholder="Exercise">
+      <div class="edit-macros" style="grid-template-columns: repeat(3, 1fr)">
+        <div class="edit-macro-cell"><label>Sets</label><input type="number" id="ee-sets-${{id}}" value="${{e.sets ?? ''}}" inputmode="numeric"></div>
+        <div class="edit-macro-cell"><label>Reps</label><input type="text" id="ee-reps-${{id}}" value="${{escapeAttr(e.reps ?? '')}}"></div>
+        <div class="edit-macro-cell"><label>Weight (lb)</label><input type="number" id="ee-weight-${{id}}" value="${{e.weight ?? ''}}" inputmode="decimal"></div>
+      </div>
+      <div class="edit-actions">
+        <button class="save-btn" onclick="saveExercise(${{id}})">Save</button>
+        <button class="cancel-btn" onclick="loadAll()">Cancel</button>
+      </div>
+    </div>
+  `;
+}}
+
+async function saveExercise(id) {{
+  const body = {{
+    exercise_name: document.getElementById('ee-name-' + id).value || null,
+    sets:    parseInt(document.getElementById('ee-sets-' + id).value) || null,
+    reps:    document.getElementById('ee-reps-' + id).value || null,
+    weight:  parseFloat(document.getElementById('ee-weight-' + id).value) || null,
+  }};
+  // Strip nulls so we don't overwrite
+  Object.keys(body).forEach(k => body[k] == null && delete body[k]);
+  const r = await fetch(`/api/exercise/${{id}}?token=${{TOKEN}}`, {{
+    method: 'PATCH', headers: {{'Content-Type': 'application/json'}},
+    body: JSON.stringify(body),
+  }});
+  if (!r.ok) {{ alert('Save failed — please try again.'); return; }}
+  await loadAll();
+}}
+
+async function deleteExercise(id, name) {{
+  if (!confirm(`Delete "${{name}}"?`)) return;
+  const r = await fetch(`/api/exercise/${{id}}?token=${{TOKEN}}`, {{ method: 'DELETE' }});
+  if (!r.ok) {{ alert('Delete failed — please try again.'); return; }}
+  await loadAll();
+}}
+
+function escapeAttr(s) {{ return String(s ?? '').replace(/"/g, '&quot;'); }}
 
 loadAll();
 setInterval(loadAll, 5 * 60 * 1000);
