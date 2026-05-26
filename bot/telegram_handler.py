@@ -577,6 +577,8 @@ async def cmd_ai(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("Nothing logged today yet — log some food or a workout first.")
             return
 
+        await update.message.reply_text("Lifting mental weights…")
+
         try:
             from db.queries import get_recent_weights
             from api.insights import generate_chat_analysis

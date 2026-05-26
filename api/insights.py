@@ -160,16 +160,9 @@ async def generate_chat_analysis(stats: dict) -> List[str]:
         return []
 
     summary = _build_summary(stats)
-    prompt = f"""You are Arnie, a direct and knowledgeable fitness and nutrition coach. A user just asked for a coaching analysis of their recent data.
+    prompt = f"""You are Arnie, a direct fitness and nutrition coach. Give a sharp coaching analysis in 75-125 words total — no more.
 
-Write 3 to 5 coaching observations. Each one should be 2-3 sentences — specific, actionable, and grounded in the numbers. Cover different areas: calories, protein, training, trends, weight if available. Mix what's working with what needs fixing.
-
-Rules:
-- Reference real numbers every time (grams, calories, percentages, days)
-- Call out multi-day patterns when history exists, not just today
-- Give a concrete recommendation in each point, not just an observation
-- No greetings, no sign-off, no filler phrases like "great job" or "keep it up"
-- Write in second person ("you", "your")
+Write 3-4 punchy observations covering calories, protein, training, and trends. Each one is 1-2 sentences max. Reference real numbers. No fluff, no greetings, no sign-off.
 
 Return ONLY a valid JSON array of strings, one string per observation. No prose before or after.
 
@@ -181,7 +174,7 @@ DATA:
         client = _get_anthropic()
         response = await client.messages.create(
             model=DEFAULT_MODEL(),
-            max_tokens=900,
+            max_tokens=300,
             messages=[{"role": "user", "content": prompt}],
         )
         text = response.content[0].text.strip()
