@@ -37,6 +37,7 @@ SCOPES = " ".join([
     "read:workout",
     "read:profile",
     "read:body_measurement",
+    "offline",  # REQUIRED to get a refresh_token so we can auto-refresh
 ])
 
 
@@ -106,6 +107,12 @@ async def exchange_code(code: str, redirect_uri: str) -> dict:
                     "details": r.text[:500],
                 }
             tokens = r.json()
+            logger.info(
+                f"Whoop token exchange OK — keys: {list(tokens.keys())}, "
+                f"has_refresh: {bool(tokens.get('refresh_token'))}, "
+                f"scope: {tokens.get('scope')!r}, "
+                f"expires_in: {tokens.get('expires_in')}"
+            )
             _CODE_CACHE[code] = {"tokens": tokens, "expires_at": time.time() + _CODE_TTL}
             return {"ok": True, "tokens": tokens}
         except Exception as e:

@@ -664,7 +664,9 @@ async def cmd_whoop(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user = await get_or_create_user(db, str(update.effective_user.id))
 
         if action in ("status", "info", ""):
-            connected = bool(user.whoop_refresh_token)
+            # A user counts as connected if they have ANY token saved.
+            # A missing refresh_token is a degraded state we surface separately.
+            connected = bool(user.whoop_refresh_token or user.whoop_access_token)
             if not connected:
                 await update.message.reply_text(
                     "<b>Whoop: not connected</b>\n\n"
@@ -698,9 +700,11 @@ async def cmd_whoop(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     bits.append(f"HRV {s.hrv:.0f}ms")
                 latest_line = f"<b>{s.date}</b>: " + " · ".join(bits)
 
+            refresh_status = "✅" if user.whoop_refresh_token else "⚠️ missing (run /whoop disconnect then /connect whoop)"
             await update.message.reply_text(
                 f"<b>Whoop status</b>\n\n"
                 f"Connected: ✅\n"
+                f"Refresh token: {refresh_status}\n"
                 f"Access token expires: {expires_str}\n"
                 f"Days synced (last 7): {len(whoop_snaps)}\n\n"
                 f"Latest: {latest_line}\n\n"
