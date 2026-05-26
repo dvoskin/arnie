@@ -58,14 +58,31 @@ async def whoop_callback(request: Request, code: str = "", state: str = "", erro
     base_url = os.getenv("RENDER_EXTERNAL_URL", "http://localhost:10000").rstrip("/")
     redirect_uri = f"{base_url}/whoop/callback"
 
-    tokens = await exchange_code(code, redirect_uri)
-    if not tokens:
-        return HTMLResponse(
-            "<h2>Whoop token exchange failed.</h2>"
-            "<p>Try /connect whoop again in Telegram.</p>",
-            status_code=500,
-        )
+    result = await exchange_code(code, redirect_uri)
+    if not result.get("ok"):
+        err = result.get("error", "Unknown error")
+        details = result.get("details", "")
+        return HTMLResponse(f"""<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>Whoop connection failed</title>
+<style>body{{font-family:system-ui;text-align:left;padding:40px;background:#0f1117;color:#f1f5f9;max-width:640px;margin:auto}}
+.box{{background:#1a1d27;border:1px solid #2e3347;border-radius:12px;padding:24px}}
+h1{{font-size:22px;margin:0 0 12px;color:#ef4444}}
+code{{background:#0f1117;padding:2px 6px;border-radius:4px;font-size:12px;color:#94a3b8;display:block;padding:12px;margin-top:8px;white-space:pre-wrap;word-break:break-all}}
+.next{{margin-top:20px;padding-top:16px;border-top:1px solid #2e3347;color:#94a3b8}}</style>
+</head><body><div class="box">
+<h1>Whoop connection failed</h1>
+<p><b>Error:</b> {err}</p>
+{f'<code>{details}</code>' if details else ''}
+<div class="next">
+  <p><b>Common causes:</b></p>
+  <ul style="color:#94a3b8;line-height:1.7">
+    <li>The auth code already expired (they're one-time, ~30 seconds) — try /connect whoop again</li>
+    <li>WHOOP_CLIENT_ID or WHOOP_CLIENT_SECRET env var on Render is wrong or missing</li>
+    <li>The Redirect URL in Whoop's developer dashboard doesn't exactly match this server's URL</li>
+  </ul>
+</div></div></body></html>""", status_code=400)
 
+    tokens = result["tokens"]
     async with AsyncSessionLocal() as db:
         user = await get_user_by_webhook_token(db, state)
         if not user:
@@ -81,23 +98,32 @@ async def whoop_callback(request: Request, code: str = "", state: str = "", erro
 
         # Pull the first batch right away
         synced = 0
+        sync_error = ""
         try:
             user_reloaded = await get_user_by_webhook_token(db, state)
             synced = await sync_user_whoop(db, user_reloaded, days=7)
         except Exception as e:
-            pass
+            sync_error = str(e)[:300]
+
+    body = (
+        f"<p>Synced <b>{synced}</b> days of recovery, sleep, and strain data.</p>"
+        if synced > 0 else
+        f"<p>Tokens saved, but initial sync returned 0 days.</p>"
+        f"<p style='color:#94a3b8;font-size:13px'>This is usually fine — Whoop may not have new data yet. Run /whoop sync in Telegram any time to retry.</p>"
+        + (f"<code style='display:block;padding:12px;background:#0f1117;border-radius:4px;font-size:12px;color:#94a3b8'>{sync_error}</code>" if sync_error else "")
+    )
 
     return HTMLResponse(f"""<!DOCTYPE html>
 <html><head><meta charset="UTF-8"><title>Whoop connected</title>
-<style>body{{font-family:system-ui;text-align:center;padding:60px;background:#0f1117;color:#f1f5f9}}
+<style>body{{font-family:system-ui;text-align:center;padding:60px 20px;background:#0f1117;color:#f1f5f9}}
 .box{{max-width:480px;margin:auto;background:#1a1d27;border:1px solid #2e3347;border-radius:12px;padding:32px}}
-.check{{font-size:48px;color:#22c55e}}h1{{font-size:24px;margin:16px 0}}p{{color:#94a3b8}}</style>
+.check{{font-size:48px;color:#22c55e}}h1{{font-size:24px;margin:16px 0}}p{{color:#94a3b8;margin:8px 0}}</style>
 </head><body>
 <div class="box">
   <div class="check">✓</div>
   <h1>Whoop connected</h1>
-  <p>Synced {synced} days of recovery, sleep, and strain data.</p>
-  <p>You can close this window and head back to Telegram. Arnie will reference your recovery score in coaching from now on.</p>
+  {body}
+  <p style="margin-top:20px">Close this window and head back to Telegram. Run <b>/whoop</b> any time to check status.</p>
 </div></body></html>""")
 
 

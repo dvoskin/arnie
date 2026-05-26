@@ -52,8 +52,15 @@ def build_auth_url(redirect_uri: str, state: str) -> str:
     return f"{AUTH_URL}?{urlencode(params)}"
 
 
-async def exchange_code(code: str, redirect_uri: str) -> Optional[dict]:
-    """POST to /oauth/oauth2/token with the auth code, get back tokens."""
+async def exchange_code(code: str, redirect_uri: str) -> dict:
+    """
+    POST to /oauth/oauth2/token with the auth code.
+    Returns {"ok": True, "tokens": {...}} on success
+    or {"ok": False, "error": "...", "details": "..."} on failure.
+    """
+    if not WHOOP_CLIENT_ID or not WHOOP_CLIENT_SECRET:
+        return {"ok": False, "error": "WHOOP_CLIENT_ID / WHOOP_CLIENT_SECRET env vars not set on server"}
+
     async with httpx.AsyncClient(timeout=15) as client:
         try:
             r = await client.post(
@@ -64,17 +71,20 @@ async def exchange_code(code: str, redirect_uri: str) -> Optional[dict]:
                     "redirect_uri": redirect_uri,
                     "client_id": WHOOP_CLIENT_ID,
                     "client_secret": WHOOP_CLIENT_SECRET,
-                    "scope": SCOPES,
                 },
                 headers={"Content-Type": "application/x-www-form-urlencoded"},
             )
-            r.raise_for_status()
-            return r.json()
+            if r.status_code >= 400:
+                logger.error(f"Whoop token exchange HTTP {r.status_code}: {r.text}")
+                return {
+                    "ok": False,
+                    "error": f"Whoop returned HTTP {r.status_code}",
+                    "details": r.text[:500],
+                }
+            return {"ok": True, "tokens": r.json()}
         except Exception as e:
             logger.error(f"Whoop token exchange failed: {e}")
-            if hasattr(e, "response"):
-                logger.error(f"Response body: {e.response.text}")
-            return None
+            return {"ok": False, "error": str(e)[:500]}
 
 
 async def refresh_access_token(refresh_token: str) -> Optional[dict]:

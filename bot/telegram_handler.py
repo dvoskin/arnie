@@ -637,6 +637,97 @@ async def cmd_reset(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
 
 
+async def cmd_whoop(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Diagnostic + manual control for the Whoop integration."""
+    args = context.args
+    action = args[0].lower() if args else "status"
+
+    async with AsyncSessionLocal() as db:
+        user = await get_or_create_user(db, str(update.effective_user.id))
+
+        if action in ("status", "info", ""):
+            connected = bool(user.whoop_refresh_token)
+            if not connected:
+                await update.message.reply_text(
+                    "<b>Whoop: not connected</b>\n\n"
+                    "Run /connect whoop to link your account.",
+                    parse_mode="HTML",
+                )
+                return
+
+            from db.queries import get_recent_health_snapshots
+            snaps = await get_recent_health_snapshots(db, user.id, days=7)
+            whoop_snaps = [s for s in snaps if s.source == "whoop"]
+
+            expires_str = "unknown"
+            if user.whoop_token_expires_at:
+                from datetime import datetime
+                delta = user.whoop_token_expires_at - datetime.utcnow()
+                mins = int(delta.total_seconds() / 60)
+                expires_str = f"in {mins} min" if mins > 0 else f"{-mins} min ago (will auto-refresh)"
+
+            latest_line = "no data synced yet"
+            if whoop_snaps:
+                s = whoop_snaps[0]
+                bits = []
+                if s.recovery_score is not None:
+                    bits.append(f"Recovery {s.recovery_score}%")
+                if s.strain is not None:
+                    bits.append(f"Strain {s.strain:.1f}")
+                if s.sleep_hours is not None:
+                    bits.append(f"Sleep {s.sleep_hours:.1f}h")
+                if s.hrv is not None:
+                    bits.append(f"HRV {s.hrv:.0f}ms")
+                latest_line = f"<b>{s.date}</b>: " + " · ".join(bits)
+
+            await update.message.reply_text(
+                f"<b>Whoop status</b>\n\n"
+                f"Connected: ✅\n"
+                f"Access token expires: {expires_str}\n"
+                f"Days synced (last 7): {len(whoop_snaps)}\n\n"
+                f"Latest: {latest_line}\n\n"
+                f"/whoop sync — pull latest data now\n"
+                f"/whoop disconnect — clear tokens and reconnect",
+                parse_mode="HTML",
+            )
+            return
+
+        if action == "sync":
+            if not user.whoop_refresh_token:
+                await update.message.reply_text("Not connected. Run /connect whoop first.")
+                return
+            await update.message.reply_text("Syncing Whoop data…")
+            from api.whoop import sync_user_whoop
+            try:
+                synced = await sync_user_whoop(db, user, days=7)
+                await update.message.reply_text(
+                    f"✓ Synced <b>{synced} days</b> of Whoop data.\n\n"
+                    f"Run /whoop to see the latest snapshot.",
+                    parse_mode="HTML",
+                )
+            except Exception as e:
+                await update.message.reply_text(
+                    f"Sync failed: <code>{str(e)[:300]}</code>\n\n"
+                    "Try /whoop disconnect then /connect whoop to refresh the link.",
+                    parse_mode="HTML",
+                )
+            return
+
+        if action in ("disconnect", "logout", "unlink"):
+            from db.queries import clear_whoop_tokens
+            await clear_whoop_tokens(db, user.id)
+            await update.message.reply_text(
+                "Whoop disconnected. Use /connect whoop to link again."
+            )
+            return
+
+        await update.message.reply_text(
+            "/whoop — connection status\n"
+            "/whoop sync — pull latest data\n"
+            "/whoop disconnect — clear and reconnect"
+        )
+
+
 async def cmd_feedback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Submit a bug report or feature suggestion."""
     args = context.args
@@ -821,6 +912,7 @@ async def _post_init(app: Application):
         BotCommand("reset",   "Clear today's log or full account reset"),
         BotCommand("dash",    "Get your personal dashboard link"),
         BotCommand("connect",  "Connect Whoop or other wearables"),
+        BotCommand("whoop",    "Whoop connection status & manual sync"),
         BotCommand("feedback", "Report a bug or suggest a feature"),
         BotCommand("help",     "How to use Arnie"),
     ])
@@ -858,6 +950,7 @@ def build_app() -> Application:
     app.add_handler(CommandHandler("reset",   cmd_reset))
     app.add_handler(CommandHandler("dash",    cmd_dash))
     app.add_handler(CommandHandler("connect",  cmd_connect))
+    app.add_handler(CommandHandler("whoop",    cmd_whoop))
     app.add_handler(CommandHandler("feedback", cmd_feedback))
     # Aliases
     app.add_handler(CommandHandler("log",      cmd_today))
