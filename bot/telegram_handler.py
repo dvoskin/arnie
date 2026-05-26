@@ -577,7 +577,18 @@ async def cmd_ai(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("Nothing logged today yet — log some food or a workout first.")
             return
 
-        await update.message.reply_text("Lifting mental weights…")
+        await update.message.reply_text(random.choice([
+            "🏋️ Lifting mental weights…",
+            "🧠 Crunching your numbers, not your abs…",
+            "📊 Running the tape on your week…",
+            "🔬 Dissecting your data…",
+            "⚡ Charging up the coach brain…",
+            "🎯 Locking in on your patterns…",
+            "🩺 Diagnosing your macros…",
+            "📈 Reading the gains tape…",
+            "💡 Connecting the dots on your data…",
+            "🔍 Zooming in on your stats…",
+        ]))
 
         try:
             from db.queries import get_recent_weights
