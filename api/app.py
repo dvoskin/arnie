@@ -376,7 +376,9 @@ async def _build_stats_for_user(db, user, target_date=None):
                 {"id": e.id, "name": e.exercise_name or "?",
                  "sets": e.sets, "reps": e.reps,
                  "weight": round(e.weight * 2.20462, 1) if e.weight else None,
-                 "duration_minutes": e.duration_minutes}
+                 "duration_minutes": e.duration_minutes,
+                 "is_cardio": bool(e.cardio_type),
+                 "cardio_type": e.cardio_type}
                 for e in (log.exercise_entries or [])
             ],
         }
@@ -544,6 +546,53 @@ async def api_delete_exercise(entry_id: int, token: str = Query(...)):
         if not ok:
             raise HTTPException(status_code=404, detail="Entry not found")
     return {"status": "ok"}
+
+
+# ── Profile edit from dashboard ────────────────────────────────────────────────
+
+class ProfilePatch(BaseModel):
+    field: str
+    value: Optional[str] = None
+
+
+@app.patch("/api/profile/{token}")
+async def api_edit_profile(token: str, patch: ProfilePatch):
+    async with AsyncSessionLocal() as db:
+        user = await get_user_by_webhook_token(db, token)
+        if not user:
+            raise HTTPException(status_code=401, detail="Invalid token")
+
+        field, raw = patch.field, patch.value
+
+        _str_fields = {"name", "primary_goal", "training_experience",
+                       "dietary_preferences", "injuries", "timezone"}
+        _int_fields = {"age"}
+        _weight_fields = {
+            "current_weight_lbs": "current_weight_kg",
+            "goal_weight_lbs":    "goal_weight_kg",
+        }
+        _pref_str = {"coaching_style"}
+        _pref_int = {"calorie_target", "protein_target"}
+
+        try:
+            if field in _str_fields:
+                setattr(user, field, str(raw).strip() if raw else None)
+            elif field in _int_fields:
+                setattr(user, field, int(raw) if raw else None)
+            elif field in _weight_fields:
+                db_col = _weight_fields[field]
+                setattr(user, db_col, float(raw) * 0.453592 if raw else None)
+            elif field in _pref_str and user.preferences:
+                setattr(user.preferences, field, str(raw).strip() if raw else None)
+            elif field in _pref_int and user.preferences:
+                setattr(user.preferences, field, int(raw) if raw else None)
+            else:
+                raise HTTPException(status_code=400, detail=f"Unknown field: {field}")
+        except (ValueError, TypeError):
+            raise HTTPException(status_code=400, detail=f"Invalid value for {field}")
+
+        await db.commit()
+    return {"status": "ok", "field": field}
 
 
 # ── Dashboard HTML ─────────────────────────────────────────────────────────────
@@ -892,6 +941,26 @@ main{{max-width:920px;margin:0 auto;padding:14px 12px 72px;position:relative;z-i
 .devst.on{{color:var(--ac)}}
 .devst.off{{color:var(--mu)}}
 
+/* ── EXERCISE SETS ───────────────────────────────────────── */
+.esets{{display:flex;flex-wrap:wrap;gap:5px;padding:5px 14px 12px;align-items:center}}
+.eset-chip{{
+  background:var(--sf2);border:1px solid var(--bd);border-radius:7px;
+  padding:4px 9px;font-size:11px;font-weight:600;color:var(--tx2);
+}}
+.eset-chip b{{color:var(--ac)}}
+.eset-wt{{font-size:11px;font-weight:700;color:var(--or);margin-right:3px}}
+
+/* ── SHARE BUTTON ────────────────────────────────────────── */
+.share-btn{{
+  background:var(--sf2);border:1px solid var(--bd);color:var(--mu);
+  padding:7px 13px;border-radius:10px;font-size:12px;font-weight:600;
+  cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;
+  gap:5px;transition:all .2s;flex-shrink:0;
+  backdrop-filter:blur(12px);box-shadow:var(--sh);
+}}
+.share-btn:hover{{border-color:var(--ac);color:var(--ac)}}
+.share-btn:active{{transform:scale(.93)}}
+
 /* ── MISC ────────────────────────────────────────────────── */
 footer{{text-align:center;padding:20px 16px;color:var(--di);font-size:11px;position:relative;z-index:1}}
 @keyframes fadeUp{{from{{opacity:0;transform:translateY(8px)}}to{{opacity:1;transform:translateY(0)}}}}
@@ -965,6 +1034,7 @@ footer{{text-align:center;padding:20px 16px;color:var(--di);font-size:11px;posit
       <span id="wo-badge" class="badge bg-n"></span>
       <span id="ca-badge" class="badge bg-n"></span>
       <span id="wt-badge" class="badge bg-b" style="display:none"></span>
+      <button class="share-btn" onclick="shareDay()" title="Share today&apos;s summary">&#128228; Share day</button>
     </div>
 
     <div class="stitle">Food log</div>
@@ -1364,6 +1434,27 @@ function renderWeekTab(d){{
 }}
 
 // ── Profile tab ───────────────────────────────────────────────────────────
+var _PEDIT={{
+  'Name':'name','Age':'age',
+  'Current weight':'current_weight_lbs','Goal weight':'goal_weight_lbs',
+  'Goal':'primary_goal','Experience':'training_experience',
+  'Diet':'dietary_preferences','Injuries':'injuries',
+  'Timezone':'timezone','Coaching style':'coaching_style',
+}};
+var _TEDIT={{'Calorie target':'calorie_target','Protein target':'protein_target'}};
+
+function _pslug(l){{return l.toLowerCase().replace(/[^a-z0-9]/g,'_');}}
+
+function _inrow(l,v,fldMap,color){{
+  var fld=fldMap[l];
+  var rawVal=v!=null?String(v):'';
+  var dispVal=color?'<span class="inval" style="color:'+color+'">'+esc(rawVal)+'</span>'
+                   :'<span class="inval">'+esc(rawVal)+'</span>';
+  var editBtn=fld?'<button class="ibtn" style="flex-shrink:0;margin-left:4px" onclick="editProw(\'pr-'+_pslug(l)+'\',\''+escA(fld)+'\',\''+escA(rawVal)+'\')">&#9998;</button>':'';
+  return '<div class="inrow" id="pr-'+_pslug(l)+'"><span class="inlbl">'+esc(l)+'</span>'+
+    '<div style="display:flex;align-items:center">'+dispVal+editBtn+'</div></div>';
+}}
+
 function renderProfileTab(d){{
   var p=d.profile||{{}},tgt=d.targets||{{}},an=p.analytics||{{}};
   var rows=[
@@ -1376,15 +1467,12 @@ function renderProfileTab(d){{
     ['Injuries',p.injuries&&p.injuries!=='none'?p.injuries:null],
     ['Timezone',p.timezone],['Coaching style',p.coaching_style],
   ].filter(([,v])=>v!=null&&v!=='');
-  document.getElementById('profile-info').innerHTML=rows.map(([l,v])=>
-    '<div class="inrow"><span class="inlbl">'+esc(l)+'</span><span class="inval">'+esc(String(v))+'</span></div>'
-  ).join('')||'<div class="lempty">No profile data</div>';
+  document.getElementById('profile-info').innerHTML=rows.map(([l,v])=>_inrow(l,v,_PEDIT,null))
+    .join('')||'<div class="lempty">No profile data</div>';
 
   document.getElementById('profile-targets').innerHTML=
-    '<div class="inrow"><span class="inlbl">Calorie target</span>'+
-    '<span class="inval" style="color:var(--ac)">'+(tgt.calories?tgt.calories.toLocaleString()+' kcal/day':'—')+'</span></div>'+
-    '<div class="inrow"><span class="inlbl">Protein target</span>'+
-    '<span class="inval" style="color:var(--bl)">'+(tgt.protein?tgt.protein+'g/day':'—')+'</span></div>';
+    _inrow('Calorie target',tgt.calories?tgt.calories.toLocaleString()+' kcal/day':'—',_TEDIT,'var(--ac)')+
+    _inrow('Protein target',tgt.protein?tgt.protein+'g/day':'—',_TEDIT,'var(--bl)');
 
   var items=[
     ['TDEE',an.tdee_estimate!=null?an.tdee_estimate.toLocaleString()+' kcal':null,'var(--ac)'],
@@ -1442,12 +1530,26 @@ function renderFoodRow(f){{
 }}
 
 function renderExerciseRow(e){{
-  var det='';
-  if(e.sets&&e.reps) det=e.sets+'×'+e.reps+(e.weight?' @ '+e.weight+'lb':'');
-  else if(e.duration_minutes) det=e.duration_minutes+' min';
+  var setsHtml='';
+  if(e.sets&&e.reps){{
+    var ra=String(e.reps).split(',').map(function(r){{return r.trim();}});
+    var allSame=ra.length<=1||ra.every(function(r){{return r===ra[0];}});
+    if(allSame){{
+      var chip='<span class="eset-chip"><b>'+e.sets+'</b>×<b>'+esc(ra[0])+'</b>'+(e.weight?'&nbsp;@&nbsp;<b>'+e.weight+'lb</b>':'')+'</span>';
+      setsHtml='<div class="esets">'+chip+'</div>';
+    }}else{{
+      var wt=e.weight?'<span class="eset-wt">'+e.weight+'lb</span>':'';
+      var chips=ra.map(function(r,i){{
+        return '<span class="eset-chip"><b>S'+(i+1)+':</b>&nbsp;'+esc(r)+'</span>';
+      }}).join('');
+      setsHtml='<div class="esets">'+wt+chips+'</div>';
+    }}
+  }}else if(e.duration_minutes){{
+    setsHtml='<div class="esets"><span class="eset-chip"><b>'+e.duration_minutes+'</b>&nbsp;min'+(e.is_cardio&&e.cardio_type?'&nbsp;('+esc(e.cardio_type)+')':'')+'</span></div>';
+  }}
   return '<div class="erow" id="ex-row-'+e.id+'">'+
-    '<div class="ecnt"><div class="ename">'+esc(e.name)+'</div>'+
-    '<div class="edet">'+esc(det)+'</div></div>'+
+    '<div class="ecnt"><div class="ename">'+esc(e.name)+'</div></div>'+
+    setsHtml+
     '<div class="ract">'+
     '<button class="ibtn" onclick="editExercise('+e.id+')" aria-label="Edit">&#9998;</button>'+
     '<button class="ibtn del" onclick="deleteExercise('+e.id+')" aria-label="Delete">&#215;</button>'+
@@ -1559,6 +1661,83 @@ async function deleteExercise(id){{
 function cancelEdit(){{
   var d=_dayCache[_viewingDate];
   if(d) renderDayTab(d);
+}}
+
+// ── Profile inline editing ────────────────────────────────────────────────
+function editProw(rowId,field,current){{
+  var row=document.getElementById(rowId);if(!row)return;
+  var lbl=row.querySelector('.inlbl').textContent;
+  row.innerHTML='<span class="inlbl">'+esc(lbl)+'</span>'+
+    '<div style="display:flex;align-items:center;gap:5px;flex:1;justify-content:flex-end">'+
+    '<input type="text" id="pi-'+rowId+'" value="'+escA(current)+'" '+
+    'style="flex:1;max-width:160px;background:var(--inp);border:1px solid var(--ac);color:var(--tx);'+
+    'padding:5px 8px;border-radius:8px;font-size:12px;font-family:inherit;outline:none">'+
+    '<button class="sbtn" style="flex:none;padding:5px 12px;font-size:12px;min-height:0" '+
+    'onclick="saveProw(\''+rowId+'\',\''+escA(field)+'\')">✓</button>'+
+    '<button class="cbtn" style="flex:none;padding:5px 10px;font-size:12px;min-height:0" '+
+    'onclick="cancelProw()">✗</button></div>';
+  var inp=document.getElementById('pi-'+rowId);
+  if(inp){{inp.focus();inp.select();}}
+}}
+
+async function saveProw(rowId,field){{
+  var inp=document.getElementById('pi-'+rowId);if(!inp)return;
+  var val=inp.value.trim();
+  var btn=document.querySelector('#'+rowId+' .sbtn');
+  if(btn){{btn.disabled=true;btn.textContent='…';}}
+  try{{
+    var r=await fetch('/api/profile/'+TOKEN,{{
+      method:'PATCH',
+      headers:{{'Content-Type':'application/json'}},
+      body:JSON.stringify({{field:field,value:val||null}}),
+    }});
+    if(!r.ok)throw new Error('HTTP '+r.status);
+    var data=await fetchStats(null);
+    _baseData=data;_dayCache[_todayStr]=data;
+    renderProfileTab(data);
+    document.getElementById('user-name').textContent=data.profile?.name||'';
+    document.getElementById('goal-tag').textContent=data.profile?.primary_goal||'';
+  }}catch(e){{
+    alert('Save failed — try again.');
+    if(btn){{btn.disabled=false;btn.textContent='✓';}}
+  }}
+}}
+
+function cancelProw(){{if(_baseData)renderProfileTab(_baseData);}}
+
+// ── Share day ─────────────────────────────────────────────────────────────
+function shareDay(){{
+  var day=(_dayCache[_viewingDate]?.day)||{{}};
+  var tgt=(_baseData?.targets)||{{}};
+  var lines=['📊 My day — '+_viewingDate,''];
+  if(day.calories!=null){{
+    var pctC=tgt.calories?Math.round(day.calories/tgt.calories*100):null;
+    lines.push('🔥 Calories: '+day.calories+(tgt.calories?'/'+tgt.calories+(pctC?' ('+pctC+'%)':''):''));
+  }}
+  if(day.protein!=null){{
+    var pctP=tgt.protein?Math.round(day.protein/tgt.protein*100):null;
+    lines.push('💪 Protein: '+day.protein+'g'+(tgt.protein?'/'+tgt.protein+'g'+(pctP?' ('+pctP+'%)':''):''));
+  }}
+  if(day.workout_completed)lines.push('🏋️ Workout: done');
+  if(day.cardio_completed)lines.push('🏃 Cardio: done');
+  if(day.water_ml>0)lines.push('💧 Water: '+(day.water_ml>=1000?(day.water_ml/1000).toFixed(1)+'L':day.water_ml+'ml'));
+  var exs=day.exercise_entries||[];
+  if(exs.length){{
+    lines.push('');
+    exs.forEach(function(e){{
+      if(e.sets&&e.reps)lines.push('  '+e.name+' — '+e.sets+'×'+e.reps+(e.weight?' @ '+e.weight+'lb':''));
+      else if(e.duration_minutes)lines.push('  '+e.name+' — '+e.duration_minutes+' min');
+    }});
+  }}
+  var text=lines.join('\n');
+  if(navigator.share){{
+    navigator.share({{title:'Arnie — Day Summary',text:text}}).catch(function(){{}});
+  }}else{{
+    navigator.clipboard.writeText(text).then(function(){{
+      var btn=document.querySelector('.share-btn');
+      if(btn){{var old=btn.innerHTML;btn.innerHTML='&#10003; Copied!';setTimeout(function(){{btn.innerHTML=old;}},1800);}}
+    }}).catch(function(){{prompt('Copy your day summary:',text);}});
+  }}
 }}
 
 // ── Start ─────────────────────────────────────────────────────────────────

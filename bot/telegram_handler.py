@@ -18,7 +18,7 @@ from db.queries import (
     get_or_create_user, get_or_create_today_log, get_today_log,
     get_recent_conversations, log_conversation, close_daily_log, reopen_daily_log,
     reload_user, reset_today_log, reset_all_user_data, get_or_create_webhook_token,
-    add_feedback, clear_today_conversations,
+    add_feedback, clear_today_conversations, get_recent_logs,
 )
 from core.llm import chat, chat_follow_up
 from core.context_builder import build_context, fmt_log
@@ -196,6 +196,62 @@ def _welcome_message(name: str, has_targets: bool) -> str:
     )
 
 
+async def _generate_workout_analysis(user, exercise_calls, db) -> str:
+    """
+    Build a short post-workout evaluation when 2+ exercises are logged in one turn.
+    Compares today's session to recent history to call out progressions / regressions.
+    """
+    just_logged = []
+    for tc in exercise_calls:
+        inp = tc["input"]
+        name = inp.get("exercise_name", "?")
+        if inp.get("sets") and inp.get("reps"):
+            w = f" @ {inp['weight']} {inp.get('weight_unit', 'lbs')}" if inp.get("weight") else ""
+            just_logged.append(f"  {name}: {inp['sets']}×{inp['reps']}{w}")
+        elif inp.get("duration_minutes"):
+            just_logged.append(f"  {name}: {inp['duration_minutes']:.0f} min")
+        else:
+            just_logged.append(f"  {name}")
+
+    recent_logs = await get_recent_logs(db, user.id, days=28)
+    history_lines = []
+    for log in recent_logs:
+        if log.exercise_entries:
+            day_exs = []
+            for e in log.exercise_entries:
+                if e.sets and e.reps:
+                    w = f" @ {e.weight * 2.20462:.0f}lb" if e.weight else ""
+                    day_exs.append(f"{e.exercise_name}: {e.sets}×{e.reps}{w}")
+                elif e.duration_minutes:
+                    day_exs.append(f"{e.exercise_name}: {e.duration_minutes:.0f}min")
+            if day_exs:
+                history_lines.append(f"  {log.date}: " + ", ".join(day_exs[:5]))
+
+    history_str = "\n".join(history_lines[-6:]) if history_lines else "No previous workouts on record."
+
+    prompt = (
+        f"[ATHLETE: {user.name or 'User'}, {user.age or '?'}yo, "
+        f"goal={user.primary_goal or '?'}, exp={user.training_experience or '?'}]\n"
+        f"[TODAY — {len(exercise_calls)} exercises]\n" + "\n".join(just_logged) +
+        f"\n[RECENT HISTORY]\n{history_str}\n---\n"
+        "Give a 3–5 line workout evaluation. No 'Great session!' opener — start with a direct "
+        "assessment. Use <b>bold</b> for key numbers. If you spot a PR or regression vs history, "
+        "call it out explicitly. End with one concrete coaching note for next time."
+    )
+
+    try:
+        result = await chat(
+            [{"role": "user", "content": prompt}],
+            system="You are Arnie, a direct fitness coach. Give a brief, specific workout evaluation.",
+            tools=False,
+            max_tokens=300,
+        )
+        return result.get("text", "")
+    except Exception as e:
+        logger.error(f"Workout analysis LLM failed: {e}")
+        return ""
+
+
 async def _run_pipeline(update: Update, context: ContextTypes.DEFAULT_TYPE,
                         raw_text: str, source_type: str, db):
     """Core pipeline shared by all message types."""
@@ -320,6 +376,26 @@ async def _run_pipeline(update: Update, context: ContextTypes.DEFAULT_TYPE,
 
     # ── Send response ─────────────────────────────────────────────────────────
     await update.message.reply_text(**_fmt(response_text))
+
+    # ── Workout performance analysis (2+ exercises logged in one turn) ────────
+    if tool_calls and not in_onboarding:
+        exercise_calls = [tc for tc in tool_calls if tc["name"] == "log_exercise"]
+        if len(exercise_calls) >= 2:
+            analysis = await _generate_workout_analysis(user, exercise_calls, db)
+            if analysis:
+                stop_wa = asyncio.Event()
+                typing_wa = asyncio.create_task(
+                    _typing_keepalive(context.bot, chat_id, stop_wa)
+                )
+                try:
+                    await update.message.reply_text(**_fmt(analysis))
+                finally:
+                    stop_wa.set()
+                    typing_wa.cancel()
+                    try:
+                        await typing_wa
+                    except asyncio.CancelledError:
+                        pass
 
     # ── Persist conversation ──────────────────────────────────────────────────
     await log_conversation(db, user.id, raw_text, response_text, source_type=source_type)
