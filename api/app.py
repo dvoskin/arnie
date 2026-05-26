@@ -1081,7 +1081,7 @@ main{{padding:12px 16px 80px;position:relative;z-index:1}}
 
 /* Desktop 2-col day layout */
 @media(min-width:700px){{
-  #panel-day{{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start}}
+  #panel-day.active{{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start}}
   .day-col-left{{min-width:0}}
   .day-col-right{{min-width:0}}
   #panel-day .dnav{{grid-column:1/-1}}
