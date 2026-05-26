@@ -79,12 +79,36 @@ def fmt_history(logs: List[DailyLog]) -> str:
     if not closed:
         return "No closed days yet."
     lines = []
-    for l in closed[:5]:
-        lines.append(
+    for l in closed[:7]:
+        line = (
             f"{l.date}: {l.total_calories:.0f}cal  {l.total_protein:.0f}gP  "
             f"workout={'✓' if l.workout_completed else '✗'}"
         )
+        lines.append(line)
     return "\n".join(lines)
+
+
+def fmt_exercise_history(logs: List[DailyLog]) -> str:
+    """Per-session exercise history with weights/reps for progressive overload context."""
+    sessions = []
+    for l in logs:
+        if not l.exercise_entries:
+            continue
+        entries = []
+        for e in l.exercise_entries:
+            if e.sets and e.reps:
+                w = f" @ {e.weight * 2.20462:.0f}lb" if e.weight else ""
+                entries.append(f"    {e.exercise_name}: {e.sets}×{e.reps}{w}")
+            elif e.duration_minutes:
+                ct = f" ({e.cardio_type})" if e.cardio_type else ""
+                entries.append(f"    {e.exercise_name}: {e.duration_minutes:.0f}min{ct}")
+            else:
+                entries.append(f"    {e.exercise_name}")
+        if entries:
+            sessions.append(f"  {l.date}:\n" + "\n".join(entries))
+    if not sessions:
+        return "No exercise history yet."
+    return "\n".join(sessions[:6])
 
 
 def fmt_weight_trend(weights: List[BodyMetric]) -> str:
@@ -216,7 +240,7 @@ def fmt_health(snaps: List[HealthSnapshot]) -> str:
 
 
 async def build_context(user: User, today_log: Optional[DailyLog], db) -> str:
-    recent_logs = await get_recent_logs(db, user.id, days=14)
+    recent_logs = await get_recent_logs(db, user.id, days=28)
     recent_weights = await get_recent_weights(db, user.id, days=14)
     recent_health = await get_recent_health_snapshots(db, user.id, days=3)
     memory = await read_memory(user.telegram_id)
@@ -227,6 +251,9 @@ async def build_context(user: User, today_log: Optional[DailyLog], db) -> str:
     progress = goal_progress(user)
     health_str = fmt_health(recent_health)
 
+    # Detect workout mode: exercises already logged today
+    in_workout = bool(today_log and today_log.exercise_entries)
+
     sections = [
         "=== PROFILE ===",
         fmt_profile(user, prefs),
@@ -236,6 +263,7 @@ async def build_context(user: User, today_log: Optional[DailyLog], db) -> str:
         fmt_log(today_log),
         (f"[PACING]\n{pace}" if pace else ""),
         (f"[WEARABLE]\n{health_str}" if health_str else ""),
+        ("" if not in_workout else "[WORKOUT MODE: ACTIVE]"),
         "",
         "=== INSIGHTS ===",
         (adherence if adherence else "No adherence data yet."),
@@ -243,6 +271,9 @@ async def build_context(user: User, today_log: Optional[DailyLog], db) -> str:
         "=== RECENT HISTORY ===",
         fmt_history(recent_logs),
         fmt_weight_trend(recent_weights),
+        "",
+        "=== EXERCISE HISTORY ===",
+        fmt_exercise_history(recent_logs),
         "",
         "=== MEMORY ===",
         (memory[:1800] if memory else "No memory yet."),
