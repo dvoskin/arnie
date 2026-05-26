@@ -1131,6 +1131,7 @@ async def _post_init(app: Application):
     from telegram import BotCommand
     await app.bot.set_my_commands([
         BotCommand("today",   "Today's calories, macros & workout"),
+        BotCommand("ai",      "AI coaching insights on your day"),
         BotCommand("week",    "Last 7 days — history & trends"),
         BotCommand("me",      "Profile, targets & settings"),
         BotCommand("close",   "Close today's log"),
