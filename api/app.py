@@ -1729,7 +1729,7 @@ function shareDay(){{
       else if(e.duration_minutes)lines.push('  '+e.name+' — '+e.duration_minutes+' min');
     }});
   }}
-  var text=lines.join('\n');
+  var text=lines.join('\\n');
   if(navigator.share){{
     navigator.share({{title:'Arnie — Day Summary',text:text}}).catch(function(){{}});
   }}else{{
