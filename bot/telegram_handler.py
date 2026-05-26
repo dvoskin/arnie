@@ -551,6 +551,14 @@ async def cmd_today(update: Update, context: ContextTypes.DEFAULT_TYPE):
         cardio_icon  = "✅" if log.cardio_completed  else "⬜"
         water_line = f"{water:.0f}ml" if water else "none logged"
 
+        # Build exercise summary for coaching context
+        ex_names = []
+        if log.exercise_entries:
+            for e in log.exercise_entries:
+                if e.exercise_name:
+                    ex_names.append(e.exercise_name)
+        ex_str = ", ".join(ex_names[:6]) if ex_names else "none"
+
         lines = [
             f"<b>Today — {log.date}</b>",
             "",
@@ -564,6 +572,37 @@ async def cmd_today(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"{workout_icon} Workout   {cardio_icon} Cardio",
         ]
         await update.message.reply_text("\n".join(lines), parse_mode="HTML")
+
+        # Generate 1-2 coaching lines via Haiku
+        try:
+            stats_ctx = (
+                f"Name: {user.name or 'user'}  Goal: {user.primary_goal or 'unset'}\n"
+                f"Calories: {cal:.0f}"
+                + (f" / {cal_t}  ({cal/cal_t*100:.0f}%)" if cal_t else "") + "\n"
+                f"Protein: {pro:.0f}g"
+                + (f" / {pro_t}g  ({pro/pro_t*100:.0f}%)" if pro_t else "") + "\n"
+                f"Carbs: {carb:.0f}g  Fats: {fat:.0f}g\n"
+                f"Workout: {'done — ' + ex_str if log.workout_completed else 'not done'}  "
+                f"Cardio: {'done' if log.cardio_completed else 'not done'}"
+            )
+            coaching_sys = (
+                "You are Arnie, a concise fitness coach. "
+                "Given the day's snapshot, write exactly 1-2 short coaching observations. "
+                "No greeting, no sign-off, no bullet points — plain sentences only. "
+                "Be specific and data-driven. Under 55 words total."
+            )
+            resp = await chat(
+                messages=[{"role": "user", "content": stats_ctx}],
+                system=coaching_sys,
+                tools=False,
+                max_tokens=100,
+                model="claude-haiku-4-5-20251001",
+            )
+            insight = (resp.get("text") or "").strip()
+            if insight:
+                await update.message.reply_text(f"<i>{insight}</i>", parse_mode="HTML")
+        except Exception:
+            pass  # coaching is best-effort; never block the snapshot
 
 
 async def cmd_me(update: Update, context: ContextTypes.DEFAULT_TYPE):
