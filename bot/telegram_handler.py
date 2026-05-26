@@ -565,7 +565,20 @@ async def cmd_today(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ]
         await update.message.reply_text("\n".join(lines), parse_mode="HTML")
 
-        # Generate 1-2 coaching insights (same style as dashboard, best-effort)
+
+async def cmd_ai(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """AI coaching insights based on today + recent history."""
+    async with AsyncSessionLocal() as db:
+        user = await get_or_create_user(db, str(update.effective_user.id))
+        log = await get_today_log(db, user.id, user.timezone or "UTC")
+        prefs = user.preferences
+
+        if not log:
+            await update.message.reply_text("Nothing logged today yet — log some food or a workout first.")
+            return
+
+        await update.message.reply_text("Analyzing…")
+
         try:
             from db.queries import get_recent_weights
             from api.insights import generate_short_insight
@@ -585,6 +598,9 @@ async def cmd_today(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 for w in sorted(weights, key=lambda w: w.timestamp)
             ]
 
+            cal_t = prefs.calorie_target if prefs else None
+            pro_t = prefs.protein_target if prefs else None
+
             stats = {
                 "user": {
                     "name": user.name,
@@ -592,13 +608,12 @@ async def cmd_today(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     "current_weight_lbs": round(user.current_weight_kg * 2.20462, 1) if user.current_weight_kg else None,
                     "goal_weight_lbs": round(user.goal_weight_kg * 2.20462, 1) if user.goal_weight_kg else None,
                 },
-                "targets": {
-                    "calories": cal_t,
-                    "protein": pro_t,
-                },
+                "targets": {"calories": cal_t, "protein": pro_t},
                 "today": {
-                    "calories": round(cal), "protein": round(pro),
-                    "carbs": round(carb), "fats": round(fat),
+                    "calories": round(log.total_calories or 0),
+                    "protein": round(log.total_protein or 0),
+                    "carbs": round(log.total_carbs or 0),
+                    "fats": round(log.total_fats or 0),
                     "workout_completed": log.workout_completed,
                     "cardio_completed": log.cardio_completed,
                 },
@@ -610,8 +625,11 @@ async def cmd_today(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if insights:
                 msg = "\n".join(f"· <i>{i}</i>" for i in insights)
                 await update.message.reply_text(msg, parse_mode="HTML")
-        except Exception:
-            pass  # never block the snapshot
+            else:
+                await update.message.reply_text("Not enough data for insights yet — keep logging.")
+        except Exception as e:
+            logger.error(f"cmd_ai failed: {e}", exc_info=True)
+            await update.message.reply_text("Couldn't generate insights right now — try again in a moment.")
 
 
 async def cmd_me(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1086,6 +1104,7 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "<b>Arnie commands</b>\n\n"
         "/today    — calories, macros &amp; workout status\n"
+        "/ai       — coaching insights on your day &amp; trends\n"
         "/week     — last 7 days recap &amp; trends\n"
         "/me       — profile, targets &amp; settings\n"
         "/close    — close today's log\n"
@@ -1145,6 +1164,7 @@ def build_app() -> Application:
     app.add_handler(CommandHandler("start",   cmd_start))
     app.add_handler(CommandHandler("help",    cmd_help))
     app.add_handler(CommandHandler("today",   cmd_today))
+    app.add_handler(CommandHandler("ai",      cmd_ai))
     app.add_handler(CommandHandler("me",      cmd_me))
     app.add_handler(CommandHandler("week",    cmd_history))
     app.add_handler(CommandHandler("close",   cmd_close))
