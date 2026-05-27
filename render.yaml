@@ -1,4 +1,14 @@
 services:
+  - type: web
+    name: arnie-landing
+    runtime: static
+    staticPublishPath: ./landing
+    buildCommand: ""
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+
   - type: worker
     name: arnie-bot
     runtime: python

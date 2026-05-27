@@ -491,6 +491,10 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ── Commands ──────────────────────────────────────────────────────────────────
 
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Deep-link parameter from landing page: /start freetrial
+    source = (context.args[0] if context.args else "").lower()
+    from_landing = source == "freetrial"
+
     async with AsyncSessionLocal() as db:
         user = await get_or_create_user(db, str(update.effective_user.id))
         if user.onboarding_completed:
@@ -506,6 +510,17 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(
                 f"Hey {user.name}, we're mid-setup. Just keep going — answer the last question I asked, "
                 "or type anything and I'll guide us back."
+            )
+        elif from_landing:
+            # Came from the landing page free trial CTA
+            await update.message.reply_text(
+                "Hey — I'm <b>Arnie</b>. 💪\n\n"
+                "Your 7-day free trial starts now. I'm your AI fitness and nutrition coach — "
+                "I track what you eat, every workout, your weight trends, and I actually remember it all.\n\n"
+                "No app to learn. Just text me like you'd text a real coach.\n\n"
+                "<b>Let's get you set up in about 3 minutes.</b>\n"
+                "First — what's your name?",
+                parse_mode="HTML",
             )
         else:
             await update.message.reply_text(
