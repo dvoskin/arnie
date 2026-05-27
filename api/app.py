@@ -12,7 +12,6 @@ from datetime import date, timedelta, datetime
 from typing import Optional
 
 import stripe
-import stripe.error
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
@@ -58,7 +57,7 @@ async def stripe_webhook(request: Request):
         event = stripe.Webhook.construct_event(payload, sig_header, webhook_secret)
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid payload")
-    except stripe.error.SignatureVerificationError:
+    except stripe.SignatureVerificationError:
         raise HTTPException(status_code=400, detail="Invalid signature")
 
     event_type = event["type"]
