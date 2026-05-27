@@ -13,6 +13,8 @@ from db.queries import (
     close_daily_log, reopen_daily_log, reload_user,
     update_food_entry as q_update_food_entry,
     delete_food_entry as q_delete_food_entry,
+    update_exercise_entry as q_update_exercise_entry,
+    delete_exercise_entry as q_delete_exercise_entry,
 )
 from handlers.onboarding import is_onboarding_complete
 from memory.memory_manager import append_memory_update, init_memory
@@ -131,6 +133,34 @@ async def _dispatch(name, inp, user, today_log, db, source_type):  # noqa: C901
             return f"No food entry #{entry_id} found."
         await db.refresh(today_log)
         return f"Removed food entry #{entry_id}"
+
+    elif name == "update_exercise_entry":
+        if not getattr(today_log, "id", None):
+            return "Skipped — no log to update"
+        entry_id = inp.get("entry_id")
+        if not entry_id:
+            return "Missing entry_id"
+        changes = {k: v for k, v in inp.items() if k != "entry_id" and v is not None}
+        # Convert weight from lbs to kg for storage
+        if "weight" in changes:
+            changes["weight"] = changes["weight"] * 0.453592
+        entry = await q_update_exercise_entry(db, entry_id, user.id, **changes)
+        if not entry:
+            return f"No exercise entry #{entry_id} found in today's log."
+        await db.refresh(today_log)
+        return f"Updated exercise #{entry_id}: {entry.exercise_name}"
+
+    elif name == "delete_exercise_entry":
+        if not getattr(today_log, "id", None):
+            return "Skipped — no log to update"
+        entry_id = inp.get("entry_id")
+        if not entry_id:
+            return "Missing entry_id"
+        ok = await q_delete_exercise_entry(db, entry_id, user.id)
+        if not ok:
+            return f"No exercise entry #{entry_id} found."
+        await db.refresh(today_log)
+        return f"Removed exercise entry #{entry_id}"
 
     elif name == "log_water":
         ml = inp.get("amount_ml") or (inp.get("amount_oz", 0) * 29.5735)

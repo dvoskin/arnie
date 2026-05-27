@@ -211,6 +211,46 @@ ARNIE_TOOLS = [
         },
     },
     {
+        "name": "update_exercise_entry",
+        "description": (
+            "CORRECT an existing exercise entry that's already in today's log. "
+            "Use when the user wants to fix weight, sets, reps, or name — e.g. "
+            "'actually I did 4 sets not 3', 'the squat weight was 185 not 175', "
+            "'change my bench to 3×6'. Find the matching entry by its [#id] in the context. "
+            "DO NOT call log_exercise for corrections — that creates a duplicate."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "entry_id": {
+                    "type": "integer",
+                    "description": "The [#id] of the exercise entry to update.",
+                },
+                "exercise_name": {"type": "string"},
+                "sets": {"type": "integer"},
+                "reps": {"type": "string", "description": "e.g. '5' or '5,5,5,4'"},
+                "weight": {"type": "number", "description": "Weight in lbs"},
+                "duration_minutes": {"type": "number"},
+            },
+            "required": ["entry_id"],
+        },
+    },
+    {
+        "name": "delete_exercise_entry",
+        "description": (
+            "REMOVE an exercise entry from today's log. Use when the user says "
+            "'delete my bench press', 'remove that set', 'I didn't do that exercise'. "
+            "Find the matching entry by its [#id] in the context."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "entry_id": {"type": "integer"},
+            },
+            "required": ["entry_id"],
+        },
+    },
+    {
         "name": "generate_image",
         "description": (
             "Generate a visual image when the user EXPLICITLY asks for a visual, "

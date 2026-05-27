@@ -34,13 +34,14 @@ def fmt_log(log: Optional[DailyLog]) -> str:
     if log.exercise_entries:
         lines = []
         for e in log.exercise_entries:
+            # [#id] lets the LLM reference entries for update_exercise_entry / delete_exercise_entry
             if e.sets and e.reps:
-                w = f" @ {e.weight}" if e.weight else ""
-                lines.append(f"  • {e.exercise_name}: {e.sets}×{e.reps}{w}")
+                w = f" @ {round(e.weight * 2.20462, 1)}lb" if e.weight else ""
+                lines.append(f"  • [#{e.id}] {e.exercise_name}: {e.sets}×{e.reps}{w}")
             elif e.duration_minutes:
-                lines.append(f"  • {e.exercise_name}: {e.duration_minutes:.0f} min")
+                lines.append(f"  • [#{e.id}] {e.exercise_name}: {e.duration_minutes:.0f} min")
             else:
-                lines.append(f"  • {e.exercise_name}")
+                lines.append(f"  • [#{e.id}] {e.exercise_name}")
         exercises = "\nExercise:\n" + "\n".join(lines)
 
     return (

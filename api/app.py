@@ -21,6 +21,7 @@ from db.queries import (
     get_recent_health_snapshots,
     update_food_entry, delete_food_entry,
     update_exercise_entry, delete_exercise_entry,
+    _user_today,
 )
 
 app = FastAPI(title="Arnie API", docs_url=None, redoc_url=None)
@@ -448,7 +449,7 @@ async def _build_stats_for_user(db, user, target_date=None):
         "weights": weight_data,
         "health": health_data,
         "available_dates": available_dates,
-        "viewing_date": str(target_date or dt_date.today()),
+        "viewing_date": str(target_date or _user_today(user.timezone or "UTC")),
         # keep legacy 'today' + 'user' keys so existing insights endpoint works unchanged
         "today": _log_to_day(day_log),
         "user": {"name": user.name or "User", "goal": user.primary_goal or "—",
@@ -1547,6 +1548,11 @@ const INSIGHTS_API = '/api/insights/' + TOKEN;
 let _baseData=null, _dayCache={{}}, _viewingDate=null, _todayStr=null;
 let _availDates=[], _activeTab='day', calChart, proChart, weightChart;
 
+// ── Local date helper (avoids UTC-offset issues with toISOString) ─────────
+function _localDate(d){{
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}}
+
 // ── Theme ─────────────────────────────────────────────────────────────────
 (function(){{
   var t=localStorage.getItem('arnie-theme')||
@@ -1630,7 +1636,7 @@ async function init(){{
   try{{
     var data=await fetchStats(null);
     _baseData=data;
-    _todayStr=data.viewing_date||data.day?.date||new Date().toISOString().slice(0,10);
+    _todayStr=data.viewing_date||data.day?.date||_localDate(new Date());
     _viewingDate=_todayStr;
     var hd=(data.history||[]).map(h=>h.date);
     _availDates=[...new Set([...hd,_todayStr])].sort();
@@ -1749,14 +1755,22 @@ function renderMacroRing(day){{
 // ── 28-day consistency heatmap ────────────────────────────────────────────
 function renderHeatmap(history,targets){{
   var grid=document.getElementById('heat-grid');if(!grid)return;
-  var today=new Date(),calT=targets.calories,html='';
-  // Build Mon-anchored 28-day grid (pad start to Monday)
+  var today=new Date();today.setHours(0,0,0,0);
+  var calT=targets.calories,html='';
+  // Build 28-day cell array (oldest first)
   var cells=[];
   for(var i=27;i>=0;i--){{
     var d=new Date(today);d.setDate(d.getDate()-i);
-    var ds=d.toISOString().slice(0,10);
+    var ds=_localDate(d);
     var log=history.find(function(h){{return h.date===ds;}})||null;
     cells.push({{ds:ds,log:log,isToday:i===0}});
+  }}
+  // Monday-anchor: pad empty cells so first day lands in correct column
+  // JS getDay(): 0=Sun,1=Mon,2=Tue,...,6=Sat → Mon-anchored: (getDay()+6)%7
+  var firstDay=new Date(today);firstDay.setDate(firstDay.getDate()-27);
+  var startCol=(firstDay.getDay()+6)%7;
+  for(var p=0;p<startCol;p++){{
+    html+='<div class="hcell" style="visibility:hidden;pointer-events:none"></div>';
   }}
   cells.forEach(function(cell){{
     var cls='hcell';
@@ -1811,14 +1825,15 @@ function renderGoalProgress(profile,weights){{
 
 // ── Streak & stats tiles ──────────────────────────────────────────────────
 function renderStreakStats(history,targets){{
-  var today=new Date(),logDates=new Set(history.map(function(h){{return h.date;}}));
+  var today=new Date();today.setHours(0,0,0,0);
+  var logDates=new Set(history.map(function(h){{return h.date;}}));
   var streak=0,check=new Date(today);
   while(true){{
-    var ds=check.toISOString().slice(0,10);
+    var ds=_localDate(check);
     if(logDates.has(ds)){{streak++;check.setDate(check.getDate()-1);}}else break;
   }}
   var monthAgo=new Date(today);monthAgo.setDate(monthAgo.getDate()-30);
-  var monthStr=monthAgo.toISOString().slice(0,10);
+  var monthStr=_localDate(monthAgo);
   var workouts=history.filter(function(h){{return h.date>=monthStr&&h.workout;}}).length;
   var closed=history.filter(function(h){{return h.status==='closed';}});
   var avgCal=closed.length?Math.round(closed.reduce(function(s,h){{return s+h.calories;}},0)/closed.length):null;

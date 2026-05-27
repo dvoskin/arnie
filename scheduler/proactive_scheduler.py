@@ -306,7 +306,9 @@ async def _run_reminders():
 
                 # ── Pre-workout readiness (15:30–16:00) ───────────────────────
                 elif hour == 15 and 30 <= minute < 60:
-                    if log and not log.workout_completed:
+                    # Skip if workout done or exercises are already being logged (mid-workout)
+                    exercises_in_progress = log and len(log.exercise_entries or []) > 0
+                    if log and not log.workout_completed and not exercises_in_progress:
                         msg = await _llm_nudge(user, log, prefs, health_snap, "preworkout", name)
                         if not msg:
                             rec = health_snap.recovery_score if health_snap else None
@@ -321,7 +323,9 @@ async def _run_reminders():
 
                 # ── Afternoon workout check (16:30–17:00) ────────────────────
                 elif hour == 16 and 30 <= minute < 60:
-                    if log and not log.workout_completed:
+                    # Skip if workout done or exercises are already being logged (mid-workout)
+                    exercises_in_progress = log and len(log.exercise_entries or []) > 0
+                    if log and not log.workout_completed and not exercises_in_progress:
                         msg = await _llm_nudge(user, log, prefs, health_snap, "workout_check", name)
                         if not msg:
                             msg = f"4:30 — workout still hasn't happened, {name}. Happening today or are we calling it a rest day?"

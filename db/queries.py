@@ -141,7 +141,8 @@ async def get_recent_weights(db: AsyncSession, user_id: int,
 
 async def get_recent_logs(db: AsyncSession, user_id: int,
                           days: int = 7) -> List[DailyLog]:
-    since = date.today() - timedelta(days=days)
+    # Add 1-day buffer to avoid UTC edge cases near midnight
+    since = date.today() - timedelta(days=days + 1)
     result = await db.execute(
         select(DailyLog)
         .where(and_(DailyLog.user_id == user_id, DailyLog.date >= since))
