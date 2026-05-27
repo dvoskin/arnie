@@ -7,7 +7,12 @@ import logging
 import os
 import random
 
-from telegram import Update
+from telegram import (
+    Update,
+    InlineKeyboardMarkup,
+    InlineKeyboardButton,
+    ReplyKeyboardRemove,
+)
 from telegram.constants import ChatAction, ParseMode
 from telegram.ext import (
     Application, CommandHandler, MessageHandler, ContextTypes, Defaults, filters,
@@ -22,7 +27,7 @@ from db.queries import (
 )
 from core.llm import chat, chat_follow_up
 from core.context_builder import build_context, fmt_log
-from handlers.onboarding import build_onboarding_system
+from handlers.onboarding import build_onboarding_system, get_onboarding_keyboard
 from handlers.tool_executor import execute_tool_calls
 from handlers.daily_closeout import generate_closeout
 from memory.reflection import maybe_update_memory
@@ -203,33 +208,35 @@ async def _build_messages(db, user_id: int, current_text: str):
     return msgs
 
 
-def _welcome_message(name: str, has_targets: bool) -> str:
-    target_note = (
-        "Your calorie and protein targets are locked in — check them anytime with /targets.\n\n"
-        if has_targets else
-        "We're skipping targets for now — once you start logging, just say <i>\"set my targets\"</i> "
-        "and I'll either calculate them with you or take whatever numbers you give me.\n\n"
+def _welcome_message(name: str, has_targets: bool,
+                     primary_goal: str = None,
+                     calorie_target: int = None,
+                     protein_target: int = None) -> str:
+    goal_labels = {
+        "cut": "Cut 🔻", "bulk": "Bulk 📈", "maintain": "Maintain ⚖️",
+        "performance": "Performance ⚡", "health": "Health 🌿",
+    }
+    goal_line = (
+        f"Goal: <b>{goal_labels.get(primary_goal, primary_goal.title())}</b>\n"
+        if primary_goal else ""
     )
+
+    if has_targets and calorie_target and protein_target:
+        target_line = f"Targets: <b>{calorie_target} cal</b> · <b>{protein_target}g protein</b>\n"
+    else:
+        target_line = "Targets: not set — say <i>\"set my targets\"</i> when ready\n"
+
     return (
-        f"Alright <b>{name}</b> — you're set. Let's get to work. 💪\n\n"
-        f"{target_note}"
-        "<b>How we work together:</b>\n\n"
-        "🍳 <b>Food</b> → just tell me what you ate\n"
-        "<i>\"3 eggs, 2 slices of toast and a coffee\"</i>\n\n"
-        "🏋️ <b>Workouts</b> → tell me what you trained\n"
-        "<i>\"bench 185 4x5, OHP 115 3x8, lateral raises 20x4x15\"</i>\n\n"
-        "⚖️ <b>Weight</b> → drop it in whenever you weigh in\n"
-        "<i>\"191.2 this morning\"</i>\n\n"
-        "💬 <b>Ask me anything</b> → coaching, pacing, plans, ideas\n"
-        "<i>\"how am I doing on protein?\"</i> or <i>\"build me a pull day\"</i>\n\n"
-        "<b>Useful commands:</b>\n"
-        "/today — daily snapshot\n"
-        "/targets — your goals\n"
-        "/dash — open your dashboard in a browser\n"
-        "/remind on — let me check in with you through the day\n"
-        "/help — full command list\n\n"
-        "Whenever you're ready, tell me what you've eaten today or what's coming up next. "
-        "We're in this together."
+        f"You're in, <b>{name}</b>.\n\n"
+        f"{goal_line}"
+        f"{target_line}\n"
+        "No commands needed to log — just talk to me:\n\n"
+        "<i>\"chicken breast, rice, broccoli\"</i> → logs your meal\n"
+        "<i>\"bench 185 4×5, OHP 115 3×8\"</i> → logs your workout\n"
+        "<i>\"182.4 this morning\"</i> → logs your weight\n"
+        "<i>\"how am I doing on protein?\"</i> → I'll tell you\n\n"
+        "Use /remind on to get proactive daily check-ins from me.\n\n"
+        "<b>What did you eat today?</b> Start there."
     )
 
 
@@ -386,8 +393,15 @@ async def _run_pipeline(update: Update, context: ContextTypes.DEFAULT_TYPE,
     # Still in onboarding → ALWAYS follow-up so next question is included
     # Normal mode → only follow-up when first pass had no text
     if just_completed:
-        has_targets = bool(user.preferences and user.preferences.calorie_target)
-        response_text = _welcome_message(user.name or "", has_targets)
+        prefs = user.preferences
+        has_targets = bool(prefs and prefs.calorie_target)
+        response_text = _welcome_message(
+            name=user.name or "",
+            has_targets=has_targets,
+            primary_goal=user.primary_goal,
+            calorie_target=prefs.calorie_target if prefs else None,
+            protein_target=prefs.protein_target if prefs else None,
+        )
     else:
         need_followup = (tool_calls and raw_content and
                          (in_onboarding or not response_text))
@@ -412,7 +426,34 @@ async def _run_pipeline(update: Update, context: ContextTypes.DEFAULT_TYPE,
         response_text = "Got it."
 
     # ── Send response ─────────────────────────────────────────────────────────
-    await update.message.reply_text(**_fmt(response_text))
+    fmt_kwargs = _fmt(response_text)
+
+    if just_completed:
+        # Remove any lingering reply keyboard when onboarding finishes
+        fmt_kwargs["reply_markup"] = ReplyKeyboardRemove()
+    elif in_onboarding:
+        # Attach the quick-reply keyboard for the upcoming question
+        kb = get_onboarding_keyboard(user)
+        if kb:
+            fmt_kwargs["reply_markup"] = kb
+
+    await update.message.reply_text(**fmt_kwargs)
+
+    # ── Post-onboarding: send dashboard as a second message with inline button ─
+    if just_completed:
+        try:
+            token = await get_or_create_webhook_token(db, user.id)
+            base_url = os.getenv("RENDER_EXTERNAL_URL", "http://localhost:10000").rstrip("/")
+            dash_url = f"{base_url}/dashboard/{token}"
+            dash_kb = InlineKeyboardMarkup([[
+                InlineKeyboardButton("📊 Open your dashboard →", url=dash_url)
+            ]])
+            await update.message.reply_text(
+                "Your coaching dashboard is live — everything you log shows up here.",
+                reply_markup=dash_kb,
+            )
+        except Exception as e:
+            logger.warning(f"Could not send dashboard link after onboarding: {e}")
 
     # ── Workout performance analysis (2+ exercises logged in one turn) ────────
     if tool_calls and not in_onboarding:
@@ -512,27 +553,24 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "or type anything and I'll guide us back."
             )
         elif from_landing:
-            # Came from the landing page free trial CTA
             await update.message.reply_text(
-                "Hey — I'm <b>Arnie</b>. 💪\n\n"
-                "Your 7-day free trial starts now. I'm your AI fitness and nutrition coach — "
-                "I track what you eat, every workout, your weight trends, and I actually remember it all.\n\n"
-                "No app to learn. Just text me like you'd text a real coach.\n\n"
-                "<b>Let's get you set up in about 3 minutes.</b>\n"
-                "First — what's your name?",
+                "I'm <b>Arnie</b> — your AI fitness and nutrition coach.\n\n"
+                "Your 7-day free trial starts now.\n\n"
+                "No app to download. No spreadsheets. Just text me — "
+                "meals, workouts, weight, questions — and I'll track it, "
+                "remember it, and actually coach you through it.\n\n"
+                "Takes about 2 minutes to get set up.\n\n"
+                "What's your first name?",
                 parse_mode="HTML",
             )
         else:
             await update.message.reply_text(
-                "Hey — I'm <b>Arnie</b>. 💪\n\n"
-                "I'm your fitness and nutrition coach. I track everything you eat, every workout you do, "
-                "your weight, your trends — and I actually pay attention so I can help you hit your goals.\n\n"
-                "<b>Here's how we'll start:</b>\n"
-                "1. Quick evaluation — your stats, your goals, what you're working with (~3 min)\n"
-                "2. We'll set your calorie and protein targets together — I can calculate them, "
-                "you can tell me what you want, or we can come back to it later\n"
-                "3. Then we get to work. Every meal, every session.\n\n"
-                "Ready? What's your first name?",
+                "I'm <b>Arnie</b> — your AI fitness and nutrition coach.\n\n"
+                "No app to download. No spreadsheets. Just text me like "
+                "you'd text a real coach — meals, workouts, weight, questions — "
+                "and I track it all, remember it all, and show up every day.\n\n"
+                "Takes about 2 minutes to get set up.\n\n"
+                "What's your first name?",
                 parse_mode="HTML",
             )
 

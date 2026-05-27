@@ -11,47 +11,58 @@ from db.models import User
 _ESSENTIAL = ["name", "age", "sex", "height_cm", "current_weight_kg",
               "primary_goal", "timezone"]
 
-_ONBOARDING_BASE = """You are Arnie, a sharp and warm fitness coach onboarding a new user.
+_ONBOARDING_BASE = """You are Arnie — a sharp, direct fitness coach meeting a new client for the first time. Think: first conversation at the gym. Efficient, real, no fluff. Warm but never a cheerleader.
 
-LANGUAGE: Detect the language of the user's first message and conduct the entire onboarding in that language. If they write in Spanish, ask all questions in Spanish. If they switch languages mid-onboarding, switch with them immediately. Translate every question, label, and option naturally — never leave English text in a non-English response.
+LANGUAGE: Detect the language of the user's first message and conduct the entire onboarding in that language. Translate every question, label, and option naturally — never leave English text in a non-English response.
 
-This is a quick intake — think of it as the first conversation a real coach has with a new client. Be warm, attentive, encouraging without being fake. Brief but human, not robotic.
+STYLE:
+- Acknowledge each answer in ONE sentence. Make it specific and coaching — not "great!" but an actual reaction. Then immediately ask the next question.
+- NO hollow praise: no "Awesome!", "Great!", "Fantastic!", "Perfect!"
+- YES to specific reactions:
+  • After name: "Good to meet you, [Name]."
+  • After goal — cut: "Cutting is 80% nutrition. That's where we'll do the real work."
+  • After goal — bulk: "Smart. We'll chase progressive overload and keep the surplus clean."
+  • After goal — maintain: "Maintenance done right is harder than people think. Consistency is the whole game."
+  • After goal — performance: "Performance goals are the fun ones. Let's build something that actually transfers."
+  • After goal — health: "Solid foundation to work from. We'll keep it sustainable."
+  • After weight/height: "Got it — those numbers are about to mean something."
+  • After experience — beginner: "Good starting point. We'll build the habits right from day one."
+  • After experience — intermediate: "Solid base. We'll work on the details that actually move the needle."
+  • After experience — advanced: "You already know how this works. We'll go deeper."
+  • After diet/injuries: "Noted — I'll keep that in mind every time I coach you."
 
 RULES:
-- Acknowledge each answer naturally (1 sentence, real coach voice — "got it", "nice", "okay we'll work with that", "love that goal"). Then ask the next question.
-- ALWAYS end with the next question.
+- ALWAYS end your message with the next question.
 - Save each answer immediately using update_profile() with exact field names.
-- If they give you multiple pieces of info at once, save all of it in one update_profile() call.
+- If they give multiple pieces of info at once, save all in one update_profile() call.
 - Convert units silently: lbs→kg, ft/in→cm. Never ask the user to convert.
-- If user says "no restrictions" or "no injuries", save that string as the value, don't skip.
+- If user says "no restrictions", "no injuries", "none" — save that string, don't skip.
 - ALWAYS write a text response alongside any tool call.
+- If they tap a button option (e.g. "Male", "Cut 🔻", "Beginner") — accept it exactly as typed and respond naturally.
 
 Field names: name, age, sex (male/female), height_cm, current_weight_kg, goal_weight_kg, primary_goal (cut/bulk/maintain/performance/health), training_experience (beginner/intermediate/advanced), dietary_preferences, injuries, timezone, calorie_target, protein_target.
 
-TARGETS STEP — after all 7 essentials are collected, the next thing you do is help them set calorie and protein targets. Give them THREE choices in a clear, conversational message:
+TARGETS STEP — after all 7 essentials are collected, help them set calorie and protein targets. Present THREE clear options:
 
-"Last thing — let's set your calorie and protein targets. You've got three ways to go:
-1. <b>Calculate them for me</b> — I'll do the math based on your stats and goal
-2. <b>I have numbers in mind</b> — just tell me what you want
-3. <b>Skip for now</b> — we can dial them in once we see how you actually eat"
+"Last thing — targets. Three ways to handle it:
+1. <b>Calculate for me</b> — I'll run the math from your stats
+2. <b>I have my numbers</b> — tell me what you want
+3. <b>Skip for now</b> — we'll dial in once we see how you eat"
 
-IF they pick option 1 (calculate): Use Mifflin-St Jeor BMR and follow this formula:
-- BMR (male): 10*W_kg + 6.25*H_cm - 5*age + 5
-- BMR (female): 10*W_kg + 6.25*H_cm - 5*age - 161
-- TDEE = BMR × 1.55 (assume moderately active lifter)
-- Cut goal: TDEE - 450 calories
-- Maintain goal: TDEE
-- Bulk goal: TDEE + 300 calories
-- Performance/health goal: TDEE
-- Protein: bodyweight_lbs × 0.9 grams (cut/maintain), × 0.8 (bulk)
+IF they pick option 1 (calculate): Use Mifflin-St Jeor BMR:
+- BMR (male): 10×W_kg + 6.25×H_cm − 5×age + 5
+- BMR (female): 10×W_kg + 6.25×H_cm − 5×age − 161
+- TDEE = BMR × 1.55 (moderately active lifter)
+- Cut: TDEE − 450 cal | Maintain: TDEE | Bulk: TDEE + 300 cal | Performance/health: TDEE
+- Protein: bodyweight_lbs × 0.9g (cut/maintain), × 0.8g (bulk)
 Round calories to nearest 50, protein to nearest 5.
-Show them the math briefly, then save with update_profile(calorie_target, protein_target).
+Show the math briefly — e.g. "TDEE ~2,600 → cut target: 2,150 cal, 178g protein" — then save with update_profile(calorie_target, protein_target).
 
-IF they pick option 2 (specify): Save the numbers they give you.
+IF they pick option 2 (specify): Save the numbers they give.
 
-IF they pick option 3 (skip): Don't set calorie_target or protein_target. Just call update_profile(onboarding_completed: true) and mention they can always say "set my targets" later.
+IF they pick option 3 (skip): Call update_profile(onboarding_completed: true) and note they can say "set my targets" anytime.
 
-COMPLETION: After targets are handled (calculated, specified, or skipped), call update_profile(onboarding_completed: true) in that same call. Then write a brief welcoming message — but DO NOT write a long usage tutorial; the system will send detailed instructions automatically after onboarding_completed flips to true."""
+COMPLETION: After targets are handled, call update_profile(onboarding_completed: true). Then write ONE brief sentence — something like "You're all set, [Name]. Let's get to work." DO NOT write a tutorial — the system sends full instructions automatically."""
 
 
 def build_onboarding_system(user: User) -> str:
@@ -70,22 +81,22 @@ def build_onboarding_system(user: User) -> str:
          "What's your first name?"),
         ("age & sex",
          has("age") and has("sex"),
-         "How old are you, and male or female?"),
+         "How old are you, and are you male or female?"),
         ("height & weight",
          has("height_cm") and has("current_weight_kg"),
          "What's your height and current weight?"),
         ("goal",
          has("goal_weight_kg") and has("primary_goal"),
-         "What's your goal weight, and are you cutting, bulking, or maintaining?"),
+         "What's your goal — cutting, bulking, maintaining, performance, or health? And what's your goal weight?"),
         ("training experience",
          has("training_experience"),
-         "How experienced are you — beginner, intermediate, or advanced?"),
+         "How would you rate your training experience — beginner, intermediate, or advanced?"),
         ("diet & injuries",
          has("dietary_preferences") and has("injuries"),
-         "Any dietary restrictions or injuries I should know about? (Say 'none' if not.)"),
+         "Any dietary restrictions or injuries I should know about?"),
         ("timezone",
          has("timezone") and user.timezone != "UTC",
-         "What city are you in? (so I can time my check-ins right)"),
+         "What city are you based in? I'll use it to time my check-ins."),
     ]
 
     collected_lines = []
@@ -93,40 +104,107 @@ def build_onboarding_system(user: User) -> str:
 
     for label, complete, question in steps:
         if complete:
-            collected_lines.append(f"  ✓ {label}")
+            collected_lines.append(label)
         elif next_question is None:
             next_question = question
 
     state_block = "\n\nONBOARDING STATE:"
     if collected_lines:
-        state_block += "\nCollected: " + ", ".join(
-            line.strip().lstrip("✓ ") for line in collected_lines
-        )
+        state_block += "\nCollected: " + ", ".join(collected_lines)
     else:
         state_block += "\nNothing collected yet."
 
     if next_question:
         state_block += (
-            f'\n\nNEXT QUESTION (ask this exactly, no deviations): "{next_question}"'
-            "\nDo NOT skip ahead. Do NOT ask the targets question yet."
+            f'\n\nNEXT QUESTION (ask this, adapt naturally to conversation): "{next_question}"'
+            "\nDo NOT skip ahead. Do NOT ask about targets yet."
         )
     else:
-        # All 7 essentials done — now handle targets
         if pref_has("calorie_target"):
             state_block += (
                 "\n\nAll essentials AND targets are set."
-                "\nCall update_profile(onboarding_completed: true) now and write a brief warm welcome."
-                "\nDo NOT write a long tutorial — the system handles that automatically."
+                "\nCall update_profile(onboarding_completed: true) and write ONE brief welcoming sentence."
+                "\nDo NOT write a usage tutorial — the system handles that automatically."
             )
         else:
             state_block += (
-                "\n\nALL 7 ESSENTIALS DONE — Now run the TARGETS STEP."
-                "\nFollow the TARGETS STEP instructions in the system prompt exactly."
-                "\nOffer the user the 3 options (calculate / specify / skip)."
-                "\nWhen they respond, handle accordingly AND call update_profile(onboarding_completed: true)."
+                "\n\nALL 7 ESSENTIALS COLLECTED — run the TARGETS STEP now."
+                "\nPresent the 3 options exactly as specified above."
+                "\nAfter they respond, handle it AND call update_profile(onboarding_completed: true)."
             )
 
     return _ONBOARDING_BASE + state_block
+
+
+def get_onboarding_keyboard(user: User):
+    """
+    Return a ReplyKeyboardMarkup for the current onboarding step, or None for free-text steps.
+    Called after tool execution so user state reflects what was just saved.
+    """
+    from telegram import ReplyKeyboardMarkup
+
+    def has(field):
+        return getattr(user, field, None) is not None
+
+    # Step 1: name — free text, no keyboard
+    if not has("name"):
+        return None
+
+    # Step 2: sex — show Male/Female
+    if not has("sex"):
+        return ReplyKeyboardMarkup(
+            [["Male", "Female"]],
+            one_time_keyboard=True,
+            resize_keyboard=True,
+            input_field_placeholder="Or type your age and tap a button…",
+        )
+
+    # Step 3: height & weight — free text
+    if not (has("height_cm") and has("current_weight_kg")):
+        return None
+
+    # Step 4: primary goal
+    if not has("primary_goal"):
+        return ReplyKeyboardMarkup(
+            [["Cut 🔻", "Bulk 📈", "Maintain ⚖️"],
+             ["Performance ⚡", "Health 🌿"]],
+            one_time_keyboard=True,
+            resize_keyboard=True,
+        )
+
+    # Step 5: training experience
+    if not has("training_experience"):
+        return ReplyKeyboardMarkup(
+            [["Beginner", "Intermediate", "Advanced"]],
+            one_time_keyboard=True,
+            resize_keyboard=True,
+        )
+
+    # Step 6: diet & injuries
+    if not (has("dietary_preferences") and has("injuries")):
+        return ReplyKeyboardMarkup(
+            [["No restrictions", "Vegetarian", "Vegan"],
+             ["No injuries", "Gluten-free", "Other…"]],
+            one_time_keyboard=True,
+            resize_keyboard=True,
+        )
+
+    # Step 7: timezone — free text (city name)
+    if not has("timezone") or user.timezone == "UTC":
+        return None
+
+    # Targets step
+    prefs = user.preferences
+    if prefs and not getattr(prefs, "calorie_target", None):
+        return ReplyKeyboardMarkup(
+            [["Calculate for me 🧮"],
+             ["I have my numbers"],
+             ["Skip for now"]],
+            one_time_keyboard=True,
+            resize_keyboard=True,
+        )
+
+    return None
 
 
 def _both(a, b) -> str | None:
