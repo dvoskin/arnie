@@ -677,6 +677,182 @@
     .sticky-btn:active { transform: scale(0.96); }
     @media (max-width: 540px) { .sticky-bar { display: flex; } }
 
+    /* ── Demo "See it in action" ─────────────────────────────── */
+    .demo-tabs {
+      display: flex; gap: 6px; margin-top: 48px; margin-bottom: 36px;
+    }
+    .demo-tab {
+      padding: 8px 18px; border-radius: 9px;
+      font-size: 13px; font-weight: 500; letter-spacing: -0.01em;
+      background: none; border: 1px solid var(--line);
+      color: var(--ink-3); transition: all 200ms; cursor: pointer;
+    }
+    .demo-tab:hover  { border-color: var(--line-s); color: var(--ink); }
+    .demo-tab.active {
+      background: color-mix(in oklch, var(--accent) 10%, transparent);
+      border-color: color-mix(in oklch, var(--accent) 30%, transparent);
+      color: var(--accent);
+    }
+    .demo-phone-wrap { max-width: 420px; margin: 0 auto; }
+    .demo-phone {
+      border-radius: 24px; overflow: hidden;
+      border: 1px solid var(--line-s);
+      background: oklch(0.068 0.008 238);
+      box-shadow:
+        0 32px 80px -20px oklch(0 0 0 / 0.65),
+        0 0 0 1px color-mix(in oklch, var(--ink) 6%, transparent),
+        inset 0 1px 0 color-mix(in oklch, var(--ink) 10%, transparent);
+    }
+    .demo-phone-hdr {
+      display: flex; align-items: center; gap: 11px;
+      padding: 13px 16px 12px; border-bottom: 1px solid var(--line);
+      background: color-mix(in oklch, var(--ink) 3%, transparent);
+    }
+    .demo-phone-name   { font-size: 14px; font-weight: 600; letter-spacing: -0.01em; }
+    .demo-phone-status { display: flex; align-items: center; gap: 5px; margin-top: 2px; }
+    .demo-phone-dot    { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+    .demo-phone-sub    {
+      font-family: var(--mono); font-size: 9px; letter-spacing: 0.06em;
+      text-transform: uppercase; color: var(--accent);
+    }
+    .demo-messages {
+      min-height: 268px; max-height: 268px;
+      padding: 14px 14px 16px; display: flex; flex-direction: column;
+      gap: 8px; overflow: hidden;
+    }
+    .demo-msg {
+      font-size: 13px; line-height: 1.55; padding: 9px 12px 7px;
+      border-radius: 14px; max-width: 90%; position: relative;
+      opacity: 0; transform: translateY(8px);
+      transition: opacity 320ms ease, transform 320ms ease;
+    }
+    .demo-msg.show { opacity: 1; transform: none; }
+    .demo-msg.user {
+      background: oklch(0.86 0.155 168 / 0.16);
+      border: 1px solid oklch(0.86 0.155 168 / 0.22);
+      align-self: flex-end; color: var(--ink); border-bottom-right-radius: 5px;
+    }
+    .demo-msg.bot {
+      background: color-mix(in oklch, var(--ink) 9%, transparent);
+      border: 1px solid var(--line);
+      align-self: flex-start; color: var(--ink-2); border-bottom-left-radius: 5px;
+    }
+    .demo-msg.bot strong { color: var(--ink); font-weight: 600; }
+    .demo-msg-time {
+      font-size: 10px; text-align: right; margin-top: 3px;
+      font-family: var(--mono); color: oklch(0.86 0.155 168 / 0.5);
+    }
+    .demo-msg.bot .demo-msg-time { color: var(--ink-4); }
+    .demo-typing {
+      display: flex; align-items: center; gap: 4px;
+      padding: 11px 14px; border-radius: 14px; border-bottom-left-radius: 5px;
+      background: color-mix(in oklch, var(--ink) 9%, transparent);
+      border: 1px solid var(--line); align-self: flex-start;
+      opacity: 0; transition: opacity 240ms ease;
+    }
+    .demo-typing.show { opacity: 1; }
+    .demo-typing span {
+      width: 5px; height: 5px; border-radius: 50%; background: var(--ink-3);
+      animation: typingBounce 1.2s ease-in-out infinite;
+    }
+    .demo-typing span:nth-child(2) { animation-delay: 0.15s; }
+    .demo-typing span:nth-child(3) { animation-delay: 0.30s; }
+    @keyframes typingBounce {
+      0%,60%,100% { transform: translateY(0); opacity: 0.4; }
+      30%          { transform: translateY(-4px); opacity: 1; }
+    }
+    .demo-replay {
+      display: flex; align-items: center; justify-content: center; gap: 7px;
+      margin-top: 14px; width: 100%; font-family: var(--mono); font-size: 10px;
+      letter-spacing: 0.10em; text-transform: uppercase; color: var(--ink-3);
+      background: none; border: 1px solid var(--line); border-radius: 8px;
+      padding: 9px 16px; transition: all 180ms; cursor: pointer;
+    }
+    .demo-replay:hover { color: var(--ink); border-color: var(--line-s); }
+
+    /* ── Dashboard preview ───────────────────────────────────── */
+    .dash-wrap {
+      margin-top: 52px; position: relative;
+    }
+    .dash-wrap::after {
+      content: ""; position: absolute; bottom: 0; left: 0; right: 0; height: 160px;
+      background: linear-gradient(to bottom, transparent, var(--bg));
+      pointer-events: none; z-index: 2;
+    }
+    .dash-browser {
+      border-radius: 16px; overflow: hidden;
+      border: 1px solid var(--line-s);
+      box-shadow:
+        0 40px 90px -24px oklch(0 0 0 / 0.70),
+        0 0 0 1px color-mix(in oklch, var(--ink) 5%, transparent);
+      background: oklch(0.052 0.006 240);
+    }
+    .dash-browser-bar {
+      display: flex; align-items: center; gap: 12px; padding: 11px 16px;
+      border-bottom: 1px solid var(--line);
+      background: color-mix(in oklch, var(--ink) 3.5%, transparent);
+    }
+    .dash-dots { display: flex; gap: 6px; }
+    .dash-dot  { width: 10px; height: 10px; border-radius: 50%; }
+    .dash-dot-r { background: oklch(0.65 0.17 27  / 0.55); }
+    .dash-dot-y { background: oklch(0.80 0.15 85  / 0.55); }
+    .dash-dot-g { background: oklch(0.72 0.16 145 / 0.55); }
+    .dash-url {
+      font-family: var(--mono); font-size: 10px; letter-spacing: 0.04em;
+      color: var(--ink-4); background: color-mix(in oklch, var(--ink) 4%, transparent);
+      border: 1px solid var(--line); border-radius: 6px; padding: 4px 12px;
+      max-width: 240px; margin: 0 auto; text-align: center;
+    }
+    .dash-content { padding: 20px 20px 10px; }
+    .dash-header  { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 18px; }
+    .dash-date    { font-family: var(--serif); font-size: 21px; letter-spacing: -0.02em; }
+    .dash-date em { font-style: italic; color: var(--accent); }
+    .dash-target  {
+      font-family: var(--mono); font-size: 9px; letter-spacing: 0.08em;
+      text-transform: uppercase; color: var(--ink-3); margin-top: 4px;
+    }
+    .dash-macros {
+      display: grid; grid-template-columns: repeat(3,1fr); gap: 10px; margin-bottom: 14px;
+    }
+    .dash-macro {
+      border-radius: 12px; padding: 13px 14px;
+      background: color-mix(in oklch, var(--ink) 5.5%, transparent);
+      border: 1px solid var(--line);
+    }
+    .dash-macro-lbl {
+      font-family: var(--mono); font-size: 8.5px; letter-spacing: 0.10em;
+      text-transform: uppercase; color: var(--ink-3); margin-bottom: 5px;
+    }
+    .dash-macro-val { font-size: 18px; font-weight: 600; letter-spacing: -0.02em; margin-bottom: 1px; }
+    .dash-macro-sub { font-size: 10px; color: var(--ink-3); }
+    .dash-macro-bar {
+      height: 3px; border-radius: 2px; margin-top: 9px;
+      background: color-mix(in oklch, var(--ink) 10%, transparent); overflow: hidden;
+    }
+    .dash-macro-fill {
+      height: 100%; border-radius: 2px;
+      background: linear-gradient(90deg, var(--accent-s), var(--accent));
+    }
+    .dash-macro.warn .dash-macro-fill { background: oklch(0.78 0.15 55); }
+    .dash-macro.warn .dash-macro-val  { color: oklch(0.85 0.12 58); }
+    .dash-log {
+      border-radius: 12px; overflow: hidden;
+      border: 1px solid var(--line);
+      background: color-mix(in oklch, var(--ink) 3%, transparent);
+    }
+    .dash-log-hdr {
+      padding: 9px 14px; border-bottom: 1px solid var(--line);
+      font-family: var(--mono); font-size: 9px; letter-spacing: 0.10em;
+      text-transform: uppercase; color: var(--ink-3);
+    }
+    .dash-log-row {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 10px 14px; border-bottom: 1px solid var(--line); gap: 10px;
+    }
+    .dash-log-row:last-child { border-bottom: none; }
+    .dash-log-name { font-size: 12.5px; color: var(--ink-2); }
+    .dash-log-meta { font-family: var(--mono); font-size: 9.5px; color: var(--ink-3); white-space: nowrap; }
+
     /* ── Scroll reveal ────────────────────────────────────────── */
     .reveal {
       opacity: 0; transform: translateY(22px);
@@ -938,6 +1114,110 @@
     </div>
   </section>
 
+  <!-- ── SEE IT IN ACTION ── -->
+  <section id="demo">
+    <div class="section-inner">
+      <div class="section-tag reveal">See it in action</div>
+      <h2 class="section-title reveal reveal-d1">Watch it<br><em>happen.</em></h2>
+      <p class="section-sub reveal reveal-d2">Every message is a coaching moment. Text Arnie like you'd text anyone — it handles the rest.</p>
+
+      <div class="demo-tabs reveal reveal-d2">
+        <button class="demo-tab active" data-scene="nutrition">Nutrition</button>
+        <button class="demo-tab" data-scene="training">Training</button>
+        <button class="demo-tab" data-scene="coaching">Coaching</button>
+      </div>
+
+      <div class="demo-phone-wrap reveal reveal-d3">
+        <div class="demo-phone">
+          <div class="demo-phone-hdr">
+            <div class="chat-avatar">A</div>
+            <div>
+              <div class="demo-phone-name">Arnie</div>
+              <div class="demo-phone-status">
+                <div class="demo-phone-dot"></div>
+                <span class="demo-phone-sub">online</span>
+              </div>
+            </div>
+          </div>
+          <div class="demo-messages" id="demoMessages"></div>
+        </div>
+        <button class="demo-replay" id="demoReplay">
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+          Replay
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── DASHBOARD PREVIEW ── -->
+  <section id="dashboard-preview">
+    <div class="section-inner">
+      <div class="section-tag reveal">Your data</div>
+      <h2 class="section-title reveal reveal-d1">Your numbers,<br><em>always in view.</em></h2>
+      <p class="section-sub reveal reveal-d2">Every meal, workout, and weight you log lives in your personal dashboard — open it from any browser, no app download needed.</p>
+
+      <div class="dash-wrap reveal reveal-d3">
+        <div class="dash-browser">
+          <div class="dash-browser-bar">
+            <div class="dash-dots">
+              <div class="dash-dot dash-dot-r"></div>
+              <div class="dash-dot dash-dot-y"></div>
+              <div class="dash-dot dash-dot-g"></div>
+            </div>
+            <div class="dash-url">tryarnie.com/dashboard/••••••</div>
+          </div>
+          <div class="dash-content">
+            <div class="dash-header">
+              <div>
+                <div class="dash-date">Today <em>·</em> May 27</div>
+                <div class="dash-target">New York &nbsp;·&nbsp; 2,150 cal target &nbsp;·&nbsp; 178g protein</div>
+              </div>
+            </div>
+            <div class="dash-macros">
+              <div class="dash-macro">
+                <div class="dash-macro-lbl">Calories</div>
+                <div class="dash-macro-val">1,640</div>
+                <div class="dash-macro-sub">of 2,150</div>
+                <div class="dash-macro-bar"><div class="dash-macro-fill" style="width:76%"></div></div>
+              </div>
+              <div class="dash-macro">
+                <div class="dash-macro-lbl">Protein</div>
+                <div class="dash-macro-val">134g</div>
+                <div class="dash-macro-sub">of 178g</div>
+                <div class="dash-macro-bar"><div class="dash-macro-fill" style="width:75%"></div></div>
+              </div>
+              <div class="dash-macro warn">
+                <div class="dash-macro-lbl">Water</div>
+                <div class="dash-macro-val">0.8L</div>
+                <div class="dash-macro-sub">of 2.5L</div>
+                <div class="dash-macro-bar"><div class="dash-macro-fill" style="width:32%"></div></div>
+              </div>
+            </div>
+            <div class="dash-log">
+              <div class="dash-log-hdr">Today's log</div>
+              <div class="dash-log-row">
+                <div class="dash-log-name">3 eggs, 2 toast, coffee</div>
+                <div class="dash-log-meta">7:45 am &nbsp;·&nbsp; 480 cal &nbsp;·&nbsp; 32g</div>
+              </div>
+              <div class="dash-log-row">
+                <div class="dash-log-name">Chicken caesar salad</div>
+                <div class="dash-log-meta">12:34 pm &nbsp;·&nbsp; 520 cal &nbsp;·&nbsp; 41g</div>
+              </div>
+              <div class="dash-log-row">
+                <div class="dash-log-name">Greek yogurt + blueberries</div>
+                <div class="dash-log-meta">3:20 pm &nbsp;·&nbsp; 220 cal &nbsp;·&nbsp; 18g</div>
+              </div>
+              <div class="dash-log-row">
+                <div class="dash-log-name">Bench 185 4×5 &nbsp;·&nbsp; OHP 115 3×8</div>
+                <div class="dash-log-meta">6:02 pm &nbsp;·&nbsp; workout</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <!-- ── FEATURES ── -->
   <section id="features">
     <div class="section-inner">
@@ -1177,6 +1457,106 @@
   new IntersectionObserver(entries => {
     stickyBar.classList.toggle('show', !entries[0].isIntersecting);
   }, {threshold: 0}).observe(heroEl);
+
+  // ── Animated chat demo ────────────────────────────────────────
+  const DEMO_SCENES = {
+    nutrition: {
+      times: ['12:34','12:34','12:37','12:38'],
+      messages: [
+        { role:'user', text:'just had a chicken caesar salad for lunch' },
+        { role:'bot',  text:'<strong>Logged.</strong> ~520 cal, 41g protein. You\'re at 68% of your protein target — 57g left. Dinner\'s the one that matters.' },
+        { role:'user', text:'how am I tracking this week?' },
+        { role:'bot',  text:'Solid. You\'ve hit protein 4 out of 5 days and you\'re running a 380 cal average deficit. At this rate — 0.8 lbs/week. Right on track.' },
+      ]
+    },
+    training: {
+      times: ['18:02','18:02','18:04','18:05'],
+      messages: [
+        { role:'user', text:'squat day done — 4×5 @ 225, felt clean' },
+        { role:'bot',  text:'<strong>Logged.</strong> +10lbs from last Monday. Squat\'s been up 5lbs/week for 3 weeks. Next session: <strong>230</strong>.' },
+        { role:'user', text:'anything to add for accessories?' },
+        { role:'bot',  text:'Romanian deadlifts 3×10 and leg press 3×15. Targets the posterior chain and quad depth where you\'re lagging based on your last four sessions.' },
+      ]
+    },
+    coaching: {
+      times: ['09:15','09:15','09:17','09:18'],
+      messages: [
+        { role:'user', text:'been exhausted all week, skipped 2 workouts' },
+        { role:'bot',  text:'Your sleep\'s averaged 5.6hrs this week — that\'s the issue. Recovery\'s been in the red both days you missed. <strong>This isn\'t laziness, it\'s your body in a hole.</strong>' },
+        { role:'user', text:'should I train today anyway?' },
+        { role:'bot',  text:'Train light. Skip the heavy compounds, do 20–30 min low-intensity cardio. You keep the habit without digging deeper. <strong>Then get 7+ hrs tonight</strong> — that\'s the real fix.' },
+      ]
+    }
+  };
+
+  let activeScene = 'nutrition';
+  let demoTimer   = null;
+  let demoFired   = false;
+
+  function runDemo(scene) {
+    const container = document.getElementById('demoMessages');
+    if (!container) return;
+    clearTimeout(demoTimer);
+    container.innerHTML = '';
+    const { messages, times } = DEMO_SCENES[scene];
+    let i = 0;
+
+    function addMsg(role, text, time) {
+      const el = document.createElement('div');
+      el.className = 'demo-msg ' + role;
+      el.innerHTML = text + '<div class="demo-msg-time">' + time + '</div>';
+      container.appendChild(el);
+      container.scrollTop = container.scrollHeight;
+      requestAnimationFrame(() => requestAnimationFrame(() => el.classList.add('show')));
+    }
+
+    function step() {
+      if (i >= messages.length) return;
+      const { role, text } = messages[i];
+      const time = times[i];
+      i++;
+      if (role === 'bot') {
+        const typing = document.createElement('div');
+        typing.className = 'demo-typing';
+        typing.innerHTML = '<span></span><span></span><span></span>';
+        container.appendChild(typing);
+        container.scrollTop = container.scrollHeight;
+        requestAnimationFrame(() => requestAnimationFrame(() => typing.classList.add('show')));
+        demoTimer = setTimeout(() => {
+          typing.remove();
+          addMsg(role, text, time);
+          demoTimer = setTimeout(step, 1700);
+        }, 1500);
+      } else {
+        addMsg(role, text, time);
+        demoTimer = setTimeout(step, 900);
+      }
+    }
+
+    demoTimer = setTimeout(step, 500);
+  }
+
+  document.querySelectorAll('.demo-tab').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.demo-tab').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      activeScene = btn.dataset.scene;
+      runDemo(activeScene);
+    });
+  });
+
+  const replayBtn = document.getElementById('demoReplay');
+  if (replayBtn) replayBtn.addEventListener('click', () => runDemo(activeScene));
+
+  const demoSection = document.getElementById('demo');
+  if (demoSection) {
+    new IntersectionObserver(entries => {
+      if (entries[0].isIntersecting && !demoFired) {
+        demoFired = true;
+        runDemo(activeScene);
+      }
+    }, { threshold: 0.25 }).observe(demoSection);
+  }
 
   // FAQ accordion
   document.querySelectorAll('.faq-q').forEach(btn => {
