@@ -388,35 +388,7 @@
       max-width: 50ch; text-wrap: pretty;
     }
 
-    /* ── Chat mockup section ─────────────────────────────────── */
-    .chat-cols {
-      display: grid; grid-template-columns: repeat(3, 1fr);
-      gap: 14px; margin-top: 56px;
-    }
-    @media (max-width: 780px) { .chat-cols { grid-template-columns: 1fr; } }
-
-    .chat-card {
-      border-radius: 20px;
-      background: linear-gradient(170deg,
-        color-mix(in oklch, var(--ink) 6%, transparent),
-        color-mix(in oklch, var(--ink) 3%, transparent));
-      border: 1px solid var(--line);
-      overflow: hidden;
-      transition: border-color 300ms, box-shadow 300ms;
-      box-shadow: 0 8px 32px -12px oklch(0 0 0 / 0.50);
-    }
-    .chat-card:hover {
-      border-color: var(--line-s);
-      box-shadow: 0 12px 40px -12px oklch(0 0 0 / 0.65);
-    }
-
-    /* Telegram-style chat header */
-    .chat-header {
-      display: flex; align-items: center; gap: 11px;
-      padding: 13px 16px 12px;
-      border-bottom: 1px solid var(--line);
-      background: color-mix(in oklch, var(--ink) 3%, transparent);
-    }
+    /* ── Shared chat avatar (used in demo phone header) ─────── */
     .chat-avatar {
       width: 34px; height: 34px; border-radius: 50%; flex-shrink: 0;
       background: linear-gradient(135deg, var(--accent), oklch(0.50 0.17 268));
@@ -424,43 +396,6 @@
       font-family: var(--serif); font-size: 14px; color: oklch(0.09 0.01 240);
       font-weight: 400; font-style: italic;
     }
-    .chat-hname { font-size: 13.5px; font-weight: 600; letter-spacing: -0.01em; }
-    .chat-hsub  {
-      display: flex; align-items: center; gap: 5px; margin-top: 1px;
-    }
-    .chat-online-dot {
-      width: 6px; height: 6px; border-radius: 50%;
-      background: var(--accent); flex-shrink: 0;
-    }
-    .chat-online-txt {
-      font-family: var(--mono); font-size: 9px; letter-spacing: 0.06em;
-      text-transform: uppercase; color: var(--accent);
-    }
-
-    .chat-body  { padding: 14px 14px 16px; display: flex; flex-direction: column; gap: 8px; }
-
-    .msg {
-      font-size: 13px; line-height: 1.55; padding: 9px 12px 7px;
-      border-radius: 14px; max-width: 92%; position: relative;
-    }
-    .msg-time {
-      font-size: 10px; color: var(--ink-4); text-align: right;
-      margin-top: 3px; font-family: var(--mono);
-    }
-    .msg.user {
-      background: oklch(0.86 0.155 168 / 0.16);
-      border: 1px solid oklch(0.86 0.155 168 / 0.22);
-      align-self: flex-end; color: var(--ink);
-      border-bottom-right-radius: 5px;
-    }
-    .msg.user .msg-time { color: oklch(0.86 0.155 168 / 0.6); }
-    .msg.bot {
-      background: color-mix(in oklch, var(--ink) 9%, transparent);
-      border: 1px solid var(--line);
-      align-self: flex-start; color: var(--ink-2);
-      border-bottom-left-radius: 5px;
-    }
-    .msg.bot strong { color: var(--ink); font-weight: 600; }
 
     /* ── Comparison section ──────────────────────────────────── */
     .compare-grid {
@@ -693,9 +628,21 @@
     .sticky-btn:active { transform: scale(0.96); }
     @media (max-width: 540px) { .sticky-bar { display: flex; } }
 
-    /* ── Demo "See it in action" ─────────────────────────────── */
+    /* ── Demo consolidated layout ────────────────────────────── */
+    .demo-layout {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 72px;
+      align-items: center;
+    }
+    @media (max-width: 860px) {
+      .demo-layout { grid-template-columns: 1fr; gap: 44px; }
+    }
+    .demo-copy .section-title { margin-bottom: 16px; }
+    .demo-copy .section-sub   { margin-bottom: 0; }
+
     .demo-tabs {
-      display: flex; gap: 6px; margin-top: 48px; margin-bottom: 36px;
+      display: flex; gap: 6px; margin-top: 36px; flex-wrap: wrap;
     }
     .demo-tab {
       padding: 8px 18px; border-radius: 9px;
@@ -709,7 +656,7 @@
       border-color: color-mix(in oklch, var(--accent) 30%, transparent);
       color: var(--accent);
     }
-    .demo-phone-wrap { max-width: 420px; margin: 0 auto; }
+    .demo-phone-wrap { max-width: 420px; }
     .demo-phone {
       border-radius: 24px; overflow: hidden;
       border: 1px solid var(--line-s);
@@ -1018,88 +965,6 @@
     </div>
   </section>
 
-  <!-- ── REAL COACHING ── -->
-  <section id="coaching">
-    <div class="section-inner">
-      <div class="section-tag reveal">How it feels</div>
-      <h2 class="section-title reveal reveal-d1">Real coaching,<br><em>in your inbox.</em></h2>
-      <p class="section-sub reveal reveal-d2">No app to learn. No dashboard to maintain. Just text Arnie like you'd text a real coach — it handles the rest.</p>
-
-      <div class="chat-cols">
-
-        <div class="chat-card reveal reveal-d1">
-          <div class="chat-header">
-            <div class="chat-avatar">A</div>
-            <div>
-              <div class="chat-hname">Arnie</div>
-              <div class="chat-hsub">
-                <div class="chat-online-dot"></div>
-                <span class="chat-online-txt">online</span>
-              </div>
-            </div>
-          </div>
-          <div class="chat-body">
-            <div class="msg user">
-              just had lunch — chicken bowl, rice, avocado
-              <div class="msg-time">12:34</div>
-            </div>
-            <div class="msg bot">
-              <strong>Logged.</strong> ~680 cal, 52g protein. You're at 71% of your protein target — dinner needs the last 42g. Steak or Greek yogurt would nail it.
-              <div class="msg-time">12:34</div>
-            </div>
-          </div>
-        </div>
-
-        <div class="chat-card reveal reveal-d2">
-          <div class="chat-header">
-            <div class="chat-avatar">A</div>
-            <div>
-              <div class="chat-hname">Arnie</div>
-              <div class="chat-hsub">
-                <div class="chat-online-dot"></div>
-                <span class="chat-online-txt">online</span>
-              </div>
-            </div>
-          </div>
-          <div class="chat-body">
-            <div class="msg user">
-              bench today — 3×5 @ 185, failed rep 4 at 195
-              <div class="msg-time">18:02</div>
-            </div>
-            <div class="msg bot">
-              Logged. Last week you hit 3×5 @ 185 clean — you're progressing. Missing rep 4 is expected. <strong>Next session: 3×5 @ 190</strong>, then retest 195 the week after.
-              <div class="msg-time">18:02</div>
-            </div>
-          </div>
-        </div>
-
-        <div class="chat-card reveal reveal-d3">
-          <div class="chat-header">
-            <div class="chat-avatar">A</div>
-            <div>
-              <div class="chat-hname">Arnie</div>
-              <div class="chat-hsub">
-                <div class="chat-online-dot"></div>
-                <span class="chat-online-txt">online</span>
-              </div>
-            </div>
-          </div>
-          <div class="chat-body">
-            <div class="msg user">
-              should I train today? slept like 5hrs
-              <div class="msg-time">09:15</div>
-            </div>
-            <div class="msg bot">
-              Whoop recovery at 38% — yellow. <strong>Train light or skip the heavy work.</strong> A 20-min walk keeps your streak without digging the hole deeper.
-              <div class="msg-time">09:15</div>
-            </div>
-          </div>
-        </div>
-
-      </div>
-    </div>
-  </section>
-
   <!-- ── COMPARISON ── -->
   <section id="compare">
     <div class="section-inner">
@@ -1130,37 +995,42 @@
     </div>
   </section>
 
-  <!-- ── SEE IT IN ACTION ── -->
+  <!-- ── HOW IT FEELS / SEE IT IN ACTION (consolidated) ── -->
   <section id="demo">
     <div class="section-inner">
-      <div class="section-tag reveal">See it in action</div>
-      <h2 class="section-title reveal reveal-d1">Watch it<br><em>happen.</em></h2>
-      <p class="section-sub reveal reveal-d2">Every message is a coaching moment. Text Arnie like you'd text anyone — it handles the rest.</p>
+      <div class="demo-layout">
 
-      <div class="demo-tabs reveal reveal-d2">
-        <button class="demo-tab active" data-scene="nutrition">Nutrition</button>
-        <button class="demo-tab" data-scene="training">Training</button>
-        <button class="demo-tab" data-scene="coaching">Coaching</button>
-      </div>
+        <div class="demo-copy">
+          <div class="section-tag reveal">How it feels</div>
+          <h2 class="section-title reveal reveal-d1">Real coaching,<br><em>in your inbox.</em></h2>
+          <p class="section-sub reveal reveal-d2">No app to learn. No dashboard to maintain. Just text Arnie like you'd text a real coach — it handles the rest.</p>
+          <div class="demo-tabs reveal reveal-d3">
+            <button class="demo-tab active" data-scene="nutrition">Nutrition</button>
+            <button class="demo-tab" data-scene="training">Training</button>
+            <button class="demo-tab" data-scene="coaching">Coaching</button>
+          </div>
+        </div>
 
-      <div class="demo-phone-wrap reveal reveal-d3">
-        <div class="demo-phone">
-          <div class="demo-phone-hdr">
-            <div class="chat-avatar">A</div>
-            <div>
-              <div class="demo-phone-name">Arnie</div>
-              <div class="demo-phone-status">
-                <div class="demo-phone-dot"></div>
-                <span class="demo-phone-sub">online</span>
+        <div class="demo-phone-wrap reveal reveal-d2">
+          <div class="demo-phone">
+            <div class="demo-phone-hdr">
+              <div class="chat-avatar">A</div>
+              <div>
+                <div class="demo-phone-name">Arnie</div>
+                <div class="demo-phone-status">
+                  <div class="demo-phone-dot"></div>
+                  <span class="demo-phone-sub">online</span>
+                </div>
               </div>
             </div>
+            <div class="demo-messages" id="demoMessages"></div>
           </div>
-          <div class="demo-messages" id="demoMessages"></div>
+          <button class="demo-replay" id="demoReplay">
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+            Replay
+          </button>
         </div>
-        <button class="demo-replay" id="demoReplay">
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
-          Replay
-        </button>
+
       </div>
     </div>
   </section>
