@@ -147,7 +147,7 @@
 
     .nav-meta {
       font-family: var(--mono); font-size: 10px; letter-spacing: 0.08em;
-      text-transform: uppercase; color: var(--ink-4);
+      text-transform: uppercase; color: var(--ink-2);
       display: flex; align-items: center; gap: 7px;
     }
     .status-dot {
@@ -330,7 +330,7 @@
 
     .hero-proof {
       margin-top: 38px; font-family: var(--mono); font-size: 10px;
-      letter-spacing: 0.11em; text-transform: uppercase; color: var(--ink-4);
+      letter-spacing: 0.11em; text-transform: uppercase; color: var(--ink-2);
       display: flex; align-items: center; gap: 10px;
       position: relative; z-index: 1;
     }
@@ -372,6 +372,7 @@
 
     /* ── Section shared ───────────────────────────────────────── */
     section { padding: 100px 24px; position: relative; }
+    @media (max-width: 640px) { section { padding: 60px 20px; } }
     .section-inner { max-width: 1000px; margin: 0 auto; }
     .section-tag {
       font-family: var(--mono); font-size: 10px; letter-spacing: 0.18em;
