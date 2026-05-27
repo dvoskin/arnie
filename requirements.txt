@@ -11,3 +11,4 @@ python-dotenv>=1.0.0
 httpx>=0.25.0
 aiofiles>=23.2.0
 pytz>=2023.3
+stripe>=8.0.0

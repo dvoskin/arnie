@@ -492,4 +492,54 @@ async def delete_exercise_entry(db: AsyncSession, entry_id: int, user_id: int) -
     log.workout_completed = any(not (e.cardio_type or (e.duration_minutes and not e.sets)) for e in remaining)
     log.cardio_completed = any((e.cardio_type or (e.duration_minutes and not e.sets)) for e in remaining)
     await db.commit()
+
+
+# ── Subscription ───────────────────────────────────────────────────────────────
+
+async def set_subscription_active(
+    db: AsyncSession,
+    telegram_id: str,
+    stripe_customer_id: str,
+    period_end: datetime,
+) -> None:
+    result = await db.execute(select(User).where(User.telegram_id == telegram_id))
+    user = result.scalar_one_or_none()
+    if user:
+        user.subscription_status = "active"
+        user.stripe_customer_id = stripe_customer_id
+        user.subscription_ends_at = period_end
+        await db.commit()
+
+
+async def set_subscription_cancelled(db: AsyncSession, stripe_customer_id: str) -> Optional[str]:
+    """Mark subscription cancelled. Returns telegram_id so the bot can notify the user."""
+    result = await db.execute(
+        select(User).where(User.stripe_customer_id == stripe_customer_id)
+    )
+    user = result.scalar_one_or_none()
+    if user:
+        user.subscription_status = "cancelled"
+        await db.commit()
+        return user.telegram_id
+    return None
+
+
+async def get_user_by_telegram_id(db: AsyncSession, telegram_id: str) -> Optional[User]:
+    result = await db.execute(
+        select(User)
+        .where(User.telegram_id == telegram_id)
+        .options(selectinload(User.preferences))
+    )
+    return result.scalar_one_or_none()
+
+
+def is_premium(user) -> bool:
+    """True if the user has an active paid subscription or an unexpired trial."""
+    if user.subscription_status == "active":
+        return True
+    if user.subscription_status == "trial":
+        if user.trial_ends_at is None:
+            return True  # trial not yet bounded — legacy users
+        return datetime.utcnow() < user.trial_ends_at
+    return False
     return True

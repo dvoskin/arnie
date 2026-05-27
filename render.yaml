@@ -9,7 +9,7 @@ services:
         source: /*
         destination: /index.html
 
-  - type: worker
+  - type: web
     name: arnie-bot
     runtime: python
     buildCommand: pip install -r requirements.txt
@@ -30,4 +30,10 @@ services:
       - key: WHOOP_CLIENT_ID
         sync: false
       - key: WHOOP_CLIENT_SECRET
+        sync: false
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_PRICE_ID
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
         sync: false

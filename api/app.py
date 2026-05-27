@@ -7,9 +7,12 @@ Exposes:
   POST /health/apple?token=...  — Apple Health inbound webhook
 """
 import os
-from datetime import date, timedelta
+import logging
+from datetime import date, timedelta, datetime
 from typing import Optional
 
+import stripe
+import stripe.error
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
@@ -22,7 +25,10 @@ from db.queries import (
     update_food_entry, delete_food_entry,
     update_exercise_entry, delete_exercise_entry,
     _user_today,
+    set_subscription_active, set_subscription_cancelled,
 )
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Arnie API", docs_url=None, redoc_url=None)
 
@@ -37,6 +43,85 @@ async def root():
 @app.get("/health")
 async def healthcheck():
     return {"status": "ok"}
+
+
+# ── Stripe Webhooks ────────────────────────────────────────────────────────────
+
+@app.post("/stripe-webhook")
+async def stripe_webhook(request: Request):
+    """Receive Stripe events and update subscription status in the DB."""
+    payload = await request.body()
+    sig_header = request.headers.get("stripe-signature", "")
+    webhook_secret = os.getenv("STRIPE_WEBHOOK_SECRET", "")
+
+    try:
+        event = stripe.Webhook.construct_event(payload, sig_header, webhook_secret)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid payload")
+    except stripe.error.SignatureVerificationError:
+        raise HTTPException(status_code=400, detail="Invalid signature")
+
+    event_type = event["type"]
+    data = event["data"]["object"]
+
+    async with AsyncSessionLocal() as db:
+        if event_type == "checkout.session.completed":
+            telegram_id = data.get("metadata", {}).get("telegram_id")
+            customer_id = data.get("customer")
+            subscription_id = data.get("subscription")
+            if telegram_id and customer_id and subscription_id:
+                sub = stripe.Subscription.retrieve(subscription_id)
+                period_end = datetime.utcfromtimestamp(sub["current_period_end"])
+                await set_subscription_active(db, telegram_id, customer_id, period_end)
+                await _notify_payment_success(telegram_id)
+                logger.info(f"Subscription activated: telegram_id={telegram_id}")
+
+        elif event_type == "customer.subscription.deleted":
+            customer_id = data.get("customer")
+            if customer_id:
+                telegram_id = await set_subscription_cancelled(db, customer_id)
+                if telegram_id:
+                    await _notify_subscription_cancelled(telegram_id)
+                    logger.info(f"Subscription cancelled: customer={customer_id}")
+
+        elif event_type == "invoice.payment_failed":
+            logger.warning(f"Payment failed for customer: {data.get('customer')}")
+
+    return {"ok": True}
+
+
+async def _notify_payment_success(telegram_id: str) -> None:
+    """Send a confirmation DM via the bot when payment succeeds."""
+    try:
+        ptb_app = app.state.ptb_app
+        await ptb_app.bot.send_message(
+            chat_id=int(telegram_id),
+            text=(
+                "You're on <b>Arnie Premium</b> 🎉\n\n"
+                "Full coaching, unlimited memory, proactive check-ins — all unlocked.\n\n"
+                "Use /billing anytime to manage your subscription."
+            ),
+            parse_mode="HTML",
+        )
+    except Exception as e:
+        logger.warning(f"Could not notify user {telegram_id} of payment: {e}")
+
+
+async def _notify_subscription_cancelled(telegram_id: str) -> None:
+    """Send a DM when a subscription is cancelled."""
+    try:
+        ptb_app = app.state.ptb_app
+        await ptb_app.bot.send_message(
+            chat_id=int(telegram_id),
+            text=(
+                "Your Arnie Premium subscription has been cancelled.\n\n"
+                "You still have access until the end of your billing period. "
+                "Use /upgrade anytime to resubscribe."
+            ),
+            parse_mode="HTML",
+        )
+    except Exception as e:
+        logger.warning(f"Could not notify user {telegram_id} of cancellation: {e}")
 
 
 # ── Whoop OAuth ────────────────────────────────────────────────────────────────

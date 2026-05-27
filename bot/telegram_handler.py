@@ -1083,6 +1083,77 @@ async def cmd_connect(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+async def cmd_upgrade(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Show upgrade prompt with a Stripe Checkout link."""
+    from telegram import InlineKeyboardMarkup, InlineKeyboardButton
+    from api.stripe_billing import create_checkout_session
+    from db.queries import is_premium
+
+    async with AsyncSessionLocal() as db:
+        user = await get_or_create_user(db, str(update.effective_user.id))
+
+        if is_premium(user):
+            await update.message.reply_text(
+                "You're already on <b>Arnie Premium</b> ✅\n\n"
+                "Use /billing to manage your subscription.",
+            )
+            return
+
+    try:
+        url = create_checkout_session(str(update.effective_user.id))
+    except Exception as e:
+        logger.error(f"Stripe checkout error: {e}")
+        await update.message.reply_text(
+            "Couldn't generate a payment link right now — try again in a moment."
+        )
+        return
+
+    keyboard = InlineKeyboardMarkup([[
+        InlineKeyboardButton("Upgrade to Premium →", url=url)
+    ]])
+    await update.message.reply_text(
+        "<b>Arnie Premium</b> — $9.99/month\n\n"
+        "• Unlimited coaching & memory\n"
+        "• Proactive daily check-ins\n"
+        "• Nutrition + training tracking\n"
+        "• Cancel anytime\n\n"
+        "Tap below to complete payment on Stripe:",
+        reply_markup=keyboard,
+    )
+
+
+async def cmd_billing(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Open the Stripe Customer Portal to manage or cancel the subscription."""
+    from telegram import InlineKeyboardMarkup, InlineKeyboardButton
+    from api.stripe_billing import create_billing_portal
+
+    async with AsyncSessionLocal() as db:
+        user = await get_or_create_user(db, str(update.effective_user.id))
+
+        if not user.stripe_customer_id:
+            await update.message.reply_text(
+                "No active subscription found.\n\nUse /upgrade to get started."
+            )
+            return
+
+    try:
+        url = create_billing_portal(user.stripe_customer_id)
+    except Exception as e:
+        logger.error(f"Stripe portal error: {e}")
+        await update.message.reply_text(
+            "Couldn't open billing portal right now — try again in a moment."
+        )
+        return
+
+    keyboard = InlineKeyboardMarkup([[
+        InlineKeyboardButton("Manage Subscription →", url=url)
+    ]])
+    await update.message.reply_text(
+        "Manage your subscription, update payment, or cancel:",
+        reply_markup=keyboard,
+    )
+
+
 async def cmd_dash(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Send the user their personal read-only dashboard URL."""
     async with AsyncSessionLocal() as db:
@@ -1216,6 +1287,8 @@ def build_app() -> Application:
     app.add_handler(CommandHandler("close",   cmd_close))
     app.add_handler(CommandHandler("reopen",  cmd_reopen))
     app.add_handler(CommandHandler("dash",    cmd_dash))
+    app.add_handler(CommandHandler("upgrade", cmd_upgrade))
+    app.add_handler(CommandHandler("billing", cmd_billing))
     app.add_handler(CommandHandler("connect", cmd_connect))
     app.add_handler(CommandHandler("reset",   cmd_reset))
     # Hidden but still functional

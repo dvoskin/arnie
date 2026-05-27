@@ -73,6 +73,10 @@ async def _migrate(conn):
         ("health_snapshots", "skin_temp_celsius", "FLOAT"),
         ("health_snapshots", "spo2_percentage", "FLOAT"),
         ("user_preferences", "preferred_language", "VARCHAR"),
+        ("users", "subscription_status", "VARCHAR DEFAULT 'trial'"),
+        ("users", "stripe_customer_id", "VARCHAR"),
+        ("users", "trial_ends_at", "DATETIME"),
+        ("users", "subscription_ends_at", "DATETIME"),
     ]
 
     for table, column, ddl in additions:

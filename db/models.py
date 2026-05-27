@@ -30,6 +30,11 @@ class User(Base):
     whoop_refresh_token = Column(Text)
     whoop_token_expires_at = Column(DateTime)
     whoop_user_id = Column(String)
+    # Subscription
+    subscription_status = Column(String, default="trial")  # trial / active / cancelled / expired
+    stripe_customer_id = Column(String, unique=True)
+    trial_ends_at = Column(DateTime)
+    subscription_ends_at = Column(DateTime)
     created_at = Column(DateTime, server_default=func.now())
 
     preferences = relationship("UserPreferences", back_populates="user", uselist=False,
