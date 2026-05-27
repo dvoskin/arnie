@@ -827,6 +827,39 @@
     .reveal-d2 { transition-delay: 180ms; }
     .reveal-d3 { transition-delay: 270ms; }
     .reveal-d4 { transition-delay: 360ms; }
+
+    /* ── Mobile performance — strip expensive GPU compositing ── */
+    @media (max-width: 768px) {
+      /* SVG turbulence grain is the single biggest paint cost — remove it */
+      .grain    { display: none; }
+      /* Spotlight has no cursor on touch and costs a compositing layer */
+      .spotlight { display: none; }
+
+      /* Each backdrop-filter element forces its own compositing layer */
+      .nav, .cta-card, .eyebrow, .chip, .sticky-bar {
+        backdrop-filter: none !important;
+        -webkit-backdrop-filter: none !important;
+      }
+      .nav          { background: color-mix(in oklch, var(--bg) 94%, transparent); }
+      .nav.scrolled { background: color-mix(in oklch, var(--bg) 97%, transparent); }
+      .sticky-bar   { background: color-mix(in oklch, var(--bg) 97%, transparent); }
+      .cta-card     { background: color-mix(in oklch, var(--ink) 7%, transparent); }
+      .eyebrow      { background: color-mix(in oklch, var(--ink) 5%, transparent); }
+
+      /* Reduce orb blur radius — far cheaper to paint, visually similar */
+      .orb-a { filter: blur(36px); width: 600px; height: 520px; }
+      .orb-b { filter: blur(44px); width: 400px; height: 360px; }
+      .orb-c { filter: blur(32px); width: 280px; height: 280px; }
+
+      /* Kill decorative looping animations — each burns frames */
+      .brand-mark::before        { animation: none; opacity: 0.2; }
+      .cta-btn::after            { display: none; }
+      .price-card.featured::before { animation: none; }
+      .cta-glow                  { animation: none; opacity: 0.6; }
+
+      /* Simpler scroll reveal — fade only, no translate, less layout thrash */
+      .reveal { transform: none; transition: opacity 380ms ease; }
+    }
   </style>
 </head>
 <body>
@@ -1321,8 +1354,9 @@
     if (orbB) orbB.style.transform = `translate(${-x * 0.3}px, ${-y * 0.3}px)`;
   }, {passive:true});
 
-  // Gyroscope (mobile)
-  if (window.DeviceOrientationEvent) {
+  // Gyroscope orb parallax — skip on mobile since orbs are already simplified
+  // and constant transform updates on fixed blur elements cause jank
+  if (window.DeviceOrientationEvent && window.innerWidth > 768) {
     window.addEventListener('deviceorientation', e => {
       if (!e.beta || !e.gamma) return;
       const x = Math.max(-14, Math.min(14, e.gamma));
