@@ -830,7 +830,7 @@
 
     /* ── Integrations strip ─────────────────────────────────────── */
     .int-strip {
-      padding: 0 24px 96px;
+      padding: 0 24px 56px;
       position: relative; z-index: 3;
     }
     .int-row {
@@ -865,18 +865,19 @@
       margin: 0 4px;
     }
     @media (max-width: 640px) {
-      .int-strip  { padding: 0 20px 60px; }
+      .int-strip  { padding: 0 20px 40px; }
       .int-sep    { display: none; }
       .int-eyebrow {
-        flex-basis: 100%; text-align: center; margin-bottom: 6px;
+        flex-basis: 100%; text-align: center; margin-bottom: 10px;
         padding-right: 0;
       }
       /* Two-column pill grid on mobile */
       .int-pill {
         flex: 1 1 calc(50% - 5px);
         justify-content: center;
-        padding: 11px 14px; font-size: 13px;
+        padding: 13px 16px; font-size: 14px;
       }
+      .int-icon { width: 18px; height: 18px; }
     }
 
     /* ── Mobile performance — strip expensive GPU compositing ── */
@@ -1053,7 +1054,7 @@
   <!-- ── INTEGRATIONS STRIP ── -->
   <div class="int-strip">
     <div class="int-row">
-      <span class="int-eyebrow">Connects with</span>
+      <span class="int-eyebrow">Works with your gear</span>
 
       <!-- Whoop — live -->
       <div class="int-pill">
