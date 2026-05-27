@@ -3,8 +3,8 @@ Onboarding flow. Uses tool-based architecture — Arnie calls update_profile()
 as it collects answers. The system prompt is built dynamically so Claude always
 knows exactly what's been collected and what to ask next.
 
-Streamlined to 7 essentials + 1 targets step. Coaching style, accountability,
-and wake/sleep are set to sensible defaults and can be changed later.
+Steps (in order): name → sex → age → height/weight → goal → experience → diet/injuries → timezone → targets
+goal_weight_kg is collected naturally during the goal step but is NOT a required blocker.
 """
 from db.models import User
 
@@ -34,15 +34,16 @@ STYLE:
 RULES:
 - ALWAYS end your message with the next question.
 - Save each answer immediately using update_profile() with exact field names.
-- If they give multiple pieces of info at once, save all in one update_profile() call.
+- If they give multiple pieces of info at once (e.g. "26, male"), save ALL of it in one update_profile() call.
 - Convert units silently: lbs→kg, ft/in→cm. Never ask the user to convert.
 - If user says "no restrictions", "no injuries", "none" — save that string, don't skip.
 - ALWAYS write a text response alongside any tool call.
 - If they tap a button option (e.g. "Male", "Cut 🔻", "Beginner") — accept it exactly as typed and respond naturally.
+- goal_weight_kg is optional — ask for it as part of the goal question (e.g. "What are you cutting to?") but do NOT block progress if they skip it.
 
-Field names: name, age, sex (male/female), height_cm, current_weight_kg, goal_weight_kg, primary_goal (cut/bulk/maintain/performance/health), training_experience (beginner/intermediate/advanced), dietary_preferences, injuries, timezone, calorie_target, protein_target.
+Field names: name, age, sex (male/female), height_cm, current_weight_kg, goal_weight_kg (optional), primary_goal (cut/bulk/maintain/performance/health), training_experience (beginner/intermediate/advanced), dietary_preferences, injuries, timezone, calorie_target, protein_target.
 
-TARGETS STEP — after all 7 essentials are collected, help them set calorie and protein targets. Present THREE clear options:
+TARGETS STEP — after all essentials are collected, help them set calorie and protein targets. Present THREE clear options:
 
 "Last thing — targets. Three ways to handle it:
 1. <b>Calculate for me</b> — I'll run the math from your stats
@@ -62,11 +63,18 @@ IF they pick option 2 (specify): Save the numbers they give.
 
 IF they pick option 3 (skip): Call update_profile(onboarding_completed: true) and note they can say "set my targets" anytime.
 
-COMPLETION: After targets are handled, call update_profile(onboarding_completed: true). Then write ONE brief sentence — something like "You're all set, [Name]. Let's get to work." DO NOT write a tutorial — the system sends full instructions automatically."""
+COMPLETION: After targets are handled, call update_profile(onboarding_completed: true). Then write ONE brief sentence — e.g. "You're all set, [Name]. Let's get to work." DO NOT write a tutorial — the system sends detailed instructions automatically."""
 
 
 def build_onboarding_system(user: User) -> str:
-    """Build a dynamic onboarding system prompt showing current state."""
+    """
+    Build a dynamic onboarding system prompt showing current state.
+
+    Steps are intentionally granular (sex and age separate) so that partial
+    answers from button taps don't re-ask already-answered fields.
+    goal_weight_kg is NOT a step blocker — it's collected as part of the goal
+    question but progress continues regardless.
+    """
     prefs = user.preferences
 
     def has(field):
@@ -79,18 +87,22 @@ def build_onboarding_system(user: User) -> str:
         ("name",
          has("name"),
          "What's your first name?"),
-        ("age & sex",
-         has("age") and has("sex"),
-         "How old are you, and are you male or female?"),
+        ("sex",
+         has("sex"),
+         "Are you male or female?"),
+        ("age",
+         has("age"),
+         "How old are you?"),
         ("height & weight",
          has("height_cm") and has("current_weight_kg"),
          "What's your height and current weight?"),
         ("goal",
-         has("goal_weight_kg") and has("primary_goal"),
-         "What's your goal — cutting, bulking, maintaining, performance, or health? And what's your goal weight?"),
+         has("primary_goal"),
+         "What are you training for — cutting, bulking, maintaining, performance, or health? "
+         "If you have a target weight, drop that in too."),
         ("training experience",
          has("training_experience"),
-         "How would you rate your training experience — beginner, intermediate, or advanced?"),
+         "How experienced are you — beginner, intermediate, or advanced?"),
         ("diet & injuries",
          has("dietary_preferences") and has("injuries"),
          "Any dietary restrictions or injuries I should know about?"),
@@ -128,7 +140,7 @@ def build_onboarding_system(user: User) -> str:
             )
         else:
             state_block += (
-                "\n\nALL 7 ESSENTIALS COLLECTED — run the TARGETS STEP now."
+                "\n\nALL ESSENTIALS COLLECTED — run the TARGETS STEP now."
                 "\nPresent the 3 options exactly as specified above."
                 "\nAfter they respond, handle it AND call update_profile(onboarding_completed: true)."
             )
@@ -139,31 +151,39 @@ def build_onboarding_system(user: User) -> str:
 def get_onboarding_keyboard(user: User):
     """
     Return a ReplyKeyboardMarkup for the current onboarding step, or None for free-text steps.
-    Called after tool execution so user state reflects what was just saved.
+
+    IMPORTANT: This must mirror build_onboarding_system's steps exactly —
+    same field checks, same order — so the keyboard always matches what
+    the LLM is about to ask.
     """
     from telegram import ReplyKeyboardMarkup
 
     def has(field):
         return getattr(user, field, None) is not None
 
-    # Step 1: name — free text, no keyboard
+    prefs = user.preferences
+
+    # Step 1: name — free text
     if not has("name"):
         return None
 
-    # Step 2: sex — show Male/Female
+    # Step 2: sex — quick-reply buttons
     if not has("sex"):
         return ReplyKeyboardMarkup(
             [["Male", "Female"]],
             one_time_keyboard=True,
             resize_keyboard=True,
-            input_field_placeholder="Or type your age and tap a button…",
         )
 
-    # Step 3: height & weight — free text
+    # Step 3: age — free text
+    if not has("age"):
+        return None
+
+    # Step 4: height & weight — free text
     if not (has("height_cm") and has("current_weight_kg")):
         return None
 
-    # Step 4: primary goal
+    # Step 5: goal — quick-reply buttons (mirrors: has("primary_goal"))
     if not has("primary_goal"):
         return ReplyKeyboardMarkup(
             [["Cut 🔻", "Bulk 📈", "Maintain ⚖️"],
@@ -172,7 +192,7 @@ def get_onboarding_keyboard(user: User):
             resize_keyboard=True,
         )
 
-    # Step 5: training experience
+    # Step 6: training experience
     if not has("training_experience"):
         return ReplyKeyboardMarkup(
             [["Beginner", "Intermediate", "Advanced"]],
@@ -180,7 +200,7 @@ def get_onboarding_keyboard(user: User):
             resize_keyboard=True,
         )
 
-    # Step 6: diet & injuries
+    # Step 7: diet & injuries
     if not (has("dietary_preferences") and has("injuries")):
         return ReplyKeyboardMarkup(
             [["No restrictions", "Vegetarian", "Vegan"],
@@ -189,12 +209,11 @@ def get_onboarding_keyboard(user: User):
             resize_keyboard=True,
         )
 
-    # Step 7: timezone — free text (city name)
+    # Step 8: timezone — free text (city name)
     if not has("timezone") or user.timezone == "UTC":
         return None
 
     # Targets step
-    prefs = user.preferences
     if prefs and not getattr(prefs, "calorie_target", None):
         return ReplyKeyboardMarkup(
             [["Calculate for me 🧮"],
@@ -204,12 +223,6 @@ def get_onboarding_keyboard(user: User):
             resize_keyboard=True,
         )
 
-    return None
-
-
-def _both(a, b) -> str | None:
-    if a is not None and b is not None:
-        return f"{a} / {b}"
     return None
 
 
