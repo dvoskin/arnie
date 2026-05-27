@@ -1092,7 +1092,7 @@ async def cmd_upgrade(update: Update, context: ContextTypes.DEFAULT_TYPE):
     async with AsyncSessionLocal() as db:
         user = await get_or_create_user(db, str(update.effective_user.id))
 
-        if is_premium(user):
+        if user.subscription_status == "active":
             await update.message.reply_text(
                 "You're already on <b>Arnie Premium</b> ✅\n\n"
                 "Use /billing to manage your subscription.",
