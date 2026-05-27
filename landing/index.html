@@ -10,18 +10,18 @@
   <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@300;400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
   <style>
     :root {
-      --bg:      oklch(0.065 0.008 240);
-      --bg-2:    oklch(0.045 0.006 242);
-      --ink:     oklch(0.96 0.005 90);
-      --ink-2:   oklch(0.72 0.008 90);
-      --ink-3:   oklch(0.50 0.01 90);
-      --ink-4:   oklch(0.30 0.012 240);
-      --line:    color-mix(in oklch, var(--ink) 8%, transparent);
-      --line-s:  color-mix(in oklch, var(--ink) 14%, transparent);
-      --glass:   color-mix(in oklch, var(--ink) 5%, transparent);
+      --bg:      oklch(0.060 0.008 240);
+      --bg-2:    oklch(0.042 0.006 242);
+      --ink:     oklch(0.97 0.004 90);
+      --ink-2:   oklch(0.70 0.008 90);
+      --ink-3:   oklch(0.48 0.010 90);
+      --ink-4:   oklch(0.28 0.012 240);
+      --line:    color-mix(in oklch, var(--ink) 7%, transparent);
+      --line-s:  color-mix(in oklch, var(--ink) 13%, transparent);
+      --glass:   color-mix(in oklch, var(--ink) 4.5%, transparent);
       --glass-2: color-mix(in oklch, var(--ink) 8%, transparent);
-      --accent:  oklch(0.83 0.145 172);
-      --accent-s:oklch(0.70 0.12 172);
+      --accent:  oklch(0.86 0.155 168);
+      --accent-s:oklch(0.72 0.13 168);
       --violet:  oklch(0.52 0.18 280);
       --serif:   "Instrument Serif", "Times New Roman", serif;
       --sans:    "Geist", ui-sans-serif, system-ui, sans-serif;
@@ -35,59 +35,55 @@
       color: var(--ink);
       font-family: var(--sans);
       -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
       overflow-x: hidden;
-      font-feature-settings: "ss01","cv11";
+      font-feature-settings: "ss01","cv11","tnum";
       letter-spacing: -0.005em;
     }
     a { color: inherit; text-decoration: none; }
     button { font-family: inherit; cursor: pointer; }
 
     /* ── Ambient stage ───────────────────────────────────────── */
-    .stage {
-      position: fixed; inset: 0;
-      pointer-events: none; overflow: hidden; z-index: 0;
-    }
-    .orb { position: absolute; border-radius: 50%; }
+    .stage { position: fixed; inset: 0; pointer-events: none; overflow: hidden; z-index: 0; }
+    .orb   { position: absolute; border-radius: 50%; }
 
-    /* Main teal glow — right side, matches original */
+    /* Primary teal — right side, deep and cinematic */
     .orb-a {
-      width: 900px; height: 780px;
-      right: -180px; top: -120px;
-      background: radial-gradient(closest-side,
-        oklch(0.55 0.14 172 / 0.38), transparent 68%);
-      filter: blur(90px);
+      width: 1000px; height: 860px;
+      right: -220px; top: -140px;
+      background: radial-gradient(closest-side, oklch(0.56 0.15 168 / 0.36), transparent 65%);
+      filter: blur(95px);
     }
-    /* Deep center glow — reinforces the teal atmosphere */
+    /* Secondary center warmth */
     .orb-b {
-      width: 650px; height: 600px;
-      left: 15%; top: 5%;
-      background: radial-gradient(closest-side,
-        oklch(0.42 0.10 172 / 0.22), transparent 70%);
-      filter: blur(100px);
+      width: 680px; height: 620px;
+      left: 10%; top: 2%;
+      background: radial-gradient(closest-side, oklch(0.44 0.10 168 / 0.20), transparent 68%);
+      filter: blur(110px);
     }
-    /* Subtle violet edge — bottom-left, tertiary */
+    /* Tertiary violet edge — bottom-left */
     .orb-c {
-      width: 480px; height: 480px;
-      left: -120px; bottom: 15%;
-      background: radial-gradient(closest-side,
-        oklch(0.42 0.16 268 / 0.16), transparent 70%);
-      filter: blur(80px);
+      width: 500px; height: 500px;
+      left: -140px; bottom: 12%;
+      background: radial-gradient(closest-side, oklch(0.44 0.17 268 / 0.14), transparent 70%);
+      filter: blur(85px);
     }
 
     .grain {
       position: fixed; inset: 0; z-index: 1; pointer-events: none;
-      background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.045 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
-      mix-blend-mode: overlay; opacity: 0.5;
+      background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.95' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.04 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+      mix-blend-mode: overlay; opacity: 0.55;
     }
     .vignette {
       position: fixed; inset: 0; z-index: 1; pointer-events: none;
-      background: radial-gradient(ellipse 130% 80% at 50% 0%,
-        transparent 28%, oklch(0.04 0.006 240 / 0.88) 100%);
+      background:
+        radial-gradient(ellipse 140% 80% at 50% 0%, transparent 24%, oklch(0.04 0.006 240 / 0.90) 100%),
+        radial-gradient(ellipse 100% 40% at 50% 100%, oklch(0.04 0.006 240 / 0.50), transparent 70%);
     }
     .spotlight {
-      position: fixed; inset: 0; pointer-events: none; z-index: 2; opacity: 0.5;
-      background: radial-gradient(340px circle at var(--mx,50%) var(--my,30%),
-        oklch(0.83 0.145 172 / 0.06), transparent 70%);
+      position: fixed; inset: 0; pointer-events: none; z-index: 2; opacity: 0.45;
+      background: radial-gradient(320px circle at var(--mx,50%) var(--my,28%),
+        oklch(0.86 0.155 168 / 0.065), transparent 68%);
       mix-blend-mode: screen;
     }
 
@@ -98,13 +94,12 @@
     .nav {
       position: sticky; top: 0; z-index: 50;
       display: flex; align-items: center; justify-content: space-between;
-      padding: 20px 36px;
-      backdrop-filter: blur(14px) saturate(140%);
-      -webkit-backdrop-filter: blur(14px) saturate(140%);
-      background: linear-gradient(180deg,
-        color-mix(in oklch, var(--bg) 55%, transparent), transparent);
+      padding: 18px 36px;
+      backdrop-filter: blur(16px) saturate(150%);
+      -webkit-backdrop-filter: blur(16px) saturate(150%);
+      background: linear-gradient(180deg, color-mix(in oklch, var(--bg) 50%, transparent), transparent);
       border-bottom: 1px solid transparent;
-      transition: border-color 300ms, background 300ms;
+      transition: border-color 400ms, background 400ms;
     }
     .nav.scrolled {
       border-bottom-color: var(--line);
@@ -115,207 +110,264 @@
       font-family: var(--serif); font-size: 20px; letter-spacing: -0.01em;
     }
     .brand-mark {
-      width: 26px; height: 26px; border-radius: 8px;
-      background: radial-gradient(circle at 30% 30%,
-        oklch(0.95 0.08 172), oklch(0.52 0.16 268) 70%);
-      box-shadow: 0 0 0 1px color-mix(in oklch, var(--ink) 18%, transparent),
-                  0 6px 20px oklch(0.52 0.18 280 / 0.35),
-                  inset 0 1px 0 oklch(0.98 0 0 / 0.45);
+      width: 27px; height: 27px; border-radius: 8px;
+      background: radial-gradient(circle at 28% 28%, oklch(0.96 0.08 168), oklch(0.52 0.17 268) 72%);
+      box-shadow:
+        0 0 0 1px color-mix(in oklch, var(--ink) 16%, transparent),
+        0 5px 18px oklch(0.52 0.18 280 / 0.32),
+        inset 0 1px 0 oklch(0.98 0 0 / 0.42);
       position: relative;
     }
     .brand-mark::before {
       content: "";
       position: absolute; inset: -3px; border-radius: 50%;
       background: conic-gradient(from 0deg, var(--accent), transparent 30%, var(--violet), transparent 70%, var(--accent));
-      filter: blur(4px); opacity: 0.45; z-index: -1;
+      filter: blur(4px); opacity: 0.40; z-index: -1;
       animation: spin 8s linear infinite;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
 
     .nav-meta {
-      font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.07em;
-      text-transform: uppercase; color: var(--ink-3);
-      display: flex; align-items: center; gap: 6px;
+      font-family: var(--mono); font-size: 10px; letter-spacing: 0.08em;
+      text-transform: uppercase; color: var(--ink-4);
+      display: flex; align-items: center; gap: 7px;
     }
     .status-dot {
       width: 6px; height: 6px; border-radius: 50%;
-      background: var(--accent); box-shadow: 0 0 10px var(--accent);
-      animation: pulse 2.4s ease-in-out infinite;
+      background: var(--accent); box-shadow: 0 0 9px var(--accent);
+      animation: pulse 2.6s ease-in-out infinite;
     }
     @keyframes pulse {
-      0%,100% { opacity: 0.6; transform: scale(1); }
-      50% { opacity: 1; transform: scale(1.3); }
+      0%,100% { opacity: 0.55; transform: scale(1); }
+      50%      { opacity: 1;    transform: scale(1.35); }
     }
 
     /* ── Hero ────────────────────────────────────────────────── */
     .hero {
-      min-height: calc(100dvh - 68px);
-      padding: 48px 24px 96px;
+      min-height: calc(100dvh - 64px);
+      padding: 44px 24px 88px;
       display: flex; flex-direction: column; align-items: center; justify-content: center;
       text-align: center; position: relative;
     }
+
+    /* Depth halo — adds cinematic separation behind headline */
+    .hero::before {
+      content: "";
+      position: absolute; inset: 0; pointer-events: none;
+      background: radial-gradient(55% 55% at 50% 46%,
+        oklch(0.38 0.08 168 / 0.13), transparent 72%);
+    }
+
+    /* Bottom section fade */
+    .hero::after {
+      content: "";
+      position: absolute; bottom: -1px; left: 0; right: 0; height: 160px;
+      background: linear-gradient(to bottom, transparent, var(--bg));
+      pointer-events: none; z-index: 1;
+    }
+
     .eyebrow {
-      font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.18em;
+      font-family: var(--mono); font-size: 10px; letter-spacing: 0.20em;
       text-transform: uppercase; color: var(--ink-3);
-      margin: 0 0 28px;
+      margin: 0 0 30px;
       display: inline-flex; align-items: center; gap: 10px;
-      padding: 8px 16px; border: 1px solid var(--line); border-radius: 999px;
-      background: var(--glass); backdrop-filter: blur(8px);
+      padding: 7px 16px; border: 1px solid var(--line); border-radius: 999px;
+      background: var(--glass); backdrop-filter: blur(10px);
+      position: relative; z-index: 1;
     }
     .eyebrow::before {
       content: "";
       width: 5px; height: 5px; border-radius: 50%;
-      background: var(--accent); box-shadow: 0 0 8px var(--accent);
+      background: var(--accent); box-shadow: 0 0 10px var(--accent);
     }
+
     h1 {
       font-family: var(--serif); font-weight: 400;
-      font-size: clamp(52px, 9vw, 112px);
-      line-height: 0.95; letter-spacing: -0.025em;
-      margin: 0 0 26px; max-width: 18ch; text-wrap: balance;
+      font-size: clamp(54px, 10.5vw, 130px);
+      line-height: 0.90; letter-spacing: -0.03em;
+      margin: 0 0 26px; max-width: 16ch; text-wrap: balance;
+      position: relative; z-index: 1;
     }
-    /* Solid teal italic — matches the original exactly */
+    /* Solid teal with soft glow — the signature element */
     h1 em {
       font-style: italic;
       color: var(--accent);
+      text-shadow:
+        0 0 60px oklch(0.86 0.155 168 / 0.40),
+        0 0 120px oklch(0.86 0.155 168 / 0.18);
     }
+
     .hero-sub {
-      font-size: clamp(15px, 1.8vw, 17px); line-height: 1.6;
-      color: var(--ink-2); max-width: 46ch; margin: 0 auto 52px; text-wrap: pretty;
+      font-size: clamp(15px, 1.8vw, 17px); line-height: 1.65;
+      color: var(--ink-2); max-width: 44ch; margin: 0 auto 50px;
+      text-wrap: pretty; position: relative; z-index: 1;
     }
 
     /* ── CTA card ────────────────────────────────────────────── */
-    .cta-wrap { width: min(450px, 100%); margin: 0 auto; position: relative; }
+    .cta-wrap { width: min(440px, 100%); margin: 0 auto; position: relative; z-index: 1; }
     .cta-glow {
-      position: absolute; inset: -36px;
-      background: radial-gradient(60% 80% at 50% 60%,
-        oklch(0.83 0.145 172 / 0.18), transparent 70%);
-      filter: blur(20px); pointer-events: none; z-index: -1;
-      animation: breathe 5s ease-in-out infinite;
+      position: absolute; inset: -40px;
+      background: radial-gradient(55% 70% at 50% 65%,
+        oklch(0.86 0.155 168 / 0.20), transparent 68%);
+      filter: blur(22px); pointer-events: none; z-index: -1;
+      animation: breathe 5.5s ease-in-out infinite;
     }
     @keyframes breathe {
-      0%,100% { opacity: 0.7; transform: scale(0.96); }
-      50% { opacity: 1; transform: scale(1.04); }
+      0%,100% { opacity: 0.65; transform: scale(0.95); }
+      50%      { opacity: 1;    transform: scale(1.05); }
     }
     .cta-card {
-      border-radius: 20px;
-      background: linear-gradient(180deg,
-        color-mix(in oklch, var(--ink) 7%, transparent),
-        color-mix(in oklch, var(--ink) 3%, transparent));
+      border-radius: 22px;
+      background: linear-gradient(170deg,
+        color-mix(in oklch, var(--ink) 8%, transparent),
+        color-mix(in oklch, var(--ink) 3%, transparent) 80%);
       border: 1px solid var(--line-s);
-      backdrop-filter: blur(24px) saturate(160%);
-      -webkit-backdrop-filter: blur(24px) saturate(160%);
+      backdrop-filter: blur(28px) saturate(160%);
+      -webkit-backdrop-filter: blur(28px) saturate(160%);
       padding: 10px;
-      box-shadow: 0 1px 0 oklch(1 0 0 / 0.06) inset,
-                  0 32px 80px -20px oklch(0 0 0 / 0.75);
+      box-shadow:
+        0 1px 0 oklch(1 0 0 / 0.07) inset,
+        0 0 0 1px oklch(1 0 0 / 0.03) inset,
+        0 32px 80px -18px oklch(0 0 0 / 0.80),
+        0 8px 20px -8px oklch(0 0 0 / 0.40);
     }
     .platform-row {
       display: grid; grid-template-columns: repeat(3, 1fr);
-      gap: 5px; padding: 5px; margin-bottom: 0;
+      gap: 5px; padding: 5px;
     }
     .platform-pill {
-      display: flex; align-items: center; justify-content: center; gap: 7px;
-      padding: 9px 10px; border-radius: 12px;
+      display: flex; align-items: center; justify-content: center; gap: 6px;
+      padding: 9px 8px; border-radius: 12px;
       border: 1px solid transparent; background: transparent;
-      font-size: 12.5px; font-weight: 500; color: var(--ink-3);
-      transition: all 180ms; cursor: default; position: relative; overflow: hidden;
+      font-size: 12px; font-weight: 500; color: var(--ink-3);
+      transition: all 200ms; cursor: default; position: relative;
     }
     .platform-pill.active {
-      background: var(--glass-2); border-color: var(--line-s); color: var(--ink);
+      background: color-mix(in oklch, var(--ink) 9%, transparent);
+      border-color: var(--line-s); color: var(--ink);
+      box-shadow: 0 1px 0 oklch(1 0 0 / 0.06) inset;
     }
-    .platform-pill.coming { opacity: 0.32; font-size: 11.5px; }
-    .platform-pill .pico {
-      width: 16px; height: 16px; border-radius: 4px;
-      display: flex; align-items: center; justify-content: center; font-size: 10px;
+    .platform-pill.coming { opacity: 0.28; font-size: 11.5px; }
+    .pico {
+      width: 17px; height: 17px; border-radius: 5px; flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center;
     }
     .tg-icon { background: #2AABEE; }
     .wa-icon { background: #25D366; }
     .im-icon { background: linear-gradient(135deg,#3dc9ff,#3497fd,#a855f7); }
     .coming-lbl {
       position: absolute; top: 3px; right: 5px;
-      font-family: var(--mono); font-size: 7px;
+      font-family: var(--mono); font-size: 6.5px;
       letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-4);
     }
+
+    /* CTA button with shimmer */
     .cta-btn {
       display: flex; align-items: center; justify-content: center; gap: 9px;
-      width: 100%; padding: 15px 20px; border-radius: 13px;
-      border: 0; margin-top: 5px;
-      font-size: 15px; font-weight: 500;
-      color: oklch(0.10 0.01 240);
-      background: linear-gradient(180deg, oklch(0.91 0.11 172), oklch(0.77 0.155 172));
-      box-shadow: 0 1px 0 oklch(1 0 0 / 0.38) inset,
-                  0 12px 32px -8px oklch(0.83 0.145 172 / 0.48);
-      transition: transform 120ms, box-shadow 200ms;
-      text-decoration: none; letter-spacing: -0.01em;
+      width: 100%; padding: 16px 20px; border-radius: 14px;
+      border: 0; margin-top: 6px;
+      font-size: 15px; font-weight: 600; letter-spacing: -0.015em;
+      color: oklch(0.09 0.01 240);
+      background: linear-gradient(175deg,
+        oklch(0.93 0.10 165) 0%,
+        oklch(0.86 0.155 168) 40%,
+        oklch(0.76 0.158 172) 100%);
+      box-shadow:
+        0 1px 0 oklch(1 0 0 / 0.45) inset,
+        0 14px 36px -8px oklch(0.86 0.155 168 / 0.50),
+        0 4px 12px -4px oklch(0.86 0.155 168 / 0.30);
+      transition: transform 130ms, box-shadow 200ms;
+      text-decoration: none; position: relative; overflow: hidden;
+    }
+    /* Shimmer sweep */
+    .cta-btn::after {
+      content: "";
+      position: absolute; top: -50%; left: -65%; width: 38%; height: 200%;
+      background: linear-gradient(90deg, transparent, oklch(1 0 0 / 0.18), transparent);
+      transform: skewX(-22deg);
+      animation: shimmer 3.8s ease-in-out infinite;
+      animation-delay: 2s;
+    }
+    @keyframes shimmer {
+      0%,100% { left: -65%; opacity: 0; }
+      4%       { opacity: 1; }
+      45%      { left: 115%; opacity: 0; }
     }
     .cta-btn:hover {
-      transform: translateY(-1px);
-      box-shadow: 0 1px 0 oklch(1 0 0 / 0.38) inset,
-                  0 18px 42px -8px oklch(0.83 0.145 172 / 0.62);
+      transform: translateY(-2px);
+      box-shadow:
+        0 1px 0 oklch(1 0 0 / 0.45) inset,
+        0 20px 44px -8px oklch(0.86 0.155 168 / 0.62),
+        0 6px 16px -4px oklch(0.86 0.155 168 / 0.38);
     }
-    .cta-btn:active { transform: scale(0.98); }
+    .cta-btn:active { transform: scale(0.98) translateY(0); }
+
     .cta-meta {
-      margin-top: 14px; font-family: var(--mono); font-size: 10px;
-      letter-spacing: 0.10em; text-transform: uppercase; color: var(--ink-4);
-      display: flex; align-items: center; justify-content: center; gap: 10px;
+      margin-top: 13px; font-family: var(--mono); font-size: 9.5px;
+      letter-spacing: 0.11em; text-transform: uppercase; color: var(--ink-4);
+      display: flex; align-items: center; justify-content: center; gap: 9px;
     }
-    .cta-meta span::before { content: "·"; margin-right: 10px; }
+    .cta-meta span::before { content: "·"; margin-right: 9px; }
     .cta-meta span:first-child::before { display: none; }
+
     .hero-proof {
-      margin-top: 40px; font-family: var(--mono); font-size: 10.5px;
-      letter-spacing: 0.10em; text-transform: uppercase; color: var(--ink-4);
+      margin-top: 38px; font-family: var(--mono); font-size: 10px;
+      letter-spacing: 0.11em; text-transform: uppercase; color: var(--ink-4);
       display: flex; align-items: center; gap: 10px;
+      position: relative; z-index: 1;
     }
-    .stars { letter-spacing: 2px; color: var(--accent); font-size: 11px; }
+    .stars { letter-spacing: 3px; color: var(--accent); font-size: 11px; }
 
     /* ── Floating chips ───────────────────────────────────────── */
-    .float-field { position: absolute; inset: 0; pointer-events: none; }
+    .float-field { position: absolute; inset: 0; pointer-events: none; z-index: 1; }
     .chip {
       position: absolute;
       display: inline-flex; align-items: center; gap: 9px;
       padding: 10px 14px; border-radius: 14px;
-      background: linear-gradient(180deg,
-        color-mix(in oklch, var(--ink) 9%, transparent),
+      background: linear-gradient(160deg,
+        color-mix(in oklch, var(--ink) 10%, transparent),
         color-mix(in oklch, var(--ink) 4%, transparent));
       border: 1px solid var(--line-s);
-      backdrop-filter: blur(20px) saturate(160%);
-      -webkit-backdrop-filter: blur(20px) saturate(160%);
-      box-shadow: 0 1px 0 oklch(1 0 0 / 0.06) inset,
-                  0 20px 44px -16px oklch(0 0 0 / 0.65);
+      backdrop-filter: blur(22px) saturate(170%);
+      -webkit-backdrop-filter: blur(22px) saturate(170%);
+      box-shadow:
+        0 1px 0 oklch(1 0 0 / 0.07) inset,
+        0 22px 48px -18px oklch(0 0 0 / 0.70);
       font-size: 12px; white-space: nowrap;
     }
-    .chip-1 { left: 6%;  top: 28%;    --r: -5deg; transform: rotate(-5deg); animation: float 6.0s ease-in-out infinite; }
-    .chip-2 { right: 6%; top: 22%;    --r:  4deg; transform: rotate( 4deg); animation: float 6.5s ease-in-out infinite; animation-delay: -2s; }
-    .chip-3 { left: 8%;  bottom: 24%; --r: -3deg; transform: rotate(-3deg); animation: float 7.0s ease-in-out infinite; animation-delay: -4s; }
-    .chip-4 { right: 7%; bottom: 24%; --r:  3deg; transform: rotate( 3deg); animation: float 5.5s ease-in-out infinite; animation-delay: -1s; }
+    .chip-1 { left: 5.5%; top: 27%; --r: -5deg; transform: rotate(-5deg); animation: float 6.0s ease-in-out infinite; }
+    .chip-2 { right: 5.5%; top: 21%; --r:  4deg; transform: rotate( 4deg); animation: float 6.8s ease-in-out infinite; animation-delay: -2.2s; }
+    .chip-3 { left: 7%;   bottom: 23%; --r: -3deg; transform: rotate(-3deg); animation: float 7.2s ease-in-out infinite; animation-delay: -4.1s; }
+    .chip-4 { right: 6.5%; bottom: 23%; --r:  3deg; transform: rotate( 3deg); animation: float 5.6s ease-in-out infinite; animation-delay: -1.3s; }
     @keyframes float {
       0%,100% { transform: translateY(0)     rotate(var(--r,0deg)); }
       50%      { transform: translateY(-10px) rotate(var(--r,0deg)); }
     }
-    @media (max-width: 900px) { .chip-1, .chip-3 { display: none; } }
-    @media (max-width: 640px)  { .chip { display: none; } }
+    @media (max-width: 920px) { .chip-1, .chip-3 { display: none; } }
+    @media (max-width: 640px) { .chip { display: none; } }
 
-    .chip-dot  { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 8px var(--accent); }
-    .chip-label{ font-family: var(--mono); font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-3); }
-    .chip-num  { font-family: var(--serif); font-size: 19px; line-height: 1; color: var(--accent); }
-    .chip-bar  { width: 56px; height: 3px; border-radius: 2px; background: oklch(0 0 0 / 0.4); overflow: hidden; }
+    .chip-dot  { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 10px var(--accent); }
+    .chip-label{ font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.07em; text-transform: uppercase; color: var(--ink-3); }
+    .chip-num  { font-family: var(--serif); font-size: 20px; line-height: 1; color: var(--accent); }
+    .chip-bar  { width: 54px; height: 3px; border-radius: 2px; background: oklch(0 0 0 / 0.45); overflow: hidden; }
     .chip-bar i{ display: block; height: 100%; width: 74%; background: linear-gradient(90deg, var(--accent-s), var(--accent)); border-radius: 2px; }
 
     /* ── Section shared ───────────────────────────────────────── */
-    section { padding: 96px 24px; position: relative; }
+    section { padding: 100px 24px; position: relative; }
     .section-inner { max-width: 1000px; margin: 0 auto; }
     .section-tag {
-      font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.16em;
-      text-transform: uppercase; color: var(--accent); margin-bottom: 16px;
+      font-family: var(--mono); font-size: 10px; letter-spacing: 0.18em;
+      text-transform: uppercase; color: var(--accent); margin-bottom: 18px;
     }
     .section-title {
-      font-family: var(--serif); font-size: clamp(36px, 5vw, 60px);
-      font-weight: 400; line-height: 1.0;
-      letter-spacing: -0.02em; margin-bottom: 20px;
+      font-family: var(--serif); font-size: clamp(40px, 5.8vw, 70px);
+      font-weight: 400; line-height: 0.96;
+      letter-spacing: -0.025em; margin-bottom: 22px;
     }
     .section-title em { font-style: italic; color: var(--accent); }
     .section-sub {
-      font-size: 17px; line-height: 1.55; color: var(--ink-2);
-      max-width: 52ch; text-wrap: pretty;
+      font-size: 17px; line-height: 1.60; color: var(--ink-2);
+      max-width: 50ch; text-wrap: pretty;
     }
 
     /* ── Chat mockup section ─────────────────────────────────── */
@@ -323,39 +375,74 @@
       display: grid; grid-template-columns: repeat(3, 1fr);
       gap: 14px; margin-top: 56px;
     }
-    @media (max-width: 760px) { .chat-cols { grid-template-columns: 1fr; } }
+    @media (max-width: 780px) { .chat-cols { grid-template-columns: 1fr; } }
+
     .chat-card {
-      border-radius: 18px; background: var(--glass); border: 1px solid var(--line);
-      overflow: hidden; transition: border-color 300ms, background 300ms;
+      border-radius: 20px;
+      background: linear-gradient(170deg,
+        color-mix(in oklch, var(--ink) 6%, transparent),
+        color-mix(in oklch, var(--ink) 3%, transparent));
+      border: 1px solid var(--line);
+      overflow: hidden;
+      transition: border-color 300ms, box-shadow 300ms;
+      box-shadow: 0 8px 32px -12px oklch(0 0 0 / 0.50);
     }
-    .chat-card:hover { background: var(--glass-2); border-color: var(--line-s); }
+    .chat-card:hover {
+      border-color: var(--line-s);
+      box-shadow: 0 12px 40px -12px oklch(0 0 0 / 0.65);
+    }
+
+    /* Telegram-style chat header */
     .chat-header {
-      display: flex; align-items: center; gap: 10px;
-      padding: 14px 16px 12px; border-bottom: 1px solid var(--line);
+      display: flex; align-items: center; gap: 11px;
+      padding: 13px 16px 12px;
+      border-bottom: 1px solid var(--line);
+      background: color-mix(in oklch, var(--ink) 3%, transparent);
     }
     .chat-avatar {
-      width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0;
-      background: radial-gradient(circle at 30% 30%, var(--accent), oklch(0.50 0.16 268));
+      width: 34px; height: 34px; border-radius: 50%; flex-shrink: 0;
+      background: linear-gradient(135deg, var(--accent), oklch(0.50 0.17 268));
+      display: flex; align-items: center; justify-content: center;
+      font-family: var(--serif); font-size: 14px; color: oklch(0.09 0.01 240);
+      font-weight: 400; font-style: italic;
     }
-    .chat-hname { font-size: 13px; font-weight: 500; }
+    .chat-hname { font-size: 13.5px; font-weight: 600; letter-spacing: -0.01em; }
     .chat-hsub  {
-      font-family: var(--mono); font-size: 9px; letter-spacing: 0.06em;
-      text-transform: uppercase; color: var(--accent); margin-top: 1px;
+      display: flex; align-items: center; gap: 5px; margin-top: 1px;
     }
-    .chat-body  { padding: 14px 16px 16px; display: flex; flex-direction: column; gap: 10px; }
+    .chat-online-dot {
+      width: 6px; height: 6px; border-radius: 50%;
+      background: var(--accent); flex-shrink: 0;
+    }
+    .chat-online-txt {
+      font-family: var(--mono); font-size: 9px; letter-spacing: 0.06em;
+      text-transform: uppercase; color: var(--accent);
+    }
+
+    .chat-body  { padding: 14px 14px 16px; display: flex; flex-direction: column; gap: 8px; }
+
     .msg {
-      font-size: 13px; line-height: 1.5; padding: 9px 13px; border-radius: 12px; max-width: 92%;
+      font-size: 13px; line-height: 1.55; padding: 9px 12px 7px;
+      border-radius: 14px; max-width: 92%; position: relative;
+    }
+    .msg-time {
+      font-size: 10px; color: var(--ink-4); text-align: right;
+      margin-top: 3px; font-family: var(--mono);
     }
     .msg.user {
-      background: oklch(0.83 0.145 172 / 0.14);
-      border: 1px solid oklch(0.83 0.145 172 / 0.22);
+      background: oklch(0.86 0.155 168 / 0.16);
+      border: 1px solid oklch(0.86 0.155 168 / 0.22);
       align-self: flex-end; color: var(--ink);
+      border-bottom-right-radius: 5px;
     }
+    .msg.user .msg-time { color: oklch(0.86 0.155 168 / 0.6); }
     .msg.bot {
-      background: var(--glass-2); border: 1px solid var(--line);
+      background: color-mix(in oklch, var(--ink) 9%, transparent);
+      border: 1px solid var(--line);
       align-self: flex-start; color: var(--ink-2);
+      border-bottom-left-radius: 5px;
     }
-    .msg.bot strong { color: var(--ink); }
+    .msg.bot strong { color: var(--ink); font-weight: 600; }
 
     /* ── Comparison section ──────────────────────────────────── */
     .compare-grid {
@@ -363,121 +450,187 @@
       gap: 14px; margin-top: 52px;
     }
     @media (max-width: 620px) { .compare-grid { grid-template-columns: 1fr; } }
-    .compare-col {
-      border-radius: 18px; border: 1px solid var(--line); overflow: hidden;
+
+    .compare-col { border-radius: 20px; border: 1px solid var(--line); overflow: hidden; }
+    .compare-col.them { opacity: 0.48; }
+    .compare-col.us   {
+      border-color: color-mix(in oklch, var(--accent) 28%, transparent);
+      box-shadow: 0 0 0 1px color-mix(in oklch, var(--accent) 10%, transparent),
+                  inset 0 1px 0 color-mix(in oklch, var(--accent) 12%, transparent);
     }
-    .compare-col.them { opacity: 0.52; }
-    .compare-col.us   { border-color: color-mix(in oklch, var(--accent) 30%, transparent); }
     .compare-head {
-      padding: 16px 22px; border-bottom: 1px solid var(--line);
-      font-family: var(--mono); font-size: 10.5px;
-      letter-spacing: 0.12em; text-transform: uppercase;
+      padding: 15px 22px; border-bottom: 1px solid var(--line);
+      font-family: var(--mono); font-size: 10px;
+      letter-spacing: 0.13em; text-transform: uppercase;
     }
     .compare-col.them .compare-head { color: var(--ink-3); }
-    .compare-col.us   .compare-head { color: var(--accent); }
+    .compare-col.us   .compare-head { color: var(--accent); background: color-mix(in oklch, var(--accent) 5%, transparent); }
     .compare-item {
-      display: flex; align-items: flex-start; gap: 12px;
-      padding: 14px 22px; border-bottom: 1px solid var(--line);
-      font-size: 14px; color: var(--ink-2); line-height: 1.4;
+      display: flex; align-items: flex-start; gap: 11px;
+      padding: 13px 22px; border-bottom: 1px solid var(--line);
+      font-size: 13.5px; color: var(--ink-2); line-height: 1.45;
     }
     .compare-item:last-child { border-bottom: none; }
-    .compare-icon { flex-shrink: 0; font-size: 12px; margin-top: 2px; }
+    .compare-icon { flex-shrink: 0; font-size: 11px; margin-top: 3px; opacity: 0.7; }
     .compare-col.us .compare-item { color: var(--ink); }
+    .compare-col.us .compare-icon { opacity: 1; color: var(--accent); }
 
     /* ── Features grid ───────────────────────────────────────── */
     .feat-grid {
       display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
       gap: 1px; background: var(--line);
-      border: 1px solid var(--line); border-radius: 20px;
+      border: 1px solid var(--line); border-radius: 22px;
       overflow: hidden; margin-top: 56px;
     }
     .feat-cell {
-      padding: 28px 30px; background: var(--bg);
-      transition: background 250ms; position: relative;
+      padding: 30px 32px; background: var(--bg);
+      transition: background 280ms;
     }
-    .feat-cell:hover { background: color-mix(in oklch, var(--bg) 72%, var(--ink) 28%); }
-    .feat-emoji  { font-size: 22px; margin-bottom: 14px; }
-    .feat-cell h4{ font-size: 15px; font-weight: 500; letter-spacing: -0.01em; margin-bottom: 7px; }
-    .feat-cell p { font-size: 13.5px; line-height: 1.55; color: var(--ink-3); }
+    .feat-cell:hover { background: color-mix(in oklch, var(--bg) 68%, var(--ink) 32%); }
+
+    /* Icon container — replaces raw emoji for a premium look */
+    .feat-icon {
+      width: 40px; height: 40px; border-radius: 11px; margin-bottom: 18px;
+      display: flex; align-items: center; justify-content: center;
+      background: color-mix(in oklch, var(--accent) 12%, transparent);
+      border: 1px solid color-mix(in oklch, var(--accent) 20%, transparent);
+      flex-shrink: 0;
+    }
+    .feat-icon svg { display: block; }
+
+    .feat-cell h4 { font-size: 15px; font-weight: 600; letter-spacing: -0.015em; margin-bottom: 8px; }
+    .feat-cell p  { font-size: 13.5px; line-height: 1.58; color: var(--ink-3); }
 
     /* ── Pricing ─────────────────────────────────────────────── */
     .pricing-cols {
       display: grid; grid-template-columns: 1fr 1fr;
-      gap: 14px; max-width: 660px; margin: 52px auto 0;
+      gap: 14px; max-width: 660px; margin: 54px auto 0;
     }
     @media (max-width: 580px) { .pricing-cols { grid-template-columns: 1fr; } }
+
     .price-card {
-      border-radius: 20px; border: 1px solid var(--line);
-      padding: 28px; background: var(--glass);
+      border-radius: 22px; border: 1px solid var(--line);
+      padding: 30px; background: var(--glass);
     }
     .price-card.featured {
-      border-color: color-mix(in oklch, var(--accent) 32%, transparent);
-      background: linear-gradient(180deg,
-        color-mix(in oklch, var(--accent) 7%, transparent), var(--glass));
+      position: relative; overflow: hidden;
+      border-color: color-mix(in oklch, var(--accent) 35%, transparent);
+      background: linear-gradient(170deg,
+        color-mix(in oklch, var(--accent) 8%, transparent),
+        var(--glass) 60%);
+      box-shadow:
+        0 0 0 1px color-mix(in oklch, var(--accent) 14%, transparent),
+        inset 0 1px 0 color-mix(in oklch, var(--accent) 18%, transparent),
+        0 24px 56px -16px oklch(0.86 0.155 168 / 0.20);
     }
+    /* Animated top-border glow on featured card */
+    .price-card.featured::before {
+      content: "";
+      position: absolute; top: 0; left: -100%; right: 0; height: 1px;
+      background: linear-gradient(90deg, transparent, var(--accent), transparent);
+      animation: borderSweep 3.5s ease-in-out infinite;
+    }
+    @keyframes borderSweep {
+      0%,100% { left: -100%; opacity: 0; }
+      10%      { opacity: 1; }
+      60%      { left: 100%; opacity: 0; }
+    }
+
     .price-badge {
-      font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.10em;
-      text-transform: uppercase; color: var(--accent); margin-bottom: 14px;
+      font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.12em;
+      text-transform: uppercase; color: var(--accent); margin-bottom: 16px;
     }
     .price-amount {
-      font-family: var(--serif); font-size: 40px;
-      line-height: 1; letter-spacing: -0.02em; margin-bottom: 6px;
+      font-family: var(--serif); font-size: 42px;
+      line-height: 1; letter-spacing: -0.025em; margin-bottom: 6px;
     }
     .price-sub {
-      font-family: var(--mono); font-size: 10px; letter-spacing: 0.06em;
-      text-transform: uppercase; color: var(--ink-3); margin-bottom: 22px;
+      font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.07em;
+      text-transform: uppercase; color: var(--ink-3); margin-bottom: 24px;
     }
     .price-features {
       list-style: none; display: flex; flex-direction: column;
-      gap: 9px; margin-bottom: 24px;
+      gap: 10px; margin-bottom: 26px;
     }
     .price-features li {
       display: flex; align-items: center; gap: 10px;
       font-size: 13.5px; color: var(--ink-2);
     }
-    .price-features li::before { content: "✓"; color: var(--accent); font-weight: 500; flex-shrink: 0; }
+    .price-features li::before {
+      content: "";
+      width: 15px; height: 15px; border-radius: 50%; flex-shrink: 0;
+      background: color-mix(in oklch, var(--accent) 18%, transparent);
+      border: 1px solid color-mix(in oklch, var(--accent) 30%, transparent);
+      background-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'><path d='M2 6l3 3 5-5' stroke='%2300c9a7' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round' fill='none'/></svg>");
+      background-size: 11px; background-position: center; background-repeat: no-repeat;
+    }
     .price-cta {
-      display: block; text-align: center; padding: 12px 20px;
-      border-radius: 12px; font-size: 14px; font-weight: 500;
-      text-decoration: none; transition: transform 120ms;
+      display: block; text-align: center; padding: 13px 20px;
+      border-radius: 13px; font-size: 14px; font-weight: 600; letter-spacing: -0.01em;
+      text-decoration: none; transition: transform 130ms, box-shadow 200ms;
     }
     .price-cta:active { transform: scale(0.97); }
-    .price-card          .price-cta { border: 1px solid var(--line-s); color: var(--ink-2); background: var(--glass-2); }
+    .price-card          .price-cta {
+      border: 1px solid var(--line-s); color: var(--ink-2); background: var(--glass-2);
+    }
     .price-card.featured .price-cta {
-      background: linear-gradient(180deg, oklch(0.91 0.11 172), oklch(0.77 0.155 172));
-      color: oklch(0.10 0.01 240); border: none;
-      box-shadow: 0 1px 0 oklch(1 0 0 / 0.38) inset,
-                  0 8px 24px -6px oklch(0.83 0.145 172 / 0.48);
+      background: linear-gradient(175deg, oklch(0.93 0.10 165), oklch(0.76 0.158 172));
+      color: oklch(0.09 0.01 240); border: none;
+      box-shadow: 0 1px 0 oklch(1 0 0 / 0.40) inset,
+                  0 10px 28px -6px oklch(0.86 0.155 168 / 0.48);
+    }
+    .price-card.featured .price-cta:hover {
+      box-shadow: 0 1px 0 oklch(1 0 0 / 0.40) inset,
+                  0 14px 36px -6px oklch(0.86 0.155 168 / 0.60);
+      transform: translateY(-1px);
     }
 
     /* ── FAQ ─────────────────────────────────────────────────── */
-    .faq-list { max-width: 640px; margin: 52px auto 0; }
+    .faq-list { max-width: 620px; margin: 54px auto 0; }
     .faq-item  { border-bottom: 1px solid var(--line); }
     .faq-q {
       width: 100%; text-align: left; background: none; border: none; color: var(--ink);
       font-size: 15px; font-weight: 500; letter-spacing: -0.01em;
-      padding: 18px 0; cursor: pointer;
-      display: flex; align-items: center; justify-content: space-between; gap: 12px;
+      padding: 20px 0; cursor: pointer;
+      display: flex; align-items: center; justify-content: space-between; gap: 14px;
     }
-    .faq-q::after { content: "+"; color: var(--ink-3); font-size: 20px; font-weight: 300; flex-shrink: 0; transition: transform 220ms; }
-    .faq-item.open .faq-q::after { transform: rotate(45deg); }
+    .faq-icon {
+      width: 22px; height: 22px; border-radius: 50%; flex-shrink: 0;
+      border: 1px solid var(--line-s);
+      display: flex; align-items: center; justify-content: center;
+      color: var(--ink-3); font-size: 16px; font-weight: 300; line-height: 1;
+      transition: transform 240ms, background 240ms, border-color 240ms;
+    }
+    .faq-item.open .faq-icon {
+      transform: rotate(45deg);
+      background: color-mix(in oklch, var(--accent) 12%, transparent);
+      border-color: color-mix(in oklch, var(--accent) 30%, transparent);
+      color: var(--accent);
+    }
     .faq-a {
-      font-size: 14.5px; line-height: 1.65; color: var(--ink-2);
-      max-height: 0; overflow: hidden; transition: max-height 320ms ease, padding 240ms ease;
+      font-size: 14.5px; line-height: 1.68; color: var(--ink-2);
+      max-height: 0; overflow: hidden;
+      transition: max-height 340ms cubic-bezier(.4,0,.2,1), padding 260ms ease;
     }
-    .faq-item.open .faq-a { max-height: 300px; padding-bottom: 18px; }
+    .faq-item.open .faq-a { max-height: 320px; padding-bottom: 20px; }
 
     /* ── Final CTA ──────────────────────────────────────────── */
-    .final-cta { text-align: center; padding: 96px 24px 120px; }
+    .final-cta { text-align: center; padding: 100px 24px 120px; position: relative; }
+    .final-cta::before {
+      content: "";
+      position: absolute; inset: 0; pointer-events: none;
+      background: radial-gradient(50% 50% at 50% 50%,
+        oklch(0.38 0.08 168 / 0.10), transparent 72%);
+    }
     .final-cta h2 {
-      font-family: var(--serif); font-size: clamp(42px, 6vw, 76px);
-      font-weight: 400; letter-spacing: -0.02em;
-      line-height: 0.96; margin-bottom: 18px;
+      font-family: var(--serif); font-size: clamp(44px, 7vw, 84px);
+      font-weight: 400; letter-spacing: -0.025em;
+      line-height: 0.94; margin-bottom: 18px; position: relative;
     }
     .final-cta h2 em { font-style: italic; color: var(--accent); }
     .final-cta p {
-      font-size: 16px; color: var(--ink-2); margin-bottom: 40px;
-      max-width: 34ch; margin-left: auto; margin-right: auto;
+      font-size: 16px; color: var(--ink-2); margin-bottom: 42px;
+      max-width: 32ch; margin-left: auto; margin-right: auto; position: relative;
     }
 
     /* ── Footer ──────────────────────────────────────────────── */
@@ -488,7 +641,7 @@
     }
     .foot-brand { font-family: var(--serif); font-size: 18px; }
     .foot-note  {
-      font-family: var(--mono); font-size: 10px; letter-spacing: 0.06em;
+      font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.07em;
       text-transform: uppercase; color: var(--ink-4);
     }
 
@@ -498,20 +651,24 @@
       display: none;
       padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
       background: color-mix(in oklch, var(--bg) 92%, transparent);
-      backdrop-filter: blur(16px); border-top: 1px solid var(--line);
+      backdrop-filter: blur(18px) saturate(150%);
+      border-top: 1px solid var(--line);
       align-items: center; gap: 12px;
       opacity: 0; transform: translateY(18px);
       transition: opacity 300ms, transform 350ms; pointer-events: none;
     }
     .sticky-bar.show { opacity: 1; transform: translateY(0); pointer-events: auto; }
-    .sticky-left { flex: 1; min-width: 0; }
-    .sticky-title{ font-size: 13px; font-weight: 500; }
-    .sticky-sub  { font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); margin-top: 2px; }
-    .sticky-btn  {
-      flex-shrink: 0; padding: 10px 16px; border-radius: 10px; border: 0;
-      font-size: 13px; font-weight: 500; color: oklch(0.10 0.01 240);
-      background: linear-gradient(180deg, oklch(0.91 0.11 172), oklch(0.80 0.13 172));
-      box-shadow: 0 1px 0 oklch(1 0 0 / 0.38) inset, 0 8px 20px -6px oklch(0.83 0.145 172 / 0.48);
+    .sticky-left  { flex: 1; min-width: 0; }
+    .sticky-title { font-size: 13px; font-weight: 600; }
+    .sticky-sub   {
+      font-family: var(--mono); font-size: 9px; letter-spacing: 0.08em;
+      text-transform: uppercase; color: var(--ink-3); margin-top: 2px;
+    }
+    .sticky-btn {
+      flex-shrink: 0; padding: 11px 18px; border-radius: 11px; border: 0;
+      font-size: 13.5px; font-weight: 600; color: oklch(0.09 0.01 240);
+      background: linear-gradient(175deg, oklch(0.93 0.10 165), oklch(0.80 0.14 172));
+      box-shadow: 0 1px 0 oklch(1 0 0 / 0.38) inset, 0 8px 20px -6px oklch(0.86 0.155 168 / 0.45);
       transition: transform 120ms; white-space: nowrap;
       text-decoration: none; display: inline-flex; align-items: center; gap: 5px;
     }
@@ -520,19 +677,18 @@
 
     /* ── Scroll reveal ────────────────────────────────────────── */
     .reveal {
-      opacity: 0; transform: translateY(20px);
-      transition: opacity 700ms cubic-bezier(.2,.7,.2,1), transform 800ms cubic-bezier(.2,.7,.2,1);
+      opacity: 0; transform: translateY(22px);
+      transition: opacity 750ms cubic-bezier(.2,.7,.2,1), transform 850ms cubic-bezier(.2,.7,.2,1);
     }
     .reveal.in { opacity: 1; transform: none; }
-    .reveal-d1 { transition-delay:  80ms; }
-    .reveal-d2 { transition-delay: 160ms; }
-    .reveal-d3 { transition-delay: 240ms; }
-    .reveal-d4 { transition-delay: 320ms; }
+    .reveal-d1 { transition-delay:  90ms; }
+    .reveal-d2 { transition-delay: 180ms; }
+    .reveal-d3 { transition-delay: 270ms; }
+    .reveal-d4 { transition-delay: 360ms; }
   </style>
 </head>
 <body>
 
-<!-- Ambient background -->
 <div class="stage">
   <div class="orb orb-a" id="orbA"></div>
   <div class="orb orb-b" id="orbB"></div>
@@ -560,14 +716,12 @@
   <section class="hero" id="hero">
     <div class="float-field" aria-hidden="true">
 
-      <!-- Top-left: online bubble -->
       <div class="chip chip-1">
         <div class="chip-dot"></div>
         <span>Arnie</span>
         <span class="chip-label">online · Telegram</span>
       </div>
 
-      <!-- Top-right: protein progress -->
       <div class="chip chip-2">
         <div>
           <div class="chip-label">Protein</div>
@@ -578,21 +732,24 @@
         </div>
       </div>
 
-      <!-- Bottom-left: streak -->
       <div class="chip chip-3">
-        <span style="font-size:17px">🔥</span>
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style="flex-shrink:0">
+          <circle cx="8" cy="8" r="7" fill="oklch(0.86 0.155 168 / 0.15)" stroke="oklch(0.86 0.155 168 / 0.3)" stroke-width="1"/>
+          <text x="8" y="12" text-anchor="middle" font-size="9" fill="var(--accent)">🔥</text>
+        </svg>
         <div>
           <div class="chip-label">Streak</div>
           <span class="chip-num">14 <span style="font-size:13px;color:var(--ink-2)">days</span></span>
         </div>
       </div>
 
-      <!-- Bottom-right: recovery (matches original screenshot) -->
       <div class="chip chip-4">
-        <span style="font-size:17px">🚶</span>
+        <div style="width:28px;height:28px;border-radius:8px;background:color-mix(in oklch,var(--accent) 14%,transparent);border:1px solid color-mix(in oklch,var(--accent) 22%,transparent);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" stroke="var(--accent)" stroke-width="1.5" stroke-linejoin="round"/></svg>
+        </div>
         <div>
           <div class="chip-label">Walk 20 min</div>
-          <div style="font-size:11px;color:var(--accent);margin-top:2px">recovery</div>
+          <div style="font-size:11px;color:var(--accent);margin-top:2px;font-family:var(--mono)">recovery</div>
         </div>
       </div>
 
@@ -611,28 +768,49 @@
       <div class="cta-glow"></div>
       <div class="cta-card">
         <div class="platform-row">
+
           <div class="platform-pill active">
-            <div class="pico tg-icon">✈️</div>
+            <div class="pico tg-icon">
+              <!-- Telegram paper-plane -->
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="white">
+                <path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/>
+              </svg>
+            </div>
             Telegram
           </div>
+
           <div class="platform-pill coming">
-            <div class="pico wa-icon">💬</div>
+            <div class="pico wa-icon">
+              <!-- WhatsApp -->
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="white">
+                <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 0 1-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 0 1-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 0 1 2.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0 0 12.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 0 0 5.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 0 0-3.48-8.413Z"/>
+              </svg>
+            </div>
             WhatsApp
             <span class="coming-lbl">Soon</span>
           </div>
+
           <div class="platform-pill coming">
-            <div class="pico im-icon">💬</div>
+            <div class="pico im-icon">
+              <!-- iMessage bubble -->
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="white">
+                <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/>
+              </svg>
+            </div>
             iMessage
             <span class="coming-lbl">Soon</span>
           </div>
+
         </div>
+
         <a href="https://t.me/Arnie_1026_Bot?start=freetrial" target="_blank" rel="noopener" class="cta-btn">
-          <svg width="17" height="17" viewBox="0 0 24 24" fill="none">
-            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm4.64 6.8l-1.72 8.1c-.13.6-.47.75-.96.47l-2.64-1.95-1.27 1.22c-.14.14-.26.26-.53.26l.19-2.68 4.87-4.4c.21-.19-.05-.29-.33-.11L7.5 14.5l-2.6-.81c-.56-.18-.58-.56.13-.83l10.15-3.91c.47-.18.88.11.46 1.85z" fill="currentColor"/>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+            <path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z" fill="currentColor"/>
           </svg>
           Start free trial →
         </a>
       </div>
+
       <div class="cta-meta">
         <span>7-day free trial</span>
         <span>Then $9.99/mo</span>
@@ -652,47 +830,75 @@
       <div class="section-tag reveal">How it feels</div>
       <h2 class="section-title reveal reveal-d1">Real coaching,<br><em>in your inbox.</em></h2>
       <p class="section-sub reveal reveal-d2">No app to learn. No dashboard to maintain. Just text Arnie like you'd text a real coach — it handles the rest.</p>
+
       <div class="chat-cols">
 
         <div class="chat-card reveal reveal-d1">
           <div class="chat-header">
-            <div class="chat-avatar"></div>
+            <div class="chat-avatar">A</div>
             <div>
               <div class="chat-hname">Arnie</div>
-              <div class="chat-hsub">● online</div>
+              <div class="chat-hsub">
+                <div class="chat-online-dot"></div>
+                <span class="chat-online-txt">online</span>
+              </div>
             </div>
           </div>
           <div class="chat-body">
-            <div class="msg user">just had lunch — chicken bowl, rice, avocado</div>
-            <div class="msg bot"><strong>Logged.</strong> ~680 cal, 52g protein. You're at 71% of your protein target — dinner needs to carry the last 42g. Steak or Greek yogurt would nail it.</div>
+            <div class="msg user">
+              just had lunch — chicken bowl, rice, avocado
+              <div class="msg-time">12:34</div>
+            </div>
+            <div class="msg bot">
+              <strong>Logged.</strong> ~680 cal, 52g protein. You're at 71% of your protein target — dinner needs the last 42g. Steak or Greek yogurt would nail it.
+              <div class="msg-time">12:34</div>
+            </div>
           </div>
         </div>
 
         <div class="chat-card reveal reveal-d2">
           <div class="chat-header">
-            <div class="chat-avatar"></div>
+            <div class="chat-avatar">A</div>
             <div>
               <div class="chat-hname">Arnie</div>
-              <div class="chat-hsub">● online</div>
+              <div class="chat-hsub">
+                <div class="chat-online-dot"></div>
+                <span class="chat-online-txt">online</span>
+              </div>
             </div>
           </div>
           <div class="chat-body">
-            <div class="msg user">bench today — 3×5 @ 185, failed 4th rep at 195</div>
-            <div class="msg bot">Logged. Last week you hit 3×5 @ 185 clean — you're progressing. Missing rep 4 at 195 is expected. <strong>Next session: 3×5 @ 190</strong>, then retest 195 the week after.</div>
+            <div class="msg user">
+              bench today — 3×5 @ 185, failed rep 4 at 195
+              <div class="msg-time">18:02</div>
+            </div>
+            <div class="msg bot">
+              Logged. Last week you hit 3×5 @ 185 clean — you're progressing. Missing rep 4 is expected. <strong>Next session: 3×5 @ 190</strong>, then retest 195 the week after.
+              <div class="msg-time">18:02</div>
+            </div>
           </div>
         </div>
 
         <div class="chat-card reveal reveal-d3">
           <div class="chat-header">
-            <div class="chat-avatar"></div>
+            <div class="chat-avatar">A</div>
             <div>
               <div class="chat-hname">Arnie</div>
-              <div class="chat-hsub">● online</div>
+              <div class="chat-hsub">
+                <div class="chat-online-dot"></div>
+                <span class="chat-online-txt">online</span>
+              </div>
             </div>
           </div>
           <div class="chat-body">
-            <div class="msg user">should I even train today? slept like 5hrs</div>
-            <div class="msg bot">Your Whoop recovery is 38% — yellow. <strong>Train light or skip the heavy lifts.</strong> A 20-min walk keeps your streak without digging the hole deeper.</div>
+            <div class="msg user">
+              should I train today? slept like 5hrs
+              <div class="msg-time">09:15</div>
+            </div>
+            <div class="msg bot">
+              Whoop recovery at 38% — yellow. <strong>Train light or skip the heavy work.</strong> A 20-min walk keeps your streak without digging the hole deeper.
+              <div class="msg-time">09:15</div>
+            </div>
           </div>
         </div>
 
@@ -736,36 +942,79 @@
       <div class="section-tag reveal">What's included</div>
       <h2 class="section-title reveal reveal-d1">A trainer that <em>remembers,</em><br>adapts, and follows up.</h2>
       <div class="feat-grid">
+
         <div class="feat-cell reveal">
-          <div class="feat-emoji">💬</div>
+          <div class="feat-icon">
+            <!-- Chat bubble -->
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+            </svg>
+          </div>
           <h4>Log naturally</h4>
           <p>Say "had a burger and fries for lunch" — Arnie handles the macros. No dropdowns, no searching, no friction.</p>
         </div>
+
         <div class="feat-cell reveal reveal-d1">
-          <div class="feat-emoji">🧠</div>
+          <div class="feat-icon">
+            <!-- Brain/memory -->
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96-.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 4.44-2.16Z"/><path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96-.44 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-4.44-2.16Z"/>
+            </svg>
+          </div>
           <h4>Built-in memory</h4>
           <p>Your injuries, preferences, goals, and full history are always in context. It never asks you to repeat yourself.</p>
         </div>
+
         <div class="feat-cell reveal reveal-d2">
-          <div class="feat-emoji">📊</div>
+          <div class="feat-icon">
+            <!-- Chart/accountability -->
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/>
+              <line x1="2" y1="20" x2="22" y2="20"/>
+            </svg>
+          </div>
           <h4>Real accountability</h4>
           <p>Morning check-ins, midday pacing, evening recaps. It knows when to nudge you and when to back off.</p>
         </div>
+
         <div class="feat-cell reveal reveal-d3">
-          <div class="feat-emoji">🏋️</div>
+          <div class="feat-icon">
+            <!-- Dumbbell -->
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M6 5v14M18 5v14M2 9h4M18 9h4M2 15h4M18 15h4M6 9h12M6 15h12"/>
+            </svg>
+          </div>
           <h4>Workout tracking</h4>
           <p>Log sets, reps, and weight in plain text. Arnie spots your progress trends and tells you what's next.</p>
         </div>
+
         <div class="feat-cell reveal">
-          <div class="feat-emoji">⌚</div>
+          <div class="feat-icon">
+            <!-- Watch/wearable -->
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="5" y="2" width="14" height="20" rx="7"/>
+              <path d="M16.8 12a4.8 4.8 0 1 1-9.6 0 4.8 4.8 0 0 1 9.6 0Z"/>
+              <path d="M12 10v2l1.5 1.5"/>
+            </svg>
+          </div>
           <h4>Whoop integration</h4>
           <p>Recovery score, HRV, sleep hours — pulled automatically and factored into every recommendation.</p>
         </div>
+
         <div class="feat-cell reveal reveal-d1">
-          <div class="feat-emoji">📅</div>
+          <div class="feat-icon">
+            <!-- Calendar/guidance -->
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="4" width="18" height="18" rx="2"/>
+              <line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/>
+              <line x1="3" y1="10" x2="21" y2="10"/>
+              <path d="M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01"/>
+            </svg>
+          </div>
           <h4>Daily guidance</h4>
           <p>See your nutrition pacing, workout status, and exactly what you need to close the day strong.</p>
         </div>
+
       </div>
     </div>
   </section>
@@ -816,28 +1065,28 @@
       <div class="faq-list">
 
         <div class="faq-item">
-          <button class="faq-q">What is Arnie?</button>
+          <button class="faq-q">What is Arnie?<span class="faq-icon">+</span></button>
           <div class="faq-a">Arnie is an AI fitness and nutrition coach that lives in Telegram. Text it like you'd text a real coach — log food, workouts, weight — and it coaches you back with specific guidance based on your actual history.</div>
         </div>
 
         <div class="faq-item">
-          <button class="faq-q">How is it different from MyFitnessPal or ChatGPT?</button>
+          <button class="faq-q">How is it different from MyFitnessPal or ChatGPT?<span class="faq-icon">+</span></button>
           <div class="faq-a">MyFitnessPal tracks — it doesn't coach. ChatGPT has no memory of your history. Arnie remembers everything: your goals, injuries, past performance — and actively guides you based on all of it.</div>
         </div>
 
         <div class="faq-item">
-          <button class="faq-q">Why only Telegram right now?</button>
-          <div class="faq-a">Telegram gives us the fastest, most natural conversational experience. WhatsApp and iMessage are both on the roadmap — tell us in Telegram which you'd want and we'll notify you when it's ready.</div>
+          <button class="faq-q">Why only Telegram right now?<span class="faq-icon">+</span></button>
+          <div class="faq-a">Telegram gives us the fastest, most natural conversational experience. WhatsApp and iMessage are both on the roadmap — tell us in Telegram which you'd prefer and we'll notify you when it's ready.</div>
         </div>
 
         <div class="faq-item">
-          <button class="faq-q">What happens after my 7-day trial?</button>
+          <button class="faq-q">What happens after my 7-day trial?<span class="faq-icon">+</span></button>
           <div class="faq-a">After the trial, Arnie continues at $9.99/month. Cancel any time before the trial ends and you won't be charged. No hidden fees, no annual lock-in.</div>
         </div>
 
         <div class="faq-item">
-          <button class="faq-q">Are WhatsApp and iMessage coming?</button>
-          <div class="faq-a">Yes — both are actively in progress. If you'd prefer to use Arnie on one of those platforms, let us know inside Telegram and we'll reach out the moment it's available.</div>
+          <button class="faq-q">Are WhatsApp and iMessage coming?<span class="faq-icon">+</span></button>
+          <div class="faq-a">Yes — both are actively in progress. If you'd prefer one of those platforms, let us know inside Telegram and we'll reach out the moment it's available.</div>
         </div>
 
       </div>
@@ -849,11 +1098,11 @@
     <div class="section-tag reveal">Ready</div>
     <h2 class="reveal reveal-d1">Ready when<br><em>you are.</em></h2>
     <p class="reveal reveal-d2">7 days free. No credit card. Cancel anytime.</p>
-    <div class="cta-wrap reveal reveal-d3" style="max-width:360px">
+    <div class="cta-wrap reveal reveal-d3" style="max-width:350px">
       <div class="cta-glow"></div>
       <a href="https://t.me/Arnie_1026_Bot?start=freetrial" target="_blank" rel="noopener" class="cta-btn">
-        <svg width="17" height="17" viewBox="0 0 24 24" fill="none">
-          <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm4.64 6.8l-1.72 8.1c-.13.6-.47.75-.96.47l-2.64-1.95-1.27 1.22c-.14.14-.26.26-.53.26l.19-2.68 4.87-4.4c.21-.19-.05-.29-.33-.11L7.5 14.5l-2.6-.81c-.56-.18-.58-.56.13-.83l10.15-3.91c.47-.18.88.11.46 1.85z" fill="currentColor"/>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+          <path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z" fill="currentColor"/>
         </svg>
         Start free trial on Telegram →
       </a>
@@ -877,7 +1126,7 @@
     </a>
   </div>
 
-</div><!-- .page -->
+</div>
 
 <script>
   // Nav scroll state
@@ -893,35 +1142,35 @@
     spotlight.style.setProperty('--my', e.clientY + 'px');
   }, {passive:true});
 
-  // Orb parallax on mouse move
+  // Orb parallax
   const orbA = document.getElementById('orbA');
   const orbB = document.getElementById('orbB');
   document.addEventListener('mousemove', e => {
-    const x = (e.clientX / window.innerWidth  - 0.5) * 22;
-    const y = (e.clientY / window.innerHeight - 0.5) * 22;
-    if (orbA) orbA.style.transform = `translate(${x * 0.55}px, ${y * 0.55}px)`;
-    if (orbB) orbB.style.transform = `translate(${-x * 0.35}px, ${-y * 0.35}px)`;
+    const x = (e.clientX / window.innerWidth  - 0.5) * 24;
+    const y = (e.clientY / window.innerHeight - 0.5) * 24;
+    if (orbA) orbA.style.transform = `translate(${x * 0.5}px, ${y * 0.5}px)`;
+    if (orbB) orbB.style.transform = `translate(${-x * 0.3}px, ${-y * 0.3}px)`;
   }, {passive:true});
 
-  // Gyroscope parallax (mobile)
+  // Gyroscope (mobile)
   if (window.DeviceOrientationEvent) {
     window.addEventListener('deviceorientation', e => {
       if (!e.beta || !e.gamma) return;
-      const x = Math.max(-12, Math.min(12, e.gamma));
-      const y = Math.max(-12, Math.min(12, e.beta - 30));
-      if (orbA) orbA.style.transform = `translate(${x * 0.7}px, ${y * 0.7}px)`;
-      if (orbB) orbB.style.transform = `translate(${-x * 0.4}px, ${-y * 0.4}px)`;
+      const x = Math.max(-14, Math.min(14, e.gamma));
+      const y = Math.max(-14, Math.min(14, e.beta - 30));
+      if (orbA) orbA.style.transform = `translate(${x * 0.65}px, ${y * 0.65}px)`;
+      if (orbB) orbB.style.transform = `translate(${-x * 0.38}px, ${-y * 0.38}px)`;
     }, {passive:true});
   }
 
   // Scroll reveal
   const io = new IntersectionObserver(entries => {
     entries.forEach(e => { if (e.isIntersecting) e.target.classList.add('in'); });
-  }, {threshold: 0.08});
+  }, {threshold: 0.07});
   document.querySelectorAll('.reveal').forEach(el => io.observe(el));
 
-  // Sticky mobile bar — appears after hero scrolls out
-  const heroEl   = document.getElementById('hero');
+  // Sticky mobile bar
+  const heroEl    = document.getElementById('hero');
   const stickyBar = document.getElementById('stickyBar');
   new IntersectionObserver(entries => {
     stickyBar.classList.toggle('show', !entries[0].isIntersecting);
@@ -930,7 +1179,7 @@
   // FAQ accordion
   document.querySelectorAll('.faq-q').forEach(btn => {
     btn.addEventListener('click', () => {
-      const item = btn.parentElement;
+      const item    = btn.parentElement;
       const wasOpen = item.classList.contains('open');
       document.querySelectorAll('.faq-item').forEach(i => i.classList.remove('open'));
       if (!wasOpen) item.classList.add('open');
