@@ -1252,6 +1252,8 @@ async def _post_init(app: Application):
         BotCommand("me",      "Profile, targets & settings"),
         BotCommand("close",   "Close today's log"),
         BotCommand("dash",    "Open your personal dashboard"),
+        BotCommand("upgrade", "Upgrade to Premium"),
+        BotCommand("billing", "Manage your subscription"),
         BotCommand("connect", "Link Whoop or Apple Health"),
         BotCommand("reset",   "Clear today's log or full reset"),
         BotCommand("help",    "How to use Arnie"),
