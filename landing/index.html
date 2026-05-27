@@ -828,6 +828,50 @@
     .reveal-d3 { transition-delay: 270ms; }
     .reveal-d4 { transition-delay: 360ms; }
 
+    /* ── Integrations strip ─────────────────────────────────────── */
+    .int-strip {
+      padding: 0 24px 88px;
+      position: relative; z-index: 3;
+    }
+    .int-row {
+      display: flex; align-items: center; justify-content: center;
+      flex-wrap: wrap; gap: 8px;
+      max-width: 880px; margin: 0 auto;
+    }
+    .int-eyebrow {
+      font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.14em;
+      text-transform: uppercase; color: var(--ink-3); white-space: nowrap;
+      padding-right: 2px;
+    }
+    .int-pill {
+      display: inline-flex; align-items: center; gap: 7px;
+      padding: 7px 13px; border-radius: 10px;
+      border: 1px solid var(--line);
+      background: color-mix(in oklch, var(--ink) 5%, transparent);
+      font-size: 12px; font-weight: 500; color: var(--ink);
+      white-space: nowrap;
+      transition: border-color 200ms;
+    }
+    .int-pill.dim {
+      opacity: 0.32;
+    }
+    .int-icon {
+      width: 15px; height: 15px; flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center;
+      color: var(--accent);
+    }
+    .int-pill.dim .int-icon { color: var(--ink-3); }
+    .int-sep {
+      width: 1px; height: 22px;
+      background: var(--line-s); flex-shrink: 0;
+      margin: 0 4px;
+    }
+    @media (max-width: 640px) {
+      .int-strip { padding: 0 20px 56px; }
+      .int-sep   { display: none; }
+      .int-eyebrow { flex-basis: 100%; text-align: center; margin-bottom: 4px; }
+    }
+
     /* ── Mobile performance — strip expensive GPU compositing ── */
     @media (max-width: 768px) {
       /* SVG turbulence grain is the single biggest paint cost — remove it */
@@ -998,6 +1042,84 @@
       4.9 from beta members
     </div>
   </section>
+
+  <!-- ── INTEGRATIONS STRIP ── -->
+  <div class="int-strip">
+    <div class="int-row">
+      <span class="int-eyebrow">Connects with</span>
+
+      <!-- Whoop — live -->
+      <div class="int-pill">
+        <div class="int-icon">
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+            <path d="M13.5 8A5.5 5.5 0 1 1 8 2.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+            <circle cx="8" cy="8" r="1.8" fill="currentColor"/>
+          </svg>
+        </div>
+        Whoop
+      </div>
+
+      <!-- Apple Health — live -->
+      <div class="int-pill">
+        <div class="int-icon">
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+            <path d="M8 13C8 13 2.5 9.2 2.5 5.8 2.5 4 3.8 2.5 5.5 2.5c1 0 1.9.55 2.5 1.3.6-.75 1.5-1.3 2.5-1.3C12.2 2.5 13.5 4 13.5 5.8 13.5 9.2 8 13 8 13Z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/>
+          </svg>
+        </div>
+        Apple Health
+      </div>
+
+      <div class="int-sep"></div>
+
+      <!-- Oura — coming -->
+      <div class="int-pill dim">
+        <div class="int-icon">
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+            <circle cx="8" cy="8" r="5.2" stroke="currentColor" stroke-width="2"/>
+          </svg>
+        </div>
+        Oura
+      </div>
+
+      <!-- Fitbit — coming -->
+      <div class="int-pill dim">
+        <div class="int-icon">
+          <svg width="15" height="15" viewBox="0 0 16 16">
+            <circle cx="8"   cy="2.8" r="1.35" fill="currentColor"/>
+            <circle cx="8"   cy="8"   r="1.35" fill="currentColor"/>
+            <circle cx="8"   cy="13.2"r="1.35" fill="currentColor"/>
+            <circle cx="3.2" cy="5.4" r="1.35" fill="currentColor"/>
+            <circle cx="12.8"cy="5.4" r="1.35" fill="currentColor"/>
+            <circle cx="3.2" cy="10.6"r="1.35" fill="currentColor"/>
+            <circle cx="12.8"cy="10.6"r="1.35" fill="currentColor"/>
+          </svg>
+        </div>
+        Fitbit
+      </div>
+
+      <!-- Hume — coming -->
+      <div class="int-pill dim">
+        <div class="int-icon">
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+            <path d="M1.5 8s1-3 2-3 2 3 3 3 1-3 2-3 2 3 3 3 1-3 2-3 2 3 3 3" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </div>
+        Hume
+      </div>
+
+      <!-- + more — coming -->
+      <div class="int-pill dim" style="color:var(--ink-3)">
+        <div class="int-icon" style="color:var(--ink-3)">
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+            <circle cx="8" cy="8" r="5.5" stroke="currentColor" stroke-width="1.3" stroke-dasharray="2.2 2.2"/>
+            <path d="M8 5.5v5M5.5 8h5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+          </svg>
+        </div>
+        more soon
+      </div>
+
+    </div>
+  </div>
 
   <!-- ── HOW IT FEELS / SEE IT IN ACTION (consolidated) ── -->
   <section id="demo">
