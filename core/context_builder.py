@@ -119,6 +119,87 @@ def fmt_weight_trend(weights: List[BodyMetric]) -> str:
     return "Weight trend: " + " → ".join(reversed(pts))
 
 
+def fmt_weight_progress(weights: List[BodyMetric], user: User) -> str:
+    """Extended weight trend for progress_timeline skill — up to 8 weeks."""
+    if not weights:
+        return ""
+    if len(weights) < 2:
+        return "WEIGHT PROGRESS: only 1 entry — need more weigh-ins for trend"
+
+    sorted_w = sorted(weights, key=lambda w: w.timestamp)
+    earliest = sorted_w[0]
+    latest = sorted_w[-1]
+    delta = latest.weight_kg - earliest.weight_kg
+    days_span = max((latest.timestamp - earliest.timestamp).days, 1)
+    weeks = days_span / 7
+    rate_per_week = delta / weeks if weeks > 0 else 0
+
+    # Recent 5 data points
+    recent_pts = [
+        f"{w.weight_kg:.1f}kg ({w.timestamp.strftime('%m/%d')})"
+        for w in sorted_w[-5:]
+    ]
+    trend_str = " → ".join(recent_pts)
+
+    goal_str = ""
+    if user.goal_weight_kg:
+        to_go = latest.weight_kg - user.goal_weight_kg
+        goal_str = f"  |  Goal {user.goal_weight_kg:.1f}kg ({to_go:+.1f}kg to go)"
+
+    return (
+        f"WEIGHT PROGRESS ({len(weights)} entries, {weeks:.1f} weeks): "
+        f"{earliest.weight_kg:.1f}kg → {latest.weight_kg:.1f}kg "
+        f"({delta:+.2f}kg total, {rate_per_week:+.2f}kg/wk)\n"
+        f"  Recent: {trend_str}"
+        f"{goal_str}"
+    )
+
+
+def fmt_weekly_breakdown(logs: List[DailyLog], prefs: Optional[UserPreferences]) -> str:
+    """Per-week nutrition and workout averages for the last 4 weeks.
+    Used by weekly_summary and progress_timeline skills."""
+    if not logs:
+        return ""
+
+    today_date = date.today()
+    cal_t = prefs.calorie_target if prefs else None
+    pro_t = prefs.protein_target if prefs else None
+    lines = []
+
+    for week_offset in range(4):
+        week_end = today_date - timedelta(days=week_offset * 7)
+        week_start = week_end - timedelta(days=6)
+        week_logs = [
+            l for l in logs
+            if week_start <= l.date <= week_end and l.status == "closed"
+        ]
+        if not week_logs:
+            continue
+
+        n = len(week_logs)
+        avg_cal = sum(l.total_calories for l in week_logs) / n
+        avg_pro = sum(l.total_protein for l in week_logs) / n
+        workouts = sum(1 for l in week_logs if l.workout_completed)
+
+        cal_str = f"{avg_cal:.0f}"
+        if cal_t:
+            cal_str += f"/{cal_t} ({avg_cal - cal_t:+.0f})"
+
+        pro_str = f"{avg_pro:.0f}g"
+        if pro_t:
+            pro_str += f"/{pro_t}g"
+
+        label = "this week" if week_offset == 0 else f"{week_start}"
+        lines.append(
+            f"  {label}: cal {cal_str}  protein {pro_str}  "
+            f"workouts {workouts}/{n}d"
+        )
+
+    if not lines:
+        return ""
+    return "WEEKLY BREAKDOWN:\n" + "\n".join(lines)
+
+
 def pacing_note(log: Optional[DailyLog], prefs: Optional[UserPreferences],
                 user_timezone: str = "UTC") -> str:
     """Calorie/protein remaining with time-of-day awareness."""
@@ -242,7 +323,7 @@ def fmt_health(snaps: List[HealthSnapshot]) -> str:
 
 async def build_context(user: User, today_log: Optional[DailyLog], db) -> str:
     recent_logs = await get_recent_logs(db, user.id, days=28)
-    recent_weights = await get_recent_weights(db, user.id, days=14)
+    recent_weights = await get_recent_weights(db, user.id, days=56)  # 8 weeks for progress_timeline
     recent_health = await get_recent_health_snapshots(db, user.id, days=3)
     memory = await read_memory(user.telegram_id)
 
@@ -251,6 +332,8 @@ async def build_context(user: User, today_log: Optional[DailyLog], db) -> str:
     adherence = adherence_insights(recent_logs, prefs)
     progress = goal_progress(user)
     health_str = fmt_health(recent_health)
+    weight_progress = fmt_weight_progress(recent_weights, user)
+    weekly_breakdown = fmt_weekly_breakdown(recent_logs, prefs)
 
     # Detect workout mode: exercises already logged today
     in_workout = bool(today_log and today_log.exercise_entries)
@@ -271,7 +354,8 @@ async def build_context(user: User, today_log: Optional[DailyLog], db) -> str:
         "",
         "=== RECENT HISTORY ===",
         fmt_history(recent_logs),
-        fmt_weight_trend(recent_weights),
+        (weight_progress if weight_progress else fmt_weight_trend(recent_weights)),
+        (weekly_breakdown if weekly_breakdown else ""),
         "",
         "=== EXERCISE HISTORY ===",
         fmt_exercise_history(recent_logs),
