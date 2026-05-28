@@ -155,6 +155,50 @@ def fmt_weight_progress(weights: List[BodyMetric], user: User) -> str:
     )
 
 
+def fmt_strength_prs(logs: List[DailyLog]) -> str:
+    """Estimated 1RMs from best recent sets using the Epley formula.
+    Injected into context so the strength_programming skill has real data."""
+    if not logs:
+        return ""
+
+    best: dict = {}  # exercise_name -> (weight_kg, reps, e1rm, date)
+
+    for log in logs:
+        for e in (log.exercise_entries or []):
+            if not (e.weight and e.reps and e.sets):
+                continue
+            # e.reps may be "5" or "5,5,4" — use first value
+            try:
+                reps = int(str(e.reps).split(",")[0].strip())
+            except (ValueError, AttributeError):
+                continue
+            if reps < 1 or reps > 20:
+                continue  # Epley unreliable outside this range
+            # Epley: 1RM = weight × (1 + reps/30)
+            e1rm = e.weight * (1.0 + reps / 30.0)
+            name = (e.exercise_name or "").strip()
+            if not name:
+                continue
+            if name not in best or e1rm > best[name][2]:
+                best[name] = (e.weight, reps, e1rm, log.date)
+
+    if not best:
+        return ""
+
+    # Sort by e1rm descending, show top 7 lifts
+    top = sorted(best.items(), key=lambda x: x[1][2], reverse=True)[:7]
+    lines = ["ESTIMATED 1RMs (Epley, best sets last 28 days):"]
+    for name, (w_kg, reps, e1rm, d) in top:
+        w_lbs = w_kg * 2.20462
+        e1rm_lbs = e1rm * 2.20462
+        lines.append(
+            f"  {name}: ~{e1rm_lbs:.0f}lb / ~{e1rm:.1f}kg "
+            f"(from {w_lbs:.0f}lb × {reps}reps on {d})"
+        )
+
+    return "\n".join(lines)
+
+
 def fmt_weekly_breakdown(logs: List[DailyLog], prefs: Optional[UserPreferences]) -> str:
     """Per-week nutrition and workout averages for the last 4 weeks.
     Used by weekly_summary and progress_timeline skills."""
@@ -334,6 +378,7 @@ async def build_context(user: User, today_log: Optional[DailyLog], db) -> str:
     health_str = fmt_health(recent_health)
     weight_progress = fmt_weight_progress(recent_weights, user)
     weekly_breakdown = fmt_weekly_breakdown(recent_logs, prefs)
+    strength_prs = fmt_strength_prs(recent_logs)
 
     # Detect workout mode: exercises already logged today
     in_workout = bool(today_log and today_log.exercise_entries)
@@ -359,6 +404,7 @@ async def build_context(user: User, today_log: Optional[DailyLog], db) -> str:
         "",
         "=== EXERCISE HISTORY ===",
         fmt_exercise_history(recent_logs),
+        (strength_prs if strength_prs else ""),
         "",
         "=== MEMORY ===",
         (memory[:1800] if memory else "No memory yet."),
