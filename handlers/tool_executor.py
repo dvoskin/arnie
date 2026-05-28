@@ -239,6 +239,11 @@ async def _dispatch(name, inp, user, today_log, db, source_type):  # noqa: C901
             "preferred_language",
         }
         for field, value in fields.items():
+            # Never let null/empty values overwrite already-saved fields.
+            # onboarding_completed is a boolean flag — always allow it.
+            if field != "onboarding_completed" and (value is None or value == ""):
+                logger.warning(f"update_profile: skipping null/empty value for field '{field}'")
+                continue
             if field == "onboarding_completed":
                 user.onboarding_completed = bool(value)
             elif field in _user_fields:
@@ -249,9 +254,20 @@ async def _dispatch(name, inp, user, today_log, db, source_type):  # noqa: C901
         await db.commit()
         user = await reload_user(db, user.id)
 
+        # SERVER-SIDE AUTO-COMPLETION — safety net so the LLM never has to call
+        # update_profile(onboarding_completed=true) explicitly (the follow-up
+        # LLM call cannot use tools, which caused the "Got it." dead-end).
+        # Rule: if all 7 essentials are present AND calorie_target is now saved
+        # → flip onboarding_completed=True automatically.
+        if not user.onboarding_completed and is_onboarding_complete(user):
+            prefs_check = user.preferences
+            if prefs_check and prefs_check.calorie_target is not None:
+                logger.info(f"Server-side auto-completing onboarding for user {user.id}")
+                user.onboarding_completed = True
+                await db.commit()
+                user = await reload_user(db, user.id)
+
         # When onboarding completes, set sensible preference defaults + init memory
-        # NOTE: we no longer auto-flip onboarding_completed when essentials are
-        # set — the LLM must call it explicitly after the targets step.
         if user.onboarding_completed and user.preferences:
             p = user.preferences
             if not p.coaching_style:

@@ -27,7 +27,9 @@ from db.queries import (
 )
 from core.llm import chat, chat_follow_up
 from core.context_builder import build_context, fmt_log
-from handlers.onboarding import build_onboarding_system, get_onboarding_keyboard
+from handlers.onboarding import (
+    build_onboarding_system, get_onboarding_keyboard, is_onboarding_complete,
+)
 from handlers.tool_executor import execute_tool_calls
 from handlers.daily_closeout import generate_closeout
 from memory.reflection import maybe_update_memory
@@ -296,6 +298,80 @@ async def _generate_workout_analysis(user, exercise_calls, db) -> str:
         return ""
 
 
+def _calc_targets(user) -> dict | None:
+    """
+    Server-side Mifflin-St Jeor BMR calculation. Returns dict with
+    {tdee, calories, protein, goal} or None if required fields are missing.
+    Matches the formula specified in the onboarding system prompt exactly.
+    """
+    try:
+        w = user.current_weight_kg   # kg
+        h = user.height_cm           # cm
+        a = user.age                 # years
+        s = (user.sex or "").lower() # "male" / "female"
+        g = user.primary_goal        # "cut" / "bulk" / "maintain"
+        if not all([w, h, a, s in ("male", "female"), g]):
+            return None
+
+        bmr = 10 * w + 6.25 * h - 5 * a + (5 if s == "male" else -161)
+        tdee = round(bmr * 1.55)  # moderately active lifter
+
+        if g == "cut":
+            cal = round((tdee - 450) / 50) * 50
+        elif g == "bulk":
+            cal = round((tdee + 300) / 50) * 50
+        else:
+            cal = round(tdee / 50) * 50
+
+        w_lbs = w * 2.20462
+        protein = round(w_lbs * (0.9 if g in ("cut", "maintain") else 0.8) / 5) * 5
+
+        return {"tdee": tdee, "calories": max(cal, 1200), "protein": max(protein, 100), "goal": g}
+    except Exception as e:
+        logger.warning(f"_calc_targets failed: {e}")
+        return None
+
+
+async def _send_onboarding_complete(update, db, user, source_type, raw_text,
+                                    calc_line: str = None):
+    """
+    Send the onboarding completion sequence: optional calc result → welcome
+    message → dashboard button. Used by the server-side target interceptor.
+    """
+    if calc_line:
+        await update.message.reply_text(calc_line, parse_mode="HTML")
+
+    prefs = user.preferences
+    has_targets = bool(prefs and prefs.calorie_target)
+    response_text = _welcome_message(
+        name=user.name or "",
+        has_targets=has_targets,
+        primary_goal=user.primary_goal,
+        calorie_target=prefs.calorie_target if prefs else None,
+        protein_target=prefs.protein_target if prefs else None,
+    )
+    fmt_kwargs = _fmt(response_text)
+    fmt_kwargs["reply_markup"] = ReplyKeyboardRemove()
+    await update.message.reply_text(**fmt_kwargs)
+
+    try:
+        token = await get_or_create_webhook_token(db, user.id)
+        base_url = os.getenv("RENDER_EXTERNAL_URL", "http://localhost:10000").rstrip("/")
+        dash_url = f"{base_url}/dashboard/{token}"
+        dash_kb = InlineKeyboardMarkup([[
+            InlineKeyboardButton("📊 Open your dashboard →", url=dash_url)
+        ]])
+        await update.message.reply_text(
+            "Your coaching dashboard is live — everything you log shows up here.",
+            reply_markup=dash_kb,
+        )
+    except Exception as e:
+        logger.warning(f"Could not send dashboard link after onboarding: {e}")
+
+    log_str = ((calc_line + "\n\n") if calc_line else "") + response_text
+    await log_conversation(db, user.id, raw_text, log_str, source_type=source_type)
+
+
 async def _run_pipeline(update: Update, context: ContextTypes.DEFAULT_TYPE,
                         raw_text: str, source_type: str, db):
     """Core pipeline shared by all message types."""
@@ -306,6 +382,47 @@ async def _run_pipeline(update: Update, context: ContextTypes.DEFAULT_TYPE,
     # ── Onboarding ────────────────────────────────────────────────────────────
     in_onboarding = not user.onboarding_completed
     was_onboarding = in_onboarding  # remember before tools run
+
+    # ── Server-side target-step interception ──────────────────────────────────
+    # "Calculate for me" and "Skip for now" are handled entirely in Python —
+    # no LLM call needed. This eliminates the "Got it." dead-end caused by
+    # the follow-up LLM not having access to tools.
+    if in_onboarding and is_onboarding_complete(user):
+        _prefs = user.preferences
+        _targets_done = bool(_prefs and getattr(_prefs, "calorie_target", None) is not None)
+        if not _targets_done:
+            _txt = raw_text.strip()
+
+            if _txt in ("Calculate for me 🧮", "Calculate for me"):
+                targets = _calc_targets(user)
+                if targets:
+                    # Save targets + complete onboarding server-side
+                    if _prefs:
+                        _prefs.calorie_target = targets["calories"]
+                        _prefs.protein_target = targets["protein"]
+                    user.onboarding_completed = True
+                    await db.commit()
+                    user = await reload_user(db, user.id)
+
+                    goal_lbl = {"cut": "cut", "bulk": "bulk", "maintain": "maintain"}.get(
+                        targets["goal"], targets["goal"]
+                    )
+                    calc_line = (
+                        f"TDEE ~{targets['tdee']:,} → {goal_lbl} target: "
+                        f"<b>{targets['calories']:,} cal</b> · <b>{targets['protein']}g protein</b>"
+                    )
+                    await _send_onboarding_complete(
+                        update, db, user, source_type, raw_text, calc_line=calc_line
+                    )
+                    return
+                # If _calc_targets returns None (missing data), fall through to LLM
+
+            elif _txt == "Skip for now":
+                user.onboarding_completed = True
+                await db.commit()
+                user = await reload_user(db, user.id)
+                await _send_onboarding_complete(update, db, user, source_type, raw_text)
+                return
 
     if not in_onboarding:
         today_log = await get_or_create_today_log(db, user.id, user.timezone or "UTC")

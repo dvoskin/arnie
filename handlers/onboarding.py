@@ -1,50 +1,55 @@
 """
-Onboarding flow — tool-based architecture.
-Arnie calls update_profile() as it collects answers.
-System prompt is rebuilt after each turn so Claude always knows exactly
-what's been collected and what to ask next.
+Onboarding flow — strictly sequential, server-managed completion.
 
 Step order: name → sex → age → height/weight (+goal weight) → goal (skipped if
 inferred from weights) → experience → timezone → targets
 
+COMPLETION MODEL (not LLM-driven):
+  • "Calculate for me" and "Skip for now" are intercepted server-side in
+    telegram_handler before the LLM is called.
+  • "I have my numbers": LLM parses the reply and calls
+    update_profile(calorie_target=X, protein_target=Y). tool_executor.py
+    then auto-flips onboarding_completed when all essentials + calorie_target
+    are present.
+  • The LLM must NEVER call update_profile(onboarding_completed=true). That
+    requirement is removed — the follow-up LLM call cannot use tools, so
+    relying on it caused the "Got it." dead-end.
+
 Diet/injuries NOT collected during onboarding.
-Goal inference: if user provides goal_weight_kg with height/weight, primary_goal
-is set automatically and the goal step is skipped entirely.
 """
 from db.models import User
 
 _ESSENTIAL = ["name", "age", "sex", "height_cm", "current_weight_kg",
               "primary_goal", "timezone"]
 
-_ONBOARDING_BASE = """You are Arnie, an AI fitness coach onboarding a new client. You are in a STRICT SEQUENTIAL FLOW. Move fast. No filler.
+_ONBOARDING_BASE = """You are Arnie, an AI fitness coach onboarding a new client. STRICT SEQUENTIAL FLOW. Move fast. No filler.
 
 LANGUAGE: Match the language of the user's first message throughout.
 
-━━━ THE ONLY THING YOU DO EACH TURN ━━━
+━━━ YOUR ONLY JOB EACH TURN ━━━
 1. Call update_profile() to save the answer immediately.
-2. Write ONE short sentence (reaction or acknowledgment).
-3. Ask the NEXT QUESTION shown in ONBOARDING STATE below.
+2. Write ONE short reaction sentence (or none — see REACTIONS).
+3. Ask exactly the question shown in ╔ NEXT QUESTION ╗ below.
 That is it. Nothing else. No extra questions. No follow-ups. No elaboration.
 
 ━━━ HARD RULES ━━━
-- ONBOARDING STATE → Collected list is your source of truth. If a field is in Collected, it is DONE. Never ask about it again under any circumstances.
-- NEXT QUESTION in ONBOARDING STATE is the ONLY question you may ask. Ask it exactly (you may rephrase it naturally but do not change what information you are collecting).
-- Never ask two questions in the same message.
-- Never ask a follow-up question after saving an answer. Save it → react in one sentence → ask the next question. Done.
-- If user provides multiple fields at once, save ALL in one update_profile() call, then ask the single next uncollected question.
-- Convert units silently: lbs→kg, ft/in→cm. Never ask the user to convert.
-- If user says "I already told you" or "I wrote that above": scan back through the conversation, extract the value, save it, move on. If genuinely not found, ask once with zero apology — e.g. just "What's your age?"
-- Do NOT say "Okay", "Got it" or any filler without also asking the next question in the same message.
+• COLLECTED & LOCKED list is ground truth. If a field is listed there, it IS saved in the database. NEVER ask about it under any circumstances — not even to confirm.
+• The ╔ NEXT QUESTION ╗ box is the ONLY question you may ask. Same information only — you may rephrase naturally.
+• Never ask two questions in the same message.
+• Never say "Okay", "Got it", or any filler phrase UNLESS you also ask the next question in the same message.
+• If user gives multiple fields at once, save ALL in one update_profile() call, then ask only the single next uncollected question.
+• Convert units silently: lbs→kg, ft/in→cm. Never ask the user to convert.
+• If user says "I already told you" — scan the conversation, extract the value, save it, move on.
 
-━━━ REACTIONS (one sentence max, then immediately the NEXT QUESTION) ━━━
-• After name: "Good to meet you, [Name]." → next question
-• After height/weight with goal inferred cut: "Down [X]kg — let's get there." → ask experience
-• After height/weight with goal inferred bulk: "Adding [X]kg — we'll do it clean." → ask experience
-• After height/weight with goal inferred maintain: "Staying at [X]kg — consistency is the game." → ask experience
-• All other steps: no reaction sentence needed — just ask the next question directly.
+━━━ REACTIONS (one sentence max, then ask NEXT QUESTION immediately) ━━━
+• After name: "Good to meet you, [Name]."
+• After height/weight with goal inferred cut: "Down [X]kg — let's get there."
+• After height/weight with goal inferred bulk: "Adding [X]kg — we'll do it clean."
+• After height/weight with goal inferred maintain: "Staying at [X]kg — consistency is the game."
+• All other steps: NO reaction sentence — just ask the next question directly.
 
 ━━━ GOAL INFERENCE ━━━
-When user provides goal_weight_kg alongside height/weight, set primary_goal automatically:
+When user provides goal_weight_kg alongside height/weight:
 - goal_weight < current_weight by >2kg → primary_goal = "cut"
 - goal_weight > current_weight by >2kg → primary_goal = "bulk"
 - within 2kg → primary_goal = "maintain"
@@ -57,44 +62,38 @@ Then ask the experience question directly — do NOT ask about goals separately.
 - "Gain Weight" → primary_goal = "bulk"
 - "Maintain" → primary_goal = "maintain"
 - "Beginner" / "Intermediate" / "Advanced" → save as training_experience
-- "Calculate for me 🧮" → option 1 (calculate targets)
-- "I have my numbers" → option 2 (user specifies)
-- "Skip for now" → option 3 (skip targets)
 
 ━━━ FIELD NAMES ━━━
-name, age, sex (male/female), height_cm, current_weight_kg, goal_weight_kg (optional), primary_goal (cut/bulk/maintain), training_experience (beginner/intermediate/advanced), timezone, calorie_target, protein_target.
+name, age, sex (male/female), height_cm, current_weight_kg, goal_weight_kg (optional),
+primary_goal (cut/bulk/maintain), training_experience (beginner/intermediate/advanced),
+timezone, calorie_target, protein_target.
 
-━━━ TARGETS STEP ━━━
-After all essentials are collected, present three options:
+━━━ TARGETS STEP (only reached when ONBOARDING STATE shows all 7 essentials collected) ━━━
+Present exactly this text:
 
 "Last thing — targets. Three ways to handle it:
 1. <b>Calculate for me</b> — I'll run the math from your stats
 2. <b>I have my numbers</b> — tell me what you want
 3. <b>Skip for now</b> — we'll dial in once we see how you eat"
 
-IF option 1 (calculate): Use Mifflin-St Jeor BMR:
-- BMR male: 10×W_kg + 6.25×H_cm − 5×age + 5
-- BMR female: 10×W_kg + 6.25×H_cm − 5×age − 161
-- TDEE = BMR × 1.55 (moderately active lifter)
-- Cut: TDEE − 450 | Maintain: TDEE | Bulk: TDEE + 300
-- Protein: bodyweight_lbs × 0.9g (cut/maintain), × 0.8g (bulk)
-Round calories to nearest 50, protein to nearest 5.
-Show briefly — e.g. "TDEE ~2,600 → cut target: 2,150 cal, 178g protein" — then save with update_profile(calorie_target=X, protein_target=Y).
+• "Calculate for me 🧮" or "Calculate for me" → the server handles this automatically.
+  Just write: "On it." — do NOT attempt to calculate, do NOT call update_profile.
 
-IF option 2: Save what they give you.
-IF option 3: Call update_profile(onboarding_completed=true). Tell them they can say "set my targets" anytime.
+• "I have my numbers" → ask: "What are your calorie and protein targets?"
+  When they reply, save with update_profile(fields={calorie_target: X, protein_target: Y}).
+  Write ONE completion sentence: "You're all set, [Name]. Let's get to work."
 
-━━━ COMPLETION ━━━
-After targets are handled, call update_profile(onboarding_completed=true).
-Write ONE sentence only — e.g. "You're all set, [Name]. Let's get to work."
-DO NOT write a tutorial or list of commands."""
+• "Skip for now" → the server handles this automatically.
+  Just write: "You can say 'set my targets' anytime." — do NOT call any tools.
+"""
 
 
 def build_onboarding_system(user: User) -> str:
     """
     Build a dynamic onboarding system prompt reflecting current saved state.
-    The NEXT QUESTION is injected explicitly so the LLM has no ambiguity
-    about what to ask — it cannot skip, re-ask, or deviate.
+    Shows actual saved values in the COLLECTED list so the LLM has no doubt
+    about what is already done. Injects the exact NEXT QUESTION so the LLM
+    cannot skip, re-ask, or deviate.
     """
     prefs = user.preferences
 
@@ -104,68 +103,83 @@ def build_onboarding_system(user: User) -> str:
     def pref_has(field):
         return prefs and getattr(prefs, field, None) is not None
 
-    # Each step: (label, is_complete, question_to_ask_next)
-    # NOTE: get_onboarding_keyboard() must mirror these checks exactly.
+    # (label, is_complete, next_question, display_value)
     steps = [
         ("name",
          has("name"),
-         "What's your first name?"),
+         "What's your first name?",
+         user.name or ""),
 
         ("sex",
          has("sex"),
-         "Are you male or female?"),
+         "Are you male or female?",
+         user.sex or ""),
 
         ("age",
          has("age"),
-         "How old are you?"),
+         "How old are you?",
+         str(user.age) if user.age else ""),
 
-        # Inviting goal weight here means primary_goal is often inferred
-        # automatically and the goal step below is skipped entirely.
         ("height & weight",
          has("height_cm") and has("current_weight_kg"),
-         "What's your height and current weight? Add a target weight too if you have one — e.g. '180cm, 90kg, target 80kg'."),
+         "What's your height and current weight? Add a target weight too if you have one — e.g. '180cm, 90kg, target 80kg'.",
+         f"{user.height_cm:.0f}cm / {user.current_weight_kg:.1f}kg"
+         if (user.height_cm and user.current_weight_kg) else ""),
 
-        # Only reached if primary_goal was NOT inferred from weight comparison.
-        ("goal",
+        ("primary goal",
          has("primary_goal"),
-         "What's your goal — lose weight, gain weight, or maintain?"),
+         "What's your goal — lose weight, gain weight, or maintain?",
+         user.primary_goal or ""),
 
         ("training experience",
          has("training_experience"),
-         "How experienced are you — beginner, intermediate, or advanced?"),
+         "How experienced are you — beginner, intermediate, or advanced?",
+         user.training_experience or ""),
 
         ("timezone",
          has("timezone") and user.timezone != "UTC",
-         "What city are you based in? I'll use it to time my check-ins."),
+         "What city are you based in? I'll use it to time my check-ins.",
+         user.timezone or ""),
     ]
 
-    collected = []
+    collected_lines = []
     next_question = None
 
-    for label, complete, question in steps:
+    for label, complete, question, display in steps:
         if complete:
-            collected.append(label)
+            val = f": {display}" if display else ""
+            collected_lines.append(f"  • {label}{val}")
         elif next_question is None:
             next_question = question
 
+    # ── State block ──
     state_block = "\n\n━━━ ONBOARDING STATE ━━━"
-    state_block += "\nCollected so far: " + (", ".join(collected) if collected else "nothing yet")
-    state_block += "\nDO NOT ask about anything in the Collected list — those are finished."
+
+    if collected_lines:
+        state_block += "\nCOLLECTED & LOCKED — do NOT ask about any of these:\n"
+        state_block += "\n".join(collected_lines)
+    else:
+        state_block += "\nNothing collected yet."
 
     if next_question:
         state_block += (
-            f'\n\nNEXT QUESTION (ask this and ONLY this): "{next_question}"'
+            f"\n\n╔═ NEXT QUESTION — ask this and only this ═╗"
+            f'\n  "{next_question}"'
+            f"\n╚══════════════════════════════════════════╝"
+            f"\nAsk it now. Do not ask anything else first."
         )
     else:
         if pref_has("calorie_target"):
             state_block += (
                 "\n\nAll essentials AND targets are set."
-                "\nCall update_profile(onboarding_completed=true) and write ONE brief sentence. No tutorial."
+                "\nWrite ONE brief completion sentence only — e.g. 'You're all set, [Name]. Let's get to work.'"
+                "\nDo NOT call any tools. Do NOT ask anything."
             )
         else:
             state_block += (
-                "\n\nALL ESSENTIALS COLLECTED — run the TARGETS STEP now."
-                "\nPresent the 3 options. Handle the response, then call update_profile(onboarding_completed=true)."
+                "\n\nALL 7 ESSENTIALS COLLECTED. Run the TARGETS STEP now."
+                "\nPresent the 3 options exactly as written in the TARGETS STEP section above."
+                "\nWait for the user's selection, then follow the instruction for whichever option they choose."
             )
 
     return _ONBOARDING_BASE + state_block
@@ -223,7 +237,7 @@ def get_onboarding_keyboard(user: User):
             resize_keyboard=True,
         )
 
-    # Step 7: timezone — free text (city name)
+    # Step 7: timezone — free text
     if not has("timezone") or user.timezone == "UTC":
         return None
 
