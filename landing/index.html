@@ -222,7 +222,7 @@
     }
 
     /* ── CTA card ────────────────────────────────────────────── */
-    .cta-wrap { width: min(440px, 100%); margin: 0 auto; position: relative; z-index: 1; }
+    .cta-wrap { width: min(500px, 100%); margin: 0 auto; position: relative; z-index: 1; }
     .cta-glow {
       position: absolute; inset: -40px;
       background: radial-gradient(55% 70% at 50% 65%,
@@ -1074,7 +1074,7 @@
         <form class="beta-form" id="heroBetaForm" onsubmit="handleBetaSubmit(event,'heroBetaForm')">
           <input type="email" name="email" placeholder="your@email.com" required autocomplete="email">
           <button type="submit" class="cta-btn beta-submit-btn">
-            Request Beta Access →
+            Get Access →
           </button>
         </form>
         <div class="beta-success" id="heroBetaSuccess" style="display:none">
@@ -1430,7 +1430,7 @@
             <li>Whoop &amp; wearable sync</li>
             <li>Proactive daily check-ins</li>
           </ul>
-          <a href="#heroBetaForm" class="price-cta" onclick="document.getElementById('heroBetaForm').querySelector('input').focus();return true;">Request Beta Access →</a>
+          <a href="#heroBetaForm" class="price-cta" onclick="document.getElementById('heroBetaForm').querySelector('input').focus();return true;">Get Access →</a>
         </div>
 
       </div>
@@ -1478,11 +1478,11 @@
     <div class="section-tag reveal">Ready</div>
     <h2 class="reveal reveal-d1">Ready when<br><em>you are.</em></h2>
     <p class="reveal reveal-d2">Limited beta spots. Be first in.</p>
-    <div class="cta-wrap reveal reveal-d3" style="max-width:420px">
+    <div class="cta-wrap reveal reveal-d3" style="max-width:500px">
       <div class="cta-glow"></div>
       <form class="beta-form" id="footerBetaForm" onsubmit="handleBetaSubmit(event,'footerBetaForm')">
         <input type="email" name="email" placeholder="your@email.com" required autocomplete="email">
-        <button type="submit" class="cta-btn beta-submit-btn">Request Beta Access →</button>
+        <button type="submit" class="cta-btn beta-submit-btn">Get Access →</button>
       </form>
       <div class="beta-success" id="footerBetaSuccess" style="display:none">
         <div class="beta-success-inner">
@@ -1546,14 +1546,14 @@
         form.style.display = 'none';
         successEl.style.display = 'block';
       } else {
-        btn.textContent = 'Request Beta Access →';
+        btn.textContent = 'Get Access →';
         btn.disabled = false;
         const msg = json?.errors?.[0]?.message || json?.error || 'Something went wrong — please try again.';
         alert(msg);
       }
     } catch (err) {
       console.error('Formspree error:', err);
-      btn.textContent = 'Request Beta Access →';
+      btn.textContent = 'Get Access →';
       btn.disabled = false;
       alert('Something went wrong — please check your connection and try again.');
     }
