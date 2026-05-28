@@ -320,6 +320,50 @@
     }
     .cta-btn:active { transform: scale(0.98) translateY(0); }
 
+    /* ── Beta signup form ───────────────────────────────────────── */
+    .beta-form {
+      display: flex; gap: 0; width: 100%; margin-top: 6px;
+      border-radius: 14px; overflow: hidden;
+      box-shadow: 0 0 0 1px var(--line-s);
+      background: color-mix(in oklch, var(--ink) 5%, transparent);
+    }
+    .beta-form input[type="email"] {
+      flex: 1; min-width: 0;
+      padding: 16px 18px; border: 0; outline: none;
+      background: transparent; color: var(--ink);
+      font-family: var(--sans); font-size: 15px;
+      letter-spacing: -0.01em;
+    }
+    .beta-form input[type="email"]::placeholder { color: var(--ink-3); }
+    .beta-form input[type="email"]:focus { background: color-mix(in oklch, var(--ink) 3%, transparent); }
+    .beta-form .beta-submit-btn {
+      flex-shrink: 0; width: auto; padding: 16px 22px;
+      border-radius: 0; margin-top: 0; white-space: nowrap; font-size: 14px;
+    }
+    .beta-success {
+      text-align: center; padding: 18px 0 4px;
+    }
+    .beta-success-inner {
+      display: flex; align-items: center; justify-content: center; gap: 10px;
+      font-size: 14px; color: var(--ink-2); margin-bottom: 12px;
+    }
+    .beta-check {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 22px; height: 22px; border-radius: 50%;
+      background: var(--accent); color: oklch(0.09 0.01 240);
+      font-size: 12px; font-weight: 700; flex-shrink: 0;
+    }
+    .beta-tg-link {
+      font-size: 12px; color: var(--accent); opacity: 0.75;
+      text-decoration: none; letter-spacing: -0.01em;
+      transition: opacity 150ms;
+    }
+    .beta-tg-link:hover { opacity: 1; }
+    @media (max-width: 480px) {
+      .beta-form { flex-direction: column; border-radius: 14px; }
+      .beta-form .beta-submit-btn { border-radius: 0 0 14px 14px; width: 100%; }
+    }
+
     .cta-meta {
       margin-top: 13px; font-family: var(--mono); font-size: 9.5px;
       letter-spacing: 0.11em; text-transform: uppercase; color: var(--ink-2);
@@ -1007,17 +1051,6 @@
           </div>
 
           <div class="platform-pill coming">
-            <div class="pico wa-icon">
-              <!-- WhatsApp -->
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="white">
-                <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 0 1-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 0 1-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 0 1 2.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0 0 12.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 0 0 5.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 0 0-3.48-8.413Z"/>
-              </svg>
-            </div>
-            WhatsApp
-            <span class="coming-lbl">Soon</span>
-          </div>
-
-          <div class="platform-pill coming">
             <div class="pico im-icon">
               <!-- iMessage bubble -->
               <svg width="10" height="10" viewBox="0 0 24 24" fill="white">
@@ -1028,28 +1061,40 @@
             <span class="coming-lbl">Soon</span>
           </div>
 
-          <div class="platform-pill coming" style="opacity:0.38">
+          <div class="platform-pill coming">
             <div class="pico" style="background:color-mix(in oklch,var(--ink) 18%,transparent);display:flex;align-items:center;justify-content:center">
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              <!-- Phone/Native App icon -->
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="white">
+                <rect x="5" y="1" width="14" height="22" rx="3"/>
+                <rect x="9" y="18.5" width="6" height="1.5" rx="0.75" fill="var(--bg)" opacity="0.6"/>
+              </svg>
             </div>
-            More
+            Native App
             <span class="coming-lbl">Soon</span>
           </div>
 
         </div>
 
-        <a href="https://t.me/Arnie_1026_Bot?start=freetrial" target="_blank" rel="noopener" class="cta-btn">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-            <path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z" fill="currentColor"/>
-          </svg>
-          Start free trial →
-        </a>
+        <!-- Beta signup form -->
+        <form class="beta-form" id="heroBetaForm" onsubmit="handleBetaSubmit(event,'heroBetaForm')">
+          <input type="email" name="email" placeholder="your@email.com" required autocomplete="email">
+          <button type="submit" class="cta-btn beta-submit-btn">
+            Request Beta Access →
+          </button>
+        </form>
+        <div class="beta-success" id="heroBetaSuccess" style="display:none">
+          <div class="beta-success-inner">
+            <span class="beta-check">✓</span>
+            <span>You're on the list — we'll reach out with access details.</span>
+          </div>
+          <a href="https://t.me/Arnie_1026_Bot?start=freetrial" target="_blank" rel="noopener" class="beta-tg-link">Or try Telegram beta now →</a>
+        </div>
       </div>
 
       <div class="cta-meta">
-        <span>7-day free trial</span>
-        <span>Then $9.99/mo</span>
-        <span>Cancel anytime</span>
+        <span>Limited beta</span>
+        <span>Telegram-first</span>
+        <span>iOS App coming</span>
       </div>
     </div>
 
@@ -1377,7 +1422,7 @@
             <li>Daily coaching &amp; check-ins</li>
             <li>Dashboard access</li>
           </ul>
-          <a href="https://t.me/Arnie_1026_Bot?start=freetrial" target="_blank" rel="noopener" class="price-cta">Start for free</a>
+          <a href="#heroBetaForm" class="price-cta" onclick="document.getElementById('heroBetaForm').querySelector('input').focus();return true;">Request Access →</a>
         </div>
 
         <div class="price-card featured reveal reveal-d2">
@@ -1390,7 +1435,7 @@
             <li>Whoop &amp; wearable sync</li>
             <li>Proactive daily check-ins</li>
           </ul>
-          <a href="https://t.me/Arnie_1026_Bot?start=freetrial" target="_blank" rel="noopener" class="price-cta">Start free trial →</a>
+          <a href="#heroBetaForm" class="price-cta" onclick="document.getElementById('heroBetaForm').querySelector('input').focus();return true;">Request Beta Access →</a>
         </div>
 
       </div>
@@ -1406,7 +1451,7 @@
 
         <div class="faq-item">
           <button class="faq-q">What is Arnie?<span class="faq-icon">+</span></button>
-          <div class="faq-a">Arnie is an AI fitness and nutrition coach that lives in Telegram. Text it like you'd text a real coach — log food, workouts, weight — and it coaches you back with specific guidance based on your actual history.</div>
+          <div class="faq-a">Arnie is an AI fitness and nutrition coach you talk to like a real coach — log food, workouts, and weight in plain English and it guides you back with specific coaching based on your actual history. Currently available on Telegram, with iMessage and a native iOS app in development.</div>
         </div>
 
         <div class="faq-item">
@@ -1415,8 +1460,8 @@
         </div>
 
         <div class="faq-item">
-          <button class="faq-q">Why only Telegram right now?<span class="faq-icon">+</span></button>
-          <div class="faq-a">Telegram gives us the fastest, most natural conversational experience. WhatsApp and iMessage are both on the roadmap — tell us in Telegram which you'd prefer and we'll notify you when it's ready.</div>
+          <button class="faq-q">Why Telegram first?<span class="faq-icon">+</span></button>
+          <div class="faq-a">Telegram gives us the fastest, most natural conversational experience with zero friction — no app install required. iMessage and a native iOS app are both in active development.</div>
         </div>
 
         <div class="faq-item">
@@ -1425,8 +1470,8 @@
         </div>
 
         <div class="faq-item">
-          <button class="faq-q">Are WhatsApp and iMessage coming?<span class="faq-icon">+</span></button>
-          <div class="faq-a">Yes — both are actively in progress. If you'd prefer one of those platforms, let us know inside Telegram and we'll reach out the moment it's available.</div>
+          <button class="faq-q">Is a native iOS app coming?<span class="faq-icon">+</span></button>
+          <div class="faq-a">Yes — it's on the roadmap. Join the beta waitlist and you'll be among the first to know when it launches, with priority access included.</div>
         </div>
 
       </div>
@@ -1437,15 +1482,20 @@
   <section class="final-cta">
     <div class="section-tag reveal">Ready</div>
     <h2 class="reveal reveal-d1">Ready when<br><em>you are.</em></h2>
-    <p class="reveal reveal-d2">7 days free. No credit card. Cancel anytime.</p>
-    <div class="cta-wrap reveal reveal-d3" style="max-width:350px">
+    <p class="reveal reveal-d2">Limited beta spots. Be first in.</p>
+    <div class="cta-wrap reveal reveal-d3" style="max-width:420px">
       <div class="cta-glow"></div>
-      <a href="https://t.me/Arnie_1026_Bot?start=freetrial" target="_blank" rel="noopener" class="cta-btn">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-          <path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z" fill="currentColor"/>
-        </svg>
-        Start free trial on Telegram →
-      </a>
+      <form class="beta-form" id="footerBetaForm" onsubmit="handleBetaSubmit(event,'footerBetaForm')">
+        <input type="email" name="email" placeholder="your@email.com" required autocomplete="email">
+        <button type="submit" class="cta-btn beta-submit-btn">Request Beta Access →</button>
+      </form>
+      <div class="beta-success" id="footerBetaSuccess" style="display:none">
+        <div class="beta-success-inner">
+          <span class="beta-check">✓</span>
+          <span>You're on the list — we'll reach out with access details.</span>
+        </div>
+        <a href="https://t.me/Arnie_1026_Bot?start=freetrial" target="_blank" rel="noopener" class="beta-tg-link">Or try Telegram beta now →</a>
+      </div>
     </div>
   </section>
 
@@ -1458,17 +1508,53 @@
   <!-- Sticky mobile CTA -->
   <div class="sticky-bar" id="stickyBar">
     <div class="sticky-left">
-      <div class="sticky-title">Start free trial</div>
-      <div class="sticky-sub">7 days free · $9.99/mo after</div>
+      <div class="sticky-title">Request Beta Access</div>
+      <div class="sticky-sub">Limited spots · Telegram-first</div>
     </div>
-    <a href="https://t.me/Arnie_1026_Bot?start=freetrial" target="_blank" rel="noopener" class="sticky-btn">
-      Open Telegram →
+    <a href="#heroBetaForm" class="sticky-btn" onclick="setTimeout(()=>document.getElementById('heroBetaForm').querySelector('input').focus(),300)">
+      Apply Now →
     </a>
   </div>
 
 </div>
 
 <script>
+  // ── Beta signup handler ──────────────────────────────────────────
+  // Replace FORMSPREE_ID with your actual Formspree form ID from formspree.io
+  const FORMSPREE_ENDPOINT = 'https://formspree.io/f/FORMSPREE_ID';
+
+  async function handleBetaSubmit(e, formId) {
+    e.preventDefault();
+    const form = document.getElementById(formId);
+    const successId = formId.replace('Form', 'Success');
+    const successEl = document.getElementById(successId);
+    const btn = form.querySelector('button[type="submit"]');
+    const email = form.querySelector('input[type="email"]').value;
+
+    btn.textContent = 'Sending…';
+    btn.disabled = true;
+
+    try {
+      const res = await fetch(FORMSPREE_ENDPOINT, {
+        method: 'POST',
+        headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email })
+      });
+      if (res.ok) {
+        form.style.display = 'none';
+        successEl.style.display = 'block';
+      } else {
+        btn.textContent = 'Request Beta Access →';
+        btn.disabled = false;
+        alert('Something went wrong — please try again.');
+      }
+    } catch {
+      btn.textContent = 'Request Beta Access →';
+      btn.disabled = false;
+      alert('Something went wrong — please try again.');
+    }
+  }
+
   // Nav scroll state
   const nav = document.getElementById('nav');
   window.addEventListener('scroll', () => {
