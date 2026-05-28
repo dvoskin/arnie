@@ -18,7 +18,7 @@ Whoop sync runs every 2 hours.
 """
 import logging
 import os
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 
 import pytz
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -30,6 +30,7 @@ _scheduler = AsyncIOScheduler()
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 
 _whoop_notified: dict = {}
+_new_user_sent: dict = {}  # user_id_str -> set of slot keys already sent
 
 # Nudge slots: (hour, minute_start, minute_end, slot_key)
 _NUDGE_SLOTS = [
@@ -95,6 +96,106 @@ _SLOT_INSTRUCTIONS = {
         "tell them specifically what's left."
     ),
 }
+
+
+_NEW_USER_SYSTEM = """You are Arnie — a direct, genuinely curious fitness coach reaching out to a brand new athlete.
+
+Rules:
+- 1–3 sentences MAX. Coach texting a new client, not a notification bot.
+- You reached out first — sound interested, not automated.
+- Reference their specific goal, weight, or experience level from context to show you know them.
+- Ask ONE specific, useful question. Their answer helps you coach them better.
+- Don't recap what they told you during onboarding. Move forward.
+- Warm but not gushy — coaches don't over-compliment.
+- LANGUAGE: Write in the user's preferred language if known. Default to English.
+- Return ONLY the message text. No prefix, no label, no explanation."""
+
+_NEW_USER_SLOT_INSTRUCTIONS = {
+    "warmup_1h": (
+        "It's about an hour since they finished onboarding. Ask a short, direct question about "
+        "their typical training schedule — what days they tend to train and roughly what time. "
+        "Frame it as something that helps you time your check-ins and coaching cues. "
+        "Reference their goal (cut/bulk/maintain) briefly if it flows naturally."
+    ),
+    "warmup_3h": (
+        "About 3 hours in. Ask about their typical daily eating pattern — "
+        "roughly how many meals, whether they follow any eating window, and "
+        "what a normal day of food usually looks like for them. One casual question. "
+        "This helps you give better food coaching."
+    ),
+    "warmup_6h": (
+        "It's been ~6 hours since they signed up. Check on two things: "
+        "First, if they have NOT logged any food yet, make it super easy — just tell them to text "
+        "you whatever they've eaten today and you'll handle the rest. No format required. "
+        "If they HAVE already logged something, briefly acknowledge what you see and "
+        "make one useful coaching observation about it (protein pacing, calories, etc.)."
+    ),
+    "warmup_24h": (
+        "Day 1 wrap-up check-in, about 24 hours after onboarding. "
+        "If they logged food: pull the actual calories and protein numbers and give them "
+        "one specific coaching note — are they on track, short on protein, over on cals? Be precise. "
+        "If they logged nothing: keep it light, ask one question about what got in the way, "
+        "and tell them the goal for today is just one logged meal. "
+        "Close with what to focus on for day 2 based on their goal."
+    ),
+    "warmup_48h": (
+        "48 hours in. Brief check-in. "
+        "If they've been logging: call out one specific data point — protein trend, calorie consistency, "
+        "workout vs no workout — and give a direct coaching cue. "
+        "If they haven't logged at all: don't lecture. Ask one honest question: 'What's getting in the way?' "
+        "Keep it under 2 sentences. Human and direct."
+    ),
+}
+
+
+def _hours_since_created(user) -> float:
+    """Hours elapsed since user.created_at (UTC). Returns 999 if unknown."""
+    if not user.created_at:
+        return 999.0
+    created = (
+        user.created_at.replace(tzinfo=timezone.utc)
+        if user.created_at.tzinfo is None
+        else user.created_at
+    )
+    return (datetime.now(timezone.utc) - created).total_seconds() / 3600.0
+
+
+async def _llm_new_user_nudge(user, log, prefs, slot: str, name: str) -> str:
+    """Generate a new-user engagement message via Claude Haiku."""
+    from core.llm import chat
+
+    cal = round(log.total_calories) if log else 0
+    pro = round(log.total_protein) if log else 0
+    foods_logged = len(log.food_entries) if log and log.food_entries else 0
+    exercises_logged = len(log.exercise_entries) if log and log.exercise_entries else 0
+
+    lang = getattr(prefs, "preferred_language", None) or "English"
+    cal_t = prefs.calorie_target if prefs else None
+    pro_t = prefs.protein_target if prefs else None
+    instr = _NEW_USER_SLOT_INSTRUCTIONS.get(slot, "Send a brief, personal coaching check-in.")
+
+    prompt = (
+        f"New athlete: {name}, goal={user.primary_goal or '?'}, "
+        f"exp={user.training_experience or '?'}, "
+        f"height={user.height_cm:.0f}cm, weight={user.current_weight_kg:.1f}kg, "
+        f"language={lang}\n"
+        f"Targets: {cal_t or '?'} cal / {pro_t or '?'}g protein\n"
+        f"Today so far: {cal} cal, {pro}g protein, {foods_logged} food entries, {exercises_logged} exercises\n"
+        f"Task: {instr}"
+    )
+
+    try:
+        result = await chat(
+            [{"role": "user", "content": prompt}],
+            system=_NEW_USER_SYSTEM,
+            tools=False,
+            max_tokens=130,
+            model="claude-haiku-4-5-20251001",
+        )
+        return (result.get("text") or "").strip()
+    except Exception as e:
+        logger.error(f"New user nudge ({slot}) failed: {e}")
+        return ""
 
 
 async def _send(telegram_id: str, text: str):
@@ -240,6 +341,38 @@ async def _run_reminders():
                 health_snap = health_snaps[0] if health_snaps else None
 
                 day_pct = _pacing_pct(hour, minute, wake, sleep)
+
+                # ── New user engagement burst (first 72 hours post-onboarding) ──
+                # Fires at fixed intervals after account creation. Independent of
+                # daily time slots. Uses a separate LLM persona focused on learning
+                # about the user and building early engagement. Falls off after 48h.
+                if user.onboarding_completed and user.created_at:
+                    hours_since = _hours_since_created(user)
+
+                    if hours_since <= 72.0:
+                        uid_key = str(user.id)
+                        sent_slots = _new_user_sent.get(uid_key, set())
+
+                        new_slot = None
+                        if 1.0 <= hours_since < 2.0 and "warmup_1h" not in sent_slots:
+                            new_slot = "warmup_1h"
+                        elif 3.0 <= hours_since < 4.0 and "warmup_3h" not in sent_slots:
+                            new_slot = "warmup_3h"
+                        elif 5.5 <= hours_since < 7.0 and "warmup_6h" not in sent_slots:
+                            new_slot = "warmup_6h"
+                        elif 23.0 <= hours_since < 25.0 and "warmup_24h" not in sent_slots:
+                            new_slot = "warmup_24h"
+                        elif 47.0 <= hours_since < 50.0 and "warmup_48h" not in sent_slots:
+                            new_slot = "warmup_48h"
+
+                        if new_slot:
+                            msg = await _llm_new_user_nudge(user, log, prefs, new_slot, name)
+                            if msg:
+                                await _send(user.telegram_id, msg)
+                                sent_slots.add(new_slot)
+                                _new_user_sent[uid_key] = sent_slots
+                            logger.info(f"New user nudge '{new_slot}' sent to user {user.id} ({hours_since:.1f}h in)")
+                            continue  # skip normal slots this tick — avoid message flood
 
                 # ── Morning check-in (30 min after wake) ──────────────────────
                 wake_h, wake_m = int(wake.split(":")[0]), int(wake.split(":")[1])
