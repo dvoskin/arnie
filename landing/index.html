@@ -1535,23 +1535,32 @@
     btn.disabled = true;
 
     try {
+      const data = new FormData();
+      data.append('email', email);
+
       const res = await fetch(FORMSPREE_ENDPOINT, {
         method: 'POST',
-        headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email })
+        headers: { 'Accept': 'application/json' },
+        body: data
       });
+
+      const json = await res.json().catch(() => ({}));
+      console.log('Formspree response:', res.status, json);
+
       if (res.ok) {
         form.style.display = 'none';
         successEl.style.display = 'block';
       } else {
         btn.textContent = 'Request Beta Access →';
         btn.disabled = false;
-        alert('Something went wrong — please try again.');
+        const msg = json?.errors?.[0]?.message || json?.error || 'Something went wrong — please try again.';
+        alert(msg);
       }
-    } catch {
+    } catch (err) {
+      console.error('Formspree error:', err);
       btn.textContent = 'Request Beta Access →';
       btn.disabled = false;
-      alert('Something went wrong — please try again.');
+      alert('Something went wrong — please check your connection and try again.');
     }
   }
 
