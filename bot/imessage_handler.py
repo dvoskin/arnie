@@ -347,12 +347,12 @@ def _match_intent(text: str, patterns: set) -> bool:
 async def _handle_im_reset(chat_guid: str, user, db) -> bool:
     """Full account wipe — returns True so pipeline skips normal processing."""
     from db.queries import reset_all_user_data
-    from memory.memory_manager import init_memory
+    from memory.memory_manager import write_memory
     telegram_id = user.telegram_id  # save before reset — object goes stale after commit
     user_id = user.id
     await reset_all_user_data(db, user_id)
     await db.commit()
-    await init_memory(telegram_id)
+    await write_memory(telegram_id, "")  # clear memory file
     bubbles = [
         "done. everything's wiped.",
         "fresh start.",
