@@ -459,10 +459,12 @@ async def run_imessage_pipeline(address: str, chat_guid: str, raw_text: str,
         user = await get_or_create_user(db, im_id)
 
         # ── Natural language command handling (iMessage has no slash commands) ──
+        # Reset works at any point — including mid-onboarding
+        if _match_intent(raw_text, _RESET_PATTERNS):
+            await _handle_im_reset(chat_guid, user, db)
+            return
+
         if user.onboarding_completed:
-            if _match_intent(raw_text, _RESET_PATTERNS):
-                await _handle_im_reset(chat_guid, user, db)
-                return
             if _match_intent(raw_text, _REMIND_ON_PATTERNS):
                 await _handle_im_remind_toggle(chat_guid, user, db, enable=True)
                 return

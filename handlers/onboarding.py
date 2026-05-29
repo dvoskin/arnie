@@ -43,38 +43,38 @@ def build_onboarding_system(user: User) -> str:
     steps = [
         ("name",
          has("name"),
-         "What's your first name?",
+         "what's your first name?",
          user.name or ""),
 
         ("sex",
          has("sex"),
-         "Are you male or female?",
+         "male or female?",
          user.sex or ""),
 
         ("age",
          has("age"),
-         "How old are you?",
+         "how old are you?",
          str(user.age) if user.age else ""),
 
         ("height & weight",
          has("height_cm") and has("current_weight_kg"),
-         "What's your height and current weight? Add a target weight too if you have one — e.g. '180cm, 90kg, target 80kg'.",
+         "height and weight? throw in a target weight too if you have one.",
          f"{user.height_cm:.0f}cm / {user.current_weight_kg:.1f}kg"
          if (user.height_cm and user.current_weight_kg) else ""),
 
         ("primary goal",
          has("primary_goal"),
-         "What's your goal — lose weight, gain weight, or maintain?",
+         "what's the goal — lose weight, gain, or maintain?",
          user.primary_goal or ""),
 
         ("training experience",
          has("training_experience"),
-         "How experienced are you — beginner, intermediate, or advanced?",
+         "how experienced are you — beginner, intermediate, or advanced?",
          user.training_experience or ""),
 
         ("timezone",
          has("timezone") and user.timezone != "UTC",
-         "What city are you based in? I'll use it to time my check-ins.",
+         "what city are you in? i'll use it to time my check-ins.",
          user.timezone or ""),
     ]
 
@@ -108,7 +108,7 @@ def build_onboarding_system(user: User) -> str:
         if pref_has("calorie_target"):
             state_block += (
                 "\n\nAll essentials AND targets are set."
-                "\nWrite ONE brief completion sentence only — e.g. 'You're all set, [Name]. Let's get to work.'"
+                "\nWrite ONE brief completion — e.g. \"you're all set, [name]. let's get to work.\""
                 "\nDo NOT call any tools. Do NOT ask anything."
             )
         else:
