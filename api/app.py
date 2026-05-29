@@ -414,10 +414,10 @@ async def imessage_webhook(request: Request):
         logger.info(f"BB webhook: skipping — missing field address={bool(address)} text={bool(text)} chat_guid={bool(chat_guid)}")
         return {"ok": True}
 
-    # Fire pipeline in background — respond 200 immediately
+    # Debounce then fire pipeline — batches rapid multi-message inputs
     import asyncio
-    from bot.imessage_handler import run_imessage_pipeline
-    asyncio.create_task(run_imessage_pipeline(address, chat_guid, text))
+    from bot.imessage_handler import handle_imessage
+    asyncio.create_task(handle_imessage(address, chat_guid, text))
 
     return {"ok": True}
 

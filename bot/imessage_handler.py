@@ -45,6 +45,8 @@ from memory.reflection import maybe_update_memory
 
 logger = logging.getLogger(__name__)
 
+from bot.message_debounce import schedule_message as _debounce
+
 # ── BlueBubbles client ─────────────────────────────────────────────────────────
 
 _BB_URL      = os.getenv("BLUEBUBBLES_URL", "").rstrip("/")
@@ -188,6 +190,19 @@ def _im_user_id(address: str) -> str:
 # Import the system prompt and helpers from the Telegram handler so we share
 # the exact same coaching logic — no duplication.
 from bot.telegram_handler import _ARNIE_SYSTEM, _welcome_message, _calc_targets
+
+
+async def handle_imessage(address: str, chat_guid: str, raw_text: str) -> None:
+    """
+    Debounced entry point — batches rapid back-to-back messages from the same
+    sender into one pipeline call so replies don't multiply (2 msgs → 4-6 bubbles).
+    """
+    user_key = f"im:{address}"
+
+    async def _run(combined_text: str):
+        await run_imessage_pipeline(address, chat_guid, combined_text)
+
+    await _debounce(user_key, raw_text, _run, delay=2.0)
 
 
 async def run_imessage_pipeline(address: str, chat_guid: str, raw_text: str):
