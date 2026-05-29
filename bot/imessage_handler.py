@@ -260,6 +260,8 @@ _REFERENCE_PATTERNS = {
     "i just sent", "i already told", "i mentioned", "i said that", "i told you",
     "check what i sent", "i already said", "scroll up", "i sent you", "see what i",
     "i just told", "already sent", "i sent that", "look at what i", "i wrote that",
+    "just texted", "just gave", "already gave", "i did already", "i just said",
+    "look up", "read up", "i literally just", "told you already",
 }
 
 def _needs_extended_history(text: str) -> bool:
@@ -621,9 +623,11 @@ lowercase always. no em dashes. no corporate language.
 capitalize their name every time you use it."""
 
         # ── Conversation history ───────────────────────────────────────────────
+        # During onboarding, ALWAYS load full history — users often give stats
+        # across several rapid texts, and the LLM must see all of them to extract.
         messages = await _build_messages(
             db, user.id, raw_text,
-            extended=_needs_extended_history(raw_text)
+            extended=(in_onboarding or _needs_extended_history(raw_text))
         )
 
         # ── LLM call ──────────────────────────────────────────────────────────

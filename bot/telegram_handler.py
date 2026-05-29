@@ -471,13 +471,16 @@ _REFERENCE_PATTERNS = {
     "i just sent", "i already told", "i mentioned", "i said that", "i told you",
     "check what i sent", "i already said", "scroll up", "i sent you",
     "i just told", "already sent", "i sent that", "look at what i",
+    "just texted", "just gave", "already gave", "i did already", "i just said",
+    "look up", "read up", "i literally just", "told you already",
 }
 
-async def _build_messages(db, user_id: int, current_text: str):
+async def _build_messages(db, user_id: int, current_text: str, extended: bool = False):
     """Build the messages list: recent history + current message.
-    Loads 25 messages when user references something they already sent."""
+    Loads 25 messages when extended, or when user references something they sent."""
     t = current_text.lower()
-    extended = any(p in t for p in _REFERENCE_PATTERNS)
+    if not extended:
+        extended = any(p in t for p in _REFERENCE_PATTERNS)
     limit = 25 if extended else 6
     recent = await get_recent_conversations(db, user_id, limit=limit)
     msgs = []
@@ -711,7 +714,9 @@ async def _run_pipeline(update: Update, context: ContextTypes.DEFAULT_TYPE,
         system = build_onboarding_system(user)  # dynamic — reflects current saved state
 
     # ── Conversation history + current message ────────────────────────────────
-    messages = await _build_messages(db, user.id, raw_text)
+    # During onboarding, load full history so stats given across rapid texts
+    # are always visible to the LLM (prevents re-asking for info already given).
+    messages = await _build_messages(db, user.id, raw_text, extended=in_onboarding)
 
     # ── LLM call with typing indicator ────────────────────────────────────────
     stop_typing = asyncio.Event()
