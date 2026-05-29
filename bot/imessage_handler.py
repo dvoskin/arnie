@@ -342,10 +342,12 @@ async def _handle_im_reset(chat_guid: str, user, db) -> bool:
     await reset_all_user_data(db, user_id)
     await db.commit()
     await write_memory(telegram_id, "")  # clear memory file
+    # Don't log a conversation — keeps history empty so the next message
+    # re-triggers the full first-contact intro sequence.
     bubbles = [
         "done. everything's wiped.",
-        "fresh start.",
-        "what's your first name?",
+        "fresh start 🌱",
+        "hit me back when you're ready and we'll get going.",
     ]
     for i, b in enumerate(bubbles):
         await bb_send_text(chat_guid, b)
