@@ -306,6 +306,104 @@ def _im_user_id(address: str) -> str:
 from core.prompts import build_arnie_system as _build_arnie_system
 from bot.telegram_handler import _welcome_message, _calc_targets
 
+
+# ── Natural language command detection ────────────────────────────────────────
+# iMessage has no slash commands — these patterns catch intent from plain text
+
+_RESET_PATTERNS = {
+    "reset my data", "reset everything", "delete my data", "delete everything",
+    "start over", "start fresh", "wipe my data", "clear my data",
+    "reset all", "delete my account", "remove my data",
+}
+
+_REMIND_ON_PATTERNS = {
+    "turn on reminders", "enable reminders", "turn on check-ins",
+    "enable check-ins", "start check-ins", "send me reminders",
+    "i want reminders", "turn notifications on",
+}
+
+_REMIND_OFF_PATTERNS = {
+    "turn off reminders", "disable reminders", "turn off check-ins",
+    "stop reminders", "no more check-ins", "stop check-ins",
+    "no more reminders", "turn notifications off", "stop messaging me",
+}
+
+_DASH_PATTERNS = {
+    "show my dashboard", "open dashboard", "my dashboard",
+    "show dashboard", "view dashboard", "my stats",
+}
+
+_WHOOP_PATTERNS = {
+    "connect my whoop", "connect whoop", "link whoop", "setup whoop",
+    "whoop integration", "add whoop",
+}
+
+
+def _match_intent(text: str, patterns: set) -> bool:
+    t = text.strip().lower()
+    return any(p in t for p in patterns)
+
+
+async def _handle_im_reset(chat_guid: str, user, db) -> bool:
+    """Full account wipe — returns True so pipeline skips normal processing."""
+    from db.queries import reset_all_user_data
+    from memory.memory_manager import init_memory
+    await reset_all_user_data(db, user.id)
+    await db.commit()
+    await init_memory(user.telegram_id)
+    bubbles = [
+        "done. everything's wiped.",
+        "fresh start.",
+        "what's your first name?",
+    ]
+    for i, b in enumerate(bubbles):
+        await bb_send_text(chat_guid, b)
+        if i < len(bubbles) - 1:
+            await asyncio.sleep(0.35)
+    return True
+
+
+async def _handle_im_remind_toggle(chat_guid: str, user, db, enable: bool) -> bool:
+    prefs = user.preferences
+    if prefs:
+        prefs.proactive_messaging_enabled = enable
+        await db.commit()
+    status = "on" if enable else "off"
+    msg = f"check-ins are {status}." if enable else f"got it. no more check-ins."
+    await bb_send_text(chat_guid, msg)
+    return True
+
+
+async def _handle_im_dashboard(chat_guid: str, user, db) -> bool:
+    from db.queries import get_or_create_webhook_token
+    import os
+    token = await get_or_create_webhook_token(db, user.id)
+    base_url = os.getenv("RENDER_EXTERNAL_URL", "https://arnie.onrender.com").rstrip("/")
+    url = f"{base_url}/dashboard/{token}"
+    await bb_send_text(chat_guid, f"your dashboard: {url}")
+    return True
+
+
+async def _handle_im_whoop(chat_guid: str, user, db) -> bool:
+    from db.queries import get_or_create_webhook_token
+    import os
+    token = await get_or_create_webhook_token(db, user.id)
+    base_url = os.getenv("RENDER_EXTERNAL_URL", "https://arnie.onrender.com").rstrip("/")
+    auth_url = f"{base_url}/whoop/callback?state={token}"
+    # Generate the actual Whoop auth URL
+    from api.whoop import AUTH_URL, WHOOP_CLIENT_ID
+    redirect = f"{base_url}/whoop/callback"
+    whoop_url = (
+        f"{AUTH_URL}?client_id={WHOOP_CLIENT_ID}"
+        f"&redirect_uri={redirect}"
+        f"&response_type=code&scope=read:recovery read:sleep read:workout read:profile"
+        f"&state={token}"
+    )
+    await bb_send_text(chat_guid, "tap this link on your phone to connect Whoop:")
+    await asyncio.sleep(0.3)
+    await bb_send_text(chat_guid, whoop_url)
+    return True
+
 # ── First-contact intro ────────────────────────────────────────────────────────
 
 _INTRO_BUBBLES = [
@@ -359,6 +457,24 @@ async def run_imessage_pipeline(address: str, chat_guid: str, raw_text: str,
 
     async with AsyncSessionLocal() as db:
         user = await get_or_create_user(db, im_id)
+
+        # ── Natural language command handling (iMessage has no slash commands) ──
+        if user.onboarding_completed:
+            if _match_intent(raw_text, _RESET_PATTERNS):
+                await _handle_im_reset(chat_guid, user, db)
+                return
+            if _match_intent(raw_text, _REMIND_ON_PATTERNS):
+                await _handle_im_remind_toggle(chat_guid, user, db, enable=True)
+                return
+            if _match_intent(raw_text, _REMIND_OFF_PATTERNS):
+                await _handle_im_remind_toggle(chat_guid, user, db, enable=False)
+                return
+            if _match_intent(raw_text, _DASH_PATTERNS):
+                await _handle_im_dashboard(chat_guid, user, db)
+                return
+            if _match_intent(raw_text, _WHOOP_PATTERNS):
+                await _handle_im_whoop(chat_guid, user, db)
+                return
 
         # ── First-ever contact — send intro before onboarding starts ──────────
         # Detect: no name yet + no prior conversations = truly new user
