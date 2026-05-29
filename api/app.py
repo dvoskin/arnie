@@ -383,6 +383,10 @@ async def imessage_webhook(request: Request):
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid JSON")
 
+    # Debug: log every incoming webhook so we can see what BlueBubbles sends
+    import json as _json
+    logger.info(f"BB webhook: type={payload.get('type')} keys={list(payload.get('data', {}).keys())[:8]} isFromMe={payload.get('data', {}).get('isFromMe')} text={str(payload.get('data', {}).get('text', ''))[:60]}")
+
     event_type = payload.get("type", "")
     if event_type != "new-message":
         # Heartbeat, read receipts, etc. — acknowledge and ignore
@@ -392,19 +396,22 @@ async def imessage_webhook(request: Request):
 
     # Skip messages sent by us
     if data.get("isFromMe"):
+        logger.info("BB webhook: skipping isFromMe=True message")
         return {"ok": True}
 
     # Skip group chats
     chats = data.get("chats", [])
     if not chats or chats[0].get("isGroup"):
+        logger.info("BB webhook: skipping group chat or no chats")
         return {"ok": True}
 
     handle  = data.get("handle", {})
-    address = handle.get("address", "")
+    address = handle.get("address", "") if handle else ""
     text    = (data.get("text") or "").strip()
     chat_guid = chats[0].get("guid", "")
 
     if not address or not text or not chat_guid:
+        logger.info(f"BB webhook: skipping — missing field address={bool(address)} text={bool(text)} chat_guid={bool(chat_guid)}")
         return {"ok": True}
 
     # Fire pipeline in background — respond 200 immediately
