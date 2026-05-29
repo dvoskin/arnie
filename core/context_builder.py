@@ -199,6 +199,44 @@ def fmt_strength_prs(logs: List[DailyLog]) -> str:
     return "\n".join(lines)
 
 
+def fmt_food_history(logs: List[DailyLog]) -> str:
+    """
+    Builds a deduped lookup of previously logged foods from the last 90 days.
+    Most recent entry for each food name wins. Sorted by most recently logged.
+    Injected as [FOOD HISTORY] so Arnie can re-use macros without asking.
+    """
+    seen: dict = {}  # normalized_name -> (display_name, qty, cal, P, C, F, date)
+
+    for log in sorted(logs, key=lambda l: l.date):  # oldest first → newest overwrites
+        for f in (log.food_entries or []):
+            name = (f.parsed_food_name or "").strip()
+            if not name:
+                continue
+            norm = name.lower()
+            seen[norm] = (
+                name,
+                f.quantity or "",
+                f.calories or 0,
+                f.protein or 0,
+                f.carbs or 0,
+                f.fats or 0,
+                log.date,
+            )
+
+    if not seen:
+        return ""
+
+    # Sort by most recently logged
+    entries = sorted(seen.values(), key=lambda x: x[6], reverse=True)[:30]
+    lines = ["FOOD HISTORY (previously logged — use these macros when user references a past food):"]
+    for name, qty, cal, pro, carb, fat, d in entries:
+        qty_str = f" ({qty})" if qty else ""
+        lines.append(
+            f"  {name}{qty_str} — {cal:.0f} cal | {pro:.0f}P | {carb:.0f}C | {fat:.0f}F  [logged {d}]"
+        )
+    return "\n".join(lines)
+
+
 def fmt_weekly_breakdown(logs: List[DailyLog], prefs: Optional[UserPreferences]) -> str:
     """Per-week nutrition and workout averages for the last 4 weeks.
     Used by weekly_summary and progress_timeline skills."""
@@ -366,7 +404,7 @@ def fmt_health(snaps: List[HealthSnapshot]) -> str:
 
 
 async def build_context(user: User, today_log: Optional[DailyLog], db) -> str:
-    recent_logs = await get_recent_logs(db, user.id, days=28)
+    recent_logs = await get_recent_logs(db, user.id, days=90)
     recent_weights = await get_recent_weights(db, user.id, days=56)  # 8 weeks for progress_timeline
     recent_health = await get_recent_health_snapshots(db, user.id, days=3)
     memory = await read_memory(user.telegram_id)
@@ -379,6 +417,7 @@ async def build_context(user: User, today_log: Optional[DailyLog], db) -> str:
     weight_progress = fmt_weight_progress(recent_weights, user)
     weekly_breakdown = fmt_weekly_breakdown(recent_logs, prefs)
     strength_prs = fmt_strength_prs(recent_logs)
+    food_history = fmt_food_history(recent_logs)
 
     # Detect workout mode: exercises already logged today
     in_workout = bool(today_log and today_log.exercise_entries)
@@ -401,6 +440,9 @@ async def build_context(user: User, today_log: Optional[DailyLog], db) -> str:
         fmt_history(recent_logs),
         (weight_progress if weight_progress else fmt_weight_trend(recent_weights)),
         (weekly_breakdown if weekly_breakdown else ""),
+        "",
+        "=== FOOD HISTORY ===",
+        (food_history if food_history else "No food history yet."),
         "",
         "=== EXERCISE HISTORY ===",
         fmt_exercise_history(recent_logs),
