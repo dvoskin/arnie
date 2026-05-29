@@ -521,7 +521,7 @@ async def run_imessage_pipeline(address: str, chat_guid: str, raw_text: str,
             else:
                 await bb_send_text(chat_guid, plain)
             if i < len(bubbles) - 1:
-                await asyncio.sleep(0.6)
+                await asyncio.sleep(0.35)  # fast enough to feel like rapid texting
 
         # ── Persist conversation ───────────────────────────────────────────────
         await log_conversation(db, user.id, raw_text, response_text, source_type="imessage")

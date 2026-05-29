@@ -818,9 +818,9 @@ async def _run_pipeline(update: Update, context: ContextTypes.DEFAULT_TYPE,
 
         await update.message.reply_text(**fmt_kwargs)
 
-        # Small pause between bubbles so they don't arrive as one clump
+        # Short pause between bubbles — fast enough to feel like rapid texting
         if not is_last:
-            await asyncio.sleep(0.4)
+            await asyncio.sleep(0.25)
 
     # ── Post-onboarding: send dashboard as a second message with inline button ─
     if just_completed:
