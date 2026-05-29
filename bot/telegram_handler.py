@@ -579,38 +579,7 @@ async def _generate_workout_analysis(user, exercise_calls, db) -> str:
         return ""
 
 
-def _calc_targets(user) -> dict | None:
-    """
-    Server-side Mifflin-St Jeor BMR calculation. Returns dict with
-    {tdee, calories, protein, goal} or None if required fields are missing.
-    Matches the formula specified in the onboarding system prompt exactly.
-    """
-    try:
-        w = user.current_weight_kg   # kg
-        h = user.height_cm           # cm
-        a = user.age                 # years
-        s = (user.sex or "").lower() # "male" / "female"
-        g = user.primary_goal        # "cut" / "bulk" / "maintain"
-        if not all([w, h, a, s in ("male", "female"), g]):
-            return None
-
-        bmr = 10 * w + 6.25 * h - 5 * a + (5 if s == "male" else -161)
-        tdee = round(bmr * 1.55)  # moderately active lifter
-
-        if g == "cut":
-            cal = round((tdee - 450) / 50) * 50
-        elif g == "bulk":
-            cal = round((tdee + 300) / 50) * 50
-        else:
-            cal = round(tdee / 50) * 50
-
-        w_lbs = w * 2.20462
-        protein = round(w_lbs * (0.9 if g in ("cut", "maintain") else 0.8) / 5) * 5
-
-        return {"tdee": tdee, "calories": max(cal, 1200), "protein": max(protein, 100), "goal": g}
-    except Exception as e:
-        logger.warning(f"_calc_targets failed: {e}")
-        return None
+from core.targets import calc_targets as _calc_targets  # shared Mifflin-St Jeor calc
 
 
 async def _send_onboarding_complete(update, db, user, source_type, raw_text,

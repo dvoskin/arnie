@@ -472,7 +472,8 @@ async def _build_completion_text(user, db, dash_url: str = "") -> str:
     if cal and pro:
         targets_line = f"{cal} cal · {pro}g protein a day. that's the target."
     else:
-        targets_line = "no targets yet — say \"set my targets\" whenever."
+        # targets come once we collect age/sex/height via nudges
+        targets_line = "i'll dial in your exact numbers as i learn a bit more about you."
     bubbles = [
         f"you're in, {name}. 🎉",
         goal_line,

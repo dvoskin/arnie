@@ -1,26 +1,23 @@
 """
-Onboarding flow — strictly sequential, server-managed completion.
+Onboarding flow — minimal & conversational.
 
-Step order: name → sex → age → height/weight (+goal weight) → goal (skipped if
-inferred from weights) → experience → timezone → targets
+Collects ONLY: name → fitness goal → current/goal weight. That's enough to start.
+age, sex, and height are collected AFTER onboarding via proactive nudges
+(scheduler._llm_profile_nudge). Once those three land, tool_executor auto-computes
+calorie + protein targets via core.targets.calc_targets.
 
-COMPLETION MODEL (not LLM-driven):
-  • "Calculate for me" and "Skip for now" are intercepted server-side in
-    telegram_handler before the LLM is called.
-  • "I have my numbers": LLM parses the reply and calls
-    update_profile(calorie_target=X, protein_target=Y). tool_executor.py
-    then auto-flips onboarding_completed when all essentials + calorie_target
-    are present.
-  • The LLM must NEVER call update_profile(onboarding_completed=true). That
-    requirement is removed — the follow-up LLM call cannot use tools, so
-    relying on it caused the "Got it." dead-end.
+COMPLETION: tool_executor auto-flips onboarding_completed the moment the three
+essentials (name, current_weight_kg, primary_goal) are saved. No targets step.
 
-Diet/injuries NOT collected during onboarding.
+Diet/injuries/experience NOT collected during onboarding — they surface organically.
 """
 from db.models import User
 from core.prompts.onboarding import ONBOARDING_BASE as _ONBOARDING_BASE
 
-_ESSENTIAL = ["name", "age", "sex", "height_cm", "current_weight_kg", "primary_goal"]
+# Minimal onboarding — just enough to start coaching. age/sex/height are
+# collected post-onboarding via proactive nudges (see scheduler), which then
+# auto-computes targets once all three land.
+_ESSENTIAL = ["name", "current_weight_kg", "primary_goal"]
 
 
 def build_onboarding_system(user: User) -> str:
@@ -38,16 +35,16 @@ def build_onboarding_system(user: User) -> str:
     def pref_has(field):
         return prefs and getattr(prefs, field, None) is not None
 
-    # Track what's been collected — shown to LLM so it never re-asks
+    # Only the minimal essentials are tracked. age/sex/height come later via proactive.
+    weight_val = (
+        f"{user.current_weight_kg:.1f}kg"
+        + (f" → {user.goal_weight_kg:.1f}kg" if user.goal_weight_kg else "")
+        if user.current_weight_kg else ""
+    )
     fields = [
-        ("name",              has("name"),                                    user.name or ""),
-        ("sex",               has("sex"),                                     user.sex or ""),
-        ("age",               has("age"),                                     str(user.age) if user.age else ""),
-        ("height & weight",   has("height_cm") and has("current_weight_kg"),
-                              f"{user.height_cm:.0f}cm / {user.current_weight_kg:.1f}kg"
-                              if (user.height_cm and user.current_weight_kg) else ""),
-        ("primary goal",      has("primary_goal"),                            user.primary_goal or ""),
-        ("training exp",      has("training_experience"),                     user.training_experience or ""),
+        ("name",         has("name"),               user.name or ""),
+        ("primary goal", has("primary_goal"),       user.primary_goal or ""),
+        ("weight",       has("current_weight_kg"),  weight_val),
     ]
 
     still_needed = [label for label, done, _ in fields if not done]
@@ -66,21 +63,14 @@ def build_onboarding_system(user: User) -> str:
     if still_needed:
         state_block += f"\n\nSTILL NEEDED: {', '.join(still_needed)}"
         state_block += (
-            "\n\nCollect these naturally through conversation — don't ask each one separately like a form."
-            "\nGroup stats together: weight, height, age, and target weight can all come in one natural ask."
-            "\nLet the conversation flow. React to what they say. Then weave in what you still need."
+            "\n\nCollect these naturally — name, then goal, then weight. React as you go."
+            "\nDo NOT ask for age, sex, or height. Those come later."
         )
     else:
-        if pref_has("calorie_target"):
-            state_block += (
-                "\n\nAll essentials AND targets are set."
-                "\nWrite ONE brief completion. do NOT ask anything else."
-            )
-        else:
-            state_block += (
-                "\n\nALL ESSENTIALS COLLECTED. Run the TARGETS STEP now."
-                "\nPresent the 3 options exactly as written above."
-            )
+        state_block += (
+            "\n\nALL ESSENTIALS COLLECTED. Wrap up warmly and tell them to start logging."
+            "\nDo NOT ask anything else. Do NOT present a targets step."
+        )
 
     return _ONBOARDING_BASE + state_block
 
@@ -99,29 +89,11 @@ def get_onboarding_keyboard(user: User):
     def has(field):
         return getattr(user, field, None) is not None
 
-    prefs = user.preferences
-
-    # Step 1: name — free text
+    # Name first — free text, no keyboard
     if not has("name"):
         return None
 
-    # Step 2: sex — buttons
-    if not has("sex"):
-        return ReplyKeyboardMarkup(
-            [["Male", "Female"]],
-            one_time_keyboard=True,
-            resize_keyboard=True,
-        )
-
-    # Step 3: age — free text
-    if not has("age"):
-        return None
-
-    # Step 4: height & weight — free text
-    if not (has("height_cm") and has("current_weight_kg")):
-        return None
-
-    # Step 5: goal — buttons (often skipped when primary_goal inferred from weights)
+    # Goal — quick-tap buttons (the one place buttons genuinely speed things up)
     if not has("primary_goal"):
         return ReplyKeyboardMarkup(
             [["Lose Weight", "Gain Weight", "Maintain"]],
@@ -129,24 +101,7 @@ def get_onboarding_keyboard(user: User):
             resize_keyboard=True,
         )
 
-    # Step 6: training experience — buttons
-    if not has("training_experience"):
-        return ReplyKeyboardMarkup(
-            [["Beginner", "Intermediate", "Advanced"]],
-            one_time_keyboard=True,
-            resize_keyboard=True,
-        )
-
-    # Targets step — buttons
-    if prefs and not getattr(prefs, "calorie_target", None):
-        return ReplyKeyboardMarkup(
-            [["Calculate for me 🧮"],
-             ["I have my numbers"],
-             ["Skip for now"]],
-            one_time_keyboard=True,
-            resize_keyboard=True,
-        )
-
+    # Weight — free text. Everything else (age/sex/height) is collected later.
     return None
 
 

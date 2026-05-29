@@ -347,18 +347,36 @@ async def _dispatch(name, inp, user, today_log, db, source_type):  # noqa: C901
         await db.commit()
         user = await reload_user(db, user.id)
 
-        # SERVER-SIDE AUTO-COMPLETION — safety net so the LLM never has to call
-        # update_profile(onboarding_completed=true) explicitly (the follow-up
-        # LLM call cannot use tools, which caused the "Got it." dead-end).
-        # Rule: if all 7 essentials are present AND calorie_target is now saved
-        # → flip onboarding_completed=True automatically.
+        # SERVER-SIDE AUTO-COMPLETION — onboarding now needs only the minimal
+        # essentials (name, weight, goal). age/sex/height + targets come later
+        # via proactive collection. Flip onboarding_completed the moment the
+        # essentials are in.
         if not user.onboarding_completed and is_onboarding_complete(user):
-            prefs_check = user.preferences
-            if prefs_check and prefs_check.calorie_target is not None:
-                logger.info(f"Server-side auto-completing onboarding for user {user.id}")
-                user.onboarding_completed = True
+            logger.info(f"Server-side auto-completing onboarding for user {user.id}")
+            user.onboarding_completed = True
+            await db.commit()
+            user = await reload_user(db, user.id)
+
+        # AUTO-CALC TARGETS — the moment all stats are present (weight, height,
+        # age, sex, goal) and no targets are set yet, compute them automatically.
+        # This fires when the post-onboarding nudges finish collecting age/sex/height.
+        _targets_msg = ""
+        prefs_check = user.preferences
+        if prefs_check and prefs_check.calorie_target is None:
+            from core.targets import calc_targets
+            t = calc_targets(user)
+            if t:
+                prefs_check.calorie_target = t["calories"]
+                prefs_check.protein_target = t["protein"]
                 await db.commit()
                 user = await reload_user(db, user.id)
+                logger.info(f"Auto-calculated targets for user {user.id}: "
+                            f"{t['calories']}cal/{t['protein']}p")
+                _targets_msg = (
+                    f" | TARGETS JUST CALCULATED: {t['calories']} cal, {t['protein']}g protein. "
+                    f"Tell the user you now have their full picture and these are their daily "
+                    f"targets — briefly and naturally, in your voice."
+                )
 
         # When onboarding completes, set sensible preference defaults + init memory
         if user.onboarding_completed and user.preferences:
@@ -378,6 +396,6 @@ async def _dispatch(name, inp, user, today_log, db, source_type):  # noqa: C901
             # init_memory is idempotent — safe to call on every update
             await init_memory(user)
 
-        return f"Profile updated: {list(fields.keys())}"
+        return f"Profile updated: {list(fields.keys())}{_targets_msg}"
 
     return "Unknown tool"
