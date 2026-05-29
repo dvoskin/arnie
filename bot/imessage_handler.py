@@ -306,6 +306,28 @@ def _im_user_id(address: str) -> str:
 from core.prompts import build_arnie_system as _build_arnie_system
 from bot.telegram_handler import _welcome_message, _calc_targets
 
+# ── First-contact intro ────────────────────────────────────────────────────────
+
+_INTRO_BUBBLES = [
+    "hey 👋",
+    "i'm arnie, your AI fitness and nutrition coach.",
+    "i track food, workouts, and weight — all just by texting.",
+    "no app to download. no forms. just this.",
+    "takes about 2 minutes to get set up.",
+    "what's your first name?",
+]
+
+
+async def _send_first_contact_intro(chat_guid: str) -> None:
+    """
+    Send Arnie's intro sequence to a brand new iMessage user before
+    onboarding starts. Rapid-fire bubbles with short delays.
+    """
+    for i, bubble in enumerate(_INTRO_BUBBLES):
+        await bb_send_text(chat_guid, bubble)
+        if i < len(_INTRO_BUBBLES) - 1:
+            await asyncio.sleep(0.4)
+
 
 async def handle_imessage(address: str, chat_guid: str, raw_text: str,
                           message_guid: str = "") -> None:
@@ -337,6 +359,21 @@ async def run_imessage_pipeline(address: str, chat_guid: str, raw_text: str,
 
     async with AsyncSessionLocal() as db:
         user = await get_or_create_user(db, im_id)
+
+        # ── First-ever contact — send intro before onboarding starts ──────────
+        # Detect: no name yet + no prior conversations = truly new user
+        if not user.name and not user.onboarding_completed:
+            from db.queries import get_recent_conversations
+            prior = await get_recent_conversations(db, user.id, limit=1)
+            if not prior:
+                await _send_first_contact_intro(chat_guid)
+                # Log this as the first conversation so intro doesn't re-fire
+                from db.queries import log_conversation
+                await log_conversation(
+                    db, user.id, raw_text,
+                    "[intro sent]", source_type="imessage"
+                )
+                return  # Wait for user to reply with their name
 
         # ── Onboarding flag ───────────────────────────────────────────────────
         in_onboarding = not user.onboarding_completed

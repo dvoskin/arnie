@@ -1093,7 +1093,13 @@
             <span class="beta-check">✓</span>
             <span>You're on the list — we'll reach out with access details.</span>
           </div>
-          <a href="https://t.me/Arnie_1026_Bot?start=freetrial" target="_blank" rel="noopener" class="beta-tg-link">Or try Telegram beta now →</a>
+          <div style="display:flex;flex-direction:column;gap:10px;margin-top:12px;width:100%">
+            <a href="sms:ARNIE_IMESSAGE_ADDRESS&body=Hey" class="beta-tg-link" id="imessageCta" style="display:flex;align-items:center;justify-content:center;gap:8px;padding:13px 20px;background:color-mix(in oklch,var(--ink) 8%,transparent);border-radius:12px;border:1px solid color-mix(in oklch,var(--ink) 14%,transparent);text-decoration:none;color:var(--ink);font-size:14px;font-weight:500;">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style="opacity:0.7"><path d="M12 2C6.477 2 2 6.477 2 12c0 1.89.525 3.66 1.438 5.168L2 22l4.832-1.438A9.956 9.956 0 0 0 12 22c5.523 0 10-4.477 10-10S17.523 2 12 2z"/></svg>
+              Start on iMessage →
+            </a>
+            <a href="https://t.me/Arnie_1026_Bot?start=freetrial" target="_blank" rel="noopener" class="beta-tg-link">Or try Telegram beta now →</a>
+          </div>
         </div>
       </div>
 
@@ -1528,6 +1534,33 @@
   // ── Beta signup handler ──────────────────────────────────────────
   // Replace FORMSPREE_ID with your actual Formspree form ID from formspree.io
   const FORMSPREE_ENDPOINT = 'https://formspree.io/f/xojbyrwl';
+
+  // iMessage CTA — replace with Arnie's actual iMessage address once live
+  const ARNIE_IMESSAGE = 'ARNIE_IMESSAGE_ADDRESS'; // e.g. arnie@icloud.com or +1234567890
+  const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
+  const isMac = /Mac/.test(navigator.userAgent) && !isIOS;
+
+  document.querySelectorAll('#imessageCta').forEach(el => {
+    if (ARNIE_IMESSAGE === 'ARNIE_IMESSAGE_ADDRESS') {
+      // Address not yet configured — hide the button
+      el.style.display = 'none';
+      return;
+    }
+    if (isIOS) {
+      // iPhone/iPad — sms: deep link opens Messages.app directly
+      el.href = `sms:${ARNIE_IMESSAGE}&body=Hey`;
+      el.target = '_self';
+    } else if (isMac) {
+      // Mac — open Messages.app via tel: or show the address
+      el.href = `imessage:${ARNIE_IMESSAGE}`;
+      el.target = '_self';
+    } else {
+      // Android/other — show the address, can't deep-link iMessage
+      el.href = '#';
+      el.textContent = `Text ${ARNIE_IMESSAGE} on iMessage`;
+      el.onclick = e => { e.preventDefault(); alert(`Open iMessage on your iPhone and text:\n${ARNIE_IMESSAGE}`); };
+    }
+  });
 
   async function handleBetaSubmit(e, formId) {
     e.preventDefault();
