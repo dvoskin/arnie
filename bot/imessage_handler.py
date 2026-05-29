@@ -39,6 +39,9 @@ from db.queries import (
 )
 from core.llm import chat, chat_follow_up
 from core.context_builder import build_context, fmt_log
+from core.platform import (
+    Response, React, FX, IMessageAdapter, onboarding_reaction,
+)
 from handlers.onboarding import build_onboarding_system, is_onboarding_complete
 from handlers.tool_executor import execute_tool_calls
 from memory.reflection import maybe_update_memory
@@ -46,6 +49,16 @@ from memory.reflection import maybe_update_memory
 logger = logging.getLogger(__name__)
 
 from bot.message_debounce import schedule_message as _debounce
+
+# Bridge old _detect_coaching_moment codes → semantic names for the adapter
+_TAPBACK_TO_SEMANTIC = {2000: React.LOVE, 2001: React.LIKE, 2003: React.LAUGH, 2004: React.EMPHASIZE}
+_EFFECT_TO_SEMANTIC = {
+    "com.apple.MobileSMS.expressivesend.impact": FX.SLAM,
+    "com.apple.MobileSMS.expressivesend.balloons": FX.CELEBRATE,
+    "com.apple.MobileSMS.expressivesend.fireworks": FX.FIREWORKS,
+    "com.apple.MobileSMS.expressivesend.lasers": FX.LASERS,
+    "com.apple.MobileSMS.expressivesend.loud": FX.LOUD,
+}
 
 # ── BlueBubbles client ─────────────────────────────────────────────────────────
 
@@ -451,20 +464,40 @@ async def _send_first_contact_intro(chat_guid: str) -> None:
             await asyncio.sleep(0.4)
 
 
-async def _send_onboarding_reaction(message_guid: str, field_updated: str) -> None:
-    """Fire a tapback reaction based on what the user just told us during onboarding."""
-    if not message_guid:
-        return
-    reactions = {
-        "name":                Tapback.LOVE,    # ❤️ when they give their name
-        "current_weight_kg":   Tapback.LIKE,    # 👍 height/weight
-        "primary_goal":        Tapback.LIKE,    # 👍 goal
-        "training_experience": Tapback.LIKE,    # 👍 experience
-        "calorie_target":      Tapback.LOVE,    # ❤️ targets set — big moment
-    }
-    tapback = reactions.get(field_updated)
-    if tapback:
-        await bb_send_reaction(message_guid, tapback)
+async def _dashboard_url(user, db) -> str:
+    """Build the user's dashboard URL."""
+    token = await get_or_create_webhook_token(db, user.id)
+    base = os.getenv("RENDER_EXTERNAL_URL", "https://arnie.onrender.com").rstrip("/")
+    return f"{base}/dashboard/{token}"
+
+
+async def _build_completion_text(user, db, dash_url: str = "") -> str:
+    """iMessage-native onboarding welcome — casual, multi-bubble, no HTML."""
+    prefs = user.preferences
+    name = user.name or ""
+    goal = user.primary_goal or ""
+    cal = prefs.calorie_target if prefs else None
+    pro = prefs.protein_target if prefs else None
+    goal_line = {
+        "cut": "goal: cut 🔻", "bulk": "goal: bulk 📈", "maintain": "goal: maintain ⚖️",
+        "performance": "goal: performance ⚡", "health": "goal: health 🌿",
+    }.get(goal, f"goal: {goal}")
+    if cal and pro:
+        targets_line = f"{cal} cal · {pro}g protein a day. that's the target."
+    else:
+        targets_line = "no targets yet — say \"set my targets\" whenever."
+    bubbles = [
+        f"you're in, {name}. 🎉",
+        goal_line,
+        targets_line,
+        "just text me like a friend. food, workouts, weight, whatever.",
+        "i'll handle the tracking and keep you honest.",
+    ]
+    if dash_url:
+        bubbles.append("your dashboard's live too — everything you log shows up here 📊")
+        bubbles.append(dash_url)
+    bubbles.append("what'd you eat today? let's start there.")
+    return "|||".join(bubbles)
 
 
 # Per-user async locks — prevents two pipelines running simultaneously for the
@@ -644,6 +677,8 @@ capitalize their name every time you use it."""
         tool_calls    = result["tool_calls"]
         raw_content   = result["raw_content"]
 
+        onboarding_field_saved = None  # which profile field was set this turn
+
         # ── Execute tools ─────────────────────────────────────────────────────
         tool_results = {}
         if tool_calls:
@@ -679,21 +714,16 @@ capitalize their name every time you use it."""
             if today_log and hasattr(today_log, "id") and today_log.id:
                 await db.refresh(today_log)
 
-            # ── Onboarding tapback reactions ──────────────────────────────────
-            if was_onboarding and message_guid:
+            # Detect which profile field was just saved (for onboarding reaction)
+            if was_onboarding:
                 for tc in tool_calls:
                     if tc["name"] == "update_profile":
-                        fields = tc.get("input", {}).get("fields", {})
-                        # height_cm also triggers the weight tapback
-                        check_fields = ("name", "current_weight_kg", "height_cm",
-                                        "primary_goal", "training_experience", "calorie_target")
-                        for field in check_fields:
-                            if field in fields:
-                                react_field = "current_weight_kg" if field == "height_cm" else field
-                                asyncio.create_task(
-                                    _send_onboarding_reaction(message_guid, react_field)
-                                )
-                                break  # one tapback per message
+                        f = tc.get("input", {}).get("fields", {})
+                        for fld in ("name", "current_weight_kg", "height_cm",
+                                    "primary_goal", "training_experience", "calorie_target"):
+                            if fld in f:
+                                onboarding_field_saved = fld
+                                break
 
             # Rebuild system after tools (onboarding state may have changed)
             in_onboarding = not user.onboarding_completed
@@ -703,26 +733,8 @@ capitalize their name every time you use it."""
 
         # ── Follow-up after tool calls ────────────────────────────────────────
         if just_completed:
-            prefs = user.preferences
-            name = user.name or ""
-            goal = user.primary_goal or ""
-            cal = prefs.calorie_target if prefs else None
-            pro = prefs.protein_target if prefs else None
-            # iMessage-native welcome — no HTML, casual tone
-            goal_line = {"cut": "goal: cut 🔻", "bulk": "goal: bulk 📈",
-                         "maintain": "goal: maintain ⚖️", "performance": "goal: performance ⚡",
-                         "health": "goal: health 🌿"}.get(goal, f"goal: {goal}")
-            if cal and pro:
-                targets_line = f"targets: {cal} cal · {pro}g protein"
-            else:
-                targets_line = "targets: not set yet — say \"set my targets\" when ready"
-            response_text = (
-                f"you're in, {name}. 🎉|||"
-                f"{goal_line}|||"
-                f"{targets_line}|||"
-                f"just text me like you'd text a friend. food, workouts, weight — all of it.|||"
-                f"what did you eat today?"
-            )
+            dash_url = await _dashboard_url(user, db)
+            response_text = await _build_completion_text(user, db, dash_url)
         else:
             logging_tools = {"log_food", "log_exercise", "update_food_entry",
                              "delete_food_entry", "update_exercise_entry"}
@@ -748,41 +760,26 @@ capitalize their name every time you use it."""
             if not response_text:
                 response_text = "done."
 
-        # ── Onboarding completion — fire Balloons 🎉 ─────────────────────────
+        # ── Build the platform-agnostic Response ──────────────────────────────
+        resp = Response.from_text(response_text)
+
         if just_completed:
-            coaching_moment = {"tapback": None, "effect": Effect.BALLOONS, "bubble_index": -1}
-        else:
-            coaching_moment = {"tapback": None, "effect": None, "bubble_index": 0}
-            if not in_onboarding and tool_calls:
-                coaching_moment = _detect_coaching_moment(response_text, tool_calls)
+            resp.effect = FX.CELEBRATE
+            resp.effect_idx = 0  # balloons on "you're in" bubble
+            resp.reaction = React.LOVE
+        elif was_onboarding and onboarding_field_saved:
+            resp.reaction = onboarding_reaction(onboarding_field_saved)
+        elif not in_onboarding and tool_calls:
+            cm = _detect_coaching_moment(response_text, tool_calls)
+            if cm["tapback"]:
+                resp.reaction = _TAPBACK_TO_SEMANTIC.get(cm["tapback"])
+            if cm["effect"]:
+                resp.effect = _EFFECT_TO_SEMANTIC.get(cm["effect"])
+                resp.effect_idx = cm["bubble_index"]
 
-        # ── Tapback reaction on the user's incoming message ───────────────────
-        if coaching_moment["tapback"] and message_guid:
-            logger.info(f"Sending tapback {coaching_moment['tapback']} + effect {coaching_moment['effect']} to {message_guid[:8]}...")
-            asyncio.create_task(
-                bb_send_reaction(message_guid, coaching_moment["tapback"])
-            )
-
-        # ── Send reply — split on ||| for multi-bubble messaging ─────────────
-        bubbles = [b.strip() for b in response_text.split("|||") if b.strip()]
-        if not bubbles:
-            bubbles = ["done."]
-
-        effect = coaching_moment["effect"]
-        effect_idx = coaching_moment["bubble_index"]
-        # Normalise negative index
-        if effect_idx < 0:
-            effect_idx = len(bubbles) + effect_idx
-
-        for i, bubble in enumerate(bubbles):
-            plain = _to_plain(bubble)
-            # Apply iMessage effect to the designated bubble only
-            if effect and i == effect_idx:
-                await bb_send_text_with_effect(chat_guid, plain, effect)
-            else:
-                await bb_send_text(chat_guid, plain)
-            if i < len(bubbles) - 1:
-                await asyncio.sleep(0.35)  # fast enough to feel like rapid texting
+        # ── Send via the iMessage adapter ─────────────────────────────────────
+        adapter = IMessageAdapter(chat_guid, reply_to_guid=message_guid)
+        await adapter.send(resp)
 
         # ── Persist conversation ───────────────────────────────────────────────
         await log_conversation(db, user.id, raw_text, response_text, source_type="imessage")

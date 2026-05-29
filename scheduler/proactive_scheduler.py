@@ -101,22 +101,23 @@ async def _llm_new_user_nudge(user, log, prefs, slot: str, name: str) -> str:
         return ""
 
 
-async def _send(telegram_id: str, text: str):
+async def _send(telegram_id: str, text: str, effect: str = None):
     """
-    Send a proactive message to the user regardless of platform.
-    telegram_id prefixed with "im:" → BlueBubbles iMessage
-    otherwise → Telegram bot
+    Send a proactive message to the user, rendered natively per platform.
+    Splits on ||| for multi-bubble. telegram_id prefixed "im:" → iMessage, else Telegram.
+    effect — optional FX.* applied on iMessage (ignored on Telegram).
     """
+    from core.platform import Response, IMessageAdapter, TelegramAdapter
+    resp = Response.from_text(text)
+    if effect:
+        resp.effect = effect
+        resp.effect_idx = -1
+
     if telegram_id.startswith("im:"):
-        # iMessage user — send via BlueBubbles
-        from bot.imessage_handler import bb_send_text, _to_plain
-        import re
-        # Derive chat GUID from address stored as "im:+15551234567"
-        address = telegram_id[3:]  # strip "im:" prefix
+        address = telegram_id[3:]
         chat_guid = f"iMessage;-;{address}"
-        plain = _to_plain(text)
         try:
-            await bb_send_text(chat_guid, plain)
+            await IMessageAdapter(chat_guid).send(resp)
         except Exception as e:
             logger.error(f"Proactive iMessage send failed → {telegram_id}: {e}")
         return
@@ -124,7 +125,7 @@ async def _send(telegram_id: str, text: str):
     from telegram import Bot
     try:
         bot = Bot(token=TELEGRAM_TOKEN)
-        await bot.send_message(chat_id=telegram_id, text=text, parse_mode="HTML")
+        await TelegramAdapter(bot, int(telegram_id)).send(resp)
         await bot.close()
     except Exception as e:
         logger.error(f"Proactive send failed → {telegram_id}: {e}")
@@ -271,21 +272,28 @@ async def _run_reminders():
                 if user.onboarding_completed and user.created_at:
                     hours_since = _hours_since_created(user)
 
-                    if hours_since <= 72.0:
+                    if hours_since <= 50.0:
                         uid_key = str(user.id)
                         sent_slots = _new_user_sent.get(uid_key, set())
 
+                        # Aggressive day-1 cadence, tapering into day 2.
+                        # (window_start, window_end, slot_key) — strongest at the start.
+                        _windows = [
+                            (0.25, 0.9,  "warmup_15m"),
+                            (1.0,  1.9,  "warmup_1h"),
+                            (2.0,  3.4,  "warmup_2h"),
+                            (4.0,  5.4,  "warmup_4h"),
+                            (7.0,  8.9,  "warmup_7h"),
+                            (10.0, 12.9, "warmup_10h"),
+                            (23.0, 25.5, "warmup_24h"),
+                            (35.0, 37.9, "warmup_36h"),
+                            (47.0, 50.0, "warmup_48h"),
+                        ]
                         new_slot = None
-                        if 1.0 <= hours_since < 2.0 and "warmup_1h" not in sent_slots:
-                            new_slot = "warmup_1h"
-                        elif 3.0 <= hours_since < 4.0 and "warmup_3h" not in sent_slots:
-                            new_slot = "warmup_3h"
-                        elif 5.5 <= hours_since < 7.0 and "warmup_6h" not in sent_slots:
-                            new_slot = "warmup_6h"
-                        elif 23.0 <= hours_since < 25.0 and "warmup_24h" not in sent_slots:
-                            new_slot = "warmup_24h"
-                        elif 47.0 <= hours_since < 50.0 and "warmup_48h" not in sent_slots:
-                            new_slot = "warmup_48h"
+                        for lo, hi, key in _windows:
+                            if lo <= hours_since < hi and key not in sent_slots:
+                                new_slot = key
+                                break
 
                         if new_slot:
                             msg = await _llm_new_user_nudge(user, log, prefs, new_slot, name)

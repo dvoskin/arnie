@@ -27,6 +27,7 @@ from db.queries import (
 )
 from core.llm import chat, chat_follow_up
 from core.context_builder import build_context, fmt_log
+from core.platform import React, onboarding_reaction
 from handlers.onboarding import (
     build_onboarding_system, get_onboarding_keyboard, is_onboarding_complete,
 )
@@ -39,6 +40,25 @@ from scheduler.proactive_scheduler import start_scheduler, stop_scheduler
 
 logger = logging.getLogger(__name__)
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+
+# Semantic reaction → Telegram emoji (Bot API 7.0+; best-effort)
+_TG_REACTION_EMOJI = {
+    React.LOVE: "❤️", React.LIKE: "👍", React.LAUGH: "😂", React.EMPHASIZE: "🔥",
+}
+
+async def _tg_react(bot, chat_id: int, message_id: int, semantic: str) -> None:
+    """Apply a Telegram message reaction. No-ops on older API versions."""
+    emoji = _TG_REACTION_EMOJI.get(semantic)
+    if not emoji:
+        return
+    try:
+        from telegram import ReactionTypeEmoji
+        await bot.set_message_reaction(
+            chat_id=chat_id, message_id=message_id,
+            reaction=[ReactionTypeEmoji(emoji=emoji)],
+        )
+    except Exception:
+        pass  # older python-telegram-bot or not permitted — skip
 
 
 def _fmt(text: str) -> dict:
@@ -754,6 +774,31 @@ async def _run_pipeline(update: Update, context: ContextTypes.DEFAULT_TYPE,
         user = await reload_user(db, user.id)
         if today_log and hasattr(today_log, "id") and today_log.id:
             await db.refresh(today_log)
+
+        # ── Reaction parity with iMessage — react to the user's message ───────
+        try:
+            _react = None
+            if was_onboarding:
+                for tc in tool_calls:
+                    if tc["name"] == "update_profile":
+                        f = tc.get("input", {}).get("fields", {})
+                        for fld in ("name", "current_weight_kg", "height_cm",
+                                    "primary_goal", "training_experience", "calorie_target"):
+                            if fld in f:
+                                _react = onboarding_reaction(
+                                    "current_weight_kg" if fld == "height_cm" else fld
+                                )
+                                break
+            else:
+                # Coaching-moment reactions: PR / goal hit
+                low = (response_text or "").lower()
+                if any(tc["name"] == "log_exercise" for tc in tool_calls) and \
+                   any(s in low for s in ("pr", "personal best", "personal record", "new max")):
+                    _react = React.LOVE
+            if _react:
+                await _tg_react(context.bot, chat_id, update.message.message_id, _react)
+        except Exception:
+            pass
 
         # Rebuild system prompt with updated profile state
         in_onboarding = not user.onboarding_completed
