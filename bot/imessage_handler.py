@@ -350,9 +350,16 @@ async def run_imessage_pipeline(address: str, chat_guid: str, raw_text: str):
         if not response_text:
             response_text = "Got it."
 
-        # ── Send reply ────────────────────────────────────────────────────────
-        plain = _to_plain(response_text)
-        await bb_send_text(chat_guid, plain)
+        # ── Send reply — split on ||| for multi-bubble messaging ─────────────
+        bubbles = [b.strip() for b in response_text.split("|||") if b.strip()]
+        if not bubbles:
+            bubbles = ["Got it."]
+
+        for i, bubble in enumerate(bubbles):
+            plain = _to_plain(bubble)
+            await bb_send_text(chat_guid, plain)
+            if i < len(bubbles) - 1:
+                await asyncio.sleep(0.6)  # slightly longer pause on iMessage
 
         # ── Persist conversation ───────────────────────────────────────────────
         await log_conversation(db, user.id, raw_text, response_text, source_type="imessage")

@@ -338,6 +338,24 @@ SKILL RESPONSES — activate the correct format when these intents are detected:
   Agility drills: T-drill, 5-10-5 shuttle, ladder in/out, box drill. Plyos: squat jump → box jump → depth jump → single-leg bounds.
   In-season: reduce volume 30–40%, maintain intensity 1–2×/week. Off-season: build base, address weaknesses.
 
+MULTI-BUBBLE MESSAGING — split responses into short separate messages using ||| between each bubble:
+Break almost every response into 2–3 bubbles. Each bubble = 1 sentence, max 2.
+Think of it as texting a friend — short bursts, not paragraphs.
+
+Examples:
+  Food log:    "Grilled chicken — 280 cal.|||That puts you at 680/1,800 today."
+  With note:   "Down. Chicken and rice — 580 cal.|||You're at 1,080/1,800.|||Protein's at 62g — keep it up."
+  Question:    "Around 160g protein is your target.|||That's roughly 0.8g per pound of bodyweight."
+  Workout:     "🏋️ <b>Bench Press</b> · 4×5 @ <b>185</b> lb|||Up 10lb from last week — that's the progression."
+  Simple ack:  "Got it." ← single bubble, no split needed
+
+Rules:
+- Use ||| between bubbles, never at the start or end
+- Never split mid-sentence — each bubble must be a complete thought
+- 2 bubbles is the default. 3 max. Never 4+.
+- Very short responses (one sentence) → no split needed
+- Never split onboarding questions — keep those as one message
+
 HARD RULES — NEVER VIOLATE:
 - NEVER use --- (horizontal rules)
 - NEVER use ## or ### (headers)
@@ -709,19 +727,27 @@ async def _run_pipeline(update: Update, context: ContextTypes.DEFAULT_TYPE,
     if not response_text:
         response_text = "Got it."
 
-    # ── Send response ─────────────────────────────────────────────────────────
-    fmt_kwargs = _fmt(response_text)
+    # ── Send response — split on ||| for multi-bubble messaging ─────────────
+    bubbles = [b.strip() for b in response_text.split("|||") if b.strip()]
+    if not bubbles:
+        bubbles = ["Got it."]
 
-    if just_completed:
-        # Remove any lingering reply keyboard when onboarding finishes
-        fmt_kwargs["reply_markup"] = ReplyKeyboardRemove()
-    elif in_onboarding:
-        # Attach the quick-reply keyboard for the upcoming question
-        kb = get_onboarding_keyboard(user)
-        if kb:
-            fmt_kwargs["reply_markup"] = kb
+    for i, bubble in enumerate(bubbles):
+        fmt_kwargs = _fmt(bubble)
+        is_last = (i == len(bubbles) - 1)
 
-    await update.message.reply_text(**fmt_kwargs)
+        if just_completed and is_last:
+            fmt_kwargs["reply_markup"] = ReplyKeyboardRemove()
+        elif in_onboarding and is_last:
+            kb = get_onboarding_keyboard(user)
+            if kb:
+                fmt_kwargs["reply_markup"] = kb
+
+        await update.message.reply_text(**fmt_kwargs)
+
+        # Small pause between bubbles so they don't arrive as one clump
+        if not is_last:
+            await asyncio.sleep(0.4)
 
     # ── Post-onboarding: send dashboard as a second message with inline button ─
     if just_completed:
