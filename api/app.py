@@ -405,10 +405,11 @@ async def imessage_webhook(request: Request):
         logger.info("BB webhook: skipping group chat or no chats")
         return {"ok": True}
 
-    handle  = data.get("handle", {})
-    address = handle.get("address", "") if handle else ""
-    text    = (data.get("text") or "").strip()
-    chat_guid = chats[0].get("guid", "")
+    handle       = data.get("handle", {})
+    address      = handle.get("address", "") if handle else ""
+    text         = (data.get("text") or "").strip()
+    chat_guid    = chats[0].get("guid", "")
+    message_guid = data.get("guid", "")   # needed for tapback reactions
 
     if not address or not text or not chat_guid:
         logger.info(f"BB webhook: skipping — missing field address={bool(address)} text={bool(text)} chat_guid={bool(chat_guid)}")
@@ -417,7 +418,7 @@ async def imessage_webhook(request: Request):
     # Debounce then fire pipeline — batches rapid multi-message inputs
     import asyncio
     from bot.imessage_handler import handle_imessage
-    asyncio.create_task(handle_imessage(address, chat_guid, text))
+    asyncio.create_task(handle_imessage(address, chat_guid, text, message_guid=message_guid))
 
     return {"ok": True}
 

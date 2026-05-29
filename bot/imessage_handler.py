@@ -63,6 +63,58 @@ def _get_http() -> httpx.AsyncClient:
     return _http
 
 
+# ── iMessage effect identifiers ───────────────────────────────────────────────
+# Pass as effectId in the message payload. Requires BlueBubbles Private API
+# mode OR works without it on some macOS versions — degrade gracefully if not.
+
+class Effect:
+    SLAM       = "com.apple.MobileSMS.expressivesend.impact"
+    LOUD       = "com.apple.MobileSMS.expressivesend.loud"
+    GENTLE     = "com.apple.MobileSMS.expressivesend.gentle"
+    INVISIBLE  = "com.apple.MobileSMS.expressivesend.invisibleink"
+    ECHO       = "com.apple.MobileSMS.expressivesend.echo"       # confetti
+    BALLOONS   = "com.apple.MobileSMS.expressivesend.balloons"
+    FIREWORKS  = "com.apple.MobileSMS.expressivesend.fireworks"
+    HEART      = "com.apple.MobileSMS.expressivesend.heart"
+    LASERS     = "com.apple.MobileSMS.expressivesend.lasers"
+    SPOTLIGHT  = "com.apple.MobileSMS.expressivesend.spotlight"
+    SHOOTING   = "com.apple.MobileSMS.expressivesend.shootingstar"
+
+
+# ── Tapback reaction codes ─────────────────────────────────────────────────────
+class Tapback:
+    LOVE      = 2000   # ❤️
+    LIKE      = 2001   # 👍
+    DISLIKE   = 2002   # 👎
+    LAUGH     = 2003   # 😂
+    EMPHASIZE = 2004   # ‼️
+    QUESTION  = 2005   # ❓
+
+
+async def bb_send_reaction(message_guid: str, tapback: int) -> bool:
+    """
+    React to an incoming message with a tapback.
+    message_guid — the guid of the MESSAGE to react to (from webhook payload data.guid)
+    tapback      — one of the Tapback constants
+    """
+    if not _BB_URL or not _BB_PASSWORD or not message_guid:
+        return False
+    try:
+        resp = await _get_http().post(
+            f"{_BB_URL}/api/v1/message/{message_guid}/react",
+            params={"password": _BB_PASSWORD},
+            json={"tapback": tapback, "remove": False},
+            headers={"Content-Type": "application/json"},
+        )
+        if resp.status_code not in (200, 201):
+            logger.warning(f"BlueBubbles reaction failed: {resp.status_code} {resp.text[:120]}")
+            return False
+        return True
+    except Exception as e:
+        logger.warning(f"BlueBubbles reaction error: {e}")
+        return False
+
+
 async def bb_send_text(chat_guid: str, text: str) -> bool:
     """
     Send a plain-text message to an iMessage chat via BlueBubbles.
@@ -94,6 +146,70 @@ async def bb_send_text(chat_guid: str, text: str) -> bool:
             logger.error(f"BlueBubbles HTTP error: {e}")
             success = False
     return success
+
+
+async def bb_send_text_with_effect(chat_guid: str, text: str, effect: str) -> bool:
+    """
+    Send a single message bubble with an iMessage screen/bubble effect.
+    Falls back to plain send if BlueBubbles rejects the effect (e.g. Private API not active).
+    """
+    if not _BB_URL or not _BB_PASSWORD:
+        return False
+    try:
+        resp = await _get_http().post(
+            f"{_BB_URL}/api/v1/message/text",
+            params={"password": _BB_PASSWORD},
+            json={
+                "chatGuid": chat_guid,
+                "message": text,
+                "tempGuid": str(uuid.uuid4()),
+                "effectId": effect,
+            },
+            headers={"Content-Type": "application/json"},
+        )
+        if resp.status_code not in (200, 201):
+            logger.warning(f"BlueBubbles effect send failed ({effect}): falling back to plain send")
+            return await bb_send_text(chat_guid, text)
+        return True
+    except Exception as e:
+        logger.warning(f"BlueBubbles effect error: {e} — falling back to plain send")
+        return await bb_send_text(chat_guid, text)
+
+
+# ── Reaction & effect detection ───────────────────────────────────────────────
+
+_PR_SIGNALS = {"pr", "personal best", "personal record", "new max", "all-time", "🔥", "that's a pr"}
+_WIN_SIGNALS = {"hit your goal", "hit your target", "you're there", "nailed it", "crushed it"}
+_MOMENTUM_SIGNALS = {"clean day", "on track", "on pace", "solid", "locked in"}
+
+
+def _detect_coaching_moment(response_text: str, tool_calls: list) -> dict:
+    """
+    Analyse the response and tool calls to decide if a reaction or effect is warranted.
+
+    Returns:
+        {
+          "tapback":  int | None,    — tapback code to react to the user's message
+          "effect":   str | None,    — effect to apply to the KEY response bubble
+          "bubble_index": int,       — which bubble gets the effect (0 = first, -1 = last)
+        }
+    """
+    text_lower = response_text.lower()
+    has_exercise = any(tc["name"] == "log_exercise" for tc in tool_calls)
+
+    # PR detected → ❤️ tapback + Slam effect on the PR bubble
+    if has_exercise and any(s in text_lower for s in _PR_SIGNALS):
+        return {"tapback": Tapback.LOVE, "effect": Effect.SLAM, "bubble_index": 0}
+
+    # Goal / target hit → ❤️ tapback + Balloons
+    if any(s in text_lower for s in _WIN_SIGNALS):
+        return {"tapback": Tapback.LOVE, "effect": Effect.BALLOONS, "bubble_index": -1}
+
+    # Consistent momentum acknowledgement → 👍 tapback, no effect
+    if any(s in text_lower for s in _MOMENTUM_SIGNALS):
+        return {"tapback": Tapback.LIKE, "effect": None, "bubble_index": 0}
+
+    return {"tapback": None, "effect": None, "bubble_index": 0}
 
 
 def _split_message(text: str, max_len: int = 1800) -> list[str]:
@@ -191,26 +307,31 @@ from core.prompts import build_arnie_system as _build_arnie_system
 from bot.telegram_handler import _welcome_message, _calc_targets
 
 
-async def handle_imessage(address: str, chat_guid: str, raw_text: str) -> None:
+async def handle_imessage(address: str, chat_guid: str, raw_text: str,
+                          message_guid: str = "") -> None:
     """
     Debounced entry point — batches rapid back-to-back messages from the same
     sender into one pipeline call so replies don't multiply (2 msgs → 4-6 bubbles).
+    message_guid is passed through for tapback reactions.
     """
     user_key = f"im:{address}"
 
     async def _run(combined_text: str):
-        await run_imessage_pipeline(address, chat_guid, combined_text)
+        await run_imessage_pipeline(address, chat_guid, combined_text,
+                                    message_guid=message_guid)
 
     await _debounce(user_key, raw_text, _run, delay=2.0)
 
 
-async def run_imessage_pipeline(address: str, chat_guid: str, raw_text: str):
+async def run_imessage_pipeline(address: str, chat_guid: str, raw_text: str,
+                                message_guid: str = ""):
     """
     Full Arnie pipeline for an incoming iMessage.
 
-    address   — sender phone/email, e.g. "+15551234567"
-    chat_guid — BlueBubbles chat GUID, e.g. "iMessage;-;+15551234567"
-    raw_text  — message text
+    address      — sender phone/email, e.g. "+15551234567"
+    chat_guid    — BlueBubbles chat GUID, e.g. "iMessage;-;+15551234567"
+    raw_text     — message text
+    message_guid — BlueBubbles message GUID for tapback reactions (optional)
     """
     im_id = _im_user_id(address)
 
@@ -362,16 +483,37 @@ async def run_imessage_pipeline(address: str, chat_guid: str, raw_text: str):
         if not response_text:
             response_text = "Got it."
 
+        # ── Detect coaching moment (PR, goal, momentum) ───────────────────────
+        coaching_moment = {"tapback": None, "effect": None, "bubble_index": 0}
+        if not in_onboarding and tool_calls:
+            coaching_moment = _detect_coaching_moment(response_text, tool_calls)
+
+        # ── Tapback reaction on the user's incoming message ───────────────────
+        if coaching_moment["tapback"] and message_guid:
+            asyncio.create_task(
+                bb_send_reaction(message_guid, coaching_moment["tapback"])
+            )
+
         # ── Send reply — split on ||| for multi-bubble messaging ─────────────
         bubbles = [b.strip() for b in response_text.split("|||") if b.strip()]
         if not bubbles:
             bubbles = ["Got it."]
 
+        effect = coaching_moment["effect"]
+        effect_idx = coaching_moment["bubble_index"]
+        # Normalise negative index
+        if effect_idx < 0:
+            effect_idx = len(bubbles) + effect_idx
+
         for i, bubble in enumerate(bubbles):
             plain = _to_plain(bubble)
-            await bb_send_text(chat_guid, plain)
+            # Apply iMessage effect to the designated bubble only
+            if effect and i == effect_idx:
+                await bb_send_text_with_effect(chat_guid, plain, effect)
+            else:
+                await bb_send_text(chat_guid, plain)
             if i < len(bubbles) - 1:
-                await asyncio.sleep(0.6)  # slightly longer pause on iMessage
+                await asyncio.sleep(0.6)
 
         # ── Persist conversation ───────────────────────────────────────────────
         await log_conversation(db, user.id, raw_text, response_text, source_type="imessage")
