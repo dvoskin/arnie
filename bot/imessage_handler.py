@@ -27,6 +27,8 @@ import hashlib
 import hmac
 from typing import Optional
 
+import uuid
+
 import httpx
 
 from db.database import AsyncSessionLocal
@@ -76,7 +78,11 @@ async def bb_send_text(chat_guid: str, text: str) -> bool:
             resp = await _get_http().post(
                 f"{_BB_URL}/api/v1/message/text",
                 params={"password": _BB_PASSWORD},
-                json={"chatGuid": chat_guid, "message": chunk},
+                json={
+                    "chatGuid": chat_guid,
+                    "message": chunk,
+                    "tempGuid": str(uuid.uuid4()),
+                },
                 headers={"Content-Type": "application/json"},
             )
             if resp.status_code not in (200, 201):
