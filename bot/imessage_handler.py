@@ -492,34 +492,17 @@ async def _complete_im_onboarding(chat_guid, user, db, raw_text, message_guid,
     await log_conversation(db, user.id, raw_text, full, source_type="imessage")
 
 
-async def _build_completion_text(user, db, dash_url: str = "") -> str:
-    """iMessage-native onboarding welcome — casual, multi-bubble, no HTML."""
-    prefs = user.preferences
+async def _build_completion_text(user, db) -> str:
+    """
+    iMessage onboarding welcome — short and warm. 3 bubbles, no goal label,
+    no targets line, no dashboard (the dashboard is sent after their first log).
+    """
     name = user.name or ""
-    goal = user.primary_goal or ""
-    cal = prefs.calorie_target if prefs else None
-    pro = prefs.protein_target if prefs else None
-    goal_line = {
-        "cut": "goal: cut 🔻", "bulk": "goal: bulk 📈", "maintain": "goal: maintain ⚖️",
-        "performance": "goal: performance ⚡", "health": "goal: health 🌿",
-    }.get(goal, f"goal: {goal}")
-    if cal and pro:
-        targets_line = f"{cal} cal · {pro}g protein a day. that's the target."
-    else:
-        # targets come once we collect age/sex/height via nudges
-        targets_line = "i'll dial in your exact numbers as i learn a bit more about you."
-    bubbles = [
-        f"you're in, {name}. 🎉",
-        goal_line,
-        targets_line,
-        "just text me like a friend. food, workouts, weight, whatever.",
-        "i'll handle the tracking and keep you honest.",
-    ]
-    if dash_url:
-        bubbles.append("your dashboard's live too — everything you log shows up here 📊")
-        bubbles.append(dash_url)
-    bubbles.append("what'd you eat today? let's start there.")
-    return "|||".join(bubbles)
+    return (
+        f"you're in, {name}. 🎉|||"
+        f"just text me whatever you eat or train and i'll handle the rest.|||"
+        f"what've you had today? let's start there."
+    )
 
 
 # Per-user async locks — prevents two pipelines running simultaneously for the
@@ -744,8 +727,7 @@ capitalize their name every time you use it."""
 
         # ── Follow-up after tool calls ────────────────────────────────────────
         if just_completed:
-            dash_url = await _dashboard_url(user, db)
-            response_text = await _build_completion_text(user, db, dash_url)
+            response_text = await _build_completion_text(user, db)
         else:
             logging_tools = {"log_food", "log_exercise", "update_food_entry",
                              "delete_food_entry", "update_exercise_entry"}
@@ -791,6 +773,18 @@ capitalize their name every time you use it."""
             resp.reaction = moment.reaction
             resp.effect = moment.effect
             resp.effect_idx = moment.effect_idx
+
+        # ── Dashboard link after their FIRST food/workout log (once) ──────────
+        if not in_onboarding and tool_calls:
+            logged = any(tc["name"] in ("log_food", "log_exercise") for tc in tool_calls)
+            sent = set(s for s in (user.nudges_sent or "").split(",") if s)
+            if logged and "dashboard" not in sent:
+                dash_url = await _dashboard_url(user, db)
+                resp.bubbles.append("oh — your dashboard's live too. everything you log shows up here 📊")
+                resp.bubbles.append(dash_url)
+                sent.add("dashboard")
+                user.nudges_sent = ",".join(sorted(sent))
+                await db.commit()
 
         # ── Stop typing, then send via the iMessage adapter ───────────────────
         await bb_set_typing(chat_guid, False)
