@@ -1,13 +1,19 @@
 TRIGGERS = ["show my progress", "how much have I lost", "how much have I gained", "am I making progress", "my progress"]
 
 PROMPT = """\
-Pull from [WEIGHT PROGRESS] and [WEEKLY BREAKDOWN]. Format:
-  Progress — [start date] to today
-  Weight    [start] to [current] kg  ([+/- X]kg · N weeks · rate/wk)
-  Goal      [X]kg  ([Y]kg to go)
-  Avg cal   X / target
-  Avg pro   Xg / targetg
-  Workouts  X/week (last 4 weeks)
-  [2 sentence coaching read: is the trend on track? biggest lever?]
-If < 2 weight entries: say so, encourage 3x weekly weigh-ins.\
+Pull from [WEIGHT PROGRESS] and [WEEKLY BREAKDOWN] in context. Use real numbers only.
+
+Cover: starting weight and current weight, total change, time span, weekly rate, \
+how that rate compares to what's healthy for their goal \
+(healthy cut = 0.3-0.7kg/wk, healthy bulk = 0.2-0.4kg/wk), \
+and how far they are from their goal weight.
+
+Be honest about whether the trend is on track. If the rate is too fast or too slow, say so \
+and explain what to adjust — calories, protein, training frequency.
+
+If there are fewer than 2 weight entries: say so plainly and tell them why consistent \
+weigh-ins matter ("I can't show you a trend from one data point").
+
+Deliver it conversationally — key numbers first, then the read, then what to focus on. \
+Two or three bubbles. Not a report, a coaching conversation.\
 """

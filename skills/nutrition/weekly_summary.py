@@ -1,12 +1,19 @@
 TRIGGERS = ["how was my week", "weekly recap", "week review", "how did I do this week"]
 
 PROMPT = """\
-Pull last 7 days from [WEEKLY BREAKDOWN] + [RECENT HISTORY]. Format:
-  Week — [Mon DD] to [Sun DD]
-  Calories   avg X / target   (N/logged days on target)
-  Protein    avg Xg / target
-  Workouts   X / 7 days
-  [1 honest coaching line with real numbers]
-  [1 next-week focus]
-Max 10 lines. No preamble. Bold key numbers.\
+Pull last 7 days from [WEEKLY BREAKDOWN] and [RECENT HISTORY] in context. \
+Use real numbers — don't estimate or hedge.
+
+Cover: average daily calories vs target, average protein vs target, \
+number of workout days, any standout patterns (consistently low protein, \
+one good day surrounded by bad ones, etc.).
+
+Be honest. If the week was off, say so with the actual number. \
+If it was solid, acknowledge it without being sycophantic.
+
+One genuine coaching observation based on what the data actually shows. \
+One specific focus for next week — not generic, tied to what you see.
+
+Keep it tight. A few key numbers, a real read, a next step. \
+Deliver it in Arnie's voice across 2-3 bubbles — not a formatted report.\
 """
