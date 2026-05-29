@@ -449,18 +449,28 @@ async def _send_onboarding_reaction(message_guid: str, field_updated: str) -> No
         await bb_send_reaction(message_guid, tapback)
 
 
+# Per-user async locks — prevents two pipelines running simultaneously for the
+# same user (fixes duplicate question bug when two webhooks arrive before first DB commit)
+_user_pipeline_locks: dict[str, asyncio.Lock] = {}
+
+
 async def handle_imessage(address: str, chat_guid: str, raw_text: str,
                           message_guid: str = "") -> None:
     """
     Debounced entry point — batches rapid back-to-back messages from the same
-    sender into one pipeline call so replies don't multiply (2 msgs → 4-6 bubbles).
-    message_guid is passed through for tapback reactions.
+    sender into one pipeline call so replies don't multiply.
+    Per-user lock ensures only one pipeline runs at a time per user.
     """
     user_key = f"im:{address}"
 
+    if user_key not in _user_pipeline_locks:
+        _user_pipeline_locks[user_key] = asyncio.Lock()
+    lock = _user_pipeline_locks[user_key]
+
     async def _run(combined_text: str):
-        await run_imessage_pipeline(address, chat_guid, combined_text,
-                                    message_guid=message_guid)
+        async with lock:
+            await run_imessage_pipeline(address, chat_guid, combined_text,
+                                        message_guid=message_guid)
 
     await _debounce(user_key, raw_text, _run, delay=2.0)
 
@@ -576,14 +586,17 @@ async def run_imessage_pipeline(address: str, chat_guid: str, raw_text: str,
         else:
             today_log = None
             system = build_onboarding_system(user)
-            # Inject voice + bubble rules into onboarding so it sounds natural
-            from core.prompts.arnie import PERSONALITY_ANCHOR
-            system += (
-                "\n\n[PLATFORM: iMessage — plain text only. No HTML. No keyboard buttons.]"
-                "\n\nSPLIT responses using ||| between bubbles — one sentence per bubble."
-                "\nlowercase. casual. like texting."
-                f"\n\n{PERSONALITY_ANCHOR}"
-            )
+            system += """
+
+[iMessage — plain text only. No HTML tags. No bold. No buttons.]
+
+MESSAGING STYLE — this is non-negotiable:
+split every response into separate bubbles using ||| between them.
+each bubble = one short sentence. sometimes a fragment. like rapid texts.
+vary where emojis land — not always at the end, not always first bubble, sometimes none.
+make it feel like a real person is typing, not a system running a script.
+lowercase always. no em dashes. no corporate language.
+capitalize their name every time you use it."""
 
         # ── Conversation history ───────────────────────────────────────────────
         messages = await _build_messages(db, user.id, raw_text)
