@@ -410,23 +410,43 @@ async def _handle_im_whoop(chat_guid: str, user, db) -> bool:
 
 _INTRO_BUBBLES = [
     "hey 👋",
-    "i'm arnie, your AI fitness and nutrition coach.",
-    "i track food, workouts, and weight — all just by texting.",
-    "no app to download. no forms. just this.",
-    "takes about 2 minutes to get set up.",
+    "i'm arnie.",
+    "your AI fitness and nutrition coach. no app, no spreadsheets, just texts.",
+    "i track what you eat, how you train, and how your body's responding.",
+    "let's get you set up. takes 2 minutes.",
     "what's your first name?",
 ]
 
 
 async def _send_first_contact_intro(chat_guid: str) -> None:
     """
-    Send Arnie's intro sequence to a brand new iMessage user before
-    onboarding starts. Rapid-fire bubbles with short delays.
+    Send Arnie's intro sequence to a brand new iMessage user.
+    Rapid-fire bubbles — feels like a real person introducing themselves.
     """
     for i, bubble in enumerate(_INTRO_BUBBLES):
-        await bb_send_text(chat_guid, bubble)
+        if i == 0:
+            # First bubble gets a Loud effect — makes an entrance
+            await bb_send_text_with_effect(chat_guid, bubble, Effect.LOUD)
+        else:
+            await bb_send_text(chat_guid, bubble)
         if i < len(_INTRO_BUBBLES) - 1:
             await asyncio.sleep(0.4)
+
+
+async def _send_onboarding_reaction(message_guid: str, field_updated: str) -> None:
+    """Fire a tapback reaction based on what the user just told us during onboarding."""
+    if not message_guid:
+        return
+    reactions = {
+        "name":                Tapback.LOVE,    # ❤️ when they give their name
+        "current_weight_kg":   Tapback.LIKE,    # 👍 height/weight
+        "primary_goal":        Tapback.LIKE,    # 👍 goal
+        "training_experience": Tapback.LIKE,    # 👍 experience
+        "calorie_target":      Tapback.LOVE,    # ❤️ targets set — big moment
+    }
+    tapback = reactions.get(field_updated)
+    if tapback:
+        await bb_send_reaction(message_guid, tapback)
 
 
 async def handle_imessage(address: str, chat_guid: str, raw_text: str,
@@ -615,6 +635,20 @@ async def run_imessage_pipeline(address: str, chat_guid: str, raw_text: str,
             if today_log and hasattr(today_log, "id") and today_log.id:
                 await db.refresh(today_log)
 
+            # ── Onboarding tapback reactions ──────────────────────────────────
+            # React to the user's message based on what profile field they just set
+            if was_onboarding and message_guid:
+                for tc in tool_calls:
+                    if tc["name"] == "update_profile":
+                        fields = tc.get("input", {}).get("fields", {})
+                        for field in ("name", "current_weight_kg", "primary_goal",
+                                      "training_experience", "calorie_target"):
+                            if field in fields:
+                                asyncio.create_task(
+                                    _send_onboarding_reaction(message_guid, field)
+                                )
+                                break  # one tapback per message
+
             # Rebuild system after tools (onboarding state may have changed)
             in_onboarding = not user.onboarding_completed
 
@@ -624,12 +658,24 @@ async def run_imessage_pipeline(address: str, chat_guid: str, raw_text: str,
         # ── Follow-up after tool calls ────────────────────────────────────────
         if just_completed:
             prefs = user.preferences
-            response_text = _welcome_message(
-                name=user.name or "",
-                has_targets=bool(prefs and prefs.calorie_target),
-                primary_goal=user.primary_goal,
-                calorie_target=prefs.calorie_target if prefs else None,
-                protein_target=prefs.protein_target if prefs else None,
+            name = user.name or ""
+            goal = user.primary_goal or ""
+            cal = prefs.calorie_target if prefs else None
+            pro = prefs.protein_target if prefs else None
+            # iMessage-native welcome — no HTML, casual tone
+            goal_line = {"cut": "goal: cut 🔻", "bulk": "goal: bulk 📈",
+                         "maintain": "goal: maintain ⚖️", "performance": "goal: performance ⚡",
+                         "health": "goal: health 🌿"}.get(goal, f"goal: {goal}")
+            if cal and pro:
+                targets_line = f"targets: {cal} cal · {pro}g protein"
+            else:
+                targets_line = "targets: not set yet — say \"set my targets\" when ready"
+            response_text = (
+                f"you're in, {name}. 🎉|||"
+                f"{goal_line}|||"
+                f"{targets_line}|||"
+                f"just text me like you'd text a friend. food, workouts, weight — all of it.|||"
+                f"what did you eat today?"
             )
         else:
             logging_tools = {"log_food", "log_exercise", "update_food_entry",
@@ -656,10 +702,13 @@ async def run_imessage_pipeline(address: str, chat_guid: str, raw_text: str,
             if not response_text:
                 response_text = "done."
 
-        # ── Detect coaching moment (PR, goal, momentum) ───────────────────────
-        coaching_moment = {"tapback": None, "effect": None, "bubble_index": 0}
-        if not in_onboarding and tool_calls:
-            coaching_moment = _detect_coaching_moment(response_text, tool_calls)
+        # ── Onboarding completion — fire Balloons 🎉 ─────────────────────────
+        if just_completed:
+            coaching_moment = {"tapback": None, "effect": Effect.BALLOONS, "bubble_index": -1}
+        else:
+            coaching_moment = {"tapback": None, "effect": None, "bubble_index": 0}
+            if not in_onboarding and tool_calls:
+                coaching_moment = _detect_coaching_moment(response_text, tool_calls)
 
         # ── Tapback reaction on the user's incoming message ───────────────────
         if coaching_moment["tapback"] and message_guid:
