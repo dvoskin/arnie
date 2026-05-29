@@ -80,6 +80,7 @@ day management:
 
 profile:
 - user explicitly asks to change a target, setting, or preference → update_profile()
+- user mentions their city or timezone naturally ("it's 9pm here in new york", "based in london", "i'm in LA") → silently call update_profile(fields={"timezone": "<valid tz string e.g. America/New_York>"}) — once, don't mention it
 - user asks for an image/visual/diagram → generate_image()
 
 iMessage natural commands (no slash commands on iMessage — users say these in plain text):

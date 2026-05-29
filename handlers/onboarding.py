@@ -20,8 +20,7 @@ Diet/injuries NOT collected during onboarding.
 from db.models import User
 from core.prompts.onboarding import ONBOARDING_BASE as _ONBOARDING_BASE
 
-_ESSENTIAL = ["name", "age", "sex", "height_cm", "current_weight_kg",
-              "primary_goal", "timezone"]
+_ESSENTIAL = ["name", "age", "sex", "height_cm", "current_weight_kg", "primary_goal"]
 
 
 def build_onboarding_system(user: User) -> str:
@@ -72,10 +71,7 @@ def build_onboarding_system(user: User) -> str:
          "how experienced are you — beginner, intermediate, or advanced?",
          user.training_experience or ""),
 
-        ("timezone",
-         has("timezone") and user.timezone != "UTC",
-         "what city are you in? i'll use it to time my check-ins.",
-         user.timezone or ""),
+        # timezone removed from onboarding — detected from conversation context
     ]
 
     collected_lines = []
@@ -172,10 +168,6 @@ def get_onboarding_keyboard(user: User):
             one_time_keyboard=True,
             resize_keyboard=True,
         )
-
-    # Step 7: timezone — free text
-    if not has("timezone") or user.timezone == "UTC":
-        return None
 
     # Targets step — buttons
     if prefs and not getattr(prefs, "calorie_target", None):
