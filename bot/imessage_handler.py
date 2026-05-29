@@ -348,9 +348,11 @@ async def _handle_im_reset(chat_guid: str, user, db) -> bool:
     """Full account wipe — returns True so pipeline skips normal processing."""
     from db.queries import reset_all_user_data
     from memory.memory_manager import init_memory
-    await reset_all_user_data(db, user.id)
+    telegram_id = user.telegram_id  # save before reset — object goes stale after commit
+    user_id = user.id
+    await reset_all_user_data(db, user_id)
     await db.commit()
-    await init_memory(user.telegram_id)
+    await init_memory(telegram_id)
     bubbles = [
         "done. everything's wiped.",
         "fresh start.",
