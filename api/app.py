@@ -415,6 +415,21 @@ async def imessage_webhook(request: Request):
         logger.info(f"BB webhook: skipping — missing field address={bool(address)} text={bool(text)} chat_guid={bool(chat_guid)}")
         return {"ok": True}
 
+    # Deduplicate — BlueBubbles fires twice when Private API + polling both trigger
+    # for the same message. Drop the duplicate within a 30s window.
+    if message_guid:
+        import time
+        _seen = getattr(app.state, "_seen_guids", {})
+        now = time.time()
+        # Purge entries older than 30s
+        _seen = {k: v for k, v in _seen.items() if now - v < 30}
+        if message_guid in _seen:
+            logger.info(f"BB webhook: duplicate guid {message_guid[:8]}... skipped")
+            app.state._seen_guids = _seen
+            return {"ok": True}
+        _seen[message_guid] = now
+        app.state._seen_guids = _seen
+
     # Debounce then fire pipeline — batches rapid multi-message inputs
     import asyncio
     from bot.imessage_handler import handle_imessage
