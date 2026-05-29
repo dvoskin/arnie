@@ -69,6 +69,19 @@ async def get_log_by_date(db: AsyncSession, user_id: int, target_date: date) -> 
     return result.scalar_one_or_none()
 
 
+async def get_or_create_log_for_date(
+    db: AsyncSession, user_id: int, target_date: date
+) -> DailyLog:
+    """Get or create a DailyLog for any specific date (used for past-day logging)."""
+    log = await get_log_by_date(db, user_id, target_date)
+    if not log:
+        log = DailyLog(user_id=user_id, date=target_date)
+        db.add(log)
+        await db.commit()
+        log = await get_log_by_date(db, user_id, target_date)
+    return log
+
+
 async def get_or_create_today_log(db: AsyncSession, user_id: int,
                                   user_timezone: str = "UTC") -> DailyLog:
     log = await get_today_log(db, user_id, user_timezone)

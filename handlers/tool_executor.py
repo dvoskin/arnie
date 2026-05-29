@@ -15,11 +15,45 @@ from db.queries import (
     delete_food_entry as q_delete_food_entry,
     update_exercise_entry as q_update_exercise_entry,
     delete_exercise_entry as q_delete_exercise_entry,
+    get_or_create_log_for_date,
 )
 from handlers.onboarding import is_onboarding_complete
 from memory.memory_manager import append_memory_update, init_memory
 
 logger = logging.getLogger(__name__)
+
+
+def _parse_log_date(date_str: str | None, user_timezone: str = "UTC"):
+    """
+    Parse a natural or explicit date string into a date object.
+    Returns None if date_str is None (meaning use today's log).
+    Supports: "yesterday", "2 days ago", "3 days ago", "YYYY-MM-DD"
+    """
+    if not date_str:
+        return None
+    import pytz
+    from datetime import date, timedelta, datetime as dt
+    try:
+        tz = pytz.timezone(user_timezone or "UTC")
+        today = dt.now(tz).date()
+    except Exception:
+        from datetime import date
+        today = date.today()
+
+    s = date_str.strip().lower()
+    if s == "yesterday":
+        return today - timedelta(days=1)
+    if s in ("2 days ago", "two days ago"):
+        return today - timedelta(days=2)
+    if s in ("3 days ago", "three days ago"):
+        return today - timedelta(days=3)
+    # Try YYYY-MM-DD
+    try:
+        from datetime import date as dclass
+        return dclass.fromisoformat(date_str.strip())
+    except ValueError:
+        pass
+    return None
 
 
 async def execute_tool_calls(
@@ -58,9 +92,16 @@ async def _dispatch(name, inp, user, today_log, db, source_type):  # noqa: C901
             return "Skipped — day log not yet created (onboarding incomplete)"
 
     if name == "log_food":
-        entry = await add_food_entry(
+        # Support logging to a past date
+        past_date = _parse_log_date(inp.get("date"), getattr(user, "timezone", "UTC"))
+        if past_date:
+            target_log = await get_or_create_log_for_date(db, user.id, past_date)
+        else:
+            target_log = today_log
+
+        await add_food_entry(
             db,
-            today_log.id,
+            target_log.id,
             raw_input=str(inp),
             parsed_food_name=inp.get("food_name"),
             quantity=inp.get("quantity"),
@@ -73,11 +114,21 @@ async def _dispatch(name, inp, user, today_log, db, source_type):  # noqa: C901
             confidence_score=inp.get("confidence", 0.8),
             source_type=source_type,
         )
-        # Refresh daily totals on the in-memory object
-        await db.refresh(today_log)
-        return f"Logged {inp.get('food_name')}: {inp.get('calories')} cal"
+        await db.refresh(target_log)
+        date_label = f" (for {past_date})" if past_date else ""
+        return (
+            f"Logged {inp.get('food_name')}: {inp.get('calories')} cal{date_label}. "
+            f"Day total: {target_log.total_calories:.0f} cal, "
+            f"{target_log.total_protein:.0f}g protein"
+        )
 
     elif name == "log_exercise":
+        past_date = _parse_log_date(inp.get("date"), getattr(user, "timezone", "UTC"))
+        if past_date:
+            target_log = await get_or_create_log_for_date(db, user.id, past_date)
+        else:
+            target_log = today_log
+
         weight = inp.get("weight")
         weight_unit = inp.get("weight_unit", "lbs")
         weight_kg = (weight * 0.453592) if (weight and weight_unit == "lbs") else weight
@@ -85,7 +136,7 @@ async def _dispatch(name, inp, user, today_log, db, source_type):  # noqa: C901
         is_cardio = inp.get("is_cardio", False) or bool(inp.get("cardio_type"))
         await add_exercise_entry(
             db,
-            today_log.id,
+            target_log.id,
             exercise_name=inp.get("exercise_name"),
             sets=inp.get("sets"),
             reps=str(inp.get("reps", "")) if inp.get("reps") else None,
@@ -96,8 +147,9 @@ async def _dispatch(name, inp, user, today_log, db, source_type):  # noqa: C901
             source_type=source_type,
             is_cardio=is_cardio,
         )
-        await db.refresh(today_log)
-        return f"Logged {inp.get('exercise_name')}"
+        await db.refresh(target_log)
+        date_label = f" (for {past_date})" if past_date else ""
+        return f"Logged {inp.get('exercise_name')}{date_label}"
 
     elif name == "log_body_weight":
         weight = inp["weight"]

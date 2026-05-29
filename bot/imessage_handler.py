@@ -470,8 +470,11 @@ async def run_imessage_pipeline(address: str, chat_guid: str, raw_text: str,
                 protein_target=prefs.protein_target if prefs else None,
             )
         else:
+            logging_tools = {"log_food", "log_exercise", "update_food_entry",
+                             "delete_food_entry", "update_exercise_entry"}
+            has_logging = any(tc["name"] in logging_tools for tc in tool_calls)
             need_followup = (tool_calls and raw_content and
-                             (in_onboarding or not response_text))
+                             (in_onboarding or not response_text or has_logging))
             if need_followup:
                 try:
                     response_text = await chat_follow_up(

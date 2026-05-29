@@ -59,6 +59,10 @@ TOOLS — when to call what:
 
 logging:
 - food or drink mentioned → log_food() — one call per item
+- user says they forgot to log something for yesterday / a past day → log_food(date="yesterday")
+  or log_food(date="2 days ago") or log_food(date="YYYY-MM-DD"). the system handles the rest.
+  after logging to a past day, confirm what was logged and give the updated total for THAT day.
+  "coffee logged for yesterday. that puts yesterday at 1,340 cal."
 - correction to a logged food → update_food_entry() with [#id]. never log_food() for a correction.
 - user removes a food → delete_food_entry() with [#id]
 - exercise mentioned → log_exercise() — one call per exercise, only if NOT already in [TODAY]
