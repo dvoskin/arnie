@@ -285,9 +285,22 @@ def verify_bb_signature(raw_body: bytes, header_sig: str) -> bool:
 
 # ── Pipeline helpers ───────────────────────────────────────────────────────────
 
-async def _build_messages(db, user_id: int, current_text: str) -> list:
-    """Build conversation history + current message for the LLM."""
-    recent = await get_recent_conversations(db, user_id, limit=6)
+_REFERENCE_PATTERNS = {
+    "i just sent", "i already told", "i mentioned", "i said that", "i told you",
+    "check what i sent", "i already said", "scroll up", "i sent you", "see what i",
+    "i just told", "already sent", "i sent that", "look at what i", "i wrote that",
+}
+
+def _needs_extended_history(text: str) -> bool:
+    t = text.lower()
+    return any(p in t for p in _REFERENCE_PATTERNS)
+
+async def _build_messages(db, user_id: int, current_text: str,
+                          extended: bool = False) -> list:
+    """Build conversation history + current message for the LLM.
+    If extended=True, loads 25 messages so Arnie can find what was referenced."""
+    limit = 25 if extended else 6
+    recent = await get_recent_conversations(db, user_id, limit=limit)
     msgs = []
     for conv in reversed(recent):
         msgs.append({"role": "user", "content": conv.raw_message or ""})
@@ -599,7 +612,10 @@ lowercase always. no em dashes. no corporate language.
 capitalize their name every time you use it."""
 
         # ── Conversation history ───────────────────────────────────────────────
-        messages = await _build_messages(db, user.id, raw_text)
+        messages = await _build_messages(
+            db, user.id, raw_text,
+            extended=_needs_extended_history(raw_text)
+        )
 
         # ── LLM call ──────────────────────────────────────────────────────────
         try:

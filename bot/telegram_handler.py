@@ -447,9 +447,19 @@ async def _typing_keepalive(bot, chat_id: int, stop_event: asyncio.Event):
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+_REFERENCE_PATTERNS = {
+    "i just sent", "i already told", "i mentioned", "i said that", "i told you",
+    "check what i sent", "i already said", "scroll up", "i sent you",
+    "i just told", "already sent", "i sent that", "look at what i",
+}
+
 async def _build_messages(db, user_id: int, current_text: str):
-    """Build the messages list: recent history + current message."""
-    recent = await get_recent_conversations(db, user_id, limit=6)
+    """Build the messages list: recent history + current message.
+    Loads 25 messages when user references something they already sent."""
+    t = current_text.lower()
+    extended = any(p in t for p in _REFERENCE_PATTERNS)
+    limit = 25 if extended else 6
+    recent = await get_recent_conversations(db, user_id, limit=limit)
     msgs = []
     for conv in reversed(recent):
         msgs.append({"role": "user", "content": conv.raw_message or ""})
