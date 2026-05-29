@@ -31,6 +31,19 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Arnie API", docs_url=None, redoc_url=None)
 
+# CORS — allow the landing page (separate Render static service) to POST the
+# iMessage signup form to this API.
+from fastapi.middleware.cors import CORSMiddleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "https://tryarnie.com", "https://www.tryarnie.com",
+        "https://arnie-landing.onrender.com",
+    ],
+    allow_methods=["POST", "GET", "OPTIONS"],
+    allow_headers=["*"],
+)
+
 
 # ── Health ─────────────────────────────────────────────────────────────────────
 
@@ -435,6 +448,45 @@ async def imessage_webhook(request: Request):
     asyncio.create_task(handle_imessage(address, chat_guid, text, message_guid=message_guid))
 
     return {"ok": True}
+
+
+# ── iMessage signup from the landing page ──────────────────────────────────────
+
+class IMessageSignup(BaseModel):
+    phone: str
+
+
+@app.post("/imessage/start")
+async def imessage_start(payload: IMessageSignup, request: Request):
+    """
+    Landing-page iMessage signup. User enters their phone → Arnie sends the
+    first outreach once. Their reply flows straight into onboarding.
+    Rate-limited per IP to curb abuse.
+    """
+    import time as _t
+    # Simple per-IP rate limit: max 5 signups / 10 min
+    ip = request.client.host if request.client else "?"
+    rl = getattr(app.state, "_signup_rl", {})
+    now = _t.time()
+    hits = [t for t in rl.get(ip, []) if now - t < 600]
+    if len(hits) >= 5:
+        raise HTTPException(status_code=429, detail="Too many attempts. Try again shortly.")
+    hits.append(now)
+    rl[ip] = hits
+    app.state._signup_rl = rl
+
+    from bot.imessage_handler import start_imessage_outreach
+    result = await start_imessage_outreach(payload.phone)
+
+    if result["ok"]:
+        return {"ok": True, "message": "Arnie is texting you now — check your messages."}
+
+    reasons = {
+        "invalid_number": "That doesn't look like a valid phone number.",
+        "not_imessage": "That number isn't on iMessage. Use an Apple device or try Telegram.",
+        "already_started": "You're already set up — check your messages for Arnie.",
+    }
+    return {"ok": False, "message": reasons.get(result["reason"], "Something went wrong — try again.")}
 
 
 # ── Stats API ──────────────────────────────────────────────────────────────────

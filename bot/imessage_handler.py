@@ -467,6 +467,96 @@ async def _send_first_contact_intro(chat_guid: str) -> None:
             await asyncio.sleep(0.4)
 
 
+# ── Landing-page outreach (user enters phone → Arnie texts first) ──────────────
+
+# Acknowledges they signed up, then flows into the same name question.
+_OUTREACH_INTRO = [
+    "hey 👋 it's arnie",
+    "you just signed up on the site — i'm your AI fitness and nutrition coach.",
+    "no app, no spreadsheets. you just text me what you eat and how you train.",
+    "takes 2 minutes to get going. what's your first name?",
+]
+
+
+def _normalize_phone(raw: str) -> str | None:
+    """Normalize a phone string to E.164. Defaults to US (+1) for 10-digit input."""
+    if not raw:
+        return None
+    digits = re.sub(r"[^\d+]", "", raw.strip())
+    if digits.startswith("+"):
+        rest = re.sub(r"\D", "", digits[1:])
+        return f"+{rest}" if 10 <= len(rest) <= 15 else None
+    digits = re.sub(r"\D", "", digits)
+    if len(digits) == 10:
+        return f"+1{digits}"
+    if len(digits) == 11 and digits.startswith("1"):
+        return f"+{digits}"
+    return None
+
+
+async def bb_imessage_available(address: str) -> bool | None:
+    """
+    Check if a number/address is reachable via iMessage (BlueBubbles).
+    Returns True/False, or None if the check itself couldn't run (then proceed anyway).
+    """
+    if not _BB_URL or not _BB_PASSWORD:
+        return None
+    try:
+        resp = await _get_http().get(
+            f"{_BB_URL}/api/v1/handle/availability/imessage",
+            params={"password": _BB_PASSWORD, "address": address},
+        )
+        if resp.status_code == 200:
+            data = resp.json().get("data", {})
+            return bool(data.get("available"))
+        return None
+    except Exception as e:
+        logger.warning(f"iMessage availability check failed: {e}")
+        return None
+
+
+async def start_imessage_outreach(raw_phone: str) -> dict:
+    """
+    Landing-page entry point. Validates the number, checks it's iMessage-capable,
+    and sends Arnie's first outreach (ONCE). Their reply flows into onboarding.
+    Returns {ok: bool, reason: str}.
+    """
+    phone = _normalize_phone(raw_phone)
+    if not phone:
+        return {"ok": False, "reason": "invalid_number"}
+
+    im_id = _im_user_id(phone)
+    chat_guid = f"iMessage;-;{phone}"
+
+    async with AsyncSessionLocal() as db:
+        user = await get_or_create_user(db, im_id)
+
+        # Dedupe — never outreach the same number twice
+        prior = await get_recent_conversations(db, user.id, limit=1)
+        if prior or user.name or user.onboarding_completed:
+            return {"ok": False, "reason": "already_started"}
+
+        # Availability check — don't blast a non-iMessage number (SMS/ban risk)
+        available = await bb_imessage_available(phone)
+        if available is False:
+            return {"ok": False, "reason": "not_imessage"}
+
+        # Send the one-time outreach intro
+        for i, bubble in enumerate(_OUTREACH_INTRO):
+            if i == 0:
+                await bb_send_text_with_effect(chat_guid, bubble, Effect.LOUD)
+            else:
+                await bb_send_text(chat_guid, bubble)
+            if i < len(_OUTREACH_INTRO) - 1:
+                await asyncio.sleep(0.4)
+
+        # Log it so the user's reply continues onboarding (no duplicate intro)
+        await log_conversation(db, user.id, "[landing signup]", "[outreach sent]",
+                               source_type="imessage")
+        logger.info(f"iMessage outreach sent to {phone}")
+        return {"ok": True, "reason": "sent"}
+
+
 async def _dashboard_url(user, db) -> str:
     """Build the user's dashboard URL."""
     token = await get_or_create_webhook_token(db, user.id)

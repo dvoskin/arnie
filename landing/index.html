@@ -1081,25 +1081,22 @@
 
         </div>
 
-        <!-- Beta signup form -->
-        <form class="beta-form" id="heroBetaForm" onsubmit="handleBetaSubmit(event,'heroBetaForm')">
-          <input type="email" name="email" placeholder="your@email.com" required autocomplete="email">
-          <button type="submit" class="cta-btn beta-submit-btn">
-            Get Access →
+        <!-- iMessage signup — enter phone, Arnie texts you first -->
+        <form class="beta-form" id="imsgForm" onsubmit="handleIMessageSignup(event)">
+          <input type="tel" name="phone" id="imsgPhone" placeholder="your phone number" required autocomplete="tel" inputmode="tel">
+          <button type="submit" class="cta-btn beta-submit-btn" id="imsgBtn">
+            Text me on iMessage →
           </button>
         </form>
-        <div class="beta-success" id="heroBetaSuccess" style="display:none">
+        <p style="font-size:11px;color:var(--ink-3);margin-top:8px;text-align:center;opacity:0.8">
+          Arnie sends one text to get started. Apple devices only. Reply STOP anytime.
+        </p>
+        <div class="beta-success" id="imsgSuccess" style="display:none">
           <div class="beta-success-inner">
             <span class="beta-check">✓</span>
-            <span>You're on the list — we'll reach out with access details.</span>
+            <span id="imsgSuccessMsg">Arnie is texting you now — check your messages.</span>
           </div>
-          <div style="display:flex;flex-direction:column;gap:10px;margin-top:12px;width:100%">
-            <a href="sms:ARNIE_IMESSAGE_ADDRESS&body=Hey" class="beta-tg-link" id="imessageCta" style="display:flex;align-items:center;justify-content:center;gap:8px;padding:13px 20px;background:color-mix(in oklch,var(--ink) 8%,transparent);border-radius:12px;border:1px solid color-mix(in oklch,var(--ink) 14%,transparent);text-decoration:none;color:var(--ink);font-size:14px;font-weight:500;">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style="opacity:0.7"><path d="M12 2C6.477 2 2 6.477 2 12c0 1.89.525 3.66 1.438 5.168L2 22l4.832-1.438A9.956 9.956 0 0 0 12 22c5.523 0 10-4.477 10-10S17.523 2 12 2z"/></svg>
-              Start on iMessage →
-            </a>
-            <a href="https://t.me/Arnie_1026_Bot?start=freetrial" target="_blank" rel="noopener" class="beta-tg-link">Or try Telegram beta now →</a>
-          </div>
+          <a href="https://t.me/Arnie_1026_Bot?start=freetrial" target="_blank" rel="noopener" class="beta-tg-link" style="margin-top:10px;display:inline-block">Not on iMessage? Try Telegram →</a>
         </div>
       </div>
 
@@ -1535,32 +1532,38 @@
   // Replace FORMSPREE_ID with your actual Formspree form ID from formspree.io
   const FORMSPREE_ENDPOINT = 'https://formspree.io/f/xojbyrwl';
 
-  // iMessage CTA — replace with Arnie's actual iMessage address once live
-  const ARNIE_IMESSAGE = 'ARNIE_IMESSAGE_ADDRESS'; // e.g. arnie@icloud.com or +1234567890
-  const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
-  const isMac = /Mac/.test(navigator.userAgent) && !isIOS;
+  // iMessage signup — user enters phone, Arnie texts them first
+  const ARNIE_API = 'https://arnie.onrender.com';
 
-  document.querySelectorAll('#imessageCta').forEach(el => {
-    if (ARNIE_IMESSAGE === 'ARNIE_IMESSAGE_ADDRESS') {
-      // Address not yet configured — hide the button
-      el.style.display = 'none';
-      return;
+  async function handleIMessageSignup(e) {
+    e.preventDefault();
+    const form = document.getElementById('imsgForm');
+    const phone = document.getElementById('imsgPhone').value.trim();
+    const btn = document.getElementById('imsgBtn');
+    btn.textContent = 'Sending…';
+    btn.disabled = true;
+    try {
+      const res = await fetch(`${ARNIE_API}/imessage/start`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        form.style.display = 'none';
+        document.getElementById('imsgSuccessMsg').textContent = data.message;
+        document.getElementById('imsgSuccess').style.display = 'block';
+      } else {
+        btn.textContent = 'Text me on iMessage →';
+        btn.disabled = false;
+        alert(data.message || 'Something went wrong — try again.');
+      }
+    } catch (err) {
+      btn.textContent = 'Text me on iMessage →';
+      btn.disabled = false;
+      alert('Could not reach Arnie. Please try again in a moment.');
     }
-    if (isIOS) {
-      // iPhone/iPad — sms: deep link opens Messages.app directly
-      el.href = `sms:${ARNIE_IMESSAGE}&body=Hey`;
-      el.target = '_self';
-    } else if (isMac) {
-      // Mac — open Messages.app via tel: or show the address
-      el.href = `imessage:${ARNIE_IMESSAGE}`;
-      el.target = '_self';
-    } else {
-      // Android/other — show the address, can't deep-link iMessage
-      el.href = '#';
-      el.textContent = `Text ${ARNIE_IMESSAGE} on iMessage`;
-      el.onclick = e => { e.preventDefault(); alert(`Open iMessage on your iPhone and text:\n${ARNIE_IMESSAGE}`); };
-    }
-  });
+  }
 
   async function handleBetaSubmit(e, formId) {
     e.preventDefault();
