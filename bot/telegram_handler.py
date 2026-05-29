@@ -27,7 +27,7 @@ from db.queries import (
 )
 from core.llm import chat, chat_follow_up
 from core.context_builder import build_context, fmt_log
-from core.platform import React, onboarding_reaction
+from core.platform import React, onboarding_reaction, detect_moment
 from handlers.onboarding import (
     build_onboarding_system, get_onboarding_keyboard, is_onboarding_complete,
 )
@@ -790,11 +790,8 @@ async def _run_pipeline(update: Update, context: ContextTypes.DEFAULT_TYPE,
                                 )
                                 break
             else:
-                # Coaching-moment reactions: PR / goal hit
-                low = (response_text or "").lower()
-                if any(tc["name"] == "log_exercise" for tc in tool_calls) and \
-                   any(s in low for s in ("pr", "personal best", "personal record", "new max")):
-                    _react = React.LOVE
+                # Shared coaching-moment detection — same logic as iMessage
+                _react = detect_moment(response_text, tool_calls).reaction
             if _react:
                 await _tg_react(context.bot, chat_id, update.message.message_id, _react)
         except Exception:

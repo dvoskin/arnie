@@ -40,7 +40,7 @@ from db.queries import (
 from core.llm import chat, chat_follow_up
 from core.context_builder import build_context, fmt_log
 from core.platform import (
-    Response, React, FX, IMessageAdapter, onboarding_reaction,
+    Response, React, FX, IMessageAdapter, onboarding_reaction, detect_moment,
 )
 from handlers.onboarding import build_onboarding_system, is_onboarding_complete
 from handlers.tool_executor import execute_tool_calls
@@ -49,16 +49,6 @@ from memory.reflection import maybe_update_memory
 logger = logging.getLogger(__name__)
 
 from bot.message_debounce import schedule_message as _debounce
-
-# Bridge old _detect_coaching_moment codes → semantic names for the adapter
-_TAPBACK_TO_SEMANTIC = {2000: React.LOVE, 2001: React.LIKE, 2003: React.LAUGH, 2004: React.EMPHASIZE}
-_EFFECT_TO_SEMANTIC = {
-    "com.apple.MobileSMS.expressivesend.impact": FX.SLAM,
-    "com.apple.MobileSMS.expressivesend.balloons": FX.CELEBRATE,
-    "com.apple.MobileSMS.expressivesend.fireworks": FX.FIREWORKS,
-    "com.apple.MobileSMS.expressivesend.lasers": FX.LASERS,
-    "com.apple.MobileSMS.expressivesend.loud": FX.LOUD,
-}
 
 # ── BlueBubbles client ─────────────────────────────────────────────────────────
 
@@ -189,40 +179,8 @@ async def bb_send_text_with_effect(chat_guid: str, text: str, effect: str) -> bo
         return await bb_send_text(chat_guid, text)
 
 
-# ── Reaction & effect detection ───────────────────────────────────────────────
-
-_PR_SIGNALS = {"pr", "personal best", "personal record", "new max", "all-time", "🔥", "that's a pr"}
-_WIN_SIGNALS = {"hit your goal", "hit your target", "you're there", "nailed it", "crushed it"}
-_MOMENTUM_SIGNALS = {"clean day", "on track", "on pace", "solid", "locked in"}
-
-
-def _detect_coaching_moment(response_text: str, tool_calls: list) -> dict:
-    """
-    Analyse the response and tool calls to decide if a reaction or effect is warranted.
-
-    Returns:
-        {
-          "tapback":  int | None,    — tapback code to react to the user's message
-          "effect":   str | None,    — effect to apply to the KEY response bubble
-          "bubble_index": int,       — which bubble gets the effect (0 = first, -1 = last)
-        }
-    """
-    text_lower = response_text.lower()
-    has_exercise = any(tc["name"] == "log_exercise" for tc in tool_calls)
-
-    # PR detected → ❤️ tapback + Slam effect on the PR bubble
-    if has_exercise and any(s in text_lower for s in _PR_SIGNALS):
-        return {"tapback": Tapback.LOVE, "effect": Effect.SLAM, "bubble_index": 0}
-
-    # Goal / target hit → ❤️ tapback + Balloons
-    if any(s in text_lower for s in _WIN_SIGNALS):
-        return {"tapback": Tapback.LOVE, "effect": Effect.BALLOONS, "bubble_index": -1}
-
-    # Consistent momentum acknowledgement → 👍 tapback, no effect
-    if any(s in text_lower for s in _MOMENTUM_SIGNALS):
-        return {"tapback": Tapback.LIKE, "effect": None, "bubble_index": 0}
-
-    return {"tapback": None, "effect": None, "bubble_index": 0}
+# Reaction/effect detection now lives in core.platform.detect_moment (shared
+# across both platforms). See imports above.
 
 
 def _split_message(text: str, max_len: int = 1800) -> list[str]:
@@ -770,13 +728,11 @@ capitalize their name every time you use it."""
             resp.reaction = React.LOVE
         elif was_onboarding and onboarding_field_saved:
             resp.reaction = onboarding_reaction(onboarding_field_saved)
-        elif not in_onboarding and tool_calls:
-            cm = _detect_coaching_moment(response_text, tool_calls)
-            if cm["tapback"]:
-                resp.reaction = _TAPBACK_TO_SEMANTIC.get(cm["tapback"])
-            if cm["effect"]:
-                resp.effect = _EFFECT_TO_SEMANTIC.get(cm["effect"])
-                resp.effect_idx = cm["bubble_index"]
+        elif not in_onboarding:
+            moment = detect_moment(response_text, tool_calls)
+            resp.reaction = moment.reaction
+            resp.effect = moment.effect
+            resp.effect_idx = moment.effect_idx
 
         # ── Send via the iMessage adapter ─────────────────────────────────────
         adapter = IMessageAdapter(chat_guid, reply_to_guid=message_guid)

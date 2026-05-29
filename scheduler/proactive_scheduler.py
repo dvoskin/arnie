@@ -29,8 +29,8 @@ logger = logging.getLogger(__name__)
 _scheduler = AsyncIOScheduler()
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 
-_whoop_notified: dict = {}
-_new_user_sent: dict = {}  # user_id_str -> set of slot keys already sent
+# Engagement de-dup state is now persisted on the User row (nudges_sent,
+# whoop_last_notified) so it survives deploys. No in-memory tracking needed.
 
 # Nudge slots: (hour, minute_start, minute_end, slot_key)
 _NUDGE_SLOTS = [
@@ -273,8 +273,10 @@ async def _run_reminders():
                     hours_since = _hours_since_created(user)
 
                     if hours_since <= 50.0:
-                        uid_key = str(user.id)
-                        sent_slots = _new_user_sent.get(uid_key, set())
+                        # Persisted across deploys via user.nudges_sent (comma-separated)
+                        sent_slots = set(
+                            s for s in (user.nudges_sent or "").split(",") if s
+                        )
 
                         # Aggressive day-1 cadence, tapering into day 2.
                         # (window_start, window_end, slot_key) — strongest at the start.
@@ -299,8 +301,10 @@ async def _run_reminders():
                             msg = await _llm_new_user_nudge(user, log, prefs, new_slot, name)
                             if msg:
                                 await _send(user.telegram_id, msg)
+                                # Persist the fired slot so it never re-fires after a deploy
                                 sent_slots.add(new_slot)
-                                _new_user_sent[uid_key] = sent_slots
+                                user.nudges_sent = ",".join(sorted(sent_slots))
+                                await db.commit()
                             logger.info(f"New user nudge '{new_slot}' sent to user {user.id} ({hours_since:.1f}h in)")
                             continue  # skip normal slots this tick — avoid message flood
 
@@ -523,10 +527,7 @@ async def _run_whoop_sync():
     from db.queries import get_users_with_whoop, get_recent_health_snapshots
     from api.whoop import sync_user_whoop
 
-    today = date.today()
-    stale = [k for k, v in _whoop_notified.items() if v != str(today)]
-    for k in stale:
-        del _whoop_notified[k]
+    today_str = str(date.today())
 
     async with AsyncSessionLocal() as db:
         try:
@@ -548,11 +549,13 @@ async def _run_whoop_sync():
                     new_snaps = await get_recent_health_snapshots(db, user.id, days=1)
                     if new_snaps:
                         snap = new_snaps[0]
-                        notif_key = f"{user.id}:{snap.date}"
+                        # Persisted dedup — one recovery ping per user per day, survives deploys
+                        already = (user.whoop_last_notified == f"{today_str}:{snap.recovery_score}")
                         if (snap.recovery_score is not None
                                 and snap.recovery_score != old_recovery
-                                and notif_key not in _whoop_notified):
-                            _whoop_notified[notif_key] = str(today)
+                                and not already):
+                            user.whoop_last_notified = f"{today_str}:{snap.recovery_score}"
+                            await db.commit()
                             msg = _fmt_whoop_notification(snap)
                             if msg:
                                 await _send(user.telegram_id, msg)

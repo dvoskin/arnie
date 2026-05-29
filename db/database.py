@@ -81,6 +81,8 @@ async def _migrate(conn):
         # ── 2026-05-29: architecture refactor additions ────────────────────────
         ("users", "sport", "VARCHAR"),
         ("users", "units_preference", "VARCHAR DEFAULT 'imperial'"),
+        ("users", "nudges_sent", "TEXT DEFAULT ''"),
+        ("users", "whoop_last_notified", "VARCHAR"),
         ("conversation_logs", "platform", "VARCHAR DEFAULT 'telegram'"),
         ("conversation_logs", "skills_fired", "VARCHAR"),
     ]

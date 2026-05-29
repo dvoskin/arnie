@@ -38,6 +38,9 @@ class User(Base):
     # Extended profile — sport and unit preference
     sport = Column(String)                          # e.g. "basketball", "boxing", "running"
     units_preference = Column(String, default="imperial")  # "imperial" | "metric"
+    # Proactive engagement state — persisted so it survives deploys
+    nudges_sent = Column(Text, default="")          # comma-separated day-1 warmup slot keys fired
+    whoop_last_notified = Column(String)            # date string of last whoop recovery ping
     created_at = Column(DateTime, server_default=func.now())
 
     preferences = relationship("UserPreferences", back_populates="user", uselist=False,

@@ -272,3 +272,72 @@ def onboarding_reaction(field_saved: str) -> Optional[str]:
         "training_experience": React.LIKE,
         "calorie_target":      React.LOVE,
     }.get(field_saved)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Coaching-moment detection — shared by both platforms
+# ─────────────────────────────────────────────────────────────────────────────
+# Reactions (tapbacks) are subtle — they can fire often and feel delightful.
+# Effects (screen animations) are dramatic — reserved for genuine milestones,
+# so they keep their punch and never feel gimmicky.
+
+_PR_SIGNALS       = ("pr", "personal best", "personal record", "new max",
+                     "all-time", "first time you", "first time at")
+_GOAL_HIT_SIGNALS = ("hit your goal", "hit your target", "you're there",
+                     "goal weight", "reached your goal", "hit goal")
+_PROTEIN_WIN      = ("nailed it", "protein nailed", "hit your protein",
+                     "protein's done", "smashed your protein", "protein goal")
+_CLEAN_DAY        = ("clean day", "perfect day", "that's the day", "locked in",
+                     "right on track", "right where you want")
+_MOMENTUM         = ("on track", "on pace", "solid day", "solid week",
+                     "good pace", "that tracks", "love it")
+_FUNNY            = ("lol", "😂", "interesting choice", "respect", "classic",
+                     "bold move", "no judgment", "we've all been there")
+_STREAK           = ("days in a row", "straight days", "streak", "consistency")
+
+
+@dataclass
+class Moment:
+    reaction: Optional[str] = None
+    effect: Optional[str] = None
+    effect_idx: int = -1
+
+
+def detect_moment(response_text: str, tool_calls: list) -> Moment:
+    """
+    Decide what reaction / effect (if any) a coaching response warrants.
+    Pure function — used by both Telegram and iMessage adapters for consistency.
+    Priority order: milestones (effect) first, then lighter reactions.
+    """
+    t = (response_text or "").lower()
+    names = {tc.get("name") for tc in (tool_calls or [])}
+    has_exercise = "log_exercise" in names
+    has_food = "log_food" in names
+
+    # ── Milestones (reaction + dramatic effect) ──────────────────────────────
+    if has_exercise and any(s in t for s in _PR_SIGNALS):
+        return Moment(React.LOVE, FX.SLAM, 0)            # PR → ❤️ + slam
+
+    if any(s in t for s in _GOAL_HIT_SIGNALS):
+        return Moment(React.LOVE, FX.FIREWORKS, -1)      # goal weight → ❤️ + fireworks
+
+    if any(s in t for s in _STREAK):
+        return Moment(React.LOVE, FX.FIREWORKS, -1)      # streak → ❤️ + fireworks
+
+    if any(s in t for s in _PROTEIN_WIN):
+        return Moment(React.LOVE, FX.CELEBRATE, -1)      # protein goal → ❤️ + balloons
+
+    if any(s in t for s in _CLEAN_DAY):
+        return Moment(React.LOVE, FX.CELEBRATE, -1)      # clean day → ❤️ + balloons
+
+    # ── Lighter reactions (tapback only, no effect) ──────────────────────────
+    if any(s in t for s in _FUNNY):
+        return Moment(React.LAUGH)                        # funny moment → 😂
+
+    if has_exercise:
+        return Moment(React.LIKE)                         # logged a workout → 👍
+
+    if any(s in t for s in _MOMENTUM):
+        return Moment(React.LIKE)                         # positive momentum → 👍
+
+    return Moment()
