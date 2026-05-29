@@ -436,7 +436,14 @@ async def run_imessage_pipeline(address: str, chat_guid: str, raw_text: str,
         else:
             today_log = None
             system = build_onboarding_system(user)
-            system += "\n\n[PLATFORM: iMessage — plain text responses only. No HTML. No keyboard buttons — just text options if needed.]"
+            # Inject voice + bubble rules into onboarding so it sounds natural
+            from core.prompts.arnie import PERSONALITY_ANCHOR
+            system += (
+                "\n\n[PLATFORM: iMessage — plain text only. No HTML. No keyboard buttons.]"
+                "\n\nSPLIT responses using ||| between bubbles — one sentence per bubble."
+                "\nlowercase. casual. like texting."
+                f"\n\n{PERSONALITY_ANCHOR}"
+            )
 
         # ── Conversation history ───────────────────────────────────────────────
         messages = await _build_messages(db, user.id, raw_text)
@@ -536,6 +543,7 @@ async def run_imessage_pipeline(address: str, chat_guid: str, raw_text: str,
 
         # ── Tapback reaction on the user's incoming message ───────────────────
         if coaching_moment["tapback"] and message_guid:
+            logger.info(f"Sending tapback {coaching_moment['tapback']} + effect {coaching_moment['effect']} to {message_guid[:8]}...")
             asyncio.create_task(
                 bb_send_reaction(message_guid, coaching_moment["tapback"])
             )
