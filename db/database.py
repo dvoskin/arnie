@@ -63,6 +63,7 @@ async def _migrate(conn):
 
     # Each entry: (table_name, column_name, column_ddl)
     additions = [
+        # ── original schema additions ──────────────────────────────────────────
         ("users", "webhook_token", "VARCHAR"),
         ("users", "whoop_access_token", "TEXT"),
         ("users", "whoop_refresh_token", "TEXT"),
@@ -77,6 +78,11 @@ async def _migrate(conn):
         ("users", "stripe_customer_id", "VARCHAR"),
         ("users", "trial_ends_at", "DATETIME"),
         ("users", "subscription_ends_at", "DATETIME"),
+        # ── 2026-05-29: architecture refactor additions ────────────────────────
+        ("users", "sport", "VARCHAR"),
+        ("users", "units_preference", "VARCHAR DEFAULT 'imperial'"),
+        ("conversation_logs", "platform", "VARCHAR DEFAULT 'telegram'"),
+        ("conversation_logs", "skills_fired", "VARCHAR"),
     ]
 
     for table, column, ddl in additions:
