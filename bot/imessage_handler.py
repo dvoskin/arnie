@@ -481,7 +481,15 @@ async def run_imessage_pipeline(address: str, chat_guid: str, raw_text: str,
                     logger.error(f"Follow-up LLM failed for {im_id}: {e}")
 
         if not response_text:
-            response_text = "Got it."
+            if tool_calls and raw_content:
+                try:
+                    response_text = await chat_follow_up(
+                        messages, raw_content, tool_calls, tool_results, system, max_tokens=300
+                    )
+                except Exception:
+                    pass
+            if not response_text:
+                response_text = "done."
 
         # ── Detect coaching moment (PR, goal, momentum) ───────────────────────
         coaching_moment = {"tapback": None, "effect": None, "bubble_index": 0}
@@ -497,7 +505,7 @@ async def run_imessage_pipeline(address: str, chat_guid: str, raw_text: str,
         # ── Send reply — split on ||| for multi-bubble messaging ─────────────
         bubbles = [b.strip() for b in response_text.split("|||") if b.strip()]
         if not bubbles:
-            bubbles = ["Got it."]
+            bubbles = ["done."]
 
         effect = coaching_moment["effect"]
         effect_idx = coaching_moment["bubble_index"]

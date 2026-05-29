@@ -788,12 +788,22 @@ async def _run_pipeline(update: Update, context: ContextTypes.DEFAULT_TYPE,
                     pass
 
     if not response_text:
-        response_text = "Got it."
+        # Force a follow-up if tools fired but no text came back
+        # This prevents silent "Got it." responses after food/exercise logging
+        if tool_calls and raw_content:
+            try:
+                response_text = await chat_follow_up(
+                    messages, raw_content, tool_calls, tool_results, system, max_tokens=300
+                )
+            except Exception:
+                pass
+        if not response_text:
+            response_text = "done."
 
     # ── Send response — split on ||| for multi-bubble messaging ─────────────
     bubbles = [b.strip() for b in response_text.split("|||") if b.strip()]
     if not bubbles:
-        bubbles = ["Got it."]
+        bubbles = ["done."]
 
     for i, bubble in enumerate(bubbles):
         fmt_kwargs = _fmt(bubble)
