@@ -94,34 +94,42 @@ class Tapback:
     QUESTION  = 2005   # ❓
 
 
-async def bb_send_reaction(chat_guid: str, message_guid: str, reaction: str) -> bool:
+async def bb_send_reaction(chat_guid: str, message_guid: str, reaction: str,
+                           message_text: str = "") -> bool:
     """
     React to a message with a tapback via the BlueBubbles Private API.
-    Correct endpoint: POST /api/v1/message/react
-    Body: {chatGuid, selectedMessageGuid, reaction} where reaction is a string:
+    POST /api/v1/message/react
+    Body: {chatGuid, selectedMessageGuid, reaction, partIndex} — reaction is a string:
           "love" | "like" | "dislike" | "laugh" | "emphasize" | "question"
-    Requires Private API enabled on the BlueBubbles server (SIP disabled).
+    Requires Private API enabled (SIP disabled). Verbose logging so failures are
+    diagnosable from Render logs.
     """
     if not _BB_URL or not _BB_PASSWORD or not message_guid or not chat_guid:
+        logger.warning(f"reaction skipped — missing field (guid={bool(message_guid)} chat={bool(chat_guid)})")
         return False
+    payload = {
+        "chatGuid": chat_guid,
+        "selectedMessageGuid": message_guid,
+        "reaction": reaction,
+        "partIndex": 0,
+    }
     try:
         resp = await _get_http().post(
             f"{_BB_URL}/api/v1/message/react",
             params={"password": _BB_PASSWORD},
-            json={
-                "chatGuid": chat_guid,
-                "selectedMessageGuid": message_guid,
-                "reaction": reaction,
-            },
+            json=payload,
             headers={"Content-Type": "application/json"},
         )
         if resp.status_code not in (200, 201):
-            logger.warning(f"BlueBubbles reaction failed: {resp.status_code} {resp.text[:160]}")
+            logger.warning(
+                f"REACTION FAILED [{resp.status_code}] reaction='{reaction}' "
+                f"guid={message_guid[:12]} body={resp.text[:300]}"
+            )
             return False
-        logger.info(f"Reaction '{reaction}' sent on {message_guid[:8]}")
+        logger.info(f"REACTION OK '{reaction}' on {message_guid[:12]}")
         return True
     except Exception as e:
-        logger.warning(f"BlueBubbles reaction error: {e}")
+        logger.warning(f"REACTION ERROR '{reaction}': {e}")
         return False
 
 
