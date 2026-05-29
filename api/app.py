@@ -347,6 +347,74 @@ async def telegram_webhook(token: str, request: Request):
     return {"ok": True}
 
 
+# ── BlueBubbles / iMessage webhook ────────────────────────────────────────────
+
+@app.post("/imessage")
+async def imessage_webhook(request: Request):
+    """
+    Receive incoming iMessages from BlueBubbles Server.
+
+    BlueBubbles sends a POST to this endpoint for every new message event.
+    We return 200 immediately, then process in the background so BlueBubbles
+    doesn't retry on slow LLM responses.
+
+    Payload shape (relevant fields):
+      {
+        "type": "new-message",
+        "data": {
+          "text": "...",
+          "isFromMe": false,
+          "handle": { "address": "+15551234567" },
+          "chats": [{ "guid": "iMessage;-;+15551234567", "isGroup": false }]
+        }
+      }
+    """
+    raw_body = await request.body()
+
+    # Signature verification (optional but recommended in production)
+    from bot.imessage_handler import verify_bb_signature
+    sig = request.headers.get("X-Bluebubbles-Signature", "")
+    if not verify_bb_signature(raw_body, sig):
+        logger.warning("BlueBubbles webhook signature mismatch — request rejected")
+        raise HTTPException(status_code=403, detail="Invalid signature")
+
+    try:
+        payload = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON")
+
+    event_type = payload.get("type", "")
+    if event_type != "new-message":
+        # Heartbeat, read receipts, etc. — acknowledge and ignore
+        return {"ok": True}
+
+    data = payload.get("data", {})
+
+    # Skip messages sent by us
+    if data.get("isFromMe"):
+        return {"ok": True}
+
+    # Skip group chats
+    chats = data.get("chats", [])
+    if not chats or chats[0].get("isGroup"):
+        return {"ok": True}
+
+    handle  = data.get("handle", {})
+    address = handle.get("address", "")
+    text    = (data.get("text") or "").strip()
+    chat_guid = chats[0].get("guid", "")
+
+    if not address or not text or not chat_guid:
+        return {"ok": True}
+
+    # Fire pipeline in background — respond 200 immediately
+    import asyncio
+    from bot.imessage_handler import run_imessage_pipeline
+    asyncio.create_task(run_imessage_pipeline(address, chat_guid, text))
+
+    return {"ok": True}
+
+
 # ── Stats API ──────────────────────────────────────────────────────────────────
 
 @app.get("/api/insights/{token}")

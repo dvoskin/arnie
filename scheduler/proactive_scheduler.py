@@ -199,6 +199,25 @@ async def _llm_new_user_nudge(user, log, prefs, slot: str, name: str) -> str:
 
 
 async def _send(telegram_id: str, text: str):
+    """
+    Send a proactive message to the user regardless of platform.
+    telegram_id prefixed with "im:" → BlueBubbles iMessage
+    otherwise → Telegram bot
+    """
+    if telegram_id.startswith("im:"):
+        # iMessage user — send via BlueBubbles
+        from bot.imessage_handler import bb_send_text, _to_plain
+        import re
+        # Derive chat GUID from address stored as "im:+15551234567"
+        address = telegram_id[3:]  # strip "im:" prefix
+        chat_guid = f"iMessage;-;{address}"
+        plain = _to_plain(text)
+        try:
+            await bb_send_text(chat_guid, plain)
+        except Exception as e:
+            logger.error(f"Proactive iMessage send failed → {telegram_id}: {e}")
+        return
+
     from telegram import Bot
     try:
         bot = Bot(token=TELEGRAM_TOKEN)

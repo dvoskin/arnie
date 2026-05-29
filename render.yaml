@@ -39,3 +39,9 @@ services:
         sync: false
       - key: ADMIN_TOKEN
         sync: false
+      - key: BLUEBUBBLES_URL
+        sync: false
+      - key: BLUEBUBBLES_PASSWORD
+        sync: false
+      - key: BLUEBUBBLES_WEBHOOK_SECRET
+        sync: false
