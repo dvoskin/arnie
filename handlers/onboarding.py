@@ -38,80 +38,48 @@ def build_onboarding_system(user: User) -> str:
     def pref_has(field):
         return prefs and getattr(prefs, field, None) is not None
 
-    # (label, is_complete, next_question, display_value)
-    steps = [
-        ("name",
-         has("name"),
-         "what's your first name? 👋",
-         user.name or ""),
-
-        ("sex",
-         has("sex"),
-         "male or female?",
-         user.sex or ""),
-
-        ("age",
-         has("age"),
-         "how old are you?",
-         str(user.age) if user.age else ""),
-
-        ("height & weight",
-         has("height_cm") and has("current_weight_kg"),
-         "height and weight? 📏 throw in a target weight too if you have one.",
-         f"{user.height_cm:.0f}cm / {user.current_weight_kg:.1f}kg"
-         if (user.height_cm and user.current_weight_kg) else ""),
-
-        ("primary goal",
-         has("primary_goal"),
-         "what's the goal? 🎯 lose weight, gain, or maintain?",
-         user.primary_goal or ""),
-
-        ("training experience",
-         has("training_experience"),
-         "how experienced are you — beginner, intermediate, or advanced? 💪",
-         user.training_experience or ""),
-
-        # timezone removed from onboarding — detected from conversation context
+    # Track what's been collected — shown to LLM so it never re-asks
+    fields = [
+        ("name",              has("name"),                                    user.name or ""),
+        ("sex",               has("sex"),                                     user.sex or ""),
+        ("age",               has("age"),                                     str(user.age) if user.age else ""),
+        ("height & weight",   has("height_cm") and has("current_weight_kg"),
+                              f"{user.height_cm:.0f}cm / {user.current_weight_kg:.1f}kg"
+                              if (user.height_cm and user.current_weight_kg) else ""),
+        ("primary goal",      has("primary_goal"),                            user.primary_goal or ""),
+        ("training exp",      has("training_experience"),                     user.training_experience or ""),
     ]
 
-    collected_lines = []
-    next_question = None
+    still_needed = [label for label, done, _ in fields if not done]
+    collected_lines = [
+        f"  • {label}: {val}" if val else f"  • {label}"
+        for label, done, val in fields if done
+    ]
 
-    for label, complete, question, display in steps:
-        if complete:
-            val = f": {display}" if display else ""
-            collected_lines.append(f"  • {label}{val}")
-        elif next_question is None:
-            next_question = question
-
-    # ── State block ──
     state_block = "\n\n━━━ ONBOARDING STATE ━━━"
 
     if collected_lines:
-        state_block += "\nCOLLECTED & LOCKED — do NOT ask about any of these:\n"
-        state_block += "\n".join(collected_lines)
+        state_block += "\nCOLLECTED & LOCKED — never ask about these:\n" + "\n".join(collected_lines)
     else:
-        state_block += "\nNothing collected yet."
+        state_block += "\nNothing collected yet. Start by asking their name."
 
-    if next_question:
+    if still_needed:
+        state_block += f"\n\nSTILL NEEDED: {', '.join(still_needed)}"
         state_block += (
-            f"\n\n╔═ NEXT QUESTION — ask this and only this ═╗"
-            f'\n  "{next_question}"'
-            f"\n╚══════════════════════════════════════════╝"
-            f"\nAsk it now. Do not ask anything else first."
+            "\n\nCollect these naturally through conversation — don't ask each one separately like a form."
+            "\nGroup stats together: weight, height, age, and target weight can all come in one natural ask."
+            "\nLet the conversation flow. React to what they say. Then weave in what you still need."
         )
     else:
         if pref_has("calorie_target"):
             state_block += (
                 "\n\nAll essentials AND targets are set."
-                "\nWrite ONE brief completion — e.g. \"you're all set, [name]. let's get to work.\""
-                "\nDo NOT call any tools. Do NOT ask anything."
+                "\nWrite ONE brief completion. do NOT ask anything else."
             )
         else:
             state_block += (
-                "\n\nALL 7 ESSENTIALS COLLECTED. Run the TARGETS STEP now."
-                "\nPresent the 3 options exactly as written in the TARGETS STEP section above."
-                "\nWait for the user's selection, then follow the instruction for whichever option they choose."
+                "\n\nALL ESSENTIALS COLLECTED. Run the TARGETS STEP now."
+                "\nPresent the 3 options exactly as written above."
             )
 
     return _ONBOARDING_BASE + state_block
