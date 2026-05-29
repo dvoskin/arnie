@@ -35,6 +35,9 @@ class User(Base):
     stripe_customer_id = Column(String, unique=True)
     trial_ends_at = Column(DateTime)
     subscription_ends_at = Column(DateTime)
+    # Extended profile — sport and unit preference
+    sport = Column(String)                          # e.g. "basketball", "boxing", "running"
+    units_preference = Column(String, default="imperial")  # "imperial" | "metric"
     created_at = Column(DateTime, server_default=func.now())
 
     preferences = relationship("UserPreferences", back_populates="user", uselist=False,
@@ -46,6 +49,10 @@ class User(Base):
     memory_updates = relationship("MemoryUpdate", back_populates="user",
                                   cascade="all, delete-orphan")
     health_snapshots = relationship("HealthSnapshot", back_populates="user",
+                                    cascade="all, delete-orphan")
+    wearable_devices = relationship("WearableDevice", back_populates="user",
+                                    cascade="all, delete-orphan")
+    wearable_metrics = relationship("WearableMetric", back_populates="user",
                                     cascade="all, delete-orphan")
 
 
@@ -164,6 +171,8 @@ class ConversationLog(Base):
     response = Column(Text)
     timestamp = Column(DateTime, server_default=func.now())
     source_type = Column(String, default="text")
+    platform = Column(String, default="telegram")   # "telegram" | "imessage" | "web"
+    skills_fired = Column(String)                    # comma-separated skill names that triggered
 
     user = relationship("User", back_populates="conversation_logs")
 
@@ -229,3 +238,58 @@ class Skill(Base):
     description = Column(Text)
     trigger_conditions = Column(Text)
     markdown_path = Column(String)
+
+
+class WearableDevice(Base):
+    """
+    One row per connected wearable device per user.
+    Designed to support multiple devices simultaneously (Whoop + Apple Health + Oura etc).
+    OAuth tokens are stored here for device-specific auth flows.
+    Note: Legacy whoop_* fields on User remain for backward compatibility.
+    """
+    __tablename__ = "wearable_devices"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    device_type = Column(String, nullable=False)  # "whoop" | "apple_health" | "oura" | "garmin" | "fitbit"
+    device_id = Column(String)                    # device-specific identifier from provider
+    connected_at = Column(DateTime, server_default=func.now())
+    last_sync_at = Column(DateTime)
+    sync_status = Column(String, default="active")  # "active" | "error" | "disconnected" | "pending"
+    error_message = Column(Text)
+    # OAuth credentials (device-specific — keeps User table clean)
+    access_token = Column(Text)
+    refresh_token = Column(Text)
+    token_expires_at = Column(DateTime)
+    # Flexible JSON blob for device-specific config / metadata
+    metadata_json = Column(Text)
+
+    user = relationship("User", back_populates="wearable_devices")
+
+
+class WearableMetric(Base):
+    """
+    Time-series store for intraday wearable measurements.
+
+    Uses a flexible (metric_type, value, unit) schema so any wearable can
+    store any metric without schema migrations. Daily summaries live in
+    HealthSnapshot; this table holds the raw time-series data.
+
+    Supported metric_type values (non-exhaustive — add freely):
+        heart_rate, hrv, steps, calories_active, calories_resting,
+        spo2, skin_temp, respiratory_rate, stress_score, strain,
+        recovery_score, sleep_stage, body_battery, vo2max,
+        blood_glucose (future), hydration (future)
+    """
+    __tablename__ = "wearable_metrics"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    device_type = Column(String, nullable=False)   # source device
+    metric_type = Column(String, nullable=False)   # what was measured
+    value = Column(Float, nullable=False)
+    unit = Column(String)                          # "bpm", "ms", "steps", "%", "°C", etc.
+    recorded_at = Column(DateTime, nullable=False) # when the device measured it
+    received_at = Column(DateTime, server_default=func.now())  # when we stored it
+
+    user = relationship("User", back_populates="wearable_metrics")

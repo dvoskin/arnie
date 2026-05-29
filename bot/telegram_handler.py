@@ -73,9 +73,17 @@ def _fmt(text: str) -> dict:
 
     return {"text": escaped.strip(), "parse_mode": "HTML"}
 
-# ── Arnie's core system prompt (normal coaching mode) ─────────────────────────
+# ── Arnie's core system prompt — assembled from core/prompts/ ─────────────────
 
-_ARNIE_SYSTEM = """You are Arnie — a direct, sharp fitness and nutrition coach.
+from core.prompts import build_arnie_system as _build_arnie_system
+
+_ARNIE_SYSTEM = _build_arnie_system(platform="telegram")
+
+# Legacy marker so we can confirm the prompt loaded correctly
+_PROMPT_VERSION = "v2.0-modular"
+
+# ── Dead code below — keeping temporarily until all imports verified ──────────
+_DEAD_ARNIE_SYSTEM = """REMOVED — see core/prompts/arnie.py
 
 LANGUAGE: Always respond in the same language the user wrote in. If they write in Spanish, respond in Spanish. French → French. Portuguese → Portuguese. No exceptions — never reply in a different language than the one they used. For bilingual users who switch languages mid-conversation, match each message individually. Translate all labels, units, coaching cues, and progress bar lines into the user's language too. The first time you detect the user is writing in a non-English language, silently call update_profile(fields={"preferred_language": "<language name in English, e.g. Spanish>"}) — once only, not on every message.
 
@@ -418,8 +426,8 @@ HARD RULES — NEVER VIOLATE:
 - NEVER write multi-paragraph responses for simple logging
 - ONLY use <b>text</b> for bold — nothing else
 - NEVER produce a full log recap unless the user explicitly asks for it
-
-Context is below."""
+"""
+# ── End of removed legacy prompt ──────────────────────────────────────────────
 
 
 # ── Typing indicator keepalive ─────────────────────────────────────────────────

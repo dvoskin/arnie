@@ -404,9 +404,11 @@ def fmt_health(snaps: List[HealthSnapshot]) -> str:
 
 
 async def build_context(user: User, today_log: Optional[DailyLog], db) -> str:
+    from core.coaching_state import compute_coaching_state
+
     recent_logs = await get_recent_logs(db, user.id, days=90)
-    recent_weights = await get_recent_weights(db, user.id, days=56)  # 8 weeks for progress_timeline
-    recent_health = await get_recent_health_snapshots(db, user.id, days=3)
+    recent_weights = await get_recent_weights(db, user.id, days=56)
+    recent_health = await get_recent_health_snapshots(db, user.id, days=7)
     memory = await read_memory(user.telegram_id)
 
     prefs = user.preferences
@@ -419,6 +421,10 @@ async def build_context(user: User, today_log: Optional[DailyLog], db) -> str:
     strength_prs = fmt_strength_prs(recent_logs)
     food_history = fmt_food_history(recent_logs)
 
+    # Compute structured coaching state from wearable data
+    coaching_state = compute_coaching_state(recent_health, recent_logs, user)
+    coaching_state_str = coaching_state.to_context_string()
+
     # Detect workout mode: exercises already logged today
     in_workout = bool(today_log and today_log.exercise_entries)
 
@@ -426,6 +432,9 @@ async def build_context(user: User, today_log: Optional[DailyLog], db) -> str:
         "=== PROFILE ===",
         fmt_profile(user, prefs),
         (progress if progress else ""),
+        "",
+        # Coaching state goes at top so every skill sees it first
+        (coaching_state_str if coaching_state_str else ""),
         "",
         "=== TODAY ===",
         fmt_log(today_log),

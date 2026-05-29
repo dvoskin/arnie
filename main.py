@@ -10,6 +10,19 @@ import os
 from dotenv import load_dotenv
 load_dotenv(override=True)
 
+# ── Error monitoring — Sentry (no-op if SENTRY_DSN not set) ──────────────────
+_SENTRY_DSN = os.getenv("SENTRY_DSN", "")
+if _SENTRY_DSN:
+    try:
+        import sentry_sdk
+        sentry_sdk.init(
+            dsn=_SENTRY_DSN,
+            traces_sample_rate=0.1,   # 10% of transactions traced
+            profiles_sample_rate=0.1,
+        )
+    except ImportError:
+        pass  # sentry-sdk not installed — silently skip
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s  %(name)-20s  %(levelname)-8s  %(message)s",

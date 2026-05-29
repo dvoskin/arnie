@@ -1,11 +1,16 @@
 """
 Lightweight LLM wrapper. Supports Anthropic (default) and OpenAI.
 All public functions are async.
+
+Tools are imported from core/tools.py — do not define them here.
+Prompt caching is enabled for Anthropic: the system prompt block uses
+cache_control={"type": "ephemeral"} for ~80% token cost reduction on
+system prompt hits (5-minute TTL on Anthropic's side).
 """
 import os
 import json
 import logging
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -50,9 +55,14 @@ def _get_openai():
     return _openai
 
 
-# ── Tool definitions (Anthropic schema format) ────────────────────────────────
+# ── Tool definitions — imported from core/tools.py ────────────────────────────
+from core.tools import build_tools, build_tools_openai
 
-ARNIE_TOOLS = [
+# Keep ARNIE_TOOLS as a module-level alias for any external references
+ARNIE_TOOLS = build_tools()
+
+# Legacy list — kept so nothing outside this module breaks during transition
+_LEGACY_TOOLS = [
     {
         "name": "log_food",
         "description": (
@@ -303,15 +313,16 @@ ARNIE_TOOLS = [
         },
     },
 ]
-
-# OpenAI-format tools (converted on demand)
-_OAI_TOOLS = None
+# End of legacy list — tools are now sourced from core/tools.py via build_tools()
 
 
 def _oai_tools():
-    global _OAI_TOOLS
-    if _OAI_TOOLS is None:
-        _OAI_TOOLS = [
+    """OpenAI-format tool list from core/tools.py."""
+    return build_tools_openai()
+
+
+def _legacy_oai():
+    return [
             {
                 "type": "function",
                 "function": {
@@ -320,9 +331,8 @@ def _oai_tools():
                     "parameters": t["input_schema"],
                 },
             }
-            for t in ARNIE_TOOLS
+            for t in build_tools()
         ]
-    return _OAI_TOOLS
 
 
 # ── Public API ────────────────────────────────────────────────────────────────
@@ -429,14 +439,26 @@ async def analyze_image(image_data: bytes, prompt: str,
 
 async def _anthropic_chat(messages, system, use_tools, max_tokens, model=None):
     client = _get_anthropic()
+
+    # Prompt caching: mark the system prompt block as cacheable.
+    # Anthropic caches the first 1024+ token prefix for 5 minutes.
+    # With a ~400-line system prompt this saves ~80% on system prompt tokens.
+    system_block = [
+        {
+            "type": "text",
+            "text": system,
+            "cache_control": {"type": "ephemeral"},
+        }
+    ]
+
     kwargs: Dict[str, Any] = dict(
         model=model or DEFAULT_MODEL(),
         max_tokens=max_tokens,
-        system=system,
+        system=system_block,
         messages=messages,
     )
     if use_tools:
-        kwargs["tools"] = ARNIE_TOOLS
+        kwargs["tools"] = build_tools()
 
     resp = await client.messages.create(**kwargs)
 

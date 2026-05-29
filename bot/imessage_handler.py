@@ -187,9 +187,8 @@ def _im_user_id(address: str) -> str:
 
 # ── Core pipeline ──────────────────────────────────────────────────────────────
 
-# Import the system prompt and helpers from the Telegram handler so we share
-# the exact same coaching logic — no duplication.
-from bot.telegram_handler import _ARNIE_SYSTEM, _welcome_message, _calc_targets
+from core.prompts import build_arnie_system as _build_arnie_system
+from bot.telegram_handler import _welcome_message, _calc_targets
 
 
 async def handle_imessage(address: str, chat_guid: str, raw_text: str) -> None:
@@ -276,13 +275,11 @@ async def run_imessage_pipeline(address: str, chat_guid: str, raw_text: str):
         if not in_onboarding:
             today_log = await get_or_create_today_log(db, user.id, user.timezone or "UTC")
             context_str = await build_context(user, today_log, db)
-            # Inject iMessage context hint so LLM knows no HTML/markdown
-            im_hint = "\n\n[PLATFORM: iMessage — plain text only. No HTML tags, no markdown, no emoji-heavy formatting.]"
-            system = f"{_ARNIE_SYSTEM}\n\n{context_str}{im_hint}"
+            # Platform hint is already baked into the iMessage system prompt
+            system = f"{_build_arnie_system(platform='imessage')}\n\n{context_str}"
         else:
             today_log = None
             system = build_onboarding_system(user)
-            # Append iMessage note to onboarding too
             system += "\n\n[PLATFORM: iMessage — plain text responses only. No HTML. No keyboard buttons — just text options if needed.]"
 
         # ── Conversation history ───────────────────────────────────────────────
