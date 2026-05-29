@@ -329,6 +329,11 @@ _RESET_PATTERNS = {
     "reset all", "delete my account", "remove my data",
 }
 
+_RESET_CONFIRM_PHRASE = "RESET confirm"
+
+# Users who have been asked to confirm a reset — waiting for the exact phrase
+_pending_resets: set[str] = set()
+
 _REMIND_ON_PATTERNS = {
     "turn on reminders", "enable reminders", "turn on check-ins",
     "enable check-ins", "start check-ins", "send me reminders",
@@ -504,9 +509,19 @@ async def run_imessage_pipeline(address: str, chat_guid: str, raw_text: str,
         user = await get_or_create_user(db, im_id)
 
         # ── Natural language command handling (iMessage has no slash commands) ──
-        # Reset works at any point — including mid-onboarding
-        if _match_intent(raw_text, _RESET_PATTERNS):
+
+        # Confirmed reset — user typed the exact phrase
+        if raw_text.strip() == _RESET_CONFIRM_PHRASE:
+            _pending_resets.discard(im_id)
             await _handle_im_reset(chat_guid, user, db)
+            return
+
+        # Reset intent detected — ask for confirmation first
+        if _match_intent(raw_text, _RESET_PATTERNS):
+            _pending_resets.add(im_id)
+            await bb_send_text(chat_guid, "just to confirm — this wipes everything.")
+            await asyncio.sleep(0.35)
+            await bb_send_text(chat_guid, "type RESET confirm to go ahead.")
             return
 
         if user.onboarding_completed:
