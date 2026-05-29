@@ -283,6 +283,10 @@
       font-family: var(--mono); font-size: 7px;
       letter-spacing: 0.07em; text-transform: uppercase; color: var(--ink-3);
     }
+    .cta-fineprint {
+      font-size: 11px; color: var(--ink-3); margin-top: 8px;
+      text-align: center; opacity: 0.8;
+    }
 
     /* CTA button with shimmer */
     .cta-btn {
@@ -1043,60 +1047,57 @@
     <div class="cta-wrap">
       <div class="cta-glow"></div>
       <div class="cta-card">
-        <div class="platform-row">
-
-          <div class="platform-pill active">
-            <div class="pico tg-icon">
-              <!-- Telegram paper-plane -->
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="white">
-                <path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/>
-              </svg>
-            </div>
-            Telegram
-            <span class="active-lbl">Beta</span>
-          </div>
-
-          <div class="platform-pill coming" style="opacity:0.93; background:color-mix(in oklch,var(--ink) 5%,transparent); border-color:color-mix(in oklch,var(--ink) 12%,transparent);">
-            <div class="pico" style="background:color-mix(in oklch,var(--ink) 28%,transparent)">
-              <!-- iMessage bubble icon -->
+        <!-- Platform selector — choose iMessage or Telegram -->
+        <div class="platform-row" style="grid-template-columns:repeat(2,1fr);">
+          <button type="button" class="platform-pill active" id="tab-imessage"
+                  style="cursor:pointer;" onclick="selectPlatform('imessage')">
+            <div class="pico" style="background:#34DA50">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="white">
                 <path d="M12 2C6.477 2 2 6.477 2 12c0 1.89.525 3.66 1.438 5.168L2 22l4.832-1.438A9.956 9.956 0 0 0 12 22c5.523 0 10-4.477 10-10S17.523 2 12 2z"/>
               </svg>
             </div>
             iMessage
-            <span class="coming-lbl">This week</span>
-          </div>
-
-          <div class="platform-pill coming">
-            <div class="pico" style="background:color-mix(in oklch,var(--ink) 18%,transparent)">
-              <!-- Phone/Native App icon -->
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="white">
-                <rect x="5" y="1" width="14" height="22" rx="3"/>
-                <rect x="9" y="18.5" width="6" height="1.5" rx="0.75" fill="oklch(0.06 0.008 240)" opacity="0.7"/>
+          </button>
+          <button type="button" class="platform-pill" id="tab-telegram"
+                  style="cursor:pointer;" onclick="selectPlatform('telegram')">
+            <div class="pico tg-icon">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="white">
+                <path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/>
               </svg>
             </div>
-            iOS / Android
-            <span class="coming-lbl">Soon</span>
-          </div>
-
+            Telegram
+          </button>
         </div>
 
-        <!-- iMessage signup — enter phone, Arnie texts you first -->
-        <form class="beta-form" id="imsgForm" onsubmit="handleIMessageSignup(event)">
-          <input type="tel" name="phone" id="imsgPhone" placeholder="your phone number" required autocomplete="tel" inputmode="tel">
-          <button type="submit" class="cta-btn beta-submit-btn" id="imsgBtn">
-            Text me on iMessage →
-          </button>
-        </form>
-        <p style="font-size:11px;color:var(--ink-3);margin-top:8px;text-align:center;opacity:0.8">
-          Arnie sends one text to get started. Apple devices only. Reply STOP anytime.
-        </p>
-        <div class="beta-success" id="imsgSuccess" style="display:none">
-          <div class="beta-success-inner">
-            <span class="beta-check">✓</span>
-            <span id="imsgSuccessMsg">Arnie is texting you now — check your messages.</span>
+        <!-- iMessage pane — phone number, Arnie texts first -->
+        <div id="pane-imessage">
+          <form class="beta-form" id="imsgForm" onsubmit="handleIMessageSignup(event)">
+            <input type="tel" name="phone" id="imsgPhone" placeholder="your phone number" required autocomplete="tel" inputmode="tel">
+            <button type="submit" class="cta-btn beta-submit-btn" id="imsgBtn">Text me on iMessage →</button>
+          </form>
+          <p class="cta-fineprint">Arnie sends one text to start. Apple devices only · reply STOP anytime.</p>
+          <div class="beta-success" id="imsgSuccess" style="display:none">
+            <div class="beta-success-inner">
+              <span class="beta-check">✓</span>
+              <span id="imsgSuccessMsg">Arnie is texting you now — check your messages.</span>
+            </div>
           </div>
-          <a href="https://t.me/Arnie_1026_Bot?start=freetrial" target="_blank" rel="noopener" class="beta-tg-link" style="margin-top:10px;display:inline-block">Not on iMessage? Try Telegram →</a>
+        </div>
+
+        <!-- Telegram pane — email, then open the bot -->
+        <div id="pane-telegram" style="display:none">
+          <form class="beta-form" id="tgForm" onsubmit="handleTelegramSignup(event)">
+            <input type="email" name="email" id="tgEmail" placeholder="your@email.com" required autocomplete="email">
+            <button type="submit" class="cta-btn beta-submit-btn" id="tgBtn">Get Telegram access →</button>
+          </form>
+          <p class="cta-fineprint">We'll save your spot and open Telegram to start now.</p>
+          <div class="beta-success" id="tgSuccess" style="display:none">
+            <div class="beta-success-inner">
+              <span class="beta-check">✓</span>
+              <span>You're on the list. Open Telegram to start now:</span>
+            </div>
+            <a href="https://t.me/Arnie_1026_Bot?start=freetrial" target="_blank" rel="noopener" class="cta-btn beta-submit-btn" style="margin-top:10px;text-decoration:none;display:flex">Open Telegram →</a>
+          </div>
         </div>
       </div>
 
@@ -1431,7 +1432,7 @@
             <li>Daily coaching &amp; check-ins</li>
             <li>Dashboard access</li>
           </ul>
-          <a href="#heroBetaForm" class="price-cta" onclick="document.getElementById('heroBetaForm').querySelector('input').focus();return true;">Request Access →</a>
+          <a href="#imsgForm" class="price-cta" onclick="document.getElementById('imsgForm').querySelector('input').focus();return true;">Request Access →</a>
         </div>
 
         <div class="price-card featured reveal reveal-d2">
@@ -1444,7 +1445,7 @@
             <li>Whoop &amp; wearable sync</li>
             <li>Proactive daily check-ins</li>
           </ul>
-          <a href="#heroBetaForm" class="price-cta" onclick="document.getElementById('heroBetaForm').querySelector('input').focus();return true;">Get Access →</a>
+          <a href="#imsgForm" class="price-cta" onclick="document.getElementById('imsgForm').querySelector('input').focus();return true;">Get Access →</a>
         </div>
 
       </div>
@@ -1520,7 +1521,7 @@
       <div class="sticky-title">Request Beta Access</div>
       <div class="sticky-sub">Limited spots · Telegram-first</div>
     </div>
-    <a href="#heroBetaForm" class="sticky-btn" onclick="setTimeout(()=>document.getElementById('heroBetaForm').querySelector('input').focus(),300)">
+    <a href="#imsgForm" class="sticky-btn" onclick="setTimeout(()=>document.getElementById('imsgForm').querySelector('input').focus(),300)">
       Apply Now →
     </a>
   </div>
@@ -1534,6 +1535,34 @@
 
   // iMessage signup — user enters phone, Arnie texts them first
   const ARNIE_API = 'https://arnie.onrender.com';
+
+  // ── Platform tab switcher ────────────────────────────────────────
+  function selectPlatform(p) {
+    const isIM = p === 'imessage';
+    document.getElementById('tab-imessage').classList.toggle('active', isIM);
+    document.getElementById('tab-telegram').classList.toggle('active', !isIM);
+    document.getElementById('pane-imessage').style.display = isIM ? 'block' : 'none';
+    document.getElementById('pane-telegram').style.display = isIM ? 'none' : 'block';
+  }
+
+  // ── Telegram signup — capture email (Formspree), then reveal bot link ──
+  async function handleTelegramSignup(e) {
+    e.preventDefault();
+    const form = document.getElementById('tgForm');
+    const email = document.getElementById('tgEmail').value.trim();
+    const btn = document.getElementById('tgBtn');
+    btn.textContent = 'Saving…';
+    btn.disabled = true;
+    try {
+      await fetch(FORMSPREE_ENDPOINT, {
+        method: 'POST',
+        headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, platform: 'telegram' }),
+      });
+    } catch (err) { /* non-blocking — still show the link */ }
+    form.style.display = 'none';
+    document.getElementById('tgSuccess').style.display = 'block';
+  }
 
   async function handleIMessageSignup(e) {
     e.preventDefault();
