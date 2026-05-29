@@ -363,12 +363,10 @@ async def run_imessage_pipeline(address: str, chat_guid: str, raw_text: str,
         # ── First-ever contact — send intro before onboarding starts ──────────
         # Detect: no name yet + no prior conversations = truly new user
         if not user.name and not user.onboarding_completed:
-            from db.queries import get_recent_conversations
             prior = await get_recent_conversations(db, user.id, limit=1)
             if not prior:
                 await _send_first_contact_intro(chat_guid)
                 # Log this as the first conversation so intro doesn't re-fire
-                from db.queries import log_conversation
                 await log_conversation(
                     db, user.id, raw_text,
                     "[intro sent]", source_type="imessage"
