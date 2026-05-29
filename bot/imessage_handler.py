@@ -94,24 +94,31 @@ class Tapback:
     QUESTION  = 2005   # ❓
 
 
-async def bb_send_reaction(message_guid: str, tapback: int) -> bool:
+async def bb_send_reaction(chat_guid: str, message_guid: str, reaction: str) -> bool:
     """
-    React to an incoming message with a tapback.
-    message_guid — the guid of the MESSAGE to react to (from webhook payload data.guid)
-    tapback      — one of the Tapback constants
+    React to a message with a tapback via the BlueBubbles Private API.
+    Correct endpoint: POST /api/v1/message/react
+    Body: {chatGuid, selectedMessageGuid, reaction} where reaction is a string:
+          "love" | "like" | "dislike" | "laugh" | "emphasize" | "question"
+    Requires Private API enabled on the BlueBubbles server (SIP disabled).
     """
-    if not _BB_URL or not _BB_PASSWORD or not message_guid:
+    if not _BB_URL or not _BB_PASSWORD or not message_guid or not chat_guid:
         return False
     try:
         resp = await _get_http().post(
-            f"{_BB_URL}/api/v1/message/{message_guid}/react",
+            f"{_BB_URL}/api/v1/message/react",
             params={"password": _BB_PASSWORD},
-            json={"tapback": tapback, "remove": False},
+            json={
+                "chatGuid": chat_guid,
+                "selectedMessageGuid": message_guid,
+                "reaction": reaction,
+            },
             headers={"Content-Type": "application/json"},
         )
         if resp.status_code not in (200, 201):
-            logger.warning(f"BlueBubbles reaction failed: {resp.status_code} {resp.text[:120]}")
+            logger.warning(f"BlueBubbles reaction failed: {resp.status_code} {resp.text[:160]}")
             return False
+        logger.info(f"Reaction '{reaction}' sent on {message_guid[:8]}")
         return True
     except Exception as e:
         logger.warning(f"BlueBubbles reaction error: {e}")

@@ -193,10 +193,9 @@ class TelegramAdapter(PlatformAdapter):
 # iMessage adapter (BlueBubbles)
 # ─────────────────────────────────────────────────────────────────────────────
 
-# Semantic → BlueBubbles tapback code
-_IM_TAPBACK = {
-    React.LOVE: 2000, React.LIKE: 2001, React.LAUGH: 2003, React.EMPHASIZE: 2004,
-}
+# Semantic React.* values ARE the BlueBubbles reaction strings ("love","like",
+# "laugh","emphasize") — passed straight through. Only these four are used.
+_IM_REACTIONS = {React.LOVE, React.LIKE, React.LAUGH, React.EMPHASIZE}
 # Semantic → iMessage effect id
 _IM_EFFECT = {
     FX.CELEBRATE: "com.apple.MobileSMS.expressivesend.balloons",
@@ -221,10 +220,10 @@ class IMessageAdapter(PlatformAdapter):
         )
 
         # Reaction (tapback) on the user's incoming message
-        if response.reaction and self.reply_to_guid:
-            code = _IM_TAPBACK.get(response.reaction)
-            if code:
-                asyncio.create_task(bb_send_reaction(self.reply_to_guid, code))
+        if response.reaction in _IM_REACTIONS and self.reply_to_guid:
+            asyncio.create_task(
+                bb_send_reaction(self.chat_guid, self.reply_to_guid, response.reaction)
+            )
 
         # Fold buttons into the last bubble as natural text (iMessage has no keyboards)
         bubbles = list(response.bubbles)
