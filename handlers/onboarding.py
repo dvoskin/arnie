@@ -42,7 +42,7 @@ def build_onboarding_system(user: User) -> str:
     steps = [
         ("name",
          has("name"),
-         "what's your first name?",
+         "what's your first name? 👋",
          user.name or ""),
 
         ("sex",
@@ -57,18 +57,18 @@ def build_onboarding_system(user: User) -> str:
 
         ("height & weight",
          has("height_cm") and has("current_weight_kg"),
-         "height and weight? throw in a target weight too if you have one.",
+         "height and weight? 📏 throw in a target weight too if you have one.",
          f"{user.height_cm:.0f}cm / {user.current_weight_kg:.1f}kg"
          if (user.height_cm and user.current_weight_kg) else ""),
 
         ("primary goal",
          has("primary_goal"),
-         "what's the goal — lose weight, gain, or maintain?",
+         "what's the goal? 🎯 lose weight, gain, or maintain?",
          user.primary_goal or ""),
 
         ("training experience",
          has("training_experience"),
-         "how experienced are you — beginner, intermediate, or advanced?",
+         "how experienced are you — beginner, intermediate, or advanced? 💪",
          user.training_experience or ""),
 
         # timezone removed from onboarding — detected from conversation context

@@ -278,6 +278,10 @@ async def _dispatch(name, inp, user, today_log, db, source_type):  # noqa: C901
         }
         fields = {_aliases.get(k, k): v for k, v in fields.items()}
 
+        # Always capitalize names properly — store "Danny" not "danny"
+        if "name" in fields and isinstance(fields["name"], str):
+            fields["name"] = fields["name"].strip().title()
+
         _user_fields = {
             "name", "age", "sex", "height_cm", "current_weight_kg",
             "goal_weight_kg", "primary_goal", "training_experience",

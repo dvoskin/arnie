@@ -636,16 +636,18 @@ async def run_imessage_pipeline(address: str, chat_guid: str, raw_text: str,
                 await db.refresh(today_log)
 
             # ── Onboarding tapback reactions ──────────────────────────────────
-            # React to the user's message based on what profile field they just set
             if was_onboarding and message_guid:
                 for tc in tool_calls:
                     if tc["name"] == "update_profile":
                         fields = tc.get("input", {}).get("fields", {})
-                        for field in ("name", "current_weight_kg", "primary_goal",
-                                      "training_experience", "calorie_target"):
+                        # height_cm also triggers the weight tapback
+                        check_fields = ("name", "current_weight_kg", "height_cm",
+                                        "primary_goal", "training_experience", "calorie_target")
+                        for field in check_fields:
                             if field in fields:
+                                react_field = "current_weight_kg" if field == "height_cm" else field
                                 asyncio.create_task(
-                                    _send_onboarding_reaction(message_guid, field)
+                                    _send_onboarding_reaction(message_guid, react_field)
                                 )
                                 break  # one tapback per message
 
