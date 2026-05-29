@@ -219,11 +219,17 @@ class IMessageAdapter(PlatformAdapter):
             bb_send_text, bb_send_text_with_effect, bb_send_reaction, _to_plain,
         )
 
-        # Reaction (tapback) on the user's incoming message
+        # Always log the reaction decision so we can see exactly why one fires or not
+        logger.info(
+            f"IM send: reaction={response.reaction or '-'} "
+            f"reply_to={'yes' if self.reply_to_guid else 'NONE'} "
+            f"effect={response.effect or '-'} bubbles={len(response.bubbles)}"
+        )
+
+        # Reaction (tapback) on the user's incoming message — awaited (not fire-and-forget)
+        # so it can't be dropped and its result is always logged.
         if response.reaction in _IM_REACTIONS and self.reply_to_guid:
-            asyncio.create_task(
-                bb_send_reaction(self.chat_guid, self.reply_to_guid, response.reaction)
-            )
+            await bb_send_reaction(self.chat_guid, self.reply_to_guid, response.reaction)
 
         # Fold buttons into the last bubble as natural text (iMessage has no keyboards)
         bubbles = list(response.bubbles)

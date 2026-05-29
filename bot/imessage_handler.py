@@ -133,6 +133,32 @@ async def bb_send_reaction(chat_guid: str, message_guid: str, reaction: str,
         return False
 
 
+async def bb_set_typing(chat_guid: str, typing: bool) -> bool:
+    """
+    Show/hide the 'Arnie is typing…' indicator in the iMessage thread.
+    POST   /api/v1/chat/{guid}/typing  → start
+    DELETE /api/v1/chat/{guid}/typing  → stop
+    Requires Private API. Best-effort — never blocks the pipeline.
+    """
+    if not _BB_URL or not _BB_PASSWORD or not chat_guid:
+        return False
+    import urllib.parse
+    guid_enc = urllib.parse.quote(chat_guid, safe="")
+    try:
+        method = "POST" if typing else "DELETE"
+        resp = await _get_http().request(
+            method,
+            f"{_BB_URL}/api/v1/chat/{guid_enc}/typing",
+            params={"password": _BB_PASSWORD},
+        )
+        if resp.status_code not in (200, 201):
+            logger.info(f"typing {'on' if typing else 'off'} → {resp.status_code} {resp.text[:120]}")
+        return resp.status_code in (200, 201)
+    except Exception as e:
+        logger.warning(f"typing indicator error: {e}")
+        return False
+
+
 async def bb_send_text(chat_guid: str, text: str) -> bool:
     """
     Send a plain-text message to an iMessage chat via BlueBubbles.
@@ -646,11 +672,15 @@ capitalize their name every time you use it."""
             extended=(in_onboarding or _needs_extended_history(raw_text))
         )
 
+        # ── Show "Arnie is typing…" while we think ────────────────────────────
+        await bb_set_typing(chat_guid, True)
+
         # ── LLM call ──────────────────────────────────────────────────────────
         try:
             result = await chat(messages, system, tools=True, max_tokens=1024)
         except Exception as e:
             logger.error(f"LLM call failed for iMessage user {im_id}: {e}")
+            await bb_set_typing(chat_guid, False)
             await bb_send_text(chat_guid, "Something went wrong on my end — try again in a moment.")
             return
 
@@ -762,7 +792,8 @@ capitalize their name every time you use it."""
             resp.effect = moment.effect
             resp.effect_idx = moment.effect_idx
 
-        # ── Send via the iMessage adapter ─────────────────────────────────────
+        # ── Stop typing, then send via the iMessage adapter ───────────────────
+        await bb_set_typing(chat_guid, False)
         adapter = IMessageAdapter(chat_guid, reply_to_guid=message_guid)
         await adapter.send(resp)
 
