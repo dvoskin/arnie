@@ -471,6 +471,24 @@ async def _dashboard_url(user, db) -> str:
     return f"{base}/dashboard/{token}"
 
 
+async def _complete_im_onboarding(chat_guid, user, db, raw_text, message_guid,
+                                  lead: str = "") -> None:
+    """
+    Single completion path for ALL onboarding exits (calculate / skip / LLM tool).
+    Sends the celebratory welcome + dashboard via the adapter so every user gets
+    the same polished ending. lead = optional bubble(s) prepended (e.g. calc result).
+    """
+    dash_url = await _dashboard_url(user, db)
+    body = await _build_completion_text(user, db, dash_url)
+    full = f"{lead}|||{body}" if lead else body
+    resp = Response.from_text(full)
+    resp.effect = FX.CELEBRATE
+    resp.effect_idx = 0
+    resp.reaction = React.LOVE
+    await IMessageAdapter(chat_guid, reply_to_guid=message_guid).send(resp)
+    await log_conversation(db, user.id, raw_text, full, source_type="imessage")
+
+
 async def _build_completion_text(user, db, dash_url: str = "") -> str:
     """iMessage-native onboarding welcome — casual, multi-bubble, no HTML."""
     prefs = user.preferences
@@ -603,39 +621,22 @@ async def run_imessage_pipeline(address: str, chat_guid: str, raw_text: str,
                         user.onboarding_completed = True
                         await db.commit()
                         user = await reload_user(db, user.id)
-
-                        goal_lbl = targets["goal"]
-                        calc_line = (
-                            f"TDEE ~{targets['tdee']:,} → {goal_lbl} target: "
-                            f"{targets['calories']:,} cal · {targets['protein']}g protein"
+                        await _complete_im_onboarding(
+                            chat_guid, user, db, raw_text, message_guid,
+                            lead=f"ran the math 🧮|||~{targets['tdee']:,} tdee, so we're going "
+                                 f"{targets['calories']:,} cal a day for the {targets['goal']}.",
                         )
-                        prefs = user.preferences
-                        welcome = _welcome_message(
-                            name=user.name or "",
-                            has_targets=bool(prefs and prefs.calorie_target),
-                            primary_goal=user.primary_goal,
-                            calorie_target=prefs.calorie_target if prefs else None,
-                            protein_target=prefs.protein_target if prefs else None,
-                        )
-                        full_msg = calc_line + "\n\n" + welcome
-                        await bb_send_text(chat_guid, _to_plain(full_msg))
-                        await log_conversation(db, user.id, raw_text, full_msg, source_type="imessage")
                         return
 
                 elif _txt in ("skip", "skip for now"):
                     user.onboarding_completed = True
                     await db.commit()
                     user = await reload_user(db, user.id)
-                    prefs = user.preferences
-                    welcome = _welcome_message(
-                        name=user.name or "",
-                        has_targets=bool(prefs and prefs.calorie_target),
-                        primary_goal=user.primary_goal,
-                        calorie_target=prefs.calorie_target if prefs else None,
-                        protein_target=prefs.protein_target if prefs else None,
+                    await _complete_im_onboarding(
+                        chat_guid, user, db, raw_text, message_guid,
+                        lead="no targets for now, that's fine.|||we'll dial them in once i "
+                             "see how you actually eat.",
                     )
-                    await bb_send_text(chat_guid, _to_plain(welcome))
-                    await log_conversation(db, user.id, raw_text, welcome, source_type="imessage")
                     return
 
         # ── Build system prompt + context ─────────────────────────────────────

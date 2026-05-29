@@ -460,57 +460,61 @@ def _fmt_whoop_notification(snap) -> str:
 
 
 def _fmt_day_report(log, prefs, user_name: str) -> str:
-    """Template-based end-of-day performance recap."""
-    name = user_name or "hey"
+    """
+    Conversational end-of-day recap — multi-bubble (|||), in Arnie's voice.
+    Deterministic (no LLM cost) but reads like a coach texting, not an app card.
+    Rendered per-platform by the adapter.
+    """
+    name = (user_name or "").strip()
     cal = round(log.total_calories or 0)
     pro = round(log.total_protein or 0)
     cal_t = prefs.calorie_target if prefs else None
     pro_t = prefs.protein_target if prefs else None
 
-    lines = [f"<b>📊 Day recap — {log.date}</b>", ""]
+    bubbles = []
 
+    # Opener — varies with how the day went
+    if cal_t and pro_t:
+        cal_ok = abs(cal - cal_t) <= cal_t * 0.1
+        pro_ok = pro >= pro_t * 0.9
+        if cal_ok and pro_ok and log.workout_completed:
+            bubbles.append(f"that's a clean day, {name}. 🔥" if name else "that's a clean day. 🔥")
+        elif cal_ok and pro_ok:
+            bubbles.append("solid day on the numbers.")
+        else:
+            bubbles.append(f"end of day check, {name}." if name else "end of day check.")
+
+    # Calories line
     if cal_t:
-        pct = int(cal / cal_t * 100)
         diff = cal - cal_t
-        icon = "✅" if abs(diff) <= cal_t * 0.1 else ("⚠️" if diff < 0 else "🔴")
-        lines.append(f"Calories  {icon}  <b>{cal}</b> / {cal_t}  ({diff:+d})")
-    else:
-        lines.append(f"Calories  <b>{cal}</b>")
+        if abs(diff) <= cal_t * 0.1:
+            bubbles.append(f"{cal}/{cal_t} cal. right where you want to be.")
+        elif diff < 0:
+            bubbles.append(f"{cal}/{cal_t} cal — {abs(diff)} under. make sure that's on purpose.")
+        else:
+            bubbles.append(f"{cal}/{cal_t} cal, {diff} over. not a big deal, just noting it.")
+    elif cal:
+        bubbles.append(f"{cal} cal logged today.")
 
+    # Protein line — the one that matters most for the goal
     if pro_t:
-        pct_p = int(pro / pro_t * 100)
-        icon_p = "✅" if pct_p >= 90 else ("⚠️" if pct_p >= 70 else "🔴")
-        lines.append(f"Protein   {icon_p}  <b>{pro}g</b> / {pro_t}g  ({pct_p}%)")
-    else:
-        lines.append(f"Protein   <b>{pro}g</b>")
+        if pro >= pro_t * 0.9:
+            bubbles.append(f"protein at {pro}g. nailed it. 💪")
+        elif pro >= pro_t * 0.7:
+            bubbles.append(f"protein landed at {pro}/{pro_t}g. close, push it earlier tomorrow.")
+        else:
+            short = pro_t - pro
+            bubbles.append(f"protein only hit {pro}g — {short}g short. that's the one to fix tomorrow.")
 
-    wo = "✅" if log.workout_completed else "✗"
-    ca = "✅" if log.cardio_completed else "✗"
-    lines.append(f"Workout   {wo}   Cardio  {ca}")
-
-    if log.total_water_ml:
-        lines.append(f"Water     <b>{log.total_water_ml:.0f}ml</b>")
-
-    notes = []
-    if pro_t and pro < pro_t * 0.7:
-        notes.append(f"Protein was {pro_t - pro:.0f}g short — prioritize it tomorrow")
-    elif pro_t and pro >= pro_t * 0.9:
-        notes.append("Protein nailed")
-    if cal_t and abs(cal - cal_t) <= cal_t * 0.08:
-        notes.append("calories on target")
-    elif cal_t and cal < cal_t * 0.85:
-        notes.append(f"calories {cal_t - cal:.0f} under — make sure it's intentional")
+    # Training acknowledgment (only if notable)
     if log.workout_completed:
-        notes.append("workout done")
+        bubbles.append("and you trained. that's the day. 👊")
 
-    if notes:
-        lines.append("")
-        lines.append("💡 " + ", ".join(notes).capitalize() + ".")
+    if not bubbles:
+        bubbles.append("quiet day on the log.")
+        bubbles.append("tomorrow we lock in. what's the plan?")
 
-    if log.status == "open":
-        lines.append("\nDone for the day? Close it out with /close")
-
-    return "\n".join(lines)
+    return "|||".join(bubbles)
 
 
 async def _run_whoop_sync():
