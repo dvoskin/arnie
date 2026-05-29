@@ -43,7 +43,7 @@ from core.platform import (
     Response, React, FX, IMessageAdapter, onboarding_reaction, detect_moment,
 )
 from handlers.onboarding import build_onboarding_system, is_onboarding_complete
-from handlers.tool_executor import execute_tool_calls
+from handlers.tool_executor import execute_tool_calls, deterministic_confirmation
 from memory.reflection import maybe_update_memory
 
 logger = logging.getLogger(__name__)
@@ -730,7 +730,13 @@ capitalize their name every time you use it."""
                 except Exception:
                     pass
             if not response_text:
-                response_text = "done."
+                # Never a bare "done." — build a real confirmation from what was logged
+                if tool_calls:
+                    response_text = deterministic_confirmation(
+                        tool_calls, today_log, user.preferences
+                    )
+                else:
+                    response_text = "still here. what's up?"
 
         # ── Build the platform-agnostic Response ──────────────────────────────
         resp = Response.from_text(response_text)

@@ -31,7 +31,7 @@ from core.platform import React, onboarding_reaction, detect_moment
 from handlers.onboarding import (
     build_onboarding_system, get_onboarding_keyboard, is_onboarding_complete,
 )
-from handlers.tool_executor import execute_tool_calls
+from handlers.tool_executor import execute_tool_calls, deterministic_confirmation
 from handlers.daily_closeout import generate_closeout
 from memory.reflection import maybe_update_memory
 from multimodal.voice_handler import process_voice
@@ -862,12 +862,18 @@ async def _run_pipeline(update: Update, context: ContextTypes.DEFAULT_TYPE,
             except Exception:
                 pass
         if not response_text:
-            response_text = "done."
+            # Never a bare "done." — build a real confirmation from what was logged
+            if tool_calls:
+                response_text = deterministic_confirmation(
+                    tool_calls, today_log, user.preferences
+                )
+            else:
+                response_text = "still here. what's up?"
 
     # ── Send response — split on ||| for multi-bubble messaging ─────────────
     bubbles = [b.strip() for b in response_text.split("|||") if b.strip()]
     if not bubbles:
-        bubbles = ["done."]
+        bubbles = ["got it."]
 
     for i, bubble in enumerate(bubbles):
         fmt_kwargs = _fmt(bubble)

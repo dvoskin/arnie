@@ -56,6 +56,43 @@ def _parse_log_date(date_str: str | None, user_timezone: str = "UTC"):
     return None
 
 
+def deterministic_confirmation(tool_calls, log, prefs) -> str:
+    """
+    Build a meaningful confirmation from what was actually logged, used when the
+    LLM returns no text after a tool call. Never a bare "done." — the user always
+    learns what happened and where they stand. Returns ||| multi-bubble text.
+    """
+    names = {tc.get("name") for tc in (tool_calls or [])}
+    cal = round(getattr(log, "total_calories", 0) or 0)
+    pro = round(getattr(log, "total_protein", 0) or 0)
+    cal_t = getattr(prefs, "calorie_target", None) if prefs else None
+    pro_t = getattr(prefs, "protein_target", None) if prefs else None
+
+    if names & {"log_food", "update_food_entry"}:
+        if cal_t:
+            tail = f"you're at {cal}/{cal_t} cal today."
+        else:
+            tail = f"that's {cal} cal so far today."
+        # surface protein if they have a target and are notably behind
+        if pro_t and pro < pro_t * 0.85:
+            return f"logged.|||{tail}|||protein's at {pro}/{pro_t}g — keep it coming."
+        return f"logged.|||{tail}"
+
+    if "log_exercise" in names:
+        return "logged your workout. 💪"
+    if "log_body_weight" in names:
+        return "got your weight down. 📉"
+    if "log_water" in names:
+        return "water logged. 💧"
+    if names & {"delete_food_entry", "delete_exercise_entry"}:
+        return "removed it."
+    if "update_profile" in names:
+        return "updated. 👍"
+    if "close_day" in names:
+        return "day closed. nice work today."
+    return "got it."
+
+
 async def execute_tool_calls(
     tool_calls: List[Dict[str, Any]],
     user: User,
