@@ -87,7 +87,6 @@ async def _migrate(conn):
 
     for table, column, ddl in additions:
         try:
-            # SQLite: PRAGMA table_info returns rows of (cid, name, type, notnull, dflt_value, pk)
             result = await conn.execute(text(f"PRAGMA table_info({table})"))
             existing_cols = {row[1] for row in result.fetchall()}
             if column not in existing_cols:
@@ -95,3 +94,15 @@ async def _migrate(conn):
                 logger.info(f"Migration: added {table}.{column}")
         except Exception as e:
             logger.warning(f"Migration check for {table}.{column} failed: {e}")
+
+    # ── Data migrations ────────────────────────────────────────────────────────
+    # Enable proactive messaging for all existing users who have it off
+    try:
+        result = await conn.execute(
+            text("UPDATE user_preferences SET proactive_messaging_enabled = 1 "
+                 "WHERE proactive_messaging_enabled = 0 OR proactive_messaging_enabled IS NULL")
+        )
+        if result.rowcount:
+            logger.info(f"Migration: enabled proactive messaging for {result.rowcount} users")
+    except Exception as e:
+        logger.warning(f"Migration: proactive messaging update failed: {e}")

@@ -67,7 +67,7 @@ class UserPreferences(Base):
     reminder_frequency = Column(String, default="moderate")   # none / light / moderate / heavy
     preferred_response_length = Column(String, default="medium")  # short / medium / long
     profanity_tolerance = Column(Boolean, default=False)
-    proactive_messaging_enabled = Column(Boolean, default=False)
+    proactive_messaging_enabled = Column(Boolean, default=True)
     wake_time = Column(String, default="07:00")
     sleep_time = Column(String, default="23:00")
     calorie_target = Column(Integer)
