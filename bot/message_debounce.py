@@ -65,7 +65,8 @@ async def schedule_message(
         try:
             await callback(combined)
         except Exception as e:
-            logger.error(f"Debounce callback failed for {user_key}: {e}")
+            import traceback
+            logger.error(f"Debounce callback failed for {user_key}: {e}\n{traceback.format_exc()}")
 
     task = asyncio.create_task(_fire())
     _pending_tasks[user_key] = task
