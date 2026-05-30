@@ -445,6 +445,12 @@ async def build_context(user: User, today_log: Optional[DailyLog], db) -> str:
     if pattern:
         discovery_lines.append(f"[PATTERN — surface this if it fits naturally] {pattern}")
 
+    # Active mission (open coaching loop) — live progress so Arnie can close it
+    from core.missions import mission_progress
+    mission_str = mission_progress(user, today_log)
+    if mission_str:
+        discovery_lines.append(mission_str)
+
     # Detect workout mode: exercises already logged today
     in_workout = bool(today_log and today_log.exercise_entries)
 

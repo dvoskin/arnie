@@ -41,6 +41,12 @@ class User(Base):
     # Proactive engagement state — persisted so it survives deploys
     nudges_sent = Column(Text, default="")          # comma-separated day-1 warmup slot keys fired
     whoop_last_notified = Column(String)            # date string of last whoop recovery ping
+    weekly_recap_week = Column(String)              # iso year-week of last weekly recap sent
+    # Open coaching loop — one active daily mission, auto-evaluated against the log
+    active_mission = Column(String)                 # human-readable mission text
+    mission_metric = Column(String)                 # protein|calories|workouts|steps
+    mission_target = Column(Float)                  # numeric target for the metric
+    mission_date = Column(String)                   # date string the mission is for
     created_at = Column(DateTime, server_default=func.now())
 
     preferences = relationship("UserPreferences", back_populates="user", uselist=False,

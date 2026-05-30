@@ -291,6 +291,18 @@ async def _llm_morning_briefing(user, log, prefs, health_snap, db, name: str) ->
     pro_t = prefs.protein_target if prefs else None
     rec = health_snap.recovery_score if health_snap else None
 
+    # Set today's mission (the day's highest-leverage action / open loop)
+    mission_text = None
+    try:
+        from core.missions import pick_mission, set_mission_on_user
+        mission = pick_mission(log, logs, prefs, user)
+        if mission:
+            set_mission_on_user(user, mission)
+            await db.commit()
+            mission_text = mission["text"]
+    except Exception as e:
+        logger.warning(f"mission set failed: {e}")
+
     data = [f"Athlete: {name}, goal {user.primary_goal or '?'}"]
     if m: data.append(f"Momentum: {m.score}/100 ({m.tier}, {m.direction}); drivers: {', '.join(m.drivers) or 'n/a'}")
     if trend: data.append(trend)
@@ -298,16 +310,57 @@ async def _llm_morning_briefing(user, log, prefs, health_snap, db, name: str) ->
     if pattern: data.append(f"Pattern noticed: {pattern}")
     if cal_t: data.append(f"Calorie target {cal_t}, protein target {pro_t}")
     if rec is not None: data.append(f"Recovery today: {rec}%")
+    if mission_text: data.append(f"TODAY'S MISSION (end the briefing with this as the action): {mission_text}")
     data.append(f"Language: {getattr(prefs,'preferred_language',None) or 'English'}")
 
     prompt = ("\n".join(data) + "\n\nWrite the morning briefing. Pick the most useful 2-3 of these "
-              "signals, state the trend with a number, and end with today's single highest-leverage action.")
+              "signals, state the trend with a number, and end with today's mission as the single action.")
     try:
         r = await chat([{"role": "user", "content": prompt}], system=_BRIEFING_SYSTEM,
                        tools=False, max_tokens=200, model="claude-haiku-4-5-20251001")
         return (r.get("text") or "").strip()
     except Exception as e:
         logger.error(f"Morning briefing failed: {e}")
+        return ""
+
+
+async def _llm_weekly_recap(user, prefs, db, name: str) -> str:
+    """Sunday 'your week' recap — momentum vs last week, PRs, and a memory moment."""
+    from core.llm import chat
+    from db.queries import get_recent_logs, get_recent_weights
+    from core.momentum import compute_momentum
+    from core.insights_engine import personal_records, fmt_records
+    from core.memory_moments import find_memory_moment
+
+    logs = await get_recent_logs(db, user.id, days=21)
+    weights = await get_recent_weights(db, user.id, days=60)
+    m = compute_momentum(logs, prefs, weights, user)
+    recs = fmt_records(personal_records(logs, weights))
+    moment = find_memory_moment(weights, logs, user)
+
+    # week-over-week training + logging
+    from datetime import date as _d, timedelta as _td
+    today = _d.today()
+    this_wk = [l for l in logs if (today - l.date).days < 7 and (l.total_calories or 0) > 0]
+    last_wk = [l for l in logs if 7 <= (today - l.date).days < 14 and (l.total_calories or 0) > 0]
+    wk_workouts = sum(1 for l in this_wk if l.workout_completed)
+    data = [f"Athlete: {name}, goal {user.primary_goal or '?'}",
+            f"This week: {len(this_wk)} days logged, {wk_workouts} workouts",
+            f"Last week: {len(last_wk)} days logged"]
+    if m: data.append(f"Momentum: {m.score}/100 ({m.tier}, {m.direction})")
+    if recs: data.append(recs)
+    if moment: data.append(f"Memory moment to weave in: {moment}")
+    data.append(f"Language: {getattr(prefs,'preferred_language',None) or 'English'}")
+
+    prompt = ("\n".join(data) + "\n\nWrite a short Sunday 'your week' recap. Celebrate what's real "
+              "with numbers, note momentum, weave in the memory moment if present, and set the tone "
+              "for next week. end with a question. lowercase, 3-5 bubbles split with |||.")
+    try:
+        r = await chat([{"role": "user", "content": prompt}], system=_BRIEFING_SYSTEM,
+                       tools=False, max_tokens=260, model="claude-haiku-4-5-20251001")
+        return (r.get("text") or "").strip()
+    except Exception as e:
+        logger.error(f"Weekly recap failed: {e}")
         return ""
 
 
@@ -320,6 +373,24 @@ async def _run_reminders():
 
         for user in users:
             prefs = user.preferences
+            # ── Weekly recap (Sunday 18:00–18:30, once per week) ──────────────
+            try:
+                tz = pytz.timezone(user.timezone or "UTC")
+                now = datetime.now(tz)
+                iso_week = f"{now.isocalendar()[0]}-W{now.isocalendar()[1]:02d}"
+                if (now.weekday() == 6 and now.hour == 18 and now.minute < 30
+                        and prefs and prefs.proactive_messaging_enabled
+                        and user.weekly_recap_week != iso_week):
+                    name = user.name or "hey"
+                    recap = await _llm_weekly_recap(user, prefs, db, name)
+                    if recap:
+                        await _send(user.telegram_id, recap)
+                        user.weekly_recap_week = iso_week
+                        await db.commit()
+                        continue
+            except Exception as e:
+                logger.error(f"Weekly recap error for user {user.id}: {e}")
+
             # ── End-of-day report (22:00–22:30) — ALL onboarded users ─────────
             try:
                 tz = pytz.timezone(user.timezone or "UTC")
@@ -330,7 +401,7 @@ async def _run_reminders():
                     log = await get_today_log(db, user.id, user.timezone or "UTC")
                     if log and log.total_calories > 0:
                         name = user.name or "hey"
-                        report = _fmt_day_report(log, prefs, name)
+                        report = _fmt_day_report(log, prefs, name, user=user)
                         await _send(user.telegram_id, report)
                         continue
             except Exception as e:
@@ -575,11 +646,11 @@ def _fmt_whoop_notification(snap) -> str:
     return "\n".join(lines)
 
 
-def _fmt_day_report(log, prefs, user_name: str) -> str:
+def _fmt_day_report(log, prefs, user_name: str, user=None) -> str:
     """
     Conversational end-of-day recap — multi-bubble (|||), in Arnie's voice.
     Deterministic (no LLM cost) but reads like a coach texting, not an app card.
-    Rendered per-platform by the adapter.
+    Closes the day's mission if there was one. Rendered per-platform by the adapter.
     """
     name = (user_name or "").strip()
     cal = round(log.total_calories or 0)
@@ -625,6 +696,18 @@ def _fmt_day_report(log, prefs, user_name: str) -> str:
     # Training acknowledgment (only if notable)
     if log.workout_completed:
         bubbles.append("and you trained. that's the day. 👊")
+
+    # Close today's mission (the open loop set this morning)
+    if user is not None:
+        try:
+            from core.missions import mission_completed
+            done = mission_completed(user, log)
+            if done is True:
+                bubbles.append(f"and you hit today's mission: {user.active_mission}. 🔥")
+            elif done is False:
+                bubbles.append(f"missed today's mission ({user.active_mission}) — first thing tomorrow.")
+        except Exception:
+            pass
 
     if not bubbles:
         bubbles.append("quiet day on the log.")

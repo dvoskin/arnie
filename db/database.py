@@ -83,6 +83,11 @@ async def _migrate(conn):
         ("users", "units_preference", "VARCHAR DEFAULT 'imperial'"),
         ("users", "nudges_sent", "TEXT DEFAULT ''"),
         ("users", "whoop_last_notified", "VARCHAR"),
+        ("users", "weekly_recap_week", "VARCHAR"),
+        ("users", "active_mission", "VARCHAR"),
+        ("users", "mission_metric", "VARCHAR"),
+        ("users", "mission_target", "FLOAT"),
+        ("users", "mission_date", "VARCHAR"),
         ("conversation_logs", "platform", "VARCHAR DEFAULT 'telegram'"),
         ("conversation_logs", "skills_fired", "VARCHAR"),
     ]
