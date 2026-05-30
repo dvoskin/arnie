@@ -253,6 +253,64 @@ async def _llm_nudge(user, log, prefs, health_snap, slot: str, name: str) -> str
         return ""
 
 
+_BRIEFING_SYSTEM = """\
+You are Arnie sending a morning performance briefing — the message that makes the
+user glad to hear from you. Not generic motivation: clarity and one clear action.
+
+Rules:
+- lowercase, 2-4 short bubbles split with |||.
+- lead with what matters: their trend or momentum, stated with a real number.
+- if a notable pattern or projection is given, weave ONE in — make them go "huh, didn't notice that".
+- end with the single highest-leverage action for today, framed as a small mission.
+- close on a question or the mission so they reply. never generic ("have a great day!").
+- match their preferred language. return only the message text with ||| separators.\
+"""
+
+
+async def _llm_morning_briefing(user, log, prefs, health_snap, db, name: str) -> str:
+    """Data-rich morning briefing: momentum + trend + projection + pattern + leverage action."""
+    from core.llm import chat
+    from db.queries import get_recent_logs, get_recent_weights
+    from core.momentum import compute_momentum
+    from core.insights_engine import weight_projection, discover_pattern
+
+    logs = await get_recent_logs(db, user.id, days=21)
+    weights = await get_recent_weights(db, user.id, days=30)
+    m = compute_momentum(logs, prefs, weights, user)
+    projection = weight_projection(weights, user)
+    pattern = discover_pattern(logs, prefs)
+
+    # 7-day weight trend in lbs
+    trend = ""
+    if len(weights) >= 2:
+        sw = sorted(weights, key=lambda w: w.timestamp)
+        d = (sw[-1].weight_kg - sw[0].weight_kg) * 2.20462
+        trend = f"7-day weight trend: {d:+.1f} lbs (now {sw[-1].weight_kg*2.20462:.0f})"
+
+    cal_t = prefs.calorie_target if prefs else None
+    pro_t = prefs.protein_target if prefs else None
+    rec = health_snap.recovery_score if health_snap else None
+
+    data = [f"Athlete: {name}, goal {user.primary_goal or '?'}"]
+    if m: data.append(f"Momentum: {m.score}/100 ({m.tier}, {m.direction}); drivers: {', '.join(m.drivers) or 'n/a'}")
+    if trend: data.append(trend)
+    if projection: data.append(f"Projection: {projection}")
+    if pattern: data.append(f"Pattern noticed: {pattern}")
+    if cal_t: data.append(f"Calorie target {cal_t}, protein target {pro_t}")
+    if rec is not None: data.append(f"Recovery today: {rec}%")
+    data.append(f"Language: {getattr(prefs,'preferred_language',None) or 'English'}")
+
+    prompt = ("\n".join(data) + "\n\nWrite the morning briefing. Pick the most useful 2-3 of these "
+              "signals, state the trend with a number, and end with today's single highest-leverage action.")
+    try:
+        r = await chat([{"role": "user", "content": prompt}], system=_BRIEFING_SYSTEM,
+                       tools=False, max_tokens=200, model="claude-haiku-4-5-20251001")
+        return (r.get("text") or "").strip()
+    except Exception as e:
+        logger.error(f"Morning briefing failed: {e}")
+        return ""
+
+
 async def _run_reminders():
     from db.database import AsyncSessionLocal
     from db.queries import get_all_active_users, get_today_log, get_recent_health_snapshots
@@ -376,17 +434,12 @@ async def _run_reminders():
 
                 if hour == morn_h and 0 <= minute - morn_m < 30:
                     if not log or log.total_calories == 0:
-                        msg = await _llm_nudge(user, log, prefs, health_snap, "morning_checkin", name)
+                        # Data-rich performance briefing (momentum + trend + leverage action)
+                        msg = await _llm_morning_briefing(user, log, prefs, health_snap, db, name)
                         if not msg:
-                            rec = health_snap.recovery_score if health_snap else None
-                            if rec is not None:
-                                emoji = "🟢" if rec >= 67 else ("🟡" if rec >= 34 else "🔴")
-                                msg = (
-                                    f"Morning {name}. Recovery at {rec}% today {emoji}. "
-                                    f"Log your weight if you have it, then tell me breakfast."
-                                )
-                            else:
-                                msg = f"Morning {name}. Log your weight if you have it, then tell me what you had for breakfast."
+                            msg = await _llm_nudge(user, log, prefs, health_snap, "morning_checkin", name)
+                        if not msg:
+                            msg = f"morning {name}.|||log your weight if you've got it, then tell me breakfast."
                         await _send(user.telegram_id, msg)
 
                 # ── Late morning (10:00–10:30, only if nothing logged) ─────────

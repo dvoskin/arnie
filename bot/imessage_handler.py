@@ -450,7 +450,7 @@ async def _handle_im_whoop(chat_guid: str, user, db) -> bool:
 _INTRO_BUBBLES = [
     "hey 👋",
     "i'm arnie.",
-    "your AI fitness and nutrition coach. no app, no spreadsheets, just texts.",
+    "your personal performance partner for fitness and nutrition. no app, no spreadsheets, just texts.",
     "i track what you eat, how you train, and how your body's responding.",
     "let's get you set up. takes 2 minutes.",
     "what's your first name?",
@@ -477,7 +477,7 @@ async def _send_first_contact_intro(chat_guid: str) -> None:
 # Acknowledges they signed up, then flows into the same name question.
 _OUTREACH_INTRO = [
     "hey 👋 it's arnie",
-    "you just signed up on the site — i'm your AI fitness and nutrition coach.",
+    "you just signed up on the site — i'm your personal performance partner for fitness and nutrition.",
     "no app, no spreadsheets. you just text me what you eat and how you train.",
     "takes 2 minutes to get going. what's your first name?",
 ]

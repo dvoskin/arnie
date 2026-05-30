@@ -430,6 +430,21 @@ async def build_context(user: User, today_log: Optional[DailyLog], db) -> str:
     coaching_state = compute_coaching_state(recent_health, recent_logs, user)
     coaching_state_str = coaching_state.to_context_string()
 
+    # Momentum score + discovery layer (projection / pattern / records)
+    from core.momentum import compute_momentum, fmt_momentum
+    from core.insights_engine import (
+        weight_projection, discover_pattern, personal_records, fmt_records,
+    )
+    momentum_str = fmt_momentum(compute_momentum(recent_logs, prefs, recent_weights, user))
+    projection = weight_projection(recent_weights, user)
+    pattern = discover_pattern(recent_logs, prefs)
+    records_str = fmt_records(personal_records(recent_logs, recent_weights))
+    discovery_lines = []
+    if projection:
+        discovery_lines.append(f"[PROJECTION] {projection}")
+    if pattern:
+        discovery_lines.append(f"[PATTERN — surface this if it fits naturally] {pattern}")
+
     # Detect workout mode: exercises already logged today
     in_workout = bool(today_log and today_log.exercise_entries)
 
@@ -446,6 +461,11 @@ async def build_context(user: User, today_log: Optional[DailyLog], db) -> str:
         (f"[PACING]\n{pace}" if pace else ""),
         (f"[WEARABLE]\n{health_str}" if health_str else ""),
         ("" if not in_workout else "[WORKOUT MODE: ACTIVE]"),
+        "",
+        "=== MOMENTUM & DISCOVERY ===",
+        (momentum_str if momentum_str else ""),
+        ("\n".join(discovery_lines) if discovery_lines else ""),
+        (records_str if records_str else ""),
         "",
         "=== INSIGHTS ===",
         (adherence if adherence else "No adherence data yet."),
