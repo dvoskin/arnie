@@ -217,3 +217,33 @@ async def _migrate(conn):
             logger.info("Backfill est_backfill_2026_05_30 applied + marked.")
     except Exception as e:
         logger.warning(f"Backfill est_backfill_2026_05_30 pass failed: {e}")
+
+    # ── One-time reconcile: heal drifted DailyLog totals (2026-05-30) ────────────
+    # Historic add/update/delete used incremental delta math, so a partial write
+    # or mid-write crash (e.g. the channel_preference outage) could leave a day's
+    # stored total_* out of sync with its actual food entries — the dashboard then
+    # showed a wrong number. Recompute every day's totals from the entry sums so
+    # logs and dashboard match. Idempotent; guarded by its own marker.
+    try:
+        _rk = "totals_reconcile_2026_05_30"
+        _rdone = (await conn.execute(
+            text("SELECT 1 FROM schema_meta WHERE key = :k"), {"k": _rk}
+        )).first()
+        if not _rdone:
+            r = await conn.execute(text(
+                "UPDATE daily_logs SET "
+                "  total_calories = COALESCE((SELECT SUM(calories) FROM food_entries "
+                "                             WHERE food_entries.daily_log_id = daily_logs.id), 0), "
+                "  total_protein  = COALESCE((SELECT SUM(protein)  FROM food_entries "
+                "                             WHERE food_entries.daily_log_id = daily_logs.id), 0), "
+                "  total_carbs    = COALESCE((SELECT SUM(carbs)    FROM food_entries "
+                "                             WHERE food_entries.daily_log_id = daily_logs.id), 0), "
+                "  total_fats     = COALESCE((SELECT SUM(fats)     FROM food_entries "
+                "                             WHERE food_entries.daily_log_id = daily_logs.id), 0)"
+            ))
+            logger.info(f"Reconcile: recomputed totals for {r.rowcount} daily logs")
+            await conn.execute(
+                text("INSERT INTO schema_meta (key) VALUES (:k)"), {"k": _rk}
+            )
+    except Exception as e:
+        logger.warning(f"Reconcile totals_reconcile_2026_05_30 failed: {e}")
