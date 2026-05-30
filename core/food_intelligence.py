@@ -41,6 +41,44 @@ def score_match(query: str, description: str) -> str:
     return "estimated"
 
 
+# Processed/altered forms that usually AREN'T what a user means by a bare food name.
+_FORM_PENALTY = (
+    "breaded", "fried", "dehydrated", "dried", "powder", "flour", "canned",
+    "juice", "fortified", "infant", "baby", "pickled", "smoked", "cured",
+    "candied", "syrup", "sauce", "concentrate",
+)
+
+
+def best_candidate(query: str, candidates: list[dict]) -> tuple[Optional[dict], str]:
+    """
+    Pick the most canonical USDA match for a query and return (candidate, confidence).
+    Favors high token-overlap + short/simple descriptions; penalizes processed
+    forms not named in the query. Returns (None, 'estimated') if nothing is a
+    good enough match (caller should then fall back to the LLM estimate).
+    """
+    if not candidates:
+        return None, "estimated"
+    q = normalize_name(query)
+    qa = set(q.split())
+    best, best_score = None, -999.0
+    for c in candidates:
+        d = normalize_name(c.get("description", ""))
+        da = set(d.split())
+        overlap = len(qa & da) / max(1, len(qa))
+        score = overlap * 3.0
+        score -= 0.15 * max(0, len(da) - len(qa))          # prefer concise descriptions
+        for w in _FORM_PENALTY:
+            if w in da and w not in qa:
+                score -= 1.2                                # processed form not asked for
+        if score > best_score:
+            best, best_score = c, score
+    conf = score_match(query, best.get("description", "")) if best else "estimated"
+    # Gate: if even the best match is weak, don't trust USDA — fall back to estimate.
+    if best_score < 1.2:
+        return None, "estimated"
+    return best, conf
+
+
 @dataclass
 class FoodAnalysis:
     calories: float

@@ -98,7 +98,7 @@ async def _analyze_food(db, user, food_name, inp):
     Enrich a logged food with USDA data + recurring-food memory, returning a
     FoodAnalysis. Always falls back to the LLM's estimate if USDA/memory miss.
     """
-    from core.food_intelligence import analyze, normalize_name, score_match
+    from core.food_intelligence import analyze, normalize_name, best_candidate
     from db.queries import get_user_food_match, upsert_user_food_match
 
     llm = (inp.get("calories"), inp.get("protein"), inp.get("carbs"), inp.get("fats"))
@@ -127,10 +127,9 @@ async def _analyze_food(db, user, food_name, inp):
     if memory is None and name_norm:
         try:
             from api.usda import search_food
-            candidates = await search_food(food_name, page_size=5)
-            if candidates:
-                best = candidates[0]
-                conf = score_match(food_name, best["description"])
+            candidates = await search_food(food_name, page_size=8)
+            best, conf = best_candidate(food_name, candidates)
+            if best:
                 best["_match"] = conf
                 usda = best
                 # Store confident matches as recurring memory for next time

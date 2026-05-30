@@ -61,31 +61,19 @@ def _extract_nutrients(food: dict) -> dict:
     return out
 
 
-async def search_food(query: str, page_size: int = 5) -> list[dict]:
-    """
-    Search USDA for a food. Returns a list of candidates, each:
-      {fdc_id, description, brand, data_type, per100g: {calories, protein, ...}}
-    Nutrients are per 100g (USDA standard). Empty list on miss/no-key/error.
-    """
-    if not _key() or not query.strip():
-        return []
+async def _search(query: str, data_types: list[str], page_size: int) -> list[dict]:
+    """One USDA search request restricted to the given data types."""
     try:
         resp = await _client().post(
             f"{_BASE}/foods/search",
             params={"api_key": _key()},
-            json={
-                "query": query.strip(),
-                "pageSize": page_size,
-                # Prefer whole foods + branded; SR Legacy/Foundation are cleanest
-                "dataType": ["Foundation", "SR Legacy", "Branded"],
-            },
+            json={"query": query.strip(), "pageSize": page_size, "dataType": data_types},
         )
         if resp.status_code != 200:
             logger.warning(f"USDA search {resp.status_code}: {resp.text[:120]}")
             return []
-        foods = resp.json().get("foods", [])
         out = []
-        for f in foods:
+        for f in resp.json().get("foods", []):
             per100 = _extract_nutrients(f)
             if not per100.get("calories"):
                 continue
@@ -94,11 +82,40 @@ async def search_food(query: str, page_size: int = 5) -> list[dict]:
                 "description": f.get("description", ""),
                 "brand": f.get("brandName") or f.get("brandOwner") or "",
                 "data_type": f.get("dataType", ""),
-                "serving_size": f.get("servingSize"),
-                "serving_unit": f.get("servingSizeUnit"),
                 "per100g": per100,
             })
         return out
     except Exception as e:
         logger.warning(f"USDA search failed: {e}")
         return []
+
+
+def _looks_branded(query: str) -> bool:
+    """Query names a specific product/brand (capitalized token or long phrase)."""
+    toks = query.split()
+    return len(toks) >= 4 or any(t[:1].isupper() for t in toks)
+
+
+async def search_food(query: str, page_size: int = 5) -> list[dict]:
+    """
+    Search USDA for a food. Two-pass: USDA's CURATED data (Foundation, SR Legacy)
+    is clean and trustworthy, so it's preferred for generic foods. Branded is
+    crowdsourced/noisy, used only as a fallback — or first when the query clearly
+    names a brand. Nutrients are per 100g. Empty list on miss/no-key/error.
+    """
+    if not _key() or not query.strip():
+        return []
+
+    curated = ["Foundation", "SR Legacy"]
+    branded = ["Branded"]
+
+    if _looks_branded(query):
+        order = [branded, curated]
+    else:
+        order = [curated, branded]
+
+    for data_types in order:
+        res = await _search(query, data_types, page_size)
+        if res:
+            return res
+    return []
