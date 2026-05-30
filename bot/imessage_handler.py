@@ -759,7 +759,7 @@ async def run_imessage_pipeline(address: str, chat_guid: str, raw_text: str,
         # ── Build system prompt + context ─────────────────────────────────────
         if not in_onboarding:
             today_log = await get_or_create_today_log(db, user.id, user.timezone or "UTC")
-            context_str = await build_context(user, today_log, db)
+            context_str = await build_context(user, today_log, db, platform="imessage")
             # Platform hint is already baked into the iMessage system prompt
             system = f"{_build_arnie_system(platform='imessage')}\n\n{context_str}"
         else:
