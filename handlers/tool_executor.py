@@ -381,6 +381,9 @@ async def _dispatch(name, inp, user, today_log, db, source_type):  # noqa: C901
             "experience_level": "training_experience",
             "dietary_restrictions": "dietary_preferences",
             "restrictions": "dietary_preferences",
+            "location": "city",
+            "hometown": "city",
+            "home_city": "city",
         }
         fields = {_aliases.get(k, k): v for k, v in fields.items()}
 
@@ -391,7 +394,7 @@ async def _dispatch(name, inp, user, today_log, db, source_type):  # noqa: C901
         _user_fields = {
             "name", "age", "sex", "height_cm", "current_weight_kg",
             "goal_weight_kg", "primary_goal", "training_experience",
-            "dietary_preferences", "injuries", "timezone",
+            "dietary_preferences", "injuries", "timezone", "city",
         }
         _pref_fields = {
             "coaching_style", "accountability_level", "pacing_enabled",
@@ -412,6 +415,20 @@ async def _dispatch(name, inp, user, today_log, db, source_type):  # noqa: C901
                 setattr(user, field, value)
             elif field in _pref_fields and user.preferences:
                 setattr(user.preferences, field, value)
+
+        # If a city was provided (and the LLM didn't explicitly set a timezone),
+        # resolve it to an IANA timezone so proactive check-ins fire in local time.
+        if "city" in fields and "timezone" not in fields and fields.get("city"):
+            try:
+                from core.timezones import resolve_timezone
+                tz = resolve_timezone(str(fields["city"]))
+                if tz:
+                    user.timezone = tz
+                    logger.info(f"Resolved city '{fields['city']}' → timezone {tz} for user {user.id}")
+                else:
+                    logger.info(f"Could not resolve city '{fields['city']}' to a timezone for user {user.id}")
+            except Exception as e:
+                logger.warning(f"City→timezone resolution failed: {e}")
 
         await db.commit()
         user = await reload_user(db, user.id)

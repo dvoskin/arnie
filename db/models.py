@@ -19,6 +19,7 @@ class User(Base):
     current_weight_kg = Column(Float)
     goal_weight_kg = Column(Float)
     timezone = Column(String, default="UTC")
+    city = Column(String)                   # free-form home city/region → resolves timezone
     primary_goal = Column(String)          # cut / bulk / maintain / performance / health
     training_experience = Column(String)   # beginner / intermediate / advanced
     dietary_preferences = Column(String)

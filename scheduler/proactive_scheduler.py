@@ -402,6 +402,44 @@ async def _llm_weekly_recap(user, prefs, db, name: str) -> str:
         return ""
 
 
+def _has_timezone(user) -> bool:
+    """
+    True only if we know the user's real timezone. The column defaults to "UTC",
+    and our city resolver never returns "UTC" for any city, so "UTC"/None means
+    "unknown" — and we must NOT send timed proactive messages (would risk 3am sends).
+    """
+    return bool(user.timezone) and user.timezone != "UTC"
+
+
+# Varied, voice-matched one-time asks for legacy users missing a timezone.
+_CITY_NUDGES = [
+    "quick one — what city are you in?|||just so my check-ins land during your day and not at 3am 😅",
+    "hey, what city you based in these days?|||want to make sure i'm hitting you up at sane hours, not the middle of the night.",
+    "random q — where are you based?|||lets me time my check-ins to your day instead of blowing up your phone at 2am.",
+]
+
+
+async def _maybe_send_city_nudge(db, user, prefs):
+    """
+    One-time city ask for users with no known timezone. Sent only during a
+    globally-daytime UTC window (so even without their tz we avoid overnight),
+    and only once (tracked via nudges_sent='city_ask').
+    """
+    sent = set(s for s in (user.nudges_sent or "").split(",") if s)
+    if "city_ask" in sent:
+        return
+    # 15:00–21:00 UTC ≈ daytime across the Americas + Europe (our user base).
+    if not (15 <= datetime.now(timezone.utc).hour < 21):
+        return
+    import random
+    msg = random.choice(_CITY_NUDGES)
+    await _send(user.telegram_id, msg)
+    sent.add("city_ask")
+    user.nudges_sent = ",".join(sorted(sent))
+    await db.commit()
+    logger.info(f"Sent one-time city/timezone nudge to user {user.id}")
+
+
 async def _run_reminders():
     from db.database import AsyncSessionLocal
     from db.queries import get_all_active_users, get_today_log, get_recent_health_snapshots
@@ -424,6 +462,18 @@ async def _run_reminders():
             except Exception:
                 pass
 
+            # ── Timezone gate: NO timed proactive until we know their timezone ─
+            # Legacy/unknown users default to "UTC". Without a real tz we can't
+            # tell local time, so sending would risk 3am spam. Skip all timed
+            # messages and instead ask once for their city (during safe UTC hours).
+            if not _has_timezone(user):
+                try:
+                    if prefs and prefs.proactive_messaging_enabled:
+                        await _maybe_send_city_nudge(db, user, prefs)
+                except Exception as e:
+                    logger.error(f"City nudge error for user {user.id}: {e}")
+                continue
+
             # ── Weekly recap (Sunday 18:00–18:30, once per week) ──────────────
             try:
                 tz = pytz.timezone(user.timezone or "UTC")
@@ -442,13 +492,14 @@ async def _run_reminders():
             except Exception as e:
                 logger.error(f"Weekly recap error for user {user.id}: {e}")
 
-            # ── End-of-day report (22:00–22:30) — ALL onboarded users ─────────
+            # ── End-of-day report (21:00–21:30) — ALL onboarded users ─────────
+            # Kept inside the 9am-9pm window so we never message late at night.
             try:
                 tz = pytz.timezone(user.timezone or "UTC")
                 now = datetime.now(tz)
                 hour, minute = now.hour, now.minute
 
-                if hour == 22 and minute < 30:
+                if hour == 21 and minute < 30:
                     log = await get_today_log(db, user.id, user.timezone or "UTC")
                     if log and log.total_calories > 0:
                         name = user.name or "hey"
@@ -468,8 +519,11 @@ async def _run_reminders():
                 hhmm = now.strftime("%H:%M")
                 hour, minute = now.hour, now.minute
 
-                wake = prefs.wake_time or "07:00"
-                sleep = prefs.sleep_time or "23:00"
+                # Hard-cap the proactive window to 9am-9pm local, even if the
+                # user's stored wake/sleep is wider. Respects a TIGHTER personal
+                # window (e.g. wake 10:00) but never sends before 9am or after 9pm.
+                wake = max(prefs.wake_time or "09:00", "09:00")
+                sleep = min(prefs.sleep_time or "21:00", "21:00")
                 if not _in_window(hhmm, wake, sleep):
                     continue
 
