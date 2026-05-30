@@ -658,9 +658,18 @@ async def run_imessage_pipeline(address: str, chat_guid: str, raw_text: str,
                 canonical = await consume_link_code(db, raw_text.strip(), channel_user)
                 if canonical:
                     nm = canonical.name or "there"
+                    # They linked from iMessage → default reminders to iMessage,
+                    # but let them switch to Telegram.
+                    if not canonical.channel_preference:
+                        canonical.channel_preference = "imessage"
+                        await db.commit()
                     await bb_send_text(chat_guid, f"linked. 🔗")
                     await asyncio.sleep(0.3)
                     await bb_send_text(chat_guid, f"this is the same account as your other device now, {nm}. everything's in sync.")
+                    await asyncio.sleep(0.3)
+                    await bb_send_text(chat_guid, "quick one — where do you want my check-ins? i'll only send on one so you're not double-pinged.")
+                    await asyncio.sleep(0.3)
+                    await bb_send_text(chat_guid, "reply 'imessage' or 'telegram' (imessage for now).")
                 else:
                     await bb_send_text(chat_guid, "that link code's expired or invalid — generate a fresh one and try again.")
                 return

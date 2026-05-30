@@ -979,9 +979,20 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             channel_user = await get_or_create_user(db, str(update.effective_user.id))
             canonical = await consume_link_code(db, raw_arg, channel_user)
             if canonical:
+                # They linked INTO Telegram (this is the canonical) → default
+                # reminders here, but let them switch to iMessage.
+                if not canonical.channel_preference:
+                    canonical.channel_preference = "telegram"
+                    await db.commit()
                 await update.message.reply_text(
                     f"🔗 Linked. This is now the same account as your other device, "
                     f"<b>{canonical.name or 'there'}</b> — everything's in sync.",
+                    parse_mode="HTML",
+                )
+                await update.message.reply_text(
+                    "quick one — where do you want my check-ins and reminders? "
+                    "i'll only send them on one so you're not double-pinged. "
+                    "reply <b>telegram</b> or <b>imessage</b> (telegram for now).",
                     parse_mode="HTML",
                 )
             else:

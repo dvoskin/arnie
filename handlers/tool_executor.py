@@ -384,6 +384,9 @@ async def _dispatch(name, inp, user, today_log, db, source_type):  # noqa: C901
             "location": "city",
             "hometown": "city",
             "home_city": "city",
+            "notification_channel": "channel_preference",
+            "preferred_channel": "channel_preference",
+            "reminder_channel": "channel_preference",
         }
         fields = {_aliases.get(k, k): v for k, v in fields.items()}
 
@@ -391,10 +394,21 @@ async def _dispatch(name, inp, user, today_log, db, source_type):  # noqa: C901
         if "name" in fields and isinstance(fields["name"], str):
             fields["name"] = fields["name"].strip().title()
 
+        # Normalize channel preference to exactly "telegram" or "imessage"
+        if "channel_preference" in fields and isinstance(fields["channel_preference"], str):
+            _v = fields["channel_preference"].strip().lower()
+            if "imessage" in _v or "imsg" in _v or "iphone" in _v or "text" in _v or "message" in _v:
+                fields["channel_preference"] = "imessage"
+            elif "telegram" in _v or "tg" in _v:
+                fields["channel_preference"] = "telegram"
+            else:
+                fields.pop("channel_preference")  # unrecognized → don't store junk
+
         _user_fields = {
             "name", "age", "sex", "height_cm", "current_weight_kg",
             "goal_weight_kg", "primary_goal", "training_experience",
             "dietary_preferences", "injuries", "timezone", "city",
+            "channel_preference",
         }
         _pref_fields = {
             "coaching_style", "accountability_level", "pacing_enabled",

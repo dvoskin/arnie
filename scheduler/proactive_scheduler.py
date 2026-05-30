@@ -457,9 +457,13 @@ async def _run_reminders():
             # secondary entirely so every proactive message goes out exactly once
             # (on the account they linked into). Gated by the linking flag so
             # turning linking off cleanly reverts to per-row behavior.
-            from db.queries import linking_enabled
+            from db.queries import linking_enabled, resolve_send_target
             if linking_enabled() and user.linked_to_user_id:
                 continue
+
+            # Route this user's proactive messages to their preferred platform
+            # (set when they linked both). Falls back to their own identity.
+            send_id = await resolve_send_target(db, user)
 
             # ── Context awareness: never fire on top of a live conversation ───
             # If the user exchanged messages with Arnie in the last ~25 min, they're
@@ -496,7 +500,7 @@ async def _run_reminders():
                     name = user.name or "hey"
                     recap = await _llm_weekly_recap(user, prefs, db, name)
                     if recap:
-                        await _send(user.telegram_id, recap)
+                        await _send(send_id, recap)
                         user.weekly_recap_week = iso_week
                         await db.commit()
                         continue
@@ -515,7 +519,7 @@ async def _run_reminders():
                     if log and log.total_calories > 0:
                         name = user.name or "hey"
                         report = _fmt_day_report(log, prefs, name, user=user)
-                        await _send(user.telegram_id, report)
+                        await _send(send_id, report)
                         continue
             except Exception as e:
                 logger.error(f"Day report error for user {user.id}: {e}")
@@ -575,7 +579,7 @@ async def _run_reminders():
                             if prof_slot:
                                 msg = await _llm_profile_nudge(user, missing, prof_slot, name)
                                 if msg:
-                                    await _send(user.telegram_id, msg)
+                                    await _send(send_id, msg)
                                     sent_slots.add(prof_slot)
                                     user.nudges_sent = ",".join(sorted(sent_slots))
                                     await db.commit()
@@ -604,7 +608,7 @@ async def _run_reminders():
                         if new_slot:
                             msg = await _llm_new_user_nudge(user, log, prefs, new_slot, name)
                             if msg:
-                                await _send(user.telegram_id, msg)
+                                await _send(send_id, msg)
                                 # Persist the fired slot so it never re-fires after a deploy
                                 sent_slots.add(new_slot)
                                 user.nudges_sent = ",".join(sorted(sent_slots))
@@ -628,7 +632,7 @@ async def _run_reminders():
                             msg = await _llm_nudge(user, log, prefs, health_snap, "morning_checkin", name)
                         if not msg:
                             msg = f"morning {name}.|||log your weight if you've got it, then tell me breakfast."
-                        await _send(user.telegram_id, msg)
+                        await _send(send_id, msg)
 
                 # ── Late morning (10:00–10:30, only if nothing logged) ─────────
                 elif hour == 10 and minute < 30:
@@ -636,7 +640,7 @@ async def _run_reminders():
                         msg = await _llm_nudge(user, log, prefs, health_snap, "late_morning_nolog", name)
                         if not msg:
                             msg = f"10am and nothing logged yet, {name}. Skipped breakfast or just haven't told me?"
-                        await _send(user.telegram_id, msg)
+                        await _send(send_id, msg)
 
                 # ── Midday pacing (12:00–12:30) ────────────────────────────────
                 elif hour == 12 and minute < 30:
@@ -664,12 +668,12 @@ async def _run_reminders():
                                 if cal_ahead:
                                     parts.append(f"already at {cal:.0f} cal — pace yourself through the afternoon")
                                 msg = ", ".join(parts).capitalize() + "."
-                            await _send(user.telegram_id, msg)
+                            await _send(send_id, msg)
                         elif log and log.total_calories > 0:
                             # On track — brief positive
                             msg = await _llm_nudge(user, log, prefs, health_snap, "midday_pacing", name)
                             if msg:
-                                await _send(user.telegram_id, msg)
+                                await _send(send_id, msg)
 
                 # ── Pre-workout readiness (15:30–16:00) ───────────────────────
                 elif hour == 15 and 30 <= minute < 60:
@@ -686,7 +690,7 @@ async def _run_reminders():
                                 )
                             else:
                                 msg = f"3:30 — workout not logged yet, {name}. Still on for today?"
-                        await _send(user.telegram_id, msg)
+                        await _send(send_id, msg)
 
                 # ── Afternoon workout check (16:30–17:00) ────────────────────
                 elif hour == 16 and 30 <= minute < 60:
@@ -696,7 +700,7 @@ async def _run_reminders():
                         msg = await _llm_nudge(user, log, prefs, health_snap, "workout_check", name)
                         if not msg:
                             msg = f"4:30 — workout still hasn't happened, {name}. Happening today or are we calling it a rest day?"
-                        await _send(user.telegram_id, msg)
+                        await _send(send_id, msg)
 
                 # ── Evening pacing (19:00–19:30) ──────────────────────────────
                 elif hour == 19 and minute < 30 and log and log.total_calories > 0:
@@ -719,7 +723,7 @@ async def _run_reminders():
                             )
                         else:
                             msg = f"Looking solid today, {name}. Log dinner when you have it."
-                    await _send(user.telegram_id, msg)
+                    await _send(send_id, msg)
 
                 # ── Night closeout (21:00–21:30) ──────────────────────────────
                 elif hour == 21 and minute < 30:
@@ -727,7 +731,7 @@ async def _run_reminders():
                         msg = await _llm_nudge(user, log, prefs, health_snap, "night_closeout", name)
                         if not msg:
                             msg = "Day still open. Done eating? Send me anything you missed and close it out."
-                        await _send(user.telegram_id, msg)
+                        await _send(send_id, msg)
 
             except Exception as e:
                 logger.error(f"Reminder error for user {user.id}: {e}")

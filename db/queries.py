@@ -105,6 +105,39 @@ async def consume_link_code(db: AsyncSession, code: str, consumer: User) -> Opti
     return canonical
 
 
+def _platform_of(telegram_id: str) -> str:
+    """Identity strings prefixed 'im:' are iMessage; everything else is Telegram."""
+    return "imessage" if (telegram_id or "").startswith("im:") else "telegram"
+
+
+async def resolve_send_target(db: AsyncSession, canonical: User) -> str:
+    """
+    Decide which platform identity a proactive message to `canonical` should go to.
+
+    Returns the telegram_id string to pass to the scheduler's _send():
+      - 'im:<addr>' routes to iMessage, a numeric string routes to Telegram.
+
+    Logic: if the user picked a channel_preference and we have an identity on that
+    platform (the canonical row itself, or a linked secondary row pointing at it),
+    send there. Otherwise fall back to the canonical's own identity. Fully safe
+    when unlinked (just returns canonical.telegram_id).
+    """
+    pref = getattr(canonical, "channel_preference", None)
+    if not pref:
+        return canonical.telegram_id
+    if _platform_of(canonical.telegram_id) == pref:
+        return canonical.telegram_id
+    # Preference is the OTHER platform — find a linked identity that matches it.
+    result = await db.execute(
+        select(User).where(User.linked_to_user_id == canonical.id)
+    )
+    for secondary in result.scalars().all():
+        if _platform_of(secondary.telegram_id) == pref:
+            return secondary.telegram_id
+    # No identity on the preferred platform — fall back to canonical.
+    return canonical.telegram_id
+
+
 def _user_today(user_timezone: str) -> date:
     tz = pytz.timezone(user_timezone or "UTC")
     return datetime.now(tz).date()
