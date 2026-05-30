@@ -393,8 +393,13 @@ async def _dispatch(name, inp, user, today_log, db, source_type):  # noqa: C901
                 p.proactive_messaging_enabled = True
             await db.commit()
             user = await reload_user(db, user.id)
-            # init_memory is idempotent — safe to call on every update
+            # Seed both the legacy memory and the adaptive Profile Matrix
             await init_memory(user)
+            try:
+                from memory.profile_manager import ensure_profile
+                await ensure_profile(user)
+            except Exception as e:
+                logger.warning(f"ensure_profile failed: {e}")
 
         return f"Profile updated: {list(fields.keys())}{_targets_msg}"
 

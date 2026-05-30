@@ -900,9 +900,13 @@ async def _run_pipeline(update: Update, context: ContextTypes.DEFAULT_TYPE,
     # ── Persist conversation ──────────────────────────────────────────────────
     await log_conversation(db, user.id, raw_text, response_text, source_type=source_type)
 
-    # ── Background memory reflection (~10% of turns) ─────────────────────────
-    if not in_onboarding and random.random() < 0.10:
-        await maybe_update_memory(user, raw_text, response_text, db)
+    # ── Adaptive profile refresh (throttled internally to ~3h) ───────────────
+    if not in_onboarding:
+        try:
+            from memory.profile_updater import maybe_update_profile
+            await maybe_update_profile(user, db)
+        except Exception as e:
+            logger.error(f"Profile update error: {e}")
 
 
 # ── Telegram handlers ─────────────────────────────────────────────────────────
@@ -1328,9 +1332,14 @@ async def cmd_reset(update: Update, context: ContextTypes.DEFAULT_TYPE):
             telegram_id = user.telegram_id
             await reset_all_user_data(db, user.id)
 
-            # Wipe memory file too
+            # Wipe memory file + Profile Matrix too
             from memory.memory_manager import clear_memory
             await clear_memory(telegram_id)
+            try:
+                from memory.profile_manager import clear_profile
+                await clear_profile(telegram_id)
+            except Exception:
+                pass
 
             await update.message.reply_text(
                 "All data wiped. Fresh start.\n\nSend any message to begin setup again."

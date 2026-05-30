@@ -384,7 +384,12 @@ async def _handle_im_reset(chat_guid: str, user, db) -> bool:
     user_id = user.id
     await reset_all_user_data(db, user_id)
     await db.commit()
-    await write_memory(telegram_id, "")  # clear memory file
+    await write_memory(telegram_id, "")  # clear legacy memory file
+    try:
+        from memory.profile_manager import clear_profile
+        await clear_profile(telegram_id)  # wipe the Profile Matrix too
+    except Exception:
+        pass
     # Don't log a conversation — keeps history empty so the next message
     # re-triggers the full first-contact intro sequence.
     bubbles = [
@@ -884,6 +889,10 @@ capitalize their name every time you use it."""
         # ── Persist conversation ───────────────────────────────────────────────
         await log_conversation(db, user.id, raw_text, response_text, source_type="imessage")
 
-        # ── Background memory reflection ───────────────────────────────────────
-        if not in_onboarding and random.random() < 0.10:
-            await maybe_update_memory(user, raw_text, response_text, db)
+        # ── Adaptive profile refresh (throttled internally to ~3h) ───────────
+        if not in_onboarding:
+            try:
+                from memory.profile_updater import maybe_update_profile
+                await maybe_update_profile(user, db)
+            except Exception as e:
+                logger.error(f"Profile update error for {im_id}: {e}")
