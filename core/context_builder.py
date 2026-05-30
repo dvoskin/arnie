@@ -403,7 +403,8 @@ def fmt_health(snaps: List[HealthSnapshot]) -> str:
     return f"{src} ({latest.date}): " + "  |  ".join(parts)
 
 
-async def build_context(user: User, today_log: Optional[DailyLog], db) -> str:
+async def build_context(user: User, today_log: Optional[DailyLog], db,
+                        platform: str = "telegram") -> str:
     from core.coaching_state import compute_coaching_state
 
     recent_logs = await get_recent_logs(db, user.id, days=90)
@@ -454,6 +455,28 @@ async def build_context(user: User, today_log: Optional[DailyLog], db) -> str:
     # Detect workout mode: exercises already logged today
     in_workout = bool(today_log and today_log.exercise_entries)
 
+    # Cross-platform link status — gates whether Arnie may offer to connect the
+    # other platform. Linked = this account points somewhere, or something points here.
+    from db.queries import linking_enabled
+    linked = False
+    if linking_enabled():
+        if user.linked_to_user_id:
+            linked = True
+        else:
+            from sqlalchemy import select, func
+            res = await db.execute(
+                select(func.count()).select_from(User).where(User.linked_to_user_id == user.id)
+            )
+            linked = (res.scalar() or 0) > 0
+    plat_name = "iMessage" if platform == "imessage" else "Telegram"
+    other = "Telegram" if platform == "imessage" else "iMessage"
+    if linked:
+        link_status = (f"[LINK STATUS] you're on {plat_name}. this person is ALREADY linked "
+                       f"across both platforms — do NOT bring up linking.")
+    else:
+        link_status = (f"[LINK STATUS] you're on {plat_name}. NOT linked to {other}. "
+                       f"only offer to connect {other} if THEY organically bring it up.")
+
     sections = [
         "=== PROFILE ===",
         fmt_profile(user, prefs),
@@ -490,5 +513,7 @@ async def build_context(user: User, today_log: Optional[DailyLog], db) -> str:
         "",
         "=== USER PROFILE ===",
         (memory[:3200] if memory else "No profile yet — still learning this user."),
+        "",
+        link_status,
     ]
     return "\n".join(s for s in sections if s is not None)
