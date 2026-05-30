@@ -175,6 +175,9 @@ async def _send(telegram_id: str, text: str, effect: str = None):
     Splits on ||| for multi-bubble. telegram_id prefixed "im:" → iMessage, else Telegram.
     effect — optional FX.* applied on iMessage (ignored on Telegram).
     """
+    # Master kill switch — no proactive message goes out while disabled, on any channel.
+    if not proactive_enabled():
+        return
     from core.platform import Response, IMessageAdapter, TelegramAdapter
     resp = Response.from_text(text)
     if effect:
@@ -812,13 +815,19 @@ async def _run_whoop_sync():
 def start_scheduler():
     if _scheduler.running:
         return
-    _scheduler.add_job(
-        _run_reminders,
-        IntervalTrigger(minutes=30),
-        id="proactive_reminders",
-        replace_existing=True,
-        max_instances=1,
-    )
+    # Reminder job only runs when proactive messaging is enabled. _send() also
+    # gates every outbound message, so this is belt-and-suspenders.
+    if proactive_enabled():
+        _scheduler.add_job(
+            _run_reminders,
+            IntervalTrigger(minutes=30),
+            id="proactive_reminders",
+            replace_existing=True,
+            max_instances=1,
+        )
+        reminders_status = "reminders every 30 min"
+    else:
+        reminders_status = "reminders DISABLED (PROACTIVE_MESSAGING_ENABLED not set)"
     _scheduler.add_job(
         _run_whoop_sync,
         IntervalTrigger(hours=2),
@@ -827,7 +836,7 @@ def start_scheduler():
         max_instances=1,
     )
     _scheduler.start()
-    logger.info("Proactive scheduler started (reminders every 30 min, Whoop sync every 2 hr)")
+    logger.info(f"Proactive scheduler started ({reminders_status}, Whoop sync every 2 hr)")
 
 
 def stop_scheduler():
