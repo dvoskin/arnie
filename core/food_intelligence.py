@@ -29,13 +29,32 @@ def normalize_name(name: str) -> str:
 # Generic food categories whose calories swing wildly by brand/recipe. A name made
 # up ONLY of these words ("protein bar", "shake", "smoothie") is ambiguous — we must
 # NOT silently reuse a previously-logged specific item or a USDA guess for it; the
-# coach should ask which one first. A name with any other (brand/qualifier) token —
-# "built bar", "oikos shake", "barebells caramel" — is specific enough to resolve.
+# coach falls back to its own estimate (and, for brand-dependent items, asks which
+# one first per the prompt). A name with any other (brand/qualifier) token —
+# "built bar", "oikos shake", "chicken breast", "dark chocolate" — is specific
+# enough to resolve normally, so it never lands here.
 _GENERIC_FOOD = {
-    "bar", "protein", "shake", "smoothie", "sandwich", "wrap", "bowl", "salad",
-    "cereal", "snack", "drink", "juice", "soda", "coffee", "tea", "latte",
-    "yogurt", "meal", "lunch", "dinner", "breakfast", "food", "supplement",
-    "powder", "scoop", "serving", "piece", "plate", "cup", "handful", "shake",
+    # bars / packaged snacks (brand swings 100-400 cal)
+    "bar", "protein", "granola", "energy", "cereal", "snack", "snacks",
+    "cookie", "cookies", "brownie", "muffin", "donut", "doughnut", "pastry",
+    "chips", "crackers", "popcorn", "pretzels", "jerky", "candy", "chocolate",
+    "gummies", "gummy", "nuts", "trail", "mix", "supplement", "supplements",
+    "preworkout", "creatine", "powder", "scoop",
+    # drinks (brand / prep dependent)
+    "shake", "smoothie", "drink", "juice", "soda", "coffee", "tea", "latte",
+    "cappuccino", "mocha", "americano", "macchiato", "espresso", "frappe",
+    "frappuccino", "milkshake", "kombucha", "lemonade", "milk", "beer", "wine",
+    "cocktail", "margarita", "alcohol",
+    # composite dishes (recipe dependent — USDA averages are meaningless here)
+    "sandwich", "wrap", "bowl", "salad", "burrito", "taco", "quesadilla",
+    "nachos", "burger", "pizza", "pasta", "noodles", "ramen", "curry", "soup",
+    "stew", "stirfry", "sushi", "poke", "omelette", "omelet", "scramble",
+    "toast", "bagel", "pancakes", "waffles", "oatmeal", "porridge", "casserole",
+    "fries", "quiche", "dumplings",
+    # vague meal references
+    "meal", "lunch", "dinner", "breakfast", "brunch", "food", "dish",
+    "leftovers", "combo", "platter", "takeout", "serving", "piece", "plate",
+    "cup", "handful", "portion", "plate",
 }
 
 
