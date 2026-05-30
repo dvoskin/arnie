@@ -822,6 +822,112 @@ async def api_edit_profile(token: str, patch: ProfilePatch):
     return {"status": "ok", "field": field}
 
 
+# ── Admin: per-user consistency audit (read-only) ──────────────────────────────
+
+@app.get("/admin/audit")
+async def admin_audit(token: str = Query(...), name: str = Query(...)):
+    """
+    Read-only per-user consistency audit. For each user whose name matches
+    (case-insensitive) returns: profile (tz, city, link, channel pref, reminders),
+    what they SENT (conversation_logs) vs what got LOGGED (food/exercise per day),
+    and a per-day check comparing entry sums to the stored DailyLog totals — plus an
+    inconsistent_days list. Pinpoints where logs and dashboard diverged. No writes.
+    """
+    if token != os.getenv("ADMIN_TOKEN", ""):
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+    from sqlalchemy import select
+    from sqlalchemy.orm import selectinload
+    from fastapi.responses import JSONResponse
+    from db.models import User, DailyLog, ConversationLog
+
+    async with AsyncSessionLocal() as db:
+        res = await db.execute(
+            select(User)
+            .where(User.name.ilike(f"%{name}%"))
+            .options(selectinload(User.preferences))
+        )
+        users = res.scalars().all()
+        if not users:
+            return JSONResponse({"query": name, "matches": 0, "users": []})
+
+        out = []
+        for u in users:
+            prefs = u.preferences
+            cres = await db.execute(
+                select(ConversationLog)
+                .where(ConversationLog.user_id == u.id)
+                .order_by(ConversationLog.timestamp.desc())
+                .limit(40)
+            )
+            convs = list(cres.scalars().all())
+
+            lres = await db.execute(
+                select(DailyLog)
+                .where(DailyLog.user_id == u.id)
+                .options(
+                    selectinload(DailyLog.food_entries),
+                    selectinload(DailyLog.exercise_entries),
+                )
+                .order_by(DailyLog.date.desc())
+            )
+            logs = list(lres.scalars().all())
+
+            days = []
+            total_food_entries = 0
+            for lg in logs:
+                fe = lg.food_entries or []
+                ee = lg.exercise_entries or []
+                total_food_entries += len(fe)
+                sum_cal = round(sum((e.calories or 0) for e in fe))
+                sum_pro = round(sum((e.protein or 0) for e in fe))
+                cal_ok = abs(sum_cal - round(lg.total_calories or 0)) <= 1
+                pro_ok = abs(sum_pro - round(lg.total_protein or 0)) <= 1
+                days.append({
+                    "date": str(lg.date),
+                    "status": lg.status,
+                    "food_count": len(fe),
+                    "exercise_count": len(ee),
+                    "entry_sum_cal": sum_cal,
+                    "stored_total_cal": round(lg.total_calories or 0),
+                    "entry_sum_protein": sum_pro,
+                    "stored_total_protein": round(lg.total_protein or 0),
+                    "totals_consistent": cal_ok and pro_ok,
+                    "foods": [
+                        {"name": e.parsed_food_name, "qty": e.quantity,
+                         "cal": round(e.calories or 0), "protein": round(e.protein or 0)}
+                        for e in fe
+                    ],
+                })
+
+            out.append({
+                "id": u.id,
+                "name": u.name,
+                "telegram_id": u.telegram_id,
+                "platform": "imessage" if str(u.telegram_id).startswith("im:") else "telegram",
+                "timezone": u.timezone,
+                "city": getattr(u, "city", None),
+                "onboarded": u.onboarding_completed,
+                "linked_to_user_id": getattr(u, "linked_to_user_id", None),
+                "channel_preference": getattr(u, "channel_preference", None),
+                "reminders_enabled": bool(getattr(prefs, "proactive_messaging_enabled", False)) if prefs else None,
+                "counts": {
+                    "messages_sent": len(convs),
+                    "days_with_logs": len(days),
+                    "total_food_entries": total_food_entries,
+                },
+                "inconsistent_days": [d["date"] for d in days if not d["totals_consistent"]],
+                "recent_messages": [
+                    {"ts": str(c.timestamp), "sent": (c.raw_message or "")[:160],
+                     "intent": c.parsed_intent}
+                    for c in convs[:25]
+                ],
+                "days": days[:30],
+            })
+
+        return JSONResponse({"query": name, "matches": len(out), "users": out})
+
+
 # ── Admin dashboard ───────────────────────────────────────────────────────────
 
 @app.get("/admin", response_class=HTMLResponse)
