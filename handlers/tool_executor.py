@@ -98,16 +98,24 @@ async def _analyze_food(db, user, food_name, inp):
     Enrich a logged food with USDA data + recurring-food memory, returning a
     FoodAnalysis. Always falls back to the LLM's estimate if USDA/memory miss.
     """
-    from core.food_intelligence import analyze, normalize_name, best_candidate
+    from core.food_intelligence import (
+        analyze, normalize_name, best_candidate, is_generic_food_name,
+    )
     from db.queries import get_user_food_match, upsert_user_food_match
 
     llm = (inp.get("calories"), inp.get("protein"), inp.get("carbs"), inp.get("fats"))
     name_norm = normalize_name(food_name)
 
+    # A bare generic name ("protein bar", "shake") must NOT silently resolve to a
+    # previously-logged specific item or a USDA guess — the coach should have asked
+    # which one. Skip memory + USDA and just use the LLM's stated estimate.
+    generic = is_generic_food_name(food_name)
+
     # 1) Recurring memory — the user's known staples (highest priority)
     memory = None
     try:
-        m = await get_user_food_match(db, user.id, name_norm) if name_norm else None
+        m = (await get_user_food_match(db, user.id, name_norm)
+             if (name_norm and not generic) else None)
         if m:
             memory = {
                 "fdc_id": m.fdc_id, "user_confirmed": m.user_confirmed,
@@ -122,9 +130,10 @@ async def _analyze_food(db, user, food_name, inp):
     except Exception as e:
         logger.warning(f"food memory lookup failed: {e}")
 
-    # 2) USDA search (only if no memory match — saves an API call on staples)
+    # 2) USDA search (only if no memory match — saves an API call on staples).
+    # Skip for generic names too: a USDA "protein bar" row is a meaningless average.
     usda = None
-    if memory is None and name_norm:
+    if memory is None and name_norm and not generic:
         try:
             from api.usda import search_food
             candidates = await search_food(food_name, page_size=8)

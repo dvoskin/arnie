@@ -26,6 +26,31 @@ def normalize_name(name: str) -> str:
     return re.sub(r"\s+", " ", n)
 
 
+# Generic food categories whose calories swing wildly by brand/recipe. A name made
+# up ONLY of these words ("protein bar", "shake", "smoothie") is ambiguous — we must
+# NOT silently reuse a previously-logged specific item or a USDA guess for it; the
+# coach should ask which one first. A name with any other (brand/qualifier) token —
+# "built bar", "oikos shake", "barebells caramel" — is specific enough to resolve.
+_GENERIC_FOOD = {
+    "bar", "protein", "shake", "smoothie", "sandwich", "wrap", "bowl", "salad",
+    "cereal", "snack", "drink", "juice", "soda", "coffee", "tea", "latte",
+    "yogurt", "meal", "lunch", "dinner", "breakfast", "food", "supplement",
+    "powder", "scoop", "serving", "piece", "plate", "cup", "handful", "shake",
+}
+
+
+def is_generic_food_name(name: str) -> bool:
+    """
+    True if a food label is too generic to safely resolve from memory/USDA without
+    clarifying (every token is a generic category word). "protein bar", "a shake",
+    "smoothie" → True; "built bar", "oikos", "banana", "chicken" → False.
+    """
+    norm = normalize_name(name)
+    if not norm:
+        return False
+    return all(t in _GENERIC_FOOD for t in norm.split())
+
+
 def score_match(query: str, description: str) -> str:
     """exact | likely | estimated — how well a USDA result matches the query."""
     q = normalize_name(query)
