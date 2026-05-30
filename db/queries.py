@@ -619,18 +619,13 @@ async def delete_exercise_entry(db: AsyncSession, entry_id: int, user_id: int) -
     if log.user_id != user_id:
         return False
 
-    was_cardio = bool(entry.cardio_type) or (entry.duration_minutes and not entry.sets)
+    daily_log_id = entry.daily_log_id
     await db.delete(entry)
+    await db.flush()
+    # Re-derive flags from whatever remains (single source of truth).
+    await recompute_log_totals(db, daily_log_id)
     await db.commit()
-
-    # Re-evaluate workout/cardio flags from remaining entries
-    remaining_result = await db.execute(
-        select(ExerciseEntry).where(ExerciseEntry.daily_log_id == log.id)
-    )
-    remaining = remaining_result.scalars().all()
-    log.workout_completed = any(not (e.cardio_type or (e.duration_minutes and not e.sets)) for e in remaining)
-    log.cardio_completed = any((e.cardio_type or (e.duration_minutes and not e.sets)) for e in remaining)
-    await db.commit()
+    return True
 
 
 # ── Subscription ───────────────────────────────────────────────────────────────
