@@ -79,6 +79,7 @@ async def _migrate(conn):
         ("users", "trial_ends_at", "DATETIME"),
         ("users", "subscription_ends_at", "DATETIME"),
         # ── 2026-05-29: architecture refactor additions ────────────────────────
+        ("users", "city", "VARCHAR"),
         ("users", "sport", "VARCHAR"),
         ("users", "units_preference", "VARCHAR DEFAULT 'imperial'"),
         ("users", "nudges_sent", "TEXT DEFAULT ''"),
