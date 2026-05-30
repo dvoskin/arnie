@@ -39,16 +39,23 @@ _GENERIC_FOOD = {
 }
 
 
+_FOOD_FILLER = {"a", "an", "the", "some", "my", "of", "with", "1", "one", "2", "two"}
+
+
 def is_generic_food_name(name: str) -> bool:
     """
     True if a food label is too generic to safely resolve from memory/USDA without
-    clarifying (every token is a generic category word). "protein bar", "a shake",
-    "smoothie" → True; "built bar", "oikos", "banana", "chicken" → False.
+    clarifying (every meaningful token is a generic category word). "protein bar",
+    "a shake", "some smoothie" → True; "built bar", "oikos", "banana" → False.
+    Filler articles ("a", "the", "some") are ignored when deciding.
     """
     norm = normalize_name(name)
     if not norm:
         return False
-    return all(t in _GENERIC_FOOD for t in norm.split())
+    tokens = [t for t in norm.split() if t not in _FOOD_FILLER]
+    if not tokens:
+        return False
+    return all(t in _GENERIC_FOOD for t in tokens)
 
 
 def score_match(query: str, description: str) -> str:
