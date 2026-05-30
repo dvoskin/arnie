@@ -450,6 +450,17 @@ async def _run_reminders():
         for user in users:
             prefs = user.preferences
 
+            # ── Single primary channel: never double-send to linked accounts ──
+            # When a user links Telegram + iMessage, both rows exist and are
+            # onboarded. The secondary row's linked_to_user_id points at the
+            # canonical account, which already holds all their data. Skip the
+            # secondary entirely so every proactive message goes out exactly once
+            # (on the account they linked into). Gated by the linking flag so
+            # turning linking off cleanly reverts to per-row behavior.
+            from db.queries import linking_enabled
+            if linking_enabled() and user.linked_to_user_id:
+                continue
+
             # ── Context awareness: never fire on top of a live conversation ───
             # If the user exchanged messages with Arnie in the last ~25 min, they're
             # already engaged — a scheduled nudge would be a jarring non-sequitur.
