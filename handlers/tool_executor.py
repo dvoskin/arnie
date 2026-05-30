@@ -90,7 +90,7 @@ def deterministic_confirmation(tool_calls, log, prefs) -> str:
         return "updated. 👍"
     if "close_day" in names:
         return "day closed. nice work today."
-    return "got it."
+    return "all set. what's next?"
 
 
 async def _analyze_food(db, user, food_name, inp):

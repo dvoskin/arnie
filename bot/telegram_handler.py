@@ -804,7 +804,9 @@ async def _run_pipeline(update: Update, context: ContextTypes.DEFAULT_TYPE,
         has_logging = any(tc["name"] in logging_tools for tc in tool_calls)
         need_followup = (tool_calls and raw_content and
                          (in_onboarding or not response_text or has_logging))
+        _followup_tried = False
         if need_followup:
+            _followup_tried = True
             stop_typing2 = asyncio.Event()
             typing_task2 = asyncio.create_task(
                 _typing_keepalive(context.bot, chat_id, stop_typing2)
@@ -813,6 +815,8 @@ async def _run_pipeline(update: Update, context: ContextTypes.DEFAULT_TYPE,
                 response_text = await chat_follow_up(
                     messages, raw_content, tool_calls, tool_results, system, max_tokens=400
                 )
+            except Exception as e:
+                logger.error(f"Follow-up LLM failed for {chat_id}: {e}")
             finally:
                 stop_typing2.set()
                 typing_task2.cancel()
@@ -822,9 +826,9 @@ async def _run_pipeline(update: Update, context: ContextTypes.DEFAULT_TYPE,
                     pass
 
     if not response_text:
-        # Force a follow-up if tools fired but no text came back
-        # This prevents silent "Got it." responses after food/exercise logging
-        if tool_calls and raw_content:
+        # Only follow-up here if we didn't already — re-calling the same LLM with
+        # identical args just adds latency (felt as a slow/glitchy reply).
+        if tool_calls and raw_content and not locals().get("_followup_tried"):
             try:
                 response_text = await chat_follow_up(
                     messages, raw_content, tool_calls, tool_results, system, max_tokens=300
@@ -843,7 +847,8 @@ async def _run_pipeline(update: Update, context: ContextTypes.DEFAULT_TYPE,
     # ── Send response — split on ||| for multi-bubble messaging ─────────────
     bubbles = [b.strip() for b in response_text.split("|||") if b.strip()]
     if not bubbles:
-        bubbles = ["got it."]
+        # Never a bare "got it." dead-end — keep the conversation open.
+        bubbles = ["still here. what's up?"]
 
     for i, bubble in enumerate(bubbles):
         fmt_kwargs = _fmt(bubble)

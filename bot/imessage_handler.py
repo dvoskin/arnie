@@ -877,7 +877,9 @@ capitalize their name every time you use it."""
             has_logging = any(tc["name"] in logging_tools for tc in tool_calls)
             need_followup = (tool_calls and raw_content and
                              (in_onboarding or not response_text or has_logging))
+            _followup_tried = False
             if need_followup:
+                _followup_tried = True
                 try:
                     response_text = await chat_follow_up(
                         messages, raw_content, tool_calls, tool_results, system, max_tokens=400
@@ -886,7 +888,9 @@ capitalize their name every time you use it."""
                     logger.error(f"Follow-up LLM failed for {im_id}: {e}")
 
         if not response_text:
-            if tool_calls and raw_content:
+            # Only attempt a follow-up here if we haven't already — re-calling the
+            # same LLM with identical args just adds latency (felt as a glitch).
+            if tool_calls and raw_content and not locals().get("_followup_tried"):
                 try:
                     response_text = await chat_follow_up(
                         messages, raw_content, tool_calls, tool_results, system, max_tokens=300
