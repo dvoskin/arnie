@@ -27,6 +27,16 @@ from apscheduler.triggers.interval import IntervalTrigger
 logger = logging.getLogger(__name__)
 
 _scheduler = AsyncIOScheduler()
+
+
+def proactive_enabled() -> bool:
+    """
+    Master kill switch for ALL proactive outreach (timed nudges + weekly recap).
+    Defaults OFF — proactive messaging stays dark until PROACTIVE_MESSAGING_ENABLED
+    is explicitly set true. Flip the env var to re-enable; no code change needed.
+    Whoop sync is unaffected (it's a background data pull, not a user message).
+    """
+    return os.getenv("PROACTIVE_MESSAGING_ENABLED", "false").lower() in ("true", "1", "yes")
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 
 # Engagement de-dup state is now persisted on the User row (nudges_sent,
