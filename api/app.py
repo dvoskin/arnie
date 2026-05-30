@@ -824,6 +824,118 @@ async def api_edit_profile(token: str, patch: ProfilePatch):
 
 # ── Admin: per-user consistency audit (read-only) ──────────────────────────────
 
+# ── Admin: one-time iMessage-availability broadcast ─────────────────────────────
+# Announce iMessage availability to onboarded Telegram users who aren't already on
+# iMessage. DRY-RUN by default (GET) — returns who would receive it + the exact copy,
+# sends nothing. Actually sends only on POST with confirm=SEND. Does NOT use the
+# scheduler._send path (that's gated by PROACTIVE_MESSAGING_ENABLED, currently off);
+# this is a deliberate one-time announcement with its own send path + dedup marker.
+
+_IMSG_BROADCAST_MARKER = "imsg_broadcast"
+_IMSG_BROADCAST_COPY = (
+    "good news, i'm on imessage now too 📱|||"
+    "want me to set you up there? say the word and i'll send the link"
+)
+
+
+async def _imsg_broadcast_recipients(db):
+    """
+    Onboarded Telegram users (telegram_id not 'im:...') who are NOT already linked
+    to an iMessage identity and haven't already received this broadcast.
+    """
+    from sqlalchemy import select
+    from db.models import User
+    res = await db.execute(select(User).where(User.onboarding_completed == True))
+    users = res.scalars().all()
+
+    # Canonical account ids that an iMessage identity is linked INTO — these
+    # Telegram users are already reachable on iMessage, so skip them.
+    res_all = await db.execute(select(User))
+    linked_canonical_ids = {
+        u.linked_to_user_id for u in res_all.scalars().all()
+        if str(u.telegram_id).startswith("im:") and u.linked_to_user_id
+    }
+
+    out = []
+    for u in users:
+        if str(u.telegram_id).startswith("im:"):
+            continue  # this endpoint targets Telegram identities only
+        # already on iMessage? either this row points to an im account, or an im
+        # row points back to this one
+        if u.linked_to_user_id:
+            continue
+        if u.id in linked_canonical_ids:
+            continue
+        sent = set(s for s in (u.nudges_sent or "").split(",") if s)
+        if _IMSG_BROADCAST_MARKER in sent:
+            continue
+        out.append(u)
+    return out
+
+
+@app.get("/admin/broadcast")
+async def admin_broadcast_preview(token: str = Query(...)):
+    """DRY RUN — list who would receive the iMessage-availability broadcast. Sends nothing."""
+    if token != os.getenv("ADMIN_TOKEN", ""):
+        raise HTTPException(status_code=403, detail="Forbidden")
+    from fastapi.responses import JSONResponse
+    async with AsyncSessionLocal() as db:
+        recipients = await _imsg_broadcast_recipients(db)
+        return JSONResponse({
+            "dry_run": True,
+            "message": _IMSG_BROADCAST_COPY,
+            "bubbles": _IMSG_BROADCAST_COPY.split("|||"),
+            "recipient_count": len(recipients),
+            "recipients": [
+                {"id": u.id, "name": u.name, "telegram_id": u.telegram_id}
+                for u in recipients
+            ],
+            "note": "Nothing was sent. To send for real: POST /admin/broadcast?token=...&confirm=SEND",
+        })
+
+
+@app.post("/admin/broadcast")
+async def admin_broadcast_send(token: str = Query(...), confirm: str = Query("")):
+    """ACTUAL SEND — requires confirm=SEND. One-time; marks each recipient so re-runs don't double-send."""
+    if token != os.getenv("ADMIN_TOKEN", ""):
+        raise HTTPException(status_code=403, detail="Forbidden")
+    from fastapi.responses import JSONResponse
+    if confirm != "SEND":
+        raise HTTPException(status_code=400,
+                            detail="Pass confirm=SEND to actually send. (GET this path for a dry run.)")
+
+    from core.platform import Response, TelegramAdapter
+    from telegram import Bot
+    import asyncio as _asyncio
+
+    tg_token = os.getenv("TELEGRAM_BOT_TOKEN", "")
+    bot = Bot(token=tg_token)
+    sent, failed = 0, 0
+    failures = []
+    async with AsyncSessionLocal() as db:
+        recipients = await _imsg_broadcast_recipients(db)
+        for u in recipients:
+            try:
+                resp = Response.from_text(_IMSG_BROADCAST_COPY)
+                await TelegramAdapter(bot, int(u.telegram_id)).send(resp)
+                # mark so a re-run never double-sends
+                marks = set(s for s in (u.nudges_sent or "").split(",") if s)
+                marks.add(_IMSG_BROADCAST_MARKER)
+                u.nudges_sent = ",".join(sorted(marks))
+                await db.commit()
+                sent += 1
+                await _asyncio.sleep(0.05)  # gentle on Telegram rate limits
+            except Exception as e:
+                failed += 1
+                failures.append({"id": u.id, "telegram_id": u.telegram_id, "error": str(e)[:120]})
+                logger.warning(f"Broadcast send failed → {u.telegram_id}: {e}")
+        try:
+            await bot.close()
+        except Exception:
+            pass
+    return JSONResponse({"dry_run": False, "sent": sent, "failed": failed, "failures": failures})
+
+
 @app.get("/admin/audit")
 async def admin_audit(token: str = Query(...), name: str = Query(...)):
     """
