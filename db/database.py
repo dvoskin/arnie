@@ -80,6 +80,7 @@ async def _migrate(conn):
         ("users", "subscription_ends_at", "DATETIME"),
         # ── 2026-05-29: architecture refactor additions ────────────────────────
         ("users", "city", "VARCHAR"),
+        ("users", "channel_preference", "VARCHAR"),
         ("users", "sport", "VARCHAR"),
         ("users", "units_preference", "VARCHAR DEFAULT 'imperial'"),
         ("users", "nudges_sent", "TEXT DEFAULT ''"),
@@ -105,6 +106,49 @@ async def _migrate(conn):
                 logger.info(f"Migration: added {table}.{column}")
         except Exception as e:
             logger.warning(f"Migration check for {table}.{column} failed: {e}")
+
+    # ── Auto-heal safety net ────────────────────────────────────────────────────
+    # Any column defined on a model but missing from the DB (e.g. a new column whose
+    # explicit migration entry above was forgotten) is added here automatically.
+    # This prevents a missing migration from bricking ALL queries against a table —
+    # which is exactly what would otherwise take the whole bot offline. SQLite ADD
+    # COLUMN is cheap and nullable by default, so this is safe.
+    try:
+        from db import models  # ensure models are imported / mapped
+        _SA_TO_SQLITE = {
+            "INTEGER": "INTEGER", "BIGINT": "INTEGER", "SMALLINT": "INTEGER",
+            "FLOAT": "FLOAT", "NUMERIC": "FLOAT", "REAL": "FLOAT",
+            "BOOLEAN": "BOOLEAN", "DATETIME": "DATETIME", "DATE": "DATE",
+            "TEXT": "TEXT", "VARCHAR": "VARCHAR",
+        }
+        for tbl in Base.metadata.sorted_tables:
+            try:
+                res = await conn.execute(text(f"PRAGMA table_info({tbl.name})"))
+                rows = res.fetchall()
+                if not rows:
+                    continue  # table created fresh by create_all — already complete
+                existing = {r[1] for r in rows}
+                for col in tbl.columns:
+                    if col.name in existing:
+                        continue
+                    # Map the SQLAlchemy type to a SQLite-friendly DDL type
+                    try:
+                        type_str = col.type.compile(dialect=conn.dialect)
+                    except Exception:
+                        type_str = str(col.type)
+                    base = type_str.split("(")[0].strip().upper()
+                    sqlite_type = _SA_TO_SQLITE.get(base, "VARCHAR")
+                    await conn.execute(
+                        text(f"ALTER TABLE {tbl.name} ADD COLUMN {col.name} {sqlite_type}")
+                    )
+                    logger.warning(
+                        f"Migration auto-heal: added missing column {tbl.name}.{col.name} "
+                        f"({sqlite_type}) — add it to the explicit migration list."
+                    )
+            except Exception as e:
+                logger.warning(f"Auto-heal scan for table {tbl.name} failed: {e}")
+    except Exception as e:
+        logger.warning(f"Migration auto-heal pass failed: {e}")
 
     # ── Data migrations ────────────────────────────────────────────────────────
     # Enable proactive messaging for all existing users who have it off
