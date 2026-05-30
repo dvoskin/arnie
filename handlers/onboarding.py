@@ -17,7 +17,7 @@ from core.prompts.onboarding import ONBOARDING_BASE as _ONBOARDING_BASE
 # Minimal onboarding — just enough to start coaching. age/sex/height are
 # collected post-onboarding via proactive nudges (see scheduler), which then
 # auto-computes targets once all three land.
-_ESSENTIAL = ["name", "current_weight_kg", "primary_goal"]
+_ESSENTIAL = ["name", "current_weight_kg", "primary_goal", "training_experience"]
 
 
 def build_onboarding_system(user: User) -> str:
@@ -45,6 +45,7 @@ def build_onboarding_system(user: User) -> str:
         ("name",         has("name"),               user.name or ""),
         ("primary goal", has("primary_goal"),       user.primary_goal or ""),
         ("weight",       has("current_weight_kg"),  weight_val),
+        ("training",     has("training_experience"), user.training_experience or ""),
     ]
 
     still_needed = [label for label, done, _ in fields if not done]
@@ -63,7 +64,7 @@ def build_onboarding_system(user: User) -> str:
     if still_needed:
         state_block += f"\n\nSTILL NEEDED: {', '.join(still_needed)}"
         state_block += (
-            "\n\nCollect these naturally — name, then goal, then weight. React as you go."
+            "\n\nCollect these naturally — name, then goal, then weight, then training. React as you go."
             "\nDo NOT ask for age, sex, or height. Those come later."
         )
     else:

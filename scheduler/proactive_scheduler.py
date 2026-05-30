@@ -63,6 +63,27 @@ def _hours_since_created(user) -> float:
     return (datetime.now(timezone.utc) - created).total_seconds() / 3600.0
 
 
+async def _last_exchange(db, user_id):
+    """
+    Returns (minutes_since_last_message, last_user_text, last_arnie_text).
+    minutes is None if the user has never messaged. Used to make proactive
+    messages context-aware and to avoid firing on top of a live conversation.
+    """
+    from db.queries import get_recent_conversations
+    from datetime import datetime as _dt
+    convs = await get_recent_conversations(db, user_id, limit=1)
+    if not convs:
+        return None, "", ""
+    c = convs[0]
+    ts = c.timestamp
+    if ts is None:
+        return None, (c.raw_message or ""), (c.response or "")
+    if ts.tzinfo is not None:
+        ts = ts.replace(tzinfo=None)
+    mins = (_dt.utcnow() - ts).total_seconds() / 60.0
+    return mins, (c.raw_message or ""), (c.response or "")
+
+
 async def _llm_new_user_nudge(user, log, prefs, slot: str, name: str) -> str:
     """Generate a new-user engagement message via Claude Haiku."""
     from core.llm import chat
@@ -267,7 +288,8 @@ Rules:
 """
 
 
-async def _llm_morning_briefing(user, log, prefs, health_snap, db, name: str) -> str:
+async def _llm_morning_briefing(user, log, prefs, health_snap, db, name: str,
+                                last_user_msg: str = "", last_arnie_msg: str = "") -> str:
     """Data-rich morning briefing: momentum + trend + projection + pattern + leverage action."""
     from core.llm import chat
     from db.queries import get_recent_logs, get_recent_weights
@@ -311,6 +333,9 @@ async def _llm_morning_briefing(user, log, prefs, health_snap, db, name: str) ->
     if cal_t: data.append(f"Calorie target {cal_t}, protein target {pro_t}")
     if rec is not None: data.append(f"Recovery today: {rec}%")
     if mission_text: data.append(f"TODAY'S MISSION (end the briefing with this as the action): {mission_text}")
+    if last_user_msg or last_arnie_msg:
+        data.append(f"Last thing they told you: \"{last_user_msg[:140]}\" — you replied: \"{last_arnie_msg[:140]}\". "
+                    f"only reference it if it flows naturally (e.g. continuing yesterday's thread).")
     data.append(f"Language: {getattr(prefs,'preferred_language',None) or 'English'}")
 
     prompt = ("\n".join(data) + "\n\nWrite the morning briefing. Pick the most useful 2-3 of these "
@@ -373,6 +398,19 @@ async def _run_reminders():
 
         for user in users:
             prefs = user.preferences
+
+            # ── Context awareness: never fire on top of a live conversation ───
+            # If the user exchanged messages with Arnie in the last ~25 min, they're
+            # already engaged — a scheduled nudge would be a jarring non-sequitur.
+            # Skip this tick; it re-checks 30 min later when the thread's gone quiet.
+            _last_u, _last_a = "", ""
+            try:
+                mins_since, _last_u, _last_a = await _last_exchange(db, user.id)
+                if mins_since is not None and mins_since < 25:
+                    continue
+            except Exception:
+                pass
+
             # ── Weekly recap (Sunday 18:00–18:30, once per week) ──────────────
             try:
                 tz = pytz.timezone(user.timezone or "UTC")
@@ -506,7 +544,8 @@ async def _run_reminders():
                 if hour == morn_h and 0 <= minute - morn_m < 30:
                     if not log or log.total_calories == 0:
                         # Data-rich performance briefing (momentum + trend + leverage action)
-                        msg = await _llm_morning_briefing(user, log, prefs, health_snap, db, name)
+                        msg = await _llm_morning_briefing(user, log, prefs, health_snap, db, name,
+                                                          last_user_msg=_last_u, last_arnie_msg=_last_a)
                         if not msg:
                             msg = await _llm_nudge(user, log, prefs, health_snap, "morning_checkin", name)
                         if not msg:
