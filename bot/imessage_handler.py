@@ -913,9 +913,11 @@ capitalize their name every time you use it."""
             logged = any(tc["name"] in ("log_food", "log_exercise") for tc in tool_calls)
             sent = set(s for s in (user.nudges_sent or "").split(",") if s)
             if logged and "dashboard" not in sent:
+                from core.blurbs import dashboard_line
                 dash_url = await _dashboard_url(user, db)
-                resp.bubbles.append("oh — your dashboard's live too. everything you log shows up here 📊")
-                resp.bubbles.append(dash_url)
+                intro = await dashboard_line(user.name or "")
+                resp.bubbles.append(intro)
+                resp.bubbles.append(dash_url)  # link in its own bubble
                 sent.add("dashboard")
                 user.nudges_sent = ",".join(sorted(sent))
                 await db.commit()
