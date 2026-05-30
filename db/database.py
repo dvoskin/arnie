@@ -244,14 +244,18 @@ async def _migrate(conn):
             logger.info(f"Reconcile: recomputed food totals for {r.rowcount} daily logs")
             # Heal workout/cardio flags too — delete_exercise_entry historically
             # never unset them, so days can show 'workout done' with no exercises.
+            # Cardio = has a cardio_type OR is duration-only (time, no sets).
+            # Matches recompute_log_totals._is_cardio so app + migration agree.
+            _is_cardio = ("(cardio_type IS NOT NULL AND cardio_type != '') "
+                          "OR (duration_minutes IS NOT NULL AND sets IS NULL)")
             r2 = await conn.execute(text(
                 "UPDATE daily_logs SET "
-                "  cardio_completed = CASE WHEN EXISTS (SELECT 1 FROM exercise_entries "
-                "       WHERE exercise_entries.daily_log_id = daily_logs.id "
-                "       AND cardio_type IS NOT NULL AND cardio_type != '') THEN 1 ELSE 0 END, "
-                "  workout_completed = CASE WHEN EXISTS (SELECT 1 FROM exercise_entries "
-                "       WHERE exercise_entries.daily_log_id = daily_logs.id "
-                "       AND (cardio_type IS NULL OR cardio_type = '')) THEN 1 ELSE 0 END"
+                f"  cardio_completed = CASE WHEN EXISTS (SELECT 1 FROM exercise_entries "
+                f"       WHERE exercise_entries.daily_log_id = daily_logs.id "
+                f"       AND ({_is_cardio})) THEN 1 ELSE 0 END, "
+                f"  workout_completed = CASE WHEN EXISTS (SELECT 1 FROM exercise_entries "
+                f"       WHERE exercise_entries.daily_log_id = daily_logs.id "
+                f"       AND NOT ({_is_cardio})) THEN 1 ELSE 0 END"
             ))
             logger.info(f"Reconcile: recomputed workout/cardio flags for {r2.rowcount} daily logs")
             await conn.execute(

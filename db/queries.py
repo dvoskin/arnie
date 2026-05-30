@@ -218,11 +218,14 @@ async def recompute_log_totals(db: AsyncSession, daily_log_id: int) -> None:
     log.total_protein = sum((e.protein or 0) for e in foods)
     log.total_carbs = sum((e.carbs or 0) for e in foods)
     log.total_fats = sum((e.fats or 0) for e in foods)
-    # Flags mirror the add logic: cardio entries have a cardio_type; everything
-    # else counts as a (strength) workout. Derived so deleting the last exercise
-    # correctly flips the flag back off.
-    log.cardio_completed = any(e.cardio_type for e in exercises)
-    log.workout_completed = any(not e.cardio_type for e in exercises)
+    # Single source of truth for cardio vs strength classification: an entry is
+    # cardio if it has a cardio_type, or it's duration-only (time logged, no sets).
+    # Everything else is a strength workout. Derived so deleting the last exercise
+    # of a kind correctly flips that flag back off.
+    def _is_cardio(e):
+        return bool(e.cardio_type) or bool(e.duration_minutes and not e.sets)
+    log.cardio_completed = any(_is_cardio(e) for e in exercises)
+    log.workout_completed = any(not _is_cardio(e) for e in exercises)
 
 
 async def add_food_entry(db: AsyncSession, daily_log_id: int, **kwargs) -> FoodEntry:
@@ -594,6 +597,9 @@ async def update_exercise_entry(
         if field in changes and changes[field] is not None:
             setattr(entry, field, changes[field])
 
+    await db.flush()
+    # Re-derive flags in case cardio_type/sets/duration changed (workout<->cardio).
+    await recompute_log_totals(db, entry.daily_log_id)
     await db.commit()
     await db.refresh(entry)
     return entry
