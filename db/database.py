@@ -241,7 +241,19 @@ async def _migrate(conn):
                 "  total_fats     = COALESCE((SELECT SUM(fats)     FROM food_entries "
                 "                             WHERE food_entries.daily_log_id = daily_logs.id), 0)"
             ))
-            logger.info(f"Reconcile: recomputed totals for {r.rowcount} daily logs")
+            logger.info(f"Reconcile: recomputed food totals for {r.rowcount} daily logs")
+            # Heal workout/cardio flags too — delete_exercise_entry historically
+            # never unset them, so days can show 'workout done' with no exercises.
+            r2 = await conn.execute(text(
+                "UPDATE daily_logs SET "
+                "  cardio_completed = CASE WHEN EXISTS (SELECT 1 FROM exercise_entries "
+                "       WHERE exercise_entries.daily_log_id = daily_logs.id "
+                "       AND cardio_type IS NOT NULL AND cardio_type != '') THEN 1 ELSE 0 END, "
+                "  workout_completed = CASE WHEN EXISTS (SELECT 1 FROM exercise_entries "
+                "       WHERE exercise_entries.daily_log_id = daily_logs.id "
+                "       AND (cardio_type IS NULL OR cardio_type = '')) THEN 1 ELSE 0 END"
+            ))
+            logger.info(f"Reconcile: recomputed workout/cardio flags for {r2.rowcount} daily logs")
             await conn.execute(
                 text("INSERT INTO schema_meta (key) VALUES (:k)"), {"k": _rk}
             )

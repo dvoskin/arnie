@@ -197,22 +197,32 @@ async def get_or_create_today_log(db: AsyncSession, user_id: int,
 
 async def recompute_log_totals(db: AsyncSession, daily_log_id: int) -> None:
     """
-    Recompute a DailyLog's total_* from the SUM of its food entries — the entries
-    are the source of truth, so totals are derived and can never drift. Using this
-    after every add/update/delete (instead of incremental delta math) means a
-    partial write, race, or mid-write crash can't leave the stored total out of
-    sync with what the dashboard shows. Caller commits.
+    Recompute ALL of a DailyLog's summary fields from its entries — the entries
+    are the source of truth, so every aggregate is derived and can never drift.
+
+    Covers: food macros (total_*) AND the workout/cardio completion flags. Using
+    this after every add/update/delete (instead of incremental delta math or
+    set-once flags) means a partial write, race, or mid-write crash can't leave
+    the stored aggregate out of sync with what the dashboard shows. Caller commits.
     """
-    rows = (await db.execute(
+    foods = (await db.execute(
         select(FoodEntry).where(FoodEntry.daily_log_id == daily_log_id)
+    )).scalars().all()
+    exercises = (await db.execute(
+        select(ExerciseEntry).where(ExerciseEntry.daily_log_id == daily_log_id)
     )).scalars().all()
     log = (await db.execute(
         select(DailyLog).where(DailyLog.id == daily_log_id)
     )).scalar_one()
-    log.total_calories = sum((e.calories or 0) for e in rows)
-    log.total_protein = sum((e.protein or 0) for e in rows)
-    log.total_carbs = sum((e.carbs or 0) for e in rows)
-    log.total_fats = sum((e.fats or 0) for e in rows)
+    log.total_calories = sum((e.calories or 0) for e in foods)
+    log.total_protein = sum((e.protein or 0) for e in foods)
+    log.total_carbs = sum((e.carbs or 0) for e in foods)
+    log.total_fats = sum((e.fats or 0) for e in foods)
+    # Flags mirror the add logic: cardio entries have a cardio_type; everything
+    # else counts as a (strength) workout. Derived so deleting the last exercise
+    # correctly flips the flag back off.
+    log.cardio_completed = any(e.cardio_type for e in exercises)
+    log.workout_completed = any(not e.cardio_type for e in exercises)
 
 
 async def add_food_entry(db: AsyncSession, daily_log_id: int, **kwargs) -> FoodEntry:
@@ -227,16 +237,14 @@ async def add_food_entry(db: AsyncSession, daily_log_id: int, **kwargs) -> FoodE
 
 async def add_exercise_entry(db: AsyncSession, daily_log_id: int,
                               is_cardio: bool = False, **kwargs) -> ExerciseEntry:
+    # If caller signals cardio but didn't set cardio_type, mark it so the derived
+    # flags (recompute_log_totals) classify this entry correctly.
+    if is_cardio and not kwargs.get("cardio_type"):
+        kwargs["cardio_type"] = "cardio"
     entry = ExerciseEntry(daily_log_id=daily_log_id, **kwargs)
     db.add(entry)
-
-    result = await db.execute(select(DailyLog).where(DailyLog.id == daily_log_id))
-    log = result.scalar_one()
-    if is_cardio or kwargs.get("cardio_type"):
-        log.cardio_completed = True
-    else:
-        log.workout_completed = True
-
+    await db.flush()  # entry must be visible to the recompute query
+    await recompute_log_totals(db, daily_log_id)
     await db.commit()
     await db.refresh(entry)
     return entry
