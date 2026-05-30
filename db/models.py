@@ -296,3 +296,33 @@ class WearableMetric(Base):
     received_at = Column(DateTime, server_default=func.now())  # when we stored it
 
     user = relationship("User", back_populates="wearable_metrics")
+
+
+class UserFoodMatch(Base):
+    """
+    Per-user 'food memory' — recurring foods matched to USDA data so Arnie
+    recognizes a user's staples and reuses accurate nutrition over time.
+    Keyed by the user + normalized food name.
+    """
+    __tablename__ = "user_food_matches"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    name_norm = Column(String, nullable=False, index=True)  # lowercased food name
+    display_name = Column(String)                           # what to call it
+    fdc_id = Column(String)                                 # USDA FoodData Central id
+    # per-100g nutrient profile from USDA (or user-confirmed)
+    cal_100 = Column(Float)
+    protein_100 = Column(Float)
+    carbs_100 = Column(Float)
+    fat_100 = Column(Float)
+    fiber_100 = Column(Float)
+    sugar_100 = Column(Float)
+    sodium_100 = Column(Float)
+    confidence = Column(String, default="estimated")  # exact|likely|estimated|user-confirmed
+    user_confirmed = Column(Boolean, default=False)
+    times_used = Column(Integer, default=1)
+    last_used = Column(DateTime, server_default=func.now())
+    created_at = Column(DateTime, server_default=func.now())
+
+    user = relationship("User")

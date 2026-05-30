@@ -4,7 +4,7 @@ from sqlalchemy.orm import selectinload
 from db.models import (
     User, UserPreferences, DailyLog, FoodEntry,
     ExerciseEntry, BodyMetric, ConversationLog, MemoryUpdate, HealthSnapshot,
-    Feedback,
+    Feedback, UserFoodMatch,
 )
 from datetime import date, datetime, timedelta
 from typing import Optional, List
@@ -556,3 +556,45 @@ def is_premium(user) -> bool:
         return datetime.utcnow() < user.trial_ends_at
     return False
     return True
+
+
+# ── Recurring food memory (USDA matches per user) ──────────────────────────────
+
+async def get_user_food_match(db: AsyncSession, user_id: int, name_norm: str):
+    """Fetch a user's stored match for a normalized food name, if any."""
+    result = await db.execute(
+        select(UserFoodMatch).where(and_(
+            UserFoodMatch.user_id == user_id,
+            UserFoodMatch.name_norm == name_norm,
+        ))
+    )
+    return result.scalar_one_or_none()
+
+
+async def upsert_user_food_match(db: AsyncSession, user_id: int, name_norm: str,
+                                 display_name: str, fdc_id: str, per100: dict,
+                                 confidence: str, user_confirmed: bool = False):
+    """Store/refresh a user's recurring food match. Bumps usage on repeat."""
+    existing = await get_user_food_match(db, user_id, name_norm)
+    if existing:
+        existing.times_used = (existing.times_used or 1) + 1
+        existing.last_used = datetime.utcnow()
+        # Upgrade to user-confirmed if the user corrected it; never downgrade.
+        if user_confirmed:
+            existing.user_confirmed = True
+            existing.confidence = "user-confirmed"
+        await db.commit()
+        return existing
+    m = UserFoodMatch(
+        user_id=user_id, name_norm=name_norm, display_name=display_name,
+        fdc_id=str(fdc_id) if fdc_id else None,
+        cal_100=per100.get("calories"), protein_100=per100.get("protein"),
+        carbs_100=per100.get("carbs"), fat_100=per100.get("fat"),
+        fiber_100=per100.get("fiber"), sugar_100=per100.get("sugar"),
+        sodium_100=per100.get("sodium"),
+        confidence="user-confirmed" if user_confirmed else confidence,
+        user_confirmed=user_confirmed,
+    )
+    db.add(m)
+    await db.commit()
+    return m

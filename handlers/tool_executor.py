@@ -93,6 +93,59 @@ def deterministic_confirmation(tool_calls, log, prefs) -> str:
     return "got it."
 
 
+async def _analyze_food(db, user, food_name, inp):
+    """
+    Enrich a logged food with USDA data + recurring-food memory, returning a
+    FoodAnalysis. Always falls back to the LLM's estimate if USDA/memory miss.
+    """
+    from core.food_intelligence import analyze, normalize_name, score_match
+    from db.queries import get_user_food_match, upsert_user_food_match
+
+    llm = (inp.get("calories"), inp.get("protein"), inp.get("carbs"), inp.get("fats"))
+    name_norm = normalize_name(food_name)
+
+    # 1) Recurring memory — the user's known staples (highest priority)
+    memory = None
+    try:
+        m = await get_user_food_match(db, user.id, name_norm) if name_norm else None
+        if m:
+            memory = {
+                "fdc_id": m.fdc_id, "user_confirmed": m.user_confirmed,
+                "confidence": m.confidence,
+                "per100g": {"calories": m.cal_100, "protein": m.protein_100,
+                            "carbs": m.carbs_100, "fat": m.fat_100,
+                            "fiber": m.fiber_100, "sugar": m.sugar_100,
+                            "sodium": m.sodium_100},
+            }
+            await upsert_user_food_match(db, user.id, name_norm, food_name,
+                                         m.fdc_id, memory["per100g"], m.confidence)
+    except Exception as e:
+        logger.warning(f"food memory lookup failed: {e}")
+
+    # 2) USDA search (only if no memory match — saves an API call on staples)
+    usda = None
+    if memory is None and name_norm:
+        try:
+            from api.usda import search_food
+            candidates = await search_food(food_name, page_size=5)
+            if candidates:
+                best = candidates[0]
+                conf = score_match(food_name, best["description"])
+                best["_match"] = conf
+                usda = best
+                # Store confident matches as recurring memory for next time
+                if conf in ("exact", "likely"):
+                    await upsert_user_food_match(
+                        db, user.id, name_norm, food_name,
+                        best.get("fdc_id"), best.get("per100g", {}), conf,
+                    )
+        except Exception as e:
+            logger.warning(f"USDA enrichment failed: {e}")
+
+    return analyze(food_name, inp.get("quantity"), *llm,
+                   usda_candidate=usda, memory_match=memory)
+
+
 async def execute_tool_calls(
     tool_calls: List[Dict[str, Any]],
     user: User,
@@ -136,27 +189,44 @@ async def _dispatch(name, inp, user, today_log, db, source_type):  # noqa: C901
         else:
             target_log = today_log
 
+        food_name = inp.get("food_name") or ""
+        analysis = await _analyze_food(db, user, food_name, inp)
+
         await add_food_entry(
             db,
             target_log.id,
             raw_input=str(inp),
-            parsed_food_name=inp.get("food_name"),
+            parsed_food_name=food_name,
             quantity=inp.get("quantity"),
-            calories=inp.get("calories"),
-            protein=inp.get("protein"),
-            carbs=inp.get("carbs"),
-            fats=inp.get("fats"),
-            fiber=inp.get("fiber"),
-            estimated_flag=inp.get("estimated", False),
+            calories=analysis.calories,
+            protein=analysis.protein,
+            carbs=analysis.carbs,
+            fats=analysis.fat,
+            fiber=analysis.fiber if analysis.fiber is not None else inp.get("fiber"),
+            sugar=analysis.sugar,
+            sodium=analysis.sodium,
+            estimated_flag=(analysis.confidence == "estimated"),
             confidence_score=inp.get("confidence", 0.8),
             source_type=source_type,
         )
         await db.refresh(target_log)
         date_label = f" (for {past_date})" if past_date else ""
+
+        # Rich result so the follow-up LLM coaches on the food, not just logs it
+        prefs = user.preferences
+        cal_t = prefs.calorie_target if prefs else None
+        pro_t = prefs.protein_target if prefs else None
+        remaining = ""
+        if cal_t:
+            remaining += f" {cal_t - target_log.total_calories:.0f} cal left"
+        if pro_t:
+            remaining += f", {pro_t - target_log.total_protein:.0f}g protein to go"
         return (
-            f"Logged {inp.get('food_name')}: {inp.get('calories')} cal{date_label}. "
-            f"Day total: {target_log.total_calories:.0f} cal, "
-            f"{target_log.total_protein:.0f}g protein"
+            f"Logged {food_name}: {analysis.calories} cal, {analysis.protein:.0f}g protein"
+            f"{date_label}. ANALYSIS: {analysis.coach_note}. "
+            f"Day total: {target_log.total_calories:.0f} cal, {target_log.total_protein:.0f}g protein"
+            f"{(' (' + remaining.strip() + ')') if remaining else ''}. "
+            f"Coach on this food — its quality, density, and goal fit — don't just confirm it."
         )
 
     elif name == "log_exercise":
