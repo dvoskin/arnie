@@ -161,3 +161,59 @@ async def _migrate(conn):
             logger.info(f"Migration: enabled proactive messaging for {result.rowcount} users")
     except Exception as e:
         logger.warning(f"Migration: proactive messaging update failed: {e}")
+
+    # ── One-time backfill (2026-05-30): EST + reminders for active users ─────────
+    # Runs ONCE, guarded by a marker row in schema_meta. Sets a real timezone +
+    # enables reminders for everyone who has actually talked to Arnie, so the
+    # 9am-9pm proactive window works for them. New signups set their own tz via
+    # onboarding, so this must never re-run on future boots.
+    try:
+        await conn.execute(text(
+            "CREATE TABLE IF NOT EXISTS schema_meta (key TEXT PRIMARY KEY)"
+        ))
+        _marker = "est_backfill_2026_05_30"
+        _done = (await conn.execute(
+            text("SELECT 1 FROM schema_meta WHERE key = :k"), {"k": _marker}
+        )).first()
+        if _done:
+            logger.info("Backfill est_backfill_2026_05_30 already applied — skipping.")
+        else:
+            # (B) Active users still on the UTC default → EST (don't clobber real tz)
+            try:
+                r = await conn.execute(text(
+                    "UPDATE users SET timezone = 'America/New_York' "
+                    "WHERE (timezone IS NULL OR timezone = 'UTC') "
+                    "AND id IN (SELECT DISTINCT user_id FROM conversation_logs "
+                    "           WHERE user_id IS NOT NULL)"
+                ))
+                logger.info(f"Backfill: set EST timezone for {r.rowcount} active users")
+            except Exception as e:
+                logger.warning(f"Backfill (timezone) failed: {e}")
+
+            # (C) Enable reminders for everyone who has messaged Arnie
+            try:
+                r = await conn.execute(text(
+                    "UPDATE user_preferences SET proactive_messaging_enabled = 1 "
+                    "WHERE user_id IN (SELECT DISTINCT user_id FROM conversation_logs "
+                    "                  WHERE user_id IS NOT NULL)"
+                ))
+                logger.info(f"Backfill: enabled reminders for {r.rowcount} active users")
+            except Exception as e:
+                logger.warning(f"Backfill (reminders) failed: {e}")
+
+            # (D) Exception LAST — +380503675704 is in Ukraine, not EST.
+            try:
+                r = await conn.execute(text(
+                    "UPDATE users SET timezone = 'Europe/Kyiv', city = 'Kyiv' "
+                    "WHERE telegram_id LIKE '%380503675704%'"
+                ))
+                logger.info(f"Backfill: set Kyiv tz/city for {r.rowcount} row(s) (+380503675704)")
+            except Exception as e:
+                logger.warning(f"Backfill (Kyiv override) failed: {e}")
+
+            await conn.execute(
+                text("INSERT INTO schema_meta (key) VALUES (:k)"), {"k": _marker}
+            )
+            logger.info("Backfill est_backfill_2026_05_30 applied + marked.")
+    except Exception as e:
+        logger.warning(f"Backfill est_backfill_2026_05_30 pass failed: {e}")
