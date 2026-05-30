@@ -1945,7 +1945,14 @@ var _macroRing=null;
 function renderMacroRing(day){{
   var p=day.protein||0, c=day.carbs||0, f=day.fats||0;
   var pCal=Math.round(p*4), cCal=Math.round(c*4), fCal=Math.round(f*9);
-  var total=pCal+cCal+fCal;
+  var macroCal=pCal+cCal+fCal;
+  // Total mirrors the Calories tile above. Logged calories are the source of
+  // truth (coach/USDA owned, stored per entry), NOT re-derived from macros.
+  // The gap vs the macro sum (fiber, alcohol, rounding) becomes an "Other" slice
+  // so the ring always adds up to the same number shown in the tile.
+  var total=(day.calories!=null)?day.calories:macroCal;
+  var other=total-macroCal;
+  var showOther=other>=5;
 
   var lg=document.getElementById('macro-legend');
   if(lg) lg.innerHTML=
@@ -1955,6 +1962,8 @@ function renderMacroRing(day){{
       '<span class="mleg-lbl">Carbs</span><div><span class="mleg-val">'+c+'g</span> <span class="mleg-sub">'+cCal+' kcal</span></div></div>'+
     '<div class="mleg"><div class="mleg-dot" style="background:#ec4899"></div>'+
       '<span class="mleg-lbl">Fats</span><div><span class="mleg-val">'+f+'g</span> <span class="mleg-sub">'+fCal+' kcal</span></div></div>'+
+    (showOther?('<div class="mleg"><div class="mleg-dot" style="background:#6b7280"></div>'+
+      '<span class="mleg-lbl">Other</span><div><span class="mleg-sub">'+other+' kcal</span></div></div>'):'')+
     '<hr class="macro-divider">'+
     '<div class="mleg"><span class="mleg-lbl" style="color:var(--tx);font-weight:700">Total</span>'+
       '<span class="mleg-val">'+total+' kcal</span></div>';
@@ -1962,11 +1971,13 @@ function renderMacroRing(day){{
   if(_macroRing) _macroRing.destroy();
   var canvas=document.getElementById('macroRing');if(!canvas)return;
   var empty=!total;
+  var ringData=empty?[1]:(showOther?[pCal||0.01,cCal||0.01,fCal||0.01,other]:[pCal||0.01,cCal||0.01,fCal||0.01]);
+  var ringColors=empty?['var(--sf2)']:(showOther?['#3b82f6','#f59e0b','#ec4899','#6b7280']:['#3b82f6','#f59e0b','#ec4899']);
   _macroRing=new Chart(canvas,{{
     type:'doughnut',
     data:{{datasets:[{{
-      data:empty?[1]:[pCal||0.01,cCal||0.01,fCal||0.01],
-      backgroundColor:empty?['var(--sf2)']:['#3b82f6','#f59e0b','#ec4899'],
+      data:ringData,
+      backgroundColor:ringColors,
       borderWidth:0,borderRadius:empty?0:4,
     }}]}},
     options:{{

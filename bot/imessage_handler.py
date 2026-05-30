@@ -423,11 +423,15 @@ async def _handle_im_remind_toggle(chat_guid: str, user, db, enable: bool) -> bo
 
 async def _handle_im_dashboard(chat_guid: str, user, db) -> bool:
     from db.queries import get_or_create_webhook_token
+    from core.blurbs import dashboard_line
     import os
     token = await get_or_create_webhook_token(db, user.id)
     base_url = os.getenv("RENDER_EXTERNAL_URL", "https://arnie.onrender.com").rstrip("/")
     url = f"{base_url}/dashboard/{token}"
-    await bb_send_text(chat_guid, f"your dashboard: {url}")
+    line = await dashboard_line(user.name or "")
+    await bb_send_text(chat_guid, line)
+    await asyncio.sleep(0.35)
+    await bb_send_text(chat_guid, url)  # link in its own bubble — easy to tap
     return True
 
 

@@ -1661,14 +1661,11 @@ async def cmd_dash(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     base_url = os.getenv("RENDER_EXTERNAL_URL", "http://localhost:10000")
     url = f"{base_url}/dashboard/{token}"
-    await update.message.reply_text(
-        f"<b>Your dashboard</b>\n\n"
-        f'<a href="{url}">{url}</a>\n\n'
-        "Read-only view of your logs, trends, and macros.\n"
-        "Bookmark it — the link doesn't change.",
-        parse_mode="HTML",
-        disable_web_page_preview=False,
-    )
+    from core.blurbs import dashboard_line
+    line = await dashboard_line(user.name or "")
+    await update.message.reply_text(line)
+    # link in its own message so it's clean to tap and bookmark
+    await update.message.reply_text(url, disable_web_page_preview=False)
 
 
 async def cmd_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1690,17 +1687,19 @@ async def cmd_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
         sms = f"sms:{im_addr}&body={code}"
         kb = InlineKeyboardMarkup([[InlineKeyboardButton("📱 Connect iMessage →", url=sms)]])
         await update.message.reply_text(
-            "Tap below on your iPhone — it opens Messages with the code ready to send. "
-            "Hit send and your iMessage links to this account automatically.\n\n"
-            f"(or text <b>{code}</b> to Arnie on iMessage. expires in 10 min)",
-            parse_mode="HTML", reply_markup=kb,
+            "tap below on your iPhone and it opens Messages with the code ready to send. "
+            "hit send and your iMessage links to this account automatically.\n\n"
+            "no iPhone in hand? copy the code below and text it to Arnie on iMessage. "
+            "expires in 10 min.",
+            reply_markup=kb,
         )
     else:
         await update.message.reply_text(
-            f"To connect your iMessage, text this code to Arnie on iMessage:\n\n"
-            f"<b>{code}</b>\n\n(expires in 10 min)",
-            parse_mode="HTML",
+            "to connect your iMessage, copy the code below and text it to Arnie "
+            "on iMessage. expires in 10 min."
         )
+    # code as its own bubble — easy to long-press and copy/paste
+    await update.message.reply_text(f"<code>{code}</code>", parse_mode="HTML")
 
 
 async def cmd_remind(update: Update, context: ContextTypes.DEFAULT_TYPE):
