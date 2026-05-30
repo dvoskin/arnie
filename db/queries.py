@@ -195,17 +195,31 @@ async def get_or_create_today_log(db: AsyncSession, user_id: int,
     return log
 
 
+async def recompute_log_totals(db: AsyncSession, daily_log_id: int) -> None:
+    """
+    Recompute a DailyLog's total_* from the SUM of its food entries — the entries
+    are the source of truth, so totals are derived and can never drift. Using this
+    after every add/update/delete (instead of incremental delta math) means a
+    partial write, race, or mid-write crash can't leave the stored total out of
+    sync with what the dashboard shows. Caller commits.
+    """
+    rows = (await db.execute(
+        select(FoodEntry).where(FoodEntry.daily_log_id == daily_log_id)
+    )).scalars().all()
+    log = (await db.execute(
+        select(DailyLog).where(DailyLog.id == daily_log_id)
+    )).scalar_one()
+    log.total_calories = sum((e.calories or 0) for e in rows)
+    log.total_protein = sum((e.protein or 0) for e in rows)
+    log.total_carbs = sum((e.carbs or 0) for e in rows)
+    log.total_fats = sum((e.fats or 0) for e in rows)
+
+
 async def add_food_entry(db: AsyncSession, daily_log_id: int, **kwargs) -> FoodEntry:
     entry = FoodEntry(daily_log_id=daily_log_id, **kwargs)
     db.add(entry)
-
-    result = await db.execute(select(DailyLog).where(DailyLog.id == daily_log_id))
-    log = result.scalar_one()
-    log.total_calories = (log.total_calories or 0) + (kwargs.get("calories") or 0)
-    log.total_protein = (log.total_protein or 0) + (kwargs.get("protein") or 0)
-    log.total_carbs = (log.total_carbs or 0) + (kwargs.get("carbs") or 0)
-    log.total_fats = (log.total_fats or 0) + (kwargs.get("fats") or 0)
-
+    await db.flush()  # entry must be visible to the recompute query
+    await recompute_log_totals(db, daily_log_id)
     await db.commit()
     await db.refresh(entry)
     return entry
@@ -518,21 +532,19 @@ async def update_food_entry(
     if log.user_id != user_id:
         return None
 
-    # Adjust totals for nutrition deltas
+    # Apply nutrition changes to the entry
     for field in ("calories", "protein", "carbs", "fats"):
         if field in changes:
-            old_val = getattr(entry, field) or 0
-            new_val = float(changes[field] or 0)
-            diff = new_val - old_val
-            total_attr = f"total_{field}"
-            setattr(log, total_attr, max(0.0, (getattr(log, total_attr) or 0) + diff))
-            setattr(entry, field, new_val)
+            setattr(entry, field, float(changes[field] or 0))
 
     # Non-nutrition fields
     for field in ("parsed_food_name", "quantity"):
         if field in changes and changes[field] is not None:
             setattr(entry, field, changes[field])
 
+    await db.flush()
+    # Totals are derived from entries — recompute so they can never drift.
+    await recompute_log_totals(db, entry.daily_log_id)
     await db.commit()
     await db.refresh(entry)
     return entry
@@ -548,12 +560,11 @@ async def delete_food_entry(db: AsyncSession, entry_id: int, user_id: int) -> bo
     if log.user_id != user_id:
         return False
 
-    log.total_calories = max(0.0, (log.total_calories or 0) - (entry.calories or 0))
-    log.total_protein = max(0.0, (log.total_protein or 0) - (entry.protein or 0))
-    log.total_carbs = max(0.0, (log.total_carbs or 0) - (entry.carbs or 0))
-    log.total_fats = max(0.0, (log.total_fats or 0) - (entry.fats or 0))
-
+    daily_log_id = entry.daily_log_id
     await db.delete(entry)
+    await db.flush()
+    # Totals are derived from entries — recompute so they can never drift.
+    await recompute_log_totals(db, daily_log_id)
     await db.commit()
     return True
 
