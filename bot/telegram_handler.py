@@ -677,7 +677,7 @@ async def _run_pipeline(update: Update, context: ContextTypes.DEFAULT_TYPE,
 
     if not in_onboarding:
         today_log = await get_or_create_today_log(db, user.id, user.timezone or "UTC")
-        context_str = await build_context(user, today_log, db)
+        context_str = await build_context(user, today_log, db, platform="telegram")
         system = f"{_ARNIE_SYSTEM}\n\n{context_str}"
     else:
         today_log = None
