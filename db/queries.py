@@ -37,6 +37,74 @@ async def get_or_create_user(db: AsyncSession, telegram_id: str) -> User:
     return user
 
 
+def linking_enabled() -> bool:
+    import os
+    return os.getenv("LINKING_ENABLED", "true").lower() in ("true", "1", "yes")
+
+
+async def resolve_user(db: AsyncSession, platform_id: str) -> User:
+    """
+    Get the canonical user for a platform identity. Cross-platform continuity:
+    if this identity has been linked to another account, return that canonical
+    user (so iMessage + Telegram load the same brain). Otherwise behave exactly
+    like get_or_create_user.
+
+    Fully gated by LINKING_ENABLED — flip the env var to false to instantly
+    revert to per-platform accounts (existing links just stop resolving; no
+    data is touched, so it's a clean rollback).
+    """
+    user = await get_or_create_user(db, platform_id)
+    if linking_enabled() and user.linked_to_user_id:
+        canonical = await reload_user(db, user.linked_to_user_id)
+        if canonical:
+            return canonical
+    return user
+
+
+def _gen_link_code() -> str:
+    import secrets
+    return "LINK-" + "".join(secrets.choice("ABCDEFGHJKLMNPQRSTUVWXYZ23456789") for _ in range(4))
+
+
+async def generate_link_code(db: AsyncSession, user: User) -> str:
+    """Mint a one-time link code (10 min) on the canonical user that generated it."""
+    code = _gen_link_code()
+    user.link_code = code
+    user.link_code_expires = datetime.utcnow() + timedelta(minutes=10)
+    await db.commit()
+    return code
+
+
+async def consume_link_code(db: AsyncSession, code: str, consumer: User) -> Optional[User]:
+    """
+    Link `consumer`'s identity to the canonical user that owns `code`.
+    Returns the canonical user on success, None if code invalid/expired/self.
+    The consumer's own (throwaway) data is left orphaned — it just repoints.
+    """
+    code = (code or "").strip().upper()
+    result = await db.execute(
+        select(User).where(User.link_code == code).options(selectinload(User.preferences))
+    )
+    canonical = result.scalar_one_or_none()
+    if not canonical:
+        return None
+    if canonical.link_code_expires and datetime.utcnow() > canonical.link_code_expires:
+        return None
+    if canonical.id == consumer.id:
+        return None
+    # Follow one level if the canonical itself is linked (avoid chains)
+    if canonical.linked_to_user_id:
+        canonical = await reload_user(db, canonical.linked_to_user_id) or canonical
+    consumer.linked_to_user_id = canonical.id
+    # burn the code
+    owner = await reload_user(db, canonical.id)
+    if owner and owner.link_code == code:
+        owner.link_code = None
+        owner.link_code_expires = None
+    await db.commit()
+    return canonical
+
+
 def _user_today(user_timezone: str) -> date:
     tz = pytz.timezone(user_timezone or "UTC")
     return datetime.now(tz).date()

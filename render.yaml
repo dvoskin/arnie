@@ -49,3 +49,9 @@ services:
         sync: false
       - key: USDA_API_KEY
         sync: false
+      - key: LINKING_ENABLED
+        value: "true"
+      - key: ARNIE_IMESSAGE_ADDRESS
+        sync: false
+      - key: TELEGRAM_BOT_USERNAME
+        value: "Arnie_1026_Bot"

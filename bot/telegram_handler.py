@@ -627,7 +627,8 @@ async def _run_pipeline(update: Update, context: ContextTypes.DEFAULT_TYPE,
     """Core pipeline shared by all message types."""
     chat_id = update.effective_chat.id
     tg_user = update.effective_user
-    user = await get_or_create_user(db, str(tg_user.id))
+    from db.queries import resolve_user
+    user = await resolve_user(db, str(tg_user.id))
 
     # ── Onboarding ────────────────────────────────────────────────────────────
     in_onboarding = not user.onboarding_completed
@@ -967,10 +968,28 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Deep-link parameter from landing page: /start freetrial
-    source = (context.args[0] if context.args else "").lower()
+    raw_arg = (context.args[0] if context.args else "")
+    source = raw_arg.lower()
     from_landing = source == "freetrial"
 
     async with AsyncSessionLocal() as db:
+        # Cross-platform link deep-link: /start LINK-XXXX (from iMessage)
+        from db.queries import linking_enabled, consume_link_code
+        if linking_enabled() and raw_arg.upper().startswith("LINK-"):
+            channel_user = await get_or_create_user(db, str(update.effective_user.id))
+            canonical = await consume_link_code(db, raw_arg, channel_user)
+            if canonical:
+                await update.message.reply_text(
+                    f"🔗 Linked. This is now the same account as your other device, "
+                    f"<b>{canonical.name or 'there'}</b> — everything's in sync.",
+                    parse_mode="HTML",
+                )
+            else:
+                await update.message.reply_text(
+                    "That link code's expired or invalid — generate a fresh one and try again."
+                )
+            return
+
         user = await get_or_create_user(db, str(update.effective_user.id))
         if user.onboarding_completed:
             today_log = await get_today_log(db, user.id, user.timezone or "UTC")
@@ -1652,6 +1671,38 @@ async def cmd_dash(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+async def cmd_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Generate a one-time code + tap-to-send iMessage link to connect devices."""
+    from db.queries import linking_enabled, generate_link_code
+    if not linking_enabled():
+        await update.message.reply_text("Device linking isn't available right now.")
+        return
+    async with AsyncSessionLocal() as db:
+        user = await get_or_create_user(db, str(update.effective_user.id))
+        if not user.onboarding_completed and not user.name:
+            await update.message.reply_text("Finish setup first, then you can link your other device.")
+            return
+        code = await generate_link_code(db, user)
+
+    im_addr = os.getenv("ARNIE_IMESSAGE_ADDRESS", "")
+    if im_addr:
+        # Pre-filled iMessage deep link — user just taps and hits send
+        sms = f"sms:{im_addr}&body={code}"
+        kb = InlineKeyboardMarkup([[InlineKeyboardButton("📱 Connect iMessage →", url=sms)]])
+        await update.message.reply_text(
+            "Tap below on your iPhone — it opens Messages with the code ready to send. "
+            "Hit send and your iMessage links to this account automatically.\n\n"
+            f"(or text <b>{code}</b> to Arnie on iMessage. expires in 10 min)",
+            parse_mode="HTML", reply_markup=kb,
+        )
+    else:
+        await update.message.reply_text(
+            f"To connect your iMessage, text this code to Arnie on iMessage:\n\n"
+            f"<b>{code}</b>\n\n(expires in 10 min)",
+            parse_mode="HTML",
+        )
+
+
 async def cmd_remind(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Toggle proactive reminders on or off."""
     async with AsyncSessionLocal() as db:
@@ -1766,6 +1817,7 @@ def build_app() -> Application:
     app.add_handler(CommandHandler("close",   cmd_close))
     app.add_handler(CommandHandler("reopen",  cmd_reopen))
     app.add_handler(CommandHandler("dash",    cmd_dash))
+    app.add_handler(CommandHandler("link",    cmd_link))
     app.add_handler(CommandHandler("upgrade", cmd_upgrade))
     app.add_handler(CommandHandler("billing", cmd_billing))
     app.add_handler(CommandHandler("connect", cmd_connect))

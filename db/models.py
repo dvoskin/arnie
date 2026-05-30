@@ -42,6 +42,10 @@ class User(Base):
     nudges_sent = Column(Text, default="")          # comma-separated day-1 warmup slot keys fired
     whoop_last_notified = Column(String)            # date string of last whoop recovery ping
     weekly_recap_week = Column(String)              # iso year-week of last weekly recap sent
+    # Cross-platform continuity — this channel resolves to a canonical user
+    linked_to_user_id = Column(Integer)             # if set, this identity points at another user
+    link_code = Column(String)                      # active one-time code this user generated
+    link_code_expires = Column(DateTime)            # when that code expires
     # Open coaching loop — one active daily mission, auto-evaluated against the log
     active_mission = Column(String)                 # human-readable mission text
     mission_metric = Column(String)                 # protein|calories|workouts|steps

@@ -370,6 +370,12 @@ _WHOOP_PATTERNS = {
     "whoop integration", "add whoop",
 }
 
+_LINK_PATTERNS = {
+    "link my telegram", "connect my telegram", "link telegram", "add telegram",
+    "link my other device", "connect my devices", "link my account",
+    "use on telegram", "sync my accounts", "link accounts",
+}
+
 
 def _match_intent(text: str, patterns: set) -> bool:
     t = text.strip().lower()
@@ -638,7 +644,37 @@ async def run_imessage_pipeline(address: str, chat_guid: str, raw_text: str,
     im_id = _im_user_id(address)
 
     async with AsyncSessionLocal() as db:
-        user = await get_or_create_user(db, im_id)
+        channel_user = await get_or_create_user(db, im_id)
+
+        # ── Cross-platform linking (gated by LINKING_ENABLED) ─────────────────
+        from db.queries import linking_enabled, consume_link_code, generate_link_code
+        if linking_enabled():
+            # Consuming a code (sent via the pre-filled deep link from Telegram)
+            if re.match(r"^\s*LINK-[A-Z0-9]{4,6}\s*$", raw_text.strip().upper()):
+                canonical = await consume_link_code(db, raw_text.strip(), channel_user)
+                if canonical:
+                    nm = canonical.name or "there"
+                    await bb_send_text(chat_guid, f"linked. 🔗")
+                    await asyncio.sleep(0.3)
+                    await bb_send_text(chat_guid, f"this is the same account as your other device now, {nm}. everything's in sync.")
+                else:
+                    await bb_send_text(chat_guid, "that link code's expired or invalid — generate a fresh one and try again.")
+                return
+            # Requesting a link from iMessage → hand them a tap link to Telegram
+            if _match_intent(raw_text, _LINK_PATTERNS):
+                code = await generate_link_code(db, channel_user)
+                bot = os.getenv("TELEGRAM_BOT_USERNAME", "Arnie_1026_Bot")
+                await bb_send_text(chat_guid, "to connect your telegram, tap this on your phone:")
+                await asyncio.sleep(0.3)
+                await bb_send_text(chat_guid, f"https://t.me/{bot}?start={code}")
+                await asyncio.sleep(0.3)
+                await bb_send_text(chat_guid, "it links automatically. (expires in 10 min)")
+                return
+
+        # Resolve to the canonical account (follows a link if one exists)
+        user = channel_user
+        if linking_enabled() and channel_user.linked_to_user_id:
+            user = await reload_user(db, channel_user.linked_to_user_id) or channel_user
 
         # ── Natural language command handling (iMessage has no slash commands) ──
 
