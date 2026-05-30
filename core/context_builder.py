@@ -455,6 +455,29 @@ async def build_context(user: User, today_log: Optional[DailyLog], db,
     # Detect workout mode: exercises already logged today
     in_workout = bool(today_log and today_log.exercise_entries)
 
+    # Current local time — so Arnie answers time/date questions correctly and
+    # times its coaching to the user's actual day (not the UTC server clock).
+    import pytz as _pytz
+    if user.timezone and user.timezone != "UTC":
+        try:
+            _now = datetime.now(_pytz.timezone(user.timezone))
+            _t = _now.strftime("%-I:%M %p").lstrip("0")
+            current_time_line = (
+                f"[CURRENT TIME] It's {_now.strftime('%A')} {_t} "
+                f"for the user (timezone {user.timezone}). "
+                f"Use this for any time or date question. Never guess the time."
+            )
+        except Exception:
+            current_time_line = ""
+    else:
+        _now = datetime.now(_pytz.utc)
+        current_time_line = (
+            f"[CURRENT TIME] User's timezone is unknown, so local time is uncertain. "
+            f"Server time is {_now.strftime('%A %-I:%M %p')} UTC. "
+            f"If asked the time, say you're not sure of their timezone and ask what city they're in. "
+            f"Do NOT state a specific local time as fact."
+        )
+
     # Cross-platform link status — gates whether Arnie may offer to connect the
     # other platform. Linked = this account points somewhere, or something points here.
     from db.queries import linking_enabled
@@ -478,6 +501,7 @@ async def build_context(user: User, today_log: Optional[DailyLog], db,
                        f"only offer to connect {other} if THEY organically bring it up.")
 
     sections = [
+        current_time_line,
         "=== PROFILE ===",
         fmt_profile(user, prefs),
         (progress if progress else ""),
