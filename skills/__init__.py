@@ -69,7 +69,13 @@ def load_all_skills() -> str:
     if not all_skills:
         return ""
 
-    lines = ["SKILL RESPONSES — activate the correct format when these intents are detected:\n"]
+    lines = [
+        "SKILL KNOWLEDGE: domain expertise to draw on when these intents come up.\n"
+        "These give you the WHAT: the facts, what to cover, what to prioritize. They do NOT\n"
+        "change HOW you talk. Your normal voice still governs every reply: deliver all of it\n"
+        "in your usual sentence-case, multi-bubble texting voice, lead with the read then the\n"
+        "next move, never as a report, list, or template.\n"
+    ]
     for name, triggers, prompt in all_skills:
         trigger_str = ", ".join(f'"{t}"' for t in triggers[:4])
         lines.append(f"▸ {name}  triggers: {trigger_str}")
