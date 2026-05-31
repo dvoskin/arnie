@@ -68,28 +68,36 @@ def deterministic_confirmation(tool_calls, log, prefs) -> str:
     cal_t = getattr(prefs, "calorie_target", None) if prefs else None
     pro_t = getattr(prefs, "protein_target", None) if prefs else None
 
+    foods = [
+        ((tc.get("input") or {}).get("food_name") or "").strip()
+        for tc in (tool_calls or [])
+        if tc.get("name") in ("log_food", "update_food_entry")
+    ]
+    foods = [f for f in foods if f]
+
     if names & {"log_food", "update_food_entry"}:
-        if cal_t:
-            tail = f"you're at {cal}/{cal_t} cal today."
-        else:
-            tail = f"that's {cal} cal so far today."
-        # surface protein if they have a target and are notably behind
+        head = f"{foods[0].lower()} logged." if len(foods) == 1 else "logged."
+        tail = (f"you're at {cal}/{cal_t} cal today." if cal_t
+                else f"that's {cal} cal so far today.")
         if pro_t and pro < pro_t * 0.85:
-            return f"logged.|||{tail}|||protein's at {pro}/{pro_t}g — keep it coming."
-        return f"logged.|||{tail}"
+            return f"{head}|||{tail}|||protein's at {pro}/{pro_t}g, keep it coming."
+        if pro_t:
+            return f"{head}|||{tail}|||{pro}/{pro_t}g protein so far. what's next?"
+        return f"{head}|||{tail}|||what's next?"
 
     if "log_exercise" in names:
-        return "logged your workout. 💪"
+        return "logged your workout. 💪|||how'd it feel?"
     if "log_body_weight" in names:
-        return "got your weight down. 📉"
+        return "got your weight down. 📉|||consistency is the whole game."
     if "log_water" in names:
-        return "water logged. 💧"
+        return "water logged. 💧|||keep sipping."
     if names & {"delete_food_entry", "delete_exercise_entry"}:
-        return "removed it."
+        tail = (f"you're at {cal}/{cal_t} cal now." if cal_t else f"that's {cal} cal now.")
+        return f"removed it.|||{tail}"
     if "update_profile" in names:
-        return "updated. 👍"
+        return "updated. 👍|||anything else?"
     if "close_day" in names:
-        return "day closed. nice work today."
+        return "day closed. nice work today. 🌙"
     return "all set. what's next?"
 
 
