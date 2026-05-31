@@ -458,11 +458,11 @@ async def _handle_im_whoop(chat_guid: str, user, db) -> bool:
 # ── First-contact intro ────────────────────────────────────────────────────────
 
 _INTRO_BUBBLES = [
-    "hey 👋",
-    "i'm arnie.",
-    "i help you train, eat right, and actually stay on track. no app, just text me.",
-    "takes 2 min to get going.",
-    "what's your name?",
+    "Hey 👋",
+    "I'm Arnie.",
+    "I help you train, eat right, and actually stay on track. No app, just text me.",
+    "Takes 2 min to get going.",
+    "What's your name?",
 ]
 
 
@@ -485,10 +485,10 @@ async def _send_first_contact_intro(chat_guid: str) -> None:
 
 # Acknowledges they signed up, then flows into the same name question.
 _OUTREACH_INTRO = [
-    "hey 👋 it's arnie",
-    "you signed up on the site — i help you train, eat right, and stay on track.",
-    "no app, just text me what you eat and how you train.",
-    "quick 2 min to get going. what's your name?",
+    "Hey 👋 it's Arnie",
+    "You signed up on the site. I help you train, eat right, and stay on track.",
+    "No app, just text me what you eat and how you train.",
+    "Quick 2 min to get going. What's your name?",
 ]
 
 
@@ -603,9 +603,9 @@ async def _build_completion_text(user, db) -> str:
     """
     name = user.name or ""
     return (
-        f"you're in, {name}. 🎉|||"
-        f"just text me whatever you eat or train and i'll handle the rest.|||"
-        f"what've you had today? let's start there."
+        f"You're in, {name}. 🎉|||"
+        f"Just text me whatever you eat or train and I'll handle the rest.|||"
+        f"What've you had today? Let's start there."
     )
 
 

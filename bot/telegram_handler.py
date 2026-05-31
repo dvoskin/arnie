@@ -507,7 +507,7 @@ def _welcome_message(name: str, has_targets: bool,
     if has_targets and calorie_target and protein_target:
         target_line = f"Targets: <b>{calorie_target} cal</b> · <b>{protein_target}g protein</b>\n"
     else:
-        target_line = "Targets: not set — say <i>\"set my targets\"</i> when ready\n"
+        target_line = "Targets: not set, say <i>\"set my targets\"</i> when ready\n"
 
     return (
         f"You're in, <b>{name}</b>.\n\n"
