@@ -54,7 +54,13 @@ async def root():
 
 @app.get("/health")
 async def healthcheck():
-    return {"status": "ok"}
+    # Build-stamp: Render injects RENDER_GIT_COMMIT/BRANCH at runtime, so this tells
+    # us EXACTLY which commit the live container is running (vs. what's on origin).
+    return {
+        "status": "ok",
+        "commit": os.getenv("RENDER_GIT_COMMIT", "unknown")[:12],
+        "branch": os.getenv("RENDER_GIT_BRANCH", "unknown"),
+    }
 
 
 # ── Stripe Webhooks ────────────────────────────────────────────────────────────
