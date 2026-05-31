@@ -416,7 +416,7 @@ async def _handle_im_remind_toggle(chat_guid: str, user, db, enable: bool) -> bo
         prefs.proactive_messaging_enabled = enable
         await db.commit()
     status = "on" if enable else "off"
-    msg = f"check-ins are {status}." if enable else f"got it. no more check-ins."
+    msg = f"Check-ins are {status}." if enable else f"Got it, no more check-ins."
     await bb_send_text(chat_guid, msg)
     return True
 
@@ -787,7 +787,7 @@ split every response into separate bubbles using ||| between them.
 each bubble = one short sentence. sometimes a fragment. like rapid texts.
 vary where emojis land — not always at the end, not always first bubble, sometimes none.
 make it feel like a real person is typing, not a system running a script.
-lowercase always. no em dashes. no corporate language.
+sentence case, like a real person texting. no em dashes. no corporate language.
 capitalize their name every time you use it."""
 
         # ── Conversation history ───────────────────────────────────────────────

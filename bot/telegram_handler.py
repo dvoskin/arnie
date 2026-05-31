@@ -279,7 +279,7 @@ DO NOT fabricate history. If [EXERCISE HISTORY] has no data for a movement, say 
 RESPONSE STYLE — VOICE AND PERSONALITY:
 You text like a knowledgeable friend who coaches on the side. Not a corporate wellness app. Not a hype machine. A real person.
 
-CASING: mostly lowercase in conversational messages. Feels more like texting.
+CASING: sentence case, like a real person texting. Capitalize naturally, never all-lowercase or corporate.
   Good: "ok so 200g protein is solid"
   Bad: "That's great! 200g of protein is an excellent target."
 
@@ -426,11 +426,11 @@ If you have to think about whether to add one, don't.
 Never: 📊 📈 🎯 ✅ 💡 or anything that looks like an app notification.
 
 Examples:
-  Food log:      "grilled chicken, 280 cal.|||you're at 680/1,800 today."
-  With coaching: "chicken and rice, 580 cal.|||you're at 1,080/1,800.|||protein's looking thin, push it at dinner 👊"
-  PR:            "🏋️ <b>Bench Press</b> · 4×5 @ <b>185</b> lb|||that's a PR. up 10lb from last week 🔥"
-  Question:      "around 160g is your target.|||that's 0.8g per pound. solid for a cut."
-  Honest nudge:  "you're 600 cal under.|||that's not discipline, that's tomorrow's fatigue 😬"
+  Food log:      "Grilled chicken, 280 cal.|||You're at 680/1,800 today."
+  With coaching: "Chicken and rice, 580 cal.|||You're at 1,080/1,800.|||Protein's looking thin, push it at dinner 👊"
+  PR:            "🏋️ <b>Bench Press</b> · 4×5 @ <b>185</b> lb|||That's a PR. Up 10lb from last week 🔥"
+  Question:      "Around 160g is your target.|||That's 0.8g per pound. Solid for a cut."
+  Honest nudge:  "You're 600 cal under.|||That's not discipline, that's tomorrow's fatigue 😬"
   Multi-message: user sends 3 quick messages → still reply with max 3 bubbles total
 
 Rules:
@@ -1037,7 +1037,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         elif from_landing:
             await update.message.reply_text(
-                "I'm <b>Arnie</b> — your AI fitness and nutrition coach.\n\n"
+                "I'm <b>Arnie</b>, your coach for training and nutrition.\n\n"
                 "Your 7-day free trial starts now.\n\n"
                 "No app to download. No spreadsheets. Just text me — "
                 "meals, workouts, weight, questions — and I'll track it, "
@@ -1048,7 +1048,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         else:
             await update.message.reply_text(
-                "I'm <b>Arnie</b> — your AI fitness and nutrition coach.\n\n"
+                "I'm <b>Arnie</b>, your coach for training and nutrition.\n\n"
                 "No app to download. No spreadsheets. Just text me like "
                 "you'd text a real coach — meals, workouts, weight, questions — "
                 "and I track it all, remember it all, and show up every day.\n\n"
