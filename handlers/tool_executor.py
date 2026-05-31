@@ -88,7 +88,19 @@ def deterministic_confirmation(tool_calls, log, prefs) -> str:
     if "log_exercise" in names:
         return "Logged your workout. 💪|||How'd it feel?"
     if "log_body_weight" in names:
-        return "Got your weight down. 📉|||Consistency is the whole game."
+        # Only confirm a weigh-in if a real numeric weight came through. A bare
+        # log_body_weight with no value is a mis-route (e.g. the model hearing
+        # "barbell"/"barbells bar" as body weight) — don't fabricate a weigh-in.
+        _bw = next((tc.get("input", {}).get("weight")
+                    for tc in (tool_calls or [])
+                    if tc.get("name") == "log_body_weight"), None)
+        try:
+            _has_weight = _bw is not None and float(_bw) > 0
+        except (TypeError, ValueError):
+            _has_weight = False
+        if _has_weight:
+            return "Got your weight down. 📉|||Consistency is the whole game."
+        # fall through to the generic net rather than claim a weigh-in happened
     if "log_water" in names:
         return "Water logged. 💧|||Keep sipping."
     if names & {"delete_food_entry", "delete_exercise_entry"}:

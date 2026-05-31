@@ -428,18 +428,31 @@ async def imessage_webhook(request: Request):
         logger.info(f"BB webhook: skipping — missing field address={bool(address)} text={bool(text)} chat_guid={bool(chat_guid)}")
         return {"ok": True}
 
-    # Deduplicate — BlueBubbles fires twice when Private API + polling both trigger.
-    # Use GUID when available, fall back to (address+text) fingerprint.
+    # Deduplicate — BlueBubbles re-delivers the same message via several paths
+    # (Private API socket + REST polling), sometimes under DIFFERENT message GUIDs,
+    # and can retry minutes apart while our pipeline is still running. GUID-only
+    # dedup misses the cross-path duplicate, so we suppress on BOTH:
+    #   - the message GUID (long window — catches retries of the same event)
+    #   - an (address+text) fingerprint (short window — catches the same message
+    #     re-delivered under a second GUID). A user genuinely sending identical
+    #     text within ~45s is rare and harmless to coalesce.
     import time as _time
     _seen = getattr(app.state, "_seen_guids", {})
     _now = _time.time()
-    _seen = {k: v for k, v in _seen.items() if _now - v < 30}
-    _dedup_key = message_guid if message_guid else f"{address}:{text[:80]}"
-    if _dedup_key in _seen:
-        logger.info(f"BB webhook: duplicate ({_dedup_key[:16]}...) skipped")
+    # Evict on the longest window we use so the dict can't grow unbounded.
+    _seen = {k: v for k, v in _seen.items() if _now - v < 600}
+    _guid_key = f"guid:{message_guid}" if message_guid else None
+    _text_key = f"txt:{address}:{text[:120]}"
+    _guid_dup = _guid_key is not None and (_now - _seen.get(_guid_key, 0)) < 600
+    _text_dup = (_now - _seen.get(_text_key, 0)) < 45
+    if _guid_dup or _text_dup:
+        _why = "guid" if _guid_dup else "text"
+        logger.info(f"BB webhook: duplicate ({_why}) skipped text={text[:40]!r}")
         app.state._seen_guids = _seen
         return {"ok": True}
-    _seen[_dedup_key] = _now
+    if _guid_key is not None:
+        _seen[_guid_key] = _now
+    _seen[_text_key] = _now
     app.state._seen_guids = _seen
 
     # Debounce then fire pipeline — batches rapid multi-message inputs
