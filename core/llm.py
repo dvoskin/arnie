@@ -354,9 +354,25 @@ async def chat(
     raw_content is the list of Anthropic content blocks (needed for multi-turn).
     Pass model= to override the default (e.g. use Haiku for cheap low-latency calls).
     """
-    if LLM_PROVIDER() == "anthropic" or not OPENAI_API_KEY():
+    # If OpenAI is the configured provider, use it directly.
+    if LLM_PROVIDER() != "anthropic" and OPENAI_API_KEY():
+        return await _openai_chat(messages, system, tools, max_tokens)
+
+    # Default: Anthropic (already retries 429/500/529/connection internally).
+    # If it STILL fails (e.g. a sustained outage) and an OpenAI key is configured,
+    # fall back to OpenAI for this turn so Arnie keeps responding instead of going
+    # dark. See AUDIT.md #8.
+    try:
         return await _anthropic_chat(messages, system, tools, max_tokens, model=model)
-    return await _openai_chat(messages, system, tools, max_tokens)
+    except Exception as e:
+        if OPENAI_API_KEY():
+            logger.warning(f"Anthropic chat failed ({e}); falling back to OpenAI.")
+            try:
+                return await _openai_chat(messages, system, tools, max_tokens)
+            except Exception as e2:
+                logger.error(f"OpenAI fallback also failed: {e2}")
+                raise
+        raise
 
 
 async def chat_follow_up(
@@ -372,11 +388,18 @@ async def chat_follow_up(
     Only used when the first turn had no text response.
     """
     if LLM_PROVIDER() == "anthropic" or not OPENAI_API_KEY():
-        return await _anthropic_follow_up(
-            messages, raw_assistant_content, tool_calls, tool_results, system, max_tokens
-        )
-    # For OpenAI the caller already has the text; this path shouldn't be needed.
-    return "Done."
+        try:
+            return await _anthropic_follow_up(
+                messages, raw_assistant_content, tool_calls, tool_results, system, max_tokens
+            )
+        except Exception as e:
+            # The follow-up only refines the post-tool confirmation; on failure
+            # return "" so the caller falls back to deterministic_confirmation
+            # (a real "logged X, you're at Y" message) instead of erroring.
+            logger.warning(f"Anthropic follow-up failed ({e}); using deterministic confirmation.")
+            return ""
+    # OpenAI path: the caller already has first-pass text; no follow-up needed.
+    return ""
 
 
 async def transcribe_voice(audio_data: bytes, filename: str = "voice.ogg") -> str:
