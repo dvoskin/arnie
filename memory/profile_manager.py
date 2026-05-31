@@ -29,7 +29,8 @@ from db.models import User
 
 logger = logging.getLogger(__name__)
 
-USERS_DIR = Path("users")
+# Persistent per-user dir (survives deploys) — shared resolver with memory_manager.
+from memory.memory_manager import USERS_DIR  # noqa: E402
 
 # Don't rewrite the profile more often than this (cost control).
 _MIN_UPDATE_INTERVAL = timedelta(hours=3)

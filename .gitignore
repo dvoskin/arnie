@@ -33,3 +33,6 @@ nohup.out
 
 # macOS
 .DS_Store
+
+# Local per-user memory/profile data (persists on /data in prod, never commit)
+users/

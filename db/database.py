@@ -38,7 +38,31 @@ def _resolve_database_url() -> str:
 
 
 DATABASE_URL = _resolve_database_url()
-engine = create_async_engine(DATABASE_URL, echo=False)
+_IS_SQLITE = "sqlite" in DATABASE_URL
+
+# SQLite concurrency hardening. Telegram + iMessage webhooks write concurrently
+# (async); with default settings that raises "database is locked" under contention
+# — a real source of intermittent glitches (a log that doesn't save, a reply that
+# errors). WAL lets readers run without blocking the writer; busy_timeout makes a
+# contending write WAIT for the lock instead of erroring immediately. Guarded so a
+# future Postgres URL is unaffected.
+_engine_kwargs = {"echo": False}
+if _IS_SQLITE:
+    _engine_kwargs["connect_args"] = {"timeout": 30}
+
+engine = create_async_engine(DATABASE_URL, **_engine_kwargs)
+
+if _IS_SQLITE:
+    from sqlalchemy import event
+
+    @event.listens_for(engine.sync_engine, "connect")
+    def _set_sqlite_pragmas(dbapi_conn, _record):
+        cur = dbapi_conn.cursor()
+        cur.execute("PRAGMA journal_mode=WAL")
+        cur.execute("PRAGMA busy_timeout=30000")
+        cur.execute("PRAGMA synchronous=NORMAL")
+        cur.close()
+
 AsyncSessionLocal = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 

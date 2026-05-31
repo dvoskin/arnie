@@ -21,6 +21,8 @@ services:
     envVars:
       - key: DATABASE_URL
         value: sqlite+aiosqlite:////data/arnie.db
+      - key: ARNIE_USERS_DIR
+        value: /data/users
       - key: TELEGRAM_BOT_TOKEN
         sync: false
       - key: ANTHROPIC_API_KEY
