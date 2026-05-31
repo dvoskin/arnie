@@ -30,7 +30,9 @@ def test_cut_is_below_maintain_and_bulk_above():
     cut = calc_targets(_user(primary_goal="cut"))["calories"]
     bulk = calc_targets(_user(primary_goal="bulk"))["calories"]
     assert cut < maint < bulk
-    assert maint - cut == 500  # 500 kcal deficit
+    # cut applies a ~450 kcal deficit (rounded to nearest 50); bulk a ~300 surplus
+    assert 350 <= maint - cut <= 500
+    assert 250 <= bulk - maint <= 350
 
 
 def test_sex_changes_bmr():

@@ -193,3 +193,34 @@ init_db under WAL, client config) and committed together for easy review/rollbac
 ~9.7k-token cached prompt) · #12 observability (ensure SENTRY_DSN set, add turn ids).
 Recommended order is in the section above. Also: pin `requirements.txt` (0 of 15
 deps are version-pinned — a transitive bump could break a deploy unpredictably).
+
+---
+
+## Foundation batch — final status (2026-05-31)
+
+Done, pushed, and verified (96 tests pass; all modules boot-import clean):
+- **#4 Test suite + CI** — tests/ (12 files, 96 tests) on in-memory SQLite built
+  from the real models + _migrate; .github/workflows/ci.yml (byte-compile +
+  pytest on Py3.14); pytest.ini (--import-mode=importlib, required because the
+  repo path contains a space).
+- **#7 Telegram per-user lock** — _tg_pipeline_locks serializes handle_text's
+  pipeline per user (parity with iMessage); message_debounce hardened to never
+  interrupt an in-flight runner (test_debounce.py).
+- **#8 Model fallback** — core/llm.chat() falls back to OpenAI when Anthropic
+  fails and OPENAI_API_KEY is set; chat_follow_up() returns "" on failure so the
+  caller uses deterministic_confirmation (test_llm_fallback.py).
+- **#10 Silent-except audit** — benign sites (import guards, asyncio task-cancel,
+  ValueError parse fallbacks) left; hot-path ones (reactions, follow-up, insights
+  send, profile-clear) now log.
+- **requirements.txt** — all 15 runtime deps pinned to installed/prod versions
+  (+ pytest/pytest-asyncio dev pins).
+
+Deferred (safe plan in #9 above):
+- **#9 split api/app.py** — high regression risk, no user-facing benefit; do it in
+  a clean tooling session with the per-step gates (route count stays 25, tests
+  green after each extraction).
+
+Next session (user agreed):
+- **#5 Postgres + #6 Alembic** — real migrations, concurrent writers, horizontal
+  scaling. Data layer is already SQLAlchemy-async, so it's mostly config + an
+  Alembic baseline.
