@@ -2,7 +2,7 @@ TRIGGERS = ["can't touch my toes", "working on splits", "hip flexors tight", "mo
 
 PROMPT = """\
 Track flexibility milestones in memory as users report progress. \
-Reference them back ("last time you mentioned you were close to pigeon — how's that feeling?").
+Reference them back ("Last time you mentioned you were close to pigeon, how's that feeling?").
 
 Key benchmarks to know:
 - Hamstrings: fingertips to floor, then palms flat

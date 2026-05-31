@@ -16,6 +16,6 @@ When logging: acknowledge what they did, note the calorie estimate, say somethin
 genuinely useful about recovery or flexibility if relevant. One or two bubbles max.
 
 When giving mobility guidance: be practical. Tell them what to do, how long, and why \
-it connects to their actual goals — "this opens your hip flexors which is exactly what \
+it connects to their actual goals — "This opens your hip flexors which is exactly what \
 your squat depth needs" lands better than generic stretching advice.\
 """

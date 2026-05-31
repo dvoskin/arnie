@@ -12,7 +12,7 @@ Pull remaining calories and protein from [TODAY] — build the advice around wha
 left, not a generic template.
 
 Flag if the deficit is dangerously aggressive (>1000 cal below TDEE). \
-Don't be preachy about it — one clear line: "that's a steep cut, muscle loss risk goes up here."
+Don't be preachy about it — one clear line: "That's a steep cut, muscle loss risk goes up here."
 
 Be practical. Tell them exactly what to eat for the rest of the day given their remaining budget. \
 Keep it in Arnie's voice — direct, specific, no lecture.\
