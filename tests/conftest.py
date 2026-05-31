@@ -1,0 +1,53 @@
+"""
+Shared pytest fixtures.
+
+Every DB test runs against a fresh in-memory SQLite database built from the real
+models + the real _migrate() pass, so tests exercise the exact schema path prod
+uses. Query functions all take an explicit `db` session, so we never touch the
+app's global engine.
+"""
+import os
+import pytest
+import pytest_asyncio
+from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+
+# Deterministic env for tests that read it.
+os.environ.setdefault("LINKING_ENABLED", "true")
+os.environ.setdefault("PROACTIVE_MESSAGING_ENABLED", "false")
+
+from db.database import Base, _migrate  # noqa: E402
+from db import models  # noqa: E402,F401  (registers tables)
+
+
+@pytest_asyncio.fixture
+async def engine():
+    eng = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with eng.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+        await _migrate(conn)
+    yield eng
+    await eng.dispose()
+
+
+@pytest_asyncio.fixture
+async def db(engine):
+    Session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    async with Session() as session:
+        yield session
+
+
+@pytest_asyncio.fixture
+async def make_user(db):
+    """Factory: create + persist a User with sensible defaults; returns the row."""
+    from db.models import User, UserPreferences
+
+    async def _make(telegram_id="100", name="Tester", onboarded=True, **kw):
+        u = User(telegram_id=telegram_id, name=name,
+                 onboarding_completed=onboarded, **kw)
+        db.add(u)
+        await db.flush()
+        db.add(UserPreferences(user_id=u.id, proactive_messaging_enabled=False))
+        await db.commit()
+        return u
+
+    return _make
