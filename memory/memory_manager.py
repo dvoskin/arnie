@@ -3,12 +3,47 @@ Per-user markdown memory files stored at users/{telegram_id}/arnie_memory.md
 These capture behavioral patterns, preferences, and coaching notes that aren't
 otherwise derivable from the structured DB.
 """
+import os
+import logging
 import aiofiles
 from pathlib import Path
 from datetime import datetime
 from db.models import User
 
-USERS_DIR = Path("users")
+logger = logging.getLogger(__name__)
+
+
+def resolve_users_dir() -> Path:
+    """
+    Pick a PERSISTENT base dir for per-user memory/profile files.
+
+    Previously a relative "users" dir = ephemeral on Render, wiped on every deploy,
+    silently erasing Arnie's accumulated understanding of each user. Now defaults to
+    the same persistent disk as the database (e.g. /data/users when DATABASE_URL
+    points at /data/arnie.db), honors ARNIE_USERS_DIR if set, with a /tmp fallback
+    mirroring db/database.py's logic.
+    """
+    explicit = os.getenv("ARNIE_USERS_DIR")
+    candidates = [explicit] if explicit else []
+    if not explicit:
+        db_url = os.getenv("DATABASE_URL", "")
+        if "sqlite" in db_url and "///" in db_url:
+            db_path = db_url.split("///")[-1]
+            if db_path.startswith("/"):
+                candidates.append(str(Path(db_path).parent / "users"))
+        candidates.append("users")  # local-dev relative fallback
+    candidates.append("/tmp/arnie_users")
+    for d in candidates:
+        try:
+            Path(d).mkdir(parents=True, exist_ok=True)
+            return Path(d)
+        except (PermissionError, OSError) as e:
+            logger.warning(f"Users dir {d} not usable ({e}); trying next.")
+    return Path("users")
+
+
+USERS_DIR = resolve_users_dir()
+logger.info(f"Per-user memory dir: {USERS_DIR}")
 
 
 def _path(telegram_id: str) -> Path:
