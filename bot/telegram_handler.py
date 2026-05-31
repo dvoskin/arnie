@@ -919,16 +919,24 @@ async def _run_pipeline(update: Update, context: ContextTypes.DEFAULT_TYPE,
 
 from bot.message_debounce import schedule_message as _debounce
 
+# Per-user pipeline lock — parity with the iMessage handler. The debounce coalesces
+# rapid texts; this guarantees two runs for the same user can never overlap (the
+# duplicate-log / duplicate-onboarding-question bug class).
+_tg_pipeline_locks: dict[str, asyncio.Lock] = {}
+
+
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text or ""
     if not text.strip():
         return
 
     user_key = f"tg:{update.effective_user.id}"
+    lock = _tg_pipeline_locks.setdefault(user_key, asyncio.Lock())
 
     async def _run(combined_text: str):
-        async with AsyncSessionLocal() as db:
-            await _run_pipeline(update, context, combined_text, "text", db)
+        async with lock:
+            async with AsyncSessionLocal() as db:
+                await _run_pipeline(update, context, combined_text, "text", db)
 
     await _debounce(user_key, text, _run, delay=1.5)
 
