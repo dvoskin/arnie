@@ -76,29 +76,29 @@ def deterministic_confirmation(tool_calls, log, prefs) -> str:
     foods = [f for f in foods if f]
 
     if names & {"log_food", "update_food_entry"}:
-        head = f"{foods[0].lower()} logged." if len(foods) == 1 else "logged."
+        head = (f"{foods[0][:1].upper() + foods[0][1:]} logged." if len(foods) == 1 else "Logged.")
         tail = (f"You're at {cal}/{cal_t} cal today." if cal_t
-                else f"that's {cal} cal so far today.")
+                else f"That's {cal} cal so far today.")
         if pro_t and pro < pro_t * 0.85:
-            return f"{head}|||{tail}|||protein's at {pro}/{pro_t}g, keep it coming."
+            return f"{head}|||{tail}|||Protein's at {pro}/{pro_t}g, keep it coming."
         if pro_t:
-            return f"{head}|||{tail}|||{pro}/{pro_t}g protein so far. what's next?"
-        return f"{head}|||{tail}|||what's next?"
+            return f"{head}|||{tail}|||{pro}/{pro_t}g protein so far. What's next?"
+        return f"{head}|||{tail}|||What's next?"
 
     if "log_exercise" in names:
-        return "logged your workout. 💪|||how'd it feel?"
+        return "Logged your workout. 💪|||How'd it feel?"
     if "log_body_weight" in names:
-        return "got your weight down. 📉|||consistency is the whole game."
+        return "Got your weight down. 📉|||Consistency is the whole game."
     if "log_water" in names:
-        return "water logged. 💧|||keep sipping."
+        return "Water logged. 💧|||Keep sipping."
     if names & {"delete_food_entry", "delete_exercise_entry"}:
-        tail = (f"you're at {cal}/{cal_t} cal now." if cal_t else f"that's {cal} cal now.")
-        return f"removed it.|||{tail}"
+        tail = (f"You're at {cal}/{cal_t} cal now." if cal_t else f"That's {cal} cal now.")
+        return f"Done, removed it.|||{tail}"
     if "update_profile" in names:
-        return "updated. 👍|||anything else?"
+        return "Updated. 👍|||Anything else?"
     if "close_day" in names:
-        return "day closed. nice work today. 🌙"
-    return "all set. what's next?"
+        return "Day closed. That's a wrap. 🌙"
+    return "All set. What's next?"
 
 
 async def _analyze_food(db, user, food_name, inp):
