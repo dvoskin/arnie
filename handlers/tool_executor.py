@@ -77,7 +77,7 @@ def deterministic_confirmation(tool_calls, log, prefs) -> str:
 
     if names & {"log_food", "update_food_entry"}:
         head = f"{foods[0].lower()} logged." if len(foods) == 1 else "logged."
-        tail = (f"you're at {cal}/{cal_t} cal today." if cal_t
+        tail = (f"You're at {cal}/{cal_t} cal today." if cal_t
                 else f"that's {cal} cal so far today.")
         if pro_t and pro < pro_t * 0.85:
             return f"{head}|||{tail}|||protein's at {pro}/{pro_t}g, keep it coming."
