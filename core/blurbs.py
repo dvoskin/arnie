@@ -12,14 +12,14 @@ import random
 # Fallbacks — only used if the LLM call fails or returns something unusable.
 # Kept varied so even the fallback path doesn't feel canned.
 _DASH_FALLBACKS = [
-    "here's your dashboard, everything you log lands here",
-    "this is your spot, all your stats live here",
-    "boom, your dashboard. logs, trends, macros, all of it",
-    "here you go, your whole picture in one place",
-    "your dashboard's right here, check it whenever",
-    "this pulls up everything you've been tracking",
-    "here's the link, your trends and logs all live there",
-    "got you, this is where all your numbers live",
+    "Here's your dashboard, everything you log lands here",
+    "This is your spot, all your stats live here",
+    "Boom, your dashboard. logs, trends, macros, all of it",
+    "Here you go, your whole picture in one place",
+    "Your dashboard's right here, check it whenever",
+    "This pulls up everything you've been tracking",
+    "Here's the link, your trends and logs all live there",
+    "Got you, this is where all your numbers live",
 ]
 
 
@@ -34,7 +34,7 @@ async def dashboard_line(name: str = "") -> str:
     nm = (name or "").strip()
     system = (
         "you are arnie, a sharp, funny, direct fitness coach who texts like a real "
-        "person. lowercase, casual, no corporate tone, no em dashes. you're handing "
+        "person. sentence case like a real text, casual, no corporate tone, no em dashes. you're handing "
         "the user the link to their personal dashboard (logs, trends, macros). "
         "write ONE short line, max ~12 words, that feels spontaneous and a little "
         "different every time. do NOT include any url or link. do NOT use the word "
