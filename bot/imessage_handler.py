@@ -873,19 +873,30 @@ capitalize their name every time you use it."""
             response_text = await _build_completion_text(user, db)
         else:
             logging_tools = {"log_food", "log_exercise", "update_food_entry",
-                             "delete_food_entry", "update_exercise_entry"}
+                             "delete_food_entry", "update_exercise_entry",
+                             "log_body_weight", "log_water"}
             has_logging = any(tc["name"] in logging_tools for tc in tool_calls)
-            need_followup = (tool_calls and raw_content and
-                             (in_onboarding or not response_text or has_logging))
             _followup_tried = False
-            if need_followup:
-                _followup_tried = True
-                try:
-                    response_text = await chat_follow_up(
-                        messages, raw_content, tool_calls, tool_results, system, max_tokens=400
-                    )
-                except Exception as e:
-                    logger.error(f"Follow-up LLM failed for {im_id}: {e}")
+            if has_logging and not in_onboarding:
+                # CRITICAL: the running totals in a log confirmation must come from
+                # the recomputed DB, never the LLM — the model invents totals
+                # ("1,601/1,800, 192g") and confabulates ("hadn't logged that yet").
+                # deterministic_confirmation reads the authoritative row. (today_log
+                # was refreshed right after tools ran.)
+                response_text = deterministic_confirmation(
+                    tool_calls, today_log, user.preferences
+                )
+            else:
+                need_followup = (tool_calls and raw_content and
+                                 (in_onboarding or not response_text))
+                if need_followup:
+                    _followup_tried = True
+                    try:
+                        response_text = await chat_follow_up(
+                            messages, raw_content, tool_calls, tool_results, system, max_tokens=400
+                        )
+                    except Exception as e:
+                        logger.error(f"Follow-up LLM failed for {im_id}: {e}")
 
         if not response_text:
             # Only attempt a follow-up here if we haven't already — re-calling the

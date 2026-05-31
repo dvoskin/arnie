@@ -795,35 +795,41 @@ async def _run_pipeline(update: Update, context: ContextTypes.DEFAULT_TYPE,
             protein_target=prefs.protein_target if prefs else None,
         )
     else:
-        # Always run follow-up after food/exercise logging so LLM has the
-        # updated totals from the tool result and gives a proper confirmation.
-        # Without this, the first-pass text ("got it, logging it") gets sent
-        # before the tool runs and doesn't include the actual numbers.
         logging_tools = {"log_food", "log_exercise", "update_food_entry",
-                         "delete_food_entry", "update_exercise_entry"}
+                         "delete_food_entry", "update_exercise_entry",
+                         "log_body_weight", "log_water"}
         has_logging = any(tc["name"] in logging_tools for tc in tool_calls)
-        need_followup = (tool_calls and raw_content and
-                         (in_onboarding or not response_text or has_logging))
         _followup_tried = False
-        if need_followup:
-            _followup_tried = True
-            stop_typing2 = asyncio.Event()
-            typing_task2 = asyncio.create_task(
-                _typing_keepalive(context.bot, chat_id, stop_typing2)
+        if has_logging and not in_onboarding:
+            # CRITICAL: a log confirmation's running totals must come from the
+            # recomputed DB, never the LLM — the model invents totals
+            # ("1,601/1,800, 192g") and confabulates corrections. deterministic_
+            # confirmation reads the authoritative row (refreshed after tools ran).
+            response_text = deterministic_confirmation(
+                tool_calls, today_log, user.preferences
             )
-            try:
-                response_text = await chat_follow_up(
-                    messages, raw_content, tool_calls, tool_results, system, max_tokens=400
+        else:
+            need_followup = (tool_calls and raw_content and
+                             (in_onboarding or not response_text))
+            if need_followup:
+                _followup_tried = True
+                stop_typing2 = asyncio.Event()
+                typing_task2 = asyncio.create_task(
+                    _typing_keepalive(context.bot, chat_id, stop_typing2)
                 )
-            except Exception as e:
-                logger.error(f"Follow-up LLM failed for {chat_id}: {e}")
-            finally:
-                stop_typing2.set()
-                typing_task2.cancel()
                 try:
-                    await typing_task2
-                except asyncio.CancelledError:
-                    pass
+                    response_text = await chat_follow_up(
+                        messages, raw_content, tool_calls, tool_results, system, max_tokens=400
+                    )
+                except Exception as e:
+                    logger.error(f"Follow-up LLM failed for {chat_id}: {e}")
+                finally:
+                    stop_typing2.set()
+                    typing_task2.cancel()
+                    try:
+                        await typing_task2
+                    except asyncio.CancelledError:
+                        pass
 
     if not response_text:
         # Only follow-up here if we didn't already — re-calling the same LLM with
