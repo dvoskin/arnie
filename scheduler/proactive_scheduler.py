@@ -288,13 +288,13 @@ async def _llm_nudge(user, log, prefs, health_snap, slot: str, name: str) -> str
 
 
 _BRIEFING_SYSTEM = """\
-You are Arnie sending a morning performance briefing — the message that makes the
+You are Arnie sending a morning performance briefing, the message that makes the
 user glad to hear from you. Not generic motivation: clarity and one clear action.
 
 Rules:
-- lowercase, 2-4 short bubbles split with |||.
+- sentence case, like a real person texting. 2-4 short bubbles split with |||.
 - lead with what matters: their trend or momentum, stated with a real number.
-- if a notable pattern or projection is given, weave ONE in — make them go "huh, didn't notice that".
+- if a notable pattern or projection is given, weave ONE in, make them go "huh, didn't notice that".
 - end with the single highest-leverage action for today, framed as a small mission.
 - close on a question or the mission so they reply. never generic ("have a great day!").
 - match their preferred language. return only the message text with ||| separators.\
@@ -392,7 +392,7 @@ async def _llm_weekly_recap(user, prefs, db, name: str) -> str:
 
     prompt = ("\n".join(data) + "\n\nWrite a short Sunday 'your week' recap. Celebrate what's real "
               "with numbers, note momentum, weave in the memory moment if present, and set the tone "
-              "for next week. end with a question. lowercase, 3-5 bubbles split with |||.")
+              "for next week. end with a question. sentence case, like a real text. 3-5 bubbles split with |||.")
     try:
         r = await chat([{"role": "user", "content": prompt}], system=_BRIEFING_SYSTEM,
                        tools=False, max_tokens=260, model="claude-haiku-4-5-20251001")
@@ -413,9 +413,9 @@ def _has_timezone(user) -> bool:
 
 # Varied, voice-matched one-time asks for legacy users missing a timezone.
 _CITY_NUDGES = [
-    "quick one — what city are you in?|||just so my check-ins land during your day and not at 3am 😅",
-    "hey, what city you based in these days?|||want to make sure i'm hitting you up at sane hours, not the middle of the night.",
-    "random q — where are you based?|||lets me time my check-ins to your day instead of blowing up your phone at 2am.",
+    "Quick one, what city are you in?|||Just so my check-ins land during your day and not at 3am 😅",
+    "Hey, what city you based in these days?|||Want to make sure I'm hitting you up at sane hours, not the middle of the night.",
+    "Random q, where are you based?|||Lets me time my check-ins to your day instead of blowing up your phone at 2am.",
 ]
 
 
@@ -786,37 +786,37 @@ def _fmt_day_report(log, prefs, user_name: str, user=None) -> str:
         cal_ok = abs(cal - cal_t) <= cal_t * 0.1
         pro_ok = pro >= pro_t * 0.9
         if cal_ok and pro_ok and log.workout_completed:
-            bubbles.append(f"that's a clean day, {name}. 🔥" if name else "that's a clean day. 🔥")
+            bubbles.append(f"That's a clean day, {name}. 🔥" if name else "That's a clean day. 🔥")
         elif cal_ok and pro_ok:
-            bubbles.append("solid day on the numbers.")
+            bubbles.append("Solid day on the numbers.")
         else:
-            bubbles.append(f"end of day check, {name}." if name else "end of day check.")
+            bubbles.append(f"End of day check, {name}." if name else "End of day check.")
 
     # Calories line
     if cal_t:
         diff = cal - cal_t
         if abs(diff) <= cal_t * 0.1:
-            bubbles.append(f"{cal}/{cal_t} cal. right where you want to be.")
+            bubbles.append(f"{cal}/{cal_t} cal. Right where you want to be.")
         elif diff < 0:
-            bubbles.append(f"{cal}/{cal_t} cal — {abs(diff)} under. make sure that's on purpose.")
+            bubbles.append(f"{cal}/{cal_t} cal, {abs(diff)} under. Make sure that's on purpose.")
         else:
-            bubbles.append(f"{cal}/{cal_t} cal, {diff} over. not a big deal, just noting it.")
+            bubbles.append(f"{cal}/{cal_t} cal, {diff} over. Not a big deal, just noting it.")
     elif cal:
         bubbles.append(f"{cal} cal logged today.")
 
     # Protein line — the one that matters most for the goal
     if pro_t:
         if pro >= pro_t * 0.9:
-            bubbles.append(f"protein at {pro}g. nailed it. 💪")
+            bubbles.append(f"Protein at {pro}g. Nailed it. 💪")
         elif pro >= pro_t * 0.7:
-            bubbles.append(f"protein landed at {pro}/{pro_t}g. close, push it earlier tomorrow.")
+            bubbles.append(f"Protein landed at {pro}/{pro_t}g. Close, push it earlier tomorrow.")
         else:
             short = pro_t - pro
-            bubbles.append(f"protein only hit {pro}g — {short}g short. that's the one to fix tomorrow.")
+            bubbles.append(f"Protein only hit {pro}g, {short}g short. That's the one to fix tomorrow.")
 
     # Training acknowledgment (only if notable)
     if log.workout_completed:
-        bubbles.append("and you trained. that's the day. 👊")
+        bubbles.append("And you trained. That's the day. 👊")
 
     # Close today's mission (the open loop set this morning)
     if user is not None:
@@ -824,15 +824,15 @@ def _fmt_day_report(log, prefs, user_name: str, user=None) -> str:
             from core.missions import mission_completed
             done = mission_completed(user, log)
             if done is True:
-                bubbles.append(f"and you hit today's mission: {user.active_mission}. 🔥")
+                bubbles.append(f"And you hit today's mission: {user.active_mission}. 🔥")
             elif done is False:
-                bubbles.append(f"missed today's mission ({user.active_mission}) — first thing tomorrow.")
+                bubbles.append(f"Missed today's mission ({user.active_mission}), first thing tomorrow.")
         except Exception:
             pass
 
     if not bubbles:
-        bubbles.append("quiet day on the log.")
-        bubbles.append("tomorrow we lock in. what's the plan?")
+        bubbles.append("Quiet day on the log.")
+        bubbles.append("Tomorrow we lock in. What's the plan?")
 
     return "|||".join(bubbles)
 
