@@ -895,8 +895,8 @@ capitalize their name every time you use it."""
                     response_text = await chat_follow_up(
                         messages, raw_content, tool_calls, tool_results, system, max_tokens=300
                     )
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning(f"iMessage follow-up failed; using deterministic confirmation: {e}")
             if not response_text:
                 # Never a bare "done." — build a real confirmation from what was logged
                 if tool_calls:

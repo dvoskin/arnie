@@ -769,8 +769,8 @@ async def _run_pipeline(update: Update, context: ContextTypes.DEFAULT_TYPE,
                 _react = detect_moment(response_text, tool_calls).reaction
             if _react:
                 await _tg_react(context.bot, chat_id, update.message.message_id, _react)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"Telegram reaction failed (non-fatal): {e}")
 
         # Rebuild system prompt with updated profile state
         in_onboarding = not user.onboarding_completed
