@@ -14,16 +14,26 @@ def _prefs(cal_t=1800, pro_t=200):
 
 
 def test_food_confirmation_uses_exact_log_totals():
+    # protein well above the low-protein threshold so we hit the "what's next?" path
     tc = [{"name": "log_food", "input": {"food_name": "Royo Bagel"}}]
-    out = deterministic_confirmation(tc, _log(435, 60), _prefs())
+    out = deterministic_confirmation(tc, _log(435, 190), _prefs())
     # the real numbers must appear; the hallucinated 1601/192 must not
     assert "435/1800 cal" in out
-    assert "60/200" in out
-    assert "1,601" not in out and "1601" not in out and "192" not in out
+    assert "190/200" in out
+    assert "1,601" not in out and "1601" not in out
     # names the food, multi-bubble, ends with a hook
     assert out.lower().startswith("royo bagel logged")
     assert "|||" in out
     assert out.rstrip().endswith("?")
+
+
+def test_food_confirmation_low_protein_path_uses_real_totals():
+    # the screenshot scenario: 435 cal / 60g protein, target 1800 / 200
+    tc = [{"name": "log_food", "input": {"food_name": "Royo Bagel"}}]
+    out = deterministic_confirmation(tc, _log(435, 60), _prefs())
+    assert "435/1800 cal" in out and "60/200g" in out
+    assert "1,601" not in out and "1601" not in out and "192g" not in out
+    assert out.lower().startswith("royo bagel logged")
 
 
 def test_no_protein_target_still_states_calories():
