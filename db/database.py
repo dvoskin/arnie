@@ -14,6 +14,18 @@ def _resolve_database_url() -> str:
     (e.g. no persistent disk mounted on Render yet).
     """
     url = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///arnie.db")
+
+    # Render's managed-Postgres connection string is libpq-style ("postgresql://..."
+    # or the legacy "postgres://..."). SQLAlchemy maps a bare postgresql:// to
+    # psycopg2 (which we don't install) — coerce to our async driver, psycopg3.
+    # Also normalize asyncpg if someone set that. Idempotent.
+    if url.startswith("postgres://"):
+        url = "postgresql://" + url[len("postgres://"):]
+    if url.startswith("postgresql://"):
+        url = "postgresql+psycopg://" + url[len("postgresql://"):]
+    elif url.startswith("postgresql+asyncpg://"):
+        url = "postgresql+psycopg://" + url[len("postgresql+asyncpg://"):]
+
     if "sqlite" not in url:
         return url  # Postgres or other — no dir to create
 

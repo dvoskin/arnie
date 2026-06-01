@@ -34,10 +34,16 @@ target_metadata = Base.metadata
 
 
 def _sync_url() -> str:
-    """Resolve DATABASE_URL and coerce async drivers to their sync equivalents."""
-    url = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///arnie.db")
+    """Resolve DATABASE_URL and coerce async drivers to their sync equivalents.
+
+    Reuses the app's _resolve_database_url() so Render's libpq-style postgres://
+    and postgresql:// (and asyncpg) all normalize to postgresql+psycopg:// the same
+    way the app does — one source of truth, no drift. psycopg3 is sync-capable, so
+    Alembic uses it directly. aiosqlite -> pysqlite (the stdlib sync driver).
+    """
+    from db.database import _resolve_database_url
+    url = _resolve_database_url()
     url = url.replace("sqlite+aiosqlite://", "sqlite://")
-    url = url.replace("postgresql+asyncpg://", "postgresql+psycopg://")
     return url
 
 
