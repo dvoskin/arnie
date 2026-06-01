@@ -58,6 +58,40 @@ def test_prompt_allows_conversational_replies_without_tools():
     assert "NOT EVERY MESSAGE NEEDS A TOOL" in s
 
 
+def test_prompt_has_global_multibubble_cadence():
+    """1 / 2 / 3-4 bubble guidance must be present and apply to everything, not
+    just food logs — this is what makes the whole product feel like texting."""
+    s = build_arnie_system("imessage")
+    assert "1 bubble" in s and "2 bubbles" in s and "3-4 bubbles" in s
+    assert "|||" in s  # the bubble separator is documented
+
+
+def test_prompt_bans_ai_self_reference():
+    """Arnie must never call itself an AI / model / software."""
+    s = build_arnie_system("imessage")
+    for banned in ("as an AI", "I'm your AI coach", "artificial intelligence",
+                   "my model", "language model"):
+        assert banned in s, f"AI-ban list missing phrase: {banned!r}"
+
+
+def test_onboarding_drives_to_first_action_not_passive():
+    """Onboarding must end on a concrete next step, never a passive 'Updated.'/'Anything else?'."""
+    from handlers.onboarding import build_onboarding_system
+    from db.models import User
+    o = build_onboarding_system(User(telegram_id="t-onb"))
+    assert "First move" in o or "DRIVE TO A FIRST ACTION" in o
+    # the weak endings must be explicitly forbidden in the prompt
+    assert "Anything else?" in o and "weak" in o.lower()
+
+
+def test_onboarding_is_multibubble_and_adaptive():
+    from handlers.onboarding import build_onboarding_system
+    from db.models import User
+    o = build_onboarding_system(User(telegram_id="t-onb2"))
+    assert "|||" in o
+    assert "ADAPT TO THEIR ENERGY" in o  # comfortable vs high-detail modes
+
+
 def test_prompt_is_sentence_case_not_forced_lowercase():
     s = build_arnie_system("imessage")
     # the only "lowercase" mention should be the "not all-lowercase" guidance
