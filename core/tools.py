@@ -89,6 +89,26 @@ _NUTRITION_TOOLS = [
         "input_schema": {"type": "object", "properties": {}},
     },
     {
+        "name": "move_day_log",
+        "description": (
+            "Move an ENTIRE day's logged food + exercise to a different date, keeping the "
+            "exact entries (no re-estimating, no data loss). Use when the user says a whole "
+            "day's log belongs on another day: 'put this log for yesterday instead of "
+            "today', 'move today to yesterday', 'this was all yesterday'. "
+            "This is ONE atomic call — do NOT delete-and-relog by hand, and do NOT narrate "
+            "the steps ('let me delete...', 'on it, clearing...'). Just call it and confirm. "
+            "Default from_date is today; set to_date to where it belongs."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "to_date":   {"type": "string", "description": "Destination day: 'yesterday', '2 days ago', or YYYY-MM-DD"},
+                "from_date": {"type": "string", "description": "Optional source day (defaults to today): 'yesterday' or YYYY-MM-DD"},
+            },
+            "required": ["to_date"],
+        },
+    },
+    {
         "name": "log_water",
         "description": "Log water intake when user mentions drinking water.",
         "input_schema": {

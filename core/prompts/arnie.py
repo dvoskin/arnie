@@ -172,6 +172,10 @@ logging:
   clear_day_log() to wipe today clean, then if they gave a new list, log_food() each item
   in the SAME turn (clear FIRST, then the logs). this is how you fix a messed-up day in one
   shot instead of stacking duplicates on top of it.
+- "put this log for yesterday instead of today" / "move today to yesterday" / "this was all
+  yesterday" → move_day_log(to_date="yesterday"). ONE atomic call moves the whole day with
+  entries intact. NEVER delete-and-relog by hand, and NEVER narrate it ("let me delete...",
+  "on it, clearing..."). reopening a closed day is handled for you — just call the tool.
 - exercise mentioned → log_exercise() — one call per exercise, only if NOT already in [TODAY]
 - correction to logged exercise → update_exercise_entry() with [#id]. never log_exercise() for a correction.
 - user removes an exercise → delete_exercise_entry() with [#id]

@@ -79,6 +79,9 @@ def deterministic_confirmation(tool_calls, log, prefs) -> str:
     if "clear_day_log" in names and not (names & {"log_food", "log_exercise", "update_food_entry"}):
         return "Wiped today clean ✅|||send me what you actually had and I'll rebuild it."
 
+    if "move_day_log" in names:
+        return "Moved that day's log over. ✅|||totals are updated."
+
     if names & {"log_food", "update_food_entry"}:
         head = (f"{foods[0][:1].upper() + foods[0][1:]} logged." if len(foods) == 1 else "Logged.")
         tail = (f"You're at {cal}/{cal_t} cal today." if cal_t
@@ -335,6 +338,35 @@ async def _dispatch(name, inp, user, today_log, db, source_type):  # noqa: C901
             await db.refresh(today_log)
         return ("Today's log wiped clean — totals back to zero. Now re-log whatever they "
                 "gave you." if existed else "Nothing was logged today — clean slate already.")
+
+    elif name == "move_day_log":
+        # Move an entire day's entries to another date in ONE atomic call (entries kept
+        # intact — no re-estimation). This is the right answer to "put this for yesterday".
+        from db.queries import move_day_entries
+        import pytz
+        from datetime import datetime as _dt, date as _date
+        tz = getattr(user, "timezone", "UTC")
+        try:
+            today = _dt.now(pytz.timezone(tz or "UTC")).date()
+        except Exception:
+            today = _date.today()
+        to_d = _parse_log_date(inp.get("to_date"), tz)
+        from_d = _parse_log_date(inp.get("from_date"), tz) or today
+        if not to_d:
+            return "Couldn't read the destination day — ask which date they meant."
+        if to_d == from_d:
+            return "Source and destination are the same day — nothing to move."
+        res = await move_day_entries(db, user.id, from_d, to_d)
+        if getattr(today_log, "id", None):
+            await db.refresh(today_log)
+        if not res.get("moved"):
+            return f"No entries on {from_d} to move."
+        return (
+            f"Moved {res['moved']} entries ({res['food']} food, {res['exercise']} exercise) "
+            f"from {from_d} to {to_d}. {to_d} now totals {res['to_total_cal']} cal, "
+            f"{res['to_total_protein']}g protein; {from_d} is back to zero. "
+            f"Confirm the move warmly and give that day's total — don't re-list every item."
+        )
 
     elif name == "update_exercise_entry":
         if not getattr(today_log, "id", None):

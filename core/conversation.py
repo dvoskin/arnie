@@ -22,8 +22,31 @@ logger = logging.getLogger(__name__)
 _LOGGING_TOOLS = frozenset({
     "log_food", "log_exercise", "update_food_entry",
     "delete_food_entry", "update_exercise_entry",
-    "log_body_weight", "log_water", "clear_day_log",
+    "log_body_weight", "log_water", "clear_day_log", "move_day_log",
 })
+
+# Action-commitment phrases that signal a STALL when they appear with NO tool calls:
+# the model promised to do something ("let me delete...", "deleting all of today's...")
+# but emitted nothing, so a broken promise ships and nothing happens. High precision —
+# a normal conversational reply doesn't use these first-person DB-action verbs. Matched
+# case-insensitively. ("let me know" / "let me think" deliberately NOT here.)
+_STALL_MARKERS = (
+    "let me do that", "let me do this", "let me handle this", "let me handle that",
+    "let me delete", "let me clear", "let me log", "let me move", "let me relog",
+    "let me reopen", "let me sort", "let me get that logged",
+    "i need to delete", "i need to log", "i need to clear", "i need to move",
+    "i need to relog", "i need to reopen", "i need to update that",
+    "i'll delete", "i'll clear", "i'll relog", "i'll move that", "i'll handle that",
+    "deleting all", "clearing today", "relogging", "logging everything",
+)
+
+
+def _looks_like_stall(text: str) -> bool:
+    """True if `text` promises an action but (with no tool calls) didn't perform it."""
+    t = (text or "").strip().lower()
+    if not t:
+        return False
+    return t.endswith(":") or t.startswith("on it") or any(m in t for m in _STALL_MARKERS)
 
 
 @dataclasses.dataclass
@@ -72,17 +95,20 @@ async def run_turn(
 
         # Self-heal an incomplete turn. Two failure modes, both seen in prod:
         #   • truncated  — model ran out of budget mid-tool-call (stop_reason)
-        #   • dangling   — model wrote an action preamble ("Now logging everything:",
-        #                  "estimating both:") then stopped with NO tool calls
-        # Either way the user sees a broken promise and nothing logged. Retry ONCE with
+        #   • stalled    — model promised an action but emitted NO tool calls. Catches
+        #                  both the colon preamble ("Now logging everything:") and the
+        #                  period-ending narration ("Let me do that now.", "On it —
+        #                  clearing today and relogging…") that slipped past the old
+        #                  colon-only check.
+        # Either way the user sees a broken promise and nothing happens. Retry ONCE with
         # a bigger budget and an explicit "finish it now" nudge.
         _txt = (result.get("text") or "").rstrip()
         _truncated = result.get("stop_reason") == "max_tokens"
-        _dangling = (not result["tool_calls"]) and _txt.endswith(":")
-        if _truncated or _dangling:
+        _stalled = (not result["tool_calls"]) and _looks_like_stall(_txt)
+        if _truncated or _stalled:
             logger.warning(
                 f"Incomplete first pass for {_tag} "
-                f"(truncated={_truncated}, dangling={_dangling}) — retrying with nudge"
+                f"(truncated={_truncated}, stalled={_stalled}) — retrying with nudge"
             )
             retry_messages = messages + [
                 {"role": "assistant", "content": _txt or "(started but didn't finish)"},

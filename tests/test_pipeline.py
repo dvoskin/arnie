@@ -254,6 +254,58 @@ async def test_redo_today_clears_then_relogs_in_one_turn(pipeline_env):
 
 
 @pytest.mark.asyncio
+async def test_move_day_log_relocates_entries_to_yesterday(pipeline_env):
+    """
+    "Put this log for yesterday instead of today" → move_day_log moves the whole day's
+    entries to yesterday in ONE call, intact: today goes to zero, yesterday holds the
+    moved totals. No delete-and-relog, no re-estimation, no narration loop.
+    """
+    env = pipeline_env
+    addr, chat = "+15550001111", "iMessage;-;+15550001111"
+    await _seed_user(env["Maker"])
+
+    # Turn 1: log two items to today.
+    env["set_llm"](text="", tool_calls=[
+        {"name": "log_food", "input": {"food_name": "chicken wrap", "calories": 450,
+                                       "protein": 35, "carbs": 40, "fats": 15}},
+        {"name": "log_food", "input": {"food_name": "premier shake", "calories": 160,
+                                       "protein": 30, "carbs": 5, "fats": 2}},
+    ], follow_up_text="logged both.")
+    await env["H"].run_imessage_pipeline(addr, chat, "wrap and a shake", message_guid="m1")
+
+    # Turn 2: move the whole day to yesterday.
+    env["set_llm"](text="", tool_calls=[
+        {"name": "move_day_log", "input": {"to_date": "yesterday"}},
+    ], follow_up_text="moved it all to yesterday 👊|||that day's at 610 now.")
+    await env["H"].run_imessage_pipeline(
+        addr, chat, "put this log for yesterday instead of today", message_guid="m2",
+    )
+
+    from sqlalchemy import select
+    from db.models import DailyLog, User
+    from datetime import datetime as _dt, timedelta
+    import pytz
+    async with env["Maker"]() as db:
+        u = (await db.execute(
+            select(User).where(User.telegram_id == f"im:{addr}")
+        )).scalar_one()
+        tz = pytz.timezone(u.timezone or "UTC")
+        today = _dt.now(tz).date()
+        yest = today - timedelta(days=1)
+        today_log = (await db.execute(
+            select(DailyLog).where(DailyLog.user_id == u.id, DailyLog.date == today)
+        )).scalar_one_or_none()
+        yest_log = (await db.execute(
+            select(DailyLog).where(DailyLog.user_id == u.id, DailyLog.date == yest)
+        )).scalar_one_or_none()
+
+    assert today_log is not None and round(today_log.total_calories or 0) == 0, \
+        "today should be emptied after the move"
+    assert yest_log is not None and round(yest_log.total_calories or 0) == 610, \
+        f"yesterday should hold the moved entries (610), got {yest_log and yest_log.total_calories}"
+
+
+@pytest.mark.asyncio
 async def test_log_persists_once_not_per_bubble(pipeline_env):
     """Even with a multi-bubble reply, the log is written once per event."""
     env = pipeline_env

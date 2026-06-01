@@ -81,6 +81,22 @@ async def test_redo_today_clears_then_relogs():
 
 
 @pytest.mark.asyncio
+async def test_put_this_for_yesterday_uses_move_tool_not_narration():
+    """'put this log for yesterday instead of today' must call move_day_log in ONE shot,
+    not narrate 'let me delete and relog' (the prod stall loop)."""
+    from core.llm import chat
+    messages = [{"role": "user", "content": (
+        "put this log for yesterday instead of today, the whole thing was yesterday"
+    )}]
+    result = await chat(messages, _coach_system(), tools=True, max_tokens=4096)
+    names = [tc["name"] for tc in result["tool_calls"]]
+    assert "move_day_log" in names, (
+        f"should move the day in one call, not narrate it. tools={names}, "
+        f"text={result['text'][:160]!r}"
+    )
+
+
+@pytest.mark.asyncio
 async def test_estimate_request_logs_without_reasking():
     """'guestimate' must produce a log_food call, not another clarifying question."""
     from core.llm import chat

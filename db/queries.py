@@ -183,6 +183,43 @@ async def get_or_create_log_for_date(
     return log
 
 
+async def move_day_entries(db: AsyncSession, user_id: int,
+                           from_date: date, to_date: date) -> dict:
+    """
+    Move an ENTIRE day's food + exercise entries from one date's log to another,
+    preserving the exact entries (no re-estimation), then recompute both days' totals.
+    Returns {"moved": n, "food": n, "exercise": n, "to_total_cal": x, "to_total_protein": y}.
+    Moves 0 if the source day has nothing.
+    """
+    from_log = await get_log_by_date(db, user_id, from_date)
+    if not from_log or not (from_log.food_entries or from_log.exercise_entries):
+        return {"moved": 0}
+
+    to_log = await get_or_create_log_for_date(db, user_id, to_date)
+    n_food = len(from_log.food_entries)
+    n_ex = len(from_log.exercise_entries)
+
+    await db.execute(
+        update(FoodEntry).where(FoodEntry.daily_log_id == from_log.id)
+        .values(daily_log_id=to_log.id)
+    )
+    await db.execute(
+        update(ExerciseEntry).where(ExerciseEntry.daily_log_id == from_log.id)
+        .values(daily_log_id=to_log.id)
+    )
+    # Entries are the source of truth — recompute both days from scratch.
+    await recompute_log_totals(db, from_log.id)
+    await recompute_log_totals(db, to_log.id)
+    await db.commit()
+
+    to_log = await get_log_by_date(db, user_id, to_date)
+    return {
+        "moved": n_food + n_ex, "food": n_food, "exercise": n_ex,
+        "to_total_cal": round(to_log.total_calories or 0),
+        "to_total_protein": round(to_log.total_protein or 0),
+    }
+
+
 async def get_or_create_today_log(db: AsyncSession, user_id: int,
                                   user_timezone: str = "UTC") -> DailyLog:
     log = await get_today_log(db, user_id, user_timezone)
