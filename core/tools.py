@@ -41,11 +41,15 @@ _NUTRITION_TOOLS = [
     {
         "name": "update_food_entry",
         "description": (
-            "CORRECT an existing food entry already in today's log. "
-            "Use when the user is fixing values for food already logged. "
-            "Find the entry by its [#id] in the context. "
+            "CORRECT or MOVE an existing food entry already in the log. "
+            "Use when the user is fixing values for food already logged, OR moving an "
+            "entry to a different day. Find the entry by its [#id] in the context. "
             "DO NOT call log_food for corrections — that creates a duplicate. "
-            "Only include fields the user is actually changing."
+            "Only include fields the user is actually changing. "
+            "To move an entry to another day, set date= (e.g. 'yesterday'). Moving a WHOLE "
+            "day means calling this once per entry with the same date — it's the same "
+            "primitive as moving one item, just repeated. Totals on both days resync "
+            "automatically."
         ),
         "input_schema": {
             "type": "object",
@@ -57,6 +61,7 @@ _NUTRITION_TOOLS = [
                 "protein":   {"type": "number"},
                 "carbs":     {"type": "number"},
                 "fats":      {"type": "number"},
+                "date":      {"type": "string", "description": "Optional. Move this entry to another day: 'yesterday', '2 days ago', or YYYY-MM-DD."},
             },
             "required": ["entry_id"],
         },
@@ -87,26 +92,6 @@ _NUTRITION_TOOLS = [
             "Then confirm: cleared + what's now logged + the new total."
         ),
         "input_schema": {"type": "object", "properties": {}},
-    },
-    {
-        "name": "move_day_log",
-        "description": (
-            "Move an ENTIRE day's logged food + exercise to a different date, keeping the "
-            "exact entries (no re-estimating, no data loss). Use when the user says a whole "
-            "day's log belongs on another day: 'put this log for yesterday instead of "
-            "today', 'move today to yesterday', 'this was all yesterday'. "
-            "This is ONE atomic call — do NOT delete-and-relog by hand, and do NOT narrate "
-            "the steps ('let me delete...', 'on it, clearing...'). Just call it and confirm. "
-            "Default from_date is today; set to_date to where it belongs."
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "to_date":   {"type": "string", "description": "Destination day: 'yesterday', '2 days ago', or YYYY-MM-DD"},
-                "from_date": {"type": "string", "description": "Optional source day (defaults to today): 'yesterday' or YYYY-MM-DD"},
-            },
-            "required": ["to_date"],
-        },
     },
     {
         "name": "log_water",
@@ -154,10 +139,11 @@ _FITNESS_TOOLS = [
     {
         "name": "update_exercise_entry",
         "description": (
-            "CORRECT an existing exercise entry already in today's log. "
-            "Use when user wants to fix weight, sets, reps, or name. "
-            "Find the entry by its [#id] in the context. "
-            "DO NOT call log_exercise for corrections — that creates a duplicate."
+            "CORRECT or MOVE an existing exercise entry already in the log. "
+            "Use when the user fixes weight, sets, reps, or name, OR moves it to another "
+            "day. Find the entry by its [#id] in the context. "
+            "DO NOT call log_exercise for corrections — that creates a duplicate. "
+            "To move it to another day, set date= (e.g. 'yesterday')."
         ),
         "input_schema": {
             "type": "object",
@@ -168,6 +154,7 @@ _FITNESS_TOOLS = [
                 "reps":             {"type": "string"},
                 "weight":           {"type": "number"},
                 "duration_minutes": {"type": "number"},
+                "date":             {"type": "string", "description": "Optional. Move this entry to another day: 'yesterday' or YYYY-MM-DD."},
             },
             "required": ["entry_id"],
         },

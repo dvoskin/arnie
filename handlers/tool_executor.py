@@ -79,8 +79,8 @@ def deterministic_confirmation(tool_calls, log, prefs) -> str:
     if "clear_day_log" in names and not (names & {"log_food", "log_exercise", "update_food_entry"}):
         return "Wiped today clean ✅|||send me what you actually had and I'll rebuild it."
 
-    if "move_day_log" in names:
-        return "Moved that day's log over. ✅|||totals are updated."
+    if names & {"update_food_entry", "update_exercise_entry"} and not (names & {"log_food", "log_exercise"}):
+        return "Updated. ✅|||totals are resynced."
 
     if names & {"log_food", "update_food_entry"}:
         head = (f"{foods[0][:1].upper() + foods[0][1:]} logged." if len(foods) == 1 else "Logged.")
@@ -306,15 +306,23 @@ async def _dispatch(name, inp, user, today_log, db, source_type):  # noqa: C901
         entry_id = inp.get("entry_id")
         if not entry_id:
             return "Missing entry_id"
-        changes = {k: v for k, v in inp.items() if k != "entry_id" and v is not None}
+        changes = {k: v for k, v in inp.items()
+                   if k not in ("entry_id", "date") and v is not None}
         # Map external name → DB column
         if "food_name" in changes:
             changes["parsed_food_name"] = changes.pop("food_name")
+        # date= moves the entry to another day's log — same primitive as editing a value.
+        target_date = _parse_log_date(inp.get("date"), getattr(user, "timezone", "UTC"))
+        if target_date:
+            target_log = await get_or_create_log_for_date(db, user.id, target_date)
+            changes["new_daily_log_id"] = target_log.id
         entry = await q_update_food_entry(db, entry_id, user.id, **changes)
         if not entry:
             return f"No food entry #{entry_id} found in today's log."
         await db.refresh(today_log)
-        return f"Updated entry #{entry_id}: {entry.parsed_food_name} → {entry.calories:.0f}cal"
+        moved = f", moved to {target_date}" if target_date else ""
+        return (f"Updated entry #{entry_id}: {entry.parsed_food_name} → "
+                f"{entry.calories:.0f}cal{moved}")
 
     elif name == "delete_food_entry":
         if not getattr(today_log, "id", None):
@@ -339,50 +347,28 @@ async def _dispatch(name, inp, user, today_log, db, source_type):  # noqa: C901
         return ("Today's log wiped clean — totals back to zero. Now re-log whatever they "
                 "gave you." if existed else "Nothing was logged today — clean slate already.")
 
-    elif name == "move_day_log":
-        # Move an entire day's entries to another date in ONE atomic call (entries kept
-        # intact — no re-estimation). This is the right answer to "put this for yesterday".
-        from db.queries import move_day_entries
-        import pytz
-        from datetime import datetime as _dt, date as _date
-        tz = getattr(user, "timezone", "UTC")
-        try:
-            today = _dt.now(pytz.timezone(tz or "UTC")).date()
-        except Exception:
-            today = _date.today()
-        to_d = _parse_log_date(inp.get("to_date"), tz)
-        from_d = _parse_log_date(inp.get("from_date"), tz) or today
-        if not to_d:
-            return "Couldn't read the destination day — ask which date they meant."
-        if to_d == from_d:
-            return "Source and destination are the same day — nothing to move."
-        res = await move_day_entries(db, user.id, from_d, to_d)
-        if getattr(today_log, "id", None):
-            await db.refresh(today_log)
-        if not res.get("moved"):
-            return f"No entries on {from_d} to move."
-        return (
-            f"Moved {res['moved']} entries ({res['food']} food, {res['exercise']} exercise) "
-            f"from {from_d} to {to_d}. {to_d} now totals {res['to_total_cal']} cal, "
-            f"{res['to_total_protein']}g protein; {from_d} is back to zero. "
-            f"Confirm the move warmly and give that day's total — don't re-list every item."
-        )
-
     elif name == "update_exercise_entry":
         if not getattr(today_log, "id", None):
             return "Skipped — no log to update"
         entry_id = inp.get("entry_id")
         if not entry_id:
             return "Missing entry_id"
-        changes = {k: v for k, v in inp.items() if k != "entry_id" and v is not None}
+        changes = {k: v for k, v in inp.items()
+                   if k not in ("entry_id", "date") and v is not None}
         # Convert weight from lbs to kg for storage
         if "weight" in changes:
             changes["weight"] = changes["weight"] * 0.453592
+        # date= moves the entry to another day's log (same primitive as editing it).
+        target_date = _parse_log_date(inp.get("date"), getattr(user, "timezone", "UTC"))
+        if target_date:
+            target_log = await get_or_create_log_for_date(db, user.id, target_date)
+            changes["new_daily_log_id"] = target_log.id
         entry = await q_update_exercise_entry(db, entry_id, user.id, **changes)
         if not entry:
             return f"No exercise entry #{entry_id} found in today's log."
         await db.refresh(today_log)
-        return f"Updated exercise #{entry_id}: {entry.exercise_name}"
+        moved = f", moved to {target_date}" if target_date else ""
+        return f"Updated exercise #{entry_id}: {entry.exercise_name}{moved}"
 
     elif name == "delete_exercise_entry":
         if not getattr(today_log, "id", None):

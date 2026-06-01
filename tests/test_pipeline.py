@@ -254,11 +254,11 @@ async def test_redo_today_clears_then_relogs_in_one_turn(pipeline_env):
 
 
 @pytest.mark.asyncio
-async def test_move_day_log_relocates_entries_to_yesterday(pipeline_env):
+async def test_move_day_via_update_date_resyncs_both_days(pipeline_env):
     """
-    "Put this log for yesterday instead of today" → move_day_log moves the whole day's
-    entries to yesterday in ONE call, intact: today goes to zero, yesterday holds the
-    moved totals. No delete-and-relog, no re-estimation, no narration loop.
+    Moving a whole day = update_food_entry(date="yesterday") once per entry (the SAME
+    primitive as moving one item — no bespoke move tool). Today drains to zero, yesterday
+    holds the moved totals, and BOTH days' totals resync so the dashboard always matches.
     """
     env = pipeline_env
     addr, chat = "+15550001111", "iMessage;-;+15550001111"
@@ -273,16 +273,21 @@ async def test_move_day_log_relocates_entries_to_yesterday(pipeline_env):
     ], follow_up_text="logged both.")
     await env["H"].run_imessage_pipeline(addr, chat, "wrap and a shake", message_guid="m1")
 
-    # Turn 2: move the whole day to yesterday.
+    from sqlalchemy import select
+    from db.models import FoodEntry, DailyLog, User
+    async with env["Maker"]() as db:
+        ids = (await db.execute(select(FoodEntry.id).order_by(FoodEntry.id))).scalars().all()
+    assert len(ids) == 2, f"setup: expected 2 entries, got {len(ids)}"
+
+    # Turn 2: move each entry to yesterday — the composable primitive, one call per item.
     env["set_llm"](text="", tool_calls=[
-        {"name": "move_day_log", "input": {"to_date": "yesterday"}},
-    ], follow_up_text="moved it all to yesterday 👊|||that day's at 610 now.")
+        {"name": "update_food_entry", "input": {"entry_id": ids[0], "date": "yesterday"}},
+        {"name": "update_food_entry", "input": {"entry_id": ids[1], "date": "yesterday"}},
+    ], follow_up_text="moved both to yesterday 👊|||that day's at 610 now.")
     await env["H"].run_imessage_pipeline(
         addr, chat, "put this log for yesterday instead of today", message_guid="m2",
     )
 
-    from sqlalchemy import select
-    from db.models import DailyLog, User
     from datetime import datetime as _dt, timedelta
     import pytz
     async with env["Maker"]() as db:
@@ -300,7 +305,7 @@ async def test_move_day_log_relocates_entries_to_yesterday(pipeline_env):
         )).scalar_one_or_none()
 
     assert today_log is not None and round(today_log.total_calories or 0) == 0, \
-        "today should be emptied after the move"
+        "today should drain to zero after moving both entries"
     assert yest_log is not None and round(yest_log.total_calories or 0) == 610, \
         f"yesterday should hold the moved entries (610), got {yest_log and yest_log.total_calories}"
 

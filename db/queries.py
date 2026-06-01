@@ -183,43 +183,6 @@ async def get_or_create_log_for_date(
     return log
 
 
-async def move_day_entries(db: AsyncSession, user_id: int,
-                           from_date: date, to_date: date) -> dict:
-    """
-    Move an ENTIRE day's food + exercise entries from one date's log to another,
-    preserving the exact entries (no re-estimation), then recompute both days' totals.
-    Returns {"moved": n, "food": n, "exercise": n, "to_total_cal": x, "to_total_protein": y}.
-    Moves 0 if the source day has nothing.
-    """
-    from_log = await get_log_by_date(db, user_id, from_date)
-    if not from_log or not (from_log.food_entries or from_log.exercise_entries):
-        return {"moved": 0}
-
-    to_log = await get_or_create_log_for_date(db, user_id, to_date)
-    n_food = len(from_log.food_entries)
-    n_ex = len(from_log.exercise_entries)
-
-    await db.execute(
-        update(FoodEntry).where(FoodEntry.daily_log_id == from_log.id)
-        .values(daily_log_id=to_log.id)
-    )
-    await db.execute(
-        update(ExerciseEntry).where(ExerciseEntry.daily_log_id == from_log.id)
-        .values(daily_log_id=to_log.id)
-    )
-    # Entries are the source of truth — recompute both days from scratch.
-    await recompute_log_totals(db, from_log.id)
-    await recompute_log_totals(db, to_log.id)
-    await db.commit()
-
-    to_log = await get_log_by_date(db, user_id, to_date)
-    return {
-        "moved": n_food + n_ex, "food": n_food, "exercise": n_ex,
-        "to_total_cal": round(to_log.total_calories or 0),
-        "to_total_protein": round(to_log.total_protein or 0),
-    }
-
-
 async def get_or_create_today_log(db: AsyncSession, user_id: int,
                                   user_timezone: str = "UTC") -> DailyLog:
     log = await get_today_log(db, user_id, user_timezone)
@@ -694,6 +657,12 @@ async def update_food_entry(
     if log.user_id != user_id:
         return None
 
+    old_log_id = entry.daily_log_id
+    # Day move: reassigning the entry to another date's log (passed as new_daily_log_id).
+    # This is how "move that coffee to yesterday" / "this was all yesterday" work —
+    # the SAME primitive as editing a value, just changing which day it belongs to.
+    new_log_id = changes.pop("new_daily_log_id", None)
+
     # Apply nutrition changes to the entry
     for field in ("calories", "protein", "carbs", "fats"):
         if field in changes:
@@ -704,9 +673,16 @@ async def update_food_entry(
         if field in changes and changes[field] is not None:
             setattr(entry, field, changes[field])
 
+    moved = bool(new_log_id and new_log_id != old_log_id)
+    if moved:
+        entry.daily_log_id = new_log_id
+
     await db.flush()
-    # Totals are derived from entries — recompute so they can never drift.
+    # Totals are derived from entries — recompute every affected day so the dashboard
+    # can never drift from the conversation. A move touches BOTH days.
     await recompute_log_totals(db, entry.daily_log_id)
+    if moved:
+        await recompute_log_totals(db, old_log_id)
     await db.commit()
     await db.refresh(entry)
     return entry
@@ -743,14 +719,24 @@ async def update_exercise_entry(
     if log.user_id != user_id:
         return None
 
+    old_log_id = entry.daily_log_id
+    new_log_id = changes.pop("new_daily_log_id", None)  # day move (same primitive as edit)
+
     for field in ("exercise_name", "sets", "reps", "weight",
                   "duration_minutes", "cardio_type", "rir"):
         if field in changes and changes[field] is not None:
             setattr(entry, field, changes[field])
 
+    moved = bool(new_log_id and new_log_id != old_log_id)
+    if moved:
+        entry.daily_log_id = new_log_id
+
     await db.flush()
-    # Re-derive flags in case cardio_type/sets/duration changed (workout<->cardio).
+    # Re-derive flags in case cardio_type/sets/duration changed (workout<->cardio),
+    # and recompute BOTH days on a move so neither dashboard drifts.
     await recompute_log_totals(db, entry.daily_log_id)
+    if moved:
+        await recompute_log_totals(db, old_log_id)
     await db.commit()
     await db.refresh(entry)
     return entry

@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 _LOGGING_TOOLS = frozenset({
     "log_food", "log_exercise", "update_food_entry",
     "delete_food_entry", "update_exercise_entry",
-    "log_body_weight", "log_water", "clear_day_log", "move_day_log",
+    "log_body_weight", "log_water", "clear_day_log",
 })
 
 # Action-commitment phrases that signal a STALL when they appear with NO tool calls:

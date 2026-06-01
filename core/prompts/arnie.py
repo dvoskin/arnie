@@ -168,14 +168,19 @@ logging:
   "coffee logged for yesterday. that puts yesterday at 1,340 cal."
 - correction to a logged food → update_food_entry() with [#id]. never log_food() for a correction.
 - user removes a food → delete_food_entry() with [#id]
+- DATE IS A FIELD ON EVERY ENTRY. logging, correcting, and moving across days are the SAME
+  primitives, just with a date:
+    • log something for a past day → log_food(date="yesterday")
+    • move ONE logged item to another day → update_food_entry([#id], date="yesterday")
+    • move a WHOLE day to another day → update_food_entry(date="yesterday") once per [#id]
+      in the day. same primitive, repeated — NOT a special tool.
+  examples: "put this log for yesterday instead of today" / "move today to yesterday" /
+  "this was all yesterday" → call update_food_entry(date="yesterday") for every entry in
+  the day, all in THIS turn. totals on both days resync automatically. just do it (don't
+  narrate "let me move..."), then confirm with the destination day's total.
 - "redo today" / "clear today" / "start today over" / "redo today as the following: ..." →
   clear_day_log() to wipe today clean, then if they gave a new list, log_food() each item
-  in the SAME turn (clear FIRST, then the logs). this is how you fix a messed-up day in one
-  shot instead of stacking duplicates on top of it.
-- "put this log for yesterday instead of today" / "move today to yesterday" / "this was all
-  yesterday" → move_day_log(to_date="yesterday"). ONE atomic call moves the whole day with
-  entries intact. NEVER delete-and-relog by hand, and NEVER narrate it ("let me delete...",
-  "on it, clearing..."). reopening a closed day is handled for you — just call the tool.
+  in the SAME turn (clear FIRST, then the logs). fixes a messed-up day in one shot.
 - exercise mentioned → log_exercise() — one call per exercise, only if NOT already in [TODAY]
 - correction to logged exercise → update_exercise_entry() with [#id]. never log_exercise() for a correction.
 - user removes an exercise → delete_exercise_entry() with [#id]

@@ -80,19 +80,34 @@ async def test_redo_today_clears_then_relogs():
     assert names.count("log_food") >= 2, f"redo must re-log the new list; got {names}"
 
 
+def _coach_system_with_entries() -> str:
+    """Coaching context with two logged entries (so the model has [#id]s to move)."""
+    from core.prompts import build_arnie_system
+    return build_arnie_system("imessage") + (
+        "\n\n[TODAY]\nLogged so far:\n"
+        "  [#11] chicken wrap — 450 cal, 35g protein\n"
+        "  [#12] premier shake — 160 cal, 30g protein\n"
+        "Totals: 610 cal, 65g protein. User: Danny, goal cut."
+    )
+
+
 @pytest.mark.asyncio
-async def test_put_this_for_yesterday_uses_move_tool_not_narration():
-    """'put this log for yesterday instead of today' must call move_day_log in ONE shot,
-    not narrate 'let me delete and relog' (the prod stall loop)."""
+async def test_put_this_for_yesterday_moves_entries_not_narration():
+    """'put this log for yesterday instead of today' must MOVE the entries via
+    update_food_entry(date=...) — one call per entry — not narrate 'let me delete and
+    relog', and not invent a bespoke move tool."""
     from core.llm import chat
     messages = [{"role": "user", "content": (
         "put this log for yesterday instead of today, the whole thing was yesterday"
     )}]
-    result = await chat(messages, _coach_system(), tools=True, max_tokens=4096)
+    result = await chat(messages, _coach_system_with_entries(), tools=True, max_tokens=4096)
     names = [tc["name"] for tc in result["tool_calls"]]
-    assert "move_day_log" in names, (
-        f"should move the day in one call, not narrate it. tools={names}, "
-        f"text={result['text'][:160]!r}"
+    moves = [tc for tc in result["tool_calls"]
+             if tc["name"] == "update_food_entry"
+             and "yester" in str(tc["input"].get("date", "")).lower()]
+    assert len(moves) >= 2, (
+        f"should move both entries to yesterday via update_food_entry(date=...). "
+        f"tools={names}, text={result['text'][:160]!r}"
     )
 
 
