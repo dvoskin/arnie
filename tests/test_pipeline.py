@@ -43,6 +43,7 @@ async def pipeline_env(monkeypatch):
     Maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
     import bot.imessage_handler as H
+    import core.conversation as C
 
     # Point the handler's session factory at our in-memory DB.
     monkeypatch.setattr(H, "AsyncSessionLocal", Maker)
@@ -83,10 +84,11 @@ async def pipeline_env(monkeypatch):
             calls["follow_up"] += 1
             return follow_up_text
 
-        monkeypatch.setattr(H, "chat", _fake_chat)
-        monkeypatch.setattr(H, "chat_follow_up", _fake_follow_up)
+        # Patch on core.conversation — the shared orchestrator now owns LLM calls.
+        monkeypatch.setattr(C, "chat", _fake_chat)
+        monkeypatch.setattr(C, "chat_follow_up", _fake_follow_up)
 
-    yield {"H": H, "Maker": Maker, "sent": sent, "reactions": reactions,
+    yield {"H": H, "C": C, "Maker": Maker, "sent": sent, "reactions": reactions,
            "calls": calls, "set_llm": set_llm}
     await engine.dispose()
 

@@ -801,173 +801,32 @@ capitalize their name every time you use it."""
         # ── Show "Arnie is typing…" while we think ────────────────────────────
         await bb_set_typing(chat_guid, True)
 
-        # ── LLM call ──────────────────────────────────────────────────────────
-        try:
-            result = await chat(messages, system, tools=True, max_tokens=1024)
-        except Exception as e:
-            logger.error(f"LLM call failed for iMessage user {im_id}: {e}")
-            await bb_set_typing(chat_guid, False)
-            await bb_send_text(chat_guid, "Something went wrong on my end — try again in a moment.")
-            return
+        # ── iMessage image callback: send as text URL (no photo upload support) ─
+        async def _on_image(url: str, caption: str) -> None:
+            if url:
+                await bb_send_text(chat_guid, f"Here's your image: {url}")
 
-        response_text = result["text"]
-        tool_calls    = result["tool_calls"]
-        raw_content   = result["raw_content"]
-
-        onboarding_field_saved = None  # which profile field was set this turn
-
-        # ── Execute tools ─────────────────────────────────────────────────────
-        tool_results = {}
-        if tool_calls:
-            if today_log is None and not in_onboarding:
-                today_log = await get_or_create_today_log(db, user.id, user.timezone or "UTC")
-
-            _log_for_tools = today_log
-            if _log_for_tools is None:
-                class _FakeLog:
-                    id = None
-                    total_calories = 0; total_protein = 0; total_carbs = 0
-                    total_fats = 0; total_water_ml = 0
-                    workout_completed = False; cardio_completed = False
-                    food_entries = []; exercise_entries = []
-                _log_for_tools = _FakeLog()
-
-            tool_results = await execute_tool_calls(
-                tool_calls, user, _log_for_tools, db, "imessage"
-            )
-
-            # Handle generated images — send as a text note (can't send photos via BlueBubbles text API)
-            for tname, tresult in list(tool_results.items()):
-                if isinstance(tresult, dict) and tresult.get("_type") == "image":
-                    image_url = tresult.get("url", "")
-                    caption = tresult.get("caption", "")
-                    tool_results[tname] = (
-                        f"Image generated. URL: {image_url}. Caption: {caption}"
-                    )
-                    if image_url:
-                        await bb_send_text(chat_guid, f"Here's your image: {image_url}")
-
-            user = await reload_user(db, user.id)
-            if today_log and hasattr(today_log, "id") and today_log.id:
-                await db.refresh(today_log)
-
-            # Detect which profile field was just saved (for onboarding reaction)
-            if was_onboarding:
-                for tc in tool_calls:
-                    if tc["name"] == "update_profile":
-                        f = tc.get("input", {}).get("fields", {})
-                        for fld in ("name", "current_weight_kg", "height_cm",
-                                    "primary_goal", "training_experience", "calorie_target"):
-                            if fld in f:
-                                onboarding_field_saved = fld
-                                break
-
-            # Rebuild system after tools (onboarding state may have changed)
-            in_onboarding = not user.onboarding_completed
-
-        # ── Detect onboarding just completed ─────────────────────────────────
-        just_completed = was_onboarding and not in_onboarding
-
-        # ── Follow-up after tool calls ────────────────────────────────────────
-        if just_completed:
-            response_text = await _build_completion_text(user, db)
-        else:
-            logging_tools = {"log_food", "log_exercise", "update_food_entry",
-                             "delete_food_entry", "update_exercise_entry",
-                             "log_body_weight", "log_water"}
-            has_logging = any(tc["name"] in logging_tools for tc in tool_calls)
-            _followup_tried = False
-            if has_logging and not in_onboarding:
-                # Let Arnie actually COACH on a log instead of emitting a fixed
-                # template. The authoritative day totals come from the tool result
-                # (the "DAY TOTAL" line _dispatch returns from the refreshed DB row),
-                # and the prompt's "NUMBERS ARE SACRED" rule forces the model to use
-                # ONLY those figures — so we get a real coaching reply without the
-                # model inventing totals. deterministic_confirmation stays as the
-                # fallback below if the model returns nothing.
-                _followup_tried = True
-                try:
-                    response_text = await chat_follow_up(
-                        messages, raw_content, tool_calls, tool_results, system, max_tokens=400
-                    )
-                except Exception as e:
-                    logger.error(f"Coaching follow-up failed for {im_id}: {e}")
-                if not response_text:
-                    response_text = deterministic_confirmation(
-                        tool_calls, today_log, user.preferences
-                    )
-            else:
-                need_followup = (tool_calls and raw_content and
-                                 (in_onboarding or not response_text))
-                if need_followup:
-                    _followup_tried = True
-                    try:
-                        response_text = await chat_follow_up(
-                            messages, raw_content, tool_calls, tool_results, system, max_tokens=400
-                        )
-                    except Exception as e:
-                        logger.error(f"Follow-up LLM failed for {im_id}: {e}")
-
-        if not response_text:
-            # Only attempt a follow-up here if we haven't already — re-calling the
-            # same LLM with identical args just adds latency (felt as a glitch).
-            if tool_calls and raw_content and not locals().get("_followup_tried"):
-                try:
-                    response_text = await chat_follow_up(
-                        messages, raw_content, tool_calls, tool_results, system, max_tokens=300
-                    )
-                except Exception as e:
-                    logger.warning(f"iMessage follow-up failed; using deterministic confirmation: {e}")
-            if not response_text:
-                # Never a bare "done." — build a real confirmation from what was logged
-                if tool_calls:
-                    response_text = deterministic_confirmation(
-                        tool_calls, today_log, user.preferences
-                    )
-                else:
-                    response_text = "Still here. What's the move?"
-
-        # ── Build the platform-agnostic Response ──────────────────────────────
-        resp = Response.from_text(response_text)
-
-        if just_completed:
-            resp.effect = FX.CELEBRATE
-            resp.effect_idx = 0  # balloons on "you're in" bubble
-            resp.reaction = React.LOVE
-        elif was_onboarding and onboarding_field_saved:
-            resp.reaction = onboarding_reaction(onboarding_field_saved)
-        elif not in_onboarding:
-            moment = detect_moment(response_text, tool_calls)
-            resp.reaction = moment.reaction
-            resp.effect = moment.effect
-            resp.effect_idx = moment.effect_idx
-
-        # ── Dashboard link after their FIRST food/workout log (once) ──────────
-        if not in_onboarding and tool_calls:
-            logged = any(tc["name"] in ("log_food", "log_exercise") for tc in tool_calls)
-            sent = set(s for s in (user.nudges_sent or "").split(",") if s)
-            if logged and "dashboard" not in sent:
-                from core.blurbs import dashboard_line
-                dash_url = await _dashboard_url(user, db)
-                intro = await dashboard_line(user.name or "")
-                resp.bubbles.append(intro)
-                resp.bubbles.append(dash_url)  # link in its own bubble
-                sent.add("dashboard")
-                user.nudges_sent = ",".join(sorted(sent))
-                await db.commit()
+        # ── Delegate to shared pipeline core ──────────────────────────────────
+        from core.conversation import run_turn
+        turn = await run_turn(
+            user, db, messages, system, platform="imessage",
+            in_onboarding=in_onboarding, was_onboarding=was_onboarding,
+            today_log=today_log, source_type="imessage", on_image=_on_image,
+        )
 
         # ── Stop typing, then send via the iMessage adapter ───────────────────
         await bb_set_typing(chat_guid, False)
         adapter = IMessageAdapter(chat_guid, reply_to_guid=message_guid)
-        await adapter.send(resp)
+        await adapter.send(turn.response)
 
-        # ── Persist conversation ───────────────────────────────────────────────
-        await log_conversation(db, user.id, raw_text, response_text, source_type="imessage")
+        # ── Persist conversation ──────────────────────────────────────────────
+        log_text = "|||".join(turn.response.bubbles)
+        await log_conversation(db, user.id, raw_text, log_text, source_type="imessage")
 
-        # ── Adaptive profile refresh (throttled internally to ~3h) ───────────
-        if not in_onboarding:
+        # ── Adaptive profile refresh (throttled internally to ~3h) ────────────
+        if not turn.in_onboarding:
             try:
                 from memory.profile_updater import maybe_update_profile
-                await maybe_update_profile(user, db)
+                await maybe_update_profile(turn.user, db)
             except Exception as e:
                 logger.error(f"Profile update error for {im_id}: {e}")
