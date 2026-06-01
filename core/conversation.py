@@ -240,6 +240,13 @@ async def run_turn(
             except Exception as e:
                 logger.warning(f"Dashboard link failed for {_tag}: {e}")
 
+    # ── Sync open follow-up loops (record needs / resolve answered) ───────────
+    # Runs every turn regardless of the proactive flag — recording + resolution
+    # are state updates, not sends. The re-ask itself stays gated in the scheduler.
+    if not in_onboarding:
+        from reminders.lifecycle import sync_pending_questions
+        await sync_pending_questions(db, user)
+
     return TurnResult(
         response=resp,
         tool_calls=tool_calls,

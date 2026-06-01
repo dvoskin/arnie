@@ -380,8 +380,28 @@ structural refactor (highest risk) and come only after behavior is locked + test
   pre-work → run_turn → adapter.send. 130 tests passing (7 pipeline tests: 4 iMessage,
   3 Telegram twins).
 
-**THEN — reminders/follow-up module + PendingQuestion (net-new):**
-Add a `PendingQuestion` table (question, asked_at, kind, answered_at). Refactor
-`scheduler/proactive_scheduler.py` into a reminders module owning eligibility / type /
-suppression / frequency / follow-up timing. Context-aware follow-ups to unanswered
-questions. Proactive stays OFF (`PROACTIVE_MESSAGING_ENABLED=false`) until validated.
+- ✅ **Reminders module + PendingQuestion** (commits 29d3fcc, f839c3d, 5d10830, +this).
+  - `PendingQuestion` table (kind, question, tier, asked_at, last_asked_at,
+    follow_up_count, answered_at) — Alembic `5ed44c60f075`, additive, verified on
+    SQLite + Postgres. Queries: record / get_open / mark_followed_up / resolve
+    (one-open-row-per-kind).
+  - `reminders/` package owns the cross-cutting decisions as pure functions:
+    `eligibility` (window / timezone / pacing / live-conversation / linked de-dup),
+    `suppression` (one-shot slot de-dup), `pending` (context-aware follow-up timing —
+    tier-scaled cadence casual 24h/cap2 vs goal_critical 8h/cap3, spacing, cold-user
+    cutoff, one-per-tick selection, tone hints), `lifecycle` (record/resolve bridge).
+  - `scheduler/proactive_scheduler.py` is now the cron driver delegating eligibility
+    to `reminders/`; added `_maybe_followup_pending` (re-asks the one due question via
+    the adapter path). Bespoke profile-collection slots replaced by the unified
+    `profile_stats` PendingQuestion loop.
+  - Lifecycle wired into `run_turn`: every inbound turn records the profile_stats loop
+    when age/sex/height are missing and resolves it the moment they land — runs
+    regardless of the proactive flag (recording/resolution are state, not sends).
+  - 166 tests passing (+36: pending-questions, reminders, follow-up dispatch,
+    lifecycle, end-to-end pipeline). **Proactive messaging stays OFF** — `_run_reminders`
+    isn't even scheduled in prod; only the loop's *state* is exercised live.
+
+**NEXT (per audit) — re-enable + validate proactive:** with the follow-up machinery
+built and dark, the remaining work is a staged turn-on: per-type frequency caps in
+prefs (`reminder_frequency` is defined but unused), a shadow/dry-run mode to log what
+*would* send, then flip `PROACTIVE_MESSAGING_ENABLED=true` behind a small allowlist.

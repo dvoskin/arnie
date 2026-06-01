@@ -183,6 +183,42 @@ async def test_empty_llm_never_dead_ends(pipeline_env):
     assert joined.strip() not in ("", "done.", "got it.")
 
 
+@pytest.mark.asyncio
+async def test_turn_records_then_resolves_profile_question(pipeline_env):
+    """End-to-end: a coaching turn for a stats-missing user opens a profile_stats
+    follow-up loop; once the stats land, the next turn resolves it. (The seeded
+    user has weight + goal but no age/sex/height.)"""
+    env = pipeline_env
+    im_id = await _seed_user(env["Maker"])
+    from db.queries import get_open_pending_question
+
+    # Turn 1: plain chat → loop opens (user is missing age/sex/height).
+    env["set_llm"](text="Noted.|||Keep me posted.")
+    await env["H"].run_imessage_pipeline("+15550001111", "iMessage;-;+15550001111",
+                                         "hey", message_guid="p1")
+    async with env["Maker"]() as db:
+        from db.queries import resolve_user
+        u = await resolve_user(db, im_id)
+        pq = await get_open_pending_question(db, u.id, "profile_stats")
+        assert pq is not None and pq.tier == "goal_critical"
+
+    # Fill the stats out-of-band (simulating an update_profile having landed).
+    async with env["Maker"]() as db:
+        from db.queries import resolve_user
+        u = await resolve_user(db, im_id)
+        u.age, u.sex, u.height_cm = 31, "male", 178.0
+        await db.commit()
+
+    # Turn 2: another plain chat → loop resolves now that stats are complete.
+    env["set_llm"](text="Got it.")
+    await env["H"].run_imessage_pipeline("+15550001111", "iMessage;-;+15550001111",
+                                         "thanks", message_guid="p2")
+    async with env["Maker"]() as db:
+        from db.queries import resolve_user
+        u = await resolve_user(db, im_id)
+        assert await get_open_pending_question(db, u.id, "profile_stats") is None
+
+
 # ── Telegram twin fixture ──────────────────────────────────────────────────────
 
 class _FakeMessage:

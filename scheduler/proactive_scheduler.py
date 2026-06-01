@@ -149,40 +149,6 @@ async def _llm_new_user_nudge(user, log, prefs, slot: str, name: str) -> str:
         return ""
 
 
-async def _llm_profile_nudge(user, missing: list[str], slot: str, name: str) -> str:
-    """
-    Ask the user for missing profile stats (age/sex/height) so targets can be
-    auto-calculated. Natural, casual, framed as 'dialing in your numbers'.
-    """
-    from core.llm import chat
-    lang = getattr(getattr(user, "preferences", None), "preferred_language", None) or "English"
-    fields_str = ", ".join(missing)
-    framing = {
-        "profile_ask":        "first time asking. casual. frame it as dialing in their actual targets.",
-        "profile_renudge_1":  "they haven't answered yet. light nudge, zero pressure.",
-        "profile_renudge_2":  "last gentle ask. quick and easy, 'whenever you get a sec'.",
-    }.get(slot, "ask casually.")
-    prompt = (
-        f"Athlete: {name}, goal={user.primary_goal or '?'}, language={lang}\n"
-        f"You still need these to calculate their calorie + protein targets: {fields_str}.\n"
-        f"Ask for them in ONE short message. {framing}\n"
-        f"Frame it as 'lets me set your real numbers.' 1-2 bubbles split with |||. "
-        f"if asking sex, phrase it simply ('and are you male or female?')."
-    )
-    try:
-        result = await chat(
-            [{"role": "user", "content": prompt}],
-            system=_NEW_USER_SYSTEM,
-            tools=False,
-            max_tokens=120,
-            model="claude-haiku-4-5-20251001",
-        )
-        return (result.get("text") or "").strip()
-    except Exception as e:
-        logger.error(f"Profile nudge ({slot}) failed: {e}")
-        return ""
-
-
 async def _send(telegram_id: str, text: str, effect: str = None):
     """
     Send a proactive message to the user, rendered natively per platform.
@@ -629,27 +595,11 @@ async def _run_reminders():
                             s for s in (user.nudges_sent or "").split(",") if s
                         )
 
-                        # ── PROFILE COLLECTION (priority) — get age/sex/height ──
-                        # so targets can auto-calculate. Re-nudges if unanswered.
-                        from core.targets import missing_profile_stats
-                        missing = missing_profile_stats(user)
-                        if missing:
-                            prof_slot = None
-                            if hours_since >= 1.3 and "profile_ask" not in sent_slots:
-                                prof_slot = "profile_ask"
-                            elif hours_since >= 8.0 and "profile_renudge_1" not in sent_slots:
-                                prof_slot = "profile_renudge_1"
-                            elif hours_since >= 26.0 and "profile_renudge_2" not in sent_slots:
-                                prof_slot = "profile_renudge_2"
-                            if prof_slot:
-                                msg = await _llm_profile_nudge(user, missing, prof_slot, name)
-                                if msg:
-                                    await _send(send_id, msg)
-                                    sent_slots.add(prof_slot)
-                                    user.nudges_sent = ",".join(sorted(sent_slots))
-                                    await db.commit()
-                                logger.info(f"Profile nudge '{prof_slot}' → user {user.id} (missing {missing})")
-                                continue  # one message per tick
+                        # NOTE: profile collection (age/sex/height for target calc)
+                        # is now a PendingQuestion of kind 'profile_stats', recorded
+                        # in the conversation path and re-asked by _maybe_followup_pending
+                        # above — a single state-aware loop that resolves the moment the
+                        # stats land, instead of bespoke slot timers here.
 
                         # Aggressive day-1 cadence, tapering into day 2.
                         # (window_start, window_end, slot_key) — strongest at the start.
