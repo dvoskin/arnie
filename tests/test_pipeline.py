@@ -164,6 +164,49 @@ async def test_food_log_runs_tool_once_and_coaches(pipeline_env):
 
 
 @pytest.mark.asyncio
+async def test_multi_item_message_logs_every_item(pipeline_env):
+    """
+    REGRESSION: a message listing several foods must log ALL of them in one turn, not
+    just the first. Previously the first-pass max_tokens (1024) truncated the response
+    after ~1 tool call, so a 7-item dump logged only the grilled chicken wrap. The
+    executor loops over every tool_call — this proves N calls => N persisted entries
+    and a total that sums all of them.
+    """
+    env = pipeline_env
+    await _seed_user(env["Maker"])
+    items = [
+        ("grilled chicken wrap", 450, 35),
+        ("shnitzel sandwich", 600, 30),
+        ("chicken poppers", 280, 18),
+        ("spicy tuna sushi", 350, 20),
+        ("cookies", 300, 4),
+        ("babka slice", 300, 6),
+        ("cinnamon roll", 350, 5),
+    ]
+    env["set_llm"](
+        text="",
+        tool_calls=[
+            {"name": "log_food", "input": {"food_name": n, "calories": c,
+                                           "protein": p, "carbs": 40, "fats": 15}}
+            for (n, c, p) in items
+        ],
+        follow_up_text="logged the whole list 🎊|||that's ~2,630 for the day.",
+    )
+    await env["H"].run_imessage_pipeline(
+        "+15550001111", "iMessage;-;+15550001111",
+        "grilled chicken wrap, shnitzel sandwich, chicken poppers, spicy tuna sushi, "
+        "cookies, babka slice, cinnamon roll", message_guid="multi1",
+    )
+    from sqlalchemy import select, func
+    from db.models import FoodEntry, DailyLog
+    async with env["Maker"]() as db:
+        n = (await db.execute(select(func.count()).select_from(FoodEntry))).scalar()
+        total = (await db.execute(select(func.sum(DailyLog.total_calories)))).scalar()
+    assert n == len(items), f"expected all {len(items)} items logged, got {n}"
+    assert total == sum(c for _, c, _ in items), f"day total should sum all items, got {total}"
+
+
+@pytest.mark.asyncio
 async def test_log_persists_once_not_per_bubble(pipeline_env):
     """Even with a multi-bubble reply, the log is written once per event."""
     env = pipeline_env

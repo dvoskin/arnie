@@ -62,8 +62,12 @@ async def run_turn(
     _tag = f"{platform}:{user.id}"
 
     # ── LLM first pass ───────────────────────────────────────────────────────
+    # max_tokens must fit a full multi-item dump: a user listing a whole day of food
+    # produces one log_food tool_use block per item (~100-130 tokens each). At 1024
+    # the response truncated after ~1 item — that's why a 7-item list logged only the
+    # first. 2048 comfortably fits ~15 items; short turns stop early and cost nothing.
     try:
-        result = await chat(messages, system, tools=True, max_tokens=1024)
+        result = await chat(messages, system, tools=True, max_tokens=2048)
     except Exception as e:
         logger.error(f"LLM call failed for {_tag}: {e}")
         resp = Response.from_text(

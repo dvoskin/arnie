@@ -98,6 +98,37 @@ def test_prompt_has_global_multibubble_cadence():
     assert "|||" in s  # the bubble separator is documented
 
 
+def test_prompt_has_multi_item_logging_rule():
+    """A list of foods must be logged all-at-once. Guards the 7-item-dump regression."""
+    s = build_arnie_system("imessage").lower()
+    assert "multi-item" in s
+    assert "one log_food() call" in s or "one log_food call" in s
+    # must forbid logging just the first and deferring the rest
+    assert "first" in s and ("there is no later" in s or "do it all now" in s)
+
+
+def test_prompt_forbids_intent_narration():
+    """Arnie must DO actions, not narrate 'let me also get X' across dead turns."""
+    s = build_arnie_system("imessage")
+    assert "DON'T NARRATE" in s or "don't narrate" in s.lower()
+    assert "let me" in s.lower()  # the banned phrasing is named explicitly
+
+
+def test_prompt_has_resilience_section():
+    """Arnie must stay on task under hostile / messy / chaotic input."""
+    s = build_arnie_system("imessage")
+    assert "STAYING ON TASK" in s
+    for marker in ("profanity", "loop", "rattled"):
+        assert marker in s.lower(), f"resilience marker missing: {marker}"
+
+
+def test_prompt_estimates_on_request_without_reasking():
+    """'guestimate'/'estimate' must trigger an immediate estimate, never a re-ask."""
+    s = build_arnie_system("imessage").lower()
+    assert "guestimate" in s
+    assert "do not ask" in s or "without asking" in s
+
+
 _SIGNATURE_EMOJIS = ["☺️", "🎊", "🩻", "✅", "📊", "💪", "🍽️", "🏋️‍♂️", "💧", "🧠"]
 
 
