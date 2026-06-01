@@ -357,3 +357,37 @@ structural refactor (highest risk) and come only after behavior is locked + test
 **Later structural:** new `orchestrator/`, `messaging/`, `reminders/`; split `api/app.py`.
 
 **Net-new (foundational):** `PendingQuestion` model + a reminders module owning follow-ups.
+
+---
+
+## 16. PROGRESS LOG — structural phases (updated as work lands)
+
+**Done & shipped:**
+- ✅ Behavior/prompt pass: skills 18→4 active; coach-unmute on logging turns;
+  anti-repetition + "not every message needs a tool"; global multi-bubble cadence;
+  hard no-AI rule; coaching belief system (`COACHING_PHILOSOPHY` in arnie.py).
+- ✅ Postgres + Alembic cutover (AUDIT.md #5/#6), verified live (user onboarded on PG).
+- ✅ **#9 phase 1 — split api/app.py 3,065→1,485 LOC** (HTML builders → `api/templates.py`,
+  commit e2b6c6d). 25 routes intact.
+- ✅ **Pipeline test harness** (`tests/test_pipeline.py`, commit 0e6186a) — drives the
+  real `run_imessage_pipeline` with mocked LLM + stubbed BlueBubbles + in-memory DB.
+  The net for the collapse. Full suite 127 passing.
+
+**NEXT — pipeline collapse (not started; harness ready):**
+The two pipelines are ~90% identical (verified). `bot/imessage_handler.run_imessage_pipeline`
+lines ~772–964 is the canonical core (has the latest coach-unmute fix). `bot/
+telegram_handler._run_pipeline` (~625–860) is the same flow with Telegram edges.
+Plan: extract the shared core into `core/conversation.py::run_turn(user, db, messages,
+system, platform, *, on_image, in_onboarding, was_onboarding)` returning a `Response`
+(build context → chat → tools → coach-unmute / follow-up / deterministic fallback →
+build Response + detect_moment + dashboard-link-once). Platform-specific bits stay in
+each handler: image delivery (`reply_photo` vs `bb_send_text`), typing indicator, the
+adapter `.send`. Both handlers become thin: pre-work (linking/onboarding/debounce) →
+`run_turn` → `adapter.send`. Keep test_pipeline.py green throughout; add a Telegram twin
+test once merged. DO THIS IN A FOCUSED SESSION — most behavior-critical code in the app.
+
+**THEN — reminders/follow-up module + PendingQuestion (net-new):**
+Add a `PendingQuestion` table (question, asked_at, kind, answered_at). Refactor
+`scheduler/proactive_scheduler.py` into a reminders module owning eligibility / type /
+suppression / frequency / follow-up timing. Context-aware follow-ups to unanswered
+questions. Proactive stays OFF (`PROACTIVE_MESSAGING_ENABLED=false`) until validated.
