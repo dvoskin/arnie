@@ -7,6 +7,12 @@ fastapi==0.136.3
 uvicorn[standard]==0.48.0
 sqlalchemy==2.0.50
 aiosqlite==0.22.1
+# Postgres (Render-managed) — psycopg3 async driver. Chosen over asyncpg because it
+# ships prebuilt cp314 manylinux wheels (verified), so the build won't break on
+# Python 3.14. URL form: postgresql+psycopg://...  SQLite still works for local/tests.
+psycopg[binary]==3.3.4
+# Schema migrations (replaces the hand-rolled _migrate in db/database.py).
+alembic==1.18.4
 anthropic==0.104.1
 openai==2.38.0
 apscheduler==3.11.2
