@@ -919,27 +919,19 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"Hey {user.name}, we're mid-setup. Just keep going — answer the last question I asked, "
                 "or type anything and I'll guide us back."
             )
-        elif from_landing:
-            await update.message.reply_text(
-                "I'm <b>Arnie</b>, your coach for training and nutrition.\n\n"
-                "Your 7-day free trial starts now.\n\n"
-                "No app to download. No spreadsheets. Just text me — "
-                "meals, workouts, weight, questions — and I'll track it, "
-                "remember it, and actually coach you through it.\n\n"
-                "Takes about 2 minutes to get set up.\n\n"
-                "What's your first name?",
-                parse_mode="HTML",
-            )
         else:
-            await update.message.reply_text(
-                "I'm <b>Arnie</b>, your coach for training and nutrition.\n\n"
-                "No app to download. No spreadsheets. Just text me like "
-                "you'd text a real coach — meals, workouts, weight, questions — "
-                "and I track it all, remember it all, and show up every day.\n\n"
-                "Takes about 2 minutes to get set up.\n\n"
-                "What's your first name?",
-                parse_mode="HTML",
-            )
+            # Brand-new user → the same scripted multi-bubble intro as iMessage.
+            # one consistent Arnie across channels. Landing-page signups get a trial line.
+            from core.prompts.onboarding import INTRO_BUBBLES
+            bubbles = list(INTRO_BUBBLES)
+            if from_landing:
+                bubbles.insert(
+                    2, "Your 7-day free trial starts now, no app, no spreadsheets."
+                )
+            for i, bubble in enumerate(bubbles):
+                await update.message.reply_text(bubble)
+                if i < len(bubbles) - 1:
+                    await asyncio.sleep(0.3)
 
 
 async def cmd_today(update: Update, context: ContextTypes.DEFAULT_TYPE):

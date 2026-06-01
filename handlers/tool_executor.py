@@ -107,7 +107,7 @@ def deterministic_confirmation(tool_calls, log, prefs) -> str:
         tail = (f"You're at {cal}/{cal_t} cal now." if cal_t else f"That's {cal} cal now.")
         return f"Done, removed it.|||{tail}"
     if "update_profile" in names:
-        return "Updated. 👍|||Anything else?"
+        return "Got it, locked in. 👍|||Send me what you've eaten today and we'll keep building."
     if "close_day" in names:
         return "Day closed. That's a wrap. 🌙"
     return "All set. What's next?"

@@ -523,13 +523,8 @@ async def _handle_im_whoop(chat_guid: str, user, db) -> bool:
 
 # ── First-contact intro ────────────────────────────────────────────────────────
 
-_INTRO_BUBBLES = [
-    "Hey 👋",
-    "I'm Arnie.",
-    "I help you train, eat right, and actually stay on track. No app, just text me.",
-    "Takes 2 min to get going.",
-    "What's your name?",
-]
+# Shared canonical intro (same on Telegram) — one consistent Arnie across channels.
+from core.prompts.onboarding import INTRO_BUBBLES as _INTRO_BUBBLES
 
 
 async def _send_first_contact_intro(chat_guid: str) -> None:

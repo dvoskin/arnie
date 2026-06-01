@@ -109,6 +109,20 @@ async def _seed_user(Maker, address="+15550001111", onboarded=True):
     return im_id
 
 
+async def _seed_onboarding_user(Maker, address="+15550003333", **fields):
+    """A user mid-onboarding (onboarding_completed=False) with optional pre-set
+    fields, for brain-dump / completion tests."""
+    from db.models import User, UserPreferences
+    im_id = f"im:{address}"
+    async with Maker() as db:
+        u = User(telegram_id=im_id, onboarding_completed=False, **fields)
+        db.add(u)
+        await db.flush()
+        db.add(UserPreferences(user_id=u.id, proactive_messaging_enabled=False))
+        await db.commit()
+    return im_id
+
+
 # ── Tests ───────────────────────────────────────────────────────────────────
 
 @pytest.mark.asyncio
@@ -272,6 +286,94 @@ async def test_voice_note_unintelligible_sends_fallback(pipeline_env, monkeypatc
 
     assert env["calls"]["chat"] == 0           # pipeline did NOT run
     assert any("couldn't make out" in s.lower() for s in env["sent"]), env["sent"]
+
+
+# ── Onboarding: brain-dump hybrid flow ─────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_first_contact_sends_scripted_intro_no_llm(pipeline_env):
+    """A truly new user's first message triggers the scripted intro (asking their
+    name), with no LLM call and no em dash."""
+    env = pipeline_env
+    H = env["H"]
+    env["set_llm"](text="should-not-be-called")
+    await H.run_imessage_pipeline(
+        "+15550003333", "iMessage;-;+15550003333", "hey", message_guid="o0",
+    )
+    assert env["calls"]["chat"] == 0                  # intro is scripted
+    assert len(env["sent"]) >= 1
+    joined = " ".join(env["sent"]).lower()
+    assert "—" not in joined
+    assert "call you" in joined or "your name" in joined   # asks what to call them
+
+
+@pytest.mark.asyncio
+async def test_brain_dump_all_in_one_completes_and_pushes_to_log(pipeline_env):
+    """After the intro, the user dumps everything in one message. Arnie extracts it
+    in a single update_profile call, onboarding auto-completes, and the reply pushes
+    straight to the first log. Profile saves once; the coaching LLM runs once."""
+    env = pipeline_env
+    H = env["H"]
+    addr, im_id = "+15550003333", "im:+15550003333"
+
+    # Turn 1: first contact → scripted intro, returns (no LLM).
+    env["set_llm"](text="")
+    await H.run_imessage_pipeline(addr, f"iMessage;-;{addr}", "hey", message_guid="o0")
+    intro_count = len(env["sent"])
+    assert env["calls"]["chat"] == 0
+
+    # Turn 2: the all-in-one brain dump → ONE update_profile (name+goal+weight+bonuses).
+    env["set_llm"](
+        text="",
+        tool_calls=[{"name": "update_profile", "input": {"fields": {
+            "name": "Danny", "primary_goal": "cut",
+            "current_weight_kg": 86.0, "goal_weight_kg": 80.0,
+            "training_experience": "intermediate",
+        }}}],
+    )
+    await H.run_imessage_pipeline(
+        addr, f"iMessage;-;{addr}",
+        "I'm Danny, cutting from 190 to 178, 6ft, lift 4x a week", message_guid="o1",
+    )
+
+    # Essentials saved once, onboarding auto-completed.
+    async with env["Maker"]() as db:
+        from db.queries import resolve_user
+        u = await resolve_user(db, im_id)
+        assert (u.name, u.primary_goal, u.current_weight_kg) == ("Danny", "cut", 86.0)
+        assert u.onboarding_completed is True
+
+    # The post-dump reply pushes to the first log, no em dash, one LLM call (no dup).
+    new_bubbles = env["sent"][intro_count:]
+    assert "—" not in " ".join(new_bubbles), new_bubbles
+    assert any("today" in s.lower() for s in new_bubbles), new_bubbles
+    assert env["calls"]["chat"] == 1
+    assert env["calls"]["follow_up"] == 0
+
+
+@pytest.mark.asyncio
+async def test_onboarding_completes_on_final_essential(pipeline_env):
+    """Resume mid-onboarding: name+goal already known, the user gives weight, and
+    that one essential flips onboarding complete (no re-asking the known fields)."""
+    env = pipeline_env
+    H = env["H"]
+    im_id = await _seed_onboarding_user(
+        env["Maker"], address="+15550004444", name="Danny", primary_goal="cut",
+    )
+    env["set_llm"](
+        text="",
+        tool_calls=[{"name": "update_profile",
+                     "input": {"fields": {"current_weight_kg": 86.0}}}],
+    )
+    await H.run_imessage_pipeline(
+        "+15550004444", "iMessage;-;+15550004444", "190 lbs", message_guid="o2",
+    )
+    async with env["Maker"]() as db:
+        from db.queries import resolve_user
+        u = await resolve_user(db, im_id)
+        assert u.onboarding_completed is True
+    assert "—" not in " ".join(env["sent"])
+    assert len(env["sent"]) >= 1
 
 
 # ── Telegram twin fixture ──────────────────────────────────────────────────────
