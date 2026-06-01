@@ -91,6 +91,35 @@ async def init_db():
     # Alembic and bypass version tracking.
     if not _IS_SQLITE:
         logger.info("Postgres detected — schema managed by Alembic, skipping create_all/_migrate.")
+        # Startup probe: confirm we can connect AND the schema is present. If the
+        # `users` table is missing, the DB is a fresh/empty Postgres and `alembic
+        # upgrade head` never ran — every real query would 500. Fail loud and clear
+        # here instead of leaving cryptic per-request errors. Also stamps the live
+        # connection so it's visible in boot logs (answers "are we really on PG?").
+        from sqlalchemy import text
+        try:
+            async with engine.connect() as conn:
+                ver = (await conn.execute(text("SELECT version()"))).scalar()
+                has_users = (await conn.execute(text(
+                    "SELECT to_regclass('public.users')"
+                ))).scalar()
+                rev = (await conn.execute(text(
+                    "SELECT version_num FROM alembic_version"
+                ))).scalar() if has_users else None
+            short = (ver or "")[:40]
+            if has_users:
+                logger.info(f"Postgres OK — connected ({short}...), alembic_version={rev}, schema present.")
+            else:
+                logger.error(
+                    "Postgres CONNECTED but EMPTY — the 'users' table is missing. "
+                    "Run `alembic upgrade head` (Render Pre-Deploy Command or service "
+                    "Shell). Until then, every DB-backed request will fail."
+                )
+        except Exception as e:
+            logger.error(
+                f"Postgres connectivity check FAILED: {e}. Verify DATABASE_URL points "
+                f"at the running Render Postgres (internal connection string)."
+            )
         return
 
     # SQLite (local dev + in-memory tests): keep the existing create_all + inline
