@@ -72,12 +72,20 @@ class Base(DeclarativeBase):
 
 async def init_db():
     from db import models  # noqa: F401 — import triggers model registration
-    from sqlalchemy import text
 
+    # Postgres: Alembic owns the schema. The app must NOT create_all or run the
+    # hand-rolled _migrate() — migrations are applied out-of-band (`alembic upgrade
+    # head`, wired into the Render start command). Doing create_all here would race
+    # Alembic and bypass version tracking.
+    if not _IS_SQLITE:
+        logger.info("Postgres detected — schema managed by Alembic, skipping create_all/_migrate.")
+        return
+
+    # SQLite (local dev + in-memory tests): keep the existing create_all + inline
+    # migration path so nothing local changes. SQLAlchemy create_all() doesn't add
+    # columns to existing tables, hence _migrate()'s ALTER list + auto-heal net.
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-        # Inline migrations: ALTER TABLE for columns added after initial schema.
-        # SQLAlchemy create_all() doesn't add columns to existing tables.
         await _migrate(conn)
 
 
