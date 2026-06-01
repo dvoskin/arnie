@@ -17,10 +17,10 @@ proactive profile_stats follow-up; city sets timezone whenever they mention it.
 # both platforms so Arnie introduces himself the same way everywhere. Multi-bubble,
 # no em dashes, on-voice. The landing-page variant just prepends a trial line.
 INTRO_BUBBLES = [
-    "Yo, I'm Arnie 👊",
-    "I'll keep you locked in on food, training, and progress.",
-    "No app, no forms. Just text me what you eat and how you train.",
-    "First, what should I call you?",
+    "yo, I'm Arnie 👊",
+    "your new coach in your pocket. food, training, progress, all of it 💪",
+    "no app, no forms, no logging in. just text me like a friend 🔥",
+    "first things first, what should I call you?",
 ]
 
 

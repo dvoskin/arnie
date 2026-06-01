@@ -546,10 +546,10 @@ async def _send_first_contact_intro(chat_guid: str) -> None:
 
 # Acknowledges they signed up, then flows into the same name question.
 _OUTREACH_INTRO = [
-    "Hey 👋 it's Arnie",
-    "You signed up on the site. I help you train, eat right, and stay on track.",
-    "No app, just text me what you eat and how you train.",
-    "Quick 2 min to get going. What's your name?",
+    "hey 👋 it's Arnie",
+    "you signed up on the site, so let's get rolling. i'm your coach for food, training, and progress 💪",
+    "no app, no forms. just text me like a friend and i handle the rest 🔥",
+    "takes 2 min to set up. what should I call you?",
 ]
 
 
