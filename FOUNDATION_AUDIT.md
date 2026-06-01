@@ -373,18 +373,12 @@ structural refactor (highest risk) and come only after behavior is locked + test
   real `run_imessage_pipeline` with mocked LLM + stubbed BlueBubbles + in-memory DB.
   The net for the collapse. Full suite 127 passing.
 
-**NEXT — pipeline collapse (not started; harness ready):**
-The two pipelines are ~90% identical (verified). `bot/imessage_handler.run_imessage_pipeline`
-lines ~772–964 is the canonical core (has the latest coach-unmute fix). `bot/
-telegram_handler._run_pipeline` (~625–860) is the same flow with Telegram edges.
-Plan: extract the shared core into `core/conversation.py::run_turn(user, db, messages,
-system, platform, *, on_image, in_onboarding, was_onboarding)` returning a `Response`
-(build context → chat → tools → coach-unmute / follow-up / deterministic fallback →
-build Response + detect_moment + dashboard-link-once). Platform-specific bits stay in
-each handler: image delivery (`reply_photo` vs `bb_send_text`), typing indicator, the
-adapter `.send`. Both handlers become thin: pre-work (linking/onboarding/debounce) →
-`run_turn` → `adapter.send`. Keep test_pipeline.py green throughout; add a Telegram twin
-test once merged. DO THIS IN A FOCUSED SESSION — most behavior-critical code in the app.
+- ✅ **Pipeline collapse** (`core/conversation.py::run_turn`, commits a68eac0 + 696292e).
+  `run_turn(user, db, messages, system, platform, *, on_image, on_completion, ...)` → `TurnResult`
+  owns: LLM call → tool execution → coach-unmute / follow-up / deterministic fallback →
+  Response assembly (detect_moment, dashboard-link-once). Both handlers are now thin:
+  pre-work → run_turn → adapter.send. 130 tests passing (7 pipeline tests: 4 iMessage,
+  3 Telegram twins).
 
 **THEN — reminders/follow-up module + PendingQuestion (net-new):**
 Add a `PendingQuestion` table (question, asked_at, kind, answered_at). Refactor
