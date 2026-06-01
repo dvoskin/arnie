@@ -18,8 +18,8 @@ proactive profile_stats follow-up; city sets timezone whenever they mention it.
 # no em dashes, on-voice. The landing-page variant just prepends a trial line.
 INTRO_BUBBLES = [
     "yo, I'm Arnie 👊",
-    "your new coach in your pocket. food, training, progress, all of it 💪",
-    "no app, no forms, no logging in. just text me like a friend 🔥",
+    "your coach for food, training, and progress. the real thing, in your pocket.",
+    "no app, no forms, no logging in. just text me like you'd text a friend.",
     "first things first, what should I call you?",
 ]
 
