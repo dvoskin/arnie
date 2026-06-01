@@ -61,6 +61,19 @@ class Button:
         return self.value if self.value is not None else self.label
 
 
+def _sanitize_bubble(s: str) -> str:
+    """
+    Enforce the no-em-dash brand rule deterministically. The model is told "no em
+    dashes" but keeps producing them, so we strip them on the way out: an em dash is
+    almost always a parenthetical or clause break, which a comma handles cleanly.
+    (En dashes / hyphens are left alone so number ranges like "12-13%" survive.)
+    """
+    s = (s or "").replace(" — ", ", ").replace("—", ", ")
+    while "  " in s:
+        s = s.replace("  ", " ")
+    return s.strip()
+
+
 @dataclass
 class Response:
     """
@@ -82,10 +95,13 @@ class Response:
 
     @classmethod
     def from_text(cls, text: str, **kwargs) -> "Response":
-        """Build a Response by splitting raw text on the ||| bubble separator."""
-        bubbles = [b.strip() for b in (text or "").split("|||") if b.strip()]
+        """Build a Response by splitting raw text on the ||| bubble separator.
+        Em dashes are stripped here — it's a hard brand rule the model keeps breaking,
+        so enforce it deterministically at the one place all bubbles flow through."""
+        bubbles = [_sanitize_bubble(b) for b in (text or "").split("|||")]
+        bubbles = [b for b in bubbles if b]
         if not bubbles:
-            bubbles = ["done."]
+            bubbles = ["still here. what's the move?"]
         return cls(bubbles=bubbles, **kwargs)
 
 

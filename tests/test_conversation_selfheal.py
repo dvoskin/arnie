@@ -150,6 +150,24 @@ async def test_bare_done_after_an_answer_is_repaired(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_wall_of_text_is_flagged_not_retried(monkeypatch):
+    """A reply over the bubble cap gets a wall_of_text health flag (telemetry only —
+    it's not a stall or dead-end, so no retry)."""
+    six = "|||".join(f"coaching point number {i} with real substance" for i in range(6))
+    fake_chat, state = _seq_chat([
+        {"text": six, "tool_calls": [], "raw_content": [], "stop_reason": "end_turn"},
+    ])
+    monkeypatch.setattr(C, "chat", fake_chat)
+    turn = await run_turn(
+        _user(), None, [{"role": "user", "content": "hey"}], "SYS",
+        "imessage", in_onboarding=False, was_onboarding=False, today_log=None,
+    )
+    assert state["n"] == 1, "a long-but-valid reply must NOT trigger a retry"
+    assert "wall_of_text" in turn.health_flags
+    assert len(turn.response.bubbles) == 6
+
+
+@pytest.mark.asyncio
 async def test_complete_turn_not_retried(monkeypatch):
     fake_chat, state = _seq_chat([
         {"text": "weight's up, not panic-worthy.|||we track the 7-day trend.",

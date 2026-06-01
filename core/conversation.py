@@ -364,6 +364,10 @@ async def run_turn(
             health_flags.append("retried")
         if _dead_ended:
             health_flags.append("dead_end")
+        # Wall-of-text: the cap is "5+ bubbles only when a plan/breakdown is asked for".
+        # Flag turns that blew past it so verbosity is visible in /admin/flagged.
+        if len(resp.bubbles) > 5:
+            health_flags.append("wall_of_text")
         if health_flags:
             logger.warning(f"TURN_HEALTH {_tag} flags={','.join(health_flags)}")
     except Exception as e:
