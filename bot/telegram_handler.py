@@ -621,6 +621,27 @@ async def _send_onboarding_complete(update, db, user, source_type, raw_text,
     await log_conversation(db, user.id, raw_text, log_str, source_type=source_type)
 
 
+async def _send_intro_and_log(update: Update, db, user_id: int, raw_text: str,
+                              source_type: str, from_landing: bool = False) -> None:
+    """
+    Send the canonical multi-bubble intro, then log it as the first conversation
+    turn. Logging matters for two reasons: (1) it stops the intro from re-firing on
+    the user's next message, and (2) it gives the LLM context so it knows the name
+    question was already asked. Shared by cmd_start and the first-contact path in
+    _run_pipeline so both stay in sync.
+    """
+    from core.prompts.onboarding import INTRO_BUBBLES
+    bubbles = list(INTRO_BUBBLES)
+    if from_landing:
+        bubbles.insert(1, "Your 7-day free trial starts now.")
+    for i, bubble in enumerate(bubbles):
+        await update.message.reply_text(bubble)
+        if i < len(bubbles) - 1:
+            await asyncio.sleep(0.3)
+    await log_conversation(db, user_id, raw_text or "[start]",
+                           "|||".join(bubbles), source_type=source_type)
+
+
 async def _run_pipeline(update: Update, context: ContextTypes.DEFAULT_TYPE,
                         raw_text: str, source_type: str, db):
     """Core pipeline shared by all message types."""
@@ -632,6 +653,17 @@ async def _run_pipeline(update: Update, context: ContextTypes.DEFAULT_TYPE,
     # ── Onboarding ────────────────────────────────────────────────────────────
     in_onboarding = not user.onboarding_completed
     was_onboarding = in_onboarding  # remember before tools run
+
+    # First-ever contact, or first message after a full reset: send the intro
+    # BEFORE treating anything as the user's name. Without this, a post-reset
+    # message gets read as the name (the GET_NAME prompt assumes the intro was
+    # already shown). Mirrors the iMessage handler. /start logs the intro too,
+    # so a normal new-user flow won't double-fire it.
+    if in_onboarding and not user.name:
+        prior = await get_recent_conversations(db, user.id, limit=1)
+        if not prior:
+            await _send_intro_and_log(update, db, user.id, raw_text, source_type)
+            return  # wait for the user to reply with their name
 
     # ── Server-side target-step interception ──────────────────────────────────
     # "Calculate for me" and "Skip for now" are handled entirely in Python —
@@ -921,17 +953,12 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "or type anything and I'll guide us back."
             )
         else:
-            # Brand-new user → the same scripted multi-bubble intro as iMessage.
-            # one consistent Arnie across channels. Landing-page signups get a trial line.
-            from core.prompts.onboarding import INTRO_BUBBLES
-            bubbles = list(INTRO_BUBBLES)
-            if from_landing:
-                # Acknowledge the trial right after the greeting, before the value props.
-                bubbles.insert(1, "Your 7-day free trial starts now.")
-            for i, bubble in enumerate(bubbles):
-                await update.message.reply_text(bubble)
-                if i < len(bubbles) - 1:
-                    await asyncio.sleep(0.3)
+            # Brand-new user → the canonical multi-bubble intro, the same on every
+            # channel. Logged (via the helper) so it won't re-fire on their first
+            # real message. Landing-page signups get a trial line.
+            await _send_intro_and_log(
+                update, db, user.id, "[start]", "text", from_landing=from_landing
+            )
 
 
 async def cmd_today(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1263,8 +1290,8 @@ async def cmd_reset(update: Update, context: ContextTypes.DEFAULT_TYPE):
             try:
                 from memory.profile_manager import clear_profile
                 await clear_profile(telegram_id)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(f"clear_profile failed for {telegram_id}: {e}")
 
             await update.message.reply_text(
                 "All data wiped. Fresh start.\n\nSend any message to begin setup again."

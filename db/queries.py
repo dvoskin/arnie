@@ -4,7 +4,7 @@ from sqlalchemy.orm import selectinload
 from db.models import (
     User, UserPreferences, DailyLog, FoodEntry,
     ExerciseEntry, BodyMetric, ConversationLog, MemoryUpdate, HealthSnapshot,
-    Feedback, UserFoodMatch, PendingQuestion,
+    Feedback, UserFoodMatch, PendingQuestion, WearableDevice, WearableMetric,
 )
 from datetime import date, datetime, timedelta
 from typing import Optional, List
@@ -386,28 +386,53 @@ async def reset_today_log(db: AsyncSession, user_id: int, user_timezone: str = "
 
 async def reset_all_user_data(db: AsyncSession, user_id: int) -> None:
     """
-    Full account wipe — deletes all logs, metrics, conversations, and memory.
-    Resets profile fields and forces re-onboarding. Keeps the user row itself
-    (same telegram_id) so the user can start fresh without needing a new account.
-    """
-    # Cascade-delete all daily logs (and their food/exercise entries)
-    await db.execute(delete(DailyLog).where(DailyLog.user_id == user_id))
-    await db.execute(delete(BodyMetric).where(BodyMetric.user_id == user_id))
-    await db.execute(delete(ConversationLog).where(ConversationLog.user_id == user_id))
-    await db.execute(delete(MemoryUpdate).where(MemoryUpdate.user_id == user_id))
-    await db.execute(delete(HealthSnapshot).where(HealthSnapshot.user_id == user_id))
+    Full account wipe — deletes ALL logs, metrics, conversations, memory, food
+    memory, pending questions, and wearable data. Resets profile + coaching state
+    and forces re-onboarding. KEEPS the user row (same telegram_id), the
+    cross-platform link, and subscription/billing so the user starts fresh without
+    losing their account or their paid plan.
 
-    # Reset user profile fields via Core UPDATE to bypass identity map caching
+    NOTE: child tables (FoodEntry/ExerciseEntry) must be deleted BEFORE their parent
+    DailyLog. The ORM `cascade="all, delete-orphan"` does NOT fire on bulk Core
+    delete() statements, and Postgres enforces the foreign key — so deleting a
+    DailyLog with surviving children raises a FK violation and rolls back the entire
+    reset. This was the bug behind "reset didn't actually clear my data."
+    """
+    # 1. Children of daily_logs first (subquery on the user's log ids).
+    log_ids = select(DailyLog.id).where(DailyLog.user_id == user_id)
+    await db.execute(delete(FoodEntry).where(FoodEntry.daily_log_id.in_(log_ids)))
+    await db.execute(delete(ExerciseEntry).where(ExerciseEntry.daily_log_id.in_(log_ids)))
+
+    # 2. Everything keyed directly by user_id.
+    for model in (
+        DailyLog, BodyMetric, ConversationLog, MemoryUpdate, HealthSnapshot,
+        WearableDevice, WearableMetric, PendingQuestion, Feedback, UserFoodMatch,
+    ):
+        await db.execute(delete(model).where(model.user_id == user_id))
+
+    # 3. Reset user profile + coaching/engagement state via Core UPDATE (bypasses
+    #    the identity map so a stale cached object can't resurrect old values).
+    #    Preserved on purpose: telegram_id, the cross-platform link, channel
+    #    preference, units, and all subscription/billing fields.
     await db.execute(
         update(User).where(User.id == user_id).values(
             name=None, age=None, sex=None, height_cm=None,
             current_weight_kg=None, goal_weight_kg=None, primary_goal=None,
             training_experience=None, dietary_preferences=None, injuries=None,
-            webhook_token=None, timezone="UTC", onboarding_completed=False,
+            city=None, sport=None, webhook_token=None,
+            timezone="UTC", onboarding_completed=False,
+            # wearable connection (we deleted the WearableDevice rows above)
+            whoop_access_token=None, whoop_refresh_token=None,
+            whoop_token_expires_at=None, whoop_user_id=None,
+            # proactive-engagement state
+            nudges_sent="", whoop_last_notified=None, weekly_recap_week=None,
+            # open coaching loop
+            active_mission=None, mission_metric=None,
+            mission_target=None, mission_date=None,
         )
     )
 
-    # Reset preferences
+    # 4. Reset preferences.
     await db.execute(
         update(UserPreferences).where(UserPreferences.user_id == user_id).values(
             coaching_style="balanced", accountability_level="medium",

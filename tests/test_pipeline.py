@@ -529,3 +529,54 @@ async def test_tg_empty_llm_never_dead_ends(tg_pipeline_env):
     assert len(env["sent"]) >= 1
     joined = " ".join(env["sent"]).lower()
     assert joined.strip() not in ("", "done.", "got it.")
+
+
+@pytest.mark.asyncio
+async def test_tg_post_reset_first_message_shows_intro_not_name(tg_pipeline_env):
+    """
+    REGRESSION (Telegram bug 2): a fresh / post-reset user (no name, no prior convo)
+    must get the scripted intro on their FIRST message — the message must NOT be
+    treated as their name. Before the fix, _run_pipeline went straight to the
+    GET_NAME onboarding prompt and saved 'hey there' as the user's name.
+    """
+    env = tg_pipeline_env
+    env["set_llm"](text="should-not-be-called")  # intro is scripted, no LLM
+    async with env["Maker"]() as db:
+        await env["TH"]._run_pipeline(
+            env["update"], env["context"], "hey there", "text", db
+        )
+    assert env["calls"]["chat"] == 0, "intro must be scripted (no LLM call)"
+    assert len(env["sent"]) >= 3, f"expected multi-bubble intro, got {env['sent']}"
+    joined = " ".join(env["sent"]).lower()
+    assert "call you" in joined or "your name" in joined
+    # the first message was NOT saved as the name
+    from db.queries import resolve_user
+    async with env["Maker"]() as db:
+        u = await resolve_user(db, str(_FakeUser.id))
+        assert u.name is None, f"first message wrongly saved as name: {u.name!r}"
+
+
+@pytest.mark.asyncio
+async def test_tg_intro_logged_so_it_does_not_refire(tg_pipeline_env):
+    """
+    The intro is logged, so the user's SECOND message (their actual name) does not
+    re-trigger the intro — it flows into the onboarding LLM instead. Guards against
+    a double-intro loop.
+    """
+    env = tg_pipeline_env
+    # Turn 1: first contact → scripted intro, logged, no LLM.
+    env["set_llm"](text="should-not-be-called")
+    async with env["Maker"]() as db:
+        await env["TH"]._run_pipeline(env["update"], env["context"], "hey", "text", db)
+    assert env["calls"]["chat"] == 0
+    intro_count = len(env["sent"])
+    assert intro_count >= 3
+
+    # Turn 2: the name reply. Intro must NOT re-fire; onboarding LLM runs instead.
+    env["set_llm"](text="good to meet you, Daniel.|||what are you chasing right now?")
+    async with env["Maker"]() as db:
+        await env["TH"]._run_pipeline(env["update"], env["context"], "Daniel", "text", db)
+    assert env["calls"]["chat"] == 1, "second turn should hit the onboarding LLM"
+    new_bubbles = env["sent"][intro_count:]
+    assert new_bubbles, "second turn produced no reply"
+    assert not any("call you" in b.lower() for b in new_bubbles), "intro re-fired"

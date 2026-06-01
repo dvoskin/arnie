@@ -23,10 +23,15 @@ from dotenv import load_dotenv
 
 load_dotenv(override=True)
 
-pytestmark = pytest.mark.skipif(
-    not os.getenv("ANTHROPIC_API_KEY"),
-    reason="ANTHROPIC_API_KEY not set — LLM behavioral tests require live API",
-)
+# Gated out of the default suite (see pytest.ini: -m "not behavioral").
+# Run explicitly with:  pytest -m behavioral
+pytestmark = [
+    pytest.mark.behavioral,
+    pytest.mark.skipif(
+        not os.getenv("ANTHROPIC_API_KEY"),
+        reason="ANTHROPIC_API_KEY not set — LLM behavioral tests require live API",
+    ),
+]
 
 # Use Haiku for all behavioral tests — fast and cheap, still catches prompt deviations.
 _EVAL_MODEL = "claude-haiku-4-5"
