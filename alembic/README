@@ -1,1 +1,65 @@
-Generic single-database configuration.
+Arnie schema migrations (Alembic)
+=================================
+
+Alembic owns the database schema. The app's SQLAlchemy models in db/models.py are
+the source of truth; migrations in alembic/versions/ are the version history that
+brings any database up to that schema.
+
+How it's wired
+--------------
+- alembic/env.py imports the app's Base.metadata (db.database.Base + db.models) and
+  reads DATABASE_URL from the environment via db.database._resolve_database_url(), so
+  migrations target the same DB the app does. Async drivers are coerced to sync for
+  Alembic: sqlite+aiosqlite -> sqlite (pysqlite), postgresql+asyncpg / bare
+  postgres:// / postgresql:// -> postgresql+psycopg (psycopg3 is sync-capable).
+- alembic.ini's sqlalchemy.url is intentionally blank — env.py supplies it.
+- On Render, `alembic upgrade head` runs as the service preDeployCommand (after build,
+  before the new instance serves traffic). On Postgres the app's init_db() does NOT
+  create_all — Alembic is the only thing that touches schema there.
+- Local dev + the in-memory pytest suite use SQLite, where init_db() still runs
+  create_all + the legacy db.database._migrate() path. (Slated for retirement once
+  fully on Postgres — see AUDIT.md.)
+
+Everyday workflow: you changed db/models.py
+--------------------------------------------
+1. Generate a migration from the model diff:
+
+     DATABASE_URL='sqlite+aiosqlite:///arnie.db' \
+       .venv/bin/python3 -m alembic revision --autogenerate -m "add X to users"
+
+   (Any reachable DB works for autogenerate; a local SQLite file is fine. The diff is
+   computed model-vs-DB, then emitted as dialect-agnostic op.* calls.)
+
+2. READ the generated file in alembic/versions/. Autogenerate is a draft, not gospel:
+   - It does NOT detect renames (shows as drop+add — fix by hand to avoid data loss).
+   - Check server defaults, enum/type changes, and index names.
+   - For Postgres data-preserving changes, hand-edit as needed.
+
+3. Verify it round-trips with no drift:
+
+     DATABASE_URL='sqlite+aiosqlite:////tmp/verify.db' .venv/bin/python3 -m alembic upgrade head
+     DATABASE_URL='sqlite+aiosqlite:////tmp/verify.db' .venv/bin/python3 -m alembic check
+       # -> "No new upgrade operations detected."
+
+   And confirm it compiles for Postgres:
+
+     DATABASE_URL='postgresql+psycopg://u:p@localhost/db' \
+       .venv/bin/python3 -m alembic upgrade head --sql | head -40
+
+4. Run the suite (LINKING_ENABLED=true PROACTIVE_MESSAGING_ENABLED=false pytest), commit
+   the migration WITH the model change, and push. Render applies it on the next deploy.
+
+Useful commands
+---------------
+  alembic current              # which revision the DB is on
+  alembic history --verbose    # full revision chain
+  alembic upgrade head         # apply all pending migrations
+  alembic downgrade -1         # roll back one revision (write downgrade() for real reverts)
+  alembic check                # fail if models and migrations have drifted (good for CI)
+
+Rules of thumb
+--------------
+- One migration per schema change, committed alongside the model edit. Never hand-edit
+  the DB in prod; never reintroduce ad-hoc ALTERs in db/database.py for Postgres.
+- Always write a real downgrade() when feasible so a bad deploy is reversible.
+- Baseline revision is fa41393154b3 (down_revision=None) — the full current schema.
