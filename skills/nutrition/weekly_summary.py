@@ -1,3 +1,7 @@
+# DEACTIVATED during foundation-stabilization pass (kept on disk for later).
+# Re-enable by removing this flag once the retrieval-gated skill layer exists.
+ENABLED = False
+
 TRIGGERS = ["how was my week", "weekly recap", "week review", "how did I do this week"]
 
 PROMPT = """\

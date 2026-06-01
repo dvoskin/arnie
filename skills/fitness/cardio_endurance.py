@@ -1,3 +1,7 @@
+# DEACTIVATED during foundation-stabilization pass (kept on disk for later).
+# Re-enable by removing this flag once the retrieval-gated skill layer exists.
+ENABLED = False
+
 TRIGGERS = ["went for a run", "zone 2", "what pace should I run", "training for a race", "VO2 max", "cycling training"]
 
 PROMPT = """\

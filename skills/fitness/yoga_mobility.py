@@ -1,3 +1,7 @@
+# DEACTIVATED during foundation-stabilization pass (kept on disk for later).
+# Re-enable by removing this flag once the retrieval-gated skill layer exists.
+ENABLED = False
+
 TRIGGERS = ["did yoga", "yoga session", "vinyasa", "yin yoga", "pilates", "stretching session", "working toward"]
 
 PROMPT = """\

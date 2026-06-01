@@ -1,3 +1,7 @@
+# DEACTIVATED during foundation-stabilization pass (kept on disk for later).
+# Re-enable by removing this flag once the retrieval-gated skill layer exists.
+ENABLED = False
+
 TRIGGERS = ["can't touch my toes", "working on splits", "hip flexors tight", "mobility routine", "give me a stretching routine", "hit a flexibility milestone"]
 
 PROMPT = """\

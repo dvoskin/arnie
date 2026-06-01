@@ -1,3 +1,7 @@
+# DEACTIVATED during foundation-stabilization pass (kept on disk for later).
+# Re-enable by removing this flag once the retrieval-gated skill layer exists.
+ENABLED = False
+
 TRIGGERS = ["why did I go up", "what does my weight mean", "my weight is up", "scale went up", "weight fluctuation"]
 
 PROMPT = """\

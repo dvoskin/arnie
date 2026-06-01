@@ -1,3 +1,7 @@
+# DEACTIVATED during foundation-stabilization pass (kept on disk for later).
+# Re-enable by removing this flag once the retrieval-gated skill layer exists.
+ENABLED = False
+
 TRIGGERS = ["aggressive cut today", "hard deficit today", "cut day protocol", "want to cut hard"]
 
 PROMPT = """\

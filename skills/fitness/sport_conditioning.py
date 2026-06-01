@@ -1,3 +1,7 @@
+# DEACTIVATED during foundation-stabilization pass (kept on disk for later).
+# Re-enable by removing this flag once the retrieval-gated skill layer exists.
+ENABLED = False
+
 TRIGGERS = ["I play", "agility work", "speed training", "plyometrics", "boxing training", "BJJ", "in-season", "off-season", "sport-specific"]
 
 PROMPT = """\

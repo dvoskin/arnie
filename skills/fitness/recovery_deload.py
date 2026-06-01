@@ -1,3 +1,7 @@
+# DEACTIVATED during foundation-stabilization pass (kept on disk for later).
+# Re-enable by removing this flag once the retrieval-gated skill layer exists.
+ENABLED = False
+
 TRIGGERS = ["should I deload", "feeling beat up", "lifts are dropping", "overtrained", "WHOOP is red", "rest day", "active recovery", "burnt out"]
 
 PROMPT = """\

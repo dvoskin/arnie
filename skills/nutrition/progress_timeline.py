@@ -1,3 +1,7 @@
+# DEACTIVATED during foundation-stabilization pass (kept on disk for later).
+# Re-enable by removing this flag once the retrieval-gated skill layer exists.
+ENABLED = False
+
 TRIGGERS = ["show my progress", "how much have I lost", "how much have I gained", "am I making progress", "my progress"]
 
 PROMPT = """\

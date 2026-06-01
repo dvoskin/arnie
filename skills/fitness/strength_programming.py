@@ -1,3 +1,7 @@
+# DEACTIVATED during foundation-stabilization pass (kept on disk for later).
+# Re-enable by removing this flag once the retrieval-gated skill layer exists.
+ENABLED = False
+
 TRIGGERS = ["what's my 1RM", "write me a program", "I'm stalling on", "training split", "show my PRs", "what should I run"]
 
 PROMPT = """\

@@ -1,3 +1,7 @@
+# DEACTIVATED during foundation-stabilization pass (kept on disk for later).
+# Re-enable by removing this flag once the retrieval-gated skill layer exists.
+ENABLED = False
+
 TRIGGERS = ["travelling", "on the road", "airport", "hotel", "no gym access", "business trip", "stuck on a layover"]
 
 PROMPT = """\
