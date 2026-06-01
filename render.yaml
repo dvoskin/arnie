@@ -82,6 +82,12 @@ services:
         value: "Arnie_1026_Bot"
       - key: PROACTIVE_MESSAGING_ENABLED
         value: "false"
+      # Branded base for user-facing dashboard links (separate from RENDER_EXTERNAL_URL,
+      # which webhooks/OAuth keep using). SET THIS ONLY AFTER app.tryarnie.com is added
+      # as a custom domain on this service and DNS resolves — until then leave it unset
+      # and links safely fall back to the service's own host.
+      - key: DASHBOARD_BASE_URL
+        value: "https://app.tryarnie.com"
 
 databases:
   # Render-managed Postgres. Replaces the SQLite-on-disk DB (AUDIT #5). Fresh start:

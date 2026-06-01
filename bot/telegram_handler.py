@@ -604,9 +604,9 @@ async def _send_onboarding_complete(update, db, user, source_type, raw_text,
     await update.message.reply_text(**fmt_kwargs)
 
     try:
+        from core.urls import dashboard_url
         token = await get_or_create_webhook_token(db, user.id)
-        base_url = os.getenv("RENDER_EXTERNAL_URL", "http://localhost:10000").rstrip("/")
-        dash_url = f"{base_url}/dashboard/{token}"
+        dash_url = dashboard_url(token)
         dash_kb = InlineKeyboardMarkup([[
             InlineKeyboardButton("📊 Open your dashboard →", url=dash_url)
         ]])
@@ -791,9 +791,9 @@ async def _run_pipeline(update: Update, context: ContextTypes.DEFAULT_TYPE,
     # ── Post-onboarding: dashboard as an inline button (Telegram-specific) ────
     if turn.just_completed:
         try:
+            from core.urls import dashboard_url
             token = await get_or_create_webhook_token(db, turn.user.id)
-            base_url = os.getenv("RENDER_EXTERNAL_URL", "http://localhost:10000").rstrip("/")
-            dash_url = f"{base_url}/dashboard/{token}"
+            dash_url = dashboard_url(token)
             dash_kb = InlineKeyboardMarkup([[
                 InlineKeyboardButton("📊 Open your dashboard →", url=dash_url)
             ]])
@@ -1593,8 +1593,8 @@ async def cmd_dash(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         token = await get_or_create_webhook_token(db, user.id)
 
-    base_url = os.getenv("RENDER_EXTERNAL_URL", "http://localhost:10000")
-    url = f"{base_url}/dashboard/{token}"
+    from core.urls import dashboard_url
+    url = dashboard_url(token)
     from core.blurbs import dashboard_line
     line = await dashboard_line(user.name or "")
     await update.message.reply_text(line)

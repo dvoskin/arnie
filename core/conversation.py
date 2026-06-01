@@ -321,12 +321,10 @@ async def run_turn(
         if logged and "dashboard" not in sent:
             try:
                 from core.blurbs import dashboard_line
+                from core.urls import dashboard_url
                 from db.queries import get_or_create_webhook_token
                 token = await get_or_create_webhook_token(db, user.id)
-                base = os.getenv(
-                    "RENDER_EXTERNAL_URL", "https://arnie.onrender.com"
-                ).rstrip("/")
-                dash_url = f"{base}/dashboard/{token}"
+                dash_url = dashboard_url(token)
                 intro = await dashboard_line(user.name or "")
                 resp.bubbles.append(intro)
                 resp.bubbles.append(dash_url)

@@ -15,6 +15,7 @@ import stripe
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
 from api.templates import _dashboard_html, _apple_guide_html
+from core.urls import dashboard_url
 from pydantic import BaseModel
 
 from db.database import AsyncSessionLocal
@@ -1200,7 +1201,7 @@ async def admin_dashboard(token: str = Query(...)):
                 "today_log": today_log,
                 "last_conv": last_conv,
                 "msg_count": msg_count,
-                "dash_url": f"{base_url}/dashboard/{u.webhook_token}" if u.webhook_token else None,
+                "dash_url": dashboard_url(u.webhook_token) if u.webhook_token else None,
             })
 
     def _ago(ts):
@@ -1450,8 +1451,7 @@ async def admin_user_detail(user_id: int, token: str = Query(...)):
           </td>
         </tr>"""
 
-    base_url = os.getenv("RENDER_EXTERNAL_URL", "http://localhost:10000").rstrip("/")
-    dash_link = f'<a href="{base_url}/dashboard/{user.webhook_token}" target="_blank">↗ Dashboard</a>' if user.webhook_token else ""
+    dash_link = f'<a href="{dashboard_url(user.webhook_token)}" target="_blank">↗ Dashboard</a>' if user.webhook_token else ""
     goal = user.primary_goal or "—"
     exp = user.training_experience or "—"
     joined = user.created_at.strftime("%b %d, %Y") if user.created_at else "—"
