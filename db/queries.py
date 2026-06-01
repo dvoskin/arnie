@@ -4,7 +4,7 @@ from sqlalchemy.orm import selectinload
 from db.models import (
     User, UserPreferences, DailyLog, FoodEntry,
     ExerciseEntry, BodyMetric, ConversationLog, MemoryUpdate, HealthSnapshot,
-    Feedback, UserFoodMatch,
+    Feedback, UserFoodMatch, PendingQuestion,
 )
 from datetime import date, datetime, timedelta
 from typing import Optional, List
@@ -522,6 +522,98 @@ async def add_feedback(db: AsyncSession, user_id: int, kind: str, text: str) -> 
     await db.commit()
     await db.refresh(entry)
     return entry
+
+
+# ── Pending questions (context-aware follow-up state) ─────────────────────────
+# An open question Arnie asked that's awaiting an answer. The reminders module
+# reads open rows to decide whether to re-ask; the conversation path resolves
+# them when the user answers (data-driven where possible). See db.models.PendingQuestion.
+
+async def record_pending_question(
+    db: AsyncSession, user_id: int, kind: str, question: str,
+    tier: str = "casual",
+) -> PendingQuestion:
+    """
+    Open a pending-question loop. If an unanswered row of the same kind already
+    exists, update it in place (one open question per kind) rather than stacking
+    duplicates — keeps follow-up logic from re-asking the same thing twice.
+    """
+    existing = await get_open_pending_question(db, user_id, kind)
+    if existing:
+        existing.question = question
+        existing.tier = tier
+        await db.commit()
+        await db.refresh(existing)
+        return existing
+    pq = PendingQuestion(user_id=user_id, kind=kind, question=question, tier=tier)
+    db.add(pq)
+    await db.commit()
+    await db.refresh(pq)
+    return pq
+
+
+async def get_open_pending_question(
+    db: AsyncSession, user_id: int, kind: str
+) -> Optional[PendingQuestion]:
+    """The single open (unanswered) question of `kind` for this user, if any."""
+    result = await db.execute(
+        select(PendingQuestion)
+        .where(and_(PendingQuestion.user_id == user_id,
+                    PendingQuestion.kind == kind,
+                    PendingQuestion.answered_at.is_(None)))
+        .order_by(desc(PendingQuestion.asked_at))
+    )
+    return result.scalars().first()
+
+
+async def get_open_pending_questions(
+    db: AsyncSession, user_id: int
+) -> List[PendingQuestion]:
+    """All open (unanswered) questions for a user, newest first."""
+    result = await db.execute(
+        select(PendingQuestion)
+        .where(and_(PendingQuestion.user_id == user_id,
+                    PendingQuestion.answered_at.is_(None)))
+        .order_by(desc(PendingQuestion.asked_at))
+    )
+    return result.scalars().all()
+
+
+async def mark_pending_question_followed_up(
+    db: AsyncSession, question_id: int
+) -> None:
+    """Record that we just re-asked: bump the count and the last-asked timestamp."""
+    result = await db.execute(
+        select(PendingQuestion).where(PendingQuestion.id == question_id)
+    )
+    pq = result.scalar_one_or_none()
+    if pq is None:
+        return
+    pq.follow_up_count = (pq.follow_up_count or 0) + 1
+    pq.last_asked_at = datetime.utcnow()
+    await db.commit()
+
+
+async def resolve_pending_questions(
+    db: AsyncSession, user_id: int, kinds: Optional[List[str]] = None
+) -> int:
+    """
+    Mark open questions answered (sets answered_at=now). If `kinds` is given,
+    only those kinds are resolved; otherwise all open questions for the user.
+    Returns the number of rows closed. Idempotent — already-answered rows are skipped.
+    """
+    conds = [PendingQuestion.user_id == user_id,
+             PendingQuestion.answered_at.is_(None)]
+    if kinds:
+        conds.append(PendingQuestion.kind.in_(kinds))
+    result = await db.execute(select(PendingQuestion).where(and_(*conds)))
+    rows = result.scalars().all()
+    now = datetime.utcnow()
+    for pq in rows:
+        pq.answered_at = now
+    if rows:
+        await db.commit()
+    return len(rows)
 
 
 # ── Food/Exercise edit + delete (with auto totals recalc) ─────────────────────

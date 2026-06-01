@@ -69,6 +69,8 @@ class User(Base):
                                     cascade="all, delete-orphan")
     wearable_metrics = relationship("WearableMetric", back_populates="user",
                                     cascade="all, delete-orphan")
+    pending_questions = relationship("PendingQuestion", back_populates="user",
+                                     cascade="all, delete-orphan")
 
 
 class UserPreferences(Base):
@@ -243,6 +245,40 @@ class Feedback(Base):
     text = Column(Text, nullable=False)
     resolved = Column(Boolean, default=False)
     created_at = Column(DateTime, server_default=func.now())
+
+
+class PendingQuestion(Base):
+    """
+    An open conversational loop — a question Arnie asked that's awaiting an answer.
+
+    This is the backing state for context-aware follow-ups: when an important
+    question goes unanswered, the reminders module re-asks it (tone scaled by
+    `tier`) instead of nagging on a blind timer. Resolution is data-driven where
+    possible (e.g. a "profile_stats" question is answered once the stats land);
+    otherwise it's closed when the user re-engages.
+
+    Lifecycle:
+      asked       → row created with answered_at=NULL, asked_at=now
+      followed up → follow_up_count incremented, last_asked_at bumped
+      answered    → answered_at set (stops all follow-ups)
+
+    Kept deliberately small (audit §8 "E. Pending conversation state"). One open
+    row per (user, kind) is the norm; the reminders layer enforces that.
+    """
+    __tablename__ = "pending_questions"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    kind = Column(String, nullable=False, index=True)  # profile_stats | goal_check | weight_checkin | generic
+    question = Column(Text, nullable=False)             # the text Arnie asked
+    tier = Column(String, default="casual")             # casual | goal_critical — scales follow-up urgency
+    asked_at = Column(DateTime, server_default=func.now())   # first time asked
+    last_asked_at = Column(DateTime, server_default=func.now())  # most recent (re-)ask
+    follow_up_count = Column(Integer, default=0)        # how many times we've re-asked
+    answered_at = Column(DateTime)                      # NULL until resolved
+    created_at = Column(DateTime, server_default=func.now())
+
+    user = relationship("User", back_populates="pending_questions")
 
 
 class Skill(Base):
