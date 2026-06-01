@@ -44,6 +44,7 @@ from handlers.onboarding import build_onboarding_system, is_onboarding_complete
 logger = logging.getLogger(__name__)
 
 from bot.message_debounce import schedule_message as _debounce
+from multimodal.audio import transcribe_audio_message
 
 # ── BlueBubbles client ─────────────────────────────────────────────────────────
 
@@ -213,6 +214,76 @@ async def bb_send_text_with_effect(chat_guid: str, text: str, effect: str) -> bo
     except Exception as e:
         logger.warning(f"BlueBubbles effect error: {e} — falling back to plain send")
         return await bb_send_text(chat_guid, text)
+
+
+async def bb_download_attachment(attachment_guid: str) -> Optional[bytes]:
+    """
+    Download an attachment's raw bytes from BlueBubbles.
+    GET /api/v1/attachment/{guid}/download?password=…
+    Returns the bytes, or None if not configured / the fetch fails. Used to pull
+    iMessage voice-note audio for transcription. Larger timeout than the default
+    client since audio can be a few MB.
+    """
+    if not _BB_URL or not _BB_PASSWORD or not attachment_guid:
+        logger.warning("attachment download skipped — BB not configured or no guid")
+        return None
+    try:
+        resp = await _get_http().get(
+            f"{_BB_URL}/api/v1/attachment/{attachment_guid}/download",
+            params={"password": _BB_PASSWORD},
+            timeout=30.0,
+        )
+        if resp.status_code != 200:
+            logger.warning(
+                f"attachment download failed [{resp.status_code}] "
+                f"guid={attachment_guid[:12]} body={resp.text[:200]}"
+            )
+            return None
+        data = resp.content
+        logger.info(f"attachment downloaded: guid={attachment_guid[:12]} bytes={len(data)}")
+        return data
+    except Exception as e:
+        logger.error(f"attachment download error guid={attachment_guid[:12]}: {e}")
+        return None
+
+
+# Audio file extensions an iMessage voice note might arrive as (we transcode
+# whatever it is, so this is just for detection, not a hard accept-list).
+_AUDIO_EXTS = (".caf", ".m4a", ".amr", ".mp3", ".wav", ".aac", ".ogg", ".opus", ".aiff")
+
+
+def extract_audio_attachment(data: dict) -> Optional[dict]:
+    """
+    Find a voice-note / audio attachment in a BlueBubbles 'new-message' payload.
+    Returns {'guid', 'transfer_name', 'mime'} for the first audio attachment, or
+    None. Detection is permissive — mimeType 'audio/*', an audio file extension,
+    or an audio UTI all count (BlueBubbles is inconsistent across iOS versions).
+    Pure function (no IO) so it's unit-testable and keeps the webhook thin.
+    """
+    attachments = data.get("attachments") or []
+    for att in attachments:
+        if not isinstance(att, dict):
+            continue
+        guid = att.get("guid")
+        if not guid:
+            continue
+        mime = (att.get("mimeType") or "").lower()
+        uti = (att.get("uti") or "").lower()
+        name = att.get("transferName") or att.get("originalROWID") or ""
+        name_l = str(name).lower()
+        is_audio = (
+            mime.startswith("audio/")
+            or name_l.endswith(_AUDIO_EXTS)
+            or "audio" in uti
+            or uti == "com.apple.coreaudio-format"
+        )
+        if is_audio:
+            return {
+                "guid": guid,
+                "transfer_name": str(name) or "audio.caf",
+                "mime": mime,
+            }
+    return None
 
 
 # Reaction/effect detection now lives in core.platform.detect_moment (shared
@@ -628,6 +699,48 @@ async def handle_imessage(address: str, chat_guid: str, raw_text: str,
                                         message_guid=message_guid)
 
     await _debounce(user_key, raw_text, _run, delay=2.0)
+
+
+async def handle_imessage_audio(address: str, chat_guid: str, attachment_guid: str,
+                                message_guid: str = "",
+                                transfer_name: str = "audio.caf") -> None:
+    """
+    Voice-note entry point: download the audio attachment, transcribe it, echo the
+    transcript back (parity with Telegram), then run the normal pipeline on the
+    transcript text. Serialized on the same per-user lock as text so a voice note
+    and a text can't double-process. No debounce — voice notes arrive singly.
+    """
+    user_key = f"im:{address}"
+    if user_key not in _user_pipeline_locks:
+        _user_pipeline_locks[user_key] = asyncio.Lock()
+    lock = _user_pipeline_locks[user_key]
+
+    async with lock:
+        await bb_set_typing(chat_guid, True)
+        try:
+            audio = await bb_download_attachment(attachment_guid)
+            transcript = ""
+            if audio:
+                transcript = await transcribe_audio_message(audio, transfer_name)
+        except Exception as e:
+            logger.error(f"Voice-note handling failed for {address}: {e}")
+            transcript = ""
+        finally:
+            await bb_set_typing(chat_guid, False)
+
+        if not transcript:
+            # Don't leave the user hanging — tell them why nothing happened.
+            await bb_send_text(
+                chat_guid,
+                "I couldn't make out that voice note. Mind sending it as text?",
+            )
+            return
+
+        # Show what we heard, then process it like any other message — all under
+        # the same lock so a concurrent text can't interleave.
+        await bb_send_text(chat_guid, f'🎙 "{transcript}"')
+        await run_imessage_pipeline(address, chat_guid, transcript,
+                                    message_guid=message_guid)
 
 
 async def run_imessage_pipeline(address: str, chat_guid: str, raw_text: str,

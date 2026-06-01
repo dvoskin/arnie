@@ -219,6 +219,61 @@ async def test_turn_records_then_resolves_profile_question(pipeline_env):
         assert await get_open_pending_question(db, u.id, "profile_stats") is None
 
 
+@pytest.mark.asyncio
+async def test_voice_note_transcript_drives_pipeline(pipeline_env, monkeypatch):
+    """End-to-end: a voice note is downloaded + transcribed, echoed back, and the
+    transcript flows through the normal pipeline as if it were typed text."""
+    env = pipeline_env
+    H = env["H"]
+    await _seed_user(env["Maker"])
+
+    async def fake_download(guid):
+        return b"FAKE-CAF-BYTES"
+
+    async def fake_transcribe(audio, transfer_name="audio.caf"):
+        return "had a chicken bowl"
+
+    monkeypatch.setattr(H, "bb_download_attachment", fake_download)
+    monkeypatch.setattr(H, "transcribe_audio_message", fake_transcribe)
+
+    env["set_llm"](text="Logged that.|||Solid protein.")
+    await H.handle_imessage_audio(
+        "+15550001111", "iMessage;-;+15550001111", "att-guid-1",
+        message_guid="v1", transfer_name="Audio Message.caf",
+    )
+
+    # The transcript was echoed (🎙 "…") AND the pipeline produced a real reply.
+    assert any("had a chicken bowl" in s for s in env["sent"]), env["sent"]
+    assert env["calls"]["chat"] == 1            # pipeline ran exactly once
+    assert len(env["sent"]) >= 2               # echo + at least one reply bubble
+
+
+@pytest.mark.asyncio
+async def test_voice_note_unintelligible_sends_fallback(pipeline_env, monkeypatch):
+    """If transcription yields nothing, the user gets a friendly fallback and the
+    pipeline never runs (no empty/garbage turn)."""
+    env = pipeline_env
+    H = env["H"]
+    await _seed_user(env["Maker"])
+
+    async def fake_download(guid):
+        return b"FAKE-CAF-BYTES"
+
+    async def fake_transcribe(audio, transfer_name="audio.caf"):
+        return ""  # couldn't transcribe
+
+    monkeypatch.setattr(H, "bb_download_attachment", fake_download)
+    monkeypatch.setattr(H, "transcribe_audio_message", fake_transcribe)
+
+    env["set_llm"](text="should never run")
+    await H.handle_imessage_audio(
+        "+15550001111", "iMessage;-;+15550001111", "att-guid-2", message_guid="v2",
+    )
+
+    assert env["calls"]["chat"] == 0           # pipeline did NOT run
+    assert any("couldn't make out" in s.lower() for s in env["sent"]), env["sent"]
+
+
 # ── Telegram twin fixture ──────────────────────────────────────────────────────
 
 class _FakeMessage:

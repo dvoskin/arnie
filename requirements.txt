@@ -22,6 +22,9 @@ aiofiles==25.1.0
 pytz==2026.2
 stripe==15.2.0
 sentry-sdk==2.41.0
+# Bundles a static ffmpeg binary so we can transcode iMessage `.caf` voice notes to
+# WAV for Whisper — the pip-only Render runtime has no system ffmpeg.
+imageio-ffmpeg==0.6.0
 
 # ── Dev / test only (not imported by the app at runtime) ──────────────────────
 pytest==8.4.1

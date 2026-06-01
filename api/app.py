@@ -403,9 +403,19 @@ async def imessage_webhook(request: Request):
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid JSON")
 
-    # Debug: log every incoming webhook so we can see what BlueBubbles sends
-    import json as _json
-    logger.info(f"BB webhook: type={payload.get('type')} keys={list(payload.get('data', {}).keys())[:8]} isFromMe={payload.get('data', {}).get('isFromMe')} text={str(payload.get('data', {}).get('text', ''))[:60]}")
+    # Debug: log every incoming webhook so we can see what BlueBubbles sends.
+    # Includes attachment mimeType/name so voice-note delivery is diagnosable.
+    _dbg = payload.get("data", {})
+    _atts = _dbg.get("attachments") or []
+    _att_dbg = [
+        {"mime": a.get("mimeType"), "name": a.get("transferName")}
+        for a in _atts if isinstance(a, dict)
+    ][:3]
+    logger.info(
+        f"BB webhook: type={payload.get('type')} keys={list(_dbg.keys())[:8]} "
+        f"isFromMe={_dbg.get('isFromMe')} text={str(_dbg.get('text', ''))[:60]} "
+        f"attachments={_att_dbg}"
+    )
 
     event_type = payload.get("type", "")
     if event_type != "new-message":
@@ -427,12 +437,22 @@ async def imessage_webhook(request: Request):
 
     handle       = data.get("handle", {})
     address      = handle.get("address", "") if handle else ""
-    text         = (data.get("text") or "").strip()
+    # iMessage stamps an object-replacement char (￼) as the "text" of an
+    # attachment-only message — strip it so such messages read as empty text.
+    text         = (data.get("text") or "").replace("￼", "").strip()
     chat_guid    = chats[0].get("guid", "")
     message_guid = data.get("guid", "")   # needed for tapback reactions
 
-    if not address or not text or not chat_guid:
-        logger.info(f"BB webhook: skipping — missing field address={bool(address)} text={bool(text)} chat_guid={bool(chat_guid)}")
+    # Voice notes (and other audio) arrive as an attachment with no text. Detect
+    # one so we can route to transcription instead of dropping the message.
+    from bot.imessage_handler import extract_audio_attachment
+    audio = extract_audio_attachment(data)
+
+    if not address or not chat_guid or (not text and not audio):
+        logger.info(
+            f"BB webhook: skipping — address={bool(address)} text={bool(text)} "
+            f"audio={bool(audio)} chat_guid={bool(chat_guid)}"
+        )
         return {"ok": True}
 
     # Deduplicate — BlueBubbles re-delivers the same message via several paths
@@ -449,7 +469,10 @@ async def imessage_webhook(request: Request):
     # Evict on the longest window we use so the dict can't grow unbounded.
     _seen = {k: v for k, v in _seen.items() if _now - v < 600}
     _guid_key = f"guid:{message_guid}" if message_guid else None
-    _text_key = f"txt:{address}:{text[:120]}"
+    # Fingerprint on the audio attachment guid when there's no text (an empty-text
+    # key would collide every voice note within the window and wrongly dedup them).
+    _text_key = (f"att:{address}:{audio['guid']}" if (audio and not text)
+                 else f"txt:{address}:{text[:120]}")
     _guid_dup = _guid_key is not None and (_now - _seen.get(_guid_key, 0)) < 600
     _text_dup = (_now - _seen.get(_text_key, 0)) < 45
     if _guid_dup or _text_dup:
@@ -462,10 +485,19 @@ async def imessage_webhook(request: Request):
     _seen[_text_key] = _now
     app.state._seen_guids = _seen
 
-    # Debounce then fire pipeline — batches rapid multi-message inputs
+    # Route: text → normal (debounced) pipeline; audio-only → transcription path.
     import asyncio
-    from bot.imessage_handler import handle_imessage
-    asyncio.create_task(handle_imessage(address, chat_guid, text, message_guid=message_guid))
+    if text:
+        from bot.imessage_handler import handle_imessage
+        asyncio.create_task(
+            handle_imessage(address, chat_guid, text, message_guid=message_guid)
+        )
+    else:  # audio attachment with no text → transcribe then process
+        from bot.imessage_handler import handle_imessage_audio
+        asyncio.create_task(handle_imessage_audio(
+            address, chat_guid, audio["guid"],
+            message_guid=message_guid, transfer_name=audio["transfer_name"],
+        ))
 
     return {"ok": True}
 
