@@ -409,9 +409,9 @@ _RESET_PATTERNS = {
     "reset all", "delete my account", "remove my data",
 }
 
-_RESET_CONFIRM_PHRASE = "RESET confirm"
-
-# Users who have been asked to confirm a reset — waiting for the exact phrase
+# Users who have been asked to confirm a reset. In-memory only, so it doesn't
+# survive a redeploy — that's why the explicit "reset confirm" phrase is accepted
+# without requiring a pending flag (see the confirmation handler).
 _pending_resets: set[str] = set()
 
 _REMIND_ON_PATTERNS = {
@@ -446,6 +446,23 @@ _LINK_PATTERNS = {
 def _match_intent(text: str, patterns: set) -> bool:
     t = text.strip().lower()
     return any(p in t for p in patterns)
+
+
+def _is_reset_confirmation(text: str, pending: bool) -> bool:
+    """
+    True if `text` confirms a full account wipe. Case-INSENSITIVE because iOS
+    auto-capitalizes — users type "Reset confirm", not the literal "RESET confirm",
+    and the old exact-match check silently failed (the message fell through to the
+    LLM, which faked a reset while all data survived).
+
+    The explicit two-word phrase always counts (so it works even after a redeploy
+    drops the in-memory pending flag). A bare "confirm"/"yes" counts only when a
+    reset is actually pending, so a stray "yes" can't trigger a surprise wipe.
+    """
+    norm = text.strip().lower().rstrip(" .!")
+    if norm in ("reset confirm", "confirm reset"):
+        return True
+    return pending and norm in ("confirm", "yes")
 
 
 async def _handle_im_reset(chat_guid: str, user, db) -> bool:
@@ -805,18 +822,21 @@ async def run_imessage_pipeline(address: str, chat_guid: str, raw_text: str,
 
         # ── Natural language command handling (iMessage has no slash commands) ──
 
-        # Confirmed reset — user typed the exact phrase
-        if raw_text.strip() == _RESET_CONFIRM_PHRASE:
+        # Confirmed reset (case-insensitive — see _is_reset_confirmation).
+        if _is_reset_confirmation(raw_text, im_id in _pending_resets):
             _pending_resets.discard(im_id)
             await _handle_im_reset(chat_guid, user, db)
             return
+        # Pending but this message isn't a confirmation → cancel it, so a stray "yes"
+        # later can't trigger a surprise wipe. Falls through to normal processing.
+        _pending_resets.discard(im_id)
 
         # Reset intent detected — ask for confirmation first
         if _match_intent(raw_text, _RESET_PATTERNS):
             _pending_resets.add(im_id)
             await bb_send_text(chat_guid, "just to confirm — this wipes everything.")
             await asyncio.sleep(0.35)
-            await bb_send_text(chat_guid, "type RESET confirm to go ahead.")
+            await bb_send_text(chat_guid, 'reply "confirm" to wipe everything (anything else cancels).')
             return
 
         if user.onboarding_completed:
