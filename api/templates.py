@@ -16,7 +16,23 @@ def _dashboard_html(token: str) -> str:
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<title>Arnie</title>
+<title>Arnie — Dashboard</title>
+<!-- favicon (served from the landing static host) -->
+<link rel="icon" type="image/png" href="https://tryarnie.com/favicon.png">
+<link rel="apple-touch-icon" href="https://tryarnie.com/favicon.png">
+<!-- Open Graph: rich preview when a user shares their dashboard link. Kept generic +
+     branded on purpose — no personal data, since link previews get cached/seen by others. -->
+<meta property="og:type"         content="website">
+<meta property="og:site_name"    content="Arnie">
+<meta property="og:title"        content="Arnie — your coaching dashboard">
+<meta property="og:description"  content="Food, training, and progress in one place. Logged by texting, coached every day.">
+<meta property="og:image"        content="https://tryarnie.com/og-image.png">
+<meta property="og:image:width"  content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card"        content="summary_large_image">
+<meta name="twitter:title"       content="Arnie — your coaching dashboard">
+<meta name="twitter:description" content="Food, training, and progress in one place. Logged by texting, coached every day.">
+<meta name="twitter:image"       content="https://tryarnie.com/og-image.png">
 <script>
 (function(){{
   var t=localStorage.getItem('arnie-theme')||
