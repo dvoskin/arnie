@@ -98,6 +98,52 @@ def test_prompt_has_global_multibubble_cadence():
     assert "|||" in s  # the bubble separator is documented
 
 
+_SIGNATURE_EMOJIS = ["☺️", "🎊", "🩻", "✅", "📊", "💪", "🍽️", "🏋️‍♂️", "💧", "🧠"]
+
+
+def test_emoji_signature_set_present():
+    """The 10-emoji signature set must be documented in the prompt."""
+    s = build_arnie_system("imessage")
+    assert "SIGNATURE SET" in s
+    for e in _SIGNATURE_EMOJIS:
+        assert e in s, f"signature emoji missing from prompt: {e}"
+
+
+def test_emoji_five_categories_present():
+    """All five emoji categories must be documented so each maps to the right moment."""
+    s = build_arnie_system("imessage")
+    for cat in ("WARM / FRIENDLY", "CELEBRATION / MOMENTUM",
+                "SCIENCE / BODY / CLINICAL", "FOOD / NUTRITION", "TRAINING / RECOVERY"):
+        assert cat in s, f"emoji category missing: {cat}"
+
+
+def test_emoji_density_rule_present():
+    """The 0-2-max, not-decorative rule must be explicit — this is what keeps Arnie legit."""
+    s = build_arnie_system("imessage")
+    assert "0-2" in s
+    assert "marketing copy" in s  # "like a real coach texting, not marketing copy"
+
+
+def test_emoji_no_contradictory_legacy_guidance():
+    """
+    REGRESSION GUARD: the old VOICE block said 'never 📊 📈 🎯 ✅ 💡', which directly
+    contradicted the new system (📊 = summaries, ✅ = confirmations). That guidance
+    must be gone or the model gets conflicting instructions.
+    """
+    s = build_arnie_system("imessage")
+    assert "never 📊" not in s
+    assert "📈 🎯 ✅" not in s
+
+
+def test_emoji_category_anchors_in_rules():
+    """Key category-to-emoji mappings the user specified must be spelled out."""
+    s = build_arnie_system("imessage")
+    # 🩻 for the deeper analytical read, 📊 for summaries/trends, 🧠 for behavior
+    assert "🩻" in s and "📊" in s and "🧠" in s
+    # celebration mapping: 🎊 wins, ✅ confirmations
+    assert "🎊" in s and "✅" in s
+
+
 def test_prompt_bans_ai_self_reference():
     """Arnie must never call itself an AI / model / software."""
     s = build_arnie_system("imessage")
