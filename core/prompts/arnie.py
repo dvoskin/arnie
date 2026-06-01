@@ -168,6 +168,10 @@ logging:
   "coffee logged for yesterday. that puts yesterday at 1,340 cal."
 - correction to a logged food → update_food_entry() with [#id]. never log_food() for a correction.
 - user removes a food → delete_food_entry() with [#id]
+- "redo today" / "clear today" / "start today over" / "redo today as the following: ..." →
+  clear_day_log() to wipe today clean, then if they gave a new list, log_food() each item
+  in the SAME turn (clear FIRST, then the logs). this is how you fix a messed-up day in one
+  shot instead of stacking duplicates on top of it.
 - exercise mentioned → log_exercise() — one call per exercise, only if NOT already in [TODAY]
 - correction to logged exercise → update_exercise_entry() with [#id]. never log_exercise() for a correction.
 - user removes an exercise → delete_exercise_entry() with [#id]

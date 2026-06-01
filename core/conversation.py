@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 _LOGGING_TOOLS = frozenset({
     "log_food", "log_exercise", "update_food_entry",
     "delete_food_entry", "update_exercise_entry",
-    "log_body_weight", "log_water",
+    "log_body_weight", "log_water", "clear_day_log",
 })
 
 
@@ -62,12 +62,37 @@ async def run_turn(
     _tag = f"{platform}:{user.id}"
 
     # ── LLM first pass ───────────────────────────────────────────────────────
-    # max_tokens must fit a full multi-item dump: a user listing a whole day of food
-    # produces one log_food tool_use block per item (~100-130 tokens each). At 1024
-    # the response truncated after ~1 item — that's why a 7-item list logged only the
-    # first. 2048 comfortably fits ~15 items; short turns stop early and cost nothing.
+    # Generous token budget on purpose: a user can dump a whole day of food in one
+    # message, which becomes one log_food tool_use block per item (~130 tokens each).
+    # Token cost is NOT the constraint here — a complete, correct log is. At 1024 the
+    # response truncated mid-turn: it logged ~1 item, the rest were cut off, and the
+    # dangling preamble ("Now logging everything:") got sent raw. 4096 fits ~30 items.
     try:
-        result = await chat(messages, system, tools=True, max_tokens=2048)
+        result = await chat(messages, system, tools=True, max_tokens=4096)
+
+        # Self-heal an incomplete turn. Two failure modes, both seen in prod:
+        #   • truncated  — model ran out of budget mid-tool-call (stop_reason)
+        #   • dangling   — model wrote an action preamble ("Now logging everything:",
+        #                  "estimating both:") then stopped with NO tool calls
+        # Either way the user sees a broken promise and nothing logged. Retry ONCE with
+        # a bigger budget and an explicit "finish it now" nudge.
+        _txt = (result.get("text") or "").rstrip()
+        _truncated = result.get("stop_reason") == "max_tokens"
+        _dangling = (not result["tool_calls"]) and _txt.endswith(":")
+        if _truncated or _dangling:
+            logger.warning(
+                f"Incomplete first pass for {_tag} "
+                f"(truncated={_truncated}, dangling={_dangling}) — retrying with nudge"
+            )
+            retry_messages = messages + [
+                {"role": "assistant", "content": _txt or "(started but didn't finish)"},
+                {"role": "user", "content": (
+                    "Finish that now, in ONE message: actually CALL the tools for every "
+                    "item you listed, then confirm with the running total. Don't narrate, "
+                    "don't stop on a colon, don't promise to do it next."
+                )},
+            ]
+            result = await chat(retry_messages, system, tools=True, max_tokens=8192)
     except Exception as e:
         logger.error(f"LLM call failed for {_tag}: {e}")
         resp = Response.from_text(
@@ -162,7 +187,7 @@ async def run_turn(
                 _followup_tried = True
                 response_text = await chat_follow_up(
                     messages, raw_content, tool_calls, tool_results,
-                    system, max_tokens=400,
+                    system, max_tokens=700,
                 )
             except Exception as e:
                 logger.error(f"Onboarding reflection follow-up failed for {_tag}: {e}")
@@ -186,7 +211,7 @@ async def run_turn(
             try:
                 response_text = await chat_follow_up(
                     messages, raw_content, tool_calls, tool_results,
-                    system, max_tokens=400,
+                    system, max_tokens=700,
                 )
             except Exception as e:
                 logger.error(f"Coaching follow-up failed for {_tag}: {e}")
@@ -203,7 +228,7 @@ async def run_turn(
                 try:
                     response_text = await chat_follow_up(
                         messages, raw_content, tool_calls, tool_results,
-                        system, max_tokens=400,
+                        system, max_tokens=700,
                     )
                 except Exception as e:
                     logger.error(f"Follow-up LLM failed for {_tag}: {e}")
@@ -214,7 +239,7 @@ async def run_turn(
             try:
                 response_text = await chat_follow_up(
                     messages, raw_content, tool_calls, tool_results,
-                    system, max_tokens=300,
+                    system, max_tokens=700,
                 )
             except Exception as e:
                 logger.warning(f"Last-resort follow-up failed for {_tag}: {e}")

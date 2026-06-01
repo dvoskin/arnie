@@ -67,6 +67,20 @@ async def test_labeled_yesterday_list_logs_to_yesterday():
 
 
 @pytest.mark.asyncio
+async def test_redo_today_clears_then_relogs():
+    """'redo today as the following: ...' must clear_day_log FIRST, then re-log the
+    items — a clean rebuild in one turn, not new items stacked on the old mess."""
+    from core.llm import chat
+    messages = [{"role": "user", "content": (
+        "redo today as the following: grilled chicken wrap, shnitzel sandwich, 6 cookies"
+    )}]
+    result = await chat(messages, _coach_system(), tools=True, max_tokens=4096)
+    names = [tc["name"] for tc in result["tool_calls"]]
+    assert "clear_day_log" in names, f"redo must clear first; got {names}"
+    assert names.count("log_food") >= 2, f"redo must re-log the new list; got {names}"
+
+
+@pytest.mark.asyncio
 async def test_estimate_request_logs_without_reasking():
     """'guestimate' must produce a log_food call, not another clarifying question."""
     from core.llm import chat

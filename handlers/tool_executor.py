@@ -75,6 +75,10 @@ def deterministic_confirmation(tool_calls, log, prefs) -> str:
     ]
     foods = [f for f in foods if f]
 
+    # Standalone day-clear (no re-log in the same turn) — a clean slate, ask for the rebuild.
+    if "clear_day_log" in names and not (names & {"log_food", "log_exercise", "update_food_entry"}):
+        return "Wiped today clean ✅|||send me what you actually had and I'll rebuild it."
+
     if names & {"log_food", "update_food_entry"}:
         head = (f"{foods[0][:1].upper() + foods[0][1:]} logged." if len(foods) == 1 else "Logged.")
         tail = (f"You're at {cal}/{cal_t} cal today." if cal_t
@@ -320,6 +324,17 @@ async def _dispatch(name, inp, user, today_log, db, source_type):  # noqa: C901
             return f"No food entry #{entry_id} found."
         await db.refresh(today_log)
         return f"Removed food entry #{entry_id}"
+
+    elif name == "clear_day_log":
+        # Wipe today's food/exercise for a clean rebuild. reset_today_log mutates the
+        # same session-cached DailyLog row, so any log_food calls dispatched AFTER this
+        # in the same turn accumulate correctly from zero.
+        from db.queries import reset_today_log
+        existed = await reset_today_log(db, user.id, getattr(user, "timezone", "UTC"))
+        if getattr(today_log, "id", None):
+            await db.refresh(today_log)
+        return ("Today's log wiped clean — totals back to zero. Now re-log whatever they "
+                "gave you." if existed else "Nothing was logged today — clean slate already.")
 
     elif name == "update_exercise_entry":
         if not getattr(today_log, "id", None):

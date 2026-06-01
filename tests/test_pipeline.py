@@ -207,6 +207,53 @@ async def test_multi_item_message_logs_every_item(pipeline_env):
 
 
 @pytest.mark.asyncio
+async def test_redo_today_clears_then_relogs_in_one_turn(pipeline_env):
+    """
+    "Redo today as the following: ..." must wipe today's log and rebuild it in ONE turn
+    (clear_day_log first, then a log_food per item) — not stack the new items on top of
+    a messed-up day. Guards the prod case where babka got logged 4x and nothing matched.
+    """
+    env = pipeline_env
+    addr, chat = "+15550001111", "iMessage;-;+15550001111"
+    await _seed_user(env["Maker"])
+
+    # Turn 1: a messed-up day — the same item logged twice (the duplicate-babka problem).
+    env["set_llm"](text="", tool_calls=[
+        {"name": "log_food", "input": {"food_name": "babka", "calories": 300,
+                                       "protein": 4, "carbs": 40, "fats": 15}},
+        {"name": "log_food", "input": {"food_name": "babka", "calories": 300,
+                                       "protein": 4, "carbs": 40, "fats": 15}},
+    ], follow_up_text="logged.")
+    await env["H"].run_imessage_pipeline(addr, chat, "babka and babka", message_guid="d1")
+
+    from sqlalchemy import select, func
+    from db.models import FoodEntry, DailyLog
+    async with env["Maker"]() as db:
+        n = (await db.execute(select(func.count()).select_from(FoodEntry))).scalar()
+    assert n == 2, f"setup: expected 2 entries before redo, got {n}"
+
+    # Turn 2: redo today clean → clear_day_log FIRST, then the real list.
+    env["set_llm"](text="", tool_calls=[
+        {"name": "clear_day_log", "input": {}},
+        {"name": "log_food", "input": {"food_name": "grilled chicken wrap", "calories": 450,
+                                       "protein": 35, "carbs": 40, "fats": 15}},
+        {"name": "log_food", "input": {"food_name": "shnitzel sandwich", "calories": 600,
+                                       "protein": 30, "carbs": 40, "fats": 20}},
+    ], follow_up_text="wiped it and rebuilt 🎊|||you're at 1,050 today.")
+    await env["H"].run_imessage_pipeline(
+        addr, chat, "redo today as the following: grilled chicken wrap, shnitzel sandwich",
+        message_guid="d2",
+    )
+
+    # Only the 2 new items remain (babkas gone), and the total sums just those.
+    async with env["Maker"]() as db:
+        n = (await db.execute(select(func.count()).select_from(FoodEntry))).scalar()
+        total = (await db.execute(select(func.sum(DailyLog.total_calories)))).scalar()
+    assert n == 2, f"redo should leave exactly the 2 new items, got {n}"
+    assert total == 1050, f"total should be just the rebuilt day (450+600), got {total}"
+
+
+@pytest.mark.asyncio
 async def test_log_persists_once_not_per_bubble(pipeline_env):
     """Even with a multi-bubble reply, the log is written once per event."""
     env = pipeline_env

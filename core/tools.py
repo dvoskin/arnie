@@ -75,6 +75,20 @@ _NUTRITION_TOOLS = [
         },
     },
     {
+        "name": "clear_day_log",
+        "description": (
+            "Wipe ALL of today's food and exercise entries and zero the totals — a clean "
+            "slate. Use when the user wants to REDO or restart today's log: 'redo today', "
+            "'clear today', 'start today over', 'wipe today and re-log', 'reset today's "
+            "food', 'delete everything from today'. "
+            "CRITICAL: if they also gave you the new list in the same message ('redo today "
+            "as the following: ...'), call this FIRST, then immediately call log_food once "
+            "per new item in the SAME turn. One clean rebuild, never a second turn. "
+            "Then confirm: cleared + what's now logged + the new total."
+        ),
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
         "name": "log_water",
         "description": "Log water intake when user mentions drinking water.",
         "input_schema": {
