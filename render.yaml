@@ -13,14 +13,25 @@ services:
     name: arnie-bot
     runtime: python
     buildCommand: pip install -r requirements.txt
+    # preDeployCommand runs AFTER build and BEFORE the new instance serves traffic —
+    # the correct place for migrations. `alembic upgrade head` brings the Postgres
+    # schema to the latest revision (creates everything on a fresh DB; a no-op once
+    # up to date). It does not run on every restart, and won't race instances.
+    preDeployCommand: alembic upgrade head
     startCommand: python main.py
+    # Disk stays: per-user memory/profile files live at /data/users (ARNIE_USERS_DIR),
+    # which is NOT in Postgres. The DB itself is now Render-managed Postgres below.
     disk:
       name: arnie-data
       mountPath: /data
       sizeGB: 1
     envVars:
+      # Postgres (Render-managed). fromDatabase injects the managed DB's connection
+      # string; the app + Alembic coerce its libpq postgres:// form to psycopg3.
       - key: DATABASE_URL
-        value: sqlite+aiosqlite:////data/arnie.db
+        fromDatabase:
+          name: arnie-db
+          property: connectionString
       - key: ARNIE_USERS_DIR
         value: /data/users
       - key: TELEGRAM_BOT_TOKEN
@@ -59,3 +70,11 @@ services:
         value: "Arnie_1026_Bot"
       - key: PROACTIVE_MESSAGING_ENABLED
         value: "false"
+
+databases:
+  # Render-managed Postgres. Replaces the SQLite-on-disk DB (AUDIT #5). Fresh start:
+  # no data is migrated from the old SQLite file (it stays on the disk as a fallback).
+  # The arnie-bot service reads its connection string via DATABASE_URL fromDatabase.
+  - name: arnie-db
+    databaseName: arnie
+    plan: basic-256mb
