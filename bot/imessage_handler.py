@@ -878,14 +878,24 @@ capitalize their name every time you use it."""
             has_logging = any(tc["name"] in logging_tools for tc in tool_calls)
             _followup_tried = False
             if has_logging and not in_onboarding:
-                # CRITICAL: the running totals in a log confirmation must come from
-                # the recomputed DB, never the LLM — the model invents totals
-                # ("1,601/1,800, 192g") and confabulates ("hadn't logged that yet").
-                # deterministic_confirmation reads the authoritative row. (today_log
-                # was refreshed right after tools ran.)
-                response_text = deterministic_confirmation(
-                    tool_calls, today_log, user.preferences
-                )
+                # Let Arnie actually COACH on a log instead of emitting a fixed
+                # template. The authoritative day totals come from the tool result
+                # (the "DAY TOTAL" line _dispatch returns from the refreshed DB row),
+                # and the prompt's "NUMBERS ARE SACRED" rule forces the model to use
+                # ONLY those figures — so we get a real coaching reply without the
+                # model inventing totals. deterministic_confirmation stays as the
+                # fallback below if the model returns nothing.
+                _followup_tried = True
+                try:
+                    response_text = await chat_follow_up(
+                        messages, raw_content, tool_calls, tool_results, system, max_tokens=400
+                    )
+                except Exception as e:
+                    logger.error(f"Coaching follow-up failed for {im_id}: {e}")
+                if not response_text:
+                    response_text = deterministic_confirmation(
+                        tool_calls, today_log, user.preferences
+                    )
             else:
                 need_followup = (tool_calls and raw_content and
                                  (in_onboarding or not response_text))
@@ -915,7 +925,7 @@ capitalize their name every time you use it."""
                         tool_calls, today_log, user.preferences
                     )
                 else:
-                    response_text = "still here. what's up?"
+                    response_text = "Still here. What's the move?"
 
         # ── Build the platform-agnostic Response ──────────────────────────────
         resp = Response.from_text(response_text)

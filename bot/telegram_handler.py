@@ -801,13 +801,34 @@ async def _run_pipeline(update: Update, context: ContextTypes.DEFAULT_TYPE,
         has_logging = any(tc["name"] in logging_tools for tc in tool_calls)
         _followup_tried = False
         if has_logging and not in_onboarding:
-            # CRITICAL: a log confirmation's running totals must come from the
-            # recomputed DB, never the LLM — the model invents totals
-            # ("1,601/1,800, 192g") and confabulates corrections. deterministic_
-            # confirmation reads the authoritative row (refreshed after tools ran).
-            response_text = deterministic_confirmation(
-                tool_calls, today_log, user.preferences
+            # Let Arnie actually COACH on a log instead of emitting a fixed template.
+            # The authoritative day totals come from the tool result (the "DAY TOTAL"
+            # line _dispatch returns from the refreshed DB row), and the prompt's
+            # "NUMBERS ARE SACRED" rule forces the model to use ONLY those figures —
+            # a real coaching reply with no invented totals. deterministic_confirmation
+            # stays as the fallback if the model returns nothing.
+            _followup_tried = True
+            stop_typing2 = asyncio.Event()
+            typing_task2 = asyncio.create_task(
+                _typing_keepalive(context.bot, chat_id, stop_typing2)
             )
+            try:
+                response_text = await chat_follow_up(
+                    messages, raw_content, tool_calls, tool_results, system, max_tokens=400
+                )
+            except Exception as e:
+                logger.error(f"Coaching follow-up failed for {chat_id}: {e}")
+            finally:
+                stop_typing2.set()
+                typing_task2.cancel()
+                try:
+                    await typing_task2
+                except asyncio.CancelledError:
+                    pass
+            if not response_text:
+                response_text = deterministic_confirmation(
+                    tool_calls, today_log, user.preferences
+                )
         else:
             need_followup = (tool_calls and raw_content and
                              (in_onboarding or not response_text))
@@ -848,13 +869,13 @@ async def _run_pipeline(update: Update, context: ContextTypes.DEFAULT_TYPE,
                     tool_calls, today_log, user.preferences
                 )
             else:
-                response_text = "still here. what's up?"
+                response_text = "Still here. What's the move?"
 
     # ── Send response — split on ||| for multi-bubble messaging ─────────────
     bubbles = [b.strip() for b in response_text.split("|||") if b.strip()]
     if not bubbles:
         # Never a bare "got it." dead-end — keep the conversation open.
-        bubbles = ["still here. what's up?"]
+        bubbles = ["Still here. What's the move?"]
 
     for i, bubble in enumerate(bubbles):
         fmt_kwargs = _fmt(bubble)
