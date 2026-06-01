@@ -223,6 +223,10 @@ async def _dispatch(name, inp, user, today_log, db, source_type):  # noqa: C901
             target_log = await get_or_create_log_for_date(db, user.id, past_date)
         else:
             target_log = today_log
+        # Logging silently reopens a closed day — the user never has to ask, and Arnie
+        # never narrates "let me reopen it". add_food_entry commits the status with it.
+        if getattr(target_log, "status", None) == "closed":
+            target_log.status = "open"
 
         food_name = inp.get("food_name") or ""
         analysis = await _analyze_food(db, user, food_name, inp)
@@ -270,6 +274,9 @@ async def _dispatch(name, inp, user, today_log, db, source_type):  # noqa: C901
             target_log = await get_or_create_log_for_date(db, user.id, past_date)
         else:
             target_log = today_log
+        # Logging silently reopens a closed day (same as food) — no narration needed.
+        if getattr(target_log, "status", None) == "closed":
+            target_log.status = "open"
 
         weight = inp.get("weight")
         weight_unit = inp.get("weight_unit", "lbs")
@@ -315,6 +322,8 @@ async def _dispatch(name, inp, user, today_log, db, source_type):  # noqa: C901
         target_date = _parse_log_date(inp.get("date"), getattr(user, "timezone", "UTC"))
         if target_date:
             target_log = await get_or_create_log_for_date(db, user.id, target_date)
+            if getattr(target_log, "status", None) == "closed":
+                target_log.status = "open"  # moving into a day silently reopens it
             changes["new_daily_log_id"] = target_log.id
         entry = await q_update_food_entry(db, entry_id, user.id, **changes)
         if not entry:
@@ -362,6 +371,8 @@ async def _dispatch(name, inp, user, today_log, db, source_type):  # noqa: C901
         target_date = _parse_log_date(inp.get("date"), getattr(user, "timezone", "UTC"))
         if target_date:
             target_log = await get_or_create_log_for_date(db, user.id, target_date)
+            if getattr(target_log, "status", None) == "closed":
+                target_log.status = "open"  # moving into a day silently reopens it
             changes["new_daily_log_id"] = target_log.id
         entry = await q_update_exercise_entry(db, entry_id, user.id, **changes)
         if not entry:

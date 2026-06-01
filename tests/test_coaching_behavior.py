@@ -112,6 +112,37 @@ async def test_put_this_for_yesterday_moves_entries_not_narration():
 
 
 @pytest.mark.asyncio
+async def test_workout_for_yesterday_logs_with_date():
+    """Workouts get the same date-flexibility as food: 'yesterday I benched and squatted'
+    → log_exercise(date='yesterday') per exercise, not today."""
+    from core.llm import chat
+    messages = [{"role": "user", "content": "yesterday I benched 185 5x5 and squatted 225 3x5"}]
+    result = await chat(messages, _coach_system(), tools=True, max_tokens=4096)
+    ex = [tc for tc in result["tool_calls"] if tc["name"] == "log_exercise"]
+    dated = [tc for tc in ex if "yester" in str(tc["input"].get("date", "")).lower()]
+    assert len(ex) >= 2, f"should log both lifts; got {[tc['name'] for tc in result['tool_calls']]}"
+    assert len(dated) >= 2, f"both should carry date=yesterday; got dates {[tc['input'].get('date') for tc in ex]}"
+
+
+@pytest.mark.asyncio
+async def test_closed_day_does_not_narrate_reopening():
+    """Logging to a closed day must NOT explain reopening or steps — just do it + confirm."""
+    from core.llm import chat
+    from core.prompts import build_arnie_system
+    system = build_arnie_system("imessage") + (
+        "\n\n[TODAY]\nStatus: CLOSED (day was wrapped up). 1,800 cal logged.\n"
+        "User: Danny, goal cut."
+    )
+    messages = [{"role": "user", "content": "oh wait i also had a protein bar after"}]
+    result = await chat(messages, system, tools=True, max_tokens=2048)
+    txt = (result.get("text") or "").lower()
+    assert "reopen" not in txt and "closed" not in txt, \
+        f"must not narrate reopening the day: {txt[:200]!r}"
+    assert any(tc["name"] == "log_food" for tc in result["tool_calls"]), \
+        "should just log the bar"
+
+
+@pytest.mark.asyncio
 async def test_estimate_request_logs_without_reasking():
     """'guestimate' must produce a log_food call, not another clarifying question."""
     from core.llm import chat
