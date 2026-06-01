@@ -311,10 +311,14 @@ async def test_first_contact_sends_scripted_intro_no_llm(pipeline_env):
 
 
 @pytest.mark.asyncio
-async def test_brain_dump_all_in_one_completes_and_pushes_to_log(pipeline_env):
-    """After the intro, the user dumps everything in one message. Arnie extracts it
-    in a single update_profile call, onboarding auto-completes, and the reply pushes
-    straight to the first log. Profile saves once; the coaching LLM runs once."""
+async def test_brain_dump_completion_reflects_then_pushes_to_log(pipeline_env):
+    """
+    RETENTION: after the intro, the user dumps everything in one message. Arnie
+    extracts it in a single update_profile call, onboarding auto-completes — and the
+    reply is the REFLECTION (an intelligent read of who they are), generated via the
+    coaching follow-up, NOT a canned "you're in, start logging" template. The
+    reflection is the retention moment; discarding it for boilerplate was the bug.
+    """
     env = pipeline_env
     H = env["H"]
     addr, im_id = "+15550003333", "im:+15550003333"
@@ -326,6 +330,7 @@ async def test_brain_dump_all_in_one_completes_and_pushes_to_log(pipeline_env):
     assert env["calls"]["chat"] == 0
 
     # Turn 2: the all-in-one brain dump → ONE update_profile (name+goal+weight+bonuses).
+    # First pass writes no text (just the tool); the reflection comes from the follow-up.
     env["set_llm"](
         text="",
         tool_calls=[{"name": "update_profile", "input": {"fields": {
@@ -333,6 +338,8 @@ async def test_brain_dump_all_in_one_completes_and_pushes_to_log(pipeline_env):
             "current_weight_kg": 86.0, "goal_weight_kg": 80.0,
             "training_experience": "intermediate",
         }}}],
+        follow_up_text=("got the full picture.|||190 to 178, and training's already "
+                        "there.|||send me what you ate today, rough is fine."),
     )
     await H.run_imessage_pipeline(
         addr, f"iMessage;-;{addr}",
@@ -346,11 +353,52 @@ async def test_brain_dump_all_in_one_completes_and_pushes_to_log(pipeline_env):
         assert (u.name, u.primary_goal, u.current_weight_kg) == ("Danny", "cut", 86.0)
         assert u.onboarding_completed is True
 
-    # The post-dump reply pushes to the first log, no em dash, one LLM call (no dup).
+    # The reply REFLECTS what was understood, then drives to the first log — and it is
+    # NOT the canned "you're in" boilerplate.
     new_bubbles = env["sent"][intro_count:]
+    joined = " ".join(new_bubbles).lower()
     assert "—" not in " ".join(new_bubbles), new_bubbles
-    assert any("today" in s.lower() for s in new_bubbles), new_bubbles
+    assert ("190" in joined or "picture" in joined), f"reflection missing: {new_bubbles}"
+    assert "today" in joined, f"should still drive to first log: {new_bubbles}"
+    assert "you're in" not in joined, f"canned completion leaked: {new_bubbles}"
     assert env["calls"]["chat"] == 1
+    assert env["calls"]["follow_up"] == 1  # reflection generated via the follow-up
+
+
+@pytest.mark.asyncio
+async def test_brain_dump_completion_keeps_first_pass_reflection(pipeline_env):
+    """
+    If the LLM reflects in the SAME response as the update_profile call (text block +
+    tool block), that reflection must be kept — not overwritten by canned completion,
+    and not regenerated via a redundant follow-up.
+    """
+    env = pipeline_env
+    H = env["H"]
+    addr, im_id = "+15550005555", "im:+15550005555"
+
+    # First contact → scripted intro.
+    env["set_llm"](text="")
+    await H.run_imessage_pipeline(addr, f"iMessage;-;{addr}", "hey", message_guid="r0")
+    intro_count = len(env["sent"])
+
+    # Dump turn: the LLM writes the reflection inline AND calls update_profile.
+    reflection = ("alright, got you.|||86kg now, chasing the cut.|||"
+                  "send me what you ate today, rough is fine.")
+    env["set_llm"](
+        text=reflection,
+        tool_calls=[{"name": "update_profile", "input": {"fields": {
+            "name": "Mia", "primary_goal": "cut", "current_weight_kg": 86.0,
+        }}}],
+    )
+    await H.run_imessage_pipeline(
+        addr, f"iMessage;-;{addr}", "I'm Mia, cutting, 86kg", message_guid="r1",
+    )
+
+    new_bubbles = env["sent"][intro_count:]
+    joined = " ".join(new_bubbles).lower()
+    assert "got you" in joined or "chasing the cut" in joined, f"first-pass reflection dropped: {new_bubbles}"
+    assert "you're in" not in joined, "canned completion overwrote the reflection"
+    # No redundant follow-up when the first pass already produced the reflection.
     assert env["calls"]["follow_up"] == 0
 
 

@@ -143,15 +143,35 @@ async def run_turn(
     _followup_tried = False
 
     if just_completed:
-        if on_completion is not None:
-            response_text = on_completion(user)
+        # Onboarding just completed — almost always because the brain dump landed all
+        # three essentials at once. The RETENTION moment here is the reflection: an
+        # intelligent read of who this person is ("190 now, 175 before Mexico, training's
+        # there, food tracking's the lever"), NOT a generic "you're in, start logging"
+        # push. The onboarding system prompt (dump stage) already instructs that
+        # reflection, so prefer the LLM's text. If the first pass only called
+        # update_profile and wrote nothing, generate the reflection via a follow-up.
+        # The canned text / on_completion welcome is the LAST resort, not the default.
+        if response_text and response_text.strip():
+            pass  # LLM reflected alongside the update_profile call — keep it
         else:
-            name = user.name or ""
-            response_text = (
-                f"You're in, {name}. 🎉|||"
-                "Just text me whatever you eat or train and I'll handle the rest.|||"
-                "What've you had today? Let's start there."
-            )
+            try:
+                _followup_tried = True
+                response_text = await chat_follow_up(
+                    messages, raw_content, tool_calls, tool_results,
+                    system, max_tokens=400,
+                )
+            except Exception as e:
+                logger.error(f"Onboarding reflection follow-up failed for {_tag}: {e}")
+            if not (response_text and response_text.strip()):
+                if on_completion is not None:
+                    response_text = on_completion(user)
+                else:
+                    name = user.name or ""
+                    response_text = (
+                        f"You're in, {name}. 🎉|||"
+                        "Just text me whatever you eat or train and I'll handle the rest.|||"
+                        "What've you had today? Let's start there."
+                    )
     else:
         has_logging = any(tc["name"] in _LOGGING_TOOLS for tc in tool_calls)
         if has_logging and not in_onboarding:
