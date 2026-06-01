@@ -235,8 +235,9 @@ async def test_turn_records_then_resolves_profile_question(pipeline_env):
 
 @pytest.mark.asyncio
 async def test_voice_note_transcript_drives_pipeline(pipeline_env, monkeypatch):
-    """End-to-end: a voice note is downloaded + transcribed, echoed back, and the
-    transcript flows through the normal pipeline as if it were typed text."""
+    """End-to-end: a voice note is downloaded + transcribed, and the transcript flows
+    through the normal pipeline as if it were typed text. Arnie does NOT echo the
+    transcript back (a human coach responds, it doesn't parrot you) — it just coaches."""
     env = pipeline_env
     H = env["H"]
     await _seed_user(env["Maker"])
@@ -256,10 +257,12 @@ async def test_voice_note_transcript_drives_pipeline(pipeline_env, monkeypatch):
         message_guid="v1", transfer_name="Audio Message.caf",
     )
 
-    # The transcript was echoed (🎙 "…") AND the pipeline produced a real reply.
-    assert any("had a chicken bowl" in s for s in env["sent"]), env["sent"]
+    # The pipeline produced a real coaching reply...
     assert env["calls"]["chat"] == 1            # pipeline ran exactly once
-    assert len(env["sent"]) >= 2               # echo + at least one reply bubble
+    assert len(env["sent"]) >= 1               # at least one reply bubble
+    # ...and the raw transcript was NOT echoed back verbatim (no 🎙 parrot).
+    assert not any(s.strip() == "had a chicken bowl" for s in env["sent"]), env["sent"]
+    assert not any("🎙" in s for s in env["sent"]), env["sent"]
 
 
 @pytest.mark.asyncio

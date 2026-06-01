@@ -844,7 +844,8 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return
 
-        await update.message.reply_text(f'🎙 "{transcript}"')
+        # Respond to the voice note like any other message — no transcript echo.
+        # Arnie just coaches on what was said (a human coach doesn't parrot you back).
         await _run_pipeline(update, context, transcript, "voice", db)
 
 

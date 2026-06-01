@@ -731,9 +731,9 @@ async def handle_imessage_audio(address: str, chat_guid: str, attachment_guid: s
             )
             return
 
-        # Show what we heard, then process it like any other message — all under
-        # the same lock so a concurrent text can't interleave.
-        await bb_send_text(chat_guid, f'🎙 "{transcript}"')
+        # Process it like any other message — no transcript echo. Arnie just coaches
+        # on what was said (a human coach doesn't parrot you back). Same lock so a
+        # concurrent text can't interleave.
         await run_imessage_pipeline(address, chat_guid, transcript,
                                     message_guid=message_guid)
 
