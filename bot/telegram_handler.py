@@ -824,9 +824,10 @@ async def _run_pipeline(update: Update, context: ContextTypes.DEFAULT_TYPE,
                     except asyncio.CancelledError:
                         pass
 
-    # ── Persist conversation ──────────────────────────────────────────────────
+    # ── Persist conversation (+ turn-health flags on parsed_intent) ────────────
     log_text = "|||".join(turn.response.bubbles)
-    await log_conversation(db, user.id, raw_text, log_text, source_type=source_type)
+    await log_conversation(db, user.id, raw_text, log_text, source_type=source_type,
+                           parsed_intent=(",".join(turn.health_flags) or None))
 
     # ── Adaptive profile refresh (throttled internally to ~3h) ───────────────
     if not turn.in_onboarding:

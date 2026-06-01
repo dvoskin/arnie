@@ -1092,6 +1092,56 @@ async def admin_audit(token: str = Query(...), name: str = Query(...)):
         return JSONResponse({"query": name, "matches": len(out), "users": out})
 
 
+@app.get("/admin/flagged")
+async def admin_flagged(token: str = Query(...), hours: int = Query(48),
+                        limit: int = Query(100)):
+    """
+    Read-only turn-health feed: every conversation turn that a deterministic detector
+    flagged (truncated, retried, stall_shipped, tool_error, user_frustrated) in the
+    last `hours`. This is the 'watch for deviations' surface — the place the screenshots
+    used to come from, now automatic. No writes.
+    """
+    if token != os.getenv("ADMIN_TOKEN", ""):
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+    from sqlalchemy import select, and_
+    from fastapi.responses import JSONResponse
+    from datetime import datetime, timedelta
+    from db.models import ConversationLog, User
+
+    since = datetime.utcnow() - timedelta(hours=hours)
+    async with AsyncSessionLocal() as db:
+        rows = (await db.execute(
+            select(ConversationLog, User.name)
+            .join(User, User.id == ConversationLog.user_id)
+            .where(and_(
+                ConversationLog.parsed_intent.is_not(None),
+                ConversationLog.parsed_intent != "",
+                ConversationLog.timestamp >= since,
+            ))
+            .order_by(ConversationLog.timestamp.desc())
+            .limit(limit)
+        )).all()
+
+    by_flag: dict = {}
+    turns = []
+    for c, uname in rows:
+        flags = [f for f in (c.parsed_intent or "").split(",") if f]
+        for f in flags:
+            by_flag[f] = by_flag.get(f, 0) + 1
+        turns.append({
+            "ts": str(c.timestamp), "user": uname, "user_id": c.user_id,
+            "platform": c.platform, "flags": flags,
+            "sent": (c.raw_message or "")[:200],
+            "reply": (c.response or "")[:200],
+        })
+
+    return JSONResponse({
+        "window_hours": hours, "flagged_turns": len(turns),
+        "by_flag": by_flag, "turns": turns,
+    })
+
+
 # ── Admin dashboard ───────────────────────────────────────────────────────────
 
 @app.get("/admin", response_class=HTMLResponse)

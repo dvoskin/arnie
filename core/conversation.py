@@ -15,6 +15,7 @@ from typing import Any, Callable, Optional
 
 from core.llm import chat, chat_follow_up
 from core.platform import Response, React, FX, onboarding_reaction, detect_moment
+from core.turn_health import looks_like_stall as _looks_like_stall, detect_turn_flags
 from handlers.tool_executor import execute_tool_calls, deterministic_confirmation
 
 logger = logging.getLogger(__name__)
@@ -24,29 +25,6 @@ _LOGGING_TOOLS = frozenset({
     "delete_food_entry", "update_exercise_entry",
     "log_body_weight", "log_water", "clear_day_log",
 })
-
-# Action-commitment phrases that signal a STALL when they appear with NO tool calls:
-# the model promised to do something ("let me delete...", "deleting all of today's...")
-# but emitted nothing, so a broken promise ships and nothing happens. High precision —
-# a normal conversational reply doesn't use these first-person DB-action verbs. Matched
-# case-insensitively. ("let me know" / "let me think" deliberately NOT here.)
-_STALL_MARKERS = (
-    "let me do that", "let me do this", "let me handle this", "let me handle that",
-    "let me delete", "let me clear", "let me log", "let me move", "let me relog",
-    "let me reopen", "let me sort", "let me get that logged",
-    "i need to delete", "i need to log", "i need to clear", "i need to move",
-    "i need to relog", "i need to reopen", "i need to update that",
-    "i'll delete", "i'll clear", "i'll relog", "i'll move that", "i'll handle that",
-    "deleting all", "clearing today", "relogging", "logging everything",
-)
-
-
-def _looks_like_stall(text: str) -> bool:
-    """True if `text` promises an action but (with no tool calls) didn't perform it."""
-    t = (text or "").strip().lower()
-    if not t:
-        return False
-    return t.endswith(":") or t.startswith("on it") or any(m in t for m in _STALL_MARKERS)
 
 
 @dataclasses.dataclass
@@ -59,6 +37,7 @@ class TurnResult:
     onboarding_field_saved: Optional[str]
     today_log: Any                  # may have been created/refreshed during the turn
     user: Any                       # refreshed after tool execution
+    health_flags: list = dataclasses.field(default_factory=list)  # turn-health telemetry
 
 
 async def run_turn(
@@ -83,6 +62,10 @@ async def run_turn(
     """
     _source = source_type or platform
     _tag = f"{platform}:{user.id}"
+    _retried = False  # turn-health: did the self-heal fire this turn?
+    _first_stop_reason = None
+    _user_text = next((m.get("content", "") for m in reversed(messages)
+                       if m.get("role") == "user"), "")
 
     # ── LLM first pass ───────────────────────────────────────────────────────
     # Generous token budget on purpose: a user can dump a whole day of food in one
@@ -103,13 +86,15 @@ async def run_turn(
         # Either way the user sees a broken promise and nothing happens. Retry ONCE with
         # a bigger budget and an explicit "finish it now" nudge.
         _txt = (result.get("text") or "").rstrip()
-        _truncated = result.get("stop_reason") == "max_tokens"
+        _first_stop_reason = result.get("stop_reason")
+        _truncated = _first_stop_reason == "max_tokens"
         _stalled = (not result["tool_calls"]) and _looks_like_stall(_txt)
         if _truncated or _stalled:
             logger.warning(
                 f"Incomplete first pass for {_tag} "
                 f"(truncated={_truncated}, stalled={_stalled}) — retrying with nudge"
             )
+            _retried = True
             retry_messages = messages + [
                 {"role": "assistant", "content": _txt or "(started but didn't finish)"},
                 {"role": "user", "content": (
@@ -322,6 +307,30 @@ async def run_turn(
         from reminders.lifecycle import sync_pending_questions
         await sync_pending_questions(db, user)
 
+    # ── Turn-health telemetry ─────────────────────────────────────────────────
+    # Cheap deterministic detectors so deviations are self-evident (in logs + the
+    # admin audit view) instead of needing a screenshot. Fully wrapped — telemetry
+    # must NEVER affect the reply the user already got.
+    health_flags: list = []
+    try:
+        _tool_error = any(
+            isinstance(v, str) and v.startswith("Error:") for v in tool_results.values()
+        )
+        health_flags = detect_turn_flags(
+            user_text=_user_text if isinstance(_user_text, str) else "",
+            response_text=response_text,
+            has_tool_calls=bool(tool_calls),
+            stop_reason=result.get("stop_reason"),
+            retried=_retried,
+            tool_error=_tool_error,
+        )
+        if _retried and "retried" not in health_flags:
+            health_flags.append("retried")
+        if health_flags:
+            logger.warning(f"TURN_HEALTH {_tag} flags={','.join(health_flags)}")
+    except Exception as e:
+        logger.debug(f"turn-health detection failed for {_tag}: {e}")
+
     return TurnResult(
         response=resp,
         tool_calls=tool_calls,
@@ -330,4 +339,5 @@ async def run_turn(
         onboarding_field_saved=onboarding_field_saved,
         today_log=today_log,
         user=user,
+        health_flags=health_flags,
     )
