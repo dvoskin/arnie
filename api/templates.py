@@ -17,9 +17,10 @@ def _dashboard_html(token: str) -> str:
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>Arnie — Dashboard</title>
-<!-- favicon (served from the landing static host) -->
-<link rel="icon" type="image/png" href="https://tryarnie.com/favicon.png">
-<link rel="apple-touch-icon" href="https://tryarnie.com/favicon.png">
+<!-- favicon served by the dashboard app itself (relative → follows whatever host
+     serves the dashboard, incl. app.tryarnie.com). OG image stays absolute below. -->
+<link rel="icon" type="image/png" href="/favicon.png">
+<link rel="apple-touch-icon" href="/favicon.png">
 <!-- Open Graph: rich preview when a user shares their dashboard link. Kept generic +
      branded on purpose — no personal data, since link previews get cached/seen by others. -->
 <meta property="og:type"         content="website">

@@ -6,7 +6,8 @@ from api.templates import _dashboard_html
 def test_dashboard_head_has_favicon():
     html = _dashboard_html("tok123")
     assert 'rel="icon"' in html
-    assert "tryarnie.com/favicon.png" in html
+    # served by the app itself via a relative path (follows whatever host serves it)
+    assert 'href="/favicon.png"' in html
 
 
 def test_dashboard_head_has_open_graph_image():

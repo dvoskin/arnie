@@ -13,7 +13,7 @@ from typing import Optional
 
 import stripe
 from fastapi import FastAPI, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, FileResponse
 from api.templates import _dashboard_html, _apple_guide_html
 from core.urls import dashboard_url
 from pydantic import BaseModel
@@ -63,6 +63,23 @@ async def healthcheck():
         "commit": os.getenv("RENDER_GIT_COMMIT", "unknown")[:12],
         "branch": os.getenv("RENDER_GIT_BRANCH", "unknown"),
     }
+
+
+# Favicon served by the app itself, so the dashboard's relative /favicon.png resolves
+# on whatever host serves it (app.tryarnie.com or the service host). Source asset is
+# the brand favicon shipped in the repo (landing/favicon.png).
+_FAVICON_PATH = os.path.join(os.path.dirname(__file__), "..", "landing", "favicon.png")
+
+
+@app.get("/favicon.png", include_in_schema=False)
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    if os.path.exists(_FAVICON_PATH):
+        return FileResponse(
+            _FAVICON_PATH, media_type="image/png",
+            headers={"Cache-Control": "public, max-age=604800"},  # 7 days
+        )
+    raise HTTPException(status_code=404, detail="not found")
 
 
 # ── Stripe Webhooks ────────────────────────────────────────────────────────────
