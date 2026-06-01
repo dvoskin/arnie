@@ -1,3 +1,15 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# REFERENCE / INTENDED INFRA — NOT auto-applied.
+# arnie-bot is configured MANUALLY in the Render dashboard (not Blueprint-managed),
+# so Render does not read this file. It documents the intended setup:
+#   - DATABASE_URL points at the Render-managed Postgres `arnie-db` (cutover done
+#     manually; old SQLite file kept on the disk as a fallback).
+#   - `alembic upgrade head` must run on schema changes — set as the dashboard
+#     Pre-Deploy Command (paid instances) or run once in the service Shell.
+#   - The /data disk stays for per-user memory files (ARNIE_USERS_DIR=/data/users).
+# If this service is ever switched to Blueprint management, this spec becomes live —
+# verify the DB `plan` id against the dashboard first.
+# ─────────────────────────────────────────────────────────────────────────────
 services:
   - type: web
     name: arnie-landing

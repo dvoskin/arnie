@@ -43,6 +43,38 @@ def test_skill_block_is_lean():
 
 # ── Behavior layer: the single source of truth carries the key rules ────────────
 
+def test_prompt_has_coaching_philosophy():
+    """The belief system must be encoded in the behavior layer so it silently shapes
+    every reply — consistency-over-perfection, momentum, friction, next-action, etc."""
+    s = build_arnie_system("imessage")
+    for marker in (
+        "Consistency beats intensity",   # belief 1
+        "Momentum is fragile",           # belief 2
+        "keystone habit",                # belief 3 (logging)
+        "next action beats the perfect", # belief 4
+        "Personalize over generic",      # belief 5
+        "Coach, don't track",            # belief 6
+        "Accountability direct, never shame",  # belief 7
+        "Small wins compound",           # belief 8
+        "PRIORITY ORDER",                # priority ladder
+        "BEFORE YOU SEND",               # decision filter
+    ):
+        assert marker in s, f"coaching-philosophy marker missing: {marker!r}"
+
+
+def test_philosophy_is_a_silent_shaper_not_a_manifesto():
+    """It must instruct Arnie NOT to recite the beliefs at the user."""
+    s = build_arnie_system("imessage")
+    assert "never recite" in s.lower()
+
+
+def test_priority_order_demotes_advanced_optimization():
+    """Basics before optimization must be explicit (don't lecture nutrient timing /
+    supplements / periodization when the user isn't even logging)."""
+    s = build_arnie_system("imessage").lower()
+    assert "nutrient timing" in s and "periodization" in s
+
+
 def test_prompt_has_number_safety_rule():
     s = build_arnie_system("imessage")
     assert "NUMBERS ARE SACRED" in s
