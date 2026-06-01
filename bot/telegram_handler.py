@@ -926,9 +926,8 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             from core.prompts.onboarding import INTRO_BUBBLES
             bubbles = list(INTRO_BUBBLES)
             if from_landing:
-                bubbles.insert(
-                    2, "Your 7-day free trial starts now, no app, no spreadsheets."
-                )
+                # Acknowledge the trial right after the greeting, before the value props.
+                bubbles.insert(1, "Your 7-day free trial starts now.")
             for i, bubble in enumerate(bubbles):
                 await update.message.reply_text(bubble)
                 if i < len(bubbles) - 1:

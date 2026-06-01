@@ -544,12 +544,23 @@ async def _send_first_contact_intro(chat_guid: str) -> None:
 
 # ── Landing-page outreach (user enters phone → Arnie texts first) ──────────────
 
-# Acknowledges they signed up, then flows into the same name question.
+# Landing-page outreach variant of the canonical intro: same science-based + memory
+# positioning, but opens by acknowledging they signed up and closes on "2 min to get
+# going". Each element is sent as ITS OWN SMS; newlines stay within that single
+# message (not split into separate bubbles). 3 messages, two lines each.
 _OUTREACH_INTRO = [
-    "hey 👋 it's Arnie",
-    "you signed up on the site, so let's get rolling. i'm your coach for food, training, and progress.",
-    "no app, no forms. just text me like you'd text a friend and i handle the rest.",
-    "takes 2 min to set up. what should I call you?",
+    # Message 1
+    "Hey, I'm Arnie ☺️ You signed up on the site, so let's get you going."
+    "\n\n"
+    "I'm your science-based coach for food, training, and progress.",
+    # Message 2
+    "Text me meals, workouts, weight, goals, or anything you want me to know."
+    "\n\n"
+    "I'll help you log it, learn from it, and coach you better every day. No apps, no forms, no starting over.",
+    # Message 3
+    "I remember your goals, habits, progress, and what works for you."
+    "\n\n"
+    "Takes 2 min to get going. What should I call you?",
 ]
 
 
