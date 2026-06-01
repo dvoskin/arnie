@@ -564,17 +564,20 @@ async def _send_first_contact_intro(chat_guid: str) -> None:
 # Landing-page outreach variant of the canonical intro: same science-based + memory
 # positioning, but opens by acknowledging they signed up and closes on "2 min to get
 # going". Each element is sent as ITS OWN SMS; newlines stay within that single
-# message (not split into separate bubbles). 3 messages, two lines each.
+# message (not split into separate bubbles). First bubble is short so the iMessage
+# screen effect punches on the greeting, not the whole paragraph. 4 messages.
 _OUTREACH_INTRO = [
-    # Message 1
-    "Hey, I'm Arnie ☺️ You signed up on the site, so let's get you going."
+    # Message 1 — short; gets the iMessage screen effect (first bubble only)
+    "Hey, I'm Arnie ☺️",
+    # Message 2
+    "You signed up on the site, so let's get you going."
     "\n\n"
     "I'm your science-based coach for food, training, and progress.",
-    # Message 2
+    # Message 3
     "Text me meals, workouts, weight, goals, or anything you want me to know."
     "\n\n"
     "I'll help you log it, learn from it, and coach you better every day. No apps, no forms, no starting over.",
-    # Message 3
+    # Message 4
     "I remember your goals, habits, progress, and what works for you."
     "\n\n"
     "Takes 2 min to get going. What should I call you?",

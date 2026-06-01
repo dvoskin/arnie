@@ -17,18 +17,21 @@ proactive profile_stats follow-up; city sets timezone whenever they mention it.
 # shared by both platforms so Arnie introduces himself the same way everywhere.
 # IMPORTANT: each list element is sent as ITS OWN SMS/message (one bb_send_text /
 # reply_text call per element). Newlines INSIDE an element stay within that single
-# message — they are NOT split into separate bubbles. So this is 3 messages, each
-# with two lines. The landing-page variant inserts a trial line before the last.
+# message — they are NOT split into separate bubbles. 4 messages: a short punchy
+# greeting (which gets the iMessage screen effect — keeping the effect off the full
+# paragraph), then three two-line messages. Landing variant inserts a trial line.
 INTRO_BUBBLES = [
-    # Message 1
-    "Hey, I'm Arnie ☺️ Your science-based coach for food, training, and progress."
+    # Message 1 — short; gets the iMessage screen effect (first bubble only)
+    "Hey, I'm Arnie ☺️",
+    # Message 2
+    "Your science-based coach for food, training, and progress."
     "\n\n"
     "Text me meals, workouts, weight, goals, or anything you want me to know.",
-    # Message 2
+    # Message 3
     "I'll help you log it, learn from it, and coach you better every day."
     "\n\n"
     "No apps, no forms, no starting over.",
-    # Message 3
+    # Message 4
     "I remember your goals, habits, progress, and what works for you."
     "\n\n"
     "What should I call you?",
