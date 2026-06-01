@@ -460,8 +460,8 @@ async def _handle_im_reset(chat_guid: str, user, db) -> bool:
     try:
         from memory.profile_manager import clear_profile
         await clear_profile(telegram_id)  # wipe the Profile Matrix too
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning(f"clear_profile failed for {telegram_id}: {e}")
     # Don't log a conversation — keeps history empty so the next message
     # re-triggers the full first-contact intro sequence.
     bubbles = [
@@ -625,9 +625,9 @@ async def start_imessage_outreach(raw_phone: str) -> dict:
             if i < len(_OUTREACH_INTRO) - 1:
                 await asyncio.sleep(0.4)
 
-        # Log it so the user's reply continues onboarding (no duplicate intro)
-        await log_conversation(db, user.id, "[landing signup]", "[outreach sent]",
-                               source_type="imessage")
+        # Log actual outreach text so the LLM has full context when the user replies
+        await log_conversation(db, user.id, "[landing signup]",
+                               "|||".join(_OUTREACH_INTRO), source_type="imessage")
         logger.info(f"iMessage outreach sent to {phone}")
         return {"ok": True, "reason": "sent"}
 
@@ -828,10 +828,11 @@ async def run_imessage_pipeline(address: str, chat_guid: str, raw_text: str,
             prior = await get_recent_conversations(db, user.id, limit=1)
             if not prior:
                 await _send_first_contact_intro(chat_guid)
-                # Log this as the first conversation so intro doesn't re-fire
+                # Log the actual intro text so the LLM has full context when
+                # the user replies (knows Arnie asked "First, what should I call you?")
                 await log_conversation(
                     db, user.id, raw_text,
-                    "[intro sent]", source_type="imessage"
+                    "|||".join(_INTRO_BUBBLES), source_type="imessage"
                 )
                 return  # Wait for user to reply with their name
 
@@ -881,17 +882,6 @@ async def run_imessage_pipeline(address: str, chat_guid: str, raw_text: str,
         else:
             today_log = None
             system = build_onboarding_system(user)
-            system += """
-
-[iMessage — plain text only. No HTML tags. No bold. No buttons.]
-
-MESSAGING STYLE — this is non-negotiable:
-split every response into separate bubbles using ||| between them.
-each bubble = one short sentence. sometimes a fragment. like rapid texts.
-vary where emojis land — not always at the end, not always first bubble, sometimes none.
-make it feel like a real person is typing, not a system running a script.
-sentence case, like a real person texting. no em dashes. no corporate language.
-capitalize their name every time you use it."""
 
         # ── Conversation history ───────────────────────────────────────────────
         # During onboarding, ALWAYS load full history — users often give stats

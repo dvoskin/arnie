@@ -106,22 +106,68 @@ def test_prompt_bans_ai_self_reference():
         assert banned in s, f"AI-ban list missing phrase: {banned!r}"
 
 
-def test_onboarding_drives_to_first_action_not_passive():
-    """Onboarding must end on a concrete next step, never a passive 'Updated.'/'Anything else?'."""
+def test_onboarding_each_stage_has_explicit_do_nots():
+    """Every stage prompt must have DO NOT instructions — escape hatches get caught here."""
+    from types import SimpleNamespace
     from handlers.onboarding import build_onboarding_system
-    from db.models import User
-    o = build_onboarding_system(User(telegram_id="t-onb"))
-    assert "First move" in o or "DRIVE TO A FIRST ACTION" in o
-    # the weak endings must be explicitly forbidden in the prompt
-    assert "Anything else?" in o and "weak" in o.lower()
+    def _u(**kw):
+        base = dict(name=None, primary_goal=None, current_weight_kg=None,
+                    goal_weight_kg=None, training_experience=None, city=None,
+                    height_cm=None, age=None, sex=None, onboarding_completed=False)
+        base.update(kw)
+        return SimpleNamespace(**base)
+    for label, user in [
+        ("get_name",   _u()),
+        ("dump_pending_no_goal", _u(name="X")),
+        ("dump_pending_no_weight", _u(name="X", primary_goal="cut")),
+    ]:
+        prompt = build_onboarding_system(user)
+        assert "DO NOT" in prompt, f"Stage {label!r} missing DO NOT guardrails"
+        assert "|||" in prompt, f"Stage {label!r} missing bubble separator example"
 
 
-def test_onboarding_is_multibubble_and_adaptive():
+def test_onboarding_dump_stage_no_skip_path():
+    """
+    REGRESSION GUARD: old ONBOARDING_BASE had 'ADAPT TO THEIR ENERGY' with a skip path
+    that let the LLM jump straight to food logging. Must not exist in any stage prompt.
+    """
+    from types import SimpleNamespace
     from handlers.onboarding import build_onboarding_system
-    from db.models import User
-    o = build_onboarding_system(User(telegram_id="t-onb2"))
-    assert "|||" in o
-    assert "ADAPT TO THEIR ENERGY" in o  # comfortable vs high-detail modes
+    u = SimpleNamespace(name="X", primary_goal=None, current_weight_kg=None,
+                        goal_weight_kg=None, training_experience=None, city=None,
+                        height_cm=None, age=None, sex=None, onboarding_completed=False)
+    prompt = build_onboarding_system(u)
+    assert "ADAPT TO THEIR ENERGY" not in prompt
+    assert "skip setup" not in prompt.lower()
+    assert "just let me log" not in prompt.lower()
+
+
+def test_onboarding_dump_stage_forbids_direct_weight_ask():
+    """
+    REGRESSION GUARD: LLM was skipping brain dump and asking weight directly.
+    The dump_pending stage must explicitly forbid this.
+    """
+    from types import SimpleNamespace
+    from handlers.onboarding import build_onboarding_system
+    u = SimpleNamespace(name="X", primary_goal="cut", current_weight_kg=None,
+                        goal_weight_kg=None, training_experience=None, city=None,
+                        height_cm=None, age=None, sex=None, onboarding_completed=False)
+    prompt = build_onboarding_system(u)
+    assert "Do NOT ask for weight directly" in prompt or \
+           "do not ask for weight" in prompt.lower(), \
+        "dump_pending stage must forbid direct weight ask"
+
+
+def test_onboarding_complete_stage_drives_to_first_log():
+    """Complete stage must push to first log, not ask more questions."""
+    from types import SimpleNamespace
+    from handlers.onboarding import build_onboarding_system
+    u = SimpleNamespace(name="X", primary_goal="cut", current_weight_kg=86.0,
+                        goal_weight_kg=None, training_experience=None, city=None,
+                        height_cm=None, age=None, sex=None, onboarding_completed=False)
+    prompt = build_onboarding_system(u)
+    assert "first log" in prompt.lower() or "ate today" in prompt.lower()
+    assert "DO NOT ask any more setup" in prompt or "no more setup" in prompt.lower()
 
 
 def test_prompt_is_sentence_case_not_forced_lowercase():

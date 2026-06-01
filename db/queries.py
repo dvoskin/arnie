@@ -1,5 +1,5 @@
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_, desc, delete
+from sqlalchemy import select, and_, desc, delete, update
 from sqlalchemy.orm import selectinload
 from db.models import (
     User, UserPreferences, DailyLog, FoodEntry,
@@ -397,28 +397,25 @@ async def reset_all_user_data(db: AsyncSession, user_id: int) -> None:
     await db.execute(delete(MemoryUpdate).where(MemoryUpdate.user_id == user_id))
     await db.execute(delete(HealthSnapshot).where(HealthSnapshot.user_id == user_id))
 
-    # Reset user profile fields
-    result = await db.execute(
-        select(User).where(User.id == user_id).options(selectinload(User.preferences))
+    # Reset user profile fields via Core UPDATE to bypass identity map caching
+    await db.execute(
+        update(User).where(User.id == user_id).values(
+            name=None, age=None, sex=None, height_cm=None,
+            current_weight_kg=None, goal_weight_kg=None, primary_goal=None,
+            training_experience=None, dietary_preferences=None, injuries=None,
+            webhook_token=None, timezone="UTC", onboarding_completed=False,
+        )
     )
-    user = result.scalar_one()
-    for field in ("name", "age", "sex", "height_cm", "current_weight_kg",
-                  "goal_weight_kg", "primary_goal", "training_experience",
-                  "dietary_preferences", "injuries", "webhook_token"):
-        setattr(user, field, None)
-    user.timezone = "UTC"
-    user.onboarding_completed = False
 
     # Reset preferences
-    if user.preferences:
-        p = user.preferences
-        p.coaching_style = "balanced"
-        p.accountability_level = "medium"
-        p.calorie_target = None
-        p.protein_target = None
-        p.wake_time = "07:00"
-        p.sleep_time = "23:00"
-        p.proactive_messaging_enabled = False
+    await db.execute(
+        update(UserPreferences).where(UserPreferences.user_id == user_id).values(
+            coaching_style="balanced", accountability_level="medium",
+            calorie_target=None, protein_target=None,
+            wake_time="07:00", sleep_time="23:00",
+            proactive_messaging_enabled=False,
+        )
+    )
 
     await db.commit()
 
