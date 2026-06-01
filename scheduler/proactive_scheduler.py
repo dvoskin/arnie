@@ -60,6 +60,20 @@ from core.prompts.nudges import (
     NEW_USER_SLOT_INSTRUCTIONS as _NEW_USER_SLOT_INSTRUCTIONS,
 )
 
+# Eligibility decisions live in the reminders package now — the scheduler is the
+# cron driver that asks "may I, and what" and then renders + sends. These aliases
+# keep the historical private names (`_in_window`, `_has_timezone`, `_pacing_pct`)
+# as module attributes so existing callers/tests are unaffected.
+from reminders.eligibility import (
+    in_window as _in_window,
+    has_timezone as _has_timezone,
+    pacing_pct as _pacing_pct,
+    clamp_window as _clamp_window,
+    is_in_live_conversation as _is_live_convo,
+    should_skip_linked as _should_skip_linked,
+    proactive_pref_on as _proactive_pref_on,
+)
+
 
 def _hours_since_created(user) -> float:
     """Hours elapsed since user.created_at (UTC). Returns 999 if unknown."""
@@ -200,23 +214,6 @@ async def _send(telegram_id: str, text: str, effect: str = None):
         await bot.close()
     except Exception as e:
         logger.error(f"Proactive send failed → {telegram_id}: {e}")
-
-
-def _in_window(hhmm: str, wake: str, sleep: str) -> bool:
-    return wake <= hhmm <= sleep
-
-
-def _pacing_pct(hour: int, minute: int, wake: str, sleep: str) -> float:
-    """Fraction of the waking day elapsed (0.0–1.0)."""
-    wh, wm = int(wake.split(":")[0]), int(wake.split(":")[1])
-    sh, sm = int(sleep.split(":")[0]), int(sleep.split(":")[1])
-    wake_min = wh * 60 + wm
-    sleep_min = sh * 60 + sm
-    now_min = hour * 60 + minute
-    day_len = sleep_min - wake_min
-    if day_len <= 0:
-        return 0.5
-    return max(0.0, min(1.0, (now_min - wake_min) / day_len))
 
 
 async def _llm_nudge(user, log, prefs, health_snap, slot: str, name: str) -> str:
@@ -402,15 +399,6 @@ async def _llm_weekly_recap(user, prefs, db, name: str) -> str:
         return ""
 
 
-def _has_timezone(user) -> bool:
-    """
-    True only if we know the user's real timezone. The column defaults to "UTC",
-    and our city resolver never returns "UTC" for any city, so "UTC"/None means
-    "unknown" — and we must NOT send timed proactive messages (would risk 3am sends).
-    """
-    return bool(user.timezone) and user.timezone != "UTC"
-
-
 # Varied, voice-matched one-time asks for legacy users missing a timezone.
 _CITY_NUDGES = [
     "Quick one, what city are you in?|||Just so my check-ins land during your day and not at 3am 😅",
@@ -440,6 +428,77 @@ async def _maybe_send_city_nudge(db, user, prefs):
     logger.info(f"Sent one-time city/timezone nudge to user {user.id}")
 
 
+async def _llm_followup(user, pq, name: str) -> str:
+    """
+    Generate a natural re-ask for an unanswered question, voiced like a friend
+    circling back. Phrasing pressure scales with the question's tier + how many
+    times we've already asked (reminders.pending.follow_up_tone). '' on failure.
+    """
+    from core.llm import chat
+    from reminders.pending import follow_up_tone
+
+    lang = getattr(getattr(user, "preferences", None), "preferred_language", None) or "English"
+    tone = follow_up_tone(pq)
+    prompt = (
+        f"Athlete: {name}, language={lang}\n"
+        f"Earlier you asked them this and they never answered:\n"
+        f"  \"{pq.question}\"\n"
+        f"Circle back and re-ask it ONCE, naturally — like a friend who genuinely "
+        f"wants to know, not a form re-prompt. {tone}\n"
+        f"Do NOT say 'I asked earlier' or reference that they ignored you. "
+        f"1-2 short bubbles split with |||."
+    )
+    try:
+        result = await chat(
+            [{"role": "user", "content": prompt}],
+            system=_NUDGE_SYSTEM,
+            tools=False,
+            max_tokens=120,
+            model="claude-haiku-4-5-20251001",
+        )
+        return (result.get("text") or "").strip()
+    except Exception as e:
+        logger.error(f"Follow-up generation failed for user {user.id}: {e}")
+        return ""
+
+
+async def _maybe_followup_pending(db, user, send_id: str, name: str,
+                                  mins_since) -> bool:
+    """
+    If the user has a due, unanswered question, re-ask the highest-priority one.
+    Returns True if a follow-up was sent (caller skips other nudges this tick).
+
+    The reminders layer owns the decision (which question, whether it's time);
+    this function is the IO: generate → send → record the re-ask. Resolution
+    (marking it answered) happens on the user's next inbound turn, not here.
+    """
+    from db.queries import (
+        get_open_pending_questions, mark_pending_question_followed_up,
+    )
+    from reminders.pending import select_follow_up
+
+    try:
+        open_qs = await get_open_pending_questions(db, user.id)
+        if not open_qs:
+            return False
+        pq = select_follow_up(open_qs, mins_since_last_exchange=mins_since)
+        if pq is None:
+            return False
+        msg = await _llm_followup(user, pq, name)
+        if not msg:
+            return False
+        await _send(send_id, msg)
+        await mark_pending_question_followed_up(db, pq.id)
+        logger.info(
+            f"Follow-up re-ask ({pq.kind}, tier={pq.tier}, "
+            f"attempt={pq.follow_up_count}) → user {user.id}"
+        )
+        return True
+    except Exception as e:
+        logger.error(f"Pending follow-up error for user {user.id}: {e}")
+        return False
+
+
 async def _run_reminders():
     from db.database import AsyncSessionLocal
     from db.queries import get_all_active_users, get_today_log, get_recent_health_snapshots
@@ -458,7 +517,7 @@ async def _run_reminders():
             # (on the account they linked into). Gated by the linking flag so
             # turning linking off cleanly reverts to per-row behavior.
             from db.queries import linking_enabled, resolve_send_target
-            if linking_enabled() and user.linked_to_user_id:
+            if _should_skip_linked(user, linking_enabled()):
                 continue
 
             # Route this user's proactive messages to their preferred platform
@@ -469,10 +528,10 @@ async def _run_reminders():
             # If the user exchanged messages with Arnie in the last ~25 min, they're
             # already engaged — a scheduled nudge would be a jarring non-sequitur.
             # Skip this tick; it re-checks 30 min later when the thread's gone quiet.
-            _last_u, _last_a = "", ""
+            mins_since, _last_u, _last_a = None, "", ""
             try:
                 mins_since, _last_u, _last_a = await _last_exchange(db, user.id)
-                if mins_since is not None and mins_since < 25:
+                if _is_live_convo(mins_since):
                     continue
             except Exception:
                 pass
@@ -525,7 +584,7 @@ async def _run_reminders():
                 logger.error(f"Day report error for user {user.id}: {e}")
 
             # Proactive nudges — default ON for all onboarded users
-            if not prefs or not prefs.proactive_messaging_enabled:
+            if not _proactive_pref_on(prefs):
                 continue
 
             try:
@@ -537,8 +596,7 @@ async def _run_reminders():
                 # Hard-cap the proactive window to 9am-9pm local, even if the
                 # user's stored wake/sleep is wider. Respects a TIGHTER personal
                 # window (e.g. wake 10:00) but never sends before 9am or after 9pm.
-                wake = max(prefs.wake_time or "09:00", "09:00")
-                sleep = min(prefs.sleep_time or "21:00", "21:00")
+                wake, sleep = _clamp_window(prefs)
                 if not _in_window(hhmm, wake, sleep):
                     continue
 
@@ -550,6 +608,13 @@ async def _run_reminders():
                 health_snap = health_snaps[0] if health_snaps else None
 
                 day_pct = _pacing_pct(hour, minute, wake, sleep)
+
+                # ── Context-aware follow-up: re-ask an unanswered open question ──
+                # Highest priority inside the window — a hanging question Arnie
+                # asked outranks a generic slot nudge. The reminders layer picks
+                # the one due question (tier-scaled timing) and we re-ask it once.
+                if await _maybe_followup_pending(db, user, send_id, name, mins_since):
+                    continue  # one proactive message per tick
 
                 # ── New user engagement burst (first 72 hours post-onboarding) ──
                 # Fires at fixed intervals after account creation. Independent of
