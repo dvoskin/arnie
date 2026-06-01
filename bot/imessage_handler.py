@@ -37,14 +37,9 @@ from db.queries import (
     get_recent_conversations, log_conversation,
     reload_user, get_or_create_webhook_token,
 )
-from core.llm import chat, chat_follow_up
-from core.context_builder import build_context, fmt_log
-from core.platform import (
-    Response, React, FX, IMessageAdapter, onboarding_reaction, detect_moment,
-)
+from core.context_builder import build_context
+from core.platform import Response, React, FX, IMessageAdapter
 from handlers.onboarding import build_onboarding_system, is_onboarding_complete
-from handlers.tool_executor import execute_tool_calls, deterministic_confirmation
-from memory.reflection import maybe_update_memory
 
 logger = logging.getLogger(__name__)
 
@@ -331,7 +326,7 @@ def _im_user_id(address: str) -> str:
 # ── Core pipeline ──────────────────────────────────────────────────────────────
 
 from core.prompts import build_arnie_system as _build_arnie_system
-from bot.telegram_handler import _welcome_message, _calc_targets
+from bot.telegram_handler import _calc_targets
 
 
 # ── Natural language command detection ────────────────────────────────────────

@@ -25,13 +25,12 @@ from db.queries import (
     reload_user, reset_today_log, reset_all_user_data, get_or_create_webhook_token,
     add_feedback, clear_today_conversations, get_recent_logs,
 )
-from core.llm import chat, chat_follow_up
+from core.llm import chat
 from core.context_builder import build_context, fmt_log
-from core.platform import React, onboarding_reaction, detect_moment
+from core.platform import React
 from handlers.onboarding import (
     build_onboarding_system, get_onboarding_keyboard, is_onboarding_complete,
 )
-from handlers.tool_executor import execute_tool_calls, deterministic_confirmation
 from handlers.daily_closeout import generate_closeout
 from memory.reflection import maybe_update_memory
 from multimodal.voice_handler import process_voice
@@ -688,13 +687,41 @@ async def _run_pipeline(update: Update, context: ContextTypes.DEFAULT_TYPE,
     # are always visible to the LLM (prevents re-asking for info already given).
     messages = await _build_messages(db, user.id, raw_text, extended=in_onboarding)
 
-    # ── LLM call with typing indicator ────────────────────────────────────────
+    # ── Telegram image callback: reply_photo (with text fallback) ────────────
+    async def _on_image(url: str, caption: str) -> None:
+        try:
+            await update.message.reply_photo(photo=url, caption=caption or None)
+        except Exception as e:
+            logger.error(f"Failed to send generated image: {e}")
+            await update.message.reply_text(
+                "Image was generated but couldn't send. Try asking again."
+            )
+
+    # ── Completion text for Telegram: rich HTML welcome with targets ──────────
+    def _tg_completion(u) -> str:
+        prefs = u.preferences
+        has_targets = bool(prefs and prefs.calorie_target)
+        return _welcome_message(
+            name=u.name or "",
+            has_targets=has_targets,
+            primary_goal=u.primary_goal,
+            calorie_target=prefs.calorie_target if prefs else None,
+            protein_target=prefs.protein_target if prefs else None,
+        )
+
+    # ── Typing keepalive wraps the shared pipeline core ───────────────────────
     stop_typing = asyncio.Event()
     typing_task = asyncio.create_task(
         _typing_keepalive(context.bot, chat_id, stop_typing)
     )
+    from core.conversation import run_turn
     try:
-        result = await chat(messages, system, tools=True, max_tokens=1024)
+        turn = await run_turn(
+            user, db, messages, system, platform="telegram",
+            in_onboarding=in_onboarding, was_onboarding=was_onboarding,
+            today_log=today_log, source_type=source_type,
+            on_image=_on_image, on_completion=_tg_completion,
+        )
     finally:
         stop_typing.set()
         typing_task.cancel()
@@ -703,201 +730,36 @@ async def _run_pipeline(update: Update, context: ContextTypes.DEFAULT_TYPE,
         except asyncio.CancelledError:
             pass
 
-    response_text = result["text"]
-    tool_calls = result["tool_calls"]
-    raw_content = result["raw_content"]
-
-    # ── Execute tools ─────────────────────────────────────────────────────────
-    tool_results = {}
-    if tool_calls:
-        if today_log is None and not in_onboarding:
-            today_log = await get_or_create_today_log(db, user.id, user.timezone or "UTC")
-
-        _log_for_tools = today_log
-        if _log_for_tools is None:
-            class _FakeLog:
-                id = None
-                total_calories = 0; total_protein = 0; total_carbs = 0
-                total_fats = 0; total_water_ml = 0
-                workout_completed = False; cardio_completed = False
-                food_entries = []; exercise_entries = []
-            _log_for_tools = _FakeLog()
-
-        tool_results = await execute_tool_calls(
-            tool_calls, user, _log_for_tools, db, source_type
-        )
-
-        # ── Send any generated images, replace dict results with string for LLM ──
-        for tname, tresult in list(tool_results.items()):
-            if isinstance(tresult, dict) and tresult.get("_type") == "image":
-                try:
-                    await update.message.reply_photo(
-                        photo=tresult["url"],
-                        caption=tresult.get("caption") or None,
-                    )
-                except Exception as e:
-                    logger.error(f"Failed to send generated image: {e}")
-                    await update.message.reply_text(
-                        "Image was generated but couldn't send. Try asking again."
-                    )
-                # Replace the dict with a string so chat_follow_up doesn't choke
-                tool_results[tname] = (
-                    f"Image generated and sent to user. "
-                    f"Caption: {tresult.get('caption', '')}"
-                )
-
-        user = await reload_user(db, user.id)
-        if today_log and hasattr(today_log, "id") and today_log.id:
-            await db.refresh(today_log)
-
-        # ── Reaction parity with iMessage — react to the user's message ───────
-        try:
-            _react = None
-            if was_onboarding:
-                for tc in tool_calls:
-                    if tc["name"] == "update_profile":
-                        f = tc.get("input", {}).get("fields", {})
-                        for fld in ("name", "current_weight_kg", "height_cm",
-                                    "primary_goal", "training_experience", "calorie_target"):
-                            if fld in f:
-                                _react = onboarding_reaction(
-                                    "current_weight_kg" if fld == "height_cm" else fld
-                                )
-                                break
-            else:
-                # Shared coaching-moment detection — same logic as iMessage
-                _react = detect_moment(response_text, tool_calls).reaction
-            if _react:
-                await _tg_react(context.bot, chat_id, update.message.message_id, _react)
-        except Exception as e:
-            logger.debug(f"Telegram reaction failed (non-fatal): {e}")
-
-        # Rebuild system prompt with updated profile state
-        in_onboarding = not user.onboarding_completed
-        if in_onboarding:
-            system = build_onboarding_system(user)
-
-    # ── Detect onboarding just completed this turn ───────────────────────────
-    just_completed = was_onboarding and not in_onboarding
-
-    # ── Follow-up text after tool calls ──────────────────────────────────────
-    # Onboarding just finished → send the welcome message, skip LLM follow-up
-    # Still in onboarding → ALWAYS follow-up so next question is included
-    # Normal mode → only follow-up when first pass had no text
-    if just_completed:
-        prefs = user.preferences
-        has_targets = bool(prefs and prefs.calorie_target)
-        response_text = _welcome_message(
-            name=user.name or "",
-            has_targets=has_targets,
-            primary_goal=user.primary_goal,
-            calorie_target=prefs.calorie_target if prefs else None,
-            protein_target=prefs.protein_target if prefs else None,
-        )
-    else:
-        logging_tools = {"log_food", "log_exercise", "update_food_entry",
-                         "delete_food_entry", "update_exercise_entry",
-                         "log_body_weight", "log_water"}
-        has_logging = any(tc["name"] in logging_tools for tc in tool_calls)
-        _followup_tried = False
-        if has_logging and not in_onboarding:
-            # Let Arnie actually COACH on a log instead of emitting a fixed template.
-            # The authoritative day totals come from the tool result (the "DAY TOTAL"
-            # line _dispatch returns from the refreshed DB row), and the prompt's
-            # "NUMBERS ARE SACRED" rule forces the model to use ONLY those figures —
-            # a real coaching reply with no invented totals. deterministic_confirmation
-            # stays as the fallback if the model returns nothing.
-            _followup_tried = True
-            stop_typing2 = asyncio.Event()
-            typing_task2 = asyncio.create_task(
-                _typing_keepalive(context.bot, chat_id, stop_typing2)
+    # ── Apply Telegram reaction to the user's message ─────────────────────────
+    try:
+        if turn.response.reaction:
+            await _tg_react(
+                context.bot, chat_id, update.message.message_id, turn.response.reaction
             )
-            try:
-                response_text = await chat_follow_up(
-                    messages, raw_content, tool_calls, tool_results, system, max_tokens=400
-                )
-            except Exception as e:
-                logger.error(f"Coaching follow-up failed for {chat_id}: {e}")
-            finally:
-                stop_typing2.set()
-                typing_task2.cancel()
-                try:
-                    await typing_task2
-                except asyncio.CancelledError:
-                    pass
-            if not response_text:
-                response_text = deterministic_confirmation(
-                    tool_calls, today_log, user.preferences
-                )
-        else:
-            need_followup = (tool_calls and raw_content and
-                             (in_onboarding or not response_text))
-            if need_followup:
-                _followup_tried = True
-                stop_typing2 = asyncio.Event()
-                typing_task2 = asyncio.create_task(
-                    _typing_keepalive(context.bot, chat_id, stop_typing2)
-                )
-                try:
-                    response_text = await chat_follow_up(
-                        messages, raw_content, tool_calls, tool_results, system, max_tokens=400
-                    )
-                except Exception as e:
-                    logger.error(f"Follow-up LLM failed for {chat_id}: {e}")
-                finally:
-                    stop_typing2.set()
-                    typing_task2.cancel()
-                    try:
-                        await typing_task2
-                    except asyncio.CancelledError:
-                        pass
+    except Exception as e:
+        logger.debug(f"Telegram reaction failed (non-fatal): {e}")
 
-    if not response_text:
-        # Only follow-up here if we didn't already — re-calling the same LLM with
-        # identical args just adds latency (felt as a slow/glitchy reply).
-        if tool_calls and raw_content and not locals().get("_followup_tried"):
-            try:
-                response_text = await chat_follow_up(
-                    messages, raw_content, tool_calls, tool_results, system, max_tokens=300
-                )
-            except Exception:
-                pass
-        if not response_text:
-            # Never a bare "done." — build a real confirmation from what was logged
-            if tool_calls:
-                response_text = deterministic_confirmation(
-                    tool_calls, today_log, user.preferences
-                )
-            else:
-                response_text = "Still here. What's the move?"
-
-    # ── Send response — split on ||| for multi-bubble messaging ─────────────
-    bubbles = [b.strip() for b in response_text.split("|||") if b.strip()]
-    if not bubbles:
-        # Never a bare "got it." dead-end — keep the conversation open.
-        bubbles = ["Still here. What's the move?"]
-
-    for i, bubble in enumerate(bubbles):
+    # ── Send response bubbles ─────────────────────────────────────────────────
+    for i, bubble in enumerate(turn.response.bubbles):
         fmt_kwargs = _fmt(bubble)
-        is_last = (i == len(bubbles) - 1)
+        is_last = (i == len(turn.response.bubbles) - 1)
 
-        if just_completed and is_last:
+        if turn.just_completed and is_last:
             fmt_kwargs["reply_markup"] = ReplyKeyboardRemove()
-        elif in_onboarding and is_last:
-            kb = get_onboarding_keyboard(user)
+        elif turn.in_onboarding and is_last:
+            kb = get_onboarding_keyboard(turn.user)
             if kb:
                 fmt_kwargs["reply_markup"] = kb
 
         await update.message.reply_text(**fmt_kwargs)
 
-        # Short pause between bubbles — fast enough to feel like rapid texting
         if not is_last:
             await asyncio.sleep(0.25)
 
-    # ── Post-onboarding: send dashboard as a second message with inline button ─
-    if just_completed:
+    # ── Post-onboarding: dashboard as an inline button (Telegram-specific) ────
+    if turn.just_completed:
         try:
-            token = await get_or_create_webhook_token(db, user.id)
+            token = await get_or_create_webhook_token(db, turn.user.id)
             base_url = os.getenv("RENDER_EXTERNAL_URL", "http://localhost:10000").rstrip("/")
             dash_url = f"{base_url}/dashboard/{token}"
             dash_kb = InlineKeyboardMarkup([[
@@ -911,10 +773,10 @@ async def _run_pipeline(update: Update, context: ContextTypes.DEFAULT_TYPE,
             logger.warning(f"Could not send dashboard link after onboarding: {e}")
 
     # ── Workout performance analysis (2+ exercises logged in one turn) ────────
-    if tool_calls and not in_onboarding:
-        exercise_calls = [tc for tc in tool_calls if tc["name"] == "log_exercise"]
+    if turn.tool_calls and not turn.in_onboarding:
+        exercise_calls = [tc for tc in turn.tool_calls if tc["name"] == "log_exercise"]
         if len(exercise_calls) >= 2:
-            analysis = await _generate_workout_analysis(user, exercise_calls, db)
+            analysis = await _generate_workout_analysis(turn.user, exercise_calls, db)
             if analysis:
                 stop_wa = asyncio.Event()
                 typing_wa = asyncio.create_task(
@@ -931,13 +793,14 @@ async def _run_pipeline(update: Update, context: ContextTypes.DEFAULT_TYPE,
                         pass
 
     # ── Persist conversation ──────────────────────────────────────────────────
-    await log_conversation(db, user.id, raw_text, response_text, source_type=source_type)
+    log_text = "|||".join(turn.response.bubbles)
+    await log_conversation(db, user.id, raw_text, log_text, source_type=source_type)
 
     # ── Adaptive profile refresh (throttled internally to ~3h) ───────────────
-    if not in_onboarding:
+    if not turn.in_onboarding:
         try:
             from memory.profile_updater import maybe_update_profile
-            await maybe_update_profile(user, db)
+            await maybe_update_profile(turn.user, db)
         except Exception as e:
             logger.error(f"Profile update error: {e}")
 
