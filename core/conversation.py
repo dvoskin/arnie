@@ -15,7 +15,11 @@ from typing import Any, Callable, Optional
 
 from core.llm import chat, chat_follow_up
 from core.platform import Response, React, FX, onboarding_reaction, detect_moment
-from core.turn_health import looks_like_stall as _looks_like_stall, detect_turn_flags
+from core.turn_health import (
+    looks_like_stall as _looks_like_stall,
+    looks_like_dead_end as _looks_like_dead_end,
+    detect_turn_flags,
+)
 from handlers.tool_executor import execute_tool_calls, deterministic_confirmation
 
 logger = logging.getLogger(__name__)
@@ -263,6 +267,38 @@ async def run_turn(
             else:
                 response_text = "Still here. What's the move?"
 
+    # ── Anti-dead-end guard ────────────────────────────────────────────────────
+    # "done" / "got it" / "logged" as the WHOLE reply is banned — it kills the
+    # conversation, and it's especially wrong right after the user ANSWERED a question
+    # (that should continue, not close). The model still does it despite the prompt
+    # rule, so enforce it in code: if a tool ran, confirm with the authoritative total;
+    # otherwise retry once for a substantive reply.
+    _dead_ended = False
+    try:
+        if _looks_like_dead_end(response_text):
+            _dead_ended = True
+            logger.warning(f"Dead-end reply for {_tag}: {response_text[:60]!r} — repairing")
+            if tool_calls:
+                response_text = deterministic_confirmation(
+                    tool_calls, today_log, user.preferences
+                )
+            else:
+                _retry = await chat(
+                    messages + [
+                        {"role": "assistant", "content": response_text},
+                        {"role": "user", "content": (
+                            "that's a dead-end reply. don't answer with just "
+                            "'done'/'got it'/'logged'. react to what i actually said and "
+                            "give a read or a next step."
+                        )},
+                    ],
+                    system, tools=False, max_tokens=700,
+                )
+                if (_retry.get("text") or "").strip():
+                    response_text = _retry["text"]
+    except Exception as e:
+        logger.debug(f"dead-end guard failed for {_tag}: {e}")
+
     # ── Build the platform-agnostic Response ──────────────────────────────────
     resp = Response.from_text(response_text)
 
@@ -326,6 +362,8 @@ async def run_turn(
         )
         if _retried and "retried" not in health_flags:
             health_flags.append("retried")
+        if _dead_ended:
+            health_flags.append("dead_end")
         if health_flags:
             logger.warning(f"TURN_HEALTH {_tag} flags={','.join(health_flags)}")
     except Exception as e:

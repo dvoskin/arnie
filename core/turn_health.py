@@ -46,6 +46,30 @@ def looks_like_stall(text: str) -> bool:
     return t.endswith(":") or t.startswith("on it") or any(m in t for m in _STALL_MARKERS)
 
 
+# Bare acknowledgments that are banned as a COMPLETE reply — they dead-end the
+# conversation and add nothing. Especially wrong right after the user answered a
+# question (that should continue, not close).
+_DEAD_END_PHRASES = {
+    "done", "got it", "gotcha", "logged", "recorded", "noted", "okay", "ok",
+    "perfect", "sounds good", "all set", "updated", "great", "nice", "cool",
+    "yep", "yup", "sure", "alright", "roger",
+}
+
+
+def looks_like_dead_end(text: str) -> bool:
+    """
+    True if the WHOLE reply is just a bare acknowledgment ("done", "got it", "logged",
+    even "done ✅"). Substance after the word ("done, you're at 450") is fine — only a
+    reply that reduces to a dead-end token is flagged.
+    """
+    t = (text or "").replace("|||", " ").strip().lower()
+    if not t:
+        return False
+    core = re.sub(r"[^a-z' ]+", " ", t)   # strip emoji / digits / punctuation
+    core = re.sub(r"\s+", " ", core).strip()
+    return core in _DEAD_END_PHRASES
+
+
 def detect_frustration(user_text: str) -> bool:
     return bool(user_text and _FRUSTRATION.search(user_text))
 

@@ -1,5 +1,26 @@
 """Turn-health detectors — the deterministic signals that flag a bad turn."""
-from core.turn_health import looks_like_stall, detect_frustration, detect_turn_flags
+from core.turn_health import (
+    looks_like_stall, looks_like_dead_end, detect_frustration, detect_turn_flags,
+)
+
+
+# ── dead-end detection ──────────────────────────────────────────────────────────
+
+def test_dead_end_catches_bare_acknowledgments():
+    for txt in ("done", "Done.", "done ✅", "got it", "Got it 👍", "logged",
+                "noted", "all set", "ok", "Updated.", "perfect", "nice 🔥"):
+        assert looks_like_dead_end(txt), f"should flag dead-end: {txt!r}"
+
+
+def test_dead_end_allows_substance():
+    for txt in (
+        "done, you're at 450 for the day.",
+        "logged it 👊|||that's 1,840/2,100.",
+        "got it, what's the dinner plan?",
+        "nice, that's a strong protein hit.",
+        "",
+    ):
+        assert not looks_like_dead_end(txt), f"false positive on: {txt!r}"
 
 
 # ── stall detection ────────────────────────────────────────────────────────────

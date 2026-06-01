@@ -123,6 +123,33 @@ async def test_conversational_no_tool_reply_not_retried(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_bare_done_after_an_answer_is_repaired(monkeypatch):
+    """
+    The user answered a question and the model replied just "done." — a banned dead-end.
+    With no tool calls, run_turn retries once for a substantive reply, and the bare
+    "done" never reaches the user.
+    """
+    fake_chat, state = _seq_chat([
+        {"text": "done.", "tool_calls": [], "raw_content": [], "stop_reason": "end_turn"},
+        {"text": "got it, 2,000 a day is a fine base.|||that puts your cut around 1,650. "
+                 "what's a normal breakfast look like?",
+         "tool_calls": [], "raw_content": [], "stop_reason": "end_turn"},
+    ])
+    monkeypatch.setattr(C, "chat", fake_chat)
+
+    turn = await run_turn(
+        _user(), None, [{"role": "user", "content": "i usually eat around 2000 cals"}],
+        "SYS", "imessage", in_onboarding=False, was_onboarding=False, today_log=None,
+    )
+    assert state["n"] == 2, "a bare 'done' with no tools should trigger a repair retry"
+    reply = " ".join(turn.response.bubbles).lower()
+    assert reply.strip() != "done." and "done." not in turn.response.bubbles, \
+        f"bare dead-end shipped: {turn.response.bubbles}"
+    assert "breakfast" in reply or "1,650" in reply, "repair should be substantive"
+    assert "dead_end" in turn.health_flags
+
+
+@pytest.mark.asyncio
 async def test_complete_turn_not_retried(monkeypatch):
     fake_chat, state = _seq_chat([
         {"text": "weight's up, not panic-worthy.|||we track the 7-day trend.",
