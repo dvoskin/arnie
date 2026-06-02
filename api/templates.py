@@ -180,8 +180,8 @@ body{{
 }}
 
 /* ── MAIN ────────────────────────────────────────────────── */
-.main{{min-width:0;overflow-x:clip}}
-.main-inner{{padding:0 48px 100px;width:100%;max-width:1140px}}
+.main{{min-width:0;overflow-x:clip;display:flex;justify-content:center}}
+.main-inner{{padding:0 52px 100px;width:100%;max-width:1080px}}
 .hbtn{{
   background:var(--sf2);border:1px solid var(--bd);color:var(--mu);
   width:34px;height:34px;border-radius:10px;cursor:pointer;font-size:14px;
@@ -226,7 +226,8 @@ body{{
 @media(max-width:940px){{
   .shell{{grid-template-columns:1fr}}
   .sidebar{{display:none}}
-  .main-inner{{padding:0 24px 90px}}
+  .main{{justify-content:flex-start}}
+  .main-inner{{padding:0 24px 90px;max-width:100%}}
   .bottomnav{{display:flex}}
   .pagehead{{padding:18px 0 14px}}
 }}
@@ -556,16 +557,22 @@ body{{
 @media(min-width:700px){{.c2col{{grid-template-columns:1fr 1fr}}}}
 
 /* ── HISTORY TABLE ───────────────────────────────────────── */
-.htbl{{width:100%;border-collapse:collapse;font-size:11px}}
+.htbl{{width:100%;border-collapse:collapse;font-size:12px}}
 .htbl th{{
   font-family:'Geist Mono','SF Mono',monospace;
-  color:var(--di);text-transform:uppercase;letter-spacing:.1em;
-  font-size:9px;font-weight:500;padding:9px 10px;text-align:left;
+  color:var(--mu);text-transform:uppercase;letter-spacing:.1em;
+  font-size:9.5px;font-weight:500;padding:10px 14px;text-align:left;
   border-bottom:1px solid var(--bd);
 }}
-.htbl td{{padding:9px 10px;border-bottom:1px solid var(--bd);color:var(--mu)}}
+.htbl th.r{{text-align:right}}
+.htbl td{{padding:11px 14px;border-bottom:1px solid var(--bd);color:var(--tx2);font-size:13px}}
 .htbl tr:last-child td{{border-bottom:none}}
-.htbl td:first-child{{color:var(--tx2);font-weight:500}}
+.htbl tr:hover td{{background:var(--sf2)}}
+.td-date{{
+  font-family:'Geist Mono','SF Mono',monospace;
+  font-size:11px;letter-spacing:.04em;color:var(--mu)!important;font-weight:500;
+}}
+.htbl td.r{{text-align:right;font-family:'Geist Mono','SF Mono',monospace;font-size:12px}}
 .td-ok{{color:var(--ac)!important;font-weight:600}}
 .td-ov{{color:var(--re)!important;font-weight:600}}
 
@@ -575,12 +582,12 @@ body{{
   backdrop-filter:blur(16px);box-shadow:var(--sh);margin-bottom:9px;transition:background .3s;
 }}
 .inrow{{
-  display:flex;justify-content:space-between;align-items:center;
-  padding:12px 14px;border-bottom:1px solid var(--bd);
+  display:flex;justify-content:space-between;align-items:baseline;
+  gap:16px;padding:13px 16px;border-bottom:1px solid var(--bd);
 }}
 .inrow:last-child{{border-bottom:none}}
-.inlbl{{font-size:13px;color:var(--mu);font-weight:400;white-space:nowrap}}
-.inval{{font-size:13px;font-weight:500;color:var(--tx2);text-align:right;max-width:65%;word-break:break-word}}
+.inlbl{{font-size:13px;color:var(--mu);font-weight:400;flex-shrink:0;min-width:110px}}
+.inval{{font-size:13px;font-weight:500;color:var(--tx2);text-align:right;word-break:normal;overflow-wrap:break-word}}
 .ancrd{{
   background:var(--sf);border:1px solid var(--bd);border-radius:16px;padding:16px;
   backdrop-filter:blur(16px);box-shadow:var(--sh);margin-bottom:9px;transition:background .3s;
@@ -642,10 +649,10 @@ footer{{
 .pagehead{{
   position:sticky;top:0;z-index:30;
   display:flex;align-items:center;justify-content:space-between;
-  gap:20px;padding:28px 0 20px;margin-bottom:4px;
-  backdrop-filter:blur(14px) saturate(140%);
-  -webkit-backdrop-filter:blur(14px) saturate(140%);
-  background:linear-gradient(180deg,var(--hbg) 60%,transparent);
+  gap:20px;padding:26px 0 18px;margin-bottom:8px;
+  backdrop-filter:blur(20px) saturate(160%);
+  -webkit-backdrop-filter:blur(20px) saturate(160%);
+  background:linear-gradient(180deg,var(--bg) 40%,transparent);
 }}
 .ph-title{{
   font-family:'Instrument Serif','Times New Roman',serif;
@@ -935,13 +942,8 @@ footer{{
       <button class="darr" id="date-next" onclick="navDate(1)"  aria-label="Next day">&#8250;</button>
     </div>
 
-    <!-- LEFT COLUMN: insights + macros + visuals -->
+    <!-- LEFT COLUMN: macros + insights + visuals -->
     <div class="day-col-left">
-      <div class="stitle">&#10024; Coach insights <span class="ai-pill">AI</span></div>
-      <div class="icrd fade-in" id="insights-card">
-        <div class="iload"><span class="spin">&#9675;</span> Analyzing&hellip;</div>
-      </div>
-
       <div class="stitle" id="day-label">Today</div>
       <div class="cards">
         <div class="card">
@@ -959,12 +961,12 @@ footer{{
         <div class="card">
           <div class="clbl">Carbs</div>
           <div class="cval" id="carb-val">&mdash;</div>
-          <div class="csub" style="color:var(--or)">grams</div>
+          <div class="csub" id="carb-sub"></div>
         </div>
         <div class="card">
           <div class="clbl">Fats</div>
           <div class="cval" id="fat-val">&mdash;</div>
-          <div class="csub" style="color:var(--pu)">grams</div>
+          <div class="csub" id="fat-sub"></div>
         </div>
       </div>
 
@@ -973,6 +975,11 @@ footer{{
         <span id="ca-badge" class="toggle"><span class="tcb"></span>No cardio</span>
         <span id="wt-badge" class="toggle on" style="display:none"></span>
         <button class="toggle share-tgl t-click" onclick="shareDay()" title="Share today&apos;s summary">&#8679; Share day</button>
+      </div>
+
+      <div class="stitle">&#10024; Coach insights <span class="ai-pill">AI</span></div>
+      <div class="icrd fade-in" id="insights-card">
+        <div class="iload"><span class="spin">&#9675;</span> Analyzing&hellip;</div>
       </div>
 
       <div class="stitle">Energy breakdown</div>
@@ -1464,8 +1471,10 @@ function renderDayTab(d){{
   proEl.textContent=day.protein!=null?day.protein+'g':'—';
   document.getElementById('pro-sub').textContent=tgt.protein?'/ '+tgt.protein+'g ('+pp+'%)':'grams';
   document.getElementById('pro-bar').style.width=pp+'%';
-  document.getElementById('carb-val').textContent=day.carbs!=null?day.carbs+'g':'—';
-  document.getElementById('fat-val').textContent=day.fats!=null?day.fats+'g':'—';
+  var carbEl=document.getElementById('carb-val');carbEl.textContent=day.carbs!=null?day.carbs+'g':'—';
+  var carbSub=document.getElementById('carb-sub');if(carbSub)carbSub.textContent=tgt.carbs?'/ '+tgt.carbs+'g ('+pct(day.carbs,tgt.carbs)+'%)':'grams';
+  var fatEl=document.getElementById('fat-val');fatEl.textContent=day.fats!=null?day.fats+'g':'—';
+  var fatSub=document.getElementById('fat-sub');if(fatSub)fatSub.textContent=tgt.fats?'/ '+tgt.fats+'g ('+pct(day.fats,tgt.fats)+'%)':'grams';
 
   var wb=document.getElementById('wo-badge');
   if(wb){{var woOn=!!day.workout_completed;wb.className='toggle'+(woOn?' on':'');wb.innerHTML='<span class="tcb">'+(woOn?'&#10003;':'')+'</span>'+(woOn?'Workout done':'No workout');}}
@@ -1621,16 +1630,19 @@ function renderWeekTab(d){{
   var rows=(hist.slice(-14)||[]).reverse();
   document.getElementById('hist-table-wrap').innerHTML=rows.length===0
     ?'<div class="lempty">No history yet</div>'
-    :'<table class="htbl"><thead><tr><th>Date</th><th>Calories</th><th>Protein</th><th>Workout</th></tr></thead><tbody>'+
-      rows.map(h=>{{
-        var cc=tgt.calories
-          ?(h.calories>=tgt.calories*.9&&h.calories<=tgt.calories*1.1?'td-ok':h.calories>tgt.calories*1.1?'td-ov':'')
-          :'';
-        var pc=tgt.protein?(h.protein>=tgt.protein*.9?'td-ok':''):'';
-        return '<tr><td>'+esc(h.date.slice(5))+'</td>'+
-          '<td class="'+cc+'">'+(h.calories??'—')+'</td>'+
-          '<td class="'+pc+'">'+(h.protein!=null?h.protein+'g':'—')+'</td>'+
-          '<td>'+(h.workout?'✓':'✗')+'</td></tr>';
+    :'<table class="htbl"><thead><tr><th>Date</th><th class="r">Calories</th><th class="r">Protein</th><th class="r">Workout</th></tr></thead><tbody>'+
+      rows.map(function(h){{
+        var calOk=tgt.calories&&h.calories>=tgt.calories*.9&&h.calories<=tgt.calories*1.1;
+        var calOv=tgt.calories&&h.calories>tgt.calories*1.1;
+        var proOk=tgt.protein&&h.protein>=tgt.protein*.9;
+        var woDot=h.workout
+          ?'<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--ac);box-shadow:0 0 6px var(--ac)"></span>'
+          :'<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--di)"></span>';
+        return '<tr>'+
+          '<td class="td-date">'+esc(h.date.slice(5))+'</td>'+
+          '<td class="r '+(calOk?'td-ok':calOv?'td-ov':'')+'">'+(h.calories!=null?h.calories.toLocaleString():'—')+'</td>'+
+          '<td class="r '+(proOk?'td-ok':'')+'">'+(h.protein!=null?h.protein+'g':'—')+'</td>'+
+          '<td class="r">'+woDot+'</td></tr>';
       }}).join('')+'</tbody></table>';
 
   renderGoalProgress(d.profile||{{}}, d.weights||[]);
