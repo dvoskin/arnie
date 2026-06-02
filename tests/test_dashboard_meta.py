@@ -1,5 +1,6 @@
-"""The user dashboard page must carry a favicon + Open Graph tags so shared dashboard
-links render a branded preview (in iMessage/Telegram/social) and a tab icon."""
+"""The user dashboard page carries a favicon and a personalized tab title, but NO Open
+Graph / Twitter preview image — shared dashboard links render as a plain link + favicon,
+no preview card."""
 from api.templates import _dashboard_html, _dashboard_title
 
 
@@ -19,14 +20,6 @@ def test_dashboard_title_escapes_user_name():
     assert "<b>" not in out and "&lt;b&gt;" in out
 
 
-def test_personalized_name_not_in_social_preview():
-    # The name personalizes the browser tab title only — it must NOT leak into the OG
-    # preview (which is generic + cacheable + seen by others).
-    html = _dashboard_html("tok", name="Danny")
-    og_block = html[html.find("og:type"):html.find("</head>")]
-    assert "Danny" not in og_block
-
-
 def test_dashboard_head_has_favicon():
     html = _dashboard_html("tok123")
     assert 'rel="icon"' in html
@@ -34,20 +27,8 @@ def test_dashboard_head_has_favicon():
     assert 'href="/favicon.png"' in html
 
 
-def test_dashboard_head_has_open_graph_image():
-    html = _dashboard_html("tok123")
-    assert 'property="og:image"' in html
-    assert "tryarnie.com/og-image.png" in html
-    assert 'property="og:title"' in html
-    assert 'property="og:description"' in html
-    # twitter card too, so X/iMessage render the large image
-    assert 'name="twitter:card"' in html
-    assert "summary_large_image" in html
-
-
-def test_dashboard_preview_leaks_no_personal_data():
-    # The token is the only per-user input; it must NOT appear in the shareable preview
-    # meta (titles/descriptions), which can be cached and seen by others.
-    html = _dashboard_html("SECRET_TOKEN_123")
-    og_block = html[html.find("og:type"):html.find("</head>")]
-    assert "SECRET_TOKEN_123" not in og_block
+def test_dashboard_head_has_no_meta_image():
+    html = _dashboard_html("tok123", name="Danny")
+    # no Open Graph / Twitter preview image (or any og:/twitter: meta) on these links
+    for needle in ("og:image", "twitter:image", "og:title", "twitter:card", "property=\"og:"):
+        assert needle not in html, f"unexpected social-preview meta present: {needle}"

@@ -27,22 +27,10 @@ def _dashboard_html(token: str, name: str = "") -> str:
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>{_dashboard_title(name)}</title>
 <!-- favicon served by the dashboard app itself (relative → follows whatever host
-     serves the dashboard, incl. app.tryarnie.com). OG image stays absolute below. -->
+     serves the dashboard, incl. app.tryarnie.com). No Open Graph image on purpose —
+     shared dashboard links render as a plain link with just the favicon, no preview card. -->
 <link rel="icon" type="image/png" href="/favicon.png">
 <link rel="apple-touch-icon" href="/favicon.png">
-<!-- Open Graph: rich preview when a user shares their dashboard link. Kept generic +
-     branded on purpose — no personal data, since link previews get cached/seen by others. -->
-<meta property="og:type"         content="website">
-<meta property="og:site_name"    content="Arnie">
-<meta property="og:title"        content="Arnie — your coaching dashboard">
-<meta property="og:description"  content="Food, training, and progress in one place. Logged by texting, coached every day.">
-<meta property="og:image"        content="https://tryarnie.com/og-image.png">
-<meta property="og:image:width"  content="1200">
-<meta property="og:image:height" content="630">
-<meta name="twitter:card"        content="summary_large_image">
-<meta name="twitter:title"       content="Arnie — your coaching dashboard">
-<meta name="twitter:description" content="Food, training, and progress in one place. Logged by texting, coached every day.">
-<meta name="twitter:image"       content="https://tryarnie.com/og-image.png">
 <script>
 (function(){{
   var t=localStorage.getItem('arnie-theme')||
