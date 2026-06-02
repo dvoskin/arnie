@@ -37,6 +37,28 @@ def proactive_enabled() -> bool:
     Whoop sync is unaffected (it's a background data pull, not a user message).
     """
     return os.getenv("PROACTIVE_MESSAGING_ENABLED", "false").lower() in ("true", "1", "yes")
+
+
+def _proactive_allowlist() -> set:
+    """
+    Safe-rollout gate. PROACTIVE_ALLOWLIST = comma-separated identifiers (DB user id,
+    telegram_id like 'im:+1555...' or a numeric Telegram id, or the resolved send
+    target). When SET, proactive messages go ONLY to those users — validate on yourself
+    or a few accounts before flipping it on for everyone. When UNSET/empty, no
+    restriction (normal behavior). Read fresh each call so it can change without restart.
+    """
+    raw = os.getenv("PROACTIVE_ALLOWLIST", "")
+    return {x.strip() for x in raw.split(",") if x.strip()}
+
+
+def _allowlist_allows(*identifiers) -> bool:
+    """True if no allowlist is configured (everyone), or any identifier is on it."""
+    allow = _proactive_allowlist()
+    if not allow:
+        return True
+    return any(i is not None and str(i) in allow for i in identifiers)
+
+
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 
 # Engagement de-dup state is now persisted on the User row (nudges_sent,
@@ -157,6 +179,10 @@ async def _send(telegram_id: str, text: str, effect: str = None):
     """
     # Master kill switch — no proactive message goes out while disabled, on any channel.
     if not proactive_enabled():
+        return
+    # Safe-rollout gate — when an allowlist is set, only its members get proactive sends.
+    if not _allowlist_allows(telegram_id):
+        logger.info(f"Proactive send to {telegram_id} skipped — not on PROACTIVE_ALLOWLIST")
         return
     from core.platform import Response, IMessageAdapter, TelegramAdapter
     resp = Response.from_text(text)
@@ -489,6 +515,12 @@ async def _run_reminders():
             # Route this user's proactive messages to their preferred platform
             # (set when they linked both). Falls back to their own identity.
             send_id = await resolve_send_target(db, user)
+
+            # ── Safe-rollout allowlist ────────────────────────────────────────
+            # Skip non-allowlisted users early so we don't burn LLM calls generating
+            # nudges they'll never receive. _send() also gates as a hard backstop.
+            if not _allowlist_allows(user.id, user.telegram_id, send_id):
+                continue
 
             # ── Context awareness: never fire on top of a live conversation ───
             # If the user exchanged messages with Arnie in the last ~25 min, they're
@@ -909,7 +941,11 @@ def start_scheduler():
             replace_existing=True,
             max_instances=1,
         )
-        reminders_status = "reminders every 30 min"
+        _allow = _proactive_allowlist()
+        reminders_status = (
+            f"reminders every 30 min, ALLOWLIST active ({len(_allow)} users only)"
+            if _allow else "reminders every 30 min"
+        )
     else:
         reminders_status = "reminders DISABLED (PROACTIVE_MESSAGING_ENABLED not set)"
     _scheduler.add_job(
