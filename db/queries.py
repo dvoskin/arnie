@@ -190,11 +190,6 @@ async def get_today_log(db: AsyncSession, user_id: int,
         if log is not None:
             return log
 
-    yesterday = today - timedelta(days=1)
-    if yesterday != utc_today:
-        log = await _fetch(yesterday)
-
-    return log
 
 
 async def get_log_by_date(db: AsyncSession, user_id: int, target_date: date) -> Optional[DailyLog]:
