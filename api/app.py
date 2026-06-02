@@ -1519,8 +1519,9 @@ async def dashboard(token: str):
         user = await get_user_by_webhook_token(db, token)
         if not user:
             return HTMLResponse("<h2>Invalid or expired link.</h2>", status_code=401)
+        name = user.name or ""
 
-    return HTMLResponse(_dashboard_html(token))
+    return HTMLResponse(_dashboard_html(token, name=name))
 
 
 

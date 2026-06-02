@@ -5,10 +5,19 @@ Pure string functions — no DB, no app.state, no FastAPI deps. Each is called
 from exactly one route in api/app.py. Split out so app.py holds API/route logic
 and these ~1.6k lines of HTML live on their own (AUDIT #9).
 """
+import html
 from typing import Optional  # noqa: F401 — kept for parity if signatures evolve
 
 
-def _dashboard_html(token: str) -> str:
+def _dashboard_title(name: str) -> str:
+    """Personalized browser-tab title, e.g. 'ArnieOS ⏐ Danny's Dashboard'.
+    Falls back to 'Your Dashboard' when no name. Name is HTML-escaped (user-provided)."""
+    n = (name or "").strip()
+    owner = f"{html.escape(n)}'s" if n else "Your"
+    return f"ArnieOS ⏐ {owner} Dashboard"
+
+
+def _dashboard_html(token: str, name: str = "") -> str:
     return f"""<!DOCTYPE html>
 <html lang="en" data-theme="dark">
 <head>
@@ -16,7 +25,7 @@ def _dashboard_html(token: str) -> str:
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<title>Arnie — Dashboard</title>
+<title>{_dashboard_title(name)}</title>
 <!-- favicon served by the dashboard app itself (relative → follows whatever host
      serves the dashboard, incl. app.tryarnie.com). OG image stays absolute below. -->
 <link rel="icon" type="image/png" href="/favicon.png">
