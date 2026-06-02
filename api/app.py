@@ -516,7 +516,7 @@ async def imessage_webhook(request: Request):
     _text_key = (f"att:{address}:{audio['guid']}" if (audio and not text)
                  else f"txt:{address}:{text[:120]}")
     _guid_dup = _guid_key is not None and (_now - _seen.get(_guid_key, 0)) < 600
-    _text_dup = (_now - _seen.get(_text_key, 0)) < 45
+    _text_dup = (_now - _seen.get(_text_key, 0)) < 120
     if _guid_dup or _text_dup:
         _why = "guid" if _guid_dup else "text"
         logger.info(f"BB webhook: duplicate ({_why}) skipped text={text[:40]!r}")
