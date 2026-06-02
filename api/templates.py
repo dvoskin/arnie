@@ -181,7 +181,7 @@ body{{
 
 /* ── MAIN ────────────────────────────────────────────────── */
 .main{{min-width:0;overflow-x:clip;display:flex;justify-content:center}}
-.main-inner{{padding:0 52px 100px;width:100%;max-width:1080px}}
+.main-inner{{padding:0 40px 100px;width:100%;max-width:720px}}
 .hbtn{{
   background:var(--sf2);border:1px solid var(--bd);color:var(--mu);
   width:34px;height:34px;border-radius:10px;cursor:pointer;font-size:14px;
@@ -193,15 +193,6 @@ body{{
 #app-load{{text-align:center;padding:80px 20px;color:var(--mu);font-size:14px}}
 .tab-panel{{display:none;animation:fadeUp .28s ease}}
 .tab-panel.active{{display:block}}
-
-/* ── DAY 2-COL DESKTOP ───────────────────────────────────── */
-@media(min-width:700px){{
-  #panel-day.active{{display:grid;grid-template-columns:1.05fr .95fr;gap:20px;align-items:start}}
-  .day-col-left{{min-width:0}}
-  .day-col-right{{min-width:0}}
-  #panel-day .dnav{{grid-column:1/-1}}
-  #panel-day .toggles{{grid-column:1/-1}}
-}}
 
 /* ── BOTTOM NAV (mobile) ─────────────────────────────────── */
 .bottomnav{{
@@ -227,12 +218,9 @@ body{{
   .shell{{grid-template-columns:1fr}}
   .sidebar{{display:none}}
   .main{{justify-content:flex-start}}
-  .main-inner{{padding:0 24px 90px;max-width:100%}}
+  .main-inner{{padding:0 20px 90px;max-width:100%}}
   .bottomnav{{display:flex}}
   .pagehead{{padding:18px 0 14px}}
-}}
-@media(max-width:700px){{
-  #panel-day.active{{display:block}}
 }}
 @media(max-width:560px){{
   .main-inner{{padding:0 16px 90px}}
@@ -752,13 +740,14 @@ footer{{
 .lm-field{{display:flex;flex-direction:column;gap:5px}}
 .lm-label{{
   font-family:'Geist Mono','SF Mono',monospace;
-  font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;
+  font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;
   color:var(--mu);font-weight:500;
 }}
 .lm-input{{
   background:var(--sf2);border:1px solid var(--bd);color:var(--tx);
-  padding:11px 13px;border-radius:10px;font-size:14px;
-  font-family:inherit;width:100%;outline:none;
+  padding:12px 14px;border-radius:11px;font-size:14px;
+  font-family:'Geist',ui-sans-serif,system-ui,sans-serif;
+  width:100%;outline:none;letter-spacing:-.005em;
   transition:border-color .15s,box-shadow .15s;
 }}
 .lm-input::placeholder{{color:var(--di)}}
@@ -779,10 +768,13 @@ footer{{
 }}
 .lm-result:last-child{{border-bottom:none}}
 .lm-result:hover{{background:var(--sf2)}}
-.lm-result-name{{font-size:13px;font-weight:500;color:var(--tx);line-height:1.3}}
+.lm-result-name{{
+  font-size:14px;font-weight:500;color:var(--tx);line-height:1.3;
+  font-family:'Geist',ui-sans-serif,system-ui,sans-serif;letter-spacing:-.005em;
+}}
 .lm-result-meta{{
   font-family:'Geist Mono','SF Mono',monospace;
-  font-size:10px;color:var(--mu);margin-top:3px;
+  font-size:10px;color:var(--mu);margin-top:4px;letter-spacing:.04em;
 }}
 .lm-selected{{
   background:var(--sf2);border:1px solid var(--bd);
@@ -833,14 +825,83 @@ footer{{
   background-size:28px 28px;
 }}
 
-/* ── Enhanced ambient orbs ───────────────────────────────── */
-[data-theme="dark"] body::before{{
-  background:
-    radial-gradient(ellipse 65% 55% at 6% 8%,rgba(0,230,118,.14),transparent),
-    radial-gradient(ellipse 55% 45% at 94% 82%,rgba(59,130,246,.11),transparent),
-    radial-gradient(ellipse 70% 58% at 48% 52%,rgba(100,55,210,.08),transparent),
-    radial-gradient(ellipse 42% 38% at 82% 12%,rgba(0,200,255,.07),transparent);
-  animation:mesh 14s ease-in-out infinite alternate;
+/* ── Ambient scene (body::before removed, handled by .scene divs) ── */
+[data-theme="dark"] body::before{{display:none}}
+[data-theme="light"] body::before{{display:none}}
+
+/* ── 3D Ambient scene ────────────────────────────────────── */
+.scene{{
+  position:fixed;inset:0;z-index:0;pointer-events:none;overflow:hidden;
+}}
+.scene-orb{{
+  position:absolute;border-radius:50%;
+  will-change:transform;
+}}
+.so-1{{
+  width:900px;height:900px;
+  background:radial-gradient(closest-side,rgba(0,230,118,.18),transparent);
+  top:-25%;left:-20%;filter:blur(55px);
+  animation:soFloat1 22s ease-in-out infinite;
+}}
+.so-2{{
+  width:750px;height:750px;
+  background:radial-gradient(closest-side,rgba(59,130,246,.16),transparent);
+  top:35%;right:-18%;filter:blur(50px);
+  animation:soFloat2 28s ease-in-out infinite;
+}}
+.so-3{{
+  width:650px;height:650px;
+  background:radial-gradient(closest-side,rgba(112,60,220,.14),transparent);
+  bottom:-12%;left:22%;filter:blur(60px);
+  animation:soFloat3 20s ease-in-out infinite;
+}}
+.so-4{{
+  width:450px;height:450px;
+  background:radial-gradient(closest-side,rgba(0,195,255,.11),transparent);
+  top:18%;left:52%;filter:blur(45px);
+  animation:soFloat4 17s ease-in-out infinite reverse;
+}}
+.scene-grid{{
+  position:absolute;
+  bottom:-8%;left:-30%;right:-30%;height:48%;
+  transform:perspective(550px) rotateX(72deg);
+  transform-origin:bottom center;
+  background-image:
+    linear-gradient(rgba(0,230,118,.07) 0,transparent 1px),
+    linear-gradient(90deg,rgba(0,230,118,.07) 0,transparent 1px);
+  background-size:72px 72px;
+  mask-image:linear-gradient(to top,rgba(0,0,0,.7) 0%,transparent 72%);
+  -webkit-mask-image:linear-gradient(to top,rgba(0,0,0,.7) 0%,transparent 72%);
+  animation:gridBreath 10s ease-in-out infinite;
+}}
+[data-theme="light"] .scene-grid{{opacity:0}}
+[data-theme="light"] .so-1{{background:radial-gradient(closest-side,rgba(5,150,105,.09),transparent)}}
+[data-theme="light"] .so-2{{background:radial-gradient(closest-side,rgba(37,99,235,.07),transparent)}}
+[data-theme="light"] .so-3{{background:radial-gradient(closest-side,rgba(80,40,180,.06),transparent)}}
+[data-theme="light"] .so-4{{background:radial-gradient(closest-side,rgba(0,150,200,.06),transparent)}}
+@keyframes soFloat1{{
+  0%,100%{{transform:translate(0,0) scale(1);}}
+  25%{{transform:translate(90px,-70px) scale(1.08);}}
+  50%{{transform:translate(-50px,55px) scale(.94);}}
+  75%{{transform:translate(70px,25px) scale(1.04);}}
+}}
+@keyframes soFloat2{{
+  0%,100%{{transform:translate(0,0) scale(1);}}
+  33%{{transform:translate(-85px,-65px) scale(1.1);}}
+  66%{{transform:translate(65px,85px) scale(.91);}}
+}}
+@keyframes soFloat3{{
+  0%,100%{{transform:translate(0,0) scale(1);}}
+  40%{{transform:translate(-65px,-80px) scale(1.12);}}
+  80%{{transform:translate(85px,-35px) scale(.88);}}
+}}
+@keyframes soFloat4{{
+  0%,100%{{transform:translate(0,0) scale(1);}}
+  50%{{transform:translate(-75px,65px) scale(1.16);}}
+}}
+@keyframes gridBreath{{
+  0%,100%{{opacity:.85;}}
+  50%{{opacity:1.1;}}
 }}
 
 /* ── Deep card depth (dark mode) ─────────────────────────── */
@@ -974,7 +1035,7 @@ footer{{
   .inlbl,.inval{{font-size:12.5px}}
   .dev-grid{{grid-template-columns:1fr;gap:8px}}
   /* Main padding */
-  .main-inner{{padding:0 16px 90px}}
+  .main-inner{{padding:0 18px 90px}}
 }}
 
 /* ── Medium breakpoint ───────────────────────────────────── */
@@ -1000,6 +1061,13 @@ footer{{
 </style>
 </head>
 <body>
+<div class="scene" aria-hidden="true">
+  <div class="scene-orb so-1"></div>
+  <div class="scene-orb so-2"></div>
+  <div class="scene-orb so-3"></div>
+  <div class="scene-orb so-4"></div>
+  <div class="scene-grid"></div>
+</div>
 <div class="shell">
 
 <!-- SIDEBAR -->
@@ -1053,6 +1121,7 @@ footer{{
 <div id="app-load">Loading your data&hellip;</div>
 
   <!-- DAY TAB -->
+  <!-- DAY TAB — single column, insights first -->
   <div class="tab-panel active" id="panel-day">
     <div class="dnav">
       <button class="darr" id="date-prev" onclick="navDate(-1)" aria-label="Previous day">&#8249;</button>
@@ -1060,130 +1129,110 @@ footer{{
       <button class="darr" id="date-next" onclick="navDate(1)"  aria-label="Next day">&#8250;</button>
     </div>
 
-    <!-- LEFT COLUMN: macros + insights + visuals -->
-    <div class="day-col-left">
-      <div class="stitle" id="day-label">Today</div>
-      <div class="cards">
-        <div class="card">
-          <div class="clbl">Calories</div>
-          <div class="cval" id="cal-val">&mdash;</div>
-          <div class="csub" id="cal-sub"></div>
-          <div class="ptrack"><div class="pfill" id="cal-bar" style="background:var(--ac);width:0%"></div></div>
-        </div>
-        <div class="card">
-          <div class="clbl">Protein</div>
-          <div class="cval" id="pro-val">&mdash;</div>
-          <div class="csub" id="pro-sub"></div>
-          <div class="ptrack"><div class="pfill" id="pro-bar" style="background:var(--bl);width:0%"></div></div>
-        </div>
-        <div class="card">
-          <div class="clbl">Carbs</div>
-          <div class="cval" id="carb-val">&mdash;</div>
-          <div class="csub" id="carb-sub"></div>
-        </div>
-        <div class="card">
-          <div class="clbl">Fats</div>
-          <div class="cval" id="fat-val">&mdash;</div>
-          <div class="csub" id="fat-sub"></div>
-        </div>
-      </div>
+    <div class="stitle">&#10024; Coach insights <span class="ai-pill">AI</span></div>
+    <div class="icrd fade-in" id="insights-card">
+      <div class="iload"><span class="spin">&#9675;</span> Analyzing&hellip;</div>
+    </div>
 
-      <div class="toggles">
-        <span id="wo-badge" class="toggle"><span class="tcb"></span>No workout</span>
-        <span id="ca-badge" class="toggle"><span class="tcb"></span>No cardio</span>
-        <span id="wt-badge" class="toggle on" style="display:none"></span>
-        <button class="toggle share-tgl t-click" onclick="shareDay()" title="Share today&apos;s summary">&#8679; Share day</button>
+    <div class="stitle" id="day-label">Today</div>
+    <div class="cards">
+      <div class="card">
+        <div class="clbl">Calories</div>
+        <div class="cval" id="cal-val">&mdash;</div>
+        <div class="csub" id="cal-sub"></div>
+        <div class="ptrack"><div class="pfill" id="cal-bar" style="background:var(--ac);width:0%"></div></div>
       </div>
-
-      <div class="stitle">&#10024; Coach insights <span class="ai-pill">AI</span></div>
-      <div class="icrd fade-in" id="insights-card">
-        <div class="iload"><span class="spin">&#9675;</span> Analyzing&hellip;</div>
+      <div class="card">
+        <div class="clbl">Protein</div>
+        <div class="cval" id="pro-val">&mdash;</div>
+        <div class="csub" id="pro-sub"></div>
+        <div class="ptrack"><div class="pfill" id="pro-bar" style="background:var(--bl);width:0%"></div></div>
       </div>
-
-      <div class="stitle">Energy breakdown</div>
-      <div class="macro-ring-wrap">
-        <canvas class="macro-ring-canvas" id="macroRing" width="80" height="80"></canvas>
-        <div class="macro-legend" id="macro-legend"></div>
+      <div class="card">
+        <div class="clbl">Carbs</div>
+        <div class="cval" id="carb-val">&mdash;</div>
+        <div class="csub" id="carb-sub"></div>
       </div>
-
-      <div class="stitle">28-day consistency</div>
-      <div class="heat-wrap">
-        <div class="heat-dow">
-          <span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span><span>S</span>
-        </div>
-        <div class="heat-grid" id="heat-grid"></div>
-        <div class="heat-legend">
-          <span class="hleg-dot" style="background:#22c55e"></span>On target &nbsp;
-          <span class="hleg-dot" style="background:#f59e0b"></span>Logged &nbsp;
-          <span class="hleg-dot" style="background:var(--sf2)"></span>Missed &nbsp;
-          <span class="hleg-dot" style="background:rgba(255,255,255,.15)"></span><span style="color:var(--di)">● workout</span>
-        </div>
-      </div>
-
-      <div id="health-section" style="display:none">
-        <div class="stitle">Wearable</div>
-        <div class="hgrid" id="health-grid"></div>
+      <div class="card">
+        <div class="clbl">Fats</div>
+        <div class="cval" id="fat-val">&mdash;</div>
+        <div class="csub" id="fat-sub"></div>
       </div>
     </div>
 
-    <!-- RIGHT COLUMN: food + workout logs -->
-    <div class="day-col-right">
-      <div class="stitle">Food log</div>
-      <div class="lcrd" id="food-log"><div class="lempty">Loading&hellip;</div></div>
+    <div class="toggles">
+      <span id="wo-badge" class="toggle"><span class="tcb"></span>No workout</span>
+      <span id="ca-badge" class="toggle"><span class="tcb"></span>No cardio</span>
+      <span id="wt-badge" class="toggle on" style="display:none"></span>
+      <button class="toggle share-tgl t-click" onclick="shareDay()" title="Share today&apos;s summary">&#8679; Share day</button>
+    </div>
 
-      <div class="stitle">Workouts</div>
-      <div class="lcrd" id="ex-log"><div class="lempty">Loading&hellip;</div></div>
+    <div class="stitle">Food log</div>
+    <div class="lcrd" id="food-log"><div class="lempty">Loading&hellip;</div></div>
+
+    <div class="stitle">Workouts</div>
+    <div class="lcrd" id="ex-log"><div class="lempty">Loading&hellip;</div></div>
+
+    <div class="stitle">Energy breakdown</div>
+    <div class="macro-ring-wrap">
+      <canvas class="macro-ring-canvas" id="macroRing" width="80" height="80"></canvas>
+      <div class="macro-legend" id="macro-legend"></div>
+    </div>
+
+    <div class="stitle">28-day consistency</div>
+    <div class="heat-wrap">
+      <div class="heat-dow">
+        <span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span><span>S</span>
+      </div>
+      <div class="heat-grid" id="heat-grid"></div>
+      <div class="heat-legend">
+        <span class="hleg-dot" style="background:#22c55e"></span>On target &nbsp;
+        <span class="hleg-dot" style="background:#f59e0b"></span>Logged &nbsp;
+        <span class="hleg-dot" style="background:var(--sf2)"></span>Missed &nbsp;
+        <span class="hleg-dot" style="background:rgba(255,255,255,.15)"></span><span style="color:var(--di)">● workout</span>
+      </div>
+    </div>
+
+    <div id="health-section" style="display:none">
+      <div class="stitle">Wearable</div>
+      <div class="hgrid" id="health-grid"></div>
     </div>
   </div>
 
-  <!-- WEEK TAB -->
+  <!-- WEEK TAB — single column -->
   <div class="tab-panel" id="panel-week">
-    <div class="c2col">
-      <div class="ccrd">
-        <div class="ctitle"><span>Calories &middot; 30 days</span><span id="cal-avg-lbl" class="ctitle-val" style="color:var(--ac)"></span></div>
-        <div class="cwrap"><canvas id="calChart"></canvas></div>
-      </div>
-      <div class="ccrd">
-        <div class="ctitle"><span>Protein &middot; 30 days</span><span id="pro-tgt-lbl" class="ctitle-val" style="color:var(--bl)"></span></div>
-        <div class="cwrap"><canvas id="proChart"></canvas></div>
-      </div>
-      <div class="ccrd" style="grid-column:1/-1">
-        <div class="ctitle"><span>Weight trend &middot; 30 days</span><span id="wt-now-lbl" class="ctitle-val" style="color:var(--pu)"></span></div>
-        <div class="cwrap"><canvas id="weightChart"></canvas></div>
-      </div>
+    <div class="ccrd">
+      <div class="ctitle"><span>Calories &middot; 30 days</span><span id="cal-avg-lbl" class="ctitle-val" style="color:var(--ac)"></span></div>
+      <div class="cwrap"><canvas id="calChart"></canvas></div>
+    </div>
+    <div class="ccrd" style="margin-top:14px">
+      <div class="ctitle"><span>Protein &middot; 30 days</span><span id="pro-tgt-lbl" class="ctitle-val" style="color:var(--bl)"></span></div>
+      <div class="cwrap"><canvas id="proChart"></canvas></div>
+    </div>
+    <div class="ccrd" style="margin-top:14px">
+      <div class="ctitle"><span>Weight trend &middot; 30 days</span><span id="wt-now-lbl" class="ctitle-val" style="color:var(--pu)"></span></div>
+      <div class="cwrap"><canvas id="weightChart"></canvas></div>
     </div>
     <div class="stitle">Goal progress</div>
     <div class="goal-card" id="goal-card"></div>
-
     <div class="stitle">Stats</div>
     <div class="stat-row">
       <div class="stat-tile"><div class="stat-num" id="stat-streak">—</div><div class="stat-lbl">Day streak</div></div>
       <div class="stat-tile"><div class="stat-num" id="stat-workouts">—</div><div class="stat-lbl">Workouts / 30d</div></div>
       <div class="stat-tile"><div class="stat-num" id="stat-avg-cal">—</div><div class="stat-lbl">Avg cal / day</div></div>
     </div>
-
     <div class="stitle">Last 14 days</div>
     <div class="infocrd" id="hist-table-wrap"><div class="lempty">Loading&hellip;</div></div>
   </div>
 
-  <!-- PROFILE TAB -->
+  <!-- PROFILE TAB — single column -->
   <div class="tab-panel" id="panel-profile">
-    <div class="profile-grid">
-      <div>
-        <div class="stitle" style="margin-top:4px">Your info</div>
-        <div class="infocrd" id="profile-info"></div>
-      </div>
-      <div class="pstack">
-        <div>
-          <div class="stitle" style="margin-top:4px">Targets</div>
-          <div class="infocrd" id="profile-targets"></div>
-        </div>
-        <div>
-          <div class="stitle">Connected devices</div>
-          <div class="infocrd" style="overflow:hidden" id="devices-card"></div>
-        </div>
-      </div>
-    </div>
+    <div class="stitle" style="margin-top:4px">Your info</div>
+    <div class="infocrd" id="profile-info"></div>
+    <div class="stitle">Targets</div>
+    <div class="infocrd" id="profile-targets"></div>
+    <div class="stitle">Connected devices</div>
+    <div class="infocrd" style="overflow:hidden" id="devices-card"></div>
     <div class="stitle">Science</div>
     <div class="ancrd">
       <div class="antitle">Performance analytics</div>
