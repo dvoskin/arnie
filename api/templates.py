@@ -626,15 +626,22 @@ body{{
   backdrop-filter:blur(16px);box-shadow:var(--sh);margin-bottom:9px;transition:background .3s;
 }}
 .inrow{{
-  display:flex;justify-content:space-between;align-items:flex-start;
+  display:flex;align-items:flex-start;
   gap:12px;padding:13px 16px;border-bottom:1px solid var(--bd);
 }}
 .inrow:last-child{{border-bottom:none}}
-.inlbl{{font-size:13px;color:var(--mu);font-weight:400;flex-shrink:0;min-width:100px;padding-top:2px}}
+.inlbl{{font-size:13px;color:var(--mu);font-weight:400;flex-shrink:0;min-width:110px;padding-top:2px}}
+.inrow-right{{flex:1;display:flex;align-items:flex-start;justify-content:flex-end;gap:6px;min-width:0}}
+.inrow-edit{{
+  width:22px;height:22px;border-radius:6px;font-size:10px;flex-shrink:0;
+  background:var(--sf2);border:1px solid var(--bd);color:var(--mu);
+  cursor:pointer;display:flex;align-items:center;justify-content:center;
+  transition:all .15s;
+}}
+.inrow-edit:hover{{border-color:var(--bd2);color:var(--tx)}}
 .inval{{
   font-size:13px;font-weight:500;color:var(--tx2);
-  text-align:right;word-break:normal;overflow-wrap:break-word;
-  max-width:calc(100% - 120px);
+  text-align:right;word-break:break-word;overflow-wrap:anywhere;flex:1;min-width:0;
 }}
 .ancrd{{
   background:var(--sf);border:1px solid var(--bd);border-radius:16px;padding:16px;
@@ -1093,11 +1100,21 @@ footer{{
   .itxt{{font-size:14px;line-height:1.5}}
   /* Profile */
   .anval{{font-size:22px}}
-  .inlbl,.inval{{font-size:13px}}
-  .inrow{{flex-wrap:wrap;gap:4px 12px}}
-  .inlbl{{min-width:auto;width:100%;padding-top:0}}
-  .inval{{text-align:left;max-width:100%}}
-  .profile-grid{{grid-template-columns:1fr;gap:14px}}
+  /* Profile info rows */
+  .inrow{{padding:11px 14px;gap:10px;align-items:flex-start}}
+  .inlbl{{font-size:12px;min-width:80px;padding-top:1px;flex-shrink:0}}
+  .inrow-right{{flex:1;display:flex;align-items:flex-start;justify-content:flex-end;gap:6px;min-width:0}}
+  .inval{{font-size:13px;text-align:right;word-break:break-word;flex:1;min-width:0}}
+  .inrow-edit{{width:20px;height:20px;border-radius:5px;font-size:9px;flex-shrink:0;opacity:.45;border-color:transparent;background:transparent}}
+  .inrow-edit:hover{{opacity:1;border-color:var(--bd)!important;background:var(--sf2)!important}}
+  /* Badges */
+  .goal-badge,.coach-badge{{font-size:9.5px;padding:3px 8px;letter-spacing:.05em}}
+  /* Profile grid */
+  .profile-grid{{grid-template-columns:1fr;gap:12px}}
+  /* Science grid: 2 col on mobile */
+  .angrid{{grid-template-columns:repeat(2,1fr)}}
+  .anval{{font-size:20px}}
+  .anlbl{{font-size:9px}}
   .dev-grid{{grid-template-columns:1fr;gap:8px}}
   /* Main padding */
   .main-inner{{padding:0 18px 90px}}
@@ -2018,11 +2035,14 @@ function _pslug(l){{return l.toLowerCase().replace(/[^a-z0-9]/g,'_');}}
 function _inrow(l,v,fldMap,color){{
   var fld=fldMap[l];
   var rawVal=v!=null?String(v):'';
-  var dispVal=color?'<span class="inval" style="color:'+color+'">'+esc(rawVal)+'</span>'
-                   :'<span class="inval">'+esc(rawVal)+'</span>';
-  var editBtn=fld?'<button class="ibtn" style="flex-shrink:0;margin-left:4px" onclick="editProw(\\'pr-'+_pslug(l)+'\\',\\''+escA(fld)+'\\',\\''+escA(rawVal)+'\\')">&#9998;</button>':'';
-  return '<div class="inrow" id="pr-'+_pslug(l)+'"><span class="inlbl">'+esc(l)+'</span>'+
-    '<div style="display:flex;align-items:center">'+dispVal+editBtn+'</div></div>';
+  var dispTxt=rawVal.replace(/_/g,' ');
+  var dispVal=color?'<span class="inval" style="color:'+color+'">'+esc(dispTxt)+'</span>'
+                   :'<span class="inval">'+esc(dispTxt)+'</span>';
+  var editBtn=fld?'<button class="ibtn inrow-edit" onclick="editProw(\\'pr-'+_pslug(l)+'\\',\\''+escA(fld)+'\\',\\''+escA(rawVal)+'\\')">&#9998;</button>':'';
+  return '<div class="inrow" id="pr-'+_pslug(l)+'">'+
+    '<span class="inlbl">'+esc(l)+'</span>'+
+    '<div class="inrow-right">'+dispVal+editBtn+'</div>'+
+    '</div>';
 }}
 
 function renderProfileTab(d){{
