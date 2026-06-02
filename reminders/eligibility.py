@@ -39,7 +39,7 @@ def clamp_window(prefs) -> tuple[str, str]:
     window (e.g. wake 10:00) but never widens past the cap.
     """
     user_wake = getattr(prefs, "wake_time", None)
-wake = user_wake if user_wake else HARD_WAKE
+    wake = max((user_wake or HARD_WAKE), HARD_WAKE)
     sleep = min((getattr(prefs, "sleep_time", None) or HARD_SLEEP), HARD_SLEEP)
     return wake, sleep
 
