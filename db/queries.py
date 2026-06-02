@@ -166,16 +166,35 @@ def _user_today(user_timezone: str) -> date:
 
 async def get_today_log(db: AsyncSession, user_id: int,
                         user_timezone: str = "UTC") -> Optional[DailyLog]:
-    today = _user_today(user_timezone)
-    result = await db.execute(
-        select(DailyLog)
-        .where(and_(DailyLog.user_id == user_id, DailyLog.date == today))
-        .options(
-            selectinload(DailyLog.food_entries),
-            selectinload(DailyLog.exercise_entries),
+    _opts = [
+        selectinload(DailyLog.food_entries),
+        selectinload(DailyLog.exercise_entries),
+    ]
+
+    async def _fetch(d: date) -> Optional[DailyLog]:
+        r = await db.execute(
+            select(DailyLog)
+            .where(and_(DailyLog.user_id == user_id, DailyLog.date == d))
+            .options(*_opts)
         )
-    )
-    return result.scalar_one_or_none()
+        return r.scalar_one_or_none()
+
+    today = _user_today(user_timezone)
+    log = await _fetch(today)
+    if log is not None:
+        return log
+
+    utc_today = _user_today("UTC")
+    if utc_today != today:
+        log = await _fetch(utc_today)
+        if log is not None:
+            return log
+
+    yesterday = today - timedelta(days=1)
+    if yesterday != utc_today:
+        log = await _fetch(yesterday)
+
+    return log
 
 
 async def get_log_by_date(db: AsyncSession, user_id: int, target_date: date) -> Optional[DailyLog]:
