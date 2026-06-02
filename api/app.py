@@ -27,9 +27,12 @@ from db.queries import (
     get_recent_health_snapshots,
     update_food_entry, delete_food_entry,
     update_exercise_entry, delete_exercise_entry,
+    add_food_entry, add_exercise_entry,
+    get_or_create_today_log, get_or_create_log_for_date,
     _user_today,
     set_subscription_active, set_subscription_cancelled,
 )
+from api.usda import search_food as _usda_search
 
 logger = logging.getLogger(__name__)
 
@@ -1570,6 +1573,95 @@ async def admin_user_detail(user_id: int, token: str = Query(...)):
 </body>
 </html>"""
     return HTMLResponse(html)
+
+
+# ── Dashboard log endpoints ────────────────────────────────────────────────────
+
+@app.get("/api/food/search")
+async def api_food_search(q: str = Query(..., min_length=2), token: str = Query(...)):
+    async with AsyncSessionLocal() as db:
+        user = await get_user_by_webhook_token(db, token)
+        if not user:
+            raise HTTPException(status_code=401, detail="Invalid token")
+    results = await _usda_search(q, page_size=8)
+    return {"results": [
+        {
+            "name": r["description"],
+            "brand": r.get("brand", ""),
+            "per100g": r["per100g"],
+            "fdc_id": r["fdc_id"],
+        }
+        for r in results
+    ]}
+
+
+class FoodLogBody(BaseModel):
+    name: str
+    quantity: Optional[str] = None
+    calories: float = 0
+    protein: float = 0
+    carbs: float = 0
+    fats: float = 0
+    estimated: bool = True
+    log_date: Optional[str] = None  # YYYY-MM-DD, defaults to viewing date
+
+
+@app.post("/api/food/log")
+async def api_log_food(body: FoodLogBody, token: str = Query(...)):
+    async with AsyncSessionLocal() as db:
+        user = await get_user_by_webhook_token(db, token)
+        if not user:
+            raise HTTPException(status_code=401, detail="Invalid token")
+        tz = getattr(user, "timezone", None) or "UTC"
+        if body.log_date:
+            log = await get_or_create_log_for_date(db, user.id, date.fromisoformat(body.log_date))
+        else:
+            log = await get_or_create_today_log(db, user.id, tz)
+        entry = await add_food_entry(
+            db, log.id,
+            parsed_food_name=body.name,
+            quantity=body.quantity,
+            calories=round(body.calories),
+            protein=round(body.protein, 1),
+            carbs=round(body.carbs, 1),
+            fats=round(body.fats, 1),
+            estimated=body.estimated,
+        )
+    return {"status": "ok", "id": entry.id}
+
+
+class ExerciseLogBody(BaseModel):
+    name: str
+    sets: Optional[int] = None
+    reps: Optional[str] = None
+    weight_lbs: Optional[float] = None
+    duration_minutes: Optional[float] = None
+    is_cardio: bool = False
+    log_date: Optional[str] = None
+
+
+@app.post("/api/exercise/log")
+async def api_log_exercise(body: ExerciseLogBody, token: str = Query(...)):
+    async with AsyncSessionLocal() as db:
+        user = await get_user_by_webhook_token(db, token)
+        if not user:
+            raise HTTPException(status_code=401, detail="Invalid token")
+        tz = getattr(user, "timezone", None) or "UTC"
+        if body.log_date:
+            log = await get_or_create_log_for_date(db, user.id, date.fromisoformat(body.log_date))
+        else:
+            log = await get_or_create_today_log(db, user.id, tz)
+        weight_kg = body.weight_lbs * 0.453592 if body.weight_lbs else None
+        entry = await add_exercise_entry(
+            db, log.id,
+            is_cardio=body.is_cardio,
+            parsed_exercise_name=body.name,
+            sets=body.sets,
+            reps=body.reps,
+            weight_kg=weight_kg,
+            duration_minutes=body.duration_minutes,
+        )
+    return {"status": "ok", "id": entry.id}
 
 
 # ── Dashboard HTML ─────────────────────────────────────────────────────────────

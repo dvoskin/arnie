@@ -680,7 +680,7 @@ footer{{
 .ph-log-btn:active{{transform:scale(.95)}}
 
 /* ── STATUS TOGGLES ──────────────────────────────────────── */
-.toggles{{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:14px}}
+.toggles{{display:flex;gap:7px;flex-wrap:wrap;margin-top:16px;margin-bottom:14px}}
 .toggle{{
   display:inline-flex;align-items:center;gap:7px;padding:7px 12px;
   border-radius:999px;border:1px solid var(--bd);background:var(--sf);
@@ -702,6 +702,124 @@ footer{{
 [data-theme="light"] .toggle.on .tcb{{color:#fff}}
 .share-tgl{{cursor:pointer}}
 .share-tgl:hover{{border-color:var(--ac);color:var(--ac)}}
+
+/* ── LOG MODAL ───────────────────────────────────────────── */
+.lm-overlay{{
+  position:fixed;inset:0;z-index:200;
+  background:rgba(0,0,0,.55);backdrop-filter:blur(8px);
+  display:flex;align-items:center;justify-content:center;
+  padding:20px;animation:fadeUp .18s ease;
+}}
+.lm-box{{
+  background:var(--bg);border:1px solid var(--bd);border-radius:22px;
+  width:100%;max-width:500px;overflow:hidden;
+  box-shadow:0 28px 70px rgba(0,0,0,.55),0 0 0 1px rgba(255,255,255,.07);
+  animation:slideUp .22s cubic-bezier(.2,.7,.2,1);
+}}
+@keyframes slideUp{{from{{opacity:0;transform:translateY(18px)}}to{{opacity:1;transform:none}}}}
+.lm-head{{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:20px 22px 0;
+}}
+.lm-title{{
+  font-family:'Instrument Serif','Times New Roman',serif;
+  font-size:22px;letter-spacing:-.01em;color:var(--tx);
+}}
+.lm-close{{
+  width:30px;height:30px;border-radius:8px;border:1px solid var(--bd);
+  background:var(--sf2);color:var(--mu);cursor:pointer;
+  display:grid;place-items:center;font-size:16px;line-height:1;
+  transition:all .15s;
+}}
+.lm-close:hover{{border-color:var(--bd2);color:var(--tx)}}
+.lm-tabs{{
+  display:grid;grid-template-columns:1fr 1fr;gap:8px;
+  padding:16px 22px;
+}}
+.lm-tab{{
+  padding:9px;border-radius:10px;border:1px solid var(--bd);
+  background:var(--sf2);color:var(--mu);
+  font-family:'Geist Mono','SF Mono',monospace;
+  font-size:10px;letter-spacing:.1em;text-transform:uppercase;font-weight:500;
+  cursor:pointer;transition:all .18s;
+}}
+.lm-tab.active{{
+  background:var(--ac-dim);border-color:rgba(var(--ac-rgb),.4);
+  color:var(--tx);
+}}
+[data-theme="dark"] .lm-tab.active{{box-shadow:0 0 12px rgba(var(--ac-rgb),.15)}}
+.lm-body{{padding:0 22px 22px;display:flex;flex-direction:column;gap:12px}}
+.lm-field{{display:flex;flex-direction:column;gap:5px}}
+.lm-label{{
+  font-family:'Geist Mono','SF Mono',monospace;
+  font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--mu);font-weight:500;
+}}
+.lm-input{{
+  background:var(--sf2);border:1px solid var(--bd);color:var(--tx);
+  padding:11px 13px;border-radius:10px;font-size:14px;
+  font-family:inherit;width:100%;outline:none;
+  transition:border-color .15s,box-shadow .15s;
+}}
+.lm-input::placeholder{{color:var(--di)}}
+.lm-input:focus{{
+  border-color:rgba(var(--ac-rgb),.5);
+  box-shadow:0 0 0 3px rgba(var(--ac-rgb),.1);
+}}
+.lm-search-wrap{{position:relative}}
+.lm-results{{
+  position:absolute;top:calc(100% + 6px);left:0;right:0;z-index:10;
+  background:var(--bg);border:1px solid var(--bd);border-radius:12px;
+  overflow:hidden;max-height:260px;overflow-y:auto;
+  box-shadow:0 12px 30px rgba(0,0,0,.3);
+}}
+.lm-result{{
+  padding:11px 14px;cursor:pointer;border-bottom:1px solid var(--bd);
+  transition:background .12s;
+}}
+.lm-result:last-child{{border-bottom:none}}
+.lm-result:hover{{background:var(--sf2)}}
+.lm-result-name{{font-size:13px;font-weight:500;color:var(--tx);line-height:1.3}}
+.lm-result-meta{{
+  font-family:'Geist Mono','SF Mono',monospace;
+  font-size:10px;color:var(--mu);margin-top:3px;
+}}
+.lm-selected{{
+  background:var(--sf2);border:1px solid var(--bd);
+  border-radius:12px;padding:12px 14px;
+}}
+.lm-sel-name{{font-size:14px;font-weight:500;color:var(--tx);margin-bottom:6px}}
+.lm-sel-macros{{
+  display:flex;gap:12px;
+  font-family:'Geist Mono','SF Mono',monospace;font-size:11px;
+}}
+.lm-sel-macros span{{color:var(--mu)}}
+.lm-sel-macros b{{color:var(--tx2);font-weight:600}}
+.lm-macro-row{{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}}
+.lm-type-row{{display:grid;grid-template-columns:1fr 1fr;gap:8px}}
+.lm-type-btn{{
+  padding:9px;border-radius:10px;border:1px solid var(--bd);
+  background:var(--sf2);color:var(--mu);cursor:pointer;
+  font-family:'Geist Mono','SF Mono',monospace;
+  font-size:10px;letter-spacing:.08em;text-transform:uppercase;font-weight:500;
+  transition:all .15s;
+}}
+.lm-type-btn.active{{
+  background:var(--ac-dim);border-color:rgba(var(--ac-rgb),.4);color:var(--tx);
+}}
+.lm-submit{{
+  background:var(--ac);border:none;border-radius:11px;
+  padding:13px;width:100%;font-size:14px;font-weight:600;
+  color:#000;cursor:pointer;font-family:inherit;
+  transition:opacity .15s,transform .12s;margin-top:4px;
+  box-shadow:0 4px 14px rgba(var(--ac-rgb),.35);
+}}
+[data-theme="light"] .lm-submit{{color:#fff}}
+.lm-submit:hover{{opacity:.88;transform:translateY(-1px)}}
+.lm-submit:active{{transform:scale(.98)}}
+.lm-submit:disabled{{opacity:.45;cursor:not-allowed;transform:none}}
+.lm-note{{font-size:12px;color:var(--mu);text-align:center}}
+.lm-divider{{height:1px;background:var(--bd);margin:2px 0}}
 
 /* ═══════════════════════════════════════════════════════════
    IMMERSIVE 3D + MOBILE
@@ -926,7 +1044,7 @@ footer{{
     <div class="ph-sub" id="ph-sub"></div>
   </div>
   <div class="ph-actions">
-    <button class="ph-log-btn" onclick="focusLogInput()">+ Log</button>
+    <button class="ph-log-btn" onclick="openLogModal()">+ Log</button>
     <button class="hbtn" id="theme-btn" onclick="toggleTheme()" title="Toggle theme">&#9790;</button>
     <button class="hbtn" onclick="refreshCurrent()" title="Refresh">&#8635;</button>
   </div>
@@ -2015,6 +2133,196 @@ function shareDay(){{
   }}
 }}
 
+// ── Log Modal ─────────────────────────────────────────────────────────────
+var _lmTab='food', _lmExType='lift', _lmPer100=null, _lmSearchTimer=null;
+
+function openLogModal(){{
+  var m=document.getElementById('log-modal');
+  if(m){{m.style.display='flex';document.getElementById('lm-search')&&document.getElementById('lm-search').focus();}}
+}}
+function closeLogModal(){{
+  var m=document.getElementById('log-modal');
+  if(m)m.style.display='none';
+  // reset
+  var s=document.getElementById('lm-search');if(s)s.value='';
+  var r=document.getElementById('lm-results');if(r){{r.style.display='none';r.innerHTML='';}}
+  var sel=document.getElementById('lm-selected');if(sel)sel.style.display='none';
+  _lmPer100=null;
+  ['lm-cal','lm-pro','lm-carb','lm-fat','lm-qty'].forEach(function(id){{var e=document.getElementById(id);if(e)e.value='';}});
+  ['lm-ex-name','lm-sets','lm-reps','lm-weight','lm-dur'].forEach(function(id){{var e=document.getElementById(id);if(e)e.value='';}});
+}}
+
+function switchLogTab(tab){{
+  _lmTab=tab;
+  document.getElementById('lm-tab-food').classList.toggle('active',tab==='food');
+  document.getElementById('lm-tab-exercise').classList.toggle('active',tab==='exercise');
+  document.getElementById('lm-food').style.display=tab==='food'?'flex':'none';
+  document.getElementById('lm-exercise').style.display=tab==='exercise'?'flex':'none';
+  document.getElementById('lm-title').textContent=tab==='food'?'Log food':'Log workout';
+}}
+
+function setExType(t){{
+  _lmExType=t;
+  document.getElementById('lm-lift-btn').classList.toggle('active',t==='lift');
+  document.getElementById('lm-cardio-btn').classList.toggle('active',t==='cardio');
+  document.getElementById('lm-lift-fields').style.display=t==='lift'?'block':'none';
+  document.getElementById('lm-cardio-fields').style.display=t==='cardio'?'block':'none';
+}}
+
+function lmSearchDebounce(){{
+  clearTimeout(_lmSearchTimer);
+  var q=(document.getElementById('lm-search').value||'').trim();
+  if(q.length<2){{
+    var r=document.getElementById('lm-results');r.style.display='none';r.innerHTML='';
+    return;
+  }}
+  _lmSearchTimer=setTimeout(function(){{lmSearch(q);}},320);
+}}
+
+async function lmSearch(q){{
+  var r=document.getElementById('lm-results');
+  r.innerHTML='<div class="lm-result" style="color:var(--mu)">Searching…</div>';
+  r.style.display='block';
+  try{{
+    var resp=await fetch('/api/food/search?q='+encodeURIComponent(q)+'&token='+TOKEN);
+    if(!resp.ok)throw new Error();
+    var data=await resp.json();
+    var items=data.results||[];
+    if(!items.length){{r.innerHTML='<div class="lm-result" style="color:var(--mu)">No results — enter macros manually</div>';return;}}
+    r.innerHTML=items.map(function(item,i){{
+      var p100=item.per100g||{{}};
+      var cal=Math.round(p100.calories||0);
+      var pro=Math.round(p100.protein||0);
+      var carb=Math.round(p100.carbs||0);
+      var fat=Math.round(p100.fat||p100.fats||0);
+      var brand=item.brand?'<span style="color:var(--di)"> · '+esc(item.brand)+'</span>':'';
+      return '<div class="lm-result" onclick="lmSelectFood('+i+')" data-i="'+i+'">'+
+        '<div class="lm-result-name">'+esc(item.description||item.name)+brand+'</div>'+
+        '<div class="lm-result-meta">'+cal+' cal · '+pro+'g P · '+carb+'g C · '+fat+'g F &nbsp;<span style="color:var(--di)">per 100g</span></div>'+
+        '</div>';
+    }}).join('');
+    r._items=items;
+  }}catch(e){{
+    r.innerHTML='<div class="lm-result" style="color:var(--mu)">Search failed — enter macros manually</div>';
+  }}
+}}
+
+function lmSelectFood(i){{
+  var r=document.getElementById('lm-results');
+  if(!r._items||!r._items[i])return;
+  var item=r._items[i];
+  var p100=item.per100g||{{}};
+  _lmPer100=p100;
+  r.style.display='none';
+  // populate search with selected name
+  var s=document.getElementById('lm-search');
+  if(s)s.value=item.description||item.name;
+  // show selected card
+  var sel=document.getElementById('lm-selected');
+  var selName=document.getElementById('lm-sel-name');
+  var selMacros=document.getElementById('lm-sel-macros');
+  selName.textContent=item.description||item.name;
+  var cal=Math.round(p100.calories||0);
+  var pro=+(p100.protein||0).toFixed(1);
+  var carb=+(p100.carbs||0).toFixed(1);
+  var fat=+(p100.fat||p100.fats||0).toFixed(1);
+  selMacros.innerHTML=
+    '<span><b>'+cal+'</b> cal</span>'+
+    '<span style="color:var(--bl)"><b>'+pro+'g</b> P</span>'+
+    '<span style="color:var(--or)"><b>'+carb+'g</b> C</span>'+
+    '<span style="color:var(--pu)"><b>'+fat+'g</b> F</span>'+
+    '<span style="color:var(--di)">per 100g</span>';
+  sel.style.display='block';
+  // Set macros for 100g default
+  lmSetMacros(100, p100);
+  var qty=document.getElementById('lm-qty');if(qty)qty.value='100';
+  // focus qty
+  setTimeout(function(){{if(qty)qty.focus();}},50);
+}}
+
+function lmSetMacros(grams,p100){{
+  var ratio=grams/100;
+  var set=function(id,val){{var e=document.getElementById(id);if(e)e.value=isNaN(val)?'':String(Math.round(val*10)/10);}};
+  set('lm-cal',Math.round((p100.calories||0)*ratio));
+  set('lm-pro',((p100.protein||0)*ratio));
+  set('lm-carb',((p100.carbs||0)*ratio));
+  set('lm-fat',((p100.fat||p100.fats||0)*ratio));
+}}
+
+function lmQtyChange(){{
+  if(!_lmPer100)return;
+  var qty=document.getElementById('lm-qty');
+  if(!qty)return;
+  var g=parseFloat(qty.value);
+  if(!isNaN(g)&&g>0)lmSetMacros(g,_lmPer100);
+}}
+
+async function submitFood(){{
+  var name=(document.getElementById('lm-search').value||'').trim();
+  if(!name){{document.getElementById('lm-search').focus();return;}}
+  var qty=(document.getElementById('lm-qty').value||'').trim()||null;
+  var cal=parseFloat(document.getElementById('lm-cal').value)||0;
+  var pro=parseFloat(document.getElementById('lm-pro').value)||0;
+  var carb=parseFloat(document.getElementById('lm-carb').value)||0;
+  var fat=parseFloat(document.getElementById('lm-fat').value)||0;
+  var estimated=!_lmPer100;
+  var btn=document.getElementById('lm-food-btn');
+  btn.disabled=true;btn.textContent='Logging…';
+  try{{
+    var resp=await fetch('/api/food/log?token='+TOKEN,{{
+      method:'POST',headers:{{'Content-Type':'application/json'}},
+      body:JSON.stringify({{name,quantity:qty,calories:cal,protein:pro,carbs:carb,fats:fat,estimated,log_date:_viewingDate}})
+    }});
+    if(!resp.ok)throw new Error('HTTP '+resp.status);
+    closeLogModal();
+    delete _dayCache[_viewingDate];
+    await loadDayData(_viewingDate);
+  }}catch(e){{
+    btn.textContent='Error — retry';
+  }}finally{{
+    btn.disabled=false;
+    if(btn.textContent==='Logging…')btn.textContent='Log food';
+  }}
+}}
+
+async function submitExercise(){{
+  var name=(document.getElementById('lm-ex-name').value||'').trim();
+  if(!name){{document.getElementById('lm-ex-name').focus();return;}}
+  var isCardio=_lmExType==='cardio';
+  var sets=parseInt(document.getElementById('lm-sets').value)||null;
+  var reps=(document.getElementById('lm-reps').value||'').trim()||null;
+  var weight=parseFloat(document.getElementById('lm-weight').value)||null;
+  var dur=parseFloat(document.getElementById('lm-dur').value)||null;
+  var btn=document.getElementById('lm-ex-btn');
+  btn.disabled=true;btn.textContent='Logging…';
+  try{{
+    var resp=await fetch('/api/exercise/log?token='+TOKEN,{{
+      method:'POST',headers:{{'Content-Type':'application/json'}},
+      body:JSON.stringify({{name,sets,reps,weight_lbs:weight,duration_minutes:dur,is_cardio:isCardio,log_date:_viewingDate}})
+    }});
+    if(!resp.ok)throw new Error('HTTP '+resp.status);
+    closeLogModal();
+    delete _dayCache[_viewingDate];
+    await loadDayData(_viewingDate);
+  }}catch(e){{
+    btn.textContent='Error — retry';
+  }}finally{{
+    btn.disabled=false;
+    if(btn.textContent==='Logging…')btn.textContent='Log workout';
+  }}
+}}
+
+// Wire up + Log button
+function focusLogInput(){{switchTab('day');openLogModal();}}
+
+// Close on Escape
+document.addEventListener('keydown',function(e){{
+  if(e.key==='Escape'){{
+    var m=document.getElementById('log-modal');
+    if(m&&m.style.display!=='none')closeLogModal();
+  }}
+}});
+
 // ── Start ─────────────────────────────────────────────────────────────────
 init();
 setInterval(()=>{{
@@ -2082,6 +2390,70 @@ setInterval(()=>{{
   setTimeout(function(){{staggerCards();attachTilt();}},500);
 }})();
 </script>
+
+<!-- LOG MODAL — direct body child so position:fixed works across all containers -->
+<div class="lm-overlay" id="log-modal" style="display:none" onclick="if(event.target===this)closeLogModal()">
+  <div class="lm-box">
+    <div class="lm-head">
+      <div class="lm-title" id="lm-title">Log</div>
+      <button class="lm-close" onclick="closeLogModal()">&#215;</button>
+    </div>
+    <div class="lm-tabs">
+      <button class="lm-tab active" id="lm-tab-food" onclick="switchLogTab('food')">&#127869; Food</button>
+      <button class="lm-tab" id="lm-tab-exercise" onclick="switchLogTab('exercise')">&#127947; Workout</button>
+    </div>
+    <!-- FOOD PANEL -->
+    <div class="lm-body" id="lm-food">
+      <div class="lm-field lm-search-wrap">
+        <label class="lm-label">Search food</label>
+        <input class="lm-input" id="lm-search" type="text" placeholder="e.g. grilled chicken, banana…" autocomplete="off" oninput="lmSearchDebounce()" />
+        <div class="lm-results" id="lm-results" style="display:none"></div>
+      </div>
+      <div id="lm-selected" style="display:none">
+        <div class="lm-selected">
+          <div class="lm-sel-name" id="lm-sel-name"></div>
+          <div class="lm-sel-macros" id="lm-sel-macros"></div>
+        </div>
+      </div>
+      <div class="lm-field">
+        <label class="lm-label">Quantity <span style="color:var(--di);text-transform:none;letter-spacing:0;font-family:inherit">(grams, or describe: "1 cup")</span></label>
+        <input class="lm-input" id="lm-qty" type="text" placeholder="e.g. 150  or  1 large" oninput="lmQtyChange()" />
+      </div>
+      <div class="lm-macro-row">
+        <div class="lm-field"><label class="lm-label">Cal</label><input class="lm-input" id="lm-cal" type="number" min="0" step="1" placeholder="0" /></div>
+        <div class="lm-field"><label class="lm-label">P (g)</label><input class="lm-input" id="lm-pro" type="number" min="0" step="0.1" placeholder="0" /></div>
+        <div class="lm-field"><label class="lm-label">C (g)</label><input class="lm-input" id="lm-carb" type="number" min="0" step="0.1" placeholder="0" /></div>
+        <div class="lm-field"><label class="lm-label">F (g)</label><input class="lm-input" id="lm-fat" type="number" min="0" step="0.1" placeholder="0" /></div>
+      </div>
+      <button class="lm-submit" id="lm-food-btn" onclick="submitFood()">Log food</button>
+    </div>
+    <!-- EXERCISE PANEL -->
+    <div class="lm-body" id="lm-exercise" style="display:none">
+      <div class="lm-field">
+        <label class="lm-label">Exercise name</label>
+        <input class="lm-input" id="lm-ex-name" type="text" placeholder="e.g. Bench press, Running…" />
+      </div>
+      <div class="lm-field">
+        <label class="lm-label">Type</label>
+        <div class="lm-type-row">
+          <button class="lm-type-btn active" id="lm-lift-btn" onclick="setExType('lift')">&#127959; Strength</button>
+          <button class="lm-type-btn" id="lm-cardio-btn" onclick="setExType('cardio')">&#127939; Cardio</button>
+        </div>
+      </div>
+      <div id="lm-lift-fields">
+        <div class="lm-macro-row">
+          <div class="lm-field"><label class="lm-label">Sets</label><input class="lm-input" id="lm-sets" type="number" min="1" step="1" placeholder="3" /></div>
+          <div class="lm-field"><label class="lm-label">Reps</label><input class="lm-input" id="lm-reps" type="text" placeholder="10" /></div>
+          <div class="lm-field" style="grid-column:span 2"><label class="lm-label">Weight (lbs)</label><input class="lm-input" id="lm-weight" type="number" min="0" step="2.5" placeholder="135" /></div>
+        </div>
+      </div>
+      <div id="lm-cardio-fields" style="display:none">
+        <div class="lm-field"><label class="lm-label">Duration (minutes)</label><input class="lm-input" id="lm-dur" type="number" min="1" step="1" placeholder="30" /></div>
+      </div>
+      <button class="lm-submit" id="lm-ex-btn" onclick="submitExercise()">Log workout</button>
+    </div>
+  </div>
+</div>
 </body>
 </html>"""
 
