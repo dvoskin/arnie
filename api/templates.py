@@ -2165,7 +2165,7 @@ function renderWorkoutProgram(p, rawText){{
   var daysHtml=(p.days||[]).map(function(day,i){{
     var pri=day.priority||'';
     var priHtml=pri?'<span class="wp-priority '+esc(priorityClass[pri]||'')+'">'+esc(pri)+'</span>':'';
-    var goalsHtml=(day.goals||[]).map(function(g){{return '<span class="wp-goal">'+esc(g)+'</span>';'}}).join('');
+    var goalsHtml=(day.goals||[]).map(function(g){{return '<span class="wp-goal">'+esc(g)+'</span>';}}).join('');
     var exHtml=(day.exercises||[]).map(function(ex){{
       var catCls='wp-ex-cat-'+(ex.category||'main');
       var perf=ex.recent_performance?'<div class="wp-ex-perf">'+esc(ex.recent_performance)+'</div>':'';
