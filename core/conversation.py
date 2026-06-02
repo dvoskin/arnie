@@ -127,7 +127,7 @@ async def run_turn(
     # ── Execute tools ─────────────────────────────────────────────────────────
     tool_results: dict = {}
     if tool_calls:
-        if today_log is None and not in_onboarding:
+        if today_log is None:
             from db.queries import get_or_create_today_log
             today_log = await get_or_create_today_log(
                 db, user.id, user.timezone or "UTC"
