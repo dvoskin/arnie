@@ -196,6 +196,7 @@ body{{
 .tab-panel.active{{display:block}}
 
 /* ── DAY LAYOUT ──────────────────────────────────────────── */
+.insights-top{{margin-bottom:4px}}
 .day-top{{margin-bottom:4px}}
 .day-grid{{display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start}}
 .day-col-analytics{{min-width:0;order:1}}
@@ -1216,6 +1217,17 @@ footer{{
     </div>
 
     <!-- FULL-WIDTH: macros + toggles always on top -->
+    <!-- Coach insights — full width, always at the top -->
+    <div class="insights-top">
+      <div class="stitle spaced">
+        <span>&#10024; Coach insights <span class="ai-pill">AI</span></span>
+        <button class="add-toggle" onclick="refreshInsights()" title="Refresh" style="font-size:14px;font-family:inherit">&#8635;</button>
+      </div>
+      <div class="icrd fade-in" id="insights-card">
+        <div class="iload"><span class="spin">&#9675;</span> Analyzing&hellip;</div>
+      </div>
+    </div>
+
     <div class="day-top">
       <div class="stitle" id="day-label">Today</div>
       <div class="cards">
@@ -1255,11 +1267,6 @@ footer{{
 
       <!-- Analytics column (right on desktop, bottom on mobile) -->
       <div class="day-col-analytics">
-        <div class="stitle">&#10024; Coach insights <span class="ai-pill">AI</span></div>
-        <div class="icrd fade-in" id="insights-card">
-          <div class="iload"><span class="spin">&#9675;</span> Analyzing&hellip;</div>
-        </div>
-
         <div class="stitle">Energy breakdown</div>
         <div class="macro-ring-wrap">
           <canvas class="macro-ring-canvas" id="macroRing" width="80" height="80"></canvas>
@@ -2111,13 +2118,26 @@ function renderProfileTab(d){{
 // ── Insights ──────────────────────────────────────────────────────────────
 function renderInsights(ins){{
   var el=document.getElementById('insights-card');
+  if(!el)return;
   if(!ins||!ins.length){{
-    el.innerHTML='<div class="iempty">Not enough data yet — keep logging and check back tomorrow.</div>';
+    el.innerHTML='<div class="iempty">Not enough data yet — keep logging and Arnie will have more to say.</div>';
     return;
   }}
-  el.innerHTML=ins.map(txt=>
-    '<div class="irow fade-in"><div class="iico">&#9656;</div><div class="itxt">'+esc(txt)+'</div></div>'
-  ).join('');
+  el.innerHTML=ins.map(function(txt){{
+    return '<div class="irow fade-in"><div class="iico">&#9656;</div><div class="itxt">'+esc(txt)+'</div></div>';
+  }}).join('');
+}}
+
+async function refreshInsights(){{
+  var el=document.getElementById('insights-card');
+  if(el)el.innerHTML='<div class="iload"><span class="spin">&#9675;</span> Analyzing&hellip;</div>';
+  try{{
+    var r=await fetch(INSIGHTS_API+'?force=true');
+    if(!r.ok)throw new Error();
+    renderInsights(((await r.json()).insights)||[]);
+  }}catch(e){{
+    if(el)el.innerHTML='<div class="iempty">Could not load insights — try again shortly.</div>';
+  }}
 }}
 
 // ── Food emoji mapping ────────────────────────────────────────────────────
