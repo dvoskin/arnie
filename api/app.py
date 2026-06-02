@@ -1761,6 +1761,124 @@ Workout description:
         return {"program": program}
 
 
+@app.post("/api/workout/{token}/auto-fill")
+async def auto_fill_workout_program(token: str):
+    """
+    Synthesize a workout program from the user's Arnie memory + recent
+    conversation history, then save it. Returns the parsed program.
+    """
+    import json
+    from sqlalchemy import select, desc
+    from core.llm import _get_anthropic, DEFAULT_MODEL, ANTHROPIC_API_KEY
+    from memory.memory_manager import read_memory
+
+    async with AsyncSessionLocal() as db:
+        user = await get_user_by_webhook_token(db, token)
+        if not user:
+            raise HTTPException(status_code=401, detail="Invalid token")
+
+        if not ANTHROPIC_API_KEY():
+            raise HTTPException(status_code=503, detail="AI unavailable")
+
+        # Pull Arnie memory file
+        from db.models import ConversationLog
+        try:
+            memory_text = await read_memory(user.telegram_id)
+        except Exception:
+            memory_text = ""
+
+        # Pull last 60 conversation turns for workout-relevant context
+        rows = (await db.execute(
+            select(ConversationLog)
+            .where(ConversationLog.user_id == user.id)
+            .order_by(desc(ConversationLog.timestamp))
+            .limit(60)
+        )).scalars().all()
+
+        # Filter to messages that mention workout/exercise keywords
+        kw = ("workout", "gym", "lift", "press", "pull", "push", "squat", "chest",
+              "back", "shoulder", "arm", "leg", "cardio", "set", "rep", "exercise",
+              "train", "split", "day", "pr", "bench", "deadlift", "curl")
+        relevant = []
+        for r in reversed(rows):
+            combined = ((r.raw_message or "") + " " + (r.response or "")).lower()
+            if any(k in combined for k in kw):
+                relevant.append(f"User: {r.raw_message or ''}\nArnie: {r.response or ''}")
+
+        convo_context = "\n\n---\n\n".join(relevant[-30:]) if relevant else "(no workout conversations found)"
+
+        prompt = f"""You are extracting a user's workout program from their fitness coaching history.
+
+Read the memory notes and conversation snippets below, then produce a structured JSON workout program.
+
+IMPORTANT: Only include information that is actually present in the context. If something is unclear or missing, omit it. Do not invent exercises or details.
+
+Memory notes:
+{memory_text or '(empty)'}
+
+Recent workout-related conversations (most recent first):
+{convo_context}
+
+Return ONLY valid JSON in this structure:
+{{
+  "split_name": "descriptive name based on what you found",
+  "focus": "one sentence summary of their training focus",
+  "rotation": ["Day 1 name", "Day 2 name", ...],
+  "days": [
+    {{
+      "name": "muscle group / session name",
+      "priority": "primary | secondary | optional",
+      "goals": ["goal 1", "goal 2"],
+      "exercises": [
+        {{
+          "name": "Exercise Name",
+          "category": "main | accessory | cardio",
+          "recent_performance": "e.g. 225 × 5 (PR)" or null,
+          "notes": null
+        }}
+      ],
+      "notes": "any extra context"
+    }}
+  ]
+}}
+
+If there is not enough workout information to build a meaningful program, return:
+{{"insufficient_data": true, "reason": "brief explanation"}}
+"""
+        client = _get_anthropic()
+        resp = await client.messages.create(
+            model=DEFAULT_MODEL(),
+            max_tokens=2500,
+            messages=[{{"role": "user", "content": prompt}}],
+        )
+        text = resp.content[0].text.strip()
+        if text.startswith("```"):
+            text = text.split("\n", 1)[1].rsplit("```", 1)[0].strip()
+        if text.startswith("json"):
+            text = text[4:].strip()
+
+        try:
+            program = json.loads(text)
+        except Exception:
+            raise HTTPException(status_code=422, detail="AI returned unparseable JSON")
+
+        if program.get("insufficient_data"):
+            return {{"program": None, "reason": program.get("reason", "Not enough workout data in your conversation history yet.")}}
+
+        # Save it
+        from db.models import WorkoutProgram
+        row = (await db.execute(select(WorkoutProgram).where(WorkoutProgram.user_id == user.id))).scalar_one_or_none()
+        raw_summary = f"[Auto-filled from Arnie conversation history]\n\n{memory_text}"
+        if row:
+            row.raw_text = raw_summary
+            row.program_json = json.dumps(program)
+        else:
+            db.add(WorkoutProgram(user_id=user.id, raw_text=raw_summary, program_json=json.dumps(program)))
+        await db.commit()
+
+        return {{"program": program}}
+
+
 @app.delete("/api/workout/{token}")
 async def delete_workout_program(token: str):
     """Remove the user's workout program."""

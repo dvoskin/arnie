@@ -1432,7 +1432,11 @@ footer{{
 
     <!-- paste / edit panel (hidden by default) -->
     <div class="add-card" id="workout-editor" style="display:none;margin-top:10px">
-      <textarea class="add-inp" id="workout-raw" rows="12" placeholder="Paste your workout split here — exercises, goals, recent lifts, rotation. Arnie will parse it." style="height:200px;resize:vertical;font-size:13px;line-height:1.5"></textarea>
+      <div style="display:flex;gap:8px;padding:12px 14px;border-bottom:1px solid var(--bd)">
+        <button class="add-submit" style="flex:1;text-align:center;padding:10px" onclick="autoFillWorkout()">&#10024; Auto-fill from Arnie chat</button>
+      </div>
+      <div style="padding:6px 14px;font-family:'Geist Mono','SF Mono',monospace;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--di)">or paste manually</div>
+      <textarea class="add-inp" id="workout-raw" rows="10" placeholder="Paste your workout split here — exercises, goals, recent lifts, rotation." style="height:180px;resize:vertical;font-size:13px;line-height:1.5"></textarea>
       <div style="display:flex;gap:8px;padding:10px 14px;border-top:1px solid var(--bd)">
         <button class="add-submit" style="flex:1" onclick="saveWorkoutProgram()">&#9889; Parse &amp; save</button>
         <button class="cbtn" onclick="closeWorkoutEditor()">Cancel</button>
@@ -2237,6 +2241,30 @@ async function saveWorkoutProgram(){{
     if(status)status.textContent='Parse failed — check your input and try again.';
   }}finally{{
     if(btn){{btn.innerHTML='&#9889; Parse &amp; save';btn.disabled=false;}}
+  }}
+}}
+
+async function autoFillWorkout(){{
+  var status=document.getElementById('workout-parse-status');
+  var btn=document.querySelector('#workout-editor .add-submit');
+  var autoBtn=document.querySelector('#workout-editor button:first-child');
+  if(autoBtn){{autoBtn.textContent='&#9675; Reading your Arnie history…';autoBtn.disabled=true;}}
+  if(status)status.textContent='';
+  try{{
+    var r=await fetch('/api/workout/'+TOKEN+'/auto-fill',{{method:'POST'}});
+    if(!r.ok)throw new Error('HTTP '+r.status);
+    var data=await r.json();
+    if(!data.program){{
+      if(status)status.textContent=data.reason||'Not enough workout info in your chat history yet — paste it manually.';
+      return;
+    }}
+    _wpCache={{program:data.program,raw_text:''}};
+    renderWorkoutProgram(data.program,'');
+    closeWorkoutEditor();
+  }}catch(e){{
+    if(status)status.textContent='Auto-fill failed — try pasting manually instead.';
+  }}finally{{
+    if(autoBtn){{autoBtn.innerHTML='&#10024; Auto-fill from Arnie chat';autoBtn.disabled=false;}}
   }}
 }}
 
