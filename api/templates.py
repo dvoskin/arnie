@@ -232,7 +232,7 @@ body{{
   .main-inner{{max-width:100%;margin:0}}
   .main-inner{{padding:0 20px 90px;max-width:100%}}
   .bottomnav{{display:flex}}
-  .pagehead{{padding:18px 0 14px}}
+  .pagehead{{padding:14px 0 10px}}
 }}
 @media(max-width:560px){{
   .main-inner{{padding:0 16px 90px}}
@@ -370,7 +370,7 @@ body{{
   background:var(--sf);border:1px solid var(--bd);border-radius:18px;padding:20px;
   backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);box-shadow:var(--sh);
 }}
-.macro-ring-canvas{{width:80px;height:80px;flex-shrink:0}}
+.macro-ring-canvas{{width:80px;height:80px;min-width:80px;min-height:80px;flex-shrink:0}}
 .macro-legend{{flex:1;display:flex;flex-direction:column;gap:8px}}
 .mleg{{display:flex;align-items:center;gap:8px;font-size:12px}}
 .mleg-dot{{width:8px;height:8px;border-radius:50%;flex-shrink:0}}
@@ -388,7 +388,8 @@ body{{
   text-transform:uppercase;letter-spacing:.06em;
 }}
 .heat-grid{{display:grid;grid-template-columns:repeat(7,1fr);gap:3px}}
-.hcell{{height:20px;border-radius:5px;background:var(--sf2);border:1px solid var(--bd);position:relative;transition:transform .15s;cursor:default}}
+.hcell{{height:22px;border-radius:5px;background:var(--sf3);border:1px solid var(--bd);position:relative;transition:transform .15s;cursor:default}}
+[data-theme="light"] .hcell{{background:#e4e8f0;border-color:#d0d8e8}}
 .hcell:hover{{transform:scale(1.2);z-index:2}}
 .hcell.h-on{{background:#22c55e;border-color:#22c55e}}
 .hcell.h-off{{background:#f59e0b;border-color:#f59e0b}}
@@ -704,10 +705,10 @@ footer{{
 .pagehead{{
   position:sticky;top:0;z-index:30;
   display:flex;align-items:center;justify-content:space-between;
-  gap:20px;padding:26px 0 18px;margin-bottom:8px;
+  gap:20px;padding:22px 0 14px;margin-bottom:6px;
   backdrop-filter:blur(20px) saturate(160%);
   -webkit-backdrop-filter:blur(20px) saturate(160%);
-  background:linear-gradient(180deg,var(--bg) 40%,transparent);
+  background:var(--bg);
 }}
 .ph-title{{
   font-family:'Instrument Serif','Times New Roman',serif;
@@ -1065,17 +1066,20 @@ footer{{
 @media(max-width:560px){{
   /* Pagehead: hide icon-only buttons, keep just + Log */
   .pagehead .hbtn{{display:none}}
-  .pagehead{{padding:14px 0 10px;gap:10px;align-items:center}}
+  .pagehead{{padding:12px 0 8px;gap:10px;align-items:center;margin-bottom:4px}}
   .ph-title{{font-size:26px!important;letter-spacing:-.015em}}
   .ph-sub{{font-size:11px;margin-top:6px;gap:8px}}
   .ph-actions{{gap:5px}}
   .ph-log-btn{{padding:0 14px;height:35px;font-size:13px;border-radius:9px}}
   /* Section labels */
-  .stitle{{margin:20px 0 10px;font-size:10.5px;letter-spacing:.11em}}
+  .stitle{{margin:16px 0 8px;font-size:10px;letter-spacing:.11em}}
   /* Cards */
-  .cval{{font-size:30px}}
-  .clbl{{font-size:10px;margin-bottom:6px;letter-spacing:.09em}}
-  .card{{padding:16px;border-radius:14px}}
+  .cval{{font-size:28px}}
+  .clbl{{font-size:9.5px;margin-bottom:5px;letter-spacing:.09em}}
+  .card{{padding:14px;border-radius:14px}}
+  .lcrd{{border-radius:14px}}
+  .heat-wrap{{padding:14px}}
+  .macro-ring-wrap{{padding:14px;gap:14px}}
   .csub{{font-size:12px}}
   /* Date nav */
   .dchip{{padding:8px 13px;font-size:11.5px}}
