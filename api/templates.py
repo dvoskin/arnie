@@ -195,6 +195,17 @@ body{{
 .tab-panel{{display:none;animation:fadeUp .28s ease}}
 .tab-panel.active{{display:block}}
 
+/* ── DAY LAYOUT ──────────────────────────────────────────── */
+.day-top{{margin-bottom:4px}}
+.day-grid{{display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start}}
+.day-col-analytics{{min-width:0;order:1}}
+.day-col-log{{min-width:0;order:2}}
+@media(max-width:700px){{
+  .day-grid{{grid-template-columns:1fr}}
+  .day-col-log{{order:1}}
+  .day-col-analytics{{order:2}}
+}}
+
 /* ── BOTTOM NAV (mobile) ─────────────────────────────────── */
 .bottomnav{{
   display:none;position:fixed;bottom:0;left:0;right:0;z-index:60;
@@ -1170,8 +1181,8 @@ footer{{
       <button class="darr" id="date-next" onclick="navDate(1)"  aria-label="Next day">&#8250;</button>
     </div>
 
-    <!-- LEFT COLUMN -->
-    <div class="day-col-left">
+    <!-- FULL-WIDTH: macros + toggles always on top -->
+    <div class="day-top">
       <div class="stitle" id="day-label">Today</div>
       <div class="cards">
         <div class="card">
@@ -1197,85 +1208,88 @@ footer{{
           <div class="csub" id="fat-sub"></div>
         </div>
       </div>
-
       <div class="toggles">
         <span id="wo-badge" class="toggle"><span class="tcb"></span>No workout</span>
         <span id="ca-badge" class="toggle"><span class="tcb"></span>No cardio</span>
         <span id="wt-badge" class="toggle on" style="display:none"></span>
         <button class="toggle share-tgl t-click" onclick="shareDay()">&#8679; Share day</button>
       </div>
-
-      <div class="stitle">&#10024; Coach insights <span class="ai-pill">AI</span></div>
-      <div class="icrd fade-in" id="insights-card">
-        <div class="iload"><span class="spin">&#9675;</span> Analyzing&hellip;</div>
-      </div>
-
-      <div class="stitle">Energy breakdown</div>
-      <div class="macro-ring-wrap">
-        <canvas class="macro-ring-canvas" id="macroRing" width="80" height="80"></canvas>
-        <div class="macro-legend" id="macro-legend"></div>
-      </div>
-
-      <div class="stitle">28-day consistency</div>
-      <div class="heat-wrap">
-        <div class="heat-dow">
-          <span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span><span>S</span>
-        </div>
-        <div class="heat-grid" id="heat-grid"></div>
-        <div class="heat-legend">
-          <span class="hleg-dot" style="background:#22c55e"></span>On target &nbsp;
-          <span class="hleg-dot" style="background:#f59e0b"></span>Logged &nbsp;
-          <span class="hleg-dot" style="background:var(--sf2)"></span>Missed &nbsp;
-          <span class="hleg-dot" style="background:rgba(255,255,255,.15)"></span><span style="color:var(--di)">● workout</span>
-        </div>
-      </div>
-
-      <div id="health-section" style="display:none">
-        <div class="stitle">Wearable</div>
-        <div class="hgrid" id="health-grid"></div>
-      </div>
     </div>
 
-    <!-- RIGHT COLUMN -->
-    <div class="day-col-right">
-      <div class="stitle spaced">
-        <span>Food log</span>
-        <span id="food-log-count" style="color:var(--mu);font-weight:400"></span>
-      </div>
-      <div class="lcrd" id="food-log"><div class="lempty">Loading&hellip;</div></div>
+    <!-- 2-COL GRID: food/workouts left on mobile, analytics right -->
+    <div class="day-grid">
 
-      <!-- Add food form -->
-      <div class="add-card" id="add-food-card">
-        <input class="add-inp" id="food-name" placeholder="Food name (e.g. chicken breast)" autocomplete="off">
-        <input class="add-inp" id="food-qty" placeholder="Portion (e.g. 200g)" style="flex:0 0 140px">
-        <div class="add-macros">
-          <div class="add-mac-field"><label>Cal</label><input type="number" id="food-cal" min="0" inputmode="numeric"></div>
-          <div class="add-mac-field"><label>P&nbsp;(g)</label><input type="number" id="food-pro" min="0" inputmode="decimal"></div>
-          <div class="add-mac-field"><label>C&nbsp;(g)</label><input type="number" id="food-carb" min="0" inputmode="decimal"></div>
-          <div class="add-mac-field"><label>F&nbsp;(g)</label><input type="number" id="food-fat" min="0" inputmode="decimal"></div>
+      <!-- Analytics column (right on desktop, bottom on mobile) -->
+      <div class="day-col-analytics">
+        <div class="stitle">&#10024; Coach insights <span class="ai-pill">AI</span></div>
+        <div class="icrd fade-in" id="insights-card">
+          <div class="iload"><span class="spin">&#9675;</span> Analyzing&hellip;</div>
         </div>
-        <button class="add-submit" id="food-submit" onclick="submitFood()">+ Add food</button>
+
+        <div class="stitle">Energy breakdown</div>
+        <div class="macro-ring-wrap">
+          <canvas class="macro-ring-canvas" id="macroRing" width="80" height="80"></canvas>
+          <div class="macro-legend" id="macro-legend"></div>
+        </div>
+
+        <div class="stitle">28-day consistency</div>
+        <div class="heat-wrap">
+          <div class="heat-dow">
+            <span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span><span>S</span>
+          </div>
+          <div class="heat-grid" id="heat-grid"></div>
+          <div class="heat-legend">
+            <span class="hleg-dot" style="background:#22c55e"></span>On target &nbsp;
+            <span class="hleg-dot" style="background:#f59e0b"></span>Logged &nbsp;
+            <span class="hleg-dot" style="background:var(--sf2)"></span>Missed &nbsp;
+            <span class="hleg-dot" style="background:rgba(255,255,255,.15)"></span><span style="color:var(--di)">● workout</span>
+          </div>
+        </div>
+
+        <div id="health-section" style="display:none">
+          <div class="stitle">Wearable</div>
+          <div class="hgrid" id="health-grid"></div>
+        </div>
       </div>
 
-      <div class="stitle" style="margin-top:24px">Workouts</div>
-      <div class="lcrd" id="ex-log"><div class="lempty">Loading&hellip;</div></div>
+      <!-- Logging column (right on desktop, top on mobile) -->
+      <div class="day-col-log">
+        <div class="stitle spaced">
+          <span>Food log</span>
+          <span id="food-log-count" style="color:var(--mu);font-weight:400"></span>
+        </div>
+        <div class="lcrd" id="food-log"><div class="lempty">Loading&hellip;</div></div>
+        <div class="add-card">
+          <input class="add-inp" id="food-name" placeholder="Food name (e.g. chicken breast)" autocomplete="off">
+          <input class="add-inp" id="food-qty" placeholder="Portion (e.g. 200g)">
+          <div class="add-macros">
+            <div class="add-mac-field"><label>Cal</label><input type="number" id="food-cal" min="0" inputmode="numeric" placeholder="0"></div>
+            <div class="add-mac-field"><label>P (g)</label><input type="number" id="food-pro" min="0" inputmode="decimal" placeholder="0"></div>
+            <div class="add-mac-field"><label>C (g)</label><input type="number" id="food-carb" min="0" inputmode="decimal" placeholder="0"></div>
+            <div class="add-mac-field"><label>F (g)</label><input type="number" id="food-fat" min="0" inputmode="decimal" placeholder="0"></div>
+          </div>
+          <button class="add-submit" id="food-submit" onclick="submitFood()">+ Add food</button>
+        </div>
 
-      <!-- Add workout form -->
-      <div class="add-card" id="add-ex-card">
-        <input class="add-inp" id="ex-name" placeholder="Exercise (e.g. bench press, running)" autocomplete="off">
-        <div class="add-macros">
-          <div class="add-mac-field"><label>Sets</label><input type="number" id="ex-sets" min="1" inputmode="numeric" placeholder="—"></div>
-          <div class="add-mac-field"><label>Reps</label><input type="text"   id="ex-reps" inputmode="numeric" placeholder="—"></div>
-          <div class="add-mac-field"><label>Weight&nbsp;lb</label><input type="number" id="ex-wt" min="0" inputmode="decimal" placeholder="—"></div>
-          <div class="add-mac-field"><label>Min</label><input type="number" id="ex-dur" min="0" inputmode="numeric" placeholder="—"></div>
+        <div class="stitle" style="margin-top:28px">Workouts</div>
+        <div class="lcrd" id="ex-log"><div class="lempty">Loading&hellip;</div></div>
+        <div class="add-card">
+          <input class="add-inp" id="ex-name" placeholder="Exercise (e.g. bench press, 5k run)" autocomplete="off">
+          <div class="add-macros">
+            <div class="add-mac-field"><label>Sets</label><input type="number" id="ex-sets" min="1" inputmode="numeric" placeholder="—"></div>
+            <div class="add-mac-field"><label>Reps</label><input type="text" id="ex-reps" placeholder="—"></div>
+            <div class="add-mac-field"><label>lbs</label><input type="number" id="ex-wt" min="0" inputmode="decimal" placeholder="—"></div>
+            <div class="add-mac-field"><label>Min</label><input type="number" id="ex-dur" min="0" inputmode="numeric" placeholder="—"></div>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;padding:8px 14px 2px;font-size:13px;color:var(--mu)">
+            <input type="checkbox" id="ex-cardio" style="width:15px;height:15px;accent-color:var(--ac)">
+            <label for="ex-cardio">Cardio / conditioning</label>
+          </div>
+          <button class="add-submit" id="ex-submit" onclick="submitExercise()">+ Add workout</button>
         </div>
-        <div style="display:flex;align-items:center;gap:8px;padding:0 14px 12px;font-size:12px;color:var(--mu)">
-          <input type="checkbox" id="ex-cardio" style="width:14px;height:14px;accent-color:var(--ac)">
-          <label for="ex-cardio">Cardio</label>
-        </div>
-        <button class="add-submit" id="ex-submit" onclick="submitExercise()">+ Add workout</button>
       </div>
-    </div>
+
+    </div><!-- /day-grid -->
   </div>
   </div>
 
