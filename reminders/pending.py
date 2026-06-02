@@ -32,8 +32,9 @@ class FollowUpPolicy:
 
 
 TIER_POLICY: dict[str, FollowUpPolicy] = {
-    "casual":        FollowUpPolicy(first_delay_h=24.0, spacing_h=24.0, max_follow_ups=2),
-    "goal_critical": FollowUpPolicy(first_delay_h=8.0,  spacing_h=12.0, max_follow_ups=3),
+    "casual":           FollowUpPolicy(first_delay_h=24.0, spacing_h=24.0, max_follow_ups=2),
+    "goal_critical":    FollowUpPolicy(first_delay_h=8.0,  spacing_h=12.0, max_follow_ups=3),
+    "conversation_hook": FollowUpPolicy(first_delay_h=2.0, spacing_h=3.0,  max_follow_ups=1),
 }
 
 # A user silent this long has effectively churned — stop following up so we don't
