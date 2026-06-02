@@ -1005,40 +1005,41 @@ footer{{
   /* Pagehead: hide icon-only buttons, keep just + Log */
   .pagehead .hbtn{{display:none}}
   .pagehead{{padding:14px 0 10px;gap:10px;align-items:center}}
-  .ph-title{{font-size:24px!important;letter-spacing:-.015em}}
-  .ph-sub{{font-size:10.5px;margin-top:6px;gap:8px}}
+  .ph-title{{font-size:26px!important;letter-spacing:-.015em}}
+  .ph-sub{{font-size:11px;margin-top:6px;gap:8px}}
   .ph-actions{{gap:5px}}
-  .ph-log-btn{{padding:0 14px;height:34px;font-size:12.5px;border-radius:9px}}
+  .ph-log-btn{{padding:0 14px;height:35px;font-size:13px;border-radius:9px}}
   /* Section labels */
-  .stitle{{margin:20px 0 10px;font-size:10px;letter-spacing:.12em}}
+  .stitle{{margin:20px 0 10px;font-size:10.5px;letter-spacing:.11em}}
   /* Cards */
-  .cval{{font-size:28px}}
-  .clbl{{font-size:9.5px;margin-bottom:6px;letter-spacing:.09em}}
+  .cval{{font-size:30px}}
+  .clbl{{font-size:10px;margin-bottom:6px;letter-spacing:.09em}}
   .card{{padding:16px;border-radius:14px}}
-  .csub{{font-size:11px}}
+  .csub{{font-size:12px}}
   /* Date nav */
-  .dchip{{padding:7px 12px;font-size:10.5px}}
-  .darr{{width:32px;height:32px;border-radius:9px}}
+  .dchip{{padding:8px 13px;font-size:11.5px}}
+  .darr{{width:34px;height:34px;border-radius:9px}}
   .dnav{{gap:5px;margin-bottom:14px}}
   /* Toggles */
-  .toggle{{padding:6px 10px;font-size:11px;gap:6px}}
-  .toggles{{gap:6px;margin-bottom:12px}}
+  .toggle{{padding:7px 11px;font-size:12px;gap:6px}}
+  .toggles{{gap:6px;margin-bottom:14px}}
   /* Stats */
-  .stat-num{{font-size:36px}}
-  .stat-lbl{{font-size:9.5px}}
+  .stat-num{{font-size:38px}}
+  .stat-lbl{{font-size:10px}}
   .stat-tile{{padding:18px 10px;border-radius:14px}}
   /* Goal */
-  .goal-lbs{{font-size:30px}}
-  .goal-title{{font-size:20px}}
+  .goal-lbs{{font-size:32px}}
+  .goal-title{{font-size:21px}}
   /* Food */
-  .ficon{{width:36px;height:36px;font-size:19px;border-radius:10px}}
-  .lname{{font-size:14px}}
-  .lmac{{font-size:11.5px}}
+  .ficon{{width:38px;height:38px;font-size:20px;border-radius:10px}}
+  .lname{{font-size:15px}}
+  .lqty{{font-size:13px}}
+  .lmac{{font-size:12px}}
   /* Insights */
-  .itxt{{font-size:13px;line-height:1.48}}
+  .itxt{{font-size:14px;line-height:1.5}}
   /* Profile */
-  .anval{{font-size:20px}}
-  .inlbl,.inval{{font-size:12.5px}}
+  .anval{{font-size:22px}}
+  .inlbl,.inval{{font-size:13.5px}}
   .dev-grid{{grid-template-columns:1fr;gap:8px}}
   /* Main padding */
   .main-inner{{padding:0 18px 90px}}
