@@ -68,7 +68,8 @@ async def run():
                 drop_pending_updates=True,
                 allowed_updates=["message", "callback_query"],
             )
-            logger.info(f"Webhook mode: {webhook_url}")
+            # Never log the full URL — it contains the bot token. Redact it.
+            logger.info(f"Webhook mode: {base_url}/webhook/<bot-token-redacted>")
         else:
             await ptb_app.updater.start_polling(drop_pending_updates=True)
             logger.info("Polling mode (local dev)")

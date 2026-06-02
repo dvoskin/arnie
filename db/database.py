@@ -110,16 +110,21 @@ async def init_db():
             if has_users:
                 logger.info(f"Postgres OK — connected ({short}...), alembic_version={rev}, schema present.")
             else:
-                logger.error(
+                # Fail loud AND hard: a started-but-schemaless app looks healthy to the
+                # load balancer while every real request 500s. Crash so the bad deploy is
+                # visible and rolls back, instead of silently serving a dead app.
+                raise RuntimeError(
                     "Postgres CONNECTED but EMPTY — the 'users' table is missing. "
-                    "Run `alembic upgrade head` (Render Pre-Deploy Command or service "
-                    "Shell). Until then, every DB-backed request will fail."
+                    "`alembic upgrade head` did not run (Render Pre-Deploy Command or "
+                    "service Shell). Refusing to start."
                 )
+        except RuntimeError:
+            raise
         except Exception as e:
-            logger.error(
+            raise RuntimeError(
                 f"Postgres connectivity check FAILED: {e}. Verify DATABASE_URL points "
                 f"at the running Render Postgres (internal connection string)."
-            )
+            ) from e
         return
 
     # SQLite (local dev + in-memory tests): keep the existing create_all + inline

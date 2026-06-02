@@ -7,6 +7,8 @@ Exposes:
   POST /health/apple?token=...  — Apple Health inbound webhook
 """
 import os
+import hmac
+import html
 import logging
 from datetime import date, timedelta, datetime
 from typing import Optional
@@ -32,6 +34,19 @@ from db.queries import (
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Arnie API", docs_url=None, redoc_url=None)
+
+
+def _require_admin(token: str) -> None:
+    """
+    Gate an admin endpoint. FAILS CLOSED: if ADMIN_TOKEN is unset, admin is disabled
+    (503) rather than accepting an empty token. Constant-time compare avoids leaking
+    the token via timing. Raises HTTPException on any failure; returns None on success.
+    """
+    expected = os.getenv("ADMIN_TOKEN")
+    if not expected:
+        raise HTTPException(status_code=503, detail="Admin disabled (ADMIN_TOKEN unset)")
+    if not hmac.compare_digest(token or "", expected):
+        raise HTTPException(status_code=403, detail="Forbidden")
 
 # CORS — allow the landing page (separate Render static service) to POST the
 # iMessage signup form to this API.
@@ -89,7 +104,11 @@ async def stripe_webhook(request: Request):
     """Receive Stripe events and update subscription status in the DB."""
     payload = await request.body()
     sig_header = request.headers.get("stripe-signature", "")
-    webhook_secret = os.getenv("STRIPE_WEBHOOK_SECRET", "")
+    webhook_secret = os.getenv("STRIPE_WEBHOOK_SECRET")
+    # Fail closed: never process a payment webhook without verification material.
+    if not webhook_secret:
+        logger.error("Stripe webhook hit but STRIPE_WEBHOOK_SECRET is unset — rejecting.")
+        raise HTTPException(status_code=503, detail="Webhook not configured")
 
     try:
         event = stripe.Webhook.construct_event(payload, sig_header, webhook_secret)
@@ -167,8 +186,9 @@ async def _notify_subscription_cancelled(telegram_id: str) -> None:
 async def whoop_callback(request: Request, code: str = "", state: str = "", error: str = ""):
     """Whoop redirects here after user authorizes. Exchange code for tokens."""
     if error:
+        # `error` comes straight from the URL — escape it (reflected XSS otherwise).
         return HTMLResponse(
-            f"<h2>Whoop connection failed</h2><p>Error: {error}</p>"
+            f"<h2>Whoop connection failed</h2><p>Error: {html.escape(error)}</p>"
             f"<p>You can try again in Telegram with /connect whoop</p>",
             status_code=400,
         )
@@ -205,8 +225,9 @@ async def whoop_callback(request: Request, code: str = "", state: str = "", erro
 </div></body></html>""")
 
     if not result.get("ok"):
-        err = result.get("error", "Unknown error")
-        details = result.get("details", "")
+        # Escape everything interpolated into the HTML below (defense in depth).
+        err = html.escape(str(result.get("error", "Unknown error")))
+        details = html.escape(str(result.get("details", "")))
         return HTMLResponse(f"""<!DOCTYPE html>
 <html><head><meta charset="UTF-8"><title>Whoop connection failed</title>
 <style>body{{font-family:system-ui;text-align:left;padding:40px;background:#0f1117;color:#f1f5f9;max-width:640px;margin:auto}}
@@ -946,8 +967,7 @@ async def _imsg_broadcast_recipients(db):
 @app.get("/admin/broadcast")
 async def admin_broadcast_preview(token: str = Query(...)):
     """DRY RUN — list who would receive the iMessage-availability broadcast. Sends nothing."""
-    if token != os.getenv("ADMIN_TOKEN", ""):
-        raise HTTPException(status_code=403, detail="Forbidden")
+    _require_admin(token)
     from fastapi.responses import JSONResponse
     async with AsyncSessionLocal() as db:
         recipients = await _imsg_broadcast_recipients(db)
@@ -967,8 +987,7 @@ async def admin_broadcast_preview(token: str = Query(...)):
 @app.post("/admin/broadcast")
 async def admin_broadcast_send(token: str = Query(...), confirm: str = Query("")):
     """ACTUAL SEND — requires confirm=SEND. One-time; marks each recipient so re-runs don't double-send."""
-    if token != os.getenv("ADMIN_TOKEN", ""):
-        raise HTTPException(status_code=403, detail="Forbidden")
+    _require_admin(token)
     from fastapi.responses import JSONResponse
     if confirm != "SEND":
         raise HTTPException(status_code=400,
@@ -1015,8 +1034,7 @@ async def admin_audit(token: str = Query(...), name: str = Query(...)):
     and a per-day check comparing entry sums to the stored DailyLog totals — plus an
     inconsistent_days list. Pinpoints where logs and dashboard diverged. No writes.
     """
-    if token != os.getenv("ADMIN_TOKEN", ""):
-        raise HTTPException(status_code=403, detail="Forbidden")
+    _require_admin(token)
 
     from sqlalchemy import select
     from sqlalchemy.orm import selectinload
@@ -1119,8 +1137,7 @@ async def admin_flagged(token: str = Query(...), hours: int = Query(48),
     last `hours`. This is the 'watch for deviations' surface — the place the screenshots
     used to come from, now automatic. No writes.
     """
-    if token != os.getenv("ADMIN_TOKEN", ""):
-        raise HTTPException(status_code=403, detail="Forbidden")
+    _require_admin(token)
 
     from sqlalchemy import select, and_
     from fastapi.responses import JSONResponse
@@ -1164,8 +1181,7 @@ async def admin_flagged(token: str = Query(...), hours: int = Query(48),
 
 @app.get("/admin", response_class=HTMLResponse)
 async def admin_dashboard(token: str = Query(...)):
-    if token != os.getenv("ADMIN_TOKEN", ""):
-        return HTMLResponse("<h2>Unauthorized</h2>", status_code=401)
+    _require_admin(token)
 
     from sqlalchemy import select, func as sqlfunc
     from sqlalchemy.orm import selectinload
@@ -1391,8 +1407,7 @@ function switchTab(name,el){{
 
 @app.post("/admin/feedback/{feedback_id}/resolve", response_class=HTMLResponse)
 async def admin_resolve_feedback(feedback_id: int, token: str = Query(...)):
-    if token != os.getenv("ADMIN_TOKEN", ""):
-        return HTMLResponse("<h2>Unauthorized</h2>", status_code=401)
+    _require_admin(token)
     from sqlalchemy import select
     from db.models import Feedback
     async with AsyncSessionLocal() as db:
@@ -1409,8 +1424,7 @@ async def admin_resolve_feedback(feedback_id: int, token: str = Query(...)):
 
 @app.get("/admin/user/{user_id}", response_class=HTMLResponse)
 async def admin_user_detail(user_id: int, token: str = Query(...)):
-    if token != os.getenv("ADMIN_TOKEN", ""):
-        return HTMLResponse("<h2>Unauthorized</h2>", status_code=401)
+    _require_admin(token)
 
     from sqlalchemy import select
     from sqlalchemy.orm import selectinload
