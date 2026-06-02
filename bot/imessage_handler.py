@@ -676,6 +676,9 @@ async def _complete_im_onboarding(chat_guid, user, db, raw_text, message_guid,
     Sends the celebratory welcome + dashboard via the adapter so every user gets
     the same polished ending. lead = optional bubble(s) prepended (e.g. calc result).
     """
+    # Native check-in enable on completion (global PROACTIVE_MESSAGING_ENABLED still gates sends).
+    from db.queries import enable_check_ins
+    await enable_check_ins(db, user.id)
     dash_url = await _dashboard_url(user, db)
     body = await _build_completion_text(user, db, dash_url)
     full = f"{lead}|||{body}" if lead else body

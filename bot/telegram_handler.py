@@ -587,6 +587,10 @@ async def _send_onboarding_complete(update, db, user, source_type, raw_text,
     Send the onboarding completion sequence: optional calc result → welcome
     message → dashboard button. Used by the server-side target interceptor.
     """
+    # Native check-in enable on completion (global PROACTIVE_MESSAGING_ENABLED gates sends).
+    from db.queries import enable_check_ins
+    await enable_check_ins(db, user.id)
+
     if calc_line:
         await update.message.reply_text(calc_line, parse_mode="HTML")
 

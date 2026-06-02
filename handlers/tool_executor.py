@@ -528,6 +528,10 @@ async def _dispatch(name, inp, user, today_log, db, source_type):  # noqa: C901
             logger.info(f"Server-side auto-completing onboarding for user {user.id}")
             user.onboarding_completed = True
             await db.commit()
+            # Native check-in enable: every onboarding finisher gets proactive check-ins
+            # on (the global PROACTIVE_MESSAGING_ENABLED switch still gates real sends).
+            from db.queries import enable_check_ins
+            await enable_check_ins(db, user.id)
             user = await reload_user(db, user.id)
 
         # AUTO-CALC TARGETS — the moment all stats are present (weight, height,

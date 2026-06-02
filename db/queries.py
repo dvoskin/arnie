@@ -42,6 +42,27 @@ def linking_enabled() -> bool:
     return os.getenv("LINKING_ENABLED", "true").lower() in ("true", "1", "yes")
 
 
+async def enable_check_ins(db: AsyncSession, user_id: int) -> None:
+    """
+    Turn proactive check-ins ON for a user — called natively when onboarding completes,
+    so every finisher gets check-ins (and a reset-then-re-onboard re-enables them).
+    Creates a preferences row if one is somehow missing. Queries prefs directly so it
+    doesn't depend on the User.preferences relationship being eager-loaded.
+
+    NOTE: this is the PER-USER opt-in. The global PROACTIVE_MESSAGING_ENABLED switch
+    still gates whether the scheduler actually sends anything.
+    """
+    result = await db.execute(
+        select(UserPreferences).where(UserPreferences.user_id == user_id)
+    )
+    prefs = result.scalar_one_or_none()
+    if prefs is None:
+        prefs = UserPreferences(user_id=user_id)
+        db.add(prefs)
+    prefs.proactive_messaging_enabled = True
+    await db.commit()
+
+
 async def resolve_user(db: AsyncSession, platform_id: str) -> User:
     """
     Get the canonical user for a platform identity. Cross-platform continuity:

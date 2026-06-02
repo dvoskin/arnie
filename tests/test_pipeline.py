@@ -573,12 +573,18 @@ async def test_brain_dump_completion_reflects_then_pushes_to_log(pipeline_env):
         "I'm Danny, cutting from 190 to 178, 6ft, lift 4x a week", message_guid="o1",
     )
 
-    # Essentials saved once, onboarding auto-completed.
+    # Essentials saved once, onboarding auto-completed, check-ins enabled natively.
     async with env["Maker"]() as db:
         from db.queries import resolve_user
+        from sqlalchemy import select as _select
+        from db.models import UserPreferences
         u = await resolve_user(db, im_id)
         assert (u.name, u.primary_goal, u.current_weight_kg) == ("Danny", "cut", 86.0)
         assert u.onboarding_completed is True
+        prefs = (await db.execute(
+            _select(UserPreferences).where(UserPreferences.user_id == u.id)
+        )).scalar_one()
+        assert prefs.proactive_messaging_enabled is True, "check-ins should turn on at completion"
 
     # The reply REFLECTS what was understood, then drives to the first log — and it is
     # NOT the canned "you're in" boilerplate.

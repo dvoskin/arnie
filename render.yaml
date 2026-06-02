@@ -80,8 +80,11 @@ services:
         sync: false
       - key: TELEGRAM_BOT_USERNAME
         value: "Arnie_1026_Bot"
+      # Global master switch for proactive check-ins. Per-user check-ins are enabled
+      # natively at onboarding completion, but NOTHING sends until this is "true".
+      # Set it to "true" in the Render dashboard to go live (this file is reference-only).
       - key: PROACTIVE_MESSAGING_ENABLED
-        value: "false"
+        value: "true"
       # Branded base for user-facing dashboard links (separate from RENDER_EXTERNAL_URL,
       # which webhooks/OAuth keep using). SET THIS ONLY AFTER app.tryarnie.com is added
       # as a custom domain on this service and DNS resolves — until then leave it unset
