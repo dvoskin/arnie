@@ -235,6 +235,40 @@ body{{
   letter-spacing:.14em;margin:30px 0 13px;display:flex;align-items:center;gap:10px;
 }}
 .stitle:first-child{{margin-top:6px}}
+.stitle.spaced{{justify-content:space-between}}
+
+/* ── ADD FOOD / WORKOUT FORMS ────────────────────────────── */
+.add-card{{
+  background:var(--sf);border:1px solid var(--bd);border-radius:16px;
+  margin-top:10px;overflow:hidden;backdrop-filter:blur(16px);box-shadow:var(--sh);
+}}
+.add-inp{{
+  display:block;width:100%;background:transparent;border:none;
+  border-bottom:1px solid var(--bd);color:var(--tx);font-family:inherit;
+  font-size:14px;padding:13px 16px;outline:none;transition:background .15s;
+}}
+.add-inp:focus{{background:var(--sf2)}}
+.add-inp::placeholder{{color:var(--di)}}
+.add-macros{{display:grid;grid-template-columns:repeat(4,1fr);border-bottom:1px solid var(--bd)}}
+.add-mac-field{{border-right:1px solid var(--bd);padding:10px 12px}}
+.add-mac-field:last-child{{border-right:none}}
+.add-mac-field label{{
+  display:block;font-family:'Geist Mono','SF Mono',monospace;
+  font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--mu);margin-bottom:5px;
+}}
+.add-mac-field input{{
+  width:100%;background:transparent;border:none;color:var(--tx);
+  font-family:inherit;font-size:14px;font-weight:500;outline:none;
+}}
+.add-mac-field input::placeholder{{color:var(--di)}}
+.add-submit{{
+  display:block;width:100%;border:none;background:transparent;
+  color:var(--ac);font-family:'Geist Mono','SF Mono',monospace;
+  font-size:11px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;
+  padding:13px 16px;cursor:pointer;text-align:left;transition:background .15s;
+}}
+.add-submit:hover{{background:var(--ac-dim)}}
+.add-submit:active{{opacity:.7}}
 .ai-pill{{
   background:var(--ac-dim);color:var(--ac);border:1px solid rgba(var(--ac-rgb),.2);
   padding:2px 7px;border-radius:10px;
@@ -1129,7 +1163,6 @@ footer{{
 <div id="app-load">Loading your data&hellip;</div>
 
   <!-- DAY TAB -->
-  <!-- DAY TAB — single column, insights first -->
   <div class="tab-panel active" id="panel-day">
     <div class="dnav">
       <button class="darr" id="date-prev" onclick="navDate(-1)" aria-label="Previous day">&#8249;</button>
@@ -1137,74 +1170,113 @@ footer{{
       <button class="darr" id="date-next" onclick="navDate(1)"  aria-label="Next day">&#8250;</button>
     </div>
 
-    <div class="stitle">&#10024; Coach insights <span class="ai-pill">AI</span></div>
-    <div class="icrd fade-in" id="insights-card">
-      <div class="iload"><span class="spin">&#9675;</span> Analyzing&hellip;</div>
+    <!-- LEFT COLUMN -->
+    <div class="day-col-left">
+      <div class="stitle" id="day-label">Today</div>
+      <div class="cards">
+        <div class="card">
+          <div class="clbl">Calories</div>
+          <div class="cval" id="cal-val">&mdash;</div>
+          <div class="csub" id="cal-sub"></div>
+          <div class="ptrack"><div class="pfill" id="cal-bar" style="background:var(--ac);width:0%"></div></div>
+        </div>
+        <div class="card">
+          <div class="clbl">Protein</div>
+          <div class="cval" id="pro-val">&mdash;</div>
+          <div class="csub" id="pro-sub"></div>
+          <div class="ptrack"><div class="pfill" id="pro-bar" style="background:var(--bl);width:0%"></div></div>
+        </div>
+        <div class="card">
+          <div class="clbl">Carbs</div>
+          <div class="cval" id="carb-val">&mdash;</div>
+          <div class="csub" id="carb-sub"></div>
+        </div>
+        <div class="card">
+          <div class="clbl">Fats</div>
+          <div class="cval" id="fat-val">&mdash;</div>
+          <div class="csub" id="fat-sub"></div>
+        </div>
+      </div>
+
+      <div class="toggles">
+        <span id="wo-badge" class="toggle"><span class="tcb"></span>No workout</span>
+        <span id="ca-badge" class="toggle"><span class="tcb"></span>No cardio</span>
+        <span id="wt-badge" class="toggle on" style="display:none"></span>
+        <button class="toggle share-tgl t-click" onclick="shareDay()">&#8679; Share day</button>
+      </div>
+
+      <div class="stitle">&#10024; Coach insights <span class="ai-pill">AI</span></div>
+      <div class="icrd fade-in" id="insights-card">
+        <div class="iload"><span class="spin">&#9675;</span> Analyzing&hellip;</div>
+      </div>
+
+      <div class="stitle">Energy breakdown</div>
+      <div class="macro-ring-wrap">
+        <canvas class="macro-ring-canvas" id="macroRing" width="80" height="80"></canvas>
+        <div class="macro-legend" id="macro-legend"></div>
+      </div>
+
+      <div class="stitle">28-day consistency</div>
+      <div class="heat-wrap">
+        <div class="heat-dow">
+          <span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span><span>S</span>
+        </div>
+        <div class="heat-grid" id="heat-grid"></div>
+        <div class="heat-legend">
+          <span class="hleg-dot" style="background:#22c55e"></span>On target &nbsp;
+          <span class="hleg-dot" style="background:#f59e0b"></span>Logged &nbsp;
+          <span class="hleg-dot" style="background:var(--sf2)"></span>Missed &nbsp;
+          <span class="hleg-dot" style="background:rgba(255,255,255,.15)"></span><span style="color:var(--di)">● workout</span>
+        </div>
+      </div>
+
+      <div id="health-section" style="display:none">
+        <div class="stitle">Wearable</div>
+        <div class="hgrid" id="health-grid"></div>
+      </div>
     </div>
 
-    <div class="stitle" id="day-label">Today</div>
-    <div class="cards">
-      <div class="card">
-        <div class="clbl">Calories</div>
-        <div class="cval" id="cal-val">&mdash;</div>
-        <div class="csub" id="cal-sub"></div>
-        <div class="ptrack"><div class="pfill" id="cal-bar" style="background:var(--ac);width:0%"></div></div>
+    <!-- RIGHT COLUMN -->
+    <div class="day-col-right">
+      <div class="stitle spaced">
+        <span>Food log</span>
+        <span id="food-log-count" style="color:var(--mu);font-weight:400"></span>
       </div>
-      <div class="card">
-        <div class="clbl">Protein</div>
-        <div class="cval" id="pro-val">&mdash;</div>
-        <div class="csub" id="pro-sub"></div>
-        <div class="ptrack"><div class="pfill" id="pro-bar" style="background:var(--bl);width:0%"></div></div>
+      <div class="lcrd" id="food-log"><div class="lempty">Loading&hellip;</div></div>
+
+      <!-- Add food form -->
+      <div class="add-card" id="add-food-card">
+        <input class="add-inp" id="food-name" placeholder="Food name (e.g. chicken breast)" autocomplete="off">
+        <input class="add-inp" id="food-qty" placeholder="Portion (e.g. 200g)" style="flex:0 0 140px">
+        <div class="add-macros">
+          <div class="add-mac-field"><label>Cal</label><input type="number" id="food-cal" min="0" inputmode="numeric"></div>
+          <div class="add-mac-field"><label>P&nbsp;(g)</label><input type="number" id="food-pro" min="0" inputmode="decimal"></div>
+          <div class="add-mac-field"><label>C&nbsp;(g)</label><input type="number" id="food-carb" min="0" inputmode="decimal"></div>
+          <div class="add-mac-field"><label>F&nbsp;(g)</label><input type="number" id="food-fat" min="0" inputmode="decimal"></div>
+        </div>
+        <button class="add-submit" id="food-submit" onclick="submitFood()">+ Add food</button>
       </div>
-      <div class="card">
-        <div class="clbl">Carbs</div>
-        <div class="cval" id="carb-val">&mdash;</div>
-        <div class="csub" id="carb-sub"></div>
-      </div>
-      <div class="card">
-        <div class="clbl">Fats</div>
-        <div class="cval" id="fat-val">&mdash;</div>
-        <div class="csub" id="fat-sub"></div>
-      </div>
-    </div>
 
-    <div class="toggles">
-      <span id="wo-badge" class="toggle"><span class="tcb"></span>No workout</span>
-      <span id="ca-badge" class="toggle"><span class="tcb"></span>No cardio</span>
-      <span id="wt-badge" class="toggle on" style="display:none"></span>
-      <button class="toggle share-tgl t-click" onclick="shareDay()" title="Share today&apos;s summary">&#8679; Share day</button>
-    </div>
+      <div class="stitle" style="margin-top:24px">Workouts</div>
+      <div class="lcrd" id="ex-log"><div class="lempty">Loading&hellip;</div></div>
 
-    <div class="stitle">Food log</div>
-    <div class="lcrd" id="food-log"><div class="lempty">Loading&hellip;</div></div>
-
-    <div class="stitle">Workouts</div>
-    <div class="lcrd" id="ex-log"><div class="lempty">Loading&hellip;</div></div>
-
-    <div class="stitle">Energy breakdown</div>
-    <div class="macro-ring-wrap">
-      <canvas class="macro-ring-canvas" id="macroRing" width="80" height="80"></canvas>
-      <div class="macro-legend" id="macro-legend"></div>
-    </div>
-
-    <div class="stitle">28-day consistency</div>
-    <div class="heat-wrap">
-      <div class="heat-dow">
-        <span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span><span>S</span>
-      </div>
-      <div class="heat-grid" id="heat-grid"></div>
-      <div class="heat-legend">
-        <span class="hleg-dot" style="background:#22c55e"></span>On target &nbsp;
-        <span class="hleg-dot" style="background:#f59e0b"></span>Logged &nbsp;
-        <span class="hleg-dot" style="background:var(--sf2)"></span>Missed &nbsp;
-        <span class="hleg-dot" style="background:rgba(255,255,255,.15)"></span><span style="color:var(--di)">● workout</span>
+      <!-- Add workout form -->
+      <div class="add-card" id="add-ex-card">
+        <input class="add-inp" id="ex-name" placeholder="Exercise (e.g. bench press, running)" autocomplete="off">
+        <div class="add-macros">
+          <div class="add-mac-field"><label>Sets</label><input type="number" id="ex-sets" min="1" inputmode="numeric" placeholder="—"></div>
+          <div class="add-mac-field"><label>Reps</label><input type="text"   id="ex-reps" inputmode="numeric" placeholder="—"></div>
+          <div class="add-mac-field"><label>Weight&nbsp;lb</label><input type="number" id="ex-wt" min="0" inputmode="decimal" placeholder="—"></div>
+          <div class="add-mac-field"><label>Min</label><input type="number" id="ex-dur" min="0" inputmode="numeric" placeholder="—"></div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;padding:0 14px 12px;font-size:12px;color:var(--mu)">
+          <input type="checkbox" id="ex-cardio" style="width:14px;height:14px;accent-color:var(--ac)">
+          <label for="ex-cardio">Cardio</label>
+        </div>
+        <button class="add-submit" id="ex-submit" onclick="submitExercise()">+ Add workout</button>
       </div>
     </div>
-
-    <div id="health-section" style="display:none">
-      <div class="stitle">Wearable</div>
-      <div class="hgrid" id="health-grid"></div>
-    </div>
+  </div>
   </div>
 
   <!-- WEEK TAB — single column -->
@@ -1625,8 +1697,62 @@ function renderPageHead(d){{
 
 function focusLogInput(){{
   switchTab('day');
-  var el=document.getElementById('food-log');
-  if(el)setTimeout(function(){{el.scrollIntoView({{behavior:'smooth',block:'start'}});}},180);
+  setTimeout(function(){{
+    var el=document.getElementById('food-name');
+    if(el){{el.scrollIntoView({{behavior:'smooth',block:'center'}});el.focus();}}
+  }},220);
+}}
+
+// ── Log food ──────────────────────────────────────────────
+async function submitFood(){{
+  var name=(document.getElementById('food-name').value||'').trim();
+  if(!name){{document.getElementById('food-name').focus();return;}}
+  var btn=document.getElementById('food-submit');
+  btn.textContent='Saving…';btn.disabled=true;
+  try{{
+    var body={{
+      name,
+      quantity:(document.getElementById('food-qty').value||'').trim()||null,
+      calories:parseFloat(document.getElementById('food-cal').value)||0,
+      protein:parseFloat(document.getElementById('food-pro').value)||0,
+      carbs:parseFloat(document.getElementById('food-carb').value)||0,
+      fats:parseFloat(document.getElementById('food-fat').value)||0,
+      estimated:true,
+      log_date:_viewingDate!==_todayStr?_viewingDate:undefined,
+    }};
+    var r=await fetch('/api/food/log?token='+TOKEN,{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify(body)}});
+    if(!r.ok)throw new Error('HTTP '+r.status);
+    // clear form
+    ['food-name','food-qty','food-cal','food-pro','food-carb','food-fat'].forEach(id=>{{document.getElementById(id).value='';}});
+    // refresh
+    delete _dayCache[_viewingDate];
+    await loadDayData(_viewingDate);
+  }}catch(e){{alert('Failed to save: '+e.message);}}
+  finally{{btn.textContent='+ Add food';btn.disabled=false;}}
+}}
+
+// ── Log workout ───────────────────────────────────────────
+async function submitExercise(){{
+  var name=(document.getElementById('ex-name').value||'').trim();
+  if(!name){{document.getElementById('ex-name').focus();return;}}
+  var btn=document.getElementById('ex-submit');
+  btn.textContent='Saving…';btn.disabled=true;
+  try{{
+    var sets=parseInt(document.getElementById('ex-sets').value)||null;
+    var reps=(document.getElementById('ex-reps').value||'').trim()||null;
+    var wt=parseFloat(document.getElementById('ex-wt').value)||null;
+    var dur=parseFloat(document.getElementById('ex-dur').value)||null;
+    var isCardio=document.getElementById('ex-cardio').checked;
+    var body={{name,sets,reps,weight_lbs:wt,duration_minutes:dur,is_cardio:isCardio,
+      log_date:_viewingDate!==_todayStr?_viewingDate:undefined}};
+    var r=await fetch('/api/exercise/log?token='+TOKEN,{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify(body)}});
+    if(!r.ok)throw new Error('HTTP '+r.status);
+    ['ex-name','ex-sets','ex-reps','ex-wt','ex-dur'].forEach(id=>{{document.getElementById(id).value='';}});
+    document.getElementById('ex-cardio').checked=false;
+    delete _dayCache[_viewingDate];
+    await loadDayData(_viewingDate);
+  }}catch(e){{alert('Failed to save: '+e.message);}}
+  finally{{btn.textContent='+ Add workout';btn.disabled=false;}}
 }}
 
 function renderDayTab(d){{
@@ -1664,6 +1790,8 @@ function renderDayTab(d){{
   }}
 
   var fe=day.food_entries||[];
+  var flc=document.getElementById('food-log-count');
+  if(flc)flc.textContent=fe.length?fe.length+' item'+(fe.length!==1?'s':''):'';
   document.getElementById('food-log').innerHTML=fe.length?fe.map(renderFoodRow).join('')
     :'<div class="lempty">Nothing logged'+(isToday?' yet':'')+'</div>';
   var ee=day.exercise_entries||[];
