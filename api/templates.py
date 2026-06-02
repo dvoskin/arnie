@@ -174,6 +174,7 @@ body{{
   background:var(--ac);border:2px solid var(--bg);
 }}
 .sb-name{{font-size:13px;font-weight:500;color:var(--tx)}}
+.sb-user:hover{{border-color:var(--bd2);background:var(--sf2);}}
 .sb-goal{{
   font-family:'Geist Mono','SF Mono',monospace;
   font-size:9px;letter-spacing:.06em;text-transform:uppercase;color:var(--ac);margin-top:2px;
@@ -1095,7 +1096,7 @@ footer{{
       <span class="ni-ico" id="sb-theme-ico"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4 12H2M22 12h-2M5 5l1.5 1.5M17.5 17.5 19 19M19 5l-1.5 1.5M6.5 17.5 5 19"/></svg></span>
       <span class="ni-lbl" id="sb-theme-lbl">Light mode</span>
     </button>
-    <div class="sb-user" id="sb-user" style="display:none">
+    <div class="sb-user" id="sb-user" style="display:none;cursor:pointer" onclick="switchTab('profile')" title="View profile">
       <div class="sb-avatar"></div>
       <div><div class="sb-name" id="sb-name"></div><div class="sb-goal" id="sb-goal-lbl"></div></div>
     </div>
