@@ -15,7 +15,7 @@ from typing import Optional
 
 import stripe
 from fastapi import FastAPI, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse, FileResponse
+from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
 from api.templates import _dashboard_html, _apple_guide_html
 from core.urls import dashboard_url
 from pydantic import BaseModel
@@ -1174,6 +1174,53 @@ async def admin_flagged(token: str = Query(...), hours: int = Query(48),
     return JSONResponse({
         "window_hours": hours, "flagged_turns": len(turns),
         "by_flag": by_flag, "turns": turns,
+    })
+
+
+@app.post("/admin/run-reminders")
+async def admin_run_reminders(token: str = Query(...), test: int = Query(0)):
+    """
+    Manually fire the proactive scheduler once, for testing the rollout without waiting
+    for a time slot. Respects PROACTIVE_MESSAGING_ENABLED and PROACTIVE_ALLOWLIST.
+
+    ?test=1 → send ONE forced check-in ping to each allowlisted user, bypassing the
+    time-of-day windows (so you get an instant message). Requires PROACTIVE_ALLOWLIST
+    to be set, so it can never blast everyone.
+
+    default → run the real reminder loop once. It still honors the time windows, so it
+    sends only what's genuinely due right now (often nothing).
+    """
+    _require_admin(token)
+    from scheduler.proactive_scheduler import (
+        _run_reminders, proactive_enabled, _proactive_allowlist, _allowlist_allows, _send,
+    )
+    if not proactive_enabled():
+        return JSONResponse(
+            {"ok": False, "reason": "PROACTIVE_MESSAGING_ENABLED is off — nothing will send."},
+            status_code=409,
+        )
+
+    if test:
+        allow = _proactive_allowlist()
+        if not allow:
+            raise HTTPException(
+                status_code=400,
+                detail="Refusing test ping: set PROACTIVE_ALLOWLIST first so this can't blast everyone.",
+            )
+        from db.queries import get_all_active_users, resolve_send_target
+        pinged = []
+        async with AsyncSessionLocal() as db:
+            for u in await get_all_active_users(db):
+                send_id = await resolve_send_target(db, u)
+                if _allowlist_allows(u.id, u.telegram_id, send_id):
+                    await _send(send_id, "quick test ping 👊 your check-ins are live. you can ignore this.")
+                    pinged.append(send_id)
+        return JSONResponse({"ok": True, "mode": "test", "pinged": pinged})
+
+    await _run_reminders()
+    return JSONResponse({
+        "ok": True, "mode": "natural",
+        "note": "ran the reminder loop once; sent whatever was due now (time-gated).",
     })
 
 

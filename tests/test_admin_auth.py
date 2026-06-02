@@ -26,3 +26,32 @@ def test_admin_rejects_wrong_or_empty_token(monkeypatch):
 def test_admin_accepts_correct_token(monkeypatch):
     monkeypatch.setenv("ADMIN_TOKEN", "s3cret")
     assert app_mod._require_admin("s3cret") is None  # no raise = authorized
+
+
+# ── /admin/run-reminders safety gates ──────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_run_reminders_rejects_bad_token(monkeypatch):
+    monkeypatch.setenv("ADMIN_TOKEN", "t")
+    with pytest.raises(HTTPException) as e:
+        await app_mod.admin_run_reminders(token="wrong", test=0)
+    assert e.value.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_run_reminders_409_when_global_switch_off(monkeypatch):
+    monkeypatch.setenv("ADMIN_TOKEN", "t")
+    monkeypatch.delenv("PROACTIVE_MESSAGING_ENABLED", raising=False)
+    resp = await app_mod.admin_run_reminders(token="t", test=0)
+    assert resp.status_code == 409  # won't run while proactive is globally off
+
+
+@pytest.mark.asyncio
+async def test_run_reminders_test_mode_refuses_without_allowlist(monkeypatch):
+    # The critical safety invariant: a forced test ping can NEVER blast everyone.
+    monkeypatch.setenv("ADMIN_TOKEN", "t")
+    monkeypatch.setenv("PROACTIVE_MESSAGING_ENABLED", "true")
+    monkeypatch.delenv("PROACTIVE_ALLOWLIST", raising=False)
+    with pytest.raises(HTTPException) as e:
+        await app_mod.admin_run_reminders(token="t", test=1)
+    assert e.value.status_code == 400
