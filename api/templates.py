@@ -486,20 +486,17 @@ body{{
 
 /* ── PROFILE GRID ────────────────────────────────────────── */
 .profile-grid{{display:grid;grid-template-columns:1fr 1fr;gap:18px}}
-@media(max-width:640px){{.profile-grid{{grid-template-columns:1fr}}}}
+@media(max-width:700px){{.profile-grid{{grid-template-columns:1fr}}}}
 .pstack{{display:flex;flex-direction:column}}
-.goal-badge{{
+.goal-badge,.coach-badge{{
   font-family:'Geist Mono','SF Mono',monospace;
-  font-size:10px;letter-spacing:.08em;text-transform:uppercase;
-  color:var(--ac);border:1px solid rgba(var(--ac-rgb),.35);
-  border-radius:999px;padding:2px 9px;font-weight:500;
+  font-size:10px;letter-spacing:.06em;text-transform:uppercase;
+  border-radius:8px;padding:3px 10px;font-weight:500;
+  word-break:break-word;white-space:normal;line-height:1.4;
+  display:inline-block;max-width:100%;
 }}
-.coach-badge{{
-  font-family:'Geist Mono','SF Mono',monospace;
-  font-size:10px;letter-spacing:.08em;text-transform:uppercase;
-  color:var(--pu);border:1px solid rgba(168,85,247,.35);
-  border-radius:999px;padding:2px 9px;font-weight:500;
-}}
+.goal-badge{{color:var(--ac);border:1px solid rgba(var(--ac-rgb),.35)}}
+.coach-badge{{color:var(--pu);border:1px solid rgba(168,85,247,.35)}}
 
 /* ── DEVICE CARDS ────────────────────────────────────────── */
 .dev-grid{{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:14px}}
@@ -621,12 +618,16 @@ body{{
   backdrop-filter:blur(16px);box-shadow:var(--sh);margin-bottom:9px;transition:background .3s;
 }}
 .inrow{{
-  display:flex;justify-content:space-between;align-items:baseline;
-  gap:16px;padding:13px 16px;border-bottom:1px solid var(--bd);
+  display:flex;justify-content:space-between;align-items:flex-start;
+  gap:12px;padding:13px 16px;border-bottom:1px solid var(--bd);
 }}
 .inrow:last-child{{border-bottom:none}}
-.inlbl{{font-size:13px;color:var(--mu);font-weight:400;flex-shrink:0;min-width:110px}}
-.inval{{font-size:13px;font-weight:500;color:var(--tx2);text-align:right;word-break:normal;overflow-wrap:break-word}}
+.inlbl{{font-size:13px;color:var(--mu);font-weight:400;flex-shrink:0;min-width:100px;padding-top:2px}}
+.inval{{
+  font-size:13px;font-weight:500;color:var(--tx2);
+  text-align:right;word-break:normal;overflow-wrap:break-word;
+  max-width:calc(100% - 120px);
+}}
 .ancrd{{
   background:var(--sf);border:1px solid var(--bd);border-radius:16px;padding:16px;
   backdrop-filter:blur(16px);box-shadow:var(--sh);margin-bottom:9px;transition:background .3s;
@@ -1084,7 +1085,11 @@ footer{{
   .itxt{{font-size:14px;line-height:1.5}}
   /* Profile */
   .anval{{font-size:22px}}
-  .inlbl,.inval{{font-size:13.5px}}
+  .inlbl,.inval{{font-size:13px}}
+  .inrow{{flex-wrap:wrap;gap:4px 12px}}
+  .inlbl{{min-width:auto;width:100%;padding-top:0}}
+  .inval{{text-align:left;max-width:100%}}
+  .profile-grid{{grid-template-columns:1fr;gap:14px}}
   .dev-grid{{grid-template-columns:1fr;gap:8px}}
   /* Main padding */
   .main-inner{{padding:0 18px 90px}}
