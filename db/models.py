@@ -71,6 +71,8 @@ class User(Base):
                                     cascade="all, delete-orphan")
     pending_questions = relationship("PendingQuestion", back_populates="user",
                                      cascade="all, delete-orphan")
+    workout_program = relationship("WorkoutProgram", back_populates="user",
+                                   uselist=False, cascade="all, delete-orphan")
 
 
 class UserPreferences(Base):
@@ -374,3 +376,21 @@ class UserFoodMatch(Base):
     created_at = Column(DateTime, server_default=func.now())
 
     user = relationship("User")
+
+
+class WorkoutProgram(Base):
+    """
+    Structured workout split for a user — parsed from free-text via AI.
+    Stores both the original raw paste and the structured JSON representation.
+    One active program per user (upserted on update).
+    """
+    __tablename__ = "workout_programs"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), unique=True, nullable=False, index=True)
+    raw_text = Column(Text)          # original free-text paste
+    program_json = Column(Text)      # JSON string: {split_name, focus, rotation, days[]}
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+    created_at = Column(DateTime, server_default=func.now())
+
+    user = relationship("User", back_populates="workout_program")

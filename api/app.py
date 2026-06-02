@@ -1664,6 +1664,117 @@ async def api_log_exercise(body: ExerciseLogBody, token: str = Query(...)):
     return {"status": "ok", "id": entry.id}
 
 
+# ── Workout Program ────────────────────────────────────────────────────────────
+
+@app.get("/api/workout/{token}")
+async def get_workout_program(token: str):
+    """Return the user's structured workout program, or null if not set."""
+    import json
+    async with AsyncSessionLocal() as db:
+        user = await get_user_by_webhook_token(db, token)
+        if not user:
+            raise HTTPException(status_code=401, detail="Invalid token")
+        from db.models import WorkoutProgram
+        from sqlalchemy import select
+        row = (await db.execute(select(WorkoutProgram).where(WorkoutProgram.user_id == user.id))).scalar_one_or_none()
+        if not row:
+            return {"program": None}
+        try:
+            return {"program": json.loads(row.program_json), "raw_text": row.raw_text}
+        except Exception:
+            return {"program": None}
+
+
+class WorkoutParseBody(BaseModel):
+    raw_text: str
+
+
+@app.post("/api/workout/{token}/parse")
+async def parse_and_save_workout(token: str, body: WorkoutParseBody):
+    """AI-parse raw workout text into structured JSON, then save it."""
+    import json
+    from core.llm import _get_anthropic, DEFAULT_MODEL, ANTHROPIC_API_KEY
+
+    async with AsyncSessionLocal() as db:
+        user = await get_user_by_webhook_token(db, token)
+        if not user:
+            raise HTTPException(status_code=401, detail="Invalid token")
+
+        if not ANTHROPIC_API_KEY():
+            raise HTTPException(status_code=503, detail="AI unavailable")
+
+        prompt = f"""Parse this workout program description into structured JSON. Return ONLY valid JSON, no prose.
+
+Required structure:
+{{
+  "split_name": "short descriptive name (e.g. Upper-Focus PPL)",
+  "focus": "one sentence summary",
+  "rotation": ["Day 1 name", "Day 2 name", ...],
+  "days": [
+    {{
+      "name": "muscle group label",
+      "priority": "primary | secondary | optional",
+      "goals": ["goal 1", "goal 2"],
+      "exercises": [
+        {{
+          "name": "Exercise Name",
+          "category": "main | accessory | cardio",
+          "recent_performance": "e.g. 200 × 14 (PR), 200 × 12" or null,
+          "notes": null
+        }}
+      ],
+      "notes": "any extra context about this day"
+    }}
+  ]
+}}
+
+Workout description:
+{body.raw_text}
+"""
+        client = _get_anthropic()
+        resp = await client.messages.create(
+            model=DEFAULT_MODEL(),
+            max_tokens=2000,
+            messages=[{{"role": "user", "content": prompt}}],
+        )
+        text = resp.content[0].text.strip()
+        if text.startswith("```"):
+            text = text.split("\n", 1)[1].rsplit("```", 1)[0].strip()
+        if text.startswith("json"):
+            text = text[4:].strip()
+
+        try:
+            program = json.loads(text)
+        except Exception:
+            raise HTTPException(status_code=422, detail="AI returned unparseable JSON")
+
+        from db.models import WorkoutProgram
+        from sqlalchemy import select
+        row = (await db.execute(select(WorkoutProgram).where(WorkoutProgram.user_id == user.id))).scalar_one_or_none()
+        if row:
+            row.raw_text = body.raw_text
+            row.program_json = json.dumps(program)
+        else:
+            db.add(WorkoutProgram(user_id=user.id, raw_text=body.raw_text, program_json=json.dumps(program)))
+        await db.commit()
+
+        return {"program": program}
+
+
+@app.delete("/api/workout/{token}")
+async def delete_workout_program(token: str):
+    """Remove the user's workout program."""
+    async with AsyncSessionLocal() as db:
+        user = await get_user_by_webhook_token(db, token)
+        if not user:
+            raise HTTPException(status_code=401, detail="Invalid token")
+        from db.models import WorkoutProgram
+        from sqlalchemy import select, delete as sql_delete
+        await db.execute(sql_delete(WorkoutProgram).where(WorkoutProgram.user_id == user.id))
+        await db.commit()
+    return {{"status": "ok"}}
+
+
 # ── Dashboard HTML ─────────────────────────────────────────────────────────────
 
 @app.get("/dashboard/{token}", response_class=HTMLResponse)

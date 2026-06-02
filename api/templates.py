@@ -494,6 +494,61 @@ body{{
 .lmac b{{font-weight:600}}
 .lempty{{padding:18px 12px;color:var(--mu);font-size:13px;text-align:center}}
 
+/* ── TRAINING PROGRAM ───────────────────────────────────── */
+.wp-summary{{
+  background:var(--sf);border:1px solid var(--bd);border-radius:16px;
+  padding:18px 20px;backdrop-filter:blur(16px);box-shadow:var(--sh);
+}}
+.wp-name{{font-family:'Instrument Serif','Times New Roman',serif;font-size:22px;letter-spacing:-.01em;margin-bottom:4px}}
+.wp-focus{{font-size:13px;color:var(--mu);margin-bottom:14px}}
+.wp-rotation{{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:18px}}
+.wp-chip{{
+  font-family:'Geist Mono','SF Mono',monospace;
+  font-size:10px;letter-spacing:.06em;text-transform:uppercase;
+  padding:4px 10px;border-radius:6px;border:1px solid var(--bd);
+  background:var(--sf2);color:var(--tx2);
+}}
+.wp-days{{display:flex;flex-direction:column;gap:10px}}
+.wp-day{{
+  border:1px solid var(--bd);border-radius:12px;overflow:hidden;
+  background:var(--sf);
+}}
+.wp-day-hd{{
+  display:flex;align-items:center;gap:10px;padding:13px 16px;
+  cursor:pointer;user-select:none;transition:background .15s;
+}}
+.wp-day-hd:hover{{background:var(--sf2)}}
+.wp-day-name{{font-weight:600;font-size:14px;flex:1}}
+.wp-priority{{
+  font-family:'Geist Mono','SF Mono',monospace;font-size:9px;
+  letter-spacing:.08em;text-transform:uppercase;padding:2px 7px;
+  border-radius:5px;border:1px solid var(--bd);color:var(--mu);
+}}
+.wp-priority.primary{{color:var(--ac);border-color:rgba(var(--ac-rgb),.3);background:var(--ac-dim)}}
+.wp-priority.secondary{{color:var(--ye);border-color:rgba(234,179,8,.3)}}
+.wp-chevron{{font-size:11px;color:var(--mu);transition:transform .2s}}
+.wp-day.open .wp-chevron{{transform:rotate(90deg)}}
+.wp-day-body{{display:none;border-top:1px solid var(--bd);padding:14px 16px}}
+.wp-day.open .wp-day-body{{display:block}}
+.wp-goals{{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}}
+.wp-goal{{
+  font-size:12px;color:var(--tx2);background:var(--sf2);
+  border:1px solid var(--bd);border-radius:6px;padding:3px 9px;
+}}
+.wp-exlist{{display:flex;flex-direction:column;gap:6px}}
+.wp-ex{{display:flex;align-items:flex-start;gap:10px;font-size:13px}}
+.wp-ex-dot{{width:6px;height:6px;border-radius:50%;background:var(--ac);flex-shrink:0;margin-top:5px}}
+.wp-ex-main{{color:var(--tx)}}
+.wp-ex-perf{{font-family:'Geist Mono','SF Mono',monospace;font-size:10.5px;color:var(--mu);margin-top:2px}}
+.wp-ex-cat-accessory .wp-ex-dot{{background:var(--bl)}}
+.wp-ex-cat-cardio .wp-ex-dot{{background:var(--or)}}
+.wp-empty{{
+  background:var(--sf);border:1px solid var(--bd);border-radius:16px;
+  padding:28px 20px;text-align:center;color:var(--mu);font-size:14px;
+  backdrop-filter:blur(16px);
+}}
+.wp-empty .wp-empty-hint{{font-size:12px;margin-top:6px;color:var(--di)}}
+
 /* ── PROFILE GRID ────────────────────────────────────────── */
 .profile-grid{{display:grid;grid-template-columns:1fr 1fr;gap:18px}}
 @media(max-width:700px){{.profile-grid{{grid-template-columns:1fr}}}}
@@ -1368,6 +1423,23 @@ footer{{
     <div class="infocrd" id="profile-info"></div>
     <div class="stitle">Targets</div>
     <div class="infocrd" id="profile-targets"></div>
+
+    <div class="stitle spaced">
+      <span>Training program</span>
+      <button class="add-toggle" id="wp-edit-btn" onclick="openWorkoutEditor()" title="Set up program">+</button>
+    </div>
+    <div id="workout-program-card"></div>
+
+    <!-- paste / edit panel (hidden by default) -->
+    <div class="add-card" id="workout-editor" style="display:none;margin-top:10px">
+      <textarea class="add-inp" id="workout-raw" rows="12" placeholder="Paste your workout split here — exercises, goals, recent lifts, rotation. Arnie will parse it." style="height:200px;resize:vertical;font-size:13px;line-height:1.5"></textarea>
+      <div style="display:flex;gap:8px;padding:10px 14px;border-top:1px solid var(--bd)">
+        <button class="add-submit" style="flex:1" onclick="saveWorkoutProgram()">&#9889; Parse &amp; save</button>
+        <button class="cbtn" onclick="closeWorkoutEditor()">Cancel</button>
+      </div>
+      <div id="workout-parse-status" style="padding:0 14px 10px;font-size:12px;color:var(--mu)"></div>
+    </div>
+
     <div class="stitle">Connected devices</div>
     <div class="infocrd" style="overflow:hidden" id="devices-card"></div>
     <div class="stitle">Science</div>
@@ -1497,7 +1569,7 @@ function switchTab(name){{
     renderPageHead(_baseData);
   }}
   if(name==='week' && _baseData) renderWeekTab(_baseData);
-  if(name==='profile' && _baseData) renderProfileTab(_baseData);
+  if(name==='profile' && _baseData){{renderProfileTab(_baseData);loadWorkoutProgram();}}
 }}
 
 // ── Boot ──────────────────────────────────────────────────────────────────
@@ -2054,6 +2126,125 @@ function _inrow(l,v,fldMap,color){{
     '<span class="inlbl">'+esc(l)+'</span>'+
     '<div class="inrow-right">'+dispVal+editBtn+'</div>'+
     '</div>';
+}}
+
+// ── Training program ─────────────────────────────────────────────────────────
+var _wpCache=null;
+
+async function loadWorkoutProgram(){{
+  try{{
+    var r=await fetch('/api/workout/'+TOKEN);
+    if(!r.ok)return;
+    var data=await r.json();
+    _wpCache=data;
+    renderWorkoutProgram(data.program, data.raw_text||'');
+  }}catch(e){{}}
+}}
+
+function renderWorkoutProgram(p, rawText){{
+  var el=document.getElementById('workout-program-card');
+  var editBtn=document.getElementById('wp-edit-btn');
+  if(!el)return;
+  if(!p){{
+    el.innerHTML='<div class="wp-empty">No training program set up yet.<div class="wp-empty-hint">Tap + to paste your split — Arnie will parse it automatically.</div></div>';
+    if(editBtn){{editBtn.textContent='+';editBtn.classList.remove('open');}}
+    return;
+  }}
+  if(editBtn){{editBtn.innerHTML='&#9998;';editBtn.classList.remove('open');}}
+
+  var priorityClass={{primary:'primary',secondary:'secondary'}}
+
+  var rotHtml=(p.rotation||[]).map(function(d){{
+    return '<span class="wp-chip">'+esc(d)+'</span>';
+  }}).join('');
+
+  var daysHtml=(p.days||[]).map(function(day,i){{
+    var pri=day.priority||'';
+    var priHtml=pri?'<span class="wp-priority '+esc(priorityClass[pri]||'')+'">'+esc(pri)+'</span>':'';
+    var goalsHtml=(day.goals||[]).map(function(g){{return '<span class="wp-goal">'+esc(g)+'</span>';'}}).join('');
+    var exHtml=(day.exercises||[]).map(function(ex){{
+      var catCls='wp-ex-cat-'+(ex.category||'main');
+      var perf=ex.recent_performance?'<div class="wp-ex-perf">'+esc(ex.recent_performance)+'</div>':'';
+      return '<div class="wp-ex '+catCls+'"><div class="wp-ex-dot"></div><div><div class="wp-ex-main">'+esc(ex.name)+'</div>'+perf+'</div></div>';
+    }}).join('');
+    return '<div class="wp-day" id="wpd-'+i+'">'+
+      '<div class="wp-day-hd" onclick="toggleWpDay('+i+')">'+
+      '<span class="wp-day-name">'+esc(day.name)+'</span>'+
+      priHtml+
+      '<span class="wp-chevron">&#9658;</span>'+
+      '</div>'+
+      '<div class="wp-day-body">'+
+      (goalsHtml?'<div class="wp-goals">'+goalsHtml+'</div>':'')+
+      '<div class="wp-exlist">'+exHtml+'</div>'+
+      (day.notes?'<div style="margin-top:10px;font-size:12px;color:var(--mu)">'+esc(day.notes)+'</div>':'')+
+      '</div></div>';
+  }}).join('');
+
+  el.innerHTML='<div class="wp-summary">'+
+    '<div class="wp-name">'+esc(p.split_name||'Training Split')+'</div>'+
+    (p.focus?'<div class="wp-focus">'+esc(p.focus)+'</div>':'')+
+    (rotHtml?'<div class="wp-rotation">'+rotHtml+'</div>':'')+
+    '<div class="wp-days">'+daysHtml+'</div>'+
+    '</div>';
+}}
+
+function toggleWpDay(i){{
+  var d=document.getElementById('wpd-'+i);
+  if(d)d.classList.toggle('open');
+}}
+
+function openWorkoutEditor(){{
+  var btn=document.getElementById('wp-edit-btn');
+  var ed=document.getElementById('workout-editor');
+  var ta=document.getElementById('workout-raw');
+  if(!ed)return;
+  var isOpen=ed.style.display!=='none';
+  if(isOpen){{closeWorkoutEditor();return;}}
+  if(_wpCache&&_wpCache.raw_text)ta.value=_wpCache.raw_text;
+  ed.style.display='block';
+  if(btn)btn.classList.add('open');
+  setTimeout(function(){{ta.focus();}},60);
+}}
+
+function closeWorkoutEditor(){{
+  var btn=document.getElementById('wp-edit-btn');
+  var ed=document.getElementById('workout-editor');
+  if(ed)ed.style.display='none';
+  if(btn)btn.classList.remove('open');
+  var st=document.getElementById('workout-parse-status');
+  if(st)st.textContent='';
+}}
+
+async function saveWorkoutProgram(){{
+  var rawText=(document.getElementById('workout-raw').value||'').trim();
+  if(!rawText)return;
+  var btn=document.querySelector('#workout-editor .add-submit');
+  var status=document.getElementById('workout-parse-status');
+  if(btn){{btn.textContent='&#9889; Parsing…';btn.disabled=true;}}
+  if(status)status.textContent='Sending to Arnie for parsing…';
+  try{{
+    var r=await fetch('/api/workout/'+TOKEN+'/parse',{{
+      method:'POST',
+      headers:{{'Content-Type':'application/json'}},
+      body:JSON.stringify({{raw_text:rawText}})
+    }});
+    if(!r.ok)throw new Error('HTTP '+r.status);
+    var data=await r.json();
+    _wpCache={{program:data.program,raw_text:rawText}};
+    renderWorkoutProgram(data.program,rawText);
+    closeWorkoutEditor();
+  }}catch(e){{
+    if(status)status.textContent='Parse failed — check your input and try again.';
+  }}finally{{
+    if(btn){{btn.innerHTML='&#9889; Parse &amp; save';btn.disabled=false;}}
+  }}
+}}
+
+async function deleteWorkoutProgram(){{
+  if(!confirm('Remove your training program?'))return;
+  await fetch('/api/workout/'+TOKEN,{{method:'DELETE'}});
+  _wpCache=null;
+  renderWorkoutProgram(null,'');
 }}
 
 function renderProfileTab(d){{
