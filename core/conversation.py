@@ -339,7 +339,7 @@ async def run_turn(
     # are state updates, not sends. The re-ask itself stays gated in the scheduler.
     if not in_onboarding:
         from reminders.lifecycle import sync_pending_questions
-        await sync_pending_questions(db, user)
+        await sync_pending_questions(db, user, arnie_response=response_text)
 
     # ── Turn-health telemetry ─────────────────────────────────────────────────
     # Cheap deterministic detectors so deviations are self-evident (in logs + the
