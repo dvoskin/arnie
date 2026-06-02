@@ -280,6 +280,14 @@ body{{
 }}
 .add-submit:hover{{background:var(--ac-dim)}}
 .add-submit:active{{opacity:.7}}
+.add-toggle{{
+  width:26px;height:26px;border-radius:8px;border:1px solid var(--bd);
+  background:var(--sf2);color:var(--mu);font-size:18px;line-height:1;
+  cursor:pointer;font-family:inherit;display:grid;place-items:center;
+  transition:all .18s;flex-shrink:0;
+}}
+.add-toggle:hover{{border-color:var(--ac);color:var(--ac);background:var(--ac-dim)}}
+.add-toggle.open{{background:var(--ac-dim);border-color:rgba(var(--ac-rgb),.4);color:var(--ac);transform:rotate(45deg)}}
 .ai-pill{{
   background:var(--ac-dim);color:var(--ac);border:1px solid rgba(var(--ac-rgb),.2);
   padding:2px 7px;border-radius:10px;
@@ -1260,25 +1268,27 @@ footer{{
       <!-- Logging column (right on desktop, top on mobile) -->
       <div class="day-col-log">
         <div class="stitle spaced">
-          <span>Food log</span>
-          <span id="food-log-count" style="color:var(--mu);font-weight:400"></span>
+          <span>Food log <span id="food-log-count" style="font-weight:400;opacity:.7"></span></span>
+          <button class="add-toggle" id="food-toggle" onclick="toggleAddForm('food')" title="Add food">+</button>
         </div>
-        <div class="lcrd" id="food-log"><div class="lempty">Loading&hellip;</div></div>
-        <div class="add-card">
+        <div class="add-card" id="food-form" style="display:none">
           <input class="add-inp" id="food-name" placeholder="Food name (e.g. chicken breast)" autocomplete="off">
-          <input class="add-inp" id="food-qty" placeholder="Portion (e.g. 200g)">
+          <input class="add-inp" id="food-qty" placeholder="Portion (e.g. 200g, 1 cup)">
           <div class="add-macros">
             <div class="add-mac-field"><label>Cal</label><input type="number" id="food-cal" min="0" inputmode="numeric" placeholder="0"></div>
             <div class="add-mac-field"><label>P (g)</label><input type="number" id="food-pro" min="0" inputmode="decimal" placeholder="0"></div>
             <div class="add-mac-field"><label>C (g)</label><input type="number" id="food-carb" min="0" inputmode="decimal" placeholder="0"></div>
             <div class="add-mac-field"><label>F (g)</label><input type="number" id="food-fat" min="0" inputmode="decimal" placeholder="0"></div>
           </div>
-          <button class="add-submit" id="food-submit" onclick="submitFood()">+ Add food</button>
+          <button class="add-submit" id="food-submit" onclick="submitFood()">Save food</button>
         </div>
+        <div class="lcrd" id="food-log"><div class="lempty">Loading&hellip;</div></div>
 
-        <div class="stitle" style="margin-top:28px">Workouts</div>
-        <div class="lcrd" id="ex-log"><div class="lempty">Loading&hellip;</div></div>
-        <div class="add-card">
+        <div class="stitle spaced" style="margin-top:28px">
+          <span>Workouts</span>
+          <button class="add-toggle" id="ex-toggle" onclick="toggleAddForm('ex')" title="Add workout">+</button>
+        </div>
+        <div class="add-card" id="ex-form" style="display:none">
           <input class="add-inp" id="ex-name" placeholder="Exercise (e.g. bench press, 5k run)" autocomplete="off">
           <div class="add-macros">
             <div class="add-mac-field"><label>Sets</label><input type="number" id="ex-sets" min="1" inputmode="numeric" placeholder="—"></div>
@@ -1290,7 +1300,7 @@ footer{{
             <input type="checkbox" id="ex-cardio" style="width:15px;height:15px;accent-color:var(--ac)">
             <label for="ex-cardio">Cardio / conditioning</label>
           </div>
-          <button class="add-submit" id="ex-submit" onclick="submitExercise()">+ Add workout</button>
+          <button class="add-submit" id="ex-submit" onclick="submitExercise()">Save workout</button>
         </div>
       </div>
 
@@ -1714,9 +1724,30 @@ function renderPageHead(d){{
   ps.innerHTML=esc(ds)+(st>0?' <span class="ph-streak">&#9889; '+st+'-DAY STREAK</span>':'');
 }}
 
+function toggleAddForm(type){{
+  var form=document.getElementById(type+'-form');
+  var btn=document.getElementById(type+'-toggle');
+  if(!form||!btn)return;
+  var open=form.style.display==='none'||!form.style.display;
+  form.style.display=open?'block':'none';
+  btn.classList.toggle('open',open);
+  if(open){{
+    setTimeout(function(){{
+      var first=form.querySelector('input');
+      if(first){{form.scrollIntoView({{behavior:'smooth',block:'nearest'}});first.focus();}}
+    }},60);
+  }}
+}}
+
 function focusLogInput(){{
   switchTab('day');
   setTimeout(function(){{
+    var form=document.getElementById('food-form');
+    var btn=document.getElementById('food-toggle');
+    if(form&&form.style.display==='none'){{
+      form.style.display='block';
+      if(btn)btn.classList.add('open');
+    }}
     var el=document.getElementById('food-name');
     if(el){{el.scrollIntoView({{behavior:'smooth',block:'center'}});el.focus();}}
   }},220);
@@ -1743,7 +1774,7 @@ async function submitFood(){{
     if(!r.ok)throw new Error('HTTP '+r.status);
     // clear form
     ['food-name','food-qty','food-cal','food-pro','food-carb','food-fat'].forEach(id=>{{document.getElementById(id).value='';}});
-    // refresh
+    toggleAddForm('food');
     delete _dayCache[_viewingDate];
     await loadDayData(_viewingDate);
   }}catch(e){{alert('Failed to save: '+e.message);}}
@@ -1768,6 +1799,7 @@ async function submitExercise(){{
     if(!r.ok)throw new Error('HTTP '+r.status);
     ['ex-name','ex-sets','ex-reps','ex-wt','ex-dur'].forEach(id=>{{document.getElementById(id).value='';}});
     document.getElementById('ex-cardio').checked=false;
+    toggleAddForm('ex');
     delete _dayCache[_viewingDate];
     await loadDayData(_viewingDate);
   }}catch(e){{alert('Failed to save: '+e.message);}}
