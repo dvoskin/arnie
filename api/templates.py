@@ -181,8 +181,8 @@ body{{
 }}
 
 /* ── MAIN ────────────────────────────────────────────────── */
-.main{{min-width:0;overflow-x:clip;display:flex;justify-content:center}}
-.main-inner{{padding:0 40px 100px;width:100%;max-width:720px}}
+.main{{min-width:0;overflow-x:clip}}
+.main-inner{{padding:0 48px 100px;width:100%;max-width:1100px;margin:0 auto}}
 .hbtn{{
   background:var(--sf2);border:1px solid var(--bd);color:var(--mu);
   width:34px;height:34px;border-radius:10px;cursor:pointer;font-size:14px;
@@ -229,7 +229,7 @@ body{{
 @media(max-width:940px){{
   .shell{{grid-template-columns:1fr}}
   .sidebar{{display:none}}
-  .main{{justify-content:flex-start}}
+  .main-inner{{max-width:100%;margin:0}}
   .main-inner{{padding:0 20px 90px;max-width:100%}}
   .bottomnav{{display:flex}}
   .pagehead{{padding:18px 0 14px}}
