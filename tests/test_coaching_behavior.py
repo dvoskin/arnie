@@ -143,6 +143,19 @@ async def test_closed_day_does_not_narrate_reopening():
 
 
 @pytest.mark.asyncio
+async def test_dashboard_handoff_line_does_not_greet_by_name():
+    """The dashboard hand-off line should continue the conversation, not open with a
+    fresh greeting or the user's name ('yo Danny') — that reads as out-of-context."""
+    import re
+    from core.blurbs import dashboard_line
+    line = (await dashboard_line("Danny")).strip()
+    low = line.lower()
+    assert not re.match(r"^(yo|hey|hi|sup|hello|howdy)\b", low), f"greeting opener: {line!r}"
+    assert "danny" not in low, f"used the name mid-convo: {line!r}"
+    assert "http" not in low
+
+
+@pytest.mark.asyncio
 async def test_estimate_request_logs_without_reasking():
     """'guestimate' must produce a log_food call, not another clarifying question."""
     from core.llm import chat
