@@ -45,137 +45,219 @@ def _dashboard_html(token: str, name: str = "") -> str:
 </script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
 *,*::before,*::after{{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}}
 
 /* ── THEMES ─────────────────────────────────────────────── */
 [data-theme="dark"]{{
-  --bg:#070c18;
-  --sf:rgba(255,255,255,.045); --sf2:rgba(255,255,255,.08); --sf3:rgba(255,255,255,.13);
-  --bd:rgba(255,255,255,.09);  --bd2:rgba(255,255,255,.18);
-  --ac:#00e676; --ac-rgb:0,230,118; --ac-dim:rgba(0,230,118,.12);
+  --bg:#0c1018;
+  --sf:rgba(255,255,255,.05); --sf2:rgba(255,255,255,.09); --sf3:rgba(255,255,255,.14);
+  --bd:rgba(255,255,255,.10); --bd2:rgba(255,255,255,.20);
+  --ac:#00e676; --ac-rgb:0,230,118; --ac-dim:rgba(0,230,118,.13);
   --bl:#3b82f6; --or:#f97316; --pu:#a855f7; --re:#ef4444; --ye:#eab308;
   --tx:#eef2ff; --tx2:#c8d0e8; --mu:#6b7a99; --di:#3d4a66;
-  --sh:none; --hbg:rgba(7,12,24,.92);
-  --cgrid:rgba(255,255,255,.05); --ctick:#4a5568; --inp:rgba(255,255,255,.05);
+  --sh:none; --hbg:rgba(12,16,24,.92);
+  --cgrid:rgba(255,255,255,.05); --ctick:#4a5568; --inp:rgba(255,255,255,.06);
 }}
 [data-theme="light"]{{
-  --bg:#f0f4f8;
-  --sf:#ffffff; --sf2:#f5f8fc; --sf3:#edf2f7;
-  --bd:#e2e8f0; --bd2:#cbd5e1;
-  --ac:#059669; --ac-rgb:5,150,105; --ac-dim:rgba(5,150,105,.1);
+  --bg:#f5f7fa;
+  --sf:rgba(255,255,255,.88); --sf2:#eef2f7; --sf3:#e4eaf3;
+  --bd:#dde4ef; --bd2:#c4cfdf;
+  --ac:#059669; --ac-rgb:5,150,105; --ac-dim:rgba(5,150,105,.10);
   --bl:#2563eb; --or:#ea580c; --pu:#9333ea; --re:#dc2626; --ye:#d97706;
   --tx:#0f172a; --tx2:#334155; --mu:#64748b; --di:#94a3b8;
-  --sh:0 1px 3px rgba(0,0,0,.07),0 4px 16px rgba(0,0,0,.05);
-  --hbg:rgba(240,244,248,.92);
+  --sh:0 1px 3px rgba(0,0,0,.06),0 4px 18px rgba(0,0,0,.05);
+  --hbg:rgba(245,247,250,.94);
   --cgrid:#e2e8f0; --ctick:#94a3b8; --inp:#f8fafc;
 }}
 
 /* ── BASE ────────────────────────────────────────────────── */
-html{{background:var(--bg);transition:background .3s,color .3s}}
+html{{background:var(--bg);transition:background .35s,color .3s}}
 body{{
-  font-family:'Inter',-apple-system,system-ui,sans-serif;
+  font-family:'Geist',ui-sans-serif,system-ui,-apple-system,sans-serif;
   background:var(--bg);color:var(--tx);min-height:100vh;
   -webkit-font-smoothing:antialiased;overflow-x:hidden;position:relative;
   padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom);
-  transition:background .3s,color .3s;
+  transition:background .35s,color .3s;letter-spacing:-.005em;
 }}
 [data-theme="dark"] body::before{{
   content:'';position:fixed;inset:0;z-index:0;pointer-events:none;
   background:
-    radial-gradient(ellipse 80% 50% at 15% 20%,rgba(0,230,118,.07),transparent),
-    radial-gradient(ellipse 60% 40% at 85% 70%,rgba(59,130,246,.05),transparent);
-  animation:mesh 20s ease-in-out infinite alternate;
+    radial-gradient(ellipse 70% 55% at 10% 12%,rgba(0,230,118,.10),transparent),
+    radial-gradient(ellipse 65% 50% at 90% 78%,rgba(59,130,246,.08),transparent),
+    radial-gradient(ellipse 80% 60% at 50% 52%,rgba(90,55,190,.06),transparent);
+  animation:mesh 18s ease-in-out infinite alternate;
+}}
+[data-theme="light"] body::before{{
+  content:'';position:fixed;inset:0;z-index:0;pointer-events:none;
+  background:
+    radial-gradient(ellipse 70% 55% at 10% 12%,rgba(5,150,105,.04),transparent),
+    radial-gradient(ellipse 65% 50% at 90% 78%,rgba(37,99,235,.03),transparent);
 }}
 @keyframes mesh{{0%{{opacity:.7;transform:scale(1)}}100%{{opacity:1;transform:scale(1.06)}}}}
 
-/* ── HEADER ─────────────────────────────────────────────── */
-header{{
-  background:var(--hbg);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
-  border-bottom:1px solid var(--bd);padding:8px 14px;
-  display:flex;align-items:center;justify-content:space-between;
-  position:sticky;top:0;z-index:100;transition:background .3s;
+/* ── SHELL / SIDEBAR ─────────────────────────────────────── */
+.shell{{display:grid;grid-template-columns:252px minmax(0,1fr);min-height:100dvh;position:relative;z-index:1}}
+.sidebar{{
+  position:sticky;top:0;height:100dvh;display:flex;flex-direction:column;
+  padding:24px 14px 20px;border-right:1px solid var(--bd);
+  background:var(--hbg);backdrop-filter:blur(24px) saturate(140%);
+  -webkit-backdrop-filter:blur(24px) saturate(140%);overflow-y:auto;z-index:10;
+  transition:background .35s;
 }}
-.logo{{
-  font-size:15px;font-weight:800;letter-spacing:-.5px;
-  background:linear-gradient(130deg,var(--ac),var(--bl));
-  -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
+[data-theme="light"] .sidebar{{
+  background:rgba(255,255,255,.96);
+  border-right:1px solid var(--bd);
+  box-shadow:2px 0 20px rgba(0,0,0,.06);
 }}
-.hdr-r{{display:flex;align-items:center;gap:6px}}
-.u-name{{font-size:12px;font-weight:600;color:var(--tx2)}}
-.g-tag{{
-  background:var(--ac-dim);color:var(--ac);font-size:9px;font-weight:700;
-  padding:2px 7px;border-radius:20px;border:1px solid rgba(var(--ac-rgb),.25);
-  text-transform:capitalize;
+.sb-logo{{
+  font-family:'Instrument Serif','Times New Roman',serif;
+  font-size:21px;letter-spacing:-.01em;color:var(--tx);
+  display:inline-flex;align-items:center;gap:9px;padding:2px 10px 0;
 }}
+.logo-os{{
+  font-family:'Geist Mono','SF Mono',monospace;
+  font-size:9px;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--mu);border:1px solid var(--bd);border-radius:5px;padding:2px 6px;
+}}
+.sidenav{{display:flex;flex-direction:column;gap:2px;margin-top:28px}}
+.nav-section-lbl{{
+  font-family:'Geist Mono','SF Mono',monospace;
+  font-size:9px;letter-spacing:.16em;text-transform:uppercase;
+  color:var(--mu);padding:0 12px;margin:2px 0 8px;font-weight:500;
+}}
+.navitem{{
+  display:flex;align-items:center;gap:13px;padding:11px 12px;
+  border-radius:12px;border:1px solid transparent;
+  color:var(--tx2);font-size:14px;font-weight:500;cursor:pointer;
+  transition:all .18s cubic-bezier(.2,.7,.2,1);
+  width:100%;text-align:left;background:transparent;font-family:inherit;position:relative;
+}}
+.navitem:hover:not(.active){{color:var(--tx);background:var(--sf2)}}
+.navitem.active{{
+  color:var(--tx);background:linear-gradient(180deg,var(--sf3),var(--sf2));
+  border-color:var(--bd);
+}}
+[data-theme="dark"] .navitem.active{{
+  box-shadow:0 1px 0 rgba(255,255,255,.05) inset;
+}}
+[data-theme="light"] .navitem.active{{
+  background:linear-gradient(180deg,#fff,#f8fafc);
+  box-shadow:0 1px 3px rgba(0,0,0,.08);
+}}
+.navitem.active::before{{
+  content:'';position:absolute;left:-14px;top:50%;transform:translateY(-50%);
+  width:3px;height:22px;border-radius:3px;
+  background:var(--ac);
+}}
+[data-theme="dark"] .navitem.active::before{{box-shadow:0 0 10px var(--ac);}}
+.ni-ico{{width:20px;height:20px;display:grid;place-items:center;flex-shrink:0;color:var(--tx2);opacity:.65;transition:color .18s,opacity .18s}}
+.navitem.active .ni-ico,.navitem:hover .ni-ico{{color:var(--ac);opacity:1}}
+.ni-lbl{{flex:1}}
+.ni-meta{{font-family:'Geist Mono','SF Mono',monospace;font-size:9.5px;color:var(--mu);letter-spacing:.04em}}
+.navitem.active .ni-meta{{color:var(--tx2)}}
+.sb-foot{{margin-top:auto;display:flex;flex-direction:column;gap:8px;padding-top:12px;border-top:1px solid var(--bd)}}
+.sb-user{{
+  display:flex;align-items:center;gap:11px;padding:11px 12px;
+  border-radius:12px;border:1px solid var(--bd);background:var(--sf);
+}}
+.sb-avatar{{
+  width:36px;height:36px;border-radius:50%;flex-shrink:0;
+  background:radial-gradient(circle at 35% 30%,#86efac,#6366f1 72%);
+  border:1px solid rgba(255,255,255,.18);position:relative;
+}}
+.sb-avatar::after{{
+  content:'';position:absolute;right:-1px;bottom:-1px;
+  width:10px;height:10px;border-radius:50%;
+  background:var(--ac);border:2px solid var(--bg);
+}}
+.sb-name{{font-size:13px;font-weight:500;color:var(--tx)}}
+.sb-goal{{
+  font-family:'Geist Mono','SF Mono',monospace;
+  font-size:9px;letter-spacing:.06em;text-transform:uppercase;color:var(--ac);margin-top:2px;
+}}
+
+/* ── MAIN ────────────────────────────────────────────────── */
+.main{{min-width:0;overflow-x:clip}}
+.main-inner{{padding:0 48px 100px;width:100%;max-width:1140px}}
 .hbtn{{
-  background:var(--sf2);border:1px solid var(--bd2);color:var(--mu);
-  width:30px;height:30px;border-radius:9px;cursor:pointer;font-size:14px;
+  background:var(--sf2);border:1px solid var(--bd);color:var(--mu);
+  width:34px;height:34px;border-radius:10px;cursor:pointer;font-size:14px;
   display:flex;align-items:center;justify-content:center;font-family:inherit;
   transition:all .2s;flex-shrink:0;
 }}
 .hbtn:hover{{border-color:var(--ac);color:var(--ac)}}
 .hbtn:active{{transform:scale(.91)}}
-
-/* ── TABS ────────────────────────────────────────────────── */
-.tabs{{
-  background:var(--hbg);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
-  border-bottom:1px solid var(--bd);padding:6px 12px;
-  display:flex;gap:4px;position:sticky;top:47px;z-index:99;
-  transition:background .3s;
-}}
-.tab-pill{{
-  position:absolute;bottom:8px;height:calc(100% - 16px);
-  background:var(--sf2);border:1px solid var(--bd2);border-radius:10px;
-  transition:left .25s cubic-bezier(.4,0,.2,1),width .25s cubic-bezier(.4,0,.2,1);
-  pointer-events:none;z-index:0;
-}}
-.tab-btn{{
-  flex:1;padding:6px 10px;border-radius:9px;border:none;
-  background:transparent;color:var(--mu);font-size:12px;font-weight:600;
-  cursor:pointer;font-family:inherit;min-height:32px;
-  transition:color .2s;position:relative;z-index:1;
-}}
-.tab-btn.active{{color:var(--tx)}}
-
-/* ── APP WRAP ────────────────────────────────────────────── */
-.app-wrap{{
-  max-width:960px;margin:0 auto;position:relative;min-height:100vh;
-}}
-
-/* ── MAIN ────────────────────────────────────────────────── */
-main{{padding:12px 16px 80px;position:relative;z-index:1}}
-
-/* Desktop 2-col day layout */
-@media(min-width:700px){{
-  #panel-day.active{{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start}}
-  .day-col-left{{min-width:0}}
-  .day-col-right{{min-width:0}}
-  #panel-day .dnav{{grid-column:1/-1}}
-}}
 #app-load{{text-align:center;padding:80px 20px;color:var(--mu);font-size:14px}}
 .tab-panel{{display:none;animation:fadeUp .28s ease}}
 .tab-panel.active{{display:block}}
 
+/* ── DAY 2-COL DESKTOP ───────────────────────────────────── */
+@media(min-width:700px){{
+  #panel-day.active{{display:grid;grid-template-columns:1.05fr .95fr;gap:20px;align-items:start}}
+  .day-col-left{{min-width:0}}
+  .day-col-right{{min-width:0}}
+  #panel-day .dnav{{grid-column:1/-1}}
+  #panel-day .toggles{{grid-column:1/-1}}
+}}
+
+/* ── BOTTOM NAV (mobile) ─────────────────────────────────── */
+.bottomnav{{
+  display:none;position:fixed;bottom:0;left:0;right:0;z-index:60;
+  justify-content:space-around;gap:4px;
+  padding:10px 16px calc(10px + env(safe-area-inset-bottom));
+  background:var(--hbg);backdrop-filter:blur(22px);
+  -webkit-backdrop-filter:blur(22px);border-top:1px solid var(--bd);
+}}
+.bn-item{{
+  flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;
+  background:transparent;border:none;
+  font-family:'Geist Mono','SF Mono',monospace;
+  font-size:9px;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--mu);cursor:pointer;padding:7px 0 4px;border-radius:10px;transition:color .15s;
+}}
+.bn-ico{{width:23px;height:23px;display:grid;place-items:center;transition:transform .2s}}
+.bn-item.active{{color:var(--ac)}}
+.bn-item.active .bn-ico{{transform:translateY(-2px)}}
+
+/* ── RESPONSIVE ──────────────────────────────────────────── */
+@media(max-width:940px){{
+  .shell{{grid-template-columns:1fr}}
+  .sidebar{{display:none}}
+  .main-inner{{padding:0 24px 90px}}
+  .bottomnav{{display:flex}}
+  .pagehead{{padding:18px 0 14px}}
+}}
+@media(max-width:700px){{
+  #panel-day.active{{display:block}}
+}}
+@media(max-width:560px){{
+  .main-inner{{padding:0 16px 90px}}
+  .ph-sub{{flex-wrap:wrap;gap:5px 8px}}
+}}
+
 /* ── SECTION TITLES ─────────────────────────────────────── */
 .stitle{{
-  font-size:10px;font-weight:700;color:var(--di);text-transform:uppercase;
-  letter-spacing:1.4px;margin:18px 2px 8px;display:flex;align-items:center;gap:8px;
+  font-family:'Geist Mono','SF Mono',monospace;
+  font-size:10px;font-weight:500;color:var(--mu);text-transform:uppercase;
+  letter-spacing:.16em;margin:28px 0 12px;display:flex;align-items:center;gap:10px;
 }}
-.stitle:first-child{{margin-top:2px}}
+.stitle:first-child{{margin-top:6px}}
 .ai-pill{{
   background:var(--ac-dim);color:var(--ac);border:1px solid rgba(var(--ac-rgb),.2);
-  padding:2px 7px;border-radius:10px;font-size:9px;letter-spacing:.5px;font-weight:700;
+  padding:2px 7px;border-radius:10px;
+  font-family:'Geist Mono','SF Mono',monospace;font-size:9px;letter-spacing:.06em;font-weight:500;
 }}
 
 /* ── DATE NAV ────────────────────────────────────────────── */
-.dnav{{display:flex;align-items:center;gap:5px;margin-bottom:12px}}
-.dscroll{{flex:1;display:flex;gap:5px;overflow-x:auto;scrollbar-width:none}}
+.dnav{{display:flex;align-items:center;gap:6px;margin-bottom:16px}}
+.dscroll{{flex:1;display:flex;gap:6px;overflow-x:auto;scrollbar-width:none}}
 .dscroll::-webkit-scrollbar{{display:none}}
 .darr{{
   background:var(--sf);border:1px solid var(--bd);color:var(--mu);
-  width:32px;height:32px;min-width:32px;border-radius:9px;cursor:pointer;
+  width:34px;height:34px;min-width:34px;border-radius:10px;cursor:pointer;
   font-size:15px;display:flex;align-items:center;justify-content:center;
   font-family:inherit;flex-shrink:0;transition:all .2s;
   backdrop-filter:blur(12px);box-shadow:var(--sh);
@@ -184,39 +266,49 @@ main{{padding:12px 16px 80px;position:relative;z-index:1}}
 .darr:disabled{{opacity:.3;cursor:default}}
 .dchip{{
   background:var(--sf);border:1px solid var(--bd);color:var(--mu);
-  padding:6px 11px;border-radius:9px;font-size:11px;font-weight:600;
+  padding:8px 14px;border-radius:10px;
+  font-family:'Geist Mono','SF Mono',monospace;font-size:11px;font-weight:500;
   white-space:nowrap;cursor:pointer;transition:all .2s;flex-shrink:0;
-  display:inline-flex;align-items:center;gap:4px;
+  display:inline-flex;align-items:center;gap:5px;
   backdrop-filter:blur(12px);box-shadow:var(--sh);
 }}
 .dchip:hover{{border-color:var(--bd2);color:var(--tx2)}}
-.dchip.active{{background:var(--ac-dim);border-color:var(--ac);color:var(--ac)}}
+.dchip.active{{background:var(--ac-dim);border-color:rgba(var(--ac-rgb),.4);color:var(--tx)}}
 .today-tag{{
-  background:var(--ac);color:#fff;font-size:9px;font-weight:700;
-  padding:1px 5px;border-radius:5px;
+  background:var(--ac);color:#000;
+  font-family:'Geist Mono','SF Mono',monospace;
+  font-size:8px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;
+  padding:1px 5px;border-radius:4px;
 }}
-[data-theme="dark"] .today-tag{{color:#000}}
+[data-theme="light"] .today-tag{{color:#fff}}
 
 /* ── MACRO CARDS ─────────────────────────────────────────── */
-.cards{{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}}
+.cards{{display:grid;grid-template-columns:repeat(2,1fr);gap:9px}}
 @media(min-width:440px){{.cards{{grid-template-columns:repeat(4,1fr)}}}}
 .card{{
-  background:var(--sf);border:1px solid var(--bd);border-radius:14px;padding:12px;
-  backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);
+  background:var(--sf);border:1px solid var(--bd);border-radius:18px;padding:20px;
+  backdrop-filter:blur(16px) saturate(140%);-webkit-backdrop-filter:blur(16px) saturate(140%);
   box-shadow:var(--sh);transition:background .3s,border-color .3s;
   position:relative;overflow:hidden;
 }}
 [data-theme="dark"] .card::before{{
   content:'';position:absolute;inset:0;border-radius:16px;
-  background:linear-gradient(135deg,rgba(255,255,255,.025),transparent);
+  background:linear-gradient(135deg,rgba(255,255,255,.03),transparent);
   pointer-events:none;
 }}
-.clbl{{font-size:10px;color:var(--mu);text-transform:uppercase;letter-spacing:.8px;margin-bottom:5px;font-weight:700}}
-.cval{{font-size:20px;font-weight:800;line-height:1;letter-spacing:-.5px}}
-.csub{{font-size:11px;color:var(--mu);margin-top:3px;font-weight:500}}
-.ptrack{{background:var(--sf2);border-radius:999px;height:3px;margin-top:10px;overflow:hidden}}
+.clbl{{
+  font-family:'Geist Mono','SF Mono',monospace;
+  font-size:9.5px;color:var(--mu);text-transform:uppercase;
+  letter-spacing:.12em;margin-bottom:7px;font-weight:500;
+}}
+.cval{{
+  font-family:'Instrument Serif','Times New Roman',serif;
+  font-size:28px;font-weight:normal;line-height:1;letter-spacing:-.01em;
+}}
+.csub{{font-size:11px;color:var(--mu);margin-top:4px;font-weight:400}}
+.ptrack{{background:var(--sf2);border-radius:999px;height:3px;margin-top:11px;overflow:hidden}}
 .pfill{{height:100%;border-radius:999px;transition:width .8s cubic-bezier(.4,0,.2,1)}}
-[data-theme="dark"] .pfill{{filter:brightness(1.15) saturate(1.2)}}
+[data-theme="dark"] .pfill{{filter:brightness(1.1) saturate(1.2)}}
 
 /* ── STATUS BADGES ───────────────────────────────────────── */
 .sbrow{{display:flex;gap:6px;margin-top:10px;flex-wrap:wrap}}
@@ -231,64 +323,71 @@ main{{padding:12px 16px 80px;position:relative;z-index:1}}
 
 /* ── MACRO RING ──────────────────────────────────────────── */
 .macro-ring-wrap{{
-  display:flex;align-items:center;gap:14px;
-  background:var(--sf);border:1px solid var(--bd);border-radius:14px;padding:14px 16px;
+  display:flex;align-items:center;gap:20px;
+  background:var(--sf);border:1px solid var(--bd);border-radius:18px;padding:20px;
   backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);box-shadow:var(--sh);
 }}
 .macro-ring-canvas{{width:80px;height:80px;flex-shrink:0}}
-.macro-legend{{flex:1;display:flex;flex-direction:column;gap:7px}}
+.macro-legend{{flex:1;display:flex;flex-direction:column;gap:8px}}
 .mleg{{display:flex;align-items:center;gap:8px;font-size:12px}}
 .mleg-dot{{width:8px;height:8px;border-radius:50%;flex-shrink:0}}
-.mleg-lbl{{color:var(--mu);flex:1;font-weight:500}}
-.mleg-val{{font-weight:700;color:var(--tx);font-size:12px}}
-.mleg-sub{{font-size:10px;color:var(--di)}}
-.macro-divider{{border:none;border-top:1px solid var(--bd);margin:2px 0}}
+.mleg-lbl{{color:var(--mu);flex:1;font-weight:400}}
+.mleg-val{{font-weight:500;color:var(--tx);font-size:12px}}
+.mleg-sub{{font-family:'Geist Mono','SF Mono',monospace;font-size:10px;color:var(--di)}}
+.macro-divider{{border:none;border-top:1px solid var(--bd);margin:3px 0}}
 
 /* ── CONSISTENCY HEATMAP ─────────────────────────────────── */
-.heat-wrap{{background:var(--sf);border:1px solid var(--bd);border-radius:14px;padding:14px 16px;backdrop-filter:blur(16px);box-shadow:var(--sh)}}
-.heat-dow{{display:grid;grid-template-columns:repeat(7,1fr);gap:3px;margin-bottom:3px}}
-.heat-dow span{{font-size:9px;color:var(--di);text-align:center;font-weight:600;text-transform:uppercase;letter-spacing:.4px}}
+.heat-wrap{{background:var(--sf);border:1px solid var(--bd);border-radius:16px;padding:16px;backdrop-filter:blur(16px);box-shadow:var(--sh)}}
+.heat-dow{{display:grid;grid-template-columns:repeat(7,1fr);gap:3px;margin-bottom:4px}}
+.heat-dow span{{
+  font-family:'Geist Mono','SF Mono',monospace;
+  font-size:9px;color:var(--di);text-align:center;font-weight:500;
+  text-transform:uppercase;letter-spacing:.06em;
+}}
 .heat-grid{{display:grid;grid-template-columns:repeat(7,1fr);gap:3px}}
-.hcell{{height:20px;border-radius:4px;background:var(--sf2);position:relative;transition:transform .15s;cursor:default}}
+.hcell{{height:20px;border-radius:5px;background:var(--sf2);border:1px solid var(--bd);position:relative;transition:transform .15s;cursor:default}}
 .hcell:hover{{transform:scale(1.2);z-index:2}}
-.hcell.h-on{{background:#22c55e}}
-.hcell.h-off{{background:#f59e0b}}
+.hcell.h-on{{background:#22c55e;border-color:#22c55e}}
+.hcell.h-off{{background:#f59e0b;border-color:#f59e0b}}
 .hcell.h-today{{box-shadow:0 0 0 2px var(--ac)}}
 .hcell-wo{{position:absolute;bottom:2px;right:2px;width:3px;height:3px;border-radius:50%;background:rgba(255,255,255,.8)}}
-.heat-legend{{display:flex;gap:12px;margin-top:8px;font-size:10px;color:var(--di);align-items:center}}
+.heat-legend{{
+  display:flex;gap:12px;margin-top:9px;font-size:10px;color:var(--di);align-items:center;
+  font-family:'Geist Mono','SF Mono',monospace;letter-spacing:.04em;
+}}
 .hleg-dot{{width:8px;height:8px;border-radius:2px;display:inline-block;flex-shrink:0}}
 
 /* ── GOAL PROGRESS ───────────────────────────────────────── */
-.goal-card{{background:var(--sf);border:1px solid var(--bd);border-radius:14px;padding:14px 16px;backdrop-filter:blur(16px);box-shadow:var(--sh)}}
-.goal-header{{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px}}
-.goal-title{{font-size:13px;font-weight:700}}
-.goal-sub{{font-size:11px;color:var(--mu);margin-top:2px}}
+.goal-card{{background:var(--sf);border:1px solid var(--bd);border-radius:16px;padding:16px;backdrop-filter:blur(16px);box-shadow:var(--sh)}}
+.goal-header{{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px}}
+.goal-title{{font-family:'Instrument Serif','Times New Roman',serif;font-size:20px;font-weight:normal;letter-spacing:-.01em}}
+.goal-sub{{font-family:'Geist Mono','SF Mono',monospace;font-size:10px;color:var(--mu);margin-top:4px;letter-spacing:.04em}}
 .goal-current{{text-align:right}}
-.goal-lbs{{font-size:18px;font-weight:900;line-height:1;letter-spacing:-.5px}}
-.goal-lbs-lbl{{font-size:10px;color:var(--mu)}}
-.goal-track{{position:relative;height:7px;background:var(--sf2);border-radius:999px;margin:4px 0 8px}}
+.goal-lbs{{font-family:'Instrument Serif','Times New Roman',serif;font-size:28px;font-weight:normal;line-height:1;letter-spacing:-.02em}}
+.goal-lbs-lbl{{font-family:'Geist Mono','SF Mono',monospace;font-size:9px;color:var(--mu);letter-spacing:.08em;text-transform:uppercase;margin-top:2px}}
+.goal-track{{position:relative;height:7px;background:var(--sf2);border-radius:999px;margin:12px 0 9px}}
 .goal-fill{{height:100%;border-radius:999px;background:linear-gradient(90deg,var(--bl),var(--ac));transition:width .9s cubic-bezier(.4,0,.2,1)}}
 .goal-pin{{position:absolute;top:50%;transform:translate(-50%,-50%);width:14px;height:14px;border-radius:50%;border:2px solid var(--bg)}}
-.goal-labels{{display:flex;justify-content:space-between;font-size:10px;color:var(--mu);font-weight:600}}
+.goal-labels{{display:flex;justify-content:space-between;font-family:'Geist Mono','SF Mono',monospace;font-size:10px;color:var(--mu);font-weight:500}}
 
 /* ── STREAK STATS ────────────────────────────────────────── */
-.stat-row{{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}}
-.stat-tile{{background:var(--sf);border:1px solid var(--bd);border-radius:12px;padding:13px 10px;text-align:center;backdrop-filter:blur(16px);box-shadow:var(--sh)}}
-.stat-num{{font-size:22px;font-weight:900;line-height:1;letter-spacing:-.5px}}
-.stat-lbl{{font-size:9px;color:var(--mu);text-transform:uppercase;letter-spacing:.5px;margin-top:4px;font-weight:700}}
+.stat-row{{display:grid;grid-template-columns:repeat(3,1fr);gap:9px}}
+.stat-tile{{background:var(--sf);border:1px solid var(--bd);border-radius:16px;padding:16px 10px;text-align:center;backdrop-filter:blur(16px);box-shadow:var(--sh)}}
+.stat-num{{font-family:'Instrument Serif','Times New Roman',serif;font-size:34px;font-weight:normal;line-height:1;letter-spacing:-.02em}}
+.stat-lbl{{font-family:'Geist Mono','SF Mono',monospace;font-size:9px;color:var(--mu);text-transform:uppercase;letter-spacing:.1em;margin-top:5px;font-weight:500}}
 
 /* ── INSIGHTS ────────────────────────────────────────────── */
 .icrd{{
-  background:var(--sf);border:1px solid var(--bd);border-radius:14px;overflow:hidden;
+  background:var(--sf);border:1px solid var(--bd);border-radius:16px;overflow:hidden;
   backdrop-filter:blur(16px);box-shadow:var(--sh);transition:background .3s;
 }}
 [data-theme="dark"] .icrd{{
-  background:linear-gradient(160deg,rgba(0,230,118,.04),transparent 60%),var(--sf);
-  border-color:rgba(0,230,118,.15);
+  background:linear-gradient(160deg,rgba(0,230,118,.04),transparent 55%),var(--sf);
+  border-color:rgba(0,230,118,.14);
 }}
 .irow{{
-  display:grid;grid-template-columns:26px 1fr;gap:8px;
-  padding:10px 12px;border-bottom:1px solid var(--bd);align-items:flex-start;
+  display:grid;grid-template-columns:26px 1fr;gap:10px;
+  padding:12px 14px;border-bottom:1px solid var(--bd);align-items:flex-start;
 }}
 .irow:last-child{{border-bottom:none}}
 .iico{{
@@ -297,8 +396,8 @@ main{{padding:12px 16px 80px;position:relative;z-index:1}}
   display:flex;align-items:center;justify-content:center;
   border:1px solid rgba(var(--ac-rgb),.2);
 }}
-.itxt{{font-size:12px;line-height:1.5;color:var(--tx2)}}
-.iload,.iempty{{padding:16px 12px;color:var(--mu);font-size:12px;text-align:center}}
+.itxt{{font-size:13px;line-height:1.52;color:var(--tx2)}}
+.iload,.iempty{{padding:16px 12px;color:var(--mu);font-size:13px;text-align:center}}
 
 /* ── WEARABLE ────────────────────────────────────────────── */
 .hgrid{{display:grid;gap:7px;grid-template-columns:repeat(3,1fr)}}
@@ -308,27 +407,100 @@ main{{padding:12px 16px 80px;position:relative;z-index:1}}
   padding:10px 8px;text-align:center;backdrop-filter:blur(12px);
   box-shadow:var(--sh);transition:background .3s;
 }}
-.hv{{font-size:15px;font-weight:800;line-height:1;letter-spacing:-.3px}}
-.hl{{font-size:9px;color:var(--mu);text-transform:uppercase;letter-spacing:.5px;margin-top:3px;font-weight:700}}
+.hv{{font-family:'Instrument Serif','Times New Roman',serif;font-size:18px;font-weight:normal;line-height:1;letter-spacing:-.01em}}
+.hl{{font-family:'Geist Mono','SF Mono',monospace;font-size:9px;color:var(--mu);text-transform:uppercase;letter-spacing:.08em;margin-top:3px;font-weight:500}}
 
 /* ── LOG CARDS ───────────────────────────────────────────── */
 .lcrd{{
-  background:var(--sf);border:1px solid var(--bd);border-radius:14px;overflow:hidden;
+  background:var(--sf);border:1px solid var(--bd);border-radius:16px;overflow:hidden;
   backdrop-filter:blur(16px);box-shadow:var(--sh);transition:background .3s;
 }}
-.lrow{{padding:11px 12px;border-bottom:1px solid var(--bd);position:relative}}
+.lrow{{
+  display:flex;align-items:flex-start;gap:11px;
+  padding:12px 14px;border-bottom:1px solid var(--bd);position:relative;
+}}
 .lrow:last-child{{border-bottom:none}}
-.lname{{font-size:13px;font-weight:600;line-height:1.3;word-break:break-word;padding-right:66px;color:var(--tx)}}
-.lqty{{font-size:11px;color:var(--mu);margin-top:2px;font-weight:500}}
-.lmac{{display:flex;gap:8px;font-size:11px;margin-top:5px;flex-wrap:wrap}}
+.ficon{{
+  width:36px;height:36px;border-radius:10px;flex-shrink:0;
+  background:var(--sf2);border:1px solid var(--bd);
+  display:grid;place-items:center;font-size:18px;margin-top:1px;
+}}
+.fbody{{flex:1;min-width:0;padding-right:54px}}
+.lname{{
+  font-size:14px;font-weight:500;line-height:1.3;word-break:break-word;
+  color:var(--tx);display:flex;align-items:center;gap:6px;flex-wrap:wrap;
+}}
+.est-tag{{
+  font-family:'Geist Mono','SF Mono',monospace;
+  font-size:9px;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--di);border:1px solid var(--bd);border-radius:4px;padding:1px 5px;flex-shrink:0;
+}}
+.lqty{{font-size:12px;color:var(--mu);margin-top:2px;font-weight:400}}
+.lmac{{
+  display:flex;gap:10px;font-size:11px;margin-top:5px;flex-wrap:wrap;
+  font-family:'Geist Mono','SF Mono',monospace;
+}}
 .lmac span{{color:var(--mu)}}
-.lmac b{{color:var(--tx2);font-weight:700}}
+.lmac b{{font-weight:600}}
 .lempty{{padding:18px 12px;color:var(--mu);font-size:13px;text-align:center}}
-.erow{{padding:11px 12px;border-bottom:1px solid var(--bd);position:relative}}
+
+/* ── PROFILE GRID ────────────────────────────────────────── */
+.profile-grid{{display:grid;grid-template-columns:1fr 1fr;gap:18px}}
+@media(max-width:640px){{.profile-grid{{grid-template-columns:1fr}}}}
+.pstack{{display:flex;flex-direction:column}}
+.goal-badge{{
+  font-family:'Geist Mono','SF Mono',monospace;
+  font-size:10px;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--ac);border:1px solid rgba(var(--ac-rgb),.35);
+  border-radius:999px;padding:2px 9px;font-weight:500;
+}}
+.coach-badge{{
+  font-family:'Geist Mono','SF Mono',monospace;
+  font-size:10px;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--pu);border:1px solid rgba(168,85,247,.35);
+  border-radius:999px;padding:2px 9px;font-weight:500;
+}}
+
+/* ── DEVICE CARDS ────────────────────────────────────────── */
+.dev-grid{{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:14px}}
+.dev-card{{
+  display:flex;align-items:center;gap:11px;padding:13px;
+  border-radius:12px;border:1px solid var(--bd);background:var(--sf);
+  transition:all .2s;
+}}
+.dev-card:hover{{border-color:var(--bd2);background:var(--sf2)}}
+.dev-card.dev-soon{{opacity:.6}}
+.dev-logo{{
+  width:40px;height:40px;border-radius:10px;flex-shrink:0;
+  background:var(--sf2);border:1px solid var(--bd);
+  display:grid;place-items:center;font-size:18px;
+}}
+.dev-body{{min-width:0}}
+.dev-name{{font-size:13px;font-weight:500;color:var(--tx)}}
+.dev-status{{
+  font-family:'Geist Mono','SF Mono',monospace;
+  font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--mu);margin-top:3px;display:inline-flex;align-items:center;gap:5px;
+}}
+.dev-status.dev-live{{color:var(--ac)}}
+.dev-dot{{
+  width:6px;height:6px;border-radius:50%;
+  background:currentColor;box-shadow:0 0 6px currentColor;flex-shrink:0;
+}}
+
+/* ── CHART TITLES ────────────────────────────────────────── */
+.ctitle{{
+  font-family:'Geist Mono','SF Mono',monospace;
+  font-size:10px;font-weight:500;margin-bottom:14px;color:var(--mu);
+  text-transform:uppercase;letter-spacing:.14em;
+  display:flex;justify-content:space-between;align-items:center;
+}}
+.ctitle-val{{font-weight:600}}
+.erow{{padding:12px 14px;border-bottom:1px solid var(--bd);position:relative}}
 .erow:last-child{{border-bottom:none}}
 .ecnt{{display:flex;justify-content:space-between;align-items:center;padding-right:66px;gap:8px}}
-.ename{{font-size:13px;font-weight:600;word-break:break-word;flex:1;color:var(--tx)}}
-.edet{{font-size:12px;color:var(--ac);font-weight:700;white-space:nowrap}}
+.ename{{font-size:14px;font-weight:500;word-break:break-word;flex:1;color:var(--tx)}}
+.edet{{font-family:'Geist Mono','SF Mono',monospace;font-size:11px;color:var(--ac);font-weight:500;white-space:nowrap}}
 
 /* ── EDIT / DELETE ───────────────────────────────────────── */
 .ract{{position:absolute;top:9px;right:9px;display:flex;gap:4px}}
@@ -349,91 +521,105 @@ main{{padding:12px 16px 80px;position:relative;z-index:1}}
 }}
 .eform input:focus{{outline:none;border-color:var(--ac)}}
 .emac{{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}}
-.emc label{{font-size:10px;color:var(--mu);display:block;margin-bottom:3px;font-weight:600}}
+.emc label{{
+  font-family:'Geist Mono','SF Mono',monospace;
+  font-size:9px;color:var(--mu);display:block;margin-bottom:3px;
+  font-weight:500;text-transform:uppercase;letter-spacing:.08em;
+}}
 .eact{{display:flex;gap:6px;margin-top:4px}}
 .sbtn{{
   background:var(--ac);color:#000;border:none;padding:9px 16px;
-  border-radius:9px;font-weight:700;font-size:13px;cursor:pointer;font-family:inherit;
+  border-radius:10px;font-weight:600;font-size:13px;cursor:pointer;font-family:inherit;
   flex:1;min-height:38px;transition:opacity .15s;
 }}
 [data-theme="light"] .sbtn{{color:#fff}}
 .sbtn:hover{{opacity:.88}}
 .cbtn{{
   background:var(--sf2);color:var(--mu);border:1px solid var(--bd);
-  padding:9px 16px;border-radius:9px;font-size:13px;cursor:pointer;font-family:inherit;
+  padding:9px 16px;border-radius:10px;font-size:13px;cursor:pointer;font-family:inherit;
   min-height:38px;transition:all .15s;
 }}
 .cbtn:hover{{border-color:var(--bd2);color:var(--tx)}}
 
 /* ── CHARTS ──────────────────────────────────────────────── */
 .ccrd{{
-  background:var(--sf);border:1px solid var(--bd);border-radius:14px;padding:14px;
+  background:var(--sf);border:1px solid var(--bd);border-radius:16px;padding:16px;
   backdrop-filter:blur(16px);box-shadow:var(--sh);transition:background .3s;
 }}
-.ctitle{{font-size:10px;font-weight:700;margin-bottom:12px;color:var(--mu);text-transform:uppercase;letter-spacing:.8px}}
+.ctitle{{
+  font-family:'Geist Mono','SF Mono',monospace;
+  font-size:10px;font-weight:500;margin-bottom:14px;color:var(--mu);
+  text-transform:uppercase;letter-spacing:.14em;
+}}
 .cwrap{{position:relative;height:150px}}
-.c2col{{display:grid;grid-template-columns:1fr;gap:8px}}
+.c2col{{display:grid;grid-template-columns:1fr;gap:9px}}
 @media(min-width:700px){{.c2col{{grid-template-columns:1fr 1fr}}}}
 
 /* ── HISTORY TABLE ───────────────────────────────────────── */
 .htbl{{width:100%;border-collapse:collapse;font-size:11px}}
 .htbl th{{
-  color:var(--di);text-transform:uppercase;letter-spacing:.5px;
-  font-size:9px;font-weight:700;padding:8px 10px;text-align:left;
+  font-family:'Geist Mono','SF Mono',monospace;
+  color:var(--di);text-transform:uppercase;letter-spacing:.1em;
+  font-size:9px;font-weight:500;padding:9px 10px;text-align:left;
   border-bottom:1px solid var(--bd);
 }}
-.htbl td{{padding:8px 10px;border-bottom:1px solid var(--bd);color:var(--mu)}}
+.htbl td{{padding:9px 10px;border-bottom:1px solid var(--bd);color:var(--mu)}}
 .htbl tr:last-child td{{border-bottom:none}}
-.htbl td:first-child{{color:var(--tx2);font-weight:600}}
-.td-ok{{color:var(--ac)!important;font-weight:700}}
-.td-ov{{color:var(--re)!important;font-weight:700}}
+.htbl td:first-child{{color:var(--tx2);font-weight:500}}
+.td-ok{{color:var(--ac)!important;font-weight:600}}
+.td-ov{{color:var(--re)!important;font-weight:600}}
 
 /* ── PROFILE ─────────────────────────────────────────────── */
 .infocrd{{
-  background:var(--sf);border:1px solid var(--bd);border-radius:14px;overflow:hidden;
-  backdrop-filter:blur(16px);box-shadow:var(--sh);margin-bottom:8px;transition:background .3s;
+  background:var(--sf);border:1px solid var(--bd);border-radius:16px;overflow:hidden;
+  backdrop-filter:blur(16px);box-shadow:var(--sh);margin-bottom:9px;transition:background .3s;
 }}
 .inrow{{
   display:flex;justify-content:space-between;align-items:center;
-  padding:11px 12px;border-bottom:1px solid var(--bd);
+  padding:12px 14px;border-bottom:1px solid var(--bd);
 }}
 .inrow:last-child{{border-bottom:none}}
-.inlbl{{font-size:12px;color:var(--mu);font-weight:500}}
-.inval{{font-size:12px;font-weight:700;color:var(--tx2);text-align:right;max-width:60%}}
+.inlbl{{font-size:13px;color:var(--mu);font-weight:400;white-space:nowrap}}
+.inval{{font-size:13px;font-weight:500;color:var(--tx2);text-align:right;max-width:65%;word-break:break-word}}
 .ancrd{{
-  background:var(--sf);border:1px solid var(--bd);border-radius:14px;padding:14px;
-  backdrop-filter:blur(16px);box-shadow:var(--sh);margin-bottom:8px;transition:background .3s;
+  background:var(--sf);border:1px solid var(--bd);border-radius:16px;padding:16px;
+  backdrop-filter:blur(16px);box-shadow:var(--sh);margin-bottom:9px;transition:background .3s;
 }}
 [data-theme="dark"] .ancrd{{
   background:linear-gradient(135deg,rgba(59,130,246,.06),transparent 60%),var(--sf);
   border-color:rgba(59,130,246,.15);
 }}
-.antitle{{font-size:10px;color:var(--mu);font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px}}
-.angrid{{display:grid;grid-template-columns:repeat(2,1fr);gap:7px}}
+.antitle{{
+  font-family:'Geist Mono','SF Mono',monospace;
+  font-size:10px;color:var(--mu);font-weight:500;text-transform:uppercase;
+  letter-spacing:.14em;margin-bottom:12px;
+}}
+.angrid{{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}}
 @media(min-width:420px){{.angrid{{grid-template-columns:repeat(3,1fr)}}}}
-.anitem{{background:var(--sf2);border-radius:10px;padding:10px;border:1px solid var(--bd);transition:background .3s}}
-.anval{{font-size:16px;font-weight:800;line-height:1;letter-spacing:-.3px}}
-.anlbl{{font-size:10px;color:var(--mu);margin-top:3px;font-weight:600;text-transform:uppercase;letter-spacing:.4px}}
-.devrow{{display:flex;align-items:center;gap:10px;padding:11px 12px;border-bottom:1px solid var(--bd)}}
+.anitem{{background:var(--sf2);border-radius:12px;padding:12px;border:1px solid var(--bd);transition:background .3s}}
+.anval{{font-family:'Instrument Serif','Times New Roman',serif;font-size:24px;font-weight:normal;line-height:1;letter-spacing:-.01em}}
+.anlbl{{font-family:'Geist Mono','SF Mono',monospace;font-size:9.5px;color:var(--mu);margin-top:4px;font-weight:500;text-transform:uppercase;letter-spacing:.1em}}
+.devrow{{display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid var(--bd)}}
 .devrow:last-child{{border-bottom:none}}
-.devname{{font-size:13px;font-weight:700;flex:1;color:var(--tx)}}
-.devst{{font-size:12px;font-weight:700}}
+.devname{{font-size:13px;font-weight:500;flex:1;color:var(--tx)}}
+.devst{{font-family:'Geist Mono','SF Mono',monospace;font-size:11px;font-weight:500;letter-spacing:.04em}}
 .devst.on{{color:var(--ac)}}
 .devst.off{{color:var(--mu)}}
 
 /* ── EXERCISE SETS ───────────────────────────────────────── */
-.esets{{display:flex;flex-wrap:wrap;gap:4px;padding:4px 12px 10px;align-items:center}}
+.esets{{display:flex;flex-wrap:wrap;gap:4px;padding:4px 14px 10px;align-items:center}}
 .eset-chip{{
   background:var(--sf2);border:1px solid var(--bd);border-radius:7px;
-  padding:4px 9px;font-size:11px;font-weight:600;color:var(--tx2);
+  padding:4px 9px;font-size:11px;font-weight:500;color:var(--tx2);
+  font-family:'Geist Mono','SF Mono',monospace;
 }}
 .eset-chip b{{color:var(--ac)}}
-.eset-wt{{font-size:11px;font-weight:700;color:var(--or);margin-right:3px}}
+.eset-wt{{font-size:11px;font-weight:600;color:var(--or);margin-right:3px}}
 
 /* ── SHARE BUTTON ────────────────────────────────────────── */
 .share-btn{{
   background:var(--sf2);border:1px solid var(--bd);color:var(--mu);
-  padding:5px 10px;border-radius:9px;font-size:11px;font-weight:600;
+  padding:5px 10px;border-radius:9px;font-size:11px;font-weight:500;
   cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;
   gap:4px;transition:all .2s;flex-shrink:0;
   backdrop-filter:blur(12px);box-shadow:var(--sh);
@@ -442,35 +628,304 @@ main{{padding:12px 16px 80px;position:relative;z-index:1}}
 .share-btn:active{{transform:scale(.93)}}
 
 /* ── MISC ────────────────────────────────────────────────── */
-footer{{text-align:center;padding:16px 12px;color:var(--di);font-size:10px;position:relative;z-index:1}}
+footer{{
+  text-align:center;padding:16px 12px;color:var(--di);font-size:10px;
+  position:relative;z-index:1;
+  font-family:'Geist Mono','SF Mono',monospace;letter-spacing:.08em;text-transform:uppercase;
+}}
 @keyframes fadeUp{{from{{opacity:0;transform:translateY(8px)}}to{{opacity:1;transform:translateY(0)}}}}
 .fade-in{{animation:fadeUp .3s ease}}
 @keyframes spin{{to{{transform:rotate(360deg)}}}}
 .spin{{display:inline-block;animation:spin 1s linear infinite}}
+
+/* ── PAGE HEADER ─────────────────────────────────────────── */
+.pagehead{{
+  position:sticky;top:0;z-index:30;
+  display:flex;align-items:center;justify-content:space-between;
+  gap:20px;padding:28px 0 20px;margin-bottom:4px;
+  backdrop-filter:blur(14px) saturate(140%);
+  -webkit-backdrop-filter:blur(14px) saturate(140%);
+  background:linear-gradient(180deg,var(--hbg) 60%,transparent);
+}}
+.ph-title{{
+  font-family:'Instrument Serif','Times New Roman',serif;
+  font-size:32px;line-height:1;letter-spacing:-.025em;color:var(--tx);
+}}
+@media(max-width:940px){{.ph-title{{font-size:26px}}}}
+@media(max-width:560px){{.ph-title{{font-size:22px}}}}
+.ph-sub{{
+  font-family:'Geist Mono','SF Mono',monospace;
+  font-size:11px;color:var(--mu);margin-top:8px;
+  letter-spacing:.07em;text-transform:uppercase;
+  display:flex;align-items:center;gap:12px;
+}}
+.ph-streak{{color:var(--ac);display:inline-flex;align-items:center;gap:5px;font-weight:500}}
+.ph-actions{{display:flex;gap:8px;align-items:center;flex-shrink:0}}
+.ph-log-btn{{
+  border:none;border-radius:11px;padding:0 16px;height:36px;font-size:13px;
+  font-weight:600;color:#000;background:var(--ac);
+  cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:6px;
+  white-space:nowrap;transition:opacity .15s,transform .12s;
+  box-shadow:0 4px 14px rgba(var(--ac-rgb),.4);flex-shrink:0;
+}}
+[data-theme="light"] .ph-log-btn{{color:#fff}}
+.ph-log-btn:hover{{opacity:.85;transform:translateY(-1px)}}
+.ph-log-btn:active{{transform:scale(.95)}}
+
+/* ── STATUS TOGGLES ──────────────────────────────────────── */
+.toggles{{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:14px}}
+.toggle{{
+  display:inline-flex;align-items:center;gap:7px;padding:7px 12px;
+  border-radius:999px;border:1px solid var(--bd);background:var(--sf);
+  color:var(--mu);font-size:12px;font-weight:600;
+  font-family:inherit;transition:background .2s,border-color .2s;
+  backdrop-filter:blur(12px);box-shadow:var(--sh);
+}}
+.toggle.on{{
+  border-color:rgba(var(--ac-rgb),.4);color:var(--tx);
+  background:var(--ac-dim);
+}}
+.toggle.t-click{{cursor:pointer}}
+.toggle.t-click:hover{{border-color:var(--bd2);color:var(--tx2)}}
+.toggle .tcb{{
+  width:14px;height:14px;border-radius:4px;border:1.5px solid var(--di);
+  display:grid;place-items:center;flex-shrink:0;font-size:10px;line-height:1;color:transparent;
+}}
+.toggle.on .tcb{{background:var(--ac);border-color:var(--ac);color:#000}}
+[data-theme="light"] .toggle.on .tcb{{color:#fff}}
+.share-tgl{{cursor:pointer}}
+.share-tgl:hover{{border-color:var(--ac);color:var(--ac)}}
+
+/* ═══════════════════════════════════════════════════════════
+   IMMERSIVE 3D + MOBILE
+   ═══════════════════════════════════════════════════════════ */
+
+/* ── Subtle dot-grid texture ─────────────────────────────── */
+[data-theme="dark"] body::after{{
+  content:'';position:fixed;inset:0;z-index:3;pointer-events:none;
+  opacity:.055;
+  background-image:radial-gradient(circle,rgba(255,255,255,.35) 1px,transparent 1px);
+  background-size:28px 28px;
+}}
+
+/* ── Enhanced ambient orbs ───────────────────────────────── */
+[data-theme="dark"] body::before{{
+  background:
+    radial-gradient(ellipse 65% 55% at 6% 8%,rgba(0,230,118,.14),transparent),
+    radial-gradient(ellipse 55% 45% at 94% 82%,rgba(59,130,246,.11),transparent),
+    radial-gradient(ellipse 70% 58% at 48% 52%,rgba(100,55,210,.08),transparent),
+    radial-gradient(ellipse 42% 38% at 82% 12%,rgba(0,200,255,.07),transparent);
+  animation:mesh 14s ease-in-out infinite alternate;
+}}
+
+/* ── Deep card depth (dark mode) ─────────────────────────── */
+[data-theme="dark"] .card,[data-theme="dark"] .icrd,
+[data-theme="dark"] .heat-wrap,[data-theme="dark"] .ccrd,
+[data-theme="dark"] .goal-card,[data-theme="dark"] .macro-ring-wrap,
+[data-theme="dark"] .stat-tile,[data-theme="dark"] .lcrd,
+[data-theme="dark"] .ancrd,[data-theme="dark"] .infocrd,
+[data-theme="dark"] .dev-card{{
+  box-shadow:
+    0 1px 0 rgba(255,255,255,.07) inset,
+    0 -1px 0 rgba(0,0,0,.18) inset,
+    0 3px 6px rgba(0,0,0,.28),
+    0 12px 32px rgba(0,0,0,.38),
+    0 0 0 1px rgba(255,255,255,.07);
+}}
+
+/* ── 3D will-change + base transition ────────────────────── */
+.card,.icrd,.heat-wrap,.ccrd,.goal-card,.macro-ring-wrap,.stat-tile{{
+  will-change:transform;
+  transition:transform .16s ease,box-shadow .16s ease;
+}}
+
+/* ── Glass light sweep on hover (desktop) ────────────────── */
+.card,.icrd,.ccrd,.goal-card,.stat-tile,.macro-ring-wrap{{position:relative;overflow:hidden}}
+.card::after,.icrd::after,.ccrd::after,.goal-card::after,.stat-tile::after,.macro-ring-wrap::after{{
+  content:'';position:absolute;top:0;left:-90%;
+  width:45%;height:100%;
+  background:linear-gradient(105deg,transparent,rgba(255,255,255,.055),transparent);
+  transform:skewX(-8deg);transition:left .55s cubic-bezier(.4,0,.2,1);
+  pointer-events:none;z-index:2;
+}}
+.card:hover::after,.icrd:hover::after,.ccrd:hover::after,
+.goal-card:hover::after,.stat-tile:hover::after,.macro-ring-wrap:hover::after{{left:150%}}
+
+/* ── Neon glow system ────────────────────────────────────── */
+[data-theme="dark"] .ph-log-btn{{
+  box-shadow:
+    0 0 22px rgba(0,230,118,.5),
+    0 0 50px rgba(0,230,118,.16),
+    0 4px 14px rgba(0,230,118,.4),
+    0 1px 0 rgba(255,255,255,.4) inset;
+}}
+[data-theme="dark"] .ph-log-btn:hover{{
+  box-shadow:
+    0 0 30px rgba(0,230,118,.65),
+    0 0 60px rgba(0,230,118,.22),
+    0 6px 18px rgba(0,230,118,.5),
+    0 1px 0 rgba(255,255,255,.4) inset;
+}}
+[data-theme="dark"] .navitem.active::before{{
+  box-shadow:0 0 14px var(--ac),0 0 28px rgba(0,230,118,.35);
+}}
+[data-theme="dark"] .ph-streak{{
+  text-shadow:0 0 14px rgba(0,230,118,.7);
+}}
+[data-theme="dark"] .dchip.active{{
+  box-shadow:0 0 12px rgba(0,230,118,.25);
+}}
+[data-theme="dark"] .sb-avatar::after{{
+  box-shadow:0 0 10px var(--ac);
+}}
+
+/* ── Sidebar glass depth ─────────────────────────────────── */
+[data-theme="dark"] .sidebar{{
+  background:linear-gradient(180deg,rgba(10,14,22,.96),rgba(8,12,20,.90));
+  border-right:1px solid rgba(255,255,255,.07);
+  box-shadow:2px 0 24px rgba(0,0,0,.4);
+}}
+
+/* ── Stagger card entrance ───────────────────────────────── */
+@keyframes cardIn{{
+  from{{opacity:0;transform:translateY(16px) scale(.98)}}
+  to{{opacity:1;transform:none}}
+}}
+.card-in{{animation:cardIn .42s cubic-bezier(.2,.7,.2,1) both}}
+
+/* ── Glowing border on insights card ────────────────────── */
+[data-theme="dark"] .icrd{{
+  border:1px solid rgba(0,230,118,.18);
+  box-shadow:
+    0 1px 0 rgba(255,255,255,.07) inset,
+    0 3px 6px rgba(0,0,0,.28),
+    0 12px 32px rgba(0,0,0,.38),
+    0 0 20px rgba(0,230,118,.06);
+}}
+
+/* ── Floating glow on stat nums ──────────────────────────── */
+[data-theme="dark"] .stat-num{{
+  text-shadow:0 0 40px rgba(0,230,118,.2);
+}}
+
+/* ═══ MOBILE TYPOGRAPHY + LAYOUT FIXES ═════════════════════ */
+@media(max-width:560px){{
+  /* Pagehead: hide icon-only buttons, keep just + Log */
+  .pagehead .hbtn{{display:none}}
+  .pagehead{{padding:14px 0 10px;gap:10px;align-items:center}}
+  .ph-title{{font-size:19px!important;letter-spacing:-.015em}}
+  .ph-sub{{font-size:10px;margin-top:5px;gap:8px}}
+  .ph-actions{{gap:5px}}
+  .ph-log-btn{{padding:0 14px;height:33px;font-size:12px;border-radius:9px}}
+  /* Section labels */
+  .stitle{{margin:18px 0 8px;font-size:9px;letter-spacing:.14em}}
+  /* Cards */
+  .cval{{font-size:24px}}
+  .clbl{{font-size:8.5px;margin-bottom:5px;letter-spacing:.1em}}
+  .card{{padding:14px;border-radius:14px}}
+  .csub{{font-size:10.5px}}
+  /* Date nav */
+  .dchip{{padding:7px 12px;font-size:10.5px}}
+  .darr{{width:32px;height:32px;border-radius:9px}}
+  .dnav{{gap:5px;margin-bottom:14px}}
+  /* Toggles */
+  .toggle{{padding:6px 10px;font-size:11px;gap:6px}}
+  .toggles{{gap:6px;margin-bottom:12px}}
+  /* Stats */
+  .stat-num{{font-size:30px}}
+  .stat-lbl{{font-size:8.5px}}
+  .stat-tile{{padding:16px 8px;border-radius:14px}}
+  /* Goal */
+  .goal-lbs{{font-size:24px}}
+  .goal-title{{font-size:17px}}
+  /* Food */
+  .ficon{{width:34px;height:34px;font-size:17px;border-radius:9px}}
+  .lname{{font-size:13px}}
+  .lmac{{font-size:10.5px;gap:8px}}
+  /* Insights */
+  .itxt{{font-size:13px;line-height:1.48}}
+  /* Profile */
+  .anval{{font-size:20px}}
+  .inlbl,.inval{{font-size:12.5px}}
+  .dev-grid{{grid-template-columns:1fr;gap:8px}}
+  /* Main padding */
+  .main-inner{{padding:0 16px 90px}}
+}}
+
+/* ── Medium breakpoint ───────────────────────────────────── */
+@media(max-width:740px) and (min-width:561px){{
+  .ph-title{{font-size:26px!important}}
+  .cval{{font-size:26px}}
+}}
+
+/* ── Bottom nav upgrade ──────────────────────────────────── */
+.bottomnav{{
+  padding:10px 16px calc(12px + env(safe-area-inset-bottom));
+}}
+.bn-item{{font-size:9px;gap:4px;padding:6px 0 4px}}
+[data-theme="dark"] .bn-item.active .bn-ico{{
+  filter:drop-shadow(0 0 6px var(--ac));
+}}
+.bn-item.active .bn-ico{{transform:translateY(-2px)}}
+
+/* ── Pull-to-feel: subtle press on cards ─────────────────── */
+.card:active,.stat-tile:active,.goal-card:active{{
+  transform:scale(.985)!important;
+}}
 </style>
 </head>
 <body>
-<div class="app-wrap">
+<div class="shell">
 
-<header>
-  <div class="logo">&#9889; Arnie</div>
-  <div class="hdr-r">
-    <span class="u-name" id="user-name"></span>
-    <span id="goal-tag" class="g-tag"></span>
+<!-- SIDEBAR -->
+<aside class="sidebar">
+  <div>
+    <div class="sb-logo">Arnie<span class="logo-os">OS</span></div>
+    <nav class="sidenav">
+      <div class="nav-section-lbl">Dashboard</div>
+      <button class="navitem active" id="nav-day" onclick="switchTab('day')">
+        <span class="ni-ico"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="16.5" rx="3"/><path d="M3 9.5h18M8 2.5v4M16 2.5v4"/><circle cx="12" cy="15" r="1.8" fill="currentColor" stroke="none"/></svg></span>
+        <span class="ni-lbl">Day</span><span class="ni-meta">Today</span>
+      </button>
+      <button class="navitem" id="nav-week" onclick="switchTab('week')">
+        <span class="ni-ico"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 16l5-5 4 4 8-9"/><path d="M16 6h5v5"/><path d="M3 21h18" opacity=".4"/></svg></span>
+        <span class="ni-lbl">Week</span><span class="ni-meta">Trends</span>
+      </button>
+      <button class="navitem" id="nav-profile" onclick="switchTab('profile')">
+        <span class="ni-ico"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.2 4-6.5 8-6.5s8 2.3 8 6.5"/></svg></span>
+        <span class="ni-lbl">Profile</span><span class="ni-meta">You</span>
+      </button>
+    </nav>
+  </div>
+  <div class="sb-foot">
+    <button class="navitem" id="nav-theme" onclick="toggleTheme()">
+      <span class="ni-ico" id="sb-theme-ico"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4 12H2M22 12h-2M5 5l1.5 1.5M17.5 17.5 19 19M19 5l-1.5 1.5M6.5 17.5 5 19"/></svg></span>
+      <span class="ni-lbl" id="sb-theme-lbl">Light mode</span>
+    </button>
+    <div class="sb-user" id="sb-user" style="display:none">
+      <div class="sb-avatar"></div>
+      <div><div class="sb-name" id="sb-name"></div><div class="sb-goal" id="sb-goal-lbl"></div></div>
+    </div>
+  </div>
+</aside>
+
+<!-- MAIN -->
+<div class="main">
+<div class="main-inner">
+
+<div class="pagehead">
+  <div>
+    <div class="ph-title" id="ph-title"></div>
+    <div class="ph-sub" id="ph-sub"></div>
+  </div>
+  <div class="ph-actions">
+    <button class="ph-log-btn" onclick="focusLogInput()">+ Log</button>
     <button class="hbtn" id="theme-btn" onclick="toggleTheme()" title="Toggle theme">&#9790;</button>
     <button class="hbtn" onclick="refreshCurrent()" title="Refresh">&#8635;</button>
   </div>
-</header>
-
-<div class="tabs" id="tabs-bar" role="tablist">
-  <div class="tab-pill" id="tab-pill"></div>
-  <button class="tab-btn active" id="tab-day"     role="tab" onclick="switchTab('day')">Day</button>
-  <button class="tab-btn"        id="tab-week"    role="tab" onclick="switchTab('week')">Week</button>
-  <button class="tab-btn"        id="tab-profile" role="tab" onclick="switchTab('profile')">Profile</button>
 </div>
 
-<main>
-  <div id="app-load">Loading your data&hellip;</div>
+<div id="app-load">Loading your data&hellip;</div>
 
   <!-- DAY TAB -->
   <div class="tab-panel active" id="panel-day">
@@ -513,11 +968,11 @@ footer{{text-align:center;padding:16px 12px;color:var(--di);font-size:10px;posit
         </div>
       </div>
 
-      <div class="sbrow">
-        <span id="wo-badge" class="badge bg-n"></span>
-        <span id="ca-badge" class="badge bg-n"></span>
-        <span id="wt-badge" class="badge bg-b" style="display:none"></span>
-        <button class="share-btn" onclick="shareDay()" title="Share today&apos;s summary">&#128228; Share day</button>
+      <div class="toggles">
+        <span id="wo-badge" class="toggle"><span class="tcb"></span>No workout</span>
+        <span id="ca-badge" class="toggle"><span class="tcb"></span>No cardio</span>
+        <span id="wt-badge" class="toggle on" style="display:none"></span>
+        <button class="toggle share-tgl t-click" onclick="shareDay()" title="Share today&apos;s summary">&#8679; Share day</button>
       </div>
 
       <div class="stitle">Energy breakdown</div>
@@ -560,21 +1015,18 @@ footer{{text-align:center;padding:16px 12px;color:var(--di);font-size:10px;posit
   <div class="tab-panel" id="panel-week">
     <div class="c2col">
       <div class="ccrd">
-        <div class="ctitle">Calories &mdash; 30 days</div>
+        <div class="ctitle"><span>Calories &middot; 30 days</span><span id="cal-avg-lbl" class="ctitle-val" style="color:var(--ac)"></span></div>
         <div class="cwrap"><canvas id="calChart"></canvas></div>
       </div>
       <div class="ccrd">
-        <div class="ctitle">Protein &mdash; 30 days</div>
+        <div class="ctitle"><span>Protein &middot; 30 days</span><span id="pro-tgt-lbl" class="ctitle-val" style="color:var(--bl)"></span></div>
         <div class="cwrap"><canvas id="proChart"></canvas></div>
       </div>
-      <div class="ccrd">
-        <div class="ctitle">Weight trend (lbs)</div>
+      <div class="ccrd" style="grid-column:1/-1">
+        <div class="ctitle"><span>Weight trend &middot; 30 days</span><span id="wt-now-lbl" class="ctitle-val" style="color:var(--pu)"></span></div>
         <div class="cwrap"><canvas id="weightChart"></canvas></div>
       </div>
     </div>
-    <div class="stitle">Last 14 days</div>
-    <div class="infocrd" id="hist-table-wrap"><div class="lempty">Loading&hellip;</div></div>
-
     <div class="stitle">Goal progress</div>
     <div class="goal-card" id="goal-card"></div>
 
@@ -584,26 +1036,53 @@ footer{{text-align:center;padding:16px 12px;color:var(--di);font-size:10px;posit
       <div class="stat-tile"><div class="stat-num" id="stat-workouts">—</div><div class="stat-lbl">Workouts / 30d</div></div>
       <div class="stat-tile"><div class="stat-num" id="stat-avg-cal">—</div><div class="stat-lbl">Avg cal / day</div></div>
     </div>
+
+    <div class="stitle">Last 14 days</div>
+    <div class="infocrd" id="hist-table-wrap"><div class="lempty">Loading&hellip;</div></div>
   </div>
 
   <!-- PROFILE TAB -->
   <div class="tab-panel" id="panel-profile">
-    <div class="stitle">Your info</div>
-    <div class="infocrd" id="profile-info"></div>
-    <div class="stitle">Targets</div>
-    <div class="infocrd" id="profile-targets"></div>
+    <div class="profile-grid">
+      <div>
+        <div class="stitle" style="margin-top:4px">Your info</div>
+        <div class="infocrd" id="profile-info"></div>
+      </div>
+      <div class="pstack">
+        <div>
+          <div class="stitle" style="margin-top:4px">Targets</div>
+          <div class="infocrd" id="profile-targets"></div>
+        </div>
+        <div>
+          <div class="stitle">Connected devices</div>
+          <div class="infocrd" style="overflow:hidden" id="devices-card"></div>
+        </div>
+      </div>
+    </div>
     <div class="stitle">Science</div>
     <div class="ancrd">
       <div class="antitle">Performance analytics</div>
       <div class="angrid" id="analytics-grid"></div>
     </div>
-    <div class="stitle">Connected devices</div>
-    <div class="infocrd" id="devices-card"></div>
   </div>
 
-</main>
 <footer>Arnie &middot; auto-refresh 5 min</footer>
-</div>
+</div><!-- /main-inner -->
+</div><!-- /main -->
+
+<nav class="bottomnav">
+  <button class="bn-item active" id="bn-day" onclick="switchTab('day')">
+    <span class="bn-ico"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="16.5" rx="3"/><path d="M3 9.5h18M8 2.5v4M16 2.5v4"/><circle cx="12" cy="15" r="1.8" fill="currentColor" stroke="none"/></svg></span>Day
+  </button>
+  <button class="bn-item" id="bn-week" onclick="switchTab('week')">
+    <span class="bn-ico"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 16l5-5 4 4 8-9"/><path d="M16 6h5v5"/></svg></span>Week
+  </button>
+  <button class="bn-item" id="bn-profile" onclick="switchTab('profile')">
+    <span class="bn-ico"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.2 4-6.5 8-6.5s8 2.3 8 6.5"/></svg></span>Profile
+  </button>
+</nav>
+
+</div><!-- /shell -->
 
 <script>
 // ── Constants ─────────────────────────────────────────────────────────────
@@ -629,24 +1108,24 @@ function _localDate(d){{
   if(btn) btn.textContent=t==='dark'?'☾':'☀';
 }})();
 
+function updateThemeUI(t){{
+  var isDark=t==='dark';
+  var btn=document.getElementById('theme-btn');
+  if(btn) btn.textContent=isDark?'☾':'☀';
+  var lbl=document.getElementById('sb-theme-lbl');
+  if(lbl) lbl.textContent=isDark?'Light mode':'Dark mode';
+  var ico=document.getElementById('sb-theme-ico');
+  if(ico) ico.innerHTML=isDark
+    ?'<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4 12H2M22 12h-2M5 5l1.5 1.5M17.5 17.5 19 19M19 5l-1.5 1.5M6.5 17.5 5 19"/></svg>'
+    :'<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>';
+}}
 function toggleTheme(){{
   var html=document.documentElement;
   var next=html.getAttribute('data-theme')==='dark'?'light':'dark';
   html.setAttribute('data-theme',next);
-  document.getElementById('theme-btn').textContent=next==='dark'?'☾':'☀';
+  updateThemeUI(next);
   localStorage.setItem('arnie-theme',next);
   if(_baseData && _activeTab==='week') setTimeout(()=>renderWeekTab(_baseData),50);
-}}
-
-// ── Tab indicator pill ────────────────────────────────────────────────────
-function updatePill(name){{
-  var btn=document.getElementById('tab-'+name);
-  var bar=document.getElementById('tabs-bar');
-  var pill=document.getElementById('tab-pill');
-  if(!btn||!bar||!pill) return;
-  var br=bar.getBoundingClientRect(), br2=btn.getBoundingClientRect();
-  pill.style.left=(br2.left-br.left)+'px';
-  pill.style.width=br2.width+'px';
 }}
 
 // ── Utils ─────────────────────────────────────────────────────────────────
@@ -686,20 +1165,35 @@ async function fetchInsights(){{
 }}
 
 // ── Tab switching ─────────────────────────────────────────────────────────
+var PAGE_HEADS={{
+  week:{{title:'Your trends',sub:'LAST 30 DAYS'}},
+  profile:{{title:'Your profile',sub:'ACCOUNT &amp; COACHING'}},
+}};
 function switchTab(name){{
   _activeTab=name;
-  document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
   document.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('active'));
-  document.getElementById('tab-'+name).classList.add('active');
   document.getElementById('panel-'+name).classList.add('active');
-  updatePill(name);
+  document.querySelectorAll('.navitem[id^="nav-"]').forEach(b=>b.classList.remove('active'));
+  var ni=document.getElementById('nav-'+name);if(ni)ni.classList.add('active');
+  document.querySelectorAll('.bn-item').forEach(b=>b.classList.remove('active'));
+  var bi=document.getElementById('bn-'+name);if(bi)bi.classList.add('active');
+  if(name!=='day'){{
+    var h=PAGE_HEADS[name]||{{}};
+    var pt=document.getElementById('ph-title');var ps=document.getElementById('ph-sub');
+    if(pt)pt.textContent=h.title||'';
+    if(ps)ps.innerHTML=h.sub||'';
+  }}else if(_baseData){{
+    renderPageHead(_baseData);
+  }}
   if(name==='week' && _baseData) renderWeekTab(_baseData);
   if(name==='profile' && _baseData) renderProfileTab(_baseData);
 }}
 
 // ── Boot ──────────────────────────────────────────────────────────────────
 async function init(){{
-  updatePill('day');
+  var saved=localStorage.getItem('arnie-theme')||
+    (window.matchMedia('(prefers-color-scheme:light)').matches?'light':'dark');
+  updateThemeUI(saved);
   try{{
     var data=await fetchStats(null);
     _baseData=data;
@@ -708,8 +1202,16 @@ async function init(){{
     var hd=(data.history||[]).map(h=>h.date);
     _availDates=[...new Set([...hd,_todayStr])].sort();
     _dayCache[_todayStr]=data;
-    document.getElementById('user-name').textContent=data.profile?.name||'';
-    document.getElementById('goal-tag').textContent=data.profile?.primary_goal||'';
+    // Sidebar user card
+    var nm=data.profile?.name||'';
+    var gl=data.profile?.primary_goal||'';
+    var wt=data.profile?.current_weight_lbs||'';
+    var su=document.getElementById('sb-user');
+    var sn=document.getElementById('sb-name');
+    var sg=document.getElementById('sb-goal-lbl');
+    if(sn)sn.textContent=nm;
+    if(sg)sg.textContent=(gl?gl.toUpperCase():'')+(wt?' · '+wt+' LB':'');
+    if(su&&nm)su.style.display='flex';
     document.getElementById('app-load').style.display='none';
     renderDateNav();
     renderDayTab(data);
@@ -921,7 +1423,32 @@ function renderStreakStats(history,targets){{
   el=document.getElementById('stat-avg-cal');if(el)el.textContent=avgCal?avgCal.toLocaleString():'—';
 }}
 
+function renderPageHead(d){{
+  var pt=document.getElementById('ph-title');
+  var ps=document.getElementById('ph-sub');
+  if(!pt||!ps)return;
+  var hr=new Date().getHours();
+  var g=hr<12?'Good morning':hr<18?'Good afternoon':'Good evening';
+  var name=((d.profile&&d.profile.name)||'').trim();
+  pt.textContent=name?(g+', '+name):g;
+  var now=new Date();
+  var ds=now.toLocaleDateString('en-US',{{weekday:'long',month:'long',day:'numeric'}}).toUpperCase();
+  var hist=d.history||[];
+  var t0=new Date();t0.setHours(0,0,0,0);
+  var logSet=new Set(hist.map(function(h){{return h.date;}}));
+  var st=0,ck=new Date(t0);
+  while(true){{var ds2=_localDate(ck);if(logSet.has(ds2)){{st++;ck.setDate(ck.getDate()-1);}}else break;}}
+  ps.innerHTML=esc(ds)+(st>0?' <span class="ph-streak">&#9889; '+st+'-DAY STREAK</span>':'');
+}}
+
+function focusLogInput(){{
+  switchTab('day');
+  var el=document.getElementById('food-log');
+  if(el)setTimeout(function(){{el.scrollIntoView({{behavior:'smooth',block:'start'}});}},180);
+}}
+
 function renderDayTab(d){{
+  if(_activeTab==='day') renderPageHead(d);
   var isToday=_viewingDate===_todayStr;
   document.getElementById('day-label').textContent=isToday?'Today':fmtDate(_viewingDate);
   var day=d.day||{{}},tgt=d.targets||{{}};
@@ -941,16 +1468,16 @@ function renderDayTab(d){{
   document.getElementById('fat-val').textContent=day.fats!=null?day.fats+'g':'—';
 
   var wb=document.getElementById('wo-badge');
-  wb.className='badge '+(day.workout_completed?'bg-g':'bg-n');
-  wb.textContent=day.workout_completed?'💪 Workout done':'⬜ No workout';
+  if(wb){{var woOn=!!day.workout_completed;wb.className='toggle'+(woOn?' on':'');wb.innerHTML='<span class="tcb">'+(woOn?'&#10003;':'')+'</span>'+(woOn?'Workout done':'No workout');}}
   var cb=document.getElementById('ca-badge');
-  cb.className='badge '+(day.cardio_completed?'bg-g':'bg-n');
-  cb.textContent=day.cardio_completed?'🏃 Cardio done':'⬜ No cardio';
+  if(cb){{var caOn=!!day.cardio_completed;cb.className='toggle'+(caOn?' on':'');cb.innerHTML='<span class="tcb">'+(caOn?'&#10003;':'')+'</span>'+(caOn?'Cardio done':'No cardio');}}
   var wb2=document.getElementById('wt-badge');
-  if(day.water_ml>0){{
-    wb2.style.display='inline-flex';
-    wb2.textContent='💧 '+(day.water_ml>=1000?(day.water_ml/1000).toFixed(1)+'L':day.water_ml+'ml');
-  }}else wb2.style.display='none';
+  if(wb2){{
+    if(day.water_ml>0){{
+      wb2.style.display='inline-flex';wb2.className='toggle on';
+      wb2.textContent='💧 '+(day.water_ml>=1000?(day.water_ml/1000).toFixed(1)+'L':day.water_ml+'ml');
+    }}else wb2.style.display='none';
+  }}
 
   var fe=day.food_entries||[];
   document.getElementById('food-log').innerHTML=fe.length?fe.map(renderFoodRow).join('')
@@ -1003,6 +1530,14 @@ function renderWeekTab(d){{
   var hist=(d.history||[]).slice(-30),tgt=d.targets||{{}};
   var labels=hist.map(h=>h.date.slice(5));
   var calD=hist.map(h=>h.calories??0),proD=hist.map(h=>h.protein??0);
+  // Dynamic chart header values
+  var loggedCal=hist.filter(h=>h.calories>0);
+  var avgCal=loggedCal.length?Math.round(loggedCal.reduce((s,h)=>s+h.calories,0)/loggedCal.length):null;
+  var wEl=document.getElementById('cal-avg-lbl');if(wEl)wEl.textContent=avgCal?'AVG '+avgCal.toLocaleString():'';
+  var pEl=document.getElementById('pro-tgt-lbl');if(pEl)pEl.textContent=tgt.protein?'TARGET '+tgt.protein+'G':'';
+  var weights=d.weights||[];
+  var curW=weights.length?weights[weights.length-1].lbs:null;
+  var wEl2=document.getElementById('wt-now-lbl');if(wEl2)wEl2.textContent=curW?curW+' LB NOW':'';
   var tick=dk?'#4a5568':'#94a3b8',grid=dk?'rgba(255,255,255,.05)':'#e2e8f0';
   var opts={{
     responsive:true,maintainAspectRatio:false,
@@ -1136,8 +1671,15 @@ function renderProfileTab(d){{
     ['Injuries',p.injuries&&p.injuries!=='none'?p.injuries:null],
     ['Timezone',p.timezone],['Coaching style',p.coaching_style],
   ].filter(([,v])=>v!=null&&v!=='');
-  document.getElementById('profile-info').innerHTML=rows.map(([l,v])=>_inrow(l,v,_PEDIT,null))
-    .join('')||'<div class="lempty">No profile data</div>';
+  // Badge renderer for Goal / Coaching style
+  function _badge(v,cls){{return v?'<span class="'+cls+'">'+esc(v.toUpperCase())+'</span>':'';}}
+  document.getElementById('profile-info').innerHTML=rows.map(([l,v])=>{{
+    if(l==='Goal') return _inrow(l,null,_PEDIT,null).replace('</div></div>',
+      '<div style="display:flex;align-items:center;gap:6px">'+_badge(v,'goal-badge')+'</div></div></div>');
+    if(l==='Coaching style') return _inrow(l,null,_PEDIT,null).replace('</div></div>',
+      '<div style="display:flex;align-items:center;gap:6px">'+_badge(v,'coach-badge')+'</div></div></div>');
+    return _inrow(l,v,_PEDIT,null);
+  }}).join('')||'<div class="lempty">No profile data</div>';
 
   document.getElementById('profile-targets').innerHTML=
     _inrow('Calorie target',tgt.calories?tgt.calories.toLocaleString()+' kcal/day':'—',_TEDIT,'var(--ac)')+
@@ -1158,15 +1700,22 @@ function renderProfileTab(d){{
     '<div class="anlbl">'+esc(l)+'</div></div>'
   ).join('')||'<div style="color:var(--mu);font-size:13px;grid-column:1/-1">No analytics data yet</div>';
 
+  var devs=[
+    {{name:'Apple Health',icon:'♥',live:p.apple_health_connected,label:p.apple_health_connected?'Syncing':'Not connected'}},
+    {{name:'Whoop',icon:'〰',live:p.whoop_connected,label:p.whoop_connected?'Connected':'Not connected'}},
+    {{name:'Fitbit',icon:'⊕',live:false,label:'Coming soon',soon:true}},
+    {{name:'Hume',icon:'◉',live:false,label:'Coming soon',soon:true}},
+  ];
   document.getElementById('devices-card').innerHTML=
-    '<div class="devrow"><span style="font-size:20px">&#8987;</span>'+
-    '<span class="devname">Whoop</span>'+
-    '<span class="devst '+(p.whoop_connected?'on':'off')+'">'+
-    (p.whoop_connected?'✓ Connected':'⚠ Not connected')+'</span></div>'+
-    '<div class="devrow"><span style="font-size:20px">&#63743;</span>'+
-    '<span class="devname">Apple Health</span>'+
-    '<span class="devst '+(p.apple_health_connected?'on':'off')+'">'+
-    (p.apple_health_connected?'✓ Syncing':'⚠ Not connected')+'</span></div>';
+    '<div class="dev-grid">'+devs.map(function(d){{
+      return '<div class="dev-card'+(d.soon?' dev-soon':'')+'">'+
+        '<div class="dev-logo">'+d.icon+'</div>'+
+        '<div class="dev-body">'+
+        '<div class="dev-name">'+esc(d.name)+'</div>'+
+        '<div class="dev-status'+(d.live?' dev-live':'')+'">'+
+        (d.live?'<span class="dev-dot"></span>':'')+esc(d.label)+
+        '</div></div></div>';
+    }}).join('')+'</div>';
 }}
 
 // ── Insights ──────────────────────────────────────────────────────────────
@@ -1181,17 +1730,62 @@ function renderInsights(ins){{
   ).join('');
 }}
 
+// ── Food emoji mapping ────────────────────────────────────────────────────
+function foodEmoji(name){{
+  var n=(name||'').toLowerCase();
+  if(/pizza/.test(n))return'🍕';
+  if(/burger|hamburger/.test(n))return'🍔';
+  if(/sushi|maki|temaki|roll.*rice|rice.*roll/.test(n))return'🍣';
+  if(/taco|burrito/.test(n))return'🌮';
+  if(/wrap/.test(n))return'🌯';
+  if(/sandwich|sub|schnitzel/.test(n))return'🥪';
+  if(/chicken|popcorn chicken|popper/.test(n))return'🍗';
+  if(/steak|beef|brisket/.test(n))return'🥩';
+  if(/bacon|pork|ham|sausage/.test(n))return'🥓';
+  if(/salmon|fish|tuna|cod|tilapia|sea/.test(n))return'🐟';
+  if(/shrimp|prawn/.test(n))return'🍤';
+  if(/salad/.test(n))return'🥗';
+  if(/pasta|noodle|ramen|spaghetti|penne|fettuccine|linguine/.test(n))return'🍝';
+  if(/rice/.test(n))return'🍚';
+  if(/soup|stew/.test(n))return'🍲';
+  if(/egg|omelet|scramble/.test(n))return'🥚';
+  if(/toast|bagel|croissant/.test(n))return'🥐';
+  if(/bread|loaf|bun/.test(n))return'🍞';
+  if(/babka|pastry|danish/.test(n))return'🥐';
+  if(/cookie|biscuit/.test(n))return'🍪';
+  if(/cinnamon roll|cinnabon/.test(n))return'🍩';
+  if(/cake|brownie|cupcake|muffin/.test(n))return'🎂';
+  if(/chocolate|candy|sweet/.test(n))return'🍫';
+  if(/fruit|apple|banana|orange|berry|grape|mango/.test(n))return'🍎';
+  if(/yogurt|greek/.test(n))return'🫙';
+  if(/oat|cereal|granola|porridge/.test(n))return'🥣';
+  if(/protein shake|shake|smoothie/.test(n))return'🥤';
+  if(/coffee|latte|cappuccino|espresso/.test(n))return'☕';
+  if(/avocado/.test(n))return'🥑';
+  if(/broccoli|veggie|vegetable/.test(n))return'🥦';
+  if(/potato|fries|chips/.test(n))return'🍟';
+  if(/cheese/.test(n))return'🧀';
+  if(/milk/.test(n))return'🥛';
+  if(/water/.test(n))return'💧';
+  if(/wine|beer|cocktail/.test(n))return'🍷';
+  return'🍽️';
+}}
+
 // ── Food rows ─────────────────────────────────────────────────────────────
 function renderFoodRow(f){{
-  var est=f.estimated?' <span style="color:var(--di);font-size:10px;font-weight:500">~est</span>':'';
+  var est=f.estimated?'<span class="est-tag">EST</span>':'';
+  var ico=foodEmoji(f.name);
   return '<div class="lrow" id="food-row-'+f.id+'">'+
+    '<div class="ficon">'+ico+'</div>'+
+    '<div class="fbody">'+
     '<div class="lname">'+esc(f.name)+est+'</div>'+
-    '<div class="lqty">'+esc(f.quantity||'')+'</div>'+
+    (f.quantity?'<div class="lqty">'+esc(f.quantity)+'</div>':'')+
     '<div class="lmac">'+
     '<span><b>'+(f.calories??0)+'</b> cal</span>'+
-    '<span><b>'+(f.protein??0)+'g</b> P</span>'+
-    '<span><b>'+(f.carbs??0)+'g</b> C</span>'+
-    '<span><b>'+(f.fats??0)+'g</b> F</span></div>'+
+    '<span style="color:var(--bl)"><b>'+(f.protein??0)+'g</b> P</span>'+
+    '<span style="color:var(--or)"><b>'+(f.carbs??0)+'g</b> C</span>'+
+    '<span style="color:var(--pu)"><b>'+(f.fats??0)+'g</b> F</span>'+
+    '</div></div>'+
     '<div class="ract">'+
     '<button class="ibtn" onclick="editFood('+f.id+')" aria-label="Edit">&#9998;</button>'+
     '<button class="ibtn del" onclick="deleteFood('+f.id+')" aria-label="Delete">&#215;</button>'+
@@ -1403,7 +1997,7 @@ function shareDay(){{
     navigator.share({{title:'Arnie — Day Summary',text:text}}).catch(function(){{}});
   }}else{{
     navigator.clipboard.writeText(text).then(function(){{
-      var btn=document.querySelector('.share-btn');
+      var btn=document.querySelector('.share-tgl');
       if(btn){{var old=btn.innerHTML;btn.innerHTML='&#10003; Copied!';setTimeout(function(){{btn.innerHTML=old;}},1800);}}
     }}).catch(function(){{prompt('Copy your day summary:',text);}});
   }}
@@ -1415,6 +2009,66 @@ setInterval(()=>{{
   delete _dayCache[_todayStr];
   if(_viewingDate===_todayStr) refreshCurrent();
 }}, 5*60*1000);
+
+// ── Post-render enhancements ──────────────────────────────
+(function(){{
+  var isMobile=window.matchMedia('(max-width:860px)').matches;
+  var TILT=7,SC=1.018;
+  var CARD_SEL='.card,.icrd,.stat-tile,.ccrd,.goal-card,.macro-ring-wrap';
+  var STAGGER_SEL='.card,.icrd,.heat-wrap,.ccrd,.goal-card,.stat-tile,.macro-ring-wrap,.lcrd,.ancrd,.infocrd';
+
+  // 3D tilt (desktop only)
+  function attachTilt(){{
+    if(isMobile)return;
+    document.querySelectorAll(CARD_SEL).forEach(function(card){{
+      if(card._tilt)return;card._tilt=true;
+      card.addEventListener('mousemove',function(e){{
+        var r=card.getBoundingClientRect();
+        var x=(e.clientX-r.left)/r.width-.5,y=(e.clientY-r.top)/r.height-.5;
+        card.style.transform='perspective(900px) rotateX('+(y*-TILT)+'deg) rotateY('+(x*TILT)+'deg) scale('+SC+')';
+      }});
+      card.addEventListener('mouseleave',function(){{card.style.transform='';}});
+    }});
+  }}
+
+  // Stagger entrance
+  function staggerCards(scope){{
+    (scope||document).querySelectorAll(STAGGER_SEL).forEach(function(el,i){{
+      el.style.animation='none';void el.offsetWidth;
+      el.style.animationDelay=(i*50)+'ms';
+      el.style.animation='cardIn .4s cubic-bezier(.2,.7,.2,1) both';
+    }});
+  }}
+
+  // Mouse parallax on body::before (desktop)
+  if(!isMobile){{
+    var raf=null;
+    window.addEventListener('mousemove',function(e){{
+      if(raf)return;
+      raf=requestAnimationFrame(function(){{
+        var x=(e.clientX/window.innerWidth-.5)*30;
+        var y=(e.clientY/window.innerHeight-.5)*20;
+        document.documentElement.style.setProperty('--px',x+'px');
+        document.documentElement.style.setProperty('--py',y+'px');
+        raf=null;
+      }});
+    }});
+  }}
+
+  // Hook into switchTab once
+  var _orig=switchTab;
+  switchTab=function(name){{
+    _orig(name);
+    window.scrollTo({{top:0,behavior:'smooth'}});
+    setTimeout(function(){{
+      staggerCards(document.getElementById('panel-'+name));
+      attachTilt();
+    }},60);
+  }};
+
+  // Initial run
+  setTimeout(function(){{staggerCards();attachTilt();}},500);
+}})();
 </script>
 </body>
 </html>"""
