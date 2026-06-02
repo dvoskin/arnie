@@ -27,10 +27,15 @@ def _dashboard_html(token: str, name: str = "") -> str:
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>{_dashboard_title(name)}</title>
 <!-- favicon served by the dashboard app itself (relative → follows whatever host
-     serves the dashboard, incl. app.tryarnie.com). No Open Graph image on purpose —
-     shared dashboard links render as a plain link with just the favicon, no preview card. -->
+     serves the dashboard, incl. app.tryarnie.com). -->
 <link rel="icon" type="image/png" href="/favicon.png">
 <link rel="apple-touch-icon" href="/favicon.png">
+<!-- Social preview: a generic text title only — NO image, NO per-user name. The explicit
+     og:title also stops crawlers from falling back to the personalized <title>. -->
+<meta property="og:type"   content="website">
+<meta property="og:title"  content="Dashboard ⏐ ArnieOS">
+<meta name="twitter:card"  content="summary">
+<meta name="twitter:title" content="Dashboard ⏐ ArnieOS">
 <script>
 (function(){{
   var t=localStorage.getItem('arnie-theme')||

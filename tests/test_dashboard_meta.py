@@ -27,8 +27,20 @@ def test_dashboard_head_has_favicon():
     assert 'href="/favicon.png"' in html
 
 
-def test_dashboard_head_has_no_meta_image():
+def test_dashboard_social_title_present_no_image():
     html = _dashboard_html("tok123", name="Danny")
-    # no Open Graph / Twitter preview image (or any og:/twitter: meta) on these links
-    for needle in ("og:image", "twitter:image", "og:title", "twitter:card", "property=\"og:"):
-        assert needle not in html, f"unexpected social-preview meta present: {needle}"
+    # a generic text title for the preview...
+    assert 'property="og:title"' in html
+    assert 'content="Dashboard ⏐ ArnieOS"' in html
+    assert 'name="twitter:title"' in html
+    # ...but NO preview image
+    assert "og:image" not in html and "twitter:image" not in html
+
+
+def test_social_title_is_generic_no_name_leak():
+    # The explicit generic og:title must NOT carry the per-user name (it would otherwise
+    # leak into cacheable, forwardable link previews).
+    html = _dashboard_html("tok123", name="Danny")
+    head = html[:html.find("</head>")]
+    title_block = head[head.find("og:title"):]
+    assert "Danny" not in title_block
