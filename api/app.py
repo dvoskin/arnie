@@ -1765,7 +1765,7 @@ Workout description:
 async def auto_fill_workout_program(token: str):
     """
     Synthesize a workout program from the user's Arnie memory + recent
-    conversation history, then save it. Returns the parsed program.
+    conversation history across ALL linked platforms (Telegram + iMessage).
     """
     import json
     from sqlalchemy import select, desc
@@ -1780,32 +1780,49 @@ async def auto_fill_workout_program(token: str):
         if not ANTHROPIC_API_KEY():
             raise HTTPException(status_code=503, detail="AI unavailable")
 
-        # Pull Arnie memory file
         from db.models import ConversationLog
-        try:
-            memory_text = await read_memory(user.telegram_id)
-        except Exception:
-            memory_text = ""
 
-        # Pull last 60 conversation turns for workout-relevant context
+        # Collect ALL user IDs for this identity (canonical + any linked platforms)
+        # iMessage identities: linked_to_user_id == user.id
+        linked_users = (await db.execute(
+            select(User).where(User.linked_to_user_id == user.id)
+        )).scalars().all()
+        all_user_ids = [user.id] + [u.id for u in linked_users]
+        all_telegram_ids = [user.telegram_id] + [u.telegram_id for u in linked_users]
+
+        # Pull memory from ALL linked identities and merge
+        memory_parts = []
+        for tid in all_telegram_ids:
+            try:
+                m = await read_memory(tid)
+                if m and m.strip():
+                    platform_label = "iMessage" if str(tid).startswith("im:") else "Telegram"
+                    memory_parts.append(f"[{platform_label} memory]\n{m}")
+            except Exception:
+                pass
+        memory_text = "\n\n".join(memory_parts) or ""
+
+        # Pull last 80 conversation turns across all platforms
         rows = (await db.execute(
             select(ConversationLog)
-            .where(ConversationLog.user_id == user.id)
+            .where(ConversationLog.user_id.in_(all_user_ids))
             .order_by(desc(ConversationLog.timestamp))
-            .limit(60)
+            .limit(80)
         )).scalars().all()
 
         # Filter to messages that mention workout/exercise keywords
         kw = ("workout", "gym", "lift", "press", "pull", "push", "squat", "chest",
               "back", "shoulder", "arm", "leg", "cardio", "set", "rep", "exercise",
-              "train", "split", "day", "pr", "bench", "deadlift", "curl")
+              "train", "split", "day", "pr", "bench", "deadlift", "curl", "incline",
+              "flat", "fly", "row", "pulldown", "lateral", "shrug", "curl", "lunge")
         relevant = []
         for r in reversed(rows):
             combined = ((r.raw_message or "") + " " + (r.response or "")).lower()
             if any(k in combined for k in kw):
-                relevant.append(f"User: {r.raw_message or ''}\nArnie: {r.response or ''}")
+                platform = r.platform or "telegram"
+                relevant.append(f"[{platform}] User: {r.raw_message or ''}\nArnie: {r.response or ''}")
 
-        convo_context = "\n\n---\n\n".join(relevant[-30:]) if relevant else "(no workout conversations found)"
+        convo_context = "\n\n---\n\n".join(relevant[-35:]) if relevant else "(no workout conversations found)"
 
         prompt = f"""You are extracting a user's workout program from their fitness coaching history.
 
