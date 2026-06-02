@@ -231,8 +231,8 @@ body{{
 /* ── SECTION TITLES ─────────────────────────────────────── */
 .stitle{{
   font-family:'Geist Mono','SF Mono',monospace;
-  font-size:10px;font-weight:500;color:var(--mu);text-transform:uppercase;
-  letter-spacing:.16em;margin:28px 0 12px;display:flex;align-items:center;gap:10px;
+  font-size:11px;font-weight:500;color:var(--mu);text-transform:uppercase;
+  letter-spacing:.14em;margin:30px 0 13px;display:flex;align-items:center;gap:10px;
 }}
 .stitle:first-child{{margin-top:6px}}
 .ai-pill{{
@@ -288,14 +288,14 @@ body{{
 }}
 .clbl{{
   font-family:'Geist Mono','SF Mono',monospace;
-  font-size:9.5px;color:var(--mu);text-transform:uppercase;
-  letter-spacing:.12em;margin-bottom:7px;font-weight:500;
+  font-size:10.5px;color:var(--mu);text-transform:uppercase;
+  letter-spacing:.10em;margin-bottom:9px;font-weight:500;
 }}
 .cval{{
   font-family:'Instrument Serif','Times New Roman',serif;
-  font-size:28px;font-weight:normal;line-height:1;letter-spacing:-.01em;
+  font-size:34px;font-weight:normal;line-height:1;letter-spacing:-.02em;
 }}
-.csub{{font-size:11px;color:var(--mu);margin-top:4px;font-weight:400}}
+.csub{{font-size:12px;color:var(--mu);margin-top:5px;font-weight:400}}
 .ptrack{{background:var(--sf2);border-radius:999px;height:3px;margin-top:11px;overflow:hidden}}
 .pfill{{height:100%;border-radius:999px;transition:width .8s cubic-bezier(.4,0,.2,1)}}
 [data-theme="dark"] .pfill{{filter:brightness(1.1) saturate(1.2)}}
@@ -350,10 +350,10 @@ body{{
 /* ── GOAL PROGRESS ───────────────────────────────────────── */
 .goal-card{{background:var(--sf);border:1px solid var(--bd);border-radius:16px;padding:16px;backdrop-filter:blur(16px);box-shadow:var(--sh)}}
 .goal-header{{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px}}
-.goal-title{{font-family:'Instrument Serif','Times New Roman',serif;font-size:20px;font-weight:normal;letter-spacing:-.01em}}
+.goal-title{{font-family:'Instrument Serif','Times New Roman',serif;font-size:24px;font-weight:normal;letter-spacing:-.01em}}
 .goal-sub{{font-family:'Geist Mono','SF Mono',monospace;font-size:10px;color:var(--mu);margin-top:4px;letter-spacing:.04em}}
 .goal-current{{text-align:right}}
-.goal-lbs{{font-family:'Instrument Serif','Times New Roman',serif;font-size:28px;font-weight:normal;line-height:1;letter-spacing:-.02em}}
+.goal-lbs{{font-family:'Instrument Serif','Times New Roman',serif;font-size:34px;font-weight:normal;line-height:1;letter-spacing:-.02em}}
 .goal-lbs-lbl{{font-family:'Geist Mono','SF Mono',monospace;font-size:9px;color:var(--mu);letter-spacing:.08em;text-transform:uppercase;margin-top:2px}}
 .goal-track{{position:relative;height:7px;background:var(--sf2);border-radius:999px;margin:12px 0 9px}}
 .goal-fill{{height:100%;border-radius:999px;background:linear-gradient(90deg,var(--bl),var(--ac));transition:width .9s cubic-bezier(.4,0,.2,1)}}
@@ -363,8 +363,8 @@ body{{
 /* ── STREAK STATS ────────────────────────────────────────── */
 .stat-row{{display:grid;grid-template-columns:repeat(3,1fr);gap:9px}}
 .stat-tile{{background:var(--sf);border:1px solid var(--bd);border-radius:16px;padding:16px 10px;text-align:center;backdrop-filter:blur(16px);box-shadow:var(--sh)}}
-.stat-num{{font-family:'Instrument Serif','Times New Roman',serif;font-size:34px;font-weight:normal;line-height:1;letter-spacing:-.02em}}
-.stat-lbl{{font-family:'Geist Mono','SF Mono',monospace;font-size:9px;color:var(--mu);text-transform:uppercase;letter-spacing:.1em;margin-top:5px;font-weight:500}}
+.stat-num{{font-family:'Instrument Serif','Times New Roman',serif;font-size:40px;font-weight:normal;line-height:1;letter-spacing:-.02em}}
+.stat-lbl{{font-family:'Geist Mono','SF Mono',monospace;font-size:10px;color:var(--mu);text-transform:uppercase;letter-spacing:.10em;margin-top:6px;font-weight:500}}
 
 /* ── INSIGHTS ────────────────────────────────────────────── */
 .icrd{{
@@ -386,7 +386,7 @@ body{{
   display:flex;align-items:center;justify-content:center;
   border:1px solid rgba(var(--ac-rgb),.2);
 }}
-.itxt{{font-size:13px;line-height:1.52;color:var(--tx2)}}
+.itxt{{font-size:14px;line-height:1.55;color:var(--tx2)}}
 .iload,.iempty{{padding:16px 12px;color:var(--mu);font-size:13px;text-align:center}}
 
 /* ── WEARABLE ────────────────────────────────────────────── */
@@ -406,31 +406,36 @@ body{{
   backdrop-filter:blur(16px);box-shadow:var(--sh);transition:background .3s;
 }}
 .lrow{{
-  display:flex;align-items:flex-start;gap:11px;
-  padding:12px 14px;border-bottom:1px solid var(--bd);position:relative;
+  display:flex;align-items:flex-start;gap:13px;
+  padding:14px 16px;border-bottom:1px solid var(--bd);position:relative;
 }}
 .lrow:last-child{{border-bottom:none}}
+.lrow:hover{{background:var(--sf2)}}
 .ficon{{
-  width:36px;height:36px;border-radius:10px;flex-shrink:0;
+  width:38px;height:38px;border-radius:11px;flex-shrink:0;
   background:var(--sf2);border:1px solid var(--bd);
-  display:grid;place-items:center;font-size:18px;margin-top:1px;
+  display:grid;place-items:center;font-size:20px;margin-top:2px;
 }}
-.fbody{{flex:1;min-width:0;padding-right:54px}}
+.fbody{{flex:1;min-width:0;padding-right:58px}}
 .lname{{
-  font-size:14px;font-weight:500;line-height:1.3;word-break:break-word;
-  color:var(--tx);display:flex;align-items:center;gap:6px;flex-wrap:wrap;
+  font-size:15px;font-weight:500;line-height:1.3;word-break:break-word;
+  color:var(--tx);display:flex;align-items:center;gap:7px;flex-wrap:wrap;
 }}
 .est-tag{{
   font-family:'Geist Mono','SF Mono',monospace;
-  font-size:9px;letter-spacing:.06em;text-transform:uppercase;
-  color:var(--di);border:1px solid var(--bd);border-radius:4px;padding:1px 5px;flex-shrink:0;
+  font-size:8.5px;letter-spacing:.07em;text-transform:uppercase;
+  color:var(--mu);background:var(--sf2);border:1px solid var(--bd);
+  border-radius:5px;padding:2px 6px;flex-shrink:0;font-weight:500;
 }}
-.lqty{{font-size:12px;color:var(--mu);margin-top:2px;font-weight:400}}
+.lqty{{font-size:13px;color:var(--mu);margin-top:3px;font-weight:400}}
 .lmac{{
-  display:flex;gap:10px;font-size:11px;margin-top:5px;flex-wrap:wrap;
+  display:flex;gap:0;font-size:12px;margin-top:7px;flex-wrap:wrap;
   font-family:'Geist Mono','SF Mono',monospace;
+  align-items:center;
 }}
-.lmac span{{color:var(--mu)}}
+.lmac .lm-sep{{color:var(--di);margin:0 8px;font-size:10px;}}
+.lmac .lm-cal{{color:var(--tx2);font-weight:600;font-size:13px;}}
+.lmac .lm-macro{{color:var(--mu);font-weight:400;font-size:11px;}}
 .lmac b{{font-weight:600}}
 .lempty{{padding:18px 12px;color:var(--mu);font-size:13px;text-align:center}}
 
@@ -593,7 +598,7 @@ body{{
 .angrid{{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}}
 @media(min-width:420px){{.angrid{{grid-template-columns:repeat(3,1fr)}}}}
 .anitem{{background:var(--sf2);border-radius:12px;padding:12px;border:1px solid var(--bd);transition:background .3s}}
-.anval{{font-family:'Instrument Serif','Times New Roman',serif;font-size:24px;font-weight:normal;line-height:1;letter-spacing:-.01em}}
+.anval{{font-family:'Instrument Serif','Times New Roman',serif;font-size:28px;font-weight:normal;line-height:1;letter-spacing:-.01em}}
 .anlbl{{font-family:'Geist Mono','SF Mono',monospace;font-size:9.5px;color:var(--mu);margin-top:4px;font-weight:500;text-transform:uppercase;letter-spacing:.1em}}
 .devrow{{display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid var(--bd)}}
 .devrow:last-child{{border-bottom:none}}
@@ -645,10 +650,10 @@ footer{{
 }}
 .ph-title{{
   font-family:'Instrument Serif','Times New Roman',serif;
-  font-size:32px;line-height:1;letter-spacing:-.025em;color:var(--tx);
+  font-size:38px;line-height:1;letter-spacing:-.025em;color:var(--tx);
 }}
-@media(max-width:940px){{.ph-title{{font-size:26px}}}}
-@media(max-width:560px){{.ph-title{{font-size:22px}}}}
+@media(max-width:940px){{.ph-title{{font-size:30px}}}}
+@media(max-width:560px){{.ph-title{{font-size:25px}}}}
 .ph-sub{{
   font-family:'Geist Mono','SF Mono',monospace;
   font-size:11px;color:var(--mu);margin-top:8px;
@@ -1000,17 +1005,17 @@ footer{{
   /* Pagehead: hide icon-only buttons, keep just + Log */
   .pagehead .hbtn{{display:none}}
   .pagehead{{padding:14px 0 10px;gap:10px;align-items:center}}
-  .ph-title{{font-size:19px!important;letter-spacing:-.015em}}
-  .ph-sub{{font-size:10px;margin-top:5px;gap:8px}}
+  .ph-title{{font-size:24px!important;letter-spacing:-.015em}}
+  .ph-sub{{font-size:10.5px;margin-top:6px;gap:8px}}
   .ph-actions{{gap:5px}}
-  .ph-log-btn{{padding:0 14px;height:33px;font-size:12px;border-radius:9px}}
+  .ph-log-btn{{padding:0 14px;height:34px;font-size:12.5px;border-radius:9px}}
   /* Section labels */
-  .stitle{{margin:18px 0 8px;font-size:9px;letter-spacing:.14em}}
+  .stitle{{margin:20px 0 10px;font-size:10px;letter-spacing:.12em}}
   /* Cards */
-  .cval{{font-size:24px}}
-  .clbl{{font-size:8.5px;margin-bottom:5px;letter-spacing:.1em}}
-  .card{{padding:14px;border-radius:14px}}
-  .csub{{font-size:10.5px}}
+  .cval{{font-size:28px}}
+  .clbl{{font-size:9.5px;margin-bottom:6px;letter-spacing:.09em}}
+  .card{{padding:16px;border-radius:14px}}
+  .csub{{font-size:11px}}
   /* Date nav */
   .dchip{{padding:7px 12px;font-size:10.5px}}
   .darr{{width:32px;height:32px;border-radius:9px}}
@@ -1019,16 +1024,16 @@ footer{{
   .toggle{{padding:6px 10px;font-size:11px;gap:6px}}
   .toggles{{gap:6px;margin-bottom:12px}}
   /* Stats */
-  .stat-num{{font-size:30px}}
-  .stat-lbl{{font-size:8.5px}}
-  .stat-tile{{padding:16px 8px;border-radius:14px}}
+  .stat-num{{font-size:36px}}
+  .stat-lbl{{font-size:9.5px}}
+  .stat-tile{{padding:18px 10px;border-radius:14px}}
   /* Goal */
-  .goal-lbs{{font-size:24px}}
-  .goal-title{{font-size:17px}}
+  .goal-lbs{{font-size:30px}}
+  .goal-title{{font-size:20px}}
   /* Food */
-  .ficon{{width:34px;height:34px;font-size:17px;border-radius:9px}}
-  .lname{{font-size:13px}}
-  .lmac{{font-size:10.5px;gap:8px}}
+  .ficon{{width:36px;height:36px;font-size:19px;border-radius:10px}}
+  .lname{{font-size:14px}}
+  .lmac{{font-size:11.5px}}
   /* Insights */
   .itxt{{font-size:13px;line-height:1.48}}
   /* Profile */
@@ -1041,8 +1046,9 @@ footer{{
 
 /* ── Medium breakpoint ───────────────────────────────────── */
 @media(max-width:740px) and (min-width:561px){{
-  .ph-title{{font-size:26px!important}}
-  .cval{{font-size:26px}}
+  .ph-title{{font-size:28px!important}}
+  .cval{{font-size:30px}}
+  .stitle{{font-size:10.5px}}
 }}
 
 /* ── Bottom nav upgrade ──────────────────────────────────── */
@@ -1961,10 +1967,13 @@ function renderFoodRow(f){{
     '<div class="lname">'+esc(f.name)+est+'</div>'+
     (f.quantity?'<div class="lqty">'+esc(f.quantity)+'</div>':'')+
     '<div class="lmac">'+
-    '<span><b>'+(f.calories??0)+'</b> cal</span>'+
-    '<span style="color:var(--bl)"><b>'+(f.protein??0)+'g</b> P</span>'+
-    '<span style="color:var(--or)"><b>'+(f.carbs??0)+'g</b> C</span>'+
-    '<span style="color:var(--pu)"><b>'+(f.fats??0)+'g</b> F</span>'+
+    '<span class="lm-cal">'+(f.calories??0)+' cal</span>'+
+    '<span class="lm-sep">·</span>'+
+    '<span class="lm-macro"><b style="color:var(--bl)">'+(f.protein??0)+'g</b> P</span>'+
+    '<span class="lm-sep">·</span>'+
+    '<span class="lm-macro"><b style="color:var(--or)">'+(f.carbs??0)+'g</b> C</span>'+
+    '<span class="lm-sep">·</span>'+
+    '<span class="lm-macro"><b style="color:var(--pu)">'+(f.fats??0)+'g</b> F</span>'+
     '</div></div>'+
     '<div class="ract">'+
     '<button class="ibtn" onclick="editFood('+f.id+')" aria-label="Edit">&#9998;</button>'+
