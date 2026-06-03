@@ -1595,7 +1595,8 @@ async def cmd_dash(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not user.onboarding_completed:
             await update.message.reply_text("Finish setup first before accessing the dashboard.")
             return
-        token = await get_or_create_webhook_token(db, user.id)
+        canonical_id = user.linked_to_user_id or user.id
+        token = await get_or_create_webhook_token(db, canonical_id)
 
     from core.urls import dashboard_url
     url = dashboard_url(token)
