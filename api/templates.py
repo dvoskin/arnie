@@ -201,12 +201,6 @@ body{{
 .day-grid{{display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start}}
 .day-col-analytics{{min-width:0;order:1}}
 .day-col-log{{min-width:0;order:2}}
-/* Food + Workout side-by-side inside log column on desktop */
-.log-row{{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start}}
-.log-section{{min-width:0}}
-@media(max-width:900px){{
-  .log-row{{grid-template-columns:1fr}}
-}}
 @media(max-width:700px){{
   .day-grid{{grid-template-columns:1fr}}
   .day-col-log{{order:1}}
@@ -236,26 +230,14 @@ body{{
 @media(max-width:940px){{
   .shell{{grid-template-columns:1fr}}
   .sidebar{{display:none}}
-  .main-inner{{padding:0 20px 90px;max-width:100%;margin:0}}
+  .main-inner{{max-width:100%;margin:0}}
+  .main-inner{{padding:0 20px 90px;max-width:100%}}
   .bottomnav{{display:flex}}
   .pagehead{{padding:14px 0 10px}}
-  .profile-grid{{grid-template-columns:1fr}}
-}}
-/* Landscape mobile (phones rotated) */
-@media(max-width:940px) and (orientation:landscape){{
-  .main-inner{{padding:0 24px 70px}}
-  .bottomnav{{padding:6px 16px calc(6px + env(safe-area-inset-bottom))}}
-  .pagehead{{padding:10px 0 8px}}
-  .day-grid{{grid-template-columns:1fr 1fr}}
-  .c2col{{grid-template-columns:1fr 1fr}}
-  .log-row{{grid-template-columns:1fr 1fr}}
-  .macro-ring-wrap{{flex-direction:row}}
 }}
 @media(max-width:560px){{
   .main-inner{{padding:0 16px 90px}}
   .ph-sub{{flex-wrap:wrap;gap:5px 8px}}
-  .c2col{{grid-template-columns:1fr}}
-  .log-row{{grid-template-columns:1fr}}
 }}
 
 /* ── SECTION TITLES ─────────────────────────────────────── */
@@ -406,7 +388,7 @@ body{{
   font-size:9px;color:var(--di);text-align:center;font-weight:500;
   text-transform:uppercase;letter-spacing:.06em;
 }}
-.heat-grid{{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}}
+.heat-grid{{display:grid;grid-template-columns:repeat(7,1fr);gap:3px}}
 .hcell{{height:22px;border-radius:5px;background:var(--sf3);border:1px solid var(--bd);position:relative;transition:transform .15s;cursor:default}}
 [data-theme="light"] .hcell{{background:#e4e8f0;border-color:#d0d8e8}}
 .hcell:hover{{transform:scale(1.2);z-index:2}}
@@ -568,8 +550,8 @@ body{{
 .wp-empty .wp-empty-hint{{font-size:12px;margin-top:6px;color:var(--di)}}
 
 /* ── PROFILE GRID ────────────────────────────────────────── */
-.profile-grid{{display:grid;grid-template-columns:1.1fr .9fr;gap:20px;align-items:start}}
-@media(max-width:800px){{.profile-grid{{grid-template-columns:1fr}}}}
+.profile-grid{{display:grid;grid-template-columns:1fr 1fr;gap:18px}}
+@media(max-width:700px){{.profile-grid{{grid-template-columns:1fr}}}}
 .pstack{{display:flex;flex-direction:column}}
 .goal-badge,.coach-badge{{
   font-family:'Geist Mono','SF Mono',monospace;
@@ -617,22 +599,6 @@ body{{
 }}
 .ctitle-val{{font-weight:600}}
 .erow{{padding:12px 14px;border-bottom:1px solid var(--bd);position:relative}}
-/* Grouped exercise rows */
-.eg-row{{padding:12px 14px;border-bottom:1px solid var(--bd);cursor:pointer;user-select:none;transition:background .15s}}
-.eg-row:last-child{{border-bottom:none}}
-.eg-row:hover{{background:var(--sf2)}}
-.eg-hd{{display:flex;align-items:center;gap:8px}}
-.eg-name{{font-size:14px;font-weight:500;color:var(--tx);flex:1}}
-.eg-summary{{font-family:'Geist Mono','SF Mono',monospace;font-size:11px;color:var(--mu);white-space:nowrap}}
-.eg-chevron{{font-size:10px;color:var(--di);transition:transform .18s;flex-shrink:0}}
-.eg-row.open .eg-chevron{{transform:rotate(90deg)}}
-.eg-sets{{display:none;padding:6px 0 2px}}
-.eg-row.open .eg-sets{{display:block}}
-.eg-set{{display:flex;align-items:center;gap:8px;padding:4px 0;font-size:12.5px;color:var(--tx2)}}
-.eg-set-num{{font-family:'Geist Mono','SF Mono',monospace;font-size:10px;color:var(--di);width:24px;flex-shrink:0}}
-.eg-set-detail{{font-family:'Geist Mono','SF Mono',monospace;font-size:12px;color:var(--ac)}}
-.eg-del{{width:22px;height:22px;border-radius:5px;border:1px solid transparent;background:transparent;color:var(--di);cursor:pointer;font-size:11px;display:grid;place-items:center;transition:all .15s;flex-shrink:0}}
-.eg-del:hover{{color:var(--re);border-color:rgba(239,68,68,.3);background:rgba(239,68,68,.08)}}
 .erow:last-child{{border-bottom:none}}
 .ecnt{{display:flex;justify-content:space-between;align-items:center;padding-right:66px;gap:8px}}
 .ename{{font-size:14px;font-weight:500;word-break:break-word;flex:1;color:var(--tx)}}
@@ -688,8 +654,8 @@ body{{
   text-transform:uppercase;letter-spacing:.14em;
 }}
 .cwrap{{position:relative;height:150px}}
-.c2col{{display:grid;grid-template-columns:1fr;gap:12px}}
-@media(min-width:600px){{.c2col{{grid-template-columns:1fr 1fr}}}}
+.c2col{{display:grid;grid-template-columns:1fr;gap:9px}}
+@media(min-width:700px){{.c2col{{grid-template-columns:1fr 1fr}}}}
 
 /* ── HISTORY TABLE ───────────────────────────────────────── */
 .htbl{{width:100%;border-collapse:collapse;font-size:12px}}
@@ -1384,65 +1350,56 @@ footer{{
 
       <!-- Logging column (right on desktop, top on mobile) -->
       <div class="day-col-log">
-        <div class="log-row">
-          <!-- Food -->
-          <div class="log-section">
-            <div class="stitle spaced">
-              <span>Food <span id="food-log-count" style="font-weight:400;opacity:.7"></span></span>
-              <button class="add-toggle" id="food-toggle" onclick="toggleAddForm('food')" title="Add food">+</button>
-            </div>
-            <div class="add-card" id="food-form" style="display:none">
-              <input class="add-inp" id="food-name" placeholder="Food name (e.g. chicken breast)" autocomplete="off">
-              <input class="add-inp" id="food-qty" placeholder="Portion (e.g. 200g, 1 cup)">
-              <div class="add-macros">
-                <div class="add-mac-field"><label>Cal</label><input type="number" id="food-cal" min="0" inputmode="numeric" placeholder="0"></div>
-                <div class="add-mac-field"><label>P (g)</label><input type="number" id="food-pro" min="0" inputmode="decimal" placeholder="0"></div>
-                <div class="add-mac-field"><label>C (g)</label><input type="number" id="food-carb" min="0" inputmode="decimal" placeholder="0"></div>
-                <div class="add-mac-field"><label>F (g)</label><input type="number" id="food-fat" min="0" inputmode="decimal" placeholder="0"></div>
-              </div>
-              <button class="add-submit" id="food-submit" onclick="submitFood()">Save food</button>
-            </div>
-            <div class="lcrd" id="food-log"><div class="lempty">Loading&hellip;</div></div>
+        <div class="stitle spaced">
+          <span>Food log <span id="food-log-count" style="font-weight:400;opacity:.7"></span></span>
+          <button class="add-toggle" id="food-toggle" onclick="toggleAddForm('food')" title="Add food">+</button>
+        </div>
+        <div class="add-card" id="food-form" style="display:none">
+          <input class="add-inp" id="food-name" placeholder="Food name (e.g. chicken breast)" autocomplete="off">
+          <input class="add-inp" id="food-qty" placeholder="Portion (e.g. 200g, 1 cup)">
+          <div class="add-macros">
+            <div class="add-mac-field"><label>Cal</label><input type="number" id="food-cal" min="0" inputmode="numeric" placeholder="0"></div>
+            <div class="add-mac-field"><label>P (g)</label><input type="number" id="food-pro" min="0" inputmode="decimal" placeholder="0"></div>
+            <div class="add-mac-field"><label>C (g)</label><input type="number" id="food-carb" min="0" inputmode="decimal" placeholder="0"></div>
+            <div class="add-mac-field"><label>F (g)</label><input type="number" id="food-fat" min="0" inputmode="decimal" placeholder="0"></div>
           </div>
-          <!-- Workouts -->
-          <div class="log-section">
-            <div class="stitle spaced">
-              <span>Workouts</span>
-              <button class="add-toggle" id="ex-toggle" onclick="toggleAddForm('ex')" title="Add workout">+</button>
-            </div>
-            <div class="add-card" id="ex-form" style="display:none">
-              <input class="add-inp" id="ex-name" placeholder="Exercise (e.g. bench press, 5k run)" autocomplete="off">
-              <div class="add-macros">
-                <div class="add-mac-field"><label>Sets</label><input type="number" id="ex-sets" min="1" inputmode="numeric" placeholder="—"></div>
-                <div class="add-mac-field"><label>Reps</label><input type="text" id="ex-reps" placeholder="—"></div>
-                <div class="add-mac-field"><label>lbs</label><input type="number" id="ex-wt" min="0" inputmode="decimal" placeholder="—"></div>
-                <div class="add-mac-field"><label>Min</label><input type="number" id="ex-dur" min="0" inputmode="numeric" placeholder="—"></div>
-              </div>
-              <div style="display:flex;align-items:center;gap:8px;padding:8px 14px 2px;font-size:13px;color:var(--mu)">
-                <input type="checkbox" id="ex-cardio" style="width:15px;height:15px;accent-color:var(--ac)">
-                <label for="ex-cardio">Cardio</label>
-              </div>
-              <button class="add-submit" id="ex-submit" onclick="submitExercise()">Save workout</button>
-            </div>
-            <div class="lcrd" id="ex-log"><div class="lempty">Loading&hellip;</div></div>
+          <button class="add-submit" id="food-submit" onclick="submitFood()">Save food</button>
+        </div>
+        <div class="lcrd" id="food-log"><div class="lempty">Loading&hellip;</div></div>
+
+        <div class="stitle spaced" style="margin-top:28px">
+          <span>Workouts</span>
+          <button class="add-toggle" id="ex-toggle" onclick="toggleAddForm('ex')" title="Add workout">+</button>
+        </div>
+        <div class="add-card" id="ex-form" style="display:none">
+          <input class="add-inp" id="ex-name" placeholder="Exercise (e.g. bench press, 5k run)" autocomplete="off">
+          <div class="add-macros">
+            <div class="add-mac-field"><label>Sets</label><input type="number" id="ex-sets" min="1" inputmode="numeric" placeholder="—"></div>
+            <div class="add-mac-field"><label>Reps</label><input type="text" id="ex-reps" placeholder="—"></div>
+            <div class="add-mac-field"><label>lbs</label><input type="number" id="ex-wt" min="0" inputmode="decimal" placeholder="—"></div>
+            <div class="add-mac-field"><label>Min</label><input type="number" id="ex-dur" min="0" inputmode="numeric" placeholder="—"></div>
           </div>
-        </div><!-- /log-row -->
+          <div style="display:flex;align-items:center;gap:8px;padding:8px 14px 2px;font-size:13px;color:var(--mu)">
+            <input type="checkbox" id="ex-cardio" style="width:15px;height:15px;accent-color:var(--ac)">
+            <label for="ex-cardio">Cardio / conditioning</label>
+          </div>
+          <button class="add-submit" id="ex-submit" onclick="submitExercise()">Save workout</button>
+        </div>
       </div>
 
     </div><!-- /day-grid -->
-  </div><!-- /panel-day -->
+  </div>
+  </div>
 
-  <!-- WEEK TAB -->
+  <!-- WEEK TAB — single column -->
   <div class="tab-panel" id="panel-week">
-    <div class="c2col">
-      <div class="ccrd">
-        <div class="ctitle"><span>Calories &middot; 30 days</span><span id="cal-avg-lbl" class="ctitle-val" style="color:var(--ac)"></span></div>
-        <div class="cwrap"><canvas id="calChart"></canvas></div>
-      </div>
-      <div class="ccrd">
-        <div class="ctitle"><span>Protein &middot; 30 days</span><span id="pro-tgt-lbl" class="ctitle-val" style="color:var(--bl)"></span></div>
-        <div class="cwrap"><canvas id="proChart"></canvas></div>
-      </div>
+    <div class="ccrd">
+      <div class="ctitle"><span>Calories &middot; 30 days</span><span id="cal-avg-lbl" class="ctitle-val" style="color:var(--ac)"></span></div>
+      <div class="cwrap"><canvas id="calChart"></canvas></div>
+    </div>
+    <div class="ccrd" style="margin-top:14px">
+      <div class="ctitle"><span>Protein &middot; 30 days</span><span id="pro-tgt-lbl" class="ctitle-val" style="color:var(--bl)"></span></div>
+      <div class="cwrap"><canvas id="proChart"></canvas></div>
     </div>
     <div class="ccrd" style="margin-top:14px">
       <div class="ctitle"><span>Weight trend &middot; 30 days</span><span id="wt-now-lbl" class="ctitle-val" style="color:var(--pu)"></span></div>
@@ -1460,50 +1417,39 @@ footer{{
     <div class="infocrd" id="hist-table-wrap"><div class="lempty">Loading&hellip;</div></div>
   </div>
 
-  <!-- PROFILE TAB -->
+  <!-- PROFILE TAB — single column -->
   <div class="tab-panel" id="panel-profile">
-    <div class="profile-grid">
-      <!-- Left: core info -->
-      <div>
-        <div class="stitle" style="margin-top:4px">Your info</div>
-        <div class="infocrd" id="profile-info"></div>
-        <div class="stitle spaced">
-          <span>Training program</span>
-          <button class="add-toggle" id="wp-edit-btn" onclick="openWorkoutEditor()" title="Set up program">+</button>
-        </div>
-        <div id="workout-program-card"></div>
-        <div class="add-card" id="workout-editor" style="display:none;margin-top:10px">
-          <div style="display:flex;gap:8px;padding:12px 14px;border-bottom:1px solid var(--bd)">
-            <button class="add-submit" style="flex:1;text-align:center;padding:10px" onclick="autoFillWorkout()">&#10024; Auto-fill from Arnie chat</button>
-            <button class="add-toggle" id="wp-edit-btn-inner" onclick="openWorkoutEditor()" style="width:auto;padding:0 12px;border-radius:8px;font-size:12px;font-family:inherit">✎ Edit</button>
-          </div>
-          <div style="padding:6px 14px;font-family:'Geist Mono','SF Mono',monospace;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--di)">or paste manually</div>
-          <textarea class="add-inp" id="workout-raw" rows="10" placeholder="Paste your workout split here — exercises, goals, recent lifts, rotation." style="height:180px;resize:vertical;font-size:13px;line-height:1.5"></textarea>
-          <div style="display:flex;gap:8px;padding:10px 14px;border-top:1px solid var(--bd)">
-            <button class="add-submit" style="flex:1" onclick="saveWorkoutProgram()">&#9889; Parse &amp; save</button>
-            <button class="cbtn" onclick="closeWorkoutEditor()">Cancel</button>
-          </div>
-          <div id="workout-parse-status" style="padding:0 14px 10px;font-size:12px;color:var(--mu)"></div>
-        </div>
+    <div class="stitle" style="margin-top:4px">Your info</div>
+    <div class="infocrd" id="profile-info"></div>
+    <div class="stitle">Targets</div>
+    <div class="infocrd" id="profile-targets"></div>
+
+    <div class="stitle spaced">
+      <span>Training program</span>
+      <button class="add-toggle" id="wp-edit-btn" onclick="openWorkoutEditor()" title="Set up program">+</button>
+    </div>
+    <div id="workout-program-card"></div>
+
+    <!-- paste / edit panel (hidden by default) -->
+    <div class="add-card" id="workout-editor" style="display:none;margin-top:10px">
+      <div style="display:flex;gap:8px;padding:12px 14px;border-bottom:1px solid var(--bd)">
+        <button class="add-submit" style="flex:1;text-align:center;padding:10px" onclick="autoFillWorkout()">&#10024; Auto-fill from Arnie chat</button>
       </div>
-      <!-- Right: targets + devices + science -->
-      <div class="pstack">
-        <div>
-          <div class="stitle" style="margin-top:4px">Targets</div>
-          <div class="infocrd" id="profile-targets"></div>
-        </div>
-        <div>
-          <div class="stitle">Connected devices</div>
-          <div class="infocrd" style="overflow:hidden" id="devices-card"></div>
-        </div>
-        <div>
-          <div class="stitle">Science</div>
-          <div class="ancrd">
-            <div class="antitle">Performance analytics</div>
-            <div class="angrid" id="analytics-grid"></div>
-          </div>
-        </div>
+      <div style="padding:6px 14px;font-family:'Geist Mono','SF Mono',monospace;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--di)">or paste manually</div>
+      <textarea class="add-inp" id="workout-raw" rows="10" placeholder="Paste your workout split here — exercises, goals, recent lifts, rotation." style="height:180px;resize:vertical;font-size:13px;line-height:1.5"></textarea>
+      <div style="display:flex;gap:8px;padding:10px 14px;border-top:1px solid var(--bd)">
+        <button class="add-submit" style="flex:1" onclick="saveWorkoutProgram()">&#9889; Parse &amp; save</button>
+        <button class="cbtn" onclick="closeWorkoutEditor()">Cancel</button>
       </div>
+      <div id="workout-parse-status" style="padding:0 14px 10px;font-size:12px;color:var(--mu)"></div>
+    </div>
+
+    <div class="stitle">Connected devices</div>
+    <div class="infocrd" style="overflow:hidden" id="devices-card"></div>
+    <div class="stitle">Science</div>
+    <div class="ancrd">
+      <div class="antitle">Performance analytics</div>
+      <div class="angrid" id="analytics-grid"></div>
     </div>
   </div>
 
@@ -1597,25 +1543,12 @@ async function fetchStats(d){{
   if(!r.ok) throw new Error('HTTP '+r.status);
   return r.json();
 }}
-var _insightsLoaded=false;
-
 async function fetchInsights(){{
   try{{
-    // 25-second timeout — Claude can be slow on cold starts
-    var ctrl=new AbortController();
-    var tid=setTimeout(function(){{ctrl.abort();}},25000);
-    var r=await fetch(INSIGHTS_API,{{signal:ctrl.signal}});
-    clearTimeout(tid);
-    if(!r.ok)return[];
+    var r=await fetch(INSIGHTS_API);
+    if(!r.ok) return[];
     return(await r.json()).insights||[];
   }}catch(e){{return[]}}
-}}
-
-async function loadInsights(){{
-  if(_insightsLoaded)return;
-  var ins=await fetchInsights();
-  _insightsLoaded=!!ins.length;
-  renderInsights(ins);
 }}
 
 // ── Tab switching ─────────────────────────────────────────────────────────
@@ -1639,7 +1572,6 @@ function switchTab(name){{
   }}else if(_baseData){{
     renderPageHead(_baseData);
   }}
-  if(name==='day') loadInsights();  // retry if not yet loaded
   if(name==='week' && _baseData) renderWeekTab(_baseData);
   if(name==='profile' && _baseData){{renderProfileTab(_baseData);loadWorkoutProgram();}}
 }}
@@ -1670,7 +1602,7 @@ async function init(){{
     document.getElementById('app-load').style.display='none';
     renderDateNav();
     renderDayTab(data);
-    loadInsights();
+    fetchInsights().then(renderInsights);
   }}catch(e){{
     document.getElementById('app-load').textContent='Failed to load — tap ↻ to retry.';
   }}
@@ -1779,8 +1711,7 @@ function renderMacroRing(day){{
       borderWidth:0,borderRadius:empty?0:4,
     }}]}},
     options:{{
-      responsive:true,
-      maintainAspectRatio:true,
+      responsive:false,
       cutout:'70%',
       plugins:{{legend:{{display:false}},tooltip:{{enabled:false}}}},
       animation:{{duration:empty?0:600,easing:'easeInOutQuart'}},
@@ -2019,7 +1950,7 @@ function renderDayTab(d){{
   document.getElementById('food-log').innerHTML=fe.length?fe.map(renderFoodRow).join('')
     :'<div class="lempty">Nothing logged'+(isToday?' yet':'')+'</div>';
   var ee=day.exercise_entries||[];
-  document.getElementById('ex-log').innerHTML=ee.length?renderGroupedExercises(ee)
+  document.getElementById('ex-log').innerHTML=ee.length?ee.map(renderExerciseRow).join('')
     :'<div class="lempty">No exercises logged'+(isToday?' yet':'')+'</div>';
 
   renderMacroRing(day);
@@ -2234,7 +2165,7 @@ function renderWorkoutProgram(p, rawText){{
   var daysHtml=(p.days||[]).map(function(day,i){{
     var pri=day.priority||'';
     var priHtml=pri?'<span class="wp-priority '+esc(priorityClass[pri]||'')+'">'+esc(pri)+'</span>':'';
-    var goalsHtml=(day.goals||[]).map(function(g){{return '<span class="wp-goal">'+esc(g)+'</span>';'}}).join('');
+    var goalsHtml=(day.goals||[]).map(function(g){{return '<span class="wp-goal">'+esc(g)+'</span>';}}).join('');
     var exHtml=(day.exercises||[]).map(function(ex){{
       var catCls='wp-ex-cat-'+(ex.category||'main');
       var perf=ex.recent_performance?'<div class="wp-ex-perf">'+esc(ex.recent_performance)+'</div>':'';
@@ -2417,20 +2348,14 @@ function renderInsights(ins){{
 }}
 
 async function refreshInsights(){{
-  _insightsLoaded=false;
   var el=document.getElementById('insights-card');
   if(el)el.innerHTML='<div class="iload"><span class="spin">&#9675;</span> Analyzing&hellip;</div>';
   try{{
-    var ctrl=new AbortController();
-    var tid=setTimeout(function(){{ctrl.abort();}},30000);
-    var r=await fetch(INSIGHTS_API+'?force=true',{{signal:ctrl.signal}});
-    clearTimeout(tid);
+    var r=await fetch(INSIGHTS_API+'?force=true');
     if(!r.ok)throw new Error();
-    var ins=((await r.json()).insights)||[];
-    _insightsLoaded=!!ins.length;
-    renderInsights(ins);
+    renderInsights(((await r.json()).insights)||[]);
   }}catch(e){{
-    if(el)el.innerHTML='<div class="iempty">Couldn\'t load — tap &#8635; to retry.</div>';
+    if(el)el.innerHTML='<div class="iempty">Could not load insights — try again shortly.</div>';
   }}
 }}
 
@@ -2497,60 +2422,6 @@ function renderFoodRow(f){{
     '<button class="ibtn" onclick="editFood('+f.id+')" aria-label="Edit">&#9998;</button>'+
     '<button class="ibtn del" onclick="deleteFood('+f.id+')" aria-label="Delete">&#215;</button>'+
     '</div></div>';
-}}
-
-function renderGroupedExercises(entries){{
-  // Group entries by exercise name
-  var groups={{}};
-  var order=[];
-  entries.forEach(function(e){{
-    var key=(e.name||'?').toLowerCase().trim();
-    if(!groups[key]){{groups[key]={{name:e.name||'?',items:[]}};order.push(key);}}
-    groups[key].items.push(e);
-  }});
-
-  return order.map(function(key,gi){{
-    var g=groups[key];
-    var items=g.items;
-    var totalSets=items.length;
-
-    // Summary line: sets × reps @ weight or duration
-    var summaryParts=[];
-    var allReps=items.map(function(e){{return e.reps;}}).filter(Boolean);
-    var allWts=items.map(function(e){{return e.weight;}}).filter(Boolean);
-    var allDur=items.map(function(e){{return e.duration_minutes;}}).filter(Boolean);
-    if(allDur.length){{
-      summaryParts.push(allDur.reduce(function(a,b){{return a+b;}},0)+' min');
-    }}else if(totalSets>0){{
-      var repStr=allReps.length===totalSets&&new Set(allReps).size===1?allReps[0]:allReps.join('/');
-      var wtStr=allWts.length?allWts[0]+'lb':'';
-      summaryParts.push(totalSets+(repStr?' × '+repStr:'')+(wtStr?' @ '+wtStr:''));
-    }}
-    var summary=summaryParts.join(' · ');
-
-    // Individual set lines
-    var setsHtml=items.map(function(e,i){{
-      var detail='';
-      if(e.duration_minutes){{detail=e.duration_minutes+' min'+(e.cardio_type?' ('+esc(e.cardio_type)+')':'');}}
-      else if(e.sets||e.reps){{detail=(e.sets?e.sets+'×':'')+esc(e.reps||'')+(e.weight?' @ '+e.weight+'lb':'');}}
-      return '<div class="eg-set">'+
-        '<span class="eg-set-num">S'+(i+1)+'</span>'+
-        (detail?'<span class="eg-set-detail">'+detail+'</span>':'<span style="color:var(--di);font-size:11px">logged</span>')+
-        '<span style="flex:1"></span>'+
-        '<button class="eg-del" onclick="event.stopPropagation();deleteExercise('+e.id+')" title="Remove">&#215;</button>'+
-        '</div>';
-    }}).join('');
-
-    var isOpen=totalSets===1;  // single sets auto-expand
-    return '<div class="eg-row'+(isOpen?' open':'')+'" onclick="this.classList.toggle(\'open\')">'+
-      '<div class="eg-hd">'+
-      '<span class="eg-name">'+esc(g.name)+'</span>'+
-      (summary?'<span class="eg-summary">'+esc(summary)+'</span>':'')+
-      '<span class="eg-chevron">&#9658;</span>'+
-      '</div>'+
-      '<div class="eg-sets">'+setsHtml+'</div>'+
-      '</div>';
-  }}).join('');
 }}
 
 function renderExerciseRow(e){{
