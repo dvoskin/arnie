@@ -236,14 +236,26 @@ body{{
 @media(max-width:940px){{
   .shell{{grid-template-columns:1fr}}
   .sidebar{{display:none}}
-  .main-inner{{max-width:100%;margin:0}}
-  .main-inner{{padding:0 20px 90px;max-width:100%}}
+  .main-inner{{padding:0 20px 90px;max-width:100%;margin:0}}
   .bottomnav{{display:flex}}
   .pagehead{{padding:14px 0 10px}}
+  .profile-grid{{grid-template-columns:1fr}}
+}}
+/* Landscape mobile (phones rotated) */
+@media(max-width:940px) and (orientation:landscape){{
+  .main-inner{{padding:0 24px 70px}}
+  .bottomnav{{padding:6px 16px calc(6px + env(safe-area-inset-bottom))}}
+  .pagehead{{padding:10px 0 8px}}
+  .day-grid{{grid-template-columns:1fr 1fr}}
+  .c2col{{grid-template-columns:1fr 1fr}}
+  .log-row{{grid-template-columns:1fr 1fr}}
+  .macro-ring-wrap{{flex-direction:row}}
 }}
 @media(max-width:560px){{
   .main-inner{{padding:0 16px 90px}}
   .ph-sub{{flex-wrap:wrap;gap:5px 8px}}
+  .c2col{{grid-template-columns:1fr}}
+  .log-row{{grid-template-columns:1fr}}
 }}
 
 /* ── SECTION TITLES ─────────────────────────────────────── */
@@ -394,7 +406,7 @@ body{{
   font-size:9px;color:var(--di);text-align:center;font-weight:500;
   text-transform:uppercase;letter-spacing:.06em;
 }}
-.heat-grid{{display:grid;grid-template-columns:repeat(7,1fr);gap:3px}}
+.heat-grid{{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}}
 .hcell{{height:22px;border-radius:5px;background:var(--sf3);border:1px solid var(--bd);position:relative;transition:transform .15s;cursor:default}}
 [data-theme="light"] .hcell{{background:#e4e8f0;border-color:#d0d8e8}}
 .hcell:hover{{transform:scale(1.2);z-index:2}}
@@ -556,8 +568,8 @@ body{{
 .wp-empty .wp-empty-hint{{font-size:12px;margin-top:6px;color:var(--di)}}
 
 /* ── PROFILE GRID ────────────────────────────────────────── */
-.profile-grid{{display:grid;grid-template-columns:1fr 1fr;gap:18px}}
-@media(max-width:700px){{.profile-grid{{grid-template-columns:1fr}}}}
+.profile-grid{{display:grid;grid-template-columns:1.1fr .9fr;gap:20px;align-items:start}}
+@media(max-width:800px){{.profile-grid{{grid-template-columns:1fr}}}}
 .pstack{{display:flex;flex-direction:column}}
 .goal-badge,.coach-badge{{
   font-family:'Geist Mono','SF Mono',monospace;
@@ -676,8 +688,8 @@ body{{
   text-transform:uppercase;letter-spacing:.14em;
 }}
 .cwrap{{position:relative;height:150px}}
-.c2col{{display:grid;grid-template-columns:1fr;gap:9px}}
-@media(min-width:700px){{.c2col{{grid-template-columns:1fr 1fr}}}}
+.c2col{{display:grid;grid-template-columns:1fr;gap:12px}}
+@media(min-width:600px){{.c2col{{grid-template-columns:1fr 1fr}}}}
 
 /* ── HISTORY TABLE ───────────────────────────────────────── */
 .htbl{{width:100%;border-collapse:collapse;font-size:12px}}
@@ -1421,15 +1433,17 @@ footer{{
   </div>
   </div>
 
-  <!-- WEEK TAB — single column -->
+  <!-- WEEK TAB -->
   <div class="tab-panel" id="panel-week">
-    <div class="ccrd">
-      <div class="ctitle"><span>Calories &middot; 30 days</span><span id="cal-avg-lbl" class="ctitle-val" style="color:var(--ac)"></span></div>
-      <div class="cwrap"><canvas id="calChart"></canvas></div>
-    </div>
-    <div class="ccrd" style="margin-top:14px">
-      <div class="ctitle"><span>Protein &middot; 30 days</span><span id="pro-tgt-lbl" class="ctitle-val" style="color:var(--bl)"></span></div>
-      <div class="cwrap"><canvas id="proChart"></canvas></div>
+    <div class="c2col">
+      <div class="ccrd">
+        <div class="ctitle"><span>Calories &middot; 30 days</span><span id="cal-avg-lbl" class="ctitle-val" style="color:var(--ac)"></span></div>
+        <div class="cwrap"><canvas id="calChart"></canvas></div>
+      </div>
+      <div class="ccrd">
+        <div class="ctitle"><span>Protein &middot; 30 days</span><span id="pro-tgt-lbl" class="ctitle-val" style="color:var(--bl)"></span></div>
+        <div class="cwrap"><canvas id="proChart"></canvas></div>
+      </div>
     </div>
     <div class="ccrd" style="margin-top:14px">
       <div class="ctitle"><span>Weight trend &middot; 30 days</span><span id="wt-now-lbl" class="ctitle-val" style="color:var(--pu)"></span></div>
@@ -1447,39 +1461,50 @@ footer{{
     <div class="infocrd" id="hist-table-wrap"><div class="lempty">Loading&hellip;</div></div>
   </div>
 
-  <!-- PROFILE TAB — single column -->
+  <!-- PROFILE TAB -->
   <div class="tab-panel" id="panel-profile">
-    <div class="stitle" style="margin-top:4px">Your info</div>
-    <div class="infocrd" id="profile-info"></div>
-    <div class="stitle">Targets</div>
-    <div class="infocrd" id="profile-targets"></div>
-
-    <div class="stitle spaced">
-      <span>Training program</span>
-      <button class="add-toggle" id="wp-edit-btn" onclick="openWorkoutEditor()" title="Set up program">+</button>
-    </div>
-    <div id="workout-program-card"></div>
-
-    <!-- paste / edit panel (hidden by default) -->
-    <div class="add-card" id="workout-editor" style="display:none;margin-top:10px">
-      <div style="display:flex;gap:8px;padding:12px 14px;border-bottom:1px solid var(--bd)">
-        <button class="add-submit" style="flex:1;text-align:center;padding:10px" onclick="autoFillWorkout()">&#10024; Auto-fill from Arnie chat</button>
+    <div class="profile-grid">
+      <!-- Left: core info -->
+      <div>
+        <div class="stitle" style="margin-top:4px">Your info</div>
+        <div class="infocrd" id="profile-info"></div>
+        <div class="stitle spaced">
+          <span>Training program</span>
+          <button class="add-toggle" id="wp-edit-btn" onclick="openWorkoutEditor()" title="Set up program">+</button>
+        </div>
+        <div id="workout-program-card"></div>
+        <div class="add-card" id="workout-editor" style="display:none;margin-top:10px">
+          <div style="display:flex;gap:8px;padding:12px 14px;border-bottom:1px solid var(--bd)">
+            <button class="add-submit" style="flex:1;text-align:center;padding:10px" onclick="autoFillWorkout()">&#10024; Auto-fill from Arnie chat</button>
+            <button class="add-toggle" id="wp-edit-btn-inner" onclick="openWorkoutEditor()" style="width:auto;padding:0 12px;border-radius:8px;font-size:12px;font-family:inherit">✎ Edit</button>
+          </div>
+          <div style="padding:6px 14px;font-family:'Geist Mono','SF Mono',monospace;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--di)">or paste manually</div>
+          <textarea class="add-inp" id="workout-raw" rows="10" placeholder="Paste your workout split here — exercises, goals, recent lifts, rotation." style="height:180px;resize:vertical;font-size:13px;line-height:1.5"></textarea>
+          <div style="display:flex;gap:8px;padding:10px 14px;border-top:1px solid var(--bd)">
+            <button class="add-submit" style="flex:1" onclick="saveWorkoutProgram()">&#9889; Parse &amp; save</button>
+            <button class="cbtn" onclick="closeWorkoutEditor()">Cancel</button>
+          </div>
+          <div id="workout-parse-status" style="padding:0 14px 10px;font-size:12px;color:var(--mu)"></div>
+        </div>
       </div>
-      <div style="padding:6px 14px;font-family:'Geist Mono','SF Mono',monospace;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--di)">or paste manually</div>
-      <textarea class="add-inp" id="workout-raw" rows="10" placeholder="Paste your workout split here — exercises, goals, recent lifts, rotation." style="height:180px;resize:vertical;font-size:13px;line-height:1.5"></textarea>
-      <div style="display:flex;gap:8px;padding:10px 14px;border-top:1px solid var(--bd)">
-        <button class="add-submit" style="flex:1" onclick="saveWorkoutProgram()">&#9889; Parse &amp; save</button>
-        <button class="cbtn" onclick="closeWorkoutEditor()">Cancel</button>
+      <!-- Right: targets + devices + science -->
+      <div class="pstack">
+        <div>
+          <div class="stitle" style="margin-top:4px">Targets</div>
+          <div class="infocrd" id="profile-targets"></div>
+        </div>
+        <div>
+          <div class="stitle">Connected devices</div>
+          <div class="infocrd" style="overflow:hidden" id="devices-card"></div>
+        </div>
+        <div>
+          <div class="stitle">Science</div>
+          <div class="ancrd">
+            <div class="antitle">Performance analytics</div>
+            <div class="angrid" id="analytics-grid"></div>
+          </div>
+        </div>
       </div>
-      <div id="workout-parse-status" style="padding:0 14px 10px;font-size:12px;color:var(--mu)"></div>
-    </div>
-
-    <div class="stitle">Connected devices</div>
-    <div class="infocrd" style="overflow:hidden" id="devices-card"></div>
-    <div class="stitle">Science</div>
-    <div class="ancrd">
-      <div class="antitle">Performance analytics</div>
-      <div class="angrid" id="analytics-grid"></div>
     </div>
   </div>
 
@@ -1755,7 +1780,8 @@ function renderMacroRing(day){{
       borderWidth:0,borderRadius:empty?0:4,
     }}]}},
     options:{{
-      responsive:false,
+      responsive:true,
+      maintainAspectRatio:true,
       cutout:'70%',
       plugins:{{legend:{{display:false}},tooltip:{{enabled:false}}}},
       animation:{{duration:empty?0:600,easing:'easeInOutQuart'}},
