@@ -1430,8 +1430,7 @@ footer{{
       </div>
 
     </div><!-- /day-grid -->
-  </div>
-  </div>
+  </div><!-- /panel-day -->
 
   <!-- WEEK TAB -->
   <div class="tab-panel" id="panel-week">

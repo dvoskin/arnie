@@ -22,15 +22,15 @@ def upgrade() -> None:
         sa.Column('user_id', sa.Integer(), nullable=False),
         sa.Column('raw_text', sa.Text(), nullable=True),
         sa.Column('program_json', sa.Text(), nullable=True),
-        sa.Column('updated_at', sa.DateTime(), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=True),
-        sa.Column('created_at', sa.DateTime(), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=True),
+        sa.Column('updated_at', sa.DateTime(), server_default=sa.text('now()'), nullable=True),
+        sa.Column('created_at', sa.DateTime(), server_default=sa.text('now()'), nullable=True),
         sa.ForeignKeyConstraint(['user_id'], ['users.id']),
         sa.PrimaryKeyConstraint('id'),
-        sa.UniqueConstraint('user_id'),
     )
-    with op.batch_alter_table('workout_programs') as batch_op:
-        batch_op.create_index('ix_workout_programs_user_id', ['user_id'], unique=True)
+    # Single unique index on user_id (one program per user)
+    op.create_index('ix_workout_programs_user_id', 'workout_programs', ['user_id'], unique=True)
 
 
 def downgrade() -> None:
+    op.drop_index('ix_workout_programs_user_id', table_name='workout_programs')
     op.drop_table('workout_programs')
