@@ -1198,21 +1198,30 @@ footer{{
     </div>
     <div class="lcrd" id="ex-log"><div class="lempty">Loading&hellip;</div></div>
 
-    <!-- COACH INSIGHTS (collapsed on mobile, open on desktop) -->
-    <details id="insights-details" open>
-      <summary class="stitle spaced" style="list-style:none;cursor:pointer;display:flex;align-items:center;">
-        <span>&#10024; Coach insights <span class="ai-pill">AI</span></span>
-        <button class="add-toggle" onclick="event.preventDefault();refreshInsights()" title="Refresh" style="font-size:14px;font-family:inherit">&#8635;</button>
-      </summary>
-      <div class="icrd fade-in" id="insights-card" style="margin-top:10px">
-        <div class="iload"><span class="spin">&#9675;</span> Analyzing&hellip;</div>
-      </div>
-    </details>
+    <!-- COACH INSIGHTS — always visible -->
+    <div class="stitle spaced">
+      <span>&#10024; Coach insights <span class="ai-pill">AI</span></span>
+      <button class="add-toggle" onclick="refreshInsights()" title="Refresh insights" style="font-size:15px;font-family:inherit">&#8635;</button>
+    </div>
+    <div class="icrd fade-in" id="insights-card">
+      <div class="iload"><span class="spin">&#9675;</span> Analyzing&hellip;</div>
+    </div>
 
   </div><!-- /panel-day -->
 
   <!-- WEEK TAB -->
   <div class="tab-panel" id="panel-week">
+
+    <!-- Weekly AI analysis — always visible at top -->
+    <div class="stitle spaced" style="margin-top:4px">
+      <span>&#10024; Weekly analysis <span class="ai-pill">AI</span></span>
+      <button class="add-toggle" onclick="refreshWeekInsights()" title="Refresh" style="font-size:15px;font-family:inherit">&#8635;</button>
+    </div>
+    <div class="icrd fade-in" id="week-insights-card">
+      <div class="iload"><span class="spin">&#9675;</span> Analyzing&hellip;</div>
+    </div>
+
+    <div class="stitle" style="margin-top:20px">Trends</div>
     <div class="c2col">
       <div class="ccrd">
         <div class="ctitle"><span>Calories &middot; 30 days</span><span id="cal-avg-lbl" class="ctitle-val" style="color:var(--ac)"></span></div>
@@ -1379,8 +1388,8 @@ function switchTab(name){{
   }}else if(_baseData){{
     renderPageHead(_baseData);
   }}
-  if(name==='day') loadInsights();  // retry if not yet loaded
-  if(name==='week' && _baseData) renderWeekTab(_baseData);
+  if(name==='day') loadInsights();
+  if(name==='week'){{if(_baseData)renderWeekTab(_baseData);loadWeekInsights();}}
   if(name==='profile' && _baseData) renderProfileTab(_baseData);
 }}
 
@@ -2111,6 +2120,49 @@ async function refreshInsights(){{
     if(!r.ok)throw new Error();
     var ins=((await r.json()).insights)||[];
     _insightsLoaded=!!ins.length;
+    renderInsights(ins);
+  }}catch(e){{
+    if(el)el.innerHTML='<div class="iempty">Could not load — tap &#8635; to retry.</div>';
+  }}
+}}
+
+// ── Week insights ─────────────────────────────────────────────────────────
+var _weekInsightsLoaded=false;
+
+async function loadWeekInsights(){{
+  if(_weekInsightsLoaded)return;
+  var ins=await fetchInsights();  // reuses day insights (30-day data, relevant for both)
+  _weekInsightsLoaded=!!ins.length;
+  renderWeekInsights(ins);
+}}
+
+function renderWeekInsights(ins){{
+  var el=document.getElementById('week-insights-card');
+  if(!el)return;
+  if(!ins||!ins.length){{
+    el.innerHTML='<div class="iempty">Not enough data yet — keep logging and Arnie will have more to say.</div>';
+    return;
+  }}
+  el.innerHTML=ins.map(function(txt){{
+    return '<div class="irow fade-in"><div class="iico">&#9656;</div><div class="itxt">'+esc(txt)+'</div></div>';
+  }}).join('');
+}}
+
+async function refreshWeekInsights(){{
+  _weekInsightsLoaded=false;
+  var el=document.getElementById('week-insights-card');
+  if(el)el.innerHTML='<div class="iload"><span class="spin">&#9675;</span> Analyzing&hellip;</div>';
+  try{{
+    var ctrl=new AbortController();
+    var tid=setTimeout(function(){{ctrl.abort();}},30000);
+    var r=await fetch(INSIGHTS_API+'?force=true',{{signal:ctrl.signal}});
+    clearTimeout(tid);
+    if(!r.ok)throw new Error();
+    var ins=((await r.json()).insights)||[];
+    _weekInsightsLoaded=!!ins.length;
+    renderWeekInsights(ins);
+    // Also update day insights since same data
+    _insightsLoaded=_weekInsightsLoaded;
     renderInsights(ins);
   }}catch(e){{
     if(el)el.innerHTML='<div class="iempty">Could not load — tap &#8635; to retry.</div>';
