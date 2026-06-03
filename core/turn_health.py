@@ -25,6 +25,14 @@ _STALL_MARKERS = (
     "i need to relog", "i need to reopen", "i need to update that",
     "i'll delete", "i'll clear", "i'll relog", "i'll move that", "i'll handle that",
     "deleting all", "clearing today", "relogging", "logging everything",
+    # Russian stall phrases
+    "исправляю прямо сейчас", "исправляю сейчас", "сейчас всё занесу",
+    "сейчас занесу", "сейчас залогирую", "сейчас всё залогирую",
+    "сейчас исправлю", "давай занесу", "давай залогирую",
+    "сейчас всё внесу", "сейчас внесу", "внесу прямо сейчас",
+    "залогирую прямо сейчас", "логирую прямо сейчас",
+    "мне нужно залогировать", "мне нужно внести",
+    "я залогирую", "я внесу", "я занесу",
 )
 
 # Frustration / "you got it wrong" markers — a very high-precision proxy for "Arnie
