@@ -1735,7 +1735,7 @@ Workout description:
         resp = await client.messages.create(
             model=DEFAULT_MODEL(),
             max_tokens=2000,
-            messages=[{{"role": "user", "content": prompt}}],
+            messages=[{"role": "user", "content": prompt}],
         )
         text = resp.content[0].text.strip()
         if text.startswith("```"):
@@ -1866,7 +1866,7 @@ If there is not enough workout information to build a meaningful program, return
         resp = await client.messages.create(
             model=DEFAULT_MODEL(),
             max_tokens=2500,
-            messages=[{{"role": "user", "content": prompt}}],
+            messages=[{"role": "user", "content": prompt}],
         )
         text = resp.content[0].text.strip()
         if text.startswith("```"):

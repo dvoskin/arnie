@@ -201,6 +201,12 @@ body{{
 .day-grid{{display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start}}
 .day-col-analytics{{min-width:0;order:1}}
 .day-col-log{{min-width:0;order:2}}
+/* Food + Workout side-by-side inside log column on desktop */
+.log-row{{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start}}
+.log-section{{min-width:0}}
+@media(max-width:900px){{
+  .log-row{{grid-template-columns:1fr}}
+}}
 @media(max-width:700px){{
   .day-grid{{grid-template-columns:1fr}}
   .day-col-log{{order:1}}
@@ -599,6 +605,22 @@ body{{
 }}
 .ctitle-val{{font-weight:600}}
 .erow{{padding:12px 14px;border-bottom:1px solid var(--bd);position:relative}}
+/* Grouped exercise rows */
+.eg-row{{padding:12px 14px;border-bottom:1px solid var(--bd);cursor:pointer;user-select:none;transition:background .15s}}
+.eg-row:last-child{{border-bottom:none}}
+.eg-row:hover{{background:var(--sf2)}}
+.eg-hd{{display:flex;align-items:center;gap:8px}}
+.eg-name{{font-size:14px;font-weight:500;color:var(--tx);flex:1}}
+.eg-summary{{font-family:'Geist Mono','SF Mono',monospace;font-size:11px;color:var(--mu);white-space:nowrap}}
+.eg-chevron{{font-size:10px;color:var(--di);transition:transform .18s;flex-shrink:0}}
+.eg-row.open .eg-chevron{{transform:rotate(90deg)}}
+.eg-sets{{display:none;padding:6px 0 2px}}
+.eg-row.open .eg-sets{{display:block}}
+.eg-set{{display:flex;align-items:center;gap:8px;padding:4px 0;font-size:12.5px;color:var(--tx2)}}
+.eg-set-num{{font-family:'Geist Mono','SF Mono',monospace;font-size:10px;color:var(--di);width:24px;flex-shrink:0}}
+.eg-set-detail{{font-family:'Geist Mono','SF Mono',monospace;font-size:12px;color:var(--ac)}}
+.eg-del{{width:22px;height:22px;border-radius:5px;border:1px solid transparent;background:transparent;color:var(--di);cursor:pointer;font-size:11px;display:grid;place-items:center;transition:all .15s;flex-shrink:0}}
+.eg-del:hover{{color:var(--re);border-color:rgba(239,68,68,.3);background:rgba(239,68,68,.08)}}
 .erow:last-child{{border-bottom:none}}
 .ecnt{{display:flex;justify-content:space-between;align-items:center;padding-right:66px;gap:8px}}
 .ename{{font-size:14px;font-weight:500;word-break:break-word;flex:1;color:var(--tx)}}
@@ -1350,42 +1372,49 @@ footer{{
 
       <!-- Logging column (right on desktop, top on mobile) -->
       <div class="day-col-log">
-        <div class="stitle spaced">
-          <span>Food log <span id="food-log-count" style="font-weight:400;opacity:.7"></span></span>
-          <button class="add-toggle" id="food-toggle" onclick="toggleAddForm('food')" title="Add food">+</button>
-        </div>
-        <div class="add-card" id="food-form" style="display:none">
-          <input class="add-inp" id="food-name" placeholder="Food name (e.g. chicken breast)" autocomplete="off">
-          <input class="add-inp" id="food-qty" placeholder="Portion (e.g. 200g, 1 cup)">
-          <div class="add-macros">
-            <div class="add-mac-field"><label>Cal</label><input type="number" id="food-cal" min="0" inputmode="numeric" placeholder="0"></div>
-            <div class="add-mac-field"><label>P (g)</label><input type="number" id="food-pro" min="0" inputmode="decimal" placeholder="0"></div>
-            <div class="add-mac-field"><label>C (g)</label><input type="number" id="food-carb" min="0" inputmode="decimal" placeholder="0"></div>
-            <div class="add-mac-field"><label>F (g)</label><input type="number" id="food-fat" min="0" inputmode="decimal" placeholder="0"></div>
+        <div class="log-row">
+          <!-- Food -->
+          <div class="log-section">
+            <div class="stitle spaced">
+              <span>Food <span id="food-log-count" style="font-weight:400;opacity:.7"></span></span>
+              <button class="add-toggle" id="food-toggle" onclick="toggleAddForm('food')" title="Add food">+</button>
+            </div>
+            <div class="add-card" id="food-form" style="display:none">
+              <input class="add-inp" id="food-name" placeholder="Food name (e.g. chicken breast)" autocomplete="off">
+              <input class="add-inp" id="food-qty" placeholder="Portion (e.g. 200g, 1 cup)">
+              <div class="add-macros">
+                <div class="add-mac-field"><label>Cal</label><input type="number" id="food-cal" min="0" inputmode="numeric" placeholder="0"></div>
+                <div class="add-mac-field"><label>P (g)</label><input type="number" id="food-pro" min="0" inputmode="decimal" placeholder="0"></div>
+                <div class="add-mac-field"><label>C (g)</label><input type="number" id="food-carb" min="0" inputmode="decimal" placeholder="0"></div>
+                <div class="add-mac-field"><label>F (g)</label><input type="number" id="food-fat" min="0" inputmode="decimal" placeholder="0"></div>
+              </div>
+              <button class="add-submit" id="food-submit" onclick="submitFood()">Save food</button>
+            </div>
+            <div class="lcrd" id="food-log"><div class="lempty">Loading&hellip;</div></div>
           </div>
-          <button class="add-submit" id="food-submit" onclick="submitFood()">Save food</button>
-        </div>
-        <div class="lcrd" id="food-log"><div class="lempty">Loading&hellip;</div></div>
-
-        <div class="stitle spaced" style="margin-top:28px">
-          <span>Workouts</span>
-          <button class="add-toggle" id="ex-toggle" onclick="toggleAddForm('ex')" title="Add workout">+</button>
-        </div>
-        <div class="add-card" id="ex-form" style="display:none">
-          <input class="add-inp" id="ex-name" placeholder="Exercise (e.g. bench press, 5k run)" autocomplete="off">
-          <div class="add-macros">
-            <div class="add-mac-field"><label>Sets</label><input type="number" id="ex-sets" min="1" inputmode="numeric" placeholder="—"></div>
-            <div class="add-mac-field"><label>Reps</label><input type="text" id="ex-reps" placeholder="—"></div>
-            <div class="add-mac-field"><label>lbs</label><input type="number" id="ex-wt" min="0" inputmode="decimal" placeholder="—"></div>
-            <div class="add-mac-field"><label>Min</label><input type="number" id="ex-dur" min="0" inputmode="numeric" placeholder="—"></div>
+          <!-- Workouts -->
+          <div class="log-section">
+            <div class="stitle spaced">
+              <span>Workouts</span>
+              <button class="add-toggle" id="ex-toggle" onclick="toggleAddForm('ex')" title="Add workout">+</button>
+            </div>
+            <div class="add-card" id="ex-form" style="display:none">
+              <input class="add-inp" id="ex-name" placeholder="Exercise (e.g. bench press, 5k run)" autocomplete="off">
+              <div class="add-macros">
+                <div class="add-mac-field"><label>Sets</label><input type="number" id="ex-sets" min="1" inputmode="numeric" placeholder="—"></div>
+                <div class="add-mac-field"><label>Reps</label><input type="text" id="ex-reps" placeholder="—"></div>
+                <div class="add-mac-field"><label>lbs</label><input type="number" id="ex-wt" min="0" inputmode="decimal" placeholder="—"></div>
+                <div class="add-mac-field"><label>Min</label><input type="number" id="ex-dur" min="0" inputmode="numeric" placeholder="—"></div>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px;padding:8px 14px 2px;font-size:13px;color:var(--mu)">
+                <input type="checkbox" id="ex-cardio" style="width:15px;height:15px;accent-color:var(--ac)">
+                <label for="ex-cardio">Cardio</label>
+              </div>
+              <button class="add-submit" id="ex-submit" onclick="submitExercise()">Save workout</button>
+            </div>
+            <div class="lcrd" id="ex-log"><div class="lempty">Loading&hellip;</div></div>
           </div>
-          <div style="display:flex;align-items:center;gap:8px;padding:8px 14px 2px;font-size:13px;color:var(--mu)">
-            <input type="checkbox" id="ex-cardio" style="width:15px;height:15px;accent-color:var(--ac)">
-            <label for="ex-cardio">Cardio / conditioning</label>
-          </div>
-          <button class="add-submit" id="ex-submit" onclick="submitExercise()">Save workout</button>
-        </div>
-        <div class="lcrd" id="ex-log"><div class="lempty">Loading&hellip;</div></div>
+        </div><!-- /log-row -->
       </div>
 
     </div><!-- /day-grid -->
@@ -1965,7 +1994,7 @@ function renderDayTab(d){{
   document.getElementById('food-log').innerHTML=fe.length?fe.map(renderFoodRow).join('')
     :'<div class="lempty">Nothing logged'+(isToday?' yet':'')+'</div>';
   var ee=day.exercise_entries||[];
-  document.getElementById('ex-log').innerHTML=ee.length?ee.map(renderExerciseRow).join('')
+  document.getElementById('ex-log').innerHTML=ee.length?renderGroupedExercises(ee)
     :'<div class="lempty">No exercises logged'+(isToday?' yet':'')+'</div>';
 
   renderMacroRing(day);
@@ -2443,6 +2472,60 @@ function renderFoodRow(f){{
     '<button class="ibtn" onclick="editFood('+f.id+')" aria-label="Edit">&#9998;</button>'+
     '<button class="ibtn del" onclick="deleteFood('+f.id+')" aria-label="Delete">&#215;</button>'+
     '</div></div>';
+}}
+
+function renderGroupedExercises(entries){{
+  // Group entries by exercise name
+  var groups={{}};
+  var order=[];
+  entries.forEach(function(e){{
+    var key=(e.name||'?').toLowerCase().trim();
+    if(!groups[key]){{groups[key]={{name:e.name||'?',items:[]}};order.push(key);}}
+    groups[key].items.push(e);
+  }});
+
+  return order.map(function(key,gi){{
+    var g=groups[key];
+    var items=g.items;
+    var totalSets=items.length;
+
+    // Summary line: sets × reps @ weight or duration
+    var summaryParts=[];
+    var allReps=items.map(function(e){{return e.reps;}}).filter(Boolean);
+    var allWts=items.map(function(e){{return e.weight;}}).filter(Boolean);
+    var allDur=items.map(function(e){{return e.duration_minutes;}}).filter(Boolean);
+    if(allDur.length){{
+      summaryParts.push(allDur.reduce(function(a,b){{return a+b;}},0)+' min');
+    }}else if(totalSets>0){{
+      var repStr=allReps.length===totalSets&&new Set(allReps).size===1?allReps[0]:allReps.join('/');
+      var wtStr=allWts.length?allWts[0]+'lb':'';
+      summaryParts.push(totalSets+(repStr?' × '+repStr:'')+(wtStr?' @ '+wtStr:''));
+    }}
+    var summary=summaryParts.join(' · ');
+
+    // Individual set lines
+    var setsHtml=items.map(function(e,i){{
+      var detail='';
+      if(e.duration_minutes){{detail=e.duration_minutes+' min'+(e.cardio_type?' ('+esc(e.cardio_type)+')':'');}}
+      else if(e.sets||e.reps){{detail=(e.sets?e.sets+'×':'')+esc(e.reps||'')+(e.weight?' @ '+e.weight+'lb':'');}}
+      return '<div class="eg-set">'+
+        '<span class="eg-set-num">S'+(i+1)+'</span>'+
+        (detail?'<span class="eg-set-detail">'+detail+'</span>':'<span style="color:var(--di);font-size:11px">logged</span>')+
+        '<span style="flex:1"></span>'+
+        '<button class="eg-del" onclick="event.stopPropagation();deleteExercise('+e.id+')" title="Remove">&#215;</button>'+
+        '</div>';
+    }}).join('');
+
+    var isOpen=totalSets===1;  // single sets auto-expand
+    return '<div class="eg-row'+(isOpen?' open':'')+'" onclick="this.classList.toggle(\'open\')">'+
+      '<div class="eg-hd">'+
+      '<span class="eg-name">'+esc(g.name)+'</span>'+
+      (summary?'<span class="eg-summary">'+esc(summary)+'</span>':'')+
+      '<span class="eg-chevron">&#9658;</span>'+
+      '</div>'+
+      '<div class="eg-sets">'+setsHtml+'</div>'+
+      '</div>';
+  }}).join('');
 }}
 
 function renderExerciseRow(e){{
