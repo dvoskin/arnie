@@ -1173,7 +1173,7 @@ footer{{
         <div class="add-mac-field"><label>C (g)</label><input type="number" id="food-carb" min="0" inputmode="decimal" placeholder="0"></div>
         <div class="add-mac-field"><label>F (g)</label><input type="number" id="food-fat" min="0" inputmode="decimal" placeholder="0"></div>
       </div>
-      <button class="add-submit" id="food-submit" onclick="submitFood()">Save food</button>
+      <button class="add-submit" id="food-submit" onclick="submitFoodInline()">Save food</button>
     </div>
     <div class="lcrd" id="food-log"><div class="lempty">Loading&hellip;</div></div>
 
@@ -1194,7 +1194,7 @@ footer{{
         <input type="checkbox" id="ex-cardio" style="width:15px;height:15px;accent-color:var(--ac)">
         <label for="ex-cardio">Cardio</label>
       </div>
-      <button class="add-submit" id="ex-submit" onclick="submitExercise()">Save workout</button>
+      <button class="add-submit" id="ex-submit" onclick="submitExerciseInline()">Save workout</button>
     </div>
     <div class="lcrd" id="ex-log"><div class="lempty">Loading&hellip;</div></div>
 
@@ -1652,22 +1652,8 @@ function toggleAddForm(type){{
   }}
 }}
 
-function focusLogInput(){{
-  switchTab('day');
-  setTimeout(function(){{
-    var form=document.getElementById('food-form');
-    var btn=document.getElementById('food-toggle');
-    if(form&&form.style.display==='none'){{
-      form.style.display='block';
-      if(btn)btn.classList.add('open');
-    }}
-    var el=document.getElementById('food-name');
-    if(el){{el.scrollIntoView({{behavior:'smooth',block:'center'}});el.focus();}}
-  }},220);
-}}
-
-// ── Log food ──────────────────────────────────────────────
-async function submitFood(){{
+// ── Log food (inline forms) ───────────────────────────────
+async function submitFoodInline(){{
   var name=(document.getElementById('food-name').value||'').trim();
   if(!name){{document.getElementById('food-name').focus();return;}}
   var btn=document.getElementById('food-submit');
@@ -1695,7 +1681,7 @@ async function submitFood(){{
 }}
 
 // ── Log workout ───────────────────────────────────────────
-async function submitExercise(){{
+async function submitExerciseInline(){{
   var name=(document.getElementById('ex-name').value||'').trim();
   if(!name){{document.getElementById('ex-name').focus();return;}}
   var btn=document.getElementById('ex-submit');
@@ -1946,7 +1932,7 @@ function renderWorkoutProgram(p, rawText){{
   var daysHtml=(p.days||[]).map(function(day,i){{
     var pri=day.priority||'';
     var priHtml=pri?'<span class="wp-priority '+esc(priorityClass[pri]||'')+'">'+esc(pri)+'</span>':'';
-    var goalsHtml=(day.goals||[]).map(function(g){{return '<span class="wp-goal">'+esc(g)+'</span>';'}}).join('');
+    var goalsHtml=(day.goals||[]).map(function(g){{return '<span class="wp-goal">'+esc(g)+'</span>';}}).join('');
     var exHtml=(day.exercises||[]).map(function(ex){{
       var catCls='wp-ex-cat-'+(ex.category||'main');
       var perf=ex.recent_performance?'<div class="wp-ex-perf">'+esc(ex.recent_performance)+'</div>':'';
@@ -2127,7 +2113,7 @@ async function refreshInsights(){{
     _insightsLoaded=!!ins.length;
     renderInsights(ins);
   }}catch(e){{
-    if(el)el.innerHTML='<div class="iempty">Couldn\'t load — tap &#8635; to retry.</div>';
+    if(el)el.innerHTML='<div class="iempty">Could not load — tap &#8635; to retry.</div>';
   }}
 }}
 
@@ -2239,7 +2225,7 @@ function renderGroupedExercises(entries){{
     }}).join('');
 
     var isOpen=totalSets===1;  // single sets auto-expand
-    return '<div class="eg-row'+(isOpen?' open':'')+'" onclick="this.classList.toggle(\'open\')">'+
+    return '<div class="eg-row'+(isOpen?' open':'')+'" onclick="this.classList.toggle(&quot;open&quot;)">'+
       '<div class="eg-hd">'+
       '<span class="eg-name">'+esc(g.name)+'</span>'+
       (summary?'<span class="eg-summary">'+esc(summary)+'</span>':'')+
