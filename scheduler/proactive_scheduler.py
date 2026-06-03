@@ -206,7 +206,27 @@ async def _send(telegram_id: str, text: str, effect: str = None):
         await bot.close()
     except Exception as e:
         logger.error(f"Proactive send failed → {telegram_id}: {e}")
-
+async def _send_with_voice(telegram_id: str, text: str, name: str = "", language: str = "English") -> None:
+    await _send(telegram_id, text)
+    if telegram_id.startswith("im:"):
+        return
+    if not proactive_enabled() or not _allowlist_allows(telegram_id):
+        return
+    try:
+        from core.llm import text_to_speech, voice_variant
+        spoken = await voice_variant(text, name=name, language=language)
+        audio_bytes = await text_to_speech(spoken, voice="onyx")
+        if not audio_bytes:
+            return
+        import io
+        from telegram import Bot
+        bot = Bot(token=TELEGRAM_TOKEN)
+        buf = io.BytesIO(audio_bytes)
+        buf.name = "arnie.mp3"
+        await bot.send_voice(chat_id=int(telegram_id), voice=buf)
+        await bot.close()
+    except Exception as e:
+        logger.error(f"Voice send failed → {telegram_id}: {e}")
 
 async def _llm_nudge(user, log, prefs, health_snap, slot: str, name: str) -> str:
     """Generate a personalized nudge via Claude Haiku. Returns '' on failure."""
@@ -479,7 +499,11 @@ async def _maybe_followup_pending(db, user, send_id: str, name: str,
         msg = await _llm_followup(user, pq, name)
         if not msg:
             return False
-        await _send(send_id, msg)
+        if getattr(pq, "kind", "") == "conversation_hook":
+            lang = getattr(getattr(user, "preferences", None), "preferred_language", None) or "English"
+            await _send_with_voice(send_id, msg, name=name, language=lang)
+        else:
+            await _send(send_id, msg)
         await mark_pending_question_followed_up(db, pq.id)
         logger.info(
             f"Follow-up re-ask ({pq.kind}, tier={pq.tier}, "
@@ -679,7 +703,8 @@ async def _run_reminders():
                             msg = await _llm_nudge(user, log, prefs, health_snap, "morning_checkin", name)
                         if not msg:
                             msg = f"morning {name}.|||log your weight if you've got it, then tell me breakfast."
-                        await _send(send_id, msg)
+                        lang = getattr(prefs, "preferred_language", None) or "English"
+await _send_with_voice(send_id, msg, name=name, language=lang)
 
                 # ── Late morning (10:00–10:30, only if nothing logged) ─────────
                 elif hour == 10 and minute < 30:
@@ -770,7 +795,8 @@ async def _run_reminders():
                             )
                         else:
                             msg = f"Looking solid today, {name}. Log dinner when you have it."
-                    await _send(send_id, msg)
+                    lang = getattr(prefs, "preferred_language", None) or "English"
+await _send_with_voice(send_id, msg, name=name, language=lang)
 
                 # ── Night closeout (21:00–21:30) ──────────────────────────────
                 elif hour == 21 and minute < 30:
