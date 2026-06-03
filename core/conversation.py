@@ -67,6 +67,7 @@ async def run_turn(
     _source = source_type or platform
     _tag = f"{platform}:{user.id}"
     _retried = False  # turn-health: did the self-heal fire this turn?
+    _messages_for_followup = messages
     _first_stop_reason = None
     _user_text = next((m.get("content", "") for m in reversed(messages)
                        if m.get("role") == "user"), "")
@@ -108,6 +109,7 @@ async def run_turn(
                 )},
             ]
             result = await chat(retry_messages, system, tools=True, max_tokens=8192)
+            _messages_for_followup = retry_messages
     except Exception as e:
         logger.error(f"LLM call failed for {_tag}: {e}")
         resp = Response.from_text(
@@ -201,7 +203,7 @@ async def run_turn(
             try:
                 _followup_tried = True
                 response_text = await chat_follow_up(
-                    messages, raw_content, tool_calls, tool_results,
+                    _messages_for_followup, raw_content, tool_calls, tool_results,
                     system, max_tokens=700,
                 )
             except Exception as e:
@@ -225,7 +227,7 @@ async def run_turn(
             _followup_tried = True
             try:
                 response_text = await chat_follow_up(
-                    messages, raw_content, tool_calls, tool_results,
+                    _messages_for_followup, raw_content, tool_calls, tool_results,
                     system, max_tokens=700,
                 )
             except Exception as e:
@@ -242,7 +244,7 @@ async def run_turn(
                 _followup_tried = True
                 try:
                     response_text = await chat_follow_up(
-                        messages, raw_content, tool_calls, tool_results,
+                        _messages_for_followup, raw_content, tool_calls, tool_results,
                         system, max_tokens=700,
                     )
                 except Exception as e:
@@ -253,7 +255,7 @@ async def run_turn(
         if tool_calls and raw_content and not _followup_tried:
             try:
                 response_text = await chat_follow_up(
-                    messages, raw_content, tool_calls, tool_results,
+                    _messages_for_followup, raw_content, tool_calls, tool_results,
                     system, max_tokens=700,
                 )
             except Exception as e:
