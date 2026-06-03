@@ -1385,7 +1385,7 @@ footer{{
           </div>
           <button class="add-submit" id="ex-submit" onclick="submitExercise()">Save workout</button>
         </div>
-        <div class="lcrd" id="ex-log"><div class="lempty">No exercises logged yet</div></div>
+        <div class="lcrd" id="ex-log"><div class="lempty">Loading&hellip;</div></div>
       </div>
 
     </div><!-- /day-grid -->
@@ -1544,12 +1544,25 @@ async function fetchStats(d){{
   if(!r.ok) throw new Error('HTTP '+r.status);
   return r.json();
 }}
+var _insightsLoaded=false;
+
 async function fetchInsights(){{
   try{{
-    var r=await fetch(INSIGHTS_API);
-    if(!r.ok) return[];
+    // 25-second timeout — Claude can be slow on cold starts
+    var ctrl=new AbortController();
+    var tid=setTimeout(function(){{ctrl.abort();}},25000);
+    var r=await fetch(INSIGHTS_API,{{signal:ctrl.signal}});
+    clearTimeout(tid);
+    if(!r.ok)return[];
     return(await r.json()).insights||[];
   }}catch(e){{return[]}}
+}}
+
+async function loadInsights(){{
+  if(_insightsLoaded)return;
+  var ins=await fetchInsights();
+  _insightsLoaded=!!ins.length;
+  renderInsights(ins);
 }}
 
 // ── Tab switching ─────────────────────────────────────────────────────────
@@ -1573,6 +1586,7 @@ function switchTab(name){{
   }}else if(_baseData){{
     renderPageHead(_baseData);
   }}
+  if(name==='day') loadInsights();  // retry if not yet loaded
   if(name==='week' && _baseData) renderWeekTab(_baseData);
   if(name==='profile' && _baseData){{renderProfileTab(_baseData);loadWorkoutProgram();}}
 }}
@@ -1603,7 +1617,7 @@ async function init(){{
     document.getElementById('app-load').style.display='none';
     renderDateNav();
     renderDayTab(data);
-    fetchInsights().then(renderInsights);
+    loadInsights();
   }}catch(e){{
     document.getElementById('app-load').textContent='Failed to load — tap ↻ to retry.';
   }}
@@ -2166,7 +2180,7 @@ function renderWorkoutProgram(p, rawText){{
   var daysHtml=(p.days||[]).map(function(day,i){{
     var pri=day.priority||'';
     var priHtml=pri?'<span class="wp-priority '+esc(priorityClass[pri]||'')+'">'+esc(pri)+'</span>':'';
-    var goalsHtml=(day.goals||[]).map(function(g){{return '<span class="wp-goal">'+esc(g)+'</span>';}}).join('');
+    var goalsHtml=(day.goals||[]).map(function(g){{return '<span class="wp-goal">'+esc(g)+'</span>';'}}).join('');
     var exHtml=(day.exercises||[]).map(function(ex){{
       var catCls='wp-ex-cat-'+(ex.category||'main');
       var perf=ex.recent_performance?'<div class="wp-ex-perf">'+esc(ex.recent_performance)+'</div>':'';
@@ -2349,14 +2363,20 @@ function renderInsights(ins){{
 }}
 
 async function refreshInsights(){{
+  _insightsLoaded=false;
   var el=document.getElementById('insights-card');
   if(el)el.innerHTML='<div class="iload"><span class="spin">&#9675;</span> Analyzing&hellip;</div>';
   try{{
-    var r=await fetch(INSIGHTS_API+'?force=true');
+    var ctrl=new AbortController();
+    var tid=setTimeout(function(){{ctrl.abort();}},30000);
+    var r=await fetch(INSIGHTS_API+'?force=true',{{signal:ctrl.signal}});
+    clearTimeout(tid);
     if(!r.ok)throw new Error();
-    renderInsights(((await r.json()).insights)||[]);
+    var ins=((await r.json()).insights)||[];
+    _insightsLoaded=!!ins.length;
+    renderInsights(ins);
   }}catch(e){{
-    if(el)el.innerHTML='<div class="iempty">Could not load insights — try again shortly.</div>';
+    if(el)el.innerHTML='<div class="iempty">Couldn\'t load — tap &#8635; to retry.</div>';
   }}
 }}
 

@@ -1780,12 +1780,12 @@ async def auto_fill_workout_program(token: str):
         if not ANTHROPIC_API_KEY():
             raise HTTPException(status_code=503, detail="AI unavailable")
 
-        from db.models import ConversationLog
+        from db.models import ConversationLog, User as UserModel
 
         # Collect ALL user IDs for this identity (canonical + any linked platforms)
         # iMessage identities: linked_to_user_id == user.id
         linked_users = (await db.execute(
-            select(User).where(User.linked_to_user_id == user.id)
+            select(UserModel).where(UserModel.linked_to_user_id == user.id)
         )).scalars().all()
         all_user_ids = [user.id] + [u.id for u in linked_users]
         all_telegram_ids = [user.telegram_id] + [u.telegram_id for u in linked_users]
