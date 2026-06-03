@@ -425,10 +425,7 @@ async def text_to_speech(text: str, voice: str = "onyx") -> Optional[bytes]:
             input=text,
             response_format="mp3",
         )
-        buf = io.BytesIO()
-        async for chunk in response.aiter_bytes():
-            buf.write(chunk)
-        return buf.getvalue()
+        return response.content
     except Exception as e:
         logger.error(f"TTS failed: {e}")
         return None
