@@ -182,7 +182,7 @@ body{{
 
 /* ── MAIN ────────────────────────────────────────────────── */
 .main{{min-width:0;overflow-x:clip}}
-.main-inner{{padding:0 48px 100px;width:100%;max-width:1100px;margin:0 auto}}
+.main-inner{{padding:0 48px 100px;width:100%;max-width:900px;margin:0 auto}}
 .hbtn{{
   background:var(--sf2);border:1px solid var(--bd);color:var(--mu);
   width:34px;height:34px;border-radius:10px;cursor:pointer;font-size:14px;
@@ -196,22 +196,17 @@ body{{
 .tab-panel.active{{display:block}}
 
 /* ── DAY LAYOUT ──────────────────────────────────────────── */
-.insights-top{{margin-bottom:4px}}
-.day-top{{margin-bottom:4px}}
-.day-grid{{display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start}}
-.day-col-analytics{{min-width:0;order:1}}
-.day-col-log{{min-width:0;order:2}}
-/* Food + Workout side-by-side inside log column on desktop */
-.log-row{{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start}}
-.log-section{{min-width:0}}
-@media(max-width:900px){{
-  .log-row{{grid-template-columns:1fr}}
-}}
-@media(max-width:700px){{
-  .day-grid{{grid-template-columns:1fr}}
-  .day-col-log{{order:1}}
-  .day-col-analytics{{order:2}}
-}}
+.day-col{{display:flex;flex-direction:column}}
+
+/* ── MACRO STRIP ─────────────────────────────────────────── */
+.macro-strip{{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--bd);border:1px solid var(--bd);border-radius:14px;overflow:hidden;margin-bottom:14px;}}
+.macro-cell{{background:var(--sf);padding:12px 14px;}}
+.mc-label{{font-family:'Geist Mono','SF Mono',monospace;font-size:9px;text-transform:uppercase;letter-spacing:.12em;color:var(--mu);margin-bottom:6px;}}
+.mc-num{{font-family:'Instrument Serif','Times New Roman',serif;font-size:24px;letter-spacing:-.02em;}}
+.mc-sub{{font-size:11px;color:var(--mu);margin-top:2px;}}
+.mc-bar{{background:var(--sf3);border-radius:999px;height:3px;margin-top:8px;overflow:hidden;}}
+.mc-fill{{height:100%;border-radius:999px;transition:width .8s cubic-bezier(.4,0,.2,1);}}
+@media(max-width:560px){{.macro-strip{{grid-template-columns:repeat(2,1fr);}}}}
 
 /* ── BOTTOM NAV (mobile) ─────────────────────────────────── */
 .bottomnav{{
@@ -246,10 +241,7 @@ body{{
   .main-inner{{padding:0 24px 70px}}
   .bottomnav{{padding:6px 16px calc(6px + env(safe-area-inset-bottom))}}
   .pagehead{{padding:10px 0 8px}}
-  .day-grid{{grid-template-columns:1fr 1fr}}
   .c2col{{grid-template-columns:1fr 1fr}}
-  .log-row{{grid-template-columns:1fr 1fr}}
-  .macro-ring-wrap{{flex-direction:row}}
 }}
 @media(max-width:560px){{
   .main-inner{{padding:0 16px 90px}}
@@ -344,19 +336,10 @@ body{{
 }}
 [data-theme="light"] .today-tag{{color:#fff}}
 
-/* ── MACRO CARDS ─────────────────────────────────────────── */
-.cards{{display:grid;grid-template-columns:repeat(2,1fr);gap:9px}}
-@media(min-width:440px){{.cards{{grid-template-columns:repeat(4,1fr)}}}}
+/* ── SIMPLE CARD ─────────────────────────────────────────── */
 .card{{
-  background:var(--sf);border:1px solid var(--bd);border-radius:18px;padding:20px;
-  backdrop-filter:blur(16px) saturate(140%);-webkit-backdrop-filter:blur(16px) saturate(140%);
-  box-shadow:var(--sh);transition:background .3s,border-color .3s;
-  position:relative;overflow:hidden;
-}}
-[data-theme="dark"] .card::before{{
-  content:'';position:absolute;inset:0;border-radius:16px;
-  background:linear-gradient(135deg,rgba(255,255,255,.03),transparent);
-  pointer-events:none;
+  background:var(--sf);border:1px solid var(--bd);border-radius:14px;padding:16px;
+  transition:background .3s,border-color .3s;
 }}
 .clbl{{
   font-family:'Geist Mono','SF Mono',monospace;
@@ -370,7 +353,6 @@ body{{
 .csub{{font-size:12px;color:var(--mu);margin-top:5px;font-weight:400}}
 .ptrack{{background:var(--sf2);border-radius:999px;height:3px;margin-top:11px;overflow:hidden}}
 .pfill{{height:100%;border-radius:999px;transition:width .8s cubic-bezier(.4,0,.2,1)}}
-[data-theme="dark"] .pfill{{filter:brightness(1.1) saturate(1.2)}}
 
 /* ── STATUS BADGES ───────────────────────────────────────── */
 .sbrow{{display:flex;gap:6px;margin-top:10px;flex-wrap:wrap}}
@@ -780,6 +762,16 @@ body{{
 .share-btn:hover{{border-color:var(--ac);color:var(--ac)}}
 .share-btn:active{{transform:scale(.93)}}
 
+/* ── INSIGHTS DETAILS ────────────────────────────────────── */
+#insights-details summary{{
+  font-family:'Geist Mono','SF Mono',monospace;
+  font-size:11px;font-weight:500;color:var(--mu);text-transform:uppercase;
+  letter-spacing:.14em;margin:30px 0 0;display:flex;align-items:center;gap:10px;
+  justify-content:space-between;
+}}
+#insights-details summary::-webkit-details-marker{{display:none}}
+@media(max-width:940px){{#insights-details{{}} }}
+
 /* ── MISC ────────────────────────────────────────────────── */
 footer{{
   text-align:center;padding:16px 12px;color:var(--di);font-size:10px;
@@ -971,158 +963,6 @@ footer{{
 .lm-note{{font-size:12px;color:var(--mu);text-align:center}}
 .lm-divider{{height:1px;background:var(--bd);margin:2px 0}}
 
-/* ═══════════════════════════════════════════════════════════
-   IMMERSIVE 3D + MOBILE
-   ═══════════════════════════════════════════════════════════ */
-
-/* ── Subtle dot-grid texture ─────────────────────────────── */
-[data-theme="dark"] body::after{{
-  content:'';position:fixed;inset:0;z-index:3;pointer-events:none;
-  opacity:.055;
-  background-image:radial-gradient(circle,rgba(255,255,255,.35) 1px,transparent 1px);
-  background-size:28px 28px;
-}}
-
-/* ── Ambient scene (body::before removed, handled by .scene divs) ── */
-[data-theme="dark"] body::before{{display:none}}
-[data-theme="light"] body::before{{display:none}}
-
-/* ── 3D Ambient scene ────────────────────────────────────── */
-.scene{{
-  position:fixed;inset:0;z-index:0;pointer-events:none;overflow:hidden;
-}}
-.scene-orb{{
-  position:absolute;border-radius:50%;
-  will-change:transform;
-}}
-.so-1{{
-  width:900px;height:900px;
-  background:radial-gradient(closest-side,rgba(0,230,118,.18),transparent);
-  top:-25%;left:-20%;filter:blur(55px);
-  animation:soFloat1 22s ease-in-out infinite;
-}}
-.so-2{{
-  width:750px;height:750px;
-  background:radial-gradient(closest-side,rgba(59,130,246,.16),transparent);
-  top:35%;right:-18%;filter:blur(50px);
-  animation:soFloat2 28s ease-in-out infinite;
-}}
-.so-3{{
-  width:650px;height:650px;
-  background:radial-gradient(closest-side,rgba(112,60,220,.14),transparent);
-  bottom:-12%;left:22%;filter:blur(60px);
-  animation:soFloat3 20s ease-in-out infinite;
-}}
-.so-4{{
-  width:450px;height:450px;
-  background:radial-gradient(closest-side,rgba(0,195,255,.11),transparent);
-  top:18%;left:52%;filter:blur(45px);
-  animation:soFloat4 17s ease-in-out infinite reverse;
-}}
-.scene-grid{{
-  position:absolute;
-  bottom:-8%;left:-30%;right:-30%;height:48%;
-  transform:perspective(550px) rotateX(72deg);
-  transform-origin:bottom center;
-  background-image:
-    linear-gradient(rgba(0,230,118,.07) 0,transparent 1px),
-    linear-gradient(90deg,rgba(0,230,118,.07) 0,transparent 1px);
-  background-size:72px 72px;
-  mask-image:linear-gradient(to top,rgba(0,0,0,.7) 0%,transparent 72%);
-  -webkit-mask-image:linear-gradient(to top,rgba(0,0,0,.7) 0%,transparent 72%);
-  animation:gridBreath 10s ease-in-out infinite;
-}}
-[data-theme="light"] .scene-grid{{opacity:0}}
-[data-theme="light"] .so-1{{background:radial-gradient(closest-side,rgba(5,150,105,.09),transparent)}}
-[data-theme="light"] .so-2{{background:radial-gradient(closest-side,rgba(37,99,235,.07),transparent)}}
-[data-theme="light"] .so-3{{background:radial-gradient(closest-side,rgba(80,40,180,.06),transparent)}}
-[data-theme="light"] .so-4{{background:radial-gradient(closest-side,rgba(0,150,200,.06),transparent)}}
-@keyframes soFloat1{{
-  0%,100%{{transform:translate(0,0) scale(1);}}
-  25%{{transform:translate(90px,-70px) scale(1.08);}}
-  50%{{transform:translate(-50px,55px) scale(.94);}}
-  75%{{transform:translate(70px,25px) scale(1.04);}}
-}}
-@keyframes soFloat2{{
-  0%,100%{{transform:translate(0,0) scale(1);}}
-  33%{{transform:translate(-85px,-65px) scale(1.1);}}
-  66%{{transform:translate(65px,85px) scale(.91);}}
-}}
-@keyframes soFloat3{{
-  0%,100%{{transform:translate(0,0) scale(1);}}
-  40%{{transform:translate(-65px,-80px) scale(1.12);}}
-  80%{{transform:translate(85px,-35px) scale(.88);}}
-}}
-@keyframes soFloat4{{
-  0%,100%{{transform:translate(0,0) scale(1);}}
-  50%{{transform:translate(-75px,65px) scale(1.16);}}
-}}
-@keyframes gridBreath{{
-  0%,100%{{opacity:.85;}}
-  50%{{opacity:1.1;}}
-}}
-
-/* ── Deep card depth (dark mode) ─────────────────────────── */
-[data-theme="dark"] .card,[data-theme="dark"] .icrd,
-[data-theme="dark"] .heat-wrap,[data-theme="dark"] .ccrd,
-[data-theme="dark"] .goal-card,[data-theme="dark"] .macro-ring-wrap,
-[data-theme="dark"] .stat-tile,[data-theme="dark"] .lcrd,
-[data-theme="dark"] .ancrd,[data-theme="dark"] .infocrd,
-[data-theme="dark"] .dev-card{{
-  box-shadow:
-    0 1px 0 rgba(255,255,255,.07) inset,
-    0 -1px 0 rgba(0,0,0,.18) inset,
-    0 3px 6px rgba(0,0,0,.28),
-    0 12px 32px rgba(0,0,0,.38),
-    0 0 0 1px rgba(255,255,255,.07);
-}}
-
-/* ── 3D will-change + base transition ────────────────────── */
-.card,.icrd,.heat-wrap,.ccrd,.goal-card,.macro-ring-wrap,.stat-tile{{
-  will-change:transform;
-  transition:transform .16s ease,box-shadow .16s ease;
-}}
-
-/* ── Glass light sweep on hover (desktop) ────────────────── */
-.card,.icrd,.ccrd,.goal-card,.stat-tile,.macro-ring-wrap{{position:relative;overflow:hidden}}
-.card::after,.icrd::after,.ccrd::after,.goal-card::after,.stat-tile::after,.macro-ring-wrap::after{{
-  content:'';position:absolute;top:0;left:-90%;
-  width:45%;height:100%;
-  background:linear-gradient(105deg,transparent,rgba(255,255,255,.055),transparent);
-  transform:skewX(-8deg);transition:left .55s cubic-bezier(.4,0,.2,1);
-  pointer-events:none;z-index:2;
-}}
-.card:hover::after,.icrd:hover::after,.ccrd:hover::after,
-.goal-card:hover::after,.stat-tile:hover::after,.macro-ring-wrap:hover::after{{left:150%}}
-
-/* ── Neon glow system ────────────────────────────────────── */
-[data-theme="dark"] .ph-log-btn{{
-  box-shadow:
-    0 0 22px rgba(0,230,118,.5),
-    0 0 50px rgba(0,230,118,.16),
-    0 4px 14px rgba(0,230,118,.4),
-    0 1px 0 rgba(255,255,255,.4) inset;
-}}
-[data-theme="dark"] .ph-log-btn:hover{{
-  box-shadow:
-    0 0 30px rgba(0,230,118,.65),
-    0 0 60px rgba(0,230,118,.22),
-    0 6px 18px rgba(0,230,118,.5),
-    0 1px 0 rgba(255,255,255,.4) inset;
-}}
-[data-theme="dark"] .navitem.active::before{{
-  box-shadow:0 0 14px var(--ac),0 0 28px rgba(0,230,118,.35);
-}}
-[data-theme="dark"] .ph-streak{{
-  text-shadow:0 0 14px rgba(0,230,118,.7);
-}}
-[data-theme="dark"] .dchip.active{{
-  box-shadow:0 0 12px rgba(0,230,118,.25);
-}}
-[data-theme="dark"] .sb-avatar::after{{
-  box-shadow:0 0 10px var(--ac);
-}}
-
 /* ── Sidebar glass depth ─────────────────────────────────── */
 [data-theme="dark"] .sidebar{{
   background:linear-gradient(180deg,rgba(10,14,22,.96),rgba(8,12,20,.90));
@@ -1130,26 +970,13 @@ footer{{
   box-shadow:2px 0 24px rgba(0,0,0,.4);
 }}
 
-/* ── Stagger card entrance ───────────────────────────────── */
-@keyframes cardIn{{
-  from{{opacity:0;transform:translateY(16px) scale(.98)}}
-  to{{opacity:1;transform:none}}
-}}
-.card-in{{animation:cardIn .42s cubic-bezier(.2,.7,.2,1) both}}
-
-/* ── Glowing border on insights card ────────────────────── */
-[data-theme="dark"] .icrd{{
-  border:1px solid rgba(0,230,118,.18);
-  box-shadow:
-    0 1px 0 rgba(255,255,255,.07) inset,
-    0 3px 6px rgba(0,0,0,.28),
-    0 12px 32px rgba(0,0,0,.38),
-    0 0 20px rgba(0,230,118,.06);
-}}
-
-/* ── Floating glow on stat nums ──────────────────────────── */
-[data-theme="dark"] .stat-num{{
-  text-shadow:0 0 40px rgba(0,230,118,.2);
+/* ── Dark mode card shadow ───────────────────────────────── */
+[data-theme="dark"] .card,[data-theme="dark"] .icrd,
+[data-theme="dark"] .ccrd,[data-theme="dark"] .goal-card,
+[data-theme="dark"] .stat-tile,[data-theme="dark"] .lcrd,
+[data-theme="dark"] .ancrd,[data-theme="dark"] .infocrd,
+[data-theme="dark"] .dev-card{{
+  box-shadow:0 2px 8px rgba(0,0,0,.28);
 }}
 
 /* ═══ MOBILE TYPOGRAPHY + LAYOUT FIXES ═════════════════════ */
@@ -1238,13 +1065,6 @@ footer{{
 </style>
 </head>
 <body>
-<div class="scene" aria-hidden="true">
-  <div class="scene-orb so-1"></div>
-  <div class="scene-orb so-2"></div>
-  <div class="scene-orb so-3"></div>
-  <div class="scene-orb so-4"></div>
-  <div class="scene-grid"></div>
-</div>
 <div class="shell">
 
 <!-- SIDEBAR -->
@@ -1305,131 +1125,90 @@ footer{{
       <button class="darr" id="date-next" onclick="navDate(1)"  aria-label="Next day">&#8250;</button>
     </div>
 
-    <!-- FULL-WIDTH: macros + toggles always on top -->
-    <!-- Coach insights — full width, always at the top -->
-    <div class="insights-top">
-      <div class="stitle spaced">
-        <span>&#10024; Coach insights <span class="ai-pill">AI</span></span>
-        <button class="add-toggle" onclick="refreshInsights()" title="Refresh" style="font-size:14px;font-family:inherit">&#8635;</button>
+    <!-- MACRO STRIP -->
+    <div class="macro-strip">
+      <div class="macro-cell">
+        <div class="mc-label">Calories</div>
+        <div class="mc-num" id="cal-val">&mdash;</div>
+        <div class="mc-sub" id="cal-sub"></div>
+        <div class="mc-bar"><div class="mc-fill" id="cal-bar" style="background:var(--ac);width:0%"></div></div>
       </div>
-      <div class="icrd fade-in" id="insights-card">
+      <div class="macro-cell">
+        <div class="mc-label">Protein</div>
+        <div class="mc-num" id="pro-val">&mdash;</div>
+        <div class="mc-sub" id="pro-sub"></div>
+        <div class="mc-bar"><div class="mc-fill" id="pro-bar" style="background:var(--bl);width:0%"></div></div>
+      </div>
+      <div class="macro-cell">
+        <div class="mc-label">Carbs</div>
+        <div class="mc-num" id="carb-val">&mdash;</div>
+        <div class="mc-sub" id="carb-sub"></div>
+      </div>
+      <div class="macro-cell">
+        <div class="mc-label">Fats</div>
+        <div class="mc-num" id="fat-val">&mdash;</div>
+        <div class="mc-sub" id="fat-sub"></div>
+      </div>
+    </div>
+
+    <!-- STATUS TOGGLES -->
+    <div class="toggles">
+      <span id="wo-badge" class="toggle"><span class="tcb"></span>No workout</span>
+      <span id="ca-badge" class="toggle"><span class="tcb"></span>No cardio</span>
+      <span id="wt-badge" class="toggle on" style="display:none"></span>
+      <button class="toggle share-tgl t-click" onclick="shareDay()">&#8679; Share day</button>
+    </div>
+
+    <!-- FOOD -->
+    <div class="stitle spaced">
+      <span>Food <span id="food-log-count" style="font-weight:400;opacity:.7"></span></span>
+      <button class="add-toggle" id="food-toggle" onclick="toggleAddForm('food')" title="Add food">+</button>
+    </div>
+    <div class="add-card" id="food-form" style="display:none">
+      <input class="add-inp" id="food-name" placeholder="Food name (e.g. chicken breast)" autocomplete="off">
+      <input class="add-inp" id="food-qty" placeholder="Portion (e.g. 200g, 1 cup)">
+      <div class="add-macros">
+        <div class="add-mac-field"><label>Cal</label><input type="number" id="food-cal" min="0" inputmode="numeric" placeholder="0"></div>
+        <div class="add-mac-field"><label>P (g)</label><input type="number" id="food-pro" min="0" inputmode="decimal" placeholder="0"></div>
+        <div class="add-mac-field"><label>C (g)</label><input type="number" id="food-carb" min="0" inputmode="decimal" placeholder="0"></div>
+        <div class="add-mac-field"><label>F (g)</label><input type="number" id="food-fat" min="0" inputmode="decimal" placeholder="0"></div>
+      </div>
+      <button class="add-submit" id="food-submit" onclick="submitFood()">Save food</button>
+    </div>
+    <div class="lcrd" id="food-log"><div class="lempty">Loading&hellip;</div></div>
+
+    <!-- WORKOUTS -->
+    <div class="stitle spaced">
+      <span>Workouts</span>
+      <button class="add-toggle" id="ex-toggle" onclick="toggleAddForm('ex')" title="Add workout">+</button>
+    </div>
+    <div class="add-card" id="ex-form" style="display:none">
+      <input class="add-inp" id="ex-name" placeholder="Exercise (e.g. bench press, 5k run)" autocomplete="off">
+      <div class="add-macros">
+        <div class="add-mac-field"><label>Sets</label><input type="number" id="ex-sets" min="1" inputmode="numeric" placeholder="—"></div>
+        <div class="add-mac-field"><label>Reps</label><input type="text" id="ex-reps" placeholder="—"></div>
+        <div class="add-mac-field"><label>lbs</label><input type="number" id="ex-wt" min="0" inputmode="decimal" placeholder="—"></div>
+        <div class="add-mac-field"><label>Min</label><input type="number" id="ex-dur" min="0" inputmode="numeric" placeholder="—"></div>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;padding:8px 14px 2px;font-size:13px;color:var(--mu)">
+        <input type="checkbox" id="ex-cardio" style="width:15px;height:15px;accent-color:var(--ac)">
+        <label for="ex-cardio">Cardio</label>
+      </div>
+      <button class="add-submit" id="ex-submit" onclick="submitExercise()">Save workout</button>
+    </div>
+    <div class="lcrd" id="ex-log"><div class="lempty">Loading&hellip;</div></div>
+
+    <!-- COACH INSIGHTS (collapsed on mobile, open on desktop) -->
+    <details id="insights-details" open>
+      <summary class="stitle spaced" style="list-style:none;cursor:pointer;display:flex;align-items:center;">
+        <span>&#10024; Coach insights <span class="ai-pill">AI</span></span>
+        <button class="add-toggle" onclick="event.preventDefault();refreshInsights()" title="Refresh" style="font-size:14px;font-family:inherit">&#8635;</button>
+      </summary>
+      <div class="icrd fade-in" id="insights-card" style="margin-top:10px">
         <div class="iload"><span class="spin">&#9675;</span> Analyzing&hellip;</div>
       </div>
-    </div>
+    </details>
 
-    <div class="day-top">
-      <div class="stitle" id="day-label">Today</div>
-      <div class="cards">
-        <div class="card">
-          <div class="clbl">Calories</div>
-          <div class="cval" id="cal-val">&mdash;</div>
-          <div class="csub" id="cal-sub"></div>
-          <div class="ptrack"><div class="pfill" id="cal-bar" style="background:var(--ac);width:0%"></div></div>
-        </div>
-        <div class="card">
-          <div class="clbl">Protein</div>
-          <div class="cval" id="pro-val">&mdash;</div>
-          <div class="csub" id="pro-sub"></div>
-          <div class="ptrack"><div class="pfill" id="pro-bar" style="background:var(--bl);width:0%"></div></div>
-        </div>
-        <div class="card">
-          <div class="clbl">Carbs</div>
-          <div class="cval" id="carb-val">&mdash;</div>
-          <div class="csub" id="carb-sub"></div>
-        </div>
-        <div class="card">
-          <div class="clbl">Fats</div>
-          <div class="cval" id="fat-val">&mdash;</div>
-          <div class="csub" id="fat-sub"></div>
-        </div>
-      </div>
-      <div class="toggles">
-        <span id="wo-badge" class="toggle"><span class="tcb"></span>No workout</span>
-        <span id="ca-badge" class="toggle"><span class="tcb"></span>No cardio</span>
-        <span id="wt-badge" class="toggle on" style="display:none"></span>
-        <button class="toggle share-tgl t-click" onclick="shareDay()">&#8679; Share day</button>
-      </div>
-    </div>
-
-    <!-- 2-COL GRID: food/workouts left on mobile, analytics right -->
-    <div class="day-grid">
-
-      <!-- Analytics column (right on desktop, bottom on mobile) -->
-      <div class="day-col-analytics">
-        <div class="stitle">Energy breakdown</div>
-        <div class="macro-ring-wrap">
-          <canvas class="macro-ring-canvas" id="macroRing" width="80" height="80"></canvas>
-          <div class="macro-legend" id="macro-legend"></div>
-        </div>
-
-        <div class="stitle">28-day consistency</div>
-        <div class="heat-wrap">
-          <div class="heat-dow">
-            <span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span><span>S</span>
-          </div>
-          <div class="heat-grid" id="heat-grid"></div>
-          <div class="heat-legend">
-            <span class="hleg-dot" style="background:#22c55e"></span>On target &nbsp;
-            <span class="hleg-dot" style="background:#f59e0b"></span>Logged &nbsp;
-            <span class="hleg-dot" style="background:var(--sf2)"></span>Missed &nbsp;
-            <span class="hleg-dot" style="background:rgba(255,255,255,.15)"></span><span style="color:var(--di)">● workout</span>
-          </div>
-        </div>
-
-        <div id="health-section" style="display:none">
-          <div class="stitle">Wearable</div>
-          <div class="hgrid" id="health-grid"></div>
-        </div>
-      </div>
-
-      <!-- Logging column (right on desktop, top on mobile) -->
-      <div class="day-col-log">
-        <div class="log-row">
-          <!-- Food -->
-          <div class="log-section">
-            <div class="stitle spaced">
-              <span>Food <span id="food-log-count" style="font-weight:400;opacity:.7"></span></span>
-              <button class="add-toggle" id="food-toggle" onclick="toggleAddForm('food')" title="Add food">+</button>
-            </div>
-            <div class="add-card" id="food-form" style="display:none">
-              <input class="add-inp" id="food-name" placeholder="Food name (e.g. chicken breast)" autocomplete="off">
-              <input class="add-inp" id="food-qty" placeholder="Portion (e.g. 200g, 1 cup)">
-              <div class="add-macros">
-                <div class="add-mac-field"><label>Cal</label><input type="number" id="food-cal" min="0" inputmode="numeric" placeholder="0"></div>
-                <div class="add-mac-field"><label>P (g)</label><input type="number" id="food-pro" min="0" inputmode="decimal" placeholder="0"></div>
-                <div class="add-mac-field"><label>C (g)</label><input type="number" id="food-carb" min="0" inputmode="decimal" placeholder="0"></div>
-                <div class="add-mac-field"><label>F (g)</label><input type="number" id="food-fat" min="0" inputmode="decimal" placeholder="0"></div>
-              </div>
-              <button class="add-submit" id="food-submit" onclick="submitFood()">Save food</button>
-            </div>
-            <div class="lcrd" id="food-log"><div class="lempty">Loading&hellip;</div></div>
-          </div>
-          <!-- Workouts -->
-          <div class="log-section">
-            <div class="stitle spaced">
-              <span>Workouts</span>
-              <button class="add-toggle" id="ex-toggle" onclick="toggleAddForm('ex')" title="Add workout">+</button>
-            </div>
-            <div class="add-card" id="ex-form" style="display:none">
-              <input class="add-inp" id="ex-name" placeholder="Exercise (e.g. bench press, 5k run)" autocomplete="off">
-              <div class="add-macros">
-                <div class="add-mac-field"><label>Sets</label><input type="number" id="ex-sets" min="1" inputmode="numeric" placeholder="—"></div>
-                <div class="add-mac-field"><label>Reps</label><input type="text" id="ex-reps" placeholder="—"></div>
-                <div class="add-mac-field"><label>lbs</label><input type="number" id="ex-wt" min="0" inputmode="decimal" placeholder="—"></div>
-                <div class="add-mac-field"><label>Min</label><input type="number" id="ex-dur" min="0" inputmode="numeric" placeholder="—"></div>
-              </div>
-              <div style="display:flex;align-items:center;gap:8px;padding:8px 14px 2px;font-size:13px;color:var(--mu)">
-                <input type="checkbox" id="ex-cardio" style="width:15px;height:15px;accent-color:var(--ac)">
-                <label for="ex-cardio">Cardio</label>
-              </div>
-              <button class="add-submit" id="ex-submit" onclick="submitExercise()">Save workout</button>
-            </div>
-            <div class="lcrd" id="ex-log"><div class="lempty">Loading&hellip;</div></div>
-          </div>
-        </div><!-- /log-row -->
-      </div>
-
-    </div><!-- /day-grid -->
   </div><!-- /panel-day -->
 
   <!-- WEEK TAB -->
@@ -1456,55 +1235,16 @@ footer{{
       <div class="stat-tile"><div class="stat-num" id="stat-workouts">—</div><div class="stat-lbl">Workouts / 30d</div></div>
       <div class="stat-tile"><div class="stat-num" id="stat-avg-cal">—</div><div class="stat-lbl">Avg cal / day</div></div>
     </div>
-    <div class="stitle">Last 14 days</div>
-    <div class="infocrd" id="hist-table-wrap"><div class="lempty">Loading&hellip;</div></div>
   </div>
 
   <!-- PROFILE TAB -->
   <div class="tab-panel" id="panel-profile">
-    <div class="profile-grid">
-      <!-- Left: core info -->
-      <div>
-        <div class="stitle" style="margin-top:4px">Your info</div>
-        <div class="infocrd" id="profile-info"></div>
-        <div class="stitle spaced">
-          <span>Training program</span>
-          <button class="add-toggle" id="wp-edit-btn" onclick="openWorkoutEditor()" title="Set up program">+</button>
-        </div>
-        <div id="workout-program-card"></div>
-        <div class="add-card" id="workout-editor" style="display:none;margin-top:10px">
-          <div style="display:flex;gap:8px;padding:12px 14px;border-bottom:1px solid var(--bd)">
-            <button class="add-submit" style="flex:1;text-align:center;padding:10px" onclick="autoFillWorkout()">&#10024; Auto-fill from Arnie chat</button>
-            <button class="add-toggle" id="wp-edit-btn-inner" onclick="openWorkoutEditor()" style="width:auto;padding:0 12px;border-radius:8px;font-size:12px;font-family:inherit">✎ Edit</button>
-          </div>
-          <div style="padding:6px 14px;font-family:'Geist Mono','SF Mono',monospace;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--di)">or paste manually</div>
-          <textarea class="add-inp" id="workout-raw" rows="10" placeholder="Paste your workout split here — exercises, goals, recent lifts, rotation." style="height:180px;resize:vertical;font-size:13px;line-height:1.5"></textarea>
-          <div style="display:flex;gap:8px;padding:10px 14px;border-top:1px solid var(--bd)">
-            <button class="add-submit" style="flex:1" onclick="saveWorkoutProgram()">&#9889; Parse &amp; save</button>
-            <button class="cbtn" onclick="closeWorkoutEditor()">Cancel</button>
-          </div>
-          <div id="workout-parse-status" style="padding:0 14px 10px;font-size:12px;color:var(--mu)"></div>
-        </div>
-      </div>
-      <!-- Right: targets + devices + science -->
-      <div class="pstack">
-        <div>
-          <div class="stitle" style="margin-top:4px">Targets</div>
-          <div class="infocrd" id="profile-targets"></div>
-        </div>
-        <div>
-          <div class="stitle">Connected devices</div>
-          <div class="infocrd" style="overflow:hidden" id="devices-card"></div>
-        </div>
-        <div>
-          <div class="stitle">Science</div>
-          <div class="ancrd">
-            <div class="antitle">Performance analytics</div>
-            <div class="angrid" id="analytics-grid"></div>
-          </div>
-        </div>
-      </div>
-    </div>
+    <div class="stitle" style="margin-top:4px">Your info</div>
+    <div class="infocrd" id="profile-info"></div>
+    <div class="stitle">Targets</div>
+    <div class="infocrd" id="profile-targets"></div>
+    <div class="stitle">Connected devices</div>
+    <div class="infocrd" style="overflow:hidden" id="devices-card"></div>
   </div>
 
 <footer>Arnie &middot; auto-refresh 5 min</footer>
@@ -1641,7 +1381,7 @@ function switchTab(name){{
   }}
   if(name==='day') loadInsights();  // retry if not yet loaded
   if(name==='week' && _baseData) renderWeekTab(_baseData);
-  if(name==='profile' && _baseData){{renderProfileTab(_baseData);loadWorkoutProgram();}}
+  if(name==='profile' && _baseData) renderProfileTab(_baseData);
 }}
 
 // ── Boot ──────────────────────────────────────────────────────────────────
@@ -1982,23 +1722,21 @@ async function submitExercise(){{
 function renderDayTab(d){{
   if(_activeTab==='day') renderPageHead(d);
   var isToday=_viewingDate===_todayStr;
-  document.getElementById('day-label').textContent=isToday?'Today':fmtDate(_viewingDate);
   var day=d.day||{{}},tgt=d.targets||{{}};
   var cp=pct(day.calories,tgt.calories),pp=pct(day.protein,tgt.protein);
 
   var calEl=document.getElementById('cal-val');
   if(day.calories!=null) countUp(calEl,day.calories);
   else calEl.textContent='—';
-  document.getElementById('cal-sub').textContent=tgt.calories?'/ '+tgt.calories+' ('+cp+'%)':'kcal';
-  document.getElementById('cal-bar').style.width=cp+'%';
+  var calSub=document.getElementById('cal-sub');if(calSub)calSub.textContent=tgt.calories?'/ '+tgt.calories+' ('+cp+'%)':'kcal';
+  var calBar=document.getElementById('cal-bar');if(calBar)calBar.style.width=cp+'%';
 
-  var proEl=document.getElementById('pro-val');
-  proEl.textContent=day.protein!=null?day.protein+'g':'—';
-  document.getElementById('pro-sub').textContent=tgt.protein?'/ '+tgt.protein+'g ('+pp+'%)':'grams';
-  document.getElementById('pro-bar').style.width=pp+'%';
-  var carbEl=document.getElementById('carb-val');carbEl.textContent=day.carbs!=null?day.carbs+'g':'—';
+  var proEl=document.getElementById('pro-val');if(proEl)proEl.textContent=day.protein!=null?day.protein+'g':'—';
+  var proSub=document.getElementById('pro-sub');if(proSub)proSub.textContent=tgt.protein?'/ '+tgt.protein+'g ('+pp+'%)':'grams';
+  var proBar=document.getElementById('pro-bar');if(proBar)proBar.style.width=pp+'%';
+  var carbEl=document.getElementById('carb-val');if(carbEl)carbEl.textContent=day.carbs!=null?day.carbs+'g':'—';
   var carbSub=document.getElementById('carb-sub');if(carbSub)carbSub.textContent=tgt.carbs?'/ '+tgt.carbs+'g ('+pct(day.carbs,tgt.carbs)+'%)':'grams';
-  var fatEl=document.getElementById('fat-val');fatEl.textContent=day.fats!=null?day.fats+'g':'—';
+  var fatEl=document.getElementById('fat-val');if(fatEl)fatEl.textContent=day.fats!=null?day.fats+'g':'—';
   var fatSub=document.getElementById('fat-sub');if(fatSub)fatSub.textContent=tgt.fats?'/ '+tgt.fats+'g ('+pct(day.fats,tgt.fats)+'%)':'grams';
 
   var wb=document.getElementById('wo-badge');
@@ -2021,14 +1759,6 @@ function renderDayTab(d){{
   var ee=day.exercise_entries||[];
   document.getElementById('ex-log').innerHTML=ee.length?renderGroupedExercises(ee)
     :'<div class="lempty">No exercises logged'+(isToday?' yet':'')+'</div>';
-
-  renderMacroRing(day);
-  renderHeatmap(d.history||[], d.targets||{{}});
-
-  var hl=d.health||[],hd=hl.find(h=>h.date===_viewingDate)||null;
-  var hs=document.getElementById('health-section');
-  if(hd){{hs.style.display='block';renderHealthGrid(hd)}}
-  else hs.style.display='none';
 }}
 
 function renderHealthGrid(h){{
@@ -2153,24 +1883,6 @@ function renderWeekTab(d){{
     }},
     options:{{...opts,scales:{{...opts.scales,y:{{...opts.scales.y,beginAtZero:false}}}}}},
   }});
-
-  var rows=(hist.slice(-14)||[]).reverse();
-  document.getElementById('hist-table-wrap').innerHTML=rows.length===0
-    ?'<div class="lempty">No history yet</div>'
-    :'<table class="htbl"><thead><tr><th>Date</th><th class="r">Calories</th><th class="r">Protein</th><th class="r">Workout</th></tr></thead><tbody>'+
-      rows.map(function(h){{
-        var calOk=tgt.calories&&h.calories>=tgt.calories*.9&&h.calories<=tgt.calories*1.1;
-        var calOv=tgt.calories&&h.calories>tgt.calories*1.1;
-        var proOk=tgt.protein&&h.protein>=tgt.protein*.9;
-        var woDot=h.workout
-          ?'<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--ac);box-shadow:0 0 6px var(--ac)"></span>'
-          :'<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--di)"></span>';
-        return '<tr>'+
-          '<td class="td-date">'+esc(h.date.slice(5))+'</td>'+
-          '<td class="r '+(calOk?'td-ok':calOv?'td-ov':'')+'">'+(h.calories!=null?h.calories.toLocaleString():'—')+'</td>'+
-          '<td class="r '+(proOk?'td-ok':'')+'">'+(h.protein!=null?h.protein+'g':'—')+'</td>'+
-          '<td class="r">'+woDot+'</td></tr>';
-      }}).join('')+'</tbody></table>';
 
   renderGoalProgress(d.profile||{{}}, d.weights||[]);
   renderStreakStats(d.history||[], d.targets||{{}});
@@ -2369,21 +2081,6 @@ function renderProfileTab(d){{
   document.getElementById('profile-targets').innerHTML=
     _inrow('Calorie target',tgt.calories?tgt.calories.toLocaleString()+' kcal/day':'—',_TEDIT,'var(--ac)')+
     _inrow('Protein target',tgt.protein?tgt.protein+'g/day':'—',_TEDIT,'var(--bl)');
-
-  var items=[
-    ['TDEE',an.tdee_estimate!=null?an.tdee_estimate.toLocaleString()+' kcal':null,'var(--ac)'],
-    ['BMR',an.bmr!=null?an.bmr.toLocaleString()+' kcal':null,'var(--bl)'],
-    ['Daily diff',an.daily_vs_tdee!=null?(an.daily_vs_tdee>0?'+':'')+an.daily_vs_tdee+' kcal':null,
-      an.pace_label==='surplus'?'var(--or)':'var(--ac)'],
-    ['Target pace',an.pace_lbs_per_week!=null?an.pace_lbs_per_week+' lbs/wk':null,'var(--ac)'],
-    ['Actual pace',an.actual_lbs_per_week!=null?an.actual_lbs_per_week+' lbs/wk':null,'var(--mu)'],
-    ['Weeks to goal',an.weeks_to_goal!=null?an.weeks_to_goal+' wks':null,'var(--ye)'],
-    ['Rec. protein',(an.rec_protein_min&&an.rec_protein_max)?an.rec_protein_min+'–'+an.rec_protein_max+'g':null,'var(--pu)'],
-  ].filter(([,v])=>v!=null);
-  document.getElementById('analytics-grid').innerHTML=items.map(([l,v,c])=>
-    '<div class="anitem"><div class="anval" style="color:'+c+'">'+esc(String(v))+'</div>'+
-    '<div class="anlbl">'+esc(l)+'</div></div>'
-  ).join('')||'<div style="color:var(--mu);font-size:13px;grid-column:1/-1">No analytics data yet</div>';
 
   var devs=[
     {{name:'Apple Health',icon:'♥',live:p.apple_health_connected,label:p.apple_health_connected?'Syncing':'Not connected'}},
@@ -2955,71 +2652,28 @@ document.addEventListener('keydown',function(e){{
 }});
 
 // ── Start ─────────────────────────────────────────────────────────────────
+// Scroll to top on tab switch
+(function(){{
+  var _orig=switchTab;
+  switchTab=function(name){{
+    _orig(name);
+    window.scrollTo({{top:0,behavior:'smooth'}});
+  }};
+}})();
+
+// On mobile, collapse insights by default
+(function(){{
+  if(window.matchMedia('(max-width:940px)').matches){{
+    var det=document.getElementById('insights-details');
+    if(det)det.removeAttribute('open');
+  }}
+}})();
+
 init();
 setInterval(()=>{{
   delete _dayCache[_todayStr];
   if(_viewingDate===_todayStr) refreshCurrent();
 }}, 5*60*1000);
-
-// ── Post-render enhancements ──────────────────────────────
-(function(){{
-  var isMobile=window.matchMedia('(max-width:860px)').matches;
-  var TILT=7,SC=1.018;
-  var CARD_SEL='.card,.icrd,.stat-tile,.ccrd,.goal-card,.macro-ring-wrap';
-  var STAGGER_SEL='.card,.icrd,.heat-wrap,.ccrd,.goal-card,.stat-tile,.macro-ring-wrap,.lcrd,.ancrd,.infocrd';
-
-  // 3D tilt (desktop only)
-  function attachTilt(){{
-    if(isMobile)return;
-    document.querySelectorAll(CARD_SEL).forEach(function(card){{
-      if(card._tilt)return;card._tilt=true;
-      card.addEventListener('mousemove',function(e){{
-        var r=card.getBoundingClientRect();
-        var x=(e.clientX-r.left)/r.width-.5,y=(e.clientY-r.top)/r.height-.5;
-        card.style.transform='perspective(900px) rotateX('+(y*-TILT)+'deg) rotateY('+(x*TILT)+'deg) scale('+SC+')';
-      }});
-      card.addEventListener('mouseleave',function(){{card.style.transform='';}});
-    }});
-  }}
-
-  // Stagger entrance
-  function staggerCards(scope){{
-    (scope||document).querySelectorAll(STAGGER_SEL).forEach(function(el,i){{
-      el.style.animation='none';void el.offsetWidth;
-      el.style.animationDelay=(i*50)+'ms';
-      el.style.animation='cardIn .4s cubic-bezier(.2,.7,.2,1) both';
-    }});
-  }}
-
-  // Mouse parallax on body::before (desktop)
-  if(!isMobile){{
-    var raf=null;
-    window.addEventListener('mousemove',function(e){{
-      if(raf)return;
-      raf=requestAnimationFrame(function(){{
-        var x=(e.clientX/window.innerWidth-.5)*30;
-        var y=(e.clientY/window.innerHeight-.5)*20;
-        document.documentElement.style.setProperty('--px',x+'px');
-        document.documentElement.style.setProperty('--py',y+'px');
-        raf=null;
-      }});
-    }});
-  }}
-
-  // Hook into switchTab once
-  var _orig=switchTab;
-  switchTab=function(name){{
-    _orig(name);
-    window.scrollTo({{top:0,behavior:'smooth'}});
-    setTimeout(function(){{
-      staggerCards(document.getElementById('panel-'+name));
-      attachTilt();
-    }},60);
-  }};
-
-  // Initial run
-  setTimeout(function(){{staggerCards();attachTilt();}},500);
-}})();
 </script>
 
 <!-- LOG MODAL — direct body child so position:fixed works across all containers -->
