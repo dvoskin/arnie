@@ -704,7 +704,7 @@ async def _run_reminders():
                         if not msg:
                             msg = f"morning {name}.|||log your weight if you've got it, then tell me breakfast."
                         lang = getattr(prefs, "preferred_language", None) or "English"
-await _send_with_voice(send_id, msg, name=name, language=lang)
+                        await _send_with_voice(send_id, msg, name=name, language=lang)
 
                 # ── Late morning (10:00–10:30, only if nothing logged) ─────────
                 elif hour == 10 and minute < 30:
@@ -796,7 +796,7 @@ await _send_with_voice(send_id, msg, name=name, language=lang)
                         else:
                             msg = f"Looking solid today, {name}. Log dinner when you have it."
                     lang = getattr(prefs, "preferred_language", None) or "English"
-await _send_with_voice(send_id, msg, name=name, language=lang)
+                    await _send_with_voice(send_id, msg, name=name, language=lang)
 
                 # ── Night closeout (21:00–21:30) ──────────────────────────────
                 elif hour == 21 and minute < 30:
