@@ -413,7 +413,43 @@ async def transcribe_voice(audio_data: bytes, filename: str = "voice.ogg") -> st
     buf.name = filename
     transcript = await client.audio.transcriptions.create(model="whisper-1", file=buf)
     return transcript.text
+async def text_to_speech(text: str, voice: str = "onyx") -> Optional[bytes]:
+    if not OPENAI_API_KEY():
+        return None
+    try:
+        import io
+        client = _get_openai()
+        response = await client.audio.speech.create(
+            model="tts-1",
+            voice=voice,
+            input=text,
+            response_format="mp3",
+        )
+        buf = io.BytesIO()
+        async for chunk in response.aiter_bytes():
+            buf.write(chunk)
+        return buf.getvalue()
+    except Exception as e:
+        logger.error(f"TTS failed: {e}")
+        return None
 
+
+async def voice_variant(text: str, name: str = "", language: str = "English") -> str:
+    system = (
+        "You are a fitness coach. Rewrite the message as natural SPOKEN audio — "
+        "no formatting, no '|||'. Under 25 words. Different words, same message."
+    )
+    name_hint = f" Their name is {name}." if name else ""
+    prompt = f"Original: {text}{name_hint}\nLanguage: {language}\nSpoken version:"
+    try:
+        result = await chat(
+            messages=[{"role": "user", "content": prompt}],
+            system=system, tools=False, max_tokens=80,
+            model="claude-haiku-4-5-20251001",
+        )
+        return (result.get("text") or "").strip() or text
+    except Exception:
+        return text
 
 async def generate_image(prompt: str, size: str = "1024x1024") -> Optional[str]:
     """
