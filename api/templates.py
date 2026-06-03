@@ -1385,6 +1385,7 @@ footer{{
           </div>
           <button class="add-submit" id="ex-submit" onclick="submitExercise()">Save workout</button>
         </div>
+        <div class="lcrd" id="ex-log"><div class="lempty">No exercises logged yet</div></div>
       </div>
 
     </div><!-- /day-grid -->
