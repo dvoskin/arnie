@@ -249,10 +249,10 @@ body{{
 .whoop-rec-mid  .whoop-stat-val{{color:var(--ye)}}
 .whoop-rec-low  .whoop-stat-val{{color:var(--re)}}
 .macro-cell{{background:var(--sf);padding:12px 14px;}}
-.mc-label{{font-family:'Geist Mono','SF Mono',monospace;font-size:9px;text-transform:uppercase;letter-spacing:.12em;color:var(--mu);margin-bottom:6px;}}
-.mc-num{{font-family:'Instrument Serif','Times New Roman',serif;font-size:24px;letter-spacing:-.02em;}}
-.mc-sub{{font-size:11px;color:var(--mu);margin-top:2px;}}
-.mc-bar{{background:var(--sf3);border-radius:999px;height:3px;margin-top:8px;overflow:hidden;}}
+.mc-label{{font-family:'Geist Mono','SF Mono',monospace;font-size:9.5px;text-transform:uppercase;letter-spacing:.1em;color:var(--mu);margin-bottom:5px;}}
+.mc-num{{font-family:'Instrument Serif','Times New Roman',serif;font-size:26px;letter-spacing:-.02em;line-height:1;}}
+.mc-sub{{font-size:11.5px;color:var(--mu);margin-top:3px;line-height:1.3;}}
+.mc-bar{{background:var(--sf3);border-radius:999px;height:3px;margin-top:9px;overflow:hidden;}}
 .mc-fill{{height:100%;border-radius:999px;transition:width .8s cubic-bezier(.4,0,.2,1);}}
 @media(max-width:560px){{.macro-strip{{grid-template-columns:repeat(2,1fr);}}}}
 
@@ -301,8 +301,8 @@ body{{
 /* ── SECTION TITLES ─────────────────────────────────────── */
 .stitle{{
   font-family:'Geist Mono','SF Mono',monospace;
-  font-size:11px;font-weight:500;color:var(--mu);text-transform:uppercase;
-  letter-spacing:.14em;margin:30px 0 13px;display:flex;align-items:center;gap:10px;
+  font-size:10.5px;font-weight:500;color:var(--mu);text-transform:uppercase;
+  letter-spacing:.13em;margin:28px 0 11px;display:flex;align-items:center;gap:10px;
 }}
 .stitle:first-child{{margin-top:6px}}
 .stitle.spaced{{justify-content:space-between}}
@@ -497,18 +497,19 @@ body{{
   border-color:rgba(0,230,118,.14);
 }}
 .irow{{
-  display:grid;grid-template-columns:26px 1fr;gap:10px;
-  padding:12px 14px;border-bottom:1px solid var(--bd);align-items:flex-start;
+  display:flex;align-items:flex-start;gap:12px;
+  padding:13px 16px;border-bottom:1px solid var(--bd);
 }}
 .irow:last-child{{border-bottom:none}}
 .iico{{
-  font-size:11px;width:24px;height:24px;flex-shrink:0;margin-top:1px;
-  background:var(--ac-dim);color:var(--ac);border-radius:50%;
-  display:flex;align-items:center;justify-content:center;
-  border:1px solid rgba(var(--ac-rgb),.2);
+  font-size:10px;width:6px;height:6px;flex-shrink:0;margin-top:8px;
+  background:var(--ac);border-radius:50%;box-shadow:0 0 6px var(--ac);
 }}
-.itxt{{font-size:14px;line-height:1.55;color:var(--tx2)}}
-.iload,.iempty{{padding:16px 12px;color:var(--mu);font-size:13px;text-align:center}}
+.itxt{{font-size:14px;line-height:1.6;color:var(--tx);font-weight:400}}
+.iload,.iempty{{
+  padding:18px 16px;color:var(--mu);font-size:13.5px;
+  text-align:left;line-height:1.55;
+}}
 
 /* ── WEARABLE ────────────────────────────────────────────── */
 .hgrid{{display:grid;gap:7px;grid-template-columns:repeat(3,1fr)}}
@@ -558,7 +559,10 @@ body{{
 .lmac .lm-cal{{color:var(--tx2);font-weight:600;font-size:13px;}}
 .lmac .lm-macro{{color:var(--mu);font-weight:400;font-size:11px;}}
 .lmac b{{font-weight:600}}
-.lempty{{padding:18px 12px;color:var(--mu);font-size:13px;text-align:center}}
+.lempty{{
+  padding:20px 16px;color:var(--mu);font-size:13.5px;
+  text-align:left;line-height:1.5;
+}}
 
 /* ── TRAINING PROGRAM ───────────────────────────────────── */
 .wp-summary{{
@@ -1898,10 +1902,10 @@ function renderDayTab(d){{
   var flc=document.getElementById('food-log-count');
   if(flc)flc.textContent=fe.length?fe.length+' item'+(fe.length!==1?'s':''):'';
   document.getElementById('food-log').innerHTML=fe.length?fe.map(renderFoodRow).join('')
-    :'<div class="lempty">Nothing logged'+(isToday?' yet':'')+'</div>';
+    :'<div class="lempty">'+(isToday?'Nothing logged yet — tap + to add a meal.':'Nothing logged this day.')+'</div>';
   var ee=day.exercise_entries||[];
   document.getElementById('ex-log').innerHTML=ee.length?renderGroupedExercises(ee)
-    :'<div class="lempty">No exercises logged'+(isToday?' yet':'')+'</div>';
+    :'<div class="lempty">'+(isToday?'No workouts logged yet — tap + to add one.':'No workouts logged this day.')+'</div>';
 
   // Whoop module
   var health=d.health||[];
@@ -2368,7 +2372,7 @@ function renderInsights(ins){{
     return;
   }}
   el.innerHTML=ins.map(function(txt){{
-    return '<div class="irow fade-in"><div class="iico">&#9656;</div><div class="itxt">'+esc(txt)+'</div></div>';
+    return '<div class="irow fade-in"><div class="iico"></div><div class="itxt">'+esc(txt)+'</div></div>';
   }}).join('');
 }}
 
@@ -2410,7 +2414,7 @@ function renderWeekInsights(ins){{
     return;
   }}
   el.innerHTML=ins.map(function(txt){{
-    return '<div class="irow fade-in"><div class="iico">&#9656;</div><div class="itxt">'+esc(txt)+'</div></div>';
+    return '<div class="irow fade-in"><div class="iico"></div><div class="itxt">'+esc(txt)+'</div></div>';
   }}).join('');
 }}
 
