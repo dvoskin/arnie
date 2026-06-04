@@ -1486,7 +1486,12 @@ async def cmd_connect(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if target == "whoop":
         async with AsyncSessionLocal() as db:
-            user = await get_or_create_user(db, str(update.effective_user.id))
+            # resolve_user returns the canonical account for linked identities so
+            # Whoop tokens are always written to the same row that build_context
+            # and the dashboard read from. Using get_or_create_user here caused
+            # tokens to land on the linked (non-canonical) row → Arnie saw no tokens.
+            from db.queries import resolve_user
+            user = await resolve_user(db, str(update.effective_user.id))
             if not user.onboarding_completed:
                 await update.message.reply_text("Finish setup first, then we'll connect Whoop.")
                 return

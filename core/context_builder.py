@@ -447,10 +447,11 @@ async def build_context(user: User, today_log: Optional[DailyLog], db,
                         platform: str = "telegram") -> str:
     from core.coaching_state import compute_coaching_state
 
-    # Always reload the user from DB so OAuth token changes (e.g. Whoop just
-    # connected) are reflected in whoop_status without waiting for tool execution.
-    from db.queries import reload_user
-    user = await reload_user(db, user.id)
+    # Expire all cached attributes and fetch fresh from DB so OAuth token changes
+    # (e.g. Whoop just connected in the same session) are reflected immediately.
+    # reload_user() on the same session hits SQLAlchemy's identity map cache —
+    # db.refresh() bypasses it and actually hits the DB.
+    await db.refresh(user)
 
     recent_logs = await get_recent_logs(db, user.id, days=90)
     recent_weights = await get_recent_weights(db, user.id, days=56)
