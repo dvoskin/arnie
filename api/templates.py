@@ -1184,8 +1184,8 @@ footer{{
     <!-- WHOOP STATS (hidden until data loads) -->
     <div id="whoop-module" style="display:none">
       <div class="stitle spaced">
-        <span>&#128994; Whoop</span>
-        <span id="whoop-date" style="font-weight:400;opacity:.6;font-size:10px"></span>
+        <span>&#128994; Whoop <span id="whoop-date" style="font-weight:400;opacity:.6;font-size:10px;margin-left:6px"></span></span>
+        <button class="add-toggle" id="whoop-sync-btn" onclick="syncWhoop()" title="Sync now" style="font-size:15px;font-family:inherit">&#8635;</button>
       </div>
       <div class="whoop-grid" id="whoop-grid"></div>
     </div>
@@ -1810,6 +1810,29 @@ function renderDayTab(d){{
   renderWhoopModule(snap, d.profile);
 }}
 
+// ── Whoop sync from dashboard ─────────────────────────────────────────────
+async function syncWhoop(){{
+  var btn=document.getElementById('whoop-sync-btn');
+  var grid=document.getElementById('whoop-grid');
+  if(btn){{btn.innerHTML='<span class="spin">&#9675;</span>';btn.disabled=true;}}
+  if(grid)grid.innerHTML='<div style="color:var(--mu);font-size:13px;padding:8px 0">Syncing…</div>';
+  try{{
+    var r=await fetch('/api/whoop/sync/'+TOKEN,{{method:'POST'}});
+    var data=await r.json();
+    if(data.days>0){{
+      // Reload day data to get fresh Whoop snapshot
+      delete _dayCache[_viewingDate];
+      await loadDayData(_viewingDate);
+    }}else{{
+      if(grid)grid.innerHTML='<div style="color:var(--mu);font-size:13px;padding:8px 0">Whoop has not processed your data yet — try again after 9am, or check that your band synced.</div>';
+    }}
+  }}catch(e){{
+    if(grid)grid.innerHTML='<div style="color:var(--re);font-size:13px;padding:8px 0">Sync failed — try /whoop sync in Telegram.</div>';
+  }}finally{{
+    if(btn){{btn.innerHTML='&#8635;';btn.disabled=false;}}
+  }}
+}}
+
 // ── Whoop stats module ────────────────────────────────────────────────────
 function renderWhoopModule(snap, profile){{
   var mod=document.getElementById('whoop-module');
@@ -1817,9 +1840,17 @@ function renderWhoopModule(snap, profile){{
   var dateEl=document.getElementById('whoop-date');
   if(!mod||!grid)return;
 
-  // Only show if Whoop is connected AND we have a snapshot
-  if(!profile||!profile.whoop_connected||!snap||snap.source!=='whoop'){{
+  // Show if connected; if no snapshot yet, show sync prompt
+  if(!profile||!profile.whoop_connected){{
     mod.style.display='none';
+    return;
+  }}
+
+  mod.style.display='block';
+
+  if(!snap||snap.source!=='whoop'){{
+    if(dateEl)dateEl.textContent='';
+    grid.innerHTML='<div style="color:var(--mu);font-size:13px;padding:4px 0">No data for this day — tap &#8635; to sync, or check that your Whoop band has synced to the app.</div>';
     return;
   }}
 

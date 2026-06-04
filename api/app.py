@@ -1704,6 +1704,36 @@ async def api_log_exercise(body: ExerciseLogBody, token: str = Query(...)):
     return {"status": "ok", "id": entry.id}
 
 
+# ── Whoop sync (dashboard-triggered) ──────────────────────────────────────────
+
+@app.post("/api/whoop/sync/{token}")
+async def dashboard_whoop_sync(token: str):
+    """Pull latest 30 days of Whoop data for the dashboard user."""
+    from api.whoop import sync_user_whoop
+    async with AsyncSessionLocal() as db:
+        user = await get_user_by_webhook_token(db, token)
+        if not user:
+            raise HTTPException(status_code=401, detail="Invalid token")
+
+        # If tokens are on a linked identity, use that user for the sync
+        if not (user.whoop_access_token or user.whoop_refresh_token):
+            from sqlalchemy import select as _sel
+            from db.models import User as _U
+            linked = (await db.execute(
+                _sel(_U).where(_U.linked_to_user_id == user.id)
+            )).scalars().all()
+            whoop_user = next(
+                (u for u in linked if u.whoop_access_token or u.whoop_refresh_token), None
+            )
+            if not whoop_user:
+                return {"status": "not_connected", "days": 0}
+        else:
+            whoop_user = user
+
+        synced = await sync_user_whoop(db, whoop_user, days=30)
+        return {"status": "ok", "days": synced}
+
+
 # ── Workout Program ────────────────────────────────────────────────────────────
 
 @app.get("/api/workout/{token}")
