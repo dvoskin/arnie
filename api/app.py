@@ -300,7 +300,24 @@ async def _background_initial_sync(user_id: int, telegram_id: str = ""):
             synced = await sync_user_whoop(db, user, days=7)
             logger.info(f"Background Whoop sync: user {user_id} → {synced} days")
 
-            if telegram_id:
+            # Determine which Telegram ID to notify. If the canonical user is an
+            # iMessage identity (telegram_id starts with "im:"), find a linked
+            # Telegram account to send the notification to instead.
+            notify_id = telegram_id
+            if notify_id and notify_id.startswith("im:"):
+                from sqlalchemy import select as sa_select
+                from db.models import User as _User
+                linked_tg = (await db.execute(
+                    sa_select(_User).where(
+                        _User.linked_to_user_id == user_id,
+                        _User.telegram_id.not_like("im:%"),
+                    )
+                )).scalars().first()
+                notify_id = linked_tg.telegram_id if linked_tg else ""
+                if notify_id:
+                    logger.info(f"Whoop sync: routing notification to linked TG {notify_id[:8]}...")
+
+            if notify_id:
                 snaps = await get_recent_health_snapshots(db, user_id, days=1)
                 snap = snaps[0] if snaps else None
                 from telegram import Bot
@@ -324,10 +341,10 @@ async def _background_initial_sync(user_id: int, telegram_id: str = ""):
                         parts.append(s)
                     if snap.strain is not None:
                         parts.append(f"Strain: {snap.strain:.1f}")
-                    await bot.send_message(chat_id=telegram_id, text="\n".join(parts), parse_mode="HTML")
+                    await bot.send_message(chat_id=notify_id, text="\n".join(parts), parse_mode="HTML")
                 else:
                     await bot.send_message(
-                        chat_id=telegram_id,
+                        chat_id=notify_id,
                         text="✅ <b>Whoop connected!</b>\n\nPulled your last 7 days. Recovery scores will show once Whoop processes your sleep data — usually by 9am.",
                         parse_mode="HTML"
                     )
