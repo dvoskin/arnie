@@ -886,17 +886,36 @@ async def get_profile(token: str, refresh: bool = False):
 
         attributes = await get_all_attributes(db, user.id)
 
-        # Unified read model — merges typed columns + learned attributes (+ the
-        # bridged workout-program summary) into one categorized profile. This
-        # only powers the dashboard/bio; Arnie's context is untouched.
-        unified = build_unified_profile(user, user.preferences, attributes)
+        # Auto-derive favorite foods from logging frequency (the standard
+        # "Favorite foods" slot fills itself from what the user actually logs,
+        # unless an explicit learned attribute already exists).
+        derived = {}
+        try:
+            from db.models import UserFoodMatch
+            from sqlalchemy import select as _sel
+            rows = (await db.execute(
+                _sel(UserFoodMatch).where(UserFoodMatch.user_id == user.id)
+                .order_by(UserFoodMatch.times_used.desc()).limit(6)
+            )).scalars().all()
+            foods = [r.display_name for r in rows
+                     if r.display_name and (r.times_used or 0) >= 2]
+            if foods:
+                derived["nutrition_favorite_foods"] = foods
+        except Exception:
+            pass
+
+        # Unified read model — the standard-parameter skeleton (always-present
+        # slots, filled from columns/attributes/derived) + a custom bucket. Only
+        # powers the dashboard/bio; Arnie's context is untouched.
+        unified = build_unified_profile(user, user.preferences, attributes, derived=derived)
 
         return {
             "name": user.name or "User",
             "bio": user.user_bio or None,
             "bio_updated_at": user.user_bio_updated_at.isoformat() if user.user_bio_updated_at else None,
             "basics": unified["basics"],
-            "categories": unified["categories"],
+            "standard": unified["standard"],
+            "custom": unified["custom"],
             "attribute_count": len([a for a in attributes if a.attribute_status == "active"]),
         }
 

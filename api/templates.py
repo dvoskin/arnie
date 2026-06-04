@@ -809,6 +809,13 @@ body{{
 .basic-cell:hover .basic-edit{{opacity:1}}
 .basic-edit:hover{{background:var(--sf2);color:var(--tx)}}
 @media(max-width:560px){{.basics-grid{{grid-template-columns:repeat(2,1fr)}}}}
+/* Standard-skeleton extras: "learning" placeholder + value chips */
+.inval.learning{{color:var(--mu);font-style:italic;font-weight:400;opacity:.65}}
+.chips{{display:flex;flex-wrap:wrap;gap:5px;justify-content:flex-end}}
+.chip{{
+  font-size:11.5px;font-weight:500;color:var(--tx2);background:var(--sf2);
+  border:1px solid var(--bd);border-radius:7px;padding:3px 8px;line-height:1.35;
+}}
 .ancrd{{
   background:var(--sf);border:1px solid var(--bd);border-radius:16px;padding:16px;
   backdrop-filter:blur(16px);box-shadow:var(--sh);margin-bottom:9px;transition:background .3s;
@@ -2405,8 +2412,8 @@ function renderAIProfile(data) {{
   if (loadEl) loadEl.style.display = 'none';
 
   var basics = (data && data.basics) || [];
-  var cats = (data && data.categories) ? Object.keys(data.categories) : [];
-  if (!data || (!data.bio && !basics.length && !cats.length)) {{
+  var hasStd = !!(data && data.standard && Object.keys(data.standard).length);
+  if (!data || (!data.bio && !basics.length && !hasStd)) {{
     if (emptyEl) emptyEl.style.display = 'block';
     return;
   }}
@@ -2437,32 +2444,51 @@ function renderAIProfile(data) {{
     }}).join('');
   }}
 
-  // Categories — declared columns + learned attributes, merged
+  // Standard skeleton (always-present slots) + Custom Tracking
   var attrsEl = document.getElementById('ai-attributes-section');
   if (!attrsEl) return;
-  if (!cats.length) {{ attrsEl.innerHTML = ''; return; }}
+  var std = (data && data.standard) || {{}};
+  var STD_ORDER = ['goals','nutrition','fitness','health','lifestyle','behavior'];
 
-  attrsEl.innerHTML = cats.map(function(cat) {{
-    var rows = data.categories[cat] || [];
-    if (!rows.length) return '';
-    var label = CATEGORY_LABELS[cat] || cat;
-    var rowsHtml = rows.map(function(r) {{
-      var id = 'pc-' + _pslug(cat + '_' + r.label);
-      var val = esc(r.value) + (r.unit ? ' ' + esc(r.unit) : '');
-      var confDot = (r.confidence && r.confidence !== 'confirmed')
-        ? '<span class="conf-dot" style="background:' + (CONF_COLORS[r.confidence]||'var(--mu)') + '" title="' + esc(r.confidence) + '"></span>'
-        : '';
-      var edit = r.edit_field
-        ? '<button class="ibtn inrow-edit" onclick="editProw(\\''+id+'\\',\\''+escA(r.edit_field)+'\\',\\''+escA(r.raw)+'\\')">&#9998;</button>'
-        : '';
-      return '<div class="inrow" id="'+id+'">' +
-        '<span class="inlbl">' + esc(r.label) + '</span>' +
-        '<div class="inrow-right"><span class="inval">' + val + '</span>' + confDot + edit + '</div>' +
-        '</div>';
-    }}).join('');
-    return '<div style="margin-top:20px"><div class="stitle" style="margin-top:0">' + esc(label) + '</div>' +
-      '<div class="infocrd">' + rowsHtml + '</div></div>';
-  }}).join('');
+  function _chip(t) {{ return '<span class="chip">' + esc(t) + '</span>'; }}
+  function _slotRow(s, cat) {{
+    var id = 'pc-' + _pslug(cat + '_' + s.label);
+    var right;
+    if (!s.filled) {{
+      right = '<span class="inval learning">learning…</span>';
+    }} else if (s.chips && s.chips.length) {{
+      right = '<div class="chips">' + s.chips.map(_chip).join('') + '</div>';
+    }} else {{
+      right = '<span class="inval">' + esc(s.value) + '</span>';
+    }}
+    var confDot = (s.filled && s.confidence && s.confidence !== 'confirmed')
+      ? '<span class="conf-dot" style="background:' + (CONF_COLORS[s.confidence]||'var(--mu)') + '" title="' + esc(s.confidence) + '"></span>' : '';
+    var edit = s.edit_field
+      ? '<button class="ibtn inrow-edit" onclick="editProw(\\''+id+'\\',\\''+escA(s.edit_field)+'\\',\\''+escA(s.raw)+'\\')">&#9998;</button>' : '';
+    return '<div class="inrow" id="'+id+'"><span class="inlbl">' + esc(s.label) + '</span>' +
+      '<div class="inrow-right">' + right + confDot + edit + '</div></div>';
+  }}
+
+  var html = '';
+  STD_ORDER.forEach(function(cat) {{
+    var slots = std[cat] || [];
+    if (!slots.length) return;
+    html += '<div style="margin-top:20px"><div class="stitle" style="margin-top:0">' + esc(CATEGORY_LABELS[cat]||cat) + '</div>' +
+      '<div class="infocrd">' + slots.map(function(s){{ return _slotRow(s, cat); }}).join('') + '</div></div>';
+  }});
+
+  var custom = (data && data.custom) || [];
+  if (custom.length) {{
+    html += '<div style="margin-top:20px"><div class="stitle" style="margin-top:0">' + esc(CATEGORY_LABELS['custom']||'Custom Tracking') + '</div>' +
+      '<div class="infocrd">' + custom.map(function(c) {{
+        var confDot = (c.confidence && c.confidence !== 'confirmed')
+          ? '<span class="conf-dot" style="background:' + (CONF_COLORS[c.confidence]||'var(--mu)') + '" title="' + esc(c.confidence) + '"></span>' : '';
+        return '<div class="inrow"><span class="inlbl">' + esc(c.label) + '</span>' +
+          '<div class="inrow-right"><span class="inval">' + esc(c.value) + '</span>' + confDot + '</div></div>';
+      }}).join('') + '</div></div>';
+  }}
+
+  attrsEl.innerHTML = html;
 }}
 
 async function loadAIProfile() {{
