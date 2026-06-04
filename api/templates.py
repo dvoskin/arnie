@@ -1789,13 +1789,7 @@ function toggleLogSection(type){{
 }}
 
 function initLogSections(){{
-  // Collapse both sections by default on mobile
-  if(window.innerWidth<=700){{
-    ['food','ex'].forEach(function(t){{
-      var sec=document.getElementById(t+'-section');
-      if(sec)sec.classList.add('collapsed');
-    }});
-  }}
+  // Sections start expanded — chevron is still available to collapse manually
 }}
 
 function toggleAddForm(type){{
