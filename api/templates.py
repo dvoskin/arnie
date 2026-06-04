@@ -199,7 +199,27 @@ body{{
 .day-col{{display:flex;flex-direction:column}}
 
 /* ── MACRO STRIP ─────────────────────────────────────────── */
-.macro-strip{{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--bd);border:1px solid var(--bd);border-radius:14px;overflow:hidden;margin-bottom:14px;}}
+.macro-strip{{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--bd);border:1px solid var(--bd);border-radius:14px;overflow:hidden;margin-bottom:10px;}}
+
+/* ── COMPACT DAY STATUS ROW ──────────────────────────────── */
+.day-status{{display:flex;align-items:center;gap:6px;margin:8px 0 14px;flex-wrap:wrap}}
+.ds-pill{{
+  display:inline-flex;align-items:center;gap:5px;padding:5px 10px;
+  border-radius:999px;border:1px solid var(--bd);background:var(--sf);
+  font-size:11.5px;font-weight:500;color:var(--mu);
+}}
+.ds-pill.on{{border-color:rgba(var(--ac-rgb),.35);color:var(--tx);background:var(--ac-dim)}}
+.ds-pill .tcb{{
+  width:12px;height:12px;border-radius:3px;border:1.5px solid var(--di);
+  display:grid;place-items:center;flex-shrink:0;font-size:9px;color:transparent;
+}}
+.ds-pill.on .tcb{{background:var(--ac);border-color:var(--ac);color:#000}}
+.ds-share{{
+  margin-left:auto;background:transparent;border:1px solid var(--bd);
+  border-radius:8px;color:var(--mu);font-size:14px;padding:4px 8px;
+  cursor:pointer;transition:all .15s;
+}}
+.ds-share:hover{{border-color:var(--ac);color:var(--ac)}}
 
 /* ── WHOOP MODULE ────────────────────────────────────────── */
 .whoop-grid{{display:grid;grid-template-columns:repeat(4,1fr);gap:9px;margin-bottom:4px}}
@@ -1165,13 +1185,25 @@ footer{{
 
   <!-- DAY TAB -->
   <div class="tab-panel active" id="panel-day">
+
+    <!-- DATE NAV -->
     <div class="dnav">
       <button class="darr" id="date-prev" onclick="navDate(-1)" aria-label="Previous day">&#8249;</button>
       <div class="dscroll" id="date-chips"></div>
       <button class="darr" id="date-next" onclick="navDate(1)"  aria-label="Next day">&#8250;</button>
     </div>
 
+    <!-- AI INSIGHTS — day-specific, always at top -->
+    <div class="stitle spaced" style="margin-top:0">
+      <span>&#10024; Coach insights <span class="ai-pill">AI</span></span>
+      <button class="add-toggle" onclick="refreshInsights()" title="Refresh" style="font-size:15px;font-family:inherit">&#8635;</button>
+    </div>
+    <div class="icrd fade-in" id="insights-card">
+      <div class="iload"><span class="spin">&#9675;</span> Analyzing&hellip;</div>
+    </div>
+
     <!-- MACRO STRIP -->
+    <div class="stitle" style="margin-top:16px" id="day-label">Today</div>
     <div class="macro-strip">
       <div class="macro-cell">
         <div class="mc-label">Calories</div>
@@ -1197,12 +1229,12 @@ footer{{
       </div>
     </div>
 
-    <!-- STATUS TOGGLES -->
-    <div class="toggles">
-      <span id="wo-badge" class="toggle"><span class="tcb"></span>No workout</span>
-      <span id="ca-badge" class="toggle"><span class="tcb"></span>No cardio</span>
-      <span id="wt-badge" class="toggle on" style="display:none"></span>
-      <button class="toggle share-tgl t-click" onclick="shareDay()">&#8679; Share day</button>
+    <!-- STATUS (compact: workout/cardio/water/share) -->
+    <div class="day-status">
+      <span id="wo-badge" class="ds-pill"><span class="tcb"></span>No workout</span>
+      <span id="ca-badge" class="ds-pill"><span class="tcb"></span>No cardio</span>
+      <span id="wt-badge" class="ds-pill on" style="display:none"></span>
+      <button class="ds-share" onclick="shareDay()">&#8679;</button>
     </div>
 
     <!-- FOOD -->
@@ -1256,15 +1288,6 @@ footer{{
         </div>
         <div class="lcrd" id="ex-log"><div class="lempty">Loading&hellip;</div></div>
       </div>
-    </div>
-
-    <!-- COACH INSIGHTS — always visible -->
-    <div class="stitle spaced">
-      <span>&#10024; Coach insights <span class="ai-pill">AI</span></span>
-      <button class="add-toggle" onclick="refreshInsights()" title="Refresh insights" style="font-size:15px;font-family:inherit">&#8635;</button>
-    </div>
-    <div class="icrd fade-in" id="insights-card">
-      <div class="iload"><span class="spin">&#9675;</span> Analyzing&hellip;</div>
     </div>
 
     <!-- WHOOP RECOVERY — bottom of day, only when connected -->
@@ -1434,13 +1457,14 @@ async function fetchStats(d){{
   return r.json();
 }}
 var _insightsLoaded=false;
+var _insightsDate='';  // which date the loaded insights are for
 
-async function fetchInsights(){{
+async function fetchInsights(dateStr){{
   try{{
-    // 25-second timeout — Claude can be slow on cold starts
     var ctrl=new AbortController();
     var tid=setTimeout(function(){{ctrl.abort();}},25000);
-    var r=await fetch(INSIGHTS_API,{{signal:ctrl.signal}});
+    var url=INSIGHTS_API+(dateStr?'?date='+dateStr:'');
+    var r=await fetch(url,{{signal:ctrl.signal}});
     clearTimeout(tid);
     if(!r.ok)return[];
     return(await r.json()).insights||[];
@@ -1448,9 +1472,12 @@ async function fetchInsights(){{
 }}
 
 async function loadInsights(){{
-  if(_insightsLoaded)return;
-  var ins=await fetchInsights();
+  var date=_viewingDate||'';
+  // Already loaded for this date? Skip.
+  if(_insightsLoaded&&_insightsDate===date)return;
+  var ins=await fetchInsights(date);
   _insightsLoaded=!!ins.length;
+  _insightsDate=date;
   renderInsights(ins);
 }}
 
@@ -1559,6 +1586,11 @@ async function navDate(dir){{
 
 async function selectDate(d){{
   _viewingDate=d;renderDateNav();
+  // Reload insights for the newly selected date
+  _insightsLoaded=false;_insightsDate='';
+  var el=document.getElementById('insights-card');
+  if(el)el.innerHTML='<div class="iload"><span class="spin">&#9675;</span> Analyzing&hellip;</div>';
+  loadInsights();
   if(_dayCache[d]) renderDayTab(_dayCache[d]);
   else await loadDayData(d);
 }}
@@ -1851,9 +1883,9 @@ function renderDayTab(d){{
   var fatSub=document.getElementById('fat-sub');if(fatSub)fatSub.textContent=tgt.fats?'/ '+tgt.fats+'g ('+pct(day.fats,tgt.fats)+'%)':'grams';
 
   var wb=document.getElementById('wo-badge');
-  if(wb){{var woOn=!!day.workout_completed;wb.className='toggle'+(woOn?' on':'');wb.innerHTML='<span class="tcb">'+(woOn?'&#10003;':'')+'</span>'+(woOn?'Workout done':'No workout');}}
+  if(wb){{var woOn=!!day.workout_completed;wb.className='ds-pill'+(woOn?' on':'');wb.innerHTML='<span class="tcb">'+(woOn?'&#10003;':'')+'</span>'+(woOn?'Workout':'No workout');}}
   var cb=document.getElementById('ca-badge');
-  if(cb){{var caOn=!!day.cardio_completed;cb.className='toggle'+(caOn?' on':'');cb.innerHTML='<span class="tcb">'+(caOn?'&#10003;':'')+'</span>'+(caOn?'Cardio done':'No cardio');}}
+  if(cb){{var caOn=!!day.cardio_completed;cb.className='ds-pill'+(caOn?' on':'');cb.innerHTML='<span class="tcb">'+(caOn?'&#10003;':'')+'</span>'+(caOn?'Cardio':'No cardio');}}
   var wb2=document.getElementById('wt-badge');
   if(wb2){{
     if(day.water_ml>0){{
@@ -2341,17 +2373,19 @@ function renderInsights(ins){{
 }}
 
 async function refreshInsights(){{
-  _insightsLoaded=false;
+  _insightsLoaded=false;_insightsDate='';
   var el=document.getElementById('insights-card');
   if(el)el.innerHTML='<div class="iload"><span class="spin">&#9675;</span> Analyzing&hellip;</div>';
   try{{
+    var date=_viewingDate||'';
     var ctrl=new AbortController();
     var tid=setTimeout(function(){{ctrl.abort();}},30000);
-    var r=await fetch(INSIGHTS_API+'?force=true',{{signal:ctrl.signal}});
+    var url=INSIGHTS_API+'?force=true'+(date?'&date='+date:'');
+    var r=await fetch(url,{{signal:ctrl.signal}});
     clearTimeout(tid);
     if(!r.ok)throw new Error();
     var ins=((await r.json()).insights)||[];
-    _insightsLoaded=!!ins.length;
+    _insightsLoaded=!!ins.length;_insightsDate=date;
     renderInsights(ins);
   }}catch(e){{
     if(el)el.innerHTML='<div class="iempty">Could not load — tap &#8635; to retry.</div>';

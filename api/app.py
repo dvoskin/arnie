@@ -603,16 +603,22 @@ async def imessage_start(payload: IMessageSignup, request: Request):
 # ── Stats API ──────────────────────────────────────────────────────────────────
 
 @app.get("/api/insights/{token}")
-async def get_insights_endpoint(token: str, force: bool = False):
-    """Return 3-5 AI-generated coaching insights based on user data."""
+async def get_insights_endpoint(token: str, force: bool = False, date: str = None):
+    """Return 3-5 AI-generated coaching insights for the given date (defaults to today)."""
     from api.insights import get_insights
+    from datetime import date as dt_date
     async with AsyncSessionLocal() as db:
         user = await get_user_by_webhook_token(db, token)
         if not user:
             raise HTTPException(status_code=401, detail="Invalid token")
-        # Re-use the stats payload to feed the LLM
-        stats = await _build_stats_for_user(db, user)
-        insights = await get_insights(user.id, stats, force=force)
+        target = None
+        if date:
+            try:
+                target = dt_date.fromisoformat(date)
+            except ValueError:
+                pass
+        stats = await _build_stats_for_user(db, user, target_date=target)
+        insights = await get_insights(user.id, stats, force=force, date_key=date or "")
     return {"insights": insights}
 
 

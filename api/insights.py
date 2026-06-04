@@ -191,14 +191,16 @@ DATA:
     return []
 
 
-async def get_insights(user_id: int, stats: dict, force: bool = False) -> List[str]:
-    """Cached insights — regenerates if older than 1 hour."""
+async def get_insights(user_id: int, stats: dict, force: bool = False,
+                       date_key: str = "") -> List[str]:
+    """Cached insights per (user_id, date) — regenerates if older than 1 hour."""
     now = time.time()
-    cached = _CACHE.get(user_id)
+    cache_key = (user_id, date_key)
+    cached = _CACHE.get(cache_key)
     if not force and cached and (now - cached[0]) < _TTL:
         return cached[1]
 
     insights = await generate_insights(stats)
     if insights:
-        _CACHE[user_id] = (now, insights)
+        _CACHE[cache_key] = (now, insights)
     return insights
