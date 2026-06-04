@@ -371,41 +371,86 @@ def fmt_health(snaps: List[HealthSnapshot]) -> str:
     if not snaps:
         return ""
     latest = snaps[0]
-    parts = []
-    # Recovery + strain first (Whoop primary signals)
+    src = "Whoop" if latest.source == "whoop" else "Apple Health"
+
+    # ── Latest snapshot (today / most recent) ────────────────
+    today_parts = []
     if latest.recovery_score is not None:
-        parts.append(f"Recovery {latest.recovery_score}%")
+        today_parts.append(f"Recovery {latest.recovery_score}%")
     if latest.strain is not None:
-        parts.append(f"Strain {latest.strain:.1f}")
+        today_parts.append(f"Strain {latest.strain:.1f}")
     if latest.sleep_hours is not None:
         sleep_str = f"Sleep {latest.sleep_hours:.1f}h"
-        if latest.sleep_deep_hours or latest.sleep_rem_hours:
-            extras = []
-            if latest.sleep_deep_hours:
-                extras.append(f"deep {latest.sleep_deep_hours:.1f}h")
-            if latest.sleep_rem_hours:
-                extras.append(f"REM {latest.sleep_rem_hours:.1f}h")
+        extras = []
+        if latest.sleep_deep_hours:
+            extras.append(f"deep {latest.sleep_deep_hours:.1f}h")
+        if latest.sleep_rem_hours:
+            extras.append(f"REM {latest.sleep_rem_hours:.1f}h")
+        if extras:
             sleep_str += f" ({', '.join(extras)})"
-        parts.append(sleep_str)
+        today_parts.append(sleep_str)
     if latest.hrv is not None:
-        parts.append(f"HRV {latest.hrv:.0f}ms")
+        today_parts.append(f"HRV {latest.hrv:.0f}ms")
     if latest.resting_hr is not None:
-        parts.append(f"Resting HR {latest.resting_hr:.0f}bpm")
+        today_parts.append(f"RHR {latest.resting_hr:.0f}bpm")
     if latest.steps is not None:
-        parts.append(f"Steps {latest.steps:,}")
+        today_parts.append(f"Steps {latest.steps:,}")
     if latest.active_calories is not None:
-        parts.append(f"Active cal {latest.active_calories:.0f}")
-    if latest.stand_hours is not None:
-        parts.append(f"Stand {latest.stand_hours}h")
-    if not parts:
+        today_parts.append(f"Active cal {latest.active_calories:.0f}")
+    if not today_parts:
         return ""
-    src = "Whoop" if latest.source == "whoop" else "Apple Health"
-    return f"{src} ({latest.date}): " + "  |  ".join(parts)
+
+    result = f"{src} ({latest.date}): " + "  |  ".join(today_parts)
+
+    # ── 7-day trend summary (when we have multiple days) ─────
+    if len(snaps) >= 3:
+        recoveries = [s.recovery_score for s in snaps if s.recovery_score is not None]
+        hrvs       = [s.hrv            for s in snaps if s.hrv            is not None]
+        sleeps     = [s.sleep_hours    for s in snaps if s.sleep_hours    is not None]
+        strains    = [s.strain         for s in snaps if s.strain         is not None]
+
+        trend_parts = []
+        if len(recoveries) >= 3:
+            avg_rec = sum(recoveries) / len(recoveries)
+            lo, hi  = min(recoveries), max(recoveries)
+            # HRV trend: compare last 2 days vs prior days
+            if len(recoveries) >= 4:
+                recent_avg  = sum(recoveries[:2]) / 2
+                earlier_avg = sum(recoveries[2:]) / len(recoveries[2:])
+                arrow = "⬇" if recent_avg < earlier_avg - 5 else ("⬆" if recent_avg > earlier_avg + 5 else "→")
+                trend_parts.append(f"Recovery avg {avg_rec:.0f}% (range {lo}–{hi}%, {arrow})")
+            else:
+                trend_parts.append(f"Recovery avg {avg_rec:.0f}% (range {lo}–{hi}%)")
+        if len(hrvs) >= 3:
+            avg_hrv = sum(hrvs) / len(hrvs)
+            if len(hrvs) >= 4:
+                recent_hrv  = sum(hrvs[:2]) / 2
+                earlier_hrv = sum(hrvs[2:]) / len(hrvs[2:])
+                arrow = "⬇" if recent_hrv < earlier_hrv - 3 else ("⬆" if recent_hrv > earlier_hrv + 3 else "→")
+                trend_parts.append(f"HRV avg {avg_hrv:.0f}ms ({arrow})")
+            else:
+                trend_parts.append(f"HRV avg {avg_hrv:.0f}ms")
+        if len(sleeps) >= 3:
+            avg_sleep = sum(sleeps) / len(sleeps)
+            trend_parts.append(f"Sleep avg {avg_sleep:.1f}h")
+        if len(strains) >= 3:
+            peak_strain = max(strains)
+            trend_parts.append(f"Peak strain {peak_strain:.1f}")
+
+        if trend_parts:
+            result += f"\n{src} 7-day trend: " + "  |  ".join(trend_parts)
+
+    return result
 
 
 async def build_context(user: User, today_log: Optional[DailyLog], db,
                         platform: str = "telegram") -> str:
     from core.coaching_state import compute_coaching_state
+
+    # Always reload the user from DB so OAuth token changes (e.g. Whoop just
+    # connected) are reflected in whoop_status without waiting for tool execution.
+    from db.queries import reload_user
+    user = await reload_user(db, user.id)
 
     recent_logs = await get_recent_logs(db, user.id, days=90)
     recent_weights = await get_recent_weights(db, user.id, days=56)
