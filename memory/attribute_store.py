@@ -264,6 +264,64 @@ async def upsert_many(db, user_id: int, attrs: list[dict]) -> int:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Training-program bridge
+# ─────────────────────────────────────────────────────────────────────────────
+# A full workout split is STRUCTURED data and stays in the WorkoutProgram table
+# (its source of truth — multi-day, per-exercise). We only mirror a COMPACT
+# summary into the fitness attributes so the program surfaces in the AI Profile's
+# Fitness section and feeds the bio + synthesis, without flattening the structure
+# into EAV rows.
+
+_PROGRAM_ATTR_KEYS = ("fitness_workout_split", "fitness_program_focus")
+
+
+async def sync_program_to_attributes(db, user_id: int, program: dict) -> None:
+    """Mirror a saved workout program's summary into the fitness attributes.
+
+    Called after a WorkoutProgram row is written (parse / auto-fill). Keeps the
+    profile in sync with the user's actual split. The full structured program
+    still lives in WorkoutProgram.
+    """
+    if not program or not isinstance(program, dict):
+        return
+    split = (program.get("split_name") or "").strip()
+    focus = (program.get("focus") or "").strip()
+    n_days = len(program.get("days") or []) or len(program.get("rotation") or [])
+
+    if split:
+        val = split + (f" ({n_days}-day)" if n_days else "")
+        await upsert_attribute(
+            db, user_id, attribute_key="fitness_workout_split", value=val,
+            display_name="Workout split", category="fitness",
+            relevance_tier="core", source="training_program", confidence="confirmed",
+        )
+    if focus:
+        await upsert_attribute(
+            db, user_id, attribute_key="fitness_program_focus", value=focus,
+            display_name="Program focus", category="fitness",
+            relevance_tier="core", source="training_program", confidence="confirmed",
+        )
+
+
+async def clear_program_attributes(db, user_id: int) -> None:
+    """Discontinue the mirrored program attributes when the program is deleted.
+
+    Discontinue (not delete) so history survives and a re-added program
+    reactivates the same rows via upsert. The CALLER commits.
+    """
+    from sqlalchemy import update as _sql_update
+    await db.execute(
+        _sql_update(UserAttribute)
+        .where(and_(
+            UserAttribute.user_id == user_id,
+            UserAttribute.attribute_key.in_(_PROGRAM_ATTR_KEYS),
+            UserAttribute.source == "training_program",
+        ))
+        .values(attribute_status="discontinued")
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Read
 # ─────────────────────────────────────────────────────────────────────────────
 

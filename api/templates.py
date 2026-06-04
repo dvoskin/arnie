@@ -786,6 +786,10 @@ body{{
   font-size:13px;font-weight:500;color:var(--tx2);
   text-align:right;word-break:break-word;overflow-wrap:anywhere;flex:1;min-width:0;
 }}
+.conf-dot{{
+  width:5px;height:5px;border-radius:50%;flex-shrink:0;
+  align-self:flex-start;margin-top:6px;
+}}
 .ancrd{{
   background:var(--sf);border:1px solid var(--bd);border-radius:16px;padding:16px;
   backdrop-filter:blur(16px);box-shadow:var(--sh);margin-bottom:9px;transition:background .3s;
@@ -1347,9 +1351,9 @@ footer{{
 
     <!-- AI Profile — bio + learned attributes -->
     <div id="ai-profile-section" style="display:none">
-      <div class="stitle" style="margin-top:4px;display:flex;align-items:center;gap:8px">
+      <div class="stitle spaced" style="margin-top:4px">
         <span>&#x2728; Arnie's profile</span>
-        <button onclick="refreshAIProfile()" style="background:none;border:none;color:var(--mu);cursor:pointer;font-size:11px;padding:2px 6px;border-radius:6px;border:1px solid var(--bd)" title="Refresh">&#8635;</button>
+        <button class="add-toggle" onclick="refreshAIProfile()" title="Refresh">&#8635;</button>
       </div>
       <!-- Bio card -->
       <div class="infocrd" id="ai-bio-card" style="padding:14px 16px;line-height:1.6;font-size:14px;color:var(--tx)"></div>
@@ -1361,14 +1365,9 @@ footer{{
       <div class="lempty">Keep logging and chatting — Arnie builds your profile from your interactions. Check back after a few days.</div>
     </div>
 
-    <div class="stitle" style="margin-top:24px">Your info</div>
-    <div class="infocrd" id="profile-info"></div>
-    <div class="stitle">Targets</div>
-    <div class="infocrd" id="profile-targets"></div>
-    <div class="stitle">Connected devices</div>
-    <div class="infocrd" style="overflow:hidden" id="devices-card"></div>
-
-    <div class="stitle spaced" style="margin-top:28px">
+    <!-- Training program — sits with the fitness content; full structured split
+         lives in WorkoutProgram, a summary mirrors into the Fitness attributes -->
+    <div class="stitle spaced" style="margin-top:24px">
       <span>Training program</span>
       <button class="add-toggle" id="wp-edit-btn" onclick="openWorkoutEditor()" title="Set up / edit">+</button>
     </div>
@@ -1385,6 +1384,13 @@ footer{{
       </div>
       <div id="workout-parse-status" style="padding:0 14px 10px;font-size:12px;color:var(--mu)"></div>
     </div>
+
+    <div class="stitle" style="margin-top:24px">Your info</div>
+    <div class="infocrd" id="profile-info"></div>
+    <div class="stitle">Targets</div>
+    <div class="infocrd" id="profile-targets"></div>
+    <div class="stitle">Connected devices</div>
+    <div class="infocrd" style="overflow:hidden" id="devices-card"></div>
   </div>
 
 <footer>Arnie &middot; auto-refresh 5 min</footer>
@@ -2427,15 +2433,15 @@ function renderAIProfile(data) {{
     var rowsHtml = rows.map(function(r) {{
       var val = esc(r.value) + (r.unit ? ' ' + esc(r.unit) : '');
       var confDot = r.confidence !== 'confirmed'
-        ? '<span style="width:6px;height:6px;border-radius:50%;background:' + (CONF_COLORS[r.confidence]||'var(--mu)') + ';display:inline-block;margin-left:5px;vertical-align:middle" title="' + esc(r.confidence) + '"></span>'
+        ? '<span class="conf-dot" style="background:' + (CONF_COLORS[r.confidence]||'var(--mu)') + '" title="' + esc(r.confidence) + '"></span>'
         : '';
-      return '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--bd)">' +
-        '<span style="color:var(--mu);font-size:12px">' + esc(r.display_name) + '</span>' +
-        '<span style="font-size:13px;font-weight:500">' + val + confDot + '</span>' +
+      return '<div class="inrow">' +
+        '<span class="inlbl">' + esc(r.display_name) + '</span>' +
+        '<div class="inrow-right"><span class="inval">' + val + '</span>' + confDot + '</div>' +
         '</div>';
     }}).join('');
-    return '<div style="margin-top:20px"><div class="stitle" style="margin-top:0;margin-bottom:8px">' + esc(label) + '</div>' +
-      '<div class="infocrd" style="padding:0 16px">' + rowsHtml + '</div></div>';
+    return '<div style="margin-top:20px"><div class="stitle" style="margin-top:0">' + esc(label) + '</div>' +
+      '<div class="infocrd">' + rowsHtml + '</div></div>';
   }}).join('');
 }}
 

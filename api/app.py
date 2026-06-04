@@ -1907,6 +1907,11 @@ Workout description:
             db.add(WorkoutProgram(user_id=user.id, raw_text=body.raw_text, program_json=json.dumps(program)))
         await db.commit()
 
+        # Bridge: mirror the split summary into the fitness attributes so it shows
+        # in the AI Profile + feeds the bio. Full program stays in WorkoutProgram.
+        from memory.attribute_store import sync_program_to_attributes
+        await sync_program_to_attributes(db, user.id, program)
+
         return {"program": program}
 
 
@@ -2029,7 +2034,7 @@ If there is not enough workout information to build a meaningful program, return
             raise HTTPException(status_code=422, detail="AI returned unparseable JSON")
 
         if program.get("insufficient_data"):
-            return {{"program": None, "reason": program.get("reason", "Not enough workout data in your conversation history yet.")}}
+            return {"program": None, "reason": program.get("reason", "Not enough workout data in your conversation history yet.")}
 
         # Save it
         from db.models import WorkoutProgram
@@ -2042,7 +2047,10 @@ If there is not enough workout information to build a meaningful program, return
             db.add(WorkoutProgram(user_id=user.id, raw_text=raw_summary, program_json=json.dumps(program)))
         await db.commit()
 
-        return {{"program": program}}
+        from memory.attribute_store import sync_program_to_attributes
+        await sync_program_to_attributes(db, user.id, program)
+
+        return {"program": program}
 
 
 @app.delete("/api/workout/{token}")
@@ -2054,9 +2062,11 @@ async def delete_workout_program(token: str):
             raise HTTPException(status_code=401, detail="Invalid token")
         from db.models import WorkoutProgram
         from sqlalchemy import select, delete as sql_delete
+        from memory.attribute_store import clear_program_attributes
         await db.execute(sql_delete(WorkoutProgram).where(WorkoutProgram.user_id == user.id))
+        await clear_program_attributes(db, user.id)
         await db.commit()
-    return {{"status": "ok"}}
+    return {"status": "ok"}
 
 
 # ── Dashboard HTML ─────────────────────────────────────────────────────────────
