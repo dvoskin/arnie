@@ -159,8 +159,37 @@ def build_unified_profile(
         if c not in ordered:
             ordered[c] = cats[c]
 
+    # Clean redundant leading words from LEARNED labels so they read cleanly under
+    # their category header: every "Nutrition X" under Nutrition → "X", and any
+    # sub-prefix shared by 2+ learned facts in a group (e.g. "Psychology …") gets
+    # collapsed too. Declared (column) facts already have clean human labels.
+    for cat, facts in ordered.items():
+        _dedupe_labels(facts, cat)
+
     return {
         "name": user.name or "User",
         "basics": basics,
         "categories": ordered,
     }
+
+
+def _dedupe_labels(facts: list, category: str) -> None:
+    """In place: strip a learned fact's leading word when it just repeats the
+    category, or is a prefix shared by 2+ learned facts in the same group."""
+    learned = [f for f in facts if f.get("origin") == "attribute"]
+    if not learned:
+        return
+    counts: dict = {}
+    for f in learned:
+        parts = f["label"].split()
+        if parts:
+            counts[parts[0].lower()] = counts.get(parts[0].lower(), 0) + 1
+    cat_l = (category or "").lower()
+    for f in learned:
+        parts = f["label"].split()
+        if len(parts) > 1:
+            lead = parts[0].lower()
+            if lead == cat_l or counts.get(lead, 0) >= 2:
+                cleaned = " ".join(parts[1:])
+                # Capitalize first letter so "calorie range" → "Calorie range"
+                f["label"] = cleaned[:1].upper() + cleaned[1:]

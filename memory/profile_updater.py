@@ -83,6 +83,19 @@ Key naming: {category}_{noun}_{qualifier}
   Categories: nutrition, fitness, health, lifestyle, behavior, mental, custom
   Tiers: core (always shown), daily (shown if updated recently), contextual (topic-match), archive (stored only)
 
+CONFIDENCE — be honest, do NOT present guesses as facts:
+  "confirmed"          → the user EXPLICITLY stated it, or it's in the structured DB.
+  "inferred"           → you DEDUCED it from behavior/patterns. MOST learned
+                         attributes are inferred — a noticed pattern, a tendency,
+                         a weakness you spotted. Tag these "inferred", not "confirmed".
+  "needs_verification" → a single offhand mention you're not sure is durable.
+  If you didn't hear the user say it in plain words, it is NOT "confirmed".
+
+display_name — SHORT, human, and do NOT repeat the category (it renders under a
+  category header). "Calorie range", not "Nutrition calorie range". "Cardio
+  preference", not "Fitness cardio preference". "Frustrated by", not "Psychology
+  frustrated by".
+
 Only output attributes that are NEW or materially CHANGED from the current profile.
 If nothing changed, output an empty array: []
 Do not output attributes for things like name, weight, goal — those are in the DB.

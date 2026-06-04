@@ -81,6 +81,28 @@ async def test_discontinued_attributes_excluded(db, make_user):
     assert all(f["label"] != "Supplement X" for f in health)
 
 
+def test_dedupe_labels_strips_redundant_prefixes():
+    from memory.profile_view import _dedupe_labels
+
+    def mk(lbl):
+        return {"label": lbl, "origin": "attribute"}
+
+    # leading word == category → stripped
+    fitness = [mk("Fitness Cardio Preference"), mk("Fitness Dislikes")]
+    _dedupe_labels(fitness, "fitness")
+    assert [f["label"] for f in fitness] == ["Cardio Preference", "Dislikes"]
+
+    # shared sub-prefix across 2+ learned facts → stripped (even if != category)
+    custom = [mk("Psychology Frustrated By"), mk("Psychology Motivated By"), mk("Recovery Limiter")]
+    _dedupe_labels(custom, "custom")
+    assert [f["label"] for f in custom] == ["Frustrated By", "Motivated By", "Recovery Limiter"]
+
+    # declared (column) facts and single non-matching learned facts are untouched
+    mixed = [{"label": "Injuries / limitations", "origin": "column"}, mk("Zinc")]
+    _dedupe_labels(mixed, "health")
+    assert [f["label"] for f in mixed] == ["Injuries / limitations", "Zinc"]
+
+
 async def test_empty_user_still_has_name_basic(db, make_user):
     """A sparse user (just a name) still produces a Basics entry — the profile
     never renders fully empty for an onboarded user."""
