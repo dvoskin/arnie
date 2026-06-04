@@ -231,6 +231,13 @@ class HealthSnapshot(Base):
     strain = Column(Float)                   # 0–21, from Whoop
     skin_temp_celsius = Column(Float)
     spo2_percentage = Column(Float)
+    # Extended sleep metrics (Whoop sleep score)
+    respiratory_rate = Column(Float)         # breaths/min during sleep
+    sleep_performance_pct = Column(Float)    # Whoop sleep quality score 0–100
+    sleep_need_hours = Column(Float)         # hours Whoop says you needed
+    sleep_efficiency_pct = Column(Float)     # % of time in bed actually sleeping
+    # Workout summary (JSON: [{sport, strain, duration_min, avg_hr, max_hr, calories}])
+    whoop_workouts = Column(Text)
     source = Column(String, default="apple_health")  # "apple_health" or "whoop"
     received_at = Column(DateTime, server_default=func.now())
 

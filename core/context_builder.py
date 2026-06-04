@@ -378,7 +378,7 @@ def fmt_health(snaps: List[HealthSnapshot]) -> str:
     if latest.recovery_score is not None:
         today_parts.append(f"Recovery {latest.recovery_score}%")
     if latest.strain is not None:
-        today_parts.append(f"Strain {latest.strain:.1f}")
+        today_parts.append(f"Strain {latest.strain:.1f}/21")
     if latest.sleep_hours is not None:
         sleep_str = f"Sleep {latest.sleep_hours:.1f}h"
         extras = []
@@ -386,17 +386,51 @@ def fmt_health(snaps: List[HealthSnapshot]) -> str:
             extras.append(f"deep {latest.sleep_deep_hours:.1f}h")
         if latest.sleep_rem_hours:
             extras.append(f"REM {latest.sleep_rem_hours:.1f}h")
+        if latest.sleep_efficiency_pct:
+            extras.append(f"eff {latest.sleep_efficiency_pct:.0f}%")
         if extras:
             sleep_str += f" ({', '.join(extras)})"
         today_parts.append(sleep_str)
+    if getattr(latest, "sleep_performance_pct", None) is not None:
+        today_parts.append(f"Sleep quality {latest.sleep_performance_pct:.0f}%")
+    if getattr(latest, "sleep_need_hours", None) is not None:
+        today_parts.append(f"Sleep need {latest.sleep_need_hours:.1f}h")
     if latest.hrv is not None:
         today_parts.append(f"HRV {latest.hrv:.0f}ms")
     if latest.resting_hr is not None:
         today_parts.append(f"RHR {latest.resting_hr:.0f}bpm")
+    if latest.avg_hr is not None:
+        today_parts.append(f"Avg HR {latest.avg_hr:.0f}bpm")
+    if getattr(latest, "respiratory_rate", None) is not None:
+        today_parts.append(f"Resp rate {latest.respiratory_rate:.1f}br/min")
+    if getattr(latest, "spo2_percentage", None) is not None:
+        today_parts.append(f"SpO2 {latest.spo2_percentage:.1f}%")
+    if getattr(latest, "skin_temp_celsius", None) is not None:
+        today_parts.append(f"Skin temp {latest.skin_temp_celsius:.1f}°C")
     if latest.steps is not None:
         today_parts.append(f"Steps {latest.steps:,}")
     if latest.active_calories is not None:
         today_parts.append(f"Active cal {latest.active_calories:.0f}")
+    # Workout summary
+    if getattr(latest, "whoop_workouts", None):
+        try:
+            import json as _j
+            wos = _j.loads(latest.whoop_workouts)
+            wo_strs = []
+            for w in wos:
+                s = w.get("sport", "Workout")
+                strain = w.get("strain")
+                dur = w.get("duration_min")
+                parts_w = []
+                if strain:
+                    parts_w.append(f"strain {strain}")
+                if dur:
+                    parts_w.append(f"{int(dur)}min")
+                wo_strs.append(s + (f" ({', '.join(parts_w)})" if parts_w else ""))
+            if wo_strs:
+                today_parts.append("Workouts: " + "; ".join(wo_strs))
+        except Exception:
+            pass
     if not today_parts:
         return ""
 
@@ -434,8 +468,22 @@ def fmt_health(snaps: List[HealthSnapshot]) -> str:
             avg_sleep = sum(sleeps) / len(sleeps)
             trend_parts.append(f"Sleep avg {avg_sleep:.1f}h")
         if len(strains) >= 3:
+            avg_strain = sum(strains) / len(strains)
             peak_strain = max(strains)
-            trend_parts.append(f"Peak strain {peak_strain:.1f}")
+            trend_parts.append(f"Strain avg {avg_strain:.1f} peak {peak_strain:.1f}")
+        # Sleep quality trend
+        sleep_perfs = [s.sleep_performance_pct for s in snaps if getattr(s, "sleep_performance_pct", None) is not None]
+        if len(sleep_perfs) >= 3:
+            avg_perf = sum(sleep_perfs) / len(sleep_perfs)
+            trend_parts.append(f"Sleep quality avg {avg_perf:.0f}%")
+        resp_rates = [s.respiratory_rate for s in snaps if getattr(s, "respiratory_rate", None) is not None]
+        if len(resp_rates) >= 3:
+            avg_resp = sum(resp_rates) / len(resp_rates)
+            trend_parts.append(f"Resp rate avg {avg_resp:.1f}br/min")
+        # Workout count from Whoop
+        wo_days = sum(1 for s in snaps if getattr(s, "whoop_workouts", None))
+        if wo_days > 0:
+            trend_parts.append(f"Workout days logged {wo_days}/{len(snaps)}")
 
         if trend_parts:
             result += f"\n{src} 7-day trend: " + "  |  ".join(trend_parts)

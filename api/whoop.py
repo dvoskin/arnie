@@ -218,11 +218,12 @@ async def sync_user_whoop(db, user: User, days: int = 2) -> int:
     start = end - timedelta(days=days)
     params = {"start": start.isoformat(), "end": end.isoformat(), "limit": 25}
 
-    # Fetch all three endpoints in parallel — much faster than sequential
-    recovery_data, sleep_data, cycle_data = await asyncio.gather(
+    # Fetch all endpoints in parallel — recovery, sleep, cycles, workouts
+    recovery_data, sleep_data, cycle_data, workout_data = await asyncio.gather(
         _whoop_get(token, "/v1/recovery", params),
         _whoop_get(token, "/v1/activity/sleep", params),
         _whoop_get(token, "/v1/cycle", params),
+        _whoop_get(token, "/v1/activity/workout", params),
         return_exceptions=False,
     )
 
@@ -262,10 +263,26 @@ async def sync_user_whoop(db, user: User, days: int = 2) -> int:
                 by_date[d]["sleep_hours"] = round(total_in_bed_ms / 1000 / 3600, 2)
             deep_ms = stages.get("total_slow_wave_sleep_time_milli", 0)
             rem_ms = stages.get("total_rem_sleep_time_milli", 0)
+            light_ms = stages.get("total_light_sleep_time_milli", 0)
+            awake_ms = stages.get("total_awake_time_milli", 0)
             if deep_ms:
                 by_date[d]["sleep_deep_hours"] = round(deep_ms / 1000 / 3600, 2)
             if rem_ms:
                 by_date[d]["sleep_rem_hours"] = round(rem_ms / 1000 / 3600, 2)
+            # Sleep quality metrics
+            if score.get("respiratory_rate") is not None:
+                by_date[d]["respiratory_rate"] = score.get("respiratory_rate")
+            if score.get("sleep_performance_percentage") is not None:
+                by_date[d]["sleep_performance_pct"] = score.get("sleep_performance_percentage")
+            if score.get("sleep_needed") is not None:
+                needed = score.get("sleep_needed") or {}
+                baseline_ms = needed.get("baseline_milli", 0)
+                if baseline_ms:
+                    by_date[d]["sleep_need_hours"] = round(baseline_ms / 1000 / 3600, 2)
+            # Sleep efficiency = actual sleep / time in bed
+            actual_sleep_ms = deep_ms + rem_ms + light_ms
+            if total_in_bed_ms and actual_sleep_ms:
+                by_date[d]["sleep_efficiency_pct"] = round(actual_sleep_ms / total_in_bed_ms * 100, 1)
 
     if cycle_data and "records" in cycle_data:
         for cyc in cycle_data["records"]:
@@ -279,6 +296,57 @@ async def sync_user_whoop(db, user: User, days: int = 2) -> int:
                 by_date[d]["strain"] = score.get("strain")
             if score.get("average_heart_rate") is not None:
                 by_date[d]["avg_hr"] = score.get("average_heart_rate")
+            if score.get("kilojoule") is not None:
+                # Whoop gives kJ; convert to kcal (1 kJ = 0.239 kcal)
+                by_date[d]["active_calories"] = round(score["kilojoule"] * 0.239, 0)
+
+    # Workout details — aggregate per day
+    if workout_data and "records" in workout_data:
+        import json as _json
+        workout_by_date: dict = {}
+        SPORT_MAP = {
+            -1: "Activity", 0: "Running", 1: "Cycling", 16: "Baseball", 17: "Basketball",
+            18: "Rowing", 19: "Fencing", 20: "Field Hockey", 21: "Football", 22: "Golf",
+            24: "Ice Hockey", 25: "Lacrosse", 27: "Rugby", 28: "Sailing", 29: "Skiing",
+            30: "Soccer", 31: "Softball", 32: "Squash", 33: "Swimming", 34: "Tennis",
+            35: "Track & Field", 36: "Volleyball", 37: "Water Polo", 38: "Wrestling",
+            39: "Boxing", 42: "Dance", 43: "Pilates", 44: "Yoga", 45: "Weightlifting",
+            47: "Cross Country Skiing", 48: "Functional Fitness", 49: "Duathlon",
+            51: "Gymnastics", 52: "Hiking", 53: "Horse Racing", 55: "Kayaking",
+            56: "Martial Arts", 57: "Mountain Biking", 58: "Powerlifting",
+            59: "Rock Climbing", 60: "Paddleboarding", 61: "Triathlon",
+            62: "Walking", 63: "Surfing", 64: "Elliptical", 65: "Stairmaster",
+        }
+        for wo in workout_data["records"]:
+            start_str = wo.get("start", "")[:10]
+            if not start_str:
+                continue
+            d = date.fromisoformat(start_str)
+            score = wo.get("score") or {}
+            sport_id = wo.get("sport_id", -1)
+            sport_name = SPORT_MAP.get(sport_id, f"Sport {sport_id}")
+            duration_ms = 0
+            if wo.get("start") and wo.get("end"):
+                try:
+                    from datetime import datetime as _dt
+                    s = _dt.fromisoformat(wo["start"].replace("Z", "+00:00"))
+                    e = _dt.fromisoformat(wo["end"].replace("Z", "+00:00"))
+                    duration_ms = int((e - s).total_seconds() * 1000)
+                except Exception:
+                    pass
+            entry = {
+                "sport": sport_name,
+                "strain": round(score.get("strain", 0), 1),
+                "duration_min": round(duration_ms / 60000, 0) if duration_ms else None,
+                "avg_hr": score.get("average_heart_rate"),
+                "max_hr": score.get("max_heart_rate"),
+                "calories": round(score.get("kilojoule", 0) * 0.239) if score.get("kilojoule") else None,
+            }
+            workout_by_date.setdefault(d, []).append(entry)
+
+        for d, workouts in workout_by_date.items():
+            _ensure(d)
+            by_date[d]["whoop_workouts"] = _json.dumps(workouts)
 
     # Upsert
     count = 0
