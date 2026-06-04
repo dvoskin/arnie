@@ -2028,6 +2028,16 @@ async def dashboard(token: str):
 
 # ── Apple Health webhook ────────────────────────────────────────────────────────
 
+class AppleWorkout(BaseModel):
+    """One Apple Watch workout record from the iOS Shortcut."""
+    name: Optional[str] = None           # e.g. "Running", "Cycling", user-visible label
+    workout_type: Optional[str] = None   # raw HKWorkoutActivityType name if name not set
+    duration_minutes: Optional[float] = None
+    active_calories: Optional[float] = None
+    distance_km: Optional[float] = None
+    start_time: Optional[str] = None     # ISO datetime — used as display metadata
+
+
 class AppleHealthPayload(BaseModel):
     date: Optional[str] = None
     steps: Optional[int] = None
@@ -2041,6 +2051,90 @@ class AppleHealthPayload(BaseModel):
     hrv: Optional[float] = None
     stand_hours: Optional[int] = None
     exercise_minutes: Optional[int] = None
+    workouts: Optional[list[AppleWorkout]] = None  # Apple Watch workout records
+
+
+async def _process_apple_workouts(db, user_id: int, snap_date, workouts: list) -> None:
+    """
+    Replace this day's Apple-Health-sourced exercise entries with the incoming batch.
+    Uses replace-on-sync: stale entries for the day are deleted first, then the fresh
+    set is inserted. This means a re-sync never double-counts workouts.
+    """
+    from db.queries import get_or_create_log_for_date, recompute_log_totals
+    from db.models import ExerciseEntry
+    from sqlalchemy import delete as sql_delete
+
+    log = await get_or_create_log_for_date(db, user_id, snap_date)
+
+    # Delete existing apple_health exercise entries for this day only
+    await db.execute(
+        sql_delete(ExerciseEntry).where(
+            ExerciseEntry.daily_log_id == log.id,
+            ExerciseEntry.source_type == "apple_health",
+        )
+    )
+    await db.flush()
+
+    for w in workouts:
+        d = w.model_dump(exclude_none=True) if hasattr(w, "model_dump") else dict(w)
+        name = d.get("name") or d.get("workout_type") or "Workout"
+        entry = ExerciseEntry(
+            daily_log_id=log.id,
+            exercise_name=name,
+            duration_minutes=d.get("duration_minutes"),
+            calories_burned_estimate=d.get("active_calories"),
+            # cardio_type set so recompute_log_totals marks cardio_completed=True
+            cardio_type="apple_health",
+            source_type="apple_health",
+            notes=d.get("start_time") or "",
+        )
+        db.add(entry)
+
+    await db.flush()
+    await recompute_log_totals(db, log.id)
+    await db.commit()
+
+
+async def _notify_apple_health_connected(telegram_id: str, snap_date, data: dict) -> None:
+    """
+    Send a one-time "Apple Health connected!" message when the first sync arrives.
+    Only fires for Telegram users (skips im: identities).
+    """
+    if str(telegram_id).startswith("im:"):
+        return
+    tg_token = os.getenv("TELEGRAM_BOT_TOKEN", "")
+    if not tg_token:
+        return
+
+    parts = ["✅ <b>Apple Health connected!</b>", ""]
+    bullets = []
+    if data.get("steps"):
+        bullets.append(f"Steps: {int(data['steps']):,}")
+    if data.get("active_calories"):
+        bullets.append(f"Active cals: {int(data['active_calories'])}")
+    if data.get("resting_hr"):
+        bullets.append(f"Resting HR: {int(data['resting_hr'])}bpm")
+    if data.get("hrv"):
+        bullets.append(f"HRV: {int(data['hrv'])}ms")
+    if data.get("sleep_hours"):
+        bullets.append(f"Sleep: {data['sleep_hours']:.1f}h")
+    if bullets:
+        parts.append("First sync received — " + " · ".join(bullets))
+    else:
+        parts.append("Your first sync arrived.")
+    parts += ["", "Steps, activity, and sleep will update automatically each morning. 🌅"]
+
+    try:
+        from telegram import Bot
+        bot = Bot(token=tg_token)
+        await bot.send_message(
+            chat_id=int(telegram_id),
+            text="\n".join(parts),
+            parse_mode="HTML",
+        )
+        await bot.close()
+    except Exception as e:
+        logger.warning(f"Apple Health connected notify failed for {telegram_id}: {e}")
 
 
 @app.post("/health/apple")
@@ -2048,6 +2142,10 @@ async def receive_apple_health(
     payload: AppleHealthPayload,
     token: str = Query(...),
 ):
+    import asyncio as _asyncio
+    _notify_tg_id: Optional[str] = None
+    _notify_data: Optional[dict] = None
+
     async with AsyncSessionLocal() as db:
         user = await get_user_by_webhook_token(db, token)
         if not user:
@@ -2061,11 +2159,59 @@ async def receive_apple_health(
             except ValueError:
                 raise HTTPException(status_code=400, detail="Use YYYY-MM-DD")
 
-        data = payload.model_dump(exclude={"date"}, exclude_none=True)
+        # Snapshot fields only — exclude date and workouts (handled separately)
+        data = payload.model_dump(exclude={"date", "workouts"}, exclude_none=True)
         data.setdefault("source", "apple_health")
         await upsert_health_snapshot(db, user.id, snap_date, **data)
 
+        # Store Apple Watch workout records as exercise entries
+        if payload.workouts:
+            await _process_apple_workouts(db, user.id, snap_date, payload.workouts)
+
+        # First-sync detection — fire a Telegram notification exactly once
+        is_first = "apple_health_connected" not in (user.nudges_sent or "").split(",")
+        if is_first:
+            marks = set(s for s in (user.nudges_sent or "").split(",") if s)
+            marks.add("apple_health_connected")
+            user.nudges_sent = ",".join(sorted(marks))
+            await db.commit()
+            _notify_tg_id = user.telegram_id
+            _notify_data = dict(data)
+
+    if _notify_tg_id:
+        _asyncio.create_task(
+            _notify_apple_health_connected(_notify_tg_id, snap_date, _notify_data)
+        )
+
     return {"status": "ok", "date": str(snap_date)}
+
+
+# ── Apple Health status check (polled by the guide page) ──────────────────────
+
+@app.get("/health/apple/status")
+async def apple_health_status(token: str = Query(...)):
+    """
+    Return connection state for the Apple Health guide page.
+    Called by the guide's JavaScript to show a live "connected" indicator.
+    """
+    async with AsyncSessionLocal() as db:
+        user = await get_user_by_webhook_token(db, token)
+        if not user:
+            raise HTTPException(status_code=401, detail="Invalid token")
+        snaps = await get_recent_health_snapshots(db, user.id, days=7)
+        ah_snaps = [s for s in snaps if s.source == "apple_health"]
+        if not ah_snaps:
+            return {"connected": False, "last_sync": None}
+        latest = ah_snaps[0]
+        return {
+            "connected": True,
+            "last_sync": str(latest.date),
+            "steps": latest.steps,
+            "active_calories": latest.active_calories,
+            "resting_hr": round(latest.resting_hr) if latest.resting_hr else None,
+            "hrv": round(latest.hrv) if latest.hrv else None,
+            "sleep_hours": latest.sleep_hours,
+        }
 
 
 # ── Apple Health setup guide ───────────────────────────────────────────────────
@@ -2079,6 +2225,7 @@ async def apple_health_guide(token: str = Query(...)):
 
     base_url = os.getenv("RENDER_EXTERNAL_URL", "http://localhost:10000").rstrip("/")
     endpoint = f"{base_url}/health/apple?token={token}"
-    return HTMLResponse(_apple_guide_html(endpoint))
+    status_url = f"{base_url}/health/apple/status?token={token}"
+    return HTMLResponse(_apple_guide_html(endpoint, status_url))
 
 
