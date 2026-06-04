@@ -492,7 +492,7 @@ def fmt_health(snaps: List[HealthSnapshot]) -> str:
 
 
 async def build_context(user: User, today_log: Optional[DailyLog], db,
-                        platform: str = "telegram") -> str:
+                        platform: str = "telegram", user_message: str = "") -> str:
     from core.coaching_state import compute_coaching_state
 
     # Expire all cached attributes and fetch fresh from DB so OAuth token changes
@@ -526,6 +526,17 @@ async def build_context(user: User, today_log: Optional[DailyLog], db,
     from memory.profile_manager import read_profile
     profile = await read_profile(user.telegram_id)
     memory = profile if profile else await read_memory(user.telegram_id)
+
+    # Live, tier-filtered learned attributes — core always; daily if updated in
+    # the last 7 days; contextual ONLY when this message's topic matches the
+    # attribute's category. Surfaces newly-learned facts (e.g. a supplement)
+    # immediately instead of waiting for the ~3h markdown synthesis. Purely
+    # additive: fmt_profile (columns) and the markdown profile are unchanged.
+    from memory.attribute_store import get_attributes_for_context
+    try:
+        attr_block = await get_attributes_for_context(db, user.id, user_message or "")
+    except Exception:
+        attr_block = ""
 
     prefs = user.preferences
     pace = pacing_note(today_log, prefs, user.timezone or "UTC")
@@ -705,6 +716,7 @@ async def build_context(user: User, today_log: Optional[DailyLog], db,
         "",
         "=== USER PROFILE ===",
         (memory[:3200] if memory else "No profile yet — still learning this user."),
+        (attr_block if attr_block else ""),
         "",
         link_status,
     ]

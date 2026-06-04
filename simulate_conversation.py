@@ -110,14 +110,22 @@ def analyze(bubbles, tool_calls, *, allow_long=False, expect_tools=None,
 # ── Conversation script ──────────────────────────────────────────────────────
 # (message, kwargs for analyze)
 SCRIPT = [
+    # food-log: a seeded CONTEXTUAL health attr (zinc) must NOT appear in context
+    # here — no health topic in this message.
     ("morning! had greek yogurt with berries and honey for breakfast",
-     dict(label="food-log", expect_tools=["log_food"])),
+     dict(label="food-log", expect_tools=["log_food"], ctx_lacks=["zinc: 50"])),
     ("just smashed push day — bench 4x8 at 185, then incline db and some flies",
      dict(label="workout-log", expect_tools=["log_exercise"])),
     ("ngl work was brutal today, barely slept and my boss was on me all day",
      dict(label="vent", forbid_tools=["log_food", "log_exercise"])),
     ("what should i have for dinner to hit my protein",
      dict(label="coaching-q", forbid_tools=["log_food"])),
+    # supps-topic: health topic → the seeded contextual zinc attr SHOULD surface
+    # in context (Step-1 live-injection under test). Pre-dates the user "telling"
+    # Arnie about zinc, so it can only come from the learned attribute.
+    ("are there any supplements worth taking for recovery and sleep?",
+     dict(label="supps-topic", allow_long=True, forbid_tools=["log_food", "log_exercise"],
+          ctx_has=["zinc: 50", "[known attributes]"])),
     ("oh also remember i take zinc and creatine every morning",
      dict(label="remember-supps")),  # the silent-storage test
     ("had a barebells caramel bar as a snack",
@@ -170,6 +178,14 @@ async def main():
         # Seed a profile.md so "what do you know about me" has real material
         await write_profile("CONVSIM_001", _SEED_PROFILE)
 
+        # Seed a CONTEXTUAL learned attribute (health tier=contextual). Step 1
+        # should surface it in Arnie's context ONLY when the topic matches.
+        from memory.attribute_store import upsert_attribute
+        await upsert_attribute(db, uid, attribute_key="health_supplement_zinc_mg",
+                               value="50", unit="mg", display_name="Zinc",
+                               category="health", relevance_tier="contextual",
+                               confidence="confirmed", source="user_stated")
+
     print(f"\n{B}{C}{'═'*66}{X}")
     print(f"{B}{C} CONVERSATION BEHAVIORAL CHECK — live LLM, production prompt{X}")
     print(f"{B}{C}{'═'*66}{X}")
@@ -180,7 +196,8 @@ async def main():
             from db.queries import reload_user
             user = await reload_user(db, uid)
             today_log = await get_or_create_today_log(db, uid, user.timezone)
-            context_str = await build_context(user, today_log, db, platform="telegram")
+            context_str = await build_context(user, today_log, db, platform="telegram",
+                                               user_message=msg)
             system = f"{system_base}\n\n{context_str}"
 
             # history + current
@@ -214,6 +231,14 @@ async def main():
             print(f"  {C}ARNIE:{X} {b}")
         if names:
             print(f"  {D}      tools: {', '.join(names)}{X}")
+
+        # Step-1 context-injection assertions (tier-filtered, topic-gated).
+        ctx_low = context_str.lower()
+        for s in kw.pop("ctx_has", []):
+            check(f"[{kw.get('label')}] context SHOWS '{s}' (topic match)", s.lower() in ctx_low)
+        for s in kw.pop("ctx_lacks", []):
+            check(f"[{kw.get('label')}] context HIDES '{s}' (no topic match)", s.lower() not in ctx_low)
+
         analyze(bubbles, tool_calls, **kw)
 
         # Targeted extra checks
