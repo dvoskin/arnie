@@ -3051,7 +3051,7 @@ setInterval(()=>{{
 </html>"""
 
 
-def _apple_guide_html(endpoint: str, status_url: str = "") -> str:
+def _apple_guide_html(endpoint: str, status_url: str = "") -> str:  # noqa: C901
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -3061,364 +3061,381 @@ def _apple_guide_html(endpoint: str, status_url: str = "") -> str:
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
 *{{box-sizing:border-box;margin:0;padding:0}}
-body{{font-family:'Inter',-apple-system,sans-serif;background:#070c18;color:#eef2ff;
-  min-height:100vh;padding:0 0 60px;-webkit-font-smoothing:antialiased}}
-header{{background:rgba(7,12,24,.95);border-bottom:1px solid rgba(255,255,255,.08);
+body{{
+  font-family:-apple-system,BlinkMacSystemFont,'Inter','Segoe UI',sans-serif;
+  background:#07090f;color:#c8d4e8;min-height:100vh;padding:0 0 72px;
+  -webkit-font-smoothing:antialiased;font-size:16px;line-height:1.65;
+}}
+header{{
+  background:rgba(7,9,15,.96);border-bottom:1px solid rgba(255,255,255,.07);
   padding:14px 20px;position:sticky;top:0;z-index:10;backdrop-filter:blur(16px);
-  display:flex;align-items:center;justify-content:space-between}}
-.logo{{font-size:17px;font-weight:800;background:linear-gradient(130deg,#00e676,#3b82f6);
-  -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}}
-main{{max-width:620px;margin:0 auto;padding:24px 16px}}
-h1{{font-size:22px;font-weight:800;margin-bottom:6px;letter-spacing:-.4px}}
-.sub{{font-size:14px;color:#6b7a99;margin-bottom:20px;line-height:1.55}}
+}}
+.logo{{
+  font-size:17px;font-weight:800;
+  background:linear-gradient(130deg,#00e676,#3b82f6);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
+}}
+main{{max-width:560px;margin:0 auto;padding:32px 18px 0}}
+h1{{font-size:26px;font-weight:800;letter-spacing:-.5px;color:#eef2ff;margin-bottom:6px}}
+.sub{{font-size:15px;color:#5c6b8a;line-height:1.6;margin-bottom:24px}}
 
-/* ── STATUS BANNER ─────────────────────────────────────── */
-.status-banner{{
+/* ── STATUS BANNER ─── */
+.sbanner{{
   border-radius:14px;padding:14px 16px;
-  display:flex;align-items:center;gap:12px;
-  margin-bottom:24px;font-size:14px;font-weight:500;
-  transition:all .4s;
+  display:flex;align-items:flex-start;gap:12px;
+  margin-bottom:28px;transition:all .4s;
 }}
-.status-banner.checking{{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);color:#6b7a99}}
-.status-banner.connected{{background:rgba(0,230,118,.07);border:1px solid rgba(0,230,118,.25);color:#00e676}}
-.status-banner.waiting{{background:rgba(59,130,246,.07);border:1px solid rgba(59,130,246,.2);color:#7ca9f8}}
-.status-dot{{width:10px;height:10px;border-radius:50%;flex-shrink:0}}
-.status-banner.checking .status-dot{{background:#3d4a66}}
-.status-banner.connected .status-dot{{background:#00e676;box-shadow:0 0 8px #00e676}}
-.status-banner.waiting .status-dot{{background:#3b82f6}}
-.status-meta{{font-size:12px;color:#6b7a99;margin-top:2px;font-weight:400}}
+.sbanner.checking{{background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07);color:#4a5568}}
+.sbanner.connected{{background:rgba(0,230,118,.07);border:1px solid rgba(0,230,118,.22);color:#00e676}}
+.sbanner.waiting{{background:rgba(59,130,246,.06);border:1px solid rgba(59,130,246,.18);color:#7ca9f8}}
+.sdot{{width:11px;height:11px;border-radius:50%;flex-shrink:0;margin-top:4px}}
+.sbanner.checking .sdot{{background:#2d3748}}
+.sbanner.connected .sdot{{background:#00e676;box-shadow:0 0 9px rgba(0,230,118,.6)}}
+.sbanner.waiting .sdot{{background:#3b82f6}}
+.stxt{{font-size:14px;font-weight:600}}
+.smeta{{font-size:13px;opacity:.7;margin-top:2px;font-weight:400}}
 
-/* ── URL BOX ───────────────────────────────────────────── */
-.section{{margin-bottom:28px}}
-.section-lbl{{font-size:10px;font-weight:700;color:#3d4a66;text-transform:uppercase;
-  letter-spacing:1.4px;margin-bottom:10px}}
-.url-box{{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);
-  border-radius:12px;padding:12px 14px;display:flex;align-items:center;gap:10px}}
-.url-text{{font-family:monospace;font-size:11.5px;color:#00e676;word-break:break-all;
-  flex:1;line-height:1.5;user-select:all}}
-.copy-btn{{background:rgba(0,230,118,.12);border:1px solid rgba(0,230,118,.3);color:#00e676;
-  padding:7px 14px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;
-  white-space:nowrap;font-family:inherit;transition:all .2s;flex-shrink:0}}
-.copy-btn:active{{transform:scale(.93);opacity:.8}}
-.copy-btn.copied{{background:rgba(0,230,118,.22);border-color:#00e676}}
-
-/* ── STEPS ─────────────────────────────────────────────── */
-.steps{{display:flex;flex-direction:column;gap:10px}}
-.step{{background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07);
-  border-radius:14px;padding:16px 16px 16px 14px;
-  display:grid;grid-template-columns:28px 1fr;gap:12px;align-items:start}}
-.step-num{{width:28px;height:28px;background:rgba(0,230,118,.10);border:1px solid rgba(0,230,118,.22);
-  color:#00e676;border-radius:50%;display:flex;align-items:center;justify-content:center;
-  font-size:12px;font-weight:800;flex-shrink:0;margin-top:1px}}
-.step-title{{font-size:14px;font-weight:700;color:#eef2ff;margin-bottom:5px}}
-.step-body{{font-size:13px;color:#8899aa;line-height:1.6}}
-.step-body b{{color:#c8d0e8;font-weight:600}}
-.step-body ul{{padding-left:18px;margin-top:6px;display:flex;flex-direction:column;gap:4px}}
-.step-body li{{list-style:disc}}
-code{{background:rgba(255,255,255,.08);padding:1px 6px;border-radius:5px;
-  font-size:11px;color:#00e676;font-family:monospace;white-space:nowrap}}
-.action-tag{{
-  display:inline-block;background:rgba(59,130,246,.12);border:1px solid rgba(59,130,246,.25);
-  color:#7ca9f8;border-radius:6px;padding:1px 8px;font-size:11.5px;font-weight:600;
-  margin:0 1px;white-space:nowrap;
+/* ── URL BOX ─── */
+.url-wrap{{margin-bottom:32px}}
+.url-lbl{{font-size:11px;font-weight:700;color:#2d3748;text-transform:uppercase;letter-spacing:1.3px;margin-bottom:8px}}
+.url-box{{
+  background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.09);
+  border-radius:13px;padding:13px 14px;display:flex;align-items:center;gap:10px;
 }}
-.val-tag{{
-  display:inline-block;background:rgba(0,230,118,.08);border:1px solid rgba(0,230,118,.2);
-  color:#00e676;border-radius:6px;padding:1px 8px;font-size:11.5px;font-weight:600;
-  margin:0 1px;white-space:nowrap;
+.url-txt{{
+  font-family:'SF Mono',monospace;font-size:11.5px;color:#00e676;
+  word-break:break-all;flex:1;line-height:1.55;user-select:all;
+}}
+.copy-btn{{
+  background:rgba(0,230,118,.10);border:1px solid rgba(0,230,118,.28);color:#00e676;
+  padding:8px 16px;border-radius:9px;font-size:13px;font-weight:700;cursor:pointer;
+  white-space:nowrap;font-family:inherit;transition:all .18s;flex-shrink:0;
+}}
+.copy-btn:active{{transform:scale(.92)}}
+.copy-btn.ok{{background:rgba(0,230,118,.18);border-color:#00e676}}
+
+/* ── SECTION HEADER ─── */
+.sec-hd{{
+  font-size:11px;font-weight:700;color:#2d3748;text-transform:uppercase;
+  letter-spacing:1.3px;margin:0 0 14px;
 }}
 
-/* ── METRICS TABLE ─────────────────────────────────────── */
-.metrics-grid{{display:grid;grid-template-columns:repeat(2,1fr);gap:7px}}
-@media(min-width:480px){{.metrics-grid{{grid-template-columns:repeat(3,1fr)}}}}
-.metric{{background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07);
-  border-radius:10px;padding:10px 11px}}
-.metric-key{{font-family:monospace;font-size:11px;color:#00e676;margin-bottom:3px}}
-.metric-src{{font-size:11px;color:#6b7a99}}
-
-/* ── OPTIONAL SECTION ──────────────────────────────────── */
-.optional-hd{{
-  display:flex;align-items:center;gap:10px;cursor:pointer;user-select:none;
-  padding:14px 16px;border-radius:14px;
-  background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07);
-  transition:background .15s;
+/* ── STEP CARDS ─── */
+.steps{{display:flex;flex-direction:column;gap:3px;margin-bottom:36px}}
+.step{{
+  background:rgba(255,255,255,.025);border:1px solid rgba(255,255,255,.065);
+  border-radius:16px;padding:18px 18px 18px 16px;
+  display:grid;grid-template-columns:34px 1fr;gap:14px;
 }}
-.optional-hd:hover{{background:rgba(255,255,255,.05)}}
-.optional-title{{font-size:14px;font-weight:700;color:#eef2ff;flex:1}}
-.optional-badge{{
-  font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;
-  background:rgba(234,179,8,.1);border:1px solid rgba(234,179,8,.25);
-  color:#eab308;border-radius:6px;padding:2px 8px;
+.snum{{
+  width:34px;height:34px;border-radius:50%;
+  background:rgba(0,230,118,.09);border:1px solid rgba(0,230,118,.20);
+  color:#00e676;display:flex;align-items:center;justify-content:center;
+  font-size:14px;font-weight:800;flex-shrink:0;
 }}
-.optional-chevron{{font-size:11px;color:#3d4a66;transition:transform .2s}}
-.optional-body{{display:none;margin-top:8px}}
-.optional-body.open{{display:block}}
-.tip-box{{background:rgba(59,130,246,.06);border:1px solid rgba(59,130,246,.18);
-  border-radius:12px;padding:14px;font-size:13px;color:#8899aa;line-height:1.6;
-  margin-top:8px}}
-.tip-box b{{color:#7ca9f8}}
+.stitle{{font-size:16px;font-weight:700;color:#eef2ff;margin-bottom:8px;letter-spacing:-.2px}}
+.sbody{{font-size:14.5px;color:#7a8da8;line-height:1.65}}
+.sbody b,.sbody strong{{color:#bac4d8;font-weight:600}}
 
-/* ── DIVIDER ───────────────────────────────────────────── */
-.divider{{border:none;border-top:1px solid rgba(255,255,255,.07);margin:28px 0}}
+/* ── TAP INSTRUCTION ─── */
+.tap{{
+  display:inline-flex;align-items:center;gap:4px;
+  background:rgba(59,130,246,.10);border:1px solid rgba(59,130,246,.20);
+  color:#93b4f0;border-radius:7px;padding:1px 9px 2px;
+  font-size:13.5px;font-weight:600;white-space:nowrap;
+}}
 
-footer{{text-align:center;padding:0;color:#3d4a66;font-size:11px}}
+/* ── KEY NAME (monospace label) ─── */
+.key{{
+  font-family:'SF Mono',ui-monospace,monospace;
+  background:rgba(0,230,118,.08);border:1px solid rgba(0,230,118,.18);
+  color:#00e676;border-radius:6px;padding:1px 8px;
+  font-size:12.5px;white-space:nowrap;
+}}
+
+/* ── METRIC BLOCK (each health query) ─── */
+.metrics{{display:flex;flex-direction:column;gap:10px;margin:14px 0 4px}}
+.metric-card{{
+  background:rgba(255,255,255,.025);border:1px solid rgba(255,255,255,.07);
+  border-radius:12px;padding:13px 15px;
+  display:grid;grid-template-columns:1fr auto;gap:6px 16px;align-items:start;
+}}
+.mc-name{{font-size:15px;font-weight:600;color:#eef2ff}}
+.mc-search{{font-size:12.5px;color:#4a5568;margin-top:2px}}
+.mc-var{{
+  font-family:'SF Mono',ui-monospace,monospace;font-size:12px;
+  background:rgba(0,230,118,.08);border:1px solid rgba(0,230,118,.18);
+  color:#00e676;border-radius:6px;padding:2px 8px;white-space:nowrap;
+  align-self:start;margin-top:3px;
+}}
+
+/* ── DICT ROW ─── */
+.dict-rows{{display:flex;flex-direction:column;gap:8px;margin:14px 0 4px}}
+.dict-row{{
+  background:rgba(255,255,255,.025);border:1px solid rgba(255,255,255,.07);
+  border-radius:10px;padding:11px 14px;
+  display:grid;grid-template-columns:auto 1fr;gap:6px 14px;align-items:center;
+}}
+.dk{{
+  font-family:'SF Mono',ui-monospace,monospace;font-size:12.5px;
+  color:#00e676;white-space:nowrap;font-weight:600;
+}}
+.dv{{font-size:13.5px;color:#7a8da8;line-height:1.5}}
+.dv b{{color:#bac4d8;font-weight:600}}
+
+/* ── NOTE BOX ─── */
+.note{{
+  background:rgba(59,130,246,.05);border:1px solid rgba(59,130,246,.16);
+  border-radius:12px;padding:13px 15px;font-size:13.5px;color:#6b82a8;
+  line-height:1.6;margin-top:10px;
+}}
+.note b{{color:#7ca9f8}}
+.note.green{{
+  background:rgba(0,230,118,.05);border-color:rgba(0,230,118,.16);
+}}
+.note.green b{{color:#00e676}}
+
+/* ── DIVIDER ─── */
+hr{{border:none;border-top:1px solid rgba(255,255,255,.06);margin:36px 0}}
+
+footer{{text-align:center;padding:28px 0 0;color:#2d3748;font-size:12px}}
 </style>
 </head>
 <body>
-<header>
-  <div class="logo">&#9889; Arnie</div>
-</header>
+<header><div class="logo">⚡ Arnie</div></header>
 <main>
 
 <h1>Connect Apple Health</h1>
-<p class="sub">Sync your iPhone's health data automatically each morning using an iOS Shortcut. Takes about 5 minutes to set up once.</p>
+<p class="sub">Sync your health data to Arnie automatically every morning. One-time setup, takes about 5–8 minutes.</p>
 
-<!-- CONNECTION STATUS -->
-<div class="status-banner checking" id="status-banner">
-  <div class="status-dot"></div>
+<!-- STATUS -->
+<div class="sbanner checking" id="sbanner">
+  <div class="sdot"></div>
   <div>
-    <div id="status-text">Checking connection…</div>
-    <div class="status-meta" id="status-meta"></div>
+    <div class="stxt" id="stxt">Checking connection…</div>
+    <div class="smeta" id="smeta"></div>
   </div>
 </div>
 
-<!-- PERSONAL URL -->
-<div class="section">
-  <div class="section-lbl">Your personal URL</div>
+<!-- URL -->
+<div class="url-wrap">
+  <div class="url-lbl">Your personal Arnie URL</div>
   <div class="url-box">
-    <div class="url-text" id="url-text">{endpoint}</div>
+    <div class="url-txt" id="url-text">{endpoint}</div>
     <button class="copy-btn" id="copy-btn" onclick="copyUrl()">Copy</button>
   </div>
 </div>
 
-<!-- STEP-BY-STEP -->
-<div class="section">
-  <div class="section-lbl">Setup — 4 steps</div>
-  <div class="steps">
+<!-- STEP 1 -->
+<div class="sec-hd">Setup — follow these steps in order</div>
+<div class="steps">
 
-    <div class="step">
-      <div class="step-num">1</div>
-      <div>
-        <div class="step-title">Create a new Shortcut</div>
-        <div class="step-body">
-          Open the <b>Shortcuts</b> app on your iPhone → tap <b>+</b> (top right) → rename it <b>"Arnie Health Sync"</b>.
-        </div>
-      </div>
-    </div>
-
-    <div class="step">
-      <div class="step-num">2</div>
-      <div>
-        <div class="step-title">Add your health queries</div>
-        <div class="step-body">
-          Tap <b>Add Action</b> and search <b>Find Health Samples</b>.
-          Add one action per metric, each set to date range <b>Today</b>:<br><br>
-          <ul>
-            <li><b>Step Count</b> — Summarise: <span class="val-tag">Sum</span> → name variable <code>steps</code></li>
-            <li><b>Active Energy Burned</b> — Summarise: <span class="val-tag">Sum</span> → name variable <code>cals</code></li>
-            <li><b>Resting Heart Rate</b> — Limit: <span class="val-tag">1</span>, Sort: <span class="val-tag">Newest first</span> → name variable <code>rhr</code></li>
-            <li><b>Heart Rate Variability</b> — Limit: <span class="val-tag">1</span>, Sort: <span class="val-tag">Newest first</span> → name variable <code>hrv</code></li>
-            <li><b>Sleep Analysis</b> — Summarise: <span class="val-tag">Sum</span> → name variable <code>sleep_secs</code></li>
-          </ul>
-          <br>To set a variable name: after adding each action, tap the result chip at the bottom and choose <b>Set Variable</b>.
-        </div>
-      </div>
-    </div>
-
-    <div class="step">
-      <div class="step-num">3</div>
-      <div>
-        <div class="step-title">Build the payload and send it</div>
-        <div class="step-body">
-          Add a <span class="action-tag">Dictionary</span> action with these key→value pairs:<br><br>
-          <ul>
-            <li><code>date</code> → <span class="action-tag">Format Date</span> (Today, format <code>yyyy-MM-dd</code>)</li>
-            <li><code>steps</code> → variable <code>steps</code></li>
-            <li><code>active_calories</code> → variable <code>cals</code></li>
-            <li><code>resting_hr</code> → variable <code>rhr</code></li>
-            <li><code>hrv</code> → variable <code>hrv</code></li>
-            <li><code>sleep_hours</code> → <span class="action-tag">Calculate</span> (<code>sleep_secs</code> ÷ <code>3600</code>)</li>
-          </ul>
-          <br>Then add <span class="action-tag">Get Contents of URL</span>:
-          <ul>
-            <li>URL → <code>{endpoint}</code></li>
-            <li>Method → <span class="val-tag">POST</span></li>
-            <li>Request Body → <span class="val-tag">JSON</span> → set to the Dictionary above</li>
-          </ul>
-        </div>
-      </div>
-    </div>
-
-    <div class="step">
-      <div class="step-num">4</div>
-      <div>
-        <div class="step-title">Automate it to run every morning</div>
-        <div class="step-body">
-          In Shortcuts tap <b>Automation</b> (bottom tab) → <b>+</b> → <b>Time of Day</b><br><br>
-          <ul>
-            <li>Time: <span class="val-tag">8:00 AM</span> (or whenever you wake)</li>
-            <li>Repeat: <span class="val-tag">Daily</span></li>
-            <li>Run Shortcut: <b>Arnie Health Sync</b></li>
-          </ul>
-          <br>Tap <b>Done</b>, then tap the automation again and turn off <b>"Ask Before Running"</b> so it runs silently.
-        </div>
-      </div>
-    </div>
-
-  </div>
-</div>
-
-<hr class="divider">
-
-<!-- OPTIONAL: APPLE WATCH WORKOUTS -->
-<div class="section">
-  <div class="section-lbl">Optional add-on</div>
-  <div class="optional-hd" onclick="toggleOptional(this)">
-    <div class="optional-title">🏃 Add Apple Watch workout tracking</div>
-    <span class="optional-badge">Optional</span>
-    <span class="optional-chevron" id="opt-chevron">▶</span>
-  </div>
-  <div class="optional-body" id="optional-body">
-    <div class="steps" style="margin-top:8px">
-
-      <div class="step">
-        <div class="step-num">A</div>
-        <div>
-          <div class="step-title">Fetch workouts for today</div>
-          <div class="step-body">
-            In your Arnie Health Sync shortcut, before the Dictionary action, add:
-            <span class="action-tag">Find Workouts</span> — set date range to <b>Today</b>.
-            Name the result variable <code>workouts</code>.
-          </div>
-        </div>
-      </div>
-
-      <div class="step">
-        <div class="step-num">B</div>
-        <div>
-          <div class="step-title">Build the workouts array</div>
-          <div class="step-body">
-            After Find Workouts, add <span class="action-tag">Repeat with Each</span> (iterates over <code>workouts</code>).
-            Inside the loop, add a <span class="action-tag">Dictionary</span> with these keys:
-            <ul style="margin-top:8px">
-              <li><code>name</code> → <b>Repeat Item</b>'s <span class="val-tag">Workout Type</span></li>
-              <li><code>duration_minutes</code> → <b>Repeat Item</b>'s <span class="val-tag">Duration</span> ÷ <code>60</code></li>
-              <li><code>active_calories</code> → <b>Repeat Item</b>'s <span class="val-tag">Active Energy Burned</span></li>
-              <li><code>start_time</code> → <b>Repeat Item</b>'s <span class="val-tag">Start Date</span></li>
-            </ul>
-            After the Repeat block add <span class="action-tag">Combine Text</span> on the loop results (join with separator <code>,</code>) to form the array, then wrap it: add a <span class="action-tag">Text</span> action → <code>[</code> + combined text + <code>]</code> and name it <code>workouts_json</code>.
-          </div>
-        </div>
-      </div>
-
-      <div class="step">
-        <div class="step-num">C</div>
-        <div>
-          <div class="step-title">Add workouts to the Dictionary</div>
-          <div class="step-body">
-            In your main Dictionary (from step 3), add one more key:
-            <ul style="margin-top:6px">
-              <li><code>workouts</code> → variable <code>workouts_json</code></li>
-            </ul>
-            That's it — Arnie will log each Apple Watch workout as an exercise entry in your daily log.
-          </div>
-        </div>
-      </div>
-
-    </div>
-
-    <div class="tip-box" style="margin-top:12px">
-      <b>What gets logged:</b> Each Apple Watch workout (Run, Cycle, Strength Training, HIIT, etc.)
-      appears in your daily exercise log with name, duration, and calorie burn.
-      Re-syncing the same day replaces the entries rather than doubling them.
+<div class="step">
+  <div class="snum">1</div>
+  <div>
+    <div class="stitle">Create a new Shortcut on your iPhone</div>
+    <div class="sbody">
+      Open the <b>Shortcuts</b> app &nbsp;→&nbsp; tap the <span class="tap">+</span> button in the top-right corner &nbsp;→&nbsp; tap the name at the top and type <b>Arnie Health</b> &nbsp;→&nbsp; tap <span class="tap">Done</span>.
     </div>
   </div>
 </div>
 
-<hr class="divider">
-
-<!-- SUPPORTED FIELDS -->
-<div class="section">
-  <div class="section-lbl">All supported fields</div>
-  <div class="metrics-grid">
-    <div class="metric"><div class="metric-key">steps</div><div class="metric-src">Step Count</div></div>
-    <div class="metric"><div class="metric-key">active_calories</div><div class="metric-src">Active Energy (kcal)</div></div>
-    <div class="metric"><div class="metric-key">resting_hr</div><div class="metric-src">Resting HR (bpm)</div></div>
-    <div class="metric"><div class="metric-key">avg_hr</div><div class="metric-src">Heart Rate avg</div></div>
-    <div class="metric"><div class="metric-key">hrv</div><div class="metric-src">HRV SDNN (ms)</div></div>
-    <div class="metric"><div class="metric-key">resting_calories</div><div class="metric-src">Basal Energy (kcal)</div></div>
-    <div class="metric"><div class="metric-key">sleep_hours</div><div class="metric-src">Sleep total (hrs)</div></div>
-    <div class="metric"><div class="metric-key">sleep_deep_hours</div><div class="metric-src">Sleep deep (hrs)</div></div>
-    <div class="metric"><div class="metric-key">sleep_rem_hours</div><div class="metric-src">Sleep REM (hrs)</div></div>
-    <div class="metric"><div class="metric-key">stand_hours</div><div class="metric-src">Stand Hours</div></div>
-    <div class="metric"><div class="metric-key">exercise_minutes</div><div class="metric-src">Exercise Minutes</div></div>
-    <div class="metric"><div class="metric-key">workouts</div><div class="metric-src">Watch workouts (array)</div></div>
-  </div>
-  <div class="tip-box" style="margin-top:10px">
-    All fields are <b>optional</b> — include only the ones you care about.
-    Once your first sync arrives you'll get a confirmation in Telegram and the wearable
-    section of your dashboard will show Apple Health as connected.
+<!-- STEP 2 -->
+<div class="step">
+  <div class="snum">2</div>
+  <div>
+    <div class="stitle">Add 5 health queries — one at a time</div>
+    <div class="sbody">
+      For each metric below, tap <span class="tap">Add Action</span> &nbsp;→&nbsp; search <b>Find Health Samples</b> &nbsp;→&nbsp; tap it.<br><br>
+      Then inside the action:
+      <ol style="padding-left:18px;margin:8px 0 12px;display:flex;flex-direction:column;gap:5px">
+        <li>Tap the <b>type field</b> (it usually says "Heart Rate") and search for the exact name below.</li>
+        <li>Make sure the <b>date range</b> says <b>Today</b>.</li>
+        <li>Make sure <b>Summarise</b> is set to <b>Sum</b>.</li>
+        <li>At the very bottom of the action you'll see a <b>blue result chip</b> (like "Health Samples"). Tap it &nbsp;→&nbsp; tap <span class="tap">Set Variable</span> &nbsp;→&nbsp; type the name from the last column &nbsp;→&nbsp; tap <span class="tap">Done</span>.</li>
+      </ol>
+      Do this for all 5 metrics:
+    </div>
+    <div class="metrics">
+      <div class="metric-card">
+        <div>
+          <div class="mc-name">Steps</div>
+          <div class="mc-search">Search for: <b>Step Count</b></div>
+        </div>
+        <div class="mc-var">steps</div>
+      </div>
+      <div class="metric-card">
+        <div>
+          <div class="mc-name">Active Calories</div>
+          <div class="mc-search">Search for: <b>Active Energy Burned</b></div>
+        </div>
+        <div class="mc-var">cals</div>
+      </div>
+      <div class="metric-card">
+        <div>
+          <div class="mc-name">Resting Calories</div>
+          <div class="mc-search">Search for: <b>Basal Energy Burned</b></div>
+        </div>
+        <div class="mc-var">rest</div>
+      </div>
+      <div class="metric-card">
+        <div>
+          <div class="mc-name">Sleep</div>
+          <div class="mc-search">Search for: <b>Sleep Analysis</b></div>
+        </div>
+        <div class="mc-var">sleep</div>
+      </div>
+      <div class="metric-card">
+        <div>
+          <div class="mc-name">Exercise Minutes</div>
+          <div class="mc-search">Search for: <b>Apple Exercise Time</b></div>
+        </div>
+        <div class="mc-var">exmin</div>
+      </div>
+    </div>
+    <div class="note green" style="margin-top:12px">
+      <b>Tip:</b> The variable name you type (like <b>steps</b> or <b>sleep</b>) is just a label
+      so you can find it in the next step. Type it exactly as shown — lowercase, no spaces.
+    </div>
   </div>
 </div>
+
+<!-- STEP 3 -->
+<div class="step">
+  <div class="snum">3</div>
+  <div>
+    <div class="stitle">Package the data</div>
+    <div class="sbody">
+      Tap <span class="tap">Add Action</span> &nbsp;→&nbsp; search <b>Dictionary</b> &nbsp;→&nbsp; tap it.<br><br>
+      Tap <span class="tap">Add new item</span> six times to create 6 rows.
+      For each row, tap the <b>left field</b> to type the key name, then tap the <b>right field</b> and tap the small variable icon (looks like <b>&#123;x&#125;</b> or a colored circle above the keyboard) to pick the variable.<br><br>
+      Fill them in like this:
+    </div>
+    <div class="dict-rows">
+      <div class="dict-row">
+        <div class="dk">date</div>
+        <div class="dv">Tap the right field &nbsp;→&nbsp; tap the <b>clock or calendar icon</b> &nbsp;→&nbsp; choose <b>Current Date</b> &nbsp;→&nbsp; change the format to <b>yyyy-MM-dd</b></div>
+      </div>
+      <div class="dict-row">
+        <div class="dk">steps</div>
+        <div class="dv">Tap right field &nbsp;→&nbsp; variable icon &nbsp;→&nbsp; choose <b>steps</b></div>
+      </div>
+      <div class="dict-row">
+        <div class="dk">active_calories</div>
+        <div class="dv">Tap right field &nbsp;→&nbsp; variable icon &nbsp;→&nbsp; choose <b>cals</b></div>
+      </div>
+      <div class="dict-row">
+        <div class="dk">resting_calories</div>
+        <div class="dv">Tap right field &nbsp;→&nbsp; variable icon &nbsp;→&nbsp; choose <b>rest</b></div>
+      </div>
+      <div class="dict-row">
+        <div class="dk">sleep_seconds</div>
+        <div class="dv">Tap right field &nbsp;→&nbsp; variable icon &nbsp;→&nbsp; choose <b>sleep</b> &nbsp;(no math needed — Arnie converts it automatically)</div>
+      </div>
+      <div class="dict-row">
+        <div class="dk">exercise_minutes</div>
+        <div class="dv">Tap right field &nbsp;→&nbsp; variable icon &nbsp;→&nbsp; choose <b>exmin</b></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- STEP 4 -->
+<div class="step">
+  <div class="snum">4</div>
+  <div>
+    <div class="stitle">Send the data to Arnie</div>
+    <div class="sbody">
+      Tap <span class="tap">Add Action</span> &nbsp;→&nbsp; search <b>Get Contents of URL</b> &nbsp;→&nbsp; tap it.<br><br>
+      Configure it like this:
+    </div>
+    <div class="dict-rows" style="margin-top:12px">
+      <div class="dict-row">
+        <div class="dk">URL</div>
+        <div class="dv">Tap the URL field and paste your personal URL (use the Copy button at the top of this page)</div>
+      </div>
+      <div class="dict-row">
+        <div class="dk">Method</div>
+        <div class="dv">Change from <b>GET</b> to <b>POST</b></div>
+      </div>
+      <div class="dict-row">
+        <div class="dk">Request Body</div>
+        <div class="dv">Tap <b>Show More</b> if you see it &nbsp;→&nbsp; set to <b>JSON</b> &nbsp;→&nbsp; tap the body area and choose the <b>Dictionary</b> from the previous step</div>
+      </div>
+    </div>
+    <div class="note" style="margin-top:12px">
+      <b>Test it now:</b> Tap the play button ▷ at the bottom of the shortcut. If it works,
+      the status banner at the top of this page will turn green within a few seconds.
+      You'll also get a confirmation message in Telegram.
+    </div>
+  </div>
+</div>
+
+<!-- STEP 5 -->
+<div class="step">
+  <div class="snum">5</div>
+  <div>
+    <div class="stitle">Set it to run automatically every morning</div>
+    <div class="sbody">
+      In the Shortcuts app, tap <span class="tap">Automation</span> at the bottom &nbsp;→&nbsp; tap <span class="tap">+</span> &nbsp;→&nbsp; tap <b>Time of Day</b>.<br><br>
+      Set it up like this:
+      <ul style="padding-left:18px;margin:10px 0;display:flex;flex-direction:column;gap:6px">
+        <li>Time: <b>8:00 AM</b> (or whatever time you're usually awake)</li>
+        <li>Repeat: <b>Daily</b></li>
+      </ul>
+      Tap <span class="tap">Next</span> &nbsp;→&nbsp; select <b>Arnie Health</b> &nbsp;→&nbsp; tap <span class="tap">Done</span>.<br><br>
+      Tap the automation you just created in the list &nbsp;→&nbsp; <b>turn off "Ask Before Running"</b> (toggle it off) so it runs silently in the background without asking every morning.
+    </div>
+    <div class="note green" style="margin-top:12px">
+      <b>You're done!</b> Every morning it'll run quietly and your steps, calories, sleep,
+      and exercise will appear in your Arnie dashboard automatically.
+    </div>
+  </div>
+</div>
+
+</div><!-- end .steps -->
 
 </main>
-<footer style="padding:24px 16px 0;text-align:center;color:#3d4a66;font-size:11px">Arnie &middot; Apple Health via iOS Shortcut</footer>
+<footer>Arnie &middot; Apple Health · iOS Shortcut</footer>
 
 <script>
-// ── Copy URL ──
 function copyUrl(){{
   var url=document.getElementById('url-text').textContent.trim();
   navigator.clipboard.writeText(url).then(function(){{
-    var btn=document.getElementById('copy-btn');
-    btn.textContent='Copied ✓';
-    btn.classList.add('copied');
-    setTimeout(function(){{btn.textContent='Copy';btn.classList.remove('copied')}},2200);
+    var b=document.getElementById('copy-btn');
+    b.textContent='Copied ✓';b.classList.add('ok');
+    setTimeout(function(){{b.textContent='Copy';b.classList.remove('ok')}},2200);
   }}).catch(function(){{
-    // Fallback: select the text so the user can copy manually
     var el=document.getElementById('url-text');
-    var range=document.createRange();
-    range.selectNodeContents(el);
-    window.getSelection().removeAllRanges();
-    window.getSelection().addRange(range);
+    var r=document.createRange();r.selectNodeContents(el);
+    window.getSelection().removeAllRanges();window.getSelection().addRange(r);
   }});
 }}
 
-// ── Optional section toggle ──
-function toggleOptional(hd){{
-  var body=document.getElementById('optional-body');
-  var chevron=document.getElementById('opt-chevron');
-  var isOpen=body.classList.contains('open');
-  body.classList.toggle('open',!isOpen);
-  chevron.textContent=isOpen?'▶':'▼';
-}}
-
-// ── Connection status check ──
 {f"""
-(function pollStatus(){{
-  var statusUrl='{status_url}';
-  if(!statusUrl)return;
-  fetch(statusUrl).then(function(r){{return r.json()}}).then(function(d){{
-    var banner=document.getElementById('status-banner');
-    var text=document.getElementById('status-text');
-    var meta=document.getElementById('status-meta');
+(function poll(){{
+  fetch('{status_url}').then(function(r){{return r.json()}}).then(function(d){{
+    var b=document.getElementById('sbanner');
+    var t=document.getElementById('stxt');
+    var m=document.getElementById('smeta');
     if(d.connected){{
-      banner.className='status-banner connected';
-      text.textContent='Apple Health connected ✓';
-      var parts=[];
-      if(d.last_sync)parts.push('Last sync: '+d.last_sync);
-      if(d.steps)parts.push(Number(d.steps).toLocaleString()+' steps');
-      if(d.active_calories)parts.push(Math.round(d.active_calories)+' active kcal');
-      if(d.resting_hr)parts.push(d.resting_hr+'bpm RHR');
-      meta.textContent=parts.join(' · ');
+      b.className='sbanner connected';
+      t.textContent='Apple Health connected ✓';
+      var p=[];
+      if(d.last_sync)p.push('Last sync: '+d.last_sync);
+      if(d.steps)p.push(Number(d.steps).toLocaleString()+' steps');
+      if(d.active_calories)p.push(Math.round(d.active_calories)+' active kcal');
+      if(d.resting_hr)p.push(d.resting_hr+'bpm RHR');
+      m.textContent=p.join(' · ');
     }}else{{
-      banner.className='status-banner waiting';
-      text.textContent='Waiting for first sync…';
-      meta.textContent='Complete setup below, run the shortcut once, then refresh this page';
-      setTimeout(pollStatus,15000);
+      b.className='sbanner waiting';
+      t.textContent='Not connected yet';
+      m.textContent='Complete the steps below, then run the shortcut once to test it';
+      setTimeout(poll,12000);
     }}
   }}).catch(function(){{
-    document.getElementById('status-banner').className='status-banner waiting';
-    document.getElementById('status-text').textContent='Could not check status';
+    document.getElementById('sbanner').className='sbanner waiting';
+    document.getElementById('stxt').textContent='Connection unknown';
   }});
 }})();
 """ if status_url else ""}

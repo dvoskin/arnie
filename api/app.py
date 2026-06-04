@@ -2043,7 +2043,8 @@ class AppleHealthPayload(BaseModel):
     steps: Optional[int] = None
     active_calories: Optional[float] = None
     resting_calories: Optional[float] = None
-    sleep_hours: Optional[float] = None
+    sleep_hours: Optional[float] = None       # already in hours (advanced users)
+    sleep_seconds: Optional[float] = None     # raw iOS value — auto-converted to sleep_hours
     sleep_deep_hours: Optional[float] = None
     sleep_rem_hours: Optional[float] = None
     resting_hr: Optional[float] = None
@@ -2159,8 +2160,13 @@ async def receive_apple_health(
             except ValueError:
                 raise HTTPException(status_code=400, detail="Use YYYY-MM-DD")
 
-        # Snapshot fields only — exclude date and workouts (handled separately)
-        data = payload.model_dump(exclude={"date", "workouts"}, exclude_none=True)
+        # Snapshot fields only — exclude date, workouts, and sleep_seconds (handled below)
+        data = payload.model_dump(
+            exclude={"date", "workouts", "sleep_seconds"}, exclude_none=True
+        )
+        # Auto-convert sleep_seconds → sleep_hours so users never have to divide by 3600
+        if payload.sleep_seconds is not None and payload.sleep_hours is None:
+            data["sleep_hours"] = round(payload.sleep_seconds / 3600, 2)
         data.setdefault("source", "apple_health")
         await upsert_health_snapshot(db, user.id, snap_date, **data)
 
