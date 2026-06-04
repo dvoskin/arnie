@@ -879,35 +879,25 @@ async def get_profile(token: str, refresh: bool = False):
 
         from memory.attribute_store import get_all_attributes
         from memory.bio_generator import maybe_update_bio
+        from memory.profile_view import build_unified_profile
 
         if refresh or not user.user_bio:
             await maybe_update_bio(user, db, force=refresh)
 
         attributes = await get_all_attributes(db, user.id)
 
-        # Group by category, preserving tier ordering within each category
-        by_category: dict[str, list] = {}
-        for attr in attributes:
-            cat = attr.category or "custom"
-            by_category.setdefault(cat, []).append({
-                "key": attr.attribute_key,
-                "display_name": attr.display_name or attr.attribute_key.replace("_", " ").title(),
-                "value": attr.value,
-                "unit": attr.unit,
-                "category": cat,
-                "tier": attr.relevance_tier,
-                "confidence": attr.confidence,
-                "source": attr.source,
-                "status": attr.attribute_status,
-                "updated_at": attr.updated_at.isoformat() if attr.updated_at else None,
-            })
+        # Unified read model — merges typed columns + learned attributes (+ the
+        # bridged workout-program summary) into one categorized profile. This
+        # only powers the dashboard/bio; Arnie's context is untouched.
+        unified = build_unified_profile(user, user.preferences, attributes)
 
         return {
             "name": user.name or "User",
             "bio": user.user_bio or None,
             "bio_updated_at": user.user_bio_updated_at.isoformat() if user.user_bio_updated_at else None,
-            "attributes": by_category,
-            "attribute_count": len(attributes),
+            "basics": unified["basics"],
+            "categories": unified["categories"],
+            "attribute_count": len([a for a in attributes if a.attribute_status == "active"]),
         }
 
 

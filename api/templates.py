@@ -569,7 +569,7 @@ body{{
   background:var(--sf);border:1px solid var(--bd);border-radius:16px;
   padding:18px 20px;backdrop-filter:blur(16px);box-shadow:var(--sh);
 }}
-.wp-name{{font-family:'Instrument Serif','Times New Roman',serif;font-size:22px;letter-spacing:-.01em;margin-bottom:4px}}
+.wp-name{{font-size:16px;font-weight:600;letter-spacing:-.01em;margin-bottom:4px}}
 .wp-focus{{font-size:13px;color:var(--mu);margin-bottom:14px}}
 .wp-rotation{{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:18px}}
 .wp-chip{{
@@ -790,6 +790,25 @@ body{{
   width:5px;height:5px;border-radius:50%;flex-shrink:0;
   align-self:flex-start;margin-top:6px;
 }}
+/* Basics — compact demographic grid (short scalar values) */
+.basics-grid{{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin-bottom:9px}}
+.basic-cell{{
+  background:var(--sf);border:1px solid var(--bd);border-radius:12px;
+  padding:9px 11px;position:relative;backdrop-filter:blur(12px);box-shadow:var(--sh);
+}}
+.basic-lbl{{
+  font-family:'Geist Mono','SF Mono',monospace;font-size:8.5px;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--mu);margin-bottom:3px;font-weight:500;
+}}
+.basic-val{{font-size:14px;font-weight:500;color:var(--tx);letter-spacing:-.01em}}
+.basic-edit{{
+  position:absolute;top:6px;right:6px;width:18px;height:18px;border-radius:5px;
+  border:none;background:transparent;color:var(--mu);font-size:10px;cursor:pointer;
+  opacity:.35;transition:opacity .15s;display:grid;place-items:center;
+}}
+.basic-cell:hover .basic-edit{{opacity:1}}
+.basic-edit:hover{{background:var(--sf2);color:var(--tx)}}
+@media(max-width:560px){{.basics-grid{{grid-template-columns:repeat(2,1fr)}}}}
 .ancrd{{
   background:var(--sf);border:1px solid var(--bd);border-radius:16px;padding:16px;
   backdrop-filter:blur(16px);box-shadow:var(--sh);margin-bottom:9px;transition:background .3s;
@@ -1357,7 +1376,9 @@ footer{{
       </div>
       <!-- Bio card -->
       <div class="infocrd" id="ai-bio-card" style="padding:14px 16px;line-height:1.6;font-size:14px;color:var(--tx)"></div>
-      <!-- Learned attributes by category -->
+      <!-- Basics: compact demographic grid -->
+      <div id="ai-basics" class="basics-grid"></div>
+      <!-- Declared + learned facts, merged by category -->
       <div id="ai-attributes-section"></div>
     </div>
     <div id="ai-profile-loading" style="padding:24px 16px;text-align:center;color:var(--mu);font-size:13px">Building your profile&#8230;</div>
@@ -1385,11 +1406,7 @@ footer{{
       <div id="workout-parse-status" style="padding:0 14px 10px;font-size:12px;color:var(--mu)"></div>
     </div>
 
-    <div class="stitle" style="margin-top:24px">Your info</div>
-    <div class="infocrd" id="profile-info"></div>
-    <div class="stitle">Targets</div>
-    <div class="infocrd" id="profile-targets"></div>
-    <div class="stitle">Connected devices</div>
+    <div class="stitle" style="margin-top:24px">Connected devices</div>
     <div class="infocrd" style="overflow:hidden" id="devices-card"></div>
   </div>
 
@@ -2337,39 +2354,20 @@ async function deleteWorkoutProgram(){{
   renderWorkoutProgram(null,'');
 }}
 
+// Profile tab is now driven by the unified /api/profile model (bio, Basics grid,
+// merged categories — see renderAIProfile). renderProfileTab only renders the
+// connected-devices card, which needs the /api/stats connection flags.
 function renderProfileTab(d){{
-  var p=d.profile||{{}},tgt=d.targets||{{}},an=p.analytics||{{}};
-  var rows=[
-    ['Name',p.name],['Age',p.age?p.age+' yrs':null],['Sex',p.sex],
-    ['Height',p.height_ft||(p.height_cm?p.height_cm+' cm':null)],
-    ['Current weight',p.current_weight_lbs?p.current_weight_lbs+' lbs':null],
-    ['Goal weight',p.goal_weight_lbs?p.goal_weight_lbs+' lbs':null],
-    ['Goal',p.primary_goal],['Experience',p.training_experience],
-    ['Diet',p.dietary_preferences&&p.dietary_preferences!=='none'?p.dietary_preferences:null],
-    ['Injuries',p.injuries&&p.injuries!=='none'?p.injuries:null],
-    ['Timezone',p.timezone],['Coaching style',p.coaching_style],
-  ].filter(([,v])=>v!=null&&v!=='');
-  // Badge renderer for Goal / Coaching style
-  function _badge(v,cls){{return v?'<span class="'+cls+'">'+esc(v.toUpperCase())+'</span>':'';}}
-  document.getElementById('profile-info').innerHTML=rows.map(([l,v])=>{{
-    if(l==='Goal') return _inrow(l,null,_PEDIT,null).replace('</div></div>',
-      '<div style="display:flex;align-items:center;gap:6px">'+_badge(v,'goal-badge')+'</div></div></div>');
-    if(l==='Coaching style') return _inrow(l,null,_PEDIT,null).replace('</div></div>',
-      '<div style="display:flex;align-items:center;gap:6px">'+_badge(v,'coach-badge')+'</div></div></div>');
-    return _inrow(l,v,_PEDIT,null);
-  }}).join('')||'<div class="lempty">No profile data</div>';
-
-  document.getElementById('profile-targets').innerHTML=
-    _inrow('Calorie target',tgt.calories?tgt.calories.toLocaleString()+' kcal/day':'—',_TEDIT,'var(--ac)')+
-    _inrow('Protein target',tgt.protein?tgt.protein+'g/day':'—',_TEDIT,'var(--bl)');
-
+  var p=d.profile||{{}};
+  var dc=document.getElementById('devices-card');
+  if(!dc) return;
   var devs=[
     {{name:'Apple Health',icon:'♥',live:p.apple_health_connected,label:p.apple_health_connected?'Syncing':'Not connected'}},
     {{name:'Whoop',icon:'〰',live:p.whoop_connected,label:p.whoop_connected?'Connected':'Run /connect whoop in Telegram to link'}},
     {{name:'Fitbit',icon:'⊕',live:false,label:'Coming soon',soon:true}},
     {{name:'Hume',icon:'◉',live:false,label:'Coming soon',soon:true}},
   ];
-  document.getElementById('devices-card').innerHTML=
+  dc.innerHTML=
     '<div class="dev-grid">'+devs.map(function(d){{
       return '<div class="dev-card'+(d.soon?' dev-soon':'')+'">'+
         '<div class="dev-logo">'+d.icon+'</div>'+
@@ -2385,9 +2383,9 @@ function renderProfileTab(d){{
 var _aiProfileLoaded = false;
 
 const CATEGORY_LABELS = {{
-  nutrition: '🍽 Nutrition', fitness: '🏋 Fitness', health: '💊 Health & Supplements',
-  lifestyle: '🌅 Lifestyle', behavior: '🧠 Behavior', mental: '💭 Mental',
-  custom: '📌 Custom Tracking',
+  goals: '🎯 Goals', nutrition: '🍽 Nutrition', fitness: '🏋 Fitness',
+  health: '💊 Health & Supplements', lifestyle: '🌅 Lifestyle',
+  behavior: '🧠 Behavior', mental: '💭 Mental', custom: '📌 Custom Tracking',
 }};
 const CONF_COLORS = {{ confirmed: 'var(--ac)', inferred: 'var(--mu)', needs_verification: '#f0a500' }};
 
@@ -2398,7 +2396,9 @@ function renderAIProfile(data) {{
 
   if (loadEl) loadEl.style.display = 'none';
 
-  if (!data || (!data.bio && (!data.attributes || !Object.keys(data.attributes).length))) {{
+  var basics = (data && data.basics) || [];
+  var cats = (data && data.categories) ? Object.keys(data.categories) : [];
+  if (!data || (!data.bio && !basics.length && !cats.length)) {{
     if (emptyEl) emptyEl.style.display = 'block';
     return;
   }}
@@ -2414,30 +2414,42 @@ function renderAIProfile(data) {{
       : '<p style="margin:0;color:var(--mu);font-style:italic">Bio generates after a few interactions — keep logging and chatting.</p>';
   }}
 
-  // Attributes by category
+  // Basics — compact demographic grid
+  var basicsEl = document.getElementById('ai-basics');
+  if (basicsEl) {{
+    basicsEl.innerHTML = basics.map(function(b) {{
+      var id = 'pb-' + _pslug(b.label);
+      var edit = b.edit_field
+        ? '<button class="basic-edit" onclick="editBasic(\\''+id+'\\',\\''+escA(b.edit_field)+'\\',\\''+escA(b.raw)+'\\',\\''+escA(b.label)+'\\')">&#9998;</button>'
+        : '';
+      return '<div class="basic-cell" id="'+id+'">' +
+        '<div class="basic-lbl">'+esc(b.label)+'</div>' +
+        '<div class="basic-val">'+esc(b.value)+'</div>' + edit +
+        '</div>';
+    }}).join('');
+  }}
+
+  // Categories — declared columns + learned attributes, merged
   var attrsEl = document.getElementById('ai-attributes-section');
   if (!attrsEl) return;
-
-  var cats = Object.keys(data.attributes || {{}});
   if (!cats.length) {{ attrsEl.innerHTML = ''; return; }}
 
-  var CAT_ORDER = ['fitness','nutrition','health','behavior','lifestyle','mental','custom'];
-  cats.sort(function(a,b){{
-    return (CAT_ORDER.indexOf(a)+1||99) - (CAT_ORDER.indexOf(b)+1||99);
-  }});
-
   attrsEl.innerHTML = cats.map(function(cat) {{
-    var rows = (data.attributes[cat] || []).filter(function(r){{ return r.status === 'active'; }});
+    var rows = data.categories[cat] || [];
     if (!rows.length) return '';
     var label = CATEGORY_LABELS[cat] || cat;
     var rowsHtml = rows.map(function(r) {{
+      var id = 'pc-' + _pslug(cat + '_' + r.label);
       var val = esc(r.value) + (r.unit ? ' ' + esc(r.unit) : '');
-      var confDot = r.confidence !== 'confirmed'
+      var confDot = (r.confidence && r.confidence !== 'confirmed')
         ? '<span class="conf-dot" style="background:' + (CONF_COLORS[r.confidence]||'var(--mu)') + '" title="' + esc(r.confidence) + '"></span>'
         : '';
-      return '<div class="inrow">' +
-        '<span class="inlbl">' + esc(r.display_name) + '</span>' +
-        '<div class="inrow-right"><span class="inval">' + val + '</span>' + confDot + '</div>' +
+      var edit = r.edit_field
+        ? '<button class="ibtn inrow-edit" onclick="editProw(\\''+id+'\\',\\''+escA(r.edit_field)+'\\',\\''+escA(r.raw)+'\\')">&#9998;</button>'
+        : '';
+      return '<div class="inrow" id="'+id+'">' +
+        '<span class="inlbl">' + esc(r.label) + '</span>' +
+        '<div class="inrow-right"><span class="inval">' + val + '</span>' + confDot + edit + '</div>' +
         '</div>';
     }}).join('');
     return '<div style="margin-top:20px"><div class="stitle" style="margin-top:0">' + esc(label) + '</div>' +
@@ -2457,6 +2469,46 @@ async function loadAIProfile() {{
     var loadEl = document.getElementById('ai-profile-loading');
     if (loadEl) loadEl.innerHTML = '<div class="lempty">Could not load profile — tap refresh to retry.</div>';
   }}
+}}
+
+// Re-fetch the unified profile WITHOUT forcing a bio regen (used after an edit).
+async function reloadAIProfile() {{
+  try {{
+    var r = await fetch(PROFILE_API);
+    if (!r.ok) return;
+    _aiProfileLoaded = true;
+    renderAIProfile(await r.json());
+  }} catch(e) {{}}
+}}
+
+// Inline edit for a Basics grid cell.
+function editBasic(cellId, field, raw, label) {{
+  var cell = document.getElementById(cellId); if (!cell) return;
+  cell.innerHTML = '<div class="basic-lbl">'+esc(label)+'</div>' +
+    '<div style="display:flex;gap:4px;align-items:center;margin-top:1px">' +
+    '<input type="text" id="bi-'+cellId+'" value="'+escA(raw)+'" ' +
+    'style="flex:1;min-width:0;background:var(--inp);border:1px solid var(--ac);color:var(--tx);padding:4px 7px;border-radius:7px;font-size:13px;font-family:inherit;outline:none">' +
+    '<button class="sbtn" style="flex:none;padding:4px 9px;font-size:11px;min-height:0" onclick="saveBasic(\\''+cellId+'\\',\\''+escA(field)+'\\')">&#10003;</button>' +
+    '<button class="cbtn" style="flex:none;padding:4px 7px;font-size:11px;min-height:0" onclick="reloadAIProfile()">&#10005;</button>' +
+    '</div>';
+  var inp = document.getElementById('bi-'+cellId);
+  if (inp) {{ inp.focus(); inp.select(); }}
+}}
+
+async function saveBasic(cellId, field) {{
+  var inp = document.getElementById('bi-'+cellId); if (!inp) return;
+  var val = inp.value.trim();
+  try {{
+    var r = await fetch('/api/profile/'+TOKEN, {{
+      method:'PATCH', headers:{{'Content-Type':'application/json'}},
+      body:JSON.stringify({{field:field, value:val||null}}),
+    }});
+    if (!r.ok) throw new Error();
+    var data = await fetchStats(null);
+    if (data) {{ _baseData=data; _dayCache[_todayStr]=data; renderProfileTab(data);
+      var nm=document.getElementById('user-name'); if(nm) nm.textContent=data.profile?.name||''; }}
+    reloadAIProfile();
+  }} catch(e) {{ alert('Save failed — try again.'); reloadAIProfile(); }}
 }}
 
 async function refreshAIProfile() {{
@@ -2841,17 +2893,20 @@ async function saveProw(rowId,field){{
     }});
     if(!r.ok)throw new Error('HTTP '+r.status);
     var data=await fetchStats(null);
-    _baseData=data;_dayCache[_todayStr]=data;
-    renderProfileTab(data);
-    document.getElementById('user-name').textContent=data.profile?.name||'';
-    document.getElementById('goal-tag').textContent=data.profile?.primary_goal||'';
+    if(data){{
+      _baseData=data;_dayCache[_todayStr]=data;
+      renderProfileTab(data);
+      var nm=document.getElementById('user-name'); if(nm) nm.textContent=data.profile?.name||'';
+      var gt=document.getElementById('goal-tag'); if(gt) gt.textContent=data.profile?.primary_goal||'';
+    }}
+    reloadAIProfile();   // re-render the unified profile so the edited value shows
   }}catch(e){{
     alert('Save failed — try again.');
     if(btn){{btn.disabled=false;btn.textContent='✓';}}
   }}
 }}
 
-function cancelProw(){{if(_baseData)renderProfileTab(_baseData);}}
+function cancelProw(){{reloadAIProfile();}}
 
 // ── Share day ─────────────────────────────────────────────────────────────
 function shareDay(){{
