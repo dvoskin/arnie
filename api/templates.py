@@ -809,8 +809,11 @@ body{{
 .basic-cell:hover .basic-edit{{opacity:1}}
 .basic-edit:hover{{background:var(--sf2);color:var(--tx)}}
 @media(max-width:560px){{.basics-grid{{grid-template-columns:repeat(2,1fr)}}}}
-/* Standard-skeleton extras: "learning" placeholder + value chips */
-.inval.learning{{color:var(--mu);font-style:italic;font-weight:400;opacity:.65}}
+/* Standard-skeleton extras: "waiting" dot for empty slots + value chips */
+.slot-wait{{
+  width:6px;height:6px;border-radius:50%;flex-shrink:0;align-self:center;
+  background:#f0a500;opacity:.7;box-shadow:0 0 5px rgba(240,165,0,.5);
+}}
 .chips{{display:flex;flex-wrap:wrap;gap:5px;justify-content:flex-end}}
 .chip{{
   font-size:11.5px;font-weight:500;color:var(--tx2);background:var(--sf2);
@@ -2455,7 +2458,7 @@ function renderAIProfile(data) {{
     var id = 'pc-' + _pslug(cat + '_' + s.label);
     var right;
     if (!s.filled) {{
-      right = '<span class="inval learning">learning…</span>';
+      right = '<span class="slot-wait" title="Arnie is still learning this from your activity"></span>';
     }} else if (s.chips && s.chips.length) {{
       right = '<div class="chips">' + s.chips.map(_chip).join('') + '</div>';
     }} else {{
