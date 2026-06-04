@@ -3051,392 +3051,361 @@ setInterval(()=>{{
 </html>"""
 
 
+
 def _apple_guide_html(endpoint: str, status_url: str = "") -> str:  # noqa: C901
+    # Pre-build the URL template shown in Step 3 — user pastes this into
+    # the "URL" action and inserts Shortcuts variables for each placeholder.
+    url_template = (
+        f"{endpoint}"
+        "&steps=[steps]"
+        "&active_calories=[cals]"
+        "&resting_calories=[rest]"
+        "&sleep_seconds=[sleep]"
+        "&exercise_minutes=[exmin]"
+    )
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Apple Health Setup — Arnie</title>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Connect Apple Health — Arnie</title>
 <style>
-*{{box-sizing:border-box;margin:0;padding:0}}
+/* ── Reset & base ── */
+*{{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}}
+html{{font-size:16px}}
 body{{
-  font-family:-apple-system,BlinkMacSystemFont,'Inter','Segoe UI',sans-serif;
-  background:#07090f;color:#c8d4e8;min-height:100vh;padding:0 0 72px;
-  -webkit-font-smoothing:antialiased;font-size:16px;line-height:1.65;
+  font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',sans-serif;
+  background:#08090e;color:#c9d4e8;min-height:100vh;
+  -webkit-font-smoothing:antialiased;
+  padding:0 0 80px;
 }}
-header{{
-  background:rgba(7,9,15,.96);border-bottom:1px solid rgba(255,255,255,.07);
-  padding:14px 20px;position:sticky;top:0;z-index:10;backdrop-filter:blur(16px);
+
+/* ── Header ── */
+.hdr{{
+  background:rgba(8,9,14,.95);border-bottom:1px solid rgba(255,255,255,.07);
+  padding:14px 20px;position:sticky;top:0;z-index:20;backdrop-filter:blur(16px);
+  display:flex;align-items:center;justify-content:space-between;
 }}
 .logo{{
-  font-size:17px;font-weight:800;
-  background:linear-gradient(130deg,#00e676,#3b82f6);
-  -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
+  font-size:16px;font-weight:800;
+  background:linear-gradient(130deg,#00e676,#4a9eff);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
 }}
-main{{max-width:560px;margin:0 auto;padding:32px 18px 0}}
-h1{{font-size:26px;font-weight:800;letter-spacing:-.5px;color:#eef2ff;margin-bottom:6px}}
-.sub{{font-size:15px;color:#5c6b8a;line-height:1.6;margin-bottom:24px}}
 
-/* ── STATUS BANNER ─── */
+/* ── Layout ── */
+main{{max-width:520px;margin:0 auto;padding:28px 16px 0}}
+h1{{font-size:26px;font-weight:800;color:#eef2ff;letter-spacing:-.4px;margin-bottom:6px}}
+.sub{{font-size:15px;color:#546070;line-height:1.6;margin-bottom:24px}}
+
+/* ── Status banner ── */
 .sbanner{{
-  border-radius:14px;padding:14px 16px;
-  display:flex;align-items:flex-start;gap:12px;
-  margin-bottom:28px;transition:all .4s;
+  display:flex;align-items:flex-start;gap:11px;
+  border-radius:14px;padding:13px 15px;margin-bottom:26px;
+  transition:background .4s,border .4s;
 }}
-.sbanner.checking{{background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07);color:#4a5568}}
-.sbanner.connected{{background:rgba(0,230,118,.07);border:1px solid rgba(0,230,118,.22);color:#00e676}}
-.sbanner.waiting{{background:rgba(59,130,246,.06);border:1px solid rgba(59,130,246,.18);color:#7ca9f8}}
-.sdot{{width:11px;height:11px;border-radius:50%;flex-shrink:0;margin-top:4px}}
-.sbanner.checking .sdot{{background:#2d3748}}
-.sbanner.connected .sdot{{background:#00e676;box-shadow:0 0 9px rgba(0,230,118,.6)}}
-.sbanner.waiting .sdot{{background:#3b82f6}}
-.stxt{{font-size:14px;font-weight:600}}
-.smeta{{font-size:13px;opacity:.7;margin-top:2px;font-weight:400}}
+.sbanner.loading{{background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07)}}
+.sbanner.yes{{background:rgba(0,230,118,.07);border:1px solid rgba(0,230,118,.22)}}
+.sbanner.no{{background:rgba(74,158,255,.06);border:1px solid rgba(74,158,255,.18)}}
+.sdot{{
+  width:10px;height:10px;border-radius:50%;flex-shrink:0;margin-top:4px;
+}}
+.sbanner.loading .sdot{{background:#2a3040}}
+.sbanner.yes .sdot{{background:#00e676;box-shadow:0 0 8px rgba(0,230,118,.6)}}
+.sbanner.no .sdot{{background:#4a9eff}}
+.stext{{font-size:14px;font-weight:600;color:#c9d4e8}}
+.sbanner.yes .stext{{color:#00e676}}
+.sbanner.no .stext{{color:#4a9eff}}
+.smeta{{font-size:13px;color:#546070;margin-top:3px}}
 
-/* ── URL BOX ─── */
-.url-wrap{{margin-bottom:32px}}
-.url-lbl{{font-size:11px;font-weight:700;color:#2d3748;text-transform:uppercase;letter-spacing:1.3px;margin-bottom:8px}}
-.url-box{{
-  background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.09);
-  border-radius:13px;padding:13px 14px;display:flex;align-items:center;gap:10px;
-}}
-.url-txt{{
-  font-family:'SF Mono',monospace;font-size:11.5px;color:#00e676;
-  word-break:break-all;flex:1;line-height:1.55;user-select:all;
-}}
-.copy-btn{{
-  background:rgba(0,230,118,.10);border:1px solid rgba(0,230,118,.28);color:#00e676;
-  padding:8px 16px;border-radius:9px;font-size:13px;font-weight:700;cursor:pointer;
-  white-space:nowrap;font-family:inherit;transition:all .18s;flex-shrink:0;
-}}
-.copy-btn:active{{transform:scale(.92)}}
-.copy-btn.ok{{background:rgba(0,230,118,.18);border-color:#00e676}}
-
-/* ── SECTION HEADER ─── */
-.sec-hd{{
-  font-size:11px;font-weight:700;color:#2d3748;text-transform:uppercase;
-  letter-spacing:1.3px;margin:0 0 14px;
+/* ── Section title ── */
+.stitle{{
+  font-size:11px;font-weight:700;color:#2a3040;
+  text-transform:uppercase;letter-spacing:1.2px;
+  margin:0 0 10px;
 }}
 
-/* ── STEP CARDS ─── */
-.steps{{display:flex;flex-direction:column;gap:3px;margin-bottom:36px}}
+/* ── Copy row — the main UI primitive ── */
+.crow{{
+  display:flex;align-items:center;gap:10px;
+  background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);
+  border-radius:12px;padding:11px 14px;margin-bottom:8px;
+}}
+.cval{{
+  flex:1;font-family:'SF Mono',ui-monospace,monospace;
+  font-size:12.5px;color:#00e676;word-break:break-all;
+  line-height:1.5;user-select:all;
+}}
+.cval.plain{{color:#c9d4e8;font-family:inherit;font-size:14px}}
+.cbtn{{
+  background:rgba(0,230,118,.10);border:1px solid rgba(0,230,118,.25);
+  color:#00e676;border-radius:9px;padding:7px 14px;
+  font-size:13px;font-weight:700;cursor:pointer;
+  white-space:nowrap;font-family:inherit;flex-shrink:0;
+  transition:all .15s;-webkit-appearance:none;
+}}
+.cbtn:active{{transform:scale(.91);opacity:.75}}
+.cbtn.ok{{background:rgba(0,230,118,.2);color:#00e676}}
+
+/* ── Step card ── */
 .step{{
-  background:rgba(255,255,255,.025);border:1px solid rgba(255,255,255,.065);
-  border-radius:16px;padding:18px 18px 18px 16px;
-  display:grid;grid-template-columns:34px 1fr;gap:14px;
-}}
-.snum{{
-  width:34px;height:34px;border-radius:50%;
-  background:rgba(0,230,118,.09);border:1px solid rgba(0,230,118,.20);
-  color:#00e676;display:flex;align-items:center;justify-content:center;
-  font-size:14px;font-weight:800;flex-shrink:0;
-}}
-.stitle{{font-size:16px;font-weight:700;color:#eef2ff;margin-bottom:8px;letter-spacing:-.2px}}
-.sbody{{font-size:14.5px;color:#7a8da8;line-height:1.65}}
-.sbody b,.sbody strong{{color:#bac4d8;font-weight:600}}
-
-/* ── TAP INSTRUCTION ─── */
-.tap{{
-  display:inline-flex;align-items:center;gap:4px;
-  background:rgba(59,130,246,.10);border:1px solid rgba(59,130,246,.20);
-  color:#93b4f0;border-radius:7px;padding:1px 9px 2px;
-  font-size:13.5px;font-weight:600;white-space:nowrap;
-}}
-
-/* ── KEY NAME (monospace label) ─── */
-.key{{
-  font-family:'SF Mono',ui-monospace,monospace;
-  background:rgba(0,230,118,.08);border:1px solid rgba(0,230,118,.18);
-  color:#00e676;border-radius:6px;padding:1px 8px;
-  font-size:12.5px;white-space:nowrap;
-}}
-
-/* ── METRIC BLOCK (each health query) ─── */
-.metrics{{display:flex;flex-direction:column;gap:10px;margin:14px 0 4px}}
-.metric-card{{
   background:rgba(255,255,255,.025);border:1px solid rgba(255,255,255,.07);
-  border-radius:12px;padding:13px 15px;
-  display:grid;grid-template-columns:1fr auto;gap:6px 16px;align-items:start;
+  border-radius:18px;padding:20px;margin-bottom:10px;
 }}
-.mc-name{{font-size:15px;font-weight:600;color:#eef2ff}}
-.mc-search{{font-size:12.5px;color:#4a5568;margin-top:2px}}
-.mc-var{{
+.step-hd{{display:flex;align-items:center;gap:14px;margin-bottom:14px}}
+.snum{{
+  width:36px;height:36px;border-radius:50%;flex-shrink:0;
+  background:rgba(0,230,118,.09);border:1px solid rgba(0,230,118,.20);
+  color:#00e676;font-size:15px;font-weight:800;
+  display:flex;align-items:center;justify-content:center;
+}}
+.stname{{font-size:17px;font-weight:700;color:#eef2ff;letter-spacing:-.2px}}
+p{{font-size:14px;color:#6a7a90;line-height:1.65;margin-bottom:10px}}
+p:last-child{{margin-bottom:0}}
+p b{{color:#b0bdd0;font-weight:600}}
+.note{{
+  background:rgba(74,158,255,.06);border:1px solid rgba(74,158,255,.15);
+  border-radius:11px;padding:12px 14px;font-size:13.5px;color:#5a7090;
+  line-height:1.6;margin-top:4px;
+}}
+.note b{{color:#4a9eff}}
+.note.grn{{background:rgba(0,230,118,.05);border-color:rgba(0,230,118,.15)}}
+.note.grn b{{color:#00e676}}
+
+/* ── Metric rows (step 2) ── */
+.mrow{{
+  display:grid;grid-template-columns:1fr auto auto;
+  gap:8px;align-items:center;
+  background:rgba(255,255,255,.025);border:1px solid rgba(255,255,255,.07);
+  border-radius:12px;padding:11px 14px;margin-bottom:8px;
+}}
+.mname{{font-size:14px;font-weight:600;color:#eef2ff}}
+.msearch{{font-size:12px;color:#546070;margin-top:2px}}
+.mvar{{
   font-family:'SF Mono',ui-monospace,monospace;font-size:12px;
   background:rgba(0,230,118,.08);border:1px solid rgba(0,230,118,.18);
-  color:#00e676;border-radius:6px;padding:2px 8px;white-space:nowrap;
-  align-self:start;margin-top:3px;
+  color:#00e676;border-radius:7px;padding:4px 10px;white-space:nowrap;
 }}
+.mcopy{{
+  background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.10);
+  color:#546070;border-radius:8px;padding:5px 11px;
+  font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;
+  font-family:inherit;-webkit-appearance:none;transition:all .15s;
+}}
+.mcopy:active{{transform:scale(.90)}}
+.mcopy.ok{{color:#00e676;background:rgba(0,230,118,.09);border-color:rgba(0,230,118,.22)}}
 
-/* ── DICT ROW ─── */
-.dict-rows{{display:flex;flex-direction:column;gap:8px;margin:14px 0 4px}}
-.dict-row{{
-  background:rgba(255,255,255,.025);border:1px solid rgba(255,255,255,.07);
-  border-radius:10px;padding:11px 14px;
-  display:grid;grid-template-columns:auto 1fr;gap:6px 14px;align-items:center;
+/* ── URL template (step 3) ── */
+.url-template{{
+  background:rgba(0,0,0,.25);border:1px solid rgba(255,255,255,.08);
+  border-radius:12px;padding:14px;font-family:'SF Mono',ui-monospace,monospace;
+  font-size:12px;color:#546070;line-height:1.7;word-break:break-all;
+  margin:10px 0;
 }}
-.dk{{
-  font-family:'SF Mono',ui-monospace,monospace;font-size:12.5px;
-  color:#00e676;white-space:nowrap;font-weight:600;
-}}
-.dv{{font-size:13.5px;color:#7a8da8;line-height:1.5}}
-.dv b{{color:#bac4d8;font-weight:600}}
+.url-base{{color:#00e676}}
+.url-param{{color:#4a9eff}}
+.url-var{{color:#f59e0b}}
 
-/* ── NOTE BOX ─── */
-.note{{
-  background:rgba(59,130,246,.05);border:1px solid rgba(59,130,246,.16);
-  border-radius:12px;padding:13px 15px;font-size:13.5px;color:#6b82a8;
-  line-height:1.6;margin-top:10px;
-}}
-.note b{{color:#7ca9f8}}
-.note.green{{
-  background:rgba(0,230,118,.05);border-color:rgba(0,230,118,.16);
-}}
-.note.green b{{color:#00e676}}
-
-/* ── DIVIDER ─── */
-hr{{border:none;border-top:1px solid rgba(255,255,255,.06);margin:36px 0}}
-
-footer{{text-align:center;padding:28px 0 0;color:#2d3748;font-size:12px}}
+hr{{border:none;border-top:1px solid rgba(255,255,255,.06);margin:26px 0}}
+footer{{text-align:center;padding:24px 0 0;color:#2a3040;font-size:12px}}
 </style>
 </head>
 <body>
-<header><div class="logo">⚡ Arnie</div></header>
+<div class="hdr"><div class="logo">⚡ Arnie</div></div>
 <main>
 
 <h1>Connect Apple Health</h1>
-<p class="sub">Sync your health data to Arnie automatically every morning. One-time setup, takes about 5–8 minutes.</p>
+<p class="sub">5 steps, ~5 minutes. Use the <b>Copy</b> buttons so you don't have to type anything.</p>
 
 <!-- STATUS -->
-<div class="sbanner checking" id="sbanner">
+<div class="sbanner loading" id="sb">
   <div class="sdot"></div>
   <div>
-    <div class="stxt" id="stxt">Checking connection…</div>
+    <div class="stext" id="stxt">Checking connection…</div>
     <div class="smeta" id="smeta"></div>
   </div>
 </div>
 
-<!-- URL -->
-<div class="url-wrap">
-  <div class="url-lbl">Your personal Arnie URL</div>
-  <div class="url-box">
-    <div class="url-txt" id="url-text">{endpoint}</div>
-    <button class="copy-btn" id="copy-btn" onclick="copyUrl()">Copy</button>
-  </div>
-</div>
-
-<!-- STEP 1 -->
-<div class="sec-hd">Setup — follow these steps in order</div>
-<div class="steps">
-
+<!-- ── STEP 1 ── -->
 <div class="step">
-  <div class="snum">1</div>
-  <div>
-    <div class="stitle">Create a new Shortcut on your iPhone</div>
-    <div class="sbody">
-      Open the <b>Shortcuts</b> app &nbsp;→&nbsp; tap the <span class="tap">+</span> button in the top-right corner &nbsp;→&nbsp; tap the name at the top and type <b>Arnie Health</b> &nbsp;→&nbsp; tap <span class="tap">Done</span>.
-    </div>
+  <div class="step-hd">
+    <div class="snum">1</div>
+    <div class="stname">Create a new Shortcut</div>
+  </div>
+  <p>Open the <b>Shortcuts</b> app on your iPhone &rarr; tap <b>+</b> in the top-right corner.</p>
+  <p>Tap the title at the top and type a name, then tap <b>Done</b>. Copy the name below to use it exactly:</p>
+  <div class="crow">
+    <div class="cval plain">Arnie Health</div>
+    <button class="cbtn" onclick="cp('Arnie Health',this)">Copy</button>
   </div>
 </div>
 
-<!-- STEP 2 -->
+<!-- ── STEP 2 ── -->
 <div class="step">
-  <div class="snum">2</div>
-  <div>
-    <div class="stitle">Add 5 health queries — one at a time</div>
-    <div class="sbody">
-      For each metric below, tap <span class="tap">Add Action</span> &nbsp;→&nbsp; search <b>Find Health Samples</b> &nbsp;→&nbsp; tap it.<br><br>
-      Then inside the action:
-      <ol style="padding-left:18px;margin:8px 0 12px;display:flex;flex-direction:column;gap:5px">
-        <li>Tap the <b>type field</b> (it usually says "Heart Rate") and search for the exact name below.</li>
-        <li>Make sure the <b>date range</b> says <b>Today</b>.</li>
-        <li>Make sure <b>Summarise</b> is set to <b>Sum</b>.</li>
-        <li>At the very bottom of the action you'll see a <b>blue result chip</b> (like "Health Samples"). Tap it &nbsp;→&nbsp; tap <span class="tap">Set Variable</span> &nbsp;→&nbsp; type the name from the last column &nbsp;→&nbsp; tap <span class="tap">Done</span>.</li>
-      </ol>
-      Do this for all 5 metrics:
-    </div>
-    <div class="metrics">
-      <div class="metric-card">
-        <div>
-          <div class="mc-name">Steps</div>
-          <div class="mc-search">Search for: <b>Step Count</b></div>
-        </div>
-        <div class="mc-var">steps</div>
-      </div>
-      <div class="metric-card">
-        <div>
-          <div class="mc-name">Active Calories</div>
-          <div class="mc-search">Search for: <b>Active Energy Burned</b></div>
-        </div>
-        <div class="mc-var">cals</div>
-      </div>
-      <div class="metric-card">
-        <div>
-          <div class="mc-name">Resting Calories</div>
-          <div class="mc-search">Search for: <b>Basal Energy Burned</b></div>
-        </div>
-        <div class="mc-var">rest</div>
-      </div>
-      <div class="metric-card">
-        <div>
-          <div class="mc-name">Sleep</div>
-          <div class="mc-search">Search for: <b>Sleep Analysis</b></div>
-        </div>
-        <div class="mc-var">sleep</div>
-      </div>
-      <div class="metric-card">
-        <div>
-          <div class="mc-name">Exercise Minutes</div>
-          <div class="mc-search">Search for: <b>Apple Exercise Time</b></div>
-        </div>
-        <div class="mc-var">exmin</div>
-      </div>
-    </div>
-    <div class="note green" style="margin-top:12px">
-      <b>Tip:</b> The variable name you type (like <b>steps</b> or <b>sleep</b>) is just a label
-      so you can find it in the next step. Type it exactly as shown — lowercase, no spaces.
-    </div>
+  <div class="step-hd">
+    <div class="snum">2</div>
+    <div class="stname">Add 5 health queries</div>
+  </div>
+  <p>For each row below, tap <b>Add Action</b> in Shortcuts &rarr; search for the term &rarr; tap it. Then:</p>
+  <p style="margin-bottom:12px">① Make sure <b>Today</b> is selected &nbsp; ② Set <b>Summarise</b> to <b>Sum</b> &nbsp; ③ Tap the blue result chip at the bottom &rarr; <b>Set Variable</b> &rarr; paste the name &rarr; <b>Done</b></p>
+
+  <div class="mrow">
+    <div><div class="mname">Steps</div><div class="msearch">Search for &rarr;</div></div>
+    <button class="mcopy" onclick="cp('Step Count',this)">Step Count</button>
+    <button class="mcopy" onclick="cp('steps',this)">steps</button>
+  </div>
+  <div class="mrow">
+    <div><div class="mname">Active Calories</div><div class="msearch">Search for &rarr;</div></div>
+    <button class="mcopy" onclick="cp('Active Energy Burned',this)">Active Energy Burned</button>
+    <button class="mcopy" onclick="cp('cals',this)">cals</button>
+  </div>
+  <div class="mrow">
+    <div><div class="mname">Resting Calories</div><div class="msearch">Search for &rarr;</div></div>
+    <button class="mcopy" onclick="cp('Basal Energy Burned',this)">Basal Energy Burned</button>
+    <button class="mcopy" onclick="cp('rest',this)">rest</button>
+  </div>
+  <div class="mrow">
+    <div><div class="mname">Sleep</div><div class="msearch">Search for &rarr;</div></div>
+    <button class="mcopy" onclick="cp('Sleep Analysis',this)">Sleep Analysis</button>
+    <button class="mcopy" onclick="cp('sleep',this)">sleep</button>
+  </div>
+  <div class="mrow">
+    <div><div class="mname">Exercise</div><div class="msearch">Search for &rarr;</div></div>
+    <button class="mcopy" onclick="cp('Apple Exercise Time',this)">Apple Exercise Time</button>
+    <button class="mcopy" onclick="cp('exmin',this)">exmin</button>
+  </div>
+  <div class="note" style="margin-top:4px">
+    The two buttons on each row are: the <b>search term</b> (paste it in the search box)
+    and the <b>variable name</b> (paste it when Shortcuts asks you to name the result).
   </div>
 </div>
 
-<!-- STEP 3 -->
+<!-- ── STEP 3 ── -->
 <div class="step">
-  <div class="snum">3</div>
-  <div>
-    <div class="stitle">Package the data</div>
-    <div class="sbody">
-      Tap <span class="tap">Add Action</span> &nbsp;→&nbsp; search <b>Dictionary</b> &nbsp;→&nbsp; tap it.<br><br>
-      Tap <span class="tap">Add new item</span> six times to create 6 rows.
-      For each row, tap the <b>left field</b> to type the key name, then tap the <b>right field</b> and tap the small variable icon (looks like <b>&#123;x&#125;</b> or a colored circle above the keyboard) to pick the variable.<br><br>
-      Fill them in like this:
-    </div>
-    <div class="dict-rows">
-      <div class="dict-row">
-        <div class="dk">date</div>
-        <div class="dv">Tap the right field &nbsp;→&nbsp; tap the <b>clock or calendar icon</b> &nbsp;→&nbsp; choose <b>Current Date</b> &nbsp;→&nbsp; change the format to <b>yyyy-MM-dd</b></div>
-      </div>
-      <div class="dict-row">
-        <div class="dk">steps</div>
-        <div class="dv">Tap right field &nbsp;→&nbsp; variable icon &nbsp;→&nbsp; choose <b>steps</b></div>
-      </div>
-      <div class="dict-row">
-        <div class="dk">active_calories</div>
-        <div class="dv">Tap right field &nbsp;→&nbsp; variable icon &nbsp;→&nbsp; choose <b>cals</b></div>
-      </div>
-      <div class="dict-row">
-        <div class="dk">resting_calories</div>
-        <div class="dv">Tap right field &nbsp;→&nbsp; variable icon &nbsp;→&nbsp; choose <b>rest</b></div>
-      </div>
-      <div class="dict-row">
-        <div class="dk">sleep_seconds</div>
-        <div class="dv">Tap right field &nbsp;→&nbsp; variable icon &nbsp;→&nbsp; choose <b>sleep</b> &nbsp;(no math needed — Arnie converts it automatically)</div>
-      </div>
-      <div class="dict-row">
-        <div class="dk">exercise_minutes</div>
-        <div class="dv">Tap right field &nbsp;→&nbsp; variable icon &nbsp;→&nbsp; choose <b>exmin</b></div>
-      </div>
+  <div class="step-hd">
+    <div class="snum">3</div>
+    <div class="stname">Add a URL action</div>
+  </div>
+  <p>Tap <b>Add Action</b> &rarr; search <b>URL</b> &rarr; tap the first result called <b>URL</b>.</p>
+  <p>Tap the URL field that appears &rarr; copy and paste your personal URL below:</p>
+  <div class="crow">
+    <div class="cval" id="url-text">{endpoint}</div>
+    <button class="cbtn" id="copy-btn" onclick="cp(document.getElementById('url-text').textContent.trim(),this)">Copy</button>
+  </div>
+  <p style="margin-top:10px">After pasting, add each parameter below. For each one: <b>tap at the end of the URL</b> &rarr; copy the parameter text &rarr; paste it &rarr; then tap the <b>&#123;x&#125;</b> icon above the keyboard and pick the matching variable name.</p>
+
+  <div class="crow" style="margin-top:4px">
+    <div class="cval">&amp;steps=</div>
+    <button class="cbtn" onclick="cp('&steps=',this)">Copy</button>
+  </div>
+  <div class="crow">
+    <div class="cval">&amp;active_calories=</div>
+    <button class="cbtn" onclick="cp('&active_calories=',this)">Copy</button>
+  </div>
+  <div class="crow">
+    <div class="cval">&amp;resting_calories=</div>
+    <button class="cbtn" onclick="cp('&resting_calories=',this)">Copy</button>
+  </div>
+  <div class="crow">
+    <div class="cval">&amp;sleep_seconds=</div>
+    <button class="cbtn" onclick="cp('&sleep_seconds=',this)">Copy</button>
+  </div>
+  <div class="crow">
+    <div class="cval">&amp;exercise_minutes=</div>
+    <button class="cbtn" onclick="cp('&exercise_minutes=',this)">Copy</button>
+  </div>
+  <div class="note grn" style="margin-top:8px">
+    Your finished URL will look like this — the <span style="color:#f59e0b">orange parts</span> are your Shortcuts variables:
+    <div style="margin-top:8px;background:rgba(0,0,0,.3);border-radius:9px;padding:11px 12px;
+      font-family:'SF Mono',monospace;font-size:11px;line-height:1.8;word-break:break-all;
+      color:#546070">
+      <span style="color:#00e676">{endpoint}</span><span
+      style="color:#4a9eff">&amp;steps=</span><span style="color:#f59e0b">steps</span><span
+      style="color:#4a9eff">&amp;active_calories=</span><span style="color:#f59e0b">cals</span><span
+      style="color:#4a9eff">&amp;resting_calories=</span><span style="color:#f59e0b">rest</span><span
+      style="color:#4a9eff">&amp;sleep_seconds=</span><span style="color:#f59e0b">sleep</span><span
+      style="color:#4a9eff">&amp;exercise_minutes=</span><span style="color:#f59e0b">exmin</span>
     </div>
   </div>
 </div>
 
-<!-- STEP 4 -->
+<!-- ── STEP 4 ── -->
 <div class="step">
-  <div class="snum">4</div>
-  <div>
-    <div class="stitle">Send the data to Arnie</div>
-    <div class="sbody">
-      Tap <span class="tap">Add Action</span> &nbsp;→&nbsp; search <b>Get Contents of URL</b> &nbsp;→&nbsp; tap it.<br><br>
-      Configure it like this:
-    </div>
-    <div class="dict-rows" style="margin-top:12px">
-      <div class="dict-row">
-        <div class="dk">URL</div>
-        <div class="dv">Tap the URL field and paste your personal URL (use the Copy button at the top of this page)</div>
-      </div>
-      <div class="dict-row">
-        <div class="dk">Method</div>
-        <div class="dv">Change from <b>GET</b> to <b>POST</b></div>
-      </div>
-      <div class="dict-row">
-        <div class="dk">Request Body</div>
-        <div class="dv">Tap <b>Show More</b> if you see it &nbsp;→&nbsp; set to <b>JSON</b> &nbsp;→&nbsp; tap the body area and choose the <b>Dictionary</b> from the previous step</div>
-      </div>
-    </div>
-    <div class="note" style="margin-top:12px">
-      <b>Test it now:</b> Tap the play button ▷ at the bottom of the shortcut. If it works,
-      the status banner at the top of this page will turn green within a few seconds.
-      You'll also get a confirmation message in Telegram.
-    </div>
+  <div class="step-hd">
+    <div class="snum">4</div>
+    <div class="stname">Send it to Arnie</div>
   </div>
+  <p>Tap <b>Add Action</b> &rarr; search <b>Get Contents of URL</b> &rarr; tap it. That's it — no extra settings needed. It automatically uses the URL you built in Step 3.</p>
+  <p>Tap <b>▷</b> (play) at the bottom of your shortcut to test it. If it works, the green banner at the top of this page will update within a few seconds, and you'll get a confirmation in Telegram.</p>
 </div>
 
-<!-- STEP 5 -->
+<!-- ── STEP 5 ── -->
 <div class="step">
-  <div class="snum">5</div>
-  <div>
-    <div class="stitle">Set it to run automatically every morning</div>
-    <div class="sbody">
-      In the Shortcuts app, tap <span class="tap">Automation</span> at the bottom &nbsp;→&nbsp; tap <span class="tap">+</span> &nbsp;→&nbsp; tap <b>Time of Day</b>.<br><br>
-      Set it up like this:
-      <ul style="padding-left:18px;margin:10px 0;display:flex;flex-direction:column;gap:6px">
-        <li>Time: <b>8:00 AM</b> (or whatever time you're usually awake)</li>
-        <li>Repeat: <b>Daily</b></li>
-      </ul>
-      Tap <span class="tap">Next</span> &nbsp;→&nbsp; select <b>Arnie Health</b> &nbsp;→&nbsp; tap <span class="tap">Done</span>.<br><br>
-      Tap the automation you just created in the list &nbsp;→&nbsp; <b>turn off "Ask Before Running"</b> (toggle it off) so it runs silently in the background without asking every morning.
-    </div>
-    <div class="note green" style="margin-top:12px">
-      <b>You're done!</b> Every morning it'll run quietly and your steps, calories, sleep,
-      and exercise will appear in your Arnie dashboard automatically.
-    </div>
+  <div class="step-hd">
+    <div class="snum">5</div>
+    <div class="stname">Run it automatically every morning</div>
+  </div>
+  <p>In Shortcuts, tap <b>Automation</b> at the bottom &rarr; tap <b>+</b> &rarr; tap <b>Time of Day</b>.</p>
+  <p>Set the time to <b>8:00 AM</b> (or whenever you wake up), set Repeat to <b>Daily</b>, then tap <b>Next</b> and choose <b>Arnie Health</b>.</p>
+  <p>Tap <b>Done</b>. Then tap the new automation in the list and <b>turn off "Ask Before Running"</b> — this makes it run silently every morning without interrupting you.</p>
+  <div class="note grn">
+    <b>All done.</b> From tomorrow morning it runs automatically.
+    Your steps, calories, sleep, and exercise will appear in your Arnie dashboard every day.
   </div>
 </div>
 
-</div><!-- end .steps -->
+<hr>
+<footer>Arnie &middot; Apple Health · iOS Shortcuts</footer>
 
 </main>
-<footer>Arnie &middot; Apple Health · iOS Shortcut</footer>
 
 <script>
-function copyUrl(){{
-  var url=document.getElementById('url-text').textContent.trim();
-  navigator.clipboard.writeText(url).then(function(){{
-    var b=document.getElementById('copy-btn');
-    b.textContent='Copied ✓';b.classList.add('ok');
-    setTimeout(function(){{b.textContent='Copy';b.classList.remove('ok')}},2200);
-  }}).catch(function(){{
-    var el=document.getElementById('url-text');
-    var r=document.createRange();r.selectNodeContents(el);
-    window.getSelection().removeAllRanges();window.getSelection().addRange(r);
+function cp(text, btn) {{
+  navigator.clipboard.writeText(text).then(function() {{
+    var old = btn.textContent;
+    btn.textContent = '✓';
+    btn.classList.add('ok');
+    setTimeout(function() {{ btn.textContent = old; btn.classList.remove('ok'); }}, 1600);
+  }}).catch(function() {{
+    /* fallback: select the nearest monospace text */
+    var row = btn.closest('.crow,.mrow');
+    if (!row) return;
+    var el = row.querySelector('.cval,.mvar');
+    if (!el) return;
+    var r = document.createRange();
+    r.selectNodeContents(el);
+    window.getSelection().removeAllRanges();
+    window.getSelection().addRange(r);
   }});
 }}
 
 {f"""
-(function poll(){{
-  fetch('{status_url}').then(function(r){{return r.json()}}).then(function(d){{
-    var b=document.getElementById('sbanner');
-    var t=document.getElementById('stxt');
-    var m=document.getElementById('smeta');
-    if(d.connected){{
-      b.className='sbanner connected';
-      t.textContent='Apple Health connected ✓';
-      var p=[];
-      if(d.last_sync)p.push('Last sync: '+d.last_sync);
-      if(d.steps)p.push(Number(d.steps).toLocaleString()+' steps');
-      if(d.active_calories)p.push(Math.round(d.active_calories)+' active kcal');
-      if(d.resting_hr)p.push(d.resting_hr+'bpm RHR');
-      m.textContent=p.join(' · ');
-    }}else{{
-      b.className='sbanner waiting';
-      t.textContent='Not connected yet';
-      m.textContent='Complete the steps below, then run the shortcut once to test it';
-      setTimeout(poll,12000);
-    }}
-  }}).catch(function(){{
-    document.getElementById('sbanner').className='sbanner waiting';
-    document.getElementById('stxt').textContent='Connection unknown';
-  }});
+(function poll() {{
+  fetch('{status_url}')
+    .then(function(r) {{ return r.json(); }})
+    .then(function(d) {{
+      var b = document.getElementById('sb');
+      var t = document.getElementById('stxt');
+      var m = document.getElementById('smeta');
+      if (d.connected) {{
+        b.className = 'sbanner yes';
+        t.textContent = 'Apple Health connected ✓';
+        var p = [];
+        if (d.last_sync) p.push('Last sync: ' + d.last_sync);
+        if (d.steps) p.push(Number(d.steps).toLocaleString() + ' steps');
+        if (d.active_calories) p.push(Math.round(d.active_calories) + ' active kcal');
+        if (d.resting_hr) p.push(d.resting_hr + 'bpm RHR');
+        m.textContent = p.join(' · ');
+      }} else {{
+        b.className = 'sbanner no';
+        t.textContent = 'Not connected yet';
+        m.textContent = 'Finish setup and tap ▷ in Shortcuts to test — this page auto-updates';
+        setTimeout(poll, 12000);
+      }}
+    }})
+    .catch(function() {{
+      document.getElementById('sb').className = 'sbanner no';
+      document.getElementById('stxt').textContent = 'Could not check status';
+    }});
 }})();
 """ if status_url else ""}
 </script>

@@ -2138,11 +2138,12 @@ async def _notify_apple_health_connected(telegram_id: str, snap_date, data: dict
         logger.warning(f"Apple Health connected notify failed for {telegram_id}: {e}")
 
 
-@app.post("/health/apple")
-async def receive_apple_health(
-    payload: AppleHealthPayload,
-    token: str = Query(...),
-):
+async def _process_apple_health(payload: "AppleHealthPayload", token: str) -> dict:
+    """
+    Shared handler for both GET and POST Apple Health endpoints.
+    Upserts the health snapshot, processes workouts, and fires the one-time
+    "connected" Telegram notification on first sync.
+    """
     import asyncio as _asyncio
     _notify_tg_id: Optional[str] = None
     _notify_data: Optional[dict] = None
@@ -2170,7 +2171,6 @@ async def receive_apple_health(
         data.setdefault("source", "apple_health")
         await upsert_health_snapshot(db, user.id, snap_date, **data)
 
-        # Store Apple Watch workout records as exercise entries
         if payload.workouts:
             await _process_apple_workouts(db, user.id, snap_date, payload.workouts)
 
@@ -2190,6 +2190,41 @@ async def receive_apple_health(
         )
 
     return {"status": "ok", "date": str(snap_date)}
+
+
+@app.post("/health/apple")
+async def receive_apple_health(payload: AppleHealthPayload, token: str = Query(...)):
+    """POST endpoint — accepts a JSON body (advanced / original format)."""
+    return await _process_apple_health(payload, token)
+
+
+@app.get("/health/apple")
+async def receive_apple_health_get(
+    token: str = Query(...),
+    date: Optional[str] = Query(None),
+    steps: Optional[int] = Query(None),
+    active_calories: Optional[float] = Query(None),
+    resting_calories: Optional[float] = Query(None),
+    sleep_seconds: Optional[float] = Query(None),
+    sleep_hours: Optional[float] = Query(None),
+    exercise_minutes: Optional[int] = Query(None),
+):
+    """
+    GET endpoint — simpler for iOS Shortcuts users.
+    No JSON body or Dictionary action needed; all values are URL query params.
+    Example:
+      GET /health/apple?token=X&steps=9000&active_calories=400&sleep_seconds=27000
+    """
+    payload = AppleHealthPayload(
+        date=date,
+        steps=steps,
+        active_calories=active_calories,
+        resting_calories=resting_calories,
+        sleep_seconds=sleep_seconds,
+        sleep_hours=sleep_hours,
+        exercise_minutes=exercise_minutes,
+    )
+    return await _process_apple_health(payload, token)
 
 
 # ── Apple Health status check (polled by the guide page) ──────────────────────
@@ -2230,6 +2265,7 @@ async def apple_health_guide(token: str = Query(...)):
             return HTMLResponse("<h2>Invalid or expired link.</h2>", status_code=401)
 
     base_url = os.getenv("RENDER_EXTERNAL_URL", "http://localhost:10000").rstrip("/")
+    # GET endpoint URL — the base the user pastes; they append &param=variable for each metric
     endpoint = f"{base_url}/health/apple?token={token}"
     status_url = f"{base_url}/health/apple/status?token={token}"
     return HTMLResponse(_apple_guide_html(endpoint, status_url))
