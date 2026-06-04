@@ -751,11 +751,20 @@ async def _build_stats_for_user(db, user, target_date=None):
          "recovery_score": s.recovery_score,
          "hrv": round(s.hrv) if s.hrv else None,
          "resting_hr": round(s.resting_hr) if s.resting_hr else None,
+         "avg_hr": round(s.avg_hr) if s.avg_hr else None,
          "sleep_hours": s.sleep_hours,
          "sleep_deep_hours": s.sleep_deep_hours,
          "sleep_rem_hours": s.sleep_rem_hours,
+         "sleep_performance_pct": getattr(s, "sleep_performance_pct", None),
+         "sleep_need_hours": getattr(s, "sleep_need_hours", None),
+         "sleep_efficiency_pct": getattr(s, "sleep_efficiency_pct", None),
+         "respiratory_rate": getattr(s, "respiratory_rate", None),
+         "spo2_percentage": getattr(s, "spo2_percentage", None),
+         "skin_temp_celsius": getattr(s, "skin_temp_celsius", None),
          "strain": s.strain,
-         "steps": s.steps}
+         "steps": s.steps,
+         "active_calories": s.active_calories,
+         "whoop_workouts": getattr(s, "whoop_workouts", None)}
         for s in health_snaps
     ]
 

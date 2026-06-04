@@ -200,6 +200,28 @@ body{{
 
 /* ── MACRO STRIP ─────────────────────────────────────────── */
 .macro-strip{{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--bd);border:1px solid var(--bd);border-radius:14px;overflow:hidden;margin-bottom:14px;}}
+
+/* ── WHOOP MODULE ────────────────────────────────────────── */
+.whoop-grid{{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:16px}}
+@media(max-width:560px){{.whoop-grid{{grid-template-columns:repeat(2,1fr)}}}}
+.whoop-stat{{
+  background:var(--sf);border:1px solid var(--bd);border-radius:12px;
+  padding:12px 14px;display:flex;flex-direction:column;gap:3px;
+}}
+.whoop-stat-label{{
+  font-family:'Geist Mono','SF Mono',monospace;
+  font-size:9px;font-weight:500;text-transform:uppercase;letter-spacing:.1em;
+  color:var(--mu);
+}}
+.whoop-stat-val{{
+  font-family:'Instrument Serif','Times New Roman',serif;
+  font-size:22px;line-height:1;letter-spacing:-.02em;color:var(--tx);
+}}
+.whoop-stat-sub{{font-size:11px;color:var(--mu);margin-top:1px}}
+/* Recovery color coding */
+.whoop-rec-high .whoop-stat-val{{color:var(--ac)}}
+.whoop-rec-mid  .whoop-stat-val{{color:var(--ye)}}
+.whoop-rec-low  .whoop-stat-val{{color:var(--re)}}
 .macro-cell{{background:var(--sf);padding:12px 14px;}}
 .mc-label{{font-family:'Geist Mono','SF Mono',monospace;font-size:9px;text-transform:uppercase;letter-spacing:.12em;color:var(--mu);margin-bottom:6px;}}
 .mc-num{{font-family:'Instrument Serif','Times New Roman',serif;font-size:24px;letter-spacing:-.02em;}}
@@ -1159,6 +1181,15 @@ footer{{
       <button class="toggle share-tgl t-click" onclick="shareDay()">&#8679; Share day</button>
     </div>
 
+    <!-- WHOOP STATS (hidden until data loads) -->
+    <div id="whoop-module" style="display:none">
+      <div class="stitle spaced">
+        <span>&#128994; Whoop</span>
+        <span id="whoop-date" style="font-weight:400;opacity:.6;font-size:10px"></span>
+      </div>
+      <div class="whoop-grid" id="whoop-grid"></div>
+    </div>
+
     <!-- FOOD -->
     <div class="stitle spaced">
       <span>Food <span id="food-log-count" style="font-weight:400;opacity:.7"></span></span>
@@ -1772,6 +1803,91 @@ function renderDayTab(d){{
   var ee=day.exercise_entries||[];
   document.getElementById('ex-log').innerHTML=ee.length?renderGroupedExercises(ee)
     :'<div class="lempty">No exercises logged'+(isToday?' yet':'')+'</div>';
+
+  // Whoop module
+  var health=d.health||[];
+  var snap=health.find(function(h){{return h.date===_viewingDate;}}) || (health.length?health[0]:null);
+  renderWhoopModule(snap, d.profile);
+}}
+
+// ── Whoop stats module ────────────────────────────────────────────────────
+function renderWhoopModule(snap, profile){{
+  var mod=document.getElementById('whoop-module');
+  var grid=document.getElementById('whoop-grid');
+  var dateEl=document.getElementById('whoop-date');
+  if(!mod||!grid)return;
+
+  // Only show if Whoop is connected AND we have a snapshot
+  if(!profile||!profile.whoop_connected||!snap||snap.source!=='whoop'){{
+    mod.style.display='none';
+    return;
+  }}
+
+  mod.style.display='block';
+  if(dateEl)dateEl.textContent=snap.date||'';
+
+  // Define all possible stats — only render if value is present
+  var recClass='';
+  if(snap.recovery_score!=null){{
+    recClass=snap.recovery_score>=67?'whoop-rec-high':snap.recovery_score>=34?'whoop-rec-mid':'whoop-rec-low';
+  }}
+
+  function stat(label,val,sub,extraClass){{
+    if(val==null||val===undefined)return '';
+    return '<div class="whoop-stat'+(extraClass?' '+extraClass:'')+'">'+
+      '<div class="whoop-stat-label">'+label+'</div>'+
+      '<div class="whoop-stat-val">'+val+'</div>'+
+      (sub?'<div class="whoop-stat-sub">'+sub+'</div>':'')+
+      '</div>';
+  }}
+
+  function fmtSleep(h){{
+    if(!h)return null;
+    var hrs=Math.floor(h),mins=Math.round((h-hrs)*60);
+    return hrs+'h'+(mins>0?' '+mins+'m':'');
+  }}
+
+  var parts='';
+  parts+=stat('Recovery',snap.recovery_score!=null?snap.recovery_score+'%':null,
+    snap.recovery_score!=null?(snap.recovery_score>=67?'Green':snap.recovery_score>=34?'Yellow':'Red'):null, recClass);
+  parts+=stat('Strain',snap.strain!=null?snap.strain.toFixed(1):null,'/ 21');
+  parts+=stat('HRV',snap.hrv!=null?snap.hrv+'ms':null,'during sleep');
+  parts+=stat('Sleep',fmtSleep(snap.sleep_hours),
+    snap.sleep_performance_pct!=null?'Quality '+Math.round(snap.sleep_performance_pct)+'%':
+    snap.sleep_efficiency_pct!=null?'Eff '+Math.round(snap.sleep_efficiency_pct)+'%':null);
+  if(snap.sleep_deep_hours||snap.sleep_rem_hours){{
+    var parts2=[];
+    if(snap.sleep_deep_hours)parts2.push(fmtSleep(snap.sleep_deep_hours)+' deep');
+    if(snap.sleep_rem_hours)parts2.push(fmtSleep(snap.sleep_rem_hours)+' REM');
+    parts+=stat('Sleep stages',parts2.join(' · '),
+      snap.sleep_need_hours?'Need '+fmtSleep(snap.sleep_need_hours):null);
+  }}
+  parts+=stat('Resting HR',snap.resting_hr!=null?snap.resting_hr+'bpm':null,null);
+  parts+=stat('Resp rate',snap.respiratory_rate!=null?snap.respiratory_rate.toFixed(1)+' br/min':null,'during sleep');
+  parts+=stat('SpO2',snap.spo2_percentage!=null?snap.spo2_percentage.toFixed(1)+'%':null,'blood oxygen');
+  if(snap.skin_temp_celsius!=null){{
+    parts+=stat('Skin temp',snap.skin_temp_celsius.toFixed(1)+'°C',null);
+  }}
+  if(snap.steps)parts+=stat('Steps',snap.steps.toLocaleString(),null);
+  if(snap.active_calories)parts+=stat('Active cal',Math.round(snap.active_calories)+'',null);
+
+  // Workouts from Whoop
+  if(snap.whoop_workouts){{
+    try{{
+      var wos=JSON.parse(snap.whoop_workouts);
+      wos.forEach(function(w){{
+        var sub=[];
+        if(w.strain)sub.push('Strain '+w.strain);
+        if(w.duration_min)sub.push(w.duration_min+'min');
+        if(w.avg_hr)sub.push('Avg '+w.avg_hr+'bpm');
+        parts+=stat(w.sport,
+          w.strain?w.strain.toFixed(1):w.duration_min?w.duration_min+'min':'—',
+          sub.slice(1).join(' · '));
+      }});
+    }}catch(e){{}}
+  }}
+
+  grid.innerHTML=parts||'<div style="color:var(--mu);font-size:13px;padding:8px 0">No data for this day yet — run /whoop sync in Telegram.</div>';
 }}
 
 function renderHealthGrid(h){{
