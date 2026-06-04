@@ -1222,7 +1222,7 @@ footer{{
 
     <!-- AI INSIGHTS — day-specific, always at top -->
     <div class="stitle spaced" style="margin-top:0">
-      <span>&#10024; Coach insights <span class="ai-pill">AI</span></span>
+      <span>Coach insights <span class="ai-pill">AI</span></span>
       <button class="add-toggle" onclick="refreshInsights()" title="Refresh" style="font-size:15px;font-family:inherit">&#8635;</button>
     </div>
     <div class="icrd fade-in" id="insights-card">
@@ -1333,7 +1333,7 @@ footer{{
 
     <!-- Weekly AI analysis — always visible at top -->
     <div class="stitle spaced" style="margin-top:4px">
-      <span>&#10024; Weekly analysis <span class="ai-pill">AI</span></span>
+      <span>Weekly analysis <span class="ai-pill">AI</span></span>
       <button class="add-toggle" onclick="refreshWeekInsights()" title="Refresh" style="font-size:15px;font-family:inherit">&#8635;</button>
     </div>
     <div class="icrd fade-in" id="week-insights-card">
@@ -1371,7 +1371,7 @@ footer{{
     <!-- AI Profile — bio + learned attributes -->
     <div id="ai-profile-section" style="display:none">
       <div class="stitle spaced" style="margin-top:4px">
-        <span>&#x2728; Arnie's profile</span>
+        <span>Arnie's profile</span>
         <button class="add-toggle" onclick="refreshAIProfile()" title="Refresh">&#8635;</button>
       </div>
       <!-- Bio card -->
@@ -2383,11 +2383,19 @@ function renderProfileTab(d){{
 var _aiProfileLoaded = false;
 
 const CATEGORY_LABELS = {{
-  goals: '🎯 Goals', nutrition: '🍽 Nutrition', fitness: '🏋 Fitness',
-  health: '💊 Health & Supplements', lifestyle: '🌅 Lifestyle',
-  behavior: '🧠 Behavior', mental: '💭 Mental', custom: '📌 Custom Tracking',
+  goals: 'Goals', nutrition: 'Nutrition', fitness: 'Fitness',
+  health: 'Health & Supplements', lifestyle: 'Lifestyle',
+  behavior: 'Behavior', mental: 'Mental', custom: 'Custom Tracking',
 }};
 const CONF_COLORS = {{ confirmed: 'var(--ac)', inferred: 'var(--mu)', needs_verification: '#f0a500' }};
+// Enum edit fields → fixed option vocabularies (picklist instead of free text).
+// Free-text/numeric fields (name, weight, injuries, diet…) keep their input;
+// learned attributes aren't manually edited (they backfill from conversation).
+const EDIT_OPTIONS = {{
+  primary_goal: ['cut','bulk','maintain','performance','health'],
+  training_experience: ['beginner','intermediate','advanced'],
+  coaching_style: ['strict','balanced','supportive'],
+}};
 
 function renderAIProfile(data) {{
   var loadEl = document.getElementById('ai-profile-loading');
@@ -2867,17 +2875,28 @@ function cancelEdit(){{
 function editProw(rowId,field,current){{
   var row=document.getElementById(rowId);if(!row)return;
   var lbl=row.querySelector('.inlbl').textContent;
+  var _style='flex:1;max-width:170px;background:var(--inp);border:1px solid var(--ac);color:var(--tx);'+
+    'padding:5px 8px;border-radius:8px;font-size:12px;font-family:inherit;outline:none';
+  var opts=EDIT_OPTIONS[field], editor;
+  if(opts){{
+    // Picklist for enum fields. Keep any current off-list value selectable.
+    var cur=(current||'').toLowerCase(), list=opts.slice();
+    if(cur && list.indexOf(cur)===-1) list.unshift(cur);
+    editor='<select id="pi-'+rowId+'" style="'+_style+';text-transform:capitalize">'+
+      list.map(function(o){{return '<option value="'+escA(o)+'"'+(o===cur?' selected':'')+'>'+esc(o)+'</option>';}}).join('')+
+      '</select>';
+  }}else{{
+    editor='<input type="text" id="pi-'+rowId+'" value="'+escA(current)+'" style="'+_style+'">';
+  }}
   row.innerHTML='<span class="inlbl">'+esc(lbl)+'</span>'+
     '<div style="display:flex;align-items:center;gap:5px;flex:1;justify-content:flex-end">'+
-    '<input type="text" id="pi-'+rowId+'" value="'+escA(current)+'" '+
-    'style="flex:1;max-width:160px;background:var(--inp);border:1px solid var(--ac);color:var(--tx);'+
-    'padding:5px 8px;border-radius:8px;font-size:12px;font-family:inherit;outline:none">'+
+    editor+
     '<button class="sbtn" style="flex:none;padding:5px 12px;font-size:12px;min-height:0" '+
     'onclick="saveProw(\\''+rowId+'\\',\\''+escA(field)+'\\')">✓</button>'+
     '<button class="cbtn" style="flex:none;padding:5px 10px;font-size:12px;min-height:0" '+
     'onclick="cancelProw()">✗</button></div>';
   var inp=document.getElementById('pi-'+rowId);
-  if(inp){{inp.focus();inp.select();}}
+  if(inp){{inp.focus();if(inp.select)inp.select();}}
 }}
 
 async function saveProw(rowId,field){{
