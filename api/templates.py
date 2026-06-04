@@ -287,6 +287,24 @@ body{{
 .stitle:first-child{{margin-top:6px}}
 .stitle.spaced{{justify-content:space-between}}
 
+/* ── COLLAPSIBLE LOG SECTIONS ───────────────────────────── */
+.log-section-hd{{cursor:pointer;user-select:none}}
+.log-section-body{{overflow:hidden;transition:max-height .25s cubic-bezier(.4,0,.2,1);max-height:2000px}}
+.log-section.collapsed .log-section-body{{max-height:0}}
+.log-chevron{{
+  background:transparent;border:none;color:var(--mu);cursor:pointer;
+  font-size:18px;line-height:1;padding:0;transition:transform .2s;
+  font-family:inherit;display:grid;place-items:center;width:20px;
+}}
+.log-section-hd:hover .log-chevron{{color:var(--tx2)}}
+.log-section.collapsed .log-chevron{{transform:rotate(-90deg)}}
+/* Desktop: always expanded, hide chevron */
+@media(min-width:701px){{
+  .log-chevron{{display:none}}
+  .log-section-body{{max-height:none!important}}
+  .log-section-hd{{cursor:default}}
+}}
+
 /* ── ADD FOOD / WORKOUT FORMS ────────────────────────────── */
 .add-card{{
   background:var(--sf);border:1px solid var(--bd);border-radius:16px;
@@ -1188,43 +1206,57 @@ footer{{
     </div>
 
     <!-- FOOD -->
-    <div class="stitle spaced">
-      <span>Food <span id="food-log-count" style="font-weight:400;opacity:.7"></span></span>
-      <button class="add-toggle" id="food-toggle" onclick="toggleAddForm('food')" title="Add food">+</button>
-    </div>
-    <div class="add-card" id="food-form" style="display:none">
-      <input class="add-inp" id="food-name" placeholder="Food name (e.g. chicken breast)" autocomplete="off">
-      <input class="add-inp" id="food-qty" placeholder="Portion (e.g. 200g, 1 cup)">
-      <div class="add-macros">
-        <div class="add-mac-field"><label>Cal</label><input type="number" id="food-cal" min="0" inputmode="numeric" placeholder="0"></div>
-        <div class="add-mac-field"><label>P (g)</label><input type="number" id="food-pro" min="0" inputmode="decimal" placeholder="0"></div>
-        <div class="add-mac-field"><label>C (g)</label><input type="number" id="food-carb" min="0" inputmode="decimal" placeholder="0"></div>
-        <div class="add-mac-field"><label>F (g)</label><input type="number" id="food-fat" min="0" inputmode="decimal" placeholder="0"></div>
+    <div class="log-section" id="food-section">
+      <div class="stitle spaced log-section-hd" onclick="toggleLogSection('food')">
+        <span>Food <span id="food-log-count" style="font-weight:400;opacity:.7"></span></span>
+        <div style="display:flex;align-items:center;gap:6px">
+          <button class="log-chevron" id="food-chevron" title="Collapse">&#8249;</button>
+          <button class="add-toggle" id="food-toggle" onclick="event.stopPropagation();toggleAddForm('food')" title="Add food">+</button>
+        </div>
       </div>
-      <button class="add-submit" id="food-submit" onclick="submitFoodInline()">Save food</button>
+      <div class="log-section-body" id="food-section-body">
+        <div class="add-card" id="food-form" style="display:none">
+          <input class="add-inp" id="food-name" placeholder="Food name (e.g. chicken breast)" autocomplete="off">
+          <input class="add-inp" id="food-qty" placeholder="Portion (e.g. 200g, 1 cup)">
+          <div class="add-macros">
+            <div class="add-mac-field"><label>Cal</label><input type="number" id="food-cal" min="0" inputmode="numeric" placeholder="0"></div>
+            <div class="add-mac-field"><label>P (g)</label><input type="number" id="food-pro" min="0" inputmode="decimal" placeholder="0"></div>
+            <div class="add-mac-field"><label>C (g)</label><input type="number" id="food-carb" min="0" inputmode="decimal" placeholder="0"></div>
+            <div class="add-mac-field"><label>F (g)</label><input type="number" id="food-fat" min="0" inputmode="decimal" placeholder="0"></div>
+          </div>
+          <button class="add-submit" id="food-submit" onclick="submitFoodInline()">Save food</button>
+        </div>
+        <div class="lcrd" id="food-log"><div class="lempty">Loading&hellip;</div></div>
+      </div>
     </div>
-    <div class="lcrd" id="food-log"><div class="lempty">Loading&hellip;</div></div>
 
     <!-- WORKOUTS -->
-    <div class="stitle spaced">
-      <span>Workouts</span>
-      <button class="add-toggle" id="ex-toggle" onclick="toggleAddForm('ex')" title="Add workout">+</button>
-    </div>
-    <div class="add-card" id="ex-form" style="display:none">
-      <input class="add-inp" id="ex-name" placeholder="Exercise (e.g. bench press, 5k run)" autocomplete="off">
-      <div class="add-macros">
-        <div class="add-mac-field"><label>Sets</label><input type="number" id="ex-sets" min="1" inputmode="numeric" placeholder="—"></div>
-        <div class="add-mac-field"><label>Reps</label><input type="text" id="ex-reps" placeholder="—"></div>
-        <div class="add-mac-field"><label>lbs</label><input type="number" id="ex-wt" min="0" inputmode="decimal" placeholder="—"></div>
-        <div class="add-mac-field"><label>Min</label><input type="number" id="ex-dur" min="0" inputmode="numeric" placeholder="—"></div>
+    <div class="log-section" id="ex-section">
+      <div class="stitle spaced log-section-hd" onclick="toggleLogSection('ex')">
+        <span>Workouts</span>
+        <div style="display:flex;align-items:center;gap:6px">
+          <button class="log-chevron" id="ex-chevron" title="Collapse">&#8249;</button>
+          <button class="add-toggle" id="ex-toggle" onclick="event.stopPropagation();toggleAddForm('ex')" title="Add workout">+</button>
+        </div>
       </div>
-      <div style="display:flex;align-items:center;gap:8px;padding:8px 14px 2px;font-size:13px;color:var(--mu)">
-        <input type="checkbox" id="ex-cardio" style="width:15px;height:15px;accent-color:var(--ac)">
-        <label for="ex-cardio">Cardio</label>
+      <div class="log-section-body" id="ex-section-body">
+        <div class="add-card" id="ex-form" style="display:none">
+          <input class="add-inp" id="ex-name" placeholder="Exercise (e.g. bench press, 5k run)" autocomplete="off">
+          <div class="add-macros">
+            <div class="add-mac-field"><label>Sets</label><input type="number" id="ex-sets" min="1" inputmode="numeric" placeholder="—"></div>
+            <div class="add-mac-field"><label>Reps</label><input type="text" id="ex-reps" placeholder="—"></div>
+            <div class="add-mac-field"><label>lbs</label><input type="number" id="ex-wt" min="0" inputmode="decimal" placeholder="—"></div>
+            <div class="add-mac-field"><label>Min</label><input type="number" id="ex-dur" min="0" inputmode="numeric" placeholder="—"></div>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;padding:8px 14px 2px;font-size:13px;color:var(--mu)">
+            <input type="checkbox" id="ex-cardio" style="width:15px;height:15px;accent-color:var(--ac)">
+            <label for="ex-cardio">Cardio</label>
+          </div>
+          <button class="add-submit" id="ex-submit" onclick="submitExerciseInline()">Save workout</button>
+        </div>
+        <div class="lcrd" id="ex-log"><div class="lempty">Loading&hellip;</div></div>
       </div>
-      <button class="add-submit" id="ex-submit" onclick="submitExerciseInline()">Save workout</button>
     </div>
-    <div class="lcrd" id="ex-log"><div class="lempty">Loading&hellip;</div></div>
 
     <!-- COACH INSIGHTS — always visible -->
     <div class="stitle spaced">
@@ -1475,6 +1507,7 @@ async function init(){{
     renderDateNav();
     renderDayTab(data);
     loadInsights();
+    initLogSections();
   }}catch(e){{
     document.getElementById('app-load').textContent='Failed to load — tap ↻ to retry.';
   }}
@@ -1699,6 +1732,34 @@ function renderPageHead(d){{
   var st=0,ck=new Date(t0);
   while(true){{var ds2=_localDate(ck);if(logSet.has(ds2)){{st++;ck.setDate(ck.getDate()-1);}}else break;}}
   ps.innerHTML=esc(ds)+(st>0?' <span class="ph-streak">&#9889; '+st+'-DAY STREAK</span>':'');
+}}
+
+function toggleLogSection(type){{
+  var sec=document.getElementById(type+'-section');
+  if(!sec)return;
+  // On desktop chevrons are hidden and sections stay open
+  if(window.innerWidth>700)return;
+  var wasCollapsed=sec.classList.contains('collapsed');
+  sec.classList.toggle('collapsed');
+  // If expanding and add form is open, close it to avoid double-animation
+  if(wasCollapsed){{
+    var form=document.getElementById(type+'-form');
+    var btn=document.getElementById(type+'-toggle');
+    if(form&&form.style.display!=='none'){{
+      form.style.display='none';
+      if(btn)btn.classList.remove('open');
+    }}
+  }}
+}}
+
+function initLogSections(){{
+  // Collapse both sections by default on mobile
+  if(window.innerWidth<=700){{
+    ['food','ex'].forEach(function(t){{
+      var sec=document.getElementById(t+'-section');
+      if(sec)sec.classList.add('collapsed');
+    }});
+  }}
 }}
 
 function toggleAddForm(type){{
