@@ -2546,7 +2546,7 @@ function renderGroupedExercises(entries){{
         '</div>';
     }}).join('');
 
-    var isOpen=totalSets===1;  // single sets auto-expand
+    var isOpen=false;  // all exercises collapsed by default — tap to expand sets
     return '<div class="eg-row'+(isOpen?' open':'')+'" onclick="this.classList.toggle(&quot;open&quot;)">'+
       '<div class="eg-hd">'+
       '<span class="eg-name">'+esc(g.name)+'</span>'+
