@@ -2482,26 +2482,32 @@ function foodEmoji(name){{
 
 // ── Food rows ─────────────────────────────────────────────────────────────
 function renderFoodRow(f){{
-  var est=f.estimated?'<span class="est-tag">EST</span>':'';
-  var ico=foodEmoji(f.name);
-  return '<div class="lrow" id="food-row-'+f.id+'">'+
-    '<div class="ficon">'+ico+'</div>'+
-    '<div class="fbody">'+
-    '<div class="lname">'+esc(f.name)+est+'</div>'+
-    (f.quantity?'<div class="lqty">'+esc(f.quantity)+'</div>':'')+
-    '<div class="lmac">'+
-    '<span class="lm-cal">'+(f.calories??0)+' cal</span>'+
-    '<span class="lm-sep">·</span>'+
-    '<span class="lm-macro"><b style="color:var(--bl)">'+(f.protein??0)+'g</b> P</span>'+
-    '<span class="lm-sep">·</span>'+
-    '<span class="lm-macro"><b style="color:var(--or)">'+(f.carbs??0)+'g</b> C</span>'+
-    '<span class="lm-sep">·</span>'+
-    '<span class="lm-macro"><b style="color:var(--pu)">'+(f.fats??0)+'g</b> F</span>'+
-    '</div></div>'+
-    '<div class="ract">'+
-    '<button class="ibtn" onclick="editFood('+f.id+')" aria-label="Edit">&#9998;</button>'+
-    '<button class="ibtn del" onclick="deleteFood('+f.id+')" aria-label="Delete">&#215;</button>'+
-    '</div></div>';
+  var est=f.estimated?' <span class="est-tag">est</span>':'';
+  var cal=(f.calories??0);
+  var macroLine=
+    '<b style="color:var(--bl)">'+(f.protein??0)+'g</b> P'+
+    ' <span style="color:var(--di)">·</span> '+
+    '<b style="color:var(--or)">'+(f.carbs??0)+'g</b> C'+
+    ' <span style="color:var(--di)">·</span> '+
+    '<b style="color:var(--pu)">'+(f.fats??0)+'g</b> F';
+
+  return '<div class="eg-row" id="food-row-'+f.id+'" onclick="this.classList.toggle(&quot;open&quot;)">'+
+    '<div class="eg-hd">'+
+    '<span class="eg-name">'+esc(f.name)+est+'</span>'+
+    '<span class="eg-summary">'+cal+' cal</span>'+
+    '<span class="eg-chevron">&#9658;</span>'+
+    '</div>'+
+    '<div class="eg-sets">'+
+    (f.quantity?'<div class="eg-set"><span class="eg-set-num"></span><span style="font-size:12px;color:var(--mu)">'+esc(f.quantity)+'</span></div>':'')+
+    '<div class="eg-set">'+
+    '<span class="eg-set-num"></span>'+
+    '<span class="food-macros-detail" style="font-size:12.5px;font-family:inherit">'+macroLine+'</span>'+
+    '<span style="flex:1"></span>'+
+    '<button class="ibtn" onclick="event.stopPropagation();editFood('+f.id+')" aria-label="Edit" style="width:24px;height:24px;font-size:11px">&#9998;</button>'+
+    '<button class="ibtn del" onclick="event.stopPropagation();deleteFood('+f.id+')" aria-label="Delete" style="width:24px;height:24px;font-size:12px">&#215;</button>'+
+    '</div>'+
+    '</div>'+
+    '</div>';
 }}
 
 function renderGroupedExercises(entries){{
