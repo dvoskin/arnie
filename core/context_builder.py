@@ -505,6 +505,22 @@ async def build_context(user: User, today_log: Optional[DailyLog], db,
     recent_weights = await get_recent_weights(db, user.id, days=56)
     recent_health = await get_recent_health_snapshots(db, user.id, days=7)
 
+    # Health snapshots may be on a linked identity — check linked users if empty
+    if not recent_health:
+        try:
+            from sqlalchemy import select as _sel
+            from db.models import User as _U
+            _linked = (await db.execute(
+                _sel(_U).where(_U.linked_to_user_id == user.id)
+            )).scalars().all()
+            for _lu in _linked:
+                _snaps = await get_recent_health_snapshots(db, _lu.id, days=7)
+                if _snaps:
+                    recent_health = _snaps
+                    break
+        except Exception:
+            pass
+
     # Long-term context: the adaptive Profile Matrix is primary; fall back to the
     # legacy freeform memory only if no profile exists yet.
     from memory.profile_manager import read_profile

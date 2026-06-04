@@ -210,11 +210,15 @@ async def _whoop_get(token: str, path: str, params: Optional[dict] = None) -> Op
             return None
 
 
-async def sync_user_whoop(db, user: User, days: int = 2) -> int:
+async def sync_user_whoop(db, user: User, days: int = 2,
+                          snapshot_user_id: int = None) -> int:
     """
-    Pull last `days` of Whoop data for one user and upsert into HealthSnapshot.
-    Returns number of days synced. Default 2 days catches yesterday + today.
+    Pull last `days` of Whoop data and upsert into HealthSnapshot.
+    snapshot_user_id: save snapshots to this user_id (use canonical for linked accounts).
+                      Defaults to user.id.
+    Returns number of days synced.
     """
+    save_id = snapshot_user_id or user.id
     token = await _ensure_fresh_token(db, user)
     if not token:
         return 0
@@ -361,7 +365,7 @@ async def sync_user_whoop(db, user: User, days: int = 2) -> int:
             continue
         fields = {k: v for k, v in fields.items() if v is not None}
         fields["source"] = "whoop"
-        await upsert_health_snapshot(db, user.id, d, **fields)
+        await upsert_health_snapshot(db, save_id, d, **fields)
         count += 1
 
     return count

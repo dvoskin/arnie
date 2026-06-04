@@ -676,9 +676,31 @@ async def _build_stats_for_user(db, user, target_date=None):
     weights = await get_recent_weights(db, user.id, days=90)
     health_snaps = await get_recent_health_snapshots(db, user.id, days=14)
 
-    # Whoop tokens may be on a linked identity (e.g. Telegram) rather than the
-    # canonical (iMessage) row. Check all linked identities so the dashboard
-    # correctly reflects the connection even before the user reconnects.
+    # Whoop tokens AND health snapshots may be on a linked identity (e.g. Telegram)
+    # rather than the canonical (iMessage) row. Check all linked identities.
+    from sqlalchemy import select as _sel
+    from db.models import User as _U
+    _linked_users = (await db.execute(
+        _sel(_U).where(_U.linked_to_user_id == user.id)
+    )).scalars().all()
+
+    # Merge health snapshots from linked identities (dedup by date, prefer linked)
+    if not health_snaps and _linked_users:
+        for _lu in _linked_users:
+            _linked_snaps = await get_recent_health_snapshots(db, _lu.id, days=14)
+            if _linked_snaps:
+                health_snaps = _linked_snaps
+                break
+    elif _linked_users:
+        # Merge: add linked snaps for dates not covered by canonical snaps
+        _canonical_dates = {s.date for s in health_snaps}
+        for _lu in _linked_users:
+            _linked_snaps = await get_recent_health_snapshots(db, _lu.id, days=14)
+            for _ls in _linked_snaps:
+                if _ls.date not in _canonical_dates:
+                    health_snaps.append(_ls)
+                    _canonical_dates.add(_ls.date)
+
     _whoop_connected = bool(user.whoop_access_token or user.whoop_refresh_token)
     if not _whoop_connected:
         from sqlalchemy import select as _sel
@@ -1730,7 +1752,9 @@ async def dashboard_whoop_sync(token: str):
         else:
             whoop_user = user
 
-        synced = await sync_user_whoop(db, whoop_user, days=30)
+        # Save snapshots to canonical user so stats API finds them
+        synced = await sync_user_whoop(db, whoop_user, days=30,
+                                       snapshot_user_id=user.id)
         return {"status": "ok", "days": synced}
 
 

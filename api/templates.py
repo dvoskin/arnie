@@ -202,22 +202,28 @@ body{{
 .macro-strip{{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--bd);border:1px solid var(--bd);border-radius:14px;overflow:hidden;margin-bottom:14px;}}
 
 /* ── WHOOP MODULE ────────────────────────────────────────── */
-.whoop-grid{{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:16px}}
-@media(max-width:560px){{.whoop-grid{{grid-template-columns:repeat(2,1fr)}}}}
+.whoop-grid{{display:grid;grid-template-columns:repeat(4,1fr);gap:9px;margin-bottom:4px}}
+@media(max-width:700px){{.whoop-grid{{grid-template-columns:repeat(2,1fr)}}}}
+@media(max-width:400px){{.whoop-grid{{grid-template-columns:repeat(2,1fr)}}}}
 .whoop-stat{{
-  background:var(--sf);border:1px solid var(--bd);border-radius:12px;
-  padding:12px 14px;display:flex;flex-direction:column;gap:3px;
+  background:var(--sf);border:1px solid var(--bd);border-radius:14px;
+  padding:14px 14px 12px;display:flex;flex-direction:column;gap:4px;
+  backdrop-filter:blur(12px);box-shadow:var(--sh);
 }}
 .whoop-stat-label{{
   font-family:'Geist Mono','SF Mono',monospace;
-  font-size:9px;font-weight:500;text-transform:uppercase;letter-spacing:.1em;
+  font-size:9.5px;font-weight:500;text-transform:uppercase;letter-spacing:.1em;
   color:var(--mu);
 }}
 .whoop-stat-val{{
   font-family:'Instrument Serif','Times New Roman',serif;
-  font-size:22px;line-height:1;letter-spacing:-.02em;color:var(--tx);
+  font-size:24px;line-height:1;letter-spacing:-.02em;color:var(--tx);
 }}
-.whoop-stat-sub{{font-size:11px;color:var(--mu);margin-top:1px}}
+.whoop-stat-sub{{
+  font-size:11px;color:var(--mu);margin-top:1px;
+  font-family:'Geist Mono','SF Mono',monospace;letter-spacing:.02em;
+}}
+.whoop-stat.whoop-full{{grid-column:1/-1}}
 /* Recovery color coding */
 .whoop-rec-high .whoop-stat-val{{color:var(--ac)}}
 .whoop-rec-mid  .whoop-stat-val{{color:var(--ye)}}
@@ -1181,15 +1187,6 @@ footer{{
       <button class="toggle share-tgl t-click" onclick="shareDay()">&#8679; Share day</button>
     </div>
 
-    <!-- WHOOP STATS (hidden until data loads) -->
-    <div id="whoop-module" style="display:none">
-      <div class="stitle spaced">
-        <span>&#128994; Whoop <span id="whoop-date" style="font-weight:400;opacity:.6;font-size:10px;margin-left:6px"></span></span>
-        <button class="add-toggle" id="whoop-sync-btn" onclick="syncWhoop()" title="Sync now" style="font-size:15px;font-family:inherit">&#8635;</button>
-      </div>
-      <div class="whoop-grid" id="whoop-grid"></div>
-    </div>
-
     <!-- FOOD -->
     <div class="stitle spaced">
       <span>Food <span id="food-log-count" style="font-weight:400;opacity:.7"></span></span>
@@ -1236,6 +1233,15 @@ footer{{
     </div>
     <div class="icrd fade-in" id="insights-card">
       <div class="iload"><span class="spin">&#9675;</span> Analyzing&hellip;</div>
+    </div>
+
+    <!-- WHOOP RECOVERY — bottom of day, only when connected -->
+    <div id="whoop-module" style="display:none">
+      <div class="stitle spaced">
+        <span>Whoop <span id="whoop-date" style="font-family:'Geist Mono','SF Mono',monospace;font-weight:400;opacity:.6;font-size:9px;letter-spacing:.04em;margin-left:6px"></span></span>
+        <button class="add-toggle" id="whoop-sync-btn" onclick="syncWhoop()" title="Sync" style="font-size:15px;font-family:inherit">&#8635;</button>
+      </div>
+      <div class="whoop-grid" id="whoop-grid"></div>
     </div>
 
   </div><!-- /panel-day -->
@@ -1868,7 +1874,7 @@ function renderWhoopModule(snap, profile){{
     return '<div class="whoop-stat'+(extraClass?' '+extraClass:'')+'">'+
       '<div class="whoop-stat-label">'+label+'</div>'+
       '<div class="whoop-stat-val">'+val+'</div>'+
-      (sub?'<div class="whoop-stat-sub">'+sub+'</div>':'')+
+      (sub?'<div class="whoop-stat-sub">'+esc(String(sub))+'</div>':'')+
       '</div>';
   }}
 
@@ -1908,12 +1914,12 @@ function renderWhoopModule(snap, profile){{
       var wos=JSON.parse(snap.whoop_workouts);
       wos.forEach(function(w){{
         var sub=[];
-        if(w.strain)sub.push('Strain '+w.strain);
         if(w.duration_min)sub.push(w.duration_min+'min');
-        if(w.avg_hr)sub.push('Avg '+w.avg_hr+'bpm');
+        if(w.avg_hr)sub.push('Avg HR '+w.avg_hr);
+        if(w.calories)sub.push(w.calories+' cal');
         parts+=stat(w.sport,
-          w.strain?w.strain.toFixed(1):w.duration_min?w.duration_min+'min':'—',
-          sub.slice(1).join(' · '));
+          w.strain!=null?w.strain.toFixed(1)+' strain':w.duration_min?w.duration_min+'min':'—',
+          sub.join(' · '), 'whoop-full');
       }});
     }}catch(e){{}}
   }}

@@ -1374,8 +1374,11 @@ async def cmd_whoop(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 return
             await update.message.reply_text("Syncing Whoop data…")
             from api.whoop import sync_user_whoop
+            from db.queries import resolve_user as _resolve_tg
             try:
-                synced = await sync_user_whoop(db, user, days=7)
+                canonical = await _resolve_tg(db, str(update.effective_user.id))
+                synced = await sync_user_whoop(db, user, days=7,
+                                               snapshot_user_id=canonical.id)
                 if synced > 0:
                     await update.message.reply_text(
                         f"✓ Synced <b>{synced} days</b> of Whoop data.\n\n"

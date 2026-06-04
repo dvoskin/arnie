@@ -928,14 +928,20 @@ async def _run_whoop_sync():
         total = 0
         for user in users:
             try:
-                old_snaps = await get_recent_health_snapshots(db, user.id, days=1)
+                # Resolve canonical so snapshots land on the right user_id
+                from db.queries import resolve_user as _resolve
+                canonical = await _resolve(db, user.telegram_id)
+                snapshot_uid = canonical.id
+
+                old_snaps = await get_recent_health_snapshots(db, snapshot_uid, days=1)
                 old_recovery = old_snaps[0].recovery_score if old_snaps else None
 
-                synced = await sync_user_whoop(db, user, days=7)
+                synced = await sync_user_whoop(db, user, days=7,
+                                               snapshot_user_id=snapshot_uid)
                 total += synced
 
                 if synced > 0 and user.telegram_id:
-                    new_snaps = await get_recent_health_snapshots(db, user.id, days=1)
+                    new_snaps = await get_recent_health_snapshots(db, snapshot_uid, days=1)
                     if new_snaps:
                         snap = new_snaps[0]
                         # Persisted dedup — one recovery ping per user per day, survives deploys
