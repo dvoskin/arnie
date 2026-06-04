@@ -833,13 +833,43 @@ async def _run_pipeline(update: Update, context: ContextTypes.DEFAULT_TYPE,
     await log_conversation(db, user.id, raw_text, log_text, source_type=source_type,
                            parsed_intent=(",".join(turn.health_flags) or None))
 
-    # ── Adaptive profile refresh (throttled internally to ~3h) ───────────────
+    # ── Adaptive profile refresh + reflection (both fire in background) ─────
+    # CRITICAL: the request-scoped `db` session closes when this function returns
+    # (the `async with AsyncSessionLocal()` in _run exits). Background tasks must
+    # therefore open their OWN session and re-fetch the user by id — never close
+    # over `db` or `turn.user`, which would be detached/closed by run time.
     if not turn.in_onboarding:
-        try:
-            from memory.profile_updater import maybe_update_profile
-            await maybe_update_profile(turn.user, db)
-        except Exception as e:
-            logger.error(f"Profile update error: {e}")
+        _uid = turn.user.id
+
+        # Profile synthesis — throttled to ~3h internally; background so it never
+        # adds latency to the user's response.
+        async def _bg_profile(uid=_uid):
+            try:
+                async with AsyncSessionLocal() as bg_db:
+                    from db.queries import reload_user
+                    u = await reload_user(bg_db, uid)
+                    if u:
+                        from memory.profile_updater import maybe_update_profile
+                        await maybe_update_profile(u, bg_db)
+            except Exception as e:
+                logger.error(f"Profile update error: {e}")
+
+        asyncio.create_task(_bg_profile())
+
+        # Reflection — capture durable behavioral notes at 25% probability.
+        # (Was imported but never called — now wired.)
+        if random.random() < 0.25 and raw_text and len(raw_text) > 20:
+            _resp_text = "|||".join(turn.response.bubbles)
+            async def _bg_reflect(uid=_uid, msg=raw_text, resp=_resp_text):
+                try:
+                    async with AsyncSessionLocal() as bg_db:
+                        from db.queries import reload_user
+                        u = await reload_user(bg_db, uid)
+                        if u:
+                            await maybe_update_memory(u, msg, resp, bg_db)
+                except Exception as e:
+                    logger.error(f"Reflection error: {e}")
+            asyncio.create_task(_bg_reflect())
 
 
 # ── Telegram handlers ─────────────────────────────────────────────────────────
@@ -1149,7 +1179,32 @@ async def cmd_me(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # Keep /profile and /targets as aliases for /me
 async def cmd_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    return await cmd_me(update, context)
+    """
+    /profile — Arnie's accumulated understanding of the user.
+    Delivers the AI-generated bio in chat + link to the full dashboard profile tab.
+    """
+    async with AsyncSessionLocal() as db:
+        user = await get_or_create_user(db, str(update.effective_user.id))
+        if not user.onboarding_completed:
+            await update.message.reply_text("Finish setup first — then I'll have a real picture of you.")
+            return
+
+        from memory.bio_generator import get_bio_for_chat
+        from db.queries import get_or_create_webhook_token
+
+        bio = await get_bio_for_chat(user, db)
+        token = await get_or_create_webhook_token(db, user)
+        dashboard_url = f"https://app.tryarnie.com/dashboard/{token}"
+
+        if bio:
+            await update.message.reply_text(bio)
+            await update.message.reply_text(
+                f"That's the overview. Full breakdown — everything I've tracked organized by category — is on your dashboard:\n{dashboard_url}"
+            )
+        else:
+            await update.message.reply_text(
+                f"Still building your profile — keep logging and I'll know more soon.\n\nDashboard: {dashboard_url}"
+            )
 
 
 async def cmd_targets(update: Update, context: ContextTypes.DEFAULT_TYPE):

@@ -1,6 +1,6 @@
 from sqlalchemy import (
     Column, Integer, String, Float, Boolean,
-    DateTime, Text, ForeignKey, Date,
+    DateTime, Text, ForeignKey, Date, UniqueConstraint,
 )
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -40,6 +40,10 @@ class User(Base):
     # Extended profile — sport and unit preference
     sport = Column(String)                          # e.g. "basketball", "boxing", "running"
     units_preference = Column(String, default="imperial")  # "imperial" | "metric"
+    # AI-generated profile bio (narrative text, refreshed when attributes change significantly)
+    user_bio = Column(Text)
+    user_bio_updated_at = Column(DateTime)
+
     # Proactive engagement state — persisted so it survives deploys
     nudges_sent = Column(Text, default="")          # comma-separated day-1 warmup slot keys fired
     whoop_last_notified = Column(String)            # date string of last whoop recovery ping
@@ -73,6 +77,8 @@ class User(Base):
                                      cascade="all, delete-orphan")
     workout_program = relationship("WorkoutProgram", back_populates="user",
                                    uselist=False, cascade="all, delete-orphan")
+    user_attributes = relationship("UserAttribute", back_populates="user",
+                                   cascade="all, delete-orphan")
 
 
 class UserPreferences(Base):
@@ -401,3 +407,52 @@ class WorkoutProgram(Base):
     created_at = Column(DateTime, server_default=func.now())
 
     user = relationship("User", back_populates="workout_program")
+
+
+class UserAttribute(Base):
+    """
+    Flexible per-user attribute store (EAV pattern).
+
+    Captures everything Arnie learns about a user that doesn't have a fixed
+    column: supplements, biomarkers, training habits, lifestyle details,
+    behavioral patterns, custom tracked metrics — anything.
+
+    New attribute types are rows, never new columns. The system grows without
+    migrations.
+
+    attribute_key naming: {category}_{noun}_{qualifier?}
+      e.g. nutrition_diet_style, fitness_training_time,
+           health_supplement_zinc_mg, lifestyle_wake_time,
+           behavior_motivation_driver, custom_anything
+
+    relevance_tier controls context injection:
+      core        → always injected into every Arnie conversation
+      daily       → injected when updated within the last 7 days
+      contextual  → injected when the conversation topic matches category
+      archive     → stored, never auto-injected (old lab tests, past injuries)
+    """
+    __tablename__ = "user_attributes"
+    # One row per (user, attribute_key) — the upsert layer relies on this, and the
+    # migration enforces it. Declared here so model and migration stay in lockstep
+    # (alembic check / create_all both honor it).
+    __table_args__ = (
+        UniqueConstraint("user_id", "attribute_key", name="uq_user_attribute_key"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    attribute_key = Column(String, nullable=False, index=True)   # canonical key
+    display_name = Column(String)                                 # human label
+    value = Column(Text, nullable=False)                          # always string
+    value_type = Column(String, default="string")                 # float|int|string|bool
+    unit = Column(String)                                         # "mg", "hours", "lbs"
+    category = Column(String, nullable=False)                     # nutrition|fitness|health|lifestyle|behavior|mental|custom
+    relevance_tier = Column(String, default="contextual")         # core|daily|contextual|archive
+    attribute_status = Column(String, default="active")           # active|discontinued|historical
+    source = Column(String, default="conversation")               # conversation|user_stated|wearable|onboarding
+    confidence = Column(String, default="inferred")               # confirmed|inferred|needs_verification
+    last_value = Column(Text)                                     # previous value (for bio: "was X, now Y")
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+    created_at = Column(DateTime, server_default=func.now())
+
+    user = relationship("User", back_populates="user_attributes")

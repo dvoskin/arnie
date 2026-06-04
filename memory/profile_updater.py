@@ -1,7 +1,18 @@
 """
 Adaptive profile updater — synthesizes the User Profile Matrix after meaningful
-interactions. Full-rewrite with strong preservation guardrails, throttled so it
-won't run more than once every few hours per user.
+interactions. Full-rewrite with strong preservation guardrails, throttled to
+~3h per user.
+
+Key fixes vs. original:
+  - Synthesis context now includes User model structured fields (age, height,
+    training_experience, dietary_preferences, injuries, coaching_style, etc.)
+    which were previously ignored, causing the profile to contradict the DB.
+  - arnie_memory.md (reflection notes) is now fed in as context.
+  - Model upgraded to Sonnet for higher-quality holistic synthesis.
+  - Synthesis prompt is assertive: replace (learning) placeholders when data exists.
+  - After each successful write, extracts structured attributes via a JSON block
+    and upserts them to user_attributes table.
+  - Triggers bio regeneration after attribute upsert.
 """
 import logging
 from datetime import datetime, timezone
@@ -14,63 +25,151 @@ logger = logging.getLogger(__name__)
 
 _UPDATE_SYSTEM = """\
 You maintain a user's "Profile Matrix" — a living markdown file that makes Arnie
-a better coach over time. You are given the CURRENT profile and recent context
-(conversation + logged food/workouts/weight). Return the COMPLETE updated profile
-markdown and NOTHING else (no preamble, no code fences).
+a better coach over time. You receive the CURRENT profile, the user's structured
+DB data, and recent behavioral context (conversations + food/exercise logs + weight).
 
-RULES — follow exactly:
-1. PRESERVE everything that's still true. You are refining, not rewriting. Never
-   drop a section or a fact that hasn't changed. Keep the exact section headings.
-2. Only change a fact when the new context clearly supports it (a stated change,
-   or a repeated behavior pattern — not a single occurrence).
-3. CONFIDENCE TAGS on facts: `[confirmed]` (user explicitly said it),
-   `[inferred]` (you deduced it from behavior), `[outdated]` (was true, now
-   superseded — keep only if historically useful), `[needs verification]`
-   (assumed). When unsure, use `[inferred]` or `[needs verification]` — never
-   present a guess as `[confirmed]`.
-4. STABLE vs TEMPORARY: only write durable traits. A one-off bad day, a single
-   craving, a single skipped workout → do NOT record as a trait. A repeated
-   pattern (e.g. logs Oikos shakes most days, trains in the evening) → DO record.
-5. CONFLICT RESOLUTION: an explicit user statement beats an old inference. Newer
-   beats older for the same fact. If a stable fact genuinely changed (weight,
-   goal, routine, schedule), update it and add a Change Log line. Mark the prior
-   value `[outdated]` only if it's useful history; otherwise just replace it.
-6. TIMESTAMPS: update the "_Last updated: YYYY-MM-DD_" line ONLY for sections you
-   actually changed. Leave untouched sections' dates as they are.
-7. CHANGE LOG: append a one-line dated entry for each material change. Keep the
-   log to the most recent ~12 entries (trim oldest beyond that).
-8. PRIVACY: do not record sensitive medical information unless the user explicitly
-   shared it for coaching relevance. No diagnoses, medications, or conditions
-   inferred from offhand remarks.
-9. Keep it TIGHT and useful. Replace "(learning)" / "(none yet)" placeholders with
-   real findings as they emerge; leave them if nothing's been learned.
-10. Update the top `<!-- last_synced: ... -->` comment to the provided timestamp.
+Return TWO things separated by the exact marker ---ATTRIBUTES---:
 
-Return only the full updated markdown.\
+PART 1: The COMPLETE updated profile markdown (everything before ---ATTRIBUTES---).
+PART 2: A JSON array of new or updated attributes (everything after ---ATTRIBUTES---).
+
+═══════════════════════════════════════════════════════
+MARKDOWN RULES (Part 1):
+═══════════════════════════════════════════════════════
+1. PRESERVE everything still true. Refine, don't wipe. Keep exact section headings.
+2. REPLACE (learning) placeholders whenever you have ANY evidence. A partial note
+   beats a placeholder. If STRUCTURED DB DATA shows dietary_preferences, injuries,
+   training_experience — write them. DB data is confirmed ground truth.
+3. TRANSLATE DB fields into profile lines:
+   - dietary_preferences → Diet style (confirmed)
+   - training_experience → Training experience (confirmed)
+   - injuries → Injuries / limitations (confirmed)
+   - coaching_style pref → Coaching tone preference (confirmed)
+   - age, height, sex → Demographics (confirmed)
+   If FREQUENT FOODS shows any item 3+ times → write it as Commonly eaten staples.
+   If any item appears 8+ times → write it as Favorite foods.
+4. CONFIDENCE TAGS: `[confirmed]` (user stated/DB has it), `[inferred]` (you deduced
+   from behavior), `[outdated]` (superseded), `[needs verification]` (assumed).
+   DB fields count as [confirmed]. Single-turn mentions are [needs verification].
+   Repeated patterns (3+ occurrences) earn [inferred].
+5. STABLE vs TEMPORARY: only write durable traits. One bad day → no. Repeated
+   pattern → yes. But if DB clearly shows it, write it regardless of recurrence.
+6. CONFLICT RESOLUTION: explicit user statement > old inference. DB value > inference.
+   Newer > older for same fact. Mark prior value [outdated] if historically useful.
+7. Update "_Last updated: YYYY-MM-DD_" only for sections you changed.
+8. CHANGE LOG: append one line per material change. Keep most recent ~12 entries.
+9. Update top <!-- last_synced: ... --> to the provided timestamp.
+10. Return ONLY the markdown (no preamble, no code fences).
+
+═══════════════════════════════════════════════════════
+JSON RULES (Part 2, after ---ATTRIBUTES---):
+═══════════════════════════════════════════════════════
+Output a JSON array. Each object represents one new or updated attribute:
+[
+  {
+    "attribute_key": "nutrition_diet_style",
+    "display_name": "Diet style",
+    "value": "high-protein, flexible dieting",
+    "value_type": "string",
+    "unit": null,
+    "category": "nutrition",
+    "relevance_tier": "core",
+    "confidence": "confirmed",
+    "source": "conversation"
+  }
+]
+
+Key naming: {category}_{noun}_{qualifier}
+  Categories: nutrition, fitness, health, lifestyle, behavior, mental, custom
+  Tiers: core (always shown), daily (shown if updated recently), contextual (topic-match), archive (stored only)
+
+Only output attributes that are NEW or materially CHANGED from the current profile.
+If nothing changed, output an empty array: []
+Do not output attributes for things like name, weight, goal — those are in the DB.
+DO output attributes for: supplements, biomarkers, training habits, behavioral patterns,
+  food preferences, lifestyle details, custom tracked metrics.\
 """
 
 
 async def _gather_context(user, db) -> str:
-    """Compact recent context for the updater: conversation + logs + weight."""
+    """
+    Compact recent context for the updater.
+    Includes: structured DB profile + arnie_memory.md + conversations + logs + weight.
+    """
     from db.queries import (
         get_recent_conversations, get_recent_logs, get_recent_weights,
     )
+    from core.context_builder import fmt_profile
+    from memory.memory_manager import read_memory
+
     parts = []
 
-    convos = await get_recent_conversations(db, user.id, limit=14)
+    # ── 1. Structured DB profile (THIS WAS MISSING — now the most important input) ──
+    prefs = user.preferences
+    structured_lines = []
+    if user.age:
+        structured_lines.append(f"Age: {user.age}")
+    if user.sex:
+        structured_lines.append(f"Sex: {user.sex}")
+    if user.height_cm:
+        structured_lines.append(f"Height: {user.height_cm:.0f}cm")
+    if user.current_weight_kg:
+        structured_lines.append(f"Current weight: {user.current_weight_kg:.1f}kg")
+    if user.goal_weight_kg:
+        structured_lines.append(f"Goal weight: {user.goal_weight_kg:.1f}kg")
+    if user.primary_goal:
+        structured_lines.append(f"Primary goal: {user.primary_goal}")
+    if user.training_experience:
+        structured_lines.append(f"Training experience: {user.training_experience}")
+    if user.dietary_preferences:
+        structured_lines.append(f"Dietary preferences: {user.dietary_preferences}")
+    if user.injuries:
+        structured_lines.append(f"Injuries / limitations: {user.injuries}")
+    if user.sport:
+        structured_lines.append(f"Sport: {user.sport}")
+    if prefs:
+        if prefs.coaching_style:
+            structured_lines.append(f"Coaching style preference: {prefs.coaching_style}")
+        if prefs.accountability_level:
+            structured_lines.append(f"Accountability level: {prefs.accountability_level}")
+        if prefs.calorie_target:
+            structured_lines.append(f"Calorie target: {prefs.calorie_target}")
+        if prefs.protein_target:
+            structured_lines.append(f"Protein target: {prefs.protein_target}g")
+        if prefs.wake_time:
+            structured_lines.append(f"Wake time: {prefs.wake_time}")
+        if prefs.sleep_time:
+            structured_lines.append(f"Sleep time: {prefs.sleep_time}")
+
+    if structured_lines:
+        parts.append("STRUCTURED DB DATA (confirmed ground truth — always populate profile from this):\n"
+                     + "\n".join(structured_lines))
+
+    # ── 2. Previously captured behavioral notes ───────────────────────────────
+    mem = await read_memory(user.telegram_id)
+    if mem and len(mem.strip()) > 50:
+        parts.append("BEHAVIORAL NOTES (previously captured by reflection system):\n"
+                     + mem[:1500])
+
+    # ── 3. Recent conversations ───────────────────────────────────────────────
+    convos = await get_recent_conversations(db, user.id, limit=20)
     if convos:
         lines = []
         for c in reversed(convos):
-            u = (c.raw_message or "").strip()[:160]
-            a = (c.response or "").strip()[:160]
+            u = (c.raw_message or "").strip()[:200]
+            a = (c.response or "").strip()[:200]
             if u:
                 lines.append(f"User: {u}")
             if a:
                 lines.append(f"Arnie: {a}")
-        parts.append("RECENT CONVERSATION:\n" + "\n".join(lines[-24:]))
+        parts.append("RECENT CONVERSATION:\n" + "\n".join(lines[-30:]))
 
-    logs = await get_recent_logs(db, user.id, days=21)
-    food_names, ex_names, evening_sessions, total_sessions = {}, {}, 0, 0
+    # ── 4. Food and exercise patterns ────────────────────────────────────────
+    logs = await get_recent_logs(db, user.id, days=30)
+    food_names: dict[str, int] = {}
+    ex_names: dict[str, int] = {}
+    evening_sessions = total_sessions = 0
+
     for lg in logs:
         for fe in (lg.food_entries or []):
             n = (fe.parsed_food_name or "").strip().lower()
@@ -83,29 +182,36 @@ async def _gather_context(user, db) -> str:
             if ee.timestamp and ee.timestamp.hour >= 17:
                 evening_sessions += 1
             total_sessions += 1
+
     if food_names:
-        top = sorted(food_names.items(), key=lambda x: -x[1])[:12]
-        parts.append("FREQUENT FOODS (21d, name×count): " +
-                     ", ".join(f"{n}×{c}" for n, c in top))
+        top = sorted(food_names.items(), key=lambda x: -x[1])[:15]
+        parts.append("FREQUENT FOODS (30d, name×count — items with 3+ = commonly eaten, 8+ = staple/favorite):\n"
+                     + ", ".join(f"{n}×{c}" for n, c in top))
+
     if ex_names:
         top = sorted(ex_names.items(), key=lambda x: -x[1])[:12]
-        parts.append("FREQUENT EXERCISES (21d): " +
-                     ", ".join(f"{n}×{c}" for n, c in top))
+        parts.append("FREQUENT EXERCISES (30d): " + ", ".join(f"{n}×{c}" for n, c in top))
         if total_sessions:
             parts.append(f"Training time: {evening_sessions}/{total_sessions} logged sessions were evening (5pm+).")
 
+    # ── 5. Weight trend ──────────────────────────────────────────────────────
     weights = await get_recent_weights(db, user.id, days=30)
     if len(weights) >= 2:
         sw = sorted(weights, key=lambda w: w.timestamp)
         parts.append(f"Weight trend (30d): {sw[0].weight_kg:.1f}kg → {sw[-1].weight_kg:.1f}kg over {len(sw)} weigh-ins.")
 
-    return "\n\n".join(parts) if parts else "No new structured data."
+    return "\n\n".join(parts) if parts else "No context data available."
 
 
 async def maybe_update_profile(user, db, force: bool = False) -> bool:
     """
     Refresh the Profile Matrix if due. Returns True if it updated.
-    Throttled to once per few hours per user (see profile_manager).
+    Throttled to once per ~3 hours per user.
+
+    On success:
+      1. Writes updated markdown to profile.md
+      2. Parses the structured attributes JSON block → upserts to user_attributes
+      3. Triggers bio regeneration
     """
     from core.llm import chat
 
@@ -120,22 +226,34 @@ async def maybe_update_profile(user, db, force: bool = False) -> bool:
             f"SYNC TIMESTAMP TO USE: {_now_iso()}\n\n"
             f"=== CURRENT PROFILE ===\n{current}\n\n"
             f"=== RECENT CONTEXT ===\n{context}\n\n"
-            f"Return the complete updated profile markdown."
+            "Return the complete updated profile markdown, then ---ATTRIBUTES--- "
+            "followed by the JSON array of changed attributes."
         )
+
         result = await chat(
             [{"role": "user", "content": prompt}],
             system=_UPDATE_SYSTEM,
             tools=False,
-            max_tokens=2000,
-            model="claude-haiku-4-5-20251001",
+            max_tokens=3000,
+            model="claude-sonnet-4-6",
         )
-        updated = (result.get("text") or "").strip()
-        # Sanity: must look like the profile (has the header + several sections),
-        # otherwise keep the existing one — never let a bad generation wipe it.
-        if updated.startswith("```"):
-            updated = updated.strip("`").lstrip("markdown").strip()
-        if "# User Profile Matrix" in updated and updated.count("##") >= 6 and len(updated) > 400:
-            await write_profile(user.telegram_id, updated)
+        raw_output = (result.get("text") or "").strip()
+
+        # Strip code fences from the whole output if present
+        if raw_output.startswith("```"):
+            raw_output = raw_output.strip("`").lstrip("markdown").strip()
+
+        # Split into markdown + attributes JSON
+        from memory.attribute_store import parse_attributes_from_synthesis
+        updated_markdown, attrs = parse_attributes_from_synthesis(raw_output)
+
+        # Sanity check the markdown
+        if ("# User Profile Matrix" in updated_markdown
+                and updated_markdown.count("##") >= 6
+                and len(updated_markdown) > 400):
+            await write_profile(user.telegram_id, updated_markdown)
+
+            # Audit trail
             try:
                 from db.models import MemoryUpdate
                 db.add(MemoryUpdate(
@@ -146,10 +264,30 @@ async def maybe_update_profile(user, db, force: bool = False) -> bool:
                 await db.commit()
             except Exception:
                 pass
+
             logger.info(f"Profile Matrix updated for {user.telegram_id}")
+
+            # Upsert extracted attributes
+            if attrs:
+                try:
+                    from memory.attribute_store import upsert_many
+                    count = await upsert_many(db, user.id, attrs)
+                    logger.info(f"Upserted {count} attributes for {user.telegram_id}")
+                except Exception as e:
+                    logger.error(f"Attribute upsert failed for {user.telegram_id}: {e}")
+
+            # Trigger bio regeneration
+            try:
+                from memory.bio_generator import maybe_update_bio
+                await maybe_update_bio(user, db)
+            except Exception as e:
+                logger.error(f"Bio update failed for {user.telegram_id}: {e}")
+
             return True
+
         logger.warning(f"Profile update for {user.telegram_id} rejected (failed sanity check)")
         return False
+
     except Exception as e:
         logger.error(f"Profile update failed for {user.telegram_id}: {e}")
         return False

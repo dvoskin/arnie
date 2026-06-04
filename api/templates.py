@@ -1344,7 +1344,24 @@ footer{{
 
   <!-- PROFILE TAB -->
   <div class="tab-panel" id="panel-profile">
-    <div class="stitle" style="margin-top:4px">Your info</div>
+
+    <!-- AI Profile — bio + learned attributes -->
+    <div id="ai-profile-section" style="display:none">
+      <div class="stitle" style="margin-top:4px;display:flex;align-items:center;gap:8px">
+        <span>&#x2728; Arnie's profile</span>
+        <button onclick="refreshAIProfile()" style="background:none;border:none;color:var(--mu);cursor:pointer;font-size:11px;padding:2px 6px;border-radius:6px;border:1px solid var(--bd)" title="Refresh">&#8635;</button>
+      </div>
+      <!-- Bio card -->
+      <div class="infocrd" id="ai-bio-card" style="padding:14px 16px;line-height:1.6;font-size:14px;color:var(--tx)"></div>
+      <!-- Learned attributes by category -->
+      <div id="ai-attributes-section"></div>
+    </div>
+    <div id="ai-profile-loading" style="padding:24px 16px;text-align:center;color:var(--mu);font-size:13px">Building your profile&#8230;</div>
+    <div id="ai-profile-empty" style="display:none;padding:16px 0">
+      <div class="lempty">Keep logging and chatting — Arnie builds your profile from your interactions. Check back after a few days.</div>
+    </div>
+
+    <div class="stitle" style="margin-top:24px">Your info</div>
     <div class="infocrd" id="profile-info"></div>
     <div class="stitle">Targets</div>
     <div class="infocrd" id="profile-targets"></div>
@@ -1393,6 +1410,7 @@ footer{{
 const TOKEN        = '{token}';
 const STATS_BASE   = '/api/stats/'    + TOKEN;
 const INSIGHTS_API = '/api/insights/' + TOKEN;
+const PROFILE_API  = '/api/profile/'  + TOKEN;
 
 // ── State ─────────────────────────────────────────────────────────────────
 let _baseData=null, _dayCache={{}}, _viewingDate=null, _todayStr=null;
@@ -1508,7 +1526,7 @@ function switchTab(name){{
   }}
   if(name==='day') loadInsights();
   if(name==='week'){{if(_baseData)renderWeekTab(_baseData);loadWeekInsights();}}
-  if(name==='profile' && _baseData){{renderProfileTab(_baseData);loadWorkoutProgram();}}
+  if(name==='profile' && _baseData){{renderProfileTab(_baseData);loadWorkoutProgram();loadAIProfile();}}
 }}
 
 // ── Boot ──────────────────────────────────────────────────────────────────
@@ -2355,6 +2373,101 @@ function renderProfileTab(d){{
         (d.live?'<span class="dev-dot"></span>':'')+esc(d.label)+
         '</div></div></div>';
     }}).join('')+'</div>';
+}}
+
+// ── AI Profile ────────────────────────────────────────────────────────────
+var _aiProfileLoaded = false;
+
+const CATEGORY_LABELS = {{
+  nutrition: '🍽 Nutrition', fitness: '🏋 Fitness', health: '💊 Health & Supplements',
+  lifestyle: '🌅 Lifestyle', behavior: '🧠 Behavior', mental: '💭 Mental',
+  custom: '📌 Custom Tracking',
+}};
+const CONF_COLORS = {{ confirmed: 'var(--ac)', inferred: 'var(--mu)', needs_verification: '#f0a500' }};
+
+function renderAIProfile(data) {{
+  var loadEl = document.getElementById('ai-profile-loading');
+  var emptyEl = document.getElementById('ai-profile-empty');
+  var section = document.getElementById('ai-profile-section');
+
+  if (loadEl) loadEl.style.display = 'none';
+
+  if (!data || (!data.bio && (!data.attributes || !Object.keys(data.attributes).length))) {{
+    if (emptyEl) emptyEl.style.display = 'block';
+    return;
+  }}
+
+  if (section) section.style.display = 'block';
+  if (emptyEl) emptyEl.style.display = 'none';
+
+  // Bio
+  var bioEl = document.getElementById('ai-bio-card');
+  if (bioEl) {{
+    bioEl.innerHTML = data.bio
+      ? '<p style="margin:0">' + esc(data.bio) + '</p>'
+      : '<p style="margin:0;color:var(--mu);font-style:italic">Bio generates after a few interactions — keep logging and chatting.</p>';
+  }}
+
+  // Attributes by category
+  var attrsEl = document.getElementById('ai-attributes-section');
+  if (!attrsEl) return;
+
+  var cats = Object.keys(data.attributes || {{}});
+  if (!cats.length) {{ attrsEl.innerHTML = ''; return; }}
+
+  var CAT_ORDER = ['fitness','nutrition','health','behavior','lifestyle','mental','custom'];
+  cats.sort(function(a,b){{
+    return (CAT_ORDER.indexOf(a)+1||99) - (CAT_ORDER.indexOf(b)+1||99);
+  }});
+
+  attrsEl.innerHTML = cats.map(function(cat) {{
+    var rows = (data.attributes[cat] || []).filter(function(r){{ return r.status === 'active'; }});
+    if (!rows.length) return '';
+    var label = CATEGORY_LABELS[cat] || cat;
+    var rowsHtml = rows.map(function(r) {{
+      var val = esc(r.value) + (r.unit ? ' ' + esc(r.unit) : '');
+      var confDot = r.confidence !== 'confirmed'
+        ? '<span style="width:6px;height:6px;border-radius:50%;background:' + (CONF_COLORS[r.confidence]||'var(--mu)') + ';display:inline-block;margin-left:5px;vertical-align:middle" title="' + esc(r.confidence) + '"></span>'
+        : '';
+      return '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--bd)">' +
+        '<span style="color:var(--mu);font-size:12px">' + esc(r.display_name) + '</span>' +
+        '<span style="font-size:13px;font-weight:500">' + val + confDot + '</span>' +
+        '</div>';
+    }}).join('');
+    return '<div style="margin-top:20px"><div class="stitle" style="margin-top:0;margin-bottom:8px">' + esc(label) + '</div>' +
+      '<div class="infocrd" style="padding:0 16px">' + rowsHtml + '</div></div>';
+  }}).join('');
+}}
+
+async function loadAIProfile() {{
+  if (_aiProfileLoaded) return;
+  try {{
+    var r = await fetch(PROFILE_API);
+    if (!r.ok) throw new Error();
+    var data = await r.json();
+    _aiProfileLoaded = true;
+    renderAIProfile(data);
+  }} catch(e) {{
+    var loadEl = document.getElementById('ai-profile-loading');
+    if (loadEl) loadEl.innerHTML = '<div class="lempty">Could not load profile — tap refresh to retry.</div>';
+  }}
+}}
+
+async function refreshAIProfile() {{
+  _aiProfileLoaded = false;
+  var loadEl = document.getElementById('ai-profile-loading');
+  var section = document.getElementById('ai-profile-section');
+  if (loadEl) {{ loadEl.style.display = 'block'; loadEl.innerHTML = 'Refreshing&#8230;'; }}
+  if (section) section.style.display = 'none';
+  try {{
+    var r = await fetch(PROFILE_API + '?refresh=true');
+    if (!r.ok) throw new Error();
+    var data = await r.json();
+    _aiProfileLoaded = true;
+    renderAIProfile(data);
+  }} catch(e) {{
+    if (loadEl) loadEl.innerHTML = '<div class="lempty">Could not refresh — try again later.</div>';
+  }}
 }}
 
 // ── Insights ──────────────────────────────────────────────────────────────

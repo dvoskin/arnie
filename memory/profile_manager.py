@@ -55,7 +55,14 @@ def _now_iso() -> str:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def build_template(user: User) -> str:
-    """Seed a fresh profile from known DB facts. Demographics start confirmed."""
+    """
+    Seed a fresh profile from known DB facts.
+
+    Section order is deliberate — most coaching-critical sections first so that
+    the context_builder's 3200-char truncation keeps the highest-value data.
+    Order: Goals → Fitness → Nutrition → Health → Behavior → Demographics →
+           Lifestyle → Concerns → Communication → Custom → History
+    """
     prefs = user.preferences
     name = user.name or "User"
     coaching = getattr(prefs, "coaching_style", "balanced") if prefs else "balanced"
@@ -69,11 +76,57 @@ def build_template(user: User) -> str:
     return f"""<!-- last_synced: {_now_iso()} -->
 # User Profile Matrix — {name}
 
-> How to read this: each fact is tagged `[confirmed]` (user stated it),
-> `[inferred]` (Arnie deduced it from behavior), `[outdated]` (superseded, kept
-> for history), or `[needs verification]` (assumed, should confirm). STABLE facts
-> live in their sections; TEMPORARY context (a single bad day, a one-off craving)
-> does NOT get written here unless it becomes a recurring pattern.
+> Tags: `[confirmed]` user stated it · `[inferred]` Arnie deduced it · `[outdated]` superseded · `[needs verification]` unconfirmed.
+> Only durable, repeating patterns are recorded. Temporary states (a bad day, a one-off craving) are NOT written here.
+
+## Goals & Aspirations
+_Last updated: {today}_
+{line("Primary goal", user.primary_goal)}
+- Deeper why / motivation: (unknown)  `[needs verification]`
+- Secondary goals: (none yet)
+- Timeline / deadline: (none stated)
+
+## Fitness Profile
+_Last updated: {today}_
+- Training experience: {user.training_experience or "unknown"}  `[{'confirmed' if user.training_experience else 'needs verification'}]`
+- Sport / activity: {user.sport or "none stated"}
+- Workout split: (learning)
+- Training frequency: (learning)
+- Preferred training time: (learning)
+- Preferred exercises: (learning)
+- Injuries / limitations: {user.injuries or "none stated"}  `[{'confirmed' if user.injuries else 'needs verification'}]`
+- Cardio habits: (learning)
+- Strength trends: (learning)
+- Recovery patterns: (learning)
+
+## Nutrition Preferences
+_Last updated: {today}_
+- Diet style: {user.dietary_preferences or "no restrictions stated"}  `[{'confirmed' if user.dietary_preferences else 'needs verification'}]`
+- Favorite foods: (learning)
+- Commonly eaten staples: (learning)
+- Foods avoided: (learning)
+- Typical meal timing: (learning)
+- Protein habits: (learning)
+- Snack patterns: (learning)
+- Alcohol / sugar habits: (learning)
+
+## Health & Supplements
+_Last updated: {today}_
+- Supplements: (none noted yet)
+- Vitamins / minerals: (none noted yet)
+- Biomarkers / lab values: (none noted yet)
+- Medications / medical context: (none noted yet)
+- Sleep quality: (learning)
+- Chronic conditions / notes: (none noted yet)
+
+## Behavior & Motivation
+_Last updated: {today}_
+- What motivates them: (learning)
+- What discourages them: (learning)
+- Coaching tone preference: {coaching}  `[inferred]`
+- Accountability preference: {accountability}  `[inferred]`
+- Common failure points: (learning)
+- Response to setbacks: (learning)
 
 ## Demographics
 _Last updated: {today}_
@@ -84,51 +137,15 @@ _Last updated: {today}_
 {line("Current weight (kg)", round(user.current_weight_kg, 1) if user.current_weight_kg else None)}
 {line("Goal weight (kg)", round(user.goal_weight_kg, 1) if user.goal_weight_kg else None)}
 - Location / timezone: {user.timezone or "unknown"}  `[{'confirmed' if (user.timezone and user.timezone != 'UTC') else 'needs verification'}]`
-- Lifestyle notes: (none yet)
-
-## Goals & Aspirations
-_Last updated: {today}_
-{line("Primary goal", user.primary_goal)}
-- Deeper why / motivation: (unknown)  `[needs verification]`
-- Secondary goals: (none yet)
-
-## Nutrition Preferences
-_Last updated: {today}_
-- Diet style: {user.dietary_preferences or "no restrictions stated"}  `[{'confirmed' if user.dietary_preferences else 'needs verification'}]`
-- Favorite foods: (learning)
-- Commonly eaten: (learning)
-- Foods avoided: (learning)
-- Typical meal timing: (learning)
-- Protein habits: (learning)
-- Snack patterns: (learning)
-- Alcohol / sugar habits: (learning)
-
-## Fitness Profile
-_Last updated: {today}_
-- Training experience: {user.training_experience or "unknown"}  `[{'confirmed' if user.training_experience else 'needs verification'}]`
-- Sport: {user.sport or "none stated"}
-- Workout split: (learning)
-- Preferred exercises: (learning)
-- Injuries / limitations: {user.injuries or "none stated"}  `[{'confirmed' if user.injuries else 'needs verification'}]`
-- Cardio habits: (learning)
-- Strength trends: (learning)
-- Recovery patterns: (learning)
 
 ## Lifestyle & Routine
 _Last updated: {today}_
 - Wake / sleep schedule: (learning)
-- Work schedule: (learning)
+- Work schedule / occupation: (learning)
 - Travel patterns: (learning)
-- Family constraints: (learning)
+- Family / life constraints: (learning)
 - Social eating patterns: (learning)
-
-## Behavior & Motivation
-_Last updated: {today}_
-- What motivates them: (learning)
-- What discourages them: (learning)
-- Coaching tone preference: {coaching}  `[inferred]`
-- Accountability preference: {accountability}  `[inferred]`
-- Common failure points: (learning)
+- Stress level: (learning)
 
 ## Concerns & Friction Points
 _Last updated: {today}_
@@ -136,15 +153,19 @@ _Last updated: {today}_
 
 ## Communication Preferences
 _Last updated: {today}_
-- Length: {length}  `[inferred]`
+- Response length preference: {length}  `[inferred]`
 - Tone: {coaching}  `[inferred]`
 - Check-in cadence: (learning)
+
+## Custom Tracking
+_Last updated: {today}_
+- (nothing custom-tracked yet — users can ask Arnie to remember any metric)
 
 ## Important Historical Context
 _Last updated: {today}_
 - Major wins: (none yet)
 - Recurring patterns: (none yet)
-- Useful facts for future coaching: (none yet)
+- Key facts for future coaching: (none yet)
 
 ## Change Log
 - {today}: profile created from onboarding.

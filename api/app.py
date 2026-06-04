@@ -843,6 +843,8 @@ async def _build_stats_for_user(db, user, target_date=None):
         "user": {"name": user.name or "User", "goal": user.primary_goal or "—",
                  "current_weight_lbs": profile["current_weight_lbs"],
                  "goal_weight_lbs": profile["goal_weight_lbs"]},
+        # AI-generated bio — null until profile has been synthesized at least once
+        "bio": user.user_bio or None,
     }
 
 
@@ -860,6 +862,53 @@ async def get_stats(token: str, date: Optional[str] = Query(None)):
             except ValueError:
                 raise HTTPException(status_code=400, detail="Invalid date, use YYYY-MM-DD")
         return await _build_stats_for_user(db, user, target_date=target_date)
+
+
+@app.get("/api/profile/{token}")
+async def get_profile(token: str, refresh: bool = False):
+    """
+    Returns the user's AI-generated bio + all learned attributes organized by category.
+    This powers the dashboard AI Profile section.
+
+    ?refresh=true forces bio regeneration (ignores 24h throttle).
+    """
+    async with AsyncSessionLocal() as db:
+        user = await get_user_by_webhook_token(db, token)
+        if not user:
+            raise HTTPException(status_code=401, detail="Invalid token")
+
+        from memory.attribute_store import get_all_attributes
+        from memory.bio_generator import maybe_update_bio
+
+        if refresh or not user.user_bio:
+            await maybe_update_bio(user, db, force=refresh)
+
+        attributes = await get_all_attributes(db, user.id)
+
+        # Group by category, preserving tier ordering within each category
+        by_category: dict[str, list] = {}
+        for attr in attributes:
+            cat = attr.category or "custom"
+            by_category.setdefault(cat, []).append({
+                "key": attr.attribute_key,
+                "display_name": attr.display_name or attr.attribute_key.replace("_", " ").title(),
+                "value": attr.value,
+                "unit": attr.unit,
+                "category": cat,
+                "tier": attr.relevance_tier,
+                "confidence": attr.confidence,
+                "source": attr.source,
+                "status": attr.attribute_status,
+                "updated_at": attr.updated_at.isoformat() if attr.updated_at else None,
+            })
+
+        return {
+            "name": user.name or "User",
+            "bio": user.user_bio or None,
+            "bio_updated_at": user.user_bio_updated_at.isoformat() if user.user_bio_updated_at else None,
+            "attributes": by_category,
+            "attribute_count": len(attributes),
+        }
 
 
 # ── Edit / delete entries from the dashboard ───────────────────────────────────

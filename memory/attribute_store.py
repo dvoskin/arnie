@@ -1,0 +1,386 @@
+"""
+User attribute store — the structured, queryable layer beneath the profile markdown.
+
+Every fact Arnie learns about a user (supplement stack, training habits, dietary
+style, biomarkers, behavioral patterns, custom metrics) lands here as a row.
+New attribute types are new rows, never new columns. The system scales to any
+user-specific metric without migrations.
+
+Write paths:
+  1. profile_updater (primary) — holistic Sonnet synthesis emits a JSON block
+     of new/changed attributes; this module upserts them after each profile write.
+  2. update_profile tool (user-initiated) — "attr:" prefix keys route here with
+     confidence=confirmed, source=user_stated.
+
+Read paths:
+  - context_builder via get_attributes_for_context()  → injected into every prompt
+  - bio_generator via get_all_attributes()            → narrative bio generation
+  - /api/profile/{token}                             → dashboard display
+"""
+import json
+import logging
+import re
+from datetime import datetime, timezone, timedelta
+from typing import Optional
+
+from sqlalchemy import select, and_
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+
+from db.models import UserAttribute
+
+logger = logging.getLogger(__name__)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Canonical key registry
+# Maps common variant names → canonical attribute_key.
+# The extractor always canonicalizes before upserting.
+# ─────────────────────────────────────────────────────────────────────────────
+
+CANONICAL_KEYS: dict[str, str] = {
+    # nutrition
+    "diet": "nutrition_diet_style",
+    "diet_style": "nutrition_diet_style",
+    "dietary_style": "nutrition_diet_style",
+    "dietary_preference": "nutrition_diet_style",
+    "eating_style": "nutrition_diet_style",
+    "protein_habits": "nutrition_protein_habits",
+    "protein_intake": "nutrition_protein_habits",
+    "meal_timing": "nutrition_meal_timing",
+    "meal_frequency": "nutrition_meal_timing",
+    "favorite_foods": "nutrition_favorite_foods",
+    "staple_foods": "nutrition_staple_foods",
+    "common_foods": "nutrition_staple_foods",
+    "foods_avoided": "nutrition_foods_avoided",
+    "food_restrictions": "nutrition_foods_avoided",
+    "alcohol": "nutrition_alcohol_habits",
+    "alcohol_habits": "nutrition_alcohol_habits",
+    "snack_habits": "nutrition_snack_patterns",
+    # fitness
+    "training_time": "fitness_training_time",
+    "workout_time": "fitness_training_time",
+    "workout_schedule": "fitness_training_time",
+    "training_split": "fitness_training_split",
+    "workout_split": "fitness_training_split",
+    "training_frequency": "fitness_training_frequency",
+    "workout_frequency": "fitness_training_frequency",
+    "cardio_habits": "fitness_cardio_habits",
+    "cardio": "fitness_cardio_habits",
+    "preferred_exercises": "fitness_preferred_exercises",
+    "favorite_exercises": "fitness_preferred_exercises",
+    "strength_trends": "fitness_strength_trends",
+    "recovery_patterns": "fitness_recovery_patterns",
+    "sport": "fitness_sport",
+    # health
+    "injuries": "health_injuries",
+    "current_injury": "health_injuries",
+    "limitations": "health_physical_limitations",
+    "zinc": "health_supplement_zinc_mg",
+    "zinc_mg": "health_supplement_zinc_mg",
+    "creatine": "health_supplement_creatine",
+    "protein_powder": "health_supplement_protein_powder",
+    "testosterone": "health_biomarker_testosterone_ng_dl",
+    "testosterone_level": "health_biomarker_testosterone_ng_dl",
+    "sleep_quality": "health_sleep_quality",
+    "chronic_fatigue": "health_chronic_fatigue",
+    # lifestyle
+    "wake_time": "lifestyle_wake_time",
+    "sleep_time": "lifestyle_sleep_time",
+    "bedtime": "lifestyle_sleep_time",
+    "work_schedule": "lifestyle_work_schedule",
+    "job": "lifestyle_occupation",
+    "occupation": "lifestyle_occupation",
+    "travel": "lifestyle_travel_frequency",
+    "travel_frequency": "lifestyle_travel_frequency",
+    "social_eating": "lifestyle_social_eating",
+    "stress_level": "lifestyle_stress_level",
+    # behavior
+    "motivation": "behavior_motivation_driver",
+    "what_motivates": "behavior_motivation_driver",
+    "failure_points": "behavior_common_failure_points",
+    "struggles": "behavior_common_failure_points",
+    "accountability": "behavior_accountability_preference",
+    "coaching_tone": "behavior_coaching_tone",
+    # mental
+    "mental_health": "mental_general_notes",
+    "anxiety": "mental_anxiety_notes",
+    "stress": "mental_stress_patterns",
+}
+
+# Category defaults for keys that start with a known prefix
+CATEGORY_PREFIXES = {
+    "nutrition_": "nutrition",
+    "fitness_": "fitness",
+    "health_": "health",
+    "lifestyle_": "lifestyle",
+    "behavior_": "behavior",
+    "mental_": "mental",
+    "sleep_": "health",
+    "custom_": "custom",
+}
+
+# Tier defaults by category
+DEFAULT_TIERS = {
+    "nutrition": "daily",
+    "fitness": "core",
+    "health": "contextual",
+    "lifestyle": "contextual",
+    "behavior": "core",
+    "mental": "contextual",
+    "custom": "contextual",
+}
+
+# Keys that are always core tier regardless of category
+ALWAYS_CORE = {
+    "nutrition_diet_style",
+    "nutrition_protein_habits",
+    "fitness_training_split",
+    "fitness_training_frequency",
+    "fitness_training_time",
+    "fitness_sport",
+    "health_injuries",
+    "health_physical_limitations",
+    "behavior_motivation_driver",
+    "behavior_coaching_tone",
+}
+
+
+def canonicalize_key(raw_key: str) -> str:
+    """Normalize a raw attribute key to its canonical form."""
+    k = raw_key.strip().lower().replace(" ", "_").replace("-", "_")
+    return CANONICAL_KEYS.get(k, k)
+
+
+def category_for_key(key: str) -> str:
+    for prefix, cat in CATEGORY_PREFIXES.items():
+        if key.startswith(prefix):
+            return cat
+    return "custom"
+
+
+def tier_for_key(key: str) -> str:
+    if key in ALWAYS_CORE:
+        return "core"
+    cat = category_for_key(key)
+    return DEFAULT_TIERS.get(cat, "contextual")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Upsert
+# ─────────────────────────────────────────────────────────────────────────────
+
+async def upsert_attribute(
+    db,
+    user_id: int,
+    attribute_key: str,
+    value: str,
+    *,
+    display_name: Optional[str] = None,
+    value_type: str = "string",
+    unit: Optional[str] = None,
+    category: Optional[str] = None,
+    relevance_tier: Optional[str] = None,
+    source: str = "conversation",
+    confidence: str = "inferred",
+    attribute_status: str = "active",
+) -> None:
+    """
+    Upsert a single attribute. On conflict (user_id, attribute_key):
+    - Only overwrite if incoming confidence >= existing confidence
+      (confirmed > inferred > needs_verification)
+    - Save old value to last_value before overwriting
+    """
+    key = canonicalize_key(attribute_key)
+    cat = category or category_for_key(key)
+    tier = relevance_tier or tier_for_key(key)
+
+    _conf_rank = {"confirmed": 3, "inferred": 2, "needs_verification": 1}
+
+    existing = (await db.execute(
+        select(UserAttribute).where(
+            and_(UserAttribute.user_id == user_id,
+                 UserAttribute.attribute_key == key)
+        )
+    )).scalar_one_or_none()
+
+    if existing:
+        incoming_rank = _conf_rank.get(confidence, 2)
+        existing_rank = _conf_rank.get(existing.confidence, 2)
+        if incoming_rank < existing_rank:
+            return  # never downgrade confirmed with an inference
+        if existing.value != value:
+            existing.last_value = existing.value
+        existing.value = value
+        existing.value_type = value_type
+        if unit:
+            existing.unit = unit
+        existing.category = cat
+        existing.relevance_tier = tier
+        existing.source = source
+        existing.confidence = confidence
+        existing.attribute_status = attribute_status
+        if display_name:
+            existing.display_name = display_name
+        existing.updated_at = datetime.now(timezone.utc)
+    else:
+        db.add(UserAttribute(
+            user_id=user_id,
+            attribute_key=key,
+            display_name=display_name or key.replace("_", " ").title(),
+            value=value,
+            value_type=value_type,
+            unit=unit,
+            category=cat,
+            relevance_tier=tier,
+            attribute_status=attribute_status,
+            source=source,
+            confidence=confidence,
+        ))
+
+    await db.commit()
+
+
+async def upsert_many(db, user_id: int, attrs: list[dict]) -> int:
+    """Upsert a batch of attribute dicts. Returns count upserted."""
+    count = 0
+    for a in attrs:
+        key = a.get("attribute_key") or a.get("key")
+        value = a.get("value")
+        if not key or value is None or str(value).strip() == "":
+            continue
+        await upsert_attribute(
+            db, user_id,
+            attribute_key=key,
+            value=str(value),
+            display_name=a.get("display_name"),
+            value_type=a.get("value_type", "string"),
+            unit=a.get("unit"),
+            category=a.get("category"),
+            relevance_tier=a.get("relevance_tier"),
+            source=a.get("source", "conversation"),
+            confidence=a.get("confidence", "inferred"),
+        )
+        count += 1
+    return count
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Read
+# ─────────────────────────────────────────────────────────────────────────────
+
+async def get_all_attributes(db, user_id: int) -> list[UserAttribute]:
+    """All active attributes for a user, ordered by tier then key."""
+    _tier_order = {"core": 0, "daily": 1, "contextual": 2, "archive": 3}
+    rows = (await db.execute(
+        select(UserAttribute).where(
+            and_(UserAttribute.user_id == user_id,
+                 UserAttribute.attribute_status == "active")
+        )
+    )).scalars().all()
+    return sorted(rows, key=lambda r: (_tier_order.get(r.relevance_tier, 2), r.attribute_key))
+
+
+_DAILY_WINDOW = timedelta(days=7)
+
+
+async def get_attributes_for_context(db, user_id: int, message_text: str = "") -> str:
+    """
+    Build a compact attribute block for injection into Arnie's context.
+
+    Tier rules:
+      core        → always included
+      daily       → included if updated within 7 days
+      contextual  → included if message_text contains a keyword from the category
+      archive     → never included
+    """
+    rows = await get_all_attributes(db, user_id)
+    if not rows:
+        return ""
+
+    now = datetime.now(timezone.utc)
+    msg_lower = message_text.lower()
+
+    # Keywords that trigger contextual injection per category
+    _triggers: dict[str, list[str]] = {
+        "health": ["supplement", "zinc", "creatine", "vitamin", "hormone", "testosterone",
+                   "blood", "lab", "test", "injury", "pain", "recovery", "sleep"],
+        "lifestyle": ["schedule", "work", "travel", "stress", "morning", "night", "sleep",
+                      "wake", "routine", "family"],
+        "mental": ["stress", "anxiety", "mood", "mental", "feel", "emotion"],
+        "nutrition": ["eat", "food", "meal", "protein", "calorie", "diet", "drink",
+                      "snack", "carb", "fast", "restrict"],
+        "fitness": ["workout", "train", "gym", "lift", "cardio", "run", "exercise",
+                    "split", "program", "sport"],
+        "behavior": ["motivat", "habit", "struggle", "fail", "success", "coach"],
+    }
+
+    selected = []
+    for row in rows:
+        tier = row.relevance_tier or "contextual"
+        if tier == "archive":
+            continue
+        if tier == "core":
+            selected.append(row)
+        elif tier == "daily":
+            updated = row.updated_at
+            if updated:
+                if updated.tzinfo is None:
+                    updated = updated.replace(tzinfo=timezone.utc)
+                if now - updated <= _DAILY_WINDOW:
+                    selected.append(row)
+        elif tier == "contextual":
+            triggers = _triggers.get(row.category, [])
+            if any(t in msg_lower for t in triggers) or not msg_lower:
+                selected.append(row)
+
+    if not selected:
+        return ""
+
+    lines = ["[KNOWN ATTRIBUTES]"]
+    by_cat: dict[str, list] = {}
+    for row in selected:
+        by_cat.setdefault(row.category, []).append(row)
+
+    for cat, cat_rows in sorted(by_cat.items()):
+        for row in cat_rows:
+            conf_tag = f" [{row.confidence}]" if row.confidence != "confirmed" else ""
+            unit_str = f" {row.unit}" if row.unit else ""
+            lines.append(f"  {row.display_name or row.attribute_key}: {row.value}{unit_str}{conf_tag}")
+
+    return "\n".join(lines)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Parse structured JSON block from profile synthesis output
+# ─────────────────────────────────────────────────────────────────────────────
+
+def parse_attributes_from_synthesis(synthesis_output: str) -> tuple[str, list[dict]]:
+    """
+    The profile_updater synthesis prompt asks the LLM to append a JSON block
+    after the markdown, delimited by ---ATTRIBUTES---.
+
+    Returns (markdown_text, list_of_attribute_dicts).
+    If no JSON block found, returns (full_text, []).
+    """
+    marker = "---ATTRIBUTES---"
+    if marker not in synthesis_output:
+        return synthesis_output.strip(), []
+
+    parts = synthesis_output.split(marker, 1)
+    markdown = parts[0].strip()
+    json_str = parts[1].strip() if len(parts) > 1 else ""
+
+    if not json_str:
+        return markdown, []
+
+    # Strip code fences if present
+    json_str = re.sub(r"^```(?:json)?\s*", "", json_str)
+    json_str = re.sub(r"\s*```$", "", json_str)
+
+    try:
+        attrs = json.loads(json_str)
+        if isinstance(attrs, list):
+            return markdown, attrs
+    except (json.JSONDecodeError, ValueError) as e:
+        logger.warning(f"Failed to parse attributes JSON block: {e}")
+
+    return markdown, []

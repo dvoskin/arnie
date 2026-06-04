@@ -490,7 +490,27 @@ async def _dispatch(name, inp, user, today_log, db, source_type):  # noqa: C901
             "wake_time", "sleep_time", "calorie_target", "protein_target",
             "preferred_language",
         }
-        for field, value in fields.items():
+        # Separate attr: prefixed keys (→ user_attributes table) from profile fields
+        attr_fields = {k[5:]: v for k, v in fields.items() if k.startswith("attr:")}
+        profile_fields = {k: v for k, v in fields.items() if not k.startswith("attr:")}
+
+        # Persist user-stated attributes immediately (confirmed, user_stated)
+        if attr_fields:
+            try:
+                from memory.attribute_store import upsert_attribute
+                for attr_key, attr_value in attr_fields.items():
+                    if attr_value is not None and str(attr_value).strip():
+                        await upsert_attribute(
+                            db, user.id,
+                            attribute_key=attr_key,
+                            value=str(attr_value),
+                            source="user_stated",
+                            confidence="confirmed",
+                        )
+            except Exception as e:
+                logger.error(f"Attribute upsert via update_profile failed: {e}")
+
+        for field, value in profile_fields.items():
             # Never let null/empty values overwrite already-saved fields.
             # onboarding_completed is a boolean flag — always allow it.
             if field != "onboarding_completed" and (value is None or value == ""):

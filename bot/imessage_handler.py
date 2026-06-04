@@ -953,10 +953,36 @@ async def run_imessage_pipeline(address: str, chat_guid: str, raw_text: str,
         await log_conversation(db, user.id, raw_text, log_text, source_type="imessage",
                                parsed_intent=(",".join(turn.health_flags) or None))
 
-        # ── Adaptive profile refresh (throttled internally to ~3h) ────────────
+        # ── Adaptive profile refresh + reflection (background tasks) ────────
+        # Background tasks open their OWN session + re-fetch the user by id — the
+        # request-scoped `db` closes when this handler returns, so closing over it
+        # (or over turn.user) would run against a detached/closed session.
         if not turn.in_onboarding:
-            try:
-                from memory.profile_updater import maybe_update_profile
-                await maybe_update_profile(turn.user, db)
-            except Exception as e:
-                logger.error(f"Profile update error for {im_id}: {e}")
+            _uid = turn.user.id
+
+            async def _bg_profile_im(uid=_uid):
+                try:
+                    async with AsyncSessionLocal() as bg_db:
+                        from db.queries import reload_user
+                        u = await reload_user(bg_db, uid)
+                        if u:
+                            from memory.profile_updater import maybe_update_profile
+                            await maybe_update_profile(u, bg_db)
+                except Exception as e:
+                    logger.error(f"Profile update error for {im_id}: {e}")
+
+            asyncio.create_task(_bg_profile_im())
+
+            if random.random() < 0.25 and raw_text and len(raw_text) > 20:
+                _resp_text = "|||".join(turn.response.bubbles)
+                async def _bg_reflect_im(uid=_uid, msg=raw_text, resp=_resp_text):
+                    try:
+                        async with AsyncSessionLocal() as bg_db:
+                            from db.queries import reload_user
+                            from memory.reflection import maybe_update_memory
+                            u = await reload_user(bg_db, uid)
+                            if u:
+                                await maybe_update_memory(u, msg, resp, bg_db)
+                    except Exception as e:
+                        logger.error(f"Reflection error for {im_id}: {e}")
+                asyncio.create_task(_bg_reflect_im())

@@ -173,6 +173,9 @@ async def _migrate(conn):
         ("users", "mission_date", "VARCHAR"),
         ("conversation_logs", "platform", "VARCHAR DEFAULT 'telegram'"),
         ("conversation_logs", "skills_fired", "VARCHAR"),
+        # ── 2026-06-04: dynamic user-profile system ────────────────────────────
+        ("users", "user_bio", "TEXT"),
+        ("users", "user_bio_updated_at", "DATETIME"),
     ]
 
     for table, column, ddl in additions:
