@@ -1254,6 +1254,24 @@ footer{{
     <div class="infocrd" id="profile-targets"></div>
     <div class="stitle">Connected devices</div>
     <div class="infocrd" style="overflow:hidden" id="devices-card"></div>
+
+    <div class="stitle spaced" style="margin-top:28px">
+      <span>Training program</span>
+      <button class="add-toggle" id="wp-edit-btn" onclick="openWorkoutEditor()" title="Set up / edit">+</button>
+    </div>
+    <div id="workout-program-card"><div class="lempty" style="margin-top:6px">No training program saved yet. Tap + to set one up — Arnie will use it in every session.</div></div>
+    <div class="add-card" id="workout-editor" style="display:none;margin-top:10px">
+      <div style="display:flex;gap:8px;padding:12px 14px;border-bottom:1px solid var(--bd)">
+        <button class="add-submit" style="flex:1;text-align:center;padding:10px" onclick="autoFillWorkout()">&#10024; Auto-fill from Arnie chat</button>
+      </div>
+      <div style="padding:6px 14px;font-family:'Geist Mono','SF Mono',monospace;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--di)">or paste manually</div>
+      <textarea class="add-inp" id="workout-raw" rows="10" placeholder="Paste your workout split — exercises, goals, recent lifts, rotation." style="height:160px;resize:vertical;font-size:13px;line-height:1.5"></textarea>
+      <div style="display:flex;gap:8px;padding:10px 14px;border-top:1px solid var(--bd)">
+        <button class="add-submit" style="flex:1" onclick="saveWorkoutProgram()">&#9889; Parse &amp; save</button>
+        <button class="cbtn" onclick="closeWorkoutEditor()">Cancel</button>
+      </div>
+      <div id="workout-parse-status" style="padding:0 14px 10px;font-size:12px;color:var(--mu)"></div>
+    </div>
   </div>
 
 <footer>Arnie &middot; auto-refresh 5 min</footer>
@@ -1390,7 +1408,7 @@ function switchTab(name){{
   }}
   if(name==='day') loadInsights();
   if(name==='week'){{if(_baseData)renderWeekTab(_baseData);loadWeekInsights();}}
-  if(name==='profile' && _baseData) renderProfileTab(_baseData);
+  if(name==='profile' && _baseData){{renderProfileTab(_baseData);loadWorkoutProgram();}}
 }}
 
 // ── Boot ──────────────────────────────────────────────────────────────────
@@ -2079,7 +2097,7 @@ function renderProfileTab(d){{
 
   var devs=[
     {{name:'Apple Health',icon:'♥',live:p.apple_health_connected,label:p.apple_health_connected?'Syncing':'Not connected'}},
-    {{name:'Whoop',icon:'〰',live:p.whoop_connected,label:p.whoop_connected?'Connected':'Not connected'}},
+    {{name:'Whoop',icon:'〰',live:p.whoop_connected,label:p.whoop_connected?'Connected':'Run /connect whoop in Telegram to link'}},
     {{name:'Fitbit',icon:'⊕',live:false,label:'Coming soon',soon:true}},
     {{name:'Hume',icon:'◉',live:false,label:'Coming soon',soon:true}},
   ];

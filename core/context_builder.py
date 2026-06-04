@@ -500,14 +500,59 @@ async def build_context(user: User, today_log: Optional[DailyLog], db,
         link_status = (f"[LINK STATUS] you're on {plat_name}. NOT linked to {other}. "
                        f"only offer to connect {other} if THEY organically bring it up.")
 
+    # Training program (workout split) — read from DB if saved
+    training_program_str = ""
+    try:
+        import json as _json
+        from sqlalchemy import select as _select
+        from db.models import WorkoutProgram as _WP
+        _wp_row = (await db.execute(
+            _select(_WP).where(_WP.user_id == user.id)
+        )).scalar_one_or_none()
+        if _wp_row and _wp_row.program_json:
+            _prog = _json.loads(_wp_row.program_json)
+            _days_txt = []
+            for _d in (_prog.get("days") or []):
+                _ex = ", ".join(e["name"] for e in (_d.get("exercises") or []) if e.get("name"))
+                _goals = ", ".join(_d.get("goals") or [])
+                _days_txt.append(
+                    f"  {_d.get('name','')} [{_d.get('priority','')}]"
+                    + (f" — goals: {_goals}" if _goals else "")
+                    + (f"\n    Exercises: {_ex}" if _ex else "")
+                )
+            training_program_str = (
+                f"=== TRAINING PROGRAM ===\n"
+                f"Split: {_prog.get('split_name','')}\n"
+                f"Focus: {_prog.get('focus','')}\n"
+                f"Rotation: {' → '.join(_prog.get('rotation',[]))}\n"
+                + "\n".join(_days_txt)
+            )
+    except Exception:
+        pass
+
+    # Wearable / connection status for Arnie to reference
+    whoop_status = (
+        "Whoop: CONNECTED — can see recovery, HRV, sleep, strain via /whoop or wearable data above."
+        if (user.whoop_access_token or user.whoop_refresh_token)
+        else "Whoop: NOT connected. If user asks about Whoop data or connection status, tell them to run /connect whoop in Telegram to link it."
+    )
+    apple_status = (
+        "Apple Health: CONNECTED — receiving health metrics."
+        if any(s.source == "apple_health" for s in recent_health)
+        else "Apple Health: NOT connected."
+    )
+
     sections = [
         current_time_line,
         "=== PROFILE ===",
         fmt_profile(user, prefs),
         (progress if progress else ""),
+        f"[CONNECTED DEVICES] {whoop_status} | {apple_status}",
         "",
         # Coaching state goes at top so every skill sees it first
         (coaching_state_str if coaching_state_str else ""),
+        "",
+        (training_program_str if training_program_str else ""),
         "",
         "=== TODAY ===",
         fmt_log(today_log),
