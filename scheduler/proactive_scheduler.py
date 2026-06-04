@@ -931,7 +931,7 @@ async def _run_whoop_sync():
                 old_snaps = await get_recent_health_snapshots(db, user.id, days=1)
                 old_recovery = old_snaps[0].recovery_score if old_snaps else None
 
-                synced = await sync_user_whoop(db, user, days=2)
+                synced = await sync_user_whoop(db, user, days=7)
                 total += synced
 
                 if synced > 0 and user.telegram_id:
@@ -976,13 +976,13 @@ def start_scheduler():
         reminders_status = "reminders DISABLED (PROACTIVE_MESSAGING_ENABLED not set)"
     _scheduler.add_job(
         _run_whoop_sync,
-        IntervalTrigger(hours=2),
+        IntervalTrigger(minutes=30),
         id="whoop_sync",
         replace_existing=True,
         max_instances=1,
     )
     _scheduler.start()
-    logger.info(f"Proactive scheduler started ({reminders_status}, Whoop sync every 2 hr)")
+    logger.info(f"Proactive scheduler started ({reminders_status}, Whoop sync every 30 min)")
 
 
 def stop_scheduler():
