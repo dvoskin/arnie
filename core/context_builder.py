@@ -577,9 +577,22 @@ async def build_context(user: User, today_log: Optional[DailyLog], db,
         pass
 
     # Wearable / connection status for Arnie to reference
+    # Check Whoop connection on canonical AND any linked identities (tokens may
+    # be on a linked row before the user runs /whoop disconnect + /connect whoop)
+    _has_whoop = bool(user.whoop_access_token or user.whoop_refresh_token)
+    if not _has_whoop:
+        try:
+            from sqlalchemy import select as _sel
+            from db.models import User as _U
+            _linked = (await db.execute(
+                _sel(_U).where(_U.linked_to_user_id == user.id)
+            )).scalars().all()
+            _has_whoop = any(bool(u.whoop_access_token or u.whoop_refresh_token) for u in _linked)
+        except Exception:
+            pass
     whoop_status = (
         "Whoop: CONNECTED — can see recovery, HRV, sleep, strain via /whoop or wearable data above."
-        if (user.whoop_access_token or user.whoop_refresh_token)
+        if _has_whoop
         else "Whoop: NOT connected. If user asks about Whoop data or connection status, tell them to run /connect whoop in Telegram to link it."
     )
     apple_status = (

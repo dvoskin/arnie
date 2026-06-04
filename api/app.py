@@ -676,6 +676,20 @@ async def _build_stats_for_user(db, user, target_date=None):
     weights = await get_recent_weights(db, user.id, days=90)
     health_snaps = await get_recent_health_snapshots(db, user.id, days=14)
 
+    # Whoop tokens may be on a linked identity (e.g. Telegram) rather than the
+    # canonical (iMessage) row. Check all linked identities so the dashboard
+    # correctly reflects the connection even before the user reconnects.
+    _whoop_connected = bool(user.whoop_access_token or user.whoop_refresh_token)
+    if not _whoop_connected:
+        from sqlalchemy import select as _sel
+        from db.models import User as _U
+        linked_rows = (await db.execute(
+            _sel(_U).where(_U.linked_to_user_id == user.id)
+        )).scalars().all()
+        _whoop_connected = any(
+            bool(u.whoop_access_token or u.whoop_refresh_token) for u in linked_rows
+        )
+
     # Determine which day's entries to return
     if target_date:
         day_log = await get_log_by_date(db, user.id, target_date)
@@ -770,7 +784,7 @@ async def _build_stats_for_user(db, user, target_date=None):
         "coaching_style": prefs.coaching_style if prefs else None,
         "calorie_target": prefs.calorie_target if prefs else None,
         "protein_target": prefs.protein_target if prefs else None,
-        "whoop_connected": bool(user.whoop_access_token or user.whoop_refresh_token),
+        "whoop_connected": _whoop_connected,
         "apple_health_connected": any(s.source == "apple_health" for s in health_snaps),
         "analytics": analytics,
     }
