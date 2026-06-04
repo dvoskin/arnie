@@ -16,38 +16,98 @@ _TTL = 3600  # 1 hour
 
 
 def _build_summary(stats: dict) -> str:
-    """Compact text summary of the user's stats for the LLM."""
+    """Compact text summary focused on the viewed day for the LLM."""
     user = stats.get("user", {})
     targets = stats.get("targets") or {}
     today = stats.get("today") or {}
     history = stats.get("history") or []
     weights = stats.get("weights") or []
+    health = stats.get("health") or []
+    viewing_date = stats.get("viewing_date", "today")
 
-    lines = [
-        f"User: {user.get('name')} | Goal: {user.get('goal')} | "
-        f"Weight {user.get('current_weight_lbs')}lb → goal {user.get('goal_weight_lbs')}lb",
-        f"Targets: {targets.get('calories') or '—'} cal / {targets.get('protein') or '—'}g protein per day",
+    # ── Day being analysed ──────────────────────────────────
+    cal = today.get("calories") or 0
+    pro = today.get("protein") or 0
+    carb = today.get("carbs") or 0
+    fat = today.get("fats") or 0
+    tgt_cal = targets.get("calories") or 0
+    tgt_pro = targets.get("protein") or 0
+    has_food = bool(today.get("food_entries"))
+    has_workout = today.get("workout_completed") or bool(today.get("exercise_entries"))
+
+    day_lines = [
+        f"DATE BEING ANALYSED: {viewing_date}",
+        f"Targets: {tgt_cal} cal / {tgt_pro}g protein",
         "",
-        f"TODAY: {today.get('calories', 0)} cal, {today.get('protein', 0)}g protein, "
-        f"{today.get('carbs', 0)}g C, {today.get('fats', 0)}g F  "
-        f"workout={today.get('workout_completed', False)}  cardio={today.get('cardio_completed', False)}",
-        "",
-        "HISTORY (last 30 days, closed days only):",
+        "FOOD & MACROS FOR THIS DAY:",
     ]
-    closed = [h for h in history if h.get("status") == "closed"]
-    for h in closed[-14:]:
-        lines.append(
-            f"  {h['date']}: {h['calories']} cal, {h['protein']}g P, "
-            f"workout={'✓' if h.get('workout') else '✗'}"
-        )
+    if has_food:
+        pct_cal = f"{round(cal/tgt_cal*100)}% of target" if tgt_cal else ""
+        pct_pro = f"{round(pro/tgt_pro*100)}% of target" if tgt_pro else ""
+        day_lines.append(f"  Calories: {cal} cal {pct_cal}")
+        day_lines.append(f"  Protein:  {pro}g {pct_pro}")
+        day_lines.append(f"  Carbs: {carb}g  |  Fats: {fat}g")
+        # List food items
+        for fe in (today.get("food_entries") or [])[:8]:
+            day_lines.append(f"  - {fe.get('name','')} {fe.get('quantity','')} ({fe.get('calories',0)} cal, {fe.get('protein',0)}g P)")
+    else:
+        day_lines.append("  No food logged for this day.")
 
+    day_lines.append("")
+    day_lines.append("WORKOUTS FOR THIS DAY:")
+    exercises = today.get("exercise_entries") or []
+    if exercises:
+        for ex in exercises[:6]:
+            sets_str = f"{ex.get('sets','?')}×{ex.get('reps','?')}" if ex.get('sets') else ""
+            wt_str = f"@ {ex.get('weight','')}lb" if ex.get('weight') else ""
+            dur_str = f"{ex.get('duration_minutes','')}min" if ex.get('duration_minutes') else ""
+            day_lines.append(f"  - {ex.get('name','')} {sets_str} {wt_str} {dur_str}".strip())
+    elif has_workout:
+        day_lines.append("  Workout completed (no exercise details)")
+    else:
+        day_lines.append("  No workout logged for this day.")
+
+    # ── Wearable data for this day ──────────────────────────
+    snap = next((h for h in health if h.get("date") == viewing_date), None)
+    if not snap and health:
+        snap = health[0]
+    if snap and snap.get("source") == "whoop":
+        day_lines.append("")
+        day_lines.append("WEARABLE (Whoop):")
+        if snap.get("recovery_score") is not None:
+            day_lines.append(f"  Recovery: {snap['recovery_score']}%")
+        if snap.get("strain") is not None:
+            day_lines.append(f"  Strain: {snap['strain']:.1f}/21")
+        if snap.get("hrv") is not None:
+            day_lines.append(f"  HRV: {snap['hrv']:.0f}ms")
+        if snap.get("sleep_hours") is not None:
+            day_lines.append(f"  Sleep: {snap['sleep_hours']:.1f}h")
+        if snap.get("resting_hr") is not None:
+            day_lines.append(f"  RHR: {snap['resting_hr']:.0f}bpm")
+
+    # ── Recent context (last 7 logged days) for pacing ─────
+    closed = [h for h in history if h.get("status") == "closed" and h.get("date") != viewing_date]
+    if closed:
+        day_lines.append("")
+        day_lines.append("RECENT LOGGED DAYS (for pacing context, last 7):")
+        for h in closed[-7:]:
+            day_lines.append(
+                f"  {h['date']}: {h['calories']} cal, {h['protein']}g P, "
+                f"workout={'✓' if h.get('workout') else '✗'}"
+            )
+
+    # Current weight context
     if weights:
-        lines.append("")
-        lines.append("WEIGHT TREND:")
-        for w in weights[-10:]:
-            lines.append(f"  {w['date']}: {w['lbs']} lbs")
+        latest_w = weights[-1]
+        goal_w = user.get("goal_weight_lbs")
+        day_lines.append("")
+        if goal_w:
+            diff = round(abs(latest_w["lbs"] - goal_w), 1)
+            day_lines.append(f"WEIGHT: {latest_w['lbs']}lb (goal {goal_w}lb — {diff}lb to go)")
+        else:
+            day_lines.append(f"WEIGHT: {latest_w['lbs']}lb")
 
-    return "\n".join(lines)
+    return "\n".join(day_lines)
 
 
 async def generate_insights(stats: dict) -> List[str]:
@@ -58,22 +118,29 @@ async def generate_insights(stats: dict) -> List[str]:
         return []
 
     summary = _build_summary(stats)
-    prompt = f"""You are Arnie, a no-BS fitness and nutrition coach reviewing a user's recent data. Write 3 to 5 SHORT coaching insights — each one line, 12-25 words, no preamble.
+    prompt = f"""You are Arnie, a direct fitness coach analysing a specific day's data. Write 3 to 5 SHORT coaching observations — each one sentence, 10-22 words.
 
-Be specific. Reference real numbers from the data. Call out patterns, not single days. Mix wins with things to fix. Avoid generic advice.
+STRICT RULES:
+- Analyse ONLY the day shown (food logged, workouts done, Whoop data, pacing vs targets)
+- DO NOT comment on overall logging habits, how many days they've tracked, or data gaps
+- DO NOT project timelines from missing data or lecture about consistency
+- If a day has limited data, comment on what IS there — or note one specific gap without dwelling on it
+- Reference actual numbers: "192g protein hit the target" not "protein looks good"
+- Use recent days only for direct pacing comparison ("down from yesterday's 2200 cal")
+- If Whoop data exists, factor recovery into workout/nutrition recommendations
 
-Examples of GOOD insights:
-- "Protein averaging 145g over 7 days — solid, keep that floor"
-- "Weight dropped 1.4 lb in 10 days — right on target for your cut"
-- "3 workouts skipped in 5 days — recovery or motivation issue?"
-- "Calories trending 200 over target on weekends — that's where the deficit is leaking"
+GOOD examples:
+- "2063 cal and 192g protein — calories at target, protein solid for muscle preservation"
+- "Recovery at 71% with Strain 14.2 — moderate day done right, sleep well tonight"
+- "Grilled chicken bowl and protein bar covered 78g protein by lunch — strong start"
+- "Skipped workout but hit the calorie floor — one rest day won't stall the cut"
 
-Examples of BAD insights (do NOT write these):
-- "Keep up the good work!" (vague, no data)
-- "Make sure you're hitting your macros" (no specifics)
-- "Consistency is key" (filler)
+BAD (never write these):
+- "Only 1 logged day in 30 — can't coach without data" (meta-commentary)
+- "Zero tracking history makes projections impossible" (irrelevant)
+- "Consistency is key to your cut" (filler)
 
-Return ONLY a valid JSON array of strings. No prose before or after.
+Return ONLY a valid JSON array of strings. No prose.
 
 DATA:
 {summary}
