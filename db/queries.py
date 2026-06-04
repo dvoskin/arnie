@@ -481,10 +481,13 @@ async def reset_all_user_data(db: AsyncSession, user_id: int) -> None:
 
 
 async def get_users_with_whoop(db: AsyncSession) -> List[User]:
-    """All users who have connected Whoop (have a refresh token)."""
+    """All users who have connected Whoop (have a non-empty refresh token)."""
     result = await db.execute(
         select(User)
-        .where(User.whoop_refresh_token.is_not(None))
+        .where(
+            User.whoop_refresh_token.is_not(None),
+            User.whoop_refresh_token != "",
+        )
         .options(selectinload(User.preferences))
     )
     return result.scalars().all()

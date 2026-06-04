@@ -150,18 +150,23 @@ async def _ensure_fresh_token(db, user: User) -> Optional[str]:
     (e.g. Whoop didn't issue a refresh_token in the first place).
     """
     now = datetime.utcnow()
+    # Whoop access tokens last 3600 seconds (1 hour). We sync every 30 min, so
+    # use a 35-minute buffer — every sync proactively refreshes the token before
+    # it can expire between runs. No window where a call hits an expired token.
+    REFRESH_BUFFER = timedelta(minutes=35)
     has_fresh_access = (
         user.whoop_access_token
         and user.whoop_token_expires_at
-        and user.whoop_token_expires_at > now + timedelta(minutes=2)
+        and user.whoop_token_expires_at > now + REFRESH_BUFFER
     )
 
-    # Fresh access token? Use it directly.
+    # Token still has plenty of life — use it directly.
     if has_fresh_access:
         return user.whoop_access_token
 
-    # Access token expired or about to — try to refresh
+    # Token expired or within 35 min of expiry — proactively refresh.
     if user.whoop_refresh_token:
+        logger.info(f"User {user.id}: proactively refreshing Whoop access token")
         tokens = await refresh_access_token(user.whoop_refresh_token)
         if tokens:
             expires_at = now + timedelta(seconds=tokens.get("expires_in", 3600))
@@ -171,8 +176,9 @@ async def _ensure_fresh_token(db, user: User) -> Optional[str]:
                 refresh_token=tokens.get("refresh_token", user.whoop_refresh_token),
                 expires_at=expires_at,
             )
+            logger.info(f"User {user.id}: Whoop token refreshed, expires in {tokens.get('expires_in', 3600)//60} min")
             return tokens["access_token"]
-        logger.warning(f"User {user.id}: Whoop refresh failed")
+        logger.warning(f"User {user.id}: Whoop token refresh failed — will try stale access token")
 
     # No refresh token, no fresh access — best we can do is try the
     # stale access token. Whoop will reject it if truly expired.
