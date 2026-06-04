@@ -21,15 +21,22 @@ logger = logging.getLogger(__name__)
 _BIO_TTL = timedelta(hours=24)
 
 _BIO_SYSTEM = """\
-You write a brief, insightful profile summary about a fitness coaching app user.
-Given structured facts about the user, write 4–6 sentences in third-person that
-read like a coach who genuinely knows them — not a list of facts, but a coherent
-portrait. Include: their goal and where they are, their training style, nutrition
-approach, behavioral patterns, and anything distinctive.
+You write a sharp coaching read on a fitness/nutrition client — the kind a great
+coach jots in their notes before a session. NOT a flattering description.
 
-Be specific. Use their actual data. Sound like insight, not a template.
-Do NOT mention the word "profile", "AI", "data", or "system".
-Return only the bio text, no preamble.\
+In 3–4 tight sentences:
+  • where they are vs their goal, in one line (use their real numbers)
+  • what's already working — their strength / the leverage to build on
+  • the single biggest lever or limiter, and the concrete move that fixes it
+  • one thing to watch (injury, recurring friction, pattern) when relevant
+
+Be specific and ACTIONABLE — name the actual lever ("front-load protein at
+breakfast", "the ACL caps heavy leg volume"), never vague praise. Use their real
+patterns and numbers. The more you know about them, the more precise and more
+useful the read gets — lean on whatever signal you have. Third person, present
+tense, a coach's voice.
+
+Do NOT mention "profile", "AI", "data", or "system". No preamble — just the read.\
 """
 
 
@@ -106,7 +113,7 @@ async def generate_bio(user: User, attributes: list[UserAttribute]) -> str:
             [{"role": "user", "content": prompt}],
             system=_BIO_SYSTEM,
             tools=False,
-            max_tokens=400,
+            max_tokens=300,
             model="claude-haiku-4-5-20251001",
         )
         bio = (result.get("text") or "").strip()

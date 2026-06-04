@@ -71,7 +71,7 @@ async def test_basics_and_category_merge(db, make_user):
     fit = {s["label"]: s for s in std["fitness"]}
     assert fit["Training split"]["filled"] and fit["Training split"]["origin"] == "attribute"
     assert fit["Experience"]["origin"] == "column" and fit["Experience"]["value"] == "Advanced"
-    assert fit["Cardio habits"]["filled"] is False  # always-present "learning" slot
+    assert fit["Favorite cardio"]["filled"] is False  # always-present "learning" slot
 
     # Behavior: coaching style column-backed + editable
     beh = {s["label"]: s for s in std["behavior"]}

@@ -71,7 +71,7 @@ STANDARD_SCHEMA = {
         {"key": "fitness_training_time",      "label": "Training time",      "type": "single"},
         {"key": "fitness_training_frequency", "label": "Training frequency", "type": "single"},
         {"key": "fitness_experience",         "label": "Experience",         "type": "single", "col": "experience"},
-        {"key": "fitness_cardio_habits",      "label": "Cardio habits",      "type": "single"},
+        {"key": "fitness_cardio_habits",      "label": "Favorite cardio",    "type": "list"},
         {"key": "fitness_sport",              "label": "Sport",              "type": "single", "col": "sport",
          "hide_empty": True},
     ],

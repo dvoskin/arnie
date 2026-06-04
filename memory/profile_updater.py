@@ -96,6 +96,16 @@ display_name — SHORT, human, and do NOT repeat the category (it renders under 
   preference", not "Fitness cardio preference". "Frustrated by", not "Psychology
   frustrated by".
 
+RECURRENCE = PREFERENCE. People reveal preferences by what they DO repeatedly, not
+just by saying "I like X". If the logs/conversation show something recurring, infer
+it as a preference (tag [inferred]) even with no explicit statement:
+  • a cardio activity logged most sessions → nutrition? no → fitness_cardio_habits
+    (e.g. "spin bike, walks") [inferred]
+  • a food eaten most days → nutrition_favorite_foods / staples [inferred]
+  • an exercise hit every week → fitness_preferred_exercises [inferred]
+  • a recurring meal-timing / training-time pattern → the matching attribute [inferred]
+Look actively for these, don't wait to be told.
+
 Only output attributes that are NEW or materially CHANGED from the current profile.
 If nothing changed, output an empty array: []
 Do not output attributes for things like name, weight, goal — those are in the DB.

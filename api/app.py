@@ -886,10 +886,11 @@ async def get_profile(token: str, refresh: bool = False):
 
         attributes = await get_all_attributes(db, user.id)
 
-        # Auto-derive favorite foods from logging frequency (the standard
-        # "Favorite foods" slot fills itself from what the user actually logs,
-        # unless an explicit learned attribute already exists).
+        # Auto-derive favorites from RECURRENCE in the logs — the standard slots
+        # fill themselves from what the user actually does/eats, not just from
+        # explicit statements (an explicit learned attribute still wins).
         derived = {}
+        from collections import Counter as _Counter
         try:
             from db.models import UserFoodMatch
             from sqlalchemy import select as _sel
@@ -901,6 +902,27 @@ async def get_profile(token: str, refresh: bool = False):
                      if r.display_name and (r.times_used or 0) >= 2]
             if foods:
                 derived["nutrition_favorite_foods"] = foods
+        except Exception:
+            pass
+        try:
+            # Favorite cardio = most-logged cardio activities (last 90 days).
+            from db.models import ExerciseEntry, DailyLog
+            from sqlalchemy import select as _sel
+            from datetime import date as _date, timedelta as _td
+            ex_rows = (await db.execute(
+                _sel(ExerciseEntry).join(DailyLog, ExerciseEntry.daily_log_id == DailyLog.id)
+                .where(DailyLog.user_id == user.id, DailyLog.date >= _date.today() - _td(days=90))
+            )).scalars().all()
+            cardio = _Counter()
+            for e in ex_rows:
+                is_cardio = bool(e.cardio_type) or (e.duration_minutes and not e.sets)
+                if is_cardio:
+                    name = (e.cardio_type or e.exercise_name or "").strip()
+                    if name:
+                        cardio[name.lower()] += 1
+            fav_cardio = [n.title() for n, c in cardio.most_common(4) if c >= 2]
+            if fav_cardio:
+                derived["fitness_cardio_habits"] = fav_cardio
         except Exception:
             pass
 
