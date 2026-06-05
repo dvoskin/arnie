@@ -274,7 +274,7 @@ body{{
 .whoop-rec-low  .whoop-stat-val{{color:var(--re)}}
 .macro-cell{{background:var(--sf);padding:12px 14px;}}
 .mc-label{{font-family:'Geist Mono','SF Mono',monospace;font-size:9.5px;text-transform:uppercase;letter-spacing:.1em;color:var(--mu);margin-bottom:5px;}}
-.mc-num{{font-family:'Geist',ui-sans-serif,system-ui,sans-serif;font-size:26px;font-weight:600;letter-spacing:-.01em;font-variant-numeric:tabular-nums;line-height:1.05;}}
+.mc-num{{font-family:'Instrument Serif','Times New Roman',serif;font-size:32px;letter-spacing:-.01em;line-height:1;}}
 .mc-sub{{font-size:11.5px;color:var(--mu);margin-top:3px;line-height:1.3;}}
 .mc-bar{{background:var(--sf3);border-radius:999px;height:3px;margin-top:9px;overflow:hidden;}}
 .mc-fill{{height:100%;border-radius:999px;transition:width .8s cubic-bezier(.4,0,.2,1);}}
@@ -1248,7 +1248,7 @@ footer{{
   /* Today counters — quiet label, clear weighted number, even bars */
   .macro-cell{{padding:14px 14px 13px}}
   .mc-label{{font-size:9.5px;letter-spacing:.1em;margin-bottom:8px;color:var(--mu);font-weight:500}}
-  .mc-num{{font-family:'Geist',ui-sans-serif,system-ui,sans-serif;font-size:25px;font-weight:600;letter-spacing:-.01em;font-variant-numeric:tabular-nums;line-height:1.05}}
+  .mc-num{{font-size:30px;line-height:1}}
   .mc-sub{{font-size:11px;margin-top:5px;color:var(--mu)}}
   .mc-bar{{margin-top:10px;height:4px}}
   /* Toggles */
