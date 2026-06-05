@@ -2409,9 +2409,40 @@ async def apple_health_guide(token: str = Query(...)):
             return HTMLResponse("<h2>Invalid or expired link.</h2>", status_code=401)
 
     base_url = os.getenv("RENDER_EXTERNAL_URL", "http://localhost:10000").rstrip("/")
-    # GET endpoint URL — the base the user pastes; they append &param=variable for each metric
     endpoint = f"{base_url}/health/apple?token={token}"
     status_url = f"{base_url}/health/apple/status?token={token}"
-    return HTMLResponse(_apple_guide_html(endpoint, status_url))
+    shortcut_url = f"{base_url}/health/apple/shortcut?token={token}"
+    return HTMLResponse(_apple_guide_html(endpoint, status_url, shortcut_url))
+
+
+# ── Personalized .shortcut file download ───────────────────────────────────────
+
+@app.get("/health/apple/shortcut")
+async def download_apple_shortcut(token: str = Query(...)):
+    """
+    Serve a pre-built .shortcut plist for one-tap Arnie Health setup.
+    The user's token is baked into the URL action so no manual editing is needed.
+    On iPhone, opening this URL in Safari prompts "Add to Shortcuts".
+    """
+    async with AsyncSessionLocal() as db:
+        user = await get_user_by_webhook_token(db, token)
+        if not user:
+            return JSONResponse({"error": "Invalid or expired token."}, status_code=401)
+
+    from wearables.shortcut_generator import generate_arnie_shortcut
+    from fastapi.responses import Response as _Response
+
+    base_url = os.getenv("RENDER_EXTERNAL_URL", "http://localhost:10000").rstrip("/")
+    endpoint = f"{base_url}/health/apple?token={token}"
+    shortcut_bytes = generate_arnie_shortcut(endpoint)
+
+    return _Response(
+        content=shortcut_bytes,
+        media_type="application/octet-stream",
+        headers={
+            "Content-Disposition": 'attachment; filename="Arnie Health.shortcut"',
+            "Cache-Control": "no-store",
+        },
+    )
 
 

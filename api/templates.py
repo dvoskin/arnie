@@ -3408,7 +3408,18 @@ setInterval(()=>{{
 
 
 
-def _apple_guide_html(endpoint: str, status_url: str = "") -> str:  # noqa: C901
+def _apple_guide_html(endpoint: str, status_url: str = "", shortcut_url: str = "") -> str:  # noqa: C901
+    # Build the shortcuts:// deep-link that opens Shortcuts app and imports the file.
+    if shortcut_url:
+        from urllib.parse import quote as _q
+        _shortcuts_link = (
+            "shortcuts://import-workflow"
+            f"?url={_q(shortcut_url, safe='')}"
+            "&name=Arnie%20Health"
+        )
+    else:
+        _shortcuts_link = ""
+
     # Pre-build the URL template shown in Step 3 — user pastes this into
     # the "URL" action and inserts Shortcuts variables for each placeholder.
     url_template = (
@@ -3563,6 +3574,40 @@ p b{{color:#b0bdd0;font-weight:600}}
 hr{{border:none;border-top:1px solid rgba(255,255,255,.06);margin:26px 0}}
 footer{{text-align:center;padding:24px 0 0;color:#2a3040;font-size:12px}}
 
+/* ── One-tap section ── */
+.onetap{{
+  background:rgba(0,230,118,.04);border:1px solid rgba(0,230,118,.14);
+  border-radius:20px;padding:22px 20px;margin-bottom:22px;
+}}
+.ot-badge{{
+  display:inline-block;background:rgba(0,230,118,.12);border:1px solid rgba(0,230,118,.25);
+  color:#00e676;font-size:10px;font-weight:800;letter-spacing:1px;
+  text-transform:uppercase;border-radius:6px;padding:3px 9px;margin-bottom:10px;
+}}
+.ot-title{{font-size:20px;font-weight:800;color:#eef2ff;letter-spacing:-.3px;margin-bottom:6px}}
+.ot-sub{{font-size:14px;color:#546070;line-height:1.6;margin-bottom:14px}}
+.ot-prereq{{
+  background:rgba(245,158,11,.06);border:1px solid rgba(245,158,11,.2);
+  border-radius:11px;padding:11px 13px;font-size:13px;color:#8a7050;
+  line-height:1.6;margin-bottom:14px;
+}}
+.ot-prereq b{{color:#f59e0b}}
+.ot-btn{{
+  display:flex;align-items:center;justify-content:center;gap:8px;
+  background:linear-gradient(135deg,rgba(0,230,118,.15),rgba(74,158,255,.10));
+  border:1.5px solid rgba(0,230,118,.4);
+  color:#00e676;font-size:16px;font-weight:800;
+  border-radius:15px;padding:17px;text-decoration:none;
+  letter-spacing:-.2px;transition:all .15s;-webkit-appearance:none;
+}}
+.ot-btn:active{{transform:scale(.97);opacity:.8}}
+.ot-hint{{text-align:center;font-size:11.5px;color:#2a3040;margin-top:8px;line-height:1.5}}
+.div-or{{
+  display:flex;align-items:center;gap:12px;
+  margin:22px 0 18px;color:#2a3040;font-size:11.5px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;
+}}
+.div-or::before,.div-or::after{{content:'';flex:1;border-top:1px solid rgba(255,255,255,.06)}}
+
 /* ── iOS Shortcuts Mockups ── */
 .ss-wrap{{margin:18px 0 4px}}
 .ss-lbl{{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#2a3040;margin-bottom:7px}}
@@ -3593,6 +3638,23 @@ footer{{text-align:center;padding:24px 0 0;color:#2a3040;font-size:12px}}
 
 <h1>Connect Apple Health</h1>
 <p class="sub">5 steps, ~5 minutes. Use the <b>Copy</b> buttons so you don't have to type anything.</p>
+
+{f"""
+<!-- ONE-TAP SETUP -->
+<div class="onetap">
+  <div class="ot-badge">Recommended</div>
+  <div class="ot-title">Add in one tap</div>
+  <div class="ot-sub">Your token is already baked in — iOS imports the shortcut automatically. No URL building or variable insertion needed.</div>
+  <div class="ot-prereq">
+    <b>First time?</b> Go to <b>Settings &rarr; Shortcuts</b> and turn on <b>Allow Untrusted Shortcuts</b> &mdash; then come back and tap below.
+  </div>
+  <a href="{_shortcuts_link}" class="ot-btn">
+    <span style="font-size:20px">⚡</span> Add to Shortcuts
+  </a>
+  <div class="ot-hint">Opens the Shortcuts app &bull; tap <b>Add Shortcut</b> to confirm</div>
+</div>
+<div class="div-or"><span>or set up manually</span></div>
+""" if _shortcuts_link else ""}
 
 <!-- STATUS -->
 <div class="sbanner loading" id="sb">
