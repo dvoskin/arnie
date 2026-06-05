@@ -1042,14 +1042,12 @@ footer{{
 .ph-streak{{color:var(--ac);display:inline-flex;align-items:center;gap:5px;font-weight:500}}
 .ph-actions{{display:flex;gap:8px;align-items:center;flex-shrink:0}}
 .ph-log-btn{{
-  border:none;border-radius:11px;padding:0 16px;height:36px;font-size:13px;
-  font-weight:600;color:#000;background:var(--ac);
-  cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:6px;
-  white-space:nowrap;transition:opacity .15s,transform .12s;
-  box-shadow:0 4px 14px rgba(var(--ac-rgb),.4);flex-shrink:0;
+  border:1px solid var(--bd);border-radius:10px;padding:0 13px;height:34px;font-size:13px;
+  font-weight:500;color:var(--tx2);background:var(--sf2);
+  cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:7px;
+  white-space:nowrap;transition:border-color .15s,color .15s,background .15s;flex-shrink:0;
 }}
-[data-theme="light"] .ph-log-btn{{color:#fff}}
-.ph-log-btn:hover{{opacity:.85;transform:translateY(-1px)}}
+.ph-log-btn:hover{{border-color:var(--ac);color:var(--ac);background:var(--sf3)}}
 .ph-log-btn:active{{transform:scale(.95)}}
 
 /* ── STATUS TOGGLES ──────────────────────────────────────── */
@@ -1219,7 +1217,7 @@ footer{{
   /* Pagehead: hide icon-only buttons, keep just the Chat button */
   .pagehead .hbtn{{display:none}}
   .pagehead{{padding:12px 0 8px;gap:10px;align-items:center;margin-bottom:4px}}
-  .ph-title{{font-size:30px!important;letter-spacing:-.015em}}
+  .ph-title{{font-size:28px!important;letter-spacing:-.015em}}
   .ph-sub{{font-size:11px;margin-top:6px;gap:8px}}
   .ph-actions{{gap:5px}}
   .ph-log-btn{{padding:0 14px;height:35px;font-size:13px;border-radius:9px}}
@@ -1238,11 +1236,11 @@ footer{{
   .darr{{width:34px;height:34px;border-radius:9px}}
   .dnav{{gap:5px;margin-bottom:14px}}
   /* Today counters — quiet label, clear weighted number, even bars */
-  .macro-cell{{padding:15px 15px 14px}}
+  .macro-cell{{padding:14px 14px 13px}}
   .mc-label{{font-size:10px;letter-spacing:.1em;margin-bottom:8px;color:var(--mu);font-weight:500}}
-  .mc-num{{font-size:34px;line-height:1}}
-  .mc-sub{{font-size:11.5px;margin-top:6px;color:var(--mu)}}
-  .mc-bar{{margin-top:11px;height:4px}}
+  .mc-num{{font-size:32px;line-height:1}}
+  .mc-sub{{font-size:11px;margin-top:5px;color:var(--mu)}}
+  .mc-bar{{margin-top:10px;height:4px}}
   /* Toggles */
   .toggle{{padding:7px 11px;font-size:12px;gap:6px}}
   .toggles{{gap:6px;margin-bottom:14px}}
