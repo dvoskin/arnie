@@ -2459,8 +2459,9 @@ function renderAIProfile(data) {{
     var id = 'pc-' + _pslug(cat + '_' + s.label);
     var right;
     if (!s.filled) {{
-      var emptyEdit = s.edit_field
-        ? '<button class="ibtn inrow-edit" onclick="editProw(\\''+id+'\\',\\''+escA(s.edit_field)+'\\',\\'\\')">&#9998;</button>' : '';
+      var editFld = s.edit_field || s.key;
+      var emptyEdit = editFld
+        ? '<button class="ibtn inrow-edit" onclick="editProw(\\''+id+'\\',\\''+escA(editFld)+'\\',\\'\\')">&#9998;</button>' : '';
       right = '<span class="slot-wait" title="Arnie is still learning this from your activity"></span>' + emptyEdit;
     }} else if (s.chips && s.chips.length) {{
       right = '<div class="chips">' + s.chips.map(_chip).join('') + '</div>';
