@@ -225,12 +225,17 @@ body{{
 .whoop-grid{{display:grid;grid-template-columns:repeat(4,1fr);gap:9px}}
 @media(max-width:700px){{.whoop-grid{{grid-template-columns:repeat(2,1fr)}}}}
 @media(max-width:400px){{.whoop-grid{{grid-template-columns:repeat(2,1fr)}}}}
-.whoop-group{{margin-bottom:14px}}
-.whoop-group:last-child{{margin-bottom:0}}
-.whoop-group-label{{
-  font-family:'Geist Mono','SF Mono',monospace;font-size:9px;letter-spacing:.12em;
-  text-transform:uppercase;color:var(--mu);font-weight:600;margin-bottom:8px;
-}}
+/* Collapsible health sections (Whoop / Apple Health) — sans, accordion, rows */
+.hsec{{border:1px solid var(--bd);border-radius:12px;overflow:hidden;background:var(--sf);margin-bottom:8px}}
+.hsec:last-child{{margin-bottom:0}}
+.hsec-hd{{display:flex;align-items:center;gap:10px;padding:12px 16px;cursor:pointer;user-select:none;transition:background .15s}}
+.hsec-hd:hover{{background:var(--sf2)}}
+.hsec-name{{font-weight:600;font-size:14px;flex:1}}
+.hsec-summary{{font-size:13px;color:var(--mu);font-weight:500}}
+.hsec-chev{{font-size:11px;color:var(--mu);transition:transform .2s}}
+.hsec.open .hsec-chev{{transform:rotate(90deg)}}
+.hsec-body{{display:none;border-top:1px solid var(--bd)}}
+.hsec.open .hsec-body{{display:block}}
 .whoop-stat{{
   background:var(--sf);border:1px solid var(--bd);border-radius:14px;
   padding:14px 14px 12px;display:flex;flex-direction:column;gap:4px;
@@ -1996,6 +2001,24 @@ async function syncWhoop(){{
   }}
 }}
 
+// ── Collapsible health-section helpers (shared by Whoop + Apple Health) ────
+function toggleHsec(id){{var el=document.getElementById('hsec-'+id);if(el)el.classList.toggle('open');}}
+function hrow(label,val,valColor){{
+  if(val==null||val==='')return '';
+  return '<div class="inrow"><span class="inlbl">'+esc(label)+'</span>'+
+    '<div class="inrow-right"><span class="inval"'+(valColor?' style="color:'+valColor+'"':'')+'>'+
+    esc(String(val))+'</span></div></div>';
+}}
+function hsec(id,name,summary,rows,open){{
+  if(!rows)return '';
+  return '<div class="hsec'+(open?' open':'')+'" id="hsec-'+id+'">'+
+    '<div class="hsec-hd" onclick="toggleHsec(\\''+id+'\\')">'+
+    '<span class="hsec-name">'+esc(name)+'</span>'+
+    (summary?'<span class="hsec-summary">'+esc(summary)+'</span>':'')+
+    '<span class="hsec-chev">&#9658;</span></div>'+
+    '<div class="hsec-body">'+rows+'</div></div>';
+}}
+
 // ── Whoop stats module ────────────────────────────────────────────────────
 function renderWhoopModule(snap, profile){{
   var mod=document.getElementById('whoop-module');
@@ -2028,85 +2051,58 @@ function renderWhoopModule(snap, profile){{
   mod.style.display='block';
   if(dateEl)dateEl.textContent=snap.date||'';
 
-  // Define all possible stats — only render if value is present
-  var recClass='';
-  if(snap.recovery_score!=null){{
-    recClass=snap.recovery_score>=67?'whoop-rec-high':snap.recovery_score>=34?'whoop-rec-mid':'whoop-rec-low';
-  }}
-
-  function stat(label,val,sub,extraClass){{
-    if(val==null||val===undefined)return '';
-    return '<div class="whoop-stat'+(extraClass?' '+extraClass:'')+'">'+
-      '<div class="whoop-stat-label">'+label+'</div>'+
-      '<div class="whoop-stat-val">'+val+'</div>'+
-      (sub?'<div class="whoop-stat-sub">'+esc(String(sub))+'</div>':'')+
-      '</div>';
-  }}
-
   function fmtSleep(h){{
     if(!h)return null;
     var hrs=Math.floor(h),mins=Math.round((h-hrs)*60);
     return hrs+'h'+(mins>0?' '+mins+'m':'');
   }}
 
-  // Wraps a category's tiles in a labeled group (omitted if it has no data).
-  function group(label,inner){{
-    if(!inner)return '';
-    return '<div class="whoop-group"><div class="whoop-group-label">'+label+'</div>'+
-      '<div class="whoop-grid">'+inner+'</div></div>';
-  }}
+  var recZone=snap.recovery_score!=null?(snap.recovery_score>=67?'Green':snap.recovery_score>=34?'Yellow':'Red'):null;
+  var recColor=snap.recovery_score!=null?(snap.recovery_score>=67?'var(--ac)':snap.recovery_score>=34?'var(--ye)':'var(--re)'):null;
 
-  // RECOVERY — morning readiness
   var recovery=
-    stat('Recovery',snap.recovery_score!=null?snap.recovery_score+'%':null,
-      snap.recovery_score!=null?(snap.recovery_score>=67?'Green':snap.recovery_score>=34?'Yellow':'Red'):null, recClass)+
-    stat('HRV',snap.hrv!=null?snap.hrv+'ms':null,'during sleep')+
-    stat('Resting HR',snap.resting_hr!=null?snap.resting_hr+'bpm':null,null);
+    hrow('Recovery',snap.recovery_score!=null?snap.recovery_score+'% · '+recZone:null,recColor)+
+    hrow('HRV',snap.hrv!=null?snap.hrv+'ms':null)+
+    hrow('Resting HR',snap.resting_hr!=null?snap.resting_hr+'bpm':null);
 
-  // SLEEP — last night's session metrics
-  var sleepStages='';
-  if(snap.sleep_deep_hours||snap.sleep_rem_hours){{
-    var parts2=[];
-    if(snap.sleep_deep_hours)parts2.push(fmtSleep(snap.sleep_deep_hours)+' deep');
-    if(snap.sleep_rem_hours)parts2.push(fmtSleep(snap.sleep_rem_hours)+' REM');
-    sleepStages=stat('Sleep stages',parts2.join(' · '),
-      snap.sleep_need_hours?'Need '+fmtSleep(snap.sleep_need_hours):null);
-  }}
   var sleep=
-    stat('Sleep',fmtSleep(snap.sleep_hours),
-      snap.sleep_performance_pct!=null?'Quality '+Math.round(snap.sleep_performance_pct)+'%':
-      snap.sleep_efficiency_pct!=null?'Eff '+Math.round(snap.sleep_efficiency_pct)+'%':null)+
-    sleepStages+
-    stat('Resp rate',snap.respiratory_rate!=null?snap.respiratory_rate.toFixed(1)+' br/min':null,'during sleep')+
-    stat('SpO2',snap.spo2_percentage!=null?snap.spo2_percentage.toFixed(1)+'%':null,'blood oxygen')+
-    (snap.skin_temp_celsius!=null?stat('Skin temp',snap.skin_temp_celsius.toFixed(1)+'°C',null):'');
+    hrow('Sleep',fmtSleep(snap.sleep_hours))+
+    hrow('Quality',snap.sleep_performance_pct!=null?Math.round(snap.sleep_performance_pct)+'%':null)+
+    hrow('Efficiency',snap.sleep_efficiency_pct!=null?Math.round(snap.sleep_efficiency_pct)+'%':null)+
+    hrow('Deep sleep',fmtSleep(snap.sleep_deep_hours))+
+    hrow('REM sleep',fmtSleep(snap.sleep_rem_hours))+
+    hrow('Sleep need',fmtSleep(snap.sleep_need_hours))+
+    hrow('Resp rate',snap.respiratory_rate!=null?snap.respiratory_rate.toFixed(1)+' br/min':null)+
+    hrow('SpO2',snap.spo2_percentage!=null?snap.spo2_percentage.toFixed(1)+'%':null)+
+    hrow('Skin temp',snap.skin_temp_celsius!=null?snap.skin_temp_celsius.toFixed(1)+'°C':null);
 
-  // STRAIN & ACTIVITY — the day's exertion
   var strain=
-    stat('Strain',snap.strain!=null?snap.strain.toFixed(1):null,'/ 21')+
-    (snap.steps?stat('Steps',snap.steps.toLocaleString(),null):'')+
-    (snap.active_calories?stat('Active cal',Math.round(snap.active_calories)+'',null):'');
+    hrow('Strain',snap.strain!=null?snap.strain.toFixed(1)+' / 21':null)+
+    hrow('Avg HR',snap.avg_hr!=null?snap.avg_hr+'bpm':null)+
+    hrow('Steps',snap.steps?snap.steps.toLocaleString():null)+
+    hrow('Active cal',snap.active_calories?Math.round(snap.active_calories)+'':null);
 
-  // WORKOUTS — individual logged sessions
-  var workouts='';
+  var workouts='',woCount=0;
   if(snap.whoop_workouts){{
     try{{
       var wos=JSON.parse(snap.whoop_workouts);
       wos.forEach(function(w){{
+        woCount++;
         var sub=[];
+        if(w.strain!=null)sub.push(w.strain.toFixed(1)+' strain');
         if(w.duration_min)sub.push(w.duration_min+'min');
-        if(w.avg_hr)sub.push('Avg HR '+w.avg_hr);
+        if(w.avg_hr)sub.push('HR '+w.avg_hr);
         if(w.calories)sub.push(w.calories+' cal');
-        workouts+=stat(w.sport,
-          w.strain!=null?w.strain.toFixed(1)+' strain':w.duration_min?w.duration_min+'min':'—',
-          sub.join(' · '), 'whoop-full');
+        workouts+=hrow(w.sport,sub.join(' · ')||'—');
       }});
     }}catch(e){{}}
   }}
 
   grid.innerHTML=
-    (group('Recovery',recovery)+group('Sleep',sleep)+
-     group('Strain &amp; activity',strain)+group('Workouts',workouts))
+    (hsec('recovery','Recovery',snap.recovery_score!=null?snap.recovery_score+'%':'',recovery,true)+
+     hsec('sleep','Sleep',fmtSleep(snap.sleep_hours)||'',sleep,false)+
+     hsec('strain','Strain & activity',snap.strain!=null?snap.strain.toFixed(1):'',strain,false)+
+     hsec('workouts','Workouts',woCount?(woCount+(woCount>1?' sessions':' session')):'',workouts,false))
     ||'<div style="color:var(--mu);font-size:13px;padding:8px 0">No data for this day yet — run /whoop sync in Telegram.</div>';
 }}
 
@@ -2123,25 +2119,23 @@ function renderAppleHealthModule(snap,mod,grid,dateEl,titleEl,syncBtn){{
   }}
   if(dateEl)dateEl.textContent=snap.date||'';
 
-  function stat(label,val,sub){{
-    if(val==null||val===undefined)return '';
-    return '<div class="whoop-stat"><div class="whoop-stat-label">'+label+'</div>'+
-      '<div class="whoop-stat-val">'+val+'</div>'+
-      (sub?'<div class="whoop-stat-sub">'+esc(String(sub))+'</div>':'')+'</div>';
-  }}
   function fmtSleep(h){{
     if(!h)return null;
     var hrs=Math.floor(h),mins=Math.round((h-hrs)*60);
     return hrs+'h'+(mins>0?' '+mins+'m':'');
   }}
 
-  var parts='';
-  parts+=stat('Sleep',fmtSleep(snap.sleep_hours),null);
-  parts+=stat('Steps',snap.steps!=null?snap.steps.toLocaleString():null,null);
-  parts+=stat('Active cal',snap.active_calories!=null?Math.round(snap.active_calories)+'':null,null);
-  parts+=stat('Resting cal',snap.resting_calories!=null?Math.round(snap.resting_calories)+'':null,null);
+  // Same collapsible format as Whoop, fewer metrics (Apple Health platform limits).
+  var sleep=hrow('Sleep',fmtSleep(snap.sleep_hours));
+  var activity=
+    hrow('Steps',snap.steps!=null?snap.steps.toLocaleString():null)+
+    hrow('Active cal',snap.active_calories!=null?Math.round(snap.active_calories)+'':null)+
+    hrow('Resting cal',snap.resting_calories!=null?Math.round(snap.resting_calories)+'':null);
 
-  grid.innerHTML=(parts?'<div class="whoop-grid">'+parts+'</div>':'')||'<div style="color:var(--mu);font-size:13px;padding:8px 0">No Apple Health data for this day yet — it syncs automatically each morning.</div>';
+  grid.innerHTML=
+    (hsec('ah-sleep','Sleep',fmtSleep(snap.sleep_hours)||'',sleep,true)+
+     hsec('ah-activity','Activity',snap.steps!=null?snap.steps.toLocaleString():'',activity,false))
+    ||'<div style="color:var(--mu);font-size:13px;padding:8px 0">No Apple Health data for this day yet — it syncs automatically each morning.</div>';
 }}
 
 function renderHealthGrid(h){{
