@@ -203,7 +203,7 @@ def build_unified_profile(
         out = []
         for slot in STANDARD_SCHEMA[cat]:
             key, typ = slot["key"], slot["type"]
-            fact = {"label": slot["label"], "type": typ, "filled": False,
+            fact = {"label": slot["label"], "key": key, "type": typ, "filled": False,
                     "value": None, "chips": [], "confidence": "confirmed",
                     "origin": None, "edit_field": None, "raw": ""}
             # 1) column source
