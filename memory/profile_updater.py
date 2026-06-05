@@ -83,6 +83,27 @@ Key naming: {category}_{noun}_{qualifier}
   Categories: nutrition, fitness, health, lifestyle, behavior, mental, custom
   Tiers: core (always shown), daily (shown if updated recently), contextual (topic-match), archive (stored only)
 
+KEY REUSE — CRITICAL, this is what stops duplicate fields from piling up:
+  • Before emitting an attribute_key, scan ALREADY-TRACKED ATTRIBUTE KEYS in the
+    context. If a fact is the SAME concept as one already tracked, reuse that EXACT
+    key — never a reworded synonym (no second key for a concept you already track).
+  • Use these CANONICAL keys for standard concepts (do not invent variants):
+      nutrition_diet_style · nutrition_favorite_foods · nutrition_staple_foods ·
+      nutrition_protein_habits · nutrition_meal_timing · nutrition_foods_avoided ·
+      fitness_training_split · fitness_training_time · fitness_training_frequency ·
+      fitness_cardio_habits · fitness_preferred_exercises ·
+      health_injuries · health_supplement_<name> (one per supplement, e.g.
+        health_supplement_zinc) · lifestyle_sleep_schedule · lifestyle_work_schedule ·
+      lifestyle_stress_level · behavior_motivation_driver · behavior_coaching_tone
+    So: cardio preference/type → fitness_cardio_habits; what motivates them →
+    behavior_motivation_driver; vitamins/supplement stack → health_supplement_<name>;
+    wake/sleep times → lifestyle_sleep_schedule; workout time → fitness_training_time.
+  • Per-supplement facts use health_supplement_<name> — NOT a fresh "supplements:
+    a, b, c" aggregate each run (that creates duplicates).
+  • Only coin a NEW key for a genuinely new durable metric not covered above, and
+    make it GENERIC and reusable ({category}_{noun}) so next time you reuse it too —
+    never one-off phrasings like fitness_cardio_preference vs fitness_cardio_type.
+
 CONFIDENCE — be honest, do NOT present guesses as facts:
   "confirmed"          → the user EXPLICITLY stated it, or it's in the structured DB.
   "inferred"           → you DEDUCED it from behavior/patterns. MOST learned
@@ -167,6 +188,23 @@ async def _gather_context(user, db) -> str:
     if structured_lines:
         parts.append("STRUCTURED DB DATA (confirmed ground truth — always populate profile from this):\n"
                      + "\n".join(structured_lines))
+
+    # ── Already-tracked attribute keys (so synthesis REUSES keys, not reinvents) ──
+    # Feeding the existing key list is the durable fix for duplicate fields: the
+    # model reuses fitness_cardio_habits instead of coining fitness_cardio_preference.
+    try:
+        from memory.attribute_store import get_all_attributes
+        existing = await get_all_attributes(db, user.id)
+        if existing:
+            key_lines = [f"  {a.attribute_key} = {a.display_name or a.attribute_key}"
+                         for a in existing[:60]]
+            parts.append(
+                "ALREADY-TRACKED ATTRIBUTE KEYS — when a fact matches one of these "
+                "concepts, REUSE the EXACT key; never invent a synonym key for it:\n"
+                + "\n".join(key_lines)
+            )
+    except Exception:
+        pass
 
     # ── 2. Previously captured behavioral notes ───────────────────────────────
     mem = await read_memory(user.telegram_id)
