@@ -236,6 +236,16 @@ body{{
 .hsec.open .hsec-chev{{transform:rotate(90deg)}}
 .hsec-body{{display:none;border-top:1px solid var(--bd)}}
 .hsec.open .hsec-body{{display:block}}
+/* 3-up compact cells for short metric values */
+.hgrid{{display:grid;grid-template-columns:repeat(3,1fr);gap:13px 10px;padding:13px 16px}}
+@media(max-width:500px){{.hgrid{{grid-template-columns:repeat(2,1fr)}}}}
+.hcell{{min-width:0}}
+.hcell-lbl{{
+  font-family:'Geist Mono','SF Mono',monospace;font-size:8px;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--mu);font-weight:600;margin-bottom:3px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}}
+.hcell-val{{font-size:14px;font-weight:500;color:var(--tx);letter-spacing:-.01em;word-break:break-word}}
 .whoop-stat{{
   background:var(--sf);border:1px solid var(--bd);border-radius:14px;
   padding:14px 14px 12px;display:flex;flex-direction:column;gap:4px;
@@ -2018,6 +2028,14 @@ function hsec(id,name,summary,rows,open){{
     '<span class="hsec-chev">&#9658;</span></div>'+
     '<div class="hsec-body">'+rows+'</div></div>';
 }}
+// Compact cell for the 3-up metric grid (short values).
+function hcell(label,val,valColor){{
+  if(val==null||val==='')return '';
+  return '<div class="hcell"><div class="hcell-lbl">'+esc(label)+'</div>'+
+    '<div class="hcell-val"'+(valColor?' style="color:'+valColor+'"':'')+'>'+
+    esc(String(val))+'</div></div>';
+}}
+function grid3(cells){{ return cells?'<div class="hgrid">'+cells+'</div>':''; }}
 
 // ── Whoop stats module ────────────────────────────────────────────────────
 function renderWhoopModule(snap, profile){{
@@ -2060,27 +2078,29 @@ function renderWhoopModule(snap, profile){{
   var recZone=snap.recovery_score!=null?(snap.recovery_score>=67?'Green':snap.recovery_score>=34?'Yellow':'Red'):null;
   var recColor=snap.recovery_score!=null?(snap.recovery_score>=67?'var(--ac)':snap.recovery_score>=34?'var(--ye)':'var(--re)'):null;
 
-  var recovery=
-    hrow('Recovery',snap.recovery_score!=null?snap.recovery_score+'% · '+recZone:null,recColor)+
-    hrow('HRV',snap.hrv!=null?snap.hrv+'ms':null)+
-    hrow('Resting HR',snap.resting_hr!=null?snap.resting_hr+'bpm':null);
+  // Short-value metrics → 3-up compact cells
+  var recovery=grid3(
+    hcell('Recovery',snap.recovery_score!=null?snap.recovery_score+'%':null,recColor)+
+    hcell('Zone',recZone,recColor)+
+    hcell('HRV',snap.hrv!=null?snap.hrv+'ms':null)+
+    hcell('Resting HR',snap.resting_hr!=null?snap.resting_hr+'bpm':null));
 
-  var sleep=
-    hrow('Sleep',fmtSleep(snap.sleep_hours))+
-    hrow('Quality',snap.sleep_performance_pct!=null?Math.round(snap.sleep_performance_pct)+'%':null)+
-    hrow('Efficiency',snap.sleep_efficiency_pct!=null?Math.round(snap.sleep_efficiency_pct)+'%':null)+
-    hrow('Deep sleep',fmtSleep(snap.sleep_deep_hours))+
-    hrow('REM sleep',fmtSleep(snap.sleep_rem_hours))+
-    hrow('Sleep need',fmtSleep(snap.sleep_need_hours))+
-    hrow('Resp rate',snap.respiratory_rate!=null?snap.respiratory_rate.toFixed(1)+' br/min':null)+
-    hrow('SpO2',snap.spo2_percentage!=null?snap.spo2_percentage.toFixed(1)+'%':null)+
-    hrow('Skin temp',snap.skin_temp_celsius!=null?snap.skin_temp_celsius.toFixed(1)+'°C':null);
+  var sleep=grid3(
+    hcell('Sleep',fmtSleep(snap.sleep_hours))+
+    hcell('Quality',snap.sleep_performance_pct!=null?Math.round(snap.sleep_performance_pct)+'%':null)+
+    hcell('Efficiency',snap.sleep_efficiency_pct!=null?Math.round(snap.sleep_efficiency_pct)+'%':null)+
+    hcell('Deep',fmtSleep(snap.sleep_deep_hours))+
+    hcell('REM',fmtSleep(snap.sleep_rem_hours))+
+    hcell('Need',fmtSleep(snap.sleep_need_hours))+
+    hcell('Resp rate',snap.respiratory_rate!=null?snap.respiratory_rate.toFixed(1):null)+
+    hcell('SpO2',snap.spo2_percentage!=null?snap.spo2_percentage.toFixed(1)+'%':null)+
+    hcell('Skin temp',snap.skin_temp_celsius!=null?snap.skin_temp_celsius.toFixed(1)+'°C':null));
 
-  var strain=
-    hrow('Strain',snap.strain!=null?snap.strain.toFixed(1)+' / 21':null)+
-    hrow('Avg HR',snap.avg_hr!=null?snap.avg_hr+'bpm':null)+
-    hrow('Steps',snap.steps?snap.steps.toLocaleString():null)+
-    hrow('Active cal',snap.active_calories?Math.round(snap.active_calories)+'':null);
+  var activity=grid3(
+    hcell('Strain',snap.strain!=null?snap.strain.toFixed(1)+'/21':null)+
+    hcell('Avg HR',snap.avg_hr!=null?snap.avg_hr+'bpm':null)+
+    hcell('Steps',snap.steps?snap.steps.toLocaleString():null)+
+    hcell('Active cal',snap.active_calories?Math.round(snap.active_calories)+'':null));
 
   var workouts='',woCount=0;
   if(snap.whoop_workouts){{
@@ -2099,10 +2119,10 @@ function renderWhoopModule(snap, profile){{
   }}
 
   grid.innerHTML=
-    (hsec('recovery','Recovery',snap.recovery_score!=null?snap.recovery_score+'%':'',recovery,true)+
-     hsec('sleep','Sleep',fmtSleep(snap.sleep_hours)||'',sleep,false)+
-     hsec('strain','Strain & activity',snap.strain!=null?snap.strain.toFixed(1):'',strain,false)+
-     hsec('workouts','Workouts',woCount?(woCount+(woCount>1?' sessions':' session')):'',workouts,false))
+    (hsec('activity','Activity',snap.strain!=null?snap.strain.toFixed(1)+' strain':'',activity,true)+
+     hsec('workouts','Workouts',woCount?(woCount+(woCount>1?' sessions':' session')):'',workouts,false)+
+     hsec('recovery','Recovery',snap.recovery_score!=null?snap.recovery_score+'%':'',recovery,false)+
+     hsec('sleep','Sleep',fmtSleep(snap.sleep_hours)||'',sleep,false))
     ||'<div style="color:var(--mu);font-size:13px;padding:8px 0">No data for this day yet — run /whoop sync in Telegram.</div>';
 }}
 
@@ -2126,15 +2146,15 @@ function renderAppleHealthModule(snap,mod,grid,dateEl,titleEl,syncBtn){{
   }}
 
   // Same collapsible format as Whoop, fewer metrics (Apple Health platform limits).
-  var sleep=hrow('Sleep',fmtSleep(snap.sleep_hours));
-  var activity=
-    hrow('Steps',snap.steps!=null?snap.steps.toLocaleString():null)+
-    hrow('Active cal',snap.active_calories!=null?Math.round(snap.active_calories)+'':null)+
-    hrow('Resting cal',snap.resting_calories!=null?Math.round(snap.resting_calories)+'':null);
+  var activity=grid3(
+    hcell('Steps',snap.steps!=null?snap.steps.toLocaleString():null)+
+    hcell('Active cal',snap.active_calories!=null?Math.round(snap.active_calories)+'':null)+
+    hcell('Resting cal',snap.resting_calories!=null?Math.round(snap.resting_calories)+'':null));
+  var sleep=grid3(hcell('Sleep',fmtSleep(snap.sleep_hours)));
 
   grid.innerHTML=
-    (hsec('ah-sleep','Sleep',fmtSleep(snap.sleep_hours)||'',sleep,true)+
-     hsec('ah-activity','Activity',snap.steps!=null?snap.steps.toLocaleString():'',activity,false))
+    (hsec('ah-activity','Activity',snap.steps!=null?snap.steps.toLocaleString():'',activity,true)+
+     hsec('ah-sleep','Sleep',fmtSleep(snap.sleep_hours)||'',sleep,false))
     ||'<div style="color:var(--mu);font-size:13px;padding:8px 0">No Apple Health data for this day yet — it syncs automatically each morning.</div>';
 }}
 
