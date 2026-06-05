@@ -3409,17 +3409,6 @@ setInterval(()=>{{
 
 
 def _apple_guide_html(endpoint: str, status_url: str = "", shortcut_url: str = "") -> str:  # noqa: C901
-    # Build the shortcuts:// deep-link that opens Shortcuts app and imports the file.
-    if shortcut_url:
-        from urllib.parse import quote as _q
-        _shortcuts_link = (
-            "shortcuts://import-workflow"
-            f"?url={_q(shortcut_url, safe='')}"
-            "&name=Arnie%20Health"
-        )
-    else:
-        _shortcuts_link = ""
-
     # Pre-build the URL template shown in Step 3 — user pastes this into
     # the "URL" action and inserts Shortcuts variables for each placeholder.
     url_template = (
@@ -3644,17 +3633,25 @@ footer{{text-align:center;padding:24px 0 0;color:#2a3040;font-size:12px}}
 <div class="onetap">
   <div class="ot-badge">Recommended</div>
   <div class="ot-title">Add in one tap</div>
-  <div class="ot-sub">Your token is already baked in — iOS imports the shortcut automatically. No URL building or variable insertion needed.</div>
+  <div class="ot-sub">Your token is already baked in &mdash; no URL building or variable insertion needed.</div>
   <div class="ot-prereq">
-    <b>First time?</b> Go to <b>Settings &rarr; Shortcuts</b> and turn on <b>Allow Untrusted Shortcuts</b> &mdash; then come back and tap below.
+    <b>Before tapping:</b> open <b>Settings &rarr; Shortcuts</b> and turn on
+    <b>Allow Untrusted Shortcuts</b>. You only need to do this once.
   </div>
-  <a href="{_shortcuts_link}" class="ot-btn">
-    <span style="font-size:20px">⚡</span> Add to Shortcuts
+  <a href="{shortcut_url}" class="ot-btn" download="Arnie Health.shortcut">
+    <span style="font-size:20px">&#11015;</span> Download Shortcut
   </a>
-  <div class="ot-hint">Opens the Shortcuts app &bull; tap <b>Add Shortcut</b> to confirm</div>
+  <div class="ot-hint">
+    Must open this page in <b>Safari</b> (not Telegram).<br>
+    Tap the button &rarr; tap <b>Allow</b> &rarr; tap <b>Add Shortcut</b>.
+  </div>
+  <div style="margin-top:12px;text-align:center">
+    <button class="cbtn" style="font-size:12px;padding:6px 14px" onclick="cp(window.location.href,this)">Copy page link</button>
+    <div style="font-size:11px;color:#2a3040;margin-top:4px">paste in Safari if you&rsquo;re viewing this inside Telegram</div>
+  </div>
 </div>
 <div class="div-or"><span>or set up manually</span></div>
-""" if _shortcuts_link else ""}
+""" if shortcut_url else ""}
 
 <!-- STATUS -->
 <div class="sbanner loading" id="sb">
