@@ -394,6 +394,7 @@ body{{
   .bottomnav{{display:flex}}
   .pagehead{{padding:14px 0 10px}}
   .profile-grid{{grid-template-columns:1fr}}
+  #date-next{{display:none}}   /* today is the latest day — no forward arrow on mobile */
 }}
 /* Landscape mobile (phones rotated) */
 @media(max-width:940px) and (orientation:landscape){{
@@ -1244,6 +1245,12 @@ footer{{
   .dchip{{padding:8px 13px;font-size:11.5px}}
   .darr{{width:34px;height:34px;border-radius:9px}}
   .dnav{{gap:5px;margin-bottom:14px}}
+  /* Today counters — quiet label, clear weighted number, even bars */
+  .macro-cell{{padding:14px 14px 13px}}
+  .mc-label{{font-size:9.5px;letter-spacing:.1em;margin-bottom:8px;color:var(--mu);font-weight:500}}
+  .mc-num{{font-family:'Geist',ui-sans-serif,system-ui,sans-serif;font-size:25px;font-weight:600;letter-spacing:-.01em;font-variant-numeric:tabular-nums;line-height:1.05}}
+  .mc-sub{{font-size:11px;margin-top:5px;color:var(--mu)}}
+  .mc-bar{{margin-top:10px;height:4px}}
   /* Toggles */
   .toggle{{padding:7px 11px;font-size:12px;gap:6px}}
   .toggles{{gap:6px;margin-bottom:14px}}
@@ -1401,11 +1408,13 @@ footer{{
         <div class="mc-label">Carbs</div>
         <div class="mc-num" id="carb-val">&mdash;</div>
         <div class="mc-sub" id="carb-sub"></div>
+        <div class="mc-bar"><div class="mc-fill" id="carb-bar" style="background:var(--or);width:0%"></div></div>
       </div>
       <div class="macro-cell">
         <div class="mc-label">Fats</div>
         <div class="mc-num" id="fat-val">&mdash;</div>
         <div class="mc-sub" id="fat-sub"></div>
+        <div class="mc-bar"><div class="mc-fill" id="fat-bar" style="background:var(--ye);width:0%"></div></div>
       </div>
     </div>
 
@@ -2075,8 +2084,10 @@ function renderDayTab(d){{
   var proBar=document.getElementById('pro-bar');if(proBar)proBar.style.width=pp+'%';
   var carbEl=document.getElementById('carb-val');if(carbEl)carbEl.textContent=day.carbs!=null?day.carbs+'g':'—';
   var carbSub=document.getElementById('carb-sub');if(carbSub)carbSub.textContent=tgt.carbs?'/ '+tgt.carbs+'g ('+pct(day.carbs,tgt.carbs)+'%)':'grams';
+  var carbBar=document.getElementById('carb-bar');if(carbBar)carbBar.style.width=pct(day.carbs,tgt.carbs)+'%';
   var fatEl=document.getElementById('fat-val');if(fatEl)fatEl.textContent=day.fats!=null?day.fats+'g':'—';
   var fatSub=document.getElementById('fat-sub');if(fatSub)fatSub.textContent=tgt.fats?'/ '+tgt.fats+'g ('+pct(day.fats,tgt.fats)+'%)':'grams';
+  var fatBar=document.getElementById('fat-bar');if(fatBar)fatBar.style.width=pct(day.fats,tgt.fats)+'%';
 
   var wb=document.getElementById('wo-badge');
   if(wb){{var woOn=!!day.workout_completed;wb.className='ds-pill'+(woOn?' on':'');wb.innerHTML='<span class="tcb">'+(woOn?'&#10003;':'')+'</span>'+(woOn?'Workout':'No workout');}}
