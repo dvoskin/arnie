@@ -302,11 +302,10 @@ body{{
 /* ── LIVE CHAT WIDGET (floating · consolidated Telegram + iMessage) ─── */
 .cw-fab{{
   position:fixed;z-index:90;bottom:24px;right:24px;
-  width:56px;height:56px;border-radius:50%;cursor:pointer;
-  border:1px solid var(--bd);background:linear-gradient(180deg,var(--sf3),var(--sf2));
+  width:54px;height:54px;border-radius:50%;cursor:pointer;
+  border:1px solid var(--bd);background:var(--sf2);
   color:var(--ac);display:grid;place-items:center;
-  box-shadow:0 10px 30px rgba(0,0,0,.35),0 0 0 1px rgba(255,255,255,.04);
-  backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
+  box-shadow:0 8px 24px rgba(0,0,0,.30);
   transition:transform .2s cubic-bezier(.2,.7,.2,1),border-color .2s,color .2s;
 }}
 .cw-fab:hover{{transform:translateY(-2px);border-color:var(--ac)}}
@@ -315,53 +314,39 @@ body{{
 .cw-fab.open .cw-ico-chat{{display:none}}
 .cw-fab.open .cw-ico-x{{display:block}}
 .cw-fab.open{{color:var(--tx)}}
-.cw-dot{{
-  position:absolute;top:-1px;right:-1px;width:14px;height:14px;border-radius:50%;
-  background:var(--ac);border:2px solid var(--bg);display:none;
-}}
-.cw-fab.unread .cw-dot{{display:block;animation:cwpulse 1.8s ease-in-out infinite}}
-@keyframes cwpulse{{0%,100%{{transform:scale(1);opacity:1}}50%{{transform:scale(1.18);opacity:.75}}}}
 
 .cw-panel{{
-  position:fixed;z-index:89;bottom:92px;right:24px;
-  width:380px;height:min(560px,72vh);
+  position:fixed;z-index:89;bottom:90px;right:24px;
+  width:360px;height:min(540px,70vh);
   display:flex;flex-direction:column;overflow:hidden;
-  background:var(--hbg);border:1px solid var(--bd);border-radius:18px;
-  box-shadow:0 24px 60px rgba(0,0,0,.45),0 0 0 1px rgba(255,255,255,.05);
+  background:var(--hbg);border:1px solid var(--bd);border-radius:16px;
+  box-shadow:0 20px 50px rgba(0,0,0,.40);
   backdrop-filter:blur(24px) saturate(140%);-webkit-backdrop-filter:blur(24px) saturate(140%);
-  opacity:0;transform:translateY(12px) scale(.98);pointer-events:none;
-  transition:opacity .2s ease,transform .22s cubic-bezier(.2,.7,.2,1);
+  opacity:0;transform:translateY(10px) scale(.98);pointer-events:none;
+  transition:opacity .2s ease,transform .2s cubic-bezier(.2,.7,.2,1);
 }}
 .cw-panel.open{{opacity:1;transform:none;pointer-events:auto}}
 .cw-head{{
   display:flex;align-items:center;justify-content:space-between;gap:10px;
-  padding:13px 14px;border-bottom:1px solid var(--bd);flex-shrink:0;
+  padding:13px 15px;border-bottom:1px solid var(--bd);flex-shrink:0;
 }}
-.cw-head-l{{display:flex;align-items:center;gap:10px;min-width:0}}
-.cw-ava{{
-  width:34px;height:34px;border-radius:50%;flex-shrink:0;position:relative;
-  background:radial-gradient(circle at 35% 30%,#86efac,#6366f1 72%);
-  border:1px solid rgba(255,255,255,.18);
-}}
-.cw-ava::after{{
-  content:'';position:absolute;right:-1px;bottom:-1px;width:9px;height:9px;
-  border-radius:50%;background:var(--ac);border:2px solid var(--bg);
-}}
-.cw-title{{font-size:14px;font-weight:600;color:var(--tx);line-height:1.1}}
+.cw-title{{font-size:14px;font-weight:600;color:var(--tx);line-height:1.15}}
 .cw-sub{{font-size:11px;color:var(--mu);margin-top:2px;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}
 .cw-close{{
-  background:var(--sf2);border:1px solid var(--bd);color:var(--mu);
-  width:30px;height:30px;border-radius:9px;cursor:pointer;font-size:15px;
-  display:grid;place-items:center;flex-shrink:0;transition:all .15s;
+  background:transparent;border:none;color:var(--mu);
+  width:28px;height:28px;border-radius:8px;cursor:pointer;font-size:18px;
+  display:grid;place-items:center;flex-shrink:0;transition:color .15s;
 }}
-.cw-close:hover{{border-color:var(--ac);color:var(--ac)}}
+.cw-close:hover{{color:var(--tx)}}
+/* Scrollbar hidden — the thread scrolls, but no visible track/handle. */
 .cw-thread{{
   flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:0;
+  scrollbar-width:none;-ms-overflow-style:none;
 }}
+.cw-thread::-webkit-scrollbar{{display:none}}
 .cw-day{{
-  align-self:center;margin:12px 0 4px;padding:3px 10px;border-radius:999px;
-  background:var(--sf);border:1px solid var(--bd);
+  align-self:center;margin:14px 0 6px;
   font-family:'Geist Mono','SF Mono',monospace;font-size:9px;letter-spacing:.08em;
   text-transform:uppercase;color:var(--mu);
 }}
@@ -369,38 +354,20 @@ body{{
 .cw-row.me{{align-self:flex-end;align-items:flex-end}}
 .cw-row.ar{{align-self:flex-start;align-items:flex-start}}
 .cw-bubble{{
-  padding:8px 12px;border-radius:15px;font-size:13.5px;line-height:1.45;
+  padding:8px 12px;border-radius:14px;font-size:13.5px;line-height:1.45;
   white-space:pre-wrap;word-break:break-word;
 }}
-.cw-row.ar .cw-bubble{{
-  background:var(--sf2);color:var(--tx);border:1px solid var(--bd);
-  border-bottom-left-radius:4px;
-}}
-.cw-row.me .cw-bubble{{
-  background:var(--ac-dim);color:var(--tx);border:1px solid rgba(var(--ac-rgb),.35);
-  border-bottom-right-radius:4px;
-}}
+.cw-row.ar .cw-bubble{{background:var(--sf2);color:var(--tx)}}
+.cw-row.me .cw-bubble{{background:var(--ac-dim);color:var(--tx)}}
 .cw-meta{{
-  font-size:9.5px;color:var(--mu);margin-top:3px;padding:0 3px;
+  font-size:9.5px;color:var(--mu);margin-top:3px;padding:0 2px;
   font-family:'Geist Mono','SF Mono',monospace;letter-spacing:.03em;
-  display:flex;align-items:center;gap:5px;
 }}
-.cw-chan{{
-  text-transform:uppercase;letter-spacing:.05em;font-size:8.5px;
-  padding:1px 5px;border-radius:5px;border:1px solid var(--bd);color:var(--mu);
-}}
-.cw-chan.tg{{color:var(--bl);border-color:rgba(59,130,246,.35)}}
-.cw-chan.im{{color:var(--ac);border-color:rgba(var(--ac-rgb),.35)}}
 .cw-state{{margin:auto;text-align:center;color:var(--mu);font-size:13px;padding:24px;line-height:1.55}}
-.cw-foot{{
-  flex-shrink:0;padding:8px 14px;border-top:1px solid var(--bd);
-  font-size:9.5px;color:var(--mu);text-align:center;
-  font-family:'Geist Mono','SF Mono',monospace;letter-spacing:.04em;
-}}
 @media(max-width:940px){{
   .cw-fab{{bottom:calc(82px + env(safe-area-inset-bottom));right:16px}}
   .cw-panel{{
-    bottom:calc(150px + env(safe-area-inset-bottom));right:12px;left:12px;
+    bottom:calc(148px + env(safe-area-inset-bottom));right:12px;left:12px;
     width:auto;height:min(60vh,440px);
   }}
 }}
@@ -3446,7 +3413,7 @@ setInterval(()=>{{
 }}, 5*60*1000);
 
 // ── Live chat widget — consolidated Telegram + iMessage thread ─────────────
-var _cwOpen=false, _cwTimer=null, _cwSeenTs=null, _cwSig='';
+var _cwOpen=false, _cwTimer=null, _cwSig='';
 function _cwChan(p){{return(String(p||'').indexOf('imessage')>-1||String(p||'').indexOf('im:')>-1)?'im':'tg';}}
 async function _cwFetch(limit){{
   var r=await fetch('/api/conversation/'+TOKEN+(limit?('?limit='+limit):''));
@@ -3461,7 +3428,6 @@ function toggleChatWidget(){{
   panel.classList.toggle('open',_cwOpen);
   panel.setAttribute('aria-hidden',_cwOpen?'false':'true');
   if(_cwOpen){{
-    fab.classList.remove('unread');
     loadChatWidget(true);
     if(_cwTimer) clearInterval(_cwTimer);
     _cwTimer=setInterval(function(){{loadChatWidget(false);}},25000);
@@ -3493,7 +3459,7 @@ function renderChatThread(turns,initial){{
   var last=turns[turns.length-1];
   var sig=turns.length+'|'+(last.ts||'');
   if(!initial && sig===_cwSig) return;   // nothing new — skip re-render (no scroll jump)
-  _cwSig=sig; _cwSeenTs=last.ts||_cwSeenTs;
+  _cwSig=sig;
   var wasNear=thread.scrollHeight-thread.scrollTop-thread.clientHeight<80;
   var html='',prevDay='';
   for(var i=0;i<turns.length;i++){{
@@ -3506,7 +3472,7 @@ function renderChatThread(turns,initial){{
     var ico=t.source==='voice'?'\\ud83c\\udfa4 ':((t.source==='image'||t.source==='photo')?'\\ud83d\\udcf7 ':'');
     if((t.user||'').trim()){{
       html+='<div class="cw-row me"><div class="cw-bubble">'+ico+esc(t.user)+'</div>'
-          +'<div class="cw-meta"><span class="cw-chan '+chan+'">'+chanLbl+'</span>'+esc(time)+'</div></div>';
+          +'<div class="cw-meta">'+esc(chanLbl+' \\u00b7 '+time)+'</div></div>';
     }}
     if((t.arnie||'').trim()){{
       html+='<div class="cw-row ar"><div class="cw-bubble">'+esc(t.arnie)+'</div></div>';
@@ -3515,16 +3481,6 @@ function renderChatThread(turns,initial){{
   thread.innerHTML=html;
   if(initial||wasNear) thread.scrollTop=thread.scrollHeight;
 }}
-// While closed, a cheap 1-row poll flags the bubble when a new message lands.
-async function _cwIdleCheck(){{
-  if(_cwOpen||_cwSeenTs==null) return;
-  try{{
-    var data=await _cwFetch(1);
-    var t=(data.turns||[])[0];
-    if(t&&t.ts&&t.ts>_cwSeenTs) document.getElementById('cw-fab').classList.add('unread');
-  }}catch(e){{}}
-}}
-setInterval(_cwIdleCheck,90000);
 </script>
 
 <!-- LOG MODAL — direct body child so position:fixed works across all containers -->
@@ -3594,22 +3550,17 @@ setInterval(_cwIdleCheck,90000);
 <!-- LIVE CHAT WIDGET — floating, consolidated Telegram + iMessage thread -->
 <div class="cw-panel" id="cw-panel" aria-hidden="true" aria-label="Your conversation with Arnie">
   <div class="cw-head">
-    <div class="cw-head-l">
-      <span class="cw-ava"></span>
-      <div style="min-width:0">
-        <div class="cw-title">Arnie</div>
-        <div class="cw-sub" id="cw-sub">Your full conversation</div>
-      </div>
+    <div style="min-width:0">
+      <div class="cw-title">Conversation</div>
+      <div class="cw-sub" id="cw-sub">Your full thread with Arnie</div>
     </div>
     <button class="cw-close" onclick="toggleChatWidget()" aria-label="Close">&#215;</button>
   </div>
-  <div class="cw-thread" id="cw-thread"><div class="cw-state">Loading your conversation&hellip;</div></div>
-  <div class="cw-foot">Read-only &middot; Telegram + iMessage &middot; updates live</div>
+  <div class="cw-thread" id="cw-thread"><div class="cw-state">Loading&hellip;</div></div>
 </div>
 <button class="cw-fab" id="cw-fab" onclick="toggleChatWidget()" aria-label="Open conversation with Arnie">
   <span class="cw-ico-chat"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg></span>
   <span class="cw-ico-x"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg></span>
-  <span class="cw-dot"></span>
 </button>
 </body>
 </html>"""
