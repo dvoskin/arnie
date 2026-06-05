@@ -1380,12 +1380,12 @@ footer{{
 
     <!-- AI Profile — bio + learned attributes -->
     <div id="ai-profile-section" style="display:none">
-      <div class="stitle spaced" style="margin-top:4px">
-        <span>Arnie's profile</span>
-        <button class="add-toggle" onclick="refreshAIProfile()" title="Refresh">&#8635;</button>
+      <div class="stitle spaced" style="margin-top:4px;cursor:pointer" onclick="toggleBio()">
+        <span>Arnie's profile <span id="bio-chevron" style="font-size:11px;opacity:.5">▼</span></span>
+        <button class="add-toggle" onclick="event.stopPropagation();refreshAIProfile()" title="Refresh">&#8635;</button>
       </div>
-      <!-- Bio card -->
-      <div class="infocrd" id="ai-bio-card" style="padding:14px 16px;line-height:1.6;font-size:14px;color:var(--tx)"></div>
+      <!-- Bio card — collapsed by default -->
+      <div class="infocrd" id="ai-bio-card" style="padding:14px 16px;line-height:1.6;font-size:14px;color:var(--tx);display:none"></div>
       <!-- Basics: compact demographic grid -->
       <div id="ai-basics" class="basics-grid"></div>
       <!-- Declared + learned facts, merged by category -->
@@ -2457,8 +2457,10 @@ function renderAIProfile(data) {{
   function _slotRow(s, cat) {{
     var id = 'pc-' + _pslug(cat + '_' + s.label);
     var right;
-    if (!s.filled) {{
-      right = '<span class="slot-wait" title="Arnie is still learning this from your activity"></span>';
+    if (!s.filled) {
+      var emptyEdit = s.edit_field
+        ? '<button class="ibtn inrow-edit" onclick="editProw(\\''+id+'\\',\\''+escA(s.edit_field)+'\\',\\'\\')">&#9998;</button>' : '';
+      right = '<span class="slot-wait" title="Arnie is still learning this from your activity"></span>' + emptyEdit;
     }} else if (s.chips && s.chips.length) {{
       right = '<div class="chips">' + s.chips.map(_chip).join('') + '</div>';
     }} else {{
@@ -2564,7 +2566,14 @@ async function refreshAIProfile() {{
     if (loadEl) loadEl.innerHTML = '<div class="lempty">Could not refresh — try again later.</div>';
   }}
 }}
-
+function toggleBio(){{
+  var el=document.getElementById('ai-bio-card');
+  var ch=document.getElementById('bio-chevron');
+  if(!el)return;
+  var open=el.style.display==='none'||!el.style.display;
+  el.style.display=open?'block':'none';
+  if(ch)ch.textContent=open?'▲':'▼';
+}}
 // ── Insights ──────────────────────────────────────────────────────────────
 function renderInsights(ins){{
   var el=document.getElementById('insights-card');
