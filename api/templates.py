@@ -1216,10 +1216,10 @@ footer{{
 
 /* ═══ MOBILE TYPOGRAPHY + LAYOUT FIXES ═════════════════════ */
 @media(max-width:560px){{
-  /* Pagehead: hide icon-only buttons, keep just + Log */
+  /* Pagehead: hide icon-only buttons, keep just the Chat button */
   .pagehead .hbtn{{display:none}}
   .pagehead{{padding:12px 0 8px;gap:10px;align-items:center;margin-bottom:4px}}
-  .ph-title{{font-size:26px!important;letter-spacing:-.015em}}
+  .ph-title{{font-size:30px!important;letter-spacing:-.015em}}
   .ph-sub{{font-size:11px;margin-top:6px;gap:8px}}
   .ph-actions{{gap:5px}}
   .ph-log-btn{{padding:0 14px;height:35px;font-size:13px;border-radius:9px}}
@@ -1238,11 +1238,11 @@ footer{{
   .darr{{width:34px;height:34px;border-radius:9px}}
   .dnav{{gap:5px;margin-bottom:14px}}
   /* Today counters — quiet label, clear weighted number, even bars */
-  .macro-cell{{padding:14px 14px 13px}}
-  .mc-label{{font-size:9.5px;letter-spacing:.1em;margin-bottom:8px;color:var(--mu);font-weight:500}}
-  .mc-num{{font-size:30px;line-height:1}}
-  .mc-sub{{font-size:11px;margin-top:5px;color:var(--mu)}}
-  .mc-bar{{margin-top:10px;height:4px}}
+  .macro-cell{{padding:15px 15px 14px}}
+  .mc-label{{font-size:10px;letter-spacing:.1em;margin-bottom:8px;color:var(--mu);font-weight:500}}
+  .mc-num{{font-size:34px;line-height:1}}
+  .mc-sub{{font-size:11.5px;margin-top:6px;color:var(--mu)}}
+  .mc-bar{{margin-top:11px;height:4px}}
   /* Toggles */
   .toggle{{padding:7px 11px;font-size:12px;gap:6px}}
   .toggles{{gap:6px;margin-bottom:14px}}
@@ -3509,11 +3509,11 @@ async function _cwFetch(limit){{
 }}
 function toggleChatWidget(){{
   _cwOpen=!_cwOpen;
-  var fab=document.getElementById('cw-fab');
   var panel=document.getElementById('cw-panel');
-  fab.classList.toggle('open',_cwOpen);
   panel.classList.toggle('open',_cwOpen);
   panel.setAttribute('aria-hidden',_cwOpen?'false':'true');
+  var btn=document.getElementById('chat-btn');
+  if(btn) btn.classList.toggle('open',_cwOpen);
   if(_cwOpen){{
     loadChatWidget(true);
     if(_cwTimer) clearInterval(_cwTimer);
