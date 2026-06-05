@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 # In-memory cache: {user_id: (timestamp, insights_list)}
 _CACHE: dict = {}
-_TTL = 3600  # 1 hour
+_TTL = 10800  # 3 hours — analysis stays stable until it auto-refreshes (or a manual refresh forces it)
 
 
 def _build_summary(stats: dict) -> str:

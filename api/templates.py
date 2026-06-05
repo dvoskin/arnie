@@ -600,13 +600,10 @@ body{{
 
 /* ── INSIGHTS ────────────────────────────────────────────── */
 .icrd{{
-  background:var(--sf);border:1px solid var(--bd);border-radius:16px;overflow:hidden;
+  background:var(--sf);border:1px solid var(--bd);border-radius:14px;overflow:hidden;
   backdrop-filter:blur(16px);box-shadow:var(--sh);transition:background .3s;
 }}
-[data-theme="dark"] .icrd{{
-  background:linear-gradient(160deg,rgba(0,230,118,.04),transparent 55%),var(--sf);
-  border-color:rgba(0,230,118,.14);
-}}
+[data-theme="dark"] .icrd{{background:var(--sf2)}}
 .irow{{
   display:flex;align-items:flex-start;gap:12px;
   padding:13px 16px;border-bottom:1px solid var(--bd);
@@ -614,13 +611,37 @@ body{{
 .irow:last-child{{border-bottom:none}}
 .iico{{
   font-size:10px;width:6px;height:6px;flex-shrink:0;margin-top:8px;
-  background:var(--ac);border-radius:50%;box-shadow:0 0 6px var(--ac);
+  background:var(--pu);border-radius:50%;box-shadow:0 0 6px var(--pu);
 }}
 .itxt{{font-size:14px;line-height:1.6;color:var(--tx);font-weight:400}}
 .iload,.iempty{{
   padding:18px 16px;color:var(--mu);font-size:13.5px;
   text-align:left;line-height:1.55;
 }}
+
+/* ── COACH INSIGHTS — minimal collapsible banner (collapsed by default) ─── */
+.insights{{margin:0 0 2px}}
+.ins-banner{{
+  display:flex;align-items:center;gap:8px;width:100%;
+  padding:10px 13px;border-radius:12px;cursor:pointer;user-select:none;
+  border:1px solid var(--bd);background:var(--sf);
+  transition:background .15s,border-color .15s;
+}}
+.ins-banner:hover{{background:var(--sf2)}}
+.ins-spark{{flex-shrink:0;display:grid;place-items:center;color:var(--pu)}}
+.ins-title{{font-size:13px;font-weight:600;color:var(--tx);letter-spacing:-.01em;white-space:nowrap}}
+.ins-actions{{margin-left:auto;display:flex;align-items:center;gap:2px;flex-shrink:0}}
+.ins-refresh{{
+  color:var(--mu);font-size:14px;line-height:1;cursor:pointer;
+  width:24px;height:24px;display:grid;place-items:center;border-radius:7px;
+  transition:color .15s,background .15s;
+}}
+.ins-refresh:hover{{color:var(--tx2);background:var(--sf2)}}
+.ins-chev{{color:var(--mu);font-size:10px;padding-right:2px;
+  transition:transform .22s cubic-bezier(.2,.7,.2,1)}}
+.insights.open .ins-chev{{transform:rotate(180deg)}}
+.ins-body{{max-height:0;overflow:hidden;transition:max-height .3s cubic-bezier(.4,0,.2,1)}}
+.insights.open .ins-body{{max-height:1600px;margin-top:8px}}
 
 /* ── WEARABLE ────────────────────────────────────────────── */
 .htile{{
@@ -1348,13 +1369,17 @@ footer{{
       <button class="darr" id="date-next" onclick="navDate(1)"  aria-label="Next day">&#8250;</button>
     </div>
 
-    <!-- AI INSIGHTS — day-specific, always at top -->
-    <div class="stitle spaced" style="margin-top:0">
-      <span>Coach insights <span class="ai-pill">AI</span></span>
-      <button class="add-toggle" onclick="refreshInsights()" title="Refresh" style="font-size:15px;font-family:inherit">&#8635;</button>
-    </div>
-    <div class="icrd fade-in" id="insights-card">
-      <div class="iload"><span class="spin">&#9675;</span> Analyzing&hellip;</div>
+    <!-- AI INSIGHTS — collapsed banner, expands on tap -->
+    <div class="insights" id="ins-day" style="margin-top:0">
+      <div class="ins-banner" onclick="toggleInsights('day')" role="button" tabindex="0" aria-expanded="false">
+        <span class="ins-spark"><svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M12 2.2l1.7 4.8 4.8 1.7-4.8 1.7L12 15.2l-1.7-4.8L5.5 8.7l4.8-1.7z"/><path d="M18.6 13.4l.82 2.18 2.18.82-2.18.82-.82 2.18-.82-2.18L15.6 16.4l2.18-.82z"/></svg></span>
+        <span class="ins-title">Coach Insights</span>
+        <span class="ins-actions">
+          <span class="ins-refresh" onclick="event.stopPropagation();refreshInsights()" title="Refresh">&#8635;</span>
+          <span class="ins-chev">&#9662;</span>
+        </span>
+      </div>
+      <div class="ins-body"><div class="icrd fade-in" id="insights-card"><div class="iload"><span class="spin">&#9675;</span> Analyzing&hellip;</div></div></div>
     </div>
 
     <!-- MACRO STRIP -->
@@ -1459,13 +1484,17 @@ footer{{
   <!-- WEEK TAB -->
   <div class="tab-panel" id="panel-week">
 
-    <!-- Weekly AI analysis — always visible at top -->
-    <div class="stitle spaced" style="margin-top:4px">
-      <span>Weekly analysis <span class="ai-pill">AI</span></span>
-      <button class="add-toggle" onclick="refreshWeekInsights()" title="Refresh" style="font-size:15px;font-family:inherit">&#8635;</button>
-    </div>
-    <div class="icrd fade-in" id="week-insights-card">
-      <div class="iload"><span class="spin">&#9675;</span> Analyzing&hellip;</div>
+    <!-- Weekly AI analysis — collapsed banner, expands on tap -->
+    <div class="insights" id="ins-week" style="margin-top:4px">
+      <div class="ins-banner" onclick="toggleInsights('week')" role="button" tabindex="0" aria-expanded="false">
+        <span class="ins-spark"><svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M12 2.2l1.7 4.8 4.8 1.7-4.8 1.7L12 15.2l-1.7-4.8L5.5 8.7l4.8-1.7z"/><path d="M18.6 13.4l.82 2.18 2.18.82-2.18.82-.82 2.18-.82-2.18L15.6 16.4l2.18-.82z"/></svg></span>
+        <span class="ins-title">Weekly Analysis</span>
+        <span class="ins-actions">
+          <span class="ins-refresh" onclick="event.stopPropagation();refreshWeekInsights()" title="Refresh">&#8635;</span>
+          <span class="ins-chev">&#9662;</span>
+        </span>
+      </div>
+      <div class="ins-body"><div class="icrd fade-in" id="week-insights-card"><div class="iload"><span class="spin">&#9675;</span> Analyzing&hellip;</div></div></div>
     </div>
 
     <div class="stitle" style="margin-top:20px">Trends</div>
@@ -2787,6 +2816,23 @@ function toggleBio(){{
   if(ch)ch.textContent=open?'▲':'▼';
 }}
 // ── Insights ──────────────────────────────────────────────────────────────
+function toggleInsights(which){{
+  var el=document.getElementById('ins-'+which);
+  if(!el)return;
+  var open=el.classList.toggle('open');
+  var b=el.querySelector('.ins-banner');
+  if(b)b.setAttribute('aria-expanded',open?'true':'false');
+}}
+// Auto-refresh the analysis every 3h; a manual refresh resets this timer.
+var _insAutoTimer=null;
+function _resetInsAuto(){{
+  if(_insAutoTimer) clearInterval(_insAutoTimer);
+  _insAutoTimer=setInterval(function(){{
+    _insightsLoaded=false;_insightsDate='';_weekInsightsLoaded=false;
+    loadInsights();
+    if(_activeTab==='week') loadWeekInsights();
+  }},10800000);  // 3 hours
+}}
 function renderInsights(ins){{
   var el=document.getElementById('insights-card');
   if(!el)return;
@@ -2800,6 +2846,7 @@ function renderInsights(ins){{
 }}
 
 async function refreshInsights(){{
+  _resetInsAuto();
   _insightsLoaded=false;_insightsDate='';
   var el=document.getElementById('insights-card');
   if(el)el.innerHTML='<div class="iload"><span class="spin">&#9675;</span> Analyzing&hellip;</div>';
@@ -2842,6 +2889,7 @@ function renderWeekInsights(ins){{
 }}
 
 async function refreshWeekInsights(){{
+  _resetInsAuto();
   _weekInsightsLoaded=false;
   var el=document.getElementById('week-insights-card');
   if(el)el.innerHTML='<div class="iload"><span class="spin">&#9675;</span> Analyzing&hellip;</div>';
@@ -3412,15 +3460,10 @@ document.addEventListener('keydown',function(e){{
   }};
 }})();
 
-// On mobile, collapse insights by default
-(function(){{
-  if(window.matchMedia('(max-width:940px)').matches){{
-    var det=document.getElementById('insights-details');
-    if(det)det.removeAttribute('open');
-  }}
-}})();
+// Coach Insights now collapse natively (banner-only by default on all views).
 
 init();
+_resetInsAuto();   // start the 3h auto-refresh for Coach Insights
 setInterval(()=>{{
   delete _dayCache[_todayStr];
   if(_viewingDate===_todayStr) refreshCurrent();
