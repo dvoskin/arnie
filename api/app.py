@@ -865,6 +865,55 @@ async def get_stats(token: str, date: Optional[str] = Query(None)):
         return await _build_stats_for_user(db, user, target_date=target_date)
 
 
+@app.get("/api/conversation/{token}")
+async def get_conversation(token: str, limit: int = Query(120, ge=1, le=400)):
+    """
+    Unified conversation thread for the dashboard's live-chat widget.
+
+    Consolidates every turn across ALL of a user's linked identities
+    (Telegram + iMessage) into one chronological thread, so the dashboard
+    shows the full back-and-forth regardless of which channel it happened on.
+    Read-only. Each row is one turn: the user's message + Arnie's reply.
+    """
+    from sqlalchemy import select, desc
+    from db.models import ConversationLog, User as UserModel
+
+    async with AsyncSessionLocal() as db:
+        user = await get_user_by_webhook_token(db, token)
+        if not user:
+            raise HTTPException(status_code=401, detail="Invalid token")
+
+        # Resolve to the canonical account, then gather every identity that
+        # rolls up to it. The token's user may itself be a linked secondary
+        # identity, so normalize to the canonical id first, then collect siblings.
+        canonical_id = user.linked_to_user_id or user.id
+        linked_ids = (await db.execute(
+            select(UserModel.id).where(UserModel.linked_to_user_id == canonical_id)
+        )).scalars().all()
+        all_ids = list({canonical_id, user.id, *linked_ids})
+
+        rows = (await db.execute(
+            select(ConversationLog)
+            .where(ConversationLog.user_id.in_(all_ids))
+            .order_by(desc(ConversationLog.timestamp))
+            .limit(limit)
+        )).scalars().all()
+
+        turns = []
+        platforms = set()
+        for c in reversed(rows):  # oldest → newest for natural reading order
+            platform = c.platform or "telegram"
+            platforms.add(platform)
+            turns.append({
+                "user": c.raw_message or "",
+                "arnie": c.response or "",
+                "ts": c.timestamp.isoformat() if c.timestamp else None,
+                "platform": platform,
+                "source": c.source_type or "text",
+            })
+        return {"turns": turns, "platforms": sorted(platforms)}
+
+
 @app.get("/api/profile/{token}")
 async def get_profile(token: str, refresh: bool = False):
     """
@@ -2420,21 +2469,30 @@ async def apple_health_guide(token: str = Query(...)):
 @app.get("/health/apple/shortcut")
 async def download_apple_shortcut(token: str = Query(...)):
     """
-    Serve a pre-built .shortcut plist for one-tap Arnie Health setup.
-    The user's token is baked into the URL action so no manual editing is needed.
-    On iPhone, opening this URL in Safari prompts "Add to Shortcuts".
+    Serve the signed Arnie Health .shortcut file.
+    The file is a pre-signed template — users paste their personal sync URL
+    (shown with a Copy button on the guide page) when iOS prompts them on import.
+    Token is validated so the endpoint isn't publicly crawlable, but the same
+    signed binary is served to every valid user.
     """
     async with AsyncSessionLocal() as db:
         user = await get_user_by_webhook_token(db, token)
         if not user:
             return JSONResponse({"error": "Invalid or expired token."}, status_code=401)
 
-    from wearables.shortcut_generator import generate_arnie_shortcut
     from fastapi.responses import Response as _Response
 
-    base_url = os.getenv("RENDER_EXTERNAL_URL", "http://localhost:10000").rstrip("/")
-    endpoint = f"{base_url}/health/apple?token={token}"
-    shortcut_bytes = generate_arnie_shortcut(endpoint)
+    signed_path = os.path.join(
+        os.path.dirname(__file__), "..", "wearables", "arnie_health.shortcut"
+    )
+    try:
+        with open(signed_path, "rb") as fh:
+            shortcut_bytes = fh.read()
+    except FileNotFoundError:
+        return JSONResponse(
+            {"error": "Shortcut file not found on server. Contact support."},
+            status_code=500,
+        )
 
     return _Response(
         content=shortcut_bytes,

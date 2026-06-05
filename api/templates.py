@@ -299,6 +299,112 @@ body{{
 .bn-item.active{{color:var(--ac)}}
 .bn-item.active .bn-ico{{transform:translateY(-2px)}}
 
+/* ── LIVE CHAT WIDGET (floating · consolidated Telegram + iMessage) ─── */
+.cw-fab{{
+  position:fixed;z-index:90;bottom:24px;right:24px;
+  width:56px;height:56px;border-radius:50%;cursor:pointer;
+  border:1px solid var(--bd);background:linear-gradient(180deg,var(--sf3),var(--sf2));
+  color:var(--ac);display:grid;place-items:center;
+  box-shadow:0 10px 30px rgba(0,0,0,.35),0 0 0 1px rgba(255,255,255,.04);
+  backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
+  transition:transform .2s cubic-bezier(.2,.7,.2,1),border-color .2s,color .2s;
+}}
+.cw-fab:hover{{transform:translateY(-2px);border-color:var(--ac)}}
+.cw-fab:active{{transform:scale(.93)}}
+.cw-fab .cw-ico-x{{display:none}}
+.cw-fab.open .cw-ico-chat{{display:none}}
+.cw-fab.open .cw-ico-x{{display:block}}
+.cw-fab.open{{color:var(--tx)}}
+.cw-dot{{
+  position:absolute;top:-1px;right:-1px;width:14px;height:14px;border-radius:50%;
+  background:var(--ac);border:2px solid var(--bg);display:none;
+}}
+.cw-fab.unread .cw-dot{{display:block;animation:cwpulse 1.8s ease-in-out infinite}}
+@keyframes cwpulse{{0%,100%{{transform:scale(1);opacity:1}}50%{{transform:scale(1.18);opacity:.75}}}}
+
+.cw-panel{{
+  position:fixed;z-index:89;bottom:92px;right:24px;
+  width:380px;height:min(560px,72vh);
+  display:flex;flex-direction:column;overflow:hidden;
+  background:var(--hbg);border:1px solid var(--bd);border-radius:18px;
+  box-shadow:0 24px 60px rgba(0,0,0,.45),0 0 0 1px rgba(255,255,255,.05);
+  backdrop-filter:blur(24px) saturate(140%);-webkit-backdrop-filter:blur(24px) saturate(140%);
+  opacity:0;transform:translateY(12px) scale(.98);pointer-events:none;
+  transition:opacity .2s ease,transform .22s cubic-bezier(.2,.7,.2,1);
+}}
+.cw-panel.open{{opacity:1;transform:none;pointer-events:auto}}
+.cw-head{{
+  display:flex;align-items:center;justify-content:space-between;gap:10px;
+  padding:13px 14px;border-bottom:1px solid var(--bd);flex-shrink:0;
+}}
+.cw-head-l{{display:flex;align-items:center;gap:10px;min-width:0}}
+.cw-ava{{
+  width:34px;height:34px;border-radius:50%;flex-shrink:0;position:relative;
+  background:radial-gradient(circle at 35% 30%,#86efac,#6366f1 72%);
+  border:1px solid rgba(255,255,255,.18);
+}}
+.cw-ava::after{{
+  content:'';position:absolute;right:-1px;bottom:-1px;width:9px;height:9px;
+  border-radius:50%;background:var(--ac);border:2px solid var(--bg);
+}}
+.cw-title{{font-size:14px;font-weight:600;color:var(--tx);line-height:1.1}}
+.cw-sub{{font-size:11px;color:var(--mu);margin-top:2px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}
+.cw-close{{
+  background:var(--sf2);border:1px solid var(--bd);color:var(--mu);
+  width:30px;height:30px;border-radius:9px;cursor:pointer;font-size:15px;
+  display:grid;place-items:center;flex-shrink:0;transition:all .15s;
+}}
+.cw-close:hover{{border-color:var(--ac);color:var(--ac)}}
+.cw-thread{{
+  flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:0;
+}}
+.cw-day{{
+  align-self:center;margin:12px 0 4px;padding:3px 10px;border-radius:999px;
+  background:var(--sf);border:1px solid var(--bd);
+  font-family:'Geist Mono','SF Mono',monospace;font-size:9px;letter-spacing:.08em;
+  text-transform:uppercase;color:var(--mu);
+}}
+.cw-row{{display:flex;flex-direction:column;max-width:86%;margin-top:8px}}
+.cw-row.me{{align-self:flex-end;align-items:flex-end}}
+.cw-row.ar{{align-self:flex-start;align-items:flex-start}}
+.cw-bubble{{
+  padding:8px 12px;border-radius:15px;font-size:13.5px;line-height:1.45;
+  white-space:pre-wrap;word-break:break-word;
+}}
+.cw-row.ar .cw-bubble{{
+  background:var(--sf2);color:var(--tx);border:1px solid var(--bd);
+  border-bottom-left-radius:4px;
+}}
+.cw-row.me .cw-bubble{{
+  background:var(--ac-dim);color:var(--tx);border:1px solid rgba(var(--ac-rgb),.35);
+  border-bottom-right-radius:4px;
+}}
+.cw-meta{{
+  font-size:9.5px;color:var(--mu);margin-top:3px;padding:0 3px;
+  font-family:'Geist Mono','SF Mono',monospace;letter-spacing:.03em;
+  display:flex;align-items:center;gap:5px;
+}}
+.cw-chan{{
+  text-transform:uppercase;letter-spacing:.05em;font-size:8.5px;
+  padding:1px 5px;border-radius:5px;border:1px solid var(--bd);color:var(--mu);
+}}
+.cw-chan.tg{{color:var(--bl);border-color:rgba(59,130,246,.35)}}
+.cw-chan.im{{color:var(--ac);border-color:rgba(var(--ac-rgb),.35)}}
+.cw-state{{margin:auto;text-align:center;color:var(--mu);font-size:13px;padding:24px;line-height:1.55}}
+.cw-foot{{
+  flex-shrink:0;padding:8px 14px;border-top:1px solid var(--bd);
+  font-size:9.5px;color:var(--mu);text-align:center;
+  font-family:'Geist Mono','SF Mono',monospace;letter-spacing:.04em;
+}}
+@media(max-width:940px){{
+  .cw-fab{{bottom:calc(82px + env(safe-area-inset-bottom));right:16px}}
+  .cw-panel{{
+    bottom:calc(150px + env(safe-area-inset-bottom));right:12px;left:12px;
+    width:auto;height:min(60vh,440px);
+  }}
+}}
+
 /* ── RESPONSIVE ──────────────────────────────────────────── */
 @media(max-width:940px){{
   .shell{{grid-template-columns:1fr}}
@@ -3338,6 +3444,87 @@ setInterval(()=>{{
   delete _dayCache[_todayStr];
   if(_viewingDate===_todayStr) refreshCurrent();
 }}, 5*60*1000);
+
+// ── Live chat widget — consolidated Telegram + iMessage thread ─────────────
+var _cwOpen=false, _cwTimer=null, _cwSeenTs=null, _cwSig='';
+function _cwChan(p){{return(String(p||'').indexOf('imessage')>-1||String(p||'').indexOf('im:')>-1)?'im':'tg';}}
+async function _cwFetch(limit){{
+  var r=await fetch('/api/conversation/'+TOKEN+(limit?('?limit='+limit):''));
+  if(!r.ok) throw new Error('HTTP '+r.status);
+  return r.json();
+}}
+function toggleChatWidget(){{
+  _cwOpen=!_cwOpen;
+  var fab=document.getElementById('cw-fab');
+  var panel=document.getElementById('cw-panel');
+  fab.classList.toggle('open',_cwOpen);
+  panel.classList.toggle('open',_cwOpen);
+  panel.setAttribute('aria-hidden',_cwOpen?'false':'true');
+  if(_cwOpen){{
+    fab.classList.remove('unread');
+    loadChatWidget(true);
+    if(_cwTimer) clearInterval(_cwTimer);
+    _cwTimer=setInterval(function(){{loadChatWidget(false);}},25000);
+  }}else if(_cwTimer){{clearInterval(_cwTimer);_cwTimer=null;}}
+}}
+async function loadChatWidget(initial){{
+  var thread=document.getElementById('cw-thread');
+  if(initial) thread.innerHTML='<div class="cw-state">Loading your conversation&hellip;</div>';
+  try{{
+    var data=await _cwFetch(120);
+    renderChatThread(data.turns||[],initial);
+    var sub=document.getElementById('cw-sub');
+    var plats=data.platforms||[];
+    if(sub){{
+      if(plats.length>1) sub.textContent='Telegram + iMessage \\u00b7 one thread';
+      else if(plats[0]) sub.textContent=(plats[0]==='imessage'?'iMessage':'Telegram')+' \\u00b7 your full thread';
+      else sub.textContent='Your full conversation';
+    }}
+  }}catch(e){{
+    if(initial) thread.innerHTML='<div class="cw-state">Could not load the conversation. Tap the bubble to retry.</div>';
+  }}
+}}
+function renderChatThread(turns,initial){{
+  var thread=document.getElementById('cw-thread');
+  if(!turns.length){{
+    thread.innerHTML='<div class="cw-state">No messages yet. Your chats with Arnie on Telegram and iMessage will show up here.</div>';
+    _cwSig='';return;
+  }}
+  var last=turns[turns.length-1];
+  var sig=turns.length+'|'+(last.ts||'');
+  if(!initial && sig===_cwSig) return;   // nothing new — skip re-render (no scroll jump)
+  _cwSig=sig; _cwSeenTs=last.ts||_cwSeenTs;
+  var wasNear=thread.scrollHeight-thread.scrollTop-thread.clientHeight<80;
+  var html='',prevDay='';
+  for(var i=0;i<turns.length;i++){{
+    var t=turns[i];
+    var d=t.ts?new Date(t.ts):null;
+    var day=d?d.toLocaleDateString('en-US',{{weekday:'short',month:'short',day:'numeric'}}):'';
+    if(day && day!==prevDay){{html+='<div class="cw-day">'+esc(day)+'</div>';prevDay=day;}}
+    var time=d?d.toLocaleTimeString('en-US',{{hour:'numeric',minute:'2-digit'}}):'';
+    var chan=_cwChan(t.platform), chanLbl=chan==='im'?'iMessage':'Telegram';
+    var ico=t.source==='voice'?'\\ud83c\\udfa4 ':((t.source==='image'||t.source==='photo')?'\\ud83d\\udcf7 ':'');
+    if((t.user||'').trim()){{
+      html+='<div class="cw-row me"><div class="cw-bubble">'+ico+esc(t.user)+'</div>'
+          +'<div class="cw-meta"><span class="cw-chan '+chan+'">'+chanLbl+'</span>'+esc(time)+'</div></div>';
+    }}
+    if((t.arnie||'').trim()){{
+      html+='<div class="cw-row ar"><div class="cw-bubble">'+esc(t.arnie)+'</div></div>';
+    }}
+  }}
+  thread.innerHTML=html;
+  if(initial||wasNear) thread.scrollTop=thread.scrollHeight;
+}}
+// While closed, a cheap 1-row poll flags the bubble when a new message lands.
+async function _cwIdleCheck(){{
+  if(_cwOpen||_cwSeenTs==null) return;
+  try{{
+    var data=await _cwFetch(1);
+    var t=(data.turns||[])[0];
+    if(t&&t.ts&&t.ts>_cwSeenTs) document.getElementById('cw-fab').classList.add('unread');
+  }}catch(e){{}}
+}}
+setInterval(_cwIdleCheck,90000);
 </script>
 
 <!-- LOG MODAL — direct body child so position:fixed works across all containers -->
@@ -3403,6 +3590,27 @@ setInterval(()=>{{
     </div>
   </div>
 </div>
+
+<!-- LIVE CHAT WIDGET — floating, consolidated Telegram + iMessage thread -->
+<div class="cw-panel" id="cw-panel" aria-hidden="true" aria-label="Your conversation with Arnie">
+  <div class="cw-head">
+    <div class="cw-head-l">
+      <span class="cw-ava"></span>
+      <div style="min-width:0">
+        <div class="cw-title">Arnie</div>
+        <div class="cw-sub" id="cw-sub">Your full conversation</div>
+      </div>
+    </div>
+    <button class="cw-close" onclick="toggleChatWidget()" aria-label="Close">&#215;</button>
+  </div>
+  <div class="cw-thread" id="cw-thread"><div class="cw-state">Loading your conversation&hellip;</div></div>
+  <div class="cw-foot">Read-only &middot; Telegram + iMessage &middot; updates live</div>
+</div>
+<button class="cw-fab" id="cw-fab" onclick="toggleChatWidget()" aria-label="Open conversation with Arnie">
+  <span class="cw-ico-chat"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg></span>
+  <span class="cw-ico-x"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg></span>
+  <span class="cw-dot"></span>
+</button>
 </body>
 </html>"""
 
@@ -3575,6 +3783,17 @@ footer{{text-align:center;padding:24px 0 0;color:#2a3040;font-size:12px}}
 }}
 .ot-title{{font-size:20px;font-weight:800;color:#eef2ff;letter-spacing:-.3px;margin-bottom:6px}}
 .ot-sub{{font-size:14px;color:#546070;line-height:1.6;margin-bottom:14px}}
+.ot-step{{
+  display:flex;align-items:flex-start;gap:10px;
+  background:rgba(255,255,255,.025);border:1px solid rgba(255,255,255,.07);
+  border-radius:12px;padding:11px 13px;font-size:14px;color:#c9d4e8;line-height:1.5;
+}}
+.ot-n{{
+  width:22px;height:22px;border-radius:50%;flex-shrink:0;
+  background:rgba(0,230,118,.12);border:1px solid rgba(0,230,118,.25);
+  color:#00e676;font-size:12px;font-weight:800;
+  display:flex;align-items:center;justify-content:center;margin-top:1px;
+}}
 .ot-prereq{{
   background:rgba(245,158,11,.06);border:1px solid rgba(245,158,11,.2);
   border-radius:11px;padding:11px 13px;font-size:13px;color:#8a7050;
@@ -3626,28 +3845,31 @@ footer{{text-align:center;padding:24px 0 0;color:#2a3040;font-size:12px}}
 <main>
 
 <h1>Connect Apple Health</h1>
-<p class="sub">5 steps, ~5 minutes. Use the <b>Copy</b> buttons so you don't have to type anything.</p>
+<p class="sub">Use the shortcut below for the quickest setup, or follow the manual steps if preferred.</p>
 
 {f"""
 <!-- ONE-TAP SETUP -->
 <div class="onetap">
   <div class="ot-badge">Recommended</div>
-  <div class="ot-title">Add in one tap</div>
-  <div class="ot-sub">Your token is already baked in &mdash; no URL building or variable insertion needed.</div>
-  <div class="ot-prereq">
-    <b>Before tapping:</b> open <b>Settings &rarr; Shortcuts</b> and turn on
-    <b>Allow Untrusted Shortcuts</b>. You only need to do this once.
+  <div class="ot-title">3-step setup</div>
+  <div class="ot-sub">No variable insertion needed. Copy, download, paste &mdash; done.</div>
+
+  <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:14px">
+    <div class="ot-step"><span class="ot-n">1</span><div><b>Copy your sync URL</b> using the button below</div></div>
+    <div class="ot-step"><span class="ot-n">2</span><div>Open this page in <b>Safari</b> &rarr; tap <b>Download Shortcut</b> &rarr; tap <b>Add Shortcut</b></div></div>
+    <div class="ot-step"><span class="ot-n">3</span><div>When iOS asks <b>"Your Arnie sync URL"</b> &mdash; paste what you copied</div></div>
   </div>
-  <a href="{shortcut_url}" class="ot-btn" download="Arnie Health.shortcut">
-    <span style="font-size:20px">&#11015;</span> Download Shortcut
+
+  <div class="crow" style="margin-bottom:10px">
+    <div class="cval" id="ep-url" style="font-size:11px">{endpoint}</div>
+    <button class="cbtn" onclick="cp(document.getElementById('ep-url').textContent.trim(),this)">Copy URL</button>
+  </div>
+
+  <a href="{shortcut_url}" class="ot-btn">
+    <span style="font-size:18px">&#11015;</span> Download Shortcut
   </a>
-  <div class="ot-hint">
-    Must open this page in <b>Safari</b> (not Telegram).<br>
-    Tap the button &rarr; tap <b>Allow</b> &rarr; tap <b>Add Shortcut</b>.
-  </div>
-  <div style="margin-top:12px;text-align:center">
-    <button class="cbtn" style="font-size:12px;padding:6px 14px" onclick="cp(window.location.href,this)">Copy page link</button>
-    <div style="font-size:11px;color:#2a3040;margin-top:4px">paste in Safari if you&rsquo;re viewing this inside Telegram</div>
+  <div class="ot-hint" style="margin-top:10px">
+    Not in Safari? &nbsp;<button class="cbtn" style="font-size:11px;padding:4px 11px" onclick="cp(window.location.href,this)">Copy page link</button>&nbsp; then paste in Safari.
   </div>
 </div>
 <div class="div-or"><span>or set up manually</span></div>
