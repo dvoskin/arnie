@@ -2160,7 +2160,8 @@ async def dashboard(token: str):
             return HTMLResponse("<h2>Invalid or expired link.</h2>", status_code=401)
         name = user.name or ""
 
-    return HTMLResponse(_dashboard_html(token, name=name))
+    bot_username = os.getenv("TELEGRAM_BOT_USERNAME", "Arnie_1026_Bot")
+    return HTMLResponse(_dashboard_html(token, name=name, bot_username=bot_username))
 
 
 

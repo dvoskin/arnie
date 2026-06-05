@@ -17,7 +17,7 @@ def _dashboard_title(name: str) -> str:
     return f"ArnieOS ⏐ {owner} Dashboard"
 
 
-def _dashboard_html(token: str, name: str = "") -> str:
+def _dashboard_html(token: str, name: str = "", bot_username: str = "Arnie_1026_Bot") -> str:
     return f"""<!DOCTYPE html>
 <html lang="en" data-theme="dark">
 <head>
@@ -302,18 +302,24 @@ body{{
 /* ── LIVE CHAT WIDGET (floating · consolidated Telegram + iMessage) ─── */
 .cw-fab{{
   position:fixed;z-index:90;bottom:24px;right:24px;
-  width:54px;height:54px;border-radius:50%;cursor:pointer;
-  border:1px solid var(--bd);background:var(--sf2);
+  width:54px;height:54px;border-radius:18px;cursor:pointer;
+  border:1px solid rgba(var(--ac-rgb),.30);background:var(--ac-dim);
   color:var(--ac);display:grid;place-items:center;
   box-shadow:0 8px 24px rgba(0,0,0,.30);
-  transition:transform .2s cubic-bezier(.2,.7,.2,1),border-color .2s,color .2s;
+  transition:transform .2s cubic-bezier(.2,.7,.2,1),border-color .2s,color .2s,
+             box-shadow .2s,background .2s,border-radius .25s cubic-bezier(.2,.7,.2,1);
 }}
-.cw-fab:hover{{transform:translateY(-2px);border-color:var(--ac)}}
+[data-theme="dark"] .cw-fab{{box-shadow:0 8px 26px rgba(0,0,0,.45),0 0 16px rgba(var(--ac-rgb),.16)}}
+.cw-fab:hover{{transform:translateY(-2px);border-color:var(--ac);border-radius:50%}}
+[data-theme="dark"] .cw-fab:hover{{box-shadow:0 10px 30px rgba(0,0,0,.5),0 0 24px rgba(var(--ac-rgb),.28)}}
 .cw-fab:active{{transform:scale(.93)}}
 .cw-fab .cw-ico-x{{display:none}}
 .cw-fab.open .cw-ico-chat{{display:none}}
 .cw-fab.open .cw-ico-x{{display:block}}
-.cw-fab.open{{color:var(--tx)}}
+.cw-fab.open{{
+  color:var(--tx);background:var(--sf2);border-color:var(--bd);border-radius:50%;
+}}
+[data-theme="dark"] .cw-fab.open{{box-shadow:0 8px 24px rgba(0,0,0,.4)}}
 
 .cw-panel{{
   position:fixed;z-index:89;bottom:90px;right:24px;
@@ -364,6 +370,16 @@ body{{
   font-family:'Geist Mono','SF Mono',monospace;letter-spacing:.03em;
 }}
 .cw-state{{margin:auto;text-align:center;color:var(--mu);font-size:13px;padding:24px;line-height:1.55}}
+/* Minimal action: opens the Arnie chat in Telegram to start a new message. */
+.cw-tg{{
+  flex-shrink:0;display:flex;align-items:center;justify-content:center;gap:8px;
+  padding:11px 14px;border-top:1px solid var(--bd);
+  color:var(--mu);text-decoration:none;font-size:12px;font-weight:500;
+  transition:color .15s,background .15s;
+}}
+.cw-tg:hover{{color:var(--ac);background:var(--ac-dim)}}
+.cw-tg svg{{flex-shrink:0;opacity:.85}}
+.cw-tg:hover svg{{opacity:1}}
 @media(max-width:940px){{
   .cw-fab{{bottom:calc(82px + env(safe-area-inset-bottom));right:16px}}
   .cw-panel{{
@@ -3557,9 +3573,13 @@ function renderChatThread(turns,initial){{
     <button class="cw-close" onclick="toggleChatWidget()" aria-label="Close">&#215;</button>
   </div>
   <div class="cw-thread" id="cw-thread"><div class="cw-state">Loading&hellip;</div></div>
+  <a class="cw-tg" href="https://t.me/{bot_username}" target="_blank" rel="noopener">
+    <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M22 3 11 14"/><path d="M22 3 15 22l-4-8-8-4z"/></svg>
+    New message on Telegram
+  </a>
 </div>
 <button class="cw-fab" id="cw-fab" onclick="toggleChatWidget()" aria-label="Open conversation with Arnie">
-  <span class="cw-ico-chat"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg></span>
+  <span class="cw-ico-chat"><svg viewBox="0 0 24 24" width="23" height="23" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4.5H6.5A3.5 3.5 0 0 0 3 8v3.5A3.5 3.5 0 0 0 6.5 15H8v3.2l3.8-3.2H16a3.5 3.5 0 0 0 3.5-3.5V8A3.5 3.5 0 0 0 16 4.5z"/><path d="M19.6 2.4l.66 1.74 1.74.66-1.74.66-.66 1.74-.66-1.74-1.74-.66 1.74-.66z" fill="currentColor" stroke="none"/></svg></span>
   <span class="cw-ico-x"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg></span>
 </button>
 </body>
