@@ -935,6 +935,13 @@ body{{
   width:6px;height:6px;border-radius:50%;flex-shrink:0;align-self:center;
   background:#f0a500;opacity:.7;box-shadow:0 0 5px rgba(240,165,0,.5);
 }}
+.pf-legend{{
+  display:flex;flex-wrap:wrap;gap:6px 15px;margin:15px 2px 2px;
+  font-size:10.5px;color:var(--mu);opacity:.7;line-height:1.4;
+}}
+.pf-legend span{{display:inline-flex;align-items:center;gap:5px}}
+.pf-dot{{width:5px;height:5px;border-radius:50%;display:inline-block;flex-shrink:0}}
+.pf-x{{font-size:9px;font-style:normal;opacity:.85}}
 .chips{{display:flex;flex-wrap:wrap;gap:5px;justify-content:flex-end}}
 .chip{{
   font-size:11.5px;font-weight:500;color:var(--tx2);background:var(--sf2);
@@ -951,6 +958,13 @@ body{{
   flex-shrink:0;padding-top:4px;
 }}
 .ai-read-txt{{font-size:13.5px;line-height:1.5;color:var(--tx)}}
+.ai-pill{{
+  font-family:'Geist Mono','SF Mono',monospace;font-size:8px;font-weight:600;
+  letter-spacing:.09em;color:var(--ac);border:1px solid var(--ac);border-radius:4px;
+  padding:1px 4px;vertical-align:middle;opacity:.75;
+}}
+.ai-bullets{{margin:0;padding-left:17px;display:flex;flex-direction:column;gap:8px}}
+.ai-bullets li{{font-size:13.5px;line-height:1.5;color:var(--tx)}}
 .ancrd{{
   background:var(--sf);border:1px solid var(--bd);border-radius:16px;padding:16px;
   backdrop-filter:blur(16px);box-shadow:var(--sh);margin-bottom:9px;transition:background .3s;
@@ -1367,8 +1381,8 @@ footer{{
     </div>
 
     <!-- AI INSIGHTS — collapsed banner, expands on tap -->
-    <div class="insights" id="ins-day" style="margin-top:0">
-      <div class="ins-banner" onclick="toggleInsights('day')" role="button" tabindex="0" aria-expanded="false">
+    <div class="insights open" id="ins-day" style="margin-top:0">
+      <div class="ins-banner" onclick="toggleInsights('day')" role="button" tabindex="0" aria-expanded="true">
         <span class="ins-spark"><svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M12 2.2l1.7 4.8 4.8 1.7-4.8 1.7L12 15.2l-1.7-4.8L5.5 8.7l4.8-1.7z"/><path d="M18.6 13.4l.82 2.18 2.18.82-2.18.82-.82 2.18-.82-2.18L15.6 16.4l2.18-.82z"/></svg></span>
         <span class="ins-title">Coach Insights</span>
         <span class="ins-actions">
@@ -1484,8 +1498,8 @@ footer{{
   <div class="tab-panel" id="panel-week">
 
     <!-- Weekly AI analysis — collapsed banner, expands on tap -->
-    <div class="insights" id="ins-week" style="margin-top:4px">
-      <div class="ins-banner" onclick="toggleInsights('week')" role="button" tabindex="0" aria-expanded="false">
+    <div class="insights open" id="ins-week" style="margin-top:4px">
+      <div class="ins-banner" onclick="toggleInsights('week')" role="button" tabindex="0" aria-expanded="true">
         <span class="ins-spark"><svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M12 2.2l1.7 4.8 4.8 1.7-4.8 1.7L12 15.2l-1.7-4.8L5.5 8.7l4.8-1.7z"/><path d="M18.6 13.4l.82 2.18 2.18.82-2.18.82-.82 2.18-.82-2.18L15.6 16.4l2.18-.82z"/></svg></span>
         <span class="ins-title">Weekly Analysis</span>
         <span class="ins-actions">
@@ -1527,7 +1541,7 @@ footer{{
     <!-- AI Profile — bio + learned attributes -->
     <div id="ai-profile-section" style="display:none">
       <div class="stitle spaced" style="margin-top:4px;cursor:pointer" onclick="toggleBio()">
-        <span>Arnie's profile <span id="bio-chevron" style="font-size:11px;opacity:.5">▼</span></span>
+        <span>Arnie's profile <span class="ai-pill">AI</span> <span id="bio-chevron" style="font-size:11px;opacity:.5">▼</span></span>
         <button class="add-toggle" onclick="event.stopPropagation();refreshAIProfile()" title="Refresh">&#8635;</button>
       </div>
       <!-- Bio card — collapsed by default -->
@@ -1660,15 +1674,18 @@ async function fetchStats(d){{
 var _insightsLoaded=false;
 var _insightsDate='';  // which date the loaded insights are for
 
-async function fetchInsights(dateStr){{
+async function fetchInsights(dateStr, period){{
   try{{
     var ctrl=new AbortController();
     var tid=setTimeout(function(){{ctrl.abort();}},25000);
-    var url=INSIGHTS_API+(dateStr?'?date='+dateStr:'');
+    var qs=[];
+    if(dateStr)qs.push('date='+dateStr);
+    if(period)qs.push('period='+period);
+    var url=INSIGHTS_API+(qs.length?'?'+qs.join('&'):'');
     var r=await fetch(url,{{signal:ctrl.signal}});
     clearTimeout(tid);
     if(!r.ok)return[];
-    return(await r.json()).insights||[];
+    return((await r.json()).insights||[]).slice(0,4);  // cap 4 bullets
   }}catch(e){{return[]}}
 }}
 
@@ -2660,12 +2677,22 @@ function renderAIProfile(data) {{
         }}
       }});
       if (rows.length >= 2) {{
-        bioEl.innerHTML = '<div class="ai-read">' + rows.map(function(r) {{
+        bioEl.innerHTML = '<div class="ai-read">' + rows.slice(0, 4).map(function(r) {{
           return '<div class="ai-read-row"><span class="ai-read-tag">' + esc(r[0]) +
             '</span><span class="ai-read-txt">' + esc(r[1]) + '</span></div>';
         }}).join('') + '</div>';
       }} else {{
-        bioEl.innerHTML = '<p style="margin:0">' + esc(data.bio) + '</p>';
+        // Older unstructured paragraph bio → break into sentence bullets (cap 4)
+        // so it reads as coaching analysis, not an essay.
+        // Split on sentence end (.!? + space + capital) so decimals like 8.8lb
+        // and 40-50g stay intact.
+        var sents = String(data.bio).replace(/\\s+/g, ' ').trim()
+          .replace(/([.!?])\\s+(?=[A-Z])/g, '$1\\u0001').split('\\u0001')
+          .map(function(s){{return s.trim();}})
+          .filter(function(s){{return s.length > 3;}}).slice(0, 4);
+        bioEl.innerHTML = sents.length
+          ? '<ul class="ai-bullets">' + sents.map(function(s){{return '<li>' + esc(s) + '</li>';}}).join('') + '</ul>'
+          : '<p style="margin:0">' + esc(data.bio) + '</p>';
       }}
     }} else {{
       bioEl.innerHTML = '<p style="margin:0;color:var(--mu);font-style:italic">Your read builds as Arnie learns you — keep logging and chatting.</p>';
@@ -2736,6 +2763,13 @@ function renderAIProfile(data) {{
           '<div class="inrow-right"><span class="inval">' + esc(c.value) + '</span>' + confDot + rm + '</div></div>';
       }}).join('') + '</div></div>';
   }}
+
+  // Super-subtle legend: what the dots mean + how to remove a custom item.
+  html += '<div class="pf-legend">' +
+    '<span><i class="pf-dot" style="background:var(--mu)"></i>learned from your activity</span>' +
+    '<span><i class="pf-dot" style="background:#f0a500"></i>still learning, unconfirmed</span>' +
+    (custom.length ? '<span><i class="pf-x">&#10005;</i>tap to remove a custom item</span>' : '') +
+    '</div>';
 
   attrsEl.innerHTML = html;
 }}
@@ -2865,7 +2899,7 @@ function renderInsights(ins){{
     el.innerHTML='<div class="iempty">Not enough data yet — keep logging and Arnie will have more to say.</div>';
     return;
   }}
-  el.innerHTML=ins.map(function(txt){{
+  el.innerHTML=ins.slice(0,4).map(function(txt){{
     return '<div class="irow fade-in"><div class="iico"></div><div class="itxt">'+esc(txt)+'</div></div>';
   }}).join('');
 }}
@@ -2896,7 +2930,7 @@ var _weekInsightsLoaded=false;
 
 async function loadWeekInsights(){{
   if(_weekInsightsLoaded)return;
-  var ins=await fetchInsights();  // reuses day insights (30-day data, relevant for both)
+  var ins=await fetchInsights(null, 'week');  // real weekly analysis (7-day trends)
   _weekInsightsLoaded=!!ins.length;
   renderWeekInsights(ins);
 }}
@@ -2908,7 +2942,7 @@ function renderWeekInsights(ins){{
     el.innerHTML='<div class="iempty">Not enough data yet — keep logging and Arnie will have more to say.</div>';
     return;
   }}
-  el.innerHTML=ins.map(function(txt){{
+  el.innerHTML=ins.slice(0,4).map(function(txt){{
     return '<div class="irow fade-in"><div class="iico"></div><div class="itxt">'+esc(txt)+'</div></div>';
   }}).join('');
 }}
@@ -2921,15 +2955,12 @@ async function refreshWeekInsights(){{
   try{{
     var ctrl=new AbortController();
     var tid=setTimeout(function(){{ctrl.abort();}},30000);
-    var r=await fetch(INSIGHTS_API+'?force=true',{{signal:ctrl.signal}});
+    var r=await fetch(INSIGHTS_API+'?period=week&force=true',{{signal:ctrl.signal}});
     clearTimeout(tid);
     if(!r.ok)throw new Error();
     var ins=((await r.json()).insights)||[];
     _weekInsightsLoaded=!!ins.length;
     renderWeekInsights(ins);
-    // Also update day insights since same data
-    _insightsLoaded=_weekInsightsLoaded;
-    renderInsights(ins);
   }}catch(e){{
     if(el)el.innerHTML='<div class="iempty">Could not load — tap &#8635; to retry.</div>';
   }}

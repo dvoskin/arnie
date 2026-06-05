@@ -603,9 +603,10 @@ async def imessage_start(payload: IMessageSignup, request: Request):
 # ── Stats API ──────────────────────────────────────────────────────────────────
 
 @app.get("/api/insights/{token}")
-async def get_insights_endpoint(token: str, force: bool = False, date: str = None):
-    """Return 3-5 AI-generated coaching insights for the given date (defaults to today)."""
-    from api.insights import get_insights
+async def get_insights_endpoint(token: str, force: bool = False, date: str = None, period: str = "day"):
+    """AI coaching insights. period='day' (default) analyses the viewed day;
+    period='week' consolidates the last 7 days into weekly trend insights."""
+    from api.insights import get_insights, get_week_insights
     from datetime import date as dt_date
     async with AsyncSessionLocal() as db:
         user = await get_user_by_webhook_token(db, token)
@@ -618,7 +619,10 @@ async def get_insights_endpoint(token: str, force: bool = False, date: str = Non
             except ValueError:
                 pass
         stats = await _build_stats_for_user(db, user, target_date=target)
-        insights = await get_insights(user.id, stats, force=force, date_key=date or "")
+        if period == "week":
+            insights = await get_week_insights(user.id, stats, force=force)
+        else:
+            insights = await get_insights(user.id, stats, force=force, date_key=date or "")
     return {"insights": insights}
 
 

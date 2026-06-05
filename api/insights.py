@@ -6,6 +6,7 @@ Cached per-user for 1 hour to keep cost down.
 import json
 import logging
 import time
+from statistics import mean
 from typing import List, Optional
 
 logger = logging.getLogger(__name__)
@@ -163,9 +164,118 @@ DATA:
 
         insights = json.loads(text)
         if isinstance(insights, list):
-            return [str(s) for s in insights if s][:5]
+            return [str(s) for s in insights if s][:4]
     except Exception as e:
         logger.error(f"Insight generation failed: {e}")
+
+    return []
+
+
+def _build_week_summary(stats: dict) -> str:
+    """Compact 7-day rollup for the WEEKLY analysis — averages, consistency,
+    weight movement, and Whoop weekly averages."""
+    user = stats.get("user", {})
+    targets = stats.get("targets") or {}
+    history = stats.get("history") or []
+    weights = stats.get("weights") or []
+    health = stats.get("health") or []
+    tgt_cal = targets.get("calories") or 0
+    tgt_pro = targets.get("protein") or 0
+
+    closed = [h for h in history if h.get("status") == "closed"]
+    last7 = closed[-7:]
+    lines = ["ANALYSIS PERIOD: last 7 logged days (analyse WEEKLY trends, not one day)",
+             f"Daily targets: {tgt_cal} cal / {tgt_pro}g protein", ""]
+
+    if last7:
+        cals = [h.get("calories") or 0 for h in last7]
+        pros = [h.get("protein") or 0 for h in last7]
+        workouts = sum(1 for h in last7 if h.get("workout"))
+        avg_cal = round(mean(cals)) if cals else 0
+        avg_pro = round(mean(pros)) if pros else 0
+        over = sum(1 for c in cals if tgt_cal and c > tgt_cal)
+        under = sum(1 for c in cals if tgt_cal and c < tgt_cal * 0.7)
+        lines.append("NUTRITION (7-day):")
+        lines.append(f"  Avg calories: {avg_cal}/day"
+                     + (f" ({round(avg_cal / tgt_cal * 100)}% of target)" if tgt_cal else ""))
+        lines.append(f"  Avg protein: {avg_pro}g/day"
+                     + (f" ({round(avg_pro / tgt_pro * 100)}% of target)" if tgt_pro else ""))
+        lines.append(f"  Days logged: {len(last7)}/7  |  over target: {over} day(s)  |  well under (<70%): {under} day(s)")
+        lines.append(f"  Workouts completed: {workouts}")
+        lines.append("  Daily calories: " + ", ".join(str(c) for c in cals))
+    else:
+        lines.append("No closed days logged in the past week.")
+
+    if len(weights) >= 2:
+        recent = weights[-7:] if len(weights) >= 7 else weights
+        first, last = recent[0], recent[-1]
+        delta = round(last["lbs"] - first["lbs"], 1)
+        goal_w = user.get("goal_weight_lbs")
+        wl = f"WEIGHT (7-day): {first['lbs']}lb -> {last['lbs']}lb ({'+' if delta >= 0 else ''}{delta}lb)"
+        if goal_w:
+            wl += f"  |  goal {goal_w}lb ({round(abs(last['lbs'] - goal_w), 1)}lb to go)"
+        lines += ["", wl]
+
+    wsnaps = [h for h in health if h.get("source") == "whoop"][-7:]
+    if wsnaps:
+        def _avg(key):
+            vals = [h.get(key) for h in wsnaps if h.get(key) is not None]
+            return mean(vals) if vals else None
+        rec, strn, slp, hrv = _avg("recovery_score"), _avg("strain"), _avg("sleep_hours"), _avg("hrv")
+        wl = ["", f"WEARABLE (Whoop, {len(wsnaps)}-day avg):"]
+        if rec is not None: wl.append(f"  Recovery: {rec:.0f}%")
+        if strn is not None: wl.append(f"  Strain: {strn:.1f}/21")
+        if slp is not None: wl.append(f"  Sleep: {slp:.1f}h/night")
+        if hrv is not None: wl.append(f"  HRV: {hrv:.0f}ms")
+        lines += wl
+
+    return "\n".join(lines)
+
+
+async def generate_week_insights(stats: dict) -> List[str]:
+    """Call Claude for 3-4 WEEKLY trend observations consolidating the week's data."""
+    from core.llm import _get_anthropic, DEFAULT_MODEL, ANTHROPIC_API_KEY
+
+    if not ANTHROPIC_API_KEY():
+        return []
+
+    summary = _build_week_summary(stats)
+    prompt = f"""You are Arnie, a direct fitness coach reviewing a client's WEEKLY data. Write 3 to 4 SHORT coaching observations — each ONE sentence, 10-22 words — that consolidate the week into a data-driven read.
+
+STRICT RULES:
+- Analyse the WEEK as a whole: averages, consistency, weight movement, and Whoop recovery/strain/sleep patterns
+- Reference real weekly numbers ("averaged 2240 cal, ~140 over target across 6 logged days")
+- Connect the dots: tie nutrition adherence to weight movement, recovery to training load
+- Make ONE of them a forward-looking call for next week
+- Do NOT lecture about how many days were tracked; work with what's there. No greetings, no filler.
+
+GOOD examples:
+- "Averaged 2180 cal and 195g protein over 6 days — deficit held, protein dialed in for the cut"
+- "Weight down 0.8lb on a 78% recovery average — sustainable pace, sleep is doing its job"
+- "Three of seven days ran 300+ over target, all weekends — that's the lever for next week"
+
+Return ONLY a valid JSON array of 3-4 strings. No prose.
+
+DATA:
+{summary}
+"""
+    try:
+        client = _get_anthropic()
+        response = await client.messages.create(
+            model=DEFAULT_MODEL(),
+            max_tokens=500,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        text = response.content[0].text.strip()
+        if text.startswith("```"):
+            text = text.split("\n", 1)[1].rsplit("```", 1)[0].strip()
+        if text.startswith("json"):
+            text = text[4:].strip()
+        result = json.loads(text)
+        if isinstance(result, list):
+            return [str(s) for s in result if s][:4]
+    except Exception as e:
+        logger.error(f"Week insight generation failed: {e}")
 
     return []
 
@@ -268,6 +378,20 @@ async def get_insights(user_id: int, stats: dict, force: bool = False,
         return cached[1]
 
     insights = await generate_insights(stats)
+    if insights:
+        _CACHE[cache_key] = (now, insights)
+    return insights
+
+
+async def get_week_insights(user_id: int, stats: dict, force: bool = False) -> List[str]:
+    """Cached WEEKLY insights per user — regenerates if older than the TTL."""
+    now = time.time()
+    cache_key = (user_id, "__week__")
+    cached = _CACHE.get(cache_key)
+    if not force and cached and (now - cached[0]) < _TTL:
+        return cached[1]
+
+    insights = await generate_week_insights(stats)
     if insights:
         _CACHE[cache_key] = (now, insights)
     return insights
