@@ -113,8 +113,8 @@ body{{
   box-shadow:2px 0 20px rgba(0,0,0,.06);
 }}
 .sb-logo{{
-  font-family:'Geist',ui-sans-serif,system-ui,sans-serif;
-  font-size:21px;font-weight:600;letter-spacing:-.01em;color:var(--tx);
+  font-family:'Instrument Serif','Times New Roman',serif;
+  font-size:21px;letter-spacing:-.01em;color:var(--tx);
   display:inline-flex;align-items:center;gap:9px;padding:2px 10px 0;
 }}
 .logo-os{{
@@ -236,8 +236,8 @@ body{{
   color:var(--mu);
 }}
 .whoop-stat-val{{
-  font-family:'Geist',ui-sans-serif,system-ui,sans-serif;
-  font-size:24px;font-weight:600;line-height:1;letter-spacing:-.02em;color:var(--tx);
+  font-family:'Instrument Serif','Times New Roman',serif;
+  font-size:24px;line-height:1;letter-spacing:-.02em;color:var(--tx);
 }}
 .whoop-stat-sub{{
   font-size:11px;color:var(--mu);margin-top:1px;
@@ -250,7 +250,7 @@ body{{
 .whoop-rec-low  .whoop-stat-val{{color:var(--re)}}
 .macro-cell{{background:var(--sf);padding:12px 14px;}}
 .mc-label{{font-family:'Geist Mono','SF Mono',monospace;font-size:9.5px;text-transform:uppercase;letter-spacing:.1em;color:var(--mu);margin-bottom:5px;}}
-.mc-num{{font-family:'Geist',ui-sans-serif,system-ui,sans-serif;font-size:26px;font-weight:600;letter-spacing:-.02em;line-height:1;}}
+.mc-num{{font-family:'Instrument Serif','Times New Roman',serif;font-size:26px;letter-spacing:-.02em;line-height:1;}}
 .mc-sub{{font-size:11.5px;color:var(--mu);margin-top:3px;line-height:1.3;}}
 .mc-bar{{background:var(--sf3);border-radius:999px;height:3px;margin-top:9px;overflow:hidden;}}
 .mc-fill{{height:100%;border-radius:999px;transition:width .8s cubic-bezier(.4,0,.2,1);}}
@@ -413,8 +413,8 @@ body{{
   letter-spacing:.10em;margin-bottom:9px;font-weight:500;
 }}
 .cval{{
-  font-family:'Geist',ui-sans-serif,system-ui,sans-serif;
-  font-size:34px;font-weight:600;line-height:1;letter-spacing:-.02em;
+  font-family:'Instrument Serif','Times New Roman',serif;
+  font-size:34px;font-weight:normal;line-height:1;letter-spacing:-.02em;
 }}
 .csub{{font-size:12px;color:var(--mu);margin-top:5px;font-weight:400}}
 .ptrack{{background:var(--sf2);border-radius:999px;height:3px;margin-top:11px;overflow:hidden}}
@@ -471,10 +471,10 @@ body{{
 /* ── GOAL PROGRESS ───────────────────────────────────────── */
 .goal-card{{background:var(--sf);border:1px solid var(--bd);border-radius:16px;padding:16px;backdrop-filter:blur(16px);box-shadow:var(--sh)}}
 .goal-header{{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px}}
-.goal-title{{font-family:'Geist',ui-sans-serif,system-ui,sans-serif;font-size:24px;font-weight:600;letter-spacing:-.01em}}
+.goal-title{{font-family:'Instrument Serif','Times New Roman',serif;font-size:24px;font-weight:normal;letter-spacing:-.01em}}
 .goal-sub{{font-family:'Geist Mono','SF Mono',monospace;font-size:10px;color:var(--mu);margin-top:4px;letter-spacing:.04em}}
 .goal-current{{text-align:right}}
-.goal-lbs{{font-family:'Geist',ui-sans-serif,system-ui,sans-serif;font-size:34px;font-weight:600;line-height:1;letter-spacing:-.02em}}
+.goal-lbs{{font-family:'Instrument Serif','Times New Roman',serif;font-size:34px;font-weight:normal;line-height:1;letter-spacing:-.02em}}
 .goal-lbs-lbl{{font-family:'Geist Mono','SF Mono',monospace;font-size:9px;color:var(--mu);letter-spacing:.08em;text-transform:uppercase;margin-top:2px}}
 .goal-track{{position:relative;height:7px;background:var(--sf2);border-radius:999px;margin:12px 0 9px}}
 .goal-fill{{height:100%;border-radius:999px;background:linear-gradient(90deg,var(--bl),var(--ac));transition:width .9s cubic-bezier(.4,0,.2,1)}}
@@ -484,7 +484,7 @@ body{{
 /* ── STREAK STATS ────────────────────────────────────────── */
 .stat-row{{display:grid;grid-template-columns:repeat(3,1fr);gap:9px}}
 .stat-tile{{background:var(--sf);border:1px solid var(--bd);border-radius:16px;padding:16px 10px;text-align:center;backdrop-filter:blur(16px);box-shadow:var(--sh)}}
-.stat-num{{font-family:'Geist',ui-sans-serif,system-ui,sans-serif;font-size:40px;font-weight:600;line-height:1;letter-spacing:-.02em}}
+.stat-num{{font-family:'Instrument Serif','Times New Roman',serif;font-size:40px;font-weight:normal;line-height:1;letter-spacing:-.02em}}
 .stat-lbl{{font-family:'Geist Mono','SF Mono',monospace;font-size:10px;color:var(--mu);text-transform:uppercase;letter-spacing:.10em;margin-top:6px;font-weight:500}}
 
 /* ── INSIGHTS ────────────────────────────────────────────── */
@@ -519,7 +519,7 @@ body{{
   padding:10px 8px;text-align:center;backdrop-filter:blur(12px);
   box-shadow:var(--sh);transition:background .3s;
 }}
-.hv{{font-family:'Geist',ui-sans-serif,system-ui,sans-serif;font-size:18px;font-weight:600;line-height:1;letter-spacing:-.01em}}
+.hv{{font-family:'Instrument Serif','Times New Roman',serif;font-size:18px;font-weight:normal;line-height:1;letter-spacing:-.01em}}
 .hl{{font-family:'Geist Mono','SF Mono',monospace;font-size:9px;color:var(--mu);text-transform:uppercase;letter-spacing:.08em;margin-top:3px;font-weight:500}}
 
 /* ── LOG CARDS ───────────────────────────────────────────── */
@@ -844,7 +844,7 @@ body{{
 .angrid{{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}}
 @media(min-width:420px){{.angrid{{grid-template-columns:repeat(3,1fr)}}}}
 .anitem{{background:var(--sf2);border-radius:12px;padding:12px;border:1px solid var(--bd);transition:background .3s}}
-.anval{{font-family:'Geist',ui-sans-serif,system-ui,sans-serif;font-size:28px;font-weight:600;line-height:1;letter-spacing:-.01em}}
+.anval{{font-family:'Instrument Serif','Times New Roman',serif;font-size:28px;font-weight:normal;line-height:1;letter-spacing:-.01em}}
 .anlbl{{font-family:'Geist Mono','SF Mono',monospace;font-size:9.5px;color:var(--mu);margin-top:4px;font-weight:500;text-transform:uppercase;letter-spacing:.1em}}
 .devrow{{display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid var(--bd)}}
 .devrow:last-child{{border-bottom:none}}
@@ -905,8 +905,8 @@ footer{{
   background:var(--bg);
 }}
 .ph-title{{
-  font-family:'Geist',ui-sans-serif,system-ui,sans-serif;
-  font-size:38px;font-weight:600;line-height:1;letter-spacing:-.025em;color:var(--tx);
+  font-family:'Instrument Serif','Times New Roman',serif;
+  font-size:38px;line-height:1;letter-spacing:-.025em;color:var(--tx);
 }}
 @media(max-width:940px){{.ph-title{{font-size:30px}}}}
 @media(max-width:560px){{.ph-title{{font-size:25px}}}}
@@ -972,8 +972,8 @@ footer{{
   padding:20px 22px 0;
 }}
 .lm-title{{
-  font-family:'Geist',ui-sans-serif,system-ui,sans-serif;
-  font-size:22px;font-weight:600;letter-spacing:-.01em;color:var(--tx);
+  font-family:'Instrument Serif','Times New Roman',serif;
+  font-size:22px;letter-spacing:-.01em;color:var(--tx);
 }}
 .lm-close{{
   width:30px;height:30px;border-radius:8px;border:1px solid var(--bd);
