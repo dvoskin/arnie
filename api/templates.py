@@ -1360,7 +1360,7 @@ footer{{
     <!-- WHOOP RECOVERY — bottom of day, only when connected -->
     <div id="whoop-module" style="display:none">
       <div class="stitle spaced">
-        <span><span id="health-mod-title">Whoop</span> <span id="whoop-date" style="font-family:'Geist Mono','SF Mono',monospace;font-weight:400;opacity:.6;font-size:9px;letter-spacing:.04em;margin-left:6px"></span></span>
+        <span style="display:inline-flex;align-items:center"><span id="health-brand" style="display:inline-flex;margin-right:7px"></span><span id="health-mod-title">Whoop</span> <span id="whoop-date" style="font-family:'Geist Mono','SF Mono',monospace;font-weight:400;opacity:.6;font-size:9px;letter-spacing:.04em;margin-left:6px"></span></span>
         <button class="add-toggle" id="whoop-sync-btn" onclick="syncWhoop()" title="Sync" style="font-size:15px;font-family:inherit">&#8635;</button>
       </div>
       <div id="whoop-grid"></div>
@@ -2036,6 +2036,15 @@ function hcell(label,val,valColor){{
     esc(String(val))+'</div></div>';
 }}
 function grid3(cells){{ return cells?'<div class="hgrid">'+cells+'</div>':''; }}
+// Subtle brand hints: Whoop's recovery-ring gauge; Apple's tri-color activity rings.
+var WHOOP_MARK='<svg width="15" height="15" viewBox="0 0 24 24" style="display:block">'+
+  '<circle cx="12" cy="12" r="8" fill="none" style="stroke:var(--sf2)" stroke-width="3.2"/>'+
+  '<circle cx="12" cy="12" r="8" fill="none" style="stroke:var(--ac)" stroke-width="3.2" '+
+  'stroke-dasharray="40 12" stroke-linecap="round" transform="rotate(-90 12 12)"/></svg>';
+var APPLE_MARK='<svg width="15" height="15" viewBox="0 0 24 24" style="display:block">'+
+  '<circle cx="12" cy="12" r="9" fill="none" stroke="#fa114f" stroke-width="2.6"/>'+
+  '<circle cx="12" cy="12" r="6" fill="none" stroke="#92e82a" stroke-width="2.6"/>'+
+  '<circle cx="12" cy="12" r="3" fill="none" stroke="#1ad4fd" stroke-width="2.6"/></svg>';
 
 // ── Whoop stats module ────────────────────────────────────────────────────
 function renderWhoopModule(snap, profile){{
@@ -2057,6 +2066,7 @@ function renderWhoopModule(snap, profile){{
   }}
 
   if(titleEl)titleEl.textContent='Whoop';
+  var brandEl=document.getElementById('health-brand'); if(brandEl)brandEl.innerHTML=WHOOP_MARK;
   if(syncBtn)syncBtn.style.display='';
   mod.style.display='block';
 
@@ -2086,7 +2096,7 @@ function renderWhoopModule(snap, profile){{
     hcell('Resting HR',snap.resting_hr!=null?snap.resting_hr+'bpm':null));
 
   var sleep=grid3(
-    hcell('Sleep',fmtSleep(snap.sleep_hours))+
+    hcell('Sleep',fmtSleep(snap.sleep_hours),'var(--pu)')+
     hcell('Quality',snap.sleep_performance_pct!=null?Math.round(snap.sleep_performance_pct)+'%':null)+
     hcell('Efficiency',snap.sleep_efficiency_pct!=null?Math.round(snap.sleep_efficiency_pct)+'%':null)+
     hcell('Deep',fmtSleep(snap.sleep_deep_hours))+
@@ -2097,10 +2107,10 @@ function renderWhoopModule(snap, profile){{
     hcell('Skin temp',snap.skin_temp_celsius!=null?snap.skin_temp_celsius.toFixed(1)+'°C':null));
 
   var activity=grid3(
-    hcell('Strain',snap.strain!=null?snap.strain.toFixed(1)+'/21':null)+
+    hcell('Strain',snap.strain!=null?snap.strain.toFixed(1)+'/21':null,'var(--bl)')+
     hcell('Avg HR',snap.avg_hr!=null?snap.avg_hr+'bpm':null)+
     hcell('Steps',snap.steps?snap.steps.toLocaleString():null)+
-    hcell('Active cal',snap.active_calories?Math.round(snap.active_calories)+'':null));
+    hcell('Active cal',snap.active_calories?Math.round(snap.active_calories)+'':null,'var(--or)'));
 
   var workouts='',woCount=0;
   if(snap.whoop_workouts){{
@@ -2129,6 +2139,7 @@ function renderWhoopModule(snap, profile){{
 // ── Apple Health module — simple panel (push-only, no sync button) ─────────
 function renderAppleHealthModule(snap,mod,grid,dateEl,titleEl,syncBtn){{
   if(titleEl)titleEl.textContent='Apple Health';
+  var brandEl=document.getElementById('health-brand'); if(brandEl)brandEl.innerHTML=APPLE_MARK;
   if(syncBtn)syncBtn.style.display='none';  // Apple Health is push-only — nothing to sync
   mod.style.display='block';
 
@@ -2148,9 +2159,9 @@ function renderAppleHealthModule(snap,mod,grid,dateEl,titleEl,syncBtn){{
   // Same collapsible format as Whoop, fewer metrics (Apple Health platform limits).
   var activity=grid3(
     hcell('Steps',snap.steps!=null?snap.steps.toLocaleString():null)+
-    hcell('Active cal',snap.active_calories!=null?Math.round(snap.active_calories)+'':null)+
+    hcell('Active cal',snap.active_calories!=null?Math.round(snap.active_calories)+'':null,'var(--or)')+
     hcell('Resting cal',snap.resting_calories!=null?Math.round(snap.resting_calories)+'':null));
-  var sleep=grid3(hcell('Sleep',fmtSleep(snap.sleep_hours)));
+  var sleep=grid3(hcell('Sleep',fmtSleep(snap.sleep_hours),'var(--pu)'));
 
   grid.innerHTML=
     (hsec('ah-activity','Activity',snap.steps!=null?snap.steps.toLocaleString():'',activity,true)+
