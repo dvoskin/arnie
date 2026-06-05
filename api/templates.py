@@ -284,42 +284,34 @@ body{{
 .bottomnav{{
   display:none;position:fixed;bottom:0;left:0;right:0;z-index:60;
   justify-content:space-around;gap:4px;
-  padding:10px 16px calc(10px + env(safe-area-inset-bottom));
-  background:var(--hbg);backdrop-filter:blur(22px);
-  -webkit-backdrop-filter:blur(22px);border-top:1px solid var(--bd);
+  padding:7px 14px calc(7px + env(safe-area-inset-bottom));
+  background:var(--bg);border-top:1px solid var(--bd);
 }}
 .bn-item{{
-  flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;
+  flex:1;display:flex;flex-direction:column;align-items:center;gap:5px;
   background:transparent;border:none;
   font-family:'Geist Mono','SF Mono',monospace;
-  font-size:9px;letter-spacing:.08em;text-transform:uppercase;
-  color:var(--mu);cursor:pointer;padding:7px 0 4px;border-radius:10px;transition:color .15s;
+  font-size:9px;letter-spacing:.07em;text-transform:uppercase;
+  color:var(--mu);cursor:pointer;padding:6px 0 2px;transition:color .15s;
 }}
-.bn-ico{{width:23px;height:23px;display:grid;place-items:center;transition:transform .2s}}
+.bn-ico{{width:24px;height:24px;display:grid;place-items:center}}
 .bn-item.active{{color:var(--ac)}}
-.bn-item.active .bn-ico{{transform:translateY(-2px)}}
 
 /* ── LIVE CHAT WIDGET (floating · consolidated Telegram + iMessage) ─── */
 .cw-fab{{
   position:fixed;z-index:90;bottom:24px;right:24px;
-  width:54px;height:54px;border-radius:18px;cursor:pointer;
-  border:1px solid rgba(var(--ac-rgb),.30);background:var(--ac-dim);
+  width:52px;height:52px;border-radius:50%;cursor:pointer;
+  border:1px solid var(--bd);background:var(--sf2);
   color:var(--ac);display:grid;place-items:center;
-  box-shadow:0 8px 24px rgba(0,0,0,.30);
-  transition:transform .2s cubic-bezier(.2,.7,.2,1),border-color .2s,color .2s,
-             box-shadow .2s,background .2s,border-radius .25s cubic-bezier(.2,.7,.2,1);
+  box-shadow:0 6px 18px rgba(0,0,0,.28);
+  transition:transform .2s cubic-bezier(.2,.7,.2,1),border-color .15s,color .15s;
 }}
-[data-theme="dark"] .cw-fab{{box-shadow:0 8px 26px rgba(0,0,0,.45),0 0 16px rgba(var(--ac-rgb),.16)}}
-.cw-fab:hover{{transform:translateY(-2px);border-color:var(--ac);border-radius:50%}}
-[data-theme="dark"] .cw-fab:hover{{box-shadow:0 10px 30px rgba(0,0,0,.5),0 0 24px rgba(var(--ac-rgb),.28)}}
+.cw-fab:hover{{transform:translateY(-2px);border-color:var(--ac)}}
 .cw-fab:active{{transform:scale(.93)}}
 .cw-fab .cw-ico-x{{display:none}}
 .cw-fab.open .cw-ico-chat{{display:none}}
 .cw-fab.open .cw-ico-x{{display:block}}
-.cw-fab.open{{
-  color:var(--tx);background:var(--sf2);border-color:var(--bd);border-radius:50%;
-}}
-[data-theme="dark"] .cw-fab.open{{box-shadow:0 8px 24px rgba(0,0,0,.4)}}
+.cw-fab.open{{color:var(--tx)}}
 
 .cw-panel{{
   position:fixed;z-index:89;bottom:90px;right:24px;
@@ -334,10 +326,12 @@ body{{
 .cw-panel.open{{opacity:1;transform:none;pointer-events:auto}}
 .cw-head{{
   display:flex;align-items:center;justify-content:space-between;gap:10px;
-  padding:13px 15px;border-bottom:1px solid var(--bd);flex-shrink:0;
+  padding:12px 15px;border-bottom:1px solid var(--bd);flex-shrink:0;
 }}
+.cw-head-l{{display:flex;align-items:center;gap:9px;min-width:0}}
+.cw-status{{width:9px;height:9px;border-radius:50%;flex-shrink:0;background:var(--bl)}}
 .cw-title{{font-size:14px;font-weight:600;color:var(--tx);line-height:1.15}}
-.cw-sub{{font-size:11px;color:var(--mu);margin-top:2px;
+.cw-sub{{font-size:11px;color:var(--mu);margin-top:1px;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}
 .cw-close{{
   background:transparent;border:none;color:var(--mu);
@@ -360,15 +354,19 @@ body{{
 .cw-row.me{{align-self:flex-end;align-items:flex-end}}
 .cw-row.ar{{align-self:flex-start;align-items:flex-start}}
 .cw-bubble{{
-  padding:8px 12px;border-radius:14px;font-size:13.5px;line-height:1.45;
+  padding:9px 13px;border-radius:17px;font-size:13.5px;line-height:1.45;
   white-space:pre-wrap;word-break:break-word;
 }}
-.cw-row.ar .cw-bubble{{background:var(--sf2);color:var(--tx)}}
-.cw-row.me .cw-bubble{{background:var(--ac-dim);color:var(--tx)}}
+.cw-row.ar .cw-bubble{{background:var(--sf2);color:var(--tx);border:1px solid var(--bd);border-bottom-left-radius:5px}}
+.cw-row.me .cw-bubble{{background:var(--ac-dim);color:var(--tx);border:1px solid rgba(var(--ac-rgb),.24);border-bottom-right-radius:5px}}
 .cw-meta{{
-  font-size:9.5px;color:var(--mu);margin-top:3px;padding:0 2px;
+  font-size:9.5px;color:var(--mu);margin-top:4px;padding:0 3px;
   font-family:'Geist Mono','SF Mono',monospace;letter-spacing:.03em;
+  display:flex;align-items:center;gap:5px;
 }}
+.cw-cdot{{width:6px;height:6px;border-radius:50%;flex-shrink:0;background:var(--mu)}}
+.cw-cdot.tg{{background:var(--bl)}}
+.cw-cdot.im{{background:var(--ac)}}
 .cw-state{{margin:auto;text-align:center;color:var(--mu);font-size:13px;padding:24px;line-height:1.55}}
 /* Minimal action: opens the Arnie chat in Telegram to start a new message. */
 .cw-tg{{
@@ -3431,6 +3429,9 @@ setInterval(()=>{{
 // ── Live chat widget — consolidated Telegram + iMessage thread ─────────────
 var _cwOpen=false, _cwTimer=null, _cwSig='';
 function _cwChan(p){{return(String(p||'').indexOf('imessage')>-1||String(p||'').indexOf('im:')>-1)?'im':'tg';}}
+// Arnie splits replies into separate bubbles with '|||'. On the web thread we
+// don't re-bubble — just turn the separator into a line break so it reads clean.
+function _cwClean(s){{return String(s||'').replace(/\\s*\\|{{3,}}\\s*/g,'\\n').trim();}}
 async function _cwFetch(limit){{
   var r=await fetch('/api/conversation/'+TOKEN+(limit?('?limit='+limit):''));
   if(!r.ok) throw new Error('HTTP '+r.status);
@@ -3455,13 +3456,8 @@ async function loadChatWidget(initial){{
   try{{
     var data=await _cwFetch(120);
     renderChatThread(data.turns||[],initial);
-    var sub=document.getElementById('cw-sub');
-    var plats=data.platforms||[];
-    if(sub){{
-      if(plats.length>1) sub.textContent='Telegram + iMessage \\u00b7 one thread';
-      else if(plats[0]) sub.textContent=(plats[0]==='imessage'?'iMessage':'Telegram')+' \\u00b7 your full thread';
-      else sub.textContent='Your full conversation';
-    }}
+    var sub=document.getElementById('cw-sub'), plats=data.platforms||[];
+    if(sub&&plats.length) sub.textContent=plats.length>1?'Telegram + iMessage':(plats[0]==='imessage'?'iMessage':'Telegram');
   }}catch(e){{
     if(initial) thread.innerHTML='<div class="cw-state">Could not load the conversation. Tap the bubble to retry.</div>';
   }}
@@ -3487,11 +3483,11 @@ function renderChatThread(turns,initial){{
     var chan=_cwChan(t.platform), chanLbl=chan==='im'?'iMessage':'Telegram';
     var ico=t.source==='voice'?'\\ud83c\\udfa4 ':((t.source==='image'||t.source==='photo')?'\\ud83d\\udcf7 ':'');
     if((t.user||'').trim()){{
-      html+='<div class="cw-row me"><div class="cw-bubble">'+ico+esc(t.user)+'</div>'
-          +'<div class="cw-meta">'+esc(chanLbl+' \\u00b7 '+time)+'</div></div>';
+      html+='<div class="cw-row me"><div class="cw-bubble">'+ico+esc(_cwClean(t.user))+'</div>'
+          +'<div class="cw-meta"><span class="cw-cdot '+chan+'"></span>'+esc(chanLbl+' \\u00b7 '+time)+'</div></div>';
     }}
     if((t.arnie||'').trim()){{
-      html+='<div class="cw-row ar"><div class="cw-bubble">'+esc(t.arnie)+'</div></div>';
+      html+='<div class="cw-row ar"><div class="cw-bubble">'+esc(_cwClean(t.arnie))+'</div></div>';
     }}
   }}
   thread.innerHTML=html;
@@ -3566,9 +3562,12 @@ function renderChatThread(turns,initial){{
 <!-- LIVE CHAT WIDGET — floating, consolidated Telegram + iMessage thread -->
 <div class="cw-panel" id="cw-panel" aria-hidden="true" aria-label="Your conversation with Arnie">
   <div class="cw-head">
-    <div style="min-width:0">
-      <div class="cw-title">Conversation</div>
-      <div class="cw-sub" id="cw-sub">Your full thread with Arnie</div>
+    <div class="cw-head-l">
+      <span class="cw-status" role="img" aria-label="Arnie — online"></span>
+      <div style="min-width:0">
+        <div class="cw-title">Arnie</div>
+        <div class="cw-sub" id="cw-sub">Telegram + iMessage</div>
+      </div>
     </div>
     <button class="cw-close" onclick="toggleChatWidget()" aria-label="Close">&#215;</button>
   </div>
@@ -3579,7 +3578,7 @@ function renderChatThread(turns,initial){{
   </a>
 </div>
 <button class="cw-fab" id="cw-fab" onclick="toggleChatWidget()" aria-label="Open conversation with Arnie">
-  <span class="cw-ico-chat"><svg viewBox="0 0 24 24" width="23" height="23" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4.5H6.5A3.5 3.5 0 0 0 3 8v3.5A3.5 3.5 0 0 0 6.5 15H8v3.2l3.8-3.2H16a3.5 3.5 0 0 0 3.5-3.5V8A3.5 3.5 0 0 0 16 4.5z"/><path d="M19.6 2.4l.66 1.74 1.74.66-1.74.66-.66 1.74-.66-1.74-1.74-.66 1.74-.66z" fill="currentColor" stroke="none"/></svg></span>
+  <span class="cw-ico-chat"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15.5a2.5 2.5 0 0 1-2.5 2.5H7.8L3 22V5.5A2.5 2.5 0 0 1 5.5 3h13A2.5 2.5 0 0 1 21 5.5z"/></svg></span>
   <span class="cw-ico-x"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg></span>
 </button>
 </body>
