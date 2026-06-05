@@ -236,16 +236,19 @@ body{{
 .hsec.open .hsec-chev{{transform:rotate(90deg)}}
 .hsec-body{{display:none;border-top:1px solid var(--bd)}}
 .hsec.open .hsec-body{{display:block}}
-/* 3-up compact cells for short metric values */
-.hgrid{{display:grid;grid-template-columns:repeat(3,1fr);gap:13px 10px;padding:13px 16px}}
-@media(max-width:500px){{.hgrid{{grid-template-columns:repeat(2,1fr)}}}}
-.hcell{{min-width:0}}
-.hcell-lbl{{
-  font-family:'Geist Mono','SF Mono',monospace;font-size:8px;letter-spacing:.1em;
-  text-transform:uppercase;color:var(--mu);font-weight:600;margin-bottom:3px;
+/* Wearable metric cells — clean multi-up grid. Private .w* namespace so the
+   habit-heatmap's .hcell/.hgrid day-square styles can't bleed in (the bug that
+   put gray boxes behind every Whoop value). */
+.wgrid{{display:grid;grid-template-columns:repeat(3,1fr);gap:16px 18px;padding:14px 16px;align-items:start}}
+@media(max-width:520px){{.wgrid{{grid-template-columns:repeat(2,1fr)}}}}
+.wcell{{min-width:0}}
+.wcell-lbl{{
+  font-family:'Geist Mono','SF Mono',monospace;font-size:8.5px;letter-spacing:.09em;
+  text-transform:uppercase;color:var(--mu);font-weight:600;margin-bottom:4px;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
 }}
-.hcell-val{{font-size:14px;font-weight:500;color:var(--tx);letter-spacing:-.01em;word-break:break-word}}
+.wcell-val{{font-size:14px;font-weight:600;color:var(--tx);letter-spacing:-.01em;
+  font-variant-numeric:tabular-nums;word-break:break-word;line-height:1.25}}
 .whoop-stat{{
   background:var(--sf);border:1px solid var(--bd);border-radius:14px;
   padding:14px 14px 12px;display:flex;flex-direction:column;gap:4px;
@@ -533,8 +536,6 @@ body{{
 }}
 
 /* ── WEARABLE ────────────────────────────────────────────── */
-.hgrid{{display:grid;gap:7px;grid-template-columns:repeat(3,1fr)}}
-@media(min-width:420px){{.hgrid{{grid-template-columns:repeat(6,1fr)}}}}
 .htile{{
   background:var(--sf);border:1px solid var(--bd);border-radius:12px;
   padding:10px 8px;text-align:center;backdrop-filter:blur(12px);
@@ -2031,11 +2032,11 @@ function hsec(id,name,summary,rows,open){{
 // Compact cell for the 3-up metric grid (short values).
 function hcell(label,val,valColor){{
   if(val==null||val==='')return '';
-  return '<div class="hcell"><div class="hcell-lbl">'+esc(label)+'</div>'+
-    '<div class="hcell-val"'+(valColor?' style="color:'+valColor+'"':'')+'>'+
+  return '<div class="wcell"><div class="wcell-lbl">'+esc(label)+'</div>'+
+    '<div class="wcell-val"'+(valColor?' style="color:'+valColor+'"':'')+'>'+
     esc(String(val))+'</div></div>';
 }}
-function grid3(cells){{ return cells?'<div class="hgrid">'+cells+'</div>':''; }}
+function grid3(cells){{ return cells?'<div class="wgrid">'+cells+'</div>':''; }}
 // Subtle brand hints: Whoop's recovery-ring gauge; Apple's tri-color activity rings.
 var WHOOP_MARK='<svg width="15" height="15" viewBox="0 0 24 24" style="display:block">'+
   '<circle cx="12" cy="12" r="8" fill="none" style="stroke:var(--sf2)" stroke-width="3.2"/>'+
@@ -2096,7 +2097,7 @@ function renderWhoopModule(snap, profile){{
     hcell('Resting HR',snap.resting_hr!=null?snap.resting_hr+'bpm':null));
 
   var sleep=grid3(
-    hcell('Sleep',fmtSleep(snap.sleep_hours),'var(--pu)')+
+    hcell('Sleep',fmtSleep(snap.sleep_hours),'var(--bl)')+
     hcell('Quality',snap.sleep_performance_pct!=null?Math.round(snap.sleep_performance_pct)+'%':null)+
     hcell('Efficiency',snap.sleep_efficiency_pct!=null?Math.round(snap.sleep_efficiency_pct)+'%':null)+
     hcell('Deep',fmtSleep(snap.sleep_deep_hours))+
@@ -2161,7 +2162,7 @@ function renderAppleHealthModule(snap,mod,grid,dateEl,titleEl,syncBtn){{
     hcell('Steps',snap.steps!=null?snap.steps.toLocaleString():null)+
     hcell('Active cal',snap.active_calories!=null?Math.round(snap.active_calories)+'':null,'var(--or)')+
     hcell('Resting cal',snap.resting_calories!=null?Math.round(snap.resting_calories)+'':null));
-  var sleep=grid3(hcell('Sleep',fmtSleep(snap.sleep_hours),'var(--pu)'));
+  var sleep=grid3(hcell('Sleep',fmtSleep(snap.sleep_hours),'var(--bl)'));
 
   grid.innerHTML=
     (hsec('ah-activity','Activity',snap.steps!=null?snap.steps.toLocaleString():'',activity,true)+
