@@ -3558,6 +3558,29 @@ p b{{color:#b0bdd0;font-weight:600}}
 
 hr{{border:none;border-top:1px solid rgba(255,255,255,.06);margin:26px 0}}
 footer{{text-align:center;padding:24px 0 0;color:#2a3040;font-size:12px}}
+
+/* ── iOS Shortcuts Mockups ── */
+.ss-wrap{{margin:18px 0 4px}}
+.ss-lbl{{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#2a3040;margin-bottom:7px}}
+.ss-screen{{background:#0f0f11;border:1px solid rgba(255,255,255,.09);border-radius:16px;overflow:hidden}}
+.ss-nav{{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:#161618;border-bottom:1px solid rgba(255,255,255,.06)}}
+.ss-back{{font-size:13px;color:#0a84ff;font-weight:500}}
+.ss-title{{font-size:14px;font-weight:700;color:#fff}}
+.ss-run{{font-size:16px;color:#0a84ff}}
+.ss-body{{padding:7px 7px 8px}}
+.ss-act{{background:#1c1c1e;border-radius:11px;margin-bottom:4px;overflow:hidden;border:1px solid transparent}}
+.ss-act.hi{{border-color:rgba(10,132,255,.3)}}
+.ss-act.hi-grn{{border-color:rgba(48,209,88,.28)}}
+.ss-hd{{display:flex;align-items:center;gap:7px;padding:8px 10px 6px}}
+.ss-ic{{width:20px;height:20px;border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:10px;flex-shrink:0;color:#fff}}
+.ss-ic.r{{background:#ff375f}}.ss-ic.b{{background:#0a84ff}}.ss-ic.t{{background:#5ac8fa}}.ss-ic.a{{background:#ff9f0a}}
+.ss-nm{{font-size:12px;font-weight:600;color:#fff}}
+.ss-bd{{padding:0 10px 7px 37px}}
+.ss-info{{font-size:10.5px;color:#636366;line-height:1.5}}
+.ss-pill{{display:inline-flex;align-items:center;background:rgba(255,159,10,.14);border:1px solid rgba(255,159,10,.3);color:#ff9f0a;border-radius:4px;padding:1px 5px;font-family:'SF Mono',monospace;font-size:9.5px;font-weight:600;vertical-align:middle;margin:0 1px}}
+.ss-pill.b{{background:rgba(10,132,255,.12);border-color:rgba(10,132,255,.28);color:#4a9eff}}
+.ss-add{{text-align:center;padding:8px;font-size:11px;color:#2a3040;background:rgba(255,255,255,.015);border:1px dashed rgba(255,255,255,.07);border-radius:10px;margin-top:2px}}
+.ss-dim{{opacity:.35}}
 </style>
 </head>
 <body>
@@ -3623,6 +3646,35 @@ footer{{text-align:center;padding:24px 0 0;color:#2a3040;font-size:12px}}
     The two buttons on each row are: the <b>search term</b> (paste it in the search box)
     and the <b>variable name</b> (paste it when Shortcuts asks you to name the result).
   </div>
+  <div class="ss-wrap">
+    <div class="ss-lbl">After this step</div>
+    <div class="ss-screen">
+      <div class="ss-nav">
+        <span class="ss-back">&#8249; Shortcuts</span>
+        <span class="ss-title">Arnie Health</span>
+        <span class="ss-run">&#9654;</span>
+      </div>
+      <div class="ss-body">
+        <div class="ss-act hi">
+          <div class="ss-hd"><div class="ss-ic r">&#9829;</div><div class="ss-nm">Find Health Samples</div></div>
+          <div class="ss-bd"><div class="ss-info">Step Count &middot; Today &middot; Sum &rarr; <span class="ss-pill">steps</span></div></div>
+        </div>
+        <div class="ss-act hi">
+          <div class="ss-hd"><div class="ss-ic r">&#9829;</div><div class="ss-nm">Find Health Samples</div></div>
+          <div class="ss-bd"><div class="ss-info">Active Energy Burned &middot; Today &middot; Sum &rarr; <span class="ss-pill">cals</span></div></div>
+        </div>
+        <div class="ss-act hi">
+          <div class="ss-hd"><div class="ss-ic r">&#9829;</div><div class="ss-nm">Find Health Samples</div></div>
+          <div class="ss-bd"><div class="ss-info">Basal Energy Burned &middot; Today &middot; Sum &rarr; <span class="ss-pill">rest</span></div></div>
+        </div>
+        <div class="ss-act hi">
+          <div class="ss-hd"><div class="ss-ic r">&#9829;</div><div class="ss-nm">Find Health Samples</div></div>
+          <div class="ss-bd"><div class="ss-info">Sleep Analysis &middot; Today &middot; Sum &rarr; <span class="ss-pill">sleep</span></div></div>
+        </div>
+        <div class="ss-add">+ Add Action</div>
+      </div>
+    </div>
+  </div>
 </div>
 
 <!-- ── STEP 3 ── -->
@@ -3667,6 +3719,30 @@ footer{{text-align:center;padding:24px 0 0;color:#2a3040;font-size:12px}}
       style="color:#4a9eff">&amp;sleep_seconds=</span><span style="color:#f59e0b">sleep</span>
     </div>
   </div>
+  <div class="ss-wrap">
+    <div class="ss-lbl">After this step</div>
+    <div class="ss-screen">
+      <div class="ss-nav">
+        <span class="ss-back">&#8249; Shortcuts</span>
+        <span class="ss-title">Arnie Health</span>
+        <span class="ss-run">&#9654;</span>
+      </div>
+      <div class="ss-body">
+        <div class="ss-act ss-dim">
+          <div class="ss-hd"><div class="ss-ic r">&#9829;</div><div class="ss-nm">Find Health Samples &times;4</div></div>
+        </div>
+        <div class="ss-act hi">
+          <div class="ss-hd"><div class="ss-ic b">&#128279;</div><div class="ss-nm">URL</div></div>
+          <div class="ss-bd">
+            <div class="ss-info" style="word-break:break-all">
+              &hellip;&amp;steps=<span class="ss-pill">steps</span>&amp;active_calories=<span class="ss-pill">cals</span>&amp;resting_calories=<span class="ss-pill">rest</span>&amp;sleep_seconds=<span class="ss-pill">sleep</span>
+            </div>
+          </div>
+        </div>
+        <div class="ss-add">+ Add Action</div>
+      </div>
+    </div>
+  </div>
 </div>
 
 <!-- ── STEP 4 ── -->
@@ -3677,6 +3753,29 @@ footer{{text-align:center;padding:24px 0 0;color:#2a3040;font-size:12px}}
   </div>
   <p>Tap <b>Add Action</b> &rarr; search <b>Get Contents of URL</b> &rarr; tap it. That's it — no extra settings needed. It automatically uses the URL you built in Step 3.</p>
   <p>Tap <b>▷</b> (play) at the bottom of your shortcut to test it. If it works, the green banner at the top of this page will update within a few seconds, and you'll get a confirmation in Telegram.</p>
+  <div class="ss-wrap">
+    <div class="ss-lbl">Completed shortcut</div>
+    <div class="ss-screen">
+      <div class="ss-nav">
+        <span class="ss-back">&#8249; Shortcuts</span>
+        <span class="ss-title">Arnie Health</span>
+        <span class="ss-run">&#9654;</span>
+      </div>
+      <div class="ss-body">
+        <div class="ss-act ss-dim">
+          <div class="ss-hd"><div class="ss-ic r">&#9829;</div><div class="ss-nm">Find Health Samples &times;4</div></div>
+        </div>
+        <div class="ss-act ss-dim">
+          <div class="ss-hd"><div class="ss-ic b">&#128279;</div><div class="ss-nm">URL</div></div>
+          <div class="ss-bd"><div class="ss-info"><span class="ss-pill">steps</span> <span class="ss-pill">cals</span> <span class="ss-pill">rest</span> <span class="ss-pill">sleep</span></div></div>
+        </div>
+        <div class="ss-act hi">
+          <div class="ss-hd"><div class="ss-ic t">&#127760;</div><div class="ss-nm">Get Contents of URL</div></div>
+          <div class="ss-bd"><div class="ss-info">URL: <span class="ss-pill b">URL</span></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
 </div>
 
 <!-- ── STEP 5 ── -->
@@ -3691,6 +3790,30 @@ footer{{text-align:center;padding:24px 0 0;color:#2a3040;font-size:12px}}
   <div class="note grn">
     <b>All done.</b> From tomorrow morning it runs automatically.
     Your steps, calories, and sleep will appear in your Arnie dashboard every day.
+  </div>
+  <div class="ss-wrap">
+    <div class="ss-lbl">Your automation</div>
+    <div class="ss-screen">
+      <div class="ss-nav">
+        <span class="ss-back">&#8249; Automation</span>
+        <span class="ss-title">Personal</span>
+        <span class="ss-run" style="font-size:20px">+</span>
+      </div>
+      <div class="ss-body">
+        <div class="ss-act hi-grn">
+          <div class="ss-hd">
+            <div class="ss-ic a">&#9200;</div>
+            <div>
+              <div class="ss-nm">Time of Day &middot; 8:00 AM</div>
+              <div class="ss-info">Every Day &middot; Runs automatically</div>
+            </div>
+          </div>
+          <div class="ss-bd">
+            <div class="ss-info" style="color:#30d158;font-weight:600">&#9654; Arnie Health</div>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </div>
 
