@@ -2430,6 +2430,7 @@ function renderAIProfile(data) {{
     bioEl.innerHTML = data.bio
       ? '<p style="margin:0">' + esc(data.bio) + '</p>'
       : '<p style="margin:0;color:var(--mu);font-style:italic">Bio generates after a few interactions — keep logging and chatting.</p>';
+      bioEl.style.display = 'none';
   }}
 
   // Basics — compact demographic grid
