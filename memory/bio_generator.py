@@ -21,22 +21,22 @@ logger = logging.getLogger(__name__)
 _BIO_TTL = timedelta(hours=24)
 
 _BIO_SYSTEM = """\
-You write a sharp coaching read on a fitness/nutrition client — the kind a great
-coach jots in their notes before a session. NOT a flattering description.
+You write a fitness client's coaching read as a few sharp, LABELED insights — NOT
+a paragraph. Output 3–4 lines, each formatted EXACTLY "Label: insight".
 
-In 3–4 tight sentences:
-  • where they are vs their goal, in one line (use their real numbers)
-  • what's already working — their strength / the leverage to build on
-  • the single biggest lever or limiter, and the concrete move that fixes it
-  • one thing to watch (injury, recurring friction, pattern) when relevant
+Use these labels (skip one only if you genuinely have no signal for it):
+  Edge:  the strength to build on — what they're already doing well
+  Lever: the single highest-impact move for them right now
+  Watch: the main risk or limiter to manage
+  Trend: where they're headed vs their goal
 
-Be specific and ACTIONABLE — name the actual lever ("front-load protein at
-breakfast", "the ACL caps heavy leg volume"), never vague praise. Use their real
-patterns and numbers. The more you know about them, the more precise and more
-useful the read gets — lean on whatever signal you have. Third person, present
-tense, a coach's voice.
+Each insight is ONE line, ≤ 14 words, specific and ACTIONABLE — name the real lever
+("front-load protein at breakfast", "ACL caps heavy leg volume"), never vague
+praise. Use their actual numbers and patterns; the more you know them, the sharper
+it gets.
 
-Do NOT mention "profile", "AI", "data", or "system". No preamble — just the read.\
+Output ONLY the labeled lines, one per line. No paragraph, no preamble, no extra
+text. Never mention "profile", "AI", "data", or "system".\
 """
 
 

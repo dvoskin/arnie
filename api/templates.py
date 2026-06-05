@@ -567,16 +567,14 @@ body{{
 /* ── TRAINING PROGRAM ───────────────────────────────────── */
 .wp-summary{{
   background:var(--sf);border:1px solid var(--bd);border-radius:16px;
-  padding:18px 20px;backdrop-filter:blur(16px);box-shadow:var(--sh);
+  padding:15px 16px;backdrop-filter:blur(16px);box-shadow:var(--sh);
 }}
-.wp-name{{font-size:16px;font-weight:600;letter-spacing:-.01em;margin-bottom:4px}}
-.wp-focus{{font-size:13px;color:var(--mu);margin-bottom:14px}}
-.wp-rotation{{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:18px}}
+.wp-name{{font-size:15px;font-weight:600;letter-spacing:-.01em;margin-bottom:3px}}
+.wp-focus{{font-size:13px;color:var(--mu);margin-bottom:13px}}
+.wp-rotation{{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:16px}}
 .wp-chip{{
-  font-family:'Geist Mono','SF Mono',monospace;
-  font-size:10px;letter-spacing:.06em;text-transform:uppercase;
-  padding:4px 10px;border-radius:6px;border:1px solid var(--bd);
-  background:var(--sf2);color:var(--tx2);
+  font-size:11.5px;font-weight:500;color:var(--tx2);background:var(--sf2);
+  border:1px solid var(--bd);border-radius:7px;padding:3px 8px;line-height:1.35;
 }}
 .wp-days{{display:flex;flex-direction:column;gap:10px}}
 .wp-day{{
@@ -602,8 +600,8 @@ body{{
 .wp-day.open .wp-day-body{{display:block}}
 .wp-goals{{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}}
 .wp-goal{{
-  font-size:12px;color:var(--tx2);background:var(--sf2);
-  border:1px solid var(--bd);border-radius:6px;padding:3px 9px;
+  font-size:11.5px;font-weight:500;color:var(--tx2);background:var(--sf2);
+  border:1px solid var(--bd);border-radius:7px;padding:3px 8px;
 }}
 .wp-exlist{{display:flex;flex-direction:column;gap:6px}}
 .wp-ex{{display:flex;align-items:flex-start;gap:10px;font-size:13px}}
@@ -819,6 +817,17 @@ body{{
   font-size:11.5px;font-weight:500;color:var(--tx2);background:var(--sf2);
   border:1px solid var(--bd);border-radius:7px;padding:3px 8px;line-height:1.35;
 }}
+/* AI read — labeled coaching insights (replaces the paragraph bio) */
+.ai-read{{display:flex;flex-direction:column}}
+.ai-read-row{{display:flex;gap:11px;padding:9px 0;border-bottom:1px solid var(--bd)}}
+.ai-read-row:first-child{{padding-top:0}}
+.ai-read-row:last-child{{border-bottom:none;padding-bottom:0}}
+.ai-read-tag{{
+  font-family:'Geist Mono','SF Mono',monospace;font-size:8.5px;letter-spacing:.13em;
+  text-transform:uppercase;color:var(--ac);font-weight:600;min-width:42px;
+  flex-shrink:0;padding-top:4px;
+}}
+.ai-read-txt{{font-size:13.5px;line-height:1.5;color:var(--tx)}}
 .ancrd{{
   background:var(--sf);border:1px solid var(--bd);border-radius:16px;padding:16px;
   backdrop-filter:blur(16px);box-shadow:var(--sh);margin-bottom:9px;transition:background .3s;
@@ -2427,10 +2436,29 @@ function renderAIProfile(data) {{
   // Bio
   var bioEl = document.getElementById('ai-bio-card');
   if (bioEl) {{
-    bioEl.innerHTML = data.bio
-      ? '<p style="margin:0">' + esc(data.bio) + '</p>'
-      : '<p style="margin:0;color:var(--mu);font-style:italic">Bio generates after a few interactions — keep logging and chatting.</p>';
-      bioEl.style.display = 'none';
+    if (data.bio) {{
+      // Parse "Label: insight" lines into the AI-read panel; fall back to a
+      // plain paragraph for older unstructured bios.
+      var rows = [];
+      data.bio.split(/\\n+/).forEach(function(line) {{
+        var i = line.indexOf(':');
+        if (i > 0 && i < 14) {{
+          var tag = line.slice(0, i).trim(), txt = line.slice(i + 1).trim();
+          if (tag && txt && /^[A-Za-z ]+$/.test(tag)) rows.push([tag, txt]);
+        }}
+      }});
+      if (rows.length >= 2) {{
+        bioEl.innerHTML = '<div class="ai-read">' + rows.map(function(r) {{
+          return '<div class="ai-read-row"><span class="ai-read-tag">' + esc(r[0]) +
+            '</span><span class="ai-read-txt">' + esc(r[1]) + '</span></div>';
+        }}).join('') + '</div>';
+      }} else {{
+        bioEl.innerHTML = '<p style="margin:0">' + esc(data.bio) + '</p>';
+      }}
+    }} else {{
+      bioEl.innerHTML = '<p style="margin:0;color:var(--mu);font-style:italic">Your read builds as Arnie learns you — keep logging and chatting.</p>';
+    }}
+    bioEl.style.display = 'none';  // collapsed by default (toggleBio expands it)
   }}
 
   // Basics — compact demographic grid
