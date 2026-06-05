@@ -3691,6 +3691,9 @@ footer{{text-align:center;padding:24px 0 0;color:#2a3040;font-size:12px}}
     <button class="cbtn" id="copy-btn" onclick="cp(document.getElementById('url-text').textContent.trim(),this)">Copy</button>
   </div>
   <p style="margin-top:10px">After pasting, add each parameter below. For each one: <b>tap at the end of the URL</b> &rarr; copy the parameter text &rarr; paste it &rarr; then tap the <b>&#123;x&#125;</b> icon above the keyboard and pick the matching variable name.</p>
+  <div class="note" style="margin-top:8px;background:rgba(245,158,11,.06);border-color:rgba(245,158,11,.22)">
+    <b style="color:#f59e0b">&#9888; Common mistake:</b> After pasting <code style="font-size:12px;color:#f59e0b">&amp;steps=</code>, you <b>must tap &#123;x&#125; and select the variable</b> from the list — do <b>not</b> type the name by hand. Typing it sends the literal word "steps" instead of your step count and the sync will fail.
+  </div>
 
   <div class="crow" style="margin-top:4px">
     <div class="cval">&amp;steps=</div>

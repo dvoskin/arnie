@@ -2293,27 +2293,80 @@ async def receive_apple_health(payload: AppleHealthPayload, token: str = Query(.
 async def receive_apple_health_get(
     token: str = Query(...),
     date: Optional[str] = Query(None),
-    steps: Optional[int] = Query(None),
-    active_calories: Optional[float] = Query(None),
-    resting_calories: Optional[float] = Query(None),
-    sleep_seconds: Optional[float] = Query(None),
-    sleep_hours: Optional[float] = Query(None),
-    exercise_minutes: Optional[int] = Query(None),
+    steps: Optional[str] = Query(None),
+    active_calories: Optional[str] = Query(None),
+    resting_calories: Optional[str] = Query(None),
+    sleep_seconds: Optional[str] = Query(None),
+    sleep_hours: Optional[str] = Query(None),
+    exercise_minutes: Optional[str] = Query(None),
 ):
     """
     GET endpoint — simpler for iOS Shortcuts users.
     No JSON body or Dictionary action needed; all values are URL query params.
     Example:
       GET /health/apple?token=X&steps=9000&active_calories=400&sleep_seconds=27000
+
+    Accepts params as strings so we can return a helpful error when a Shortcut
+    sends the variable *name* as text (e.g. &steps=steps) instead of the value.
     """
+    # ── Detect the common setup mistake ───────────────────────────────────────
+    # If Shortcuts variables weren't inserted properly, iOS sends the literal
+    # variable name as the value (e.g. &steps=steps, &active_calories=cals).
+    _PLACEHOLDER_NAMES = {
+        "steps", "cals", "active_calories", "calories",
+        "rest", "resting_calories", "resting",
+        "sleep", "sleep_seconds", "sleep_hours",
+        "exercise", "exercise_minutes",
+    }
+    _raw = {
+        "steps": steps,
+        "active_calories": active_calories,
+        "resting_calories": resting_calories,
+        "sleep_seconds": sleep_seconds,
+    }
+    bad = [k for k, v in _raw.items() if v is not None and v.lower() in _PLACEHOLDER_NAMES]
+    if bad:
+        from fastapi.responses import JSONResponse as _JSONResponse
+        return _JSONResponse(
+            status_code=422,
+            content={
+                "error": "shortcut_setup_incomplete",
+                "message": (
+                    "Your Shortcut sent the variable name as text instead of the actual value. "
+                    f"Problem parameters: {', '.join(bad)}. "
+                    "In the Shortcuts URL action, after typing &steps= (etc.) you must tap "
+                    "the {x} icon above the keyboard and SELECT the variable — do not type "
+                    "the name manually. Open your setup guide and re-read Step 3."
+                ),
+                "affected_params": bad,
+            },
+        )
+
+    # ── Parse strings to numeric types ────────────────────────────────────────
+    def _int(v: Optional[str]) -> Optional[int]:
+        if v is None:
+            return None
+        try:
+            return int(float(v))
+        except (ValueError, TypeError):
+            return None
+
+    def _float(v: Optional[str]) -> Optional[float]:
+        if v is None:
+            return None
+        try:
+            return float(v)
+        except (ValueError, TypeError):
+            return None
+
     payload = AppleHealthPayload(
         date=date,
-        steps=steps,
-        active_calories=active_calories,
-        resting_calories=resting_calories,
-        sleep_seconds=sleep_seconds,
-        sleep_hours=sleep_hours,
-        exercise_minutes=exercise_minutes,
+        steps=_int(steps),
+        active_calories=_float(active_calories),
+        resting_calories=_float(resting_calories),
+        sleep_seconds=_float(sleep_seconds),
+        sleep_hours=_float(sleep_hours),
+        exercise_minutes=_int(exercise_minutes),
     )
     return await _process_apple_health(payload, token)
 
