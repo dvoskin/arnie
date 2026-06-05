@@ -240,7 +240,7 @@ body{{
    habit-heatmap's .hcell/.hgrid day-square styles can't bleed in (the bug that
    put gray boxes behind every Whoop value). */
 .wgrid{{display:grid;grid-template-columns:repeat(3,1fr);gap:16px 18px;padding:14px 16px;align-items:start}}
-@media(max-width:520px){{.wgrid{{grid-template-columns:repeat(2,1fr)}}}}
+@media(max-width:520px){{.wgrid{{grid-template-columns:repeat(2,1fr);gap:15px 12px;padding:13px 15px}}}}
 .wcell{{min-width:0}}
 .wcell-lbl{{
   font-family:'Geist Mono','SF Mono',monospace;font-size:8.5px;letter-spacing:.09em;
@@ -2037,6 +2037,9 @@ function hcell(label,val,valColor){{
     esc(String(val))+'</div></div>';
 }}
 function grid3(cells){{ return cells?'<div class="wgrid">'+cells+'</div>':''; }}
+// On phones, start every wearable section collapsed — a clean stack of tappable
+// headers instead of one tall, ragged grid. Desktop keeps Activity open.
+function wIsMobile(){{ return (window.innerWidth||document.documentElement.clientWidth||9999)<=520; }}
 // Subtle brand hints: Whoop's recovery-ring gauge; Apple's tri-color activity rings.
 var WHOOP_MARK='<svg width="15" height="15" viewBox="0 0 24 24" style="display:block">'+
   '<circle cx="12" cy="12" r="8" fill="none" style="stroke:var(--sf2)" stroke-width="3.2"/>'+
@@ -2130,7 +2133,7 @@ function renderWhoopModule(snap, profile){{
   }}
 
   grid.innerHTML=
-    (hsec('activity','Activity',snap.strain!=null?snap.strain.toFixed(1)+' strain':'',activity,true)+
+    (hsec('activity','Activity',snap.strain!=null?snap.strain.toFixed(1)+' strain':'',activity,!wIsMobile())+
      hsec('workouts','Workouts',woCount?(woCount+(woCount>1?' sessions':' session')):'',workouts,false)+
      hsec('recovery','Recovery',snap.recovery_score!=null?snap.recovery_score+'%':'',recovery,false)+
      hsec('sleep','Sleep',fmtSleep(snap.sleep_hours)||'',sleep,false))
@@ -2165,7 +2168,7 @@ function renderAppleHealthModule(snap,mod,grid,dateEl,titleEl,syncBtn){{
   var sleep=grid3(hcell('Sleep',fmtSleep(snap.sleep_hours),'var(--bl)'));
 
   grid.innerHTML=
-    (hsec('ah-activity','Activity',snap.steps!=null?snap.steps.toLocaleString():'',activity,true)+
+    (hsec('ah-activity','Activity',snap.steps!=null?snap.steps.toLocaleString():'',activity,!wIsMobile())+
      hsec('ah-sleep','Sleep',fmtSleep(snap.sleep_hours)||'',sleep,false))
     ||'<div style="color:var(--mu);font-size:13px;padding:8px 0">No Apple Health data for this day yet — it syncs automatically each morning.</div>';
 }}
