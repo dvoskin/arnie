@@ -135,3 +135,98 @@ async def test_empty_user_still_has_name_basic(db, make_user):
     u = await make_user(telegram_id="UP3", name="Jo")
     m = build_unified_profile(u, None, [])
     assert any(b["label"] == "Name" and b["value"] == "Jo" for b in m["basics"])
+
+
+async def test_favorite_foods_union_does_not_shrink(db, make_user):
+    """A single learned favorite food must NOT replace the richer derived list —
+    they're unioned, with the behavioral (derived) signal leading. Regression
+    for the 'favorite foods 5 → 1' report."""
+    from memory.attribute_store import upsert_attribute, get_all_attributes
+    u = await make_user(telegram_id="UP5", name="Test")
+    await upsert_attribute(db, u.id, attribute_key="nutrition_favorite_foods",
+                           value="protein bar", category="nutrition", confidence="inferred")
+    attrs = await get_all_attributes(db, u.id)
+    m = build_unified_profile(u, None, attrs,
+                              derived={"nutrition_favorite_foods":
+                                       ["chicken", "rice", "oats", "yogurt", "eggs"]})
+    fav = next(s for s in m["standard"]["nutrition"] if s["label"] == "Favorite foods")
+    assert fav["filled"]
+    assert "chicken" in fav["chips"] and "protein bar" in fav["chips"]
+    assert len(fav["chips"]) >= 5
+    # the learned attribute is consumed by the slot, not duplicated into Custom
+    assert all(c["label"].lower() != "favorite foods" for c in m["custom"])
+
+
+async def test_concept_variants_fold_into_standard_slots(db, make_user):
+    """Differently-worded variants fold into the matching standard slot instead
+    of fragmenting into Custom (cardio_*, vitamins, motivated_by)."""
+    from memory.attribute_store import upsert_attribute, get_all_attributes
+    u = await make_user(telegram_id="UP6", name="Test")
+    await upsert_attribute(db, u.id, attribute_key="fitness_cardio_preference",
+                           value="Spin bike", display_name="Cardio Preference",
+                           category="fitness", confidence="confirmed")
+    await upsert_attribute(db, u.id, attribute_key="fitness_cardio_type",
+                           value="Incline walk", display_name="Cardio Type",
+                           category="fitness", confidence="confirmed")
+    await upsert_attribute(db, u.id, attribute_key="motivated_by",
+                           value="Rep PRs", display_name="Motivated By",
+                           category="custom", confidence="confirmed")
+    await upsert_attribute(db, u.id, attribute_key="health_vitamins_minerals",
+                           value="ferritin", display_name="Vitamins / minerals",
+                           category="health", confidence="confirmed")
+    attrs = await get_all_attributes(db, u.id)
+    m = build_unified_profile(u, None, attrs)
+
+    fit = {s["label"]: s for s in m["standard"]["fitness"]}
+    assert fit["Favorite cardio"]["filled"]
+    assert "Spin bike" in fit["Favorite cardio"]["chips"]
+    assert "Incline walk" in fit["Favorite cardio"]["chips"]
+
+    beh = {s["label"]: s for s in m["standard"]["behavior"]}
+    assert beh["Motivation"]["filled"] and "Rep PRs" in beh["Motivation"]["value"]
+
+    health = {s["label"]: s for s in m["standard"]["health"]}
+    assert health["Supplements"]["filled"]
+
+    # none of the folded variants remain in Custom
+    custom_labels = {c["label"] for c in m["custom"]}
+    assert not ({"Cardio Preference", "Cardio Type", "Motivated By",
+                 "Vitamins / minerals"} & custom_labels)
+
+
+async def test_distinct_facts_stay_in_custom(db, make_user):
+    """Facts that only *relate* to a slot but carry distinct info are NOT folded
+    away — e.g. an actual-intake 'Calorie Range' stays separate from the target."""
+    from memory.attribute_store import upsert_attribute, get_all_attributes
+    u = await make_user(telegram_id="UP9", name="Test")
+    await upsert_attribute(db, u.id, attribute_key="nutrition_calorie_range",
+                           value="1700-1900", display_name="Calorie Range",
+                           category="nutrition", confidence="confirmed")
+    attrs = await get_all_attributes(db, u.id)
+    m = build_unified_profile(u, None, attrs)
+    assert any(c["label"] == "Calorie Range" for c in m["custom"])
+
+
+async def test_custom_items_are_removable_with_key(db, make_user):
+    """Custom items expose attribute_key + removable for the soft-hide control."""
+    from memory.attribute_store import upsert_attribute, get_all_attributes
+    u = await make_user(telegram_id="UP7", name="Test")
+    await upsert_attribute(db, u.id, attribute_key="custom_cold_shower", value="10 min",
+                           display_name="Cold shower", category="custom", confidence="inferred")
+    attrs = await get_all_attributes(db, u.id)
+    m = build_unified_profile(u, None, attrs)
+    cs = next(c for c in m["custom"] if c["label"] == "Cold shower")
+    assert cs["key"] == "custom_cold_shower" and cs["removable"] is True
+
+
+async def test_set_attribute_status_soft_hides(db, make_user):
+    """set_attribute_status('discontinued') drops an attribute from active reads."""
+    from memory.attribute_store import (upsert_attribute, get_all_attributes,
+                                         set_attribute_status)
+    u = await make_user(telegram_id="UP8", name="Test")
+    await upsert_attribute(db, u.id, attribute_key="custom_foo", value="bar",
+                           display_name="Foo", category="custom", confidence="inferred")
+    assert any(a.attribute_key == "custom_foo" for a in await get_all_attributes(db, u.id))
+    assert await set_attribute_status(db, u.id, "custom_foo", "discontinued") is True
+    assert all(a.attribute_key != "custom_foo" for a in await get_all_attributes(db, u.id))
+    assert await set_attribute_status(db, u.id, "nonexistent_key", "discontinued") is False

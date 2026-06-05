@@ -322,6 +322,32 @@ async def clear_program_attributes(db, user_id: int) -> None:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# User-initiated status change (dashboard "remove")
+# ─────────────────────────────────────────────────────────────────────────────
+
+async def set_attribute_status(
+    db, user_id: int, attribute_key: str, status: str = "discontinued"
+) -> bool:
+    """Flip one attribute's status — the dashboard 'remove' control sets it to
+    'discontinued' (soft-hide). The row stays for history and drops out of every
+    active read path (dashboard, bio, context). It can be re-learned later, which
+    re-activates it via upsert. Returns True if a row was found. Commits here."""
+    key = canonicalize_key(attribute_key)
+    row = (await db.execute(
+        select(UserAttribute).where(
+            and_(UserAttribute.user_id == user_id,
+                 UserAttribute.attribute_key == key)
+        )
+    )).scalar_one_or_none()
+    if not row:
+        return False
+    row.attribute_status = status
+    row.updated_at = datetime.now(timezone.utc)
+    await db.commit()
+    return True
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Read
 # ─────────────────────────────────────────────────────────────────────────────
 

@@ -1027,6 +1027,29 @@ async def api_edit_food(entry_id: int, patch: FoodPatch, token: str = Query(...)
     return {"status": "ok", "id": entry_id}
 
 
+class AttrHide(BaseModel):
+    attribute_key: str
+
+
+@app.post("/api/profile/attribute/hide")
+async def api_hide_attribute(body: AttrHide, token: str = Query(...)):
+    """Dashboard 'remove' on a learned attribute → soft-hide it.
+
+    Sets attribute_status='discontinued', which drops the row out of every
+    active read path (dashboard, bio, Arnie's context) while preserving history.
+    Soft only: if Arnie re-learns the same fact later, upsert re-activates it.
+    """
+    from memory.attribute_store import set_attribute_status
+    async with AsyncSessionLocal() as db:
+        user = await get_user_by_webhook_token(db, token)
+        if not user:
+            raise HTTPException(status_code=401, detail="Invalid token")
+        ok = await set_attribute_status(db, user.id, body.attribute_key, "discontinued")
+        if not ok:
+            raise HTTPException(status_code=404, detail="Attribute not found")
+    return {"status": "ok", "attribute_key": body.attribute_key}
+
+
 @app.delete("/api/food/{entry_id}")
 async def api_delete_food(entry_id: int, token: str = Query(...)):
     async with AsyncSessionLocal() as db:

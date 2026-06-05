@@ -297,30 +297,15 @@ body{{
 .bn-ico{{width:24px;height:24px;display:grid;place-items:center}}
 .bn-item.active{{color:var(--ac)}}
 
-/* ── LIVE CHAT WIDGET (floating · consolidated Telegram + iMessage) ─── */
-.cw-fab{{
-  position:fixed;z-index:90;bottom:24px;right:24px;
-  width:52px;height:52px;border-radius:50%;cursor:pointer;
-  border:1px solid var(--bd);background:var(--sf2);
-  color:var(--ac);display:grid;place-items:center;
-  box-shadow:0 6px 18px rgba(0,0,0,.28);
-  transition:transform .2s cubic-bezier(.2,.7,.2,1),border-color .15s,color .15s;
-}}
-.cw-fab:hover{{transform:translateY(-2px);border-color:var(--ac)}}
-.cw-fab:active{{transform:scale(.93)}}
-.cw-fab .cw-ico-x{{display:none}}
-.cw-fab.open .cw-ico-chat{{display:none}}
-.cw-fab.open .cw-ico-x{{display:block}}
-.cw-fab.open{{color:var(--tx)}}
-
+/* ── CHAT PANEL (opened from the header Chat button · consolidated Telegram + iMessage) ─── */
 .cw-panel{{
-  position:fixed;z-index:89;bottom:90px;right:24px;
-  width:360px;height:min(540px,70vh);
+  position:fixed;z-index:89;top:80px;right:24px;
+  width:360px;height:min(540px,72vh);
   display:flex;flex-direction:column;overflow:hidden;
   background:var(--hbg);border:1px solid var(--bd);border-radius:16px;
   box-shadow:0 20px 50px rgba(0,0,0,.40);
   backdrop-filter:blur(24px) saturate(140%);-webkit-backdrop-filter:blur(24px) saturate(140%);
-  opacity:0;transform:translateY(10px) scale(.98);pointer-events:none;
+  opacity:0;transform:translateY(-8px) scale(.98);pointer-events:none;
   transition:opacity .2s ease,transform .2s cubic-bezier(.2,.7,.2,1);
 }}
 .cw-panel.open{{opacity:1;transform:none;pointer-events:auto}}
@@ -379,10 +364,9 @@ body{{
 .cw-tg svg{{flex-shrink:0;opacity:.85}}
 .cw-tg:hover svg{{opacity:1}}
 @media(max-width:940px){{
-  .cw-fab{{bottom:calc(82px + env(safe-area-inset-bottom));right:16px}}
   .cw-panel{{
-    bottom:calc(148px + env(safe-area-inset-bottom));right:12px;left:12px;
-    width:auto;height:min(60vh,440px);
+    top:62px;right:12px;left:12px;
+    width:auto;height:min(70vh,500px);
   }}
 }}
 
@@ -911,6 +895,14 @@ body{{
   transition:all .15s;
 }}
 .inrow-edit:hover{{border-color:var(--bd2);color:var(--tx)}}
+.inrow-x{{
+  width:20px;height:20px;border-radius:5px;font-size:10px;flex-shrink:0;
+  background:transparent;border:1px solid transparent;color:var(--mu);
+  cursor:pointer;display:flex;align-items:center;justify-content:center;
+  opacity:.3;transition:all .15s;
+}}
+.inrow:hover .inrow-x{{opacity:.65}}
+.inrow-x:hover{{opacity:1;color:var(--re);border-color:var(--bd);background:var(--sf2)}}
 .inval{{
   font-size:13px;font-weight:500;color:var(--tx2);
   text-align:right;word-break:break-word;overflow-wrap:anywhere;flex:1;min-width:0;
@@ -1358,7 +1350,7 @@ footer{{
     <div class="ph-sub" id="ph-sub"></div>
   </div>
   <div class="ph-actions">
-    <button class="ph-log-btn" onclick="openLogModal()">+ Log</button>
+    <button class="ph-log-btn" id="chat-btn" onclick="toggleChatWidget()"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15.5a2.5 2.5 0 0 1-2.5 2.5H7.8L3 22V5.5A2.5 2.5 0 0 1 5.5 3h13A2.5 2.5 0 0 1 21 5.5z"/></svg>Chat</button>
     <button class="hbtn" id="theme-btn" onclick="toggleTheme()" title="Toggle theme">&#9790;</button>
     <button class="hbtn" onclick="refreshCurrent()" title="Refresh">&#8635;</button>
   </div>
@@ -2740,8 +2732,10 @@ function renderAIProfile(data) {{
       '<div class="infocrd">' + custom.map(function(c) {{
         var confDot = (c.confidence && c.confidence !== 'confirmed')
           ? '<span class="conf-dot" style="background:' + (CONF_COLORS[c.confidence]||'var(--mu)') + '" title="' + esc(c.confidence) + '"></span>' : '';
+        var rm = c.key ? '<button class="inrow-x" title="Remove from profile" data-key="' + esc(c.key) +
+          '" data-label="' + esc(c.label) + '" onclick="hideAttribute(this)">&#10005;</button>' : '';
         return '<div class="inrow"><span class="inlbl">' + esc(c.label) + '</span>' +
-          '<div class="inrow-right"><span class="inval">' + esc(c.value) + '</span>' + confDot + '</div></div>';
+          '<div class="inrow-right"><span class="inval">' + esc(c.value) + '</span>' + confDot + rm + '</div></div>';
       }}).join('') + '</div></div>';
   }}
 
@@ -2759,6 +2753,28 @@ async function loadAIProfile() {{
   }} catch(e) {{
     var loadEl = document.getElementById('ai-profile-loading');
     if (loadEl) loadEl.innerHTML = '<div class="lempty">Could not load profile — tap refresh to retry.</div>';
+  }}
+}}
+
+// Soft-hide a learned custom attribute (dashboard "remove"). Drops it from the
+// profile, bio, and Arnie's context; he may re-learn it later from conversation.
+async function hideAttribute(btn) {{
+  var key = btn.getAttribute('data-key');
+  var label = btn.getAttribute('data-label') || 'this item';
+  if (!key) return;
+  if (!confirm('Remove "' + label + '" from your profile?\\n\\nArnie will stop showing and using it. He may re-learn it later if it comes up again.')) return;
+  btn.disabled = true;
+  try {{
+    var r = await fetch('/api/profile/attribute/hide?token=' + encodeURIComponent(TOKEN), {{
+      method: 'POST',
+      headers: {{'Content-Type': 'application/json'}},
+      body: JSON.stringify({{attribute_key: key}})
+    }});
+    if (!r.ok) throw new Error();
+    reloadAIProfile();
+  }} catch(e) {{
+    btn.disabled = false;
+    alert('Could not remove — try again.');
   }}
 }}
 
@@ -3631,10 +3647,6 @@ function renderChatThread(turns,initial){{
     New message on Telegram
   </a>
 </div>
-<button class="cw-fab" id="cw-fab" onclick="toggleChatWidget()" aria-label="Open conversation with Arnie">
-  <span class="cw-ico-chat"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15.5a2.5 2.5 0 0 1-2.5 2.5H7.8L3 22V5.5A2.5 2.5 0 0 1 5.5 3h13A2.5 2.5 0 0 1 21 5.5z"/></svg></span>
-  <span class="cw-ico-x"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg></span>
-</button>
 </body>
 </html>"""
 

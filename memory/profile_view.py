@@ -68,19 +68,23 @@ STANDARD_SCHEMA = {
     "fitness": [
         {"key": "fitness_training_split",     "label": "Training split",     "type": "single",
          "aliases": ["fitness_workout_split"]},
-        {"key": "fitness_training_time",      "label": "Training time",      "type": "single"},
+        {"key": "fitness_training_time",      "label": "Training time",      "type": "single",
+         "match": ["training_time", "workout_time", "training time", "workout time"]},
         {"key": "fitness_training_frequency", "label": "Training frequency", "type": "single"},
         {"key": "fitness_experience",         "label": "Experience",         "type": "single", "col": "experience"},
-        {"key": "fitness_cardio_habits",      "label": "Favorite cardio",    "type": "list"},
+        {"key": "fitness_cardio_habits",      "label": "Favorite cardio",    "type": "list",
+         "match": ["cardio"]},
         {"key": "fitness_sport",              "label": "Sport",              "type": "single", "col": "sport",
          "hide_empty": True},
     ],
     "health": [
         {"key": "health_injuries",    "label": "Injuries / limitations", "type": "single", "col": "injuries"},
-        {"key": "health_supplements", "label": "Supplements",            "type": "supplements"},
+        {"key": "health_supplements", "label": "Supplements",            "type": "supplements",
+         "match": ["supplement", "vitamin", "mineral"]},
     ],
     "lifestyle": [
-        {"key": "lifestyle_sleep_schedule", "label": "Sleep schedule", "type": "single", "col": "sleep"},
+        {"key": "lifestyle_sleep_schedule", "label": "Sleep schedule", "type": "single", "col": "sleep",
+         "match": ["wake", "bedtime", "sleep_schedule", "sleep schedule", "sleep_time"]},
         {"key": "lifestyle_work_schedule",  "label": "Work schedule",  "type": "single"},
         {"key": "lifestyle_stress_level",   "label": "Stress level",   "type": "single"},
         {"key": "lifestyle_timezone",       "label": "Timezone",       "type": "single", "col": "tz",
@@ -89,7 +93,8 @@ STANDARD_SCHEMA = {
     "behavior": [
         {"key": "behavior_coaching_tone",             "label": "Coaching style", "type": "single", "col": "coaching"},
         {"key": "behavior_accountability_preference", "label": "Accountability", "type": "single", "col": "accountability"},
-        {"key": "behavior_motivation_driver",         "label": "Motivation",     "type": "single"},
+        {"key": "behavior_motivation_driver",         "label": "Motivation",     "type": "single",
+         "match": ["motivat"]},
     ],
 }
 
@@ -199,22 +204,68 @@ def build_unified_profile(
     # ── Standard skeleton — always-present slots, by category ──────────────
     standard: dict[str, list] = {}
     covered = set()  # learned keys consumed by a standard slot
+
+    def _concept_hits(slot_cat: str, match_kw: list) -> list:
+        """Active attrs whose key/display-name contains a slot's match keyword,
+        scoped to the slot's category (plus the generic 'custom' bucket, where
+        the synthesizer often files matchable facts). Lets differently-worded
+        variants — 'Cardio Preference', 'Cardio Type', 'Motivated By' — fold
+        into the right standard slot instead of fragmenting into Custom."""
+        if not match_kw:
+            return []
+        hits = []
+        for a in active:
+            if a.attribute_key in covered:
+                continue
+            acat = a.category or "custom"
+            if acat != slot_cat and acat != "custom":
+                continue
+            hay = (a.attribute_key + " " + (a.display_name or "")).lower()
+            if any(kw in hay for kw in match_kw):
+                hits.append(a)
+        return hits
+
     for cat in STANDARD_ORDER:
         out = []
         for slot in STANDARD_SCHEMA[cat]:
             key, typ = slot["key"], slot["type"]
+            match_kw = slot.get("match", [])
             fact = {"label": slot["label"], "key": key, "type": typ, "filled": False,
                     "value": None, "chips": [], "confidence": "confirmed",
                     "origin": None, "edit_field": None, "raw": ""}
-            # 1) column source
-            if "col" in slot:
-                v, ef, raw = _col(slot["col"])
-                if v:
-                    fact.update(value=str(v), filled=True, origin="column",
-                                edit_field=ef, raw="" if raw is None else str(raw))
-            # 2) supplements aggregate
-            if not fact["filled"] and typ == "supplements":
+
+            if typ == "list":
+                # Union every signal, dedup, cap. Behavioral recurrence (derived)
+                # leads, so a single explicit mention can't shrink the list (the
+                # 'favorite foods 5 → 1' regression). Concept matches fold synonym
+                # attributes (cardio_preference, cardio_type) into one slot.
+                has_derived = bool(derived.get(key))
+                sources = []
+                if has_derived:
+                    sources.append(list(derived[key]))
+                for ak in [key] + slot.get("aliases", []):
+                    if ak in by_key:
+                        sources.append(str(by_key[ak].value).split(","))
+                        covered.add(ak)
+                for a in _concept_hits(cat, match_kw):
+                    sources.append(str(a.value).split(","))
+                    covered.add(a.attribute_key)
+                chips, seen = [], set()
+                for src in sources:
+                    for it in src:
+                        s = str(it).strip()
+                        if s and s.lower() not in seen:
+                            seen.add(s.lower())
+                            chips.append(s)
+                if chips:
+                    fact.update(filled=True, chips=chips[:6], value=", ".join(chips[:6]),
+                                origin="derived" if has_derived else "attribute",
+                                confidence="inferred")
+
+            elif typ == "supplements":
                 supps = [a for a in active if a.attribute_key.startswith("health_supplement_")]
+                supps += [a for a in _concept_hits(cat, match_kw)
+                          if not a.attribute_key.startswith("health_supplement_")]
                 if supps:
                     chips = []
                     for s in supps:
@@ -224,20 +275,37 @@ def build_unified_profile(
                         covered.add(s.attribute_key)
                     fact.update(filled=True, origin="attribute", chips=chips,
                                 value=", ".join(chips))
-            # 3) learned attribute (key or alias)
-            if not fact["filled"] and typ != "supplements":
-                hit = next((by_key[k] for k in [key] + slot.get("aliases", []) if k in by_key), None)
-                if hit:
-                    val = hit.value + (f" {hit.unit}" if hit.unit else "")
-                    fact.update(value=val, filled=True, origin="attribute", confidence=hit.confidence)
-                    covered.add(hit.attribute_key)
-                    if typ == "list":
-                        fact["chips"] = [c.strip() for c in str(hit.value).split(",") if c.strip()]
-            # 4) derived (e.g. favorite foods mined from logs)
-            if not fact["filled"] and derived.get(key):
-                vals = list(derived[key])
-                fact.update(filled=True, origin="derived", confidence="inferred",
-                            chips=vals, value=", ".join(vals))
+
+            else:  # single
+                # 1) column source
+                if "col" in slot:
+                    v, ef, raw = _col(slot["col"])
+                    if v:
+                        fact.update(value=str(v), filled=True, origin="column",
+                                    edit_field=ef, raw="" if raw is None else str(raw))
+                # 2) learned attribute (exact key or alias)
+                if not fact["filled"]:
+                    hit = next((by_key[k] for k in [key] + slot.get("aliases", []) if k in by_key), None)
+                    if hit:
+                        val = hit.value + (f" {hit.unit}" if hit.unit else "")
+                        fact.update(value=val, filled=True, origin="attribute", confidence=hit.confidence)
+                        covered.add(hit.attribute_key)
+                # 3) concept match — fill if still empty, then absorb the rest so
+                #    differently-worded restatements don't clutter Custom.
+                hits = _concept_hits(cat, match_kw)
+                if hits:
+                    if not fact["filled"]:
+                        m = hits[0]
+                        val = m.value + (f" {m.unit}" if m.unit else "")
+                        fact.update(value=val, filled=True, origin="attribute", confidence=m.confidence)
+                    for a in hits:
+                        covered.add(a.attribute_key)
+                # 4) derived
+                if not fact["filled"] and derived.get(key):
+                    vals = list(derived[key])
+                    fact.update(filled=True, origin="derived", confidence="inferred",
+                                chips=vals, value=", ".join(vals))
+
             # hide_empty optional slots when there's nothing to show
             if not fact["filled"] and slot.get("hide_empty"):
                 continue
@@ -254,6 +322,7 @@ def build_unified_profile(
             "label": a.display_name or a.attribute_key.replace("_", " ").title(),
             "value": val, "category": a.category or "custom",
             "confidence": a.confidence, "origin": "attribute",
+            "key": a.attribute_key, "removable": True,
             "edit_field": None, "raw": "",
         })
     _dedupe_labels(custom, "custom")
