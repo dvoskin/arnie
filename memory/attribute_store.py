@@ -104,6 +104,39 @@ CANONICAL_KEYS: dict[str, str] = {
     "mental_health": "mental_general_notes",
     "anxiety": "mental_anxiety_notes",
     "stress": "mental_stress_patterns",
+    # ── extended variants (collapse observed fragmentation at the source) ──
+    # cardio: every phrasing → one slot key
+    "cardio_preference": "fitness_cardio_habits",
+    "cardio_type": "fitness_cardio_habits",
+    "favorite_cardio": "fitness_cardio_habits",
+    "preferred_cardio": "fitness_cardio_habits",
+    "cardio_activities": "fitness_cardio_habits",
+    # motivation
+    "motivated_by": "behavior_motivation_driver",
+    "motivators": "behavior_motivation_driver",
+    "motivation_driver": "behavior_motivation_driver",
+    "what_motivates_you": "behavior_motivation_driver",
+    # supplements: aggregate restatements → one aggregate key (per-item zinc/creatine
+    # etc. keep their own health_supplement_* keys via the entries above)
+    "supplements": "health_supplements",
+    "supplement_stack": "health_supplements",
+    "supplement_list": "health_supplements",
+    "vitamins": "health_supplements",
+    "vitamins_minerals": "health_supplements",
+    "vitamins_and_minerals": "health_supplements",
+    # training time
+    "preferred_training_time": "fitness_training_time",
+    "workout_window": "fitness_training_time",
+    "train_time": "fitness_training_time",
+    # sleep schedule
+    "wake_sleep_schedule": "lifestyle_sleep_schedule",
+    "sleep_schedule": "lifestyle_sleep_schedule",
+    "wake_and_sleep_schedule": "lifestyle_sleep_schedule",
+    # staples / preferred exercises
+    "commonly_eaten_staples": "nutrition_staple_foods",
+    "common_staples": "nutrition_staple_foods",
+    "key_exercises": "fitness_preferred_exercises",
+    "main_lifts": "fitness_preferred_exercises",
 }
 
 # Category defaults for keys that start with a known prefix
@@ -222,6 +255,22 @@ async def upsert_attribute(
             existing.display_name = display_name
         existing.updated_at = datetime.now(timezone.utc)
     else:
+        # F5 — dedup-on-write: a NEW key whose (substantial) value already exists
+        # verbatim on an active attribute in the same category is the same fact
+        # reworded under a different key. Skip it (kills the 'Supplements …' twins).
+        # Guarded by length so short shared values ('daily', '1-2 RIR') aren't merged.
+        norm = (value or "").strip().lower()
+        if len(norm) >= 20:
+            siblings = (await db.execute(
+                select(UserAttribute).where(and_(
+                    UserAttribute.user_id == user_id,
+                    UserAttribute.category == cat,
+                    UserAttribute.attribute_status == "active",
+                ))
+            )).scalars().all()
+            if any((s.value or "").strip().lower() == norm for s in siblings):
+                logger.info(f"Skipped duplicate-value attribute {key} (already in {cat})")
+                return
         db.add(UserAttribute(
             user_id=user_id,
             attribute_key=key,
@@ -261,6 +310,44 @@ async def upsert_many(db, user_id: int, attrs: list[dict]) -> int:
         )
         count += 1
     return count
+
+
+# Generous backstop against runaway growth. The real bound is key-reuse during
+# synthesis (the model is shown existing keys); this only fires for true runaway,
+# and never touches confirmed facts or the workout-program mirror.
+_ACTIVE_CAP = 40
+
+
+async def prune_attributes(db, user_id: int, cap: int = _ACTIVE_CAP) -> int:
+    """If a user has more than `cap` ACTIVE attributes, soft-discontinue the
+    weakest (lowest confidence, then oldest) down to the cap. Confirmed facts and
+    training-program mirrors are never evicted. Returns the count discontinued."""
+    rows = (await db.execute(
+        select(UserAttribute).where(and_(
+            UserAttribute.user_id == user_id,
+            UserAttribute.attribute_status == "active",
+        ))
+    )).scalars().all()
+    if len(rows) <= cap:
+        return 0
+
+    _rank = {"needs_verification": 0, "inferred": 1, "confirmed": 2}
+    _epoch = datetime(1970, 1, 1, tzinfo=timezone.utc)
+
+    def _ts(r):
+        t = r.updated_at or _epoch
+        return t.replace(tzinfo=timezone.utc) if t.tzinfo is None else t
+
+    evictable = [r for r in rows
+                 if r.confidence != "confirmed" and r.source != "training_program"]
+    evictable.sort(key=lambda r: (_rank.get(r.confidence, 1), _ts(r)))
+    n_evict = min(len(rows) - cap, len(evictable))
+    for r in evictable[:n_evict]:
+        r.attribute_status = "discontinued"
+    if n_evict:
+        await db.commit()
+        logger.info(f"Pruned {n_evict} low-priority attributes for user {user_id} (cap {cap})")
+    return n_evict
 
 
 # ─────────────────────────────────────────────────────────────────────────────

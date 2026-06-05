@@ -235,10 +235,13 @@ def build_unified_profile(
                     "origin": None, "edit_field": None, "raw": ""}
 
             if typ == "list":
-                # Union every signal, dedup, cap. Behavioral recurrence (derived)
-                # leads, so a single explicit mention can't shrink the list (the
-                # 'favorite foods 5 → 1' regression). Concept matches fold synonym
-                # attributes (cardio_preference, cardio_type) into one slot.
+                # Show the real list, not every rephrasing. Clean sources lead:
+                # the derived behavioral signal (logged foods/cardio) + the
+                # canonical attribute. Concept-match variants are always folded
+                # away (covered, so they leave Custom); their wordy restatements
+                # are unioned in ONLY when there's no clean source at all — so we
+                # never drop data, but a canonical value isn't cluttered by its
+                # own paraphrases. Recurrence leads (favorite foods 5 → 1 fix).
                 has_derived = bool(derived.get(key))
                 sources = []
                 if has_derived:
@@ -247,8 +250,11 @@ def build_unified_profile(
                     if ak in by_key:
                         sources.append(str(by_key[ak].value).split(","))
                         covered.add(ak)
-                for a in _concept_hits(cat, match_kw):
-                    sources.append(str(a.value).split(","))
+                hits = _concept_hits(cat, match_kw)
+                if not sources:
+                    for a in hits:
+                        sources.append(str(a.value).split(","))
+                for a in hits:
                     covered.add(a.attribute_key)
                 chips, seen = [], set()
                 for src in sources:
@@ -263,15 +269,30 @@ def build_unified_profile(
                                 confidence="inferred")
 
             elif typ == "supplements":
-                supps = [a for a in active if a.attribute_key.startswith("health_supplement_")]
-                supps += [a for a in _concept_hits(cat, match_kw)
-                          if not a.attribute_key.startswith("health_supplement_")]
-                if supps:
-                    chips = []
-                    for s in supps:
-                        nm = s.display_name or s.attribute_key.replace("health_supplement_", "").replace("_", " ").title()
+                # The per-item keys (health_supplement_*) are the real stack — one
+                # clean chip each. Aggregate 'supplements: a, b, c' restatements and
+                # vitamin/mineral notes are folded away (covered) and only shown
+                # when there's no per-item data, so they never duplicate the
+                # structured chips. Drop the verbose 'Health Supplement ' prefix.
+                per_item = [a for a in active
+                            if a.attribute_key.startswith("health_supplement_")
+                            and a.attribute_key not in covered]
+                hits = [a for a in _concept_hits(cat, match_kw)
+                        if not a.attribute_key.startswith("health_supplement_")]
+                for a in hits:
+                    covered.add(a.attribute_key)
+                display = per_item if per_item else hits
+                if display:
+                    chips, seen = [], set()
+                    for s in display:
+                        nm = (s.display_name or
+                              s.attribute_key.replace("health_supplement_", "").replace("_", " ").title())
+                        nm = nm.replace("Health Supplement ", "").strip()
                         unit = f" {s.unit}" if s.unit else ""
-                        chips.append(f"{nm} {s.value}{unit}".strip())
+                        chip = f"{nm} {s.value}{unit}".strip()
+                        if chip.lower() not in seen:
+                            seen.add(chip.lower())
+                            chips.append(chip)
                         covered.add(s.attribute_key)
                     fact.update(filled=True, origin="attribute", chips=chips,
                                 value=", ".join(chips))

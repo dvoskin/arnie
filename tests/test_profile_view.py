@@ -230,3 +230,41 @@ async def test_set_attribute_status_soft_hides(db, make_user):
     assert await set_attribute_status(db, u.id, "custom_foo", "discontinued") is True
     assert all(a.attribute_key != "custom_foo" for a in await get_all_attributes(db, u.id))
     assert await set_attribute_status(db, u.id, "nonexistent_key", "discontinued") is False
+
+
+async def test_supplements_prefer_per_item_over_aggregate(db, make_user):
+    """Structured per-item supplement keys are the display; an aggregate
+    'supplements: a, b, c' restatement is folded away, not shown as a dup chip.
+    The verbose 'Health Supplement ' prefix is stripped."""
+    from memory.attribute_store import upsert_attribute, get_all_attributes
+    u = await make_user(telegram_id="UP10", name="Test")
+    await upsert_attribute(db, u.id, attribute_key="health_supplement_fish_oil",
+                           value="daily", display_name="Health Supplement Fish Oil",
+                           category="health", confidence="confirmed")
+    await upsert_attribute(db, u.id, attribute_key="health_aggregate_note",
+                           value="Fish oil, vitamin D, magnesium daily",
+                           display_name="Supplements", category="health", confidence="confirmed")
+    attrs = await get_all_attributes(db, u.id)
+    m = build_unified_profile(u, None, attrs)
+    supps = next(s for s in m["standard"]["health"] if s["label"] == "Supplements")
+    assert any("Fish Oil" in c for c in supps["chips"])
+    assert not any("vitamin D, magnesium" in c for c in supps["chips"])
+    assert not any(c.startswith("Health Supplement") for c in supps["chips"])
+    assert all(c["label"] != "Supplements" for c in m["custom"])
+
+
+async def test_cardio_canonical_only_when_present(db, make_user):
+    """When a canonical cardio attribute exists, variant rephrasings are folded
+    away (covered), NOT unioned into wordy extra chips."""
+    from memory.attribute_store import upsert_attribute, get_all_attributes
+    u = await make_user(telegram_id="UP11", name="Test")
+    await upsert_attribute(db, u.id, attribute_key="fitness_cardio_habits",
+                           value="Spin, incline walk", category="fitness", confidence="confirmed")
+    await upsert_attribute(db, u.id, attribute_key="fitness_cardio_pref_note",
+                           value="Spin bike 14-30 min, tends to add when frustrated",
+                           display_name="Cardio Preference", category="fitness", confidence="inferred")
+    attrs = await get_all_attributes(db, u.id)
+    m = build_unified_profile(u, None, attrs)
+    cardio = next(s for s in m["standard"]["fitness"] if s["label"] == "Favorite cardio")
+    assert cardio["chips"] == ["Spin", "incline walk"]
+    assert all(c["label"] != "Cardio Preference" for c in m["custom"])

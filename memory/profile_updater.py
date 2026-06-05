@@ -293,9 +293,11 @@ async def maybe_update_profile(user, db, force: bool = False) -> bool:
             # Upsert extracted attributes
             if attrs:
                 try:
-                    from memory.attribute_store import upsert_many
+                    from memory.attribute_store import upsert_many, prune_attributes
                     count = await upsert_many(db, user.id, attrs)
-                    logger.info(f"Upserted {count} attributes for {user.telegram_id}")
+                    pruned = await prune_attributes(db, user.id)
+                    logger.info(f"Upserted {count} attributes for {user.telegram_id}"
+                                + (f", pruned {pruned}" if pruned else ""))
                 except Exception as e:
                     logger.error(f"Attribute upsert failed for {user.telegram_id}: {e}")
 
