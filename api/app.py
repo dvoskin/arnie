@@ -2467,6 +2467,40 @@ async def apple_health_guide(token: str = Query(...)):
 
 # ── Personalized .shortcut file download ───────────────────────────────────────
 
+@app.get("/health/apple/shortcut/test-health-actions")
+async def test_health_actions_shortcut(token: str = Query(...)):
+    """
+    Diagnostic: serves the Apple-Gallery-approved 'Energy Balance' shortcut
+    which uses the same is.workflow.actions.filter.health.quantity action.
+    If this ALSO shows Unknown Action on device, the identifier is wrong for
+    that iOS version. If it works, the issue is in the Arnie plist.
+    """
+    async with AsyncSessionLocal() as db:
+        user = await get_user_by_webhook_token(db, token)
+        if not user:
+            return JSONResponse({"error": "Invalid or expired token."}, status_code=401)
+
+    # Re-fetch fresh signed copy from iCloud (URL expires, so fetch each time)
+    import httpx
+    from fastapi.responses import Response as _Response
+    try:
+        meta = (await httpx.AsyncClient().get(
+            "https://www.icloud.com/shortcuts/api/records/cc22c46649d3428bbf181f1ea7f623b4",
+            timeout=10,
+        )).json()
+        dl_url = meta["fields"]["signedShortcut"]["value"]["downloadURL"]
+        data = (await httpx.AsyncClient().get(dl_url, timeout=15)).content
+    except Exception as exc:
+        return JSONResponse({"error": f"Could not fetch test shortcut: {exc}"}, status_code=502)
+
+    return _Response(
+        content=data,
+        media_type="application/octet-stream",
+        headers={"Content-Disposition": 'attachment; filename="HealthTest.shortcut"',
+                 "Cache-Control": "no-store"},
+    )
+
+
 @app.get("/health/apple/shortcut")
 async def download_apple_shortcut(token: str = Query(...)):
     """
