@@ -210,6 +210,28 @@ async def _whoop_get(token: str, path: str, params: Optional[dict] = None) -> Op
             return None
 
 
+def _scored(record: dict) -> Optional[dict]:
+    """
+    Return a record's `score` dict only when it is actually usable.
+
+    Whoop API v2 attaches a `score_state` to every record and only includes the
+    `score` object when score_state == "SCORED" (the other states are
+    "PENDING_SCORE" and "UNSCORABLE", both of which carry a null score). Reading
+    a half-processed record would silently write NULLs over the columns, so every
+    parser gates on this.
+
+    Defensive: if a response ever omits score_state but still carries a populated
+    score (a legacy or degraded shape), accept it rather than drop real data.
+    """
+    score = record.get("score")
+    if not isinstance(score, dict) or not score:
+        return None
+    state = record.get("score_state")
+    if state is not None and state != "SCORED":
+        return None
+    return score
+
+
 async def sync_user_whoop(db, user: User, days: int = 2,
                           snapshot_user_id: int = None) -> int:
     """
@@ -228,12 +250,18 @@ async def sync_user_whoop(db, user: User, days: int = 2,
     start = end - timedelta(days=days)
     params = {"start": start.isoformat(), "end": end.isoformat(), "limit": 25}
 
-    # Fetch all endpoints in parallel — recovery, sleep, cycles, workouts
+    # Fetch all endpoints in parallel — recovery, sleep, cycles, workouts.
+    # Whoop API v2: v1 was deprecated and sunset in late 2025, after which its
+    # /v1/recovery and /v1/activity/sleep endpoints stopped returning scored data
+    # (which is why those columns went NULL while cycle/strain kept flowing). v2
+    # keeps the same {"records": [...]} envelope and the same nested score field
+    # names — the score object is just gated behind score_state == "SCORED" now
+    # (see _scored()). Sleep/workout IDs became UUIDs, but we key on dates, not IDs.
     recovery_data, sleep_data, cycle_data, workout_data = await asyncio.gather(
-        _whoop_get(token, "/v1/recovery", params),
-        _whoop_get(token, "/v1/activity/sleep", params),
-        _whoop_get(token, "/v1/cycle", params),
-        _whoop_get(token, "/v1/activity/workout", params),
+        _whoop_get(token, "/v2/recovery", params),
+        _whoop_get(token, "/v2/activity/sleep", params),
+        _whoop_get(token, "/v2/cycle", params),
+        _whoop_get(token, "/v2/activity/workout", params),
         return_exceptions=False,
     )
 
@@ -244,12 +272,17 @@ async def sync_user_whoop(db, user: User, days: int = 2,
     def _ensure(d: date):
         by_date.setdefault(d, {})
 
+    recovery_seen = recovery_scored = 0
     if recovery_data and "records" in recovery_data:
         for rec in recovery_data["records"]:
-            score = rec.get("score") or {}
+            recovery_seen += 1
             created = rec.get("created_at", "")[:10]
             if not created:
                 continue
+            score = _scored(rec)
+            if not score:
+                continue
+            recovery_scored += 1
             d = date.fromisoformat(created)
             _ensure(d)
             by_date[d]["recovery_score"] = score.get("recovery_score")
@@ -258,14 +291,23 @@ async def sync_user_whoop(db, user: User, days: int = 2,
             by_date[d]["skin_temp_celsius"] = score.get("skin_temp_celsius")
             by_date[d]["spo2_percentage"] = score.get("spo2_percentage")
 
+    sleep_seen = sleep_scored = 0
     if sleep_data and "records" in sleep_data:
         for sleep in sleep_data["records"]:
+            sleep_seen += 1
+            # Naps are separate records in v2; they must not overwrite the day's
+            # main sleep (sleep_hours, etc.), so skip them for the daily snapshot.
+            if sleep.get("nap"):
+                continue
             # Use the sleep END date so it lands on the day the user woke up
             end_str = sleep.get("end", "")[:10]
             if not end_str:
                 continue
+            score = _scored(sleep)
+            if not score:
+                continue
+            sleep_scored += 1
             d = date.fromisoformat(end_str)
-            score = sleep.get("score") or {}
             stages = score.get("stage_summary") or {}
             _ensure(d)
             total_in_bed_ms = stages.get("total_in_bed_time_milli", 0)
@@ -299,8 +341,10 @@ async def sync_user_whoop(db, user: User, days: int = 2,
             created = cyc.get("created_at", "")[:10]
             if not created:
                 continue
+            score = _scored(cyc)
+            if not score:
+                continue
             d = date.fromisoformat(created)
-            score = cyc.get("score") or {}
             _ensure(d)
             if score.get("strain") is not None:
                 by_date[d]["strain"] = score.get("strain")
@@ -332,9 +376,14 @@ async def sync_user_whoop(db, user: User, days: int = 2,
             if not start_str:
                 continue
             d = date.fromisoformat(start_str)
-            score = wo.get("score") or {}
-            sport_id = wo.get("sport_id", -1)
-            sport_name = SPORT_MAP.get(sport_id, f"Sport {sport_id}")
+            score = _scored(wo) or {}  # keep the entry even if scoring is pending
+            # v2 adds a human-readable sport_name; fall back to the v1 sport_id map.
+            sport_name = wo.get("sport_name")
+            if sport_name:
+                sport_name = sport_name.replace("_", " ").title()
+            else:
+                sport_id = wo.get("sport_id", -1)
+                sport_name = SPORT_MAP.get(sport_id, f"Sport {sport_id}")
             duration_ms = 0
             if wo.get("start") and wo.get("end"):
                 try:
@@ -357,6 +406,28 @@ async def sync_user_whoop(db, user: User, days: int = 2,
         for d, workouts in workout_by_date.items():
             _ensure(d)
             by_date[d]["whoop_workouts"] = _json.dumps(workouts)
+
+    # Regression visibility: a connected user whose sync yields strain (from the
+    # cycle endpoint) but no recovery AND no sleep almost always means a
+    # recovery/sleep endpoint, OAuth scope, or score_state regression — exactly the
+    # silent failure that left these columns NULL under the deprecated v1 API.
+    # Surface it loudly instead of quietly writing half-empty rows.
+    has_strain = any(f.get("strain") is not None for f in by_date.values())
+    has_recovery = any(f.get("recovery_score") is not None for f in by_date.values())
+    has_sleep = any(f.get("sleep_hours") is not None for f in by_date.values())
+    if has_strain and not (has_recovery or has_sleep):
+        def _diag(data, seen, scored):
+            if data is None:
+                return "endpoint error (see GET log above)"
+            return f"{seen} record(s), {scored} scored"
+        logger.warning(
+            "User %s: Whoop sync wrote strain but NO recovery and NO sleep — "
+            "recovery=[%s], sleep=[%s]. Check granted scopes (read:recovery "
+            "read:sleep) and v2 endpoint health.",
+            user.id,
+            _diag(recovery_data, recovery_seen, recovery_scored),
+            _diag(sleep_data, sleep_seen, sleep_scored),
+        )
 
     # Upsert
     count = 0
