@@ -1339,7 +1339,7 @@ footer{{
     <!-- WHOOP RECOVERY — bottom of day, only when connected -->
     <div id="whoop-module" style="display:none">
       <div class="stitle spaced">
-        <span>Whoop <span id="whoop-date" style="font-family:'Geist Mono','SF Mono',monospace;font-weight:400;opacity:.6;font-size:9px;letter-spacing:.04em;margin-left:6px"></span></span>
+        <span><span id="health-mod-title">Whoop</span> <span id="whoop-date" style="font-family:'Geist Mono','SF Mono',monospace;font-weight:400;opacity:.6;font-size:9px;letter-spacing:.04em;margin-left:6px"></span></span>
         <button class="add-toggle" id="whoop-sync-btn" onclick="syncWhoop()" title="Sync" style="font-size:15px;font-family:inherit">&#8635;</button>
       </div>
       <div class="whoop-grid" id="whoop-grid"></div>
@@ -1995,14 +1995,22 @@ function renderWhoopModule(snap, profile){{
   var mod=document.getElementById('whoop-module');
   var grid=document.getElementById('whoop-grid');
   var dateEl=document.getElementById('whoop-date');
+  var titleEl=document.getElementById('health-mod-title');
+  var syncBtn=document.getElementById('whoop-sync-btn');
   if(!mod||!grid)return;
 
-  // Show if connected; if no snapshot yet, show sync prompt
+  // Whoop takes priority (richer data). Apple Health users get a simple panel.
   if(!profile||!profile.whoop_connected){{
-    mod.style.display='none';
+    if(profile&&profile.apple_health_connected){{
+      renderAppleHealthModule(snap,mod,grid,dateEl,titleEl,syncBtn);
+    }}else{{
+      mod.style.display='none';
+    }}
     return;
   }}
 
+  if(titleEl)titleEl.textContent='Whoop';
+  if(syncBtn)syncBtn.style.display='';
   mod.style.display='block';
 
   if(!snap||snap.source!=='whoop'){{
@@ -2076,6 +2084,40 @@ function renderWhoopModule(snap, profile){{
   }}
 
   grid.innerHTML=parts||'<div style="color:var(--mu);font-size:13px;padding:8px 0">No data for this day yet — run /whoop sync in Telegram.</div>';
+}}
+
+// ── Apple Health module — simple panel (push-only, no sync button) ─────────
+function renderAppleHealthModule(snap,mod,grid,dateEl,titleEl,syncBtn){{
+  if(titleEl)titleEl.textContent='Apple Health';
+  if(syncBtn)syncBtn.style.display='none';  // Apple Health is push-only — nothing to sync
+  mod.style.display='block';
+
+  if(!snap||snap.source!=='apple_health'){{
+    if(dateEl)dateEl.textContent='';
+    grid.innerHTML='<div style="color:var(--mu);font-size:13px;padding:4px 0">No Apple Health data for this day yet — it syncs automatically each morning.</div>';
+    return;
+  }}
+  if(dateEl)dateEl.textContent=snap.date||'';
+
+  function stat(label,val,sub){{
+    if(val==null||val===undefined)return '';
+    return '<div class="whoop-stat"><div class="whoop-stat-label">'+label+'</div>'+
+      '<div class="whoop-stat-val">'+val+'</div>'+
+      (sub?'<div class="whoop-stat-sub">'+esc(String(sub))+'</div>':'')+'</div>';
+  }}
+  function fmtSleep(h){{
+    if(!h)return null;
+    var hrs=Math.floor(h),mins=Math.round((h-hrs)*60);
+    return hrs+'h'+(mins>0?' '+mins+'m':'');
+  }}
+
+  var parts='';
+  parts+=stat('Sleep',fmtSleep(snap.sleep_hours),null);
+  parts+=stat('Steps',snap.steps!=null?snap.steps.toLocaleString():null,null);
+  parts+=stat('Active cal',snap.active_calories!=null?Math.round(snap.active_calories)+'':null,null);
+  parts+=stat('Resting cal',snap.resting_calories!=null?Math.round(snap.resting_calories)+'':null,null);
+
+  grid.innerHTML=parts||'<div style="color:var(--mu);font-size:13px;padding:8px 0">No Apple Health data for this day yet — it syncs automatically each morning.</div>';
 }}
 
 function renderHealthGrid(h){{
@@ -3322,7 +3364,6 @@ def _apple_guide_html(endpoint: str, status_url: str = "") -> str:  # noqa: C901
         "&active_calories=[cals]"
         "&resting_calories=[rest]"
         "&sleep_seconds=[sleep]"
-        "&exercise_minutes=[exmin]"
     )
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -3504,7 +3545,7 @@ footer{{text-align:center;padding:24px 0 0;color:#2a3040;font-size:12px}}
 <div class="step">
   <div class="step-hd">
     <div class="snum">2</div>
-    <div class="stname">Add 5 health queries</div>
+    <div class="stname">Add 4 health queries</div>
   </div>
   <p>For each row below, tap <b>Add Action</b> in Shortcuts &rarr; search for the term &rarr; tap it. Then:</p>
   <p style="margin-bottom:12px">① Make sure <b>Today</b> is selected &nbsp; ② Set <b>Summarise</b> to <b>Sum</b> &nbsp; ③ Tap the blue result chip at the bottom &rarr; <b>Set Variable</b> &rarr; paste the name &rarr; <b>Done</b></p>
@@ -3528,11 +3569,6 @@ footer{{text-align:center;padding:24px 0 0;color:#2a3040;font-size:12px}}
     <div><div class="mname">Sleep</div><div class="msearch">Search for &rarr;</div></div>
     <button class="mcopy" onclick="cp('Sleep Analysis',this)">Sleep Analysis</button>
     <button class="mcopy" onclick="cp('sleep',this)">sleep</button>
-  </div>
-  <div class="mrow">
-    <div><div class="mname">Exercise</div><div class="msearch">Search for &rarr;</div></div>
-    <button class="mcopy" onclick="cp('Apple Exercise Time',this)">Apple Exercise Time</button>
-    <button class="mcopy" onclick="cp('exmin',this)">exmin</button>
   </div>
   <div class="note" style="margin-top:4px">
     The two buttons on each row are: the <b>search term</b> (paste it in the search box)
@@ -3570,10 +3606,6 @@ footer{{text-align:center;padding:24px 0 0;color:#2a3040;font-size:12px}}
     <div class="cval">&amp;sleep_seconds=</div>
     <button class="cbtn" onclick="cp('&sleep_seconds=',this)">Copy</button>
   </div>
-  <div class="crow">
-    <div class="cval">&amp;exercise_minutes=</div>
-    <button class="cbtn" onclick="cp('&exercise_minutes=',this)">Copy</button>
-  </div>
   <div class="note grn" style="margin-top:8px">
     Your finished URL will look like this — the <span style="color:#f59e0b">orange parts</span> are your Shortcuts variables:
     <div style="margin-top:8px;background:rgba(0,0,0,.3);border-radius:9px;padding:11px 12px;
@@ -3583,8 +3615,7 @@ footer{{text-align:center;padding:24px 0 0;color:#2a3040;font-size:12px}}
       style="color:#4a9eff">&amp;steps=</span><span style="color:#f59e0b">steps</span><span
       style="color:#4a9eff">&amp;active_calories=</span><span style="color:#f59e0b">cals</span><span
       style="color:#4a9eff">&amp;resting_calories=</span><span style="color:#f59e0b">rest</span><span
-      style="color:#4a9eff">&amp;sleep_seconds=</span><span style="color:#f59e0b">sleep</span><span
-      style="color:#4a9eff">&amp;exercise_minutes=</span><span style="color:#f59e0b">exmin</span>
+      style="color:#4a9eff">&amp;sleep_seconds=</span><span style="color:#f59e0b">sleep</span>
     </div>
   </div>
 </div>
@@ -3610,7 +3641,7 @@ footer{{text-align:center;padding:24px 0 0;color:#2a3040;font-size:12px}}
   <p>Tap <b>Done</b>. Then tap the new automation in the list and <b>turn off "Ask Before Running"</b> — this makes it run silently every morning without interrupting you.</p>
   <div class="note grn">
     <b>All done.</b> From tomorrow morning it runs automatically.
-    Your steps, calories, sleep, and exercise will appear in your Arnie dashboard every day.
+    Your steps, calories, and sleep will appear in your Arnie dashboard every day.
   </div>
 </div>
 

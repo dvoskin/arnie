@@ -792,6 +792,7 @@ async def _build_stats_for_user(db, user, target_date=None):
          "strain": s.strain,
          "steps": s.steps,
          "active_calories": s.active_calories,
+         "resting_calories": s.resting_calories,
          "whoop_workouts": getattr(s, "whoop_workouts", None)}
         for s in health_snaps
     ]
