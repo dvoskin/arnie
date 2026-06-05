@@ -42,26 +42,11 @@ class WhoopProvider(WearableProvider):
         return synced > 0
 
     async def refresh_tokens_if_needed(self, db, user) -> bool:
-        """Refresh Whoop OAuth tokens if expiring soon."""
-        from api.whoop import refresh_whoop_token
-        from datetime import datetime, timedelta, timezone
+        """Refresh Whoop OAuth tokens if expiring soon.
 
-        if not user.whoop_refresh_token:
-            return False
-
-        expires = user.whoop_token_expires_at
-        if expires is None:
-            return True  # Unknown — assume valid
-
-        expires_aware = (
-            expires.replace(tzinfo=timezone.utc)
-            if expires.tzinfo is None else expires
-        )
-        if datetime.now(timezone.utc) >= expires_aware - timedelta(minutes=5):
-            try:
-                return await refresh_whoop_token(db, user)
-            except Exception as e:
-                logger.error(f"Whoop token refresh failed for user {user.id}: {e}")
-                return False
-
-        return True
+        Delegates to api/whoop._ensure_fresh_token, which checks expiry
+        (35-min buffer), refreshes via the refresh token, and persists the
+        new tokens. Returns True if a usable access token is available.
+        """
+        from api.whoop import _ensure_fresh_token
+        return bool(await _ensure_fresh_token(db, user))
