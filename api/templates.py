@@ -274,7 +274,7 @@ body{{
 .whoop-rec-low  .whoop-stat-val{{color:var(--re)}}
 .macro-cell{{background:var(--sf);padding:12px 14px;}}
 .mc-label{{font-family:'Geist Mono','SF Mono',monospace;font-size:9.5px;text-transform:uppercase;letter-spacing:.1em;color:var(--mu);margin-bottom:5px;}}
-.mc-num{{font-family:'Instrument Serif','Times New Roman',serif;font-size:26px;letter-spacing:-.02em;line-height:1;}}
+.mc-num{{font-family:'Geist',ui-sans-serif,system-ui,sans-serif;font-size:26px;font-weight:600;letter-spacing:-.01em;font-variant-numeric:tabular-nums;line-height:1.05;}}
 .mc-sub{{font-size:11.5px;color:var(--mu);margin-top:3px;line-height:1.3;}}
 .mc-bar{{background:var(--sf3);border-radius:999px;height:3px;margin-top:9px;overflow:hidden;}}
 .mc-fill{{height:100%;border-radius:999px;transition:width .8s cubic-bezier(.4,0,.2,1);}}
