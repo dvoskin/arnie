@@ -103,7 +103,23 @@ def deterministic_confirmation(tool_calls, log, prefs) -> str:
         return f"{head}|||{tail}|||What's next?"
 
     if "log_exercise" in names:
-        return "Logged your workout. 💪|||How'd it feel?"
+        # Mid-workout detection: if more than one exercise logged today (including this
+        # turn) the user is still in session — don't imply "workout done."
+        # We check the log totals: workout_completed is set after any exercise entry,
+        # but we can't easily count prior entries here without a DB query. Use the tool
+        # call count as a proxy — multiple log_exercise calls this turn = mid-session.
+        ex_names = [
+            ((tc.get("input") or {}).get("exercise_name") or "").strip()
+            for tc in (tool_calls or [])
+            if tc.get("name") == "log_exercise"
+        ]
+        ex_names = [n for n in ex_names if n]
+        if len(ex_names) > 1:
+            # Multi-exercise turn — stay in session mode
+            return f"Logged {len(ex_names)} exercises. 💪|||What's next?"
+        ex_label = ex_names[0] if ex_names else "exercise"
+        # Single exercise logged — neutral, keeps workout open
+        return f"{ex_label.capitalize()} logged. 💪|||What's the next set?"
     if "log_body_weight" in names:
         # Guard 1: if an exercise was also logged this turn, log_body_weight is
         # almost certainly a false positive (exercise weight mis-routed as body weight).
@@ -303,9 +319,12 @@ async def _dispatch(name, inp, user, today_log, db, source_type):  # noqa: C901
         return (
             f"Logged {food_name}: {analysis.calories} cal, {analysis.protein:.0f}g protein"
             f"{date_label}. ANALYSIS: {analysis.coach_note}. "
-            f"Day total: {target_log.total_calories:.0f} cal, {target_log.total_protein:.0f}g protein"
+            f"DAY TOTAL: {target_log.total_calories:.0f} cal, {target_log.total_protein:.0f}g protein"
             f"{(' (' + remaining.strip() + ')') if remaining else ''}. "
-            f"Coach on this food — its quality, density, and goal fit — don't just confirm it."
+            f"YOUR REPLY MUST include: (1) the food name and its calories + protein, "
+            f"(2) the day total from DAY TOTAL above — copy the numbers verbatim, "
+            f"(3) one coaching insight on quality or goal fit. "
+            f"The numbers are MANDATORY — do not skip them for coaching. Numbers first, then coaching."
         )
 
     elif name == "log_exercise":
@@ -338,7 +357,46 @@ async def _dispatch(name, inp, user, today_log, db, source_type):  # noqa: C901
         )
         await db.refresh(target_log)
         date_label = f" (for {past_date})" if past_date else ""
-        return f"Logged {inp.get('exercise_name')}{date_label}"
+
+        exercise_name = inp.get("exercise_name") or "exercise"
+        sets_val = inp.get("sets")
+        reps_val = inp.get("reps")
+        weight_val = inp.get("weight")
+        weight_unit_val = inp.get("weight_unit", "lbs")
+        cardio_type_val = inp.get("cardio_type")
+        duration_val = inp.get("duration_minutes")
+
+        # Build a concise log descriptor the LLM can echo back in the log line format
+        if cardio_type_val or inp.get("is_cardio"):
+            desc = f"{exercise_name}: {duration_val:.0f}min" if duration_val else exercise_name
+        elif sets_val and reps_val and weight_val:
+            desc = f"{exercise_name}: {sets_val}×{reps_val} @ {weight_val}{weight_unit_val}"
+        elif sets_val and reps_val:
+            desc = f"{exercise_name}: {sets_val}×{reps_val}"
+        else:
+            desc = exercise_name
+
+        # Count how many exercise entries are now in this log (including this one)
+        ex_count = len(target_log.exercise_entries or [])
+        mid_workout = ex_count > 1
+
+        mid_note = (
+            "MID-WORKOUT: user is actively in session. Do NOT say 'how was the workout' or "
+            "imply the session is done. Give the log line, then a short cue for the next set "
+            "or next exercise. Be directive and brief — they're between sets."
+            if mid_workout else
+            "FIRST EXERCISE: if you have [EXERCISE HISTORY] for this movement, compare to "
+            "last time and give one specific target for the next set."
+        )
+
+        return (
+            f"Logged {desc}{date_label}. "
+            f"Exercises in session so far: {ex_count}. "
+            f"YOUR REPLY: (1) log line in format '🏋️ Bench · 3×8 @135lb' (plain text on iMessage), "
+            f"(2) coaching note from history if relevant — compare weight/reps to last time. "
+            f"{mid_note} "
+            f"Keep it to 2 bubbles max. Never fabricate history numbers."
+        )
 
     elif name == "log_body_weight":
         weight = inp["weight"]

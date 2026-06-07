@@ -44,7 +44,7 @@ def test_body_weight_with_exercise_in_same_turn_skips_weighin():
     assert "weight down" not in out.lower(), (
         "exercise+body_weight in same turn must not produce the weigh-in message"
     )
-    assert "workout" in out.lower(), "should fall through to exercise confirmation"
+    assert "logged" in out.lower(), "should fall through to exercise confirmation"
 
 
 def test_food_photo_macro_numbers_do_not_produce_weighin():

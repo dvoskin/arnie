@@ -169,6 +169,48 @@ def _derive(cal, protein, carbs, fat, fiber, sugar) -> tuple:
     return pd, satiety, quality
 
 
+def reconcile_macros(cal: float, protein: float, carbs: float, fat: float) -> tuple:
+    """
+    Enforce caloric consistency: protein*4 + carbs*4 + fat*9 must ≈ total calories.
+    The LLM often submits internally inconsistent macros (e.g. 500 cal but macros
+    that sum to 720 cal). Strategy: trust calories and protein (most diet-critical),
+    then rebalance carbs/fat proportionally to fill the remaining caloric budget.
+    Returns corrected (cal, protein, carbs, fat).
+    """
+    if cal <= 0 or (protein == 0 and carbs == 0 and fat == 0):
+        return cal, protein, carbs, fat
+
+    macro_cal = protein * 4 + carbs * 4 + fat * 9
+    if macro_cal <= 0:
+        return cal, protein, carbs, fat
+
+    # If macros are within 15% of stated calories, accept as-is (small rounding ok)
+    if abs(macro_cal - cal) / cal <= 0.15:
+        return cal, protein, carbs, fat
+
+    # Macros are inconsistent — trust calories and protein, rescale carbs+fat.
+    protein_cal = protein * 4
+    remaining = cal - protein_cal
+    if remaining < 0:
+        # Protein alone exceeds calories — protein must be wrong too; scale everything
+        scale = cal / macro_cal
+        protein = round(protein * scale, 1)
+        carbs = round(carbs * scale, 1)
+        fat = round(fat * scale, 1)
+        return cal, protein, carbs, fat
+
+    carb_fat_cal = carbs * 4 + fat * 9
+    if carb_fat_cal > 0:
+        scale = remaining / carb_fat_cal
+        carbs = round(carbs * scale, 1)
+        fat = round(fat * scale, 1)
+    elif remaining > 0:
+        # No carb/fat data — put residual in carbs (safe fallback)
+        carbs = round(remaining / 4, 1)
+
+    return cal, protein, carbs, fat
+
+
 def analyze(name, quantity, llm_cal, llm_protein, llm_carbs, llm_fat,
             usda_candidate=None, memory_match=None) -> FoodAnalysis:
     """
@@ -181,6 +223,11 @@ def analyze(name, quantity, llm_cal, llm_protein, llm_carbs, llm_fat,
     protein = float(llm_protein or 0)
     carbs = float(llm_carbs or 0)
     fat = float(llm_fat or 0)
+
+    # Enforce macro/calorie consistency before USDA enrichment.
+    # Invalid macros (protein*4 + carbs*4 + fat*9 ≠ calories) mislead the coaching
+    # note and confuse the LLM on follow-up turns.
+    cal, protein, carbs, fat = reconcile_macros(cal, protein, carbs, fat)
     fiber = sugar = sodium = None
     fdc_id = None
     confidence = "estimated"
