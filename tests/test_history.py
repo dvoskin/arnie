@@ -48,10 +48,12 @@ def test_normal_row_renders_user_then_assistant_pair():
 
 
 def test_mixed_rows_interleave_correctly():
+    # CONTRACT: rows are passed newest-first (as get_recent_conversations returns them).
+    # conversations_to_messages reverses internally → output is oldest-first (LLM order).
     rows = [
-        _row(raw_message="morning", response="hey"),
-        _row(response="you still on for a workout?", source_type="proactive"),
-        _row(raw_message="yeah", response="let's go"),
+        _row(raw_message="yeah", response="let's go"),                    # newest
+        _row(response="you still on for a workout?", source_type="proactive"),  # middle
+        _row(raw_message="morning", response="hey"),                      # oldest
     ]
     msgs = conversations_to_messages(rows)
     assert msgs == [

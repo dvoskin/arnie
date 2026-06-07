@@ -315,6 +315,11 @@ async def run_turn(
         logger.debug(f"dead-end guard failed for {_tag}: {e}")
 
     # ── Build the platform-agnostic Response ──────────────────────────────────
+    # CONTRACT: response_text is FROZEN after this line. All further mutations
+    # (bubble injection, dashboard URL, intro prepend) happen on resp.bubbles.
+    # The only legitimate post-split read of response_text is sync_pending_questions,
+    # which needs the raw LLM string for hook detection. If you ever join resp.bubbles
+    # back into a string, derive it from the pre-dashboard slice, not after URL append.
     resp = Response.from_text(response_text)
 
     if just_completed:
@@ -354,7 +359,10 @@ async def run_turn(
     # are state updates, not sends. The re-ask itself stays gated in the scheduler.
     if not in_onboarding:
         from reminders.lifecycle import sync_pending_questions
-        await sync_pending_questions(db, user, arnie_response=response_text)
+        # INVARIANT: pass `response_text` (raw LLM reply), NOT a string rebuilt
+        # from resp.bubbles. Dashboard-link bubbles are appended above and must
+        # not reach hook detection.
+        await sync_pending_questions(db, user, llm_reply_text=response_text)
 
     # ── Turn-health telemetry ─────────────────────────────────────────────────
     # Cheap deterministic detectors so deviations are self-evident (in logs + the

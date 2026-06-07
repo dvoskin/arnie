@@ -23,7 +23,7 @@ def _user():
 
 @pytest.fixture(autouse=True)
 def _noop_pending(monkeypatch):
-    async def _noop(db, user, arnie_response=""):
+    async def _noop(db, user, llm_reply_text=""):
         return None
     monkeypatch.setattr(RL, "sync_pending_questions", _noop)
 

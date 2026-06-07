@@ -96,6 +96,10 @@ from reminders.eligibility import (
     proactive_pref_on as _proactive_pref_on,
 )
 
+# Prompt copy for the consolidation hook lives in lifecycle.py (content-ownership
+# rule: prose strings visible to users belong in prompts/ or lifecycle.py, not here).
+from reminders.lifecycle import _SILENCE_HOOK_DIRECTIVE
+
 
 def _hours_since_created(user) -> float:
     """Hours elapsed since user.created_at (UTC). Returns 999 if unknown."""
@@ -131,15 +135,19 @@ def _last_exchange(rows):
     from datetime import datetime as _dt
     user_rows = [r for r in rows if _is_user_row(r)]
     if not user_rows:
-        return None, "", ""
+        # No real user turn in the window — return None sentinel so callers can
+        # distinguish "never messaged" from "messaged with empty text".
+        return None, None, None
     c = user_rows[0]  # newest-first → most recent real user turn
     ts = c.timestamp
     if ts is None:
-        return None, (c.raw_message or ""), (c.response or "")
+        return None, c.raw_message, c.response
     if ts.tzinfo is not None:
         ts = ts.replace(tzinfo=None)
     mins = (_dt.utcnow() - ts).total_seconds() / 60.0
-    return mins, (c.raw_message or ""), (c.response or "")
+    # Preserve None vs "" distinction: None means the field was not stored;
+    # "" means the message existed but had no text (e.g. button tap, media).
+    return mins, c.raw_message, c.response
 
 
 def _silence_streak(rows) -> int:
@@ -271,6 +279,14 @@ async def _send_logged_with_voice(db, user_id, telegram_id: str, text: str,
     await _log_proactive(db, user_id, text, slot_key)
 
 
+# In-process TTS cache keyed on (text_hash, name, language).
+# TTL = 1800s (~1 scheduler tick). Avoids paying voice_variant (LLM) +
+# text_to_speech (TTS API) for identical or near-identical proactive messages
+# across users hitting the same slot in the same tick.
+_TTS_CACHE: dict[tuple, tuple[bytes, float]] = {}
+_TTS_CACHE_TTL = 1800.0
+
+
 async def _send_with_voice(telegram_id: str, text: str, name: str = "", language: str = "English") -> None:
     await _send(telegram_id, text)
     if telegram_id.startswith("im:"):
@@ -278,9 +294,21 @@ async def _send_with_voice(telegram_id: str, text: str, name: str = "", language
     if not proactive_enabled() or not _allowlist_allows(telegram_id):
         return
     try:
+        import hashlib
+        import time as _time
         from core.llm import text_to_speech, voice_variant
-        spoken = await voice_variant(text, name=name, language=language)
-        audio_bytes = await text_to_speech(spoken, voice="onyx")
+
+        cache_key = (hashlib.md5(text.encode()).hexdigest(), name, language)
+        now = _time.monotonic()
+        cached = _TTS_CACHE.get(cache_key)
+        if cached and cached[1] > now:
+            audio_bytes = cached[0]
+        else:
+            spoken = await voice_variant(text, name=name, language=language)
+            audio_bytes = await text_to_speech(spoken, voice="onyx")
+            if audio_bytes:
+                _TTS_CACHE[cache_key] = (audio_bytes, now + _TTS_CACHE_TTL)
+
         if not audio_bytes:
             return
         import io
@@ -403,15 +431,24 @@ Rules:
 
 
 async def _llm_morning_briefing(user, log, prefs, health_snap, db, name: str,
-                                last_user_msg: str = "", last_arnie_msg: str = "") -> str:
-    """Data-rich morning briefing: momentum + trend + projection + pattern + leverage action."""
+                                last_user_msg=None, last_arnie_msg=None,
+                                logs=None, weights=None) -> str:
+    """Data-rich morning briefing: momentum + trend + projection + pattern + leverage action.
+
+    logs / weights: pre-fetched by the caller when possible (T2-3 optimisation).
+    Pass None to let this function fetch internally (backward-compatible).
+    last_user_msg / last_arnie_msg: None means no prior exchange (never messaged);
+    "" means the row existed but had no text — both suppress the prior-exchange block.
+    """
     from core.llm import chat
     from db.queries import get_recent_logs, get_recent_weights
     from core.momentum import compute_momentum
     from core.insights_engine import weight_projection, discover_pattern
 
-    logs = await get_recent_logs(db, user.id, days=21)
-    weights = await get_recent_weights(db, user.id, days=30)
+    if logs is None:
+        logs = await get_recent_logs(db, user.id, days=21)
+    if weights is None:
+        weights = await get_recent_weights(db, user.id, days=30)
     m = compute_momentum(logs, prefs, weights, user)
     projection = weight_projection(weights, user)
     pattern = discover_pattern(logs, prefs)
@@ -447,8 +484,12 @@ async def _llm_morning_briefing(user, log, prefs, health_snap, db, name: str,
     if cal_t: data.append(f"Calorie target {cal_t}, protein target {pro_t}")
     if rec is not None: data.append(f"Recovery today: {rec}%")
     if mission_text: data.append(f"TODAY'S MISSION (end the briefing with this as the action): {mission_text}")
-    if last_user_msg or last_arnie_msg:
-        data.append(f"Last thing they told you: \"{last_user_msg[:140]}\" — you replied: \"{last_arnie_msg[:140]}\". "
+    if last_user_msg is not None or last_arnie_msg is not None:
+        # None = no prior exchange; "" = message existed with no text. Both can
+        # still carry the response side, so include the block when either is set.
+        _u = (last_user_msg or "")[:140]
+        _a = (last_arnie_msg or "")[:140]
+        data.append(f"Last thing they told you: \"{_u}\" — you replied: \"{_a}\". "
                     f"only reference it if it flows naturally (e.g. continuing yesterday's thread).")
     data.append(f"Language: {getattr(prefs,'preferred_language',None) or 'English'}")
 
@@ -543,12 +584,29 @@ async def _llm_followup(user, pq, name: str) -> str:
 
     lang = getattr(getattr(user, "preferences", None), "preferred_language", None) or "English"
     tone = follow_up_tone(pq)
+    hook_style = getattr(pq, "hook_style", None) or "question"
+
+    if hook_style == "engagement":
+        # Engagement phrase (e.g. "let me know", "still with me") — not a question.
+        # Don't re-ask as if it were one; just re-engage naturally.
+        context_line = (
+            f"You previously ended a message with \"{pq.question}\" — they didn't respond. "
+            f"Re-engage warmly and naturally, as if picking up where you left off. "
+            f"Do NOT ask \"did you see my message\" or reference the silence."
+        )
+    else:
+        # True question — can use the "you asked" framing.
+        context_line = (
+            f"Earlier you asked them this and they never answered:\n"
+            f"  \"{pq.question}\"\n"
+            f"Circle back and re-ask it ONCE, naturally — like a friend who genuinely "
+            f"wants to know, not a form re-prompt."
+        )
+
     prompt = (
         f"Athlete: {name}, language={lang}\n"
-        f"Earlier you asked them this and they never answered:\n"
-        f"  \"{pq.question}\"\n"
-        f"Circle back and re-ask it ONCE, naturally — like a friend who genuinely "
-        f"wants to know, not a form re-prompt. {tone}\n"
+        f"{context_line}\n"
+        f"{tone}\n"
         f"Do NOT say 'I asked earlier' or reference that they ignored you. "
         f"1-2 short bubbles split with |||."
     )
@@ -694,15 +752,23 @@ async def _run_reminders():
             except Exception as e:
                 logger.error(f"Weekly recap error for user {user.id}: {e}")
 
-            # ── End-of-day report (21:00–21:30) — ALL onboarded users ─────────
-            # Kept inside the 9am-9pm window so we never message late at night.
+            # ── T2-1: hoist timezone + log — ONE fetch per user per tick ────────
+            # Both the EOD report and the proactive nudge path need the same log.
+            # Computing them here avoids a second get_today_log call for users at
+            # 21:00 who had no calories (EOD falls through, nudge path ran anyway).
             try:
                 tz = pytz.timezone(user.timezone or "UTC")
                 now = datetime.now(tz)
                 hour, minute = now.hour, now.minute
+                log = await get_today_log(db, user.id, user.timezone or "UTC")
+            except Exception as e:
+                logger.error(f"Time/log fetch error for user {user.id}: {e}")
+                continue
 
+            # ── End-of-day report (21:00–21:30) — ALL onboarded users ─────────
+            # Kept inside the 9am-9pm window so we never message late at night.
+            try:
                 if hour == 21 and minute < 30:
-                    log = await get_today_log(db, user.id, user.timezone or "UTC")
                     if log and log.total_calories > 0:
                         name = user.name or "hey"
                         report = _fmt_day_report(log, prefs, name, user=user)
@@ -716,10 +782,7 @@ async def _run_reminders():
                 continue
 
             try:
-                tz = pytz.timezone(user.timezone or "UTC")
-                now = datetime.now(tz)
                 hhmm = now.strftime("%H:%M")
-                hour, minute = now.hour, now.minute
 
                 # Hard-cap the proactive window to 9am-9pm local, even if the
                 # user's stored wake/sleep is wider. Respects a TIGHTER personal
@@ -728,7 +791,6 @@ async def _run_reminders():
                 if not _in_window(hhmm, wake, sleep):
                     continue
 
-                log = await get_today_log(db, user.id, user.timezone or "UTC")
                 name = user.name or "hey"
 
                 # Get latest health snapshot (today's if available, else most recent)
@@ -742,14 +804,36 @@ async def _run_reminders():
                 # second kill switch — proactive_messaging_enabled (checked above) is
                 # the only hard OFF, and "none" still permits the smallest non-empty
                 # subset. Bind a tiny per-user predicate the slot branches consult.
-                from reminders.eligibility import frequency_allows
+                from reminders.eligibility import frequency_allows, gate_decision
                 def _freq_ok(slot_key: str, _p=prefs) -> bool:
                     return frequency_allows(_p, slot_key)
 
+                # ── T2-2: Tier-2 silence gate BEFORE follow-up ────────────────
+                # Suppressed users skip the followup DB hit entirely.
+                # Consolidate users get ONE follow-up attempt (using the freshly
+                # registered proactive_hook) and then skip individual slots.
+                # "send" verdict falls through to the normal followup + slot path.
+                hours_in = _hours_since_created(user)
+                verdict = gate_decision(silence_streak, hours_in, prefs)
+                if verdict == "suppress":
+                    continue
+                if verdict == "consolidate":
+                    try:
+                        from db.queries import record_pending_question
+                        await record_pending_question(
+                            db, user.id, kind="proactive_hook",
+                            question=_SILENCE_HOOK_DIRECTIVE,
+                            tier="proactive_hook",
+                        )
+                    except Exception as e:
+                        logger.error(f"proactive_hook record failed for user {user.id}: {e}")
+                    # Re-ask the freshly registered hook if due; then skip individual slots.
+                    await _maybe_followup_pending(db, user, send_id, name, mins_since)
+                    continue
+
                 # ── Context-aware follow-up: re-ask an unanswered open question ──
-                # Highest priority inside the window — a hanging question Arnie
-                # asked outranks a generic slot nudge. The reminders layer picks
-                # the one due question (tier-scaled timing) and we re-ask it once.
+                # Only reached when verdict == "send". Highest priority — a hanging
+                # question outranks a generic slot nudge.
                 if await _maybe_followup_pending(db, user, send_id, name, mins_since):
                     continue  # one proactive message per tick
 
@@ -802,32 +886,6 @@ async def _run_reminders():
                             logger.info(f"New user nudge '{new_slot}' sent to user {user.id} ({hours_since:.1f}h in)")
                             continue  # skip normal slots this tick — avoid message flood
 
-                # ── Tier-2 silence gate (D4) ──────────────────────────────────
-                # The user's silence streak (from the shared window) decides whether
-                # the timed slots fire at all. Policy lives in reminders.eligibility;
-                # here we just act on the verdict:
-                #   consolidate → skip the slots, open ONE proactive_hook so the
-                #                 follow-up loop re-asks a single warm check-in later.
-                #   suppress    → go dark on timed nudges this tick.
-                # (Warmup-burst users are always "send" — gate_decision relaxes then.)
-                from reminders.eligibility import gate_decision
-                hours_in = _hours_since_created(user)
-                verdict = gate_decision(silence_streak, hours_in, prefs)
-                if verdict == "suppress":
-                    continue
-                if verdict == "consolidate":
-                    try:
-                        from db.queries import record_pending_question
-                        await record_pending_question(
-                            db, user.id, kind="proactive_hook",
-                            question=("you've gone quiet for a bit — reach back out warm "
-                                      "with one easy, genuine question."),
-                            tier="proactive_hook",
-                        )
-                    except Exception as e:
-                        logger.error(f"proactive_hook record failed for user {user.id}: {e}")
-                    continue  # skip individual slots; the follow-up loop takes it from here
-
                 # ── Morning check-in (30 min after wake) ──────────────────────
                 wake_h, wake_m = int(wake.split(":")[0]), int(wake.split(":")[1])
                 morn_h, morn_m = wake_h, wake_m + 30
@@ -837,9 +895,15 @@ async def _run_reminders():
 
                 if hour == morn_h and 0 <= minute - morn_m < 30 and _freq_ok("morning_checkin"):
                     if not log or log.total_calories == 0:
+                        # T2-3: pre-fetch only when confirmed in morning slot — avoids
+                        # 21-day + 30-day scans for every user every tick.
+                        from db.queries import get_recent_logs, get_recent_weights
+                        _morning_logs = await get_recent_logs(db, user.id, days=21)
+                        _morning_weights = await get_recent_weights(db, user.id, days=30)
                         # Data-rich performance briefing (momentum + trend + leverage action)
                         msg = await _llm_morning_briefing(user, log, prefs, health_snap, db, name,
-                                                          last_user_msg=_last_u, last_arnie_msg=_last_a)
+                                                          last_user_msg=_last_u, last_arnie_msg=_last_a,
+                                                          logs=_morning_logs, weights=_morning_weights)
                         if not msg:
                             msg = await _llm_nudge(user, log, prefs, health_snap, "morning_checkin", name,
                                                    recent_proactive=recent_proactive)

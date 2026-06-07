@@ -287,6 +287,7 @@ class PendingQuestion(Base):
     kind = Column(String, nullable=False, index=True)  # profile_stats | goal_check | weight_checkin | generic
     question = Column(Text, nullable=False)             # the text Arnie asked
     tier = Column(String, default="casual")             # casual | goal_critical — scales follow-up urgency
+    hook_style = Column(String, default="question")     # question | engagement — controls re-ask framing
     asked_at = Column(DateTime, server_default=func.now())   # first time asked
     last_asked_at = Column(DateTime, server_default=func.now())  # most recent (re-)ask
     follow_up_count = Column(Integer, default=0)        # how many times we've re-asked

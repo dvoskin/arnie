@@ -602,21 +602,26 @@ async def add_feedback(db: AsyncSession, user_id: int, kind: str, text: str) -> 
 
 async def record_pending_question(
     db: AsyncSession, user_id: int, kind: str, question: str,
-    tier: str = "casual",
+    tier: str = "casual", hook_style: str = "question",
 ) -> PendingQuestion:
     """
     Open a pending-question loop. If an unanswered row of the same kind already
     exists, update it in place (one open question per kind) rather than stacking
     duplicates — keeps follow-up logic from re-asking the same thing twice.
+
+    hook_style: "question" (ends with ?) or "engagement" (ends with "let me know"
+    etc.) — controls the re-ask template in _llm_followup.
     """
     existing = await get_open_pending_question(db, user_id, kind)
     if existing:
         existing.question = question
         existing.tier = tier
+        existing.hook_style = hook_style
         await db.commit()
         await db.refresh(existing)
         return existing
-    pq = PendingQuestion(user_id=user_id, kind=kind, question=question, tier=tier)
+    pq = PendingQuestion(user_id=user_id, kind=kind, question=question, tier=tier,
+                         hook_style=hook_style)
     db.add(pq)
     await db.commit()
     await db.refresh(pq)

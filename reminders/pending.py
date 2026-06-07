@@ -115,9 +115,16 @@ def select_follow_up(pqs, now: datetime | None = None, *,
     if not eligible:
         return None
 
+    _TIER_RANK: dict[str, int] = {
+        "goal_critical":     0,
+        "conversation_hook": 1,
+        "proactive_hook":    2,
+        "casual":            3,
+    }
+
     def _rank(pq):
         tier = getattr(pq, "tier", None) or "casual"
-        tier_rank = 0 if tier == "goal_critical" else 1
+        tier_rank = _TIER_RANK.get(tier, 3)
         asked = _naive(getattr(pq, "asked_at", None)) or datetime.max
         return (tier_rank, asked)
 

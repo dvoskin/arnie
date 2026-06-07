@@ -482,7 +482,7 @@ async def _build_messages(db, user_id: int, current_text: str, extended: bool = 
     limit = 25 if extended else 6
     recent = await get_recent_conversations(db, user_id, limit=limit)
     from core.history import conversations_to_messages
-    msgs = conversations_to_messages(list(reversed(recent)))
+    msgs = conversations_to_messages(recent)  # history.py reverses internally
     msgs.append({"role": "user", "content": current_text})
     return msgs
 

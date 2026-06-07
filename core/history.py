@@ -11,14 +11,19 @@ from __future__ import annotations
 
 
 def conversations_to_messages(rows) -> list[dict]:
-    """Render ConversationLog rows (oldest-first expected by callers) into chat messages.
+    """Render ConversationLog rows into LLM-ready chat messages.
+
+    CONTRACT: accepts rows **newest-first** (as returned by get_recent_conversations).
+    Reverses internally to produce oldest-first chat order — callers must NOT call
+    reversed() themselves. This is the single point of reversal; both handlers pass
+    rows directly from the DB query.
 
     Normal row -> [{"role":"user","content":raw_message}, {"role":"assistant","content":response}].
     A proactive row (source_type == "proactive") has NO triggering user message -> emit a SINGLE
     {"role":"assistant","content": f"(I checked in:) {response}"} turn (never a synthetic empty user turn).
     """
     msgs: list[dict] = []
-    for conv in rows:
+    for conv in reversed(rows):  # newest-first in → oldest-first out
         if getattr(conv, "source_type", None) == "proactive":
             msgs.append({
                 "role": "assistant",

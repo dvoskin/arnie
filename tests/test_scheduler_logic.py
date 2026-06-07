@@ -89,14 +89,16 @@ def test_last_exchange_ignores_proactive_rows():
 
 
 def test_last_exchange_none_when_only_proactive():
+    # Only proactive rows → no real user turn → all three sentinels are None
     rows = [_row(source_type="proactive", raw_message="", mins_ago=5)]
     mins, last_u, last_a = sched._last_exchange(rows)
     assert mins is None
-    assert (last_u, last_a) == ("", "")
+    assert (last_u, last_a) == (None, None)  # None sentinel, not ""
 
 
 def test_last_exchange_empty_window():
-    assert sched._last_exchange([]) == (None, "", "")
+    # Completely empty window → same None sentinels
+    assert sched._last_exchange([]) == (None, None, None)
 
 
 # ── recent check-ins block (D2 continuity) ──────────────────────────────────────

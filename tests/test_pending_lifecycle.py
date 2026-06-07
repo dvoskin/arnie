@@ -67,5 +67,5 @@ async def test_inbound_turn_resolves_proactive_hook(make_user, db):
     assert await get_open_pending_question(db, u.id, "proactive_hook") is not None
 
     # the user replies → next sync closes the hook
-    await sync_pending_questions(db, u, arnie_response="")
+    await sync_pending_questions(db, u, llm_reply_text="")
     assert await get_open_pending_question(db, u.id, "proactive_hook") is None

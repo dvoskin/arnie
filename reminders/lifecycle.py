@@ -35,27 +35,48 @@ _PROFILE_QUESTION = (
     "what's your age, sex, and height? lets me lock in your real calorie + protein targets."
 )
 
+# Directive stored when the scheduler consolidates a silence streak into a single
+# proactive_hook. It lives here (not in the scheduler) because it is prompt copy —
+# content-ownership rule: prose visible to users belongs in lifecycle.py / prompts/,
+# never in orchestration files. Imported by proactive_scheduler for use in the
+# gate_decision "consolidate" branch.
+_SILENCE_HOOK_DIRECTIVE = (
+    "you've gone quiet for a bit — reach back out warm "
+    "with one easy, genuine question."
+)
+
 # Minimum characters for a hook question to be worth tracking (filters out
 # trivial "ok?" or "right?" fragments that aren't real open loops).
 _MIN_HOOK_LEN = 15
 
-# Phrases that signal Arnie ended on a real question/hook worth following up on.
-_HOOK_ENDINGS = re.compile(
+# Two distinct ending classes — semantically different re-ask templates.
+# A *question* ending earns "Earlier you asked them this" framing.
+# An *engagement* ending earns "You ended on X — re-engage naturally" framing.
+# Keeping them separate prevents non-questions being voiced as if they were asked.
+_HOOK_QUESTION_ENDINGS = re.compile(
     r"(\?|what'?s next|what do you think|how'?d (it|that) (go|feel)|"
-    r"you (there|good|ok)|still with me|let me know|"
     r"what'?re you (eating|having|thinking)|"
     r"how are you (feeling|doing)|what did you (eat|have|train))\s*$",
     re.IGNORECASE,
 )
+_HOOK_ENGAGEMENT_ENDINGS = re.compile(
+    r"(you (there|good|ok)|still with me|let me know)\s*$",
+    re.IGNORECASE,
+)
 
 
-def _extract_hook(response_text: str) -> str | None:
+def _extract_hook(response_text: str) -> tuple[str, str] | None:
     """
-    Return the last bubble of Arnie's response if it looks like an open question
-    worth following up on. Returns None if no hook detected.
+    Return (last_bubble, hook_style) if the last bubble looks like an open loop
+    worth following up on, or None if no hook detected.
 
-    Logic: split on |||, take the last non-empty bubble, check if it ends with
-    a question mark or a hook phrase. Filter out very short fragments.
+    hook_style is one of:
+      "question"   — ends with a genuine question (re-ask framing: "Earlier you asked…")
+      "engagement" — ends with an engagement phrase like "let me know" or "still with me"
+                     (re-ask framing: "You ended on X — re-engage naturally")
+
+    Logic: split on |||, take the last non-empty bubble, check against the two
+    distinct regex classes. Filter out very short fragments.
     """
     if not response_text:
         return None
@@ -65,17 +86,21 @@ def _extract_hook(response_text: str) -> str | None:
     last = bubbles[-1]
     if len(last) < _MIN_HOOK_LEN:
         return None
-    if _HOOK_ENDINGS.search(last):
-        return last
+    if _HOOK_QUESTION_ENDINGS.search(last):
+        return (last, "question")
+    if _HOOK_ENGAGEMENT_ENDINGS.search(last):
+        return (last, "engagement")
     return None
 
 
-async def sync_pending_questions(db, user, arnie_response: str = "") -> None:
+async def sync_pending_questions(db, user, llm_reply_text: str = "") -> None:
     """
     Reconcile open questions for `user` against current state. Best-effort: never
     raises into the turn (a follow-up bookkeeping error must not break a reply).
 
-    arnie_response: the full response text Arnie just sent (used to detect hooks).
+    llm_reply_text: the RAW LLM reply string (pre-dashboard-append) used to detect
+    hooks. Must NOT be a string rebuilt from resp.bubbles after URL injection —
+    see the INVARIANT comment in core/conversation.py above the run_turn call.
     """
     if not getattr(user, "onboarding_completed", False):
         return  # don't open or resolve loops while still onboarding
@@ -101,13 +126,17 @@ async def sync_pending_questions(db, user, arnie_response: str = "") -> None:
             db, user.id, kinds=["conversation_hook", "proactive_hook"]
         )
 
-        # If Arnie's new response ends on a question, open a new hook loop.
-        if arnie_response:
-            hook = _extract_hook(arnie_response)
-            if hook:
+        # If Arnie's new response ends on a question or engagement phrase, open a
+        # new hook loop. Store the hook_style so _llm_followup can pick the right
+        # re-ask template (question → "Earlier you asked…" / engagement → re-engage).
+        if llm_reply_text:
+            hook_result = _extract_hook(llm_reply_text)
+            if hook_result:
+                hook_text, hook_style = hook_result
                 await record_pending_question(
                     db, user.id, kind="conversation_hook",
-                    question=hook, tier="conversation_hook",
+                    question=hook_text, tier="conversation_hook",
+                    hook_style=hook_style,
                 )
 
     except Exception as e:
