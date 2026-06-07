@@ -799,7 +799,12 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         photo_data = bytes(await photo_file.download_as_bytearray())
         caption = update.message.caption or ""
 
-        analysis = await process_general_image(photo_data, caption)
+        # Use the food-specific prompt — produces clean "item: macros" lines that
+        # the LLM unambiguously maps to log_food calls. The general prompt returns
+        # narrative nutrition text ("Protein: 40 to 55g") that the LLM mistakes for
+        # body weight data, causing log_body_weight false-positives on food photos.
+        from multimodal.image_handler import process_food_image
+        analysis = await process_food_image(photo_data)
         if not analysis:
             await update.message.reply_text(
                 "Couldn't analyse the image. "
@@ -807,7 +812,13 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return
 
-        combined = f"[Photo] {caption}\nImage content: {analysis}"
+        # Frame the message explicitly as food data so the LLM routes to log_food,
+        # not log_body_weight. Caption is preserved for context (restaurant name, etc.).
+        caption_part = f" {caption}" if caption else ""
+        combined = (
+            f"[Food photo]{caption_part}\n"
+            f"Food items from photo (log each with log_food):\n{analysis}"
+        )
         await _run_pipeline(update, context, combined, "image", db)
 
 

@@ -286,31 +286,32 @@ async def run_turn(
     # "done" / "got it" / "logged" as the WHOLE reply is banned — it kills the
     # conversation, and it's especially wrong right after the user ANSWERED a question
     # (that should continue, not close). The model still does it despite the prompt
-    # rule, so enforce it in code: if a tool ran, confirm with the authoritative total;
-    # otherwise retry once for a substantive reply.
+    # rule, so enforce it in code: retry once for a substantive reply.
+    #
+    # IMPORTANT: only fire when NO logging tools ran. On a logging turn the tools
+    # already did the real work — a brief follow-up like "Nice 💪" is valid coaching
+    # even if it strips down to a dead-end token. Replacing it with
+    # deterministic_confirmation risks sending the wrong canned message (e.g. the
+    # body-weight fallback on a food log turn) and kills any coaching value.
     _dead_ended = False
+    _logging_turn = any(tc["name"] in _LOGGING_TOOLS for tc in tool_calls)
     try:
-        if _looks_like_dead_end(response_text):
+        if _looks_like_dead_end(response_text) and not _logging_turn:
             _dead_ended = True
             logger.warning(f"Dead-end reply for {_tag}: {response_text[:60]!r} — repairing")
-            if tool_calls:
-                response_text = deterministic_confirmation(
-                    tool_calls, today_log, user.preferences
-                )
-            else:
-                _retry = await chat(
-                    messages + [
-                        {"role": "assistant", "content": response_text},
-                        {"role": "user", "content": (
-                            "that's a dead-end reply. don't answer with just "
-                            "'done'/'got it'/'logged'. react to what i actually said and "
-                            "give a read or a next step."
-                        )},
-                    ],
-                    system, tools=False, max_tokens=700,
-                )
-                if (_retry.get("text") or "").strip():
-                    response_text = _retry["text"]
+            _retry = await chat(
+                messages + [
+                    {"role": "assistant", "content": response_text},
+                    {"role": "user", "content": (
+                        "that's a dead-end reply. don't answer with just "
+                        "'done'/'got it'/'logged'. react to what i actually said and "
+                        "give a read or a next step."
+                    )},
+                ],
+                system, tools=False, max_tokens=700,
+            )
+            if (_retry.get("text") or "").strip():
+                response_text = _retry["text"]
     except Exception as e:
         logger.debug(f"dead-end guard failed for {_tag}: {e}")
 
@@ -380,6 +381,8 @@ async def run_turn(
             stop_reason=result.get("stop_reason"),
             retried=_retried,
             tool_error=_tool_error,
+            source_type=_source,
+            tool_names={tc["name"] for tc in tool_calls},
         )
         if _retried and "retried" not in health_flags:
             health_flags.append("retried")

@@ -82,6 +82,24 @@ def detect_frustration(user_text: str) -> bool:
     return bool(user_text and _FRUSTRATION.search(user_text))
 
 
+# Calorie/macro estimate pattern — signals that a food photo's nutrition analysis
+# text is present in the first-pass response. Used to detect when the LLM narrates
+# macro numbers instead of calling log_food (partial stall from photo turns).
+_CALORIE_ESTIMATE_RE = re.compile(r'\d+\s*(?:cal(?:ories)?|kcal)\b', re.I)
+
+
+def looks_like_partial_narration(text: str, has_food_calls: bool) -> bool:
+    """
+    True when the first-pass text alongside log_food tool calls contains calorie
+    estimates — the model described food items inline instead of tool-calling them.
+    'rice ~200cal' fires; 'Nice 💪' does not.
+    Only relevant when at least one log_food was already called (partial, not full stall).
+    """
+    if not has_food_calls or not text:
+        return False
+    return bool(_CALORIE_ESTIMATE_RE.search(text))
+
+
 def detect_turn_flags(
     *,
     user_text: str,
@@ -90,12 +108,18 @@ def detect_turn_flags(
     stop_reason: str | None,
     retried: bool,
     tool_error: bool,
+    source_type: str | None = None,
+    tool_names: set | None = None,
 ) -> list[str]:
     """
     Return the list of health flags for a completed turn. Empty list = clean turn.
     Order is stable so persisted strings are deterministic.
+
+    source_type: "text" | "image" | "voice" — used for image-specific checks.
+    tool_names:  set of tool names called this turn — used for cross-tool checks.
     """
     flags: list[str] = []
+    tool_names = tool_names or set()
     if stop_reason == "max_tokens":
         flags.append("truncated")
     if retried:
@@ -106,4 +130,10 @@ def detect_turn_flags(
         flags.append("stall_shipped")
     if detect_frustration(user_text):
         flags.append("user_frustrated")
+    # Image turn where log_body_weight fired without log_food — almost always a
+    # nutrition-analysis false positive (macro gram numbers mistaken for body weight).
+    if (source_type == "image"
+            and "log_body_weight" in tool_names
+            and "log_food" not in tool_names):
+        flags.append("image_body_weight_misroute")
     return flags

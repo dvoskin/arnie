@@ -175,9 +175,14 @@ _FITNESS_TOOLS = [
     {
         "name": "log_body_weight",
         "description": (
-            "Log a body-weight measurement. "
-            "Call ONLY when the user explicitly states their body weight. "
-            "Do NOT call for food weights or exercise weights."
+            "Log a body-weight measurement (the user's own scale weight). "
+            "Call ONLY when the user explicitly states their body weight with phrases like "
+            "'I weigh X', 'weighed in at X', 'scale said X', 'my weight is X'. "
+            "NEVER call for exercise or lifting weights — "
+            "'benched 225', 'squatted 315', 'hit 185 on bench' → use log_exercise instead. "
+            "NEVER call based on food photo macro estimates — "
+            "protein grams, fat grams, or calorie counts in a meal analysis are NOT body weight. "
+            "Do NOT call for food weights, portion sizes, or nutrition label values."
         ),
         "input_schema": {
             "type": "object",
