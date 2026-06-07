@@ -1850,7 +1850,7 @@ async def api_log_food(body: FoodLogBody, token: str = Query(...)):
             protein=round(body.protein, 1),
             carbs=round(body.carbs, 1),
             fats=round(body.fats, 1),
-            estimated=body.estimated,
+            estimated_flag=body.estimated,
         )
     return {"status": "ok", "id": entry.id}
 
