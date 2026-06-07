@@ -71,6 +71,105 @@ def test_proactive_pref_on():
     assert elig.proactive_pref_on(None) is False
 
 
+# ── Tier-2 silence gate (D4) ────────────────────────────────────────────────────
+
+_PREFS = SimpleNamespace(reminder_frequency="moderate")
+
+
+def test_gate_decision_warmup_always_sends():
+    # During the warmup burst (< WARMUP_BURST_HOURS), even a big streak still sends.
+    assert elig.gate_decision(streak=0, hours_since_created=1.0, prefs=_PREFS) == "send"
+    assert elig.gate_decision(streak=5, hours_since_created=1.0, prefs=_PREFS) == "send"
+    assert elig.gate_decision(streak=2, hours_since_created=49.9, prefs=_PREFS) == "send"
+
+
+def test_gate_decision_streak_thresholds_after_warmup():
+    h = elig.WARMUP_BURST_HOURS + 10  # past the burst
+    assert elig.gate_decision(streak=0, hours_since_created=h, prefs=_PREFS) == "send"
+    assert elig.gate_decision(streak=1, hours_since_created=h, prefs=_PREFS) == "send"
+    assert elig.gate_decision(streak=2, hours_since_created=h, prefs=_PREFS) == "consolidate"
+    assert elig.gate_decision(streak=3, hours_since_created=h, prefs=_PREFS) == "suppress"
+    assert elig.gate_decision(streak=9, hours_since_created=h, prefs=_PREFS) == "suppress"
+
+
+def test_gate_decision_warmup_boundary():
+    # Exactly at the boundary is no longer warmup → streak gate applies.
+    h = elig.WARMUP_BURST_HOURS
+    assert elig.gate_decision(streak=3, hours_since_created=h, prefs=_PREFS) == "suppress"
+
+
+# ── Tier-3 reminder-frequency read path (D6) ────────────────────────────────────
+
+def _p(freq):
+    return SimpleNamespace(reminder_frequency=freq)
+
+
+def test_frequency_heavy_allows_everything():
+    p = _p("heavy")
+    for slot in ("morning_checkin", "late_morning_nolog", "midday_pacing",
+                 "preworkout", "workout_check", "evening_pacing", "night_closeout"):
+        assert elig.frequency_allows(p, slot) is True
+
+
+def test_frequency_moderate_drops_marginal_slots():
+    p = _p("moderate")
+    assert elig.frequency_allows(p, "morning_checkin") is True
+    assert elig.frequency_allows(p, "evening_pacing") is True
+    # the two most marginal pokes are dropped at moderate
+    assert elig.frequency_allows(p, "late_morning_nolog") is False
+    assert elig.frequency_allows(p, "night_closeout") is False
+
+
+def test_frequency_light_only_anchors():
+    p = _p("light")
+    assert elig.frequency_allows(p, "morning_checkin") is True
+    assert elig.frequency_allows(p, "evening_pacing") is True
+    assert elig.frequency_allows(p, "midday_pacing") is False
+    assert elig.frequency_allows(p, "preworkout") is False
+
+
+def test_frequency_none_is_smallest_nonempty_not_hard_off():
+    """'none' must still permit at least one anchor — it is NOT a second kill switch."""
+    p = _p("none")
+    allowed = [s for s in ("morning_checkin", "late_morning_nolog", "midday_pacing",
+                           "preworkout", "workout_check", "evening_pacing", "night_closeout")
+               if elig.frequency_allows(p, s)]
+    assert allowed == ["morning_checkin"]  # exactly one anchor, never empty
+
+
+def test_frequency_unknown_falls_back_to_moderate():
+    # unset / garbage / None → behaves like moderate (the default tier)
+    for freq in (None, "", "wat", "MODERATE"):
+        p = _p(freq)
+        assert elig.frequency_allows(p, "morning_checkin") is True
+        # late_morning is moderate-excluded; for a junk value we fall back to moderate
+        if freq != "MODERATE":  # MODERATE lowercases to a real tier
+            assert elig.frequency_allows(p, "late_morning_nolog") is False
+    # case-insensitivity: "MODERATE" resolves to moderate
+    assert elig.frequency_allows(_p("MODERATE"), "late_morning_nolog") is False
+
+
+def test_normalize_reminder_frequency_relative_and_exact():
+    norm = elig.normalize_reminder_frequency
+    # "less"/"more" step one tier along none<light<moderate<heavy from CURRENT
+    assert norm("less", "moderate") == "light"
+    assert norm("more", "moderate") == "heavy"
+    assert norm("fewer", "heavy") == "moderate"
+    assert norm("up", "light") == "moderate"
+    # clamps at the ends — "text me less" on none stays none, never wraps
+    assert norm("less", "none") == "none"
+    assert norm("more", "heavy") == "heavy"
+    # exact tier names pass through unchanged (case-insensitive)
+    for tier in ("none", "light", "moderate", "heavy"):
+        assert norm(tier, "moderate") == tier
+    assert norm("HEAVY", "light") == "heavy"
+    # missing/garbage current tier falls back to moderate as the pivot
+    assert norm("less", None) == "light"
+    assert norm("less", "wat") == "light"
+    # unrecognized value is returned unchanged (frequency_allows then defaults)
+    assert norm("banana", "moderate") == "banana"
+
+
 # ── suppression ───────────────────────────────────────────────────────────────
 
 def test_parse_slots():
@@ -164,6 +263,27 @@ def test_follow_up_tone_scales_with_tier_and_count():
     assert "last real ask" in pend.follow_up_tone(_q("goal_critical", count=1))
     assert "zero pressure" in pend.follow_up_tone(_q("casual", count=0))
     assert "final nudge" in pend.follow_up_tone(_q("casual", count=1))
+
+
+def test_proactive_hook_registered_in_tier_policy():
+    """D5: the silence-consolidation kind is a real follow-up tier."""
+    assert "proactive_hook" in pend.TIER_POLICY
+    policy = pend.TIER_POLICY["proactive_hook"]
+    assert policy.max_follow_ups == 1  # one warm re-ask, then let it go
+
+
+def test_proactive_hook_has_its_own_tone():
+    tone = pend.follow_up_tone(_q("proactive_hook", count=0))
+    # a distinct, warm-and-open tone (not the goal_critical / casual phrasings)
+    assert "warm" in tone
+    assert "guilt" in tone  # explicitly no guilt about the silence
+
+
+def test_proactive_hook_follow_up_timing():
+    # first re-ask waits ~4h, then capped at one attempt
+    assert pend.should_follow_up(_q("proactive_hook", asked_h_ago=1)) is False
+    assert pend.should_follow_up(_q("proactive_hook", asked_h_ago=5)) is True
+    assert pend.should_follow_up(_q("proactive_hook", asked_h_ago=500, last_h_ago=200, count=1)) is False
 
 
 def test_aware_now_compares_with_naive_timestamps():

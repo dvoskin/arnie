@@ -109,18 +109,30 @@ def _hours_since_created(user) -> float:
     return (datetime.now(timezone.utc) - created).total_seconds() / 3600.0
 
 
-async def _last_exchange(db, user_id):
+def _is_user_row(row) -> bool:
     """
-    Returns (minutes_since_last_message, last_user_text, last_arnie_text).
-    minutes is None if the user has never messaged. Used to make proactive
-    messages context-aware and to avoid firing on top of a live conversation.
+    A row that represents a real inbound user turn — i.e. NOT a proactive check-in
+    we sent. Proactive rows carry source_type=='proactive' (and raw_message==''),
+    so they must not count as the user being live or break a silence streak.
     """
-    from db.queries import get_recent_conversations
+    return getattr(row, "source_type", None) != "proactive"
+
+
+def _last_exchange(rows):
+    """
+    Returns (minutes_since_last_USER_message, last_user_text, last_arnie_text)
+    from a pre-fetched newest-first window (D-SHARED-FETCH). minutes is None if the
+    user has never messaged.
+
+    USER messages only (D3): a proactive nudge we just sent must NOT count as the
+    user being mid-conversation, or every send would self-trigger the live-convo
+    suppressor on the next tick. We scan for the most recent non-proactive row.
+    """
     from datetime import datetime as _dt
-    convs = await get_recent_conversations(db, user_id, limit=1)
-    if not convs:
+    user_rows = [r for r in rows if _is_user_row(r)]
+    if not user_rows:
         return None, "", ""
-    c = convs[0]
+    c = user_rows[0]  # newest-first → most recent real user turn
     ts = c.timestamp
     if ts is None:
         return None, (c.raw_message or ""), (c.response or "")
@@ -128,6 +140,23 @@ async def _last_exchange(db, user_id):
         ts = ts.replace(tzinfo=None)
     mins = (_dt.utcnow() - ts).total_seconds() / 60.0
     return mins, (c.raw_message or ""), (c.response or "")
+
+
+def _silence_streak(rows) -> int:
+    """
+    Count consecutive proactive check-ins we've sent since the user's last real
+    message — the user's "silence streak" (D3). Computed from the shared newest-
+    first window (no new query): walk from newest, counting proactive rows until we
+    hit a real user turn (which resets the streak to what we've counted so far).
+
+    A streak of N means the last N things in the thread were unanswered check-ins.
+    """
+    streak = 0
+    for r in rows:
+        if _is_user_row(r):
+            break
+        streak += 1
+    return streak
 
 
 async def _llm_new_user_nudge(user, log, prefs, slot: str, name: str) -> str:
@@ -206,6 +235,42 @@ async def _send(telegram_id: str, text: str, effect: str = None):
         await bot.close()
     except Exception as e:
         logger.error(f"Proactive send failed → {telegram_id}: {e}")
+async def _log_proactive(db, user_id, text: str, slot_key: str) -> None:
+    """
+    Record a user-facing proactive send to the conversation history (source_type=
+    'proactive', skills_fired=slot_key, parsed_intent left None so these never reach
+    /admin/flagged). Best-effort: a logging failure must never break the send path.
+    """
+    try:
+        from db.queries import log_conversation
+        await log_conversation(
+            db, user_id, raw_message="", response=text,
+            source_type="proactive", skills_fired=slot_key,
+        )
+    except Exception as e:
+        logger.error(f"Proactive log failed (user {user_id}, slot {slot_key}): {e}")
+
+
+async def _send_logged(db, user_id, telegram_id: str, text: str, slot_key: str) -> None:
+    """
+    Send a user-facing proactive message, then log it. Wraps the IO-only `_send`
+    (which stays send-only, shared by user-LESS internal callers) with the history
+    write every user-facing proactive path needs for continuity (D2) and the
+    silence streak (D3). slot_key is the structured nudge identity.
+    """
+    await _send(telegram_id, text)
+    await _log_proactive(db, user_id, text, slot_key)
+
+
+async def _send_logged_with_voice(db, user_id, telegram_id: str, text: str,
+                                  slot_key: str, name: str = "",
+                                  language: str = "English") -> None:
+    """Voice-enabled `_send_logged` — the voice-bubble proactive paths (morning
+    briefing, evening pacing, conversation-hook re-ask)."""
+    await _send_with_voice(telegram_id, text, name=name, language=language)
+    await _log_proactive(db, user_id, text, slot_key)
+
+
 async def _send_with_voice(telegram_id: str, text: str, name: str = "", language: str = "English") -> None:
     await _send(telegram_id, text)
     if telegram_id.startswith("im:"):
@@ -228,8 +293,32 @@ async def _send_with_voice(telegram_id: str, text: str, name: str = "", language
     except Exception as e:
         logger.error(f"Voice send failed → {telegram_id}: {e}")
 
-async def _llm_nudge(user, log, prefs, health_snap, slot: str, name: str) -> str:
-    """Generate a personalized nudge via Claude Haiku. Returns '' on failure."""
+def _recent_checkins_block(recent_proactive) -> str:
+    """
+    Render the last few proactive check-ins we sent into a short context block so
+    the nudge LLM can avoid repeating itself (D2 continuity). `recent_proactive` is
+    the proactive subset of the shared window (newest-first). '' if none.
+    """
+    if not recent_proactive:
+        return ""
+    lines = []
+    for r in recent_proactive[:3]:  # newest first, cap at 3
+        txt = (getattr(r, "response", "") or "").replace("|||", " / ").strip()
+        if txt:
+            lines.append(f'- "{txt[:160]}"')
+    if not lines:
+        return ""
+    return ("Recent check-ins you already sent (do NOT repeat one of these — vary the "
+            "angle or move on):\n" + "\n".join(lines))
+
+
+async def _llm_nudge(user, log, prefs, health_snap, slot: str, name: str,
+                     recent_proactive=None) -> str:
+    """Generate a personalized nudge via Claude Haiku. Returns '' on failure.
+
+    recent_proactive: the proactive rows from the shared window (newest-first), used
+    to surface a "recent check-ins you sent" block so the nudge doesn't repeat one
+    it just sent (D2 continuity)."""
     from core.llm import chat
 
     cal = round(log.total_calories) if log else 0
@@ -266,6 +355,8 @@ async def _llm_nudge(user, log, prefs, health_snap, slot: str, name: str) -> str
 
     instr = _SLOT_INSTRUCTIONS.get(slot, "Send a brief coaching check-in about their day.")
 
+    checkins_block = _recent_checkins_block(recent_proactive)
+
     lang = getattr(prefs, "preferred_language", None) or "English"
     prompt = (
         f"Athlete: {name}, goal={user.primary_goal or '?'}, "
@@ -279,6 +370,7 @@ async def _llm_nudge(user, log, prefs, health_snap, slot: str, name: str) -> str
         f"workout {'✓' if workout_done else '✗'} | cardio {'✓' if cardio_done else '✗'} | "
         f"{foods_logged} food entries | {exercises_logged} exercises\n"
         f"{health_str}\n"
+        f"{checkins_block + chr(10) if checkins_block else ''}"
         f"Task: {instr}"
     )
 
@@ -433,7 +525,7 @@ async def _maybe_send_city_nudge(db, user, prefs):
         return
     import random
     msg = random.choice(_CITY_NUDGES)
-    await _send(user.telegram_id, msg)
+    await _send_logged(db, user.id, user.telegram_id, msg, "city_ask")
     sent.add("city_ask")
     user.nudges_sent = ",".join(sorted(sent))
     await db.commit()
@@ -499,11 +591,13 @@ async def _maybe_followup_pending(db, user, send_id: str, name: str,
         msg = await _llm_followup(user, pq, name)
         if not msg:
             return False
+        slot_key = f"followup_{getattr(pq, 'kind', 'pending')}"
         if getattr(pq, "kind", "") == "conversation_hook":
             lang = getattr(getattr(user, "preferences", None), "preferred_language", None) or "English"
-            await _send_with_voice(send_id, msg, name=name, language=lang)
+            await _send_logged_with_voice(db, user.id, send_id, msg, slot_key,
+                                          name=name, language=lang)
         else:
-            await _send(send_id, msg)
+            await _send_logged(db, user.id, send_id, msg, slot_key)
         await mark_pending_question_followed_up(db, pq.id)
         logger.info(
             f"Follow-up re-ask ({pq.kind}, tier={pq.tier}, "
@@ -546,17 +640,29 @@ async def _run_reminders():
             if not _allowlist_allows(user.id, user.telegram_id, send_id):
                 continue
 
+            # ── Shared window (D-SHARED-FETCH) ────────────────────────────────
+            # ONE ordered fetch per user, reused for every derived signal below:
+            #   • minutes-since-last-USER-message (live-convo check)
+            #   • the proactive silence streak (D3, Tier-2 gate)
+            #   • the recent check-ins we've sent (D2 continuity)
+            # No separate SELECTs for _last_exchange / streak / recent sends.
+            from db.queries import get_recent_conversations
+            try:
+                recent_rows = await get_recent_conversations(db, user.id, limit=15)
+            except Exception:
+                recent_rows = []
+            recent_proactive = [r for r in recent_rows if not _is_user_row(r)]
+            silence_streak = _silence_streak(recent_rows)
+
             # ── Context awareness: never fire on top of a live conversation ───
             # If the user exchanged messages with Arnie in the last ~25 min, they're
             # already engaged — a scheduled nudge would be a jarring non-sequitur.
             # Skip this tick; it re-checks 30 min later when the thread's gone quiet.
-            mins_since, _last_u, _last_a = None, "", ""
-            try:
-                mins_since, _last_u, _last_a = await _last_exchange(db, user.id)
-                if _is_live_convo(mins_since):
-                    continue
-            except Exception:
-                pass
+            # USER messages only (D3): a check-in we just sent must not self-trigger
+            # this suppressor on the next tick.
+            mins_since, _last_u, _last_a = _last_exchange(recent_rows)
+            if _is_live_convo(mins_since):
+                continue
 
             # ── Timezone gate: NO timed proactive until we know their timezone ─
             # Legacy/unknown users default to "UTC". Without a real tz we can't
@@ -581,7 +687,7 @@ async def _run_reminders():
                     name = user.name or "hey"
                     recap = await _llm_weekly_recap(user, prefs, db, name)
                     if recap:
-                        await _send(send_id, recap)
+                        await _send_logged(db, user.id, send_id, recap, "weekly_recap")
                         user.weekly_recap_week = iso_week
                         await db.commit()
                         continue
@@ -600,7 +706,7 @@ async def _run_reminders():
                     if log and log.total_calories > 0:
                         name = user.name or "hey"
                         report = _fmt_day_report(log, prefs, name, user=user)
-                        await _send(send_id, report)
+                        await _send_logged(db, user.id, send_id, report, "day_report")
                         continue
             except Exception as e:
                 logger.error(f"Day report error for user {user.id}: {e}")
@@ -630,6 +736,15 @@ async def _run_reminders():
                 health_snap = health_snaps[0] if health_snaps else None
 
                 day_pct = _pacing_pct(hour, minute, wake, sleep)
+
+                # ── Tier-3 frequency filter (D6) ──────────────────────────────
+                # reminder_frequency NARROWS which timed slots may fire. It is NOT a
+                # second kill switch — proactive_messaging_enabled (checked above) is
+                # the only hard OFF, and "none" still permits the smallest non-empty
+                # subset. Bind a tiny per-user predicate the slot branches consult.
+                from reminders.eligibility import frequency_allows
+                def _freq_ok(slot_key: str, _p=prefs) -> bool:
+                    return frequency_allows(_p, slot_key)
 
                 # ── Context-aware follow-up: re-ask an unanswered open question ──
                 # Highest priority inside the window — a hanging question Arnie
@@ -679,13 +794,39 @@ async def _run_reminders():
                         if new_slot:
                             msg = await _llm_new_user_nudge(user, log, prefs, new_slot, name)
                             if msg:
-                                await _send(send_id, msg)
+                                await _send_logged(db, user.id, send_id, msg, new_slot)
                                 # Persist the fired slot so it never re-fires after a deploy
                                 sent_slots.add(new_slot)
                                 user.nudges_sent = ",".join(sorted(sent_slots))
                                 await db.commit()
                             logger.info(f"New user nudge '{new_slot}' sent to user {user.id} ({hours_since:.1f}h in)")
                             continue  # skip normal slots this tick — avoid message flood
+
+                # ── Tier-2 silence gate (D4) ──────────────────────────────────
+                # The user's silence streak (from the shared window) decides whether
+                # the timed slots fire at all. Policy lives in reminders.eligibility;
+                # here we just act on the verdict:
+                #   consolidate → skip the slots, open ONE proactive_hook so the
+                #                 follow-up loop re-asks a single warm check-in later.
+                #   suppress    → go dark on timed nudges this tick.
+                # (Warmup-burst users are always "send" — gate_decision relaxes then.)
+                from reminders.eligibility import gate_decision
+                hours_in = _hours_since_created(user)
+                verdict = gate_decision(silence_streak, hours_in, prefs)
+                if verdict == "suppress":
+                    continue
+                if verdict == "consolidate":
+                    try:
+                        from db.queries import record_pending_question
+                        await record_pending_question(
+                            db, user.id, kind="proactive_hook",
+                            question=("you've gone quiet for a bit — reach back out warm "
+                                      "with one easy, genuine question."),
+                            tier="proactive_hook",
+                        )
+                    except Exception as e:
+                        logger.error(f"proactive_hook record failed for user {user.id}: {e}")
+                    continue  # skip individual slots; the follow-up loop takes it from here
 
                 # ── Morning check-in (30 min after wake) ──────────────────────
                 wake_h, wake_m = int(wake.split(":")[0]), int(wake.split(":")[1])
@@ -694,28 +835,31 @@ async def _run_reminders():
                     morn_h += 1
                     morn_m -= 60
 
-                if hour == morn_h and 0 <= minute - morn_m < 30:
+                if hour == morn_h and 0 <= minute - morn_m < 30 and _freq_ok("morning_checkin"):
                     if not log or log.total_calories == 0:
                         # Data-rich performance briefing (momentum + trend + leverage action)
                         msg = await _llm_morning_briefing(user, log, prefs, health_snap, db, name,
                                                           last_user_msg=_last_u, last_arnie_msg=_last_a)
                         if not msg:
-                            msg = await _llm_nudge(user, log, prefs, health_snap, "morning_checkin", name)
+                            msg = await _llm_nudge(user, log, prefs, health_snap, "morning_checkin", name,
+                                                   recent_proactive=recent_proactive)
                         if not msg:
                             msg = f"morning {name}.|||log your weight if you've got it, then tell me breakfast."
                         lang = getattr(prefs, "preferred_language", None) or "English"
-                        await _send_with_voice(send_id, msg, name=name, language=lang)
+                        await _send_logged_with_voice(db, user.id, send_id, msg, "morning_checkin",
+                                                      name=name, language=lang)
 
                 # ── Late morning (10:00–10:30, only if nothing logged) ─────────
-                elif hour == 10 and minute < 30:
+                elif hour == 10 and minute < 30 and _freq_ok("late_morning_nolog"):
                     if not log or log.total_calories < 50:
-                        msg = await _llm_nudge(user, log, prefs, health_snap, "late_morning_nolog", name)
+                        msg = await _llm_nudge(user, log, prefs, health_snap, "late_morning_nolog", name,
+                                               recent_proactive=recent_proactive)
                         if not msg:
                             msg = f"10am and nothing logged yet, {name}. Skipped breakfast or just haven't told me?"
-                        await _send(send_id, msg)
+                        await _send_logged(db, user.id, send_id, msg, "late_morning_nolog")
 
                 # ── Midday pacing (12:00–12:30) ────────────────────────────────
-                elif hour == 12 and minute < 30:
+                elif hour == 12 and minute < 30 and _freq_ok("midday_pacing"):
                     if prefs.calorie_target or prefs.protein_target:
                         cal = log.total_calories if log else 0
                         pro = log.total_protein if log else 0
@@ -728,7 +872,8 @@ async def _run_reminders():
                         pro_behind = pro_pct is not None and pro_pct < day_pct - 0.12
 
                         if cal_behind or cal_ahead or pro_behind:
-                            msg = await _llm_nudge(user, log, prefs, health_snap, "midday_pacing", name)
+                            msg = await _llm_nudge(user, log, prefs, health_snap, "midday_pacing", name,
+                                                   recent_proactive=recent_proactive)
                             if not msg:
                                 parts = []
                                 if pro_behind:
@@ -740,19 +885,21 @@ async def _run_reminders():
                                 if cal_ahead:
                                     parts.append(f"already at {cal:.0f} cal — pace yourself through the afternoon")
                                 msg = ", ".join(parts).capitalize() + "."
-                            await _send(send_id, msg)
+                            await _send_logged(db, user.id, send_id, msg, "midday_pacing")
                         elif log and log.total_calories > 0:
                             # On track — brief positive
-                            msg = await _llm_nudge(user, log, prefs, health_snap, "midday_pacing", name)
+                            msg = await _llm_nudge(user, log, prefs, health_snap, "midday_pacing", name,
+                                                   recent_proactive=recent_proactive)
                             if msg:
-                                await _send(send_id, msg)
+                                await _send_logged(db, user.id, send_id, msg, "midday_pacing")
 
                 # ── Pre-workout readiness (15:30–16:00) ───────────────────────
-                elif hour == 15 and 30 <= minute < 60:
+                elif hour == 15 and 30 <= minute < 60 and _freq_ok("preworkout"):
                     # Skip if workout done or exercises are already being logged (mid-workout)
                     exercises_in_progress = log and len(log.exercise_entries or []) > 0
                     if log and not log.workout_completed and not exercises_in_progress:
-                        msg = await _llm_nudge(user, log, prefs, health_snap, "preworkout", name)
+                        msg = await _llm_nudge(user, log, prefs, health_snap, "preworkout", name,
+                                               recent_proactive=recent_proactive)
                         if not msg:
                             rec = health_snap.recovery_score if health_snap else None
                             if rec is not None and rec < 34:
@@ -762,21 +909,24 @@ async def _run_reminders():
                                 )
                             else:
                                 msg = f"3:30 — workout not logged yet, {name}. Still on for today?"
-                        await _send(send_id, msg)
+                        await _send_logged(db, user.id, send_id, msg, "preworkout")
 
                 # ── Afternoon workout check (16:30–17:00) ────────────────────
-                elif hour == 16 and 30 <= minute < 60:
+                elif hour == 16 and 30 <= minute < 60 and _freq_ok("workout_check"):
                     # Skip if workout done or exercises are already being logged (mid-workout)
                     exercises_in_progress = log and len(log.exercise_entries or []) > 0
                     if log and not log.workout_completed and not exercises_in_progress:
-                        msg = await _llm_nudge(user, log, prefs, health_snap, "workout_check", name)
+                        msg = await _llm_nudge(user, log, prefs, health_snap, "workout_check", name,
+                                               recent_proactive=recent_proactive)
                         if not msg:
                             msg = f"4:30 — workout still hasn't happened, {name}. Happening today or are we calling it a rest day?"
-                        await _send(send_id, msg)
+                        await _send_logged(db, user.id, send_id, msg, "workout_check")
 
                 # ── Evening pacing (19:00–19:30) ──────────────────────────────
-                elif hour == 19 and minute < 30 and log and log.total_calories > 0:
-                    msg = await _llm_nudge(user, log, prefs, health_snap, "evening_pacing", name)
+                elif (hour == 19 and minute < 30 and log and log.total_calories > 0
+                        and _freq_ok("evening_pacing")):
+                    msg = await _llm_nudge(user, log, prefs, health_snap, "evening_pacing", name,
+                                           recent_proactive=recent_proactive)
                     if not msg:
                         parts = []
                         if prefs.calorie_target:
@@ -796,15 +946,17 @@ async def _run_reminders():
                         else:
                             msg = f"Looking solid today, {name}. Log dinner when you have it."
                     lang = getattr(prefs, "preferred_language", None) or "English"
-                    await _send_with_voice(send_id, msg, name=name, language=lang)
+                    await _send_logged_with_voice(db, user.id, send_id, msg, "evening_pacing",
+                                                  name=name, language=lang)
 
                 # ── Night closeout (21:00–21:30) ──────────────────────────────
-                elif hour == 21 and minute < 30:
+                elif hour == 21 and minute < 30 and _freq_ok("night_closeout"):
                     if log and log.status == "open" and log.total_calories > 0:
-                        msg = await _llm_nudge(user, log, prefs, health_snap, "night_closeout", name)
+                        msg = await _llm_nudge(user, log, prefs, health_snap, "night_closeout", name,
+                                               recent_proactive=recent_proactive)
                         if not msg:
                             msg = "Day still open. Done eating? Send me anything you missed and close it out."
-                        await _send(send_id, msg)
+                        await _send_logged(db, user.id, send_id, msg, "night_closeout")
 
             except Exception as e:
                 logger.error(f"Reminder error for user {user.id}: {e}")
@@ -953,7 +1105,8 @@ async def _run_whoop_sync():
                             await db.commit()
                             msg = _fmt_whoop_notification(snap)
                             if msg:
-                                await _send(user.telegram_id, msg)
+                                await _send_logged(db, snapshot_uid, user.telegram_id,
+                                                   msg, "whoop_recovery")
             except Exception as e:
                 logger.error(f"Whoop sync/notify failed for user {user.id}: {e}")
 

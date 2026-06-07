@@ -291,6 +291,37 @@ _CREATIVE_TOOLS = [
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# SEARCH TOOLS (GATED — inert unless SEARCH_ENABLED=true)
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ONE generic web_search tool — no per-usecase search tools (Interface Segregation).
+# The name MUST be exactly "web_search" (the prompt's SEARCH_RULES + the dispatch
+# elif + the re-voice set all key off this literal).
+_SEARCH_TOOLS = [
+    {
+        "name": "web_search",
+        "description": (
+            "Search the open web for an external or current fact you don't already "
+            "have. Use ONLY for facts not in context or your training: exact macros "
+            "for a specific branded/restaurant product, a real-world place/menu "
+            "lookup, or recent research/news the user asks you to check. Do NOT use "
+            "for anything in the user's logged data, common-food estimates, standard "
+            "training/nutrition knowledge, opinions, or coaching judgment. The result "
+            "is re-voiced in your own coaching voice — never pasted raw."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "query":   {"type": "string", "description": "What to look up on the web"},
+                "context": {"type": "string", "description": "Optional. The user's situation to bias the lookup (e.g. an injury to keep results safe)."},
+            },
+            "required": ["query"],
+        },
+    },
+]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # PUBLIC API
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -303,13 +334,21 @@ ALL_TOOLS = (
 )
 
 
+def _active_tools() -> list[dict]:
+    """The single gating source of truth: the always-on tools plus web_search
+    ONLY when search is enabled. ONE gate decision, consumed by both formats."""
+    from db.queries import search_enabled
+    return ALL_TOOLS + (_SEARCH_TOOLS if search_enabled() else [])
+
+
 def build_tools() -> list[dict]:
-    """Return the full tool list for the Anthropic API."""
-    return ALL_TOOLS
+    """Return the active tool list for the Anthropic API (flag-aware)."""
+    return _active_tools()
 
 
 def build_tools_openai() -> list[dict]:
-    """Convert to OpenAI function-calling format."""
+    """Same active set as build_tools(), reshaped to OpenAI format. MUST delegate
+    to the single gate so the OpenAI path can never silently darken vs. Anthropic."""
     return [
         {
             "type": "function",
@@ -319,5 +358,5 @@ def build_tools_openai() -> list[dict]:
                 "parameters": t["input_schema"],
             },
         }
-        for t in ALL_TOOLS
+        for t in build_tools()
     ]

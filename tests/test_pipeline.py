@@ -660,6 +660,49 @@ async def test_onboarding_completes_on_final_essential(pipeline_env):
     assert len(env["sent"]) >= 1
 
 
+@pytest.mark.asyncio
+async def test_im_calculate_button_routes_through_run_turn_not_canned_card(pipeline_env):
+    """
+    A2/A3 behavior change: the stale "calculate for me" onboarding button no longer
+    emits a canned completion bubble. It persists the targets, completes onboarding,
+    enables check-ins ONCE, and FALLS THROUGH into run_turn so the just_completed
+    reflection is voiced by the LLM. completion_facts (TDEE/goal) reach run_turn.
+    """
+    env = pipeline_env
+    H = env["H"]
+    addr, im_id = "+15550006666", "im:+15550006666"
+    # All stats present so calc_targets succeeds; targets not yet set.
+    await _seed_onboarding_user(
+        env["Maker"], address=addr, name="Danny", primary_goal="cut",
+        current_weight_kg=86.0, height_cm=178.0, age=31, sex="male",
+    )
+    # First pass writes the reflection inline → kept as the just_completed voice.
+    env["set_llm"](
+        text="alright, locked you in.|||~2,300 a day for the cut.|||"
+             "send me what you ate today, rough is fine.",
+    )
+    await H.run_imessage_pipeline(addr, f"iMessage;-;{addr}", "Calculate for me",
+                                  message_guid="calc1")
+
+    async with env["Maker"]() as db:
+        from db.queries import resolve_user
+        from sqlalchemy import select as _select
+        from db.models import UserPreferences
+        u = await resolve_user(db, im_id)
+        assert u.onboarding_completed is True
+        prefs = (await db.execute(
+            _select(UserPreferences).where(UserPreferences.user_id == u.id)
+        )).scalar_one()
+        assert prefs.proactive_messaging_enabled is True, "check-ins on at completion"
+        assert prefs.calorie_target is not None, "targets persisted before run_turn"
+
+    joined = " ".join(env["sent"]).lower()
+    assert "—" not in " ".join(env["sent"]), env["sent"]
+    # The LLM reflection is what the user sees, NOT the old canned "you're in 🎉" card.
+    assert "locked you in" in joined or "cut" in joined, env["sent"]
+    assert env["calls"]["chat"] == 1, "fell through to run_turn (one LLM pass)"
+
+
 # ── Telegram twin fixture ──────────────────────────────────────────────────────
 
 class _FakeMessage:
@@ -861,3 +904,48 @@ async def test_tg_intro_logged_so_it_does_not_refire(tg_pipeline_env):
     new_bubbles = env["sent"][intro_count:]
     assert new_bubbles, "second turn produced no reply"
     assert not any("call you" in b.lower() for b in new_bubbles), "intro re-fired"
+
+
+@pytest.mark.asyncio
+async def test_tg_skip_button_routes_through_run_turn_not_canned_card(tg_pipeline_env):
+    """
+    A2 behavior change (Telegram): the stale "Skip for now" button no longer emits
+    the canned HTML welcome card. It completes onboarding, enables check-ins ONCE,
+    and FALLS THROUGH into run_turn so the just_completed reflection is the voiced
+    reply. No completion_facts on the skip path (no TDEE computed).
+    """
+    env = tg_pipeline_env
+    from db.models import User, UserPreferences
+    # Mid-onboarding user with the three essentials present but no targets yet.
+    async with env["Maker"]() as db:
+        u = User(telegram_id=str(_FakeUser.id), name="Danny",
+                 onboarding_completed=False, primary_goal="cut",
+                 current_weight_kg=86.0, timezone="America/New_York")
+        db.add(u)
+        await db.flush()
+        db.add(UserPreferences(user_id=u.id, proactive_messaging_enabled=False))
+        await db.commit()
+
+    # The LLM voices the completion reflection on the fall-through.
+    env["set_llm"](text="you're set.|||we'll dial targets in as we go.|||"
+                        "what did you eat today? start there.")
+    async with env["Maker"]() as db:
+        await env["TH"]._run_pipeline(
+            env["update"], env["context"], "Skip for now", "text", db
+        )
+
+    async with env["Maker"]() as db:
+        from db.queries import resolve_user
+        from sqlalchemy import select as _select
+        u = await resolve_user(db, str(_FakeUser.id))
+        assert u.onboarding_completed is True
+        prefs = (await db.execute(
+            _select(UserPreferences).where(UserPreferences.user_id == u.id)
+        )).scalar_one()
+        assert prefs.proactive_messaging_enabled is True, "check-ins on at completion"
+
+    joined = " ".join(env["sent"]).lower()
+    assert env["calls"]["chat"] == 1, "fell through to run_turn (one LLM pass)"
+    assert "you're set" in joined or "start there" in joined, env["sent"]
+    # Dashboard inline button still fires exactly once on just_completed.
+    assert sum("dashboard is live" in s.lower() for s in env["sent"]) == 1, env["sent"]

@@ -10,6 +10,9 @@ question store in sync with reality:
   record  — open a follow-up loop for a need we want chased down. Today that's:
               • profile_stats — age/sex/height for target calculation
               • conversation_hook — Arnie asked something and user went quiet
+              • proactive_hook — user has gone silent on several check-ins; the
+                scheduler consolidates the slot nudges into one re-ask (resolved
+                here too, the moment any inbound turn breaks the silence)
 
 This runs regardless of PROACTIVE_MESSAGING_ENABLED — recording and resolving are
 plain state updates, not outbound messages. The *re-asking* (which IS proactive)
@@ -89,9 +92,14 @@ async def sync_pending_questions(db, user, arnie_response: str = "") -> None:
         else:
             await resolve_pending_questions(db, user.id, kinds=["profile_stats"])
 
-        # ── Conversation hook loop ────────────────────────────────────────────
-        # Any inbound message from the user closes the open hook — they responded.
-        await resolve_pending_questions(db, user.id, kinds=["conversation_hook"])
+        # ── Conversation / proactive hook loops ───────────────────────────────
+        # Any inbound message from the user closes an open hook — they responded.
+        # proactive_hook is the silence-consolidation loop (scheduler opens it when
+        # a user has ignored several check-ins); a reply ends the quiet stretch and
+        # clears it just like a conversation hook.
+        await resolve_pending_questions(
+            db, user.id, kinds=["conversation_hook", "proactive_hook"]
+        )
 
         # If Arnie's new response ends on a question, open a new hook loop.
         if arnie_response:

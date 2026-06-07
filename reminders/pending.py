@@ -35,6 +35,11 @@ TIER_POLICY: dict[str, FollowUpPolicy] = {
     "casual":           FollowUpPolicy(first_delay_h=24.0, spacing_h=24.0, max_follow_ups=2),
     "goal_critical":    FollowUpPolicy(first_delay_h=8.0,  spacing_h=12.0, max_follow_ups=3),
     "conversation_hook": FollowUpPolicy(first_delay_h=2.0, spacing_h=3.0,  max_follow_ups=1),
+    # Tier-2 silence consolidation: when a user has gone quiet on several proactive
+    # check-ins in a row, the scheduler registers ONE proactive_hook to replace the
+    # individual slot nudges, and the normal follow-up loop re-asks it. Patient
+    # cadence and a single re-ask so a quiet day doesn't turn into nagging.
+    "proactive_hook":   FollowUpPolicy(first_delay_h=4.0,  spacing_h=8.0,  max_follow_ups=1),
 }
 
 # A user silent this long has effectively churned — stop following up so we don't
@@ -131,6 +136,11 @@ def follow_up_tone(pq) -> str:
         if count == 0:
             return "direct but warm — this matters for dialing in their goal. no guilt-trip."
         return "last real ask. quick and frictionless, one detail is enough. then let it go."
+    if tier == "proactive_hook":
+        # They've gone quiet on a few check-ins — reach out warm and open-ended, not
+        # a re-ask of any one nudge. One genuine 'how's it going' beats piling on.
+        return ("warm and open, like circling back after a quiet stretch. ask one easy, "
+                "genuine question — no guilt about the silence. then let it breathe.")
     # casual
     if count == 0:
         return "light, zero pressure. 'whenever you get a sec.'"

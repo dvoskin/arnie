@@ -62,8 +62,12 @@ def _get_openai():
 # ── Tool definitions — imported from core/tools.py ────────────────────────────
 from core.tools import build_tools, build_tools_openai
 
-# Keep ARNIE_TOOLS as a module-level alias for any external references
-ARNIE_TOOLS = build_tools()
+
+def ARNIE_TOOLS() -> list:
+    """The active tool list (flag-aware). Was a module-level import-time snapshot;
+    now that build_tools() is gated by search_enabled(), a frozen snapshot would be
+    stale/misleading, so this delegates to the single source of truth per call."""
+    return build_tools()
 
 # Legacy list — kept so nothing outside this module breaks during transition
 _LEGACY_TOOLS = [

@@ -79,3 +79,108 @@ def should_skip_linked(user, linking_enabled: bool) -> bool:
 def proactive_pref_on(prefs) -> bool:
     """True if the user hasn't opted out of proactive messaging."""
     return bool(prefs and getattr(prefs, "proactive_messaging_enabled", False))
+
+
+# ── Tier-2: silence consolidation gate ─────────────────────────────────────────
+# A fresh account is in its warmup burst (the day-1/day-2 engagement cadence). We
+# never consolidate or suppress during that window — going quiet early is normal
+# and the burst is how we hook them. Past it, repeated silence means back off.
+WARMUP_BURST_HOURS = 50.0
+
+
+def gate_decision(streak: int, hours_since_created: float, prefs) -> str:
+    """
+    Pure Tier-2 policy: given how many proactive check-ins the user has ignored in a
+    row (`streak`), how long they've been a user, and their prefs, decide what the
+    scheduler should do this tick. Returns one of:
+
+      "send"        — proceed normally (fire the due slot nudge).
+      "consolidate" — they've ignored a couple in a row; skip the individual slots
+                      and instead open ONE proactive_hook so the follow-up loop
+                      re-asks a single warm check-in.
+      "suppress"    — they've ignored several; go dark on timed nudges for now.
+
+    Policy only — no DB, no sending. The scheduler acts on the verdict.
+
+    During the warmup burst (hours_since_created < WARMUP_BURST_HOURS) we always
+    "send": a brand-new user going quiet is expected, and the engagement burst is
+    deliberately aggressive. The streak gate only kicks in after they've settled.
+    """
+    if hours_since_created < WARMUP_BURST_HOURS:
+        return "send"
+    if streak >= 3:
+        return "suppress"
+    if streak >= 2:
+        return "consolidate"
+    return "send"
+
+
+# ── Tier-3: reminder-frequency read path ───────────────────────────────────────
+# reminder_frequency NARROWS which timed slots may fire — it is NOT a second kill
+# switch. proactive_messaging_enabled is the only hard OFF; frequency only shrinks
+# the allowed subset. "none" therefore maps to the SMALLEST non-empty set (a single
+# daily anchor), never to "nothing" — if proactive is on, at least one anchor fires.
+_FREQUENCY_SLOTS: dict[str, set[str]] = {
+    # everything (all seven timed touchpoints)
+    "heavy": {
+        "morning_checkin", "late_morning_nolog", "midday_pacing", "preworkout",
+        "workout_check", "evening_pacing", "night_closeout",
+    },
+    # default — drop the two most marginal pokes (late-morning nag, night closeout)
+    "moderate": {
+        "morning_checkin", "midday_pacing", "preworkout",
+        "workout_check", "evening_pacing",
+    },
+    # just the day's two anchors
+    "light": {"morning_checkin", "evening_pacing"},
+    # smallest non-empty subset — one anchor a day, not a hard off
+    "none": {"morning_checkin"},
+}
+
+# Unknown / unset frequency behaves like the default tier.
+_DEFAULT_FREQUENCY = "moderate"
+
+# Frequency tiers, ascending (fewest → most pokes). A relative "less"/"more"
+# instruction shifts one step along this ladder; an exact tier name passes
+# through. Single source of the frequency vocabulary, shared with the write path.
+_FREQ_LADDER = ["none", "light", "moderate", "heavy"]
+_FREQ_LESS = {"less", "fewer", "down", "reduce", "lower", "quieter"}
+_FREQ_MORE = {"more", "up", "increase", "higher", "louder"}
+
+
+def normalize_reminder_frequency(value, current=_DEFAULT_FREQUENCY) -> str:
+    """Map a model- or user-written reminder_frequency onto a valid tier.
+
+    Exact tier name ("heavy"/"moderate"/"light"/"none") → returned as-is.
+    Relative "less"/"more" (and common synonyms) → one step down/up the ladder
+    from the user's CURRENT tier, so "text me less" always reduces and never
+    accidentally raises. Anything unrecognized is returned unchanged, leaving
+    frequency_allows() to apply the moderate default.
+    """
+    v = str(value or "").strip().lower()
+    if v in _FREQUENCY_SLOTS:           # already an exact tier name
+        return v
+    cur = str(current or _DEFAULT_FREQUENCY).strip().lower()
+    if cur not in _FREQ_LADDER:
+        cur = _DEFAULT_FREQUENCY
+    idx = _FREQ_LADDER.index(cur)
+    if v in _FREQ_LESS:
+        return _FREQ_LADDER[max(0, idx - 1)]
+    if v in _FREQ_MORE:
+        return _FREQ_LADDER[min(len(_FREQ_LADDER) - 1, idx + 1)]
+    return value  # unrecognized — leave as-is; frequency_allows falls back to moderate
+
+
+def frequency_allows(prefs, slot_key: str) -> bool:
+    """
+    True if `slot_key` is permitted under the user's reminder_frequency tier.
+
+    Precedence: this is a NARROWING filter applied *after* the hard
+    proactive_messaging_enabled check — it never re-enables a disabled user and
+    "none" is the smallest non-empty subset, not a second off switch. An unknown or
+    missing frequency falls back to the moderate default.
+    """
+    freq = (getattr(prefs, "reminder_frequency", None) or _DEFAULT_FREQUENCY)
+    freq = str(freq).strip().lower()
+    allowed = _FREQUENCY_SLOTS.get(freq, _FREQUENCY_SLOTS[_DEFAULT_FREQUENCY])
+    return slot_key in allowed

@@ -15,6 +15,7 @@ from typing import Any, Callable, Optional
 
 from core.llm import chat, chat_follow_up
 from core.platform import Response, React, FX, onboarding_reaction, detect_moment
+from core.prompts.onboarding import format_completion_facts
 from core.turn_health import (
     looks_like_stall as _looks_like_stall,
     looks_like_dead_end as _looks_like_dead_end,
@@ -29,6 +30,14 @@ _LOGGING_TOOLS = frozenset({
     "delete_food_entry", "update_exercise_entry",
     "log_body_weight", "log_water", "clear_day_log",
 })
+
+# Tools whose raw result MUST be re-voiced — the facts live ONLY in the tool
+# result, so a follow-up is forced even when the first pass already wrote text
+# (otherwise the search facts would never reach the user). Sibling of
+# _LOGGING_TOOLS, NOT an overload: search must take the generic re-voice path,
+# never the coach-unmute/deterministic_confirmation fallback (which is for
+# logging totals and is wrong for search).
+_VOICED_RESULT_TOOLS = frozenset({"web_search"})
 
 
 @dataclasses.dataclass
@@ -57,6 +66,7 @@ async def run_turn(
     source_type: Optional[str] = None,  # for execute_tool_calls; defaults to platform
     on_image: Optional[Callable] = None,    # async fn(url, caption) → None
     on_completion: Optional[Callable] = None,  # fn(user) → str; defaults to plain welcome
+    completion_facts: Optional[dict] = None,  # ephemeral TDEE/goal for the just-completed reflection
 ) -> TurnResult:
     """
     Core pipeline: LLM call → tool execution → coach-unmute / follow-up /
@@ -188,6 +198,19 @@ async def run_turn(
     # ── Follow-up after tool calls ────────────────────────────────────────────
     _followup_tried = False
 
+    async def _try_follow_up(system_override: Optional[str] = None,
+                             max_tokens: int = 700) -> Optional[str]:
+        """One chat_follow_up call + the shared try/except + logger.error.
+        Returns the text, or None on failure (callers own their own fallbacks)."""
+        try:
+            return await chat_follow_up(
+                _messages_for_followup, raw_content, tool_calls, tool_results,
+                system_override or system, max_tokens=max_tokens,
+            )
+        except Exception as e:
+            logger.error(f"Follow-up failed for {_tag}: {e}")
+            return None
+
     if just_completed:
         # Onboarding just completed — almost always because the brain dump landed all
         # three essentials at once. The RETENTION moment here is the reflection: an
@@ -200,14 +223,12 @@ async def run_turn(
         if response_text and response_text.strip():
             pass  # LLM reflected alongside the update_profile call — keep it
         else:
-            try:
-                _followup_tried = True
-                response_text = await chat_follow_up(
-                    _messages_for_followup, raw_content, tool_calls, tool_results,
-                    system, max_tokens=700,
-                )
-            except Exception as e:
-                logger.error(f"Onboarding reflection follow-up failed for {_tag}: {e}")
+            _followup_tried = True
+            _reflect_line = format_completion_facts(completion_facts)
+            _reflect_system = (
+                system + "\n\n" + _reflect_line if _reflect_line else system
+            )
+            response_text = await _try_follow_up(system_override=_reflect_system)
             if not (response_text and response_text.strip()):
                 if on_completion is not None:
                     response_text = on_completion(user)
@@ -225,41 +246,33 @@ async def run_turn(
             # Authoritative totals come from the tool result; "NUMBERS ARE SACRED"
             # in the system prompt prevents fabrication.
             _followup_tried = True
-            try:
-                response_text = await chat_follow_up(
-                    _messages_for_followup, raw_content, tool_calls, tool_results,
-                    system, max_tokens=700,
-                )
-            except Exception as e:
-                logger.error(f"Coaching follow-up failed for {_tag}: {e}")
+            response_text = await _try_follow_up()
             if not response_text:
                 response_text = deterministic_confirmation(
                     tool_calls, today_log, user.preferences
                 )
         else:
+            # A voiced-result tool (web_search) forces a follow-up EVEN when the
+            # first pass already wrote text — its facts live only in the tool result
+            # and must be re-voiced. The generic _try_follow_up() re-voices via
+            # chat_follow_up using the full system (which includes SEARCH_RULES when
+            # enabled). This is NOT a third branch — just a data-driven term added to
+            # the existing need_followup predicate.
+            has_voiced_result = any(
+                tc["name"] in _VOICED_RESULT_TOOLS for tc in tool_calls
+            )
             need_followup = (
-                tool_calls and raw_content and (in_onboarding or not response_text)
+                tool_calls and raw_content
+                and (in_onboarding or not response_text or has_voiced_result)
             )
             if need_followup:
                 _followup_tried = True
-                try:
-                    response_text = await chat_follow_up(
-                        _messages_for_followup, raw_content, tool_calls, tool_results,
-                        system, max_tokens=700,
-                    )
-                except Exception as e:
-                    logger.error(f"Follow-up LLM failed for {_tag}: {e}")
+                response_text = await _try_follow_up()
 
     if not response_text:
         # Last-resort follow-up — only if we haven't already tried
         if tool_calls and raw_content and not _followup_tried:
-            try:
-                response_text = await chat_follow_up(
-                    _messages_for_followup, raw_content, tool_calls, tool_results,
-                    system, max_tokens=700,
-                )
-            except Exception as e:
-                logger.warning(f"Last-resort follow-up failed for {_tag}: {e}")
+            response_text = await _try_follow_up()
         if not response_text:
             # Never a bare "done." — real confirmation or keep-alive
             if tool_calls:

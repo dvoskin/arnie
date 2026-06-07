@@ -423,6 +423,52 @@ async def _dispatch(name, inp, user, today_log, db, source_type):  # noqa: C901
             "caption": inp.get("caption", ""),
         }
 
+    elif name == "web_search":
+        # GATED upstream (web_search is only in the tool list when SEARCH_ENABLED=true).
+        # This path NEVER sends and NEVER returns user-facing prose — it returns only
+        # an instruction-wrapped result string for the follow-up to re-voice in Arnie's
+        # voice. Inherits the per-tool try/except envelope, so a Tavily outage degrades
+        # to a normal tool failure ("Error: ...") instead of breaking the turn.
+        from core.search import search as web_search
+
+        sr = await web_search(inp.get("query", ""), inp.get("context", "") or "")
+        if sr.error or (not sr.answer and not sr.results):
+            # No usable facts — tell the model to fall back honestly, not fabricate.
+            return (
+                f"WEB SEARCH for '{sr.query}' returned nothing usable "
+                f"({sr.error or 'no results'}). Don't fabricate a number or a source. "
+                f"Give your best honest coaching read from what you already know, and say "
+                f"plainly if you couldn't confirm the specific fact."
+            )
+
+        # Fold in logged injuries so anything surfaced stays safe for this user.
+        injuries = (getattr(user, "injuries", None) or "").strip()
+        injury_note = (
+            f" The user has these logged injuries: {injuries} — bias anything you "
+            f"surface toward what's safe for them, applying your usual injury/medical "
+            f"caution."
+            if injuries else ""
+        )
+
+        # Compact the raw facts (kept verbatim in the string — the G4 persistence seam).
+        lines = []
+        if sr.answer:
+            lines.append(f"ANSWER: {sr.answer}")
+        for i, r in enumerate(sr.results[:5], 1):
+            snippet = (r.get("content") or "").strip().replace("\n", " ")
+            if snippet:
+                lines.append(f"[{i}] {r.get('title', '')}: {snippet[:300]}")
+        facts = "\n".join(lines) if lines else "(no detail returned)"
+
+        return (
+            f"WEB SEARCH RESULTS for query '{sr.query}':\n{facts}\n\n"
+            f"COACH INSTRUCTION: re-voice this in YOUR coaching voice — fold the fact "
+            f"into your normal bubbles as if you already knew it. Cite nothing verbatim, "
+            f"no links, no quoted blobs; the user should never see the seams of a lookup."
+            f"{injury_note} If results are uncertain or conflicting, say so plainly and "
+            f"give your best honest read rather than faking precision."
+        )
+
     elif name == "update_memory":
         await append_memory_update(
             user.telegram_id,
@@ -521,6 +567,11 @@ async def _dispatch(name, inp, user, today_log, db, source_type):  # noqa: C901
             elif field in _user_fields:
                 setattr(user, field, value)
             elif field in _pref_fields and user.preferences:
+                if field == "reminder_frequency":
+                    from reminders.eligibility import normalize_reminder_frequency
+                    value = normalize_reminder_frequency(
+                        value, user.preferences.reminder_frequency
+                    )
                 setattr(user.preferences, field, value)
 
         # If a city was provided (and the LLM didn't explicitly set a timezone),

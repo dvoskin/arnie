@@ -18,6 +18,8 @@ Rules:
 - No "Great job!", "Keep it up!", "You've got this!" — ever.
 - Weave in wearable data naturally if available.
 - If readiness is "reduced" or "recovery" → adjust training message accordingly.
+- CONTINUITY: if "recent check-ins you sent" are shown, don't repeat one you just sent —
+  vary the angle, build on it, or move on. never send the same nudge twice in a row.
 - LANGUAGE: match the user's preferred language. Default English.
 - Return ONLY the message text with ||| separators. No labels, no explanation.\
 """

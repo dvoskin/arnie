@@ -22,19 +22,19 @@ proactive profile_stats follow-up; city sets timezone whenever they mention it.
 # paragraph), then three two-line messages. Landing variant inserts a trial line.
 INTRO_BUBBLES = [
     # Message 1 — short; gets the iMessage screen effect (first bubble only)
-    "Hey, I'm Arnie ☺️",
+    "hey, i'm arnie ☺️",
     # Message 2
-    "Your science-based coach for food, training, and progress."
+    "your science-based coach for food, training, and progress."
     "\n\n"
-    "Text me meals, workouts, weight, goals, or anything you want me to know.",
+    "just text me. meals, workouts, weight, goals, whatever you want me to know.",
     # Message 3
-    "I'll help you log it, learn from it, and coach you better every day."
+    "i'll log it, learn from it, and coach you sharper every day."
     "\n\n"
-    "No apps, no forms, no starting over.",
+    "no app, no forms, no starting over.",
     # Message 4
-    "I remember your goals, habits, progress, and what works for you."
+    "i remember your goals, your habits, your progress, what actually works for you."
     "\n\n"
-    "What should I call you?",
+    "so, what should i call you?",
 ]
 
 
@@ -139,3 +139,29 @@ GOAL INFERENCE when weight + target weight are given:
   save weight + goal_weight + primary_goal in ONE update_profile() call.
 \
 """
+
+
+def format_completion_facts(facts: dict | None) -> str:
+    """In-voice context line for the just-completed onboarding reflection.
+
+    The handler passes the ephemeral TDEE/goal it just computed via the
+    "Calculate for me" path (these are NOT persisted — only the resulting
+    calorie/protein targets are, and those already show up via build_context).
+    This line lets the reflection weave in the metabolic reasoning instead of
+    reciting a number. Returns "" when there's nothing to add.
+    """
+    if not facts:
+        return ""
+    tdee = facts.get("tdee")
+    goal = facts.get("goal")
+    parts = []
+    if tdee:
+        parts.append(f"calculated TDEE ~{int(tdee):,} kcal/day")
+    if goal:
+        parts.append(f"goal {goal}")
+    if not parts:
+        return ""
+    return (
+        f"(For your reflection: {', '.join(parts)} — you set their target from this. "
+        "Don't recite the number robotically; weave it in.)"
+    )

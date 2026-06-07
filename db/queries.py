@@ -42,6 +42,11 @@ def linking_enabled() -> bool:
     return os.getenv("LINKING_ENABLED", "true").lower() in ("true", "1", "yes")
 
 
+def search_enabled() -> bool:
+    import os
+    return os.getenv("SEARCH_ENABLED", "false").lower() in ("true", "1", "yes")
+
+
 async def enable_check_ins(db: AsyncSession, user_id: int) -> None:
     """
     Turn proactive check-ins ON for a user — called natively when onboarding completes,
@@ -330,25 +335,31 @@ async def get_recent_logs(db: AsyncSession, user_id: int,
 
 
 async def get_recent_conversations(db: AsyncSession, user_id: int,
-                                   limit: int = 8) -> List[ConversationLog]:
-    result = await db.execute(
+                                   limit: int = 8,
+                                   source_types: Optional[List[str]] = None
+                                   ) -> List[ConversationLog]:
+    stmt = (
         select(ConversationLog)
         .where(ConversationLog.user_id == user_id)
-        .order_by(desc(ConversationLog.timestamp))
-        .limit(limit)
     )
+    if source_types is not None:
+        stmt = stmt.where(ConversationLog.source_type.in_(source_types))
+    stmt = stmt.order_by(desc(ConversationLog.timestamp)).limit(limit)
+    result = await db.execute(stmt)
     return result.scalars().all()
 
 
 async def log_conversation(db: AsyncSession, user_id: int, raw_message: str,
                            response: str, parsed_intent: str = None,
-                           source_type: str = "text"):
+                           source_type: str = "text",
+                           skills_fired: str | None = None):
     entry = ConversationLog(
         user_id=user_id,
         raw_message=raw_message,
         parsed_intent=parsed_intent,
         response=response,
         source_type=source_type,
+        skills_fired=skills_fired,
     )
     db.add(entry)
     await db.commit()

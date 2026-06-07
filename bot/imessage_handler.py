@@ -38,7 +38,7 @@ from db.queries import (
     reload_user, get_or_create_webhook_token,
 )
 from core.context_builder import build_context
-from core.platform import Response, React, FX, IMessageAdapter
+from core.platform import IMessageAdapter
 from handlers.onboarding import build_onboarding_system, is_onboarding_complete
 
 logger = logging.getLogger(__name__)
@@ -381,10 +381,8 @@ async def _build_messages(db, user_id: int, current_text: str,
     If extended=True, loads 25 messages so Arnie can find what was referenced."""
     limit = 25 if extended else 6
     recent = await get_recent_conversations(db, user_id, limit=limit)
-    msgs = []
-    for conv in reversed(recent):
-        msgs.append({"role": "user", "content": conv.raw_message or ""})
-        msgs.append({"role": "assistant", "content": conv.response or ""})
+    from core.history import conversations_to_messages
+    msgs = conversations_to_messages(list(reversed(recent)))
     msgs.append({"role": "user", "content": current_text})
     return msgs
 
@@ -498,8 +496,10 @@ async def _handle_im_remind_toggle(chat_guid: str, user, db, enable: bool) -> bo
     if prefs:
         prefs.proactive_messaging_enabled = enable
         await db.commit()
-    status = "on" if enable else "off"
-    msg = f"Check-ins are {status}." if enable else f"Got it, no more check-ins."
+    if enable:
+        msg = "reminders on. i'll check in through the day, all inside your wake/sleep window."
+    else:
+        msg = "reminders off. i'll only chime in when you text me."
     await bb_send_text(chat_guid, msg)
     return True
 
@@ -660,47 +660,6 @@ async def start_imessage_outreach(raw_phone: str) -> dict:
                                "|||".join(_OUTREACH_INTRO), source_type="imessage")
         logger.info(f"iMessage outreach sent to {phone}")
         return {"ok": True, "reason": "sent"}
-
-
-async def _dashboard_url(user, db) -> str:
-    """Build the user's dashboard URL."""
-    from core.urls import dashboard_url
-    token = await get_or_create_webhook_token(db, user.id)
-    return dashboard_url(token)
-
-
-async def _complete_im_onboarding(chat_guid, user, db, raw_text, message_guid,
-                                  lead: str = "") -> None:
-    """
-    Single completion path for ALL onboarding exits (calculate / skip / LLM tool).
-    Sends the celebratory welcome + dashboard via the adapter so every user gets
-    the same polished ending. lead = optional bubble(s) prepended (e.g. calc result).
-    """
-    # Native check-in enable on completion (global PROACTIVE_MESSAGING_ENABLED still gates sends).
-    from db.queries import enable_check_ins
-    await enable_check_ins(db, user.id)
-    dash_url = await _dashboard_url(user, db)
-    body = await _build_completion_text(user, db, dash_url)
-    full = f"{lead}|||{body}" if lead else body
-    resp = Response.from_text(full)
-    resp.effect = FX.CELEBRATE
-    resp.effect_idx = 0
-    resp.reaction = React.LOVE
-    await IMessageAdapter(chat_guid, reply_to_guid=message_guid).send(resp)
-    await log_conversation(db, user.id, raw_text, full, source_type="imessage")
-
-
-async def _build_completion_text(user, db) -> str:
-    """
-    iMessage onboarding welcome — short and warm. 3 bubbles, no goal label,
-    no targets line, no dashboard (the dashboard is sent after their first log).
-    """
-    name = user.name or ""
-    return (
-        f"You're in, {name}. 🎉|||"
-        f"Just text me whatever you eat or train and I'll handle the rest.|||"
-        f"What've you had today? Let's start there."
-    )
 
 
 # Per-user async locks — prevents two pipelines running simultaneously for the
@@ -877,6 +836,12 @@ async def run_imessage_pipeline(address: str, chat_guid: str, raw_text: str,
         was_onboarding = in_onboarding
 
         # ── Server-side target interceptor (mirrors Telegram handler) ─────────
+        # "calculate for me" / "skip" are stale onboarding buttons. We still match
+        # them (live keyboards may carry them), but instead of emitting canned
+        # completion bubbles we persist the result, complete onboarding, and FALL
+        # THROUGH into the normal run_turn pipeline so the just_completed reflection
+        # is voiced by Arnie — no user-facing LLM text bypasses run_turn's voicing.
+        completion_facts: dict | None = None
         if in_onboarding and is_onboarding_complete(user):
             _prefs = user.preferences
             _targets_done = bool(_prefs and getattr(_prefs, "calorie_target", None) is not None)
@@ -891,23 +856,26 @@ async def run_imessage_pipeline(address: str, chat_guid: str, raw_text: str,
                         user.onboarding_completed = True
                         await db.commit()
                         user = await reload_user(db, user.id)
-                        await _complete_im_onboarding(
-                            chat_guid, user, db, raw_text, message_guid,
-                            lead=f"ran the math 🧮|||~{targets['tdee']:,} tdee, so we're going "
-                                 f"{targets['calories']:,} cal a day for the {targets['goal']}.",
-                        )
-                        return
+                        # Native check-in enable on completion (idempotent; fires
+                        # once here on the fall-through path). Global
+                        # PROACTIVE_MESSAGING_ENABLED still gates real sends.
+                        from db.queries import enable_check_ins
+                        await enable_check_ins(db, user.id)
+                        user = await reload_user(db, user.id)
+                        in_onboarding = False  # was_onboarding stays True → just_completed
+                        completion_facts = {"tdee": targets["tdee"], "goal": targets["goal"]}
+                    # If _calc_targets returns None, stay in onboarding and let the
+                    # LLM ask for what's missing.
 
                 elif _txt in ("skip", "skip for now"):
                     user.onboarding_completed = True
                     await db.commit()
                     user = await reload_user(db, user.id)
-                    await _complete_im_onboarding(
-                        chat_guid, user, db, raw_text, message_guid,
-                        lead="no targets for now, that's fine.|||we'll dial them in once i "
-                             "see how you actually eat.",
-                    )
-                    return
+                    from db.queries import enable_check_ins
+                    await enable_check_ins(db, user.id)
+                    user = await reload_user(db, user.id)
+                    in_onboarding = False  # was_onboarding stays True → just_completed
+                    # completion_facts stays None — no TDEE on the skip path.
 
         # ── Build system prompt + context ─────────────────────────────────────
         if not in_onboarding:
@@ -942,6 +910,7 @@ async def run_imessage_pipeline(address: str, chat_guid: str, raw_text: str,
             user, db, messages, system, platform="imessage",
             in_onboarding=in_onboarding, was_onboarding=was_onboarding,
             today_log=today_log, source_type="imessage", on_image=_on_image,
+            completion_facts=completion_facts,
         )
 
         # ── Stop typing, then send via the iMessage adapter ───────────────────

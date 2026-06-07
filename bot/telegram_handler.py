@@ -25,7 +25,6 @@ from db.queries import (
     reload_user, reset_today_log, reset_all_user_data, get_or_create_webhook_token,
     add_feedback, clear_today_conversations, get_recent_logs,
 )
-from core.llm import chat
 from core.context_builder import build_context, fmt_log
 from core.platform import React
 from handlers.onboarding import (
@@ -482,10 +481,8 @@ async def _build_messages(db, user_id: int, current_text: str, extended: bool = 
         extended = any(p in t for p in _REFERENCE_PATTERNS)
     limit = 25 if extended else 6
     recent = await get_recent_conversations(db, user_id, limit=limit)
-    msgs = []
-    for conv in reversed(recent):
-        msgs.append({"role": "user", "content": conv.raw_message or ""})
-        msgs.append({"role": "assistant", "content": conv.response or ""})
+    from core.history import conversations_to_messages
+    msgs = conversations_to_messages(list(reversed(recent)))
     msgs.append({"role": "user", "content": current_text})
     return msgs
 
@@ -494,135 +491,29 @@ def _welcome_message(name: str, has_targets: bool,
                      primary_goal: str = None,
                      calorie_target: int = None,
                      protein_target: int = None) -> str:
-    goal_labels = {
-        "cut": "Cut 🔻", "bulk": "Bulk 📈", "maintain": "Maintain ⚖️",
-        "performance": "Performance ⚡", "health": "Health 🌿",
-    }
-    goal_line = (
-        f"Goal: <b>{goal_labels.get(primary_goal, primary_goal.title())}</b>\n"
-        if primary_goal else ""
-    )
+    """Static, voiced last-resort welcome — only used as run_turn's on_completion
+    fallback when the LLM reflection comes back empty. Returns a |||-split
+    multi-bubble string in Arnie's lowercase bubble voice (no em dash, HTML-safe,
+    ends on a concrete action)."""
+    open_bubble = f"you're in{', ' + name if name else ''}."
 
     if has_targets and calorie_target and protein_target:
-        target_line = f"Targets: <b>{calorie_target} cal</b> · <b>{protein_target}g protein</b>\n"
+        target_bubble = (
+            f"locked your targets at <b>{calorie_target} cal</b> and "
+            f"<b>{protein_target}g protein</b> a day."
+        )
     else:
-        target_line = "Targets: not set, say <i>\"set my targets\"</i> when ready\n"
+        target_bubble = "no targets yet, we'll dial them in once i see how you eat."
 
     return (
-        f"You're in, <b>{name}</b>.\n\n"
-        f"{goal_line}"
-        f"{target_line}\n"
-        "No commands needed to log — just talk to me:\n\n"
-        "<i>\"chicken breast, rice, broccoli\"</i> → logs your meal\n"
-        "<i>\"bench 185 4×5, OHP 115 3×8\"</i> → logs your workout\n"
-        "<i>\"182.4 this morning\"</i> → logs your weight\n"
-        "<i>\"how am I doing on protein?\"</i> → I'll tell you\n\n"
-        "Use /remind on to get proactive daily check-ins from me.\n\n"
-        "<b>What did you eat today?</b> Start there."
+        f"{open_bubble}|||"
+        f"{target_bubble}|||"
+        "no forms, just text me. food, a workout, your weight, whatever.|||"
+        "what did you eat today? start there."
     )
-
-
-async def _generate_workout_analysis(user, exercise_calls, db) -> str:
-    """
-    Build a short post-workout evaluation when 2+ exercises are logged in one turn.
-    Compares today's session to recent history to call out progressions / regressions.
-    """
-    just_logged = []
-    for tc in exercise_calls:
-        inp = tc["input"]
-        name = inp.get("exercise_name", "?")
-        if inp.get("sets") and inp.get("reps"):
-            w = f" @ {inp['weight']} {inp.get('weight_unit', 'lbs')}" if inp.get("weight") else ""
-            just_logged.append(f"  {name}: {inp['sets']}×{inp['reps']}{w}")
-        elif inp.get("duration_minutes"):
-            just_logged.append(f"  {name}: {inp['duration_minutes']:.0f} min")
-        else:
-            just_logged.append(f"  {name}")
-
-    recent_logs = await get_recent_logs(db, user.id, days=28)
-    history_lines = []
-    for log in recent_logs:
-        if log.exercise_entries:
-            day_exs = []
-            for e in log.exercise_entries:
-                if e.sets and e.reps:
-                    w = f" @ {e.weight * 2.20462:.0f}lb" if e.weight else ""
-                    day_exs.append(f"{e.exercise_name}: {e.sets}×{e.reps}{w}")
-                elif e.duration_minutes:
-                    day_exs.append(f"{e.exercise_name}: {e.duration_minutes:.0f}min")
-            if day_exs:
-                history_lines.append(f"  {log.date}: " + ", ".join(day_exs[:5]))
-
-    history_str = "\n".join(history_lines[-6:]) if history_lines else "No previous workouts on record."
-
-    prompt = (
-        f"[ATHLETE: {user.name or 'User'}, {user.age or '?'}yo, "
-        f"goal={user.primary_goal or '?'}, exp={user.training_experience or '?'}]\n"
-        f"[TODAY — {len(exercise_calls)} exercises]\n" + "\n".join(just_logged) +
-        f"\n[RECENT HISTORY]\n{history_str}\n---\n"
-        "Give a 3–5 line workout evaluation. No 'Great session!' opener — start with a direct "
-        "assessment. Use <b>bold</b> for key numbers. If you spot a PR or regression vs history, "
-        "call it out explicitly. End with one concrete coaching note for next time."
-    )
-
-    try:
-        result = await chat(
-            [{"role": "user", "content": prompt}],
-            system="You are Arnie, a direct fitness coach. Give a brief, specific workout evaluation.",
-            tools=False,
-            max_tokens=300,
-        )
-        return result.get("text", "")
-    except Exception as e:
-        logger.error(f"Workout analysis LLM failed: {e}")
-        return ""
 
 
 from core.targets import calc_targets as _calc_targets  # shared Mifflin-St Jeor calc
-
-
-async def _send_onboarding_complete(update, db, user, source_type, raw_text,
-                                    calc_line: str = None):
-    """
-    Send the onboarding completion sequence: optional calc result → welcome
-    message → dashboard button. Used by the server-side target interceptor.
-    """
-    # Native check-in enable on completion (global PROACTIVE_MESSAGING_ENABLED gates sends).
-    from db.queries import enable_check_ins
-    await enable_check_ins(db, user.id)
-
-    if calc_line:
-        await update.message.reply_text(calc_line, parse_mode="HTML")
-
-    prefs = user.preferences
-    has_targets = bool(prefs and prefs.calorie_target)
-    response_text = _welcome_message(
-        name=user.name or "",
-        has_targets=has_targets,
-        primary_goal=user.primary_goal,
-        calorie_target=prefs.calorie_target if prefs else None,
-        protein_target=prefs.protein_target if prefs else None,
-    )
-    fmt_kwargs = _fmt(response_text)
-    fmt_kwargs["reply_markup"] = ReplyKeyboardRemove()
-    await update.message.reply_text(**fmt_kwargs)
-
-    try:
-        from core.urls import dashboard_url
-        token = await get_or_create_webhook_token(db, user.id)
-        dash_url = dashboard_url(token)
-        dash_kb = InlineKeyboardMarkup([[
-            InlineKeyboardButton("📊 Open your dashboard →", url=dash_url)
-        ]])
-        await update.message.reply_text(
-            "Your coaching dashboard is live — everything you log shows up here.",
-            reply_markup=dash_kb,
-        )
-    except Exception as e:
-        logger.warning(f"Could not send dashboard link after onboarding: {e}")
-
-    log_str = ((calc_line + "\n\n") if calc_line else "") + response_text
-    await log_conversation(db, user.id, raw_text, log_str, source_type=source_type)
 
 
 async def _send_intro_and_log(update: Update, db, user_id: int, raw_text: str,
@@ -637,7 +528,7 @@ async def _send_intro_and_log(update: Update, db, user_id: int, raw_text: str,
     from core.prompts.onboarding import INTRO_BUBBLES
     bubbles = list(INTRO_BUBBLES)
     if from_landing:
-        bubbles.insert(1, "Your 7-day free trial starts now.")
+        bubbles.insert(1, "your 7-day free trial starts now.")
     for i, bubble in enumerate(bubbles):
         await update.message.reply_text(bubble)
         if i < len(bubbles) - 1:
@@ -670,9 +561,12 @@ async def _run_pipeline(update: Update, context: ContextTypes.DEFAULT_TYPE,
             return  # wait for the user to reply with their name
 
     # ── Server-side target-step interception ──────────────────────────────────
-    # "Calculate for me" and "Skip for now" are handled entirely in Python —
-    # no LLM call needed. This eliminates the "Got it." dead-end caused by
-    # the follow-up LLM not having access to tools.
+    # "Calculate for me" and "Skip for now" are stale onboarding buttons. We still
+    # match their exact strings (live keyboards may carry them), but instead of
+    # emitting a canned HTML card we persist the result, complete onboarding, and
+    # FALL THROUGH into the normal run_turn pipeline so the just_completed
+    # reflection is voiced by Arnie — no LLM text bypasses run_turn's voicing.
+    completion_facts: dict | None = None
     if in_onboarding and is_onboarding_complete(user):
         _prefs = user.preferences
         _targets_done = bool(_prefs and getattr(_prefs, "calorie_target", None) is not None)
@@ -682,33 +576,33 @@ async def _run_pipeline(update: Update, context: ContextTypes.DEFAULT_TYPE,
             if _txt in ("Calculate for me 🧮", "Calculate for me"):
                 targets = _calc_targets(user)
                 if targets:
-                    # Save targets + complete onboarding server-side
+                    # Save targets + complete onboarding server-side, then fall through.
                     if _prefs:
                         _prefs.calorie_target = targets["calories"]
                         _prefs.protein_target = targets["protein"]
                     user.onboarding_completed = True
                     await db.commit()
                     user = await reload_user(db, user.id)
-
-                    goal_lbl = {"cut": "cut", "bulk": "bulk", "maintain": "maintain"}.get(
-                        targets["goal"], targets["goal"]
-                    )
-                    calc_line = (
-                        f"TDEE ~{targets['tdee']:,} → {goal_lbl} target: "
-                        f"<b>{targets['calories']:,} cal</b> · <b>{targets['protein']}g protein</b>"
-                    )
-                    await _send_onboarding_complete(
-                        update, db, user, source_type, raw_text, calc_line=calc_line
-                    )
-                    return
+                    # Native check-in enable on completion (idempotent; fires once
+                    # here on the fall-through path). The global
+                    # PROACTIVE_MESSAGING_ENABLED switch still gates real sends.
+                    from db.queries import enable_check_ins
+                    await enable_check_ins(db, user.id)
+                    user = await reload_user(db, user.id)
+                    in_onboarding = False  # was_onboarding stays True → just_completed
+                    completion_facts = {"tdee": targets["tdee"], "goal": targets["goal"]}
                 # If _calc_targets returns None (missing data), fall through to LLM
+                # in onboarding (no facts, still asks for what's missing).
 
             elif _txt == "Skip for now":
                 user.onboarding_completed = True
                 await db.commit()
                 user = await reload_user(db, user.id)
-                await _send_onboarding_complete(update, db, user, source_type, raw_text)
-                return
+                from db.queries import enable_check_ins
+                await enable_check_ins(db, user.id)
+                user = await reload_user(db, user.id)
+                in_onboarding = False  # was_onboarding stays True → just_completed
+                # completion_facts stays None — no TDEE to weave in on the skip path.
 
     if not in_onboarding:
         today_log = await get_or_create_today_log(db, user.id, user.timezone or "UTC")
@@ -758,6 +652,7 @@ async def _run_pipeline(update: Update, context: ContextTypes.DEFAULT_TYPE,
             in_onboarding=in_onboarding, was_onboarding=was_onboarding,
             today_log=today_log, source_type=source_type,
             on_image=_on_image, on_completion=_tg_completion,
+            completion_facts=completion_facts,
         )
     finally:
         stop_typing.set()
@@ -808,26 +703,6 @@ async def _run_pipeline(update: Update, context: ContextTypes.DEFAULT_TYPE,
             )
         except Exception as e:
             logger.warning(f"Could not send dashboard link after onboarding: {e}")
-
-    # ── Workout performance analysis (2+ exercises logged in one turn) ────────
-    if turn.tool_calls and not turn.in_onboarding:
-        exercise_calls = [tc for tc in turn.tool_calls if tc["name"] == "log_exercise"]
-        if len(exercise_calls) >= 2:
-            analysis = await _generate_workout_analysis(turn.user, exercise_calls, db)
-            if analysis:
-                stop_wa = asyncio.Event()
-                typing_wa = asyncio.create_task(
-                    _typing_keepalive(context.bot, chat_id, stop_wa)
-                )
-                try:
-                    await update.message.reply_text(**_fmt(analysis))
-                finally:
-                    stop_wa.set()
-                    typing_wa.cancel()
-                    try:
-                        await typing_wa
-                    except asyncio.CancelledError:
-                        pass
 
     # ── Persist conversation (+ turn-health flags on parsed_intent) ────────────
     log_text = "|||".join(turn.response.bubbles)
@@ -1063,16 +938,16 @@ async def cmd_ai(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         await update.message.reply_text(random.choice([
-            "🏋️ Lifting mental weights…",
-            "🧠 Crunching your numbers, not your abs…",
-            "📊 Running the tape on your week…",
-            "🔬 Dissecting your data…",
-            "⚡ Charging up the coach brain…",
-            "🎯 Locking in on your patterns…",
-            "🩺 Diagnosing your macros…",
-            "📈 Reading the gains tape…",
-            "💡 Connecting the dots on your data…",
-            "🔍 Zooming in on your stats…",
+            "🏋️ lifting some mental weights…",
+            "🧠 crunching your numbers, not your abs…",
+            "📊 running the tape on your week…",
+            "🔬 digging through your data…",
+            "⚡ spinning up the coach brain…",
+            "🎯 locking in on your patterns…",
+            "🩺 reading your macros…",
+            "📈 reading the gains tape…",
+            "💡 connecting the dots…",
+            "🔍 zooming in on your stats…",
         ]))
 
         try:
@@ -1262,8 +1137,8 @@ async def cmd_memory(update: Update, context: ContextTypes.DEFAULT_TYPE):
         mem = await read_memory(user.telegram_id)
         if not mem or mem.strip() == "":
             await update.message.reply_text(
-                "Nothing stored yet — memory builds up as we talk. "
-                "The more you log, the sharper my coaching gets."
+                "nothing stored yet. my memory builds up as we talk. "
+                "the more you log, the sharper i get. tell me what you ate today."
             )
             return
         # Telegram message limit is 4096 chars
@@ -1719,50 +1594,51 @@ async def cmd_remind(update: Update, context: ContextTypes.DEFAULT_TYPE):
             prefs.proactive_messaging_enabled = False
             await db.commit()
             await update.message.reply_text(
-                "Reminders off. I'll only respond when you message me.",
+                "reminders off. i'll only chime in when you text me.",
                 parse_mode="HTML"
             )
         elif args and args[0].lower() in ("on", "start", "enable", "1"):
             prefs.proactive_messaging_enabled = True
             await db.commit()
             await update.message.reply_text(
-                "<b>Reminders on.</b>\n\n"
-                "I'll check in at:\n"
-                "• Morning — log your weight &amp; breakfast\n"
-                "• Midday — protein pacing\n"
-                "• Afternoon — workout nudge\n"
-                "• Evening — dinner &amp; calories remaining\n"
-                "• Night — closeout nudge\n\n"
-                "All within your wake/sleep window. Turn off anytime with /remind off",
+                "<b>reminders on.</b>\n\n"
+                "i'll check in through the day:\n"
+                "• morning, weight &amp; breakfast\n"
+                "• midday, protein pacing\n"
+                "• afternoon, workout nudge\n"
+                "• evening, dinner &amp; calories left\n"
+                "• night, closeout nudge\n\n"
+                "all inside your wake/sleep window. say /remind off anytime to stop.",
                 parse_mode="HTML"
             )
         else:
             status = "on" if prefs.proactive_messaging_enabled else "off"
             await update.message.reply_text(
-                f"Reminders are currently <b>{status}</b>.\n\n"
-                "/remind on  — enable check-ins\n"
-                "/remind off — disable",
+                f"reminders are <b>{status}</b> right now.\n\n"
+                "/remind on to turn check-ins on\n"
+                "/remind off to turn them off",
                 parse_mode="HTML"
             )
 
 
 async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "<b>Arnie commands</b>\n\n"
-        "/today    — calories, macros &amp; workout status\n"
-        "/ai       — coaching insights on your day &amp; trends\n"
-        "/week     — last 7 days recap &amp; trends\n"
-        "/me       — profile, targets &amp; settings\n"
-        "/close    — close today's log\n"
-        "/dash     — open your personal dashboard\n"
-        "/connect  — link Whoop or Apple Health\n"
-        "/reset    — clear today's log or full reset\n\n"
-        "<b>Just talk to me naturally:</b>\n"
-        "<i>Had chicken and rice</i>\n"
-        "<i>Bench 225×5 for 3 sets</i>\n"
-        "<i>Weight 191.4 this morning</i>\n"
+        "<b>arnie commands</b>\n\n"
+        "/today    calories, macros &amp; workout status\n"
+        "/ai       coaching insights on your day &amp; trends\n"
+        "/week     last 7 days recap &amp; trends\n"
+        "/me       profile, targets &amp; settings\n"
+        "/close    close today's log\n"
+        "/dash     open your personal dashboard\n"
+        "/remind   turn daily check-ins on or off\n"
+        "/connect  link Whoop or Apple Health\n"
+        "/reset    clear today's log or full reset\n\n"
+        "<b>or just talk to me naturally:</b>\n"
+        "<i>had chicken and rice</i>\n"
+        "<i>bench 225x5 for 3 sets</i>\n"
+        "<i>weight 191.4 this morning</i>\n"
         "<i>30 min incline walk</i>\n\n"
-        "Voice notes and food photos work too.",
+        "voice notes and food photos work too.",
         parse_mode="HTML"
     )
 
@@ -1782,6 +1658,7 @@ async def _post_init(app: Application):
         BotCommand("me",      "Profile, targets & settings"),
         BotCommand("close",   "Close today's log"),
         BotCommand("dash",    "Open your personal dashboard"),
+        BotCommand("remind",  "Turn daily check-ins on or off"),
         BotCommand("upgrade", "Upgrade to Premium"),
         BotCommand("billing", "Manage your subscription"),
         BotCommand("connect", "Link Whoop or Apple Health"),

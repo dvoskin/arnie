@@ -5,7 +5,9 @@ follow-up loops and resolves them when answered (reminders.lifecycle).
 import pytest
 
 from reminders.lifecycle import sync_pending_questions
-from db.queries import get_open_pending_question, get_open_pending_questions
+from db.queries import (
+    get_open_pending_question, get_open_pending_questions, record_pending_question,
+)
 
 
 # A fully-onboarded user is missing age/sex/height unless we pass them.
@@ -52,3 +54,18 @@ async def test_noop_during_onboarding(make_user, db):
     await sync_pending_questions(db, u)
     # nothing recorded while still onboarding (even though stats are missing)
     assert await get_open_pending_questions(db, u.id) == []
+
+
+async def test_inbound_turn_resolves_proactive_hook(make_user, db):
+    """D5: a proactive_hook (opened by the scheduler when the user goes quiet) is
+    closed the moment any inbound turn breaks the silence — same as conversation_hook."""
+    u = await make_user(telegram_id="405", **_COMPLETE_STATS)  # stats complete → no profile loop
+    await record_pending_question(
+        db, u.id, kind="proactive_hook",
+        question="you've gone quiet — reaching back out.", tier="proactive_hook",
+    )
+    assert await get_open_pending_question(db, u.id, "proactive_hook") is not None
+
+    # the user replies → next sync closes the hook
+    await sync_pending_questions(db, u, arnie_response="")
+    assert await get_open_pending_question(db, u.id, "proactive_hook") is None
