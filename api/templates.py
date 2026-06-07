@@ -2737,7 +2737,7 @@ function renderAIProfile(data) {{
     }} else {{
       right = '<span class="inval">' + esc(s.value) + '</span>';
     }}
-    var confDot = (s.filled && s.confidence && s.confidence !== 'confirmed')
+    var confDot = (s.filled && s.confidence)
       ? '<span class="conf-dot" style="background:' + (CONF_COLORS[s.confidence]||'var(--mu)') + '" title="' + esc(s.confidence) + '"></span>' : '';
     var edit = s.edit_field
       ? '<button class="ibtn inrow-edit" onclick="editProw(\\''+id+'\\',\\''+escA(s.edit_field)+'\\',\\''+escA(s.raw)+'\\')">&#9998;</button>' : '';
@@ -2757,7 +2757,7 @@ function renderAIProfile(data) {{
   if (custom.length) {{
     html += '<div style="margin-top:20px"><div class="stitle" style="margin-top:0">' + esc(CATEGORY_LABELS['custom']||'Custom Tracking') + '</div>' +
       '<div class="infocrd">' + custom.map(function(c) {{
-        var confDot = (c.confidence && c.confidence !== 'confirmed')
+        var confDot = c.confidence
           ? '<span class="conf-dot" style="background:' + (CONF_COLORS[c.confidence]||'var(--mu)') + '" title="' + esc(c.confidence) + '"></span>' : '';
         var rm = c.key ? '<button class="inrow-x" title="Remove from profile" data-key="' + esc(c.key) +
           '" data-label="' + esc(c.label) + '" onclick="hideAttribute(this)">&#10005;</button>' : '';
@@ -2768,9 +2768,10 @@ function renderAIProfile(data) {{
 
   // Super-subtle legend: what the dots mean + how to remove a custom item.
   html += '<div class="pf-legend">' +
-    '<span><i class="pf-dot" style="background:var(--mu)"></i>learned from your activity</span>' +
-    '<span><i class="pf-dot" style="background:#f0a500"></i>still learning, unconfirmed</span>' +
-    (custom.length ? '<span><i class="pf-x">&#10005;</i>tap to remove a custom item</span>' : '') +
+    '<span><i class="pf-dot" style="background:var(--ac)"></i>you told Arnie</span>' +
+    '<span><i class="pf-dot" style="background:var(--mu)"></i>Arnie inferred this</span>' +
+    '<span><i class="pf-dot" style="background:#f0a500"></i>still learning</span>' +
+    (custom.length ? '<span><i class="pf-x">&#10005;</i>tap to remove</span>' : '') +
     '</div>';
 
   attrsEl.innerHTML = html;
