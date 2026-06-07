@@ -389,3 +389,217 @@ async def test_non_voiced_non_logging_tool_keeps_first_pass_text_no_followup(
     joined = " ".join(result.response.bubbles).lower()
     assert "locked in your new target" in joined
     assert "should not be used" not in joined
+
+
+# ── INTERIM HEADS-UP — mid-turn "looking that up" bubble (masks search latency) ──
+#
+# A keyword-only on_interim callback fires inside run_turn's tool block BEFORE the
+# slow execute_tool_calls + re-voice run, ONLY for web_search turns. HYBRID wording:
+# the model's first-pass text when present, else the deterministic search_heads_up()
+# fallback. NOT a double-send: the final answer is the re-voiced follow-up (C5).
+
+def test_search_heads_up_is_short_nonempty_and_deterministic():
+    """The deterministic fallback returns a short non-empty in-voice line, and the
+    same input always maps to the same line (stable index, no randomness)."""
+    from handlers.tool_executor import search_heads_up
+
+    line = search_heads_up("chipotle chicken bowl macros")
+    assert isinstance(line, str) and line.strip()
+    assert len(line) <= 80, "heads-up must be ONE short line, not a paragraph"
+    assert "|||" not in line, "a single bubble — no multi-bubble split"
+    # Deterministic for a given input.
+    assert search_heads_up("chipotle chicken bowl macros") == line
+    # No-arg / None is also valid and stable.
+    assert search_heads_up() == search_heads_up(None)
+    assert search_heads_up().strip()
+
+
+async def _run_interim_turn(monkeypatch, make_user, db, *, first_pass_text,
+                            tool_name="web_search", tool_input=None,
+                            on_interim=None):
+    """Drive run_turn with a single tool call and a captured re-voice follow-up.
+    Returns (result, follow_up_calls). Shared by the interim tests below."""
+    import core.conversation as C
+
+    user = await make_user(telegram_id="960")
+    calls = {"follow_up": 0}
+
+    async def _fake_chat(messages, system, tools=True, max_tokens=4096, model=None):
+        return {
+            "text": first_pass_text,
+            "tool_calls": [{"name": tool_name, "id": "t1",
+                            "input": tool_input or {}}],
+            "raw_content": [{"x": 1}],
+            "stop_reason": "tool_use",
+        }
+
+    async def _fake_follow_up(messages, raw, tcs, results, system, max_tokens=512):
+        calls["follow_up"] += 1
+        # The FINAL voiced answer — deliberately distinct from any interim text.
+        return "a chipotle chicken bowl runs ~700 cal.|||40g protein, solid for the cut."
+
+    async def _fake_execute(tool_calls, user, log, db, source_type):
+        return {tool_name: "WEB SEARCH RESULTS ... COACH INSTRUCTION: re-voice this ..."}
+
+    monkeypatch.setattr(C, "chat", _fake_chat)
+    monkeypatch.setattr(C, "chat_follow_up", _fake_follow_up)
+    monkeypatch.setattr(C, "execute_tool_calls", _fake_execute)
+
+    result = await C.run_turn(
+        user, db,
+        messages=[{"role": "user", "content": "macros for a chipotle chicken bowl?"}],
+        system="SYS", platform="imessage",
+        in_onboarding=False, was_onboarding=False,
+        on_interim=on_interim,
+    )
+    return result, calls
+
+
+async def test_interim_fires_with_first_pass_text_before_final_and_no_double_send(
+        monkeypatch, make_user, db, search_on):
+    """web_search turn WITH first-pass text → on_interim called ONCE with that text,
+    and the FINAL voiced answer differs from the interim (no double-send)."""
+    seen: list[str] = []
+
+    async def _capture(text):
+        seen.append(text)
+
+    result, calls = await _run_interim_turn(
+        monkeypatch, make_user, db,
+        first_pass_text="good q, let me check that real quick.",
+        tool_input={"query": "chipotle chicken bowl macros"},
+        on_interim=_capture,
+    )
+
+    # Interim fired exactly once, with the model's own first-pass line.
+    assert seen == ["good q, let me check that real quick."]
+    # The re-voice follow-up still ran (its text is the FINAL answer).
+    assert calls["follow_up"] == 1
+    final = " ".join(result.response.bubbles).lower()
+    assert "700 cal" in final, "final answer must be the re-voiced search result"
+    # NO double-send: the interim text is NOT also in the final answer.
+    assert "let me check that real quick" not in final, "interim text leaked into final"
+
+
+async def test_interim_fires_before_execute_tool_calls(
+        monkeypatch, make_user, db, search_on):
+    """Latency masking is the whole point: the heads-up MUST be sent before the
+    slow search runs. Pin the ordering with a shared sentinel list so a refactor
+    can't silently move the interim after execute_tool_calls and stay green."""
+    import core.conversation as C
+
+    user = await make_user(telegram_id="961")
+    order: list[str] = []
+
+    async def _fake_chat(messages, system, tools=True, max_tokens=4096, model=None):
+        return {
+            "text": "let me check that.",
+            "tool_calls": [{"name": "web_search", "id": "t1", "input": {"query": "x"}}],
+            "raw_content": [{"x": 1}],
+            "stop_reason": "tool_use",
+        }
+
+    async def _fake_follow_up(messages, raw, tcs, results, system, max_tokens=512):
+        return "the answer.|||done."
+
+    async def _fake_execute(tool_calls, user, log, db, source_type):
+        order.append("execute")
+        return {"web_search": "RESULTS ... re-voice this ..."}
+
+    async def _on_interim(text):
+        order.append("interim")
+
+    monkeypatch.setattr(C, "chat", _fake_chat)
+    monkeypatch.setattr(C, "chat_follow_up", _fake_follow_up)
+    monkeypatch.setattr(C, "execute_tool_calls", _fake_execute)
+
+    await C.run_turn(
+        user, db,
+        messages=[{"role": "user", "content": "q?"}],
+        system="SYS", platform="imessage",
+        in_onboarding=False, was_onboarding=False,
+        on_interim=_on_interim,
+    )
+
+    assert order == ["interim", "execute"], (
+        "the heads-up must be sent BEFORE execute_tool_calls (latency masking)"
+    )
+
+
+async def test_interim_uses_fallback_when_no_first_pass_text(
+        monkeypatch, make_user, db, search_on):
+    """web_search turn with NO first-pass text → on_interim gets the deterministic
+    search_heads_up() fallback line (keyed off the query)."""
+    from handlers.tool_executor import search_heads_up
+    seen: list[str] = []
+
+    async def _capture(text):
+        seen.append(text)
+
+    result, calls = await _run_interim_turn(
+        monkeypatch, make_user, db,
+        first_pass_text="",   # model wrote no pre-search line
+        tool_input={"query": "creatine timing latest research"},
+        on_interim=_capture,
+    )
+
+    assert seen == [search_heads_up("creatine timing latest research")]
+    assert calls["follow_up"] == 1
+    final = " ".join(result.response.bubbles).lower()
+    assert "700 cal" in final  # final is still the re-voiced result
+
+
+async def test_interim_never_fires_on_non_search_turn(
+        monkeypatch, make_user, db, search_on):
+    """A NON-search turn (log_food only) must NEVER trigger on_interim — it's gated
+    strictly by _VOICED_RESULT_TOOLS."""
+    import core.conversation as C
+
+    user = await make_user(telegram_id="961")
+    seen: list[str] = []
+
+    async def _capture(text):
+        seen.append(text)
+
+    async def _fake_chat(messages, system, tools=True, max_tokens=4096, model=None):
+        return {
+            "text": "logged that for you.",
+            "tool_calls": [{"name": "log_food", "id": "f1",
+                            "input": {"food_name": "banana"}}],
+            "raw_content": [{"x": 1}],
+            "stop_reason": "tool_use",
+        }
+
+    async def _fake_follow_up(messages, raw, tcs, results, system, max_tokens=512):
+        return "banana, ~100 cal.|||you're at 1,100 for the day."
+
+    async def _fake_execute(tool_calls, user, log, db, source_type):
+        return {"log_food": "Logged banana: 100 cal, 1g protein. DAY TOTAL: 1100 cal."}
+
+    monkeypatch.setattr(C, "chat", _fake_chat)
+    monkeypatch.setattr(C, "chat_follow_up", _fake_follow_up)
+    monkeypatch.setattr(C, "execute_tool_calls", _fake_execute)
+
+    await C.run_turn(
+        user, db,
+        messages=[{"role": "user", "content": "had a banana"}],
+        system="SYS", platform="imessage",
+        in_onboarding=False, was_onboarding=False,
+        on_interim=_capture,
+    )
+    assert seen == [], "on_interim must NOT fire on a non-search (log_food) turn"
+
+
+async def test_interim_none_on_search_turn_does_not_crash(
+        monkeypatch, make_user, db, search_on):
+    """run_turn with on_interim=None (default) on a web_search turn must not crash —
+    the heads-up is simply skipped and the turn completes normally."""
+    result, calls = await _run_interim_turn(
+        monkeypatch, make_user, db,
+        first_pass_text="let me check.",
+        tool_input={"query": "anything"},
+        on_interim=None,
+    )
+    assert calls["follow_up"] == 1
+    final = " ".join(result.response.bubbles).lower()
+    assert "700 cal" in final

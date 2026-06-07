@@ -628,6 +628,18 @@ async def _run_pipeline(update: Update, context: ContextTypes.DEFAULT_TYPE,
                 "Image was generated but couldn't send. Try asking again."
             )
 
+    # ── Telegram interim heads-up: send the "looking that up" bubble NOW ──────
+    # Fires mid-turn (web_search only) so the user sees an immediate reply while
+    # the slow search + re-voice run. Uses the SAME |||-split send path as normal
+    # replies. The _typing_keepalive (started below) keeps the typing indicator
+    # going through the subsequent search. Mirrors how _on_image is wired.
+    async def _on_interim(text: str) -> None:
+        bubbles = [b for b in (text or "").split("|||") if b.strip()]
+        for j, bubble in enumerate(bubbles):
+            await update.message.reply_text(**_fmt(bubble))
+            if j < len(bubbles) - 1:
+                await asyncio.sleep(0.25)
+
     # ── Completion text for Telegram: rich HTML welcome with targets ──────────
     def _tg_completion(u) -> str:
         prefs = u.preferences
@@ -651,7 +663,8 @@ async def _run_pipeline(update: Update, context: ContextTypes.DEFAULT_TYPE,
             user, db, messages, system, platform="telegram",
             in_onboarding=in_onboarding, was_onboarding=was_onboarding,
             today_log=today_log, source_type=source_type,
-            on_image=_on_image, on_completion=_tg_completion,
+            on_image=_on_image, on_interim=_on_interim,
+            on_completion=_tg_completion,
             completion_facts=completion_facts,
         )
     finally:

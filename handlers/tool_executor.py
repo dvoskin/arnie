@@ -136,6 +136,30 @@ def deterministic_confirmation(tool_calls, log, prefs) -> str:
     return "All set. What's next?"
 
 
+# Short in-voice heads-up bubbles for the interim "I'm looking that up" message,
+# sent BEFORE the slow web_search + re-voice runs. This is the DETERMINISTIC half of
+# the hybrid (the model's own pre-search line is preferred when it wrote one) — it
+# only fires when the first pass left no text. Deterministic by design: a stable
+# index keyed off the query length picks the line, so the same input always yields
+# the same bubble (no Math/random — testable). One short line, no trailing answer,
+# no promise of a specific finding. Lives here with deterministic_confirmation (SoC:
+# deterministic in-voice strings belong together).
+_SEARCH_HEADS_UP = (
+    "good q — let me look that up 🔎",
+    "hang on, let me check that 🔎",
+    "lemme look that up real quick 🔎",
+    "one sec, pulling that up 🔎",
+)
+
+
+def search_heads_up(query: str | None = None) -> str:
+    """One short in-voice heads-up line for a web_search turn. Deterministic: the
+    line is chosen by a stable index off the query length, so a given query always
+    maps to the same bubble. Never empty, never a trailing answer or promise."""
+    idx = len(query or "") % len(_SEARCH_HEADS_UP)
+    return _SEARCH_HEADS_UP[idx]
+
+
 async def _analyze_food(db, user, food_name, inp):
     """
     Enrich a logged food with USDA data + recurring-food memory, returning a

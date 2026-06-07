@@ -21,7 +21,9 @@ from core.turn_health import (
     looks_like_dead_end as _looks_like_dead_end,
     detect_turn_flags,
 )
-from handlers.tool_executor import execute_tool_calls, deterministic_confirmation
+from handlers.tool_executor import (
+    execute_tool_calls, deterministic_confirmation, search_heads_up,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +67,7 @@ async def run_turn(
     today_log=None,                 # pre-fetched or None (created lazily if tools run)
     source_type: Optional[str] = None,  # for execute_tool_calls; defaults to platform
     on_image: Optional[Callable] = None,    # async fn(url, caption) → None
+    on_interim: Optional[Callable] = None,  # async fn(text) → None; mid-turn heads-up
     on_completion: Optional[Callable] = None,  # fn(user) → str; defaults to plain welcome
     completion_facts: Optional[dict] = None,  # ephemeral TDEE/goal for the just-completed reflection
 ) -> TurnResult:
@@ -154,6 +157,35 @@ async def run_turn(
                 workout_completed = False; cardio_completed = False
                 food_entries: list = []; exercise_entries: list = []
             _log_for_tools = _FakeLog()
+
+        # ── Interim heads-up (web_search only) ────────────────────────────────
+        # Sent BEFORE the slow Tavily call AND before the slow re-voice follow-up,
+        # so the user gets an immediate "looking that up" bubble that masks the
+        # latency. HYBRID wording: prefer the model's own in-voice first-pass line
+        # (the SEARCH_RULES prompt keeps it to a short heads-up), else a short
+        # deterministic in-voice fallback. Gated by _VOICED_RESULT_TOOLS, so only
+        # web_search turns trigger it — a log_food-only turn NEVER does. NOT a
+        # double-send: the final answer comes from the forced re-voice follow-up
+        # (C5), which REPLACES response_text — so this interim text (first-pass or
+        # fallback) and the final re-voiced answer are distinct messages. Mirrors
+        # the on_image callback envelope exactly.
+        has_voiced_result = any(
+            tc["name"] in _VOICED_RESULT_TOOLS for tc in tool_calls
+        )
+        if has_voiced_result and on_interim:
+            _interim = (
+                response_text.strip()
+                if (response_text and response_text.strip())
+                else search_heads_up(
+                    next((tc.get("input", {}).get("query")
+                          for tc in tool_calls
+                          if tc["name"] in _VOICED_RESULT_TOOLS), None)
+                )
+            )
+            try:
+                await on_interim(_interim)
+            except Exception as e:
+                logger.error(f"interim heads-up failed for {_tag}: {e}")
 
         tool_results = await execute_tool_calls(
             tool_calls, user, _log_for_tools, db, _source

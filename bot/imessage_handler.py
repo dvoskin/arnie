@@ -38,7 +38,7 @@ from db.queries import (
     reload_user, get_or_create_webhook_token,
 )
 from core.context_builder import build_context
-from core.platform import IMessageAdapter
+from core.platform import IMessageAdapter, Response
 from handlers.onboarding import build_onboarding_system, is_onboarding_complete
 
 logger = logging.getLogger(__name__)
@@ -904,13 +904,23 @@ async def run_imessage_pipeline(address: str, chat_guid: str, raw_text: str,
             if url:
                 await bb_send_text(chat_guid, f"Here's your image: {url}")
 
+        # ── iMessage interim heads-up: send the "looking that up" bubble NOW ──
+        # Fires mid-turn (web_search only) so the user gets an immediate bubble
+        # while the slow search + re-voice run. Goes out via the SAME bubble-split
+        # send path as the normal reply (IMessageAdapter.send splits on |||). No
+        # reply_to_guid → no tapback on an interim. bb_set_typing (set above, cleared
+        # after run_turn) keeps the typing indicator covering the search window.
+        async def _on_interim(text: str) -> None:
+            if text and text.strip():
+                await IMessageAdapter(chat_guid).send(Response.from_text(text))
+
         # ── Delegate to shared pipeline core ──────────────────────────────────
         from core.conversation import run_turn
         turn = await run_turn(
             user, db, messages, system, platform="imessage",
             in_onboarding=in_onboarding, was_onboarding=was_onboarding,
             today_log=today_log, source_type="imessage", on_image=_on_image,
-            completion_facts=completion_facts,
+            on_interim=_on_interim, completion_facts=completion_facts,
         )
 
         # ── Stop typing, then send via the iMessage adapter ───────────────────
