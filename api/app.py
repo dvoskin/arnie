@@ -1452,6 +1452,55 @@ async def admin_run_reminders(token: str = Query(...), test: int = Query(0)):
     })
 
 
+@app.post("/admin/profile-sync")
+async def admin_profile_sync(token: str = Query(...), name: str = Query(...)):
+    """
+    Force-sync the Profile Matrix for a user matched by name (case-insensitive).
+    Bypasses the 3h throttle. Returns what changed and the resulting markdown head.
+    Safe: read/write only to that user's profile file + user_attributes table.
+    """
+    _require_admin(token)
+
+    from sqlalchemy import select
+    from sqlalchemy.orm import selectinload
+    from db.models import User
+
+    async with AsyncSessionLocal() as db:
+        res = await db.execute(
+            select(User)
+            .where(User.name.ilike(f"%{name}%"))
+            .options(selectinload(User.preferences))
+        )
+        users = res.scalars().all()
+        if not users:
+            return JSONResponse({"ok": False, "reason": f"No user found matching '{name}'"})
+
+        results = []
+        for u in users:
+            try:
+                from memory.profile_updater import maybe_update_profile
+                ok = await maybe_update_profile(u, db, force=True)
+                from memory.profile_manager import read_profile
+                md = await read_profile(u.telegram_id)
+                results.append({
+                    "user_id": u.id,
+                    "telegram_id": u.telegram_id,
+                    "name": u.name,
+                    "synced": ok,
+                    "profile_lines": len(md.splitlines()) if md else 0,
+                    "profile_head": "\n".join(md.splitlines()[:8]) if md else None,
+                })
+            except Exception as e:
+                results.append({
+                    "user_id": u.id,
+                    "name": u.name,
+                    "synced": False,
+                    "error": str(e),
+                })
+
+    return JSONResponse({"ok": True, "matched": len(users), "results": results})
+
+
 # ── Admin dashboard ───────────────────────────────────────────────────────────
 
 @app.get("/admin", response_class=HTMLResponse)

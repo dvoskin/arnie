@@ -25,6 +25,9 @@ _STALL_MARKERS = (
     "i need to relog", "i need to reopen", "i need to update that",
     "i'll delete", "i'll clear", "i'll relog", "i'll move that", "i'll handle that",
     "deleting all", "clearing today", "relogging", "logging everything",
+    "logging it all", "logging all of that", "logging all of it",
+    "i'll log all", "let me get all",
+    "adding it all", "adding all of that", "gonna log", "going to log",
     # Russian stall phrases
     "исправляю прямо сейчас", "исправляю сейчас", "сейчас всё занесу",
     "сейчас занесу", "сейчас залогирую", "сейчас всё залогирую",

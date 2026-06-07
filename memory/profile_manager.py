@@ -73,7 +73,7 @@ def build_template(user: User) -> str:
         return f"- {label}: {val}  `[{conf}]`" if val not in (None, "", "Not set") else f"- {label}: unknown  `[needs verification]`"
 
     today = _today()
-    return f"""<!-- last_synced: {_now_iso()} -->
+    return f"""<!-- last_synced: 1970-01-01T00:00:00+00:00 -->
 # User Profile Matrix — {name}
 
 > Tags: `[confirmed]` user stated it · `[inferred]` Arnie deduced it · `[outdated]` superseded · `[needs verification]` unconfirmed.
