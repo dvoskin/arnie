@@ -1652,8 +1652,10 @@ function escA(s){{return String(s??'').replace(/"/g,'&quot;')}}
 function pct(v,t){{return(!t||v==null)?0:Math.min(100,Math.round(v/t*100))}}
 function fmt(n){{return n!=null?Number(n).toLocaleString():'—'}}
 function fmtDate(d){{
-  var[,m,day]=d.split('-');
-  return['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][+m-1]+' '+ +day;
+  var[yr,m,day]=d.split('-');
+  var label=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][+m-1]+' '+ +day;
+  var curYr=String(new Date().getFullYear());
+  return yr===curYr ? label : label+" '"+yr.slice(2);
 }}
 function countUp(el,target,dur){{
   if(target==null||isNaN(target)){{el.textContent='—';return}}

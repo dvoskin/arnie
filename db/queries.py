@@ -320,11 +320,18 @@ async def get_recent_weights(db: AsyncSession, user_id: int,
 
 async def get_recent_logs(db: AsyncSession, user_id: int,
                           days: int = 7) -> List[DailyLog]:
-    # Add 1-day buffer to avoid UTC edge cases near midnight
+    # Add 1-day buffer to avoid UTC edge cases near midnight.
+    # Upper bound (today) excludes any future-dated logs created by LLM date bugs
+    # — those must never appear in history or available_dates on the dashboard.
     since = date.today() - timedelta(days=days + 1)
+    today = date.today()
     result = await db.execute(
         select(DailyLog)
-        .where(and_(DailyLog.user_id == user_id, DailyLog.date >= since))
+        .where(and_(
+            DailyLog.user_id == user_id,
+            DailyLog.date >= since,
+            DailyLog.date <= today,
+        ))
         .options(
             selectinload(DailyLog.food_entries),
             selectinload(DailyLog.exercise_entries),

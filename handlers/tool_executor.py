@@ -50,7 +50,17 @@ def _parse_log_date(date_str: str | None, user_timezone: str = "UTC"):
     # Try YYYY-MM-DD
     try:
         from datetime import date as dclass
-        return dclass.fromisoformat(date_str.strip())
+        parsed = dclass.fromisoformat(date_str.strip())
+        # Reject future dates — the LLM should never log forward in time.
+        # Also reject implausibly old dates (>2 years back) to catch year-confusion
+        # bugs (e.g. "January 1" → 2099-01-01 instead of the past Jan 1).
+        if parsed > today:
+            logger.warning(f"_parse_log_date: rejected future date {parsed} (today={today})")
+            return None
+        if (today - parsed).days > 730:
+            logger.warning(f"_parse_log_date: rejected implausibly old date {parsed} (today={today})")
+            return None
+        return parsed
     except ValueError:
         pass
     return None
