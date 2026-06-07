@@ -98,6 +98,9 @@ class Response:
         """Build a Response by splitting raw text on the ||| bubble separator.
         Em dashes are stripped here — it's a hard brand rule the model keeps breaking,
         so enforce it deterministically at the one place all bubbles flow through."""
+        # Fix ||| mistakenly placed inside numbers (e.g. "6|||000" → "6,000").
+        # This fires only when ||| sits between two digit characters — never intentional.
+        text = re.sub(r'(\d)\|\|\|(\d)', r'\1,\2', text or "")
         bubbles = [_sanitize_bubble(b) for b in (text or "").split("|||")]
         bubbles = [b for b in bubbles if b]
         if not bubbles:
