@@ -808,6 +808,34 @@ async def _build_stats_for_user(db, user, target_date=None):
         total_in = user.height_cm / 2.54
         return f"{int(total_in // 12)}'{int(total_in % 12)}\""
 
+    # ── Reminder deliverability (honesty) ──────────────────────────────────────
+    # reminders_on is just the raw opt-in bool — it can read True while a DURABLE
+    # upstream scheduler gate silently drops the user every tick. Surface the FIRST
+    # tripped durable gate as reminders_blocked_reason so the dashboard reflects
+    # deliverability, not just stored intent. Computed ONLY when the toggle is on
+    # (an OFF toggle is already honest). Reuses the real scheduler gate functions —
+    # never reimplements gate logic. Precedence mirrors the scheduler's durable
+    # gates in order; transient gates (window/live-convo/frequency/silence) are
+    # EXCLUDED (surfacing them would flag everyone every evening).
+    _reminders_on = bool(prefs.proactive_messaging_enabled) if prefs else False
+    _reminders_blocked_reason = None
+    if _reminders_on:
+        from scheduler.proactive_scheduler import (
+            proactive_enabled as _proactive_enabled,
+            _should_skip_linked, _allowlist_allows, _has_timezone,
+        )
+        from db.queries import linking_enabled, resolve_send_target
+        if not _proactive_enabled():
+            _reminders_blocked_reason = "globally_off"
+        elif _should_skip_linked(user, linking_enabled()):
+            _reminders_blocked_reason = "linked_secondary"
+        elif not _allowlist_allows(
+            user.id, user.telegram_id, await resolve_send_target(db, user)
+        ):
+            _reminders_blocked_reason = "not_on_allowlist"
+        elif not _has_timezone(user):
+            _reminders_blocked_reason = "no_timezone"
+
     profile = {
         "name": user.name or "User",
         "age": user.age,
@@ -825,7 +853,8 @@ async def _build_stats_for_user(db, user, target_date=None):
         "calorie_target": prefs.calorie_target if prefs else None,
         "protein_target": prefs.protein_target if prefs else None,
         "reminder_frequency": (prefs.reminder_frequency if prefs else None) or "moderate",
-        "reminders_on": bool(prefs.proactive_messaging_enabled) if prefs else False,
+        "reminders_on": _reminders_on,
+        "reminders_blocked_reason": _reminders_blocked_reason,
         "food_logging_mode": (getattr(prefs, "food_logging_mode", None) or "moderate") if prefs else "moderate",
         "whoop_connected": _whoop_connected,
         "apple_health_connected": any(s.source == "apple_health" for s in health_snaps),
@@ -1131,7 +1160,21 @@ async def api_edit_profile(token: str, patch: ProfilePatch):
                 db_col = _weight_fields[field]
                 setattr(user, db_col, float(raw) * 0.453592 if raw else None)
             elif field in _pref_str and user.preferences:
-                setattr(user.preferences, field, str(raw).strip() if raw else None)
+                _val = str(raw).strip() if raw else None
+                # Normalize the tiered prefs onto a valid vocabulary so a non-slider
+                # caller (e.g. a future API client sending "less"/"more") can't
+                # persist a value frequency_allows / food mode would then silently
+                # coerce. Mirrors the LLM update_profile path. The slider already
+                # sends exact tiers, so this is a defensive no-op for the dashboard.
+                if _val is not None and field == "reminder_frequency":
+                    from reminders.eligibility import normalize_reminder_frequency
+                    _val = normalize_reminder_frequency(
+                        _val, getattr(user.preferences, "reminder_frequency", None))
+                elif _val is not None and field == "food_logging_mode":
+                    from core.food_intelligence import normalize_food_logging_mode
+                    _val = normalize_food_logging_mode(
+                        _val, getattr(user.preferences, "food_logging_mode", "moderate") or "moderate")
+                setattr(user.preferences, field, _val)
             elif field in _pref_int and user.preferences:
                 setattr(user.preferences, field, int(raw) if raw else None)
             elif field in _pref_bool and user.preferences:
@@ -1502,6 +1545,214 @@ async def admin_profile_sync(token: str = Query(...), name: str = Query(...)):
                 })
 
     return JSONResponse({"ok": True, "matched": len(users), "results": results})
+
+
+@app.post("/admin/proactive-debug")
+async def admin_proactive_debug(
+    token: str = Query(...),
+    name: str = Query(None),
+    telegram_id: str = Query(None),
+):
+    """
+    Per-user proactive deliverability introspector — answers "why is this user
+    getting (or not getting) proactive messages right now?" by replaying the EXACT
+    scheduler gate chain (reusing the real gate functions, never reimplementing
+    them) and reporting the first durable gate that trips.
+
+    Resolve a user by ?name (case-insensitive substring) or ?telegram_id (exact).
+    Read-only: no messages are sent, no state is written. Auth via _require_admin.
+
+    Note on "would_send_now": the slot branches carry CONTENT guards (e.g.
+    total_calories>0, workout not yet logged) that aren't pure-function-reusable, so
+    this reports eligible_slots_now = (time-window match ∩ frequency_allows) labeled
+    "content not evaluated". An empty blocked_by means the durable gates all pass —
+    not a guaranteed send.
+    """
+    _require_admin(token)
+
+    if not name and not telegram_id:
+        raise HTTPException(status_code=400, detail="Provide ?name or ?telegram_id")
+
+    from sqlalchemy import select
+    from sqlalchemy.orm import selectinload
+    from db.models import User
+    from scheduler.proactive_scheduler import (
+        _should_skip_linked, _allowlist_allows, _proactive_allowlist,
+        _is_live_convo, _proactive_pref_on, _clamp_window, _in_window,
+        _has_timezone, _last_exchange, _silence_streak, _hours_since_created,
+        _is_user_row, proactive_enabled,
+    )
+    from reminders.eligibility import frequency_allows, gate_decision, _FREQUENCY_SLOTS
+    from db.queries import (
+        linking_enabled, resolve_send_target, get_recent_conversations,
+    )
+    import pytz
+    from datetime import datetime as _dt
+
+    # Time-window → slot map mirroring the scheduler's slot branches. Used to
+    # report which slots match the user's LOCAL clock right now (content not
+    # evaluated — see docstring). Kept in this endpoint deliberately: it is a
+    # debug projection, not a gate, and must not be a second source of truth the
+    # scheduler reads.
+    def _time_slots(hour, minute, wake):
+        slots = []
+        wake_h, wake_m = int(wake.split(":")[0]), int(wake.split(":")[1])
+        morn_h, morn_m = wake_h, wake_m + 30
+        if morn_m >= 60:
+            morn_h += 1
+            morn_m -= 60
+        if hour == morn_h and 0 <= minute - morn_m < 30:
+            slots.append("morning_checkin")
+        if hour == 10 and minute < 30:
+            slots.append("late_morning_nolog")
+        if hour == 12 and minute < 30:
+            slots.append("midday_pacing")
+        if hour == 15 and 30 <= minute < 60:
+            slots.append("preworkout")
+        if hour == 16 and 30 <= minute < 60:
+            slots.append("workout_check")
+        if hour == 19 and minute < 30:
+            slots.append("evening_pacing")
+        if hour == 21 and minute < 30:
+            slots.append("night_closeout")
+        return slots
+
+    async with AsyncSessionLocal() as db:
+        if telegram_id:
+            res = await db.execute(
+                select(User).where(User.telegram_id == telegram_id)
+                .options(selectinload(User.preferences))
+            )
+        else:
+            res = await db.execute(
+                select(User).where(User.name.ilike(f"%{name}%"))
+                .options(selectinload(User.preferences))
+            )
+        users = res.scalars().all()
+        if not users:
+            ident = telegram_id or name
+            return JSONResponse({"ok": False, "reason": f"No user found matching '{ident}'"})
+
+        link_on = linking_enabled()
+        allow_set = sorted(_proactive_allowlist())
+        global_on = proactive_enabled()
+
+        results = []
+        for user in users:
+            try:
+                prefs = user.preferences
+
+                # Resolve send target FIRST (the scheduler does this before the
+                # allowlist gate) so the three candidate id strings are accurate.
+                send_id = await resolve_send_target(db, user)
+
+                # Shared window — feeds both _last_exchange and _silence_streak,
+                # exactly as the scheduler's single fetch does.
+                try:
+                    recent_rows = await get_recent_conversations(db, user.id, limit=15)
+                except Exception:
+                    recent_rows = []
+                mins_since, _lu, _la = _last_exchange(recent_rows)
+                silence_streak = _silence_streak(recent_rows)
+                hours_in = _hours_since_created(user)
+
+                # Local clock + window.
+                tz_name = user.timezone or "UTC"
+                try:
+                    now_local = _dt.now(pytz.timezone(tz_name))
+                except Exception:
+                    now_local = _dt.now(pytz.utc)
+                hhmm = now_local.strftime("%H:%M")
+                wake, sleep = _clamp_window(prefs)
+
+                has_tz = _has_timezone(user)
+                in_win = _in_window(hhmm, wake, sleep)
+                pref_on = _proactive_pref_on(prefs)
+                verdict = gate_decision(silence_streak, hours_in, prefs)
+
+                # Durable + transient gates in SCHEDULER ORDER. blocked_by is the
+                # ordered list of every gate that trips; overall is would_send_now
+                # only when ALL gates pass.
+                blocked_by = []
+                if not global_on:
+                    blocked_by.append("globally_off")
+                if _should_skip_linked(user, link_on):
+                    blocked_by.append("skip_linked")
+                if not _allowlist_allows(user.id, user.telegram_id, send_id):
+                    blocked_by.append("allowlist")
+                if _is_live_convo(mins_since):
+                    blocked_by.append("live_conversation")
+                if not has_tz:
+                    blocked_by.append("no_timezone")
+                if not pref_on:
+                    blocked_by.append("proactive_pref_off")
+                if not in_win:
+                    blocked_by.append("outside_window")
+                if verdict == "suppress":
+                    blocked_by.append("silence_suppress")
+                elif verdict == "consolidate":
+                    blocked_by.append("silence_consolidate")
+
+                # Slots whose LOCAL time-window matches AND pass the frequency
+                # filter. Content guards NOT evaluated (see docstring).
+                eligible_slots_now = []
+                if has_tz:
+                    for slot in _time_slots(now_local.hour, now_local.minute, wake):
+                        if frequency_allows(prefs, slot):
+                            eligible_slots_now.append(slot)
+
+                nudges_raw = user.nudges_sent or ""
+                nudges_today = sorted(
+                    s for s in nudges_raw.split(",")
+                    if s and s.endswith(str(now_local.date()))
+                )
+
+                results.append({
+                    "user_id": user.id,
+                    "name": user.name,
+                    "telegram_id": user.telegram_id,
+                    "send_id": send_id,
+                    "linked_to_user_id": user.linked_to_user_id,
+                    "overall": "would_send_now" if not blocked_by else "BLOCKED",
+                    "blocked_by": blocked_by,
+                    "gates": {
+                        "globally_enabled": global_on,
+                        "skip_linked": _should_skip_linked(user, link_on),
+                        "linking_enabled": link_on,
+                        "allowlist_set": bool(allow_set),
+                        "allowlist": allow_set,
+                        "allowlist_candidates": [
+                            str(user.id), str(user.telegram_id), str(send_id),
+                        ],
+                        "allowlist_allows": _allowlist_allows(
+                            user.id, user.telegram_id, send_id),
+                        "live_conversation": _is_live_convo(mins_since),
+                        "mins_since_last_user_msg": mins_since,
+                        "timezone": tz_name,
+                        "has_timezone": has_tz,
+                        "local_now": hhmm,
+                        "window": [wake, sleep],
+                        "in_window": in_win,
+                        "proactive_pref_on": pref_on,
+                        "silence_streak": silence_streak,
+                        "hours_since_created": round(hours_in, 1),
+                        "gate_verdict": verdict,
+                    },
+                    "eligible_slots_now": eligible_slots_now,
+                    "eligible_slots_note": "time-window ∩ frequency only; content NOT evaluated",
+                    "nudges_sent_raw": nudges_raw,
+                    "nudges_sent_today": nudges_today,
+                })
+            except Exception as e:
+                results.append({"user_id": getattr(user, "id", None), "error": str(e)})
+
+    return JSONResponse({
+        "ok": True,
+        "proactive_enabled": global_on,
+        "allowlist": allow_set,
+        "matched": len(results),
+        "results": results,
+    })
 
 
 @app.post("/admin/profile-consolidate")

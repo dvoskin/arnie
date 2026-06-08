@@ -16,6 +16,7 @@ Touchpoints (all relative to user local time):
 
 Whoop sync runs every 2 hours.
 """
+import collections
 import logging
 import os
 from datetime import datetime, date, timezone
@@ -702,6 +703,14 @@ async def _run_reminders():
     async with AsyncSessionLocal() as db:
         users = await get_all_active_users(db)
 
+        # ── Per-tick skip observability (D-OBSERVE) ───────────────────────────
+        # Count why each user was skipped this tick, by reason, and how many
+        # actually got a message. Emitted as ONE summary line after the loop so
+        # the (otherwise totally silent) gate chain is legible in prod without
+        # per-user log spam. Pure instrumentation — never changes control flow.
+        # Per-user detail is available on demand via /admin/proactive-debug.
+        skip_counts = collections.Counter()
+
         for user in users:
             prefs = user.preferences
 
@@ -714,6 +723,7 @@ async def _run_reminders():
             # turning linking off cleanly reverts to per-row behavior.
             from db.queries import linking_enabled, resolve_send_target
             if _should_skip_linked(user, linking_enabled()):
+                skip_counts["linked"] += 1
                 continue
 
             # Route this user's proactive messages to their preferred platform
@@ -724,6 +734,7 @@ async def _run_reminders():
             # Skip non-allowlisted users early so we don't burn LLM calls generating
             # nudges they'll never receive. _send() also gates as a hard backstop.
             if not _allowlist_allows(user.id, user.telegram_id, send_id):
+                skip_counts["allowlist"] += 1
                 continue
 
             # ── Shared window (D-SHARED-FETCH) ────────────────────────────────
@@ -748,6 +759,7 @@ async def _run_reminders():
             # this suppressor on the next tick.
             mins_since, _last_u, _last_a = _last_exchange(recent_rows)
             if _is_live_convo(mins_since):
+                skip_counts["live_convo"] += 1
                 continue
 
             # ── Timezone gate: NO timed proactive until we know their timezone ─
@@ -760,6 +772,7 @@ async def _run_reminders():
                         await _maybe_send_city_nudge(db, user, prefs)
                 except Exception as e:
                     logger.error(f"City nudge error for user {user.id}: {e}")
+                skip_counts["no_tz"] += 1
                 continue
 
             # ── Weekly recap (Sunday 18:00–18:30, once per week) ──────────────
@@ -776,6 +789,7 @@ async def _run_reminders():
                         await _send_logged(db, user.id, send_id, recap, "weekly_recap")
                         user.weekly_recap_week = iso_week
                         await db.commit()
+                        skip_counts["sent"] += 1
                         continue
             except Exception as e:
                 logger.error(f"Weekly recap error for user {user.id}: {e}")
@@ -828,12 +842,14 @@ async def _run_reminders():
                             sent_slots.add(day_key)
                             user.nudges_sent = ",".join(sorted(sent_slots))
                             await db.commit()
+                            skip_counts["sent"] += 1
                     continue  # skip slot chain at 21:00 regardless of send
             except Exception as e:
                 logger.error(f"Day report error for user {user.id}: {e}")
 
             # Proactive nudges — default ON for all onboarded users
             if not _proactive_pref_on(prefs):
+                skip_counts["pref_off"] += 1
                 continue
 
             try:
@@ -844,6 +860,7 @@ async def _run_reminders():
                 # window (e.g. wake 10:00) but never sends before 9am or after 9pm.
                 wake, sleep = _clamp_window(prefs)
                 if not _in_window(hhmm, wake, sleep):
+                    skip_counts["window"] += 1
                     continue
 
                 name = user.name or "hey"
@@ -871,8 +888,10 @@ async def _run_reminders():
                 hours_in = _hours_since_created(user)
                 verdict = gate_decision(silence_streak, hours_in, prefs)
                 if verdict == "suppress":
+                    skip_counts["suppress"] += 1
                     continue
                 if verdict == "consolidate":
+                    skip_counts["consolidate"] += 1
                     try:
                         from db.queries import record_pending_question
                         await record_pending_question(
@@ -890,6 +909,7 @@ async def _run_reminders():
                 # Only reached when verdict == "send". Highest priority — a hanging
                 # question outranks a generic slot nudge.
                 if await _maybe_followup_pending(db, user, send_id, name, mins_since):
+                    skip_counts["sent"] += 1
                     continue  # one proactive message per tick
 
                 # ── New user engagement burst (first 72 hours post-onboarding) ──
@@ -933,6 +953,7 @@ async def _run_reminders():
                                 sent_slots.add(new_slot)
                                 user.nudges_sent = ",".join(sorted(sent_slots))
                                 await db.commit()
+                                skip_counts["sent"] += 1
                             logger.info(f"New user nudge '{new_slot}' sent to user {user.id} ({hours_since:.1f}h in)")
                             continue  # skip normal slots this tick — avoid message flood
 
@@ -960,9 +981,10 @@ async def _run_reminders():
                         if not msg:
                             msg = f"morning {name}.|||log your weight if you've got it, then tell me breakfast."
                         lang = getattr(prefs, "preferred_language", None) or "English"
-                        await _send_slot_deduped(db, user, send_id, msg, "morning_checkin",
-                                                 sent_slots, today_str,
-                                                 with_voice=True, name=name, language=lang)
+                        if await _send_slot_deduped(db, user, send_id, msg, "morning_checkin",
+                                                    sent_slots, today_str,
+                                                    with_voice=True, name=name, language=lang):
+                            skip_counts["sent"] += 1
 
                 # ── Late morning (10:00–10:30, only if nothing logged) ─────────
                 elif hour == 10 and minute < 30 and _freq_ok("late_morning_nolog"):
@@ -971,8 +993,9 @@ async def _run_reminders():
                                                recent_proactive=recent_proactive)
                         if not msg:
                             msg = f"10am and nothing logged yet, {name}. Skipped breakfast or just haven't told me?"
-                        await _send_slot_deduped(db, user, send_id, msg, "late_morning_nolog",
-                                                 sent_slots, today_str)
+                        if await _send_slot_deduped(db, user, send_id, msg, "late_morning_nolog",
+                                                    sent_slots, today_str):
+                            skip_counts["sent"] += 1
 
                 # ── Midday pacing (12:00–12:30) ────────────────────────────────
                 elif hour == 12 and minute < 30 and _freq_ok("midday_pacing"):
@@ -1001,8 +1024,9 @@ async def _run_reminders():
                                 if cal_ahead:
                                     parts.append(f"already at {cal:.0f} cal — pace yourself through the afternoon")
                                 msg = ", ".join(parts).capitalize() + "."
-                            await _send_slot_deduped(db, user, send_id, msg, "midday_pacing",
-                                                     sent_slots, today_str)
+                            if await _send_slot_deduped(db, user, send_id, msg, "midday_pacing",
+                                                        sent_slots, today_str):
+                                skip_counts["sent"] += 1
                         # On-track users get no midday nudge — they're doing fine
 
                 # ── Pre-workout readiness (15:30–16:00) ───────────────────────
@@ -1021,8 +1045,9 @@ async def _run_reminders():
                                 )
                             else:
                                 msg = f"3:30 — workout not logged yet, {name}. Still on for today?"
-                        await _send_slot_deduped(db, user, send_id, msg, "preworkout",
-                                                 sent_slots, today_str)
+                        if await _send_slot_deduped(db, user, send_id, msg, "preworkout",
+                                                    sent_slots, today_str):
+                            skip_counts["sent"] += 1
 
                 # ── Afternoon workout check (16:30–17:00) ────────────────────
                 elif hour == 16 and 30 <= minute < 60 and _freq_ok("workout_check"):
@@ -1033,8 +1058,9 @@ async def _run_reminders():
                                                recent_proactive=recent_proactive)
                         if not msg:
                             msg = f"4:30 — workout still hasn't happened, {name}. Happening today or are we calling it a rest day?"
-                        await _send_slot_deduped(db, user, send_id, msg, "workout_check",
-                                                 sent_slots, today_str)
+                        if await _send_slot_deduped(db, user, send_id, msg, "workout_check",
+                                                    sent_slots, today_str):
+                            skip_counts["sent"] += 1
 
                 # ── Evening pacing (19:00–19:30) ──────────────────────────────
                 elif (hour == 19 and minute < 30 and log and log.total_calories > 0
@@ -1060,9 +1086,10 @@ async def _run_reminders():
                         else:
                             msg = f"Looking solid today, {name}. Log dinner when you have it."
                     lang = getattr(prefs, "preferred_language", None) or "English"
-                    await _send_slot_deduped(db, user, send_id, msg, "evening_pacing",
-                                             sent_slots, today_str,
-                                             with_voice=True, name=name, language=lang)
+                    if await _send_slot_deduped(db, user, send_id, msg, "evening_pacing",
+                                                sent_slots, today_str,
+                                                with_voice=True, name=name, language=lang):
+                        skip_counts["sent"] += 1
 
                 # ── Night closeout (21:00–21:30) ──────────────────────────────
                 elif hour == 21 and minute < 30 and _freq_ok("night_closeout"):
@@ -1071,11 +1098,24 @@ async def _run_reminders():
                                                recent_proactive=recent_proactive)
                         if not msg:
                             msg = "Day still open. Done eating? Send me anything you missed and close it out."
-                        await _send_slot_deduped(db, user, send_id, msg, "night_closeout",
-                                                 sent_slots, today_str)
+                        if await _send_slot_deduped(db, user, send_id, msg, "night_closeout",
+                                                    sent_slots, today_str):
+                            skip_counts["sent"] += 1
 
             except Exception as e:
                 logger.error(f"Reminder error for user {user.id}: {e}")
+
+        # ── One summary line per tick (D-OBSERVE) ─────────────────────────────
+        # Makes the silent gate chain legible: how many users we evaluated, how
+        # many got a message, and how many were dropped at each durable gate.
+        logger.info(
+            "proactive tick: users=%d sent=%d linked=%d allowlist=%d no_tz=%d "
+            "window=%d live=%d suppress=%d consolidate=%d pref_off=%d",
+            len(users), skip_counts["sent"], skip_counts["linked"],
+            skip_counts["allowlist"], skip_counts["no_tz"], skip_counts["window"],
+            skip_counts["live_convo"], skip_counts["suppress"],
+            skip_counts["consolidate"], skip_counts["pref_off"],
+        )
 
 
 def _fmt_whoop_notification(snap) -> str:

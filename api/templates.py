@@ -2077,6 +2077,14 @@ var _REMIND_DESCS={{
   moderate:'A few times a day',
   heavy:'All day',
 }};
+// Shown under the reminders toggle when it's ON but a durable scheduler gate is
+// silently blocking delivery (reminders_blocked_reason from the stats payload).
+var _REMIND_BLOCKED_MSGS={{
+  no_timezone:'Tell Arnie your city to start getting check-ins',
+  not_on_allowlist:'Reminders are paused for your account',
+  linked_secondary:'Check-ins come to your other linked chat',
+  globally_off:'Reminders are temporarily paused',
+}};
 var _FOOD_DESCS={{
   quick:'Logs fast, rarely asks',
   moderate:'Asks on big swings',
@@ -2095,17 +2103,22 @@ function _setTicks(wrapId,idx){{
 
 function renderRemindSettings(p){{
   var on=!!p.reminders_on;
+  var blocked=p.reminders_blocked_reason||null;
   var tog=document.getElementById('remind-toggle');
   if(tog)tog.checked=on;
   var freq=p.reminder_frequency||'moderate';
   var idx=Math.max(0,_REMIND_TIERS.indexOf(freq));
   var rng=document.getElementById('remind-range');
-  if(rng){{rng.value=idx;rng.disabled=!on;}}
+  // Keep the toggle ON (it honestly reflects the saved opt-in) but dim the
+  // frequency control when a durable gate is blocking delivery — the slider
+  // can't change anything until the block clears.
+  if(rng){{rng.value=idx;rng.disabled=!on||!!blocked;}}
   var wrap=document.getElementById('remind-freq-wrap');
-  if(wrap)wrap.style.opacity=on?'1':'.4';
+  if(wrap)wrap.style.opacity=(on&&!blocked)?'1':'.4';
   _setTicks('remind-ticks',idx);
   var desc=document.getElementById('remind-desc');
-  if(desc)desc.textContent=_REMIND_DESCS[freq]||'';
+  if(desc)desc.textContent=(on&&blocked)?(_REMIND_BLOCKED_MSGS[blocked]||'')
+                                         :(_REMIND_DESCS[freq]||'');
 }}
 
 function renderFoodModeSettings(p){{
