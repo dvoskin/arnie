@@ -22,7 +22,8 @@ from core.turn_health import (
     detect_turn_flags,
 )
 from handlers.tool_executor import (
-    execute_tool_calls, deterministic_confirmation, search_heads_up,
+    execute_tool_calls, deterministic_confirmation,
+    tool_heads_up, _heads_up_seed, NEEDS_HEADS_UP_TOOLS,
 )
 
 logger = logging.getLogger(__name__)
@@ -39,6 +40,12 @@ _LOGGING_TOOLS = frozenset({
 # _LOGGING_TOOLS, NOT an overload: search must take the generic re-voice path,
 # never the coach-unmute/deterministic_confirmation fallback (which is for
 # logging totals and is wrong for search).
+#
+# RELATIONSHIP TO NEEDS_HEADS_UP_TOOLS (from tool_executor): every voiced-
+# result tool also gets a heads-up before execution, but the wider set
+# (search_food_database, query_history, generate_image) gets heads-up
+# WITHOUT forced re-voice — those return data the LLM uses directly (USDA
+# macros it logs, history figures it coaches on, image url it captions).
 _VOICED_RESULT_TOOLS = frozenset({"web_search"})
 
 
@@ -158,28 +165,29 @@ async def run_turn(
                 food_entries: list = []; exercise_entries: list = []
             _log_for_tools = _FakeLog()
 
-        # ── Interim heads-up (web_search only) ────────────────────────────────
-        # Sent BEFORE the slow Tavily call AND before the slow re-voice follow-up,
-        # so the user gets an immediate "looking that up" bubble that masks the
-        # latency. HYBRID wording: prefer the model's own in-voice first-pass line
-        # (the SEARCH_RULES prompt keeps it to a short heads-up), else a short
-        # deterministic in-voice fallback. Gated by _VOICED_RESULT_TOOLS, so only
-        # web_search turns trigger it — a log_food-only turn NEVER does. NOT a
-        # double-send: the final answer comes from the forced re-voice follow-up
-        # (C5), which REPLACES response_text — so this interim text (first-pass or
-        # fallback) and the final re-voiced answer are distinct messages. Mirrors
-        # the on_image callback envelope exactly.
-        has_voiced_result = any(
-            tc["name"] in _VOICED_RESULT_TOOLS for tc in tool_calls
+        # ── Interim heads-up (web_search, search_food_database, query_history,
+        # generate_image) ─────────────────────────────────────────────────────
+        # Sent BEFORE slow tool execution so the user gets an immediate
+        # "let me check" bubble instead of dead air the typing indicator can't
+        # bridge. Hybrid wording: prefer the model's own first-pass in-voice
+        # line (the prompt teaches a short heads-up for slow tools); fall back
+        # to a deterministic per-tool bubble when the first pass left no text.
+        # Gated by NEEDS_HEADS_UP_TOOLS — log-only turns NEVER trigger it.
+        # NOT a double-send: for re-voicing tools (web_search) the final answer
+        # comes from the forced follow-up which REPLACES response_text; for
+        # non-revoicing slow tools (USDA, history, image), the follow-up coaches
+        # on the tool result as usual. The interim is always a distinct bubble.
+        needs_heads_up_tc = next(
+            (tc for tc in tool_calls if tc["name"] in NEEDS_HEADS_UP_TOOLS),
+            None,
         )
-        if has_voiced_result and on_interim:
+        if needs_heads_up_tc and on_interim:
             _interim = (
                 response_text.strip()
                 if (response_text and response_text.strip())
-                else search_heads_up(
-                    next((tc.get("input", {}).get("query")
-                          for tc in tool_calls
-                          if tc["name"] in _VOICED_RESULT_TOOLS), None)
+                else tool_heads_up(
+                    needs_heads_up_tc["name"],
+                    _heads_up_seed(needs_heads_up_tc),
                 )
             )
             try:

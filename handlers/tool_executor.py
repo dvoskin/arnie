@@ -173,28 +173,87 @@ def deterministic_confirmation(tool_calls, log, prefs) -> str:
     return "All set. What's next?"
 
 
-# Short in-voice heads-up bubbles for the interim "I'm looking that up" message,
-# sent BEFORE the slow web_search + re-voice runs. This is the DETERMINISTIC half of
-# the hybrid (the model's own pre-search line is preferred when it wrote one) — it
-# only fires when the first pass left no text. Deterministic by design: a stable
-# index keyed off the query length picks the line, so the same input always yields
-# the same bubble (no Math/random — testable). One short line, no trailing answer,
-# no promise of a specific finding. Lives here with deterministic_confirmation (SoC:
-# deterministic in-voice strings belong together).
-_SEARCH_HEADS_UP = (
-    "good q — let me look that up 🔎",
-    "hang on, let me check that 🔎",
-    "lemme look that up real quick 🔎",
-    "one sec, pulling that up 🔎",
-)
+# ─────────────────────────────────────────────────────────────────────────────
+# INTERIM HEADS-UP BUBBLES — for tools where the typing indicator alone can't
+# bridge the latency. Sent BEFORE the slow tool runs so the user gets an
+# immediate "let me check that" bubble instead of dead air. Hybrid wording:
+# the model's own first-pass in-voice line is preferred when present; this
+# deterministic set fills in when the first pass left no text.
+#
+# Deterministic by design — index keyed off input length, so the same input
+# always yields the same bubble. No Math/random (resume-safe + testable).
+# Each line: one short bubble, in voice, no trailing answer, no promise of a
+# specific finding. Lives here with deterministic_confirmation (SoC).
+#
+# Adding a tool: drop one entry in _TOOL_HEADS_UP_BUBBLES and add the tool
+# name to NEEDS_HEADS_UP_TOOLS. The conversation pipeline picks it up.
+# ─────────────────────────────────────────────────────────────────────────────
+
+_TOOL_HEADS_UP_BUBBLES = {
+    "web_search": (
+        "good q — let me look that up 🔎",
+        "hang on, let me check that 🔎",
+        "lemme look that up real quick 🔎",
+        "one sec, pulling that up 🔎",
+    ),
+    "search_food_database": (
+        "lemme pull those macros 🩻",
+        "one sec on the macros 🩻",
+        "checking the database real quick",
+        "give me a sec, looking that up",
+    ),
+    "query_history": (
+        "let me pull your history 📊",
+        "checking the trend, one sec 📊",
+        "give me a sec to scan your data",
+        "lemme look back at your numbers",
+    ),
+    "generate_image": (
+        "drawing that up 🎨",
+        "give me a sec to sketch this 🎨",
+        "putting that together now",
+        "one sec, working on the image",
+    ),
+}
+
+# The wider set: tools that get a heads-up. Imported by the conversation
+# pipeline as the gate. Distinct from _VOICED_RESULT_TOOLS (in conversation.py),
+# which is the NARROWER subset whose result MUST be re-voiced — every voiced-
+# result tool also needs a heads-up, but not every slow tool needs re-voicing
+# (e.g. search_food_database returns macros the model logs directly).
+NEEDS_HEADS_UP_TOOLS = frozenset(_TOOL_HEADS_UP_BUBBLES.keys())
+
+
+def tool_heads_up(tool_name: str, seed: str | None = None) -> str:
+    """One short in-voice heads-up line for a slow-tool turn. Deterministic:
+    line is chosen by stable index off the seed length, so a given input
+    always maps to the same bubble. Unknown tool name falls through to the
+    web_search set as a safe default. Never empty."""
+    bubbles = _TOOL_HEADS_UP_BUBBLES.get(tool_name) or _TOOL_HEADS_UP_BUBBLES["web_search"]
+    idx = len(seed or tool_name) % len(bubbles)
+    return bubbles[idx]
 
 
 def search_heads_up(query: str | None = None) -> str:
-    """One short in-voice heads-up line for a web_search turn. Deterministic: the
-    line is chosen by a stable index off the query length, so a given query always
-    maps to the same bubble. Never empty, never a trailing answer or promise."""
-    idx = len(query or "") % len(_SEARCH_HEADS_UP)
-    return _SEARCH_HEADS_UP[idx]
+    """Backward-compatible shim — pre-T1.5 callers and tests reference this name.
+    Equivalent to tool_heads_up('web_search', query)."""
+    return tool_heads_up("web_search", query)
+
+
+def _heads_up_seed(tc: dict) -> str:
+    """Pull the most relevant text field from a tool call's input for the
+    deterministic heads-up index. Falls back to str(input) for unknown tools."""
+    inp = tc.get("input") or {}
+    name = tc.get("name")
+    if name == "web_search":
+        return inp.get("query") or ""
+    if name == "search_food_database":
+        return inp.get("food_name") or ""
+    if name == "query_history":
+        return f"{inp.get('metric','')}-{inp.get('period','')}"
+    if name == "generate_image":
+        return (inp.get("prompt") or "")[:60]
+    return str(inp)[:60]
 
 
 async def _analyze_food(db, user, food_name, inp):
