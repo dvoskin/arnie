@@ -272,11 +272,11 @@ body{{
 .whoop-rec-high .whoop-stat-val{{color:var(--ac)}}
 .whoop-rec-mid  .whoop-stat-val{{color:var(--ye)}}
 .whoop-rec-low  .whoop-stat-val{{color:var(--re)}}
-.macro-cell{{background:var(--sf);padding:12px 14px;}}
-.mc-label{{font-family:'Geist Mono','SF Mono',monospace;font-size:9.5px;text-transform:uppercase;letter-spacing:.1em;color:var(--mu);margin-bottom:5px;}}
-.mc-num{{font-family:'Instrument Serif','Times New Roman',serif;font-size:32px;letter-spacing:-.01em;line-height:1;}}
-.mc-sub{{font-size:11.5px;color:var(--mu);margin-top:3px;line-height:1.3;}}
-.mc-bar{{background:var(--sf3);border-radius:999px;height:3px;margin-top:9px;overflow:hidden;}}
+.macro-cell{{background:var(--sf);padding:11px 13px;}}
+.mc-label{{font-family:'Geist Mono','SF Mono',monospace;font-size:9.5px;font-weight:500;text-transform:uppercase;letter-spacing:.1em;color:var(--mu);margin-bottom:4px;}}
+.mc-num{{font-family:'Instrument Serif','Times New Roman',serif;font-size:28px;letter-spacing:-.01em;line-height:1;}}
+.mc-sub{{font-size:11px;color:var(--mu);margin-top:3px;line-height:1.3;}}
+.mc-bar{{background:var(--sf3);border-radius:999px;height:3px;margin-top:8px;overflow:hidden;}}
 .mc-fill{{height:100%;border-radius:999px;transition:width .8s cubic-bezier(.4,0,.2,1);}}
 @media(max-width:560px){{.macro-strip{{grid-template-columns:repeat(2,1fr);}}}}
 
@@ -1250,11 +1250,11 @@ footer{{
   .darr{{width:34px;height:34px;border-radius:9px}}
   .dnav{{gap:5px;margin-bottom:14px}}
   /* Today counters — quiet label, clear weighted number, even bars */
-  .macro-cell{{padding:14px 14px 13px}}
-  .mc-label{{font-size:10px;letter-spacing:.1em;margin-bottom:8px;color:var(--mu);font-weight:500}}
-  .mc-num{{font-size:32px;line-height:1}}
-  .mc-sub{{font-size:11px;margin-top:5px;color:var(--mu)}}
-  .mc-bar{{margin-top:10px;height:4px}}
+  .macro-cell{{padding:12px 13px}}
+  .mc-label{{font-size:9.5px;letter-spacing:.1em;margin-bottom:5px;color:var(--mu);font-weight:500}}
+  .mc-num{{font-size:28px;line-height:1}}
+  .mc-sub{{font-size:11px;margin-top:4px;color:var(--mu)}}
+  .mc-bar{{margin-top:8px;height:3px}}
   /* Toggles */
   .toggle{{padding:7px 11px;font-size:12px;gap:6px}}
   .toggles{{gap:6px;margin-bottom:14px}}
@@ -1459,12 +1459,12 @@ footer{{
       </div>
     </div>
 
-    <!-- STATUS (compact: workout/cardio/water/share) -->
+    <!-- STATUS (workout / cardio / water) -->
     <div class="day-status">
       <span id="wo-badge" class="ds-pill"><span class="tcb"></span>No workout</span>
       <span id="ca-badge" class="ds-pill"><span class="tcb"></span>No cardio</span>
-      <span id="wt-badge" class="ds-pill on" style="display:none"></span>
-      <button class="ds-share" onclick="shareDay()">&#8679;</button>
+      <span id="wt-badge" class="ds-pill"><span class="tcb"></span>No water</span>
+      <button class="ds-share" onclick="shareDay()" aria-label="Share day">&#8679;</button>
     </div>
 
     <!-- ARNIE'S LEARNING -->
@@ -2390,6 +2390,10 @@ function renderDayTab(d){{
   var fatEl=document.getElementById('fat-val');if(fatEl)fatEl.textContent=day.fats!=null?day.fats+'g':'—';
   var fatSub=document.getElementById('fat-sub');if(fatSub)fatSub.textContent=tgt.fats?'/ '+tgt.fats+'g ('+pct(day.fats,tgt.fats)+'%)':'grams';
   var fatBar=document.getElementById('fat-bar');if(fatBar)fatBar.style.width=pct(day.fats,tgt.fats)+'%';
+  // Hide the progress bar on macros without a target (carbs/fats) — an empty grey
+  // track reads as unfinished UI. Only Calories/Protein carry targets.
+  [['cal-bar',tgt.calories],['pro-bar',tgt.protein],['carb-bar',tgt.carbs],['fat-bar',tgt.fats]]
+    .forEach(function(x){{var f=document.getElementById(x[0]);if(f)f.parentNode.style.display=x[1]?'':'none';}});
 
   var wb=document.getElementById('wo-badge');
   if(wb){{var woOn=!!day.workout_completed;wb.className='ds-pill'+(woOn?' on':'');wb.innerHTML='<span class="tcb">'+(woOn?'&#10003;':'')+'</span>'+(woOn?'Workout':'No workout');}}
@@ -2397,10 +2401,10 @@ function renderDayTab(d){{
   if(cb){{var caOn=!!day.cardio_completed;cb.className='ds-pill'+(caOn?' on':'');cb.innerHTML='<span class="tcb">'+(caOn?'&#10003;':'')+'</span>'+(caOn?'Cardio':'No cardio');}}
   var wb2=document.getElementById('wt-badge');
   if(wb2){{
-    if(day.water_ml>0){{
-      wb2.style.display='inline-flex';wb2.className='toggle on';
-      wb2.textContent='💧 '+(day.water_ml>=1000?(day.water_ml/1000).toFixed(1)+'L':day.water_ml+'ml');
-    }}else wb2.style.display='none';
+    var wOn=day.water_ml>0;
+    var wAmt=day.water_ml>=1000?(day.water_ml/1000).toFixed(1)+'L':Math.round(day.water_ml||0)+'ml';
+    wb2.className='ds-pill'+(wOn?' on':'');
+    wb2.innerHTML='<span class="tcb">'+(wOn?'&#10003;':'')+'</span>'+(wOn?'Water '+wAmt:'No water');
   }}
 
   var fe=day.food_entries||[];
@@ -3069,9 +3073,9 @@ function renderAIProfile(data) {{
 
   // Super-subtle legend: what the dots mean + how to remove a custom item.
   html += '<div class="pf-legend">' +
-    '<span><i class="pf-dot" style="background:var(--ac)"></i>you told Arnie</span>' +
-    '<span><i class="pf-dot" style="background:var(--mu)"></i>Arnie inferred this</span>' +
-    '<span><i class="pf-dot" style="background:#f0a500"></i>still learning</span>' +
+    '<span><i class="pf-dot" style="background:var(--ac)"></i>confirmed</span>' +
+    '<span><i class="pf-dot" style="background:var(--mu)"></i>inferred from patterns</span>' +
+    '<span><i class="pf-dot" style="background:#f0a500"></i>needs verification</span>' +
     (custom.length ? '<span><i class="pf-x">&#10005;</i>tap to remove</span>' : '') +
     '</div>';
 
@@ -3365,7 +3369,9 @@ function renderGroupedExercises(entries){{
       summaryParts.push(allDur.reduce(function(a,b){{return a+b;}},0)+' min');
     }}else if(totalSets>0){{
       var repStr=allReps.length===totalSets&&new Set(allReps).size===1?allReps[0]:allReps.join('/');
-      var wtStr=allWts.length?allWts[0]+'lb':'';
+      // Show every load when sets differ (135/145/155lb), one when they're equal.
+      var sameWt=new Set(allWts).size<=1;
+      var wtStr=allWts.length?(sameWt?allWts[0]+'lb':allWts.map(Math.round).join('/')+'lb'):'';
       summaryParts.push(totalSets+(repStr?' × '+repStr:'')+(wtStr?' @ '+wtStr:''));
     }}
     var summary=summaryParts.join(' · ');

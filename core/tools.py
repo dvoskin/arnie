@@ -118,9 +118,14 @@ _FITNESS_TOOLS = [
     {
         "name": "log_exercise",
         "description": (
-            "Log ONE exercise to today's workout. "
-            "Call once per exercise when the user reports completing sets. "
-            "For multiple exercises, one call per exercise."
+            "Log a strength/cardio entry to the workout. "
+            "SETS WITH THE SAME LOAD: one call — set sets=N and reps='8,8,7' (comma list "
+            "captures per-set reps). e.g. '3x8 @ 135' -> sets=3, reps='8,8,8', weight=135. "
+            "SETS WITH DIFFERENT LOADS: one call PER load — each weight is its own entry. "
+            "e.g. 'bench 135x10, 145x8, 155x6' -> THREE calls: (sets=1,reps=10,weight=135), "
+            "(sets=1,reps=8,weight=145), (sets=1,reps=6,weight=155). The dashboard groups "
+            "same-named entries back into one exercise with each set shown separately. "
+            "Different exercises: one call each."
         ),
         "input_schema": {
             "type": "object",
