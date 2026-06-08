@@ -304,3 +304,50 @@ async def test_streaming_falls_back_emit_when_deterministic_confirmation_fires(_
     # was emitted via on_text_bubble post-build, NOT lost.
     assert len(streamed) >= 1, "deterministic fallback must reach the user via stream"
     assert turn.streamed_bubble_count == len(turn.response.bubbles)
+
+
+# ── REGRESSION GUARD — the heads-up bug from the Royo challah incident ─────
+
+
+async def test_heads_up_streamed_then_followup_fails_still_delivers_answer(_stream_env):
+    """REGRESSION: a user typing 'Check online' caused Arnie to stream the
+    web_search heads-up bubble ("lemme look that up real quick 🔎") but then
+    the follow-up returned empty (Tavily error / re-voice fail). The old
+    index-based catch-up saw flushed_count(1) == len(resp.bubbles)(1) and
+    emitted nothing — leaving the user staring at a heads-up for 5+ minutes
+    with no real answer. The fix tracks _response_streamed: when the final
+    response_text came from a non-streamed fallback, ALL resp.bubbles emit
+    via on_text_bubble regardless of what was already streamed."""
+    env = _stream_env
+    # First pass streams a heads-up + emits a web_search tool call.
+    env["state"]["chat_text"] = "lemme look that up real quick 🔎"
+    env["state"]["tool_calls"] = [{"name": "web_search", "id": "t1",
+                                   "input": {"query": "royo challah roll calories"}}]
+    env["state"]["stop_reason"] = "tool_use"
+    # Follow-up returns EMPTY (simulating Tavily error / re-voice fail).
+    env["state"]["follow_up_text"] = ""
+
+    streamed: list[str] = []
+
+    async def _on_bubble(text):
+        streamed.append(text)
+
+    turn = await C.run_turn(
+        env["user"], env["db"],
+        messages=[{"role": "user", "content": "Check online"}],
+        system="SYS", platform="telegram",
+        in_onboarding=False, was_onboarding=False,
+        on_text_bubble=_on_bubble,
+    )
+
+    # The user MUST see something after the heads-up — a fallback answer,
+    # an honest "I couldn't pull that up", anything. Pre-fix this assertion
+    # would have failed with len(streamed) == 1 (just the heads-up).
+    assert len(streamed) >= 2, (
+        f"User saw {len(streamed)} bubble(s); the heads-up landed but no "
+        f"real answer followed — the exact bug from the screenshot."
+    )
+    # First was the heads-up that streamed during the first pass.
+    assert "look that up" in streamed[0].lower()
+    # The rest is the fallback answer that the catch-up correctly emitted.
+    assert any(b.strip() for b in streamed[1:])

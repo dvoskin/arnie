@@ -167,10 +167,15 @@ def test_note_food_clarification_schema_requires_question_and_food_item():
     assert {"question", "food_item"} <= required
 
 
-def test_prompt_teaches_record_your_question_rule():
-    """The model must be taught to call note_food_clarification when asking."""
+def test_prompt_teaches_clarification_tool_and_context_block():
+    """The model must be taught to call note_food_clarification when asking
+    AND to consume the [PENDING CLARIFICATION] block next turn. The rule was
+    tightened from a verbose 'RECORD YOUR QUESTION' header to a few in-voice
+    lines to keep the model from going clinical mid-question."""
     from core.prompts.arnie import build_arnie_system
     s = build_arnie_system("telegram")
-    assert "RECORD YOUR QUESTION" in s
     assert "note_food_clarification" in s
     assert "[PENDING CLARIFICATION]" in s
+    # Voice-preservation example must be present — this is what prevents
+    # the "Need to confirm the calories on that" clinical regression.
+    assert "challah" in s.lower() or "in your normal voice" in s.lower()

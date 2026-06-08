@@ -217,6 +217,13 @@ async def run_turn(
     tool_calls    = result["tool_calls"]
     raw_content   = result["raw_content"]
     onboarding_field_saved: Optional[str] = None
+    # Tracks whether the final response_text was delivered via the live stream.
+    # Streamed paths leave it True; any non-streamed assignment (deterministic
+    # fallback, on_completion, hardcoded keep-alive) flips it False so the
+    # post-build catch-up emits via on_text_bubble. This is the critical fix
+    # for the "heads-up streamed but final answer never reaches user" bug
+    # when web_search / follow-up fails.
+    _response_streamed = True
 
     # ── Execute tools ─────────────────────────────────────────────────────────
     tool_results: dict = {}
@@ -379,6 +386,7 @@ async def run_turn(
                         "Just text me whatever you eat or train and I'll handle the rest.|||"
                         "What've you had today? Let's start there."
                     )
+                _response_streamed = False  # canned/welcome text wasn't streamed
     else:
         has_logging = any(tc["name"] in _LOGGING_TOOLS for tc in tool_calls)
         if has_logging and not in_onboarding:
@@ -391,6 +399,7 @@ async def run_turn(
                 response_text = deterministic_confirmation(
                     tool_calls, today_log, user.preferences
                 )
+                _response_streamed = False  # deterministic fallback wasn't streamed
         else:
             # A voiced-result tool (web_search) forces a follow-up EVEN when the
             # first pass already wrote text — its facts live only in the tool result
@@ -421,6 +430,7 @@ async def run_turn(
                 )
             else:
                 response_text = "Still here. What's the move?"
+            _response_streamed = False  # neither path was streamed
 
     # ── Anti-dead-end guard ────────────────────────────────────────────────────
     # "done" / "got it" / "logged" as the WHOLE reply is banned — it kills the
@@ -474,23 +484,27 @@ async def run_turn(
 
     # ── Streaming catch-up: emit any non-streamed response bubbles ────────────
     # In streaming mode the model's text streamed live as it arrived. But several
-    # paths populate response_text from a NON-streamed source — most commonly
-    # the deterministic_confirmation fallback, the on_completion welcome, or the
-    # hardcoded "Still here. What's the move?" keep-alive. Those bubbles haven't
-    # reached the user yet. Send them via on_text_bubble now so the user sees
-    # them, and bump flushed_count so the handler doesn't ALSO send them.
-    # NOTE: streamed_count > len(resp.bubbles) is possible when response_text
-    # got replaced after a heads-up was streamed (e.g. tool result re-voice
-    # rewrote the reply). That's fine — the handler will skip the bubble loop.
+    # paths populate response_text from a NON-streamed source — deterministic
+    # fallback, on_completion welcome, hardcoded keep-alive. Those bubbles
+    # haven't reached the user yet. _response_streamed tracks this:
+    #   True  — final response_text == what was streamed → nothing extra to send
+    #   False — final response_text came from a non-streamed fallback → emit
+    #           each resp.bubbles via on_text_bubble so the user sees it
+    #
+    # CRITICAL: the previous index-based catch-up was buggy when the streamed
+    # bubbles (e.g. a web_search heads-up "lemme look that up") were NOT in
+    # resp.bubbles (which only holds the final response). The old loop saw
+    # flushed_count(1) == len(resp.bubbles)(1) and emitted nothing — leaving
+    # the user with only the heads-up, never the real answer.
     if _streamer and on_text_bubble:
-        while _streamer.flushed_count < len(resp.bubbles):
-            next_idx = _streamer.flushed_count
-            try:
-                await on_text_bubble(resp.bubbles[next_idx])
-                _streamer.flushed_count += 1
-            except Exception as e:
-                logger.warning(f"post-build bubble send failed for {_tag}: {e}")
-                break  # prevent infinite loop on persistent send failure
+        if not _response_streamed:
+            for bubble in resp.bubbles:
+                try:
+                    await on_text_bubble(bubble)
+                    _streamer.flushed_count += 1
+                except Exception as e:
+                    logger.warning(f"post-build bubble send failed for {_tag}: {e}")
+                    break
         _streamed_total = _streamer.flushed_count
 
     if just_completed:
