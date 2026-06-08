@@ -1358,11 +1358,6 @@ footer{{
 .learn-chips{{display:flex;flex-wrap:wrap;gap:3px 10px}}
 .learn-chip{{font-size:10px;color:var(--di);transition:color .2s}}
 .learn-chip.done{{color:var(--tx2)}}
-.learn-q-row{{margin-top:8px;min-height:16px}}
-.learn-question{{font-size:11.5px;color:var(--mu);font-style:italic;letter-spacing:.01em;transition:opacity .35s ease;opacity:.9}}
-.learn-question.fading{{opacity:0}}
-.learn-cta{{background:none;border:none;padding:0;cursor:pointer;font-size:11.5px;color:var(--ac);font-weight:500;opacity:.85;margin-left:5px;display:inline}}
-.learn-cta:hover{{opacity:1;text-decoration:underline}}
 
 /* ── Settings preference cards (profile tab) ─────────────── */
 .pref-card{{background:var(--sf);border:1px solid var(--bd);border-radius:16px;padding:15px 16px;margin-bottom:9px;box-shadow:var(--sh)}}
@@ -1475,7 +1470,6 @@ footer{{
           <span id="learn-pct" class="lrn-pct"></span>
         </div>
         <div class="learn-chips" id="learn-list"></div>
-        <div class="learn-q-row"><span id="learn-question" class="learn-question"></span><button class="learn-cta" onclick="switchTab('profile')">Tell Arnie &#8594;</button></div>
       </div>
     </div>
 
@@ -1985,11 +1979,7 @@ function renderLearningProgress(d){{
   var done=items.filter(function(i){{return i.done;}}).length;
   // Once Arnie has learned every dimension, the indicator has served its purpose —
   // hide it so the day view stays clean for dialed-in users.
-  if(done>=items.length){{
-    wrap.style.display='none';
-    if(window._learnQTimer){{clearInterval(window._learnQTimer);window._learnQTimer=null;}}
-    return;
-  }}
+  if(done>=items.length){{wrap.style.display='none';return;}}
   var pctv=Math.round(done/items.length*100);
   var fill=document.getElementById('learn-fill');if(fill)fill.style.width=pctv+'%';
   var lbl=document.getElementById('learn-pct');if(lbl)lbl.textContent=pctv+'%';
@@ -1997,33 +1987,6 @@ function renderLearningProgress(d){{
   if(list)list.innerHTML=items.map(function(it){{
     return '<span class="learn-chip'+(it.done?' done':'')+'">'+esc(it.label)+'</span>';
   }}).join('');
-  // Build a rotating pool of context-aware questions from undone categories
-  var qmap=[
-    ["What's your main fitness goal right now?","Should Arnie set a calorie or protein target?"],
-    ["What foods do you eat most days?","How would you describe your typical diet?"],
-    ["Do you weigh yourself regularly?","What's your current weight?"],
-    ["What's your current workout split?","What's your favorite type of cardio?"],
-    ["What time do you wake up or go to bed?","Do you track your sleep or recovery?"],
-  ];
-  var questions=[];
-  items.forEach(function(it,idx){{if(!it.done)questions=questions.concat(qmap[idx]);}});
-  var qel=document.getElementById('learn-question');
-  if(qel&&questions.length){{
-    if(window._learnQTimer){{clearInterval(window._learnQTimer);window._learnQTimer=null;}}
-    window._learnQIdx=0;
-    qel.textContent=questions[0];
-    qel.classList.remove('fading');
-    if(questions.length>1){{
-      window._learnQTimer=setInterval(function(){{
-        qel.classList.add('fading');
-        setTimeout(function(){{
-          window._learnQIdx=(window._learnQIdx+1)%questions.length;
-          qel.textContent=questions[window._learnQIdx];
-          qel.classList.remove('fading');
-        }},350);
-      }},4000);
-    }}
-  }}
   wrap.style.display='block';
 }}
 
