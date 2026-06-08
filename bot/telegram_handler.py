@@ -835,31 +835,44 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Download and analyze the image outside the lock — pure I/O, no DB writes.
-    photo = update.message.photo[-1]
-    photo_file = await photo.get_file()
-    photo_data = bytes(await photo_file.download_as_bytearray())
-    caption = update.message.caption or ""
+    # Show typing immediately — image download + Vision API run before the pipeline
+    # starts, so without this the user sees nothing for several seconds.
+    chat_id = update.effective_chat.id
+    _stop_pre = asyncio.Event()
+    _pre_typing = asyncio.create_task(_typing_keepalive(context.bot, chat_id, _stop_pre))
 
-    from multimodal.image_handler import process_food_image
-    analysis = await process_food_image(photo_data)
-    if not analysis:
+    combined = None
+    try:
+        photo = update.message.photo[-1]
+        photo_file = await photo.get_file()
+        photo_data = bytes(await photo_file.download_as_bytearray())
+        caption = update.message.caption or ""
+
+        from multimodal.image_handler import process_food_image
+        analysis = await process_food_image(photo_data)
+        if analysis:
+            caption_part = f" {caption}" if caption else ""
+            combined = (
+                f"[Food photo]{caption_part}\n"
+                f"Photo analysis:\n{analysis}"
+            )
+    finally:
+        _stop_pre.set()
+        _pre_typing.cancel()
+        try:
+            await _pre_typing
+        except asyncio.CancelledError:
+            pass
+
+    if not combined:
         await update.message.reply_text(
             "Couldn't analyse the image. "
             "Make sure ANTHROPIC_API_KEY is set for image support."
         )
         return
 
-    # [Food photo] prefix triggers the PHOTO LOGGING system prompt rule:
-    # describe → clarify if needed → wait for user confirm → then log_food() next turn.
-    caption_part = f" {caption}" if caption else ""
-    combined = (
-        f"[Food photo]{caption_part}\n"
-        f"Photo analysis:\n{analysis}"
-    )
-
-    # Acquire per-user lock before pipeline — same pattern as handle_text — to prevent
-    # concurrent pipelines for the same user (e.g. rapid photo + text arriving together).
+    # Acquire per-user lock before pipeline — prevents concurrent pipelines for the
+    # same user (e.g. rapid photo + text arriving together).
     user_key = f"tg:{update.effective_user.id}"
     lock = _tg_pipeline_locks.setdefault(user_key, asyncio.Lock())
     async with lock:
