@@ -189,30 +189,30 @@ def deterministic_confirmation(tool_calls, log, prefs) -> str:
 # name to NEEDS_HEADS_UP_TOOLS. The conversation pipeline picks it up.
 # ─────────────────────────────────────────────────────────────────────────────
 
+# EMERGENCY FALLBACK ONLY. The model is instructed to ALWAYS write its own
+# in-voice heads-up before a slow-tool call. These deterministic lines fire
+# ONLY when the model skipped text entirely (just emitted the tool_use
+# block with no preceding text) — a rare degenerate case. Kept deliberately
+# generic and minimal so they read as "system was a little behind" rather
+# than impersonating Arnie's voice. If users start seeing these lines
+# routinely, the bug is upstream (model skipping text) — fix the prompt,
+# not these strings.
 _TOOL_HEADS_UP_BUBBLES = {
     "web_search": (
-        "one sec, checking that.",
-        "looking that up.",
-        "give me a sec.",
-        "checking online.",
+        "one sec.",
+        "checking.",
     ),
     "search_food_database": (
-        "one sec on the macros.",
-        "checking the numbers.",
-        "looking that up.",
         "one sec.",
+        "checking.",
     ),
     "query_history": (
-        "one sec, pulling your history.",
-        "checking the trend.",
-        "looking back at that.",
-        "give me a sec.",
+        "one sec.",
+        "looking back.",
     ),
     "generate_image": (
-        "drawing that up.",
-        "working on it.",
         "one sec.",
-        "putting that together.",
+        "working on it.",
     ),
 }
 

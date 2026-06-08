@@ -75,22 +75,34 @@ def test_tool_heads_up_unknown_tool_falls_back_to_web_search_default():
     assert line and line.strip()
 
 
-def test_each_tool_has_distinct_voice():
-    """Bubbles must be distinct per tool — a USDA lookup shouldn't sound like
-    a web_search. The user should be able to tell what Arnie is doing."""
-    seen: dict[str, set[str]] = {}
+def test_deterministic_fallback_is_intentionally_generic():
+    """Fallbacks are emergency-only. The model is instructed to ALWAYS write
+    its own in-voice heads-up before a slow tool. The deterministic lines
+    here exist for the degenerate case where the model emitted a tool_use
+    block with no text in front of it. Those generic lines read as
+    "system was a little behind" rather than impersonating Arnie's voice —
+    which is the right call: a stock-phrase impersonation feels worse than
+    a brief honest "one sec." See the EMERGENCY FALLBACK ONLY comment in
+    tool_executor.py.
+
+    This test pins the intent: fallbacks stay short + generic. If a user
+    sees these routinely, the upstream bug is the model skipping text;
+    the fix is the prompt rule, not these strings.
+    """
     for name in NEEDS_HEADS_UP_TOOLS:
-        seen[name] = set(_TOOL_HEADS_UP_BUBBLES[name])
-    # Every other tool's bubble set must overlap < 50% with web_search's set.
-    # (search_food_database, query_history, generate_image are all distinct.)
-    web = seen["web_search"]
-    for name, bubbles in seen.items():
-        if name == "web_search":
-            continue
-        overlap = len(bubbles & web)
-        assert overlap < len(bubbles) / 2, (
-            f"{name} bubbles too similar to web_search — should have its own vibe"
+        bubbles = _TOOL_HEADS_UP_BUBBLES[name]
+        # Each fallback must be SHORT — 30 chars caps "stock phrase" feel.
+        assert all(len(b) <= 30 for b in bubbles), (
+            f"{name} fallback got too verbose; keep it minimal so the "
+            "model's own voice wins by default"
         )
+        # Must not contain "lemme" / forced-casual filler.
+        joined = " ".join(bubbles).lower()
+        for banned in ("lemme", "real quick", "hang tight", "hang on"):
+            assert banned not in joined, (
+                f"{name} fallback contains '{banned}' — too try-hard casual; "
+                "minimal generic emergency lines only"
+            )
 
 
 # ── Backward-compatible search_heads_up shim ────────────────────────────────
