@@ -46,7 +46,7 @@ def _dashboard_html(token: str, name: str = "", bot_username: str = "Arnie_1026_
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;1,400&family=Instrument+Serif:ital@0;1&family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
 *,*::before,*::after{{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}}
 
@@ -1077,7 +1077,7 @@ footer{{
   background:var(--bg);
 }}
 .ph-title{{
-  font-family:'Cormorant Garamond','Instrument Serif','Times New Roman',serif;
+  font-family:'Instrument Serif','Times New Roman',serif;
   font-size:26px;line-height:1.15;letter-spacing:-.01em;color:var(--tx);font-weight:400;
 }}
 @media(max-width:940px){{.ph-title{{font-size:24px}}}}
