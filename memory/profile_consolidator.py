@@ -42,10 +42,63 @@ Be conservative — only flag obvious cases. When in doubt, leave it.\
 """
 
 
+async def _merge_canonical_aliases(db, user_id: int, attrs: list) -> int:
+    """
+    Pre-pass: merge rows whose keys are aliases of each other into the canonical key.
+    Deterministic — no LLM needed. Keeps the higher-confidence row; if tied, keeps
+    the more recently updated one. Returns count of rows discontinued.
+    """
+    from memory.attribute_store import canonicalize_key
+    from sqlalchemy import select, and_
+    from db.models import UserAttribute
+
+    _conf_rank = {"confirmed": 3, "inferred": 2, "needs_verification": 1}
+    _epoch = datetime(1970, 1, 1, tzinfo=timezone.utc)
+
+    # Group active rows by their canonical key
+    by_canonical: dict = {}
+    for a in attrs:
+        canon = canonicalize_key(a.attribute_key)
+        by_canonical.setdefault(canon, []).append(a)
+
+    n_merged = 0
+    now = datetime.now(timezone.utc)
+    for canon, rows in by_canonical.items():
+        if len(rows) < 2:
+            continue
+        # Sort: confirmed first, then most recently updated
+        rows.sort(
+            key=lambda r: (
+                _conf_rank.get(r.confidence, 2),
+                (r.updated_at or _epoch).replace(tzinfo=timezone.utc)
+                if (r.updated_at or _epoch).tzinfo is None
+                else (r.updated_at or _epoch),
+            ),
+            reverse=True,
+        )
+        keeper = rows[0]
+        # Rename keeper to canonical if it isn't already
+        if keeper.attribute_key != canon:
+            keeper.attribute_key = canon
+            keeper.updated_at = now
+        for dupe in rows[1:]:
+            dupe.attribute_status = "discontinued"
+            dupe.updated_at = now
+            n_merged += 1
+            logger.info(
+                f"Merged alias {dupe.attribute_key!r} → {canon!r} for user {user_id}"
+            )
+
+    if n_merged:
+        await db.commit()
+    return n_merged
+
+
 async def consolidate_user_profile(user, db) -> dict:
     """
     Run a Haiku cleanup pass on the user's active attributes.
-    Discontinues redundant/superseded rows, shortens verbose values.
+    Phase 1: deterministic canonical-alias merge (no LLM).
+    Phase 2: Haiku reviews remaining attrs for semantic redundancy + verbose values.
     Returns {"discontinued": N, "shortened": N} for logging.
     """
     from core.llm import chat
@@ -54,6 +107,12 @@ async def consolidate_user_profile(user, db) -> dict:
     attrs = await get_all_attributes(db, user.id)
     if not attrs:
         return {"discontinued": 0, "shortened": 0}
+
+    # Phase 1 — merge rows that are canonical aliases of each other
+    n_alias = await _merge_canonical_aliases(db, user.id, attrs)
+    # Reload after merge so the LLM sees the cleaned-up state
+    if n_alias:
+        attrs = await get_all_attributes(db, user.id)
 
     lines = []
     for a in attrs:
@@ -109,9 +168,10 @@ async def consolidate_user_profile(user, db) -> dict:
 
     if n_disc or n_short:
         await db.commit()
-        logger.info(
-            f"Profile consolidation for user {user.id}: "
-            f"discontinued {n_disc}, shortened {n_short}"
-        )
+    total_disc = n_alias + n_disc
+    logger.info(
+        f"Profile consolidation for user {user.id}: "
+        f"alias-merged {n_alias}, discontinued {n_disc}, shortened {n_short}"
+    )
 
-    return {"discontinued": n_disc, "shortened": n_short}
+    return {"discontinued": total_disc, "shortened": n_short}

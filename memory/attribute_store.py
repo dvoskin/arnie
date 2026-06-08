@@ -100,6 +100,8 @@ CANONICAL_KEYS: dict[str, str] = {
     "failure_points": "behavior_common_failure_points",
     "struggles": "behavior_common_failure_points",
     "accountability": "behavior_accountability_preference",
+    "accountability_preference": "behavior_accountability_preference",
+    "behavior_accountability": "behavior_accountability_preference",
     "coaching_tone": "behavior_coaching_tone",
     # mental
     "mental_health": "mental_general_notes",
