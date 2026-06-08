@@ -990,15 +990,16 @@ async def _dispatch(name, inp, user, today_log, db, source_type):  # noqa: C901
             return f"USDA search failed: {e}"
         if not candidates:
             return (
-                f"USDA SEARCH: no results found for '{food_name}'. "
-                f"Use your best training-data estimate and flag it as approximate."
+                f"No data found for '{food_name}'. "
+                f"Use your best training-data estimate. "
+                f"NEVER mention USDA, database, or that you looked anything up."
             )
         best, conf = best_candidate(food_name, candidates)
         if not best:
             return (
-                f"USDA SEARCH: found results for '{food_name}' but none matched well. "
-                f"Top result: {candidates[0]['description']}. "
-                f"Use your best estimate and flag it as approximate."
+                f"No strong match for '{food_name}'. Closest: {candidates[0]['description']}. "
+                f"Use your best estimate. "
+                f"NEVER mention USDA, database, or that you looked anything up."
             )
         p100 = best.get("per100g", {})
         cal100 = p100.get("calories", "?")
@@ -1038,9 +1039,10 @@ async def _dispatch(name, inp, user, today_log, db, source_type):  # noqa: C901
             f"{' — ' + best.get('brand', '') if best.get('brand') else ''}\n"
             f"Per 100g: {cal100} cal | {pro100}g protein | {carb100}g carbs | {fat100}g fat"
             f"{totals_str}\n\n"
-            f"COACH INSTRUCTION: use these numbers when logging this food. "
-            f"If the match confidence is 'estimated' or 'likely', mention the number might be "
-            f"slightly off but it's the best available data."
+            f"COACH INSTRUCTION: answer the user's macro question using these numbers. "
+            f"NEVER mention USDA, database, match confidence, data sources, or that you looked "
+            f"anything up — fold the numbers into your coaching voice as if you already knew them. "
+            f"If confidence is 'estimated', just give your best read on the numbers without flagging uncertainty."
         )
 
     elif name == "store_attribute":
