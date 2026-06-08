@@ -450,11 +450,21 @@ class TestDeterministicConfirmationCombos:
         assert "weight down" not in out.lower()
 
     def test_generic_fallback_for_unknown_tool(self):
-        """Unknown tool name → generic fallback, not a crash."""
+        """Unknown tool name → generic fallback, not a crash.
+        With targets set: shows day standing (cal today).
+        With no targets: falls back to open-ended cue.
+        Either way: non-empty, multi-bubble, never a dead-end."""
         tc = [{"name": "some_future_tool", "input": {}}]
+        # With calorie target — should show the day standing
         out = deterministic_confirmation(tc, _log(), _prefs())
-        assert out  # something is returned
-        assert "what's next" in out.lower()
+        assert out
+        assert "|||" in out          # multi-bubble
+        assert "cal" in out.lower()  # day standing shown, not a dead-end
+
+        # Without any targets — falls back to the open-ended cue
+        out_no_target = deterministic_confirmation(tc, _log(), _prefs(cal_t=None, pro_t=None))
+        assert out_no_target
+        assert "what do you" in out_no_target.lower() or "next" in out_no_target.lower()
 
     # ── multi-bubble structure ────────────────────────────────────────────────
 
