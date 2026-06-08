@@ -608,13 +608,13 @@ body{{
 .insights{{margin:0 0 2px}}
 .ins-banner{{
   display:flex;align-items:center;gap:8px;width:100%;
-  padding:10px 13px;border-radius:12px;cursor:pointer;user-select:none;
+  padding:9px 13px;border-radius:12px;cursor:pointer;user-select:none;
   border:1px solid var(--bd);background:var(--sf);
   transition:background .15s,border-color .15s;
 }}
 .ins-banner:hover{{background:var(--sf2)}}
-.ins-spark{{flex-shrink:0;display:grid;place-items:center;color:var(--pu)}}
-.ins-title{{font-size:13px;font-weight:600;color:var(--tx);letter-spacing:-.01em;white-space:nowrap}}
+.ins-spark{{flex-shrink:0;display:grid;place-items:center;color:var(--mu);opacity:.8}}
+.ins-title{{font-size:12.5px;font-weight:500;color:var(--tx2);letter-spacing:-.01em;white-space:nowrap}}
 .ins-actions{{margin-left:auto;display:flex;align-items:center;gap:2px;flex-shrink:0}}
 .ins-refresh{{
   color:var(--mu);font-size:14px;line-height:1;cursor:pointer;
@@ -1325,13 +1325,13 @@ footer{{
 .tc-up{{color:var(--ac)}} .tc-dn{{color:var(--re)}} .tc-fl{{color:var(--mu)}}
 
 /* ── Arnie's learning progress ───────────────────────────── */
-.learn-card{{background:var(--sf);border:1px solid var(--bd);border-radius:16px;padding:14px 16px;box-shadow:var(--sh)}}
-.learn-bar{{height:5px;border-radius:5px;background:var(--sf3);overflow:hidden;margin-bottom:12px}}
-.learn-fill{{height:100%;background:var(--ac);border-radius:5px;transition:width .5s ease}}
-.learn-item{{display:flex;align-items:center;gap:9px;font-size:13px;color:var(--mu);padding:3px 0}}
-.learn-item.done{{color:var(--tx2)}}
-.learn-check{{width:16px;height:16px;border-radius:50%;border:1.5px solid var(--bd2);flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:9px;color:transparent;transition:.2s}}
-.learn-item.done .learn-check{{background:var(--ac);border-color:var(--ac);color:#fff}}
+.learn-bar{{height:4px;border-radius:4px;background:var(--sf3);overflow:hidden}}
+.learn-fill{{height:100%;background:var(--ac);border-radius:4px;transition:width .5s ease}}
+.learn-chips{{display:flex;flex-wrap:wrap;gap:7px 14px;margin-top:11px}}
+.learn-chip{{font-size:12px;color:var(--di);display:inline-flex;align-items:center;gap:5px;transition:color .2s}}
+.learn-chip.done{{color:var(--tx2)}}
+.learn-chip .lc-mk{{font-size:10px;color:var(--di);transition:color .2s}}
+.learn-chip.done .lc-mk{{color:var(--ac)}}
 
 /* ── Settings preference cards (profile tab) ─────────────── */
 .pref-card{{background:var(--sf);border:1px solid var(--bd);border-radius:16px;padding:15px 16px;margin-bottom:9px;box-shadow:var(--sh)}}
@@ -1418,8 +1418,8 @@ footer{{
     </div>
 
     <!-- AI INSIGHTS — collapsed banner, expands on tap -->
-    <div class="insights open" id="ins-day" style="margin-top:0">
-      <div class="ins-banner" onclick="toggleInsights('day')" role="button" tabindex="0" aria-expanded="true">
+    <div class="insights" id="ins-day" style="margin-top:0">
+      <div class="ins-banner" onclick="toggleInsights('day')" role="button" tabindex="0" aria-expanded="false">
         <span class="ins-spark"><svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M12 2.2l1.7 4.8 4.8 1.7-4.8 1.7L12 15.2l-1.7-4.8L5.5 8.7l4.8-1.7z"/><path d="M18.6 13.4l.82 2.18 2.18.82-2.18.82-.82 2.18-.82-2.18L15.6 16.4l2.18-.82z"/></svg></span>
         <span class="ins-title">Coach Insights</span>
         <span class="ins-actions">
@@ -1470,10 +1470,8 @@ footer{{
     <!-- ARNIE'S LEARNING -->
     <div id="learn-wrap" style="display:none;margin-top:16px">
       <div class="stitle" style="margin-bottom:8px">Arnie's learning <span id="learn-pct" style="font-weight:400;opacity:.55;font-size:9px;letter-spacing:.04em"></span></div>
-      <div class="learn-card">
-        <div class="learn-bar"><div class="learn-fill" id="learn-fill" style="width:0%"></div></div>
-        <div id="learn-list"></div>
-      </div>
+      <div class="learn-bar"><div class="learn-fill" id="learn-fill" style="width:0%"></div></div>
+      <div class="learn-chips" id="learn-list"></div>
     </div>
 
     <!-- 5-DAY TREND -->
@@ -1550,8 +1548,8 @@ footer{{
   <div class="tab-panel" id="panel-week">
 
     <!-- Weekly AI analysis — collapsed banner, expands on tap -->
-    <div class="insights open" id="ins-week" style="margin-top:4px">
-      <div class="ins-banner" onclick="toggleInsights('week')" role="button" tabindex="0" aria-expanded="true">
+    <div class="insights" id="ins-week" style="margin-top:4px">
+      <div class="ins-banner" onclick="toggleInsights('week')" role="button" tabindex="0" aria-expanded="false">
         <span class="ins-spark"><svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M12 2.2l1.7 4.8 4.8 1.7-4.8 1.7L12 15.2l-1.7-4.8L5.5 8.7l4.8-1.7z"/><path d="M18.6 13.4l.82 2.18 2.18.82-2.18.82-.82 2.18-.82-2.18L15.6 16.4l2.18-.82z"/></svg></span>
         <span class="ins-title">Weekly Analysis</span>
         <span class="ins-actions">
@@ -1938,9 +1936,9 @@ function renderLearningProgress(d){{
   var lbl=document.getElementById('learn-pct');if(lbl)lbl.textContent=pctv+'% LEARNED';
   var list=document.getElementById('learn-list');
   if(list)list.innerHTML=items.map(function(it){{
-    return '<div class="learn-item'+(it.done?' done':'')+'">'+
-      '<span class="learn-check">'+(it.done?'&#10003;':'')+'</span>'+esc(it.label)+
-      '</div>';
+    return '<span class="learn-chip'+(it.done?' done':'')+'">'+
+      '<span class="lc-mk">'+(it.done?'&#10003;':'&#9675;')+'</span>'+esc(it.label)+
+      '</span>';
   }}).join('');
   wrap.style.display='block';
 }}
