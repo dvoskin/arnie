@@ -1492,7 +1492,7 @@ footer{{
       <span id="wo-badge" class="ds-pill on" style="display:none"></span>
       <span id="ca-badge" class="ds-pill on" style="display:none"></span>
       <span id="wt-badge" class="ds-pill on" style="display:none"></span>
-      <button class="ds-share" onclick="shareDay()" aria-label="Share day">&#8679;</button>
+      <button class="ds-share" onclick="shareDay()" aria-label="Share day" style="display:none">&#8679;</button>
     </div>
 
     <!-- AI INSIGHTS — collapsed banner, expands on tap -->
@@ -1700,6 +1700,18 @@ footer{{
       </div>
       <div class="pref-hint" id="food-mode-desc"></div>
     </div>
+
+    <div class="stitle" style="margin-top:16px">Coaching style</div>
+    <div class="pref-card" id="coach-style-card">
+      <input type="range" class="pref-range" id="coach-style-range" min="0" max="2" step="1" value="1"
+             oninput="onCoachSlide(this.value)" onchange="commitCoachSlide(this.value)">
+      <div class="pref-ticks" id="coach-style-ticks">
+        <span class="pref-tick">Supportive</span>
+        <span class="pref-tick">Balanced</span>
+        <span class="pref-tick">Strict</span>
+      </div>
+      <div class="pref-hint" id="coach-style-desc"></div>
+    </div>
   </div>
 
 <footer>Arnie &middot; auto-refresh 5 min</footer>
@@ -1836,6 +1848,7 @@ function renderCoachingTab(d) {{
   var p = (d && d.profile) || {{}};
   renderRemindSettings(p);
   renderFoodModeSettings(p);
+  renderCoachingStyleSettings(p);
 }}
 function switchTab(name){{
   _activeTab=name;
@@ -2093,6 +2106,12 @@ var _FOOD_DESCS={{
 
 var _REMIND_TIERS=['none','light','moderate','heavy'];
 var _FOOD_TIERS=['quick','moderate','strict'];
+var _COACH_TIERS=['supportive','balanced','strict'];
+var _COACH_DESCS={{
+  supportive:'Encouraging and empathetic — motivates without pressure',
+  balanced:'Mix of support and accountability',
+  strict:'Direct, data-focused, holds you to your targets',
+}};
 
 function _setTicks(wrapId,idx){{
   var wrap=document.getElementById(wrapId);
@@ -2130,6 +2149,15 @@ function renderFoodModeSettings(p){{
   var desc=document.getElementById('food-mode-desc');
   if(desc)desc.textContent=_FOOD_DESCS[mode]||'';
 }}
+function renderCoachingStyleSettings(p){{
+  var style=p.coaching_style||'balanced';
+  var idx=Math.max(0,_COACH_TIERS.indexOf(style));
+  var rng=document.getElementById('coach-style-range');
+  if(rng)rng.value=idx;
+  _setTicks('coach-style-ticks',idx);
+  var desc=document.getElementById('coach-style-desc');
+  if(desc)desc.textContent=_COACH_DESCS[style]||'';
+}}
 
 // Live preview while dragging (no save)
 function onRemindSlide(v){{
@@ -2143,6 +2171,12 @@ function onFoodSlide(v){{
   _setTicks('food-mode-ticks',+v);
   var desc=document.getElementById('food-mode-desc');
   if(desc)desc.textContent=_FOOD_DESCS[tier]||'';
+}}
+function onCoachSlide(v){{
+  var tier=_COACH_TIERS[+v]||'balanced';
+  _setTicks('coach-style-ticks',+v);
+  var desc=document.getElementById('coach-style-desc');
+  if(desc)desc.textContent=_COACH_DESCS[tier]||'';
 }}
 
 async function _patchPref(field,value){{
@@ -2174,6 +2208,11 @@ function commitFoodSlide(v){{
   var tier=_FOOD_TIERS[+v]||'moderate';
   if(_baseData&&_baseData.profile)_baseData.profile.food_logging_mode=tier;
   _patchPref('food_logging_mode',tier);
+}}
+function commitCoachSlide(v){{
+  var tier=_COACH_TIERS[+v]||'balanced';
+  if(_baseData&&_baseData.profile)_baseData.profile.coaching_style=tier;
+  _patchPref('coaching_style',tier);
 }}
 
 // ── Day tab ───────────────────────────────────────────────────────────────
