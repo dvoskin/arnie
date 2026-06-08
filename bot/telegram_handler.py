@@ -680,6 +680,7 @@ async def _run_pipeline(update: Update, context: ContextTypes.DEFAULT_TYPE,
     # reply_markup attachment, which streaming can't promise mid-flight.
     _streaming_eligible = (not in_onboarding) and (not was_onboarding)
     _on_text_bubble_arg = _on_text_bubble if _streaming_eligible else None
+    turn = None
     try:
         turn = await run_turn(
             user, db, messages, system, platform="telegram",
@@ -690,6 +691,8 @@ async def _run_pipeline(update: Update, context: ContextTypes.DEFAULT_TYPE,
             completion_facts=completion_facts,
             on_text_bubble=_on_text_bubble_arg,
         )
+    except Exception as e:
+        logger.error(f"run_turn failed (chat {chat_id}): {e}", exc_info=True)
     finally:
         stop_typing.set()
         typing_task.cancel()
@@ -697,6 +700,13 @@ async def _run_pipeline(update: Update, context: ContextTypes.DEFAULT_TYPE,
             await typing_task
         except asyncio.CancelledError:
             pass
+
+    if turn is None:
+        try:
+            await update.message.reply_text("Something went wrong on my end. Try again?")
+        except Exception:
+            pass
+        return
 
     # ── Apply Telegram reaction to the user's message ─────────────────────────
     try:

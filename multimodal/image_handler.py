@@ -16,6 +16,7 @@ Estimation rules:
 - Use realistic portion sizes — a restaurant chicken breast is typically 7-8oz, not 4oz.
 - When prep is not clearly visible, note it: "chicken (prep unclear)".
 - When sauce, dressing, or oil presence is uncertain, add a range note on that line: "sauce (est. +100-200 cal)".
+- For bowls, salads, wraps, and burritos: always list the BASE as its own line (e.g. "white rice, ~1.5 cups, 300 cal" or "romaine lettuce, 2 cups, 20 cal"). If the base type is unclear from the photo, write: "base (unclear — rice ~300cal vs lettuce ~20cal, needs clarification)".
 
 If there are multiple items, add a TOTAL line at the end:
   TOTAL: [sum cal] cal, [sum protein]g P
