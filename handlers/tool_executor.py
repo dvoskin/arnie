@@ -376,6 +376,18 @@ async def _dispatch(name, inp, user, today_log, db, source_type):  # noqa: C901
             source_type=source_type,
         )
         await db.refresh(target_log)
+
+        # T2.2 — auto-resolve any open food_clarification rows. The user's
+        # answer arrived and the log fired; the clarification is satisfied.
+        # Closing ALL open food_clarification rows is intentional: if multiple
+        # are pending, the model may be answering one specific question with a
+        # log, and stale ones from earlier turns shouldn't linger either.
+        try:
+            from db.queries import resolve_pending_questions
+            await resolve_pending_questions(db, user.id, kinds=["food_clarification"])
+        except Exception as e:
+            logger.warning(f"food_clarification auto-resolve failed: {e}")
+
         date_label = f" (for {past_date})" if past_date else ""
 
         # Rich result so the follow-up LLM coaches on the food, not just logs it
@@ -996,6 +1008,45 @@ async def _dispatch(name, inp, user, today_log, db, source_type):  # noqa: C901
         except Exception as e:
             logger.error(f"track_metric failed: {e}")
             return f"Failed to track metric: {e}"
+
+    elif name == "note_food_clarification":
+        # T2.2 — record an open clarifying question so the model SEES it next
+        # turn (via [PENDING CLARIFICATION] context block) and doesn't re-ask.
+        # Auto-resolves on log_food / update_food_entry below.
+        question = (inp.get("question") or "").strip()
+        food_item = (inp.get("food_item") or "").strip()
+        if not question or not food_item:
+            return "Missing question or food_item"
+        try:
+            from db.queries import record_pending_question, get_open_pending_question
+            # Use kind="food_clarification" — invisible to reminders module
+            # (which only re-asks profile_stats + conversation_hook).
+            existing = await get_open_pending_question(db, user.id, "food_clarification")
+            if existing and existing.item_referenced == food_item:
+                # Already pending for this item — update the question text in place.
+                existing.question = question
+                existing.item_referenced = food_item
+                await db.commit()
+            else:
+                # Either no pending or a DIFFERENT item — create new (the existing
+                # row from another item stays open; the executor's log_food auto-
+                # resolve will close it when its item lands).
+                pq = await record_pending_question(
+                    db, user.id, kind="food_clarification",
+                    question=question, tier="casual", hook_style="question",
+                )
+                pq.item_referenced = food_item
+                # Carry kind metadata in tier? No — separate field.
+                if inp.get("kind"):
+                    pq.tier = inp["kind"]  # piggyback metadata on tier field
+                await db.commit()
+            return (
+                f"Recorded pending clarification: '{question}' about '{food_item}'. "
+                f"Don't say anything about saving it — just ask the question naturally."
+            )
+        except Exception as e:
+            logger.error(f"note_food_clarification failed: {e}")
+            return f"Failed to record clarification: {e}"
 
     elif name == "schedule_check_in":
         send_at = (inp.get("send_at") or "").strip()

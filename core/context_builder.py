@@ -10,6 +10,41 @@ from db.queries import get_recent_logs, get_recent_weights, get_recent_health_sn
 from memory.memory_manager import read_memory
 
 
+def render_pending_clarification_block(pending_rows, now=None, freshness_minutes: int = 30) -> str:
+    """Render the [PENDING CLARIFICATION] context block from a list of
+    PendingQuestion rows. Filters to food_clarification kind, freshness window,
+    unanswered. Pure + testable — no DB dependency. now= injectable for tests.
+
+    Caps at 3 rows so the prompt stays lean even if the model accumulated many.
+    Returns "" when nothing fresh — context_builder will skip the line entirely.
+    """
+    from datetime import datetime as _dt, timedelta as _td
+    now = now or _dt.utcnow()
+    cutoff = now - _td(minutes=freshness_minutes)
+
+    fresh = [
+        p for p in (pending_rows or [])
+        if getattr(p, "kind", None) == "food_clarification"
+        and getattr(p, "asked_at", None) is not None
+        and p.asked_at >= cutoff
+        and getattr(p, "answered_at", None) is None
+    ]
+    if not fresh:
+        return ""
+
+    lines = [
+        "[PENDING CLARIFICATION] You asked these clarifying questions "
+        "RECENTLY about foods and the user may be answering you now. "
+        "Use their reply to log the food — DON'T re-ask:"
+    ]
+    for p in fresh[:3]:
+        age_min = max(0, int((now - p.asked_at).total_seconds() / 60))
+        item = getattr(p, "item_referenced", None) or "the food"
+        question = (p.question or "").strip()
+        lines.append(f'  - {age_min}m ago about "{item}": you asked "{question}"')
+    return "\n".join(lines)
+
+
 def food_mode_directive(mode: Optional[str]) -> str:
     """Render the per-turn [FOOD LOGGING MODE] override for the user's food_logging_mode.
 
@@ -568,6 +603,20 @@ async def build_context(user: User, today_log: Optional[DailyLog], db,
     except Exception:
         attr_block = ""
 
+    # T2.2 — Pending food clarifications (open questions Arnie asked but the
+    # user hasn't answered yet). Surface fresh ones (< 30 min) so Arnie sees
+    # what's outstanding and doesn't re-ask. Auto-resolves on log_food fire,
+    # so once the model logs the food its row is closed by the executor.
+    pending_clarification_block = ""
+    try:
+        from db.queries import get_open_pending_questions
+        _pending = await get_open_pending_questions(db, user.id)
+        pending_clarification_block = render_pending_clarification_block(_pending)
+    except Exception as e:
+        # Telemetry only — never fail the turn for a clarification fetch error.
+        import logging as _l
+        _l.getLogger(__name__).warning(f"pending clarification fetch failed: {e}")
+
     prefs = user.preferences
     pace = pacing_note(today_log, prefs, user.timezone or "UTC")
     adherence = adherence_insights(recent_logs, prefs)
@@ -757,6 +806,7 @@ async def build_context(user: User, today_log: Optional[DailyLog], db,
         (memory[:5000] if memory else raw_notes[:1200] if raw_notes else "No profile yet — still learning this user."),
         (f"[RECENT COACHING NOTES — not yet synthesized into profile]\n{raw_notes[:600]}" if raw_notes and memory else ""),
         "",
+        (pending_clarification_block if pending_clarification_block else ""),
         link_status,
         (food_mode_inj if food_mode_inj else ""),
     ]

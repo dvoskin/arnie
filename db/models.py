@@ -284,8 +284,9 @@ class PendingQuestion(Base):
 
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
-    kind = Column(String, nullable=False, index=True)  # profile_stats | goal_check | weight_checkin | generic
+    kind = Column(String, nullable=False, index=True)  # profile_stats | goal_check | weight_checkin | generic | food_clarification
     question = Column(Text, nullable=False)             # the text Arnie asked
+    item_referenced = Column(String)                    # what the question is about (e.g. "chicken sandwich") — used by food_clarification
     tier = Column(String, default="casual")             # casual | goal_critical — scales follow-up urgency
     hook_style = Column(String, default="question")     # question | engagement — controls re-ask framing
     asked_at = Column(DateTime, server_default=func.now())   # first time asked

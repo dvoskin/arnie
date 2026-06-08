@@ -447,6 +447,51 @@ _ATTRIBUTE_TOOLS = [
 # SCHEDULING TOOL
 # ─────────────────────────────────────────────────────────────────────────────
 
+# ─────────────────────────────────────────────────────────────────────────────
+# CLARIFICATION TOOL (T2.2)
+# ─────────────────────────────────────────────────────────────────────────────
+# When Arnie asks "grilled or fried?" / "what brand?" / "what size?" about a
+# food, we record it. The context block surfaces it next turn so Arnie SEES
+# what's pending and doesn't re-ask. Auto-resolves the moment log_food fires
+# for any food on this user's account.
+
+_CLARIFICATION_TOOLS = [
+    {
+        "name": "note_food_clarification",
+        "description": (
+            "Record that you JUST asked the user a clarifying question about a food "
+            "before logging it. Call this in the SAME turn you ask the question, "
+            "alongside the question text in your reply. Examples of when to call: "
+            "'grilled or fried?' about a chicken sandwich, 'which brand?' about a "
+            "protein bar, 'what dressing?' about a salad. Do NOT call when you "
+            "already have the info needed to log — only when you're explicitly "
+            "deferring the log on a question. The next turn's context will show "
+            "this as PENDING CLARIFICATION so you don't re-ask. Auto-resolves "
+            "when log_food fires (or after 30 min)."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "question": {
+                    "type": "string",
+                    "description": "The exact question you asked (e.g. 'grilled or fried?').",
+                },
+                "food_item": {
+                    "type": "string",
+                    "description": "The food the question is about (e.g. 'chicken sandwich').",
+                },
+                "kind": {
+                    "type": "string",
+                    "enum": ["cook_method", "brand", "portion", "ingredient", "other"],
+                    "description": "What sort of clarification this is.",
+                },
+            },
+            "required": ["question", "food_item"],
+        },
+    },
+]
+
+
 _SCHEDULING_TOOLS = [
     {
         "name": "schedule_check_in",
@@ -524,6 +569,7 @@ ALL_TOOLS = (
     + _HISTORY_TOOLS
     + _FOOD_DB_TOOLS
     + _ATTRIBUTE_TOOLS
+    + _CLARIFICATION_TOOLS
     + _SCHEDULING_TOOLS
 )
 
