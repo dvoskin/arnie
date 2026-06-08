@@ -1,15 +1,31 @@
 """
-Shared pytest fixtures.
+Shared pytest fixtures and plain helper factories.
 
 Every DB test runs against a fresh in-memory SQLite database built from the real
 models + the real _migrate() pass, so tests exercise the exact schema path prod
 uses. Query functions all take an explicit `db` session, so we never touch the
 app's global engine.
+
+Plain helpers (_prefs, _log) are module-level functions — import them directly in
+any test file that needs them rather than duplicating identical 2-liners everywhere.
 """
 import os
+from types import SimpleNamespace
 import pytest
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+
+
+# ── Shared stubs (non-fixture) ────────────────────────────────────────────────
+
+def _prefs(cal_t=1800, pro_t=200):
+    """Minimal UserPreferences stub with optional calorie + protein targets."""
+    return SimpleNamespace(calorie_target=cal_t, protein_target=pro_t)
+
+
+def _log(cal=0, pro=0):
+    """Minimal DailyLog stub with total_calories + total_protein."""
+    return SimpleNamespace(total_calories=cal, total_protein=pro)
 
 # Deterministic env for tests that read it.
 os.environ.setdefault("LINKING_ENABLED", "true")

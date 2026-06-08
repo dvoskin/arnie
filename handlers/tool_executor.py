@@ -66,6 +66,31 @@ def _parse_log_date(date_str: str | None, user_timezone: str = "UTC"):
     return None
 
 
+def _lbs_to_kg(weight, unit: str = "lbs"):
+    """Convert a weight value to kg. Returns None for None input, passes kg through."""
+    if weight is None:
+        return None
+    return weight * 0.453592 if (unit or "lbs").lower().strip() == "lbs" else weight
+
+
+async def _resolve_log(inp: dict, user, today_log, db):
+    """
+    Determine which DailyLog to write to and return (target_log, past_date).
+
+    If inp contains a parseable 'date' field pointing to a past date, get/create
+    that day's log. Otherwise use today_log. Silently reopens a closed log in either
+    case — no narration, no user-facing mention.
+    """
+    past_date = _parse_log_date(inp.get("date"), getattr(user, "timezone", "UTC"))
+    if past_date:
+        target = await get_or_create_log_for_date(db, user.id, past_date)
+    else:
+        target = today_log
+    if getattr(target, "status", None) == "closed":
+        target.status = "open"
+    return target, past_date
+
+
 def deterministic_confirmation(tool_calls, log, prefs) -> str:
     """
     Build a meaningful confirmation from what was actually logged, used when the
@@ -273,16 +298,7 @@ async def _dispatch(name, inp, user, today_log, db, source_type):  # noqa: C901
             return "Skipped — day log not yet created (onboarding incomplete)"
 
     if name == "log_food":
-        # Support logging to a past date
-        past_date = _parse_log_date(inp.get("date"), getattr(user, "timezone", "UTC"))
-        if past_date:
-            target_log = await get_or_create_log_for_date(db, user.id, past_date)
-        else:
-            target_log = today_log
-        # Logging silently reopens a closed day — the user never has to ask, and Arnie
-        # never narrates "let me reopen it". add_food_entry commits the status with it.
-        if getattr(target_log, "status", None) == "closed":
-            target_log.status = "open"
+        target_log, past_date = await _resolve_log(inp, user, today_log, db)
 
         food_name = inp.get("food_name") or ""
         analysis = await _analyze_food(db, user, food_name, inp)
@@ -321,25 +337,17 @@ async def _dispatch(name, inp, user, today_log, db, source_type):  # noqa: C901
             f"{date_label}. ANALYSIS: {analysis.coach_note}. "
             f"DAY TOTAL: {target_log.total_calories:.0f} cal, {target_log.total_protein:.0f}g protein"
             f"{(' (' + remaining.strip() + ')') if remaining else ''}. "
-            f"YOUR REPLY MUST include: (1) the food name and its calories + protein, "
-            f"(2) the day total from DAY TOTAL above — copy the numbers verbatim, "
-            f"(3) one coaching insight on quality or goal fit. "
-            f"The numbers are MANDATORY — do not skip them for coaching. Numbers first, then coaching."
+            f"Confirm what was logged: state the food, its exact cal + protein, and the day total "
+            f"from DAY TOTAL above — use those numbers verbatim. Then coach on quality or goal fit. "
+            f"Never skip the numbers."
         )
 
     elif name == "log_exercise":
-        past_date = _parse_log_date(inp.get("date"), getattr(user, "timezone", "UTC"))
-        if past_date:
-            target_log = await get_or_create_log_for_date(db, user.id, past_date)
-        else:
-            target_log = today_log
-        # Logging silently reopens a closed day (same as food) — no narration needed.
-        if getattr(target_log, "status", None) == "closed":
-            target_log.status = "open"
+        target_log, past_date = await _resolve_log(inp, user, today_log, db)
 
         weight = inp.get("weight")
         weight_unit = inp.get("weight_unit", "lbs")
-        weight_kg = (weight * 0.453592) if (weight and weight_unit == "lbs") else weight
+        weight_kg = _lbs_to_kg(weight, weight_unit)
 
         is_cardio = inp.get("is_cardio", False) or bool(inp.get("cardio_type"))
         await add_exercise_entry(
@@ -401,7 +409,7 @@ async def _dispatch(name, inp, user, today_log, db, source_type):  # noqa: C901
     elif name == "log_body_weight":
         weight = inp["weight"]
         unit = inp.get("unit", "lbs")
-        weight_kg = weight * 0.453592 if unit == "lbs" else weight
+        weight_kg = _lbs_to_kg(weight, unit)
         await add_body_metric(db, user.id, weight_kg)
         return f"Logged weight: {weight} {unit} ({weight_kg:.1f} kg)"
 
@@ -417,12 +425,12 @@ async def _dispatch(name, inp, user, today_log, db, source_type):  # noqa: C901
         if "food_name" in changes:
             changes["parsed_food_name"] = changes.pop("food_name")
         # date= moves the entry to another day's log — same primitive as editing a value.
-        target_date = _parse_log_date(inp.get("date"), getattr(user, "timezone", "UTC"))
-        if target_date:
-            target_log = await get_or_create_log_for_date(db, user.id, target_date)
-            if getattr(target_log, "status", None) == "closed":
-                target_log.status = "open"  # moving into a day silently reopens it
-            changes["new_daily_log_id"] = target_log.id
+        if inp.get("date"):
+            move_log, target_date = await _resolve_log(inp, user, today_log, db)
+            if target_date:
+                changes["new_daily_log_id"] = move_log.id
+        else:
+            target_date = None
         entry = await q_update_food_entry(db, entry_id, user.id, **changes)
         if not entry:
             return f"No food entry #{entry_id} found in today's log."
@@ -464,14 +472,14 @@ async def _dispatch(name, inp, user, today_log, db, source_type):  # noqa: C901
                    if k not in ("entry_id", "date") and v is not None}
         # Convert weight from lbs to kg for storage
         if "weight" in changes:
-            changes["weight"] = changes["weight"] * 0.453592
+            changes["weight"] = _lbs_to_kg(changes["weight"])
         # date= moves the entry to another day's log (same primitive as editing it).
-        target_date = _parse_log_date(inp.get("date"), getattr(user, "timezone", "UTC"))
-        if target_date:
-            target_log = await get_or_create_log_for_date(db, user.id, target_date)
-            if getattr(target_log, "status", None) == "closed":
-                target_log.status = "open"  # moving into a day silently reopens it
-            changes["new_daily_log_id"] = target_log.id
+        if inp.get("date"):
+            move_log, target_date = await _resolve_log(inp, user, today_log, db)
+            if target_date:
+                changes["new_daily_log_id"] = move_log.id
+        else:
+            target_date = None
         entry = await q_update_exercise_entry(db, entry_id, user.id, **changes)
         if not entry:
             return f"No exercise entry #{entry_id} found in today's log."
