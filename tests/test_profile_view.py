@@ -268,3 +268,49 @@ async def test_cardio_canonical_only_when_present(db, make_user):
     cardio = next(s for s in m["standard"]["fitness"] if s["label"] == "Favorite cardio")
     assert cardio["chips"] == ["Spin", "incline walk"]
     assert all(c["label"] != "Cardio Preference" for c in m["custom"])
+
+
+def test_split_list_preserves_thousands_separator():
+    """A thousands comma in a number must NOT fracture a list value."""
+    from memory.profile_view import _split_list
+    assert _split_list("9,200 steps/day") == ["9,200 steps/day"]
+    assert _split_list("running, walking, cycling") == ["running", "walking", "cycling"]
+    assert _split_list("averages 9,200 steps/day") == ["averages 9,200 steps/day"]
+    assert _split_list("Spin, 1,500 cal burn") == ["Spin", "1,500 cal burn"]
+
+
+async def test_steps_separated_from_favorite_cardio(db, make_user):
+    """Regression (Ryan): a step count mis-filed under the cardio key must surface
+    as 'Daily steps', NOT as comma-split chips under 'Favorite cardio'."""
+    from memory.attribute_store import upsert_attribute, get_all_attributes
+    u = await make_user(telegram_id="UP12", name="Ryan")
+    await upsert_attribute(db, u.id, attribute_key="fitness_cardio_habits",
+                           value="averages 9,200 steps/day", category="fitness",
+                           confidence="inferred")
+    attrs = await get_all_attributes(db, u.id)
+    m = build_unified_profile(u, None, attrs)
+    fit = m["standard"]["fitness"]
+
+    steps = next(s for s in fit if s["label"] == "Daily steps")
+    assert steps["filled"] is True
+    assert "9,200 steps/day" in steps["value"]      # number intact, no fracture
+    assert "averages" not in steps["value"].lower()  # leading qualifier stripped
+
+    cardio = next(s for s in fit if s["label"] == "Favorite cardio")
+    assert cardio["filled"] is False                 # no step fragments leak in
+    assert cardio["chips"] == []
+
+
+async def test_real_cardio_activities_still_show(db, make_user):
+    """A genuine cardio-activities value still populates Favorite cardio, and no
+    empty Daily steps slot appears (hide_empty)."""
+    from memory.attribute_store import upsert_attribute, get_all_attributes
+    u = await make_user(telegram_id="UP13", name="Test")
+    await upsert_attribute(db, u.id, attribute_key="fitness_cardio_habits",
+                           value="walking, cycling", category="fitness", confidence="confirmed")
+    attrs = await get_all_attributes(db, u.id)
+    m = build_unified_profile(u, None, attrs)
+    fit = m["standard"]["fitness"]
+    cardio = next(s for s in fit if s["label"] == "Favorite cardio")
+    assert cardio["chips"] == ["walking", "cycling"]
+    assert all(s["label"] != "Daily steps" for s in fit)  # hidden when no steps

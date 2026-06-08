@@ -25,9 +25,18 @@ Editability mirrors the existing PATCH /api/profile whitelist exactly — a fact
 is editable iff its column is in that whitelist, so no new write surface is
 introduced.
 """
+import re
 from typing import Optional
 
 from db.models import User, UserPreferences, UserAttribute
+
+
+def _split_list(value) -> list[str]:
+    """Split a comma-separated attribute value into items WITHOUT breaking numbers
+    that use a thousands separator (e.g. "9,200 steps/day" stays one item, while
+    "running, walking" splits into two). Splits on a comma only when it's followed
+    by a non-digit or end-of-string — a list separator, never a thousands comma."""
+    return [x.strip() for x in re.split(r",(?=\D|$)", str(value)) if x.strip()]
 
 
 # Order categories render in (declared 'goals' first, then the learned-attr cats)
@@ -73,6 +82,12 @@ STANDARD_SCHEMA = {
          "match": ["training_time", "workout_time", "training time", "workout time"]},
         {"key": "fitness_training_frequency", "label": "Training frequency", "type": "single"},
         {"key": "fitness_experience",         "label": "Experience",         "type": "single", "col": "experience"},
+        # Steps are their OWN metric — keep them out of "Favorite cardio" (which is
+        # for activities like walking/running). value_match catches step counts even
+        # when they were mis-filed under a cardio key, and claims them first so the
+        # cardio slot below never absorbs them. hide_empty: only shows when present.
+        {"key": "fitness_daily_steps",        "label": "Daily steps",        "type": "single",
+         "match": ["step"], "value_match": ["step"], "hide_empty": True},
         {"key": "fitness_cardio_habits",      "label": "Favorite cardio",    "type": "list",
          "match": ["cardio"]},
         {"key": "fitness_sport",              "label": "Sport",              "type": "single", "col": "sport",
@@ -226,6 +241,23 @@ def build_unified_profile(
                 hits.append(a)
         return hits
 
+    def _value_hits(slot_cat: str, value_kw: list) -> list:
+        """Active attrs whose VALUE contains a keyword — catches facts mis-filed
+        under the wrong key (e.g. a step count stored as 'favorite cardio'). Scoped
+        to the slot's category (+ generic 'custom') and never re-claims a covered key."""
+        if not value_kw:
+            return []
+        hits = []
+        for a in active:
+            if a.attribute_key in covered:
+                continue
+            acat = a.category or "custom"
+            if acat != slot_cat and acat != "custom":
+                continue
+            if any(kw in (a.value or "").lower() for kw in value_kw):
+                hits.append(a)
+        return hits
+
     for cat in STANDARD_ORDER:
         out = []
         for slot in STANDARD_SCHEMA[cat]:
@@ -248,13 +280,13 @@ def build_unified_profile(
                 if has_derived:
                     sources.append(list(derived[key]))
                 for ak in [key] + slot.get("aliases", []):
-                    if ak in by_key:
-                        sources.append(str(by_key[ak].value).split(","))
+                    if ak in by_key and ak not in covered:
+                        sources.append(_split_list(by_key[ak].value))
                         covered.add(ak)
                 hits = _concept_hits(cat, match_kw)
                 if not sources:
                     for a in hits:
-                        sources.append(str(a.value).split(","))
+                        sources.append(_split_list(a.value))
                 for a in hits:
                     covered.add(a.attribute_key)
                 chips, seen = [], set()
@@ -312,6 +344,20 @@ def build_unified_profile(
                         val = hit.value + (f" {hit.unit}" if hit.unit else "")
                         fact.update(value=val, filled=True, origin="attribute", confidence=hit.confidence)
                         covered.add(hit.attribute_key)
+                # 2.5) value match — claim a fact mis-filed under another key (e.g. a
+                #      step count stored as 'favorite cardio'). Covered so the slots
+                #      that follow (cardio) never re-absorb it.
+                if slot.get("value_match"):
+                    vhits = _value_hits(cat, slot["value_match"])
+                    if vhits:
+                        if not fact["filled"]:
+                            m = vhits[0]
+                            val = m.value + (f" {m.unit}" if m.unit else "")
+                            val = re.sub(r"^(averages?|about|approx\.?|around|roughly|~)\s+",
+                                         "", val, flags=re.I)
+                            fact.update(value=val, filled=True, origin="attribute", confidence=m.confidence)
+                        for a in vhits:
+                            covered.add(a.attribute_key)
                 # 3) concept match — fill if still empty, then absorb the rest so
                 #    differently-worded restatements don't clutter Custom.
                 hits = _concept_hits(cat, match_kw)
