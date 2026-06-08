@@ -199,7 +199,7 @@ body{{
 .day-col{{display:flex;flex-direction:column}}
 
 /* ── MACRO STRIP ─────────────────────────────────────────── */
-.macro-strip{{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--bd);border:1px solid var(--bd);border-radius:14px;overflow:hidden;margin-bottom:10px;}}
+.macro-strip{{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:10px;}}
 
 /* ── COMPACT DAY STATUS ROW ──────────────────────────────── */
 .day-status{{display:flex;align-items:center;gap:6px;margin:8px 0 14px;flex-wrap:wrap}}
@@ -272,7 +272,7 @@ body{{
 .whoop-rec-high .whoop-stat-val{{color:var(--ac)}}
 .whoop-rec-mid  .whoop-stat-val{{color:var(--ye)}}
 .whoop-rec-low  .whoop-stat-val{{color:var(--re)}}
-.macro-cell{{background:var(--sf);padding:11px 13px;}}
+.macro-cell{{background:var(--sf);border:1px solid var(--bd);border-radius:12px;padding:11px 13px;box-shadow:var(--sh);}}
 .mc-label{{font-family:'Geist Mono','SF Mono',monospace;font-size:9.5px;font-weight:500;text-transform:uppercase;letter-spacing:.1em;color:var(--mu);margin-bottom:4px;}}
 .mc-num{{font-family:'Instrument Serif','Times New Roman',serif;font-size:28px;letter-spacing:-.01em;line-height:1;}}
 .mc-sub{{font-size:11px;color:var(--mu);margin-top:3px;line-height:1.3;}}
@@ -935,6 +935,10 @@ body{{
   width:6px;height:6px;border-radius:50%;flex-shrink:0;align-self:center;
   background:#f0a500;opacity:.7;box-shadow:0 0 5px rgba(240,165,0,.5);
 }}
+.pf-learning{{
+  font-size:11px;color:var(--mu);padding:9px 16px 10px;
+  border-top:1px solid var(--bd);letter-spacing:.01em;
+}}
 .pf-legend{{
   display:flex;flex-wrap:wrap;gap:6px 15px;margin:15px 2px 2px;
   font-size:10.5px;color:var(--mu);opacity:.7;line-height:1.4;
@@ -1464,7 +1468,7 @@ footer{{
     <div class="day-status">
       <span id="wo-badge" class="ds-pill"><span class="tcb"></span>No workout</span>
       <span id="ca-badge" class="ds-pill"><span class="tcb"></span>No cardio</span>
-      <span id="wt-badge" class="ds-pill"><span class="tcb"></span>No water</span>
+      <span id="wt-badge" class="ds-pill on" style="display:none"></span>
       <button class="ds-share" onclick="shareDay()" aria-label="Share day">&#8679;</button>
     </div>
 
@@ -2402,10 +2406,16 @@ function renderDayTab(d){{
   if(cb){{var caOn=!!day.cardio_completed;cb.className='ds-pill'+(caOn?' on':'');cb.innerHTML='<span class="tcb">'+(caOn?'&#10003;':'')+'</span>'+(caOn?'Cardio':'No cardio');}}
   var wb2=document.getElementById('wt-badge');
   if(wb2){{
-    var wOn=day.water_ml>0;
-    var wAmt=day.water_ml>=1000?(day.water_ml/1000).toFixed(1)+'L':Math.round(day.water_ml||0)+'ml';
-    wb2.className='ds-pill'+(wOn?' on':'');
-    wb2.innerHTML='<span class="tcb">'+(wOn?'&#10003;':'')+'</span>'+(wOn?'Water '+wAmt:'No water');
+    // Water is opt-in — only show the pill when the user actually logs it, so it's
+    // never a permanent "No water" guilt-chip for people who don't track it.
+    if(day.water_ml>0){{
+      var wAmt=day.water_ml>=1000?(day.water_ml/1000).toFixed(1)+'L':Math.round(day.water_ml)+'ml';
+      wb2.style.display='inline-flex';
+      wb2.className='ds-pill on';
+      wb2.innerHTML='<span class="tcb">&#10003;</span>Water '+wAmt;
+    }}else{{
+      wb2.style.display='none';
+    }}
   }}
 
   var fe=day.food_entries||[];
@@ -3051,25 +3061,51 @@ function renderAIProfile(data) {{
       '<div class="inrow-right">' + right + confDot + edit + '</div></div>';
   }}
 
+  // One row for a learned/custom attribute (with remove button).
+  function _customRow(c) {{
+    var confDot = c.confidence
+      ? '<span class="conf-dot" style="background:' + (CONF_COLORS[c.confidence]||'var(--mu)') + '" title="' + esc(c.confidence) + '"></span>' : '';
+    var rm = c.key ? '<button class="inrow-x" title="Remove from profile" data-key="' + esc(c.key) +
+      '" data-label="' + esc(c.label) + '" onclick="hideAttribute(this)">&#10005;</button>' : '';
+    return '<div class="inrow"><span class="inlbl">' + esc(c.label) + '</span>' +
+      '<div class="inrow-right"><span class="inval">' + esc(c.value) + '</span>' + confDot + rm + '</div></div>';
+  }}
+  function _section(label, rowsHtml, learnLabels) {{
+    if (!rowsHtml) return '';  // skip a section with no real content
+    var learn = (learnLabels && learnLabels.length)
+      ? '<div class="pf-learning">Still learning &middot; ' + learnLabels.map(esc).join(' &middot; ') + '</div>' : '';
+    return '<div style="margin-top:20px"><div class="stitle" style="margin-top:0">' + esc(label) + '</div>' +
+      '<div class="infocrd">' + rowsHtml + learn + '</div></div>';
+  }}
+
+  // Nest custom/learned attributes under the section their category belongs to,
+  // instead of one catch-all "Custom Tracking" block. Leftover categories that
+  // don't map to a standard section collapse into a single "Other" group.
+  var custom = (data && data.custom) || [];
+  var customByCat = {{}};
+  custom.forEach(function(c) {{
+    var k = (c.category || 'custom').toLowerCase();
+    (customByCat[k] = customByCat[k] || []).push(c);
+  }});
+
   var html = '';
   STD_ORDER.forEach(function(cat) {{
     var slots = std[cat] || [];
-    if (!slots.length) return;
-    html += '<div style="margin-top:20px"><div class="stitle" style="margin-top:0">' + esc(CATEGORY_LABELS[cat]||cat) + '</div>' +
-      '<div class="infocrd">' + slots.map(function(s){{ return _slotRow(s, cat); }}).join('') + '</div></div>';
+    var filledRows = slots.filter(function(s){{ return s.filled; }})
+      .map(function(s){{ return _slotRow(s, cat); }}).join('');
+    var custRows = (customByCat[cat] || []).map(_customRow).join('');
+    delete customByCat[cat];
+    // Empty standard slots collapse into one compact "still learning" footer.
+    var learnLabels = slots.filter(function(s){{ return !s.filled; }})
+      .map(function(s){{ return s.label; }});
+    html += _section(CATEGORY_LABELS[cat]||cat, filledRows + custRows, learnLabels);
   }});
 
-  var custom = (data && data.custom) || [];
-  if (custom.length) {{
-    html += '<div style="margin-top:20px"><div class="stitle" style="margin-top:0">' + esc(CATEGORY_LABELS['custom']||'Custom Tracking') + '</div>' +
-      '<div class="infocrd">' + custom.map(function(c) {{
-        var confDot = c.confidence
-          ? '<span class="conf-dot" style="background:' + (CONF_COLORS[c.confidence]||'var(--mu)') + '" title="' + esc(c.confidence) + '"></span>' : '';
-        var rm = c.key ? '<button class="inrow-x" title="Remove from profile" data-key="' + esc(c.key) +
-          '" data-label="' + esc(c.label) + '" onclick="hideAttribute(this)">&#10005;</button>' : '';
-        return '<div class="inrow"><span class="inlbl">' + esc(c.label) + '</span>' +
-          '<div class="inrow-right"><span class="inval">' + esc(c.value) + '</span>' + confDot + rm + '</div></div>';
-      }}).join('') + '</div></div>';
+  // Any custom attrs whose category isn't a standard section → one "Other" group.
+  var leftover = [];
+  Object.keys(customByCat).forEach(function(k){{ leftover = leftover.concat(customByCat[k]); }});
+  if (leftover.length) {{
+    html += _section(CATEGORY_LABELS['custom']||'Other', leftover.map(_customRow).join(''), null);
   }}
 
   // Super-subtle legend: what the dots mean + how to remove a custom item.
