@@ -131,7 +131,7 @@ async def consolidate_user_profile(user, db) -> dict:
             system=_CONSOLIDATOR_SYSTEM,
             tools=False,
             max_tokens=400,
-            model="claude-haiku-4-5-20251001",
+            model="claude-sonnet-4-6",
         )
         raw = (result.get("text") or "").strip()
         raw = re.sub(r"^```(?:json)?\s*", "", raw)
