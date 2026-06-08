@@ -1915,7 +1915,7 @@ async function loadDayData(d){{
 // ── Arnie's learning progress ─────────────────────────────────────────────
 // A small checklist + bar that shows users Arnie sharpens as they feed it more.
 // Each item is a dimension Arnie learns about them; uses only the stats payload
-// (zero backend). Always shown when onboarded — at 100% it reads as "dialed in".
+// (zero backend). Hides entirely once all dimensions are learned (100%).
 function renderLearningProgress(d){{
   var wrap=document.getElementById('learn-wrap');
   if(!wrap)return;
@@ -1931,6 +1931,9 @@ function renderLearningProgress(d){{
     {{label:'Recovery data',    done:!!(p.whoop_connected||p.apple_health_connected)}},
   ];
   var done=items.filter(function(i){{return i.done;}}).length;
+  // Once Arnie has learned every dimension, the indicator has served its purpose —
+  // hide it so the day view stays clean for dialed-in users.
+  if(done>=items.length){{wrap.style.display='none';return;}}
   var pctv=Math.round(done/items.length*100);
   var fill=document.getElementById('learn-fill');if(fill)fill.style.width=pctv+'%';
   var lbl=document.getElementById('learn-pct');if(lbl)lbl.textContent=pctv+'% LEARNED';
