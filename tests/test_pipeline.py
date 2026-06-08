@@ -311,40 +311,6 @@ async def test_move_day_via_update_date_resyncs_both_days(pipeline_env):
 
 
 @pytest.mark.asyncio
-async def test_logging_silently_reopens_a_closed_day(pipeline_env):
-    """
-    Logging to a CLOSED day reopens it automatically at the tool layer — so Arnie never
-    has to call reopen_day or narrate "your day is closed, let me reopen it". The user
-    just gets their log + a positive confirmation.
-    """
-    env = pipeline_env
-    addr, chat = "+15550001111", "iMessage;-;+15550001111"
-    await _seed_user(env["Maker"])
-
-    from sqlalchemy import select
-    from db.models import User, DailyLog
-    from db.queries import get_or_create_today_log
-    async with env["Maker"]() as db:
-        u = (await db.execute(select(User).where(User.telegram_id == f"im:{addr}"))).scalar_one()
-        log = await get_or_create_today_log(db, u.id, u.timezone or "UTC")
-        log.status = "closed"
-        await db.commit()
-
-    env["set_llm"](text="", tool_calls=[
-        {"name": "log_food", "input": {"food_name": "late snack", "calories": 200,
-                                       "protein": 10, "carbs": 20, "fats": 8}},
-    ], follow_up_text="logged it 👊|||you're at 200 now.")
-    await env["H"].run_imessage_pipeline(addr, chat, "had a late snack", message_guid="c1")
-
-    async with env["Maker"]() as db:
-        u = (await db.execute(select(User).where(User.telegram_id == f"im:{addr}"))).scalar_one()
-        log = (await db.execute(
-            select(DailyLog).where(DailyLog.user_id == u.id)
-        )).scalars().first()
-    assert log.status == "open", "logging must silently reopen the closed day"
-
-
-@pytest.mark.asyncio
 async def test_workout_logged_for_yesterday_lands_on_yesterday(pipeline_env):
     """Workouts get the same date-flexibility as food: 'yesterday I benched and squatted'
     logs both exercises onto yesterday, not today."""

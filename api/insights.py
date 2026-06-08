@@ -87,11 +87,12 @@ def _build_summary(stats: dict) -> str:
             day_lines.append(f"  RHR: {snap['resting_hr']:.0f}bpm")
 
     # ── Recent context (last 7 logged days) for pacing ─────
-    closed = [h for h in history if h.get("status") == "closed" and h.get("date") != viewing_date]
-    if closed:
+    # Past days only — the day being viewed (or today) is still in flight.
+    past = [h for h in history if h.get("date") and h.get("date") < viewing_date]
+    if past:
         day_lines.append("")
         day_lines.append("RECENT LOGGED DAYS (for pacing context, last 7):")
-        for h in closed[-7:]:
+        for h in past[-7:]:
             day_lines.append(
                 f"  {h['date']}: {h['calories']} cal, {h['protein']}g P, "
                 f"workout={'✓' if h.get('workout') else '✗'}"
@@ -182,8 +183,13 @@ def _build_week_summary(stats: dict) -> str:
     tgt_cal = targets.get("calories") or 0
     tgt_pro = targets.get("protein") or 0
 
-    closed = [h for h in history if h.get("status") == "closed"]
-    last7 = closed[-7:]
+    # Past days only — today's totals are still moving until bedtime. The
+    # history list is already sorted by date ascending; the last entry is today
+    # (or empty if the user hasn't logged today). Drop today via date comparison.
+    from datetime import date as _date
+    today_iso = _date.today().isoformat()
+    past = [h for h in history if h.get("date") and h["date"] < today_iso]
+    last7 = past[-7:]
     lines = ["ANALYSIS PERIOD: last 7 logged days (analyse WEEKLY trends, not one day)",
              f"Daily targets: {tgt_cal} cal / {tgt_pro}g protein", ""]
 
@@ -204,7 +210,7 @@ def _build_week_summary(stats: dict) -> str:
         lines.append(f"  Workouts completed: {workouts}")
         lines.append("  Daily calories: " + ", ".join(str(c) for c in cals))
     else:
-        lines.append("No closed days logged in the past week.")
+        lines.append("No prior days logged in the past week.")
 
     if len(weights) >= 2:
         recent = weights[-7:] if len(weights) >= 7 else weights

@@ -1066,7 +1066,7 @@ async def _run_reminders():
 
                 # ── Night closeout (21:00–21:30) ──────────────────────────────
                 elif hour == 21 and minute < 30 and _freq_ok("night_closeout"):
-                    if log and log.status == "open" and log.total_calories > 0:
+                    if log and log.total_calories > 0:
                         msg = await _llm_nudge(user, log, prefs, health_snap, "night_closeout", name,
                                                recent_proactive=recent_proactive)
                         if not msg:

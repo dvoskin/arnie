@@ -21,7 +21,7 @@ from telegram.ext import (
 from db.database import AsyncSessionLocal, init_db
 from db.queries import (
     get_or_create_user, get_or_create_today_log, get_today_log,
-    get_recent_conversations, log_conversation, close_daily_log, reopen_daily_log,
+    get_recent_conversations, log_conversation,
     reload_user, reset_today_log, reset_all_user_data, get_or_create_webhook_token,
     add_feedback, clear_today_conversations, get_recent_logs,
 )
@@ -30,7 +30,6 @@ from core.platform import React
 from handlers.onboarding import (
     build_onboarding_system, get_onboarding_keyboard, is_onboarding_complete,
 )
-from handlers.daily_closeout import generate_closeout
 from memory.reflection import maybe_update_memory
 from multimodal.voice_handler import process_voice
 from multimodal.image_handler import process_general_image
@@ -115,8 +114,6 @@ TOOL RULES (no exceptions):
 - User wants to REMOVE an exercise ("delete my bench", "I didn't do that set") → delete_exercise_entry() with the [#id]
 - User states body weight → log_body_weight() — body weight only, never food weight
 - User drinks water → log_water()
-- "close the day" → close_day()
-- Day is CLOSED and user wants to log food/exercise/water → call reopen_day() FIRST, then immediately call the logging tool. Never refuse to log because the day is closed — just reopen it.
 - User explicitly asks to change a setting or target → update_profile()
 - User explicitly asks for a visual / image / diagram / infographic → generate_image()
 - DO NOT re-log anything already in today's log
@@ -983,8 +980,7 @@ async def cmd_ai(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             hist_data = [
                 {"date": str(l.date), "calories": round(l.total_calories or 0),
-                 "protein": round(l.total_protein or 0), "workout": l.workout_completed,
-                 "status": l.status}
+                 "protein": round(l.total_protein or 0), "workout": l.workout_completed}
                 for l in sorted(history, key=lambda x: x.date)
             ]
             weight_data = [
@@ -1120,8 +1116,12 @@ async def cmd_history(update: Update, context: ContextTypes.DEFAULT_TYPE):
         weights = await get_recent_weights(db, user.id, days=7)
         prefs = user.preferences
 
-        closed = [l for l in logs if l.status == "closed"]
-        if len(closed) < 3:
+        # Past days are always "finalized" — there's no open/closed state.
+        # Filter out today (which is still in progress) for the weekly summary.
+        from datetime import date as _date
+        today_d = _date.today()
+        past = [l for l in logs if l.date < today_d]
+        if len(past) < 3:
             await update.message.reply_text(
                 "Not enough history yet — /week needs at least 3 logged days to show useful trends. "
                 "Keep logging and check back."
@@ -1129,7 +1129,7 @@ async def cmd_history(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         lines = ["<b>Last 7 days</b>", ""]
-        for log in sorted(closed, key=lambda l: l.date, reverse=True)[:7]:
+        for log in sorted(past, key=lambda l: l.date, reverse=True)[:7]:
             wo = "💪" if log.workout_completed else "  "
             cal_str = f"{log.total_calories:.0f}"
             if prefs and prefs.calorie_target:
@@ -1168,37 +1168,6 @@ async def cmd_memory(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Telegram message limit is 4096 chars
         text = mem[:3800]
         await update.message.reply_text(f"<pre>{text}</pre>", parse_mode="HTML")
-
-
-async def cmd_close(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Close the day's log."""
-    async with AsyncSessionLocal() as db:
-        user = await get_or_create_user(db, str(update.effective_user.id))
-        log = await get_today_log(db, user.id, user.timezone or "UTC")
-        if not log:
-            await update.message.reply_text("Nothing to close — you haven't logged anything today.")
-            return
-        if log.status == "closed":
-            await update.message.reply_text("Day's already closed.")
-            return
-        summary = await generate_closeout(user, log, db)
-        await close_daily_log(db, log.id)
-        await update.message.reply_text(**_fmt(summary))
-
-
-async def cmd_reopen(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Reopen a closed day's log."""
-    async with AsyncSessionLocal() as db:
-        user = await get_or_create_user(db, str(update.effective_user.id))
-        log = await get_today_log(db, user.id, user.timezone or "UTC")
-        if not log:
-            await update.message.reply_text("No log for today — start by telling me what you ate.")
-            return
-        if log.status == "open":
-            await update.message.reply_text("Today's log is already open — keep logging.")
-            return
-        await reopen_daily_log(db, log.id)
-        await update.message.reply_text("Day reopened. Keep logging — what's next?")
 
 
 async def cmd_reset(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1652,7 +1621,6 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/ai       coaching insights on your day &amp; trends\n"
         "/week     last 7 days recap &amp; trends\n"
         "/me       profile, targets &amp; settings\n"
-        "/close    close today's log\n"
         "/dash     open your personal dashboard\n"
         "/remind   turn daily check-ins on or off\n"
         "/connect  link Whoop or Apple Health\n"
@@ -1717,8 +1685,6 @@ def build_app() -> Application:
     app.add_handler(CommandHandler("ai",      cmd_ai))
     app.add_handler(CommandHandler("me",      cmd_me))
     app.add_handler(CommandHandler("week",    cmd_history))
-    app.add_handler(CommandHandler("close",   cmd_close))
-    app.add_handler(CommandHandler("reopen",  cmd_reopen))
     app.add_handler(CommandHandler("dash",    cmd_dash))
     app.add_handler(CommandHandler("link",    cmd_link))
     app.add_handler(CommandHandler("upgrade", cmd_upgrade))
@@ -1736,7 +1702,6 @@ def build_app() -> Application:
     # Aliases
     app.add_handler(CommandHandler("log",      cmd_today))
     app.add_handler(CommandHandler("summary",  cmd_today))
-    app.add_handler(CommandHandler("closeday", cmd_close))
     app.add_handler(MessageHandler(filters.VOICE, handle_voice))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))

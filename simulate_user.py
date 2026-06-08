@@ -168,7 +168,6 @@ async def build_sim_user(db) -> str:
     for i, day_data in enumerate(DAYS):
         is_today = (i == n_days - 1)
         log_date = today - timedelta(days=n_days - 1 - i)
-        status = "open" if is_today else "closed"
 
         total_cal  = sum(f[2] for f in day_data["foods"])
         total_pro  = sum(f[3] for f in day_data["foods"])
@@ -176,7 +175,7 @@ async def build_sim_user(db) -> str:
         total_fat  = sum(f[5] for f in day_data["foods"])
 
         daily_log = DailyLog(
-            user_id=user.id, date=log_date, status=status,
+            user_id=user.id, date=log_date,
             total_calories=total_cal, total_protein=total_pro,
             total_carbs=total_carb, total_fats=total_fat,
             total_water_ml=day_data["water_ml"],

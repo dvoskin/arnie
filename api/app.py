@@ -740,7 +740,6 @@ async def _build_stats_for_user(db, user, target_date=None):
             return None
         return {
             "date": str(log.date),
-            "status": log.status,
             "calories": round(log.total_calories or 0),
             "protein": round(log.total_protein or 0),
             "carbs": round(log.total_carbs or 0),
@@ -773,8 +772,7 @@ async def _build_stats_for_user(db, user, target_date=None):
          "protein": round(log.total_protein or 0),
          "carbs": round(log.total_carbs or 0),
          "fats": round(log.total_fats or 0),
-         "workout": log.workout_completed,
-         "status": log.status}
+         "workout": log.workout_completed}
         for log in sorted(history, key=lambda l: l.date)
     ]
 
@@ -1319,7 +1317,6 @@ async def admin_audit(token: str = Query(...), name: str = Query(...)):
                 pro_ok = abs(sum_pro - round(lg.total_protein or 0)) <= 1
                 days.append({
                     "date": str(lg.date),
-                    "status": lg.status,
                     "food_count": len(fe),
                     "exercise_count": len(ee),
                     "entry_sum_cal": sum_cal,

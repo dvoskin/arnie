@@ -236,7 +236,7 @@ async def print_final_state():
 
         log = await get_today_log(db, user.id, user.timezone or "UTC")
         if log:
-            info(f"\nToday's log [{log.status}]:")
+            info(f"\nToday's log:")
             info(f"  Calories: {log.total_calories:.0f}  Protein: {log.total_protein:.0f}g  "
                  f"Carbs: {log.total_carbs:.0f}g  Fats: {log.total_fats:.0f}g")
             info(f"  Workout: {log.workout_completed}  Cardio: {log.cardio_completed}")

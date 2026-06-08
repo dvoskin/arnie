@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from db.models import User, DailyLog, MemoryUpdate
 from db.queries import (
     add_food_entry, add_exercise_entry, add_body_metric,
-    close_daily_log, reopen_daily_log, reload_user,
+    reload_user,
     update_food_entry as q_update_food_entry,
     delete_food_entry as q_delete_food_entry,
     update_exercise_entry as q_update_exercise_entry,
@@ -78,16 +78,14 @@ async def _resolve_log(inp: dict, user, today_log, db):
     Determine which DailyLog to write to and return (target_log, past_date).
 
     If inp contains a parseable 'date' field pointing to a past date, get/create
-    that day's log. Otherwise use today_log. Silently reopens a closed log in either
-    case — no narration, no user-facing mention.
+    that day's log. Otherwise use today_log. Days have no open/closed state —
+    every day is editable, today or past.
     """
     past_date = _parse_log_date(inp.get("date"), getattr(user, "timezone", "UTC"))
     if past_date:
         target = await get_or_create_log_for_date(db, user.id, past_date)
     else:
         target = today_log
-    if getattr(target, "status", None) == "closed":
-        target.status = "open"
     return target, past_date
 
 
@@ -172,8 +170,6 @@ def deterministic_confirmation(tool_calls, log, prefs) -> str:
         return f"Done, removed it.|||{tail}"
     if "update_profile" in names:
         return "Got it, locked in. 👍|||Send me what you've eaten today and we'll keep building."
-    if "close_day" in names:
-        return "Day closed. That's a wrap. 🌙"
     return "All set. What's next?"
 
 
@@ -292,8 +288,8 @@ async def execute_tool_calls(
 
 
 async def _dispatch(name, inp, user, today_log, db, source_type):  # noqa: C901
-    # Guard: log_food/log_exercise/log_water/close_day require a real daily log
-    if name in ("log_food", "log_exercise", "log_water", "close_day"):
+    # Guard: log_food/log_exercise/log_water require a real daily log
+    if name in ("log_food", "log_exercise", "log_water"):
         if not getattr(today_log, "id", None):
             return "Skipped — day log not yet created (onboarding incomplete)"
 
@@ -522,17 +518,6 @@ async def _dispatch(name, inp, user, today_log, db, source_type):  # noqa: C901
             f"Water is a low-friction log — don't over-coach it. "
             f"If they're well-hydrated, one line and done. If still low, a brief nudge."
         )
-
-    elif name == "close_day":
-        await close_daily_log(db, today_log.id)
-        return "Day closed"
-
-    elif name == "reopen_day":
-        if not getattr(today_log, "id", None):
-            return "Skipped — no log to reopen"
-        await reopen_daily_log(db, today_log.id)
-        today_log.status = "open"
-        return "Day reopened"
 
     elif name == "generate_image":
         from core.llm import generate_image

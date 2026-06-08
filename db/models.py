@@ -109,7 +109,6 @@ class DailyLog(Base):
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey("users.id"))
     date = Column(Date, nullable=False)
-    status = Column(String, default="open")  # open / closed
     total_calories = Column(Float, default=0)
     total_protein = Column(Float, default=0)
     total_carbs = Column(Float, default=0)

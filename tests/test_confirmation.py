@@ -55,7 +55,10 @@ def test_delete_reports_new_total_not_blank():
 
 
 def test_no_bare_got_it_fallback():
-    out = deterministic_confirmation([{"name": "close_day", "input": {}}], _log(0, 0), _prefs())
+    # Use update_profile as a representative non-logging tool that falls through
+    # the priority chain to the generic confirmation. Same intent as before
+    # (was close_day, deleted in T1.1): the catch-all should never be a bare "got it."
+    out = deterministic_confirmation([{"name": "update_profile", "input": {}}], _log(0, 0), _prefs())
     assert out and "got it." != out.strip().lower()
 
 

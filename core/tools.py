@@ -204,30 +204,12 @@ _FITNESS_TOOLS = [
 ]
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# DAY MANAGEMENT TOOLS
-# ─────────────────────────────────────────────────────────────────────────────
+# Day close/reopen was deleted in T1.1: every day (today or past) is always
+# editable via the date= field on log_food / log_exercise / update_*_entry.
+# No status transition, no "closed" state. _DAY_TOOLS kept as empty list so
+# ALL_TOOLS below can stay structurally identical.
 
-_DAY_TOOLS = [
-    {
-        "name": "close_day",
-        "description": (
-            "Close the current day's log. "
-            "ONLY call when user explicitly says 'close the day', 'end my day', 'wrap up today'. "
-            "Do NOT call for any other reason."
-        ),
-        "input_schema": {"type": "object", "properties": {}},
-    },
-    {
-        "name": "reopen_day",
-        "description": (
-            "Reopen a closed day's log so the user can continue logging. "
-            "Call automatically when day is CLOSED and user wants to log — "
-            "then immediately proceed with the logging tool."
-        ),
-        "input_schema": {"type": "object", "properties": {}},
-    },
-]
+_DAY_TOOLS: list = []
 
 
 # ─────────────────────────────────────────────────────────────────────────────

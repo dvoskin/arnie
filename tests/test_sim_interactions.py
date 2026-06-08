@@ -277,7 +277,6 @@ class TestDeterministicConfirmationCombos:
     log_water → water
     delete → removed
     update_profile → profile
-    close_day → wrap-up
     generic fallback
     """
 
@@ -433,13 +432,6 @@ class TestDeterministicConfirmationCombos:
         tc = [{"name": "delete_exercise_entry", "input": {"entry_id": 2}}]
         out = deterministic_confirmation(tc, _log(), _prefs())
         assert "removed" in out.lower()
-
-    # ── close_day ─────────────────────────────────────────────────────────────
-
-    def test_close_day_wrap_message(self):
-        tc = [{"name": "close_day", "input": {}}]
-        out = deterministic_confirmation(tc, _log(2100, 180), _prefs())
-        assert "wrap" in out.lower() or "closed" in out.lower()
 
     # ── body weight fallback priority ─────────────────────────────────────────
 

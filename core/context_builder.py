@@ -69,7 +69,7 @@ def fmt_log(log: Optional[DailyLog]) -> str:
         exercises = "\nExercise:\n" + "\n".join(lines)
 
     return (
-        f"TODAY {log.date} [{log.status.upper()}]\n"
+        f"TODAY {log.date}\n"
         f"Cals {log.total_calories:.0f}  |  "
         f"P {log.total_protein:.0f}g  C {log.total_carbs:.0f}g  F {log.total_fats:.0f}g  |  "
         f"Water {log.total_water_ml:.0f}ml\n"
@@ -100,11 +100,13 @@ def fmt_profile(user: User, prefs: Optional[UserPreferences]) -> str:
 
 
 def fmt_history(logs: List[DailyLog]) -> str:
-    closed = [l for l in logs if l.status == "closed"]
-    if not closed:
-        return "No closed days yet."
+    # Past days only — today's totals are still moving until bedtime.
+    today_d = date.today()
+    past = [l for l in logs if l.date < today_d]
+    if not past:
+        return "No prior days logged yet."
     lines = []
-    for l in closed[:7]:
+    for l in past[:7]:
         line = (
             f"{l.date}: {l.total_calories:.0f}cal  {l.total_protein:.0f}gP  "
             f"workout={'✓' if l.workout_completed else '✗'}"
@@ -275,9 +277,10 @@ def fmt_weekly_breakdown(logs: List[DailyLog], prefs: Optional[UserPreferences])
     for week_offset in range(4):
         week_end = today_date - timedelta(days=week_offset * 7)
         week_start = week_end - timedelta(days=6)
+        # Past finalized days only — today's totals are still in flight.
         week_logs = [
             l for l in logs
-            if week_start <= l.date <= week_end and l.status == "closed"
+            if week_start <= l.date <= week_end and l.date < today_date
         ]
         if not week_logs:
             continue
@@ -366,10 +369,10 @@ def adherence_insights(logs: List[DailyLog], prefs: Optional[UserPreferences]) -
     if workout_days:
         lines.append(f"Workouts this week: {workout_days}")
 
-    # Average daily calories this week (closed days only)
-    closed = [l for l in logs if l.status == "closed" and l.date >= week_ago]
-    if closed and prefs and prefs.calorie_target:
-        avg_cal = sum(l.total_calories for l in closed) / len(closed)
+    # Average daily calories this week — past days only (today still in flight).
+    finalized = [l for l in logs if l.date < today_date and l.date >= week_ago]
+    if finalized and prefs and prefs.calorie_target:
+        avg_cal = sum(l.total_calories for l in finalized) / len(finalized)
         diff = avg_cal - prefs.calorie_target
         lines.append(f"Avg calories this week: {avg_cal:.0f} ({diff:+.0f} vs target)")
 

@@ -13,13 +13,14 @@ from skills import load_all_skills
 from handlers.tool_executor import deterministic_confirmation
 
 
-# ── Skill isolation: only the 4 foundational skills are active ──────────────────
+# ── Skill isolation: only the 3 foundational skills are active ──────────────────
+# DAILY CLOSEOUT was removed in T1.1 when day close/reopen was deleted.
 
-_ACTIVE_EXPECTED = {"DAILY CLOSEOUT", "FOOD SEARCH", "MEAL SUGGESTIONS", "WORKOUT BUILDER"}
+_ACTIVE_EXPECTED = {"FOOD SEARCH", "MEAL SUGGESTIONS", "WORKOUT BUILDER"}
 _DISABLED = [
     "CARDIO", "HIIT", "YOGA", "RESTAURANT", "TRAVEL", "WEEKLY SUMMARY",
     "PROGRESS", "STRENGTH", "RECOVERY", "FLEXIBILITY", "SPORT", "GROCERY",
-    "AGGRESSIVE", "WEIGH",
+    "AGGRESSIVE", "WEIGH", "CLOSEOUT",
 ]
 
 

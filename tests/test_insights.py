@@ -3,15 +3,16 @@ from api.insights import _build_week_summary
 
 
 def test_week_summary_includes_nutrition_weight_and_wearable():
+    # Use dates well in the past so the past-days filter (today's date) keeps them all.
     stats = {
         "user": {"goal_weight_lbs": 180},
         "targets": {"calories": 2100, "protein": 200},
         "history": [
-            {"status": "closed", "calories": 2200, "protein": 180, "workout": True,
-             "date": f"2026-06-0{i}"} for i in range(1, 8)
+            {"calories": 2200, "protein": 180, "workout": True,
+             "date": f"2024-06-0{i}"} for i in range(1, 8)
         ],
-        "weights": [{"lbs": 186.0, "date": "2026-06-01"},
-                    {"lbs": 185.2, "date": "2026-06-05"}],
+        "weights": [{"lbs": 186.0, "date": "2024-06-01"},
+                    {"lbs": 185.2, "date": "2024-06-05"}],
         "health": [{"source": "whoop", "recovery_score": 62, "strain": 13.1,
                     "sleep_hours": 6.8, "hrv": 82} for _ in range(5)],
     }
@@ -27,4 +28,4 @@ def test_week_summary_includes_nutrition_weight_and_wearable():
 def test_week_summary_handles_no_data():
     s = _build_week_summary({"user": {}, "targets": {}, "history": [],
                              "weights": [], "health": []})
-    assert "No closed days logged" in s
+    assert "No prior days logged" in s

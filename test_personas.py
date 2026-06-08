@@ -271,7 +271,6 @@ async def build_persona(db, persona: dict) -> str:
         daily_log = DailyLog(
             user_id=user.id,
             date=log_date,
-            status="closed" if day_offset < len(persona["days"]) - 1 else "open",
             total_calories=total_cal,
             total_protein=total_pro,
             total_carbs=total_carbs,
