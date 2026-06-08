@@ -1356,9 +1356,10 @@ footer{{
 .learn-chip.done{{color:var(--ac)}}
 .learn-chip .lc-mk{{font-size:10px;color:var(--di);transition:color .2s}}
 .learn-chip.done .lc-mk{{color:var(--ac)}}
-.learn-question{{font-size:11px;color:var(--di);margin-top:10px;min-height:15px;opacity:.85;font-style:italic;letter-spacing:.01em;transition:opacity .35s ease}}
+.learn-q-row{{margin-top:10px;min-height:16px}}
+.learn-question{{font-size:12px;color:var(--mu);font-style:italic;letter-spacing:.01em;transition:opacity .35s ease;opacity:.9}}
 .learn-question.fading{{opacity:0}}
-.learn-cta{{background:none;border:none;padding:0;cursor:pointer;font-size:11px;color:var(--ac);font-weight:500;opacity:.8;letter-spacing:.02em;margin-top:7px;display:inline-block}}
+.learn-cta{{background:none;border:none;padding:0;cursor:pointer;font-size:12px;color:var(--ac);font-weight:500;opacity:.85;letter-spacing:.02em;margin-left:6px;display:inline}}
 .learn-cta:hover{{opacity:1;text-decoration:underline}}
 
 /* ── Settings preference cards (profile tab) ─────────────── */
@@ -1468,8 +1469,7 @@ footer{{
       <div class="stitle" style="margin-bottom:8px">Arnie's learning <span id="learn-pct" style="font-weight:400;opacity:.55;font-size:9px;letter-spacing:.04em"></span></div>
       <div class="learn-bar"><div class="learn-fill" id="learn-fill" style="width:0%"></div></div>
       <div class="learn-chips" id="learn-list"></div>
-      <div id="learn-question" class="learn-question"></div>
-      <button class="learn-cta" onclick="switchTab('profile')">Tell Arnie more &#8594;</button>
+      <div class="learn-q-row"><span id="learn-question" class="learn-question"></span><button class="learn-cta" onclick="switchTab('profile')">Tell Arnie &#8594;</button></div>
     </div>
 
     <!-- MACRO STRIP -->
@@ -1988,9 +1988,7 @@ function renderLearningProgress(d){{
   var lbl=document.getElementById('learn-pct');if(lbl)lbl.textContent=pctv+'% LEARNED';
   var list=document.getElementById('learn-list');
   if(list)list.innerHTML=items.map(function(it){{
-    return '<span class="learn-chip'+(it.done?' done':'')+'">'+
-      '<span class="lc-mk">'+(it.done?'&#10003;':'&#9675;')+'</span>'+esc(it.label)+
-      '</span>';
+    return '<span class="learn-chip'+(it.done?' done':'')+'">'+esc(it.label)+'</span>';
   }}).join('');
   // Build a rotating pool of context-aware questions from undone categories
   var qmap=[
