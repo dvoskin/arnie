@@ -1356,6 +1356,10 @@ footer{{
 .learn-chip.done{{color:var(--ac)}}
 .learn-chip .lc-mk{{font-size:10px;color:var(--di);transition:color .2s}}
 .learn-chip.done .lc-mk{{color:var(--ac)}}
+.learn-question{{font-size:11px;color:var(--di);margin-top:10px;min-height:15px;opacity:.85;font-style:italic;letter-spacing:.01em;transition:opacity .35s ease}}
+.learn-question.fading{{opacity:0}}
+.learn-cta{{background:none;border:none;padding:0;cursor:pointer;font-size:11px;color:var(--ac);font-weight:500;opacity:.8;letter-spacing:.02em;margin-top:7px;display:inline-block}}
+.learn-cta:hover{{opacity:1;text-decoration:underline}}
 
 /* ── Settings preference cards (profile tab) ─────────────── */
 .pref-card{{background:var(--sf);border:1px solid var(--bd);border-radius:16px;padding:15px 16px;margin-bottom:9px;box-shadow:var(--sh)}}
@@ -1464,6 +1468,8 @@ footer{{
       <div class="stitle" style="margin-bottom:8px">Arnie's learning <span id="learn-pct" style="font-weight:400;opacity:.55;font-size:9px;letter-spacing:.04em"></span></div>
       <div class="learn-bar"><div class="learn-fill" id="learn-fill" style="width:0%"></div></div>
       <div class="learn-chips" id="learn-list"></div>
+      <div id="learn-question" class="learn-question"></div>
+      <button class="learn-cta" onclick="switchTab('profile')">Tell Arnie more &#8594;</button>
     </div>
 
     <!-- MACRO STRIP -->
@@ -1972,7 +1978,11 @@ function renderLearningProgress(d){{
   var done=items.filter(function(i){{return i.done;}}).length;
   // Once Arnie has learned every dimension, the indicator has served its purpose —
   // hide it so the day view stays clean for dialed-in users.
-  if(done>=items.length){{wrap.style.display='none';return;}}
+  if(done>=items.length){{
+    wrap.style.display='none';
+    if(window._learnQTimer){{clearInterval(window._learnQTimer);window._learnQTimer=null;}}
+    return;
+  }}
   var pctv=Math.round(done/items.length*100);
   var fill=document.getElementById('learn-fill');if(fill)fill.style.width=pctv+'%';
   var lbl=document.getElementById('learn-pct');if(lbl)lbl.textContent=pctv+'% LEARNED';
@@ -1982,6 +1992,33 @@ function renderLearningProgress(d){{
       '<span class="lc-mk">'+(it.done?'&#10003;':'&#9675;')+'</span>'+esc(it.label)+
       '</span>';
   }}).join('');
+  // Build a rotating pool of context-aware questions from undone categories
+  var qmap=[
+    ["What's your main fitness goal right now?","Should Arnie set a calorie or protein target?"],
+    ["What foods do you eat most days?","How would you describe your typical diet?"],
+    ["Do you weigh yourself regularly?","What's your current weight?"],
+    ["What's your current workout split?","What's your favorite type of cardio?"],
+    ["What time do you wake up or go to bed?","Do you track your sleep or recovery?"],
+  ];
+  var questions=[];
+  items.forEach(function(it,idx){{if(!it.done)questions=questions.concat(qmap[idx]);}});
+  var qel=document.getElementById('learn-question');
+  if(qel&&questions.length){{
+    if(window._learnQTimer){{clearInterval(window._learnQTimer);window._learnQTimer=null;}}
+    window._learnQIdx=0;
+    qel.textContent=questions[0];
+    qel.classList.remove('fading');
+    if(questions.length>1){{
+      window._learnQTimer=setInterval(function(){{
+        qel.classList.add('fading');
+        setTimeout(function(){{
+          window._learnQIdx=(window._learnQIdx+1)%questions.length;
+          qel.textContent=questions[window._learnQIdx];
+          qel.classList.remove('fading');
+        }},350);
+      }},4000);
+    }}
+  }}
   wrap.style.display='block';
 }}
 
