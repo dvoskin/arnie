@@ -1325,24 +1325,24 @@ footer{{
 .tc-up{{color:var(--ac)}} .tc-dn{{color:var(--re)}} .tc-fl{{color:var(--mu)}}
 
 /* ── Settings preference cards (profile tab) ─────────────── */
-.pref-card{{background:var(--sf);border:1px solid var(--bd);border-radius:14px;padding:14px 16px;margin-bottom:10px}}
-.pref-title{{font-size:10px;letter-spacing:.07em;text-transform:uppercase;color:var(--mu);font-weight:700;margin-bottom:10px}}
-.pref-row{{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}}
-.pref-lbl{{font-size:13px;color:var(--tx2)}}
-.pref-toggle{{position:relative;display:inline-block;width:40px;height:22px;flex-shrink:0}}
+.pref-card{{background:var(--sf);border:1px solid var(--bd);border-radius:16px;padding:15px 16px;margin-bottom:9px;box-shadow:var(--sh)}}
+.pref-row{{display:flex;align-items:center;justify-content:space-between}}
+.pref-lbl{{font-size:13px;color:var(--mu);font-weight:400}}
+.pref-toggle{{position:relative;display:inline-block;width:38px;height:21px;flex-shrink:0}}
 .pref-toggle input{{opacity:0;width:0;height:0}}
-.pref-slider{{position:absolute;inset:0;background:var(--sf3);border-radius:22px;cursor:pointer;transition:.25s}}
-.pref-slider::before{{content:'';position:absolute;height:16px;width:16px;left:3px;top:3px;background:#fff;border-radius:50%;transition:.25s}}
+.pref-slider{{position:absolute;inset:0;background:var(--sf3);border-radius:21px;cursor:pointer;transition:.25s}}
+.pref-slider::before{{content:'';position:absolute;height:15px;width:15px;left:3px;top:3px;background:#fff;border-radius:50%;transition:.25s}}
 .pref-toggle input:checked+.pref-slider{{background:var(--ac)}}
-.pref-toggle input:checked+.pref-slider::before{{transform:translateX(18px)}}
-.pref-range{{-webkit-appearance:none;appearance:none;width:100%;height:4px;border-radius:4px;background:var(--sf3);accent-color:var(--ac);cursor:pointer;outline:none;margin:2px 0}}
-.pref-range::-webkit-slider-thumb{{-webkit-appearance:none;appearance:none;width:16px;height:16px;border-radius:50%;background:var(--ac);cursor:pointer;border:none}}
-.pref-range::-moz-range-thumb{{width:16px;height:16px;border-radius:50%;background:var(--ac);cursor:pointer;border:none}}
-.pref-ticks{{display:flex;justify-content:space-between;margin-top:7px}}
+.pref-toggle input:checked+.pref-slider::before{{transform:translateX(17px)}}
+.pref-range{{-webkit-appearance:none;appearance:none;width:100%;height:4px;border-radius:4px;background:var(--sf3);accent-color:var(--ac);cursor:pointer;outline:none;margin:0}}
+.pref-range::-webkit-slider-thumb{{-webkit-appearance:none;appearance:none;width:15px;height:15px;border-radius:50%;background:var(--ac);cursor:pointer;border:none}}
+.pref-range::-moz-range-thumb{{width:15px;height:15px;border-radius:50%;background:var(--ac);cursor:pointer;border:none}}
+.pref-ticks{{display:flex;justify-content:space-between;margin-top:9px}}
 .pref-tick{{font-size:10px;color:var(--mu);flex:1;text-align:center;transition:.18s}}
 .pref-tick:first-child{{text-align:left}}
 .pref-tick:last-child{{text-align:right}}
-.pref-tick.active{{color:var(--ac);font-weight:700}}
+.pref-tick.active{{color:var(--ac);font-weight:600}}
+.pref-hint{{font-size:11px;color:var(--mu);margin-top:9px}}
 </style>
 </head>
 <body>
@@ -1611,16 +1611,16 @@ footer{{
     </div>
 
     <!-- SETTINGS: Reminders & Check-ins -->
-    <div class="stitle" style="margin-top:24px">Check-ins &amp; reminders</div>
+    <div class="stitle" style="margin-top:24px">Reminders</div>
     <div class="pref-card" id="remind-card">
-      <div class="pref-row" style="margin-bottom:14px">
+      <div class="pref-row">
         <span class="pref-lbl">Daily check-ins</span>
         <label class="pref-toggle">
           <input type="checkbox" id="remind-toggle" onchange="saveRemindOn(this.checked)">
           <span class="pref-slider"></span>
         </label>
       </div>
-      <div id="remind-freq-wrap">
+      <div id="remind-freq-wrap" style="margin-top:16px">
         <input type="range" class="pref-range" id="remind-range" min="0" max="3" step="1" value="2"
                oninput="onRemindSlide(this.value)" onchange="commitRemindSlide(this.value)">
         <div class="pref-ticks" id="remind-ticks">
@@ -1629,12 +1629,12 @@ footer{{
           <span class="pref-tick">Regular</span>
           <span class="pref-tick">All-day</span>
         </div>
-        <div style="font-size:11px;color:var(--mu);margin-top:8px" id="remind-desc"></div>
+        <div class="pref-hint" id="remind-desc"></div>
       </div>
     </div>
 
     <!-- SETTINGS: Food Logging Mode -->
-    <div class="stitle" style="margin-top:16px">Food logging accuracy</div>
+    <div class="stitle" style="margin-top:16px">Food logging</div>
     <div class="pref-card" id="food-mode-card">
       <input type="range" class="pref-range" id="food-mode-range" min="0" max="2" step="1" value="1"
              oninput="onFoodSlide(this.value)" onchange="commitFoodSlide(this.value)">
@@ -1643,7 +1643,7 @@ footer{{
         <span class="pref-tick">Balanced</span>
         <span class="pref-tick">Strict</span>
       </div>
-      <div style="font-size:11px;color:var(--mu);margin-top:8px" id="food-mode-desc"></div>
+      <div class="pref-hint" id="food-mode-desc"></div>
     </div>
 
     <div class="stitle" style="margin-top:16px">Connected devices</div>
@@ -1978,15 +1978,15 @@ function renderTrendStrip(history, weights, targets){{
 
 // ── Settings: Reminders ───────────────────────────────────────────────────
 var _REMIND_DESCS={{
-  none:'Morning check-in only — one anchor a day.',
-  light:'Morning and evening only.',
-  moderate:'Morning, midday, pre-workout, and evening (default).',
-  heavy:'All seven daily touchpoints — maximum coaching.',
+  none:'Morning only',
+  light:'Morning & evening',
+  moderate:'A few times a day',
+  heavy:'All day',
 }};
 var _FOOD_DESCS={{
-  quick:'Log immediately. Estimate portions without asking. Only clarify when gap is extreme.',
-  moderate:'Ask one question when prep/amount would swing macros significantly (default).',
-  strict:'Always confirm cook method and quantity before logging anything ambiguous.',
+  quick:'Logs fast, rarely asks',
+  moderate:'Asks on big swings',
+  strict:'Always confirms portions',
 }};
 
 var _REMIND_TIERS=['none','light','moderate','heavy'];
