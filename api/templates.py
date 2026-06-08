@@ -797,7 +797,7 @@ body{{
 .eg-row:hover{{background:var(--sf2)}}
 .eg-hd{{display:flex;align-items:center;gap:8px}}
 .eg-name{{font-size:14px;font-weight:500;color:var(--tx);flex:1}}
-.eg-summary{{font-family:'Geist Mono','SF Mono',monospace;font-size:11px;color:var(--mu);white-space:nowrap}}
+.eg-summary{{font-family:'Geist Mono','SF Mono',monospace;font-size:11px;color:var(--tx2);white-space:nowrap}}
 .eg-chevron{{font-size:10px;color:var(--di);transition:transform .18s;flex-shrink:0}}
 .eg-row.open .eg-chevron{{transform:rotate(90deg)}}
 .eg-sets{{display:none;padding:6px 0 2px}}
@@ -807,6 +807,14 @@ body{{
 .eg-set-detail{{font-family:'Geist Mono','SF Mono',monospace;font-size:12px;color:var(--ac)}}
 .eg-del{{width:22px;height:22px;border-radius:5px;border:1px solid transparent;background:transparent;color:var(--di);cursor:pointer;font-size:11px;display:grid;place-items:center;transition:all .15s;flex-shrink:0}}
 .eg-del:hover{{color:var(--re);border-color:rgba(239,68,68,.3);background:rgba(239,68,68,.08)}}
+.food-macros{{display:inline-flex;align-items:center;gap:0;font-family:'Geist Mono','SF Mono',monospace;flex:1;min-width:0;}}
+.food-macros .fm-label{{color:var(--mu);font-weight:400;font-size:10.5px;}}
+.food-macros .fm-sep{{color:var(--di);margin:0 4px;font-size:10px;}}
+.food-macros .fm-val{{font-weight:600;font-size:12px;}}
+.food-macros .fm-cal{{color:var(--ac);}}
+.food-macros .fm-pro{{color:var(--bl);}}
+.food-macros .fm-carb{{color:var(--or);}}
+.food-macros .fm-fat{{color:var(--pu);}}
 .erow:last-child{{border-bottom:none}}
 .ecnt{{display:flex;justify-content:space-between;align-items:center;padding-right:66px;gap:8px}}
 .ename{{font-size:14px;font-weight:500;word-break:break-word;flex:1;color:var(--tx)}}
@@ -3494,11 +3502,13 @@ function renderFoodRow(f){{
   var est=f.estimated?' <span class="est-tag">est</span>':'';
   var cal=(f.calories??0);
   var macroLine=
-    '<b style="color:var(--bl)">'+(f.protein??0)+'g</b> P'+
-    ' <span style="color:var(--di)">·</span> '+
-    '<b style="color:var(--or)">'+(f.carbs??0)+'g</b> C'+
-    ' <span style="color:var(--di)">·</span> '+
-    '<b style="color:var(--pu)">'+(f.fats??0)+'g</b> F';
+    '<span class="fm-val fm-cal">'+cal+'</span><span class="fm-label">&nbsp;cal</span>'+
+    '<span class="fm-sep">·</span>'+
+    '<span class="fm-label">P&nbsp;</span><span class="fm-val fm-pro">'+(f.protein??0)+'g</span>'+
+    '<span class="fm-sep">·</span>'+
+    '<span class="fm-label">C&nbsp;</span><span class="fm-val fm-carb">'+(f.carbs??0)+'g</span>'+
+    '<span class="fm-sep">·</span>'+
+    '<span class="fm-label">F&nbsp;</span><span class="fm-val fm-fat">'+(f.fats??0)+'g</span>';
 
   return '<div class="eg-row" id="food-row-'+f.id+'" onclick="this.classList.toggle(&quot;open&quot;)">'+
     '<div class="eg-hd">'+
@@ -3510,8 +3520,7 @@ function renderFoodRow(f){{
     (f.quantity?'<div class="eg-set"><span class="eg-set-num"></span><span style="font-size:12px;color:var(--mu)">'+esc(f.quantity)+'</span></div>':'')+
     '<div class="eg-set">'+
     '<span class="eg-set-num"></span>'+
-    '<span class="food-macros-detail" style="font-size:12.5px;font-family:inherit">'+macroLine+'</span>'+
-    '<span style="flex:1"></span>'+
+    '<span class="food-macros">'+macroLine+'</span>'+
     '<button class="ibtn" onclick="event.stopPropagation();editFood('+f.id+')" aria-label="Edit" style="width:24px;height:24px;font-size:11px">&#9998;</button>'+
     '<button class="ibtn del" onclick="event.stopPropagation();deleteFood('+f.id+')" aria-label="Delete" style="width:24px;height:24px;font-size:12px">&#215;</button>'+
     '</div>'+
