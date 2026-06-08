@@ -29,6 +29,7 @@ from db.queries import (
     update_exercise_entry, delete_exercise_entry,
     add_food_entry, add_exercise_entry,
     get_or_create_today_log, get_or_create_log_for_date,
+    resolve_send_target,
     _user_today,
     set_subscription_active, set_subscription_cancelled,
 )
@@ -181,6 +182,57 @@ async def _notify_subscription_cancelled(telegram_id: str) -> None:
         )
     except Exception as e:
         logger.warning(f"Could not notify user {telegram_id} of cancellation: {e}")
+
+
+# ── Dashboard change notifications ────────────────────────────────────────────
+
+def _dashboard_msg(action: str, **kw) -> str:
+    """Build a short Arnie-voice confirmation for a dashboard edit. Returns ||| text."""
+    label = kw.get("label", "")
+    cal = kw.get("cal", 0)
+    cal_t = kw.get("cal_target")
+    cal_str = f"{cal}/{cal_t}" if cal_t else str(cal)
+    if action == "food_edit":
+        return f"updated {label} in your log — you're at {cal_str} cal."
+    if action == "food_delete":
+        return f"removed {label} — you're at {cal_str} cal now."
+    if action == "exercise_edit":
+        return f"updated that in your workout log."
+    if action == "exercise_delete":
+        return f"removed that from your workout log."
+    if action == "profile_targets":
+        return f"targets updated — {label}."
+    if action == "profile_reminders_on":
+        return "check-ins back on."
+    if action == "profile_reminders_off":
+        return "got it, going quiet."
+    if action == "profile_quick":
+        return "got it, logging quick from now on."
+    if action == "profile_strict":
+        return "got it, i'll confirm everything before logging."
+    if action == "profile_field":
+        return f"{label} updated."
+    return ""
+
+
+async def _send_dashboard_notification(send_target: str, text: str) -> None:
+    """
+    Send a dashboard-change confirmation on the user's preferred channel.
+    No proactive gate — this is reactive confirmation of a user action.
+    """
+    if not text or not send_target:
+        return
+    try:
+        from core.platform import Response, IMessageAdapter, TelegramAdapter
+        resp = Response.from_text(text)
+        if send_target.startswith("im:"):
+            address = send_target[3:]
+            await IMessageAdapter(f"iMessage;-;{address}").send(resp)
+        else:
+            ptb_app = app.state.ptb_app
+            await TelegramAdapter(ptb_app.bot, int(send_target)).send(resp)
+    except Exception as e:
+        logger.warning(f"dashboard notification failed for {send_target}: {e}")
 
 
 # ── Whoop OAuth ────────────────────────────────────────────────────────────────
@@ -1047,17 +1099,29 @@ class ExercisePatch(BaseModel):
 
 @app.patch("/api/food/{entry_id}")
 async def api_edit_food(entry_id: int, patch: FoodPatch, token: str = Query(...)):
+    import asyncio
+    notify: dict = {}
     async with AsyncSessionLocal() as db:
         user = await get_user_by_webhook_token(db, token)
         if not user:
             raise HTTPException(status_code=401, detail="Invalid token")
         changes = patch.model_dump(exclude_none=True)
-        # Map external "food_name" → internal column "parsed_food_name"
         if "food_name" in changes:
             changes["parsed_food_name"] = changes.pop("food_name")
         entry = await update_food_entry(db, entry_id, user.id, **changes)
         if not entry:
             raise HTTPException(status_code=404, detail="Entry not found")
+        from sqlalchemy import select as _sel
+        from db.models import DailyLog
+        log = (await db.execute(_sel(DailyLog).where(DailyLog.id == entry.daily_log_id))).scalar_one()
+        prefs = user.preferences
+        notify = dict(
+            send_target=await resolve_send_target(db, user),
+            text=_dashboard_msg("food_edit", label=entry.parsed_food_name or "entry",
+                                cal=round(log.total_calories or 0),
+                                cal_target=prefs.calorie_target if prefs else None),
+        )
+    asyncio.create_task(_send_dashboard_notification(**notify))
     return {"status": "ok", "id": entry_id}
 
 
@@ -1086,34 +1150,56 @@ async def api_hide_attribute(body: AttrHide, token: str = Query(...)):
 
 @app.delete("/api/food/{entry_id}")
 async def api_delete_food(entry_id: int, token: str = Query(...)):
+    import asyncio
+    notify: dict = {}
     async with AsyncSessionLocal() as db:
         user = await get_user_by_webhook_token(db, token)
         if not user:
             raise HTTPException(status_code=401, detail="Invalid token")
+        from sqlalchemy import select as _sel
+        from db.models import FoodEntry, DailyLog
+        entry = (await db.execute(_sel(FoodEntry).where(FoodEntry.id == entry_id))).scalar_one_or_none()
+        food_name = entry.parsed_food_name if entry else "entry"
+        log_id = entry.daily_log_id if entry else None
         ok = await delete_food_entry(db, entry_id, user.id)
         if not ok:
             raise HTTPException(status_code=404, detail="Entry not found")
+        log = (await db.execute(_sel(DailyLog).where(DailyLog.id == log_id))).scalar_one()
+        prefs = user.preferences
+        notify = dict(
+            send_target=await resolve_send_target(db, user),
+            text=_dashboard_msg("food_delete", label=food_name,
+                                cal=round(log.total_calories or 0),
+                                cal_target=prefs.calorie_target if prefs else None),
+        )
+    asyncio.create_task(_send_dashboard_notification(**notify))
     return {"status": "ok"}
 
 
 @app.patch("/api/exercise/{entry_id}")
 async def api_edit_exercise(entry_id: int, patch: ExercisePatch, token: str = Query(...)):
+    import asyncio
+    notify: dict = {}
     async with AsyncSessionLocal() as db:
         user = await get_user_by_webhook_token(db, token)
         if not user:
             raise HTTPException(status_code=401, detail="Invalid token")
         changes = patch.model_dump(exclude_none=True)
-        # Dashboard sends weight in lbs; DB stores kg
         if "weight" in changes:
             changes["weight"] = changes["weight"] * 0.453592
         entry = await update_exercise_entry(db, entry_id, user.id, **changes)
         if not entry:
             raise HTTPException(status_code=404, detail="Entry not found")
+        notify = dict(send_target=await resolve_send_target(db, user),
+                      text=_dashboard_msg("exercise_edit"))
+    asyncio.create_task(_send_dashboard_notification(**notify))
     return {"status": "ok", "id": entry_id}
 
 
 @app.delete("/api/exercise/{entry_id}")
 async def api_delete_exercise(entry_id: int, token: str = Query(...)):
+    import asyncio
+    notify: dict = {}
     async with AsyncSessionLocal() as db:
         user = await get_user_by_webhook_token(db, token)
         if not user:
@@ -1121,6 +1207,9 @@ async def api_delete_exercise(entry_id: int, token: str = Query(...)):
         ok = await delete_exercise_entry(db, entry_id, user.id)
         if not ok:
             raise HTTPException(status_code=404, detail="Entry not found")
+        notify = dict(send_target=await resolve_send_target(db, user),
+                      text=_dashboard_msg("exercise_delete"))
+    asyncio.create_task(_send_dashboard_notification(**notify))
     return {"status": "ok"}
 
 
@@ -1185,6 +1274,30 @@ async def api_edit_profile(token: str, patch: ProfilePatch):
             raise HTTPException(status_code=400, detail=f"Invalid value for {field}")
 
         await db.commit()
+
+        # Build notification after commit so values are persisted
+        import asyncio as _asyncio
+        prefs = user.preferences
+        if field == "proactive_messaging_enabled":
+            _action = "profile_reminders_on" if str(raw).lower() in ("true", "1", "yes", "on") else "profile_reminders_off"
+            _label = ""
+        elif field == "food_logging_mode":
+            _norm = getattr(prefs, "food_logging_mode", "moderate") or "moderate"
+            _action = "profile_quick" if _norm == "quick" else ("profile_strict" if _norm == "strict" else "profile_field")
+            _label = "food logging mode"
+        elif field in ("calorie_target", "protein_target"):
+            _action = "profile_targets"
+            _cal_t = getattr(prefs, "calorie_target", None) if prefs else None
+            _pro_t = getattr(prefs, "protein_target", None) if prefs else None
+            _label = f"{_cal_t} cal / {_pro_t}g protein" if _cal_t and _pro_t else (f"{_cal_t} cal" if _cal_t else f"{_pro_t}g protein")
+        else:
+            _action = "profile_field"
+            _label = field.replace("_", " ")
+        _send_target = await resolve_send_target(db, user)
+        _msg = _dashboard_msg(_action, label=_label)
+
+    if _msg:
+        _asyncio.create_task(_send_dashboard_notification(_send_target, _msg))
     return {"status": "ok", "field": field}
 
 
