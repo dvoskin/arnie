@@ -1385,24 +1385,24 @@ footer{{
 .learn-chip.done{{color:var(--tx2)}}
 
 /* ── Settings preference cards (profile tab) ─────────────── */
-.pref-card{{background:var(--sf);border:1px solid var(--bd);border-radius:16px;padding:15px 16px;margin-bottom:9px;box-shadow:var(--sh)}}
+.pref-card{{background:var(--sf);border:1px solid var(--bd);border-radius:14px;padding:13px 16px;margin-bottom:8px;box-shadow:var(--sh)}}
 .pref-row{{display:flex;align-items:center;justify-content:space-between}}
-.pref-lbl{{font-size:13px;color:var(--mu);font-weight:400}}
+.pref-lbl{{font-size:13px;color:var(--tx2);font-weight:400}}
 .pref-toggle{{position:relative;display:inline-block;width:38px;height:21px;flex-shrink:0}}
 .pref-toggle input{{opacity:0;width:0;height:0}}
 .pref-slider{{position:absolute;inset:0;background:var(--sf3);border-radius:21px;cursor:pointer;transition:.25s}}
 .pref-slider::before{{content:'';position:absolute;height:15px;width:15px;left:3px;top:3px;background:#fff;border-radius:50%;transition:.25s}}
 .pref-toggle input:checked+.pref-slider{{background:var(--ac)}}
 .pref-toggle input:checked+.pref-slider::before{{transform:translateX(17px)}}
-.pref-range{{-webkit-appearance:none;appearance:none;width:100%;height:4px;border-radius:4px;background:var(--sf3);accent-color:var(--ac);cursor:pointer;outline:none;margin:0}}
+.pref-range{{-webkit-appearance:none;appearance:none;width:100%;height:3px;border-radius:3px;background:var(--sf3);accent-color:var(--ac);cursor:pointer;outline:none;margin:0}}
 .pref-range::-webkit-slider-thumb{{-webkit-appearance:none;appearance:none;width:15px;height:15px;border-radius:50%;background:var(--ac);cursor:pointer;border:none}}
 .pref-range::-moz-range-thumb{{width:15px;height:15px;border-radius:50%;background:var(--ac);cursor:pointer;border:none}}
-.pref-ticks{{display:flex;justify-content:space-between;margin-top:9px}}
+.pref-ticks{{display:flex;justify-content:space-between;margin-top:8px}}
 .pref-tick{{font-size:10px;color:var(--mu);flex:1;text-align:center;transition:.18s}}
 .pref-tick:first-child{{text-align:left}}
 .pref-tick:last-child{{text-align:right}}
 .pref-tick.active{{color:var(--ac);font-weight:600}}
-.pref-hint{{font-size:11px;color:var(--mu);margin-top:9px}}
+.pref-hint{{font-size:11px;color:var(--mu);margin-top:7px}}
 </style>
 </head>
 <body>
@@ -1701,7 +1701,7 @@ footer{{
           <span class="pref-slider"></span>
         </label>
       </div>
-      <div id="remind-freq-wrap" style="margin-top:16px">
+      <div id="remind-freq-wrap" style="margin-top:12px">
         <input type="range" class="pref-range" id="remind-range" min="0" max="3" step="1" value="2"
                oninput="onRemindSlide(this.value)" onchange="commitRemindSlide(this.value)">
         <div class="pref-ticks" id="remind-ticks">
