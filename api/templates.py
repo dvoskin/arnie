@@ -429,16 +429,16 @@ body{{
 .add-inp{{
   display:block;width:100%;background:transparent;border:none;
   border-bottom:1px solid var(--bd);color:var(--tx);font-family:inherit;
-  font-size:14px;padding:13px 16px;outline:none;transition:background .15s;
+  font-size:14px;padding:11px 16px;outline:none;transition:background .15s;
 }}
 .add-inp:focus{{background:var(--sf2)}}
 .add-inp::placeholder{{color:var(--di)}}
 .add-macros{{display:grid;grid-template-columns:repeat(4,1fr);border-bottom:1px solid var(--bd)}}
-.add-mac-field{{border-right:1px solid var(--bd);padding:10px 12px}}
+.add-mac-field{{border-right:1px solid var(--bd);padding:8px 12px}}
 .add-mac-field:last-child{{border-right:none}}
 .add-mac-field label{{
   display:block;font-family:'Geist Mono','SF Mono',monospace;
-  font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--mu);margin-bottom:5px;
+  font-size:9px;letter-spacing:.08em;text-transform:uppercase;color:var(--mu);margin-bottom:4px;
 }}
 .add-mac-field input{{
   width:100%;background:transparent;border:none;color:var(--tx);
@@ -448,8 +448,8 @@ body{{
 .add-submit{{
   display:block;width:100%;border:none;background:transparent;
   color:var(--ac);font-family:'Geist Mono','SF Mono',monospace;
-  font-size:11px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;
-  padding:13px 16px;cursor:pointer;text-align:left;transition:background .15s;
+  font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;
+  padding:11px 16px;cursor:pointer;text-align:left;transition:background .15s;
 }}
 .add-submit:hover{{background:var(--ac-dim)}}
 .add-submit:active{{opacity:.7}}
@@ -652,15 +652,15 @@ body{{
   backdrop-filter:blur(16px);box-shadow:var(--sh);transition:background .3s;
 }}
 .lrow{{
-  display:flex;align-items:flex-start;gap:13px;
-  padding:14px 16px;border-bottom:1px solid var(--bd);position:relative;
+  display:flex;align-items:flex-start;gap:12px;
+  padding:12px 16px;border-bottom:1px solid var(--bd);position:relative;
 }}
 .lrow:last-child{{border-bottom:none}}
 .lrow:hover{{background:var(--sf2)}}
 .ficon{{
-  width:38px;height:38px;border-radius:11px;flex-shrink:0;
+  width:36px;height:36px;border-radius:10px;flex-shrink:0;
   background:var(--sf2);border:1px solid var(--bd);
-  display:grid;place-items:center;font-size:20px;margin-top:2px;
+  display:grid;place-items:center;font-size:19px;margin-top:1px;
 }}
 .fbody{{flex:1;min-width:0;padding-right:58px}}
 .lname{{
@@ -675,11 +675,11 @@ body{{
 }}
 .lqty{{font-size:13px;color:var(--mu);margin-top:3px;font-weight:400}}
 .lmac{{
-  display:flex;gap:0;font-size:12px;margin-top:7px;flex-wrap:wrap;
+  display:flex;gap:0;font-size:12px;margin-top:5px;flex-wrap:wrap;
   font-family:'Geist Mono','SF Mono',monospace;
   align-items:center;
 }}
-.lmac .lm-sep{{color:var(--di);margin:0 8px;font-size:10px;}}
+.lmac .lm-sep{{color:var(--di);margin:0 5px;font-size:10px;}}
 .lmac .lm-cal{{color:var(--tx2);font-weight:600;font-size:13px;}}
 .lmac .lm-macro{{color:var(--mu);font-weight:400;font-size:11px;}}
 .lmac b{{font-weight:600}}
