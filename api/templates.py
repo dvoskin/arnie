@@ -1902,9 +1902,13 @@ function renderTrendStrip(history, weights, targets){{
   var strip=document.getElementById('trend-strip');
   if(!wrap||!strip)return;
 
-  // Last 5 closed days from history (already sorted oldest→newest by the API)
-  var closed=(history||[]).filter(function(h){{return h.status==='closed';}});
-  var recent=closed.slice(-5);
+  // Last 5 completed days from history (sorted oldest→newest by the API). A day
+  // counts once it has calories logged and isn't today — we don't require a formal
+  // /close (most users never close days), and today's in-progress day would skew the
+  // trend, so it's excluded until tomorrow.
+  var recent=(history||[]).filter(function(h){{
+    return (h.calories||0)>0 && h.date!==_todayStr;
+  }}).slice(-5);
   if(recent.length<2){{wrap.style.display='none';return;}}
 
   var lbl=document.getElementById('trend-days-lbl');
