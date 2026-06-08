@@ -1335,11 +1335,14 @@ footer{{
 .pref-slider::before{{content:'';position:absolute;height:16px;width:16px;left:3px;top:3px;background:#fff;border-radius:50%;transition:.25s}}
 .pref-toggle input:checked+.pref-slider{{background:var(--ac)}}
 .pref-toggle input:checked+.pref-slider::before{{transform:translateX(18px)}}
-.pref-tiers{{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}}
-.pref-tiers.t3{{grid-template-columns:repeat(3,1fr)}}
-.ptier{{border:1px solid var(--bd);border-radius:8px;padding:6px 4px;font-size:11px;text-align:center;cursor:pointer;background:var(--sf);color:var(--mu);transition:.18s;font-weight:500}}
-.ptier:hover{{border-color:var(--bd2);color:var(--tx)}}
-.ptier.active{{border-color:var(--ac);background:var(--ac-dim);color:var(--ac);font-weight:700}}
+.pref-range{{-webkit-appearance:none;appearance:none;width:100%;height:4px;border-radius:4px;background:var(--sf3);accent-color:var(--ac);cursor:pointer;outline:none;margin:2px 0}}
+.pref-range::-webkit-slider-thumb{{-webkit-appearance:none;appearance:none;width:16px;height:16px;border-radius:50%;background:var(--ac);cursor:pointer;border:none}}
+.pref-range::-moz-range-thumb{{width:16px;height:16px;border-radius:50%;background:var(--ac);cursor:pointer;border:none}}
+.pref-ticks{{display:flex;justify-content:space-between;margin-top:7px}}
+.pref-tick{{font-size:10px;color:var(--mu);flex:1;text-align:center;transition:.18s}}
+.pref-tick:first-child{{text-align:left}}
+.pref-tick:last-child{{text-align:right}}
+.pref-tick.active{{color:var(--ac);font-weight:700}}
 </style>
 </head>
 <body>
@@ -1610,31 +1613,35 @@ footer{{
     <!-- SETTINGS: Reminders & Check-ins -->
     <div class="stitle" style="margin-top:24px">Check-ins &amp; reminders</div>
     <div class="pref-card" id="remind-card">
-      <div class="pref-row">
+      <div class="pref-row" style="margin-bottom:14px">
         <span class="pref-lbl">Daily check-ins</span>
         <label class="pref-toggle">
           <input type="checkbox" id="remind-toggle" onchange="saveRemindOn(this.checked)">
           <span class="pref-slider"></span>
         </label>
       </div>
-      <div class="pref-title" style="margin-top:4px">Frequency</div>
-      <div class="pref-tiers" id="remind-tiers">
-        <div class="ptier" id="rf-none"  onclick="saveRemindFreq('none')">Minimal</div>
-        <div class="ptier" id="rf-light" onclick="saveRemindFreq('light')">Light</div>
-        <div class="ptier" id="rf-moderate" onclick="saveRemindFreq('moderate')">Regular</div>
-        <div class="ptier" id="rf-heavy" onclick="saveRemindFreq('heavy')">All-day</div>
+      <div id="remind-freq-wrap">
+        <input type="range" class="pref-range" id="remind-range" min="0" max="3" step="1" value="2"
+               oninput="onRemindSlide(this.value)" onchange="commitRemindSlide(this.value)">
+        <div class="pref-ticks" id="remind-ticks">
+          <span class="pref-tick">Minimal</span>
+          <span class="pref-tick">Light</span>
+          <span class="pref-tick">Regular</span>
+          <span class="pref-tick">All-day</span>
+        </div>
+        <div style="font-size:11px;color:var(--mu);margin-top:8px" id="remind-desc"></div>
       </div>
-      <div style="font-size:11px;color:var(--mu);margin-top:8px" id="remind-desc"></div>
     </div>
 
     <!-- SETTINGS: Food Logging Mode -->
     <div class="stitle" style="margin-top:16px">Food logging accuracy</div>
     <div class="pref-card" id="food-mode-card">
-      <div class="pref-title">How should Arnie handle uncertain portions?</div>
-      <div class="pref-tiers t3" id="food-mode-tiers">
-        <div class="ptier" id="fm-quick"    onclick="saveFoodMode('quick')">Quick</div>
-        <div class="ptier" id="fm-moderate" onclick="saveFoodMode('moderate')">Balanced</div>
-        <div class="ptier" id="fm-strict"   onclick="saveFoodMode('strict')">Strict</div>
+      <input type="range" class="pref-range" id="food-mode-range" min="0" max="2" step="1" value="1"
+             oninput="onFoodSlide(this.value)" onchange="commitFoodSlide(this.value)">
+      <div class="pref-ticks" id="food-mode-ticks">
+        <span class="pref-tick">Quick</span>
+        <span class="pref-tick">Balanced</span>
+        <span class="pref-tick">Strict</span>
       </div>
       <div style="font-size:11px;color:var(--mu);margin-top:8px" id="food-mode-desc"></div>
     </div>
@@ -1978,65 +1985,84 @@ var _FOOD_DESCS={{
   strict:'Always confirm cook method and quantity before logging anything ambiguous.',
 }};
 
+var _REMIND_TIERS=['none','light','moderate','heavy'];
+var _FOOD_TIERS=['quick','moderate','strict'];
+
+function _setTicks(wrapId,idx){{
+  var wrap=document.getElementById(wrapId);
+  if(!wrap)return;
+  var ticks=wrap.querySelectorAll('.pref-tick');
+  for(var i=0;i<ticks.length;i++)ticks[i].classList.toggle('active',i===idx);
+}}
+
 function renderRemindSettings(p){{
-  var on=p.reminders_on;
+  var on=!!p.reminders_on;
   var tog=document.getElementById('remind-toggle');
-  if(tog)tog.checked=!!on;
+  if(tog)tog.checked=on;
   var freq=p.reminder_frequency||'moderate';
-  ['none','light','moderate','heavy'].forEach(function(t){{
-    var el=document.getElementById('rf-'+t);
-    if(el)el.classList.toggle('active',t===freq);
-  }});
+  var idx=Math.max(0,_REMIND_TIERS.indexOf(freq));
+  var rng=document.getElementById('remind-range');
+  if(rng){{rng.value=idx;rng.disabled=!on;}}
+  var wrap=document.getElementById('remind-freq-wrap');
+  if(wrap)wrap.style.opacity=on?'1':'.4';
+  _setTicks('remind-ticks',idx);
   var desc=document.getElementById('remind-desc');
   if(desc)desc.textContent=_REMIND_DESCS[freq]||'';
 }}
 
 function renderFoodModeSettings(p){{
   var mode=p.food_logging_mode||'moderate';
-  ['quick','moderate','strict'].forEach(function(t){{
-    var el=document.getElementById('fm-'+t);
-    if(el)el.classList.toggle('active',t===mode);
-  }});
+  var idx=Math.max(0,_FOOD_TIERS.indexOf(mode));
+  var rng=document.getElementById('food-mode-range');
+  if(rng)rng.value=idx;
+  _setTicks('food-mode-ticks',idx);
   var desc=document.getElementById('food-mode-desc');
   if(desc)desc.textContent=_FOOD_DESCS[mode]||'';
 }}
 
+// Live preview while dragging (no save)
+function onRemindSlide(v){{
+  var tier=_REMIND_TIERS[+v]||'moderate';
+  _setTicks('remind-ticks',+v);
+  var desc=document.getElementById('remind-desc');
+  if(desc)desc.textContent=_REMIND_DESCS[tier]||'';
+}}
+function onFoodSlide(v){{
+  var tier=_FOOD_TIERS[+v]||'moderate';
+  _setTicks('food-mode-ticks',+v);
+  var desc=document.getElementById('food-mode-desc');
+  if(desc)desc.textContent=_FOOD_DESCS[tier]||'';
+}}
+
+async function _patchPref(field,value){{
+  try{{
+    await fetch('/api/profile/'+TOKEN,{{
+      method:'PATCH',
+      headers:{{'Content-Type':'application/json'}},
+      body:JSON.stringify({{field:field,value:value}}),
+    }});
+  }}catch(e){{}}
+}}
+
 async function saveRemindOn(checked){{
-  try{{
-    await fetch('/api/profile/'+TOKEN,{{
-      method:'PATCH',
-      headers:{{'Content-Type':'application/json'}},
-      body:JSON.stringify({{field:'proactive_messaging_enabled',value:checked?'true':'false'}}),
-    }});
-  }}catch(e){{}}
+  if(_baseData&&_baseData.profile)_baseData.profile.reminders_on=checked;
+  var rng=document.getElementById('remind-range');
+  if(rng)rng.disabled=!checked;
+  var wrap=document.getElementById('remind-freq-wrap');
+  if(wrap)wrap.style.opacity=checked?'1':'.4';
+  await _patchPref('proactive_messaging_enabled',checked?'true':'false');
 }}
 
-async function saveRemindFreq(tier){{
-  try{{
-    await fetch('/api/profile/'+TOKEN,{{
-      method:'PATCH',
-      headers:{{'Content-Type':'application/json'}},
-      body:JSON.stringify({{field:'reminder_frequency',value:tier}}),
-    }});
-    if(_baseData&&_baseData.profile){{
-      _baseData.profile.reminder_frequency=tier;
-      renderRemindSettings(_baseData.profile);
-    }}
-  }}catch(e){{}}
+// Commit on release
+function commitRemindSlide(v){{
+  var tier=_REMIND_TIERS[+v]||'moderate';
+  if(_baseData&&_baseData.profile)_baseData.profile.reminder_frequency=tier;
+  _patchPref('reminder_frequency',tier);
 }}
-
-async function saveFoodMode(mode){{
-  try{{
-    await fetch('/api/profile/'+TOKEN,{{
-      method:'PATCH',
-      headers:{{'Content-Type':'application/json'}},
-      body:JSON.stringify({{field:'food_logging_mode',value:mode}}),
-    }});
-    if(_baseData&&_baseData.profile){{
-      _baseData.profile.food_logging_mode=mode;
-      renderFoodModeSettings(_baseData.profile);
-    }}
-  }}catch(e){{}}
+function commitFoodSlide(v){{
+  var tier=_FOOD_TIERS[+v]||'moderate';
+  if(_baseData&&_baseData.profile)_baseData.profile.food_logging_mode=tier;
+  _patchPref('food_logging_mode',tier);
 }}
 
 // ── Day tab ───────────────────────────────────────────────────────────────
