@@ -1507,6 +1507,51 @@ async def admin_profile_sync(token: str = Query(...), name: str = Query(...)):
     return JSONResponse({"ok": True, "matched": len(users), "results": results})
 
 
+@app.post("/admin/profile-consolidate")
+async def admin_profile_consolidate(token: str = Query(...), name: str = Query(...)):
+    """
+    Force-run the nightly profile consolidator for a user matched by name.
+    Discontinues redundant/superseded attributes and shortens verbose values.
+    Safe: only touches non-confirmed attributes; confirmed facts are never removed.
+    """
+    _require_admin(token)
+
+    from sqlalchemy import select
+    from sqlalchemy.orm import selectinload
+    from db.models import User
+
+    async with AsyncSessionLocal() as db:
+        res = await db.execute(
+            select(User)
+            .where(User.name.ilike(f"%{name}%"))
+            .options(selectinload(User.preferences))
+        )
+        users = res.scalars().all()
+        if not users:
+            return JSONResponse({"ok": False, "reason": f"No user found matching '{name}'"})
+
+        results = []
+        for u in users:
+            try:
+                from memory.profile_consolidator import consolidate_user_profile
+                result = await consolidate_user_profile(u, db)
+                results.append({
+                    "user_id": u.id,
+                    "telegram_id": u.telegram_id,
+                    "name": u.name,
+                    "discontinued": result["discontinued"],
+                    "shortened": result["shortened"],
+                })
+            except Exception as e:
+                results.append({
+                    "user_id": u.id,
+                    "name": u.name,
+                    "error": str(e),
+                })
+
+    return JSONResponse({"ok": True, "matched": len(users), "results": results})
+
+
 # ── Admin dashboard ───────────────────────────────────────────────────────────
 
 @app.get("/admin", response_class=HTMLResponse)
