@@ -835,33 +835,36 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    async with AsyncSessionLocal() as db:
-        photo = update.message.photo[-1]
-        photo_file = await photo.get_file()
-        photo_data = bytes(await photo_file.download_as_bytearray())
-        caption = update.message.caption or ""
+    # Download and analyze the image outside the lock — pure I/O, no DB writes.
+    photo = update.message.photo[-1]
+    photo_file = await photo.get_file()
+    photo_data = bytes(await photo_file.download_as_bytearray())
+    caption = update.message.caption or ""
 
-        # Use the food-specific prompt — produces clean "item: macros" lines that
-        # the LLM unambiguously maps to log_food calls. The general prompt returns
-        # narrative nutrition text ("Protein: 40 to 55g") that the LLM mistakes for
-        # body weight data, causing log_body_weight false-positives on food photos.
-        from multimodal.image_handler import process_food_image
-        analysis = await process_food_image(photo_data)
-        if not analysis:
-            await update.message.reply_text(
-                "Couldn't analyse the image. "
-                "Make sure ANTHROPIC_API_KEY is set for image support."
-            )
-            return
-
-        # [Food photo] prefix triggers the PHOTO LOGGING system prompt rule:
-        # describe → clarify if needed → wait for user confirm → then log_food() next turn.
-        caption_part = f" {caption}" if caption else ""
-        combined = (
-            f"[Food photo]{caption_part}\n"
-            f"Photo analysis:\n{analysis}"
+    from multimodal.image_handler import process_food_image
+    analysis = await process_food_image(photo_data)
+    if not analysis:
+        await update.message.reply_text(
+            "Couldn't analyse the image. "
+            "Make sure ANTHROPIC_API_KEY is set for image support."
         )
-        await _run_pipeline(update, context, combined, "image", db)
+        return
+
+    # [Food photo] prefix triggers the PHOTO LOGGING system prompt rule:
+    # describe → clarify if needed → wait for user confirm → then log_food() next turn.
+    caption_part = f" {caption}" if caption else ""
+    combined = (
+        f"[Food photo]{caption_part}\n"
+        f"Photo analysis:\n{analysis}"
+    )
+
+    # Acquire per-user lock before pipeline — same pattern as handle_text — to prevent
+    # concurrent pipelines for the same user (e.g. rapid photo + text arriving together).
+    user_key = f"tg:{update.effective_user.id}"
+    lock = _tg_pipeline_locks.setdefault(user_key, asyncio.Lock())
+    async with lock:
+        async with AsyncSessionLocal() as db:
+            await _run_pipeline(update, context, combined, "image", db)
 
 
 # ── Commands ──────────────────────────────────────────────────────────────────

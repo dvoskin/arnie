@@ -15,6 +15,10 @@ Estimation rules:
 - Account for hidden calories: pan-cooked items assume oil/butter (~100-150 cal); sauces and dressings add 100-300 cal even when not dominant.
 - Use realistic portion sizes — a restaurant chicken breast is typically 7-8oz, not 4oz.
 - When prep is not clearly visible, note it: "chicken (prep unclear)".
+- When sauce, dressing, or oil presence is uncertain, add a range note on that line: "sauce (est. +100-200 cal)".
+
+If there are multiple items, add a TOTAL line at the end:
+  TOTAL: [sum cal] cal, [sum protein]g P
 
 If it's a nutrition label: state serving size, calories, protein, carbs, fat, fiber on one line.
 If it's a receipt or packaging: extract item names and any nutritional info shown.
