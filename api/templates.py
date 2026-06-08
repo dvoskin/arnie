@@ -273,9 +273,9 @@ body{{
 .whoop-rec-mid  .whoop-stat-val{{color:var(--ye)}}
 .whoop-rec-low  .whoop-stat-val{{color:var(--re)}}
 .macro-cell{{background:var(--sf);border:1px solid var(--bd);border-radius:12px;padding:11px 13px;box-shadow:var(--sh);}}
-.mc-label{{font-family:'Geist Mono','SF Mono',monospace;font-size:9.5px;font-weight:500;text-transform:uppercase;letter-spacing:.1em;color:var(--mu);margin-bottom:4px;}}
-.mc-num{{font-family:'Instrument Serif','Times New Roman',serif;font-size:28px;letter-spacing:-.01em;line-height:1;}}
-.mc-sub{{font-size:11px;color:var(--mu);margin-top:3px;line-height:1.3;}}
+.mc-label{{font-size:9px;font-weight:500;text-transform:uppercase;letter-spacing:.06em;color:var(--mu);margin-bottom:4px;}}
+.mc-num{{font-size:26px;font-weight:700;letter-spacing:-.02em;line-height:1.1;color:var(--tx2);}}
+.mc-sub{{font-size:10px;color:var(--mu);margin-top:3px;line-height:1.3;}}
 .mc-bar{{background:var(--sf3);border-radius:999px;height:3px;margin-top:8px;overflow:hidden;}}
 .mc-fill{{height:100%;border-radius:999px;transition:width .8s cubic-bezier(.4,0,.2,1);}}
 @media(max-width:560px){{.macro-strip{{grid-template-columns:repeat(2,1fr);}}}}
@@ -607,14 +607,18 @@ body{{
 /* ── COACH INSIGHTS — minimal collapsible banner (collapsed by default) ─── */
 .insights{{margin:0 0 2px}}
 .ins-banner{{
-  display:flex;align-items:center;gap:8px;width:100%;
-  padding:9px 13px;border-radius:12px;cursor:pointer;user-select:none;
-  border:1px solid var(--bd);background:var(--sf);
-  transition:background .15s,border-color .15s;
+  display:flex;align-items:center;gap:10px;width:100%;
+  padding:11px 14px;border-radius:12px;cursor:pointer;user-select:none;
+  border:1px solid var(--bd2);background:var(--sf2);box-shadow:var(--sh);
+  transition:background .15s,border-color .15s,transform .1s;
 }}
-.ins-banner:hover{{background:var(--sf2)}}
-.ins-spark{{flex-shrink:0;display:grid;place-items:center;color:var(--pu)}}
-.ins-title{{font-size:12.5px;font-weight:500;color:var(--tx);letter-spacing:-.01em;white-space:nowrap}}
+.ins-banner:hover{{background:var(--sf3);border-color:var(--pu)}}
+.ins-banner:active{{transform:scale(.98)}}
+.ins-spark{{
+  flex-shrink:0;display:grid;place-items:center;color:var(--pu);
+  width:28px;height:28px;background:var(--sf3);border-radius:8px;
+}}
+.ins-title{{font-size:13px;font-weight:600;color:var(--tx);letter-spacing:-.01em;white-space:nowrap}}
 .ins-time{{font-size:10px;color:var(--mu);font-family:'Geist Mono','SF Mono',monospace;letter-spacing:.02em;white-space:nowrap}}
 .ins-actions{{margin-left:auto;display:flex;align-items:center;gap:2px;flex-shrink:0}}
 .ins-refresh{{
@@ -622,8 +626,8 @@ body{{
   width:24px;height:24px;display:grid;place-items:center;border-radius:7px;
   transition:color .15s,background .15s;
 }}
-.ins-refresh:hover{{color:var(--tx2);background:var(--sf2)}}
-.ins-chev{{color:var(--mu);font-size:10px;padding-right:2px;
+.ins-refresh:hover{{color:var(--tx2);background:var(--sf3)}}
+.ins-chev{{color:var(--tx2);font-size:14px;padding-right:2px;
   transition:transform .22s cubic-bezier(.2,.7,.2,1)}}
 .insights.open .ins-chev{{transform:rotate(180deg)}}
 .ins-body{{max-height:0;overflow:hidden;transition:max-height .3s cubic-bezier(.4,0,.2,1)}}
