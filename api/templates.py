@@ -1078,10 +1078,10 @@ footer{{
 }}
 .ph-title{{
   font-family:'Instrument Serif','Times New Roman',serif;
-  font-size:26px;line-height:1.15;letter-spacing:-.01em;color:var(--tx);font-weight:400;
+  font-size:28px;line-height:1.15;letter-spacing:-.01em;color:var(--tx);font-weight:400;
 }}
-@media(max-width:940px){{.ph-title{{font-size:24px}}}}
-@media(max-width:560px){{.ph-title{{font-size:22px}}}}
+@media(max-width:940px){{.ph-title{{font-size:26px}}}}
+@media(max-width:560px){{.ph-title{{font-size:24px}}}}
 .ph-sub{{
   font-size:12px;color:var(--tx2);margin-top:7px;
   letter-spacing:.01em;
@@ -1269,7 +1269,7 @@ footer{{
   /* Pagehead: hide icon-only buttons, keep just the Chat button */
   .pagehead .hbtn{{display:none}}
   .pagehead{{padding:12px 0 8px;gap:10px;align-items:center;margin-bottom:4px}}
-  .ph-title{{font-size:20px!important;letter-spacing:-.01em}}
+  .ph-title{{font-size:22px!important;letter-spacing:-.01em}}
   .ph-sub{{font-size:12px;margin-top:4px;gap:8px}}
   .ph-actions{{gap:5px}}
   .ph-log-btn{{padding:0 14px;height:35px;font-size:13px;border-radius:9px}}
@@ -1290,9 +1290,9 @@ footer{{
   .dnav{{gap:5px;margin-bottom:14px}}
   /* Today counters — quiet label, clear weighted number, even bars */
   .macro-cell{{padding:12px 13px}}
-  .mc-label{{font-size:9.5px;letter-spacing:.1em;margin-bottom:5px;color:var(--mu);font-weight:500}}
-  .mc-num{{font-size:31px;line-height:1}}
-  .mc-sub{{font-size:11px;margin-top:4px;color:var(--mu)}}
+  .mc-label{{font-size:9px;letter-spacing:.08em;margin-bottom:4px;color:var(--mu);font-weight:500}}
+  .mc-num{{font-size:26px;line-height:1.1}}
+  .mc-sub{{font-size:10px;margin-top:3px;color:var(--mu)}}
   .mc-bar{{margin-top:8px;height:3px}}
   /* Toggles */
   .toggle{{padding:7px 11px;font-size:12px;gap:6px}}
@@ -1335,7 +1335,7 @@ footer{{
 
 /* ── Medium breakpoint ───────────────────────────────────── */
 @media(max-width:740px) and (min-width:561px){{
-  .ph-title{{font-size:21px!important}}
+  .ph-title{{font-size:23px!important}}
   .cval{{font-size:30px}}
   .stitle{{font-size:10.5px}}
 }}
@@ -1364,14 +1364,14 @@ footer{{
 .tc-up{{color:var(--mu)}} .tc-dn{{color:var(--mu)}} .tc-fl{{color:var(--di)}}
 
 /* ── Arnie's learning progress ───────────────────────────── */
-.lrn-card{{background:var(--sf2);border-radius:12px;padding:10px 14px 11px}}
-.lrn-top{{display:flex;align-items:center;gap:8px;margin-bottom:7px}}
-.lrn-label{{font-size:10px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:var(--di);white-space:nowrap}}
+.lrn-card{{background:var(--sf2);border:1px solid var(--bd);border-radius:14px;padding:11px 14px}}
+.lrn-top{{display:flex;align-items:center;gap:9px;margin-bottom:8px}}
+.lrn-label{{font-size:10px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--di);white-space:nowrap}}
 .lrn-pct{{font-size:10px;color:var(--di);white-space:nowrap;letter-spacing:.02em}}
 .learn-bar{{flex:1;height:2px;border-radius:2px;background:var(--sf3);overflow:hidden}}
 .learn-fill{{height:100%;background:var(--ac);border-radius:2px;transition:width .5s ease}}
 .learn-chips{{display:flex;flex-wrap:wrap;gap:3px 10px}}
-.learn-chip{{font-size:10px;color:var(--di);transition:color .2s}}
+.learn-chip{{font-size:10px;color:var(--mu);transition:color .2s}}
 .learn-chip.done{{color:var(--tx2)}}
 
 /* ── Settings preference cards (profile tab) ─────────────── */
