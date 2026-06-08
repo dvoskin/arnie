@@ -209,6 +209,34 @@ async def _llm_new_user_nudge(user, log, prefs, slot: str, name: str) -> str:
         return ""
 
 
+async def _send_hook(telegram_id: str, text: str) -> None:
+    """
+    Send a conversation-hook follow-up (left-on-read re-ask). Bypasses the
+    PROACTIVE_MESSAGING_ENABLED gate — hook re-asks are conversation continuity,
+    not proactive marketing nudges. Still respects the allowlist.
+    """
+    if not _allowlist_allows(telegram_id):
+        logger.info(f"Hook send to {telegram_id} skipped — not on PROACTIVE_ALLOWLIST")
+        return
+    from core.platform import Response, IMessageAdapter, TelegramAdapter
+    resp = Response.from_text(text)
+    if telegram_id.startswith("im:"):
+        address = telegram_id[3:]
+        chat_guid = f"iMessage;-;{address}"
+        try:
+            await IMessageAdapter(chat_guid).send(resp)
+        except Exception as e:
+            logger.error(f"Hook iMessage send failed → {telegram_id}: {e}")
+        return
+    from telegram import Bot
+    try:
+        bot = Bot(token=TELEGRAM_TOKEN)
+        await TelegramAdapter(bot, int(telegram_id)).send(resp)
+        await bot.close()
+    except Exception as e:
+        logger.error(f"Hook send failed → {telegram_id}: {e}")
+
+
 async def _send(telegram_id: str, text: str, effect: str = None):
     """
     Send a proactive message to the user, rendered natively per platform.
@@ -1361,6 +1389,78 @@ def schedule_one_shot_checkin(
         return False
 
 
+async def _run_conversation_hooks() -> None:
+    """
+    Re-ask open conversation_hook questions for users who haven't responded.
+
+    Runs independently of PROACTIVE_MESSAGING_ENABLED — this is conversation
+    continuity (Arnie asked something, user went quiet) not a marketing nudge.
+    Fires every 30 min; the per-question timing policy (first_delay_h / spacing_h
+    / max_follow_ups) in reminders.pending prevents it from being spammy.
+    """
+    from db.database import AsyncSessionLocal
+    from db.queries import (
+        get_all_active_users, get_open_pending_questions,
+        mark_pending_question_followed_up, resolve_send_target,
+        get_recent_conversations, linking_enabled,
+    )
+    from reminders.pending import select_follow_up
+
+    async with AsyncSessionLocal() as db:
+        users = await get_all_active_users(db)
+        sent = 0
+        for user in users:
+            try:
+                if not getattr(user, "onboarding_completed", False):
+                    continue
+                if _should_skip_linked(user, linking_enabled()):
+                    continue
+
+                send_id = await resolve_send_target(db, user)
+                if not _allowlist_allows(user.id, user.telegram_id, send_id):
+                    continue
+
+                recent_rows = await get_recent_conversations(db, user.id, limit=15)
+                mins_since, _, _ = _last_exchange(recent_rows)
+
+                # Never fire mid-conversation.
+                if _is_live_convo(mins_since):
+                    continue
+
+                open_qs = await get_open_pending_questions(db, user.id)
+                hook_qs = [q for q in open_qs
+                           if getattr(q, "kind", "") == "conversation_hook"]
+                if not hook_qs:
+                    continue
+
+                pq = select_follow_up(hook_qs, mins_since_last_exchange=mins_since)
+                if pq is None:
+                    continue
+
+                name = user.name or "hey"
+                msg = await _llm_followup(user, pq, name)
+                if not msg:
+                    continue
+
+                lang = (getattr(getattr(user, "preferences", None),
+                                "preferred_language", None) or "English")
+                # Use _send_hook (bypasses PROACTIVE gate) + log it so the silence
+                # streak and continuity blocks see the send.
+                await _send_hook(send_id, msg)
+                await _log_proactive(db, user.id, msg, "followup_conversation_hook")
+                await mark_pending_question_followed_up(db, pq.id)
+                sent += 1
+                logger.info(
+                    f"Conversation hook re-ask (tier={pq.tier}, "
+                    f"attempt={pq.follow_up_count}) → user {user.id}"
+                )
+            except Exception as e:
+                logger.error(f"Conversation hook error for user {user.id}: {e}")
+
+        if sent:
+            logger.info(f"Conversation hooks: sent {sent} re-ask(s) this tick")
+
+
 def start_scheduler():
     if _scheduler.running:
         return
@@ -1381,6 +1481,15 @@ def start_scheduler():
         )
     else:
         reminders_status = "reminders DISABLED (PROACTIVE_MESSAGING_ENABLED not set)"
+    # Conversation-hook re-asks always run — they're conversation continuity,
+    # not proactive nudges, and don't require PROACTIVE_MESSAGING_ENABLED.
+    _scheduler.add_job(
+        _run_conversation_hooks,
+        IntervalTrigger(minutes=30),
+        id="conversation_hooks",
+        replace_existing=True,
+        max_instances=1,
+    )
     _scheduler.add_job(
         _run_whoop_sync,
         IntervalTrigger(minutes=30),

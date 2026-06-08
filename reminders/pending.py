@@ -34,7 +34,7 @@ class FollowUpPolicy:
 TIER_POLICY: dict[str, FollowUpPolicy] = {
     "casual":           FollowUpPolicy(first_delay_h=24.0, spacing_h=24.0, max_follow_ups=2),
     "goal_critical":    FollowUpPolicy(first_delay_h=8.0,  spacing_h=12.0, max_follow_ups=3),
-    "conversation_hook": FollowUpPolicy(first_delay_h=4.0, spacing_h=6.0,  max_follow_ups=1),
+    "conversation_hook": FollowUpPolicy(first_delay_h=0.75, spacing_h=6.0,  max_follow_ups=1),
     # Tier-2 silence consolidation: when a user has gone quiet on several proactive
     # check-ins in a row, the scheduler registers ONE proactive_hook to replace the
     # individual slot nudges, and the normal follow-up loop re-asks it. Patient
