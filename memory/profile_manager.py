@@ -102,8 +102,7 @@ _Last updated: {today}_
 ## Nutrition Preferences
 _Last updated: {today}_
 - Diet style: {user.dietary_preferences or "no restrictions stated"}  `[{'confirmed' if user.dietary_preferences else 'needs verification'}]`
-- Favorite foods: (learning)
-- Commonly eaten staples: (learning)
+- Staple foods: (learning)
 - Foods avoided: (learning)
 - Typical meal timing: (learning)
 - Protein habits: (learning)

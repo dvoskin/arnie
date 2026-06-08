@@ -59,7 +59,8 @@ STANDARD_SCHEMA = {
         {"key": "goal_protein",  "label": "Protein target", "type": "single", "col": "pro"},
     ],
     "nutrition": [
-        {"key": "nutrition_favorite_foods", "label": "Favorite foods", "type": "list"},
+        {"key": "nutrition_staple_foods", "label": "Staple foods", "type": "list",
+         "aliases": ["nutrition_favorite_foods"]},
         {"key": "nutrition_foods_avoided",  "label": "Foods avoided",  "type": "list"},
         {"key": "nutrition_diet_style",     "label": "Diet style",     "type": "single", "col": "diet"},
         {"key": "nutrition_protein_habits", "label": "Protein habits", "type": "single"},

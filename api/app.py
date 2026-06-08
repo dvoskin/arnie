@@ -958,7 +958,7 @@ async def get_profile(token: str, refresh: bool = False):
             foods = [r.display_name for r in rows
                      if r.display_name and (r.times_used or 0) >= 2]
             if foods:
-                derived["nutrition_favorite_foods"] = foods
+                derived["nutrition_staple_foods"] = foods
         except Exception:
             pass
         try:

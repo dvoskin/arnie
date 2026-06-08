@@ -47,7 +47,8 @@ CANONICAL_KEYS: dict[str, str] = {
     "protein_intake": "nutrition_protein_habits",
     "meal_timing": "nutrition_meal_timing",
     "meal_frequency": "nutrition_meal_timing",
-    "favorite_foods": "nutrition_favorite_foods",
+    "favorite_foods": "nutrition_staple_foods",
+    "nutrition_favorite_foods": "nutrition_staple_foods",  # collapse — same concept
     "staple_foods": "nutrition_staple_foods",
     "common_foods": "nutrition_staple_foods",
     "foods_avoided": "nutrition_foods_avoided",

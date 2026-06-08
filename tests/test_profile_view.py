@@ -119,12 +119,12 @@ def test_dedupe_labels_strips_redundant_prefixes():
     assert [f["label"] for f in mixed] == ["Injuries / limitations", "Zinc"]
 
 
-async def test_favorite_foods_derived_when_no_attribute(db, make_user):
-    """The Favorite foods slot fills from a passed-in derived value (mined from
+async def test_staple_foods_derived_when_no_attribute(db, make_user):
+    """The Staple foods slot fills from a passed-in derived value (mined from
     logs) when no explicit learned attribute exists."""
     u = await make_user(telegram_id="UP4", name="Test")
-    m = build_unified_profile(u, None, [], derived={"nutrition_favorite_foods": ["chicken", "rice"]})
-    fav = next(s for s in m["standard"]["nutrition"] if s["label"] == "Favorite foods")
+    m = build_unified_profile(u, None, [], derived={"nutrition_staple_foods": ["chicken", "rice"]})
+    fav = next(s for s in m["standard"]["nutrition"] if s["label"] == "Staple foods")
     assert fav["filled"] and fav["origin"] == "derived"
     assert fav["chips"] == ["chicken", "rice"]
 
@@ -137,24 +137,24 @@ async def test_empty_user_still_has_name_basic(db, make_user):
     assert any(b["label"] == "Name" and b["value"] == "Jo" for b in m["basics"])
 
 
-async def test_favorite_foods_union_does_not_shrink(db, make_user):
-    """A single learned favorite food must NOT replace the richer derived list —
+async def test_staple_foods_union_does_not_shrink(db, make_user):
+    """A single learned staple food must NOT replace the richer derived list —
     they're unioned, with the behavioral (derived) signal leading. Regression
     for the 'favorite foods 5 → 1' report."""
     from memory.attribute_store import upsert_attribute, get_all_attributes
     u = await make_user(telegram_id="UP5", name="Test")
-    await upsert_attribute(db, u.id, attribute_key="nutrition_favorite_foods",
+    await upsert_attribute(db, u.id, attribute_key="nutrition_staple_foods",
                            value="protein bar", category="nutrition", confidence="inferred")
     attrs = await get_all_attributes(db, u.id)
     m = build_unified_profile(u, None, attrs,
-                              derived={"nutrition_favorite_foods":
+                              derived={"nutrition_staple_foods":
                                        ["chicken", "rice", "oats", "yogurt", "eggs"]})
-    fav = next(s for s in m["standard"]["nutrition"] if s["label"] == "Favorite foods")
+    fav = next(s for s in m["standard"]["nutrition"] if s["label"] == "Staple foods")
     assert fav["filled"]
     assert "chicken" in fav["chips"] and "protein bar" in fav["chips"]
     assert len(fav["chips"]) >= 5
     # the learned attribute is consumed by the slot, not duplicated into Custom
-    assert all(c["label"].lower() != "favorite foods" for c in m["custom"])
+    assert all(c["label"].lower() != "staple foods" for c in m["custom"])
 
 
 async def test_concept_variants_fold_into_standard_slots(db, make_user):

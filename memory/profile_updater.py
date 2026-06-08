@@ -46,8 +46,8 @@ MARKDOWN RULES (Part 1):
    - injuries → Injuries / limitations (confirmed)
    - coaching_style pref → Coaching tone preference (confirmed)
    - age, height, sex → Demographics (confirmed)
-   If FREQUENT FOODS shows any item 3+ times → write it as Commonly eaten staples.
-   If any item appears 8+ times → write it as Favorite foods.
+   If FREQUENT FOODS shows any item 3+ times → write it under Commonly eaten staples.
+   There is no separate "Favorite foods" section — staples covers both.
 4. CONFIDENCE TAGS: `[confirmed]` (user stated/DB has it), `[inferred]` (you deduced
    from behavior), `[outdated]` (superseded), `[needs verification]` (assumed).
    DB fields count as [confirmed]. Single-turn mentions are [needs verification].
@@ -88,7 +88,7 @@ KEY REUSE — CRITICAL, this is what stops duplicate fields from piling up:
     context. If a fact is the SAME concept as one already tracked, reuse that EXACT
     key — never a reworded synonym (no second key for a concept you already track).
   • Use these CANONICAL keys for standard concepts (do not invent variants):
-      nutrition_diet_style · nutrition_favorite_foods · nutrition_staple_foods ·
+      nutrition_diet_style · nutrition_staple_foods ·
       nutrition_protein_habits · nutrition_meal_timing · nutrition_foods_avoided ·
       fitness_training_split · fitness_training_time · fitness_training_frequency ·
       fitness_cardio_habits · fitness_preferred_exercises ·
@@ -105,10 +105,13 @@ KEY REUSE — CRITICAL, this is what stops duplicate fields from piling up:
     make it GENERIC and reusable ({category}_{noun}) so next time you reuse it too —
     never one-off phrasings like fitness_cardio_preference vs fitness_cardio_type.
 
-VALUE LENGTH — keep values compact:
+VALUE LENGTH & DELIMITERS — keep values compact and unambiguous:
   Attribute values must be ≤ 80 characters. If a fact needs more than 80 chars it
-  is too granular — compress to the core pattern (e.g. "fish oil, zinc, magnesium"
-  not "takes fish oil 3×/wk, zinc 50mg daily, mag glycinate 400mg before bed").
+  is too granular — compress to the core pattern.
+  When a value contains a list of items, separate them with " · " (space-dot-space),
+  NOT commas. Commas look like attribute boundaries and cause fragmentation.
+  Good: "chicken · rice · eggs · oats"   Bad: "chicken, rice, eggs, oats"
+  Good: "fish oil · zinc · magnesium"    Bad: "fish oil, zinc, magnesium"
   Shorten long values on update too; don't inherit a verbose old value verbatim.
 
 CONFIDENCE — be honest, do NOT present guesses as facts:
@@ -129,7 +132,7 @@ just by saying "I like X". If the logs/conversation show something recurring, in
 it as a preference (tag [inferred]) even with no explicit statement:
   • a cardio activity logged most sessions → nutrition? no → fitness_cardio_habits
     (e.g. "spin bike, walks") [inferred]
-  • a food eaten most days → nutrition_favorite_foods / staples [inferred]
+  • a food eaten most days → nutrition_staple_foods [inferred]
   • an exercise hit every week → fitness_preferred_exercises [inferred]
   • a recurring meal-timing / training-time pattern → the matching attribute [inferred]
 Look actively for these, don't wait to be told.
