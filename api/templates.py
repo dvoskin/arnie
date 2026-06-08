@@ -1342,11 +1342,11 @@ footer{{
 
 /* ── 5-day trend strip ───────────────────────────────────── */
 .trend-strip{{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:4px}}
-.tcell{{background:var(--sf);border:1px solid var(--bd);border-radius:12px;padding:10px 12px;display:flex;flex-direction:column;gap:2px}}
-.tc-lbl{{font-size:9px;letter-spacing:.06em;text-transform:uppercase;color:var(--mu);font-weight:600}}
-.tc-val{{font-size:17px;font-weight:700;color:var(--tx);font-family:'Geist Mono','SF Mono',monospace;line-height:1.1}}
+.tcell{{background:var(--sf2);border:1px solid var(--bd);border-radius:12px;padding:10px 12px;display:flex;flex-direction:column;gap:2px}}
+.tc-lbl{{font-size:9px;letter-spacing:.06em;text-transform:uppercase;color:var(--mu);font-weight:500}}
+.tc-val{{font-size:16px;font-weight:600;color:var(--tx2);line-height:1.1}}
 .tc-sub{{font-size:10px;color:var(--mu);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}
-.tc-up{{color:var(--ac)}} .tc-dn{{color:var(--re)}} .tc-fl{{color:var(--mu)}}
+.tc-up{{color:var(--mu)}} .tc-dn{{color:var(--mu)}} .tc-fl{{color:var(--di)}}
 
 /* ── Arnie's learning progress ───────────────────────────── */
 .learn-bar{{height:4px;border-radius:4px;background:var(--sf3);overflow:hidden}}
@@ -2966,6 +2966,14 @@ function renderProfileTab(d){{
 }}
 
 // ── AI Profile ────────────────────────────────────────────────────────────
+// Global: must live outside renderAIProfile so onclick="pfToggleMore(this)" resolves.
+function pfToggleMore(btn) {{
+  var extra = btn.previousElementSibling;
+  var isOpen = extra.style.display !== 'none';
+  extra.style.display = isOpen ? 'none' : '';
+  btn.textContent = isOpen ? ('Show ' + btn.dataset.n + ' more') : 'Show less';
+}}
+
 var _aiProfileLoaded = false;
 
 const CATEGORY_LABELS = {{
@@ -3091,12 +3099,6 @@ function renderAIProfile(data) {{
       '<div class="inrow-right"><span class="inval">' + esc(c.value) + '</span>' + confDot + rm + '</div></div>';
   }}
   var PF_LIMIT = 5;
-  function pfToggleMore(btn) {{
-    var extra = btn.previousElementSibling;
-    var isOpen = extra.style.display !== 'none';
-    extra.style.display = isOpen ? 'none' : '';
-    btn.textContent = isOpen ? ('Show ' + btn.dataset.n + ' more') : 'Show less';
-  }}
   // _section now takes an array of pre-rendered row HTML strings so it can
   // slice at PF_LIMIT and wire up the show-more toggle without re-parsing HTML.
   function _section(label, rowsArr, learnLabels) {{
