@@ -937,9 +937,23 @@ body{{
   background:#f0a500;opacity:.7;box-shadow:0 0 5px rgba(240,165,0,.5);
 }}
 .pf-learning{{
-  font-size:11px;color:var(--mu);padding:9px 16px 10px;
-  border-top:1px solid var(--bd);letter-spacing:.01em;
+  font-size:11px;padding:8px 14px 9px;letter-spacing:.01em;
+  border-top:1px solid rgba(220,160,40,.22);
+  background:rgba(220,160,40,.07);
+  color:#9a7830;
+  display:flex;align-items:center;gap:6px;line-height:1.45;
 }}
+.pf-learn-dot{{
+  width:5px;height:5px;border-radius:50%;background:#c49428;
+  flex-shrink:0;opacity:.85;margin-top:1px;
+}}
+.pf-show-more{{
+  width:100%;padding:8px 14px;background:none;border:none;
+  border-top:1px solid var(--bd);color:var(--mu);font-size:12px;
+  cursor:pointer;text-align:center;display:block;font-family:inherit;
+  letter-spacing:.01em;transition:color .15s,background .15s;
+}}
+.pf-show-more:hover{{color:var(--tx);background:var(--sf2)}}
 .pf-legend{{
   display:flex;flex-wrap:wrap;gap:6px 15px;margin:15px 2px 2px;
   font-size:10.5px;color:var(--mu);opacity:.7;line-height:1.4;
@@ -1230,6 +1244,10 @@ footer{{
 [data-theme="dark"] .dev-card{{
   box-shadow:0 2px 8px rgba(0,0,0,.28);
 }}
+[data-theme="dark"] .pf-learning{{
+  color:#c4a050;background:rgba(220,160,40,.1);border-top-color:rgba(220,160,40,.28);
+}}
+[data-theme="dark"] .pf-learn-dot{{background:#d4b040}}
 
 /* ═══ MOBILE TYPOGRAPHY + LAYOUT FIXES ═════════════════════ */
 @media(max-width:560px){{
@@ -3072,12 +3090,29 @@ function renderAIProfile(data) {{
     return '<div class="inrow"><span class="inlbl">' + esc(c.label) + '</span>' +
       '<div class="inrow-right"><span class="inval">' + esc(c.value) + '</span>' + confDot + rm + '</div></div>';
   }}
-  function _section(label, rowsHtml, learnLabels) {{
-    if (!rowsHtml) return '';  // skip a section with no real content
+  var PF_LIMIT = 5;
+  function pfToggleMore(btn) {{
+    var extra = btn.previousElementSibling;
+    var isOpen = extra.style.display !== 'none';
+    extra.style.display = isOpen ? 'none' : '';
+    btn.textContent = isOpen ? ('Show ' + btn.dataset.n + ' more') : 'Show less';
+  }}
+  // _section now takes an array of pre-rendered row HTML strings so it can
+  // slice at PF_LIMIT and wire up the show-more toggle without re-parsing HTML.
+  function _section(label, rowsArr, learnLabels) {{
+    if (!rowsArr || !rowsArr.length) return '';
+    var visible = rowsArr.slice(0, PF_LIMIT).join('');
+    var extra = rowsArr.slice(PF_LIMIT);
+    var extraHtml = extra.length
+      ? '<div class="pf-extra" style="display:none">' + extra.join('') + '</div>' +
+        '<button class="pf-show-more" data-n="' + extra.length +
+        '" onclick="pfToggleMore(this)">Show ' + extra.length + ' more</button>'
+      : '';
     var learn = (learnLabels && learnLabels.length)
-      ? '<div class="pf-learning">Still learning &middot; ' + learnLabels.map(esc).join(' &middot; ') + '</div>' : '';
+      ? '<div class="pf-learning"><span class="pf-learn-dot"></span>Still learning &middot; ' +
+        learnLabels.map(esc).join(' &middot; ') + '</div>' : '';
     return '<div style="margin-top:20px"><div class="stitle" style="margin-top:0">' + esc(label) + '</div>' +
-      '<div class="infocrd">' + rowsHtml + learn + '</div></div>';
+      '<div class="infocrd">' + visible + extraHtml + learn + '</div></div>';
   }}
 
   // Nest custom/learned attributes under the section their category belongs to,
@@ -3093,21 +3128,21 @@ function renderAIProfile(data) {{
   var html = '';
   STD_ORDER.forEach(function(cat) {{
     var slots = std[cat] || [];
-    var filledRows = slots.filter(function(s){{ return s.filled; }})
-      .map(function(s){{ return _slotRow(s, cat); }}).join('');
-    var custRows = (customByCat[cat] || []).map(_customRow).join('');
+    var slotRowsArr = slots.filter(function(s){{ return s.filled; }})
+      .map(function(s){{ return _slotRow(s, cat); }});
+    var custRowsArr = (customByCat[cat] || []).map(_customRow);
     delete customByCat[cat];
     // Empty standard slots collapse into one compact "still learning" footer.
     var learnLabels = slots.filter(function(s){{ return !s.filled; }})
       .map(function(s){{ return s.label; }});
-    html += _section(CATEGORY_LABELS[cat]||cat, filledRows + custRows, learnLabels);
+    html += _section(CATEGORY_LABELS[cat]||cat, slotRowsArr.concat(custRowsArr), learnLabels);
   }});
 
   // Any custom attrs whose category isn't a standard section → one "Other" group.
   var leftover = [];
   Object.keys(customByCat).forEach(function(k){{ leftover = leftover.concat(customByCat[k]); }});
   if (leftover.length) {{
-    html += _section(CATEGORY_LABELS['custom']||'Other', leftover.map(_customRow).join(''), null);
+    html += _section(CATEGORY_LABELS['custom']||'Other', leftover.map(_customRow), null);
   }}
 
   // Super-subtle legend: what the dots mean + how to remove a custom item.
