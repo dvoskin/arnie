@@ -43,10 +43,15 @@ _LOGGING_TOOLS = frozenset({
 #
 # RELATIONSHIP TO NEEDS_HEADS_UP_TOOLS (from tool_executor): every voiced-
 # result tool also gets a heads-up before execution, but the wider set
-# (search_food_database, query_history, generate_image) gets heads-up
-# WITHOUT forced re-voice — those return data the LLM uses directly (USDA
-# macros it logs, history figures it coaches on, image url it captions).
-_VOICED_RESULT_TOOLS = frozenset({"web_search"})
+# (query_history, generate_image) gets heads-up WITHOUT forced re-voice —
+# those return data the LLM uses directly (history figures it coaches on,
+# image url it captions).
+#
+# search_food_database IS forced-revoice: its USDA macros live only in the
+# tool result, and the follow-up is text-only (chat_follow_up runs tools=False),
+# so without a forced re-voice the search result is dropped on the floor and the
+# turn dead-ends on "All set. What's next?" — the exact bug this prevents.
+_VOICED_RESULT_TOOLS = frozenset({"web_search", "search_food_database"})
 
 
 @dataclasses.dataclass
@@ -397,7 +402,7 @@ async def run_turn(
             response_text = await _try_follow_up()
             if not response_text:
                 response_text = deterministic_confirmation(
-                    tool_calls, today_log, user.preferences
+                    tool_calls, today_log, user.preferences, tool_results
                 )
                 _response_streamed = False  # deterministic fallback wasn't streamed
         else:
@@ -426,7 +431,7 @@ async def run_turn(
             # Never a bare "done." — real confirmation or keep-alive
             if tool_calls:
                 response_text = deterministic_confirmation(
-                    tool_calls, today_log, user.preferences
+                    tool_calls, today_log, user.preferences, tool_results
                 )
             else:
                 response_text = "Still here. What's the move?"

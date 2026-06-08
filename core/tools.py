@@ -356,12 +356,14 @@ _FOOD_DB_TOOLS = [
     {
         "name": "search_food_database",
         "description": (
-            "Search the USDA FoodData Central database for accurate macro data on a food. "
-            "Use before logging when the user mentions a specific branded product, restaurant item, "
-            "or any food where you're uncertain of the macros. Returns per-100g data plus "
-            "calculated totals for the user's quantity. "
-            "Do NOT use for staple foods where you're already confident (chicken breast, rice, eggs, oats). "
-            "Do NOT use just to confirm a number you already know well."
+            "Look up USDA macro data to ANSWER A QUESTION about a food's macros when the user is "
+            "NOT asking you to log it (e.g. 'how many calories in a Royo challah roll?', "
+            "'what's the protein in this?'). Returns per-100g data plus calculated totals. "
+            "CRITICAL: do NOT call this before logging. log_food already enriches every entry with "
+            "USDA data automatically — when the user says 'log X', call log_food(food_name=\"X\") "
+            "DIRECTLY and the macros are pulled for you in the same step. Calling search first and "
+            "then trying to log creates a broken two-step where the food never gets logged. "
+            "Do NOT use for staples you already know well (chicken breast, rice, eggs, oats)."
         ),
         "input_schema": {
             "type": "object",

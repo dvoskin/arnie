@@ -89,13 +89,39 @@ async def _resolve_log(inp: dict, user, today_log, db):
     return target, past_date
 
 
-def deterministic_confirmation(tool_calls, log, prefs) -> str:
+def deterministic_confirmation(tool_calls, log, prefs, tool_results=None) -> str:
     """
     Build a meaningful confirmation from what was actually logged, used when the
     LLM returns no text after a tool call. Never a bare "done." — the user always
     learns what happened and where they stand. Returns ||| multi-bubble text.
+
+    tool_results (optional) is the name→result-string map from execute_tool_calls,
+    used to surface real data (e.g. USDA macros from search_food_database) when the
+    model produced no text — so a macro lookup never dead-ends on a generic line.
     """
     names = {tc.get("name") for tc in (tool_calls or [])}
+    tool_results = tool_results or {}
+
+    # A macro lookup that produced no model text — surface the actual numbers from
+    # the USDA result rather than a content-free "all set." The user asked about a
+    # food's macros (or to log it); they must leave with the numbers, never a blank.
+    # Only when the SEARCH was the action — if a log also ran, fall through to the
+    # logged-confirmation branch below (the food is already on the board).
+    if "search_food_database" in names and not (
+        names & {"log_food", "update_food_entry"}
+    ):
+        macro = _macros_from_search(tool_results.get("search_food_database", ""))
+        food = next(
+            ((tc.get("input") or {}).get("food_name", "").strip()
+             for tc in (tool_calls or []) if tc.get("name") == "search_food_database"),
+            "",
+        )
+        if macro:
+            head = f"{food[:1].upper() + food[1:]}: {macro}" if food else macro
+            return f"{head}|||want me to log it?"
+        # No parseable macros (USDA miss) — still don't dead-end.
+        return (f"Couldn't pin exact macros on {food or 'that'}.|||"
+                "tell me roughly what it was and I'll log my best estimate.")
     cal = round(getattr(log, "total_calories", 0) or 0)
     pro = round(getattr(log, "total_protein", 0) or 0)
     cal_t = getattr(prefs, "calorie_target", None) if prefs else None
@@ -170,7 +196,30 @@ def deterministic_confirmation(tool_calls, log, prefs) -> str:
         return f"Done, removed it.|||{tail}"
     if "update_profile" in names:
         return "Got it, locked in. 👍|||Send me what you've eaten today and we'll keep building."
-    return "All set. What's next?"
+    # Generic net — only hit for tool turns with no specific branch above. Never a
+    # content-free "all set"; keep the ball in their court with the day's standing.
+    tail = (f"You're at {cal}/{cal_t} cal today." if cal_t
+            else f"That's {cal} cal so far today." if cal
+            else "What do you want to log next?")
+    return f"Got that.|||{tail}"
+
+
+def _macros_from_search(result: str) -> str:
+    """Pull a short macro summary from a search_food_database result string.
+    Prefers the per-quantity 'For X' totals line, falls back to per-100g.
+    Returns '' if neither is present (USDA miss / error result)."""
+    if not result:
+        return ""
+    import re as _re
+    # "For 1 bar (~50g): 180 cal, 20g P, 4g C, 9g F"
+    m = _re.search(r"For .+?:\s*(\d[\d.]*\s*cal[^\n]*)", result)
+    if m:
+        return m.group(1).strip()
+    # "Per 100g: 360 cal | 40g protein | 8g carbs | 18g fat"
+    m = _re.search(r"Per 100g:\s*([^\n]+)", result)
+    if m:
+        return f"{m.group(1).strip()} (per 100g)"
+    return ""
 
 
 # ─────────────────────────────────────────────────────────────────────────────
