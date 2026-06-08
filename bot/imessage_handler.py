@@ -915,16 +915,23 @@ async def run_imessage_pipeline(address: str, chat_guid: str, raw_text: str,
                 await IMessageAdapter(chat_guid).send(Response.from_text(text))
 
         # ── Delegate to shared pipeline core ──────────────────────────────────
+        # Wrap in try/finally so the "Arnie is typing…" indicator is ALWAYS
+        # cleared — if run_turn raises (e.g. a network error in the web_search/
+        # Tavily path or the re-voice follow-up), the exception propagates out of
+        # the finally and the user is not left with a stuck typing bubble. Mirrors
+        # the Telegram handler's try/finally around its _typing_keepalive task.
         from core.conversation import run_turn
-        turn = await run_turn(
-            user, db, messages, system, platform="imessage",
-            in_onboarding=in_onboarding, was_onboarding=was_onboarding,
-            today_log=today_log, source_type="imessage", on_image=_on_image,
-            on_interim=_on_interim, completion_facts=completion_facts,
-        )
+        try:
+            turn = await run_turn(
+                user, db, messages, system, platform="imessage",
+                in_onboarding=in_onboarding, was_onboarding=was_onboarding,
+                today_log=today_log, source_type="imessage", on_image=_on_image,
+                on_interim=_on_interim, completion_facts=completion_facts,
+            )
+        finally:
+            await bb_set_typing(chat_guid, False)
 
-        # ── Stop typing, then send via the iMessage adapter ───────────────────
-        await bb_set_typing(chat_guid, False)
+        # ── Send via the iMessage adapter ─────────────────────────────────────
         adapter = IMessageAdapter(chat_guid, reply_to_guid=message_guid)
         await adapter.send(turn.response)
 
