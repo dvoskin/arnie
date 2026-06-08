@@ -1353,7 +1353,7 @@ footer{{
 .learn-fill{{height:100%;background:var(--ac);border-radius:4px;transition:width .5s ease}}
 .learn-chips{{display:flex;flex-wrap:wrap;gap:7px 14px;margin-top:11px}}
 .learn-chip{{font-size:12px;color:var(--di);display:inline-flex;align-items:center;gap:5px;transition:color .2s}}
-.learn-chip.done{{color:var(--tx2)}}
+.learn-chip.done{{color:var(--ac)}}
 .learn-chip .lc-mk{{font-size:10px;color:var(--di);transition:color .2s}}
 .learn-chip.done .lc-mk{{color:var(--ac)}}
 
@@ -1455,6 +1455,13 @@ footer{{
       <div class="ins-body"><div class="icrd fade-in" id="insights-card"><div class="iload"><span class="spin">&#9675;</span> Analyzing&hellip;</div></div></div>
     </div>
 
+    <!-- ARNIE'S LEARNING — shown only for new users, hides at 100% -->
+    <div id="learn-wrap" style="display:none;margin-top:16px">
+      <div class="stitle" style="margin-bottom:8px">Arnie's learning <span id="learn-pct" style="font-weight:400;opacity:.55;font-size:9px;letter-spacing:.04em"></span></div>
+      <div class="learn-bar"><div class="learn-fill" id="learn-fill" style="width:0%"></div></div>
+      <div class="learn-chips" id="learn-list"></div>
+    </div>
+
     <!-- MACRO STRIP -->
     <div class="stitle" style="margin-top:16px" id="day-label">Today</div>
     <div class="macro-strip">
@@ -1490,13 +1497,6 @@ footer{{
       <span id="ca-badge" class="ds-pill"><span class="tcb"></span>No cardio</span>
       <span id="wt-badge" class="ds-pill on" style="display:none"></span>
       <button class="ds-share" onclick="shareDay()" aria-label="Share day">&#8679;</button>
-    </div>
-
-    <!-- ARNIE'S LEARNING -->
-    <div id="learn-wrap" style="display:none;margin-top:16px">
-      <div class="stitle" style="margin-bottom:8px">Arnie's learning <span id="learn-pct" style="font-weight:400;opacity:.55;font-size:9px;letter-spacing:.04em"></span></div>
-      <div class="learn-bar"><div class="learn-fill" id="learn-fill" style="width:0%"></div></div>
-      <div class="learn-chips" id="learn-list"></div>
     </div>
 
     <!-- 5-DAY TREND -->
@@ -1949,11 +1949,11 @@ function renderLearningProgress(d){{
   var loggedDays=hist.filter(function(h){{return (h.calories||0)>0;}}).length;
   var workoutDays=hist.filter(function(h){{return h.workout;}}).length;
   var items=[
-    {{label:'Goals & targets',  done:!!(p.primary_goal && tgt.calories && tgt.protein)}},
-    {{label:'Eating patterns',  done:loggedDays>=3}},
-    {{label:'Weight trend',     done:weights.length>=3}},
-    {{label:'Training habits',  done:workoutDays>=1}},
-    {{label:'Recovery data',    done:!!(p.whoop_connected||p.apple_health_connected)}},
+    {{label:'Goals',    done:!!(p.primary_goal && tgt.calories && tgt.protein)}},
+    {{label:'Eating',   done:loggedDays>=3}},
+    {{label:'Weight',   done:weights.length>=3}},
+    {{label:'Training', done:workoutDays>=1}},
+    {{label:'Recovery', done:!!(p.whoop_connected||p.apple_health_connected)}},
   ];
   var done=items.filter(function(i){{return i.done;}}).length;
   // Once Arnie has learned every dimension, the indicator has served its purpose —
@@ -2278,8 +2278,10 @@ function renderStreakStats(history,targets){{
   var monthAgo=new Date(today);monthAgo.setDate(monthAgo.getDate()-30);
   var monthStr=_localDate(monthAgo);
   var workouts=history.filter(function(h){{return h.date>=monthStr&&h.workout;}}).length;
-  var closed=history.filter(function(h){{return h.status==='closed';}});
-  var avgCal=closed.length?Math.round(closed.reduce(function(s,h){{return s+h.calories;}},0)/closed.length):null;
+  // Past days only — today's totals are still moving. No open/closed state any more.
+  var todayStr=_localDate(today);
+  var past=history.filter(function(h){{return h.date<todayStr;}});
+  var avgCal=past.length?Math.round(past.reduce(function(s,h){{return s+h.calories;}},0)/past.length):null;
 
   var el=document.getElementById('stat-streak');if(el)el.textContent=streak;
   el=document.getElementById('stat-workouts');if(el)el.textContent=workouts;
