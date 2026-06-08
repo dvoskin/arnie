@@ -613,8 +613,9 @@ body{{
   transition:background .15s,border-color .15s;
 }}
 .ins-banner:hover{{background:var(--sf2)}}
-.ins-spark{{flex-shrink:0;display:grid;place-items:center;color:var(--mu);opacity:.8}}
-.ins-title{{font-size:12.5px;font-weight:500;color:var(--tx2);letter-spacing:-.01em;white-space:nowrap}}
+.ins-spark{{flex-shrink:0;display:grid;place-items:center;color:var(--pu)}}
+.ins-title{{font-size:12.5px;font-weight:500;color:var(--tx);letter-spacing:-.01em;white-space:nowrap}}
+.ins-time{{font-size:10px;color:var(--mu);font-family:'Geist Mono','SF Mono',monospace;letter-spacing:.02em;white-space:nowrap}}
 .ins-actions{{margin-left:auto;display:flex;align-items:center;gap:2px;flex-shrink:0}}
 .ins-refresh{{
   color:var(--mu);font-size:14px;line-height:1;cursor:pointer;
@@ -1257,7 +1258,7 @@ footer{{
   /* Today counters — quiet label, clear weighted number, even bars */
   .macro-cell{{padding:12px 13px}}
   .mc-label{{font-size:9.5px;letter-spacing:.1em;margin-bottom:5px;color:var(--mu);font-weight:500}}
-  .mc-num{{font-size:28px;line-height:1}}
+  .mc-num{{font-size:31px;line-height:1}}
   .mc-sub{{font-size:11px;margin-top:4px;color:var(--mu)}}
   .mc-bar{{margin-top:8px;height:3px}}
   /* Toggles */
@@ -1427,6 +1428,7 @@ footer{{
       <div class="ins-banner" onclick="toggleInsights('day')" role="button" tabindex="0" aria-expanded="false">
         <span class="ins-spark"><svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M12 2.2l1.7 4.8 4.8 1.7-4.8 1.7L12 15.2l-1.7-4.8L5.5 8.7l4.8-1.7z"/><path d="M18.6 13.4l.82 2.18 2.18.82-2.18.82-.82 2.18-.82-2.18L15.6 16.4l2.18-.82z"/></svg></span>
         <span class="ins-title">Coach Insights</span>
+        <span class="ins-time" id="ins-time-day"></span>
         <span class="ins-actions">
           <span class="ins-refresh" onclick="event.stopPropagation();refreshInsights()" title="Refresh">&#8635;</span>
           <span class="ins-chev">&#9662;</span>
@@ -3237,6 +3239,13 @@ function _resetInsAuto(){{
     if(_activeTab==='week') loadWeekInsights();
   }},10800000);  // 3 hours
 }}
+function _stampInsTime(){{
+  var t=document.getElementById('ins-time-day');
+  if(!t)return;
+  var d=new Date(),h=d.getHours(),m=d.getMinutes(),ap=h>=12?'PM':'AM';
+  h=h%12||12;
+  t.textContent='updated '+h+':'+(m<10?'0':'')+m+' '+ap;
+}}
 function renderInsights(ins){{
   var el=document.getElementById('insights-card');
   if(!el)return;
@@ -3244,9 +3253,11 @@ function renderInsights(ins){{
     el.innerHTML='<div class="iempty">Not enough data yet — keep logging and Arnie will have more to say.</div>';
     return;
   }}
-  el.innerHTML=ins.slice(0,4).map(function(txt){{
+  // Day tab keeps it to 3 tight structured bullets.
+  el.innerHTML=ins.slice(0,3).map(function(txt){{
     return '<div class="irow fade-in"><div class="iico"></div><div class="itxt">'+esc(txt)+'</div></div>';
   }}).join('');
+  _stampInsTime();
 }}
 
 async function refreshInsights(){{
