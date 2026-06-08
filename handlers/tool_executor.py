@@ -191,28 +191,28 @@ def deterministic_confirmation(tool_calls, log, prefs) -> str:
 
 _TOOL_HEADS_UP_BUBBLES = {
     "web_search": (
-        "good q — let me look that up 🔎",
-        "hang on, let me check that 🔎",
-        "lemme look that up real quick 🔎",
-        "one sec, pulling that up 🔎",
+        "one sec, checking that.",
+        "looking that up.",
+        "give me a sec.",
+        "checking online.",
     ),
     "search_food_database": (
-        "lemme pull those macros 🩻",
-        "one sec on the macros 🩻",
-        "checking the database real quick",
-        "give me a sec, looking that up",
+        "one sec on the macros.",
+        "checking the numbers.",
+        "looking that up.",
+        "one sec.",
     ),
     "query_history": (
-        "let me pull your history 📊",
-        "checking the trend, one sec 📊",
-        "give me a sec to scan your data",
-        "lemme look back at your numbers",
+        "one sec, pulling your history.",
+        "checking the trend.",
+        "looking back at that.",
+        "give me a sec.",
     ),
     "generate_image": (
-        "drawing that up 🎨",
-        "give me a sec to sketch this 🎨",
-        "putting that together now",
-        "one sec, working on the image",
+        "drawing that up.",
+        "working on it.",
+        "one sec.",
+        "putting that together.",
     ),
 }
 
