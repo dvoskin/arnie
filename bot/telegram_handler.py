@@ -854,18 +854,12 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return
 
-        # Frame the message explicitly as food data so the LLM routes to log_food,
-        # not log_body_weight. Caption is preserved for context (restaurant name, etc.).
-        # IMPORTANT: do NOT use imperative "log each with log_food" here — that overrides
-        # the "never re-log what's already in [TODAY]" rule and causes duplicates when the
-        # same meal was already logged via text. Instead, instruct a check-first guard so
-        # the model skips items already in the log and only logs genuinely new ones.
+        # [Food photo] prefix triggers the PHOTO LOGGING system prompt rule:
+        # describe → clarify if needed → wait for user confirm → then log_food() next turn.
         caption_part = f" {caption}" if caption else ""
         combined = (
             f"[Food photo]{caption_part}\n"
-            f"Food items detected in photo:\n{analysis}\n"
-            f"Check [TODAY] first — if any of these items are already in the log, do NOT "
-            f"re-log them. Only call log_food() for items that are not already there."
+            f"Photo analysis:\n{analysis}"
         )
         await _run_pipeline(update, context, combined, "image", db)
 
