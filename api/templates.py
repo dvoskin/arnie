@@ -1324,6 +1324,15 @@ footer{{
 .tc-sub{{font-size:10px;color:var(--mu);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}
 .tc-up{{color:var(--ac)}} .tc-dn{{color:var(--re)}} .tc-fl{{color:var(--mu)}}
 
+/* ── Arnie's learning progress ───────────────────────────── */
+.learn-card{{background:var(--sf);border:1px solid var(--bd);border-radius:16px;padding:14px 16px;box-shadow:var(--sh)}}
+.learn-bar{{height:5px;border-radius:5px;background:var(--sf3);overflow:hidden;margin-bottom:12px}}
+.learn-fill{{height:100%;background:var(--ac);border-radius:5px;transition:width .5s ease}}
+.learn-item{{display:flex;align-items:center;gap:9px;font-size:13px;color:var(--mu);padding:3px 0}}
+.learn-item.done{{color:var(--tx2)}}
+.learn-check{{width:16px;height:16px;border-radius:50%;border:1.5px solid var(--bd2);flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:9px;color:transparent;transition:.2s}}
+.learn-item.done .learn-check{{background:var(--ac);border-color:var(--ac);color:#fff}}
+
 /* ── Settings preference cards (profile tab) ─────────────── */
 .pref-card{{background:var(--sf);border:1px solid var(--bd);border-radius:16px;padding:15px 16px;margin-bottom:9px;box-shadow:var(--sh)}}
 .pref-row{{display:flex;align-items:center;justify-content:space-between}}
@@ -1456,6 +1465,15 @@ footer{{
       <span id="ca-badge" class="ds-pill"><span class="tcb"></span>No cardio</span>
       <span id="wt-badge" class="ds-pill on" style="display:none"></span>
       <button class="ds-share" onclick="shareDay()">&#8679;</button>
+    </div>
+
+    <!-- ARNIE'S LEARNING -->
+    <div id="learn-wrap" style="display:none;margin-top:16px">
+      <div class="stitle" style="margin-bottom:8px">Arnie's learning <span id="learn-pct" style="font-weight:400;opacity:.55;font-size:9px;letter-spacing:.04em"></span></div>
+      <div class="learn-card">
+        <div class="learn-bar"><div class="learn-fill" id="learn-fill" style="width:0%"></div></div>
+        <div id="learn-list"></div>
+      </div>
     </div>
 
     <!-- 5-DAY TREND -->
@@ -1894,6 +1912,37 @@ async function loadDayData(d){{
   }}catch(e){{
     document.getElementById('food-log').innerHTML='<div class="lempty">Failed to load.</div>';
   }}
+}}
+
+// ── Arnie's learning progress ─────────────────────────────────────────────
+// A small checklist + bar that shows users Arnie sharpens as they feed it more.
+// Each item is a dimension Arnie learns about them; uses only the stats payload
+// (zero backend). Always shown when onboarded — at 100% it reads as "dialed in".
+function renderLearningProgress(d){{
+  var wrap=document.getElementById('learn-wrap');
+  if(!wrap)return;
+  var p=d.profile||{{}}, tgt=d.targets||{{}};
+  var hist=d.history||[], weights=d.weights||[];
+  var loggedDays=hist.filter(function(h){{return (h.calories||0)>0;}}).length;
+  var workoutDays=hist.filter(function(h){{return h.workout;}}).length;
+  var items=[
+    {{label:'Goals & targets',  done:!!(p.primary_goal && tgt.calories && tgt.protein)}},
+    {{label:'Eating patterns',  done:loggedDays>=3}},
+    {{label:'Weight trend',     done:weights.length>=3}},
+    {{label:'Training habits',  done:workoutDays>=1}},
+    {{label:'Recovery data',    done:!!(p.whoop_connected||p.apple_health_connected)}},
+  ];
+  var done=items.filter(function(i){{return i.done;}}).length;
+  var pctv=Math.round(done/items.length*100);
+  var fill=document.getElementById('learn-fill');if(fill)fill.style.width=pctv+'%';
+  var lbl=document.getElementById('learn-pct');if(lbl)lbl.textContent=pctv+'% LEARNED';
+  var list=document.getElementById('learn-list');
+  if(list)list.innerHTML=items.map(function(it){{
+    return '<div class="learn-item'+(it.done?' done':'')+'">'+
+      '<span class="learn-check">'+(it.done?'&#10003;':'')+'</span>'+esc(it.label)+
+      '</div>';
+  }}).join('');
+  wrap.style.display='block';
 }}
 
 // ── 5-day trend strip ─────────────────────────────────────────────────────
@@ -2367,7 +2416,8 @@ function renderDayTab(d){{
   var snap=health.find(function(h){{return h.date===_viewingDate;}}) || (health.length?health[0]:null);
   renderWhoopModule(snap, d.profile);
 
-  // 5-day trend strip — uses base history + weights (always present in stats payload)
+  // Arnie's learning progress + 5-day trend — both use only the stats payload
+  renderLearningProgress(d);
   renderTrendStrip(d.history||[], d.weights||[], d.targets||{{}});
 }}
 
