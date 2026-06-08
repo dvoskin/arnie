@@ -1062,14 +1062,14 @@ footer{{
 }}
 .ph-title{{
   font-family:'Instrument Serif','Times New Roman',serif;
-  font-size:38px;line-height:1;letter-spacing:-.025em;color:var(--tx);
+  font-size:24px;line-height:1;letter-spacing:-.02em;color:var(--tx);
 }}
-@media(max-width:940px){{.ph-title{{font-size:30px}}}}
-@media(max-width:560px){{.ph-title{{font-size:25px}}}}
+@media(max-width:940px){{.ph-title{{font-size:22px}}}}
+@media(max-width:560px){{.ph-title{{font-size:20px}}}}
 .ph-sub{{
   font-family:'Geist Mono','SF Mono',monospace;
-  font-size:11px;color:var(--mu);margin-top:8px;
-  letter-spacing:.07em;text-transform:uppercase;
+  font-size:12px;color:var(--tx2);margin-top:5px;
+  letter-spacing:.04em;
   display:flex;align-items:center;gap:12px;
 }}
 .ph-streak{{color:var(--ac);display:inline-flex;align-items:center;gap:5px;font-weight:500}}
@@ -1254,8 +1254,8 @@ footer{{
   /* Pagehead: hide icon-only buttons, keep just the Chat button */
   .pagehead .hbtn{{display:none}}
   .pagehead{{padding:12px 0 8px;gap:10px;align-items:center;margin-bottom:4px}}
-  .ph-title{{font-size:28px!important;letter-spacing:-.015em}}
-  .ph-sub{{font-size:11px;margin-top:6px;gap:8px}}
+  .ph-title{{font-size:20px!important;letter-spacing:-.01em}}
+  .ph-sub{{font-size:12px;margin-top:4px;gap:8px}}
   .ph-actions{{gap:5px}}
   .ph-log-btn{{padding:0 14px;height:35px;font-size:13px;border-radius:9px}}
   /* Section labels */
@@ -1320,7 +1320,7 @@ footer{{
 
 /* ── Medium breakpoint ───────────────────────────────────── */
 @media(max-width:740px) and (min-width:561px){{
-  .ph-title{{font-size:28px!important}}
+  .ph-title{{font-size:21px!important}}
   .cval{{font-size:30px}}
   .stitle{{font-size:10.5px}}
 }}
@@ -1447,20 +1447,6 @@ footer{{
       <button class="darr" id="date-next" onclick="navDate(1)"  aria-label="Next day">&#8250;</button>
     </div>
 
-    <!-- AI INSIGHTS — collapsed banner, expands on tap -->
-    <div class="insights" id="ins-day" style="margin-top:0">
-      <div class="ins-banner" onclick="toggleInsights('day')" role="button" tabindex="0" aria-expanded="false">
-        <span class="ins-spark"><svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M12 2.2l1.7 4.8 4.8 1.7-4.8 1.7L12 15.2l-1.7-4.8L5.5 8.7l4.8-1.7z"/><path d="M18.6 13.4l.82 2.18 2.18.82-2.18.82-.82 2.18-.82-2.18L15.6 16.4l2.18-.82z"/></svg></span>
-        <span class="ins-title">Coach Insights</span>
-        <span class="ins-time" id="ins-time-day"></span>
-        <span class="ins-actions">
-          <span class="ins-refresh" onclick="event.stopPropagation();refreshInsights()" title="Refresh">&#8635;</span>
-          <span class="ins-chev">&#9662;</span>
-        </span>
-      </div>
-      <div class="ins-body"><div class="icrd fade-in" id="insights-card"><div class="iload"><span class="spin">&#9675;</span> Analyzing&hellip;</div></div></div>
-    </div>
-
     <!-- ARNIE'S LEARNING — shown only for new users, hides at 100% -->
     <div id="learn-wrap" style="display:none;margin-top:12px">
       <div class="lrn-card">
@@ -1501,12 +1487,26 @@ footer{{
       </div>
     </div>
 
-    <!-- STATUS (workout / cardio / water) -->
+    <!-- STATUS (workout / cardio / water) — pills only shown when logged -->
     <div class="day-status">
-      <span id="wo-badge" class="ds-pill"><span class="tcb"></span>No workout</span>
-      <span id="ca-badge" class="ds-pill"><span class="tcb"></span>No cardio</span>
+      <span id="wo-badge" class="ds-pill on" style="display:none"></span>
+      <span id="ca-badge" class="ds-pill on" style="display:none"></span>
       <span id="wt-badge" class="ds-pill on" style="display:none"></span>
       <button class="ds-share" onclick="shareDay()" aria-label="Share day">&#8679;</button>
+    </div>
+
+    <!-- AI INSIGHTS — collapsed banner, expands on tap -->
+    <div class="insights" id="ins-day" style="margin-top:12px">
+      <div class="ins-banner" onclick="toggleInsights('day')" role="button" tabindex="0" aria-expanded="false">
+        <span class="ins-spark"><svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M12 2.2l1.7 4.8 4.8 1.7-4.8 1.7L12 15.2l-1.7-4.8L5.5 8.7l4.8-1.7z"/><path d="M18.6 13.4l.82 2.18 2.18.82-2.18.82-.82 2.18-.82-2.18L15.6 16.4l2.18-.82z"/></svg></span>
+        <span class="ins-title">Coach Insights</span>
+        <span class="ins-time" id="ins-time-day"></span>
+        <span class="ins-actions">
+          <span class="ins-refresh" onclick="event.stopPropagation();refreshInsights()" title="Refresh">&#8635;</span>
+          <span class="ins-chev">&#9662;</span>
+        </span>
+      </div>
+      <div class="ins-body"><div class="icrd fade-in" id="insights-card"><div class="iload"><span class="spin">&#9675;</span> Analyzing&hellip;</div></div></div>
     </div>
 
     <!-- 5-DAY TREND -->
@@ -2329,13 +2329,13 @@ function renderPageHead(d){{
   var name=((d.profile&&d.profile.name)||'').trim();
   pt.textContent=name?(g+', '+name):g;
   var now=new Date();
-  var ds=now.toLocaleDateString('en-US',{{weekday:'long',month:'long',day:'numeric'}}).toUpperCase();
+  var ds=now.toLocaleDateString('en-US',{{weekday:'long',month:'long',day:'numeric'}});
   var hist=d.history||[];
   var t0=new Date();t0.setHours(0,0,0,0);
   var logSet=new Set(hist.map(function(h){{return h.date;}}));
   var st=0,ck=new Date(t0);
   while(true){{var ds2=_localDate(ck);if(logSet.has(ds2)){{st++;ck.setDate(ck.getDate()-1);}}else break;}}
-  ps.innerHTML=esc(ds)+(st>0?' <span class="ph-streak">&#9889; '+st+'-DAY STREAK</span>':'');
+  ps.innerHTML='<span style="color:var(--tx);font-weight:500;letter-spacing:.01em">'+esc(ds)+'</span>'+(st>0?' <span class="ph-streak">&#9889; '+st+'-day streak</span>':'');
 }}
 
 function toggleLogSection(type){{
@@ -2455,9 +2455,9 @@ function renderDayTab(d){{
     .forEach(function(x){{var f=document.getElementById(x[0]);if(f)f.parentNode.style.display=x[1]?'':'none';}});
 
   var wb=document.getElementById('wo-badge');
-  if(wb){{var woOn=!!day.workout_completed;wb.className='ds-pill'+(woOn?' on':'');wb.innerHTML='<span class="tcb">'+(woOn?'&#10003;':'')+'</span>'+(woOn?'Workout':'No workout');}}
+  if(wb){{var woOn=!!day.workout_completed;wb.style.display=woOn?'':'none';if(woOn){{wb.className='ds-pill on';wb.innerHTML='<span class="tcb">&#10003;</span>Workout';}}}}
   var cb=document.getElementById('ca-badge');
-  if(cb){{var caOn=!!day.cardio_completed;cb.className='ds-pill'+(caOn?' on':'');cb.innerHTML='<span class="tcb">'+(caOn?'&#10003;':'')+'</span>'+(caOn?'Cardio':'No cardio');}}
+  if(cb){{var caOn=!!day.cardio_completed;cb.style.display=caOn?'':'none';if(caOn){{cb.className='ds-pill on';cb.innerHTML='<span class="tcb">&#10003;</span>Cardio';}}}}
   var wb2=document.getElementById('wt-badge');
   if(wb2){{
     // Water is opt-in — only show the pill when the user actually logs it, so it's
