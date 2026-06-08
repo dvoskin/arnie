@@ -1268,11 +1268,11 @@ footer{{
 @media(max-width:560px){{
   /* Pagehead: hide icon-only buttons, keep just the Chat button */
   .pagehead .hbtn{{display:none}}
-  .pagehead{{padding:12px 0 8px;gap:10px;align-items:center;margin-bottom:4px}}
+  .pagehead{{padding:10px 0 6px;gap:10px;align-items:center;margin-bottom:4px}}
   .ph-title{{font-size:22px!important;letter-spacing:-.01em}}
-  .ph-sub{{font-size:12px;margin-top:4px;gap:8px}}
+  .ph-sub{{font-size:12px;margin-top:3px;gap:8px}}
   .ph-actions{{gap:5px}}
-  .ph-log-btn{{padding:0 14px;height:35px;font-size:13px;border-radius:9px}}
+  .ph-log-btn{{padding:0 14px;height:34px;font-size:13px;border-radius:9px}}
   /* Section labels */
   .stitle{{margin:16px 0 8px;font-size:10px;letter-spacing:.11em}}
   /* Cards — two-tier radius: big content cards 14px, small cells 12px (uniform) */
@@ -1285,18 +1285,28 @@ footer{{
   .macro-ring-wrap{{padding:14px;gap:14px}}
   .csub{{font-size:12px}}
   /* Date nav */
-  .dchip{{padding:8px 13px;font-size:11.5px}}
+  .dchip{{padding:6px 11px;font-size:11px}}
   .darr{{width:34px;height:34px;border-radius:9px}}
-  .dnav{{gap:5px;margin-bottom:14px}}
+  .dnav{{gap:5px;margin-bottom:12px}}
+  /* Still learning */
+  #learn-wrap{{margin-top:10px!important}}
+  .lrn-card{{padding:9px 12px}}
+  .lrn-top{{gap:8px;margin-bottom:6px}}
   /* Today counters — quiet label, clear weighted number, even bars */
-  .macro-cell{{padding:12px 13px}}
+  .macro-cell{{padding:10px 12px}}
   .mc-label{{font-size:9px;letter-spacing:.08em;margin-bottom:4px;color:var(--mu);font-weight:500}}
   .mc-num{{font-size:26px;line-height:1.1}}
   .mc-sub{{font-size:10px;margin-top:3px;color:var(--mu)}}
-  .mc-bar{{margin-top:8px;height:3px}}
+  .mc-bar{{margin-top:6px;height:3px}}
+  /* Coach insights — hide timestamp on narrow screens, tighten banner */
+  .ins-time{{display:none}}
+  .ins-banner{{padding:10px 12px;gap:8px}}
+  .ins-spark{{width:26px;height:26px;border-radius:7px}}
   /* Toggles */
   .toggle{{padding:7px 11px;font-size:12px;gap:6px}}
   .toggles{{gap:6px;margin-bottom:14px}}
+  /* Food rows */
+  .eg-row{{padding:11px 13px}}
   /* Stats */
   .stat-num{{font-size:38px}}
   .stat-lbl{{font-size:10px}}
