@@ -19,6 +19,44 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 
+# ── Food logging mode ──────────────────────────────────────────────────────────
+# How aggressively Arnie confirms amounts/prep before logging. Three tiers:
+#   quick     — log immediately, estimate freely, only ask on extreme variance
+#   moderate  — the static FOOD_ACCURACY default (ask when it swings >120 cal)
+#   strict    — always confirm cook method + quantity before logging anything ambiguous
+# Maps a model- or user-written value (incl. relative "less"/"more" and synonyms)
+# onto one of the three tiers. Unknown values fall back to "moderate".
+_FOOD_MODES = {"quick", "moderate", "strict"}
+_FOOD_QUICKER = {"quick", "quicker", "fast", "faster", "less", "fewer", "minimal",
+                 "relaxed", "loose", "lenient", "lower", "easygoing", "chill"}
+_FOOD_STRICTER = {"strict", "stricter", "careful", "more", "precise", "accurate",
+                  "thorough", "higher", "exact", "detailed", "rigorous"}
+
+
+def normalize_food_logging_mode(value, current: str = "moderate") -> str:
+    """Map a model/user value onto a valid food-logging tier (quick/moderate/strict).
+
+    Exact tier name → returned as-is. "balanced"/"default"/"normal" → moderate.
+    Relative "less"/"more" (and synonyms) → one step toward quick/strict from the
+    user's CURRENT tier, so "ask me less" always relaxes and never tightens.
+    Anything unrecognized → moderate (the safe default)."""
+    v = str(value or "").strip().lower()
+    if v in _FOOD_MODES:
+        return v
+    if v in ("balanced", "default", "normal", "standard"):
+        return "moderate"
+    ladder = ["quick", "moderate", "strict"]
+    cur = str(current or "moderate").strip().lower()
+    if cur not in ladder:
+        cur = "moderate"
+    idx = ladder.index(cur)
+    if v in _FOOD_QUICKER:
+        return ladder[max(0, idx - 1)]
+    if v in _FOOD_STRICTER:
+        return ladder[min(len(ladder) - 1, idx + 1)]
+    return "moderate"
+
+
 def normalize_name(name: str) -> str:
     n = (name or "").lower().strip()
     n = re.sub(r"\b(\d+\s*(g|oz|cups?|tbsp|tsp|ml|servings?|slices?|pieces?))\b", "", n)

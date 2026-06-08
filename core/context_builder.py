@@ -10,6 +10,30 @@ from db.queries import get_recent_logs, get_recent_weights, get_recent_health_sn
 from memory.memory_manager import read_memory
 
 
+def food_mode_directive(mode: Optional[str]) -> str:
+    """Render the per-turn [FOOD LOGGING MODE] override for the user's food_logging_mode.
+
+    Pure + tiny so it's unit-testable and the only place the override prose lives.
+    "moderate" (or None / unknown) returns "" — the static FOOD_ACCURACY block in the
+    system prompt is the baseline, and only quick/strict deviate from it. Mirrors the
+    ACCURACY MODE section the system prompt points the model at.
+    """
+    m = (mode or "moderate").strip().lower()
+    if m == "quick":
+        return (
+            "[FOOD LOGGING MODE: quick] Log food immediately on your best estimate. "
+            "Do NOT ask the usual >120 cal clarifying question — only ask when the prep gap "
+            "is extreme (>300 cal, e.g. grilled vs deep-fried). Favor flow over confirmation."
+        )
+    if m == "strict":
+        return (
+            "[FOOD LOGGING MODE: strict] Confirm cook method AND quantity before logging any "
+            "ambiguous item, even when the swing is under 120 cal. Surface the uncertainty out "
+            "loud rather than silently estimating. (Still skip the question if they said 'just log it'.)"
+        )
+    return ""  # moderate / unknown = static system prompt default
+
+
 def fmt_log(log: Optional[DailyLog]) -> str:
     if not log:
         return "No log started today."
@@ -676,22 +700,8 @@ async def build_context(user: User, today_log: Optional[DailyLog], db,
         else "Apple Health: NOT connected."
     )
 
-    # Food logging mode — only quick/strict deviate from the static system prompt default
-    _food_mode = getattr(prefs, "food_logging_mode", None) or "moderate"
-    if _food_mode == "quick":
-        food_mode_inj = (
-            "[FOOD LOGGING MODE: quick] Log all food immediately without asking. "
-            "Use lean-high estimates for unknown portions. Only ask a clarifying question "
-            "when the variance between preparations exceeds ~300 cal (e.g. grilled vs deep-fried whole chicken)."
-        )
-    elif _food_mode == "strict":
-        food_mode_inj = (
-            "[FOOD LOGGING MODE: strict] Always ask the user to confirm cook method, "
-            "quantity, and key ingredients before logging any ambiguous item. "
-            "Never silently estimate — surface the uncertainty explicitly."
-        )
-    else:
-        food_mode_inj = ""  # moderate = static system prompt default
+    # Food logging mode — quick/strict inject an override; moderate is the static default.
+    food_mode_inj = food_mode_directive(getattr(prefs, "food_logging_mode", None))
 
     sections = [
         current_time_line,
