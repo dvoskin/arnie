@@ -193,25 +193,25 @@ def _dashboard_msg(action: str, **kw) -> str:
     cal_t = kw.get("cal_target")
     cal_str = f"{cal}/{cal_t}" if cal_t else str(cal)
     if action == "food_edit":
-        return f"updated {label} in your log — you're at {cal_str} cal."
+        return f"got it, updated {label}.|||you're at {cal_str} cal today."
     if action == "food_delete":
-        return f"removed {label} — you're at {cal_str} cal now."
+        return f"pulled {label} from your log.|||{cal_str} cal on the day."
     if action == "exercise_edit":
-        return f"updated that in your workout log."
+        return "training log updated."
     if action == "exercise_delete":
-        return f"removed that from your workout log."
+        return "pulled that from your training log."
     if action == "profile_targets":
-        return f"targets updated — {label}."
+        return f"locked in your new targets.|||{label}"
     if action == "profile_reminders_on":
-        return "check-ins back on."
+        return "check-ins back on. i'll be in touch."
     if action == "profile_reminders_off":
-        return "got it, going quiet."
+        return "going quiet. ping me whenever you need."
     if action == "profile_quick":
-        return "got it, logging quick from now on."
+        return "quick mode on — i'll log without the back and forth."
     if action == "profile_strict":
-        return "got it, i'll confirm everything before logging."
+        return "strict mode on — i'll confirm everything before it goes in."
     if action == "profile_field":
-        return f"{label} updated."
+        return f"updated your {label}."
     return ""
 
 
