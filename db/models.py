@@ -148,6 +148,14 @@ class FoodEntry(Base):
     estimated_flag = Column(Boolean, default=False)
     confidence_score = Column(Float)   # 0.0 – 1.0
     source_type = Column(String, default="text")  # text / voice / image
+    # T2.3 — meal timing + alcohol + micronutrient + photo flags. Enable
+    # meal-grouped display, alcohol-aware coaching, and photo-confidence
+    # heuristics downstream. Nullable for backward compat with existing rows.
+    meal_type = Column(String)               # breakfast|lunch|dinner|snack|pre_workout|post_workout
+    meal_time = Column(DateTime)             # when consumed (not when logged)
+    alcohol_units = Column(Float)            # for alcohol-aware coaching
+    micronutrients_json = Column(Text)       # {"iron": 2.1, "vitamin_d": 400, ...}
+    from_photo = Column(Boolean, default=False)
 
     daily_log = relationship("DailyLog", back_populates="food_entries")
 
@@ -181,9 +189,40 @@ class BodyMetric(Base):
     bodyfat_estimate = Column(Float)
     waist_cm = Column(Float)
     photo_reference = Column(String)
+    # T2.5 — when/how the weight was taken. Material for trend interpretation:
+    # a "morning_fasted" reading is the gold standard; "post_meal" / "evening"
+    # carry noise that should temper the coaching response.
+    context = Column(String)  # morning_fasted | post_meal | evening | post_workout | unknown
     timestamp = Column(DateTime, server_default=func.now())
 
     user = relationship("User", back_populates="body_metrics")
+
+
+class WaterEntry(Base):
+    """
+    T2.4 — Timestamped hydration log.
+
+    DailyLog.total_water_ml stays as a cached aggregate (updated on each
+    log_water call) for backward compatibility with the existing dashboard
+    and context display. WaterEntry rows are the canonical source: enables
+    timing-aware coaching ("you haven't had water since noon"), per-meal
+    hydration patterns, and morning/post-workout context.
+
+    daily_log_id is nullable because a water log MAY arrive before today's
+    DailyLog row is materialized (rare, defensive).
+    """
+    __tablename__ = "water_entries"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    daily_log_id = Column(Integer, ForeignKey("daily_logs.id"), nullable=True)
+    amount_ml = Column(Float, nullable=False)
+    context = Column(String)  # morning | with_meal | post_workout | during_workout | random
+    source_type = Column(String, default="text")
+    timestamp = Column(DateTime, server_default=func.now())
+
+    user = relationship("User")
+    daily_log = relationship("DailyLog")
 
 
 class ConversationLog(Base):

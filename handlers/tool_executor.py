@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.models import User, DailyLog, MemoryUpdate
 from db.queries import (
-    add_food_entry, add_exercise_entry, add_body_metric,
+    add_food_entry, add_exercise_entry, add_body_metric, add_water_entry,
     reload_user,
     update_food_entry as q_update_food_entry,
     delete_food_entry as q_delete_food_entry,
@@ -358,6 +358,18 @@ async def _dispatch(name, inp, user, today_log, db, source_type):  # noqa: C901
         food_name = inp.get("food_name") or ""
         analysis = await _analyze_food(db, user, food_name, inp)
 
+        # T2.3 — capture meal timing / alcohol / photo provenance. Photos are
+        # inherently noisier than text: force estimated=True and cap confidence
+        # at 0.75 regardless of what the model passed, so trend-tracking treats
+        # photo logs with appropriate skepticism.
+        from_photo = bool(inp.get("from_photo"))
+        _conf = inp.get("confidence", 0.8)
+        if from_photo:
+            _conf = min(_conf, 0.75)
+        # meal_time defaults to "now" so we capture WHEN, not just WHAT
+        from datetime import datetime as _dt
+        _meal_time = _dt.utcnow()
+
         await add_food_entry(
             db,
             target_log.id,
@@ -371,9 +383,13 @@ async def _dispatch(name, inp, user, today_log, db, source_type):  # noqa: C901
             fiber=analysis.fiber if analysis.fiber is not None else inp.get("fiber"),
             sugar=analysis.sugar,
             sodium=analysis.sodium,
-            estimated_flag=(analysis.confidence == "estimated"),
-            confidence_score=inp.get("confidence", 0.8),
+            estimated_flag=(analysis.confidence == "estimated") or from_photo,
+            confidence_score=_conf,
             source_type=source_type,
+            meal_type=inp.get("meal_type"),
+            meal_time=_meal_time,
+            alcohol_units=inp.get("alcohol_units"),
+            from_photo=from_photo,
         )
         await db.refresh(target_log)
 
@@ -477,8 +493,14 @@ async def _dispatch(name, inp, user, today_log, db, source_type):  # noqa: C901
         weight = inp["weight"]
         unit = inp.get("unit", "lbs")
         weight_kg = _lbs_to_kg(weight, unit)
-        await add_body_metric(db, user.id, weight_kg)
-        return f"Logged weight: {weight} {unit} ({weight_kg:.1f} kg)"
+        # T2.5 — context (morning_fasted / post_meal / evening / post_workout)
+        # is captured for trend interpretation. A morning_fasted reading is
+        # the gold standard; anything else carries noise the coach should
+        # weight accordingly.
+        context_val = inp.get("context")
+        await add_body_metric(db, user.id, weight_kg, context=context_val)
+        ctx_note = f" ({context_val})" if context_val else ""
+        return f"Logged weight: {weight} {unit} ({weight_kg:.1f} kg){ctx_note}"
 
     elif name == "update_food_entry":
         if not getattr(today_log, "id", None):
@@ -567,11 +589,25 @@ async def _dispatch(name, inp, user, today_log, db, source_type):  # noqa: C901
         return f"Removed exercise entry #{entry_id}"
 
     elif name == "log_water":
+        # T2.4 — resolve to target log (today by default; supports date= for
+        # past-day correction same as food/exercise).
+        target_log, past_date = await _resolve_log(inp, user, today_log, db)
         ml = inp.get("amount_ml") or (inp.get("amount_oz", 0) * 29.5735)
         if ml:
-            today_log.total_water_ml = (today_log.total_water_ml or 0) + ml
+            target_log.total_water_ml = (target_log.total_water_ml or 0) + ml
             await db.commit()
-        total_ml = today_log.total_water_ml or 0
+            # Canonical timestamped row alongside the aggregate. Failure here
+            # is logged but doesn't bubble up — the aggregate is still updated
+            # so the user sees their hydration progress.
+            try:
+                await add_water_entry(
+                    db, user.id, target_log.id,
+                    amount_ml=ml, context=inp.get("context"),
+                    source_type=source_type,
+                )
+            except Exception as e:
+                logger.warning(f"WaterEntry write failed (aggregate already updated): {e}")
+        total_ml = target_log.total_water_ml or 0
         oz_this = round((ml or 0) / 29.5735)
         total_oz = round(total_ml / 29.5735)
         # Hydration status relative to a common ~2400ml daily target

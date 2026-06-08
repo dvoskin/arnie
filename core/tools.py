@@ -37,6 +37,9 @@ _NUTRITION_TOOLS = [
                 "confidence": {"type": "number", "description": "0.0-1.0. 0.9+ for known foods, 0.6-0.8 for estimates"},
                 "estimated":  {"type": "boolean"},
                 "date":       {"type": "string", "description": "Optional. Log to a specific date instead of today. Use 'yesterday', '2 days ago', or YYYY-MM-DD format. Only set when user explicitly says they forgot to log something for a past day."},
+                "meal_type":  {"type": "string", "enum": ["breakfast", "lunch", "dinner", "snack", "pre_workout", "post_workout"], "description": "Optional. Which meal slot this fits. Infer from time of day + user history if not stated."},
+                "alcohol_units": {"type": "number", "description": "Optional. Standard alcohol units (1 unit ≈ 1 beer / 1 glass wine / 1 shot)."},
+                "from_photo": {"type": "boolean", "description": "True when logging from a food photo — sets confidence ≤0.75 and estimated=true automatically."},
             },
             "required": ["food_name", "quantity", "calories", "protein", "carbs", "fats", "confidence"],
         },
@@ -98,12 +101,19 @@ _NUTRITION_TOOLS = [
     },
     {
         "name": "log_water",
-        "description": "Log water intake when user mentions drinking water.",
+        "description": (
+            "Log water intake when user mentions drinking water. "
+            "Optionally include context (morning, with_meal, post_workout, "
+            "during_workout, random) for timing-aware hydration coaching, "
+            "and date= to log to a past day."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {
                 "amount_ml": {"type": "number"},
                 "amount_oz": {"type": "number"},
+                "context":   {"type": "string", "enum": ["morning", "with_meal", "post_workout", "during_workout", "random"], "description": "Optional. When/why they drank — improves hydration timing coaching."},
+                "date":      {"type": "string", "description": "Optional. Log to a specific date — 'yesterday', '2 days ago', or YYYY-MM-DD."},
             },
         },
     },
@@ -190,13 +200,20 @@ _FITNESS_TOOLS = [
             "'benched 225', 'squatted 315', 'hit 185 on bench' → use log_exercise instead. "
             "NEVER call based on food photo macro estimates — "
             "protein grams, fat grams, or calorie counts in a meal analysis are NOT body weight. "
-            "Do NOT call for food weights, portion sizes, or nutrition label values."
+            "Do NOT call for food weights, portion sizes, or nutrition label values. "
+            "If the user mentions WHEN they weighed in (morning, after meal, etc.) include "
+            "the context for trend interpretation."
         ),
         "input_schema": {
             "type": "object",
             "properties": {
                 "weight": {"type": "number"},
                 "unit":   {"type": "string", "enum": ["lbs", "kg"]},
+                "context": {
+                    "type": "string",
+                    "enum": ["morning_fasted", "post_meal", "evening", "post_workout", "unknown"],
+                    "description": "When/how the weight was taken. morning_fasted is gold standard; others carry noise.",
+                },
             },
             "required": ["weight", "unit"],
         },

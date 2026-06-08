@@ -307,6 +307,27 @@ async def add_body_metric(db: AsyncSession, user_id: int,
     return metric
 
 
+async def add_water_entry(db: AsyncSession, user_id: int, daily_log_id: int,
+                          amount_ml: float, context: Optional[str] = None,
+                          source_type: str = "text"):
+    """T2.4 — Persist a timestamped water log. DailyLog.total_water_ml stays
+    as the cached aggregate (updated by the caller alongside) for backward
+    compat with existing dashboards; the WaterEntry row is the canonical
+    source for hydration timing coaching and future per-event analytics."""
+    from db.models import WaterEntry
+    entry = WaterEntry(
+        user_id=user_id,
+        daily_log_id=daily_log_id,
+        amount_ml=amount_ml,
+        context=context,
+        source_type=source_type,
+    )
+    db.add(entry)
+    await db.commit()
+    await db.refresh(entry)
+    return entry
+
+
 async def get_recent_weights(db: AsyncSession, user_id: int,
                              days: int = 14) -> List[BodyMetric]:
     since = datetime.utcnow() - timedelta(days=days)
