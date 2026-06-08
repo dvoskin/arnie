@@ -1237,11 +1237,12 @@ footer{{
   .ph-log-btn{{padding:0 14px;height:35px;font-size:13px;border-radius:9px}}
   /* Section labels */
   .stitle{{margin:16px 0 8px;font-size:10px;letter-spacing:.11em}}
-  /* Cards */
+  /* Cards — two-tier radius: big content cards 14px, small cells 12px (uniform) */
   .cval{{font-size:28px}}
   .clbl{{font-size:9.5px;margin-bottom:5px;letter-spacing:.09em}}
-  .card{{padding:14px;border-radius:14px}}
-  .lcrd{{border-radius:14px}}
+  .card,.lcrd,.infocrd,.ancrd,.pref-card,.goal-card,.stat-tile,.whoop-stat{{border-radius:14px}}
+  .basic-cell,.tcell,.anitem{{border-radius:12px}}
+  .card{{padding:14px}}
   .heat-wrap{{padding:14px}}
   .macro-ring-wrap{{padding:14px;gap:14px}}
   .csub{{font-size:12px}}
