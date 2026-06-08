@@ -75,12 +75,19 @@ async def pipeline_env(monkeypatch):
     calls = {"chat": 0, "follow_up": 0}
 
     def set_llm(text="", tool_calls=None, follow_up_text="Logged it."):
-        async def _fake_chat(messages, system, tools=True, max_tokens=1024, model=None):
+        # **kwargs absorbs forward-compat params like stream_handler (T2.1).
+        async def _fake_chat(messages, system, tools=True, max_tokens=1024,
+                             model=None, stream_handler=None, **kwargs):
             calls["chat"] += 1
+            if stream_handler is not None and text:
+                await stream_handler(text)
             return {"text": text, "tool_calls": tool_calls or [], "raw_content": [{"x": 1}]}
 
-        async def _fake_follow_up(messages, raw, tcs, results, system, max_tokens=512):
+        async def _fake_follow_up(messages, raw, tcs, results, system,
+                                  max_tokens=512, stream_handler=None, **kwargs):
             calls["follow_up"] += 1
+            if stream_handler is not None and follow_up_text:
+                await stream_handler(follow_up_text)
             return follow_up_text
 
         # Patch on core.conversation — the shared orchestrator now owns LLM calls.
@@ -733,11 +740,21 @@ async def tg_pipeline_env(monkeypatch):
         bot = _FakeBot()
 
     def set_llm(text="", tool_calls=None, follow_up_text="Logged it."):
-        async def _fake_chat(messages, system, tools=True, max_tokens=1024, model=None):
+        # **kwargs absorbs forward-compat params like stream_handler (T2.1).
+        # When streaming is on, run_turn passes stream_handler=... to chat();
+        # we simulate streaming by emitting deltas to the handler so the test
+        # path mirrors prod behavior (the handler accumulates and emits bubbles).
+        async def _fake_chat(messages, system, tools=True, max_tokens=1024,
+                             model=None, stream_handler=None, **kwargs):
             calls["chat"] += 1
+            if stream_handler is not None and text:
+                await stream_handler(text)
             return {"text": text, "tool_calls": tool_calls or [], "raw_content": [{"x": 1}]}
-        async def _fake_follow_up(messages, raw, tcs, results, system, max_tokens=512):
+        async def _fake_follow_up(messages, raw, tcs, results, system,
+                                  max_tokens=512, stream_handler=None, **kwargs):
             calls["follow_up"] += 1
+            if stream_handler is not None and follow_up_text:
+                await stream_handler(follow_up_text)
             return follow_up_text
         monkeypatch.setattr(C, "chat", _fake_chat)
         monkeypatch.setattr(C, "chat_follow_up", _fake_follow_up)

@@ -83,12 +83,20 @@ async def chat(
     tools: bool = True,
     max_tokens: int = 1024,
     model: Optional[str] = None,
+    stream_handler: Optional[Any] = None,
 ) -> Dict[str, Any]:
     """
     Single-turn chat. Returns:
-        {text, tool_calls, raw_content}
+        {text, tool_calls, raw_content, stop_reason}
     raw_content is the list of Anthropic content blocks (needed for multi-turn).
     Pass model= to override the default (e.g. use Haiku for cheap low-latency calls).
+
+    stream_handler — optional async callable(text_delta: str) → None. When provided
+    AND using the Anthropic provider, the call uses messages.stream() and invokes
+    stream_handler for every text delta as it arrives. The return value is identical
+    to the non-streaming path (full text + tool_calls + stop_reason), so callers can
+    consume it the same way; the deltas are a SEPARATE side channel. The OpenAI path
+    ignores stream_handler (it's the Telegram-streaming feature, Anthropic-only).
     """
     # If OpenAI is the configured provider, use it directly.
     if LLM_PROVIDER() != "anthropic" and OPENAI_API_KEY():
@@ -99,7 +107,8 @@ async def chat(
     # fall back to OpenAI for this turn so Arnie keeps responding instead of going
     # dark. See AUDIT.md #8.
     try:
-        return await _anthropic_chat(messages, system, tools, max_tokens, model=model)
+        return await _anthropic_chat(messages, system, tools, max_tokens,
+                                     model=model, stream_handler=stream_handler)
     except Exception as e:
         if OPENAI_API_KEY():
             logger.warning(f"Anthropic chat failed ({e}); falling back to OpenAI.")
@@ -118,15 +127,22 @@ async def chat_follow_up(
     tool_results: Dict[str, str],
     system: str,
     max_tokens: int = 512,
+    stream_handler: Optional[Any] = None,
 ) -> str:
     """
     Second turn after tool use — feed results back and get final text.
     Only used when the first turn had no text response.
+
+    stream_handler — optional async callable(text_delta: str) → None. When
+    provided, the follow-up streams its text via messages.stream() and the
+    deltas are sent to stream_handler as they arrive. Return value is the
+    final concatenated text (same as the non-streaming path).
     """
     if LLM_PROVIDER() == "anthropic" or not OPENAI_API_KEY():
         try:
             return await _anthropic_follow_up(
-                messages, raw_assistant_content, tool_calls, tool_results, system, max_tokens
+                messages, raw_assistant_content, tool_calls, tool_results, system,
+                max_tokens, stream_handler=stream_handler,
             )
         except Exception as e:
             # The follow-up only refines the post-tool confirmation; on failure
@@ -233,7 +249,8 @@ async def analyze_image(image_data: bytes, prompt: str,
 
 # ── Anthropic internals ───────────────────────────────────────────────────────
 
-async def _anthropic_chat(messages, system, use_tools, max_tokens, model=None):
+async def _anthropic_chat(messages, system, use_tools, max_tokens, model=None,
+                          stream_handler=None):
     client = _get_anthropic()
 
     # Prompt caching: mark the system prompt block as cacheable.
@@ -256,6 +273,35 @@ async def _anthropic_chat(messages, system, use_tools, max_tokens, model=None):
     if use_tools:
         kwargs["tools"] = build_tools()
 
+    # Streaming path — called when a delta handler is provided (Telegram). The
+    # final message is identical to the non-streaming path; the deltas are a
+    # SEPARATE side channel for the caller to flush bubbles as they land. If
+    # stream_handler raises, log and continue collecting — the caller's bubbles
+    # may be incomplete, but the final return value (text + tool_calls) stays
+    # correct so the rest of the pipeline keeps working.
+    if stream_handler is not None:
+        async with client.messages.stream(**kwargs) as stream:
+            async for delta in stream.text_stream:
+                try:
+                    await stream_handler(delta)
+                except Exception as e:
+                    logger.warning(f"stream_handler raised on delta: {e}")
+            final = await stream.get_final_message()
+
+        text_parts, tool_calls = [], []
+        for block in final.content:
+            if block.type == "text":
+                text_parts.append(block.text)
+            elif block.type == "tool_use":
+                tool_calls.append({"name": block.name, "input": block.input, "id": block.id})
+        return {
+            "text": "\n".join(text_parts),
+            "tool_calls": tool_calls,
+            "raw_content": final.content,
+            "stop_reason": final.stop_reason,
+        }
+
+    # Non-streaming path — existing buffered behavior.
     resp = await client.messages.create(**kwargs)
 
     text_parts, tool_calls = [], []
@@ -274,7 +320,8 @@ async def _anthropic_chat(messages, system, use_tools, max_tokens, model=None):
 
 
 async def _anthropic_follow_up(messages, raw_assistant_content, tool_calls,
-                                tool_results, system, max_tokens):
+                                tool_results, system, max_tokens,
+                                stream_handler=None):
     client = _get_anthropic()
 
     tool_result_blocks = [
@@ -288,12 +335,24 @@ async def _anthropic_follow_up(messages, raw_assistant_content, tool_calls,
         {"role": "user", "content": tool_result_blocks},
     ]
 
-    resp = await client.messages.create(
+    kwargs = dict(
         model=DEFAULT_MODEL(),
         max_tokens=max_tokens,
         system=system,
         messages=follow_up_messages,
     )
+
+    if stream_handler is not None:
+        async with client.messages.stream(**kwargs) as stream:
+            async for delta in stream.text_stream:
+                try:
+                    await stream_handler(delta)
+                except Exception as e:
+                    logger.warning(f"follow-up stream_handler raised: {e}")
+            final = await stream.get_final_message()
+        return "".join(b.text for b in final.content if b.type == "text")
+
+    resp = await client.messages.create(**kwargs)
     return "".join(b.text for b in resp.content if b.type == "text")
 
 

@@ -60,6 +60,56 @@ class TurnResult:
     today_log: Any                  # may have been created/refreshed during the turn
     user: Any                       # refreshed after tool execution
     health_flags: list = dataclasses.field(default_factory=list)  # turn-health telemetry
+    streamed_bubble_count: int = 0  # bubbles already sent via on_text_delta (handler sends the rest)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# BUBBLE STREAMER — accumulates LLM text deltas and emits one bubble per |||
+# as soon as it completes. The trailing buffer (anything after the last |||)
+# is emitted by finalize() at end of stream. Lives here, not in core/llm.py,
+# because |||-splitting is an Arnie-voice contract, not an LLM-API concern.
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class _BubbleStreamer:
+    """Per-stream accumulator. on_bubble is async fn(text) → None called per
+    completed bubble; finalize() flushes the trailing buffer. Single-use:
+    create one per LLM call (first pass + follow-up each get their own).
+
+    Errors in on_bubble are caught + logged so a Telegram send failure can't
+    abort the LLM stream mid-flight (we'd lose the rest of the turn)."""
+
+    def __init__(self, on_bubble):
+        self.on_bubble = on_bubble
+        self._buffer = ""
+        self._full_text = ""
+        self.flushed_count = 0
+
+    async def on_delta(self, delta: str):
+        if not delta:
+            return
+        self._buffer += delta
+        self._full_text += delta
+        # Emit every completed bubble (delimited by |||) immediately.
+        while "|||" in self._buffer:
+            bubble, _, self._buffer = self._buffer.partition("|||")
+            await self._emit(bubble)
+
+    async def finalize(self):
+        """Flush the trailing buffer (text after the last ||| in the stream)."""
+        if self._buffer.strip():
+            await self._emit(self._buffer)
+            self._buffer = ""
+
+    async def _emit(self, text: str):
+        text = (text or "").strip()
+        if not text:
+            return
+        try:
+            await self.on_bubble(text)
+            self.flushed_count += 1
+        except Exception as e:
+            logger.warning(f"bubble flush failed (continuing stream): {e}")
 
 
 async def run_turn(
@@ -77,6 +127,7 @@ async def run_turn(
     on_interim: Optional[Callable] = None,  # async fn(text) → None; mid-turn heads-up
     on_completion: Optional[Callable] = None,  # fn(user) → str; defaults to plain welcome
     completion_facts: Optional[dict] = None,  # ephemeral TDEE/goal for the just-completed reflection
+    on_text_bubble: Optional[Callable] = None,  # async fn(bubble) → None — stream bubbles as they land
 ) -> TurnResult:
     """
     Core pipeline: LLM call → tool execution → coach-unmute / follow-up /
@@ -92,6 +143,16 @@ async def run_turn(
     _user_text = next((m.get("content", "") for m in reversed(messages)
                        if m.get("role") == "user"), "")
 
+    # Streaming aggregator — one per turn, accumulates bubble count across the
+    # first pass + follow-up + any self-heal retry. None when not streaming.
+    _streamed_total = 0
+    _streamer = _BubbleStreamer(on_text_bubble) if on_text_bubble else None
+    _stream_handler = _streamer.on_delta if _streamer else None
+    # Only pass stream_handler to LLM calls when active — keeps the chat() and
+    # chat_follow_up() signatures backward-compatible with mocks that predate
+    # T2.1 (no kwarg surface change for non-streaming callers / tests).
+    _chat_extras = {"stream_handler": _stream_handler} if _stream_handler else {}
+
     # ── LLM first pass ───────────────────────────────────────────────────────
     # Generous token budget on purpose: a user can dump a whole day of food in one
     # message, which becomes one log_food tool_use block per item (~130 tokens each).
@@ -99,7 +160,12 @@ async def run_turn(
     # response truncated mid-turn: it logged ~1 item, the rest were cut off, and the
     # dangling preamble ("Now logging everything:") got sent raw. 4096 fits ~30 items.
     try:
-        result = await chat(messages, system, tools=True, max_tokens=4096)
+        result = await chat(messages, system, tools=True, max_tokens=4096,
+                            **_chat_extras)
+        # Flush trailing buffer immediately so a no-||| partial doesn't carry
+        # over and prepend itself to the next call's first bubble.
+        if _streamer:
+            await _streamer.finalize()
 
         # Self-heal an incomplete turn. Two failure modes, both seen in prod:
         #   • truncated  — model ran out of budget mid-tool-call (stop_reason)
@@ -128,7 +194,13 @@ async def run_turn(
                     "don't stop on a colon, don't promise to do it next."
                 )},
             ]
-            result = await chat(retry_messages, system, tools=True, max_tokens=8192)
+            # Self-heal retry: stream it too if streaming is on. The original
+            # truncated/stalled output already flushed (finalize above), so the
+            # retry's stream starts with a clean buffer.
+            result = await chat(retry_messages, system, tools=True, max_tokens=8192,
+                                **_chat_extras)
+            if _streamer:
+                await _streamer.finalize()
             _messages_for_followup = retry_messages
     except Exception as e:
         logger.error(f"LLM call failed for {_tag}: {e}")
@@ -181,19 +253,41 @@ async def run_turn(
             (tc for tc in tool_calls if tc["name"] in NEEDS_HEADS_UP_TOOLS),
             None,
         )
-        if needs_heads_up_tc and on_interim:
-            _interim = (
-                response_text.strip()
-                if (response_text and response_text.strip())
-                else tool_heads_up(
-                    needs_heads_up_tc["name"],
-                    _heads_up_seed(needs_heads_up_tc),
+        if needs_heads_up_tc:
+            _model_wrote_text = bool(response_text and response_text.strip())
+            if _streamer:
+                # Streaming mode (Telegram): the model's first-pass text already
+                # flushed to the user via the bubble stream — DON'T also call
+                # on_interim with the same text or the user gets a double-send.
+                # Only fill in the deterministic fallback when the model wrote
+                # nothing, and route it through on_text_bubble so it lands in
+                # the same channel as the streamed bubbles.
+                if not _model_wrote_text and on_text_bubble:
+                    fallback = tool_heads_up(
+                        needs_heads_up_tc["name"],
+                        _heads_up_seed(needs_heads_up_tc),
+                    )
+                    try:
+                        await on_text_bubble(fallback)
+                        # Count it so the handler doesn't re-send it after the turn.
+                        if _streamer:
+                            _streamer.flushed_count += 1
+                    except Exception as e:
+                        logger.error(f"streaming heads-up fallback failed for {_tag}: {e}")
+            elif on_interim:
+                # Buffered mode (iMessage / no streaming): existing pattern —
+                # prefer the model's first-pass line, fall back to deterministic.
+                _interim = (
+                    response_text.strip() if _model_wrote_text
+                    else tool_heads_up(
+                        needs_heads_up_tc["name"],
+                        _heads_up_seed(needs_heads_up_tc),
+                    )
                 )
-            )
-            try:
-                await on_interim(_interim)
-            except Exception as e:
-                logger.error(f"interim heads-up failed for {_tag}: {e}")
+                try:
+                    await on_interim(_interim)
+                except Exception as e:
+                    logger.error(f"interim heads-up failed for {_tag}: {e}")
 
         tool_results = await execute_tool_calls(
             tool_calls, user, _log_for_tools, db, _source
@@ -241,12 +335,18 @@ async def run_turn(
     async def _try_follow_up(system_override: Optional[str] = None,
                              max_tokens: int = 700) -> Optional[str]:
         """One chat_follow_up call + the shared try/except + logger.error.
-        Returns the text, or None on failure (callers own their own fallbacks)."""
+        Returns the text, or None on failure (callers own their own fallbacks).
+        Streams via _stream_handler when streaming mode is active; finalizes
+        the streamer at the end so trailing buffer flushes as the last bubble."""
         try:
-            return await chat_follow_up(
+            text = await chat_follow_up(
                 _messages_for_followup, raw_content, tool_calls, tool_results,
                 system_override or system, max_tokens=max_tokens,
+                **_chat_extras,
             )
+            if _streamer:
+                await _streamer.finalize()
+            return text
         except Exception as e:
             logger.error(f"Follow-up failed for {_tag}: {e}")
             return None
@@ -336,7 +436,13 @@ async def run_turn(
     _dead_ended = False
     _logging_turn = any(tc["name"] in _LOGGING_TOOLS for tc in tool_calls)
     try:
-        if _looks_like_dead_end(response_text) and not _logging_turn:
+        # In streaming mode, dead-end repair can't help: the bubble was already
+        # flushed to the user. Skip the repair call (saves a roundtrip), and
+        # rely on the prompt-level rule + the streaming follow-up to keep things
+        # alive. Dead-end is still recorded in health flags below.
+        if (_looks_like_dead_end(response_text)
+                and not _logging_turn
+                and _streamer is None):
             _dead_ended = True
             logger.warning(f"Dead-end reply for {_tag}: {response_text[:60]!r} — repairing")
             _retry = await chat(
@@ -352,6 +458,9 @@ async def run_turn(
             )
             if (_retry.get("text") or "").strip():
                 response_text = _retry["text"]
+        elif _looks_like_dead_end(response_text) and not _logging_turn:
+            # Still log it for health telemetry even though we don't repair.
+            _dead_ended = True
     except Exception as e:
         logger.debug(f"dead-end guard failed for {_tag}: {e}")
 
@@ -362,6 +471,27 @@ async def run_turn(
     # which needs the raw LLM string for hook detection. If you ever join resp.bubbles
     # back into a string, derive it from the pre-dashboard slice, not after URL append.
     resp = Response.from_text(response_text)
+
+    # ── Streaming catch-up: emit any non-streamed response bubbles ────────────
+    # In streaming mode the model's text streamed live as it arrived. But several
+    # paths populate response_text from a NON-streamed source — most commonly
+    # the deterministic_confirmation fallback, the on_completion welcome, or the
+    # hardcoded "Still here. What's the move?" keep-alive. Those bubbles haven't
+    # reached the user yet. Send them via on_text_bubble now so the user sees
+    # them, and bump flushed_count so the handler doesn't ALSO send them.
+    # NOTE: streamed_count > len(resp.bubbles) is possible when response_text
+    # got replaced after a heads-up was streamed (e.g. tool result re-voice
+    # rewrote the reply). That's fine — the handler will skip the bubble loop.
+    if _streamer and on_text_bubble:
+        while _streamer.flushed_count < len(resp.bubbles):
+            next_idx = _streamer.flushed_count
+            try:
+                await on_text_bubble(resp.bubbles[next_idx])
+                _streamer.flushed_count += 1
+            except Exception as e:
+                logger.warning(f"post-build bubble send failed for {_tag}: {e}")
+                break  # prevent infinite loop on persistent send failure
+        _streamed_total = _streamer.flushed_count
 
     if just_completed:
         resp.effect    = FX.CELEBRATE
@@ -446,4 +576,5 @@ async def run_turn(
         today_log=today_log,
         user=user,
         health_flags=health_flags,
+        streamed_bubble_count=_streamed_total,
     )

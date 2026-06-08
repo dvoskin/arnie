@@ -626,16 +626,36 @@ async def _run_pipeline(update: Update, context: ContextTypes.DEFAULT_TYPE,
             )
 
     # ── Telegram interim heads-up: send the "looking that up" bubble NOW ──────
-    # Fires mid-turn (web_search only) so the user sees an immediate reply while
-    # the slow search + re-voice run. Uses the SAME |||-split send path as normal
-    # replies. The _typing_keepalive (started below) keeps the typing indicator
-    # going through the subsequent search. Mirrors how _on_image is wired.
+    # Fires mid-turn (slow tools — see NEEDS_HEADS_UP_TOOLS) so the user sees an
+    # immediate reply while the slow tool + re-voice run. Uses the SAME ||| send
+    # path as normal replies. Mirrors _on_image. Also covers iMessage callbacks
+    # that flow through the same shared core. Inside streaming mode (Telegram
+    # post-T2.1), run_turn skips on_interim entirely — the heads-up streams as a
+    # normal bubble via on_text_bubble instead, so there's never a double-send.
     async def _on_interim(text: str) -> None:
         bubbles = [b for b in (text or "").split("|||") if b.strip()]
         for j, bubble in enumerate(bubbles):
             await update.message.reply_text(**_fmt(bubble))
             if j < len(bubbles) - 1:
                 await asyncio.sleep(0.25)
+
+    # ── Telegram streaming bubble: emit each ||| chunk as it completes ────────
+    # T2.1 — the LLM stream pipes bubbles through run_turn → _BubbleStreamer →
+    # this callback, which sends each bubble as a separate Telegram message
+    # the moment its closing ||| arrives. iMessage stays buffered (BlueBubbles
+    # can't truly stream). Onboarding stays buffered too because the LAST
+    # bubble carries a reply_markup keyboard — streaming would attach it to
+    # whichever bubble streams last (which can't be predicted mid-stream).
+    # When this callback is wired, run_turn populates streamed_bubble_count
+    # and the post-turn send loop only handles bubbles that DIDN'T stream
+    # (dashboard link, onboarding completion extras).
+    async def _on_text_bubble(text: str) -> None:
+        if not (text and text.strip()):
+            return
+        try:
+            await update.message.reply_text(**_fmt(text))
+        except Exception as e:
+            logger.warning(f"Streaming bubble send failed (continuing): {e}")
 
     # ── Completion text for Telegram: rich HTML welcome with targets ──────────
     def _tg_completion(u) -> str:
@@ -655,6 +675,11 @@ async def _run_pipeline(update: Update, context: ContextTypes.DEFAULT_TYPE,
         _typing_keepalive(context.bot, chat_id, stop_typing)
     )
     from core.conversation import run_turn
+    # Stream only when: not in onboarding AND not the just-completed transition.
+    # Both keyboard-bearing paths need the LAST bubble identifiable for
+    # reply_markup attachment, which streaming can't promise mid-flight.
+    _streaming_eligible = (not in_onboarding) and (not was_onboarding)
+    _on_text_bubble_arg = _on_text_bubble if _streaming_eligible else None
     try:
         turn = await run_turn(
             user, db, messages, system, platform="telegram",
@@ -663,6 +688,7 @@ async def _run_pipeline(update: Update, context: ContextTypes.DEFAULT_TYPE,
             on_image=_on_image, on_interim=_on_interim,
             on_completion=_tg_completion,
             completion_facts=completion_facts,
+            on_text_bubble=_on_text_bubble_arg,
         )
     finally:
         stop_typing.set()
@@ -682,9 +708,15 @@ async def _run_pipeline(update: Update, context: ContextTypes.DEFAULT_TYPE,
         logger.debug(f"Telegram reaction failed (non-fatal): {e}")
 
     # ── Send response bubbles ─────────────────────────────────────────────────
-    for i, bubble in enumerate(turn.response.bubbles):
+    # Skip bubbles already streamed via _on_text_bubble (T2.1). The remainder
+    # is normally either: nothing (everything streamed), OR the dashboard-link
+    # extras appended in run_turn AFTER streaming, OR ALL bubbles when this
+    # turn wasn't streaming-eligible (onboarding / just-completed paths).
+    _already_streamed = getattr(turn, "streamed_bubble_count", 0) or 0
+    _remaining = list(turn.response.bubbles[_already_streamed:])
+    for i, bubble in enumerate(_remaining):
         fmt_kwargs = _fmt(bubble)
-        is_last = (i == len(turn.response.bubbles) - 1)
+        is_last = (i == len(_remaining) - 1)
 
         if turn.just_completed and is_last:
             fmt_kwargs["reply_markup"] = ReplyKeyboardRemove()
