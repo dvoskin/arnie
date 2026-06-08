@@ -5,11 +5,21 @@ logger = logging.getLogger(__name__)
 
 _FOOD_PROMPT = """You are analyzing a food image for a fitness tracking app. Reply in plain text only — no markdown, no headers, no bullet symbols, no asterisks.
 
-If it's a meal: list each food item on its own line with estimated quantity and macros (cal, protein, carbs, fat).
-If it's a nutrition label: state the key numbers — serving size, calories, protein, carbs, fat, fiber.
+If it's a meal: list each distinct food item on its own line in this format:
+  [item name], [quantity], [cal] cal, [protein]g P, [carbs]g C, [fat]g F
+Example: grilled chicken breast, ~6oz, 280 cal, 35g P, 0g C, 6g F
+
+Estimation rules:
+- State prep method when visible (grilled, fried, steamed, raw).
+- Restaurant or packaged meals: estimate 30-50% larger than typical home portions — restaurants use more oil, butter, and larger serves.
+- Account for hidden calories: pan-cooked items assume oil/butter (~100-150 cal); sauces and dressings add 100-300 cal even when not dominant.
+- Use realistic portion sizes — a restaurant chicken breast is typically 7-8oz, not 4oz.
+- When prep is not clearly visible, note it: "chicken (prep unclear)".
+
+If it's a nutrition label: state serving size, calories, protein, carbs, fat, fiber on one line.
 If it's a receipt or packaging: extract item names and any nutritional info shown.
 
-Keep it concise and factual. Use realistic estimates."""
+Be concise. One line per item."""
 
 _SCALE_PROMPT = "Read the weight shown on this scale. Reply with just the number and unit, nothing else."
 
