@@ -826,6 +826,9 @@ async def _build_stats_for_user(db, user, target_date=None):
         "coaching_style": prefs.coaching_style if prefs else None,
         "calorie_target": prefs.calorie_target if prefs else None,
         "protein_target": prefs.protein_target if prefs else None,
+        "reminder_frequency": (prefs.reminder_frequency if prefs else None) or "moderate",
+        "reminders_on": bool(prefs.proactive_messaging_enabled) if prefs else False,
+        "food_logging_mode": (getattr(prefs, "food_logging_mode", None) or "moderate") if prefs else "moderate",
         "whoop_connected": _whoop_connected,
         "apple_health_connected": any(s.source == "apple_health" for s in health_snaps),
         "analytics": analytics,
@@ -1117,8 +1120,9 @@ async def api_edit_profile(token: str, patch: ProfilePatch):
             "current_weight_lbs": "current_weight_kg",
             "goal_weight_lbs":    "goal_weight_kg",
         }
-        _pref_str = {"coaching_style"}
+        _pref_str = {"coaching_style", "reminder_frequency", "food_logging_mode"}
         _pref_int = {"calorie_target", "protein_target"}
+        _pref_bool = {"proactive_messaging_enabled"}
 
         try:
             if field in _str_fields:
@@ -1132,6 +1136,8 @@ async def api_edit_profile(token: str, patch: ProfilePatch):
                 setattr(user.preferences, field, str(raw).strip() if raw else None)
             elif field in _pref_int and user.preferences:
                 setattr(user.preferences, field, int(raw) if raw else None)
+            elif field in _pref_bool and user.preferences:
+                setattr(user.preferences, field, str(raw).lower() in ("true", "1", "yes", "on"))
             else:
                 raise HTTPException(status_code=400, detail=f"Unknown field: {field}")
         except (ValueError, TypeError):

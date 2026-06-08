@@ -676,6 +676,23 @@ async def build_context(user: User, today_log: Optional[DailyLog], db,
         else "Apple Health: NOT connected."
     )
 
+    # Food logging mode — only quick/strict deviate from the static system prompt default
+    _food_mode = getattr(prefs, "food_logging_mode", None) or "moderate"
+    if _food_mode == "quick":
+        food_mode_inj = (
+            "[FOOD LOGGING MODE: quick] Log all food immediately without asking. "
+            "Use lean-high estimates for unknown portions. Only ask a clarifying question "
+            "when the variance between preparations exceeds ~300 cal (e.g. grilled vs deep-fried whole chicken)."
+        )
+    elif _food_mode == "strict":
+        food_mode_inj = (
+            "[FOOD LOGGING MODE: strict] Always ask the user to confirm cook method, "
+            "quantity, and key ingredients before logging any ambiguous item. "
+            "Never silently estimate — surface the uncertainty explicitly."
+        )
+    else:
+        food_mode_inj = ""  # moderate = static system prompt default
+
     sections = [
         current_time_line,
         "=== PROFILE ===",
@@ -719,5 +736,6 @@ async def build_context(user: User, today_log: Optional[DailyLog], db,
         (attr_block if attr_block else ""),
         "",
         link_status,
+        (food_mode_inj if food_mode_inj else ""),
     ]
     return "\n".join(s for s in sections if s is not None)

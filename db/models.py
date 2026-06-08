@@ -98,6 +98,7 @@ class UserPreferences(Base):
     calorie_target = Column(Integer)
     protein_target = Column(Integer)
     preferred_language = Column(String)  # e.g. "Spanish", "French" — null means English/auto
+    food_logging_mode = Column(String, default="moderate")  # quick / moderate / strict
 
     user = relationship("User", back_populates="preferences")
 

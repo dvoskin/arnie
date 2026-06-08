@@ -1315,6 +1315,31 @@ footer{{
 .card:active,.stat-tile:active,.goal-card:active{{
   transform:scale(.985)!important;
 }}
+
+/* ── 5-day trend strip ───────────────────────────────────── */
+.trend-strip{{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:4px}}
+.tcell{{background:var(--sf);border:1px solid var(--bd);border-radius:12px;padding:10px 12px;display:flex;flex-direction:column;gap:2px}}
+.tc-lbl{{font-size:9px;letter-spacing:.06em;text-transform:uppercase;color:var(--mu);font-weight:600}}
+.tc-val{{font-size:17px;font-weight:700;color:var(--tx);font-family:'Geist Mono','SF Mono',monospace;line-height:1.1}}
+.tc-sub{{font-size:10px;color:var(--mu);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}
+.tc-up{{color:var(--ac)}} .tc-dn{{color:var(--re)}} .tc-fl{{color:var(--mu)}}
+
+/* ── Settings preference cards (profile tab) ─────────────── */
+.pref-card{{background:var(--sf);border:1px solid var(--bd);border-radius:14px;padding:14px 16px;margin-bottom:10px}}
+.pref-title{{font-size:10px;letter-spacing:.07em;text-transform:uppercase;color:var(--mu);font-weight:700;margin-bottom:10px}}
+.pref-row{{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}}
+.pref-lbl{{font-size:13px;color:var(--tx2)}}
+.pref-toggle{{position:relative;display:inline-block;width:40px;height:22px;flex-shrink:0}}
+.pref-toggle input{{opacity:0;width:0;height:0}}
+.pref-slider{{position:absolute;inset:0;background:var(--sf3);border-radius:22px;cursor:pointer;transition:.25s}}
+.pref-slider::before{{content:'';position:absolute;height:16px;width:16px;left:3px;top:3px;background:#fff;border-radius:50%;transition:.25s}}
+.pref-toggle input:checked+.pref-slider{{background:var(--ac)}}
+.pref-toggle input:checked+.pref-slider::before{{transform:translateX(18px)}}
+.pref-tiers{{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}}
+.pref-tiers.t3{{grid-template-columns:repeat(3,1fr)}}
+.ptier{{border:1px solid var(--bd);border-radius:8px;padding:6px 4px;font-size:11px;text-align:center;cursor:pointer;background:var(--sf);color:var(--mu);transition:.18s;font-weight:500}}
+.ptier:hover{{border-color:var(--bd2);color:var(--tx)}}
+.ptier.active{{border-color:var(--ac);background:var(--ac-dim);color:var(--ac);font-weight:700}}
 </style>
 </head>
 <body>
@@ -1428,6 +1453,12 @@ footer{{
       <span id="ca-badge" class="ds-pill"><span class="tcb"></span>No cardio</span>
       <span id="wt-badge" class="ds-pill on" style="display:none"></span>
       <button class="ds-share" onclick="shareDay()">&#8679;</button>
+    </div>
+
+    <!-- 5-DAY TREND -->
+    <div id="trend-wrap" style="display:none;margin-top:16px">
+      <div class="stitle" style="margin-bottom:8px">5-day trend <span id="trend-days-lbl" style="font-weight:400;opacity:.55;font-size:9px;letter-spacing:.04em"></span></div>
+      <div class="trend-strip" id="trend-strip"></div>
     </div>
 
     <!-- FOOD -->
@@ -1576,7 +1607,39 @@ footer{{
       <div id="workout-parse-status" style="padding:0 14px 10px;font-size:12px;color:var(--mu)"></div>
     </div>
 
-    <div class="stitle" style="margin-top:24px">Connected devices</div>
+    <!-- SETTINGS: Reminders & Check-ins -->
+    <div class="stitle" style="margin-top:24px">Check-ins &amp; reminders</div>
+    <div class="pref-card" id="remind-card">
+      <div class="pref-row">
+        <span class="pref-lbl">Daily check-ins</span>
+        <label class="pref-toggle">
+          <input type="checkbox" id="remind-toggle" onchange="saveRemindOn(this.checked)">
+          <span class="pref-slider"></span>
+        </label>
+      </div>
+      <div class="pref-title" style="margin-top:4px">Frequency</div>
+      <div class="pref-tiers" id="remind-tiers">
+        <div class="ptier" id="rf-none"  onclick="saveRemindFreq('none')">Minimal</div>
+        <div class="ptier" id="rf-light" onclick="saveRemindFreq('light')">Light</div>
+        <div class="ptier" id="rf-moderate" onclick="saveRemindFreq('moderate')">Regular</div>
+        <div class="ptier" id="rf-heavy" onclick="saveRemindFreq('heavy')">All-day</div>
+      </div>
+      <div style="font-size:11px;color:var(--mu);margin-top:8px" id="remind-desc"></div>
+    </div>
+
+    <!-- SETTINGS: Food Logging Mode -->
+    <div class="stitle" style="margin-top:16px">Food logging accuracy</div>
+    <div class="pref-card" id="food-mode-card">
+      <div class="pref-title">How should Arnie handle uncertain portions?</div>
+      <div class="pref-tiers t3" id="food-mode-tiers">
+        <div class="ptier" id="fm-quick"    onclick="saveFoodMode('quick')">Quick</div>
+        <div class="ptier" id="fm-moderate" onclick="saveFoodMode('moderate')">Balanced</div>
+        <div class="ptier" id="fm-strict"   onclick="saveFoodMode('strict')">Strict</div>
+      </div>
+      <div style="font-size:11px;color:var(--mu);margin-top:8px" id="food-mode-desc"></div>
+    </div>
+
+    <div class="stitle" style="margin-top:16px">Connected devices</div>
     <div class="infocrd" style="overflow:hidden" id="devices-card"></div>
   </div>
 
@@ -1824,6 +1887,156 @@ async function loadDayData(d){{
   }}catch(e){{
     document.getElementById('food-log').innerHTML='<div class="lempty">Failed to load.</div>';
   }}
+}}
+
+// ── 5-day trend strip ─────────────────────────────────────────────────────
+function renderTrendStrip(history, weights, targets){{
+  var wrap=document.getElementById('trend-wrap');
+  var strip=document.getElementById('trend-strip');
+  if(!wrap||!strip)return;
+
+  // Last 5 closed days from history (already sorted oldest→newest by the API)
+  var closed=(history||[]).filter(function(h){{return h.status==='closed';}});
+  var recent=closed.slice(-5);
+  if(recent.length<2){{wrap.style.display='none';return;}}
+
+  var lbl=document.getElementById('trend-days-lbl');
+  if(lbl)lbl.textContent='LAST '+recent.length+' DAYS';
+
+  function avgOf(arr,key){{
+    var vals=arr.map(function(x){{return x[key]||0;}});
+    return vals.reduce(function(a,b){{return a+b;}},0)/vals.length;
+  }}
+  function arrow(delta,thresh){{
+    if(delta>thresh)return'<span class="tc-up">↑</span>';
+    if(delta<-thresh)return'<span class="tc-dn">↓</span>';
+    return'<span class="tc-fl">→</span>';
+  }}
+
+  var avgCal=Math.round(avgOf(recent,'calories'));
+  var avgPro=Math.round(avgOf(recent,'protein'));
+  var calT=targets&&targets.calories;
+  var proT=targets&&targets.protein;
+
+  // Calorie trend: compare last 2 vs prior days
+  var last2Cal=recent.length>=2?Math.round((recent[recent.length-1].calories+recent[recent.length-2].calories)/2):avgCal;
+  var prior3Cal=recent.length>=3?Math.round(avgOf(recent.slice(0,-2),'calories')):avgCal;
+  var calDelta=last2Cal-prior3Cal;
+  var calArrow=arrow(calDelta,50);
+  var calSub=calT?(avgCal.toLocaleString()+'/'+calT.toLocaleString()+' target'):(avgCal.toLocaleString()+' avg');
+
+  // Protein trend
+  var last2Pro=recent.length>=2?Math.round((recent[recent.length-1].protein+recent[recent.length-2].protein)/2):avgPro;
+  var prior3Pro=recent.length>=3?Math.round(avgOf(recent.slice(0,-2),'protein')):avgPro;
+  var proDelta=last2Pro-prior3Pro;
+  var proArrow=arrow(proDelta,5);
+  var proSub=proT?(avgPro+'g/'+proT+'g target'):(avgPro+'g avg');
+
+  // Weight trend: last two weight entries (API already oldest→newest)
+  var wArr=(weights||[]).slice(-5);
+  var wtHtml='—';var wtSub='no weigh-ins';var wtArrow='';
+  if(wArr.length>=2){{
+    var oldest=wArr[0].lbs,newest=wArr[wArr.length-1].lbs;
+    var wDelta=newest-oldest;
+    wtHtml=newest.toFixed(1);
+    wtSub=(wDelta>=0?'+':'')+wDelta.toFixed(1)+' lb over '+wArr.length+' entries';
+    wtArrow=arrow(wDelta,0.2);
+  }}else if(wArr.length===1){{
+    wtHtml=wArr[0].lbs.toFixed(1);wtSub='1 weigh-in';
+  }}
+
+  strip.innerHTML=
+    '<div class="tcell">'+
+      '<div class="tc-lbl">Calories</div>'+
+      '<div class="tc-val">'+calArrow+' '+avgCal.toLocaleString()+'</div>'+
+      '<div class="tc-sub">'+esc(calSub)+'</div>'+
+    '</div>'+
+    '<div class="tcell">'+
+      '<div class="tc-lbl">Protein</div>'+
+      '<div class="tc-val">'+proArrow+' '+avgPro+'g</div>'+
+      '<div class="tc-sub">'+esc(proSub)+'</div>'+
+    '</div>'+
+    '<div class="tcell">'+
+      '<div class="tc-lbl">Weight</div>'+
+      '<div class="tc-val">'+wtArrow+' '+esc(String(wtHtml))+'</div>'+
+      '<div class="tc-sub">'+esc(wtSub)+'</div>'+
+    '</div>';
+
+  wrap.style.display='block';
+}}
+
+// ── Settings: Reminders ───────────────────────────────────────────────────
+var _REMIND_DESCS={{
+  none:'Morning check-in only — one anchor a day.',
+  light:'Morning and evening only.',
+  moderate:'Morning, midday, pre-workout, and evening (default).',
+  heavy:'All seven daily touchpoints — maximum coaching.',
+}};
+var _FOOD_DESCS={{
+  quick:'Log immediately. Estimate portions without asking. Only clarify when gap is extreme.',
+  moderate:'Ask one question when prep/amount would swing macros significantly (default).',
+  strict:'Always confirm cook method and quantity before logging anything ambiguous.',
+}};
+
+function renderRemindSettings(p){{
+  var on=p.reminders_on;
+  var tog=document.getElementById('remind-toggle');
+  if(tog)tog.checked=!!on;
+  var freq=p.reminder_frequency||'moderate';
+  ['none','light','moderate','heavy'].forEach(function(t){{
+    var el=document.getElementById('rf-'+t);
+    if(el)el.classList.toggle('active',t===freq);
+  }});
+  var desc=document.getElementById('remind-desc');
+  if(desc)desc.textContent=_REMIND_DESCS[freq]||'';
+}}
+
+function renderFoodModeSettings(p){{
+  var mode=p.food_logging_mode||'moderate';
+  ['quick','moderate','strict'].forEach(function(t){{
+    var el=document.getElementById('fm-'+t);
+    if(el)el.classList.toggle('active',t===mode);
+  }});
+  var desc=document.getElementById('food-mode-desc');
+  if(desc)desc.textContent=_FOOD_DESCS[mode]||'';
+}}
+
+async function saveRemindOn(checked){{
+  try{{
+    await fetch('/api/profile/'+TOKEN,{{
+      method:'PATCH',
+      headers:{{'Content-Type':'application/json'}},
+      body:JSON.stringify({{field:'proactive_messaging_enabled',value:checked?'true':'false'}}),
+    }});
+  }}catch(e){{}}
+}}
+
+async function saveRemindFreq(tier){{
+  try{{
+    await fetch('/api/profile/'+TOKEN,{{
+      method:'PATCH',
+      headers:{{'Content-Type':'application/json'}},
+      body:JSON.stringify({{field:'reminder_frequency',value:tier}}),
+    }});
+    if(_baseData&&_baseData.profile){{
+      _baseData.profile.reminder_frequency=tier;
+      renderRemindSettings(_baseData.profile);
+    }}
+  }}catch(e){{}}
+}}
+
+async function saveFoodMode(mode){{
+  try{{
+    await fetch('/api/profile/'+TOKEN,{{
+      method:'PATCH',
+      headers:{{'Content-Type':'application/json'}},
+      body:JSON.stringify({{field:'food_logging_mode',value:mode}}),
+    }});
+    if(_baseData&&_baseData.profile){{
+      _baseData.profile.food_logging_mode=mode;
+      renderFoodModeSettings(_baseData.profile);
+    }}
+  }}catch(e){{}}
 }}
 
 // ── Day tab ───────────────────────────────────────────────────────────────
@@ -2123,6 +2336,9 @@ function renderDayTab(d){{
   var health=d.health||[];
   var snap=health.find(function(h){{return h.date===_viewingDate;}}) || (health.length?health[0]:null);
   renderWhoopModule(snap, d.profile);
+
+  // 5-day trend strip — uses base history + weights (always present in stats payload)
+  renderTrendStrip(d.history||[], d.weights||[], d.targets||{{}});
 }}
 
 // ── Whoop sync from dashboard ─────────────────────────────────────────────
@@ -2604,11 +2820,15 @@ async function deleteWorkoutProgram(){{
   renderWorkoutProgram(null,'');
 }}
 
-// Profile tab is now driven by the unified /api/profile model (bio, Basics grid,
-// merged categories — see renderAIProfile). renderProfileTab only renders the
-// connected-devices card, which needs the /api/stats connection flags.
+// Profile tab renders the connected-devices card (needs /api/stats connection flags)
+// plus the settings cards for reminders and food logging mode (sourced from d.profile).
 function renderProfileTab(d){{
   var p=d.profile||{{}};
+
+  // Render settings cards whenever profile tab data is available
+  renderRemindSettings(p);
+  renderFoodModeSettings(p);
+
   var dc=document.getElementById('devices-card');
   if(!dc) return;
   var devs=[
