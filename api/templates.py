@@ -1463,8 +1463,7 @@ footer{{
     </div>
 
     <!-- MACRO STRIP -->
-    <div class="stitle" style="margin-top:16px" id="day-label">Today</div>
-    <div class="macro-strip">
+    <div class="macro-strip" style="margin-top:16px">
       <div class="macro-cell">
         <div class="mc-label">Calories</div>
         <div class="mc-num" id="cal-val">&mdash;</div>
