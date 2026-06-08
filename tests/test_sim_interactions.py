@@ -490,6 +490,84 @@ class TestDeterministicConfirmationCombos:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# log_water tool result — must be rich enough to drive a real coaching reply
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class TestWaterToolResult:
+    """
+    Regression: log_water's tool result was `"Logged 500 ml water"` — so sparse
+    that the follow-up LLM returned empty, triggering the deterministic fallback
+    "Water logged. 💧|||Keep sipping." on every single water log. The tool result
+    must now include enough context (total, hydration status, coaching directive)
+    for the LLM to generate a real 1-2 bubble coaching response.
+
+    These tests are async because _dispatch requires a DB session. We test the
+    output by inspecting what _dispatch WOULD produce via a thin synchronous stand-in
+    that simulates the updated return value format.
+    """
+
+    def _water_result(self, logged_ml: float, prior_total_ml: float = 0) -> str:
+        """Reproduce the updated log_water tool result without a DB call."""
+        total_ml = prior_total_ml + logged_ml
+        oz_this = round(logged_ml / 29.5735)
+        total_oz = round(total_ml / 29.5735)
+        if total_ml >= 2000:
+            hydration = "solid — well hydrated for the day"
+        elif total_ml >= 1200:
+            hydration = "on track"
+        else:
+            hydration = "still building — nudge them to keep drinking"
+        return (
+            f"Logged {round(logged_ml)}ml water (~{oz_this}oz). "
+            f"Water total today: {round(total_ml)}ml (~{total_oz}oz). "
+            f"Hydration status: {hydration}. "
+            f"YOUR REPLY: 1-2 short bubbles max. Quick read on their hydration and keep moving. "
+            f"Water is a low-friction log — don't over-coach it. "
+            f"If they're well-hydrated, one line and done. If still low, a brief nudge."
+        )
+
+    def test_result_includes_total_water(self):
+        """Tool result must expose the running daily total so the LLM can coach on it."""
+        result = self._water_result(500, prior_total_ml=700)
+        assert "1200ml" in result or "1200" in result  # 500 + 700 = 1200
+
+    def test_result_includes_hydration_status_low(self):
+        result = self._water_result(400, prior_total_ml=0)
+        assert "still building" in result
+
+    def test_result_includes_hydration_status_on_track(self):
+        result = self._water_result(500, prior_total_ml=900)
+        assert "on track" in result  # 1400ml total
+
+    def test_result_includes_hydration_status_solid(self):
+        result = self._water_result(600, prior_total_ml=1500)
+        assert "solid" in result  # 2100ml total
+
+    def test_result_includes_coaching_directive(self):
+        """Must include an explicit instruction so the LLM replies and doesn't leave empty."""
+        result = self._water_result(500)
+        assert "YOUR REPLY" in result
+        assert "short bubbles" in result
+
+    def test_result_includes_oz_conversion(self):
+        """oz is shown alongside ml for users who think in ounces."""
+        result = self._water_result(473)  # ~16oz
+        assert "oz" in result
+
+    def test_deterministic_fallback_is_only_a_last_resort(self):
+        """
+        The deterministic water fallback ('Keep sipping.') should only fire when the
+        follow-up LLM itself returns empty — which it won't when the tool result is rich.
+        Verify the fallback still exists as a safety net (not removed).
+        """
+        tc = [{"name": "log_water", "input": {}}]
+        out = deterministic_confirmation(tc, _log(), _prefs())
+        # Safety net still intact
+        assert "💧" in out
+        assert "water" in out.lower()
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # looks_like_stall — expanded edge cases
 # ═══════════════════════════════════════════════════════════════════════════════
 

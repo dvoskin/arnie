@@ -504,7 +504,24 @@ async def _dispatch(name, inp, user, today_log, db, source_type):  # noqa: C901
         if ml:
             today_log.total_water_ml = (today_log.total_water_ml or 0) + ml
             await db.commit()
-        return f"Logged {ml:.0f} ml water"
+        total_ml = today_log.total_water_ml or 0
+        oz_this = round((ml or 0) / 29.5735)
+        total_oz = round(total_ml / 29.5735)
+        # Hydration status relative to a common ~2400ml daily target
+        if total_ml >= 2000:
+            hydration = "solid — well hydrated for the day"
+        elif total_ml >= 1200:
+            hydration = "on track"
+        else:
+            hydration = "still building — nudge them to keep drinking"
+        return (
+            f"Logged {round(ml or 0)}ml water (~{oz_this}oz). "
+            f"Water total today: {round(total_ml)}ml (~{total_oz}oz). "
+            f"Hydration status: {hydration}. "
+            f"YOUR REPLY: 1-2 short bubbles max. Quick read on their hydration and keep moving. "
+            f"Water is a low-friction log — don't over-coach it. "
+            f"If they're well-hydrated, one line and done. If still low, a brief nudge."
+        )
 
     elif name == "close_day":
         await close_daily_log(db, today_log.id)
