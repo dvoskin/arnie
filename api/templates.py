@@ -1399,6 +1399,10 @@ footer{{
         <span class="ni-ico"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.2 4-6.5 8-6.5s8 2.3 8 6.5"/></svg></span>
         <span class="ni-lbl">Profile</span><span class="ni-meta">You</span>
       </button>
+      <button class="navitem" id="nav-coaching" onclick="switchTab('coaching')">
+        <span class="ni-ico"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3C7 3 3 6.6 3 11c0 2.4 1.1 4.5 2.9 6L5 21l4.3-1.4A9.6 9.6 0 0 0 12 20c5 0 9-3.6 9-8s-4-9-9-9Z"/><path d="M9 11h.01M12 11h.01M15 11h.01" stroke-width="2.2" stroke-linecap="round"/></svg></span>
+        <span class="ni-lbl">Coaching</span><span class="ni-meta">Settings</span>
+      </button>
     </nav>
   </div>
   <div class="sb-foot">
@@ -1650,8 +1654,13 @@ footer{{
       <div id="workout-parse-status" style="padding:0 14px 10px;font-size:12px;color:var(--mu)"></div>
     </div>
 
-    <!-- SETTINGS: Reminders & Check-ins -->
-    <div class="stitle" style="margin-top:24px">Reminders</div>
+    <div class="stitle" style="margin-top:16px">Connected devices</div>
+    <div class="infocrd" style="overflow:hidden" id="devices-card"></div>
+  </div>
+
+  <!-- COACHING TAB -->
+  <div class="tab-panel" id="panel-coaching">
+    <div class="stitle" style="margin-top:4px">Reminders</div>
     <div class="pref-card" id="remind-card">
       <div class="pref-row">
         <span class="pref-lbl">Daily check-ins</span>
@@ -1673,7 +1682,6 @@ footer{{
       </div>
     </div>
 
-    <!-- SETTINGS: Food Logging Mode -->
     <div class="stitle" style="margin-top:16px">Food logging</div>
     <div class="pref-card" id="food-mode-card">
       <input type="range" class="pref-range" id="food-mode-range" min="0" max="2" step="1" value="1"
@@ -1685,9 +1693,6 @@ footer{{
       </div>
       <div class="pref-hint" id="food-mode-desc"></div>
     </div>
-
-    <div class="stitle" style="margin-top:16px">Connected devices</div>
-    <div class="infocrd" style="overflow:hidden" id="devices-card"></div>
   </div>
 
 <footer>Arnie &middot; auto-refresh 5 min</footer>
@@ -1703,6 +1708,9 @@ footer{{
   </button>
   <button class="bn-item" id="bn-profile" onclick="switchTab('profile')">
     <span class="bn-ico"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.2 4-6.5 8-6.5s8 2.3 8 6.5"/></svg></span>Profile
+  </button>
+  <button class="bn-item" id="bn-coaching" onclick="switchTab('coaching')">
+    <span class="bn-ico"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3C7 3 3 6.6 3 11c0 2.4 1.1 4.5 2.9 6L5 21l4.3-1.4A9.6 9.6 0 0 0 12 20c5 0 9-3.6 9-8s-4-9-9-9Z"/><path d="M9 11h.01M12 11h.01M15 11h.01" stroke-width="2.2" stroke-linecap="round"/></svg></span>Coaching
   </button>
 </nav>
 
@@ -1814,8 +1822,14 @@ async function loadInsights(){{
 // ── Tab switching ─────────────────────────────────────────────────────────
 var PAGE_HEADS={{
   week:{{title:'Your trends',sub:'LAST 30 DAYS'}},
-  profile:{{title:'Your profile',sub:'ACCOUNT &amp; COACHING'}},
+  profile:{{title:'Your profile',sub:'ACCOUNT &amp; SETTINGS'}},
+  coaching:{{title:'Coaching',sub:'PREFERENCES &amp; REMINDERS'}},
 }};
+function renderCoachingTab(d) {{
+  var p = (d && d.profile) || {{}};
+  renderRemindSettings(p);
+  renderFoodModeSettings(p);
+}}
 function switchTab(name){{
   _activeTab=name;
   document.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('active'));
@@ -1835,6 +1849,7 @@ function switchTab(name){{
   if(name==='day') loadInsights();
   if(name==='week'){{if(_baseData)renderWeekTab(_baseData);loadWeekInsights();}}
   if(name==='profile' && _baseData){{renderProfileTab(_baseData);loadWorkoutProgram();loadAIProfile();}}
+  if(name==='coaching' && _baseData){{renderCoachingTab(_baseData);}}
 }}
 
 // ── Boot ──────────────────────────────────────────────────────────────────
@@ -2941,10 +2956,6 @@ async function deleteWorkoutProgram(){{
 // plus the settings cards for reminders and food logging mode (sourced from d.profile).
 function renderProfileTab(d){{
   var p=d.profile||{{}};
-
-  // Render settings cards whenever profile tab data is available
-  renderRemindSettings(p);
-  renderFoodModeSettings(p);
 
   var dc=document.getElementById('devices-card');
   if(!dc) return;
