@@ -17,7 +17,10 @@ _NUTRITION_TOOLS = [
         "name": "log_food",
         "description": (
             "Log ONE food or meal item to the daily nutrition log. "
-            "Call whenever the user mentions eating or drinking anything (except plain water). "
+            "Call when the user reports having eaten or drunk something — past or present tense "
+            "('just had', 'ate', 'having right now', 'finished'). "
+            "Do NOT call for future plans or intentions ('going to have', 'planning to eat', "
+            "'thinking about', 'about to eat', 'might grab', 'gonna have'). "
             "Call ONCE per distinct food item — one item per call. "
             "Multiple foods = multiple calls."
         ),
@@ -238,7 +241,10 @@ _PROFILE_TOOLS = [
             "training_experience (beginner/intermediate/advanced), dietary_preferences, "
             "injuries, sport, units_preference, timezone. "
             "Preference fields: coaching_style, accountability_level, calorie_target, "
-            "protein_target, wake_time, sleep_time, proactive_messaging_enabled, preferred_language."
+            "protein_target, wake_time, sleep_time, proactive_messaging_enabled, preferred_language, "
+            "reminder_frequency (none/light/moderate/heavy, or relative less/more), "
+            "food_logging_mode (quick/moderate/strict, or relative less/more — how much Arnie "
+            "confirms food amounts and prep before logging)."
         ),
         "input_schema": {
             "type": "object",
@@ -296,6 +302,198 @@ _CREATIVE_TOOLS = [
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# HISTORY & ANALYTICS TOOLS
+# ─────────────────────────────────────────────────────────────────────────────
+
+_HISTORY_TOOLS = [
+    {
+        "name": "query_history",
+        "description": (
+            "Look up the user's historical data beyond what's in context (which only covers ~7 days). "
+            "Use when asked about past performance, averages, trends, or a specific date more than "
+            "7 days ago: 'what was I averaging last month?', 'show my weight over the last 30 days', "
+            "'what was my bench press 3 weeks ago?', 'how consistent have I been?'. "
+            "Do NOT use for data already visible in today's log or the recent history block."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "metric": {
+                    "type": "string",
+                    "enum": ["calories", "protein", "weight", "workouts", "exercise", "all"],
+                    "description": (
+                        "What to pull. Use 'exercise' with exercise_name for a specific lift's history. "
+                        "'all' returns a compact daily summary for the period."
+                    ),
+                },
+                "period": {
+                    "type": "string",
+                    "description": (
+                        "Time window: 'last_7', 'last_14', 'last_30', 'last_60', 'last_90', "
+                        "or 'YYYY-MM-DD' for a single specific date."
+                    ),
+                },
+                "exercise_name": {
+                    "type": "string",
+                    "description": "Required when metric='exercise'. Name of the lift (e.g. 'bench press', 'squat').",
+                },
+            },
+            "required": ["metric", "period"],
+        },
+    },
+]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# FOOD DATABASE TOOL
+# ─────────────────────────────────────────────────────────────────────────────
+
+_FOOD_DB_TOOLS = [
+    {
+        "name": "search_food_database",
+        "description": (
+            "Search the USDA FoodData Central database for accurate macro data on a food. "
+            "Use before logging when the user mentions a specific branded product, restaurant item, "
+            "or any food where you're uncertain of the macros. Returns per-100g data plus "
+            "calculated totals for the user's quantity. "
+            "Do NOT use for staple foods where you're already confident (chicken breast, rice, eggs, oats). "
+            "Do NOT use just to confirm a number you already know well."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "food_name": {
+                    "type": "string",
+                    "description": "The food or product name to search. Be specific: brand + product name if known.",
+                },
+                "quantity": {
+                    "type": "string",
+                    "description": "Optional. The user's serving size (e.g. '1 cup', '200g', '1 bar') to calculate totals.",
+                },
+            },
+            "required": ["food_name"],
+        },
+    },
+]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ATTRIBUTE & METRIC TOOLS
+# ─────────────────────────────────────────────────────────────────────────────
+
+_ATTRIBUTE_TOOLS = [
+    {
+        "name": "store_attribute",
+        "description": (
+            "Persist a structured fact you've learned about this user to their permanent profile. "
+            "Use for clear, discrete, queryable facts: supplement dosages, biomarkers (testosterone, HRV), "
+            "food intolerances, training habits, lifestyle details, behavioral patterns. "
+            "Each call stores ONE fact under one key. "
+            "Prefer this over update_memory when the fact has a single value and a clear category. "
+            "Use update_memory only for multi-part coaching observations or narrative notes."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "key": {
+                    "type": "string",
+                    "description": (
+                        "Attribute key in {category}_{noun} format. Examples: "
+                        "'health_supplement_creatine_g', 'nutrition_diet_style', "
+                        "'fitness_training_time', 'behavior_motivation_driver', "
+                        "'health_biomarker_testosterone_ng_dl', 'lifestyle_occupation'."
+                    ),
+                },
+                "value": {
+                    "type": "string",
+                    "description": "The value to store (always as a string, even for numbers).",
+                },
+                "unit": {
+                    "type": "string",
+                    "description": "Optional unit (mg, hours, lbs, ng/dL, etc.)",
+                },
+                "category": {
+                    "type": "string",
+                    "enum": ["nutrition", "fitness", "health", "lifestyle", "behavior", "mental", "custom"],
+                },
+            },
+            "required": ["key", "value", "category"],
+        },
+    },
+    {
+        "name": "track_metric",
+        "description": (
+            "Log a self-reported health or performance metric as a time-series data point. "
+            "Use for values the user reports that aren't food or exercise: "
+            "resting heart rate, HRV, sleep hours, steps, a race time, VO2max estimate, "
+            "blood pressure, body temperature, or any custom personal metric. "
+            "Do NOT use for body weight (use log_body_weight) or macros (use log_food)."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "metric_name": {
+                    "type": "string",
+                    "description": (
+                        "What was measured. Use snake_case. Examples: 'resting_hr', 'hrv', "
+                        "'sleep_hours', 'steps', 'vo2max', '5k_time_seconds', "
+                        "'blood_pressure_systolic', 'spo2', 'skin_temp_celsius'."
+                    ),
+                },
+                "value": {"type": "number"},
+                "unit": {
+                    "type": "string",
+                    "description": "Optional. E.g. 'bpm', 'ms', 'hours', 'steps', 'seconds', 'mmHg'.",
+                },
+                "date": {
+                    "type": "string",
+                    "description": "Optional. YYYY-MM-DD or 'yesterday'. Defaults to today.",
+                },
+            },
+            "required": ["metric_name", "value"],
+        },
+    },
+]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SCHEDULING TOOL
+# ─────────────────────────────────────────────────────────────────────────────
+
+_SCHEDULING_TOOLS = [
+    {
+        "name": "schedule_check_in",
+        "description": (
+            "Schedule a one-time proactive check-in to this user at a specific time today. "
+            "Use when you make a coaching promise: 'I'll check on your workout tonight', "
+            "'I'll follow up after dinner', 'remind me to log that later'. "
+            "Only schedule for LATER TODAY — the time must be in the future. "
+            "The message is generated in your coaching voice at send time, not pre-written."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "send_at": {
+                    "type": "string",
+                    "description": "Time to send in HH:MM format (24-hour, user's local timezone). Must be later than now.",
+                },
+                "directive": {
+                    "type": "string",
+                    "description": (
+                        "A coaching directive describing what to check in about — written for you "
+                        "to act on at send time, not a user-facing message. "
+                        "E.g. 'follow up on whether the evening workout happened — they said 6pm at the gym', "
+                        "'ask how dinner went and if they hit protein for the day'."
+                    ),
+                },
+            },
+            "required": ["send_at", "directive"],
+        },
+    },
+]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # SEARCH TOOLS (GATED — inert unless SEARCH_ENABLED=true)
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -336,6 +534,10 @@ ALL_TOOLS = (
     + _DAY_TOOLS
     + _PROFILE_TOOLS
     + _CREATIVE_TOOLS
+    + _HISTORY_TOOLS
+    + _FOOD_DB_TOOLS
+    + _ATTRIBUTE_TOOLS
+    + _SCHEDULING_TOOLS
 )
 
 

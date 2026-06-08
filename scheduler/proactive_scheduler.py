@@ -279,6 +279,34 @@ async def _send_logged_with_voice(db, user_id, telegram_id: str, text: str,
     await _log_proactive(db, user_id, text, slot_key)
 
 
+async def _send_slot_deduped(
+    db, user, send_id: str, msg: str, slot_key: str,
+    sent_slots: set, today_str: str,
+    with_voice: bool = False, name: str = "", language: str = "English",
+) -> bool:
+    """Send a recurring slot nudge with per-day dedup.
+
+    Checks a date-keyed entry in sent_slots before sending so the same slot
+    never fires twice on the same calendar day (e.g. across a deploy restart).
+    Updates sent_slots in-place and persists user.nudges_sent on send.
+    Returns True if sent, False if skipped (already sent today or empty msg).
+    """
+    if not msg:
+        return False
+    day_key = f"{slot_key}:{today_str}"
+    if day_key in sent_slots:
+        logger.debug(f"Slot '{slot_key}' already sent today for user {user.id} — skipping")
+        return False
+    if with_voice:
+        await _send_logged_with_voice(db, user.id, send_id, msg, slot_key, name=name, language=language)
+    else:
+        await _send_logged(db, user.id, send_id, msg, slot_key)
+    sent_slots.add(day_key)
+    user.nudges_sent = ",".join(sorted(sent_slots))
+    await db.commit()
+    return True
+
+
 # In-process TTS cache keyed on (text_hash, name, language).
 # TTL = 1800s (~1 scheduler tick). Avoids paying voice_variant (LLM) +
 # text_to_speech (TTS API) for identical or near-identical proactive messages
@@ -761,19 +789,30 @@ async def _run_reminders():
                 now = datetime.now(tz)
                 hour, minute = now.hour, now.minute
                 log = await get_today_log(db, user.id, user.timezone or "UTC")
+                # Per-tick dedup state — used for EOD report and all recurring slots
+                today_str = str(now.date())
+                sent_slots = set(s for s in (user.nudges_sent or "").split(",") if s)
             except Exception as e:
                 logger.error(f"Time/log fetch error for user {user.id}: {e}")
                 continue
 
-            # ── End-of-day report (21:00–21:30) — ALL onboarded users ─────────
-            # Kept inside the 9am-9pm window so we never message late at night.
+            # ── End-of-day report (21:00–21:30) — proactive-opt-in users only ──
+            # Gated behind per-user proactive preference so opted-out users are
+            # never messaged. Deduped by date so a deploy restart during the window
+            # never sends the report twice. The outer `continue` at 21:00 prevents
+            # night_closeout (which lives in the slot chain) from also firing.
             try:
                 if hour == 21 and minute < 30:
-                    if log and log.total_calories > 0:
-                        name = user.name or "hey"
-                        report = _fmt_day_report(log, prefs, name, user=user)
-                        await _send_logged(db, user.id, send_id, report, "day_report")
-                        continue
+                    if log and log.total_calories > 0 and _proactive_pref_on(prefs):
+                        day_key = f"day_report:{today_str}"
+                        if day_key not in sent_slots:
+                            name = user.name or "hey"
+                            report = _fmt_day_report(log, prefs, name, user=user)
+                            await _send_logged(db, user.id, send_id, report, "day_report")
+                            sent_slots.add(day_key)
+                            user.nudges_sent = ",".join(sorted(sent_slots))
+                            await db.commit()
+                    continue  # skip slot chain at 21:00 regardless of send
             except Exception as e:
                 logger.error(f"Day report error for user {user.id}: {e}")
 
@@ -845,11 +884,6 @@ async def _run_reminders():
                     hours_since = _hours_since_created(user)
 
                     if hours_since <= 50.0:
-                        # Persisted across deploys via user.nudges_sent (comma-separated)
-                        sent_slots = set(
-                            s for s in (user.nudges_sent or "").split(",") if s
-                        )
-
                         # NOTE: profile collection (age/sex/height for target calc)
                         # is now a PendingQuestion of kind 'profile_stats', recorded
                         # in the conversation path and re-asked by _maybe_followup_pending
@@ -910,8 +944,9 @@ async def _run_reminders():
                         if not msg:
                             msg = f"morning {name}.|||log your weight if you've got it, then tell me breakfast."
                         lang = getattr(prefs, "preferred_language", None) or "English"
-                        await _send_logged_with_voice(db, user.id, send_id, msg, "morning_checkin",
-                                                      name=name, language=lang)
+                        await _send_slot_deduped(db, user, send_id, msg, "morning_checkin",
+                                                 sent_slots, today_str,
+                                                 with_voice=True, name=name, language=lang)
 
                 # ── Late morning (10:00–10:30, only if nothing logged) ─────────
                 elif hour == 10 and minute < 30 and _freq_ok("late_morning_nolog"):
@@ -920,7 +955,8 @@ async def _run_reminders():
                                                recent_proactive=recent_proactive)
                         if not msg:
                             msg = f"10am and nothing logged yet, {name}. Skipped breakfast or just haven't told me?"
-                        await _send_logged(db, user.id, send_id, msg, "late_morning_nolog")
+                        await _send_slot_deduped(db, user, send_id, msg, "late_morning_nolog",
+                                                 sent_slots, today_str)
 
                 # ── Midday pacing (12:00–12:30) ────────────────────────────────
                 elif hour == 12 and minute < 30 and _freq_ok("midday_pacing"):
@@ -949,13 +985,9 @@ async def _run_reminders():
                                 if cal_ahead:
                                     parts.append(f"already at {cal:.0f} cal — pace yourself through the afternoon")
                                 msg = ", ".join(parts).capitalize() + "."
-                            await _send_logged(db, user.id, send_id, msg, "midday_pacing")
-                        elif log and log.total_calories > 0:
-                            # On track — brief positive
-                            msg = await _llm_nudge(user, log, prefs, health_snap, "midday_pacing", name,
-                                                   recent_proactive=recent_proactive)
-                            if msg:
-                                await _send_logged(db, user.id, send_id, msg, "midday_pacing")
+                            await _send_slot_deduped(db, user, send_id, msg, "midday_pacing",
+                                                     sent_slots, today_str)
+                        # On-track users get no midday nudge — they're doing fine
 
                 # ── Pre-workout readiness (15:30–16:00) ───────────────────────
                 elif hour == 15 and 30 <= minute < 60 and _freq_ok("preworkout"):
@@ -973,7 +1005,8 @@ async def _run_reminders():
                                 )
                             else:
                                 msg = f"3:30 — workout not logged yet, {name}. Still on for today?"
-                        await _send_logged(db, user.id, send_id, msg, "preworkout")
+                        await _send_slot_deduped(db, user, send_id, msg, "preworkout",
+                                                 sent_slots, today_str)
 
                 # ── Afternoon workout check (16:30–17:00) ────────────────────
                 elif hour == 16 and 30 <= minute < 60 and _freq_ok("workout_check"):
@@ -984,7 +1017,8 @@ async def _run_reminders():
                                                recent_proactive=recent_proactive)
                         if not msg:
                             msg = f"4:30 — workout still hasn't happened, {name}. Happening today or are we calling it a rest day?"
-                        await _send_logged(db, user.id, send_id, msg, "workout_check")
+                        await _send_slot_deduped(db, user, send_id, msg, "workout_check",
+                                                 sent_slots, today_str)
 
                 # ── Evening pacing (19:00–19:30) ──────────────────────────────
                 elif (hour == 19 and minute < 30 and log and log.total_calories > 0
@@ -1010,8 +1044,9 @@ async def _run_reminders():
                         else:
                             msg = f"Looking solid today, {name}. Log dinner when you have it."
                     lang = getattr(prefs, "preferred_language", None) or "English"
-                    await _send_logged_with_voice(db, user.id, send_id, msg, "evening_pacing",
-                                                  name=name, language=lang)
+                    await _send_slot_deduped(db, user, send_id, msg, "evening_pacing",
+                                             sent_slots, today_str,
+                                             with_voice=True, name=name, language=lang)
 
                 # ── Night closeout (21:00–21:30) ──────────────────────────────
                 elif hour == 21 and minute < 30 and _freq_ok("night_closeout"):
@@ -1020,7 +1055,8 @@ async def _run_reminders():
                                                recent_proactive=recent_proactive)
                         if not msg:
                             msg = "Day still open. Done eating? Send me anything you missed and close it out."
-                        await _send_logged(db, user.id, send_id, msg, "night_closeout")
+                        await _send_slot_deduped(db, user, send_id, msg, "night_closeout",
+                                                 sent_slots, today_str)
 
             except Exception as e:
                 logger.error(f"Reminder error for user {user.id}: {e}")
@@ -1175,6 +1211,98 @@ async def _run_whoop_sync():
                 logger.error(f"Whoop sync/notify failed for user {user.id}: {e}")
 
     logger.info(f"Whoop sync complete: {total} user-days updated")
+
+
+async def _run_one_shot_checkin(user_id: int, telegram_id: str, directive: str) -> None:
+    """
+    Execute a one-shot check-in scheduled by the 'schedule_check_in' tool.
+    Generates an LLM nudge using the directive as context, then sends it.
+    Fully wrapped — a failure here must never surface to the user.
+    """
+    try:
+        from db.database import AsyncSessionLocal
+        from db.queries import reload_user, get_today_log
+        from core.llm import chat
+
+        async with AsyncSessionLocal() as db:
+            user = await reload_user(db, user_id)
+            if not user:
+                return
+            prefs = user.preferences
+            log = await get_today_log(db, user_id, getattr(user, "timezone", "UTC"))
+            name = user.name or ""
+            cal = round(log.total_calories) if log else 0
+            pro = round(log.total_protein) if log else 0
+            cal_t = prefs.calorie_target if prefs else None
+            pro_t = prefs.protein_target if prefs else None
+
+            prompt = (
+                f"Athlete: {name}, goal={user.primary_goal or '?'}\n"
+                f"Today: {cal} cal"
+                f"{' / ' + str(cal_t) + ' target' if cal_t else ''} | "
+                f"{pro}g protein"
+                f"{' / ' + str(pro_t) + 'g target' if pro_t else ''} | "
+                f"workout {'✓' if (log and log.workout_completed) else '✗'}\n"
+                f"Check-in task: {directive}\n"
+                f"Send a short, direct coaching message. 1-2 bubbles (split with |||). "
+                f"Sound like a real coach following up, not a notification."
+            )
+            from core.prompts.nudges import NUDGE_SYSTEM
+            result = await chat(
+                [{"role": "user", "content": prompt}],
+                system=NUDGE_SYSTEM,
+                tools=False,
+                max_tokens=150,
+                model="claude-haiku-4-5-20251001",
+            )
+            msg = (result.get("text") or "").strip()
+            if msg:
+                await _send_logged(db, user_id, telegram_id, msg, "scheduled_checkin")
+    except Exception as e:
+        logger.error(f"One-shot check-in failed (user {user_id}): {e}")
+
+
+def schedule_one_shot_checkin(
+    user_id: int,
+    telegram_id: str,
+    directive: str,
+    send_at_local: str,  # HH:MM
+    user_timezone: str = "UTC",
+) -> bool:
+    """
+    Schedule a one-time LLM-generated check-in for later today.
+    Returns True if scheduled, False if the time is in the past or scheduling fails.
+    Only works when the scheduler is running.
+    """
+    if not _scheduler.running:
+        logger.warning("schedule_one_shot_checkin called but scheduler not running")
+        return False
+    try:
+        import pytz as _pytz
+        from datetime import datetime as _dt
+        tz = _pytz.timezone(user_timezone or "UTC")
+        now_local = _dt.now(tz)
+        h, m = int(send_at_local.split(":")[0]), int(send_at_local.split(":")[1])
+        fire_local = now_local.replace(hour=h, minute=m, second=0, microsecond=0)
+        if fire_local <= now_local:
+            logger.warning(f"schedule_one_shot_checkin: {send_at_local} is in the past for user {user_id}")
+            return False
+        fire_utc = fire_local.astimezone(_pytz.utc)
+        job_id = f"checkin_{user_id}_{send_at_local.replace(':', '')}"
+        _scheduler.add_job(
+            _run_one_shot_checkin,
+            "date",
+            run_date=fire_utc,
+            args=[user_id, telegram_id, directive],
+            id=job_id,
+            replace_existing=True,
+            misfire_grace_time=300,
+        )
+        logger.info(f"Scheduled check-in for user {user_id} at {send_at_local} local ({fire_utc} UTC)")
+        return True
+    except Exception as e:
+        logger.error(f"schedule_one_shot_checkin failed for user {user_id}: {e}")
+        return False
 
 
 def start_scheduler():

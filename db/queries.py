@@ -856,6 +856,208 @@ async def set_subscription_cancelled(db: AsyncSession, stripe_customer_id: str) 
     return None
 
 
+async def query_history_stats(
+    db: AsyncSession,
+    user_id: int,
+    period: str,
+    metric: str,
+    exercise_name: str = None,
+    user_timezone: str = "UTC",
+) -> dict:
+    """
+    Pull historical stats for a user beyond the 7-day context window.
+    period: 'last_7'|'last_14'|'last_30'|'last_60'|'last_90' or 'YYYY-MM-DD'
+    metric: 'calories'|'protein'|'weight'|'workouts'|'exercise'|'all'
+    Returns a dict the executor formats into a result string.
+    """
+    tz = pytz.timezone(user_timezone or "UTC")
+    today = datetime.now(tz).date()
+
+    # Resolve period to a date range
+    single_date = None
+    _period_days = {
+        "last_7": 7, "last_14": 14, "last_30": 30, "last_60": 60, "last_90": 90,
+    }
+    if period in _period_days:
+        since = today - timedelta(days=_period_days[period])
+        until = today
+    else:
+        try:
+            from datetime import date as _date
+            single_date = _date.fromisoformat(period)
+            since = single_date
+            until = single_date
+        except ValueError:
+            return {"error": f"Unrecognised period: {period!r}"}
+
+    if metric in ("calories", "protein", "workouts", "all"):
+        logs = (await db.execute(
+            select(DailyLog)
+            .where(and_(
+                DailyLog.user_id == user_id,
+                DailyLog.date >= since,
+                DailyLog.date <= until,
+            ))
+            .options(
+                selectinload(DailyLog.food_entries),
+                selectinload(DailyLog.exercise_entries),
+            )
+            .order_by(DailyLog.date)
+        )).scalars().all()
+
+        if not logs:
+            return {"metric": metric, "period": period, "days_with_data": 0, "rows": []}
+
+        rows = []
+        for l in logs:
+            row: dict = {"date": str(l.date)}
+            if metric in ("calories", "all"):
+                row["calories"] = round(l.total_calories or 0)
+            if metric in ("protein", "all"):
+                row["protein"] = round(l.total_protein or 0)
+            if metric in ("workouts", "all"):
+                row["workout"] = bool(l.workout_completed)
+                row["cardio"] = bool(l.cardio_completed)
+            rows.append(row)
+
+        # Aggregates
+        out: dict = {"metric": metric, "period": period, "days_with_data": len(rows), "rows": rows}
+        if metric in ("calories", "all") and rows:
+            cals = [r["calories"] for r in rows]
+            out["avg_calories"] = round(sum(cals) / len(cals))
+            out["min_calories"] = min(cals)
+            out["max_calories"] = max(cals)
+        if metric in ("protein", "all") and rows:
+            pros = [r["protein"] for r in rows]
+            out["avg_protein"] = round(sum(pros) / len(pros))
+        if metric in ("workouts", "all") and rows:
+            out["workout_days"] = sum(1 for r in rows if r.get("workout"))
+            out["cardio_days"] = sum(1 for r in rows if r.get("cardio"))
+        return out
+
+    if metric == "weight":
+        metrics = (await db.execute(
+            select(BodyMetric)
+            .where(and_(
+                BodyMetric.user_id == user_id,
+                BodyMetric.timestamp >= datetime.combine(since, datetime.min.time()),
+                BodyMetric.timestamp <= datetime.combine(until, datetime.max.time()),
+            ))
+            .order_by(BodyMetric.timestamp)
+        )).scalars().all()
+
+        if not metrics:
+            return {"metric": "weight", "period": period, "entries": 0}
+
+        weights = [{"date": m.timestamp.strftime("%Y-%m-%d"), "weight_kg": round(m.weight_kg, 2)}
+                   for m in metrics]
+        delta = weights[-1]["weight_kg"] - weights[0]["weight_kg"] if len(weights) > 1 else 0
+        return {
+            "metric": "weight", "period": period,
+            "entries": len(weights), "data": weights,
+            "start_kg": weights[0]["weight_kg"], "end_kg": weights[-1]["weight_kg"],
+            "delta_kg": round(delta, 2),
+        }
+
+    if metric == "exercise":
+        if not exercise_name:
+            return {"error": "exercise_name required when metric='exercise'"}
+        name_lower = exercise_name.strip().lower()
+        logs = (await db.execute(
+            select(DailyLog)
+            .where(and_(
+                DailyLog.user_id == user_id,
+                DailyLog.date >= since,
+                DailyLog.date <= until,
+            ))
+            .options(selectinload(DailyLog.exercise_entries))
+            .order_by(DailyLog.date)
+        )).scalars().all()
+
+        sessions = []
+        for log in logs:
+            matches = [
+                e for e in (log.exercise_entries or [])
+                if name_lower in (e.exercise_name or "").lower()
+            ]
+            if matches:
+                for e in matches:
+                    w_lbs = round(e.weight * 2.20462, 1) if e.weight else None
+                    sessions.append({
+                        "date": str(log.date),
+                        "sets": e.sets, "reps": e.reps,
+                        "weight_lbs": w_lbs, "weight_kg": round(e.weight, 2) if e.weight else None,
+                    })
+
+        return {
+            "metric": "exercise", "exercise": exercise_name,
+            "period": period, "sessions": len(sessions), "data": sessions,
+        }
+
+    return {"error": f"Unknown metric: {metric!r}"}
+
+
+async def upsert_user_metric(
+    db: AsyncSession,
+    user_id: int,
+    metric_type: str,
+    value: float,
+    unit: str = None,
+    recorded_at: datetime = None,
+) -> "WearableMetric":
+    """
+    Store a user-reported health/performance metric in WearableMetric (time-series)
+    and, for known fields, also mirror it into today's HealthSnapshot.
+    """
+    from db.models import WearableMetric, HealthSnapshot
+
+    ts = recorded_at or datetime.utcnow()
+    snap_date = ts.date() if hasattr(ts, "date") else ts
+
+    entry = WearableMetric(
+        user_id=user_id,
+        device_type="user_stated",
+        metric_type=metric_type,
+        value=value,
+        unit=unit,
+        recorded_at=ts,
+    )
+    db.add(entry)
+
+    # Mirror into HealthSnapshot for context_builder to pick up
+    _snap_field_map = {
+        "resting_hr": "resting_hr", "resting_heart_rate": "resting_hr",
+        "hrv": "hrv", "heart_rate_variability": "hrv",
+        "sleep_hours": "sleep_hours", "sleep": "sleep_hours",
+        "steps": "steps",
+        "active_calories": "active_calories",
+        "spo2": "spo2_percentage", "blood_oxygen": "spo2_percentage",
+        "skin_temp_celsius": "skin_temp_celsius", "skin_temp": "skin_temp_celsius",
+        "recovery_score": "recovery_score",
+        "strain": "strain",
+        "exercise_minutes": "exercise_minutes",
+        "avg_hr": "avg_hr", "average_hr": "avg_hr",
+        "respiratory_rate": "respiratory_rate",
+        "sleep_performance_pct": "sleep_performance_pct",
+    }
+    snap_field = _snap_field_map.get(metric_type.lower().replace(" ", "_"))
+    if snap_field:
+        snap = (await db.execute(
+            select(HealthSnapshot).where(and_(
+                HealthSnapshot.user_id == user_id,
+                HealthSnapshot.date == snap_date,
+            ))
+        )).scalar_one_or_none()
+        if snap is None:
+            snap = HealthSnapshot(user_id=user_id, date=snap_date, source="user_stated")
+            db.add(snap)
+        setattr(snap, snap_field, value)
+
+    await db.commit()
+    await db.refresh(entry)
+    return entry
+
+
 async def get_user_by_telegram_id(db: AsyncSession, telegram_id: str) -> Optional[User]:
     result = await db.execute(
         select(User)

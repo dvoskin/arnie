@@ -657,7 +657,7 @@ async def _dispatch(name, inp, user, today_log, db, source_type):  # noqa: C901
             "reminder_frequency", "preferred_response_length",
             "profanity_tolerance", "proactive_messaging_enabled",
             "wake_time", "sleep_time", "calorie_target", "protein_target",
-            "preferred_language",
+            "preferred_language", "food_logging_mode",
         }
         # Separate attr: prefixed keys (→ user_attributes table) from profile fields
         attr_fields = {k[5:]: v for k, v in fields.items() if k.startswith("attr:")}
@@ -694,6 +694,11 @@ async def _dispatch(name, inp, user, today_log, db, source_type):  # noqa: C901
                     from reminders.eligibility import normalize_reminder_frequency
                     value = normalize_reminder_frequency(
                         value, user.preferences.reminder_frequency
+                    )
+                elif field == "food_logging_mode":
+                    from core.food_intelligence import normalize_food_logging_mode
+                    value = normalize_food_logging_mode(
+                        value, getattr(user.preferences, "food_logging_mode", "moderate")
                     )
                 setattr(user.preferences, field, value)
 
@@ -773,5 +778,212 @@ async def _dispatch(name, inp, user, today_log, db, source_type):  # noqa: C901
                 logger.warning(f"ensure_profile failed: {e}")
 
         return f"Profile updated: {list(fields.keys())}{_targets_msg}"
+
+    elif name == "query_history":
+        from db.queries import query_history_stats
+        metric = inp.get("metric", "all")
+        period = inp.get("period", "last_30")
+        exercise_name = inp.get("exercise_name")
+        data = await query_history_stats(
+            db, user.id, period, metric, exercise_name,
+            getattr(user, "timezone", "UTC"),
+        )
+        if "error" in data:
+            return f"History query error: {data['error']}"
+
+        # Format a compact, coach-readable summary
+        lines = [f"HISTORY QUERY — metric={metric}, period={period}"]
+        if metric in ("calories", "all") and "avg_calories" in data:
+            lines.append(
+                f"Calories: avg {data['avg_calories']}/day "
+                f"(range {data.get('min_calories','?')}–{data.get('max_calories','?')}) "
+                f"over {data['days_with_data']} days with data"
+            )
+        if metric in ("protein", "all") and "avg_protein" in data:
+            lines.append(f"Protein: avg {data['avg_protein']}g/day")
+        if metric in ("workouts", "all") and "workout_days" in data:
+            lines.append(
+                f"Workouts: {data['workout_days']} strength days, "
+                f"{data.get('cardio_days', 0)} cardio days out of {data['days_with_data']} days logged"
+            )
+        if metric == "weight" and "data" in data:
+            d = data
+            if d["entries"] > 1:
+                lines.append(
+                    f"Weight: {d['start_kg']}kg → {d['end_kg']}kg "
+                    f"({d['delta_kg']:+.2f}kg) over {d['entries']} entries"
+                )
+                for w in d["data"][-5:]:
+                    lines.append(f"  {w['date']}: {w['weight_kg']}kg")
+            else:
+                lines.append(f"Only {d['entries']} weight entry in this period")
+        if metric == "exercise" and "data" in data:
+            d = data
+            lines.append(f"Exercise '{exercise_name}': {d['sessions']} sessions logged")
+            for s in d["data"][-8:]:
+                w = f" @ {s['weight_lbs']}lb" if s.get("weight_lbs") else ""
+                lines.append(f"  {s['date']}: {s.get('sets','?')}×{s.get('reps','?')}{w}")
+        if metric == "all" and "rows" in data:
+            lines.append("Recent days:")
+            for r in data["rows"][-7:]:
+                w = "💪" if r.get("workout") else "  "
+                lines.append(
+                    f"  {r['date']} {w}: {r.get('calories','?')} cal, {r.get('protein','?')}g P"
+                )
+        return (
+            "\n".join(lines) + "\n\n"
+            "COACH INSTRUCTION: present this data conversationally — give the read, not a table. "
+            "Highlight the trend, flag anything notable, then give one concrete next step."
+        )
+
+    elif name == "search_food_database":
+        from api.usda import search_food
+        from core.food_intelligence import best_candidate
+        food_name = inp.get("food_name", "")
+        quantity = inp.get("quantity")
+        if not food_name:
+            return "Missing food_name"
+        try:
+            candidates = await search_food(food_name, page_size=8)
+        except Exception as e:
+            return f"USDA search failed: {e}"
+        if not candidates:
+            return (
+                f"USDA SEARCH: no results found for '{food_name}'. "
+                f"Use your best training-data estimate and flag it as approximate."
+            )
+        best, conf = best_candidate(food_name, candidates)
+        if not best:
+            return (
+                f"USDA SEARCH: found results for '{food_name}' but none matched well. "
+                f"Top result: {candidates[0]['description']}. "
+                f"Use your best estimate and flag it as approximate."
+            )
+        p100 = best.get("per100g", {})
+        cal100 = p100.get("calories", "?")
+        pro100 = p100.get("protein", "?")
+        carb100 = p100.get("carbs", "?")
+        fat100 = p100.get("fat", "?")
+
+        # Calculate totals for the user's quantity if provided
+        totals_str = ""
+        if quantity and isinstance(cal100, (int, float)):
+            try:
+                import re as _re
+                # Extract a gram weight from the quantity string (e.g. '200g', '1.5 oz')
+                g_match = _re.search(r"([\d.]+)\s*g\b", quantity, _re.IGNORECASE)
+                oz_match = _re.search(r"([\d.]+)\s*oz\b", quantity, _re.IGNORECASE)
+                grams = None
+                if g_match:
+                    grams = float(g_match.group(1))
+                elif oz_match:
+                    grams = float(oz_match.group(1)) * 28.3495
+                if grams:
+                    factor = grams / 100.0
+                    t_cal = round(cal100 * factor)
+                    t_pro = round((pro100 or 0) * factor, 1)
+                    t_carb = round((carb100 or 0) * factor, 1)
+                    t_fat = round((fat100 or 0) * factor, 1)
+                    totals_str = (
+                        f"\nFor {quantity} (~{round(grams)}g): "
+                        f"{t_cal} cal, {t_pro}g P, {t_carb}g C, {t_fat}g F"
+                    )
+            except Exception:
+                pass
+
+        return (
+            f"USDA SEARCH RESULT for '{food_name}' (match confidence: {conf}):\n"
+            f"Matched: {best.get('description', food_name)}"
+            f"{' — ' + best.get('brand', '') if best.get('brand') else ''}\n"
+            f"Per 100g: {cal100} cal | {pro100}g protein | {carb100}g carbs | {fat100}g fat"
+            f"{totals_str}\n\n"
+            f"COACH INSTRUCTION: use these numbers when logging this food. "
+            f"If the match confidence is 'estimated' or 'likely', mention the number might be "
+            f"slightly off but it's the best available data."
+        )
+
+    elif name == "store_attribute":
+        from memory.attribute_store import upsert_attribute
+        key = inp.get("key", "")
+        value = inp.get("value", "")
+        if not key or not value:
+            return "Missing key or value"
+        try:
+            await upsert_attribute(
+                db, user.id,
+                attribute_key=key,
+                value=str(value),
+                unit=inp.get("unit"),
+                category=inp.get("category"),
+                source="conversation",
+                confidence="confirmed",
+            )
+            display_key = key.replace("_", " ").title()
+            unit_str = f" {inp['unit']}" if inp.get("unit") else ""
+            return f"Stored attribute '{display_key}': {value}{unit_str}"
+        except Exception as e:
+            logger.error(f"store_attribute failed: {e}")
+            return f"Failed to store attribute: {e}"
+
+    elif name == "track_metric":
+        from db.queries import upsert_user_metric
+        metric_name = inp.get("metric_name", "")
+        value = inp.get("value")
+        if not metric_name or value is None:
+            return "Missing metric_name or value"
+        unit = inp.get("unit")
+        # Resolve date
+        recorded_at = None
+        if inp.get("date"):
+            past = _parse_log_date(inp["date"], getattr(user, "timezone", "UTC"))
+            if past:
+                from datetime import datetime as _dt
+                recorded_at = _dt.combine(past, _dt.min.time())
+        try:
+            await upsert_user_metric(db, user.id, metric_name, float(value), unit, recorded_at)
+            unit_str = f" {unit}" if unit else ""
+            display_name = metric_name.replace("_", " ")
+            return (
+                f"Tracked {display_name}: {value}{unit_str}. "
+                f"COACH INSTRUCTION: acknowledge the metric briefly (1 bubble), "
+                f"give context if relevant (e.g. if resting HR or HRV, relate to recovery/training), "
+                f"then keep moving. Don't over-explain."
+            )
+        except Exception as e:
+            logger.error(f"track_metric failed: {e}")
+            return f"Failed to track metric: {e}"
+
+    elif name == "schedule_check_in":
+        send_at = (inp.get("send_at") or "").strip()
+        directive = (inp.get("directive") or "").strip()
+        if not send_at or not directive:
+            return "Missing send_at or directive"
+        try:
+            from scheduler.proactive_scheduler import schedule_one_shot_checkin
+            from db.queries import resolve_send_target
+            target_id = await resolve_send_target(db, user)
+            ok = schedule_one_shot_checkin(
+                user_id=user.id,
+                telegram_id=target_id,
+                directive=directive,
+                send_at_local=send_at,
+                user_timezone=getattr(user, "timezone", "UTC"),
+            )
+            if ok:
+                return (
+                    f"Check-in scheduled for {send_at} (user local time). "
+                    f"COACH INSTRUCTION: confirm the check-in naturally in 1 short bubble — "
+                    f"'I'll check back in at {send_at}' or similar. Don't repeat the full directive."
+                )
+            else:
+                return (
+                    f"Could not schedule check-in for {send_at} — time may be in the past "
+                    f"or scheduler not running. "
+                    f"COACH INSTRUCTION: tell the user you weren't able to set the reminder "
+                    f"and ask them to log the result manually when they're done."
+                )
+        except Exception as e:
+            logger.error(f"schedule_check_in failed: {e}")
+            return f"Scheduling failed: {e}"
 
     return "Unknown tool"
