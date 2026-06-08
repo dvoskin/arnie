@@ -1349,17 +1349,19 @@ footer{{
 .tc-up{{color:var(--mu)}} .tc-dn{{color:var(--mu)}} .tc-fl{{color:var(--di)}}
 
 /* ── Arnie's learning progress ───────────────────────────── */
-.learn-bar{{height:4px;border-radius:4px;background:var(--sf3);overflow:hidden}}
-.learn-fill{{height:100%;background:var(--ac);border-radius:4px;transition:width .5s ease}}
-.learn-chips{{display:flex;flex-wrap:wrap;gap:7px 14px;margin-top:11px}}
-.learn-chip{{font-size:12px;color:var(--di);display:inline-flex;align-items:center;gap:5px;transition:color .2s}}
-.learn-chip.done{{color:var(--ac)}}
-.learn-chip .lc-mk{{font-size:10px;color:var(--di);transition:color .2s}}
-.learn-chip.done .lc-mk{{color:var(--ac)}}
-.learn-q-row{{margin-top:10px;min-height:16px}}
-.learn-question{{font-size:12px;color:var(--mu);font-style:italic;letter-spacing:.01em;transition:opacity .35s ease;opacity:.9}}
+.lrn-card{{background:var(--sf2);border-radius:12px;padding:10px 14px 11px}}
+.lrn-top{{display:flex;align-items:center;gap:8px;margin-bottom:7px}}
+.lrn-label{{font-size:10px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:var(--di);white-space:nowrap}}
+.lrn-pct{{font-size:10px;color:var(--di);white-space:nowrap;letter-spacing:.02em}}
+.learn-bar{{flex:1;height:2px;border-radius:2px;background:var(--sf3);overflow:hidden}}
+.learn-fill{{height:100%;background:var(--ac);border-radius:2px;transition:width .5s ease}}
+.learn-chips{{display:flex;flex-wrap:wrap;gap:3px 10px}}
+.learn-chip{{font-size:10px;color:var(--di);transition:color .2s}}
+.learn-chip.done{{color:var(--tx2)}}
+.learn-q-row{{margin-top:8px;min-height:16px}}
+.learn-question{{font-size:11.5px;color:var(--mu);font-style:italic;letter-spacing:.01em;transition:opacity .35s ease;opacity:.9}}
 .learn-question.fading{{opacity:0}}
-.learn-cta{{background:none;border:none;padding:0;cursor:pointer;font-size:12px;color:var(--ac);font-weight:500;opacity:.85;letter-spacing:.02em;margin-left:6px;display:inline}}
+.learn-cta{{background:none;border:none;padding:0;cursor:pointer;font-size:11.5px;color:var(--ac);font-weight:500;opacity:.85;margin-left:5px;display:inline}}
 .learn-cta:hover{{opacity:1;text-decoration:underline}}
 
 /* ── Settings preference cards (profile tab) ─────────────── */
@@ -1465,11 +1467,16 @@ footer{{
     </div>
 
     <!-- ARNIE'S LEARNING — shown only for new users, hides at 100% -->
-    <div id="learn-wrap" style="display:none;margin-top:16px">
-      <div class="stitle" style="margin-bottom:8px">Arnie's learning <span id="learn-pct" style="font-weight:400;opacity:.55;font-size:9px;letter-spacing:.04em"></span></div>
-      <div class="learn-bar"><div class="learn-fill" id="learn-fill" style="width:0%"></div></div>
-      <div class="learn-chips" id="learn-list"></div>
-      <div class="learn-q-row"><span id="learn-question" class="learn-question"></span><button class="learn-cta" onclick="switchTab('profile')">Tell Arnie &#8594;</button></div>
+    <div id="learn-wrap" style="display:none;margin-top:12px">
+      <div class="lrn-card">
+        <div class="lrn-top">
+          <span class="lrn-label">Still learning</span>
+          <div class="learn-bar"><div class="learn-fill" id="learn-fill" style="width:0%"></div></div>
+          <span id="learn-pct" class="lrn-pct"></span>
+        </div>
+        <div class="learn-chips" id="learn-list"></div>
+        <div class="learn-q-row"><span id="learn-question" class="learn-question"></span><button class="learn-cta" onclick="switchTab('profile')">Tell Arnie &#8594;</button></div>
+      </div>
     </div>
 
     <!-- MACRO STRIP -->
@@ -1985,7 +1992,7 @@ function renderLearningProgress(d){{
   }}
   var pctv=Math.round(done/items.length*100);
   var fill=document.getElementById('learn-fill');if(fill)fill.style.width=pctv+'%';
-  var lbl=document.getElementById('learn-pct');if(lbl)lbl.textContent=pctv+'% LEARNED';
+  var lbl=document.getElementById('learn-pct');if(lbl)lbl.textContent=pctv+'%';
   var list=document.getElementById('learn-list');
   if(list)list.innerHTML=items.map(function(it){{
     return '<span class="learn-chip'+(it.done?' done':'')+'">'+esc(it.label)+'</span>';
