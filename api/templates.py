@@ -46,7 +46,7 @@ def _dashboard_html(token: str, name: str = "", bot_username: str = "Arnie_1026_
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;1,400&family=Instrument+Serif:ital@0;1&family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
 *,*::before,*::after{{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}}
 
@@ -274,9 +274,9 @@ body{{
 .whoop-rec-low  .whoop-stat-val{{color:var(--re)}}
 .macro-cell{{background:var(--sf);border:1px solid var(--bd);border-radius:12px;padding:11px 13px;box-shadow:var(--sh);}}
 .mc-label{{font-size:9px;font-weight:500;text-transform:uppercase;letter-spacing:.06em;color:var(--mu);margin-bottom:4px;}}
-.mc-num{{font-size:26px;font-weight:700;letter-spacing:-.02em;line-height:1.1;color:var(--tx2);}}
+.mc-num{{font-size:26px;font-weight:700;letter-spacing:-.02em;line-height:1.1;color:var(--tx);}}
 .mc-sub{{font-size:10px;color:var(--mu);margin-top:3px;line-height:1.3;}}
-.mc-bar{{background:var(--sf3);border-radius:999px;height:3px;margin-top:8px;overflow:hidden;}}
+.mc-bar{{background:var(--sf3);border-radius:999px;height:4px;margin-top:8px;overflow:hidden;}}
 .mc-fill{{height:100%;border-radius:999px;transition:width .8s cubic-bezier(.4,0,.2,1);}}
 @media(max-width:560px){{.macro-strip{{grid-template-columns:repeat(2,1fr);}}}}
 
@@ -590,15 +590,16 @@ body{{
 }}
 [data-theme="dark"] .icrd{{background:var(--sf2)}}
 .irow{{
-  display:flex;align-items:flex-start;gap:12px;
-  padding:13px 16px;border-bottom:1px solid var(--bd);
+  display:flex;align-items:flex-start;gap:10px;
+  padding:11px 14px;border-bottom:1px solid var(--bd);
 }}
 .irow:last-child{{border-bottom:none}}
 .iico{{
-  font-size:10px;width:6px;height:6px;flex-shrink:0;margin-top:8px;
+  font-size:10px;width:6px;height:6px;flex-shrink:0;margin-top:7px;
   background:var(--pu);border-radius:50%;box-shadow:0 0 6px var(--pu);
 }}
-.itxt{{font-size:14px;line-height:1.6;color:var(--tx);font-weight:400}}
+.itxt{{font-size:13.5px;line-height:1.5;color:var(--tx);font-weight:400}}
+.itxt strong{{font-weight:600;color:var(--tx)}}
 .iload,.iempty{{
   padding:18px 16px;color:var(--mu);font-size:13.5px;
   text-align:left;line-height:1.55;
@@ -1065,15 +1066,14 @@ footer{{
   background:var(--bg);
 }}
 .ph-title{{
-  font-family:'Instrument Serif','Times New Roman',serif;
-  font-size:24px;line-height:1;letter-spacing:-.02em;color:var(--tx);
+  font-family:'Cormorant Garamond','Instrument Serif','Times New Roman',serif;
+  font-size:26px;line-height:1.15;letter-spacing:-.01em;color:var(--tx);font-weight:400;
 }}
-@media(max-width:940px){{.ph-title{{font-size:22px}}}}
-@media(max-width:560px){{.ph-title{{font-size:20px}}}}
+@media(max-width:940px){{.ph-title{{font-size:24px}}}}
+@media(max-width:560px){{.ph-title{{font-size:22px}}}}
 .ph-sub{{
-  font-family:'Geist Mono','SF Mono',monospace;
-  font-size:12px;color:var(--tx2);margin-top:5px;
-  letter-spacing:.04em;
+  font-size:12px;color:var(--tx2);margin-top:7px;
+  letter-spacing:.01em;
   display:flex;align-items:center;gap:12px;
 }}
 .ph-streak{{color:var(--ac);display:inline-flex;align-items:center;gap:5px;font-weight:500}}
@@ -3364,8 +3364,13 @@ function renderInsights(ins){{
     return;
   }}
   // Day tab keeps it to 3 tight structured bullets.
+  // Bold the lead-in before an em dash to create scan hierarchy.
   el.innerHTML=ins.slice(0,3).map(function(txt){{
-    return '<div class="irow fade-in"><div class="iico"></div><div class="itxt">'+esc(txt)+'</div></div>';
+    var parts=txt.split(' — ');
+    var content=(parts.length>=2&&parts[0].length<52)
+      ?'<strong>'+esc(parts[0])+'</strong> — '+esc(parts.slice(1).join(' — '))
+      :esc(txt);
+    return '<div class="irow fade-in"><div class="iico"></div><div class="itxt">'+content+'</div></div>';
   }}).join('');
   _stampInsTime();
 }}
@@ -3409,7 +3414,11 @@ function renderWeekInsights(ins){{
     return;
   }}
   el.innerHTML=ins.slice(0,4).map(function(txt){{
-    return '<div class="irow fade-in"><div class="iico"></div><div class="itxt">'+esc(txt)+'</div></div>';
+    var parts=txt.split(' — ');
+    var content=(parts.length>=2&&parts[0].length<52)
+      ?'<strong>'+esc(parts[0])+'</strong> — '+esc(parts.slice(1).join(' — '))
+      :esc(txt);
+    return '<div class="irow fade-in"><div class="iico"></div><div class="itxt">'+content+'</div></div>';
   }}).join('');
 }}
 
