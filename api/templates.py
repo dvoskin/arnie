@@ -199,7 +199,7 @@ body{{
 .day-col{{display:flex;flex-direction:column}}
 
 /* ── MACRO STRIP ─────────────────────────────────────────── */
-.macro-strip{{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:10px;}}
+.macro-strip{{display:grid;grid-template-columns:repeat(4,1fr);gap:9px;margin-bottom:10px;}}
 
 /* ── COMPACT DAY STATUS ROW ──────────────────────────────── */
 .day-status{{display:flex;align-items:center;gap:6px;margin:8px 0 14px;flex-wrap:wrap}}
@@ -272,7 +272,7 @@ body{{
 .whoop-rec-high .whoop-stat-val{{color:var(--ac)}}
 .whoop-rec-mid  .whoop-stat-val{{color:var(--ye)}}
 .whoop-rec-low  .whoop-stat-val{{color:var(--re)}}
-.macro-cell{{background:var(--sf);border:1px solid var(--bd);border-radius:12px;padding:11px 13px;box-shadow:var(--sh);}}
+.macro-cell{{background:var(--sf);border:1px solid var(--bd);border-radius:14px;padding:12px 14px;box-shadow:var(--sh);}}
 .mc-label{{font-size:9px;font-weight:500;text-transform:uppercase;letter-spacing:.06em;color:var(--mu);margin-bottom:4px;}}
 .mc-num{{font-size:26px;font-weight:700;letter-spacing:-.02em;line-height:1.1;color:var(--tx);}}
 .mc-sub{{font-size:10px;color:var(--mu);margin-top:3px;line-height:1.3;}}
@@ -398,7 +398,7 @@ body{{
 .stitle{{
   font-family:'Geist Mono','SF Mono',monospace;
   font-size:10.5px;font-weight:500;color:var(--mu);text-transform:uppercase;
-  letter-spacing:.13em;margin:28px 0 11px;display:flex;align-items:center;gap:10px;
+  letter-spacing:.10em;margin:22px 0 10px;display:flex;align-items:center;gap:10px;
 }}
 .stitle:first-child{{margin-top:6px}}
 .stitle.spaced{{justify-content:space-between}}
@@ -596,7 +596,7 @@ body{{
 .irow:last-child{{border-bottom:none}}
 .iico{{
   font-size:10px;width:6px;height:6px;flex-shrink:0;margin-top:7px;
-  background:var(--pu);border-radius:50%;box-shadow:0 0 6px var(--pu);
+  background:var(--pu);border-radius:50%;
 }}
 .itxt{{font-size:13.5px;line-height:1.5;color:var(--tx);font-weight:400}}
 .itxt strong{{font-weight:600;color:var(--tx)}}
@@ -619,7 +619,10 @@ body{{
   flex-shrink:0;display:grid;place-items:center;color:var(--pu);
   width:28px;height:28px;background:var(--sf3);border-radius:8px;
 }}
+.ins-head{{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;}}
 .ins-title{{font-size:13px;font-weight:600;color:var(--tx);letter-spacing:-.01em;white-space:nowrap}}
+.ins-preview{{font-size:11px;color:var(--mu);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.3;}}
+.insights.open .ins-preview{{display:none;}}
 .ins-time{{font-size:10px;color:var(--mu);font-family:'Geist Mono','SF Mono',monospace;letter-spacing:.02em;white-space:nowrap}}
 .ins-actions{{margin-left:auto;display:flex;align-items:center;gap:2px;flex-shrink:0}}
 .ins-refresh{{
@@ -1074,7 +1077,7 @@ footer{{
 .ph-sub{{
   font-size:12px;color:var(--tx2);margin-top:7px;
   letter-spacing:.01em;
-  display:flex;align-items:center;gap:12px;
+  display:flex;align-items:center;gap:10px;
 }}
 .ph-streak{{color:var(--ac);display:inline-flex;align-items:center;gap:5px;font-weight:500}}
 .ph-actions{{display:flex;gap:8px;align-items:center;flex-shrink:0}}
@@ -1503,7 +1506,7 @@ footer{{
     <div class="insights" id="ins-day" style="margin-top:12px">
       <div class="ins-banner" onclick="toggleInsights('day')" role="button" tabindex="0" aria-expanded="false">
         <span class="ins-spark"><svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M12 2.2l1.7 4.8 4.8 1.7-4.8 1.7L12 15.2l-1.7-4.8L5.5 8.7l4.8-1.7z"/><path d="M18.6 13.4l.82 2.18 2.18.82-2.18.82-.82 2.18-.82-2.18L15.6 16.4l2.18-.82z"/></svg></span>
-        <span class="ins-title">Coach Insights</span>
+        <div class="ins-head"><span class="ins-title">Coach Insights</span><div class="ins-preview" id="ins-preview-day"></div></div>
         <span class="ins-time" id="ins-time-day"></span>
         <span class="ins-actions">
           <span class="ins-refresh" onclick="event.stopPropagation();refreshInsights()" title="Refresh">&#8635;</span>
@@ -1959,6 +1962,7 @@ async function selectDate(d){{
   _insightsLoaded=false;_insightsDate='';
   var el=document.getElementById('insights-card');
   if(el)el.innerHTML='<div class="iload"><span class="spin">&#9675;</span> Analyzing&hellip;</div>';
+  var _sp=document.getElementById('ins-preview-day');if(_sp)_sp.textContent='';
   loadInsights();
   if(_dayCache[d]) renderDayTab(_dayCache[d]);
   else await loadDayData(d);
@@ -3373,6 +3377,8 @@ function renderInsights(ins){{
     return '<div class="irow fade-in"><div class="iico"></div><div class="itxt">'+content+'</div></div>';
   }}).join('');
   _stampInsTime();
+  var prev=document.getElementById('ins-preview-day');
+  if(prev&&ins[0]){{var raw=ins[0];prev.textContent=raw.length>54?raw.slice(0,52)+'…':raw;}}
 }}
 
 async function refreshInsights(){{
@@ -3380,6 +3386,7 @@ async function refreshInsights(){{
   _insightsLoaded=false;_insightsDate='';
   var el=document.getElementById('insights-card');
   if(el)el.innerHTML='<div class="iload"><span class="spin">&#9675;</span> Analyzing&hellip;</div>';
+  var _rp=document.getElementById('ins-preview-day');if(_rp)_rp.textContent='';
   try{{
     var date=_viewingDate||'';
     var ctrl=new AbortController();
