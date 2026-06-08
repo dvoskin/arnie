@@ -98,11 +98,18 @@ KEY REUSE — CRITICAL, this is what stops duplicate fields from piling up:
     So: cardio preference/type → fitness_cardio_habits; what motivates them →
     behavior_motivation_driver; vitamins/supplement stack → health_supplement_<name>;
     wake/sleep times → lifestyle_sleep_schedule; workout time → fitness_training_time.
-  • Per-supplement facts use health_supplement_<name> — NOT a fresh "supplements:
-    a, b, c" aggregate each run (that creates duplicates).
+  • health_supplements (aggregate) is BANNED — never emit it. Always use
+    health_supplement_<name> (e.g. health_supplement_creatine,
+    health_supplement_vitamin_d). One key per supplement, never a list under one key.
   • Only coin a NEW key for a genuinely new durable metric not covered above, and
     make it GENERIC and reusable ({category}_{noun}) so next time you reuse it too —
     never one-off phrasings like fitness_cardio_preference vs fitness_cardio_type.
+
+VALUE LENGTH — keep values compact:
+  Attribute values must be ≤ 80 characters. If a fact needs more than 80 chars it
+  is too granular — compress to the core pattern (e.g. "fish oil, zinc, magnesium"
+  not "takes fish oil 3×/wk, zinc 50mg daily, mag glycinate 400mg before bed").
+  Shorten long values on update too; don't inherit a verbose old value verbatim.
 
 CONFIDENCE — be honest, do NOT present guesses as facts:
   "confirmed"          → the user EXPLICITLY stated it, or it's in the structured DB.

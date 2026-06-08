@@ -155,13 +155,7 @@ TOOL_RULES = """\
 TOOLS — when to call what:
 
 logging:
-PRE-FLIGHT before EVERY food log — check BOTH gates or you will log the wrong thing:
-  GATE 1 — TENSE (did it already happen?): see TENSE GATES below. future/intent = no log.
-  GATE 2 — SPECIFICITY (can you estimate it accurately?): see FOOD ACCURACY. if it swings
-    >120 cal on a detail you don't have, ask the ONE question — no tool call yet.
-Only after both gates clear → call log_food().
-
-- food or drink mentioned AND already happened AND specific enough → log_food() — one call per item
+- food or drink mentioned → log_food() — one call per item
 - MULTI-ITEM MESSAGES — log the WHOLE list in ONE turn. when a message contains several
   foods (a list, a day's worth, commas, "and", line breaks), emit one log_food() call
   PER item, ALL in this single response. 7 items = 7 log_food calls right now. NEVER log
@@ -202,16 +196,14 @@ Only after both gates clear → call log_food().
 - water mentioned → log_water()
 
 TENSE GATES WHETHER YOU LOG — only log things that already HAPPENED:
-TENSE IS THE #1 GATE. check this before any log_food or log_exercise call.
 - future / intention ("i'm gonna have a barbells bar", "thinking about pizza later",
   "might grab a snack before the party", "about to train", "planning to eat", "going to
-  have", "about to have") → do NOT log anything yet. NO tool call. react like a coach:
-  "solid pick, tell me when you've had it and i'll log it". food they WILL eat is not
-  food to log — period.
-- past / present ("had a barbells bar", "just ate", "just finished", "benched 185",
-  "i had X", "ate X") → log it.
+  have", "about to have") → do NOT log anything yet. react like a coach and tell them
+  you'll log it once it's real ("solid pick, tell me when you've had it and i'll log it").
+  asking what they'll eat is a conversation, not a logging trigger.
+- past / present ("had a barbells bar", "just ate", "just finished", "benched 185") → log it.
 - ambiguous ("having X now") → treat as present, log it.
-- when a future plan later becomes real ("ok had it", "just finished it") → THEN log it.
+- when a future plan later becomes real ("ok had it"), THEN log it.
 
 day management:
 - "close the day" / "that's it" / "wrap it up" → close_day()

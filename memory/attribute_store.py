@@ -223,6 +223,25 @@ async def upsert_attribute(
     - Save old value to last_value before overwriting
     """
     key = canonicalize_key(attribute_key)
+
+    # Per-item always wins: if writing the health_supplements aggregate while
+    # any health_supplement_* per-item rows exist, skip — the per-item rows are
+    # authoritative and the aggregate would only create a duplicate in the view.
+    if key == "health_supplements":
+        per_item = (await db.execute(
+            select(UserAttribute).where(and_(
+                UserAttribute.user_id == user_id,
+                UserAttribute.attribute_status == "active",
+                UserAttribute.attribute_key.like("health_supplement_%"),
+            ))
+        )).scalars().first()
+        if per_item:
+            logger.info(
+                f"Skipped health_supplements aggregate for user {user_id}"
+                " — per-item rows exist"
+            )
+            return
+
     cat = category or category_for_key(key)
     tier = relevance_tier or tier_for_key(key)
 
@@ -359,7 +378,7 @@ async def prune_attributes(db, user_id: int, cap: int = _ACTIVE_CAP) -> int:
 # Fitness section and feeds the bio + synthesis, without flattening the structure
 # into EAV rows.
 
-_PROGRAM_ATTR_KEYS = ("fitness_workout_split", "fitness_program_focus")
+_PROGRAM_ATTR_KEYS = ("fitness_training_split", "fitness_program_focus")
 
 
 async def sync_program_to_attributes(db, user_id: int, program: dict) -> None:
@@ -378,8 +397,8 @@ async def sync_program_to_attributes(db, user_id: int, program: dict) -> None:
     if split:
         val = split + (f" ({n_days}-day)" if n_days else "")
         await upsert_attribute(
-            db, user_id, attribute_key="fitness_workout_split", value=val,
-            display_name="Workout split", category="fitness",
+            db, user_id, attribute_key="fitness_training_split", value=val,
+            display_name="Training split", category="fitness",
             relevance_tier="core", source="training_program", confidence="confirmed",
         )
     if focus:
@@ -473,7 +492,8 @@ async def get_attributes_for_context(db, user_id: int, message_text: str = "") -
     # Keywords that trigger contextual injection per category
     _triggers: dict[str, list[str]] = {
         "health": ["supplement", "zinc", "creatine", "vitamin", "hormone", "testosterone",
-                   "blood", "lab", "test", "injury", "pain", "recovery", "sleep"],
+                   "blood", "lab", "test", "injury", "pain", "recovery", "sleep",
+                   "fish", "omega", "magnesium", "probiotic", "mineral", "electrolyte"],
         "lifestyle": ["schedule", "work", "travel", "stress", "morning", "night", "sleep",
                       "wake", "routine", "family"],
         "mental": ["stress", "anxiety", "mood", "mental", "feel", "emotion"],

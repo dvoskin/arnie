@@ -796,6 +796,22 @@ async def _run_reminders():
                 logger.error(f"Time/log fetch error for user {user.id}: {e}")
                 continue
 
+            # ── Profile consolidation (03:00–03:30 local, once per day) ──────────
+            # Nightly cleanup pass: discontinues redundant/superseded attributes
+            # and shortens verbose values. Runs via a cheap Haiku call — no user
+            # message, just DB housekeeping. Uses per-day dedup via sent_slots.
+            try:
+                if hour == 3 and minute < 30:
+                    day_key = f"consolidate:{today_str}"
+                    if day_key not in sent_slots:
+                        from memory.profile_consolidator import consolidate_user_profile
+                        await consolidate_user_profile(user, db)
+                        sent_slots.add(day_key)
+                        user.nudges_sent = ",".join(sorted(sent_slots))
+                        await db.commit()
+            except Exception as e:
+                logger.error(f"Profile consolidation error for user {user.id}: {e}")
+
             # ── End-of-day report (21:00–21:30) — proactive-opt-in users only ──
             # Gated behind per-user proactive preference so opted-out users are
             # never messaged. Deduped by date so a deploy restart during the window

@@ -525,7 +525,7 @@ async def build_context(user: User, today_log: Optional[DailyLog], db,
     # db.refresh() bypasses it and actually hits the DB.
     await db.refresh(user)
 
-    recent_logs = await get_recent_logs(db, user.id, days=90)
+    recent_logs = await get_recent_logs(db, user.id, days=35)
     recent_weights = await get_recent_weights(db, user.id, days=56)
     recent_health = await get_recent_health_snapshots(db, user.id, days=7)
 
@@ -545,11 +545,14 @@ async def build_context(user: User, today_log: Optional[DailyLog], db,
         except Exception:
             pass
 
-    # Long-term context: the adaptive Profile Matrix is primary; fall back to the
-    # legacy freeform memory only if no profile exists yet.
+    # Long-term context: the adaptive Profile Matrix is primary. Also load
+    # arnie_memory.md as a live supplement so facts written via update_memory()
+    # appear in the SAME turn — before the ~3h profile synthesis absorbs them.
+    # Without this, update_memory() calls are invisible until the next synthesis.
     from memory.profile_manager import read_profile
     profile = await read_profile(user.telegram_id)
-    memory = profile if profile else await read_memory(user.telegram_id)
+    raw_notes = await read_memory(user.telegram_id)
+    memory = profile  # synthesized profile (empty string before first synthesis)
 
     # Live, tier-filtered learned attributes — core always; daily if updated in
     # the last 7 days; contextual ONLY when this message's topic matches the
@@ -708,6 +711,10 @@ async def build_context(user: User, today_log: Optional[DailyLog], db,
         "=== PROFILE ===",
         fmt_profile(user, prefs),
         (progress if progress else ""),
+        # Live learned attributes — placed here so they influence every skill,
+        # not buried after 35 days of logs. core tier always; daily if ≤7d old;
+        # contextual only when this message's topic matches.
+        (attr_block if attr_block else ""),
         f"[CONNECTED DEVICES] {whoop_status} | {apple_status}",
         "",
         # Coaching state goes at top so every skill sees it first
@@ -742,8 +749,10 @@ async def build_context(user: User, today_log: Optional[DailyLog], db,
         (strength_prs if strength_prs else ""),
         "",
         "=== USER PROFILE ===",
-        (memory[:3200] if memory else "No profile yet — still learning this user."),
-        (attr_block if attr_block else ""),
+        # Cap raised: real profiles exceed 3200 chars — truncating drops behavioral
+        # patterns and the change log. Raw notes follow so update_memory() is live.
+        (memory[:5000] if memory else raw_notes[:1200] if raw_notes else "No profile yet — still learning this user."),
+        (f"[RECENT COACHING NOTES — not yet synthesized into profile]\n{raw_notes[:600]}" if raw_notes and memory else ""),
         "",
         link_status,
         (food_mode_inj if food_mode_inj else ""),
