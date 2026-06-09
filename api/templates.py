@@ -210,10 +210,20 @@ body{{
 }}
 .ds-pill.on{{border-color:rgba(var(--ac-rgb),.35);color:var(--tx);background:var(--ac-dim)}}
 .ds-pill .tcb{{
-  width:12px;height:12px;border-radius:3px;border:1.5px solid var(--di);
+  width:15px;height:15px;border-radius:50%;border:1.5px solid var(--di);
   display:grid;place-items:center;flex-shrink:0;font-size:9px;color:transparent;
+  background:var(--sf);transition:all .18s;
 }}
-.ds-pill.on .tcb{{background:var(--ac);border-color:var(--ac);color:#000}}
+.ds-pill.on .tcb{{
+  border:none;color:#000;
+  background:
+    radial-gradient(circle at 38% 28%, rgba(255,255,255,.42) 0%, rgba(255,255,255,0) 55%),
+    linear-gradient(145deg, rgba(var(--ac-rgb),1) 0%, rgba(var(--ac-rgb),.68) 100%);
+  box-shadow:
+    0 1.5px 0 rgba(255,255,255,.5) inset,
+    0 4px 10px -2px rgba(var(--ac-rgb),.60),
+    0 1px 3px rgba(0,0,0,.18);
+}}
 .ds-share{{
   margin-left:auto;background:transparent;border:1px solid var(--bd);
   border-radius:8px;color:var(--mu);font-size:14px;padding:4px 8px;
@@ -1114,10 +1124,20 @@ footer{{
 .toggle.t-click{{cursor:pointer}}
 .toggle.t-click:hover{{border-color:var(--bd2);color:var(--tx2)}}
 .toggle .tcb{{
-  width:14px;height:14px;border-radius:4px;border:1.5px solid var(--di);
+  width:15px;height:15px;border-radius:50%;border:1.5px solid var(--di);
   display:grid;place-items:center;flex-shrink:0;font-size:10px;line-height:1;color:transparent;
+  background:var(--sf);transition:all .18s;
 }}
-.toggle.on .tcb{{background:var(--ac);border-color:var(--ac);color:#000}}
+.toggle.on .tcb{{
+  border:none;color:#000;
+  background:
+    radial-gradient(circle at 38% 28%, rgba(255,255,255,.42) 0%, rgba(255,255,255,0) 55%),
+    linear-gradient(145deg, rgba(var(--ac-rgb),1) 0%, rgba(var(--ac-rgb),.68) 100%);
+  box-shadow:
+    0 1.5px 0 rgba(255,255,255,.5) inset,
+    0 4px 10px -2px rgba(var(--ac-rgb),.60),
+    0 1px 3px rgba(0,0,0,.18);
+}}
 [data-theme="light"] .toggle.on .tcb{{color:#fff}}
 .share-tgl{{cursor:pointer}}
 .share-tgl:hover{{border-color:var(--ac);color:var(--ac)}}
