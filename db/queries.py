@@ -1006,10 +1006,15 @@ def parse_natural_period(period: str, today):
         return None
     p = period.strip().lower()
 
-    # 'last_N' window aliases
-    _window = {"last_7": 7, "last_14": 14, "last_30": 30, "last_60": 60, "last_90": 90}
-    if p in _window:
-        return (today - _td(days=_window[p]), today)
+    # 'last_N' window aliases — accept any positive integer so the model can
+    # pull arbitrarily long windows ("last_120", "last_365"). The DB stores
+    # entries indefinitely; nothing here imposes an upper cap.
+    import re as _re
+    m_last = _re.match(r"^last_(\d+)$", p)
+    if m_last:
+        n = int(m_last.group(1))
+        if n > 0:
+            return (today - _td(days=n), today)
 
     # 'YYYY-MM-DD:YYYY-MM-DD' range
     if ":" in p:
@@ -1050,6 +1055,26 @@ def parse_natural_period(period: str, today):
     m = re.match(r"^(one|two|three|four|five|six|seven|eight|nine|ten)\s+days?\s+ago$", p)
     if m:
         d = today - _td(days=_word_n[m.group(1)])
+        return (d, d)
+    # "N weeks ago" → single day exactly N*7 days back
+    m = re.match(r"^(\d+)\s*weeks?\s*ago$", p)
+    if m:
+        d = today - _td(days=int(m.group(1)) * 7)
+        return (d, d)
+    m = re.match(r"^(one|two|three|four|five|six|seven|eight|nine|ten)\s+weeks?\s+ago$", p)
+    if m:
+        d = today - _td(days=_word_n[m.group(1)] * 7)
+        return (d, d)
+    # "N months ago" → approximate as N*30 days (good enough for recap intent,
+    # which is "give me roughly that time period" not "give me a precise
+    # calendar month"). User can always switch to ISO if they need exact.
+    m = re.match(r"^(\d+)\s*months?\s*ago$", p)
+    if m:
+        d = today - _td(days=int(m.group(1)) * 30)
+        return (d, d)
+    m = re.match(r"^(one|two|three|four|five|six|seven|eight|nine|ten)\s+months?\s+ago$", p)
+    if m:
+        d = today - _td(days=_word_n[m.group(1)] * 30)
         return (d, d)
     # "last week" / "this week" → 7-day windows
     if p == "this week":

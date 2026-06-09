@@ -23,7 +23,28 @@ _TODAY = date(2026, 6, 9)  # a Tuesday
     ("last_30", (_TODAY - timedelta(days=30), _TODAY)),
     ("last_60", (_TODAY - timedelta(days=60), _TODAY)),
     ("last_90", (_TODAY - timedelta(days=90), _TODAY)),
+    # NEW: unlimited last_<N> window — DB stores entries indefinitely.
+    ("last_120", (_TODAY - timedelta(days=120), _TODAY)),
+    ("last_180", (_TODAY - timedelta(days=180), _TODAY)),
+    ("last_365", (_TODAY - timedelta(days=365), _TODAY)),
+    ("last_1000", (_TODAY - timedelta(days=1000), _TODAY)),
+    # NEW: weeks ago and months ago
+    ("1 week ago", (_TODAY - timedelta(days=7), _TODAY - timedelta(days=7))),
+    ("3 weeks ago", (_TODAY - timedelta(days=21), _TODAY - timedelta(days=21))),
+    ("two weeks ago", (_TODAY - timedelta(days=14), _TODAY - timedelta(days=14))),
+    ("1 month ago", (_TODAY - timedelta(days=30), _TODAY - timedelta(days=30))),
+    ("4 months ago", (_TODAY - timedelta(days=120), _TODAY - timedelta(days=120))),
+    ("six months ago", (_TODAY - timedelta(days=180), _TODAY - timedelta(days=180))),
+    # 120 days ago — the user's canonical "go back far" case
+    ("120 days ago", (_TODAY - timedelta(days=120), _TODAY - timedelta(days=120))),
+    ("365 days ago", (_TODAY - timedelta(days=365), _TODAY - timedelta(days=365))),
+    # ISO dates work for any date in the past
     ("2026-06-07", (date(2026, 6, 7), date(2026, 6, 7))),
+    ("2024-03-15", (date(2024, 3, 15), date(2024, 3, 15))),
+    ("2020-01-01", (date(2020, 1, 1), date(2020, 1, 1))),
+    # Month-day with explicit year for years-back lookups
+    ("march 15 2024", (date(2024, 3, 15), date(2024, 3, 15))),
+    ("march 15, 2024", (date(2024, 3, 15), date(2024, 3, 15))),
     # New: natural language single days
     ("today", (_TODAY, _TODAY)),
     ("now", (_TODAY, _TODAY)),
@@ -299,3 +320,108 @@ def test_query_history_tool_period_description_mentions_natural_language():
     period_desc = qh["input_schema"]["properties"]["period"]["description"]
     assert "yesterday" in period_desc.lower()
     assert "last_7" in period_desc
+
+
+def test_query_history_tool_description_mentions_unlimited_lookback():
+    """The model must know it CAN reach back 120+ days, otherwise it may
+    refuse or hallucinate that the data isn't available."""
+    from core.tools import build_tools
+    tools = build_tools()
+    qh = next(t for t in tools if t["name"] == "query_history")
+    desc = qh["description"] + qh["input_schema"]["properties"]["period"]["description"]
+    assert "120 days ago" in desc or "last_120" in desc
+    assert "indefinitely" in desc.lower() or "NO upper limit" in desc
+
+
+# ── 120-day lookback round-trip (the user's canonical ask) ───────────────────
+
+
+@pytest.mark.asyncio
+async def test_food_entry_120_days_back_is_retrievable(make_user, db):
+    """Log a food on a DailyLog 120 days in the past, then query for it.
+    Must return the exact entry — no upper-bound cap on lookback."""
+    from db.models import DailyLog, FoodEntry
+    from db.queries import recompute_log_totals
+
+    user = await make_user(telegram_id="t-120d")
+    target_date = date.today() - timedelta(days=120)
+    log = DailyLog(user_id=user.id, date=target_date)
+    db.add(log)
+    await db.flush()
+    db.add(FoodEntry(
+        daily_log_id=log.id, parsed_food_name="chicken sandwich",
+        quantity="~10in", calories=550, protein=38, carbs=45, fats=22,
+        estimated_flag=True,
+    ))
+    await db.flush()
+    await recompute_log_totals(db, log.id)
+    await db.commit()
+
+    # Query by ISO date — should retrieve the entry exactly.
+    out = await query_history_stats(
+        db, user.id, period=str(target_date), metric="food_entries",
+    )
+    assert out["entries"] == 1
+    assert out["rows"][0]["food_name"] == "chicken sandwich"
+    assert out["rows"][0]["calories"] == 550
+
+    # Query by "120 days ago" — should retrieve the same entry.
+    out2 = await query_history_stats(
+        db, user.id, period="120 days ago", metric="food_entries",
+    )
+    assert out2["entries"] == 1
+    assert out2["rows"][0]["food_name"] == "chicken sandwich"
+
+
+@pytest.mark.asyncio
+async def test_day_detail_4_months_back_is_retrievable(make_user, db):
+    """Same check, via 'day_detail' metric and '4 months ago' phrasing."""
+    from db.models import DailyLog, FoodEntry
+    from db.queries import recompute_log_totals
+
+    user = await make_user(telegram_id="t-4mo")
+    target_date = date.today() - timedelta(days=120)
+    log = DailyLog(user_id=user.id, date=target_date)
+    db.add(log)
+    await db.flush()
+    db.add(FoodEntry(
+        daily_log_id=log.id, parsed_food_name="oatmeal", quantity="1 cup",
+        calories=150, protein=5, carbs=27, fats=3, estimated_flag=False,
+    ))
+    await db.flush()
+    await recompute_log_totals(db, log.id)
+    await db.commit()
+
+    out = await query_history_stats(
+        db, user.id, period="4 months ago", metric="day_detail",
+    )
+    # 4 months ≈ 120 days — should match this log
+    assert len(out["days"]) == 1
+    assert out["days"][0]["food"][0]["food_name"] == "oatmeal"
+
+
+@pytest.mark.asyncio
+async def test_last_365_window_covers_full_year(make_user, db):
+    """A 'last_365' query must cover a date logged 200 days ago. Verifies the
+    rolling-window upper bound is genuinely unlimited."""
+    from db.models import DailyLog, FoodEntry
+    from db.queries import recompute_log_totals
+
+    user = await make_user(telegram_id="t-365")
+    target_date = date.today() - timedelta(days=200)
+    log = DailyLog(user_id=user.id, date=target_date)
+    db.add(log)
+    await db.flush()
+    db.add(FoodEntry(
+        daily_log_id=log.id, parsed_food_name="banana", quantity="1 medium",
+        calories=105, protein=1, carbs=27, fats=0, estimated_flag=False,
+    ))
+    await db.flush()
+    await recompute_log_totals(db, log.id)
+    await db.commit()
+
+    out = await query_history_stats(
+        db, user.id, period="last_365", metric="food_entries",
+    )
+    assert out["entries"] == 1
+    assert out["rows"][0]["food_name"] == "banana"

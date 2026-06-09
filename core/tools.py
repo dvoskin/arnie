@@ -356,10 +356,16 @@ _HISTORY_TOOLS = [
                     "type": "string",
                     "description": (
                         "When. Accepts natural language ('yesterday', 'sunday', "
-                        "'last monday', '2 days ago', 'this week', 'last week', "
-                        "'june 7'), ISO dates ('2026-06-07'), date ranges "
-                        "('2026-06-01:2026-06-07'), or rolling windows "
-                        "('last_7', 'last_14', 'last_30', 'last_60', 'last_90')."
+                        "'last monday', '2 days ago', '120 days ago', "
+                        "'3 weeks ago', '6 months ago', 'this week', 'last week', "
+                        "'june 7', 'march 15 2024'), ISO dates ('2026-06-07'), "
+                        "date ranges ('2026-06-01:2026-06-07'), or rolling windows "
+                        "('last_7', 'last_30', 'last_90', 'last_120', 'last_365' — "
+                        "any positive 'last_N' works). The DB stores entries "
+                        "indefinitely — there is NO upper limit on how far back "
+                        "you can pull. If the user asks for a food from 4 months "
+                        "ago, call this tool with period='120 days ago' or the "
+                        "exact ISO date — don't refuse or say you don't have it."
                     ),
                 },
                 "exercise_name": {
