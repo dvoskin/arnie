@@ -469,7 +469,13 @@ async def privacy_policy():
 
 @app.post("/webhook/{token}")
 async def telegram_webhook(token: str, request: Request):
-    """Receive updates from Telegram (production webhook mode)."""
+    """Receive updates from Telegram (production webhook mode).
+
+    Returns 200 immediately and processes the update in a background task so
+    Telegram doesn't hit its 15s webhook timeout and retry. Deduplicates by
+    update_id in case a retry slips through anyway (network blip, the prior
+    pod still warming, an old code path).
+    """
     if token != os.getenv("TELEGRAM_BOT_TOKEN", ""):
         raise HTTPException(status_code=403, detail="Forbidden")
 
@@ -480,9 +486,31 @@ async def telegram_webhook(token: str, request: Request):
     from telegram import Update
     data = await request.json()
     update = Update.de_json(data, ptb_app.bot)
-    # Fire-and-forget: return 200 immediately so Telegram doesn't retry on slow
-    # LLM responses (Telegram webhook timeout is 15s). Same pattern as iMessage.
-    asyncio.create_task(ptb_app.process_update(update))
+
+    # Dedup by update_id with a 10-min eviction window — same shape as the
+    # iMessage _seen_guids gate. Telegram MAY redeliver the same update_id on
+    # any retry; processing it twice means two LLM calls and two replies.
+    import time as _time
+    _now = _time.time()
+    _seen = getattr(request.app.state, "_seen_tg_updates", {})
+    _seen = {k: v for k, v in _seen.items() if _now - v < 600}
+    uid = getattr(update, "update_id", None)
+    if uid is not None and (_now - _seen.get(uid, 0)) < 600:
+        logger.info(f"Telegram webhook: duplicate update_id={uid} skipped")
+        request.app.state._seen_tg_updates = _seen
+        return {"ok": True}
+    if uid is not None:
+        _seen[uid] = _now
+    request.app.state._seen_tg_updates = _seen
+
+    # Hold a reference to the task so it isn't garbage-collected mid-run.
+    # Without this, Python may collect the task before process_update finishes
+    # and the LLM call dies silently. Use a per-app set, prune as tasks finish.
+    _tasks = getattr(request.app.state, "_tg_bg_tasks", set())
+    task = asyncio.create_task(ptb_app.process_update(update))
+    _tasks.add(task)
+    task.add_done_callback(_tasks.discard)
+    request.app.state._tg_bg_tasks = _tasks
     return {"ok": True}
 
 

@@ -1390,3 +1390,86 @@ def test_llm_judge_eval_scaffold_is_opt_in():
     assert hasattr(eval_mod, "_judge")
     # The pytestmark skip should be present
     assert hasattr(eval_mod, "pytestmark")
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# DIMENSION 41 — Drift 1: over-target framing
+# ════════════════════════════════════════════════════════════════════════════
+
+
+def test_prompt_bans_soft_framing_when_over_target():
+    """When the user is OVER target, the model must name the gap directly
+    ('58 over target'), not soften with 'almost no calorie room left.'"""
+    s = SYSTEM_PROMPT
+    # The corrective rule must be present
+    assert "NAME THE GAP DIRECTLY" in s
+    # And the soft phrasings must be explicitly banned for over-target
+    for banned in ("almost no room", "basically no room",
+                   "right at the limit", "at your cap"):
+        assert banned in s.lower(), f"missing ban example: {banned!r}"
+
+
+def test_prompt_has_over_target_example_format():
+    """The prompt must show the corrected over-target framing."""
+    s = SYSTEM_PROMPT
+    assert "58 over target" in s or "228 over" in s
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# DIMENSION 42 — Drift 2: redundant "X: X is..." labeling ban
+# ════════════════════════════════════════════════════════════════════════════
+
+
+def test_prompt_bans_redundant_label_repeat():
+    """'Diet Coke: Diet Coke's a zero' duplicates the food name. The prompt
+    must ban this shape with the canonical example."""
+    s = SYSTEM_PROMPT
+    assert "NEVER LABEL THE FOOD AND THEN REPEAT IT" in s
+    # The example may wrap across lines in the source — check parts.
+    assert "Diet Coke:" in s and "Diet" in s
+    # And give the corrected alternative
+    assert "Diet Coke's a zero." in s
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# DIMENSION 43 — Drift 3: strict-mode opener consistency
+# ════════════════════════════════════════════════════════════════════════════
+
+
+def test_prompt_requires_strict_mode_named_opener():
+    """Strict-mode pre-log questions must open with the mode named so the
+    user understands why they're being asked. Generic openers are banned."""
+    s = SYSTEM_PROMPT
+    # The required opener shape
+    assert "strict mode, quick check before I log this" in s
+    # The ban on generic openers
+    assert "OPEN PRE-LOG QUESTIONS WITH THE MODE NAMED" in s
+    # The specific anti-example we just saw in prod
+    assert "a couple quick ones" in s
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# DIMENSION 44 — Telegram webhook duplicate dedup
+# ════════════════════════════════════════════════════════════════════════════
+
+
+def test_telegram_webhook_has_update_id_dedup():
+    """The Telegram webhook must dedup by update_id to survive Telegram
+    retries that slip past the 200-immediate response (network blip, old
+    pod still warming, etc.)."""
+    import inspect
+    from api import app
+    src = inspect.getsource(app.telegram_webhook)
+    assert "_seen_tg_updates" in src
+    assert "update_id" in src.lower()
+    assert "duplicate update_id" in src
+
+
+def test_telegram_webhook_holds_task_reference():
+    """asyncio.create_task without a held reference can be GC'd mid-run.
+    The webhook must store the task in an app-state set."""
+    import inspect
+    from api import app
+    src = inspect.getsource(app.telegram_webhook)
+    assert "_tg_bg_tasks" in src
+    assert "add_done_callback" in src
