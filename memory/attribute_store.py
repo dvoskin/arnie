@@ -477,40 +477,68 @@ _DAILY_WINDOW = timedelta(days=7)
 
 async def get_attributes_for_context(db, user_id: int, message_text: str = "") -> str:
     """
-    Build the AI profile attribute block for injection into Arnie's context.
+    Build a compact attribute block for injection into Arnie's context.
 
-    The AI profile is the central source of truth — ALL active attributes are
-    always included so Arnie never misses a known fact about the user regardless
-    of the current message topic.  archive rows are the only exclusion.
-
-    Attributes are grouped by category and annotated with confidence so Arnie
-    can distinguish confirmed facts from working hypotheses.
+    Tier rules:
+      core        → always included
+      daily       → included if updated within 7 days
+      contextual  → included if message_text contains a keyword from the category
+      archive     → never included
     """
     rows = await get_all_attributes(db, user_id)
     if not rows:
         return ""
 
-    # Include everything except archived rows — no keyword gating.
-    selected = [r for r in rows if (r.relevance_tier or "contextual") != "archive"]
+    now = datetime.now(timezone.utc)
+    msg_lower = message_text.lower()
+
+    # Keywords that trigger contextual injection per category
+    _triggers: dict[str, list[str]] = {
+        "health": ["supplement", "zinc", "creatine", "vitamin", "hormone", "testosterone",
+                   "blood", "lab", "test", "injury", "pain", "recovery", "sleep",
+                   "fish", "omega", "magnesium", "probiotic", "mineral", "electrolyte"],
+        "lifestyle": ["schedule", "work", "travel", "stress", "morning", "night", "sleep",
+                      "wake", "routine", "family"],
+        "mental": ["stress", "anxiety", "mood", "mental", "feel", "emotion"],
+        "nutrition": ["eat", "food", "meal", "protein", "calorie", "diet", "drink",
+                      "snack", "carb", "fast", "restrict"],
+        "fitness": ["workout", "train", "gym", "lift", "cardio", "run", "exercise",
+                    "split", "program", "sport"],
+        "behavior": ["motivat", "habit", "struggle", "fail", "success", "coach"],
+    }
+
+    selected = []
+    for row in rows:
+        tier = row.relevance_tier or "contextual"
+        if tier == "archive":
+            continue
+        if tier == "core":
+            selected.append(row)
+        elif tier == "daily":
+            updated = row.updated_at
+            if updated:
+                if updated.tzinfo is None:
+                    updated = updated.replace(tzinfo=timezone.utc)
+                if now - updated <= _DAILY_WINDOW:
+                    selected.append(row)
+        elif tier == "contextual":
+            triggers = _triggers.get(row.category, [])
+            if any(t in msg_lower for t in triggers) or not msg_lower:
+                selected.append(row)
 
     if not selected:
         return ""
 
-    lines = ["[AI PROFILE — known facts about this user. treat as source of truth for every response.]"]
+    lines = ["[KNOWN ATTRIBUTES]"]
     by_cat: dict[str, list] = {}
     for row in selected:
         by_cat.setdefault(row.category, []).append(row)
 
-    cat_order = ["fitness", "nutrition", "health", "lifestyle", "behavior", "mental", "custom"]
-    ordered_cats = [c for c in cat_order if c in by_cat] + [c for c in by_cat if c not in cat_order]
-
-    for cat in ordered_cats:
-        cat_rows = by_cat[cat]
-        lines.append(f"  [{cat.upper()}]")
+    for cat, cat_rows in sorted(by_cat.items()):
         for row in cat_rows:
             conf_tag = f" [{row.confidence}]" if row.confidence != "confirmed" else ""
             unit_str = f" {row.unit}" if row.unit else ""
-            lines.append(f"    {row.display_name or row.attribute_key}: {row.value}{unit_str}{conf_tag}")
+            lines.append(f"  {row.display_name or row.attribute_key}: {row.value}{unit_str}{conf_tag}")
 
     return "\n".join(lines)
 

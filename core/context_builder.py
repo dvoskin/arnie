@@ -850,7 +850,9 @@ async def build_context(user: User, today_log: Optional[DailyLog], db,
         fmt_profile(user, prefs),
         (goal_wt_nudge if goal_wt_nudge else ""),
         (progress if progress else ""),
-        # AI profile — all active attributes, always injected. Central source of truth.
+        # Live learned attributes — placed here so they influence every skill,
+        # not buried after 35 days of logs. core tier always; daily if ≤7d old;
+        # contextual only when this message's topic matches.
         (attr_block if attr_block else ""),
         f"[CONNECTED DEVICES] {whoop_status} | {apple_status}",
         "",
