@@ -1354,6 +1354,17 @@ footer{{
 .ph-title{{
   font-family:'Instrument Serif','Times New Roman',serif;
   font-size:28px;line-height:1.15;letter-spacing:-.01em;color:var(--tx);font-weight:400;
+  display:inline-flex;align-items:baseline;gap:6px;
+}}
+.logo-arnie{{font-family:'Instrument Serif','Times New Roman',serif;color:var(--tx);font-weight:400}}
+/* "OS" rendered as a small mono caps badge next to "Arnie" — matches
+   the existing sidebar logo treatment (.logo-os). Reads as a product
+   wordmark, not a tagline. */
+.logo-os{{
+  font-family:'Geist Mono','SF Mono',monospace;
+  font-size:9px;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--mu);border:1px solid var(--bd);border-radius:5px;
+  padding:2px 6px;line-height:1;vertical-align:.18em;font-weight:500;
 }}
 @media(max-width:940px){{.ph-title{{font-size:26px}}}}
 @media(max-width:560px){{.ph-title{{font-size:24px}}}}
@@ -1661,11 +1672,28 @@ footer{{
 }}
 
 /* ── 5-day trend strip ───────────────────────────────────── */
-.trend-strip{{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:4px}}
-.tcell{{background:var(--sf2);border:1px solid var(--bd);border-radius:12px;padding:10px 12px;display:flex;flex-direction:column;gap:2px}}
-.tc-lbl{{font-size:9px;letter-spacing:.06em;text-transform:uppercase;color:var(--mu);font-weight:500}}
-.tc-val{{font-size:16px;font-weight:600;color:var(--tx2);line-height:1.1}}
-.tc-sub{{font-size:10px;color:var(--mu);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}
+/* 5-day trend cells — restored to the original production styling
+   (--sf surface, --tx full-contrast values, mono caps labels). Was
+   temporarily muted during the preview port; reverted here per user
+   feedback ("consistent with old pre-edit"). */
+.trend-strip{{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:8px}}
+.tcell{{
+  background:var(--sf);border:1px solid var(--bd);border-radius:12px;
+  padding:11px 13px;
+}}
+.tc-lbl{{
+  font-family:'Geist Mono','SF Mono',monospace;font-size:9px;
+  letter-spacing:.08em;text-transform:uppercase;color:var(--mu);
+  margin-bottom:4px;font-weight:500;
+}}
+.tc-val{{
+  font-size:16px;font-weight:600;color:var(--tx);
+  letter-spacing:-.01em;font-variant-numeric:tabular-nums;line-height:1.15;
+}}
+.tc-sub{{font-size:10.5px;color:var(--mu);margin-top:3px;line-height:1.3}}
+.tc-dn{{color:var(--ac)}}
+.tc-up{{color:var(--or)}}
+.tc-fl{{color:var(--mu)}}
 .tc-up{{color:var(--mu)}} .tc-dn{{color:var(--mu)}} .tc-fl{{color:var(--di)}}
 
 /* ── Arnie's learning progress ───────────────────────────── */
@@ -2124,18 +2152,24 @@ footer{{
 </div><!-- /main-inner -->
 </div><!-- /main -->
 
+<!-- Bottom nav icons refreshed to the preview's Lucide-family set:
+     Day = target ring + filled center dot (clear "today" marker)
+     Week = simple ascending trend line (focus on the arc, not a literal calendar)
+     Profile = refined head + single shoulder arc (fewer path segments)
+     Coaching = dual sparkle (same family as the Insights action-tile glyph,
+                so AI-coaching content speaks one visual dialect). -->
 <nav class="bottomnav">
   <button class="bn-item active" id="bn-day" onclick="switchTab('day')">
-    <span class="bn-ico"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="16.5" rx="3"/><path d="M3 9.5h18M8 2.5v4M16 2.5v4"/><circle cx="12" cy="15" r="1.8" fill="currentColor" stroke="none"/></svg></span>Day
+    <span class="bn-ico"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="2.5" fill="currentColor" stroke="none"/></svg></span>Day
   </button>
   <button class="bn-item" id="bn-week" onclick="switchTab('week')">
-    <span class="bn-ico"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 16l5-5 4 4 8-9"/><path d="M16 6h5v5"/></svg></span>Week
+    <span class="bn-ico"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 17l5-5 3.5 3.5 8-8.5"/><path d="M15 7h5.5v5.5"/></svg></span>Week
   </button>
   <button class="bn-item" id="bn-profile" onclick="switchTab('profile')">
-    <span class="bn-ico"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.2 4-6.5 8-6.5s8 2.3 8 6.5"/></svg></span>Profile
+    <span class="bn-ico"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8.5" r="3.5"/><path d="M5.5 20.5c.7-3.5 3.4-5.5 6.5-5.5s5.8 2 6.5 5.5"/></svg></span>Profile
   </button>
   <button class="bn-item" id="bn-coaching" onclick="switchTab('coaching')">
-    <span class="bn-ico"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3C7 3 3 6.6 3 11c0 2.4 1.1 4.5 2.9 6L5 21l4.3-1.4A9.6 9.6 0 0 0 12 20c5 0 9-3.6 9-8s-4-9-9-9Z"/><path d="M9 11h.01M12 11h.01M15 11h.01" stroke-width="2.2" stroke-linecap="round"/></svg></span>Coaching
+    <span class="bn-ico"><svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M11 3l1.5 4.6L17 9l-4.5 1.4L11 15l-1.5-4.6L5 9l4.5-1.4z"/><path d="M18 14l.7 2.3 2.3.7-2.3.7-.7 2.3-.7-2.3-2.3-.7 2.3-.7z" opacity=".7"/></svg></span>Coaching
   </button>
 </nav>
 
@@ -2770,15 +2804,22 @@ function renderPageHead(d){{
   var pt=document.getElementById('ph-title');
   var ps=document.getElementById('ph-sub');
   if(!pt||!ps)return;
-  // Preview-style header: day name as title, short date · goal pill ·
-  // first name as subtitle. Dashboard-shaped (vs personal-greeting).
+  // Brand-forward header: ArnieOS logotype as the title (Instrument
+  // Serif, same family as the existing sidebar logo). Day name moves
+  // into the subtitle line alongside date · goal pill · first name.
+  // This frees the title slot for branding without losing any info.
   var now=new Date();
-  pt.textContent = now.toLocaleDateString('en-US',{{weekday:'long'}});
-  var shortDate = now.toLocaleDateString('en-US',{{month:'short',day:'numeric'}});
+  pt.innerHTML = '<span class="logo-arnie">Arnie</span><span class="logo-os">OS</span>';
+  var dayName  = now.toLocaleDateString('en-US',{{weekday:'long'}});
+  var shortDate= now.toLocaleDateString('en-US',{{month:'short',day:'numeric'}});
   var p = d.profile || {{}};
   var name = (p.name||'').trim().split(/\\s+/)[0];
   var goal = (p.primary_goal||'').trim();
-  var parts = ['<span>'+esc(shortDate)+'</span>'];
+  var parts = [
+    '<span>'+esc(dayName)+'</span>',
+    '<span class="ph-dot">·</span>',
+    '<span>'+esc(shortDate)+'</span>'
+  ];
   if(goal){{ parts.push('<span class="ph-dot">·</span>', '<span class="ph-pill">'+esc(goal)+'</span>'); }}
   if(name){{ parts.push('<span class="ph-dot">·</span>', '<span>'+esc(name)+'</span>'); }}
   ps.innerHTML = parts.join('');
@@ -2874,14 +2915,16 @@ async function submitExerciseInline(){{
   finally{{btn.textContent='+ Add workout';btn.disabled=false;}}
 }}
 
-// Insights tile — scrolls to + expands the existing AI insights banner.
-// Kept as a thin wrapper around the production toggleInsights('day') so
-// all the existing fetch / refresh / streaming logic is reused as-is.
+// Insights tile — true toggle. Tap once opens the inline panel (and
+// scrolls it into view); tap again collapses it. Reuses production
+// toggleInsights('day') so all the fetch / refresh / streaming logic
+// stays unchanged.
 function handleInsightsTile(){{
   var banner = document.getElementById('ins-day');
   if(!banner) return;
-  if(!banner.classList.contains('open')){{ try{{ toggleInsights('day'); }}catch(e){{}} }}
-  banner.scrollIntoView({{behavior:'smooth', block:'center'}});
+  var wasOpen = banner.classList.contains('open');
+  try{{ toggleInsights('day'); }}catch(e){{}}
+  if(!wasOpen){{ banner.scrollIntoView({{behavior:'smooth', block:'center'}}); }}
 }}
 
 // Workout / Cardio tiles — opens the existing #ex-form (add-workout
@@ -3038,17 +3081,30 @@ function renderWeightModule(d){{
   var goalLbs = p.goal_weight_lbs;
   var subEl = document.getElementById('wm-sub');
   var fillEl = document.getElementById('wm-fill');
+  var barWrap = document.getElementById('wm-bar-wrap');
   if(goalLbs){{
+    // Goal set → show distance-to-goal + progress bar.
     var totalDistance = Math.abs(start - goalLbs);
     var traveled = Math.abs(start - current);
     var remaining = Math.max(0, Math.abs(current - goalLbs));
     var pctv = totalDistance ? Math.max(0, Math.min(100, (traveled/totalDistance)*100)) : 0;
-    if(subEl) subEl.innerHTML = remaining.toFixed(1) + ' lbs to go &nbsp;→&nbsp; ' + goalLbs.toFixed(1);
+    if(subEl){{
+      subEl.innerHTML = remaining.toFixed(1) + ' lbs to go &nbsp;→&nbsp; ' + goalLbs.toFixed(1);
+      subEl.style.cursor = '';
+      subEl.onclick = null;
+    }}
+    if(barWrap) barWrap.style.display = '';
     if(fillEl) fillEl.style.width = pctv + '%';
   }}else{{
-    if(subEl) subEl.textContent = weights.length + ' weigh-ins';
-    var barWrap = document.getElementById('wm-bar-wrap');
+    // No goal weight set → bar would be meaningless. Hide it entirely and
+    // show a tappable prompt to add one. Tap routes to the Profile tab
+    // where the goal-weight field lives.
     if(barWrap) barWrap.style.display = 'none';
+    if(subEl){{
+      subEl.innerHTML = 'Set a goal weight in <span style="color:var(--ac)">Profile →</span>';
+      subEl.style.cursor = 'pointer';
+      subEl.onclick = function(){{ try{{ switchTab('profile'); }}catch(e){{}} }};
+    }}
   }}
 }}
 
