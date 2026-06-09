@@ -807,8 +807,19 @@ body{{
 .ins-chev{{color:var(--tx2);font-size:14px;padding-right:2px;
   transition:transform .22s cubic-bezier(.2,.7,.2,1)}}
 .insights.open .ins-chev{{transform:rotate(180deg)}}
-.ins-body{{max-height:0;overflow:hidden;transition:max-height .3s cubic-bezier(.4,0,.2,1)}}
-.insights.open .ins-body{{max-height:1600px;margin-top:8px}}
+/* Inline panel — collapsed by default, expanded when .open is set on
+   #ins-day by toggleInsights() / handleInsightsTile(). Card chrome when
+   open so the panel reads as a discrete surface (no orphan content). */
+.ins-body{{
+  max-height:0;overflow:hidden;
+  transition:max-height .3s cubic-bezier(.4,0,.2,1),margin-top .2s,border-color .2s;
+  border:1px solid transparent;border-radius:12px;background:var(--sf);
+}}
+.insights.open .ins-body{{
+  max-height:1600px;margin-top:10px;
+  border-color:var(--bd);
+}}
+.ins-meta{{}}
 
 /* ── WEARABLE ────────────────────────────────────────────── */
 .htile{{
@@ -819,26 +830,52 @@ body{{
 .hv{{font-family:'Instrument Serif','Times New Roman',serif;font-size:18px;font-weight:normal;line-height:1;letter-spacing:-.01em}}
 .hl{{font-family:'Geist Mono','SF Mono',monospace;font-size:9px;color:var(--mu);text-transform:uppercase;letter-spacing:.08em;margin-top:3px;font-weight:500}}
 
-/* ── LOG CARDS ───────────────────────────────────────────── */
+/* ── LOG CARDS — preview-style connected list with hairline dividers ──
+   Flat informational rows; tap reveals edit/delete via .lrow.open. */
 .lcrd{{
-  background:var(--sf);border:1px solid var(--bd);border-radius:16px;overflow:hidden;
-  backdrop-filter:blur(16px);box-shadow:var(--sh);transition:background .3s;
+  background:var(--sf);border:1px solid var(--bd);border-radius:12px;
+  overflow:hidden;transition:background .3s;
 }}
 .lrow{{
-  display:flex;align-items:flex-start;gap:12px;
-  padding:12px 16px;border-bottom:1px solid var(--bd);position:relative;
+  display:flex;align-items:flex-start;gap:10px;
+  padding:8px 13px;border-bottom:1px solid var(--bd);
+  cursor:pointer;transition:background .12s;
+  position:relative;
 }}
 .lrow:last-child{{border-bottom:none}}
 .lrow:hover{{background:var(--sf2)}}
-.ficon{{
-  width:36px;height:36px;border-radius:10px;flex-shrink:0;
-  background:var(--sf2);border:1px solid var(--bd);
-  display:grid;place-items:center;font-size:19px;margin-top:1px;
+.lrow-main{{flex:1;min-width:0}}
+/* Right-aligned mono calorie column — eye scans straight down the
+   numbers when comparing rows. */
+.lcal{{
+  font-family:'Geist Mono','SF Mono',monospace;
+  font-size:12px;font-weight:500;color:var(--tx2);
+  white-space:nowrap;flex-shrink:0;align-self:flex-start;
+  letter-spacing:.01em;padding-top:1px;
 }}
-.fbody{{flex:1;min-width:0;padding-right:58px}}
+.lcal-unit{{color:var(--mu);font-size:9.5px;margin-left:1px;letter-spacing:.06em}}
+/* Secondary meta line: "qty · 34p · 55c · 14f" — bold numbers, muted
+   text/separators. tabular-nums keeps macros vertically aligned. */
+.lmeta{{
+  font-size:11px;color:var(--mu);margin-top:2px;line-height:1.3;
+  font-variant-numeric:tabular-nums;
+}}
+.lmeta .sep{{opacity:.5;margin:0 4px}}
+.lmeta b{{color:var(--tx2);font-weight:500}}
+/* Edit/delete actions appear only when the row is .open (tapped) so the
+   default state stays clean and informational. */
+.lrow-actions{{
+  display:none;align-items:center;gap:4px;flex-shrink:0;
+}}
+.lrow.open .lrow-actions{{display:flex}}
+.lrow-actions .ibtn{{width:24px;height:24px;font-size:11px}}
+.lrow-actions .ibtn.del{{font-size:13px}}
+/* Legacy .ficon / .fbody slots kept for backward-compat with any
+   non-food usage of .lrow (currently none after the refactor). */
+.fbody{{flex:1;min-width:0}}
 .lname{{
-  font-size:15px;font-weight:500;line-height:1.3;word-break:break-word;
-  color:var(--tx);display:flex;align-items:center;gap:7px;flex-wrap:wrap;
+  font-size:13.5px;font-weight:500;line-height:1.3;word-break:break-word;
+  color:var(--tx);display:flex;align-items:center;gap:6px;flex-wrap:wrap;
 }}
 .est-tag{{
   font-family:'Geist Mono','SF Mono',monospace;
@@ -1260,7 +1297,8 @@ footer{{
   letter-spacing:.01em;
   display:flex;align-items:center;gap:10px;
 }}
-.ph-streak{{color:var(--ac);display:inline-flex;align-items:center;gap:5px;font-weight:500}}
+/* .ph-streak (inline ⚡ X-day streak in subtitle) removed — superseded
+   by the .streak-chip in the top-right of .ph-actions. */
 .ph-actions{{display:flex;gap:8px;align-items:center;flex-shrink:0}}
 .ph-log-btn{{
   border:1px solid var(--bd);border-radius:10px;padding:0 13px;height:34px;font-size:13px;
@@ -1772,18 +1810,22 @@ footer{{
       </button>
     </div>
 
-    <!-- AI INSIGHTS — collapsed banner, expands on tap -->
-    <div class="insights" id="ins-day" style="margin-top:12px">
-      <div class="ins-banner" onclick="toggleInsights('day')" role="button" tabindex="0" aria-expanded="false">
-        <span class="ins-spark"><svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M12 2.2l1.7 4.8 4.8 1.7-4.8 1.7L12 15.2l-1.7-4.8L5.5 8.7l4.8-1.7z"/><path d="M18.6 13.4l.82 2.18 2.18.82-2.18.82-.82 2.18-.82-2.18L15.6 16.4l2.18-.82z"/></svg></span>
-        <div class="ins-head"><span class="ins-title">Coach Insights</span><div class="ins-preview" id="ins-preview-day"></div></div>
-        <span class="ins-time" id="ins-time-day"></span>
-        <span class="ins-actions">
-          <span class="ins-refresh" onclick="event.stopPropagation();refreshInsights()" title="Refresh">&#8635;</span>
-          <span class="ins-chev">&#9662;</span>
-        </span>
+    <!-- AI INSIGHTS — inline expanding panel triggered by the Insights
+         action tile above. The old standalone banner header is gone:
+         the Insights tile IS the banner now (cleaner — no redundancy).
+         Body retains #ins-preview-day + #ins-time-day + #insights-card
+         IDs unchanged so the existing fetch/refresh/streaming logic in
+         loadInsights / toggleInsights / _stampInsTime keeps working. -->
+    <div class="insights" id="ins-day" style="margin-top:0">
+      <div class="ins-body">
+        <div class="ins-meta" style="display:flex;align-items:center;gap:8px;padding:10px 14px 0;font-size:11px;color:var(--mu)">
+          <span style="font-family:'Geist Mono','SF Mono',monospace;font-size:10px;letter-spacing:.06em;text-transform:uppercase">Coach Insights</span>
+          <span style="margin-left:auto" id="ins-time-day"></span>
+          <span class="ins-refresh" onclick="refreshInsights()" title="Refresh" style="cursor:pointer">&#8635;</span>
+        </div>
+        <div id="ins-preview-day" style="display:none"></div>
+        <div class="icrd fade-in" id="insights-card"><div class="iload"><span class="spin">&#9675;</span> Analyzing&hellip;</div></div>
       </div>
-      <div class="ins-body"><div class="icrd fade-in" id="insights-card"><div class="iload"><span class="spin">&#9675;</span> Analyzing&hellip;</div></div></div>
     </div>
 
     <!-- 5-DAY TREND -->
@@ -2647,12 +2689,10 @@ function renderPageHead(d){{
   pt.textContent=name?(g+', '+name):g;
   var now=new Date();
   var ds=now.toLocaleDateString('en-US',{{weekday:'long',month:'long',day:'numeric'}});
-  var hist=d.history||[];
-  var t0=new Date();t0.setHours(0,0,0,0);
-  var logSet=new Set(hist.map(function(h){{return h.date;}}));
-  var st=0,ck=new Date(t0);
-  while(true){{var ds2=_localDate(ck);if(logSet.has(ds2)){{st++;ck.setDate(ck.getDate()-1);}}else break;}}
-  ps.innerHTML='<span style="color:var(--tx);font-weight:500;letter-spacing:.01em">'+esc(ds)+'</span>'+(st>0?' <span class="ph-streak">&#9889; '+st+'-day streak</span>':'');
+  // Inline "⚡ X-day streak" indicator removed — the new top-right
+  // .streak-chip (renderStreakChip, hidden under 3 days) is the canonical
+  // streak surface now. Keeping both was redundant and noisy.
+  ps.innerHTML='<span style="color:var(--tx);font-weight:500;letter-spacing:.01em">'+esc(ds)+'</span>';
 }}
 
 function toggleLogSection(type){{
@@ -2835,8 +2875,12 @@ function handleStreakTap(){{
 }}
 
 // Weight Module — cut/bulk only. Computes delta from earliest weigh-in
-// to most recent, and percent traversal toward goal_weight_lbs. Hides
-// entirely for maintain/performance/health goals (or when no weight data).
+// to most recent, and percent traversal toward goal_weight_lbs. Falls
+// back to profile.current_weight_lbs when the weights[] array is empty
+// (new users, or users who haven't logged a weigh-in to the dashboard
+// yet) — that way the module still surfaces the goal context as soon
+// as a goal is set, instead of waiting for the first weigh-in. Hides
+// entirely for maintain/performance/health goals.
 function renderWeightModule(d){{
   var module = document.getElementById('weight-module');
   if(!module) return;
@@ -2845,11 +2889,14 @@ function renderWeightModule(d){{
   var eligible = goal === 'cut' || goal === 'bulk';
   if(!eligible){{ module.style.display='none'; return; }}
   var weights = (d && d.weights) || [];
-  if(!weights.length){{ module.style.display='none'; return; }}
+  var fallbackWeight = p.current_weight_lbs;
+  // Hide only when we have NEITHER a weigh-in history NOR a profile weight.
+  if(!weights.length && !fallbackWeight){{ module.style.display='none'; return; }}
   module.style.display = '';
 
-  var current = weights[weights.length-1].lbs;
-  var start = weights[0].lbs;
+  var hasHistory = weights.length > 0;
+  var current = hasHistory ? weights[weights.length-1].lbs : fallbackWeight;
+  var start = hasHistory ? weights[0].lbs : current;  // 0 delta when no history
   var delta = current - start;
   var isCut = goal === 'cut';
   // "down" class = going the right direction (accent green), "up" = wrong
@@ -2862,11 +2909,17 @@ function renderWeightModule(d){{
   if(valEl) valEl.textContent = current.toFixed(1);
 
   var deltaEl = document.getElementById('wm-delta');
-  if(deltaEl) deltaEl.className = 'wm-delta ' + deltaCls;
-  var arrowEl = document.getElementById('wm-delta-arrow');
-  if(arrowEl) arrowEl.textContent = Math.abs(delta) < 0.2 ? '→' : (delta < 0 ? '↓' : '↑');
-  var dvEl = document.getElementById('wm-delta-val');
-  if(dvEl) dvEl.textContent = Math.abs(delta).toFixed(1) + ' lbs';
+  if(hasHistory){{
+    if(deltaEl){{ deltaEl.className = 'wm-delta ' + deltaCls; deltaEl.style.display=''; }}
+    var arrowEl = document.getElementById('wm-delta-arrow');
+    if(arrowEl) arrowEl.textContent = Math.abs(delta) < 0.2 ? '→' : (delta < 0 ? '↓' : '↑');
+    var dvEl = document.getElementById('wm-delta-val');
+    if(dvEl) dvEl.textContent = Math.abs(delta).toFixed(1) + ' lbs';
+  }}else{{
+    // No weigh-in history yet — hide the delta line so we don't show
+    // "→ 0.0 lbs from start" which reads confusingly.
+    if(deltaEl) deltaEl.style.display='none';
+  }}
 
   var goalLbs = p.goal_weight_lbs;
   var subEl = document.getElementById('wm-sub');
@@ -3930,32 +3983,35 @@ function foodEmoji(name){{
 }}
 
 // ── Food rows ─────────────────────────────────────────────────────────────
+// Preview-style flat 2-line layout:
+//   Line 1: name + EST tag (if estimated), right-aligned mono "510 cal"
+//   Line 2: muted secondary — "qty · 34p · 55c · 14f"
+// Tap toggles .open on the row, which reveals edit/delete buttons via the
+// .lrow-actions slot. No chevron — the row is informational at rest, action
+// surfaces appear when needed.
 function renderFoodRow(f){{
   var est=f.estimated?' <span class="est-tag">est</span>':'';
   var cal=(f.calories??0);
-  var macroLine=
-    '<span class="fm-val fm-cal">'+cal+'</span><span class="fm-label">&nbsp;cal</span>'+
-    '<span class="fm-sep">·</span>'+
-    '<span class="fm-label">P&nbsp;</span><span class="fm-val fm-pro">'+(f.protein??0)+'g</span>'+
-    '<span class="fm-sep">·</span>'+
-    '<span class="fm-label">C&nbsp;</span><span class="fm-val fm-carb">'+(f.carbs??0)+'g</span>'+
-    '<span class="fm-sep">·</span>'+
-    '<span class="fm-label">F&nbsp;</span><span class="fm-val fm-fat">'+(f.fats??0)+'g</span>';
-
-  return '<div class="eg-row" id="food-row-'+f.id+'" onclick="this.classList.toggle(&quot;open&quot;)">'+
-    '<div class="eg-hd">'+
-    '<span class="eg-name">'+esc(f.name)+est+'</span>'+
-    '<span class="eg-summary">'+cal+' cal</span>'+
-    '<span class="eg-chevron">&#9658;</span>'+
+  var qty=f.quantity||'';
+  // Secondary meta line: qty (optional) followed by macros. Mono numbers
+  // for tabular alignment between rows.
+  var meta='';
+  if(qty) meta += esc(qty);
+  if((f.protein??0)||(f.carbs??0)||(f.fats??0)){{
+    if(qty) meta += '<span class="sep">·</span>';
+    meta += '<b>'+(f.protein??0)+'</b>p<span class="sep">·</span>'+
+            '<b>'+(f.carbs??0)+'</b>c<span class="sep">·</span>'+
+            '<b>'+(f.fats??0)+'</b>f';
+  }}
+  return '<div class="lrow" id="food-row-'+f.id+'" onclick="this.classList.toggle(&quot;open&quot;)">'+
+    '<div class="lrow-main">'+
+      '<div class="lname">'+esc(f.name)+est+'</div>'+
+      (meta?'<div class="lmeta">'+meta+'</div>':'')+
     '</div>'+
-    '<div class="eg-sets">'+
-    (f.quantity?'<div class="eg-set"><span class="eg-set-num"></span><span style="font-size:12px;color:var(--mu)">'+esc(f.quantity)+'</span></div>':'')+
-    '<div class="eg-set">'+
-    '<span class="eg-set-num"></span>'+
-    '<span class="food-macros">'+macroLine+'</span>'+
-    '<button class="ibtn" onclick="event.stopPropagation();editFood('+f.id+')" aria-label="Edit" style="width:24px;height:24px;font-size:11px">&#9998;</button>'+
-    '<button class="ibtn del" onclick="event.stopPropagation();deleteFood('+f.id+')" aria-label="Delete" style="width:24px;height:24px;font-size:12px">&#215;</button>'+
-    '</div>'+
+    '<div class="lcal">'+cal+'<span class="lcal-unit">cal</span></div>'+
+    '<div class="lrow-actions">'+
+      '<button class="ibtn" onclick="event.stopPropagation();editFood('+f.id+')" aria-label="Edit">&#9998;</button>'+
+      '<button class="ibtn del" onclick="event.stopPropagation();deleteFood('+f.id+')" aria-label="Delete">&#215;</button>'+
     '</div>'+
     '</div>';
 }}
