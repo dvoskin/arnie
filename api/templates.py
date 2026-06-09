@@ -830,6 +830,45 @@ body{{
 .hv{{font-family:'Instrument Serif','Times New Roman',serif;font-size:18px;font-weight:normal;line-height:1;letter-spacing:-.01em}}
 .hl{{font-family:'Geist Mono','SF Mono',monospace;font-size:9px;color:var(--mu);text-transform:uppercase;letter-spacing:.08em;margin-top:3px;font-weight:500}}
 
+/* ── WORKOUT GROUPS (Cardio / Strength) — preview-style connected card
+   with hairline dividers between rows. Header (.ex-group-hd) is a small
+   mono caps label + extending hairline rule. Each .exrow is a flat row
+   with name on left + mono meta on right; tap reveals edit/delete. */
+.ex-group{{margin-bottom:8px}}
+.ex-group:last-child{{margin-bottom:0}}
+.ex-group-hd{{
+  font-family:'Geist Mono','SF Mono',monospace;
+  font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;
+  color:var(--mu);margin-bottom:4px;display:flex;align-items:center;gap:6px;
+}}
+.ex-group-hd::after{{content:'';flex:1;height:1px;background:var(--bd)}}
+.ex-card{{
+  background:var(--sf);border:1px solid var(--bd);
+  border-radius:12px;overflow:hidden;
+}}
+.exrow{{
+  display:flex;justify-content:space-between;align-items:baseline;gap:10px;
+  padding:7px 13px;border-bottom:1px solid var(--bd);
+  cursor:pointer;transition:background .12s;position:relative;
+}}
+.exrow:last-child{{border-bottom:none}}
+.exrow:hover{{background:var(--sf2)}}
+.ex-name{{
+  font-size:13.5px;font-weight:500;color:var(--tx);
+  line-height:1.25;flex:1;min-width:0;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}}
+.ex-meta{{
+  font-family:'Geist Mono','SF Mono',monospace;
+  font-size:11px;color:var(--mu);white-space:nowrap;
+  flex-shrink:0;letter-spacing:.01em;
+}}
+.exrow-actions{{display:none;align-items:center;gap:4px;flex-shrink:0}}
+.exrow.open .exrow-actions{{display:flex}}
+.exrow.open .ex-meta{{display:none}}
+.exrow-actions .ibtn{{width:24px;height:24px;font-size:11px}}
+.exrow-actions .ibtn.del{{font-size:13px}}
+
 /* ── LOG CARDS — preview-style connected list with hairline dividers ──
    Flat informational rows; tap reveals edit/delete via .lrow.open. */
 .lcrd{{
@@ -1706,7 +1745,7 @@ footer{{
     <div id="learn-wrap" style="display:none;margin-top:12px">
       <div class="lrn-card">
         <div class="lrn-top">
-          <span class="lrn-label">Still learning</span>
+          <span class="lrn-label">Arnie is learning</span>
           <div class="learn-bar"><div class="learn-fill" id="learn-fill" style="width:0%"></div></div>
           <span id="learn-pct" class="lrn-pct"></span>
         </div>
@@ -4016,60 +4055,79 @@ function renderFoodRow(f){{
     '</div>';
 }}
 
+// Preview-style: Cardio + Strength shown as separate .ex-group cards.
+// Each row is a flat name + mono-meta pair (e.g. "Bench Press · 4×8 ·
+// 185 lb"). Tap a row to reveal edit/delete via .exrow.open. Cardio
+// rows render duration as the meta; strength rows render sets × reps
+// @ weight. Grouping by exercise name preserves "4 sets of bench" as
+// one row instead of four — matches what users see in chat.
 function renderGroupedExercises(entries){{
-  // Group entries by exercise name
-  var groups={{}};
-  var order=[];
-  entries.forEach(function(e){{
-    var key=(e.name||'?').toLowerCase().trim();
-    if(!groups[key]){{groups[key]={{name:e.name||'?',items:[]}};order.push(key);}}
-    groups[key].items.push(e);
-  }});
+  if(!entries || !entries.length) return '';
 
-  return order.map(function(key,gi){{
-    var g=groups[key];
-    var items=g.items;
-    var totalSets=items.length;
+  function groupByName(list){{
+    var groups={{}};
+    var order=[];
+    list.forEach(function(e){{
+      var key=(e.name||'?').toLowerCase().trim();
+      if(!groups[key]){{groups[key]={{name:e.name||'?',items:[],ids:[]}};order.push(key);}}
+      groups[key].items.push(e);
+      if(e.id!=null) groups[key].ids.push(e.id);
+    }});
+    return order.map(function(k){{return groups[k];}});
+  }}
 
-    // Summary line: sets × reps @ weight or duration
-    var summaryParts=[];
+  function metaFor(items, isCardio){{
+    if(isCardio){{
+      var totalDur=items.reduce(function(s,e){{return s+(e.duration_minutes||0);}},0);
+      var type=items.map(function(e){{return e.cardio_type;}}).filter(Boolean)[0];
+      return (totalDur?totalDur+' min':'logged')+(type?' · '+type:'');
+    }}
     var allReps=items.map(function(e){{return e.reps;}}).filter(Boolean);
     var allWts=items.map(function(e){{return e.weight;}}).filter(Boolean);
-    var allDur=items.map(function(e){{return e.duration_minutes;}}).filter(Boolean);
-    if(allDur.length){{
-      summaryParts.push(allDur.reduce(function(a,b){{return a+b;}},0)+' min');
-    }}else if(totalSets>0){{
-      var repStr=allReps.length===totalSets&&new Set(allReps).size===1?allReps[0]:allReps.join('/');
-      // Show every load when sets differ (135/145/155lb), one when they're equal.
-      var sameWt=new Set(allWts).size<=1;
-      var wtStr=allWts.length?(sameWt?allWts[0]+'lb':allWts.map(Math.round).join('/')+'lb'):'';
-      summaryParts.push(totalSets+(repStr?' × '+repStr:'')+(wtStr?' @ '+wtStr:''));
-    }}
-    var summary=summaryParts.join(' · ');
+    var totalSets=items.length;
+    if(!totalSets) return 'logged';
+    var sameRep=allReps.length===totalSets && new Set(allReps).size===1;
+    var repStr=sameRep?allReps[0]:(allReps.length?allReps.join('/'):'');
+    var sameWt=new Set(allWts).size<=1;
+    var wtStr=allWts.length?(sameWt?allWts[0]+' lb':allWts.map(Math.round).join('/')+' lb'):'';
+    var leftPart=totalSets+(repStr?'×'+repStr:'');
+    return leftPart+(wtStr?' · '+wtStr:'');
+  }}
 
-    // Individual set lines
-    var setsHtml=items.map(function(e,i){{
-      var detail='';
-      if(e.duration_minutes){{detail=e.duration_minutes+' min'+(e.cardio_type?' ('+esc(e.cardio_type)+')':'');}}
-      else if(e.sets||e.reps){{detail=(e.sets?e.sets+'×':'')+esc(e.reps||'')+(e.weight?' @ '+e.weight+'lb':'');}}
-      return '<div class="eg-set">'+
-        '<span class="eg-set-num">S'+(i+1)+'</span>'+
-        (detail?'<span class="eg-set-detail">'+detail+'</span>':'<span style="color:var(--di);font-size:11px">logged</span>')+
-        '<span style="flex:1"></span>'+
-        '<button class="eg-del" onclick="event.stopPropagation();deleteExercise('+e.id+')" title="Remove">&#215;</button>'+
-        '</div>';
-    }}).join('');
-
-    var isOpen=false;  // all exercises collapsed by default — tap to expand sets
-    return '<div class="eg-row'+(isOpen?' open':'')+'" onclick="this.classList.toggle(&quot;open&quot;)">'+
-      '<div class="eg-hd">'+
-      '<span class="eg-name">'+esc(g.name)+'</span>'+
-      (summary?'<span class="eg-summary">'+esc(summary)+'</span>':'')+
-      '<span class="eg-chevron">&#9658;</span>'+
+  function renderRow(g, isCardio){{
+    var meta=metaFor(g.items, isCardio);
+    // Use the first item's id for edit/delete — production already
+    // groups same-name entries together so this is the canonical row.
+    var primaryId=g.ids[0];
+    return '<div class="exrow" onclick="this.classList.toggle(&quot;open&quot;)">'+
+      '<div class="ex-name">'+esc(g.name)+'</div>'+
+      '<div class="ex-meta">'+esc(meta)+'</div>'+
+      '<div class="exrow-actions">'+
+        '<button class="ibtn" onclick="event.stopPropagation();editExercise('+primaryId+')" aria-label="Edit">&#9998;</button>'+
+        '<button class="ibtn del" onclick="event.stopPropagation();deleteExercise('+primaryId+')" aria-label="Delete">&#215;</button>'+
       '</div>'+
-      '<div class="eg-sets">'+setsHtml+'</div>'+
-      '</div>';
-  }}).join('');
+    '</div>';
+  }}
+
+  function renderGroup(label, groupedItems, isCardio){{
+    if(!groupedItems.length) return '';
+    var rows=groupedItems.map(function(g){{return renderRow(g, isCardio);}}).join('');
+    return '<div class="ex-group">'+
+      '<div class="ex-group-hd">'+esc(label)+'</div>'+
+      '<div class="ex-card">'+rows+'</div>'+
+    '</div>';
+  }}
+
+  // Split into cardio vs strength based on the is_cardio flag (or
+  // presence of duration without sets, as a fallback for legacy rows).
+  var cardio=[], strength=[];
+  entries.forEach(function(e){{
+    if(e.is_cardio || (!e.sets && !e.reps && e.duration_minutes)) cardio.push(e);
+    else strength.push(e);
+  }});
+
+  return renderGroup('Cardio', groupByName(cardio), true) +
+         renderGroup('Strength', groupByName(strength), false);
 }}
 
 function renderExerciseRow(e){{
