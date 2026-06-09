@@ -808,18 +808,44 @@ body{{
   transition:transform .22s cubic-bezier(.2,.7,.2,1)}}
 .insights.open .ins-chev{{transform:rotate(180deg)}}
 /* Inline panel — collapsed by default, expanded when .open is set on
-   #ins-day by toggleInsights() / handleInsightsTile(). Card chrome when
-   open so the panel reads as a discrete surface (no orphan content). */
+   #ins-day by toggleInsights() / handleInsightsTile(). No chrome on the
+   body itself (transparent) — the .icrd inside handles all the card
+   styling. Just an animated height wrapper. */
 .ins-body{{
   max-height:0;overflow:hidden;
-  transition:max-height .3s cubic-bezier(.4,0,.2,1),margin-top .2s,border-color .2s;
-  border:1px solid transparent;border-radius:12px;background:var(--sf);
+  transition:max-height .3s cubic-bezier(.4,0,.2,1),margin-top .2s;
+  background:transparent;border:none;
 }}
 .insights.open .ins-body{{
   max-height:1600px;margin-top:10px;
-  border-color:var(--bd);
 }}
-.ins-meta{{}}
+/* Panel wrap — single card chrome around the meta row + insights-card.
+   Border on the wrap (not the inner card) avoids the double-border that
+   plagued the previous version. .icrd inside gets transparent so it
+   blends with the wrap. */
+.ins-panel-wrap{{
+  background:var(--sf);border:1px solid var(--bd);border-radius:12px;
+  overflow:hidden;
+}}
+.ins-meta{{
+  display:flex;align-items:center;gap:8px;
+  font-family:'Geist Mono','SF Mono',monospace;font-size:9.5px;
+  letter-spacing:.06em;text-transform:uppercase;color:var(--mu);
+  padding:9px 14px 6px;font-weight:500;
+  border-bottom:1px solid var(--bd);
+}}
+.ins-meta .ins-refresh{{
+  margin-left:auto;cursor:pointer;font-size:12px;letter-spacing:0;
+  width:20px;height:20px;display:inline-grid;place-items:center;
+  border-radius:6px;color:var(--mu);transition:color .15s,background .15s;
+}}
+.ins-meta .ins-refresh:hover{{color:var(--tx2);background:var(--sf2)}}
+/* Inner card: no border/bg/radius — handled by .ins-panel-wrap above. */
+.ins-panel-wrap .icrd{{
+  background:transparent;border:none;border-radius:0;box-shadow:none;
+  backdrop-filter:none;
+}}
+[data-theme="dark"] .ins-panel-wrap .icrd{{background:transparent}}
 
 /* ── WEARABLE ────────────────────────────────────────────── */
 .htile{{
@@ -1732,7 +1758,10 @@ footer{{
       <span class="streak-num" id="streak-num">0</span>
       <span class="streak-unit">d</span>
     </div>
-    <button class="ph-log-btn" id="chat-btn" onclick="toggleChatWidget()"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15.5a2.5 2.5 0 0 1-2.5 2.5H7.8L3 22V5.5A2.5 2.5 0 0 1 5.5 3h13A2.5 2.5 0 0 1 21 5.5z"/></svg>Chat</button>
+    <!-- Chat button removed from header — Arnie chat lives in Telegram /
+         iMessage; the dashboard surface is read-only + edit-in-place. The
+         existing toggleChatWidget() + .cw-panel remain in the file but
+         are no longer reachable from the header. -->
     <button class="hbtn" id="theme-btn" onclick="toggleTheme()" title="Toggle theme">&#9790;</button>
     <button class="hbtn" onclick="refreshCurrent()" title="Refresh">&#8635;</button>
   </div>
@@ -1834,14 +1863,14 @@ footer{{
         </svg>
         <span class="atile-lbl">Share day</span>
       </button>
-      <button class="atile" id="tile-workout" type="button">
+      <button class="atile" id="tile-workout" onclick="openLogActivity('strength')" type="button">
         <svg class="atile-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M3 6v4M13 6v4M5 5v6M11 5v6M1 8h2M13 8h2"/>
         </svg>
         <span class="atile-lbl">Workout</span>
         <span class="atile-state" id="tile-workout-state">—</span>
       </button>
-      <button class="atile" id="tile-cardio" type="button">
+      <button class="atile" id="tile-cardio" onclick="openLogActivity('cardio')" type="button">
         <svg class="atile-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <circle cx="11" cy="3" r="1.5"/>
           <path d="M5 14l2-4 2 2 3-4M5 9l-3-2"/>
@@ -1864,15 +1893,22 @@ footer{{
          Body retains #ins-preview-day + #ins-time-day + #insights-card
          IDs unchanged so the existing fetch/refresh/streaming logic in
          loadInsights / toggleInsights / _stampInsTime keeps working. -->
+    <!-- AI INSIGHTS panel: collapsed by default, expanded by the Insights
+         action tile via handleInsightsTile()/toggleInsights('day'). The
+         meta header (Coach Insights · timestamp · refresh) is OUTSIDE
+         #insights-card because renderInsights overwrites that node's
+         innerHTML when content streams in. -->
     <div class="insights" id="ins-day" style="margin-top:0">
       <div class="ins-body">
-        <div class="ins-meta" style="display:flex;align-items:center;gap:8px;padding:10px 14px 0;font-size:11px;color:var(--mu)">
-          <span style="font-family:'Geist Mono','SF Mono',monospace;font-size:10px;letter-spacing:.06em;text-transform:uppercase">Coach Insights</span>
-          <span style="margin-left:auto" id="ins-time-day"></span>
-          <span class="ins-refresh" onclick="refreshInsights()" title="Refresh" style="cursor:pointer">&#8635;</span>
+        <div class="ins-panel-wrap">
+          <div class="ins-meta">
+            <span>Coach Insights</span>
+            <span id="ins-time-day"></span>
+            <span class="ins-refresh" onclick="refreshInsights()" title="Refresh">&#8635;</span>
+          </div>
+          <div id="ins-preview-day" style="display:none"></div>
+          <div class="icrd fade-in" id="insights-card"><div class="iload"><span class="spin">&#9675;</span> Analyzing&hellip;</div></div>
         </div>
-        <div id="ins-preview-day" style="display:none"></div>
-        <div class="icrd fade-in" id="insights-card"><div class="iload"><span class="spin">&#9675;</span> Analyzing&hellip;</div></div>
       </div>
     </div>
 
@@ -1935,10 +1971,13 @@ footer{{
       </div>
     </div>
 
-    <!-- WHOOP RECOVERY — bottom of day, only when connected -->
+    <!-- WEARABLES — bottom of day; renders Whoop + Apple Health side-by-side
+         (each as a top-level .hsec card) when connected. Section title is
+         always "Wearables" — covers recovery + activity + sleep equally,
+         no longer titled after a single device. -->
     <div id="whoop-module" style="display:none">
       <div class="stitle spaced">
-        <span style="display:inline-flex;align-items:center"><span id="health-brand" style="display:inline-flex;margin-right:7px"></span><span id="health-mod-title">Whoop</span> <span id="whoop-date" style="font-family:'Geist Mono','SF Mono',monospace;font-weight:400;opacity:.6;font-size:9px;letter-spacing:.04em;margin-left:6px"></span></span>
+        <span>Wearables <span id="whoop-date" style="font-family:'Geist Mono','SF Mono',monospace;font-weight:400;opacity:.55;font-size:9px;letter-spacing:.04em;margin-left:6px"></span></span>
         <button class="add-toggle" id="whoop-sync-btn" onclick="syncWhoop()" title="Sync" style="font-size:15px;font-family:inherit">&#8635;</button>
       </div>
       <div id="whoop-grid"></div>
@@ -2845,6 +2884,31 @@ function handleInsightsTile(){{
   banner.scrollIntoView({{behavior:'smooth', block:'center'}});
 }}
 
+// Workout / Cardio tiles — opens the existing #ex-form (add-workout
+// form already in the Workouts section), expands the form if it's
+// collapsed, pre-checks the cardio checkbox when "cardio" is requested,
+// scrolls the form into view, and focuses the exercise name input so
+// the user can start typing immediately. One handler covers both tiles.
+function openLogActivity(kind){{
+  var form = document.getElementById('ex-form');
+  if(!form) return;
+  // Make sure the Workouts section is expanded (it can be collapsed on
+  // mobile). If we have a toggle helper, use it; else show directly.
+  var section = document.getElementById('ex-section');
+  if(section && section.classList.contains('collapsed')){{
+    try{{ toggleLogSection('ex'); }}catch(e){{}}
+  }}
+  // Reveal the form (it may be hidden by display:none).
+  if(form.style.display === 'none' || !form.style.display){{
+    try{{ toggleAddForm('ex'); }}catch(e){{ form.style.display=''; }}
+  }}
+  var cb = document.getElementById('ex-cardio');
+  if(cb) cb.checked = (kind === 'cardio');
+  form.scrollIntoView({{behavior:'smooth', block:'center'}});
+  var nameInput = document.getElementById('ex-name');
+  if(nameInput) setTimeout(function(){{ nameInput.focus(); }}, 350);
+}}
+
 // Macro Consumed / Remaining toggle — flips the macro strip between
 // what's been eaten (default) and what's left vs target. Choice persists
 // in localStorage so the user's preference survives reloads / tab swaps.
@@ -3142,95 +3206,125 @@ var APPLE_MARK='<svg width="15" height="15" viewBox="0 0 24 24" style="display:b
   '<circle cx="12" cy="12" r="6" fill="none" stroke="#92e82a" stroke-width="2.6"/>'+
   '<circle cx="12" cy="12" r="3" fill="none" stroke="#1ad4fd" stroke-width="2.6"/></svg>';
 
-// ── Whoop stats module ────────────────────────────────────────────────────
+// ── Wearables (Whoop + Apple Health) ──────────────────────────────────────
+// Section is now titled "Wearables" (constant) and renders BOTH devices as
+// stacked .hsec cards when both are connected. Whoop snapshot is still
+// preferred for shared rendering (richer data); Apple Health renders
+// alongside when its own connection flag is set, regardless of Whoop.
 function renderWhoopModule(snap, profile){{
   var mod=document.getElementById('whoop-module');
   var grid=document.getElementById('whoop-grid');
   var dateEl=document.getElementById('whoop-date');
-  var titleEl=document.getElementById('health-mod-title');
   var syncBtn=document.getElementById('whoop-sync-btn');
   if(!mod||!grid)return;
 
-  // Whoop takes priority (richer data). Apple Health users get a simple panel.
-  if(!profile||!profile.whoop_connected){{
-    if(profile&&profile.apple_health_connected){{
-      renderAppleHealthModule(snap,mod,grid,dateEl,titleEl,syncBtn);
-    }}else{{
-      mod.style.display='none';
-    }}
-    return;
-  }}
+  var whoopConnected  = !!(profile && profile.whoop_connected);
+  var appleConnected  = !!(profile && profile.apple_health_connected);
 
-  if(titleEl)titleEl.textContent='Whoop';
-  var brandEl=document.getElementById('health-brand'); if(brandEl)brandEl.innerHTML=WHOOP_MARK;
-  if(syncBtn)syncBtn.style.display='';
+  // Neither connected → hide the whole section, including the title.
+  if(!whoopConnected && !appleConnected){{ mod.style.display='none'; return; }}
   mod.style.display='block';
+  if(syncBtn) syncBtn.style.display = whoopConnected ? '' : 'none';
 
-  if(!snap||snap.source!=='whoop'){{
-    if(dateEl)dateEl.textContent='';
-    grid.innerHTML='<div style="color:var(--mu);font-size:13px;padding:4px 0">No data for this day — tap &#8635; to sync, or check that your Whoop band has synced to the app.</div>';
-    return;
+  // Date label uses whichever snapshot is for the viewing day.
+  if(dateEl) dateEl.textContent = (snap && snap.date) ? snap.date : '';
+
+  // Build the two cards. Each is a top-level .hsec; default Whoop open,
+  // Apple Health closed (Whoop is the more action-relevant of the two
+  // for users on a cut/bulk; Apple is mostly activity context).
+  var parts = [];
+  if(whoopConnected){{
+    parts.push(renderWhoopCard(snap && snap.source === 'whoop' ? snap : null));
   }}
+  if(appleConnected){{
+    parts.push(renderAppleCard(snap && snap.source === 'apple_health' ? snap : null));
+  }}
+  grid.innerHTML = parts.join('');
+}}
 
-  mod.style.display='block';
-  if(dateEl)dateEl.textContent=snap.date||'';
-
+// Build the single Whoop card (.hsec with all Whoop metrics inside).
+function renderWhoopCard(snap){{
   function fmtSleep(h){{
     if(!h)return null;
     var hrs=Math.floor(h),mins=Math.round((h-hrs)*60);
     return hrs+'h'+(mins>0?' '+mins+'m':'');
   }}
-
-  var recZone=snap.recovery_score!=null?(snap.recovery_score>=67?'Green':snap.recovery_score>=34?'Yellow':'Red'):null;
-  var recColor=snap.recovery_score!=null?(snap.recovery_score>=67?'var(--ac)':snap.recovery_score>=34?'var(--ye)':'var(--re)'):null;
-
-  // Short-value metrics → 3-up compact cells
-  var recovery=grid3(
-    hcell('Recovery',snap.recovery_score!=null?snap.recovery_score+'%':null,recColor)+
-    hcell('Zone',recZone,recColor)+
-    hcell('HRV',snap.hrv!=null?snap.hrv+'ms':null)+
-    hcell('Resting HR',snap.resting_hr!=null?snap.resting_hr+'bpm':null));
-
-  var sleep=grid3(
-    hcell('Sleep',fmtSleep(snap.sleep_hours),'var(--bl)')+
-    hcell('Quality',snap.sleep_performance_pct!=null?Math.round(snap.sleep_performance_pct)+'%':null)+
-    hcell('Efficiency',snap.sleep_efficiency_pct!=null?Math.round(snap.sleep_efficiency_pct)+'%':null)+
-    hcell('Deep',fmtSleep(snap.sleep_deep_hours))+
-    hcell('REM',fmtSleep(snap.sleep_rem_hours))+
-    hcell('Need',fmtSleep(snap.sleep_need_hours))+
-    hcell('Resp rate',snap.respiratory_rate!=null?snap.respiratory_rate.toFixed(1):null)+
-    hcell('SpO2',snap.spo2_percentage!=null?snap.spo2_percentage.toFixed(1)+'%':null)+
-    hcell('Skin temp',snap.skin_temp_celsius!=null?snap.skin_temp_celsius.toFixed(1)+'°C':null));
-
-  var activity=grid3(
-    hcell('Strain',snap.strain!=null?snap.strain.toFixed(1)+'/21':null,'var(--bl)')+
-    hcell('Avg HR',snap.avg_hr!=null?snap.avg_hr+'bpm':null)+
-    hcell('Steps',snap.steps?snap.steps.toLocaleString():null)+
-    hcell('Active cal',snap.active_calories?Math.round(snap.active_calories)+'':null,'var(--or)'));
-
-  var workouts='',woCount=0;
-  if(snap.whoop_workouts){{
-    try{{
-      var wos=JSON.parse(snap.whoop_workouts);
-      wos.forEach(function(w){{
-        woCount++;
-        var sub=[];
-        if(w.strain!=null)sub.push(w.strain.toFixed(1)+' strain');
-        if(w.duration_min)sub.push(w.duration_min+'min');
-        if(w.avg_hr)sub.push('HR '+w.avg_hr);
-        if(w.calories)sub.push(w.calories+' cal');
-        workouts+=hrow(w.sport,sub.join(' · ')||'—');
-      }});
-    }}catch(e){{}}
+  var headerSummary = '';
+  var bodyContent = '';
+  if(!snap){{
+    bodyContent = '<div style="color:var(--mu);font-size:13px;padding:12px 14px">No data for this day — tap &#8635; to sync, or check that your Whoop band has synced.</div>';
+  }}else{{
+    var recColor = snap.recovery_score != null
+      ? (snap.recovery_score >= 67 ? 'var(--ac)' : snap.recovery_score >= 34 ? 'var(--ye)' : 'var(--re)')
+      : null;
+    headerSummary = [];
+    if(snap.recovery_score != null) headerSummary.push(snap.recovery_score + '% recovery');
+    if(snap.sleep_hours != null) headerSummary.push(fmtSleep(snap.sleep_hours) + ' sleep');
+    headerSummary = headerSummary.join(' · ');
+    bodyContent =
+      '<div class="wgrid">'+
+        hcell('Recovery', snap.recovery_score!=null ? snap.recovery_score+'%' : null, recColor)+
+        hcell('Strain',   snap.strain!=null ? snap.strain.toFixed(1) : null)+
+        hcell('Sleep',    fmtSleep(snap.sleep_hours))+
+        hcell('HRV',      snap.hrv!=null ? snap.hrv+' ms' : null)+
+        hcell('Resting HR', snap.resting_hr!=null ? snap.resting_hr+' bpm' : null)+
+        hcell('Sleep Perf', snap.sleep_performance_pct!=null ? Math.round(snap.sleep_performance_pct)+'%' : null)+
+      '</div>';
   }}
-
-  grid.innerHTML=
-    (hsec('activity','Activity',snap.strain!=null?snap.strain.toFixed(1)+' strain':'',activity,!wIsMobile())+
-     hsec('workouts','Workouts',woCount?(woCount+(woCount>1?' sessions':' session')):'',workouts,false)+
-     hsec('recovery','Recovery',snap.recovery_score!=null?snap.recovery_score+'%':'',recovery,false)+
-     hsec('sleep','Sleep',fmtSleep(snap.sleep_hours)||'',sleep,false))
-    ||'<div style="color:var(--mu);font-size:13px;padding:8px 0">No data for this day yet — run /whoop sync in Telegram.</div>';
+  return '<div class="hsec open" id="hsec-whoop">'+
+    '<div class="hsec-hd" onclick="toggleHsec(\\'whoop\\')">'+
+      '<span class="hsec-brand">'+WHOOP_MARK+'</span>'+
+      '<span class="hsec-name">Whoop</span>'+
+      (headerSummary?'<span class="hsec-summary">'+esc(headerSummary)+'</span>':'')+
+      '<span class="hsec-chev">&#9658;</span>'+
+    '</div>'+
+    '<div class="hsec-body">'+bodyContent+'</div>'+
+  '</div>';
 }}
+
+// Build the single Apple Health card. 8 reliably-synced metrics only —
+// Active/Resting Energy, Steps, Distance, Stand, Resting/Walking HR,
+// Heart Rate. Sleep / SpO2 / Wrist Temp deliberately omitted because
+// they sync intermittently from Apple Watch (would mislead).
+function renderAppleCard(snap){{
+  var headerSummary = '';
+  var bodyContent = '';
+  if(!snap){{
+    bodyContent = '<div style="color:var(--mu);font-size:13px;padding:12px 14px">No Apple Health data for this day yet — it syncs automatically each morning.</div>';
+  }}else{{
+    headerSummary = [];
+    if(snap.steps != null) headerSummary.push(snap.steps.toLocaleString() + ' steps');
+    if(snap.active_calories != null) headerSummary.push(Math.round(snap.active_calories) + ' active cal');
+    headerSummary = headerSummary.join(' · ');
+    bodyContent =
+      '<div class="wgrid">'+
+        hcell('Steps',        snap.steps!=null ? snap.steps.toLocaleString() : null)+
+        hcell('Active',       snap.active_calories!=null ? Math.round(snap.active_calories)+' cal' : null)+
+        hcell('Resting',      snap.resting_calories!=null ? Math.round(snap.resting_calories)+' cal' : null)+
+        // Distance / Stand / Walking HR / Heart Rate are Apple-only metrics
+        // that may land on the snapshot via HealthKit push but aren't in
+        // every schema yet. Render only when present.
+        hcell('Distance',     snap.distance_miles!=null ? snap.distance_miles.toFixed(1)+' mi' : null)+
+        hcell('Stand',        snap.stand_hours!=null ? snap.stand_hours+' / 12' : null)+
+        hcell('Resting HR',   snap.resting_hr!=null ? snap.resting_hr+' bpm' : null)+
+        hcell('Walking HR',   snap.walking_hr!=null ? snap.walking_hr+' bpm' : null)+
+        hcell('Heart Rate',   snap.avg_hr!=null ? snap.avg_hr+' bpm' : null)+
+      '</div>';
+  }}
+  return '<div class="hsec" id="hsec-apple">'+
+    '<div class="hsec-hd" onclick="toggleHsec(\\'apple\\')">'+
+      '<span class="hsec-brand">'+APPLE_MARK+'</span>'+
+      '<span class="hsec-name">Apple Health</span>'+
+      (headerSummary?'<span class="hsec-summary">'+esc(headerSummary)+'</span>':'')+
+      '<span class="hsec-chev">&#9658;</span>'+
+    '</div>'+
+    '<div class="hsec-body">'+bodyContent+'</div>'+
+  '</div>';
+}}
+
+// (Legacy renderWhoopModule body removed — replaced by renderWhoopCard /
+//  renderAppleCard above. renderAppleHealthModule below is also no longer
+//  called from the new module, kept temporarily for any stray references.)
 
 // ── Apple Health module — simple panel (push-only, no sync button) ─────────
 function renderAppleHealthModule(snap,mod,grid,dateEl,titleEl,syncBtn){{
