@@ -1285,6 +1285,12 @@
     @media (max-width: 600px) {
       .d-hide { display: none !important; }
       .m-hide { display: revert; }
+      /* Strip noisy small-text elements */
+      .nav-meta    { display: none; }
+      .eyebrow     { display: none; }
+      .cta-fineprint { display: none; }
+      .cta-skip    { display: none; }
+      .cta-meta    { display: none; }
       /* Tighter hero on small screens */
       h1 { font-size: 50px; margin-bottom: 20px; }
       .hero-sub { font-size: 15px; line-height: 1.6; margin-bottom: 36px; }
@@ -1435,7 +1441,7 @@
             <p class="cta-fineprint" style="margin-top:9px">
               Tell us your goals once — Arnie knows you from the first message.
             </p>
-            <p style="text-align:center;margin-top:12px">
+            <p class="cta-skip" style="text-align:center;margin-top:12px">
               <a href="https://t.me/Arnie_1026_Bot?start=freetrial" target="_blank" rel="noopener"
                  style="font-size:11.5px;color:var(--ink-3);letter-spacing:-0.01em">
                 or skip setup and start fresh on Telegram →
