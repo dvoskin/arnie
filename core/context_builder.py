@@ -652,20 +652,16 @@ async def build_context(user: User, today_log: Optional[DailyLog], db,
         except Exception:
             pass
 
-    # Long-term context: the adaptive Profile Matrix is primary. Also load
-    # arnie_memory.md as a live supplement so facts written via update_memory()
-    # appear in the SAME turn — before the ~3h profile synthesis absorbs them.
-    # Without this, update_memory() calls are invisible until the next synthesis.
+    # Long-term context now lives in user_attributes (queryable, current within
+    # seconds of a store_attribute call). The legacy markdown profile and freeform
+    # arnie_memory.md are kept as read-only fallbacks for users created before the
+    # attribute store became authoritative; new writes do not touch them.
     from memory.profile_manager import read_profile
     profile = await read_profile(user.telegram_id)
     raw_notes = await read_memory(user.telegram_id)
-    memory = profile  # synthesized profile (empty string before first synthesis)
 
-    # Live, tier-filtered learned attributes — core always; daily if updated in
-    # the last 7 days; contextual ONLY when this message's topic matches the
-    # attribute's category. Surfaces newly-learned facts (e.g. a supplement)
-    # immediately instead of waiting for the ~3h markdown synthesis. Purely
-    # additive: fmt_profile (columns) and the markdown profile are unchanged.
+    # AI profile — all active attributes injected at the top of context as
+    # the central source of truth for what Arnie knows about this user.
     from memory.attribute_store import get_attributes_for_context
     try:
         attr_block = await get_attributes_for_context(db, user.id, user_message or "")
@@ -889,11 +885,18 @@ async def build_context(user: User, today_log: Optional[DailyLog], db,
         fmt_exercise_history(recent_logs),
         (strength_prs if strength_prs else ""),
         "",
-        "=== USER PROFILE ===",
-        # Cap raised: real profiles exceed 3200 chars — truncating drops behavioral
-        # patterns and the change log. Raw notes follow so update_memory() is live.
-        (memory[:5000] if memory else raw_notes[:1200] if raw_notes else "No profile yet — still learning this user."),
-        (f"[RECENT COACHING NOTES — not yet synthesized into profile]\n{raw_notes[:600]}" if raw_notes and memory else ""),
+        # === USER PROFILE === section removed — the [AI PROFILE] block at the
+        # top of context is now the source of truth for what Arnie knows.
+        # The legacy markdown profile (profile.md) and raw_notes (arnie_memory.md)
+        # are kept on disk but no longer injected into context. They served as the
+        # primary long-term memory before user_attributes existed; old users still
+        # have these files but new facts go through store_attribute exclusively.
+        # If profile is empty AND no attributes exist, the [AI PROFILE] block is
+        # absent and the model relies on === PROFILE === (structured DB) above.
+        (f"[LEGACY PROFILE — older user, attribute store still building]\n{profile[:2500]}"
+         if (profile and not attr_block) else ""),
+        (f"[LEGACY NOTES]\n{raw_notes[:600]}"
+         if (raw_notes and not attr_block and not profile) else ""),
         "",
         (pending_clarification_block if pending_clarification_block else ""),
         link_status,

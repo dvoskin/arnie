@@ -261,21 +261,12 @@ _PROFILE_TOOLS = [
             "required": ["fields"],
         },
     },
-    {
-        "name": "update_memory",
-        "description": (
-            "Persist an important behavioral pattern, preference, or coaching note "
-            "to the user's permanent memory. Use sparingly — only for durable insights."
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "updates":   {"type": "string", "description": "Markdown-formatted memory note"},
-                "reasoning": {"type": "string", "description": "Why this is worth remembering"},
-            },
-            "required": ["updates", "reasoning"],
-        },
-    },
+    # update_memory was removed — store_attribute is now the single proactive
+    # write path for everything Arnie learns. Multi-fact insights become
+    # multiple store_attribute calls (one per discrete fact), and the
+    # attribute store is queryable, timestamped, and confidence-tagged.
+    # The handler in tool_executor.py remains for backward compatibility
+    # with any in-flight tool calls during a deploy.
 ]
 
 

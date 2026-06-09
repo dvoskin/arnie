@@ -227,3 +227,22 @@ def is_update_due(content: str) -> bool:
     if ts.tzinfo is None:
         ts = ts.replace(tzinfo=timezone.utc)
     return datetime.now(timezone.utc) - ts >= _MIN_UPDATE_INTERVAL
+
+
+async def _touch_sync_stamp(telegram_id: str) -> None:
+    """Bump just the <!-- last_synced --> timestamp without rewriting the rest.
+
+    Used by the attribute-only synthesizer (profile_updater) to preserve the
+    file-based throttle without writing a full markdown profile. The body of
+    profile.md is now effectively legacy — kept on disk for any old read paths,
+    but the source of truth is user_attributes.
+    """
+    content = await read_profile(telegram_id)
+    if not content:
+        return
+    new_stamp = f"<!-- last_synced: {_now_iso()} -->"
+    if re.search(r"<!-- last_synced: .+? -->", content):
+        content = re.sub(r"<!-- last_synced: .+? -->", new_stamp, content, count=1)
+    else:
+        content = new_stamp + "\n" + content
+    await write_profile(telegram_id, content)

@@ -2070,8 +2070,14 @@ footer{{
   <!-- PROFILE TAB -->
   <div class="tab-panel" id="panel-profile">
 
+    <!-- Goals & targets — user-controlled settings (separate from AI brain below) -->
+    <div class="stitle spaced" style="margin-top:4px">
+      <span>Goals &amp; targets</span>
+    </div>
+    <div id="goals-card" class="infocrd"></div>
+
     <!-- AI Profile — bio + learned attributes -->
-    <div id="ai-profile-section" style="display:none">
+    <div id="ai-profile-section" style="display:none;margin-top:24px">
       <div class="stitle spaced" style="margin-top:4px;cursor:pointer" onclick="toggleBio()">
         <span>Arnie's profile <span class="ai-pill">AI</span> <span id="bio-chevron" style="font-size:11px;opacity:.5">▼</span></span>
         <button class="add-toggle" onclick="event.stopPropagation();refreshAIProfile()" title="Refresh">&#8635;</button>
@@ -3707,6 +3713,33 @@ function renderProfileTab(d){{
   var p=d.profile||{{}};
   var tgt=d.targets||{{}};
 
+  // Goals & targets card — user-controlled settings, distinct from Arnie's brain.
+  // Renders 6 editable rows: goal, goal weight, calories, protein, carbs, fat.
+  // Each row uses the existing editProw/saveProw flow; saves PATCH the profile API
+  // and re-fetch stats, which triggers renderProfileTab again to show new values.
+  var gc=document.getElementById('goals-card');
+  if(gc){{
+    var goalColor={{cut:'var(--re)',bulk:'var(--ac)',maintain:'var(--mu)',performance:'var(--or)',health:'var(--bl)'}}[p.primary_goal]||'var(--tx)';
+    var goalDisp=(p.primary_goal||'').replace(/_/g,' ')||'';
+    function gRow(lbl,disp,raw,field,col){{
+      var id='pg-'+lbl.toLowerCase().replace(/[^a-z0-9]/g,'_');
+      var hasVal=raw!=null&&raw!=='';
+      var c=hasVal?col:'var(--mu)';
+      var d=hasVal?disp:'—';
+      var eb='<button class="ibtn inrow-edit" onclick="editProw(\\''+id+'\\',\\''+escA(field)+'\\',\\''+escA(raw||'')+'\\')">&#9998;</button>';
+      return '<div class="inrow" id="'+id+'"><span class="inlbl">'+esc(lbl)+'</span>'+
+        '<div class="inrow-right"><span class="inval" style="color:'+c+'">'+esc(d)+'</span>'+eb+'</div></div>';
+    }}
+    gc.innerHTML=
+      gRow('Goal',        goalDisp,                                                p.primary_goal||'',                                  'primary_goal',    goalColor)+
+      gRow('Goal weight', p.goal_weight_lbs!=null?(p.goal_weight_lbs+' lbs'):'',   p.goal_weight_lbs!=null?String(p.goal_weight_lbs):'','goal_weight_lbs', 'var(--tx)')+
+      '<div style="border-top:1px solid var(--bd);margin:2px 0"></div>'+
+      gRow('Calories',    tgt.calories!=null?(tgt.calories+' kcal'):'',            tgt.calories!=null?String(tgt.calories):'',          'calorie_target',  'var(--tx)')+
+      gRow('Protein',     tgt.protein!=null?(tgt.protein+'g'):'',                  tgt.protein!=null?String(tgt.protein):'',            'protein_target',  'var(--ac)')+
+      gRow('Carbs',       tgt.carbs!=null?(tgt.carbs+'g'):'',                      tgt.carbs!=null?String(tgt.carbs):'',                'carb_target',     'var(--or)')+
+      gRow('Fat',         tgt.fats!=null?(tgt.fats+'g'):'',                        tgt.fats!=null?String(tgt.fats):'',                  'fat_target',      'var(--ye)');
+  }}
+
   var dc=document.getElementById('devices-card');
   if(!dc) return;
   var devs=[
@@ -3759,13 +3792,21 @@ function renderAIProfile(data) {{
   var section = document.getElementById('ai-profile-section');
 
   if (loadEl) loadEl.style.display = 'none';
-  // Always show the section — Goals declared fields render even with no AI data yet
-  if (section) section.style.display = 'block';
-  if (emptyEl) emptyEl.style.display = 'none';
 
   var basics = (data && data.basics) || [];
   var hasStd = !!(data && data.standard && Object.keys(data.standard).length);
   var hasAI  = !!(data && (data.bio || basics.length || hasStd));
+
+  // No AI data yet → show empty state, hide the section. Goals & targets card
+  // above (rendered by renderProfileTab) still appears — settings are independent.
+  if (!hasAI) {{
+    if (section) section.style.display = 'none';
+    if (emptyEl) emptyEl.style.display = 'block';
+    return;
+  }}
+
+  if (section) section.style.display = 'block';
+  if (emptyEl) emptyEl.style.display = 'none';
 
   // Bio
   var bioEl = document.getElementById('ai-bio-card');
@@ -3886,18 +3927,6 @@ function renderAIProfile(data) {{
     (customByCat[k] = customByCat[k] || []).push(c);
   }});
 
-  // Row builder for declared numeric targets — shows "X unit" or "—" (muted).
-  // disp = display text, raw = value that goes into the edit input.
-  function _declRow(lbl, disp, raw, field, setColor) {{
-    var id = 'pr-' + lbl.toLowerCase().replace(/[^a-z0-9]/g,'_');
-    var hasVal = raw != null && raw !== '';
-    var col = hasVal ? setColor : 'var(--mu)';
-    var dispTxt = hasVal ? disp : '—';
-    var eb = '<button class="ibtn inrow-edit" onclick="editProw(\\''+id+'\\',\\''+escA(field)+'\\',\\''+escA(raw||'')+'\\')">&#9998;</button>';
-    return '<div class="inrow" id="'+id+'"><span class="inlbl">'+esc(lbl)+'</span>'+
-      '<div class="inrow-right"><span class="inval" style="color:'+col+'">'+esc(dispTxt)+'</span>'+eb+'</div></div>';
-  }}
-
   var html = '';
   STD_ORDER.forEach(function(cat) {{
     var slots = std[cat] || [];
@@ -3908,31 +3937,7 @@ function renderAIProfile(data) {{
     var learnLabels = slots.filter(function(s){{ return !s.filled; }})
       .map(function(s){{ return s.label; }});
 
-    if (cat === 'goals') {{
-      // Inject declared fields at the top of the Goals section, then AI-learned below.
-      var bp = (_baseData && _baseData.profile) || {{}};
-      var goalColor = {{cut:'var(--re)',bulk:'var(--ac)',maintain:'var(--mu)',performance:'var(--or)',health:'var(--bl)'}}[bp.primary_goal] || 'var(--tx)';
-      var goalDisp = (bp.primary_goal || '').replace(/_/g,' ') || '—';
-
-      var pinnedHtml =
-        _declRow('Goal',        goalDisp,                                      bp.primary_goal||'',          'primary_goal',    goalColor)+
-        _declRow('Goal weight', bp.goal_weight_lbs!=null?(bp.goal_weight_lbs+' lbs'):'', bp.goal_weight_lbs!=null?String(bp.goal_weight_lbs):'', 'goal_weight_lbs', 'var(--tx)')+
-        '<div style="border-top:1px solid var(--bd);margin:2px 0"></div>'+
-        _declRow('Calories',    bp.calorie_target!=null?(bp.calorie_target+' kcal'):'',  bp.calorie_target!=null?String(bp.calorie_target):'',    'calorie_target',  'var(--tx)')+
-        _declRow('Protein',     bp.protein_target!=null?(bp.protein_target+'g'):'',      bp.protein_target!=null?String(bp.protein_target):'',    'protein_target',  'var(--ac)')+
-        _declRow('Carbs',       bp.carb_target!=null?(bp.carb_target+'g'):'',            bp.carb_target!=null?String(bp.carb_target):'',          'carb_target',     'var(--or)')+
-        _declRow('Fat',         bp.fat_target!=null?(bp.fat_target+'g'):'',              bp.fat_target!=null?String(bp.fat_target):'',            'fat_target',      'var(--ye)');
-
-      var learnedHtml = slotRowsArr.concat(custRowsArr).join('');
-      var learnFooter = (learnLabels && learnLabels.length)
-        ? '<div class="pf-learning"><span class="pf-learn-dot"></span>Still learning &middot; '+learnLabels.map(esc).join(' &middot; ')+'</div>' : '';
-      var divider = learnedHtml ? '<div style="border-top:1px solid var(--bd);margin:2px 0"></div>' : '';
-
-      html += '<div style="margin-top:20px"><div class="stitle" style="margin-top:0">Goals</div>'+
-        '<div class="infocrd">'+pinnedHtml+divider+learnedHtml+learnFooter+'</div></div>';
-    }} else {{
-      html += _section(CATEGORY_LABELS[cat]||cat, slotRowsArr.concat(custRowsArr), learnLabels);
-    }}
+    html += _section(CATEGORY_LABELS[cat]||cat, slotRowsArr.concat(custRowsArr), learnLabels);
   }});
 
   // Any custom attrs whose category isn't a standard section → one "Other" group.
@@ -4485,7 +4490,13 @@ async function saveProw(rowId,field){{
   }}
 }}
 
-function cancelProw(){{reloadAIProfile();}}
+function cancelProw(){{
+  // Re-render whichever section the row belongs to. Goals & targets edits
+  // (pg-*) live in renderProfileTab; AI profile edits (pc-*/pr-*/pb-*) live
+  // in renderAIProfile. Cheaper to just refresh both.
+  if (_baseData) renderProfileTab(_baseData);
+  reloadAIProfile();
+}}
 
 // ── Share day ─────────────────────────────────────────────────────────────
 function shareDay(){{
