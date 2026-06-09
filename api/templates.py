@@ -3487,14 +3487,26 @@ function renderAppleHealthModule(snap,mod,grid,dateEl,titleEl,syncBtn){{
   }}
 
   // Same collapsible format as Whoop, fewer metrics (Apple Health platform limits).
+    var recovery=grid3(
+    hcell('Resting HR',snap.resting_hr!=null?snap.resting_hr+'bpm':null)+
+    hcell('Avg HR',snap.avg_hr!=null?snap.avg_hr+'bpm':null)+
+    hcell('HRV',snap.hrv!=null?snap.hrv+'ms':null));
+
   var activity=grid3(
     hcell('Steps',snap.steps!=null?snap.steps.toLocaleString():null)+
     hcell('Active cal',snap.active_calories!=null?Math.round(snap.active_calories)+'':null,'var(--or)')+
-    hcell('Resting cal',snap.resting_calories!=null?Math.round(snap.resting_calories)+'':null));
-  var sleep=grid3(hcell('Sleep',fmtSleep(snap.sleep_hours),'var(--bl)'));
+    hcell('Resting cal',snap.resting_calories!=null?Math.round(snap.resting_calories)+'':null)+
+    hcell('Exercise',snap.exercise_minutes!=null?snap.exercise_minutes+' min':null,'var(--ac)')+
+    hcell('Stand',snap.stand_hours!=null?snap.stand_hours+' hr':null));
+
+  var sleep=grid3(
+    hcell('Sleep',fmtSleep(snap.sleep_hours),'var(--bl)')+
+    hcell('Deep',fmtSleep(snap.sleep_deep_hours))+
+    hcell('REM',fmtSleep(snap.sleep_rem_hours)));
 
   grid.innerHTML=
-    (hsec('ah-activity','Activity',snap.steps!=null?snap.steps.toLocaleString():'',activity,!wIsMobile())+
+    (hsec('ah-recovery','Recovery',snap.resting_hr!=null?snap.resting_hr+'bpm':'',recovery,false)+
+     hsec('ah-activity','Activity',snap.steps!=null?snap.steps.toLocaleString():'',activity,!wIsMobile())+
      hsec('ah-sleep','Sleep',fmtSleep(snap.sleep_hours)||'',sleep,false))
     ||'<div style="color:var(--mu);font-size:13px;padding:8px 0">No Apple Health data for this day yet — it syncs automatically each morning.</div>';
 }}
