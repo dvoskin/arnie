@@ -943,13 +943,25 @@ async def _build_stats_for_user(db, user, target_date=None):
             "water_ml": round(log.total_water_ml or 0),
             "workout_completed": log.workout_completed,
             "cardio_completed": log.cardio_completed,
+            # Chronological order (earliest → latest). `timestamp` is included
+            # so the frontend can group entries logged in the same tool-call
+            # batch (multi-item photo, multi-line text) into a single
+            # collapsible meal card. Fallback to `id` when timestamp is null
+            # (very old rows pre-T2.3). Sort uses a key that never raises on
+            # missing values.
             "food_entries": [
                 {"id": e.id, "name": e.parsed_food_name or "?",
                  "quantity": e.quantity or "",
                  "calories": round(e.calories or 0), "protein": round(e.protein or 0),
                  "carbs": round(e.carbs or 0), "fats": round(e.fats or 0),
-                 "estimated": bool(e.estimated_flag)}
-                for e in (log.food_entries or [])
+                 "estimated": bool(e.estimated_flag),
+                 "timestamp": e.timestamp.isoformat() if e.timestamp else None}
+                for e in sorted(
+                    (log.food_entries or []),
+                    key=lambda e: (
+                        e.timestamp or datetime.min, e.id or 0,
+                    ),
+                )
             ],
             "exercise_entries": [
                 {"id": e.id, "name": e.exercise_name or "?",
