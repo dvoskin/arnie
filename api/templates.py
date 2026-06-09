@@ -894,6 +894,24 @@ body{{
 .exrow.open .ex-meta{{display:none}}
 .exrow-actions .ibtn{{width:24px;height:24px;font-size:11px}}
 .exrow-actions .ibtn.del{{font-size:13px}}
+/* Bare wrapper for the workout log — no card chrome at this level so
+   the .ex-group / .ex-card cards inside don't get clipped by an outer
+   rounded corner. Empty/loading state gets a dashed-card affordance. */
+.ex-log-wrap .lempty{{
+  background:var(--sf);border:1px dashed var(--bd);border-radius:12px;
+  padding:14px 16px;color:var(--mu);font-size:13px;text-align:center;
+}}
+/* Mobile polish: shrink workout rows the same 1-2px as food rows so
+   long meta strings ("3×15/15/13 · 70/80/80 lb") don't crowd the name. */
+@media(max-width:700px){{
+  .ex-group-hd{{font-size:8.5px;letter-spacing:.07em;margin-bottom:3px}}
+  .exrow{{padding:6px 12px;gap:8px}}
+  .ex-name{{font-size:12.5px;line-height:1.25}}
+  .ex-meta{{font-size:10.5px}}
+}}
+/* Workouts log spacing — tighter gap between Cardio and Strength groups
+   so the section reads as one connected list, not two floating cards. */
+.ex-log-wrap .ex-group + .ex-group{{margin-top:6px}}
 
 /* ── LOG CARDS — preview-style connected list with hairline dividers ──
    Flat informational rows; tap reveals edit/delete via .lrow.open. */
@@ -1999,7 +2017,11 @@ footer{{
           </div>
           <button class="add-submit" id="ex-submit" onclick="submitExerciseInline()">Save workout</button>
         </div>
-        <div class="lcrd" id="ex-log"><div class="lempty">Loading&hellip;</div></div>
+        <!-- #ex-log is a bare container (no .lcrd chrome) — the renderer
+             builds its own .ex-group / .ex-card cards inside. Using .lcrd
+             here clipped the CARDIO/STRENGTH group labels with the outer
+             rounded corner. -->
+        <div id="ex-log" class="ex-log-wrap"><div class="lempty">Loading&hellip;</div></div>
       </div>
     </div>
 
@@ -2808,25 +2830,19 @@ function renderPageHead(d){{
   var pt=document.getElementById('ph-title');
   var ps=document.getElementById('ph-sub');
   if(!pt||!ps)return;
-  // Brand-forward header: ArnieOS logotype as the title (Instrument
-  // Serif, same family as the existing sidebar logo). Day name moves
-  // into the subtitle line alongside date · goal pill · first name.
-  // This frees the title slot for branding without losing any info.
+  // Brand-forward header: ArnieOS logotype as the title; subtitle just
+  // shows day-of-week · date. Goal + name pills retired — the user's
+  // goal is implicit in the dashboard's tone (cut shows weight module,
+  // etc.) and their name is in the streak chip's title attribute. Less
+  // clutter, more breath.
   var now=new Date();
   pt.innerHTML = '<span class="logo-arnie">Arnie</span><span class="logo-os">OS</span>';
   var dayName  = now.toLocaleDateString('en-US',{{weekday:'long'}});
   var shortDate= now.toLocaleDateString('en-US',{{month:'short',day:'numeric'}});
-  var p = d.profile || {{}};
-  var name = (p.name||'').trim().split(/\\s+/)[0];
-  var goal = (p.primary_goal||'').trim();
-  var parts = [
-    '<span>'+esc(dayName)+'</span>',
-    '<span class="ph-dot">·</span>',
-    '<span>'+esc(shortDate)+'</span>'
-  ];
-  if(goal){{ parts.push('<span class="ph-dot">·</span>', '<span class="ph-pill">'+esc(goal)+'</span>'); }}
-  if(name){{ parts.push('<span class="ph-dot">·</span>', '<span>'+esc(name)+'</span>'); }}
-  ps.innerHTML = parts.join('');
+  ps.innerHTML =
+    '<span>'+esc(dayName)+'</span>'+
+    '<span class="ph-dot">·</span>'+
+    '<span>'+esc(shortDate)+'</span>';
 }}
 
 function toggleLogSection(type){{
