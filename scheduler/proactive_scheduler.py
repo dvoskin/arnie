@@ -409,12 +409,15 @@ def _recent_checkins_block(recent_proactive) -> str:
 
 
 async def _llm_nudge(user, log, prefs, health_snap, slot: str, name: str,
-                     recent_proactive=None) -> str:
+                     recent_proactive=None, needs_weight: bool = False) -> str:
     """Generate a personalized nudge via Claude Haiku. Returns '' on failure.
 
     recent_proactive: the proactive rows from the shared window (newest-first), used
     to surface a "recent check-ins you sent" block so the nudge doesn't repeat one
-    it just sent (D2 continuity)."""
+    it just sent (D2 continuity).
+    needs_weight: for morning_checkin — when True, override the instruction to open
+    with a goal-specific weight ask before anything else.
+    """
     from core.llm import chat
 
     cal = round(log.total_calories) if log else 0
@@ -450,6 +453,25 @@ async def _llm_nudge(user, log, prefs, health_snap, slot: str, name: str,
     exercises_logged = len(log.exercise_entries) if log and log.exercise_entries else 0
 
     instr = _SLOT_INSTRUCTIONS.get(slot, "Send a brief coaching check-in about their day.")
+
+    # For morning_checkin: override instruction to open with a goal-specific weight ask
+    # when weight hasn't been logged yet today (cut/bulk only).
+    if slot == "morning_checkin" and needs_weight:
+        _goal = user.primary_goal or ""
+        if _goal == "cut":
+            instr = (
+                "Open the FIRST bubble with asking for their morning weight — "
+                "e.g. 'What's your weight this morning?' or 'Good morning, scale first?'. "
+                "Then prompt breakfast. Reference recovery data if present. "
+                "Keep it warm and direct — 2-3 bubbles total."
+            )
+        elif _goal == "bulk":
+            instr = (
+                "Open the FIRST bubble with asking for their scale reading — "
+                "e.g. 'What's the scale showing today?' or 'Morning, scale check?'. "
+                "Then ask about breakfast. Reference recovery data if present. "
+                "Energetic and direct — 2-3 bubbles total."
+            )
 
     checkins_block = _recent_checkins_block(recent_proactive)
 
@@ -490,6 +512,9 @@ user glad to hear from you. Not generic motivation: clarity and one clear action
 
 Rules:
 - sentence case, like a real person texting. 2-4 short bubbles split with |||.
+- if data includes a WEIGHT PROMPT directive: ALWAYS open the FIRST bubble with that
+  weight ask, before any coaching. don't bury it halfway through. one short bubble,
+  then the rest of the briefing. example: "What's your weight this morning?|||[rest]"
 - lead with what matters: their trend or momentum, stated with a real number.
 - if a notable pattern or projection is given, weave ONE in, make them go "huh, didn't notice that".
 - end with the single highest-leverage action for today, framed as a small mission.
@@ -500,13 +525,16 @@ Rules:
 
 async def _llm_morning_briefing(user, log, prefs, health_snap, db, name: str,
                                 last_user_msg=None, last_arnie_msg=None,
-                                logs=None, weights=None) -> str:
+                                logs=None, weights=None,
+                                needs_weight: bool = False) -> str:
     """Data-rich morning briefing: momentum + trend + projection + pattern + leverage action.
 
     logs / weights: pre-fetched by the caller when possible (T2-3 optimisation).
     Pass None to let this function fetch internally (backward-compatible).
     last_user_msg / last_arnie_msg: None means no prior exchange (never messaged);
     "" means the row existed but had no text — both suppress the prior-exchange block.
+    needs_weight: when True, include a weight-ask directive as the FIRST data point so
+    the model opens the briefing by asking for the user's morning weight.
     """
     from core.llm import chat
     from db.queries import get_recent_logs, get_recent_weights
@@ -545,6 +573,24 @@ async def _llm_morning_briefing(user, log, prefs, health_snap, db, name: str,
         logger.warning(f"mission set failed: {e}")
 
     data = [f"Athlete: {name}, goal {user.primary_goal or '?'}"]
+    # Weight prompt: cut/bulk users who haven't logged today's weight get a directive
+    # to open the briefing with the weight ask as the very first bubble.
+    if needs_weight:
+        _goal = user.primary_goal or ""
+        if _goal == "cut":
+            data.append(
+                "WEIGHT PROMPT: weight not logged yet today. OPEN the briefing FIRST "
+                "with asking for their morning weight — e.g. 'What's your weight this morning?' "
+                "or 'Hop on the scale, what are we working with?' — before any coaching. "
+                "One short opening bubble, then the briefing."
+            )
+        elif _goal == "bulk":
+            data.append(
+                "WEIGHT PROMPT: weight not logged yet today. OPEN the briefing FIRST "
+                "with asking for their scale reading — e.g. 'What's the scale showing today?' "
+                "or 'Morning, scale check first?' — before any coaching. "
+                "One short opening bubble, then the briefing."
+            )
     if m: data.append(f"Momentum: {m.score}/100 ({m.tier}, {m.direction}); drivers: {', '.join(m.drivers) or 'n/a'}")
     if trend: data.append(trend)
     if projection: data.append(f"Projection: {projection}")
@@ -999,9 +1045,9 @@ async def _run_reminders():
                             logger.info(f"New user nudge '{new_slot}' sent to user {user.id} ({hours_since:.1f}h in)")
                             continue  # skip normal slots this tick — avoid message flood
 
-                # ── Morning check-in (30 min after wake) ──────────────────────
+                # ── Morning check-in (15 min after wake) ──────────────────────
                 wake_h, wake_m = int(wake.split(":")[0]), int(wake.split(":")[1])
-                morn_h, morn_m = wake_h, wake_m + 30
+                morn_h, morn_m = wake_h, wake_m + 15
                 if morn_m >= 60:
                     morn_h += 1
                     morn_m -= 60
@@ -1013,15 +1059,39 @@ async def _run_reminders():
                         from db.queries import get_recent_logs, get_recent_weights
                         _morning_logs = await get_recent_logs(db, user.id, days=21)
                         _morning_weights = await get_recent_weights(db, user.id, days=30)
+
+                        # Weight ask: cut/bulk users get a weight prompt if they haven't
+                        # logged their body weight yet today. maintenance/other goals skip it.
+                        _goal = user.primary_goal or ""
+                        _today_has_weight = any(
+                            w.weight_kg is not None and w.timestamp is not None
+                            and w.timestamp.replace(tzinfo=timezone.utc).astimezone(tz).date() == now.date()
+                            for w in _morning_weights
+                        )
+                        _needs_weight = _goal in ("cut", "bulk") and not _today_has_weight
+
                         # Data-rich performance briefing (momentum + trend + leverage action)
                         msg = await _llm_morning_briefing(user, log, prefs, health_snap, db, name,
                                                           last_user_msg=_last_u, last_arnie_msg=_last_a,
-                                                          logs=_morning_logs, weights=_morning_weights)
+                                                          logs=_morning_logs, weights=_morning_weights,
+                                                          needs_weight=_needs_weight)
                         if not msg:
                             msg = await _llm_nudge(user, log, prefs, health_snap, "morning_checkin", name,
-                                                   recent_proactive=recent_proactive)
+                                                   recent_proactive=recent_proactive,
+                                                   needs_weight=_needs_weight)
                         if not msg:
-                            msg = f"morning {name}.|||log your weight if you've got it, then tell me breakfast."
+                            # Goal-specific hardcoded fallback
+                            if _needs_weight:
+                                if _goal == "cut":
+                                    msg = (f"Good morning {name} ☀️|||"
+                                           "What's your weight this morning?|||"
+                                           "Let's get today's first check-in started.")
+                                else:  # bulk
+                                    msg = (f"Morning {name} 💪|||"
+                                           "What's the scale showing today?|||"
+                                           "Let's get today's first log in.")
+                            else:
+                                msg = f"morning {name}.|||what've you had so far? let's get the day on the board."
                         lang = getattr(prefs, "preferred_language", None) or "English"
                         if await _send_slot_deduped(db, user, send_id, msg, "morning_checkin",
                                                     sent_slots, today_str,
@@ -1292,12 +1362,10 @@ def _fmt_day_report(log, prefs, user_name: str, user=None) -> str:
 
 
 async def _run_whoop_sync():
-    """Pull latest Whoop data for all connected users and send notifications for new recovery data."""
+    """Pull latest Whoop data for all connected users (silent — no push notification)."""
     from db.database import AsyncSessionLocal
-    from db.queries import get_users_with_whoop, get_recent_health_snapshots
+    from db.queries import get_users_with_whoop
     from api.whoop import sync_user_whoop
-
-    today_str = str(date.today())
 
     async with AsyncSessionLocal() as db:
         try:
@@ -1314,28 +1382,12 @@ async def _run_whoop_sync():
                 canonical = await _resolve(db, user.telegram_id)
                 snapshot_uid = canonical.id
 
-                old_snaps = await get_recent_health_snapshots(db, snapshot_uid, days=1)
-                old_recovery = old_snaps[0].recovery_score if old_snaps else None
-
                 synced = await sync_user_whoop(db, user, days=7,
                                                snapshot_user_id=snapshot_uid)
                 total += synced
-
-                if synced > 0 and user.telegram_id:
-                    new_snaps = await get_recent_health_snapshots(db, snapshot_uid, days=1)
-                    if new_snaps:
-                        snap = new_snaps[0]
-                        # Persisted dedup — one recovery ping per user per day, survives deploys
-                        already = (user.whoop_last_notified == f"{today_str}:{snap.recovery_score}")
-                        if (snap.recovery_score is not None
-                                and snap.recovery_score != old_recovery
-                                and not already):
-                            user.whoop_last_notified = f"{today_str}:{snap.recovery_score}"
-                            await db.commit()
-                            msg = _fmt_whoop_notification(snap)
-                            if msg:
-                                await _send_logged(db, snapshot_uid, user.telegram_id,
-                                                   msg, "whoop_recovery")
+                # Automatic WHOOP push notification is disabled — recovery data is
+                # synced silently and surfaced via the morning briefing and wearable
+                # context block instead of a standalone push.
             except Exception as e:
                 logger.error(f"Whoop sync/notify failed for user {user.id}: {e}")
 

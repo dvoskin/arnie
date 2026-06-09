@@ -39,21 +39,28 @@ _LOGGING_TOOLS = frozenset({
 # Tools whose raw result MUST be re-voiced — the facts live ONLY in the tool
 # result, so a follow-up is forced even when the first pass already wrote text
 # (otherwise the search facts would never reach the user). Sibling of
-# _LOGGING_TOOLS, NOT an overload: search must take the generic re-voice path,
-# never the coach-unmute/deterministic_confirmation fallback (which is for
-# logging totals and is wrong for search).
+# _LOGGING_TOOLS, NOT an overload: these tools must take the generic re-voice
+# path, never the coach-unmute/deterministic_confirmation fallback (which is
+# for logging totals and is wrong for data-fetch tools).
 #
 # RELATIONSHIP TO NEEDS_HEADS_UP_TOOLS (from tool_executor): every voiced-
-# result tool also gets a heads-up before execution, but the wider set
-# (query_history, generate_image) gets heads-up WITHOUT forced re-voice —
-# those return data the LLM uses directly (history figures it coaches on,
-# image url it captions).
+# result tool also gets a heads-up before execution. The remaining heads-up
+# tool (generate_image) does NOT need re-voice — its url + caption is what
+# gets delivered, not coached prose.
 #
-# search_food_database IS forced-revoice: its USDA macros live only in the
-# tool result, and the follow-up is text-only (chat_follow_up runs tools=False),
-# so without a forced re-voice the search result is dropped on the floor and the
-# turn dead-ends on "All set. What's next?" — the exact bug this prevents.
-_VOICED_RESULT_TOOLS = frozenset({"web_search", "search_food_database"})
+# WHY query_history IS HERE: the first LLM pass runs BEFORE the tool fires,
+# so the model cannot see the history data in its first reply — only a
+# heads-up ("pulling that up") or pre-narration. If the heads-up was the
+# only first-pass text and we did NOT force the follow-up, response_text
+# stayed as "pulling that up" and the user got dead air after — exactly the
+# screenshot bug. The original "history figures it coaches on" assumption
+# was wrong: the model can only coach on history data in the follow-up turn.
+#
+# WHY web_search / search_food_database ARE HERE: same shape. The USDA macros
+# / web facts live only in the tool result, the follow-up is text-only
+# (chat_follow_up runs tools=False), so without a forced re-voice the result
+# is dropped on the floor and the turn dead-ends.
+_VOICED_RESULT_TOOLS = frozenset({"web_search", "search_food_database", "query_history"})
 
 
 @dataclasses.dataclass

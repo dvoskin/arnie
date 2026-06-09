@@ -1436,16 +1436,21 @@ def test_prompt_bans_redundant_label_repeat():
 # ════════════════════════════════════════════════════════════════════════════
 
 
-def test_prompt_requires_strict_mode_named_opener():
-    """Strict-mode pre-log questions must open with the mode named so the
-    user understands why they're being asked. Generic openers are banned."""
+def test_prompt_bans_strict_mode_out_loud():
+    """Strict-mode pre-log questions must use natural coach-talk openers
+    ("for accuracy, …", "before I lock it in, …"). Saying the literal phrase
+    "strict mode" out loud is banned — it reads as a feature label, not a
+    coach. Users picked the accuracy level; they don't need it announced."""
     s = SYSTEM_PROMPT
-    # The required opener shape
-    assert "strict mode, quick check before I log this" in s
-    # The ban on generic openers
-    assert "OPEN PRE-LOG QUESTIONS WITH THE MODE NAMED" in s
-    # The specific anti-example we just saw in prod
-    assert "a couple quick ones" in s
+    # The explicit ban
+    assert 'NEVER SAY "STRICT MODE" OUT LOUD' in s
+    assert 'BANNED in your reply text: "strict mode"' in s
+    # The required natural openers
+    assert '"for accuracy, one thing: ..."' in s
+    assert '"quick one so we log the right numbers: ..."' in s
+    assert '"before I lock it in: ..."' in s
+    # And the one-question-shape-per-reply consolidation rule
+    assert "ONE PRE-LOG QUESTION PER ITEM, ONE QUESTION SHAPE PER REPLY" in s
 
 
 # ════════════════════════════════════════════════════════════════════════════

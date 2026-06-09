@@ -5,7 +5,13 @@ logger = logging.getLogger(__name__)
 
 _FOOD_PROMPT = """You are analyzing a food image for a fitness tracking app. Reply in plain text only — no markdown, no headers, no bullet symbols, no asterisks.
 
-If it's a meal: list each distinct food item on its own line in this format:
+PACKAGED PRODUCT WITH VISIBLE LABEL — TOP PRIORITY:
+If the image shows a packaged item (bottle, carton, can, bar, box, pouch, etc.) where the BRAND, FLAVOR/VARIANT, and macro callouts on the front are LEGIBLE, READ THEM and put the label data on ONE line in this exact format:
+  PACKAGED: [brand] [product name + flavor], [serving size from label, e.g. "11 fl oz (1 carton)"], [cal] cal, [protein]g P, [carbs]g C, [fat]g F
+Example: PACKAGED: Elmhurst Clean Protein Pistachio Crème, 11 fl oz (1 carton), 190 cal, 27g P, 4g C, 7g F
+Pull the brand and flavor verbatim from the package — do not paraphrase ("a pistachio shake"). If carbs/fat aren't shown on the front but cal and protein are, fill the visible numbers and write "?" for the unseen macros. Never ask the user for info that's on the label in the photo.
+
+If it's a meal (cooked / plated / unpackaged): list each distinct food item on its own line in this format:
   [item name], [quantity], [cal] cal, [protein]g P, [carbs]g C, [fat]g F
 Example: grilled chicken breast, ~6oz, 280 cal, 35g P, 0g C, 6g F
 
@@ -21,15 +27,10 @@ Estimation rules:
 If there are multiple items, add a TOTAL line at the end:
   TOTAL: [sum cal] cal, [sum protein]g P
 
-If it's a nutrition label: state serving size, calories, protein, carbs, fat, fiber on one line.
-If it's a receipt or packaging: extract item names and any nutritional info shown.
+If it's a nutrition-facts label (the back-panel table): state serving size, calories, protein, carbs, fat, fiber on one line.
+If it's a receipt: extract item names and any nutritional info shown.
 
 Be concise. One line per item."""
-
-_SCALE_PROMPT = "Read the weight shown on this scale. Reply with just the number and unit, nothing else."
-
-_WORKOUT_PROMPT = """You are analyzing a workout image for a fitness tracking app. Reply in plain text only — no markdown, no headers.
-List each exercise with sets, reps, and weight on its own line."""
 
 _GENERAL_PROMPT = """You are analyzing an image for a fitness/nutrition coaching app. Reply in plain text only — no markdown, no headers, no asterisks, no bullet symbols.
 
@@ -39,14 +40,6 @@ Be concise. User caption: {caption}"""
 
 async def process_food_image(image_data: bytes) -> str:
     return await analyze_image(image_data, _FOOD_PROMPT)
-
-
-async def process_scale_image(image_data: bytes) -> str:
-    return await analyze_image(image_data, _SCALE_PROMPT)
-
-
-async def process_workout_image(image_data: bytes) -> str:
-    return await analyze_image(image_data, _WORKOUT_PROMPT)
 
 
 async def process_general_image(image_data: bytes, caption: str = "") -> str:

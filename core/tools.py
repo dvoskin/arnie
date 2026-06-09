@@ -365,7 +365,15 @@ _HISTORY_TOOLS = [
                         "indefinitely — there is NO upper limit on how far back "
                         "you can pull. If the user asks for a food from 4 months "
                         "ago, call this tool with period='120 days ago' or the "
-                        "exact ISO date — don't refuse or say you don't have it."
+                        "exact ISO date — don't refuse or say you don't have it. "
+                        "CRITICAL — WEEKDAY REQUESTS: when the user names a weekday "
+                        "('last Saturday', 'Sunday', 'last Monday'), pass the WEEKDAY "
+                        "STRING VERBATIM ('saturday', 'last saturday', 'sunday', "
+                        "'last monday'). DO NOT try to compute the ISO date yourself "
+                        "and pass that instead — the parser knows today's weekday and "
+                        "resolves the correct past date. Computing it yourself causes "
+                        "off-by-one bugs (e.g. passing '2026-06-07' for 'last Saturday' "
+                        "when June 7 is actually a Sunday). Pass the WORD, not a date."
                     ),
                 },
                 "exercise_name": {

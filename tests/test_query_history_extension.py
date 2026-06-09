@@ -425,3 +425,178 @@ async def test_last_365_window_covers_full_year(make_user, db):
     )
     assert out["entries"] == 1
     assert out["rows"][0]["food_name"] == "banana"
+
+
+# ── query_history is a voiced-result tool: heads-up + tool result must always
+#    reach the user via a forced follow-up. Prevents the "On it, pulling that
+#    now." dead-air regression. ──────────────────────────────────────────────
+
+
+def test_query_history_is_in_voiced_result_tools():
+    """query_history's answer lives ONLY in the tool result (the first LLM
+    pass runs BEFORE the tool fires, so the model can never write the data
+    in pass 1 — only a heads-up bubble). It MUST be in _VOICED_RESULT_TOOLS
+    so the follow-up is forced even when the first pass already wrote
+    heads-up text. Without this, response_text stays as 'pulling that up'
+    and the user gets dead air after — the screenshot regression."""
+    import core.conversation as C
+    assert "query_history" in C._VOICED_RESULT_TOOLS, (
+        "query_history must be a voiced-result tool — otherwise a first-pass "
+        "heads-up ('pulling that up') becomes the whole reply and the actual "
+        "history data is silently dropped."
+    )
+
+
+@pytest.mark.asyncio
+async def test_query_history_with_heads_up_text_still_runs_follow_up(
+        make_user, db, monkeypatch):
+    """The exact regression from the screenshot: model writes a heads-up bubble
+    ('On it, pulling that now.') AND emits a query_history tool call in the
+    same first pass. The follow-up MUST still fire so the structured recap
+    reaches the user. Before the fix, need_followup=False because response_text
+    existed and query_history wasn't in _VOICED_RESULT_TOOLS — the result was
+    dropped and the user only saw the heads-up."""
+    import core.conversation as C
+
+    user = await make_user(telegram_id="t-qh-headsup")
+    calls = {"follow_up": 0, "execute": 0}
+
+    async def _fake_chat(messages, system, tools=True, max_tokens=4096, model=None,
+                         stream_handler=None):
+        return {
+            "text": "On it, pulling that now.",
+            "tool_calls": [{"name": "query_history", "id": "qh1",
+                            "input": {"metric": "food_entries",
+                                      "period": "last saturday"}}],
+            "raw_content": [{"x": 1}],
+            "stop_reason": "tool_use",
+        }
+
+    async def _fake_follow_up(messages, raw, tcs, results, system,
+                              max_tokens=512, stream_handler=None):
+        calls["follow_up"] += 1
+        # The structured coached recap — the answer the user actually came for.
+        return ("saturday, june 6:|||"
+                "• banana, 105 calories, 1g protein|||"
+                "105 calories total for the day.")
+
+    async def _fake_execute(tool_calls, user, log, db, source_type):
+        calls["execute"] += 1
+        return {"query_history": "HISTORY QUERY — period=last saturday\n• banana 105 cal"}
+
+    monkeypatch.setattr(C, "chat", _fake_chat)
+    monkeypatch.setattr(C, "chat_follow_up", _fake_follow_up)
+    monkeypatch.setattr(C, "execute_tool_calls", _fake_execute)
+
+    result = await C.run_turn(
+        user, db,
+        messages=[{"role": "user", "content": "what did I eat last saturday?"}],
+        system="SYS", platform="imessage",
+        in_onboarding=False, was_onboarding=False,
+    )
+
+    # The follow-up MUST have run despite the first pass writing heads-up text.
+    assert calls["follow_up"] == 1, (
+        "follow-up did not fire — query_history result was dropped on the floor"
+    )
+    assert calls["execute"] == 1, "tool execution must run before the follow-up"
+    # The final response is the COACHED RECAP, not the heads-up.
+    final = " ".join(result.response.bubbles).lower()
+    assert "saturday, june 6" in final, "structured recap missing from response"
+    assert "banana" in final, "tool result data missing from response"
+    # The heads-up text must NOT be the entire reply (dead-air regression).
+    assert "on it, pulling that now" not in final, (
+        "heads-up leaked into the final response (would mean follow-up was skipped)"
+    )
+
+
+@pytest.mark.asyncio
+async def test_query_history_with_NO_heads_up_text_still_runs_follow_up(
+        make_user, db, monkeypatch):
+    """Sanity: the no-heads-up path was always correct and must stay correct
+    after the fix. Empty first-pass text → need_followup is True via the
+    'not response_text' term; adding query_history to VOICED must not regress
+    this. Both paths converge on follow-up running."""
+    import core.conversation as C
+
+    user = await make_user(telegram_id="t-qh-noheadsup")
+    calls = {"follow_up": 0}
+
+    async def _fake_chat(messages, system, tools=True, max_tokens=4096, model=None,
+                         stream_handler=None):
+        return {
+            "text": "",  # no heads-up text — the previously-working path
+            "tool_calls": [{"name": "query_history", "id": "qh2",
+                            "input": {"metric": "calories", "period": "last_7"}}],
+            "raw_content": [{"x": 1}],
+            "stop_reason": "tool_use",
+        }
+
+    async def _fake_follow_up(messages, raw, tcs, results, system,
+                              max_tokens=512, stream_handler=None):
+        calls["follow_up"] += 1
+        return "averaged 1,800 cal/day last week. solid pacing."
+
+    async def _fake_execute(tool_calls, user, log, db, source_type):
+        return {"query_history": "Calories: avg 1800/day over 7 days"}
+
+    monkeypatch.setattr(C, "chat", _fake_chat)
+    monkeypatch.setattr(C, "chat_follow_up", _fake_follow_up)
+    monkeypatch.setattr(C, "execute_tool_calls", _fake_execute)
+
+    result = await C.run_turn(
+        user, db,
+        messages=[{"role": "user", "content": "what's my weekly average?"}],
+        system="SYS", platform="imessage",
+        in_onboarding=False, was_onboarding=False,
+    )
+
+    assert calls["follow_up"] == 1
+    final = " ".join(result.response.bubbles).lower()
+    assert "1,800" in final
+
+
+@pytest.mark.asyncio
+async def test_log_food_turn_unaffected_by_query_history_voiced_addition(
+        make_user, db, monkeypatch):
+    """Pin that adding query_history to _VOICED_RESULT_TOOLS does NOT change
+    behavior on a pure log_food turn. The logging branch is reached first
+    (has_logging=True), so the voiced-result check is never consulted."""
+    import core.conversation as C
+
+    user = await make_user(telegram_id="t-logfood-unaffected")
+    calls = {"follow_up": 0}
+
+    async def _fake_chat(messages, system, tools=True, max_tokens=4096, model=None,
+                         stream_handler=None):
+        return {
+            "text": "banana logged.",
+            "tool_calls": [{"name": "log_food", "id": "f1",
+                            "input": {"food_name": "banana", "quantity": "1 medium",
+                                      "calories": 105, "protein": 1, "carbs": 27,
+                                      "fats": 0, "confidence": 0.9}}],
+            "raw_content": [{"x": 1}],
+            "stop_reason": "tool_use",
+        }
+
+    async def _fake_follow_up(messages, raw, tcs, results, system,
+                              max_tokens=512, stream_handler=None):
+        calls["follow_up"] += 1
+        return "banana, 105 cal.|||1,205 / 2,000 for the day."
+
+    async def _fake_execute(tool_calls, user, log, db, source_type):
+        return {"log_food": "Logged banana: 105 cal. DAY TOTAL: 1205 cal."}
+
+    monkeypatch.setattr(C, "chat", _fake_chat)
+    monkeypatch.setattr(C, "chat_follow_up", _fake_follow_up)
+    monkeypatch.setattr(C, "execute_tool_calls", _fake_execute)
+
+    await C.run_turn(
+        user, db,
+        messages=[{"role": "user", "content": "had a banana"}],
+        system="SYS", platform="imessage",
+        in_onboarding=False, was_onboarding=False,
+    )
+
+    # Logging branch already forces the follow-up — same as before the fix.
+    assert calls["follow_up"] == 1
