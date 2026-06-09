@@ -967,62 +967,117 @@
     }
 
     /* ── Web onboarding modal ────────────────────────────────── */
+
+    /* Backdrop: transparent enough to let the landing teal glow breathe through */
     .ob-overlay {
       position: fixed; inset: 0; z-index: 900;
       display: flex; align-items: center; justify-content: center;
       padding: 16px;
-      background: oklch(0.05 0.01 240 / 0.74);
-      backdrop-filter: blur(14px) saturate(140%);
-      -webkit-backdrop-filter: blur(14px) saturate(140%);
+      background: oklch(0.04 0.01 240 / 0.52);
+      backdrop-filter: blur(20px) saturate(150%);
+      -webkit-backdrop-filter: blur(20px) saturate(150%);
       opacity: 0; pointer-events: none;
       transition: opacity 240ms cubic-bezier(.4,0,.2,1);
     }
     .ob-overlay.open { opacity: 1; pointer-events: auto; }
+
+    /* Modal container — the styled surface (replaces .ob-card as visual host) */
     .ob-modal {
       width: min(540px, 100%);
       max-height: calc(100dvh - 32px);
       overflow-y: auto;
-      border-radius: 24px;
+      border-radius: 22px;
       position: relative;
       transform: translateY(28px) scale(0.97);
       transition: transform 300ms cubic-bezier(.34,1.20,.64,1);
+      background: linear-gradient(170deg,
+        color-mix(in oklch, var(--ink) 10%, transparent),
+        color-mix(in oklch, var(--ink) 5%, transparent) 80%);
+      border: 1px solid color-mix(in oklch, var(--accent) 22%, var(--line-s));
+      -webkit-backdrop-filter: blur(36px) saturate(180%);
+      backdrop-filter: blur(36px) saturate(180%);
+      box-shadow:
+        0 0 0 1px oklch(1 0 0 / 0.07) inset,
+        0 -1px 0 color-mix(in oklch, var(--accent) 38%, transparent) inset,
+        0 40px 100px -20px oklch(0 0 0 / 0.75),
+        0 0 80px -15px color-mix(in oklch, var(--accent) 10%, transparent);
     }
     .ob-overlay.open .ob-modal { transform: translateY(0) scale(1); }
+
+    /* Modal header — brand mark + tagline + close in one clean row */
+    .ob-modal-head {
+      display: flex; align-items: center;
+      padding: 11px 11px 10px 18px;
+      border-bottom: 1px solid var(--line);
+      flex-shrink: 0;
+      background: linear-gradient(to bottom,
+        color-mix(in oklch, var(--accent) 7%, transparent), transparent 100%);
+    }
+    .ob-modal-brand {
+      font-family: var(--serif); font-size: 17px; font-style: italic;
+      color: var(--ink); letter-spacing: -0.02em; line-height: 1;
+    }
+    .ob-modal-sep {
+      width: 1px; height: 13px; flex-shrink: 0;
+      background: var(--line-s); margin: 0 10px;
+    }
+    .ob-modal-tagline {
+      font-family: var(--mono); font-size: 9px; letter-spacing: 0.10em;
+      text-transform: uppercase; color: var(--ink-3); flex: 1;
+    }
     .ob-modal-close {
-      position: absolute; top: 13px; right: 14px; z-index: 10;
-      width: 28px; height: 28px; border-radius: 50%; border: none;
-      background: color-mix(in oklch, var(--ink) 10%, transparent);
-      color: var(--ink-2); font-size: 14px; cursor: pointer;
+      flex-shrink: 0; margin-left: 8px;
+      width: 26px; height: 26px; border-radius: 50%; border: none;
+      background: color-mix(in oklch, var(--ink) 8%, transparent);
+      color: var(--ink-3); font-size: 13px; cursor: pointer;
       display: flex; align-items: center; justify-content: center;
       line-height: 1;
       transition: background 150ms, color 150ms;
     }
     .ob-modal-close:hover {
-      background: color-mix(in oklch, var(--ink) 18%, transparent);
+      background: color-mix(in oklch, var(--ink) 17%, transparent);
       color: var(--ink);
     }
-    /* Context strip at top of modal card */
-    .ob-intro-strip {
-      padding: 11px 20px 10px;
-      text-align: center;
-      font-family: var(--mono); font-size: 9px; letter-spacing: 0.13em;
-      text-transform: uppercase; color: var(--ink-3);
-      border-bottom: 1px solid var(--line);
-      line-height: 1.4;
+
+    /* .ob-card inside modal: strip its own surface — modal already provides it */
+    .ob-overlay .ob-card {
+      background: none; border: none; box-shadow: none;
+      backdrop-filter: none; -webkit-backdrop-filter: none;
+      width: 100%; margin: 0; border-radius: 0;
     }
+
     /* Step enter animation */
     @keyframes ob-step-enter {
-      from { opacity: 0; transform: translateY(10px); }
+      from { opacity: 0; transform: translateY(8px); }
       to   { opacity: 1; transform: translateY(0); }
     }
-    .ob-step-enter {
-      animation: ob-step-enter 220ms cubic-bezier(.4,0,.2,1) both;
-    }
+    .ob-step-enter { animation: ob-step-enter 220ms cubic-bezier(.4,0,.2,1) both; }
+
     /* Tap hint below goal grid */
     .ob-tap-hint {
       text-align: center; margin-top: 14px;
       font-family: var(--mono); font-size: 9px; letter-spacing: 0.10em;
       text-transform: uppercase; color: var(--ink-4);
+    }
+
+    /* Success icon — pop in + pulse ring */
+    @keyframes ob-check-pop {
+      0%   { transform: scale(0.5) rotate(-8deg); opacity: 0; }
+      70%  { transform: scale(1.12) rotate(2deg); opacity: 1; }
+      100% { transform: scale(1)   rotate(0deg); opacity: 1; }
+    }
+    @keyframes ob-check-pulse {
+      0%   { box-shadow: 0 0 0 0   color-mix(in oklch, var(--accent) 35%, transparent),
+                         0 0 0 1px color-mix(in oklch, var(--accent) 30%, transparent); }
+      70%  { box-shadow: 0 0 0 12px transparent,
+                         0 0 0 1px color-mix(in oklch, var(--accent) 30%, transparent); }
+      100% { box-shadow: 0 0 0 0   transparent,
+                         0 0 0 1px color-mix(in oklch, var(--accent) 30%, transparent); }
+    }
+    .ob-step-success .ob-success-icon {
+      animation:
+        ob-check-pop 380ms cubic-bezier(.34,1.26,.64,1) 0.1s both,
+        ob-check-pulse 2s ease-out 0.55s infinite;
     }
     .ob-card {
       width: min(520px, 100%); margin: 0 auto;
@@ -1040,31 +1095,36 @@
     }
     /* Progress bar */
     .ob-progress {
-      height: 3px;
+      height: 4px;
       background: color-mix(in oklch, var(--ink) 8%, transparent);
     }
     .ob-progress-bar {
       height: 100%; width: 25%;
       background: linear-gradient(90deg, var(--accent-s), var(--accent));
+      border-radius: 0 2px 2px 0;
       transition: width 500ms cubic-bezier(.4,0,.2,1);
     }
     /* Step wrapper */
     .ob-step { padding: 28px 28px 24px; text-align: left; }
     .ob-step-label {
-      font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.12em;
-      text-transform: uppercase; color: var(--ink-3); margin-bottom: 14px;
+      display: inline-flex; align-items: center;
+      padding: 4px 10px 3px; border-radius: 20px;
+      background: color-mix(in oklch, var(--ink) 7%, transparent);
+      border: 1px solid var(--line-s);
+      font-family: var(--mono); font-size: 9px; letter-spacing: 0.10em;
+      text-transform: uppercase; color: var(--ink-3); margin-bottom: 16px;
     }
     .ob-step-title {
       font-family: var(--serif); font-size: 24px; letter-spacing: -0.005em;
       color: var(--ink); margin-bottom: 22px; line-height: 1.3;
     }
-    /* Goal grid */
+    /* Goal grid — flex so last row centers when odd count */
     .ob-goals {
-      display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;
-      margin-bottom: 4px;
+      display: flex; flex-wrap: wrap; justify-content: center;
+      gap: 8px; margin-bottom: 4px;
     }
-    @media (max-width: 420px) { .ob-goals { grid-template-columns: repeat(2, 1fr); } }
     .ob-goal-btn {
+      flex: 0 0 calc(33.333% - 6px);
       display: flex; flex-direction: column; align-items: center; gap: 5px;
       padding: 16px 10px 14px; border-radius: 14px;
       border: 1px solid var(--line); background: transparent;
@@ -1751,10 +1811,14 @@
   <div id="ob-overlay" class="ob-overlay" role="dialog" aria-modal="true" aria-label="Set up your profile"
        onclick="if(event.target===this)closeObModal()">
     <div class="ob-modal">
-      <button class="ob-modal-close" onclick="closeObModal()" aria-label="Close">✕</button>
+      <div class="ob-modal-head">
+        <span class="ob-modal-brand"><em>Arnie</em></span>
+        <span class="ob-modal-sep"></span>
+        <span class="ob-modal-tagline">Set up your profile</span>
+        <button class="ob-modal-close" onclick="closeObModal()" aria-label="Close">✕</button>
+      </div>
 
     <div class="ob-card">
-      <div class="ob-intro-strip">60 seconds &nbsp;·&nbsp; Arnie knows you from the first message</div>
       <div class="ob-progress"><div class="ob-progress-bar" id="obProgressBar"></div></div>
 
       <!-- Step 1: Goal -->

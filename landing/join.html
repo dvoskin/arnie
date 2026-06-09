@@ -152,31 +152,37 @@
     }
     /* Progress bar */
     .ob-progress {
-      height: 3px;
+      height: 4px;
       background: color-mix(in oklch, var(--ink) 8%, transparent);
     }
     .ob-progress-bar {
       height: 100%; width: 25%;
       background: linear-gradient(90deg, var(--accent-s), var(--accent));
+      border-radius: 0 2px 2px 0;
       transition: width 500ms cubic-bezier(.4,0,.2,1);
     }
     /* Step wrapper */
     .ob-step { padding: 28px 28px 24px; text-align: left; }
     .ob-step-label {
-      font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.12em;
-      text-transform: uppercase; color: var(--ink-3); margin-bottom: 14px;
+      display: inline-flex; align-items: center;
+      padding: 4px 10px 3px; border-radius: 20px;
+      background: color-mix(in oklch, var(--ink) 7%, transparent);
+      border: 1px solid var(--line-s);
+      font-family: var(--mono); font-size: 9px; letter-spacing: 0.10em;
+      text-transform: uppercase; color: var(--ink-3); margin-bottom: 16px;
     }
     .ob-step-title {
       font-family: var(--serif); font-size: 24px; letter-spacing: -0.005em;
       color: var(--ink); margin-bottom: 22px; line-height: 1.3;
     }
-    /* Goal grid */
+    /* Goal grid — flex so last row centers when odd count */
     .ob-goals {
-      display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;
-      margin-bottom: 4px;
+      display: flex; flex-wrap: wrap; justify-content: center;
+      gap: 8px; margin-bottom: 4px;
     }
-    @media (max-width: 420px) { .ob-goals { grid-template-columns: repeat(2, 1fr); } }
+    @media (max-width: 420px) { .ob-goal-btn { flex: 0 0 calc(50% - 4px); } }
     .ob-goal-btn {
+      flex: 0 0 calc(33.333% - 6px);
       display: flex; flex-direction: column; align-items: center; gap: 5px;
       padding: 16px 10px 14px; border-radius: 14px;
       border: 1px solid var(--line); background: transparent;
@@ -306,6 +312,24 @@
       border: 1px solid color-mix(in oklch, var(--accent) 35%, transparent);
       display: flex; align-items: center; justify-content: center;
       font-size: 22px; color: var(--accent); margin-bottom: 18px;
+    }
+    @keyframes ob-check-pop {
+      0%   { transform: scale(0.5) rotate(-8deg); opacity: 0; }
+      70%  { transform: scale(1.12) rotate(2deg); opacity: 1; }
+      100% { transform: scale(1)   rotate(0deg); opacity: 1; }
+    }
+    @keyframes ob-check-pulse {
+      0%   { box-shadow: 0 0 0 0   color-mix(in oklch, var(--accent) 35%, transparent),
+                         0 0 0 1px color-mix(in oklch, var(--accent) 30%, transparent); }
+      70%  { box-shadow: 0 0 0 12px transparent,
+                         0 0 0 1px color-mix(in oklch, var(--accent) 30%, transparent); }
+      100% { box-shadow: 0 0 0 0   transparent,
+                         0 0 0 1px color-mix(in oklch, var(--accent) 30%, transparent); }
+    }
+    .ob-step-success .ob-success-icon {
+      animation:
+        ob-check-pop 380ms cubic-bezier(.34,1.26,.64,1) 0.1s both,
+        ob-check-pulse 2s ease-out 0.55s infinite;
     }
     .ob-success-sub {
       font-size: 14px; color: var(--ink-2); margin-bottom: 8px;
