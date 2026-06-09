@@ -1546,3 +1546,61 @@ def test_prompt_bans_chat_memory_for_recaps():
     assert "NUMBERS COME FROM THE DB" in s
     # The phrase wraps in source — verify the key tokens are present.
     assert "more recent than" in s and "chat memory" in s
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# DIMENSION 46 — LOGGING FIDELITY (upstream guarantee for recap accuracy)
+# ════════════════════════════════════════════════════════════════════════════
+
+
+def test_prompt_has_item_count_self_check():
+    """Before sending a reply, the model must verify N foods named ↔ N
+    log_food calls. This is what makes the eventual recap accurate."""
+    s = SYSTEM_PROMPT
+    assert "ITEM-COUNT SELF-CHECK" in s
+    assert "THEY MUST MATCH" in s
+
+
+def test_prompt_has_logging_fidelity_section():
+    """LOGGING FIDELITY rule must be present in FOOD_ACCURACY so the model
+    knows what gets stored is what gets restated."""
+    s = SYSTEM_PROMPT
+    assert "LOGGING FIDELITY" in s
+    # Three sub-rules
+    assert "FOOD NAME: use the user's words" in s
+    assert "QUANTITY FIDELITY" in s
+    assert "EVERY ITEM GETS ITS OWN log_food" in s
+    assert "DO NOT INVENT ITEMS" in s
+
+
+@pytest.mark.parametrize("preserved_phrase", [
+    "happy wolf chocolate chip kids bar",
+    "royo bagel",
+    "half plate",
+    "3 bites",
+    "1/3 piece",
+])
+def test_prompt_names_fidelity_examples(preserved_phrase):
+    """The fidelity rule must include concrete user-phrase preservation
+    examples so the model has a template."""
+    s = SYSTEM_PROMPT
+    assert preserved_phrase in s, (
+        f"fidelity example {preserved_phrase!r} missing from prompt"
+    )
+
+
+def test_prompt_bans_collapsing_distinct_items():
+    """'1 plain + 1 pepperoni pizza' must be two log_food calls, not one
+    '2 slices of pizza' — different macros, different items."""
+    s = SYSTEM_PROMPT
+    # The example wraps across lines in source — verify the key tokens.
+    assert "1 slice plain pizza" in s
+    assert "1 slice" in s and "pepperoni pizza" in s
+    assert "TWO log_food calls" in s
+
+
+def test_prompt_bans_inventing_items():
+    """User says 'had pizza' — don't also log garlic bread the user didn't
+    name."""
+    s = SYSTEM_PROMPT
+    assert "DO NOT INVENT ITEMS the user didn't name" in s
