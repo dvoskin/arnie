@@ -286,54 +286,6 @@ DATA:
     return []
 
 
-async def generate_short_insight(stats: dict) -> List[str]:
-    """Haiku call for 1-2 quick insights used by the /today bot command."""
-    from core.llm import _get_anthropic, ANTHROPIC_API_KEY
-
-    if not ANTHROPIC_API_KEY():
-        return []
-
-    summary = _build_summary(stats)
-    prompt = f"""You are Arnie, a no-BS fitness coach reviewing today's data. Write exactly 1 to 2 SHORT coaching insights — each one line, 10-20 words, no preamble.
-
-Be specific. Reference real numbers. Call out a pattern if history shows one.
-
-Examples of GOOD insights:
-- "Protein at 44% with 110g left — make your next meal high-protein"
-- "Calories on track, but 3 of last 7 days went over — watch dinner"
-- "Solid cut day — deficit locked and training done"
-- "Weight down 1.2 lb this week — deficit is working, keep it"
-
-Examples of BAD insights (never write these):
-- "Keep up the good work!"
-- "Make sure you're hitting your macros"
-
-Return ONLY a valid JSON array of strings. No prose.
-
-DATA:
-{summary}
-"""
-
-    try:
-        client = _get_anthropic()
-        response = await client.messages.create(
-            model="claude-haiku-4-5-20251001",
-            max_tokens=150,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        text = response.content[0].text.strip()
-        if text.startswith("```"):
-            text = text.split("\n", 1)[1].rsplit("```", 1)[0].strip()
-        if text.startswith("json"):
-            text = text[4:].strip()
-        insights = json.loads(text)
-        if isinstance(insights, list):
-            return [str(s) for s in insights if s][:2]
-    except Exception as e:
-        logger.error(f"Short insight generation failed: {e}")
-
-    return []
-
 
 async def generate_chat_analysis(stats: dict) -> List[str]:
     """Richer coaching analysis for the /ai bot command — 3-5 items, each 2-3 sentences."""

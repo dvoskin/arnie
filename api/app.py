@@ -38,6 +38,11 @@ from api.usda import search_food as _usda_search
 
 logger = logging.getLogger(__name__)
 
+
+def _esc(s: object) -> str:
+    return str(s or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
 app = FastAPI(title="Arnie API", docs_url=None, redoc_url=None)
 
 
@@ -2132,9 +2137,6 @@ async def admin_dashboard(token: str = Query(...)):
         c = colors.get(goal or "", "#888")
         return f'<span style="background:{c};color:#fff;padding:2px 8px;border-radius:10px;font-size:11px">{goal or "—"}</span>'
 
-    def _esc(s):
-        return str(s or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-
     def _cal_bar(log, target):
         if not log or not target:
             return "—"
@@ -2325,9 +2327,6 @@ async def admin_user_detail(user_id: int, token: str = Query(...)):
             .limit(200)
         )
         convos = convos_result.scalars().all()
-
-    def _esc(s):
-        return str(s or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
     def _src_badge(src):
         colors = {"text": "#3498db", "voice": "#e67e22", "image": "#9b59b6", "photo": "#9b59b6"}

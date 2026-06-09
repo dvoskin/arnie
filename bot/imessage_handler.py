@@ -25,6 +25,7 @@ import random
 import re
 import hashlib
 import hmac
+import urllib.parse
 from typing import Optional
 
 import uuid
@@ -62,32 +63,7 @@ def _get_http() -> httpx.AsyncClient:
     return _http
 
 
-# ── iMessage effect identifiers ───────────────────────────────────────────────
-# Pass as effectId in the message payload. Requires BlueBubbles Private API
-# mode OR works without it on some macOS versions — degrade gracefully if not.
-
-class Effect:
-    SLAM       = "com.apple.MobileSMS.expressivesend.impact"
-    LOUD       = "com.apple.MobileSMS.expressivesend.loud"
-    GENTLE     = "com.apple.MobileSMS.expressivesend.gentle"
-    INVISIBLE  = "com.apple.MobileSMS.expressivesend.invisibleink"
-    ECHO       = "com.apple.MobileSMS.expressivesend.echo"       # confetti
-    BALLOONS   = "com.apple.MobileSMS.expressivesend.balloons"
-    FIREWORKS  = "com.apple.MobileSMS.expressivesend.fireworks"
-    HEART      = "com.apple.MobileSMS.expressivesend.heart"
-    LASERS     = "com.apple.MobileSMS.expressivesend.lasers"
-    SPOTLIGHT  = "com.apple.MobileSMS.expressivesend.spotlight"
-    SHOOTING   = "com.apple.MobileSMS.expressivesend.shootingstar"
-
-
-# ── Tapback reaction codes ─────────────────────────────────────────────────────
-class Tapback:
-    LOVE      = 2000   # ❤️
-    LIKE      = 2001   # 👍
-    DISLIKE   = 2002   # 👎
-    LAUGH     = 2003   # 😂
-    EMPHASIZE = 2004   # ‼️
-    QUESTION  = 2005   # ❓
+_EFFECT_LOUD = "com.apple.MobileSMS.expressivesend.loud"
 
 
 async def bb_send_reaction(chat_guid: str, message_guid: str, reaction: str,
@@ -138,7 +114,6 @@ async def bb_set_typing(chat_guid: str, typing: bool) -> bool:
     """
     if not _BB_URL or not _BB_PASSWORD or not chat_guid:
         return False
-    import urllib.parse
     guid_enc = urllib.parse.quote(chat_guid, safe="")
     try:
         method = "POST" if typing else "DELETE"
@@ -551,7 +526,7 @@ async def _send_first_contact_intro(chat_guid: str) -> None:
     for i, bubble in enumerate(_INTRO_BUBBLES):
         if i == 0:
             # First bubble gets a Loud effect — makes an entrance
-            await bb_send_text_with_effect(chat_guid, bubble, Effect.LOUD)
+            await bb_send_text_with_effect(chat_guid, bubble, _EFFECT_LOUD)
         else:
             await bb_send_text(chat_guid, bubble)
         if i < len(_INTRO_BUBBLES) - 1:
@@ -649,7 +624,7 @@ async def start_imessage_outreach(raw_phone: str) -> dict:
         # Send the one-time outreach intro
         for i, bubble in enumerate(_OUTREACH_INTRO):
             if i == 0:
-                await bb_send_text_with_effect(chat_guid, bubble, Effect.LOUD)
+                await bb_send_text_with_effect(chat_guid, bubble, _EFFECT_LOUD)
             else:
                 await bb_send_text(chat_guid, bubble)
             if i < len(_OUTREACH_INTRO) - 1:
