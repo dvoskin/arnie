@@ -3291,6 +3291,12 @@ function renderWhoopModule(snap, profile){{
 }}
 
 // Build the single Whoop card (.hsec with all Whoop metrics inside).
+// Displays EVERY field Whoop pushes via the daily snapshot — recovery
+// (score + zone + HRV + RHR), sleep (hrs + efficiency + performance +
+// deep + REM + need + respiratory + SpO2 + skin temp), activity (strain
+// + avg HR + steps + active cal), and a per-workout breakdown below
+// when whoop_workouts is populated. Empty cells (hcell returns '') are
+// omitted by the grid so we never render "—" placeholders.
 function renderWhoopCard(snap){{
   function fmtSleep(h){{
     if(!h)return null;
@@ -3302,22 +3308,70 @@ function renderWhoopCard(snap){{
   if(!snap){{
     bodyContent = '<div style="color:var(--mu);font-size:13px;padding:12px 14px">No data for this day — tap &#8635; to sync, or check that your Whoop band has synced.</div>';
   }}else{{
-    var recColor = snap.recovery_score != null
-      ? (snap.recovery_score >= 67 ? 'var(--ac)' : snap.recovery_score >= 34 ? 'var(--ye)' : 'var(--re)')
+    var recScore = snap.recovery_score;
+    var recColor = recScore != null
+      ? (recScore >= 67 ? 'var(--ac)' : recScore >= 34 ? 'var(--ye)' : 'var(--re)')
       : null;
-    headerSummary = [];
-    if(snap.recovery_score != null) headerSummary.push(snap.recovery_score + '% recovery');
-    if(snap.sleep_hours != null) headerSummary.push(fmtSleep(snap.sleep_hours) + ' sleep');
-    headerSummary = headerSummary.join(' · ');
+    var recZone = recScore != null
+      ? (recScore >= 67 ? 'Green' : recScore >= 34 ? 'Yellow' : 'Red')
+      : null;
+
+    // Header summary line — most-glanceable stats when the card is collapsed.
+    var summaryBits = [];
+    if(recScore != null) summaryBits.push(recScore + '% recovery');
+    if(snap.strain != null) summaryBits.push(snap.strain.toFixed(1) + ' strain');
+    if(snap.sleep_hours != null) summaryBits.push(fmtSleep(snap.sleep_hours) + ' sleep');
+    headerSummary = summaryBits.join(' · ');
+
+    // Per-workout list (Whoop activities — runs, lifts, etc.) — rendered
+    // as compact text rows below the metric grid when whoop_workouts is
+    // populated. JSON-parsed snake on the snapshot; safe-default if malformed.
+    var workoutsHtml = '';
+    if(snap.whoop_workouts){{
+      try{{
+        var wos = JSON.parse(snap.whoop_workouts);
+        if(wos && wos.length){{
+          workoutsHtml = '<div style="padding:8px 14px;border-top:1px solid var(--bd)">'+
+            '<div style="font-family:\\'Geist Mono\\',monospace;font-size:8.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--mu);margin-bottom:5px;font-weight:600">Workouts</div>';
+          wos.forEach(function(w){{
+            var parts = [];
+            if(w.strain != null) parts.push(w.strain.toFixed(1) + ' strain');
+            if(w.duration_min) parts.push(w.duration_min + ' min');
+            if(w.avg_hr) parts.push('HR ' + w.avg_hr);
+            if(w.calories) parts.push(w.calories + ' cal');
+            workoutsHtml += '<div style="display:flex;justify-content:space-between;align-items:baseline;padding:3px 0;font-size:12.5px">'+
+              '<span style="color:var(--tx);font-weight:500">'+esc(w.sport||'Workout')+'</span>'+
+              '<span style="font-family:\\'Geist Mono\\',monospace;font-size:11px;color:var(--mu)">'+esc(parts.join(' · '))+'</span>'+
+            '</div>';
+          }});
+          workoutsHtml += '</div>';
+        }}
+      }}catch(e){{}}
+    }}
+
     bodyContent =
       '<div class="wgrid">'+
-        hcell('Recovery', snap.recovery_score!=null ? snap.recovery_score+'%' : null, recColor)+
-        hcell('Strain',   snap.strain!=null ? snap.strain.toFixed(1) : null)+
-        hcell('Sleep',    fmtSleep(snap.sleep_hours))+
-        hcell('HRV',      snap.hrv!=null ? snap.hrv+' ms' : null)+
-        hcell('Resting HR', snap.resting_hr!=null ? snap.resting_hr+' bpm' : null)+
-        hcell('Sleep Perf', snap.sleep_performance_pct!=null ? Math.round(snap.sleep_performance_pct)+'%' : null)+
-      '</div>';
+        // ── Recovery row ─────────────────────────────────────────
+        hcell('Recovery',   recScore != null ? recScore + '%' : null, recColor) +
+        hcell('Zone',       recZone, recColor) +
+        hcell('HRV',        snap.hrv != null ? snap.hrv + ' ms' : null) +
+        hcell('Resting HR', snap.resting_hr != null ? snap.resting_hr + ' bpm' : null) +
+        // ── Sleep row(s) ─────────────────────────────────────────
+        hcell('Sleep',      fmtSleep(snap.sleep_hours), 'var(--bl)') +
+        hcell('Sleep Perf', snap.sleep_performance_pct != null ? Math.round(snap.sleep_performance_pct) + '%' : null) +
+        hcell('Efficiency', snap.sleep_efficiency_pct != null ? Math.round(snap.sleep_efficiency_pct) + '%' : null) +
+        hcell('Need',       fmtSleep(snap.sleep_need_hours)) +
+        hcell('Deep',       fmtSleep(snap.sleep_deep_hours)) +
+        hcell('REM',        fmtSleep(snap.sleep_rem_hours)) +
+        hcell('Resp Rate',  snap.respiratory_rate != null ? snap.respiratory_rate.toFixed(1) : null) +
+        hcell('SpO2',       snap.spo2_percentage != null ? snap.spo2_percentage.toFixed(1) + '%' : null) +
+        hcell('Skin Temp',  snap.skin_temp_celsius != null ? snap.skin_temp_celsius.toFixed(1) + '°C' : null) +
+        // ── Activity row ─────────────────────────────────────────
+        hcell('Strain',     snap.strain != null ? snap.strain.toFixed(1) + '/21' : null, 'var(--bl)') +
+        hcell('Avg HR',     snap.avg_hr != null ? snap.avg_hr + ' bpm' : null) +
+        hcell('Steps',      snap.steps != null ? snap.steps.toLocaleString() : null) +
+        hcell('Active Cal', snap.active_calories != null ? Math.round(snap.active_calories) + ' cal' : null, 'var(--or)') +
+      '</div>' + workoutsHtml;
   }}
   return '<div class="hsec open" id="hsec-whoop">'+
     '<div class="hsec-hd" onclick="toggleHsec(\\'whoop\\')">'+
