@@ -1,0 +1,1483 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>ArnieOS — Preview: New Features</title>
+<script>
+(function(){
+  var t = localStorage.getItem('arnie-theme') ||
+    (window.matchMedia('(prefers-color-scheme:light)').matches ? 'light' : 'dark');
+  document.documentElement.setAttribute('data-theme', t);
+})();
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+
+/* ── THEMES ─────────────────────────────────────────────── */
+[data-theme="dark"]{
+  --bg:#0c1018;
+  --sf:rgba(255,255,255,.05); --sf2:rgba(255,255,255,.09); --sf3:rgba(255,255,255,.14);
+  --bd:rgba(255,255,255,.10); --bd2:rgba(255,255,255,.20);
+  --ac:#00e676; --ac-rgb:0,230,118; --ac-dim:rgba(0,230,118,.13);
+  --bl:#3b82f6; --or:#f97316; --pu:#a855f7; --re:#ef4444; --ye:#eab308;
+  --tx:#eef2ff; --tx2:#c8d0e8; --mu:#6b7a99; --di:#3d4a66;
+  --sh:none; --hbg:rgba(12,16,24,.92);
+}
+[data-theme="light"]{
+  --bg:#f5f7fa;
+  --sf:rgba(255,255,255,.88); --sf2:#eef2f7; --sf3:#e4eaf3;
+  --bd:#dde4ef; --bd2:#c4cfdf;
+  --ac:#059669; --ac-rgb:5,150,105; --ac-dim:rgba(5,150,105,.10);
+  --bl:#2563eb; --or:#ea580c; --pu:#9333ea; --re:#dc2626; --ye:#d97706;
+  --tx:#0f172a; --tx2:#334155; --mu:#64748b; --di:#94a3b8;
+  --sh:0 1px 3px rgba(0,0,0,.06),0 4px 18px rgba(0,0,0,.05);
+  --hbg:rgba(245,247,250,.94);
+}
+
+/* ── BASE ────────────────────────────────────────────────── */
+html{background:var(--bg)}
+body{
+  font-family:'Geist',ui-sans-serif,system-ui,-apple-system,sans-serif;
+  background:var(--bg);color:var(--tx);min-height:100vh;
+  -webkit-font-smoothing:antialiased;
+  padding:0;
+  transition:background .35s,color .3s;letter-spacing:-.005em;
+  max-width:430px;margin:0 auto;
+  position:relative;
+}
+[data-theme="dark"] body::before{
+  content:'';position:fixed;inset:0;z-index:0;pointer-events:none;
+  background:
+    radial-gradient(ellipse 70% 55% at 10% 12%,rgba(0,230,118,.10),transparent),
+    radial-gradient(ellipse 65% 50% at 90% 78%,rgba(59,130,246,.08),transparent);
+}
+
+/* ── FEATURE PREVIEW LABEL ─────────────────────────────── */
+.preview-badge{
+  position:fixed;top:8px;right:8px;z-index:200;
+  background:var(--pu);color:#fff;font-size:9px;font-weight:600;
+  letter-spacing:.08em;text-transform:uppercase;padding:3px 8px;
+  border-radius:6px;font-family:'Geist Mono',monospace;
+  pointer-events:none;
+}
+/* Dev-only annotations for each new feature block. Toggle to `display:none`
+   for a production-clean preview; switch back to `inline-block` while
+   iterating to see what's new at a glance. */
+.feature-label{
+  display:none;
+  font-size:8px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--pu);font-family:'Geist Mono',monospace;
+  padding:2px 6px;background:rgba(168,85,247,.12);border:1px solid rgba(168,85,247,.25);
+  border-radius:4px;margin-bottom:4px;margin-top:8px;
+}
+
+/* ── PAGE HEADER ─────────────────────────────────────────── */
+.pagehead{
+  display:flex;align-items:flex-start;justify-content:space-between;
+  padding:20px 20px 12px;position:relative;z-index:1;
+}
+.ph-left{min-width:0;flex:1}
+.ph-title{
+  font-family:'Instrument Serif','Times New Roman',serif;
+  font-size:24px;font-weight:normal;letter-spacing:-.01em;color:var(--tx);line-height:1.1;
+}
+.ph-sub{
+  display:flex;align-items:center;gap:8px;margin-top:6px;
+  font-family:'Geist Mono','SF Mono',monospace;font-size:10px;
+  letter-spacing:.06em;text-transform:uppercase;color:var(--mu);
+  flex-wrap:wrap;gap:5px 8px;
+}
+.ph-dot{color:var(--di)}
+.ph-pill{
+  padding:2px 7px;border-radius:8px;font-size:9px;font-weight:600;letter-spacing:.06em;
+  background:var(--ac-dim);color:var(--ac);border:1px solid rgba(var(--ac-rgb),.2);
+}
+.hbtn{
+  background:var(--sf2);border:1px solid var(--bd);color:var(--mu);
+  width:34px;height:34px;border-radius:10px;cursor:pointer;font-size:14px;
+  display:flex;align-items:center;justify-content:center;font-family:inherit;
+  transition:all .2s;flex-shrink:0;
+}
+.hbtn:hover{border-color:var(--ac);color:var(--ac)}
+
+/* ── HEADER RIGHT CLUSTER ─────────────────────────────────── */
+.ph-right{display:flex;align-items:center;gap:8px;flex-shrink:0}
+
+/* ── STREAK CHIP (top-right) ──────────────────────────────────
+   Tiny "X-day logging streak" indicator. Lives in the page header next
+   to the theme toggle so it's always visible regardless of scroll position.
+   Accent-green chip uses the same color tokens as .ds-pill.on — done states
+   are consistent across the dashboard. Small flame glyph + tabular number.
+   In production: hidden when streak === 0 so it never reads as a guilt-chip. */
+.streak-chip{
+  display:inline-flex;align-items:center;gap:5px;
+  padding:6px 10px;border-radius:10px;
+  background:var(--ac-dim);border:1px solid rgba(var(--ac-rgb),.28);
+  color:var(--ac);
+  font-family:'Geist',sans-serif;font-size:13px;font-weight:600;
+  letter-spacing:-.01em;line-height:1;
+  cursor:pointer;transition:all .15s;
+  font-variant-numeric:tabular-nums;
+  user-select:none;
+}
+.streak-chip:hover{
+  background:rgba(var(--ac-rgb),.18);
+  border-color:rgba(var(--ac-rgb),.42);
+}
+.streak-chip:active{transform:scale(.96)}
+.streak-ico{
+  width:12px;height:12px;display:block;flex-shrink:0;
+}
+.streak-unit{
+  font-family:'Geist Mono','SF Mono',monospace;
+  font-size:9px;font-weight:500;letter-spacing:.06em;text-transform:uppercase;
+  opacity:.75;margin-left:1px;
+}
+
+/* ── DATE NAV ─────────────────────────────────────────────── */
+.dnav{display:flex;align-items:center;gap:6px;margin:0 20px 16px;position:relative;z-index:1}
+.dscroll{flex:1;display:flex;gap:6px;overflow-x:auto;scrollbar-width:none}
+.dscroll::-webkit-scrollbar{display:none}
+.dchip{
+  flex-shrink:0;padding:6px 14px;border-radius:10px;font-size:12px;font-weight:500;
+  background:var(--sf);border:1px solid var(--bd);color:var(--mu);cursor:pointer;
+  transition:all .18s;white-space:nowrap;
+}
+.dchip.active{background:var(--sf2);border-color:var(--bd2);color:var(--tx)}
+.darr{
+  background:var(--sf);border:1px solid var(--bd);color:var(--mu);
+  width:34px;height:34px;min-width:34px;border-radius:10px;cursor:pointer;
+  font-size:15px;display:flex;align-items:center;justify-content:center;
+  font-family:inherit;flex-shrink:0;transition:all .2s;
+}
+.darr:hover{border-color:var(--bd2);color:var(--tx)}
+
+/* ── SECTION TITLES ─────────────────────────────────────── */
+.stitle{
+  font-family:'Geist Mono','SF Mono',monospace;
+  font-size:10.5px;font-weight:500;color:var(--mu);text-transform:uppercase;
+  letter-spacing:.10em;margin:20px 0 8px;display:flex;align-items:center;gap:10px;
+}
+.stitle.spaced{justify-content:space-between}
+
+/* ── MAIN SCROLL ─────────────────────────────────────────── */
+/* 90px bottom padding accounts for the fixed bottom nav so the last
+   workout row never sits underneath it. */
+.main-inner{padding:0 20px 90px;position:relative;z-index:1}
+
+/* ── VERTICAL RHYTHM ─────────────────────────────────────────
+   Two consistent gap sizes across the day view:
+     · 12px between adjacent modules in the same "block" (Learn → Weight
+       → Macros → Action tiles) so they feel like one continuous surface
+     · 20px before each .stitle so section breaks (5-Day Trend, Food,
+       Workouts) read as a clear handoff to a new region
+   Internal spacing (section title → content) is built into .stitle's
+   margin-bottom (8px). Adjacent block-element margins collapse so the
+   actual gaps never compound. */
+
+/* ── ARNIE LEARNING PROGRESS — existing production component ─
+   Shown only while < 100% (the dashboard hides it once Arnie has
+   learned every dimension). Tiny barometer, not a focal point. */
+.learn-wrap{margin:0 0 12px}
+.learn-hd{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.learn-title{
+  font-family:'Geist Mono','SF Mono',monospace;font-size:9px;
+  letter-spacing:.08em;text-transform:uppercase;color:var(--mu);font-weight:500;
+  flex-shrink:0;
+}
+.learn-bar{
+  flex:1;background:var(--sf2);border-radius:999px;height:3px;overflow:hidden;
+}
+.learn-fill{
+  height:100%;background:var(--ac);border-radius:999px;opacity:.7;
+  transition:width .8s cubic-bezier(.4,0,.2,1);
+}
+.learn-pct{
+  font-family:'Geist Mono','SF Mono',monospace;font-size:9.5px;color:var(--mu);
+  flex-shrink:0;font-weight:500;
+}
+.learn-chips{display:flex;flex-wrap:wrap;gap:5px}
+.learn-chip{
+  font-size:10px;padding:3px 8px;border-radius:999px;
+  background:var(--sf);border:1px solid var(--bd);color:var(--mu);
+  font-weight:500;letter-spacing:.01em;
+}
+.learn-chip.done{
+  background:var(--ac-dim);border-color:rgba(var(--ac-rgb),.25);color:var(--ac);
+}
+
+/* ── BOTTOM NAV (mobile) — canonical inter-section access ───
+   Day · Week · Profile · Coaching. Fixed to the bottom, capped at the
+   430px body width so it doesn't span the whole viewport on desktop. */
+.bottomnav{
+  position:fixed;bottom:0;left:0;right:0;z-index:60;
+  max-width:430px;margin:0 auto;
+  display:flex;justify-content:space-around;gap:4px;
+  padding:7px 14px calc(7px + env(safe-area-inset-bottom));
+  background:var(--hbg);border-top:1px solid var(--bd);
+  backdrop-filter:blur(20px) saturate(140%);
+  -webkit-backdrop-filter:blur(20px) saturate(140%);
+}
+.bn-item{
+  flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;
+  background:transparent;border:none;
+  font-family:'Geist Mono','SF Mono',monospace;
+  font-size:9px;letter-spacing:.07em;text-transform:uppercase;
+  color:var(--mu);cursor:pointer;padding:7px 0 3px;
+  transition:color .18s, transform .18s;
+  font-weight:500;
+}
+.bn-item:hover{color:var(--tx2)}
+.bn-item:active{transform:scale(.94)}
+.bn-ico{
+  width:22px;height:22px;display:flex;align-items:center;justify-content:center;
+  transition:transform .25s cubic-bezier(.34,1.56,.64,1);
+}
+.bn-ico svg{width:20px;height:20px;display:block}
+.bn-item:hover .bn-ico{transform:translateY(-1px)}
+.bn-item.active{color:var(--ac)}
+.bn-item.active .bn-ico{color:var(--ac)}
+/* Subtle accent halo under the active item — Apple-Health-y, signals
+   "you are here" without a heavy fill or underline bar. */
+.bn-item.active::before{
+  content:'';position:absolute;
+  top:3px;left:50%;transform:translateX(-50%);
+  width:24px;height:24px;border-radius:50%;
+  background:var(--ac);opacity:.10;
+  filter:blur(8px);
+  pointer-events:none;
+}
+.bn-item{position:relative}
+
+/* ── MACRO STRIP ─────────────────────────────────────────── */
+.macro-strip{display:grid;grid-template-columns:repeat(4,1fr);gap:9px;margin-bottom:12px;}
+@media(max-width:400px){.macro-strip{grid-template-columns:repeat(2,1fr);}}
+.macro-cell{background:var(--sf);border:1px solid var(--bd);border-radius:14px;padding:12px 14px;box-shadow:var(--sh);}
+.mc-label{font-size:9px;font-weight:500;text-transform:uppercase;letter-spacing:.06em;color:var(--mu);margin-bottom:4px;}
+/* 600 (not 700) — a touch lighter so the big numbers read confident, not bold. */
+.mc-num{font-size:26px;font-weight:600;letter-spacing:-.02em;line-height:1.1;color:var(--tx);}
+.mc-sub{font-size:10px;color:var(--mu);margin-top:3px;line-height:1.3;}
+.mc-bar{background:var(--sf3);border-radius:999px;height:4px;margin-top:8px;overflow:hidden;}
+.mc-fill{height:100%;border-radius:999px;transition:width .8s cubic-bezier(.4,0,.2,1);}
+
+/* ── ★ NEW: MACRO CONSUMED/REMAINING TOGGLE ─────────────── */
+.macro-header{display:flex;align-items:center;justify-content:space-between;margin:0 0 8px}
+.macro-toggle-btn{
+  display:flex;align-items:center;gap:5px;
+  background:var(--sf);border:1px solid var(--bd);border-radius:8px;
+  padding:5px 10px;cursor:pointer;transition:all .18s;
+  font-family:'Geist Mono','SF Mono',monospace;font-size:9px;font-weight:500;
+  letter-spacing:.06em;text-transform:uppercase;color:var(--mu);
+  user-select:none;
+}
+.macro-toggle-btn:hover{border-color:var(--bd2);color:var(--tx)}
+.macro-toggle-btn.remaining{
+  background:var(--ac-dim);border-color:rgba(var(--ac-rgb),.3);color:var(--ac);
+}
+.toggle-dot{
+  width:5px;height:5px;border-radius:50%;background:currentColor;
+  transition:all .18s;
+}
+.macro-cell.remaining-mode .mc-num{color:var(--ac)}
+.macro-cell.remaining-mode .mc-label::after{content:' left'}
+
+/* ── ★ WEIGHT PROGRESS MODULE — compact, cut/bulk only ────────────
+   GOAL-CONDITIONAL: rendered ONLY when primary_goal is 'cut' or 'bulk'.
+   For maintain/performance/health users the module (and its feature label)
+   stay hidden — weight isn't a primary KPI for those goals. See
+   renderWeightModule() in the script.
+   Layout: single-row (label+value left, delta+sub right) with a thin
+   progress bar underneath. ~40% shorter than the previous 4-line stack. */
+.weight-module{
+  background:var(--sf);border:1px solid var(--bd);border-radius:12px;
+  padding:9px 12px;margin-bottom:12px;box-shadow:var(--sh);
+}
+.wm-row{display:flex;align-items:flex-end;justify-content:space-between;gap:12px}
+.wm-stack-l{display:flex;flex-direction:column;min-width:0}
+.wm-stack-r{display:flex;flex-direction:column;align-items:flex-end;gap:1px;text-align:right;flex-shrink:0}
+.wm-label{
+  font-size:9px;font-weight:500;text-transform:uppercase;letter-spacing:.06em;
+  color:var(--mu);margin-bottom:2px;line-height:1;
+}
+/* 22px (was 26px) — slightly smaller to keep the module compact while
+   still pairing visually with the macro-strip below it. */
+.wm-num{
+  font-size:22px;font-weight:600;letter-spacing:-.02em;line-height:1;color:var(--tx);
+}
+.wm-unit{font-size:12px;font-weight:500;color:var(--mu);margin-left:1px}
+/* Two-tone delta: arrow + magnitude carry the semantic color, the
+   trailing "from start" sits muted so the line reads "↓ 4.6 lbs · from
+   start" instead of one monolithic green string. Sub line drops "lbs"
+   in favor of a clean "→ goal" pointer — the unit is established above. */
+.wm-delta{
+  font-family:'Geist Mono','SF Mono',monospace;
+  font-size:10.5px;font-weight:500;letter-spacing:.02em;
+  white-space:nowrap;line-height:1.2;color:var(--mu);
+}
+.wm-delta-strong{font-weight:600}
+.wm-delta.down .wm-delta-strong{color:var(--ac)}
+.wm-delta.up   .wm-delta-strong{color:var(--or)}
+.wm-delta.flat .wm-delta-strong{color:var(--mu)}
+.wm-sub{
+  font-family:'Geist Mono','SF Mono',monospace;
+  font-size:9.5px;color:var(--mu);line-height:1.25;letter-spacing:.02em;
+}
+.wm-bar{background:var(--sf3);border-radius:999px;height:3px;margin-top:6px;overflow:hidden}
+.wm-fill{height:100%;border-radius:999px;background:var(--ac);transition:width .8s cubic-bezier(.4,0,.2,1)}
+
+/* ── ★ NEW: ACTION TILES — refined to match existing .ds-pill row ─────
+   Keeps the dashboard's quiet chip aesthetic. Same border, same surface,
+   same font sizing as .ds-pill. Single-line layout (icon + label + state)
+   so they read like an evolution of the pill row, not a separate component. */
+.action-tiles{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:0}
+.atile{
+  display:flex;align-items:center;gap:8px;
+  padding:8px 12px;border-radius:10px;
+  background:var(--sf);border:1px solid var(--bd);
+  font-family:inherit;font-size:12px;font-weight:500;
+  color:var(--tx2);cursor:pointer;text-align:left;width:100%;
+  transition:background .15s,border-color .15s,color .15s;
+  line-height:1.25;
+}
+.atile:hover{background:var(--sf2);border-color:var(--bd2);color:var(--tx)}
+.atile:active{opacity:.8}
+.atile.done{
+  background:var(--ac-dim);border-color:rgba(var(--ac-rgb),.25);
+  color:var(--tx);
+}
+.atile-ico{
+  width:14px;height:14px;display:flex;align-items:center;justify-content:center;
+  flex-shrink:0;color:var(--mu);
+}
+.atile:hover .atile-ico{color:var(--tx2)}
+.atile.done .atile-ico{color:var(--ac)}
+.atile-lbl{
+  flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  transition:opacity .2s;
+}
+/* Activity tiles in pending state read with a faded label so the eye
+   parses "incomplete" from typography, not just the dot. Done state
+   restores full opacity. Past-day pending fades further since it's
+   informational only. Uses :has() — modern browsers, no class plumbing. */
+.atile:has(.atile-dot.today) .atile-lbl{opacity:.62}
+.atile:has(.atile-dot.past)  .atile-lbl{opacity:.5}
+.atile-state{
+  font-family:'Geist Mono','SF Mono',monospace;
+  font-size:9.5px;letter-spacing:.05em;color:var(--mu);flex-shrink:0;
+}
+.atile.done .atile-state{color:var(--ac)}
+.atile.full{grid-column:1/-1}
+
+/* ── ACTIVITY-PENDING DOTS ────────────────────────────────────
+   Replaces the bare "—" placeholder on Workout/Cardio tiles when the
+   activity hasn't been logged yet. Two states:
+     · .today  → soft yellow, gentle pulse — a quiet nudge to complete
+                 the activity today (not a guilt-chip; no exclamation,
+                 no red, no count).
+     · .past   → muted gray — informational only, no nudge. Used when
+                 the user navigates to a previous day's view where the
+                 activity simply wasn't logged.
+   Sits in the same right-side state slot as ✓, so completed and pending
+   tiles align visually across the action grid. */
+.atile-dot{
+  width:7px;height:7px;border-radius:50%;
+  display:inline-block;flex-shrink:0;
+}
+.atile-dot.today{
+  background:var(--ye);
+  box-shadow:0 0 0 0 rgba(234,179,8,.35);
+  animation:dotPulse 2.6s ease-in-out infinite;
+}
+.atile-dot.past{
+  background:var(--di);opacity:.7;
+}
+@keyframes dotPulse{
+  0%,100%{box-shadow:0 0 0 0 rgba(234,179,8,.35)}
+  50%{box-shadow:0 0 0 4px rgba(234,179,8,0)}
+}
+
+/* ── ★ NEW: PWA INSTALL BANNER ───────────────────────────── */
+.pwa-banner{
+  position:fixed;bottom:0;left:0;right:0;z-index:100;
+  max-width:430px;margin:0 auto;
+  background:var(--hbg);border-top:1px solid var(--bd);
+  backdrop-filter:blur(24px) saturate(140%);
+  -webkit-backdrop-filter:blur(24px) saturate(140%);
+  padding:16px 20px calc(16px + env(safe-area-inset-bottom));
+  transform:translateY(100%);
+  transition:transform .35s cubic-bezier(.2,.7,.2,1);
+}
+.pwa-banner.visible{transform:translateY(0)}
+.pwa-banner-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+.pwa-banner-title{
+  display:flex;align-items:center;gap:9px;
+  font-size:14px;font-weight:600;color:var(--tx);
+}
+.pwa-banner-icon{
+  width:32px;height:32px;border-radius:8px;background:var(--ac);
+  display:flex;align-items:center;justify-content:center;font-size:16px;
+}
+.pwa-dismiss{
+  background:transparent;border:none;color:var(--mu);
+  width:28px;height:28px;border-radius:8px;cursor:pointer;font-size:18px;
+  display:flex;align-items:center;justify-content:center;font-family:inherit;
+  transition:color .15s;
+}
+.pwa-dismiss:hover{color:var(--tx)}
+.pwa-steps{display:flex;flex-direction:column;gap:8px;margin-bottom:14px}
+.pwa-step{
+  display:flex;align-items:center;gap:10px;
+  font-size:13px;color:var(--tx2);line-height:1.4;
+}
+.pwa-step-num{
+  width:20px;height:20px;border-radius:6px;background:var(--sf2);border:1px solid var(--bd);
+  display:flex;align-items:center;justify-content:center;flex-shrink:0;
+  font-family:'Geist Mono',monospace;font-size:10px;font-weight:600;color:var(--mu);
+}
+.pwa-btn{
+  width:100%;padding:12px;border-radius:12px;border:none;
+  background:var(--ac);color:#000;font-family:'Geist',sans-serif;
+  font-size:14px;font-weight:600;cursor:pointer;transition:opacity .15s;
+  letter-spacing:-.01em;
+}
+.pwa-btn:hover{opacity:.88}
+.pwa-later{
+  display:block;text-align:center;margin-top:10px;
+  font-size:12px;color:var(--mu);cursor:pointer;
+  background:transparent;border:none;font-family:inherit;width:100%;
+  transition:color .15s;
+}
+.pwa-later:hover{color:var(--tx)}
+
+/* ── FOOD LOG (connected list, hairline dividers, Apple-Health-y) ──
+   One bordered container holding all rows — no per-row borders/gaps. Cal
+   is right-aligned mono so the eye scans straight down the column. Qty +
+   macros collapse onto a single muted secondary line. */
+.log-section{}
+.log-section-hd{cursor:pointer;user-select:none}
+.log-section-body{overflow:hidden;transition:max-height .25s cubic-bezier(.4,0,.2,1);max-height:none}
+.add-toggle{
+  width:24px;height:24px;border-radius:7px;border:1px solid var(--bd);
+  background:var(--sf2);color:var(--mu);font-size:16px;line-height:1;
+  cursor:pointer;font-family:inherit;display:grid;place-items:center;
+  transition:all .18s;flex-shrink:0;
+}
+.add-toggle:hover{border-color:var(--ac);color:var(--ac);background:var(--ac-dim)}
+.lcrd{
+  background:var(--sf);border:1px solid var(--bd);
+  border-radius:12px;overflow:hidden;
+}
+.lrow{
+  display:flex;align-items:flex-start;gap:10px;
+  padding:8px 13px;border-bottom:1px solid var(--bd);
+  background:transparent;transition:background .12s;
+}
+.lrow:last-child{border-bottom:none}
+.lrow:hover{background:var(--sf2)}
+.lrow-main{flex:1;min-width:0}
+.lname{
+  font-size:13.5px;font-weight:500;line-height:1.3;color:var(--tx);
+  display:flex;align-items:center;gap:6px;flex-wrap:wrap;
+}
+.est-tag{
+  font-family:'Geist Mono','SF Mono',monospace;
+  font-size:8px;letter-spacing:.05em;text-transform:uppercase;
+  color:var(--ye);font-weight:500;flex-shrink:0;opacity:.8;
+}
+.est-tag::before{content:'●';font-size:6px;margin-right:2.5px;vertical-align:1px;}
+/* Single secondary line: "qty · 34p · 55c · 14f" — replaces the separate
+   .lqty + .lmac stack. Mono numbers for tabular alignment. */
+.lmeta{
+  font-size:11px;color:var(--mu);margin-top:2px;line-height:1.3;
+  font-variant-numeric:tabular-nums;
+}
+.lmeta .sep{opacity:.5;margin:0 4px}
+.lmeta b{color:var(--tx2);font-weight:500}
+/* Right-aligned cal — same mono font as the trend/state pills, so the column
+   of numbers reads coherently across the log. */
+.lcal{
+  font-family:'Geist Mono','SF Mono',monospace;
+  font-size:12px;font-weight:500;color:var(--tx2);
+  white-space:nowrap;flex-shrink:0;align-self:flex-start;
+  letter-spacing:.01em;padding-top:1px;
+}
+.lcal-unit{color:var(--mu);font-size:9.5px;margin-left:1px;letter-spacing:.06em}
+.lempty{color:var(--mu);font-size:12px;padding:14px 0;text-align:center}
+
+/* ── WEARABLE SECTIONS — production design (.hsec accordion) ─────
+   These rules mirror the existing api/templates.py wearable styling so
+   the preview's Recovery section reflects what's actually live: a
+   collapsible card per device (Whoop / Apple Health), header with
+   brand mark + name + summary + chevron, body with a 3-column metric
+   grid. Open by default in preview so all data is visible at once. */
+.hsec{
+  border:1px solid var(--bd);border-radius:12px;overflow:hidden;
+  background:var(--sf);margin-bottom:8px;
+}
+.hsec:last-child{margin-bottom:0}
+.hsec-hd{
+  display:flex;align-items:center;gap:10px;padding:11px 14px;
+  cursor:pointer;user-select:none;transition:background .15s;
+}
+.hsec-hd:hover{background:var(--sf2)}
+.hsec-brand{
+  width:15px;height:15px;display:inline-flex;align-items:center;justify-content:center;
+  flex-shrink:0;
+}
+.hsec-name{font-weight:600;font-size:14px;flex:1;color:var(--tx)}
+.hsec-summary{font-size:12px;color:var(--mu);font-weight:500;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.hsec-chev{font-size:10px;color:var(--mu);transition:transform .2s;flex-shrink:0}
+.hsec.open .hsec-chev{transform:rotate(90deg)}
+.hsec-body{border-top:1px solid var(--bd)}
+.hsec:not(.open) .hsec-body{display:none}
+.wgrid{
+  display:grid;grid-template-columns:repeat(3,1fr);
+  gap:14px 16px;padding:13px 14px;align-items:start;
+}
+.wcell{min-width:0}
+.wcell-lbl{
+  font-family:'Geist Mono','SF Mono',monospace;font-size:8.5px;
+  letter-spacing:.09em;text-transform:uppercase;color:var(--mu);
+  font-weight:600;margin-bottom:3px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.wcell-val{
+  font-size:14px;font-weight:600;color:var(--tx);
+  letter-spacing:-.01em;font-variant-numeric:tabular-nums;line-height:1.25;
+}
+.wcell-val .wcu{font-size:10px;color:var(--mu);margin-left:1px;letter-spacing:.02em;font-weight:500}
+
+/* ── EXERCISE LOG (matching connected style) ────────────────── */
+.ex-group{margin-bottom:8px}
+.ex-group:last-child{margin-bottom:0}
+.ex-group-hd{
+  font-family:'Geist Mono','SF Mono',monospace;
+  font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;
+  color:var(--mu);margin-bottom:4px;display:flex;align-items:center;gap:6px;
+}
+.ex-group-hd::after{content:'';flex:1;height:1px;background:var(--bd)}
+.ex-card{
+  background:var(--sf);border:1px solid var(--bd);
+  border-radius:12px;overflow:hidden;
+}
+.exrow{
+  display:flex;justify-content:space-between;align-items:baseline;gap:10px;
+  padding:7px 13px;border-bottom:1px solid var(--bd);
+  background:transparent;transition:background .12s;
+}
+.exrow:last-child{border-bottom:none}
+.exrow:hover{background:var(--sf2)}
+.ex-name{font-size:13.5px;font-weight:500;color:var(--tx);line-height:1.3;flex:1;min-width:0}
+.ex-meta{
+  font-family:'Geist Mono','SF Mono',monospace;
+  font-size:11px;color:var(--mu);white-space:nowrap;flex-shrink:0;letter-spacing:.01em;
+}
+
+/* ── INLINE INSIGHTS PANEL ──────────────────────────────────
+   Replaces the old standalone Coach Insights banner. Triggered by the
+   Insights tile in the action grid above — when the tile is tapped this
+   panel expands inline, when tapped again it collapses. Consolidates the
+   action area so the day view has one less stacked section. */
+.insights-panel{
+  background:var(--sf);border:1px solid var(--bd);border-radius:12px;
+  margin:0;overflow:hidden;
+  max-height:0;opacity:0;border-color:transparent;
+  transition:max-height .25s ease, opacity .2s ease, border-color .2s ease;
+}
+.insights-panel.open{
+  max-height:240px;opacity:1;border-color:var(--bd);
+  margin-top:10px;
+}
+.insights-panel-inner{padding:12px 14px}
+.insights-panel-head{
+  display:flex;align-items:center;gap:8px;margin-bottom:6px;
+}
+.insights-panel-spark{color:var(--ac);display:flex;align-items:center}
+.insights-panel-title{font-size:13px;font-weight:600;color:var(--tx)}
+.insights-panel-time{
+  font-family:'Geist Mono','SF Mono',monospace;font-size:9px;letter-spacing:.06em;
+  color:var(--mu);margin-left:auto;font-weight:500;text-transform:uppercase;
+}
+.insights-panel-body{font-size:13px;color:var(--tx2);line-height:1.5}
+
+/* ── TREND STRIP — production styling restored ──────────────
+   Matches the existing api/templates.py .tc-* rules exactly so this section
+   feels identical to the rest of the production dashboard. */
+.trend-strip{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.tcell{
+  background:var(--sf);border:1px solid var(--bd);border-radius:12px;
+  padding:11px 13px;
+}
+.tc-lbl{
+  font-family:'Geist Mono','SF Mono',monospace;font-size:9px;
+  letter-spacing:.08em;text-transform:uppercase;color:var(--mu);
+  margin-bottom:4px;font-weight:500;
+}
+.tc-val{
+  font-size:16px;font-weight:600;color:var(--tx);
+  letter-spacing:-.01em;line-height:1.15;
+  font-variant-numeric:tabular-nums;
+}
+.tc-sub{font-size:10.5px;color:var(--mu);margin-top:3px;line-height:1.3}
+.tc-dn{color:var(--ac)}
+.tc-up{color:var(--or)}
+.tc-fl{color:var(--mu)}
+
+/* ── THEME TOGGLE ────────────────────────────────────────── */
+.theme-btn{
+  position:fixed;top:12px;left:12px;z-index:200;
+  background:var(--sf2);border:1px solid var(--bd);border-radius:8px;
+  width:34px;height:34px;display:flex;align-items:center;justify-content:center;
+  cursor:pointer;font-size:14px;transition:all .15s;color:var(--mu);
+}
+.theme-btn:hover{border-color:var(--ac);color:var(--ac)}
+
+/* ── ANIMATIONS ─────────────────────────────────────────── */
+@keyframes fadeUp{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.fade-in{animation:fadeUp .28s ease}
+</style>
+</head>
+<body>
+
+<div class="preview-badge">Preview</div>
+<button class="theme-btn" onclick="toggleTheme()" title="Toggle theme">☀</button>
+
+<!-- ★ FEATURE 2: PWA INSTALL BANNER -->
+<div class="pwa-banner" id="pwa-banner">
+  <div class="pwa-banner-head">
+    <div class="pwa-banner-title">
+      <div class="pwa-banner-icon">📊</div>
+      Add to Home Screen
+    </div>
+    <button class="pwa-dismiss" onclick="dismissPwa()" aria-label="Dismiss">✕</button>
+  </div>
+  <div class="pwa-steps" id="pwa-steps">
+    <!-- filled by JS based on platform -->
+  </div>
+  <button class="pwa-btn" id="pwa-install-btn" onclick="triggerInstall()">Add to Home Screen</button>
+  <button class="pwa-later" onclick="dismissPwa()">Maybe later</button>
+</div>
+
+<!-- PAGE HEAD -->
+<div class="pagehead">
+  <div class="ph-left">
+    <div class="ph-title">Monday</div>
+    <div class="ph-sub">
+      <span>Jun 9</span>
+      <span class="ph-dot">·</span>
+      <span class="ph-pill">Cut</span>
+      <span class="ph-dot">·</span>
+      <span>Danny</span>
+    </div>
+  </div>
+  <div class="ph-right">
+    <!-- Streak chip — taps to show streak details. In production this would
+         either open a small popover with last-N-days dots or scroll to a
+         streak-history module. Hidden entirely when streak === 0.
+         Flame icon is a stroke SVG (Lucide-style) so it reads clearly at 12px. -->
+    <div class="streak-chip" id="streak-chip" title="12-day logging streak" onclick="handleStreakTap()">
+      <svg class="streak-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.07-2.14-.22-4.05 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.15.43-2.29 1-3a2.5 2.5 0 0 0 2.5 2.5z"/>
+      </svg>
+      <span class="streak-num">12</span>
+      <span class="streak-unit">d</span>
+    </div>
+    <button class="hbtn" title="Theme" onclick="toggleTheme()">◑</button>
+  </div>
+</div>
+
+<!-- DATE NAV -->
+<div class="dnav">
+  <button class="darr" onclick="">‹</button>
+  <div class="dscroll" id="date-chips">
+    <div class="dchip">Jun 5</div>
+    <div class="dchip">Jun 6</div>
+    <div class="dchip">Jun 7</div>
+    <div class="dchip">Jun 8</div>
+    <div class="dchip active">Jun 9</div>
+  </div>
+  <button class="darr" disabled>›</button>
+</div>
+
+<!-- MAIN SCROLL -->
+<div class="main-inner">
+
+  <!-- ARNIE LEARNING PROGRESS — existing production component
+       Hides automatically once all 5 dimensions are learned (100%). -->
+  <div class="feature-label">Existing — Arnie Learning Progress</div>
+  <div class="learn-wrap" id="learn-wrap">
+    <div class="learn-hd">
+      <span class="learn-title">Arnie is learning</span>
+      <div class="learn-bar"><div class="learn-fill" style="width:60%"></div></div>
+      <span class="learn-pct">60%</span>
+    </div>
+    <div class="learn-chips">
+      <span class="learn-chip done">Goals</span>
+      <span class="learn-chip done">Eating</span>
+      <span class="learn-chip done">Weight</span>
+      <span class="learn-chip">Training</span>
+      <span class="learn-chip">Recovery</span>
+    </div>
+  </div>
+
+  <!-- ★ FEATURE 3: WEIGHT PROGRESS MODULE — compact, cut/bulk users only.
+       Visibility is goal-conditional: rendered only when primary_goal is
+       'cut' or 'bulk'. For other goals the entire block (label + module)
+       is hidden by renderWeightModule(). -->
+  <div class="feature-label" id="wm-feature-label">Feature 3 — Weight Module · cut/bulk only</div>
+  <div class="weight-module" id="weight-module">
+    <div class="wm-row">
+      <div class="wm-stack-l">
+        <div class="wm-label">Weight</div>
+        <div><span class="wm-num" id="wm-val">187.4</span><span class="wm-unit">lbs</span></div>
+      </div>
+      <div class="wm-stack-r">
+        <div class="wm-delta down" id="wm-delta">
+          <span class="wm-delta-strong"><span id="wm-delta-arrow">↓</span> <span id="wm-delta-val">4.6 lbs</span></span> from start
+        </div>
+        <div class="wm-sub" id="wm-sub">9.4 lbs to go &nbsp;→&nbsp; 178.0</div>
+      </div>
+    </div>
+    <div class="wm-bar"><div class="wm-fill" id="wm-fill" style="width:46%"></div></div>
+  </div>
+
+  <!-- ★ FEATURE 4: CONSUMED / REMAINING TOGGLE -->
+  <div class="feature-label">Feature 4 — Macro Toggle</div>
+  <div class="macro-header">
+    <div style="font-family:'Geist Mono',monospace;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--mu)">Macros</div>
+    <button class="macro-toggle-btn" id="macro-toggle" onclick="toggleMacroView()">
+      <span class="toggle-dot"></span>
+      <span id="macro-toggle-lbl">Consumed</span>
+    </button>
+  </div>
+
+  <div class="macro-strip" id="macro-strip">
+    <div class="macro-cell" id="mc-cal">
+      <div class="mc-label">Calories</div>
+      <div class="mc-num" id="cal-val">1,850</div>
+      <div class="mc-sub" id="cal-sub">/ 2,300 (80%)</div>
+      <div class="mc-bar"><div class="mc-fill" id="cal-bar" style="background:var(--ac);width:80%"></div></div>
+    </div>
+    <div class="macro-cell" id="mc-pro">
+      <div class="mc-label">Protein</div>
+      <div class="mc-num" id="pro-val">168<span style="font-size:14px;font-weight:500">g</span></div>
+      <div class="mc-sub" id="pro-sub">/ 185g (91%)</div>
+      <div class="mc-bar"><div class="mc-fill" id="pro-bar" style="background:var(--bl);width:91%"></div></div>
+    </div>
+    <div class="macro-cell" id="mc-carb">
+      <div class="mc-label">Carbs</div>
+      <div class="mc-num" id="carb-val">195<span style="font-size:14px;font-weight:500">g</span></div>
+      <div class="mc-sub" id="carb-sub">grams</div>
+      <div class="mc-bar" style="display:none"><div class="mc-fill" id="carb-bar" style="background:var(--or);width:0%"></div></div>
+    </div>
+    <div class="macro-cell" id="mc-fat">
+      <div class="mc-label">Fats</div>
+      <div class="mc-num" id="fat-val">58<span style="font-size:14px;font-weight:500">g</span></div>
+      <div class="mc-sub" id="fat-sub">grams</div>
+      <div class="mc-bar" style="display:none"><div class="mc-fill" id="fat-bar" style="background:var(--ye);width:0%"></div></div>
+    </div>
+  </div>
+
+  <!-- ★ FEATURE 5: ACTION TILE REDESIGN (refined to match .ds-pill aesthetic) -->
+  <div class="feature-label">Feature 5 — Action Tiles</div>
+  <div class="action-tiles" id="action-tiles">
+    <!-- Top row: Insights (replaces Switch view — Week is handled by bottom nav)
+         · Share day. Tapping Insights expands the inline panel below. -->
+    <button class="atile" id="tile-insights" onclick="handleInsights()">
+      <svg class="atile-ico" viewBox="0 0 16 16" fill="currentColor">
+        <path d="M8 1.4l1.1 3.2 3.2 1.1-3.2 1.1L8 10l-1.1-3.2L3.7 5.7l3.2-1.1z"/>
+        <path d="M12.6 9.4l.55 1.45 1.45.55-1.45.55-.55 1.45-.55-1.45L10.6 11.4l1.45-.55z" opacity=".75"/>
+      </svg>
+      <span class="atile-lbl">Insights</span>
+      <span class="atile-state">3h</span>
+    </button>
+    <button class="atile" onclick="handleShareDay()">
+      <svg class="atile-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M8 2v9M5 5l3-3 3 3M3 11v2a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1v-2"/>
+      </svg>
+      <span class="atile-lbl">Share day</span>
+    </button>
+    <!-- Bottom row: Workout | Cardio -->
+    <button class="atile done" id="tile-workout" onclick="handleWorkout()">
+      <svg class="atile-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M3 6v4M13 6v4M5 5v6M11 5v6M1 8h2M13 8h2"/>
+      </svg>
+      <span class="atile-lbl">Workout</span>
+      <span class="atile-state">✓</span>
+    </button>
+    <button class="atile" id="tile-cardio" onclick="handleCardio()">
+      <svg class="atile-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="11" cy="3" r="1.5"/>
+        <path d="M5 14l2-4 2 2 3-4M5 9l-3-2"/>
+      </svg>
+      <span class="atile-lbl">Cardio</span>
+      <span class="atile-dot today" aria-label="Not logged today"></span>
+    </button>
+    <!-- Water tile: only shown if logged -->
+    <button class="atile done full" id="tile-water">
+      <svg class="atile-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M8 2l3.5 5.5a4.2 4.2 0 1 1-7 0L8 2z"/>
+      </svg>
+      <span class="atile-lbl">Water</span>
+      <span class="atile-state">2.1 L</span>
+    </button>
+  </div>
+
+  <!-- Inline Coach Insights panel — collapsed by default, expanded by the
+       Insights tile above. Replaces the previous standalone banner; same
+       content, less stacking. -->
+  <div class="insights-panel" id="insights-panel">
+    <div class="insights-panel-inner">
+      <div class="insights-panel-head">
+        <span class="insights-panel-spark">
+          <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor">
+            <path d="M8 1.4l1.1 3.2 3.2 1.1-3.2 1.1L8 10l-1.1-3.2L3.7 5.7l3.2-1.1z"/>
+          </svg>
+        </span>
+        <span class="insights-panel-title">Coach Insights</span>
+        <span class="insights-panel-time">3h ago</span>
+      </div>
+      <div class="insights-panel-body">
+        Protein on track — 91% of target with solid distribution across the day. Upper-body session looked dialed; rows + pull-ups balance the press volume cleanly. The 30-min incline walk after lifting is the right cardio dose on a cut. Keep this rhythm through the week.
+      </div>
+    </div>
+  </div>
+
+  <!-- 5-DAY TREND — production fixed 3-cell layout: Calories · Protein · Weight. -->
+  <div class="stitle">5-day trend <span style="font-weight:400;opacity:.55;font-size:9px;letter-spacing:.04em">LAST 5 DAYS</span></div>
+  <div class="trend-strip">
+    <div class="tcell">
+      <div class="tc-lbl">Calories</div>
+      <div class="tc-val"><span class="tc-dn">↓</span> 2,104</div>
+      <div class="tc-sub">2,104/2,300 target</div>
+    </div>
+    <div class="tcell">
+      <div class="tc-lbl">Protein</div>
+      <div class="tc-val"><span class="tc-up">↑</span> 174g</div>
+      <div class="tc-sub">174g/185g target</div>
+    </div>
+    <div class="tcell">
+      <div class="tc-lbl">Weight</div>
+      <div class="tc-val"><span class="tc-dn">↓</span> 187.4</div>
+      <div class="tc-sub">−1.2 lb over 5 entries</div>
+    </div>
+  </div>
+
+  <!-- FOOD LOG -->
+  <div class="log-section">
+    <div class="stitle spaced log-section-hd">
+      <span>Food <span style="font-weight:400;opacity:.7">6 items</span></span>
+      <button class="add-toggle">+</button>
+    </div>
+    <div class="log-section-body">
+      <div class="lcrd" id="food-log">
+        <div class="lrow">
+          <div class="lrow-main">
+            <div class="lname">3 eggs scrambled + oats</div>
+            <div class="lmeta">2 eggs large + ½ cup oats<span class="sep">·</span><b>34</b>p<span class="sep">·</span><b>55</b>c<span class="sep">·</span><b>14</b>f</div>
+          </div>
+          <div class="lcal">510<span class="lcal-unit">cal</span></div>
+        </div>
+        <div class="lrow">
+          <div class="lrow-main">
+            <div class="lname">Chipotle — double chicken bowl</div>
+            <div class="lmeta">no rice, fajita veg, salsa<span class="sep">·</span><b>62</b>p<span class="sep">·</span><b>42</b>c<span class="sep">·</span><b>12</b>f</div>
+          </div>
+          <div class="lcal">520<span class="lcal-unit">cal</span></div>
+        </div>
+        <div class="lrow">
+          <div class="lrow-main">
+            <div class="lname">Salmon fillet</div>
+            <div class="lmeta">200g, pan-seared<span class="sep">·</span><b>44</b>p<span class="sep">·</span><b>0</b>c<span class="sep">·</span><b>22</b>f</div>
+          </div>
+          <div class="lcal">410<span class="lcal-unit">cal</span></div>
+        </div>
+        <div class="lrow">
+          <div class="lrow-main">
+            <div class="lname">Asparagus + olive oil <span class="est-tag">est</span></div>
+            <div class="lmeta">1 cup, roasted<span class="sep">·</span><b>4</b>p<span class="sep">·</span><b>8</b>c<span class="sep">·</span><b>4</b>f</div>
+          </div>
+          <div class="lcal">80<span class="lcal-unit">cal</span></div>
+        </div>
+        <div class="lrow">
+          <div class="lrow-main">
+            <div class="lname">Whey protein shake</div>
+            <div class="lmeta">1 scoop, water<span class="sep">·</span><b>25</b>p<span class="sep">·</span><b>4</b>c<span class="sep">·</span><b>2</b>f</div>
+          </div>
+          <div class="lcal">130<span class="lcal-unit">cal</span></div>
+        </div>
+        <div class="lrow">
+          <div class="lrow-main">
+            <div class="lname">Greek yogurt with berries <span class="est-tag">est</span></div>
+            <div class="lmeta">photo logged<span class="sep">·</span><b>22</b>p<span class="sep">·</span><b>14</b>c<span class="sep">·</span><b>1</b>f</div>
+          </div>
+          <div class="lcal">200<span class="lcal-unit">cal</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- WORKOUT LOG -->
+  <div class="log-section">
+    <div class="stitle spaced log-section-hd">
+      <span>Workouts</span>
+      <button class="add-toggle">+</button>
+    </div>
+    <div class="log-section-body">
+      <div id="ex-log">
+        <!-- Cardio not logged today → tile shows a pending yellow dot, and
+             the workout log has no Cardio group (only the Strength session
+             below). When user logs cardio, the dot flips to ✓ and a Cardio
+             group renders here automatically. -->
+        <div class="ex-group">
+          <div class="ex-group-hd">Strength</div>
+          <div class="ex-card">
+            <div class="exrow">
+              <div class="ex-name">Bench Press</div>
+              <div class="ex-meta">4×8 · 185 lb</div>
+            </div>
+            <div class="exrow">
+              <div class="ex-name">Incline Dumbbell Press</div>
+              <div class="ex-meta">3×10 · 65 lb</div>
+            </div>
+            <div class="exrow">
+              <div class="ex-name">Cable Rows</div>
+              <div class="ex-meta">4×12 · 140 lb</div>
+            </div>
+            <div class="exrow">
+              <div class="ex-name">Pull-ups</div>
+              <div class="ex-meta">3×8 · bodyweight</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- RECOVERY / WEARABLES — LAST section on the day view. Mirrors the
+       live dashboard's existing .hsec accordion design (api/templates.py):
+       a collapsible card per device. Sits at the bottom because wearable
+       data is supporting context, not a primary KPI — read after the
+       user's logged work for the day. -->
+  <div class="log-section">
+    <div class="stitle spaced">
+      <span>Recovery</span>
+      <span style="font-family:'Geist Mono',monospace;font-size:9px;letter-spacing:.04em;color:var(--mu);opacity:.55">JUN 9</span>
+    </div>
+
+    <!-- WHOOP -->
+    <div class="hsec open" id="hsec-whoop">
+      <div class="hsec-hd" onclick="document.getElementById('hsec-whoop').classList.toggle('open')">
+        <span class="hsec-brand">
+          <svg viewBox="0 0 24 24" width="15" height="15">
+            <circle cx="12" cy="12" r="9" fill="none" stroke="var(--sf3)" stroke-width="3.2"/>
+            <circle cx="12" cy="12" r="9" fill="none" stroke="var(--ac)" stroke-width="3.2"
+                    stroke-dasharray="45 14" stroke-linecap="round" transform="rotate(-90 12 12)"/>
+          </svg>
+        </span>
+        <span class="hsec-name">Whoop</span>
+        <span class="hsec-summary">78% recovery · 7h 34m sleep</span>
+        <span class="hsec-chev">▶</span>
+      </div>
+      <div class="hsec-body">
+        <div class="wgrid">
+          <div class="wcell">
+            <div class="wcell-lbl">Recovery</div>
+            <div class="wcell-val">78<span class="wcu">%</span></div>
+          </div>
+          <div class="wcell">
+            <div class="wcell-lbl">Strain</div>
+            <div class="wcell-val">12.4</div>
+          </div>
+          <div class="wcell">
+            <div class="wcell-lbl">Sleep</div>
+            <div class="wcell-val">7h 34m</div>
+          </div>
+          <div class="wcell">
+            <div class="wcell-lbl">HRV</div>
+            <div class="wcell-val">62<span class="wcu">ms</span></div>
+          </div>
+          <div class="wcell">
+            <div class="wcell-lbl">Resting HR</div>
+            <div class="wcell-val">56<span class="wcu">bpm</span></div>
+          </div>
+          <div class="wcell">
+            <div class="wcell-lbl">Sleep Perf</div>
+            <div class="wcell-val">92<span class="wcu">%</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- APPLE HEALTH -->
+    <div class="hsec open" id="hsec-apple">
+      <div class="hsec-hd" onclick="document.getElementById('hsec-apple').classList.toggle('open')">
+        <span class="hsec-brand">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke-width="2.8" stroke-linecap="round">
+            <circle cx="12" cy="12" r="9" stroke="#fa114f" stroke-dasharray="44 13" transform="rotate(-90 12 12)"/>
+            <circle cx="12" cy="12" r="6"  stroke="#a0ff03" stroke-dasharray="32 6" transform="rotate(-90 12 12)"/>
+            <circle cx="12" cy="12" r="3"  stroke="#00d3f3" stroke-dasharray="17 2" transform="rotate(-90 12 12)"/>
+          </svg>
+        </span>
+        <span class="hsec-name">Apple Health</span>
+        <span class="hsec-summary">9,247 steps · 420 active cal</span>
+        <span class="hsec-chev">▶</span>
+      </div>
+      <div class="hsec-body">
+        <div class="wgrid">
+          <div class="wcell">
+            <div class="wcell-lbl">Steps</div>
+            <div class="wcell-val">9,247</div>
+          </div>
+          <div class="wcell">
+            <div class="wcell-lbl">Active</div>
+            <div class="wcell-val">420<span class="wcu">cal</span></div>
+          </div>
+          <div class="wcell">
+            <div class="wcell-lbl">Resting</div>
+            <div class="wcell-val">1,820<span class="wcu">cal</span></div>
+          </div>
+          <div class="wcell">
+            <div class="wcell-lbl">Distance</div>
+            <div class="wcell-val">4.8<span class="wcu">mi</span></div>
+          </div>
+          <div class="wcell">
+            <div class="wcell-lbl">Stand</div>
+            <div class="wcell-val">11<span class="wcu">/12</span></div>
+          </div>
+          <div class="wcell">
+            <div class="wcell-lbl">Resting HR</div>
+            <div class="wcell-val">58<span class="wcu">bpm</span></div>
+          </div>
+          <div class="wcell">
+            <div class="wcell-lbl">Walking HR</div>
+            <div class="wcell-val">92<span class="wcu">bpm</span></div>
+          </div>
+          <div class="wcell">
+            <div class="wcell-lbl">Heart Rate</div>
+            <div class="wcell-val">78<span class="wcu">bpm</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /main-inner -->
+
+<!-- BOTTOM NAV (mobile) — canonical access to all 4 dashboard sections.
+     Icons are stroke-only Lucide-family glyphs that match the rest of the
+     dashboard's visual language (the streak flame, action tile icons,
+     header buttons). 1.5px stroke, round caps, no fills. -->
+<nav class="bottomnav">
+  <!-- DAY: a "today marker" — outer ring + filled center dot, like a
+       target. Reads as "the day you're on now" more clearly than a sun. -->
+  <button class="bn-item active" onclick="switchSection('day')">
+    <span class="bn-ico">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="8.5"/>
+        <circle cx="12" cy="12" r="2.5" fill="currentColor" stroke="none"/>
+      </svg>
+    </span>
+    Day
+  </button>
+  <!-- WEEK: a clean trend line — communicates "see the arc across days"
+       rather than a literal calendar, which felt visually busy. -->
+  <button class="bn-item" onclick="switchSection('week')">
+    <span class="bn-ico">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M3.5 17l5-5 3.5 3.5 8-8.5"/>
+        <path d="M15 7h5.5v5.5"/>
+      </svg>
+    </span>
+    Week
+  </button>
+  <!-- PROFILE: simplified head + shoulders. Round head, single shoulder
+       arc — fewer path segments, more modern. -->
+  <button class="bn-item" onclick="switchSection('profile')">
+    <span class="bn-ico">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="8.5" r="3.5"/>
+        <path d="M5.5 20.5c.7-3.5 3.4-5.5 6.5-5.5s5.8 2 6.5 5.5"/>
+      </svg>
+    </span>
+    Profile
+  </button>
+  <!-- COACHING: dual sparkle, same shape family as the Insights tile
+       so AI-coaching content speaks one visual dialect across the app. -->
+  <button class="bn-item" onclick="switchSection('coaching')">
+    <span class="bn-ico">
+      <svg viewBox="0 0 24 24" fill="currentColor">
+        <path d="M11 3l1.5 4.6L17 9l-4.5 1.4L11 15l-1.5-4.6L5 9l4.5-1.4z"/>
+        <path d="M18 14l.7 2.3 2.3.7-2.3.7-.7 2.3-.7-2.3-2.3-.7 2.3-.7z" opacity=".7"/>
+      </svg>
+    </span>
+    Coaching
+  </button>
+</nav>
+
+<script>
+// ── Mock data ────────────────────────────────────────────────
+const MOCK = {
+  profile: { name: 'Danny', primary_goal: 'cut', current_weight_lbs: 187.4, goal_weight_lbs: 178.0 },
+  targets: { calories: 2300, protein: 185 },
+  day: {
+    calories: 1850, protein: 168, carbs: 195, fats: 58,
+    water_ml: 2100, workout_completed: true, cardio_completed: false,
+  },
+  weights: [
+    { date: '2026-05-20', lbs: 192.0 },
+    { date: '2026-05-27', lbs: 190.8 },
+    { date: '2026-06-02', lbs: 189.4 },
+    { date: '2026-06-05', lbs: 188.6 },
+    { date: '2026-06-07', lbs: 188.1 },
+    { date: '2026-06-09', lbs: 187.4 },
+  ],
+  // Current consecutive-logging streak. Computed nightly in production from
+  // food/exercise/weight entries. Chip hides below STREAK_MIN_DAYS.
+  streak_days: 12,
+};
+
+// Minimum streak before the chip appears. New users start at 0 — we don't
+// want a "1 d" or "2 d" chip cluttering the header and feeling like
+// premature gamification. Three days is the lowest count that reads as a
+// real habit worth surfacing.
+const STREAK_MIN_DAYS = 3;
+
+// ── Theme ────────────────────────────────────────────────────
+function toggleTheme() {
+  const cur = document.documentElement.getAttribute('data-theme');
+  const next = cur === 'dark' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', next);
+  localStorage.setItem('arnie-theme', next);
+}
+
+// ── ★ FEATURE 4: Macro Toggle ────────────────────────────────
+let _macroView = 'consumed'; // 'consumed' | 'remaining'
+const CONSUMED = { cal: 1850, pro: 168, carb: 195, fat: 58 };
+const TARGETS  = { cal: 2300, pro: 185 };
+
+function toggleMacroView() {
+  _macroView = _macroView === 'consumed' ? 'remaining' : 'consumed';
+  const btn = document.getElementById('macro-toggle');
+  const lbl = document.getElementById('macro-toggle-lbl');
+  const strip = document.getElementById('macro-strip');
+  const cells = strip.querySelectorAll('.macro-cell');
+
+  if (_macroView === 'remaining') {
+    btn.classList.add('remaining');
+    lbl.textContent = 'Remaining';
+    // Update values to remaining
+    document.getElementById('cal-val').textContent = Math.max(0, TARGETS.cal - CONSUMED.cal).toLocaleString();
+    document.getElementById('cal-sub').textContent = 'calories left';
+    document.getElementById('cal-bar').style.width = Math.max(0, Math.min(100, (TARGETS.cal - CONSUMED.cal) / TARGETS.cal * 100)) + '%';
+
+    document.getElementById('pro-val').innerHTML = Math.max(0, TARGETS.pro - CONSUMED.pro) + '<span style="font-size:14px;font-weight:500">g</span>';
+    document.getElementById('pro-sub').textContent = 'protein left';
+    document.getElementById('pro-bar').style.width = Math.max(0, Math.min(100, (TARGETS.pro - CONSUMED.pro) / TARGETS.pro * 100)) + '%';
+
+    document.getElementById('carb-val').innerHTML = '—<span style="font-size:14px;font-weight:500"></span>';
+    document.getElementById('carb-sub').textContent = 'no target';
+
+    document.getElementById('fat-val').innerHTML = '—<span style="font-size:14px;font-weight:500"></span>';
+    document.getElementById('fat-sub').textContent = 'no target';
+
+    cells.forEach(c => c.classList.add('remaining-mode'));
+    // Remaining: accent color for bars
+    document.getElementById('cal-bar').style.background = 'var(--ac)';
+    document.getElementById('pro-bar').style.background = 'var(--ac)';
+  } else {
+    btn.classList.remove('remaining');
+    lbl.textContent = 'Consumed';
+    // Restore consumed values
+    document.getElementById('cal-val').textContent = CONSUMED.cal.toLocaleString();
+    document.getElementById('cal-sub').textContent = '/ 2,300 (80%)';
+    document.getElementById('cal-bar').style.width = '80%';
+    document.getElementById('cal-bar').style.background = 'var(--ac)';
+
+    document.getElementById('pro-val').innerHTML = CONSUMED.pro + '<span style="font-size:14px;font-weight:500">g</span>';
+    document.getElementById('pro-sub').textContent = '/ 185g (91%)';
+    document.getElementById('pro-bar').style.width = '91%';
+    document.getElementById('pro-bar').style.background = 'var(--bl)';
+
+    document.getElementById('carb-val').innerHTML = CONSUMED.carb + '<span style="font-size:14px;font-weight:500">g</span>';
+    document.getElementById('carb-sub').textContent = 'grams';
+
+    document.getElementById('fat-val').innerHTML = CONSUMED.fat + '<span style="font-size:14px;font-weight:500">g</span>';
+    document.getElementById('fat-sub').textContent = 'grams';
+
+    cells.forEach(c => c.classList.remove('remaining-mode'));
+  }
+}
+
+// ── ★ FEATURE 3: Weight Module ───────────────────────────────
+// VISIBILITY RULE: rendered ONLY when primary_goal === 'cut' || 'bulk'.
+// For maintain/performance/health users, weight is not the primary KPI —
+// we hide the entire module (and its feature-label) so the day view stays
+// focused on what matters for that goal. This mirrors the production code's
+// handling: the bot's _VALID_GOALS set is {cut, bulk, maintain, performance,
+// health} (see api/app.py line 705).
+function renderWeightModule() {
+  const goal = MOCK.profile.primary_goal;
+  const goalLbs = MOCK.profile.goal_weight_lbs;
+  const module = document.getElementById('weight-module');
+  const fLabel = document.getElementById('wm-feature-label');
+  if (!module) return;
+
+  const eligible = goal === 'cut' || goal === 'bulk';
+  if (!eligible) {
+    module.style.display = 'none';
+    if (fLabel) fLabel.style.display = 'none';
+    return;
+  }
+
+  const weights = MOCK.weights;
+  if (!weights.length) {
+    module.style.display = 'none';
+    if (fLabel) fLabel.style.display = 'none';
+    return;
+  }
+
+  const current = weights[weights.length - 1].lbs;
+  const start = weights[0].lbs;
+  const delta = current - start;
+  const isCut = goal === 'cut';
+  const goingRightWay = (isCut && delta < 0) || (!isCut && delta > 0);
+
+  document.getElementById('wm-val').textContent = current.toFixed(1);
+
+  const deltaEl = document.getElementById('wm-delta');
+  const absDelta = Math.abs(delta).toFixed(1);
+  deltaEl.className = 'wm-delta ' + (Math.abs(delta) < 0.2 ? 'flat' : goingRightWay ? 'down' : 'up');
+  document.getElementById('wm-delta-arrow').textContent = Math.abs(delta) < 0.2 ? '→' : (delta < 0 ? '↓' : '↑');
+  document.getElementById('wm-delta-val').textContent = absDelta + ' lbs';
+
+  // Sub line: "9.4 lbs to go → 178.0". "lbs to go" reads naturally; the
+  // arrow + goal weight on the right is a quiet pointer to the destination.
+  if (goalLbs) {
+    const totalDistance = Math.abs(start - goalLbs);
+    const traveled = Math.abs(start - current);
+    const remaining = Math.max(0, Math.abs(current - goalLbs));
+    const pct = totalDistance ? Math.max(0, Math.min(100, (traveled / totalDistance) * 100)) : 0;
+    document.getElementById('wm-sub').innerHTML =
+      remaining.toFixed(1) + ' lbs to go &nbsp;→&nbsp; ' + goalLbs.toFixed(1);
+    document.getElementById('wm-fill').style.width = pct + '%';
+  } else {
+    document.getElementById('wm-sub').textContent = weights.length + ' weigh-ins';
+    document.getElementById('wm-fill').parentNode.style.display = 'none';
+  }
+}
+
+// ── ★ FEATURE 5: Action Tiles ────────────────────────────────
+// Insights tile — replaces the old Switch View shortcut (which duplicated
+// the bottom-nav Week tab). Tap expands the inline Coach Insights panel;
+// tap again collapses it. Tile reflects open/closed state via .done class.
+function handleInsights() {
+  const tile = document.getElementById('tile-insights');
+  const panel = document.getElementById('insights-panel');
+  const state = tile.querySelector('.atile-state');
+  const willOpen = !panel.classList.contains('open');
+  panel.classList.toggle('open', willOpen);
+  tile.classList.toggle('done', willOpen);
+  state.textContent = willOpen ? '−' : '3h';
+}
+
+function handleShareDay() {
+  const text = '📊 My day — Jun 9\n🔥 Calories: 1,850/2,300\n💪 Protein: 168g/185g\n🏋️ Workout: done';
+  if (navigator.share) {
+    navigator.share({ title: 'Arnie — Day Summary', text }).catch(() => {});
+  } else {
+    navigator.clipboard.writeText(text).then(() => {
+      const tile = event.currentTarget;
+      const lbl = tile.querySelector('.atile-lbl');
+      const old = lbl.textContent;
+      lbl.textContent = '✓ Copied';
+      setTimeout(() => lbl.textContent = old, 1500);
+    });
+  }
+}
+
+// Workout/Cardio tile toggle. Swaps the right-side indicator between
+// ✓ (done, green) and a yellow "pending today" dot. For previous-day views,
+// pending would use the .past gray dot instead — see setActivityPending().
+function handleWorkout() { toggleActivityTile('tile-workout', 'Workout'); }
+function handleCardio()  { toggleActivityTile('tile-cardio',  'Cardio'); }
+
+function toggleActivityTile(tileId, label) {
+  const tile = document.getElementById(tileId);
+  const slot = tile.querySelector('.atile-state, .atile-dot');
+  const becomingDone = !tile.classList.contains('done');
+  tile.classList.toggle('done', becomingDone);
+  if (becomingDone) {
+    // Swap dot → ✓ checkmark
+    const check = document.createElement('span');
+    check.className = 'atile-state';
+    check.textContent = '✓';
+    slot.replaceWith(check);
+  } else {
+    // Swap ✓ → yellow pending dot (today). For past days, caller can
+    // re-tag the dot's class to .past instead.
+    const dot = document.createElement('span');
+    dot.className = 'atile-dot today';
+    dot.setAttribute('aria-label', 'Not logged today');
+    slot.replaceWith(dot);
+  }
+}
+
+// ── ★ FEATURE 2: PWA Install Banner ─────────────────────────
+let _deferredInstall = null;
+
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  _deferredInstall = e;
+  showPwaBanner('android');
+});
+
+function detectPlatform() {
+  const ua = navigator.userAgent;
+  if (/iPhone|iPad|iPod/.test(ua)) return 'ios';
+  if (/Android/.test(ua)) return 'android';
+  return 'desktop';
+}
+
+function showPwaBanner(platform) {
+  if (localStorage.getItem('arnie-pwa-dismissed')) return;
+  const banner = document.getElementById('pwa-banner');
+  const steps = document.getElementById('pwa-steps');
+  const installBtn = document.getElementById('pwa-install-btn');
+
+  if (platform === 'ios') {
+    steps.innerHTML = `
+      <div class="pwa-step">
+        <div class="pwa-step-num">1</div>
+        <span>Tap the <strong>Share</strong> button (↑) at the bottom of Safari</span>
+      </div>
+      <div class="pwa-step">
+        <div class="pwa-step-num">2</div>
+        <span>Scroll down and tap <strong>"Add to Home Screen"</strong></span>
+      </div>
+      <div class="pwa-step">
+        <div class="pwa-step-num">3</div>
+        <span>Tap <strong>Add</strong> to confirm</span>
+      </div>`;
+    installBtn.textContent = 'Got it';
+    installBtn.onclick = dismissPwa;
+  } else if (platform === 'android') {
+    steps.innerHTML = `
+      <div class="pwa-step">
+        <div class="pwa-step-num">1</div>
+        <span>Tap <strong>Add to Home Screen</strong> below</span>
+      </div>
+      <div class="pwa-step">
+        <div class="pwa-step-num">2</div>
+        <span>Tap <strong>Install</strong> to confirm</span>
+      </div>`;
+    installBtn.textContent = 'Add to Home Screen';
+  } else {
+    // Desktop — show a simplified hint
+    steps.innerHTML = `
+      <div class="pwa-step">
+        <div class="pwa-step-num">1</div>
+        <span>Click the install icon <strong>(⊕)</strong> in your browser's address bar</span>
+      </div>`;
+    installBtn.textContent = 'Install App';
+  }
+
+  requestAnimationFrame(() => banner.classList.add('visible'));
+}
+
+function triggerInstall() {
+  if (_deferredInstall) {
+    _deferredInstall.prompt();
+    _deferredInstall.userChoice.then(() => {
+      _deferredInstall = null;
+      dismissPwa();
+    });
+  } else {
+    dismissPwa();
+  }
+}
+
+function dismissPwa() {
+  const banner = document.getElementById('pwa-banner');
+  banner.classList.remove('visible');
+  localStorage.setItem('arnie-pwa-dismissed', '1');
+}
+
+// ── Bottom nav: switch sections ──────────────────────────────
+// In production this calls switchTab(name) — the main panel swaps to the
+// matching tab (week, profile, coaching). In this preview there's only a
+// Day panel, so we just flash the active state to demonstrate the wiring.
+function switchSection(name) {
+  document.querySelectorAll('.bn-item').forEach(b => b.classList.remove('active'));
+  event.currentTarget.classList.add('active');
+  // In production: switchTab(name) — swaps to the corresponding panel
+  if (name !== 'day') {
+    const label = event.currentTarget.querySelector('span:not(.bn-ico)') ? event.currentTarget.textContent.trim() : name;
+    // Tiny toast so the click feels responsive in preview
+    flashToast('Would switch to ' + label + ' tab');
+  }
+}
+
+// Streak chip — render + tap handler.
+// Visibility rule: chip is hidden until streak_days >= STREAK_MIN_DAYS (3).
+// Below that, new users see no chip at all — the header stays clean and
+// the streak only "appears" once it's a habit worth recognizing.
+function renderStreakChip() {
+  const chip = document.getElementById('streak-chip');
+  if (!chip) return;
+  const days = MOCK.streak_days || 0;
+  if (days < STREAK_MIN_DAYS) {
+    chip.style.display = 'none';
+    return;
+  }
+  chip.style.display = '';
+  chip.querySelector('.streak-num').textContent = String(days);
+  chip.title = days + '-day logging streak';
+}
+
+function handleStreakTap() {
+  const days = MOCK.streak_days || 0;
+  flashToast(days + '-day logging streak — keep it going');
+}
+
+function flashToast(msg) {
+  let toast = document.getElementById('preview-toast');
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.id = 'preview-toast';
+    toast.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:var(--tx);color:var(--bg);padding:8px 14px;border-radius:8px;font-size:12px;font-weight:500;z-index:200;opacity:0;transition:opacity .2s;pointer-events:none;max-width:300px;text-align:center;';
+    document.body.appendChild(toast);
+  }
+  toast.textContent = msg;
+  requestAnimationFrame(() => { toast.style.opacity = '1'; });
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => { toast.style.opacity = '0'; }, 1400);
+}
+
+// ── Boot ─────────────────────────────────────────────────────
+function init() {
+  renderWeightModule();
+  renderStreakChip();
+
+  // Show PWA banner after 1.5s if not dismissed
+  // (In production this fires after the dashboard link is first opened)
+  if (!localStorage.getItem('arnie-pwa-dismissed')) {
+    setTimeout(() => {
+      const platform = detectPlatform();
+      // Always show in preview for demonstration
+      showPwaBanner(platform);
+    }, 1500);
+  }
+}
+
+init();
+</script>
+</body>
+</html>
