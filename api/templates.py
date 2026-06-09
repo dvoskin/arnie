@@ -1332,9 +1332,18 @@ footer{{
 @media(max-width:940px){{.ph-title{{font-size:26px}}}}
 @media(max-width:560px){{.ph-title{{font-size:24px}}}}
 .ph-sub{{
-  font-size:12px;color:var(--tx2);margin-top:7px;
-  letter-spacing:.01em;
-  display:flex;align-items:center;gap:10px;
+  font-family:'Geist Mono','SF Mono',monospace;
+  font-size:10px;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--mu);margin-top:6px;
+  display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+}}
+.ph-dot{{color:var(--di)}}
+/* Goal chip in the subtitle — same accent token as .ds-pill.on / .streak-chip. */
+.ph-pill{{
+  padding:2px 7px;border-radius:8px;font-size:9px;font-weight:600;letter-spacing:.06em;
+  background:var(--ac-dim);color:var(--ac);
+  border:1px solid rgba(var(--ac-rgb),.2);
+  text-transform:uppercase;
 }}
 /* .ph-streak (inline ⚡ X-day streak in subtitle) removed — superseded
    by the .streak-chip in the top-right of .ph-actions. */
@@ -2722,16 +2731,18 @@ function renderPageHead(d){{
   var pt=document.getElementById('ph-title');
   var ps=document.getElementById('ph-sub');
   if(!pt||!ps)return;
-  var hr=new Date().getHours();
-  var g=hr<12?'Good morning':hr<18?'Good afternoon':'Good evening';
-  var name=((d.profile&&d.profile.name)||'').trim();
-  pt.textContent=name?(g+', '+name):g;
+  // Preview-style header: day name as title, short date · goal pill ·
+  // first name as subtitle. Dashboard-shaped (vs personal-greeting).
   var now=new Date();
-  var ds=now.toLocaleDateString('en-US',{{weekday:'long',month:'long',day:'numeric'}});
-  // Inline "⚡ X-day streak" indicator removed — the new top-right
-  // .streak-chip (renderStreakChip, hidden under 3 days) is the canonical
-  // streak surface now. Keeping both was redundant and noisy.
-  ps.innerHTML='<span style="color:var(--tx);font-weight:500;letter-spacing:.01em">'+esc(ds)+'</span>';
+  pt.textContent = now.toLocaleDateString('en-US',{{weekday:'long'}});
+  var shortDate = now.toLocaleDateString('en-US',{{month:'short',day:'numeric'}});
+  var p = d.profile || {{}};
+  var name = (p.name||'').trim().split(/\\s+/)[0];
+  var goal = (p.primary_goal||'').trim();
+  var parts = ['<span>'+esc(shortDate)+'</span>'];
+  if(goal){{ parts.push('<span class="ph-dot">·</span>', '<span class="ph-pill">'+esc(goal)+'</span>'); }}
+  if(name){{ parts.push('<span class="ph-dot">·</span>', '<span>'+esc(name)+'</span>'); }}
+  ps.innerHTML = parts.join('');
 }}
 
 function toggleLogSection(type){{
