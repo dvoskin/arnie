@@ -55,7 +55,15 @@ async def _debounce_and_run(user_key: str, runner, delay: float):
     try:
         # Drain: if new messages arrive during a run, flush them too (no interrupt).
         while _buffers.get(user_key):
-            combined = "\n".join(_buffers.pop(user_key, []))
+            lines = _buffers.pop(user_key, [])
+            # Deduplicate consecutive identical lines (rapid-tap protection).
+            # e.g. ["just had a banana", "just had a banana", "just had a banana"]
+            # → "just had a banana" so the LLM doesn't log the same food 3 times.
+            deduped: list[str] = []
+            for line in lines:
+                if not deduped or line.strip().lower() != deduped[-1].strip().lower():
+                    deduped.append(line)
+            combined = "\n".join(deduped)
             try:
                 await runner(combined)
             except Exception as e:

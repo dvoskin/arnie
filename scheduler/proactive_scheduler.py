@@ -40,6 +40,15 @@ def proactive_enabled() -> bool:
     return os.getenv("PROACTIVE_MESSAGING_ENABLED", "false").lower() in ("true", "1", "yes")
 
 
+def voice_proactive_enabled() -> bool:
+    """
+    Kill switch for TTS audio on proactive messages only. Text is still sent.
+    Defaults ON so existing behavior is preserved; set VOICE_PROACTIVE_ENABLED=false
+    to send proactive nudges as text-only with no voice note attached.
+    """
+    return os.getenv("VOICE_PROACTIVE_ENABLED", "true").lower() in ("true", "1", "yes")
+
+
 def _proactive_allowlist() -> set:
     """
     Safe-rollout gate. PROACTIVE_ALLOWLIST = comma-separated identifiers (DB user id,
@@ -349,6 +358,8 @@ async def _send_with_voice(telegram_id: str, text: str, name: str = "", language
     if telegram_id.startswith("im:"):
         return
     if not proactive_enabled() or not _allowlist_allows(telegram_id):
+        return
+    if not voice_proactive_enabled():
         return
     try:
         import hashlib
