@@ -61,9 +61,15 @@ def looks_like_stall(text: str) -> bool:
 # conversation and add nothing. Especially wrong right after the user answered a
 # question (that should continue, not close).
 _DEAD_END_PHRASES = {
+    # single-token forms
     "done", "got it", "gotcha", "logged", "recorded", "noted", "okay", "ok",
     "perfect", "sounds good", "all set", "updated", "great", "nice", "cool",
     "yep", "yup", "sure", "alright", "roger",
+    # two-word variants that slip past the single-token filter
+    "logged that", "logged it", "got it logged", "all logged", "got that",
+    "got that logged", "done for now", "all good", "that's logged",
+    # sign-off used as a COMPLETE reply (valid only when paired with coaching content)
+    "sleep well", "good night", "goodnight", "night night",
 }
 
 
@@ -79,6 +85,55 @@ def looks_like_dead_end(text: str) -> bool:
     core = re.sub(r"[^a-z' ]+", " ", t)   # strip emoji / digits / punctuation
     core = re.sub(r"\s+", " ", core).strip()
     return core in _DEAD_END_PHRASES
+
+
+# Phrases that expose internal mechanics the user should never see — tool names,
+# sync/resync language, DB confirmation wording. Substring-matched so partial
+# sentences containing these are caught ("Updated totals are resynced for you.").
+_MECHANICS_PHRASES = (
+    "totals are resynced", "totals resynced", "totals have been resynced",
+    "totals have been updated", "totals have been synced", "totals synced",
+    "entry has been updated", "entry updated successfully", "entry saved",
+    "changes saved", "changes have been saved", "database updated",
+    "your log has been updated", "the log has been updated", "log has been updated",
+    "synced successfully", "resynced successfully",
+    "updated in the system", "saved in the system", "stored in the system",
+    # Russian equivalents
+    "итоги пересинхронизированы", "данные обновлены в системе",
+)
+
+
+# Subset of dead-end phrases that are ALWAYS wrong even on logging turns —
+# pure log acknowledgments with no coaching. Unlike "Nice 💪" or "Clean ✅"
+# (which ARE valid brief coaching after a tool call), these contain zero
+# substance: they only confirm the mechanical act of logging itself.
+_LOG_ACK_PHRASES = {
+    "logged", "logged that", "logged it", "got it logged", "all logged",
+    "got that logged", "that's logged", "done logging",
+}
+
+
+def looks_like_bare_log_ack(text: str) -> bool:
+    """
+    True for pure log-acknowledgment replies ("Logged that.", "All logged.") that
+    are bad even after tool calls. Narrower than looks_like_dead_end — it never
+    flags valid brief coaching like "Nice 💪" or "Clean 🔥" on a logging turn.
+    """
+    t = (text or "").replace("|||", " ").strip().lower()
+    if not t:
+        return False
+    core = re.sub(r"[^a-z' ]+", " ", t).strip()
+    return core in _LOG_ACK_PHRASES
+
+
+def looks_like_mechanics(text: str) -> bool:
+    """
+    True if the response leaks internal plumbing language the user should never see
+    ('Updated totals are resynced', 'Entry saved', etc.). Substring match so partial
+    sentences are caught.
+    """
+    t = (text or "").strip().lower()
+    return any(phrase in t for phrase in _MECHANICS_PHRASES)
 
 
 def detect_frustration(user_text: str) -> bool:
@@ -133,6 +188,8 @@ def detect_turn_flags(
         flags.append("stall_shipped")
     if detect_frustration(user_text):
         flags.append("user_frustrated")
+    if looks_like_mechanics(response_text):
+        flags.append("mechanics_narration")
     # Image turn where log_body_weight fired without log_food — almost always a
     # nutrition-analysis false positive (macro gram numbers mistaken for body weight).
     if (source_type == "image"

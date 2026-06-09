@@ -19,6 +19,8 @@ from core.prompts.onboarding import format_completion_facts
 from core.turn_health import (
     looks_like_stall as _looks_like_stall,
     looks_like_dead_end as _looks_like_dead_end,
+    looks_like_bare_log_ack as _looks_like_bare_log_ack,
+    looks_like_mechanics as _looks_like_mechanics,
     detect_turn_flags,
 )
 from handlers.tool_executor import (
@@ -478,6 +480,68 @@ async def run_turn(
             _dead_ended = True
     except Exception as e:
         logger.debug(f"dead-end guard failed for {_tag}: {e}")
+
+    # ── Post-response quality filter ──────────────────────────────────────────
+    # Closes three gaps the anti-dead-end guard above can't reach:
+    #
+    #   1. Streaming dead-ends: the dead-end guard detected the problem but
+    #      skipped repair because the bubble was already flushed. For streaming,
+    #      we send a CORRECTIVE follow-up so the user gets coaching immediately
+    #      after the bare ack — "Logged that." is followed right away by the
+    #      totals and next move they actually needed.
+    #
+    #   2. Logging-turn dead-ends: the guard gates out logging turns to protect
+    #      brief valid coaching ("Nice 💪"). But "Logged that." / "All logged." /
+    #      "Logged it." are NEVER valid — they only contain acknowledgment, no
+    #      coaching. These now get repaired regardless of tool calls.
+    #
+    #   3. Mechanics narration: "Updated totals are resynced." / "Entry saved."
+    #      expose internal plumbing language. The dead-end guard misses them
+    #      entirely (they're too long to match _DEAD_END_PHRASES). Caught here.
+    #
+    # Strategy: for non-streaming, replace response_text before it's frozen.
+    # For streaming, the bad bubble is already sent — emit a corrective follow-up
+    # via on_text_bubble so the user gets substance right after the bad bubble,
+    # and update response_text so history stores the repaired version.
+    _REPAIR_PROMPT = (
+        "your last reply was either a bare acknowledgment ('Logged that.', 'Done.', "
+        "'Sleep well.') or contained internal mechanics language ('totals resynced', "
+        "'entry updated', 'changes saved') the user should never see. "
+        "send a real coaching reply in your normal voice RIGHT NOW: "
+        "react to what was logged/changed, give the exact day total from [TODAY], "
+        "then one clear next move. 2-3 short bubbles (|||). no acknowledgment of "
+        "the previous bad reply — just the coaching."
+    )
+    _streaming_dead_end = _dead_ended and _streamer is not None
+    # Use the narrow _looks_like_bare_log_ack (not the broad dead-end set) for logging
+    # turns — otherwise valid brief coaching like "Nice 💪" ("nice" ∈ _DEAD_END_PHRASES)
+    # would be incorrectly flagged and replaced with a full coaching prompt.
+    _logging_dead_end = _logging_turn and _looks_like_bare_log_ack(response_text)
+    _mechanics = _looks_like_mechanics(response_text)
+
+    if _streaming_dead_end or _logging_dead_end or _mechanics:
+        try:
+            _repair = await chat(
+                messages + [{"role": "assistant", "content": response_text}],
+                system + f"\n\nQUALITY REPAIR: {_REPAIR_PROMPT}",
+                tools=False, max_tokens=400,
+            )
+            _repair_text = (_repair.get("text") or "").strip()
+            if _repair_text:
+                if on_text_bubble:
+                    # Streaming: bad bubble already sent — emit repair as immediate follow-up
+                    for _b in Response.from_text(_repair_text).bubbles:
+                        await on_text_bubble(_b)
+                response_text = _repair_text  # history + telemetry store the good version
+                if _mechanics and not _dead_ended:
+                    _dead_ended = True  # so telemetry records it
+                logger.warning(
+                    f"Quality repair fired for {_tag} "
+                    f"(streaming_dead_end={_streaming_dead_end}, "
+                    f"logging_dead_end={_logging_dead_end}, mechanics={_mechanics})"
+                )
+        except Exception as e:
+            logger.debug(f"Quality repair failed for {_tag}: {e}")
 
     # ── Build the platform-agnostic Response ──────────────────────────────────
     # CONTRACT: response_text is FROZEN after this line. All further mutations
