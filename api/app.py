@@ -746,6 +746,19 @@ async def landing_page():
     return FileResponse(landing_path, media_type="text/html")
 
 
+@app.get("/join", response_class=HTMLResponse, include_in_schema=False)
+async def join_page():
+    """
+    Serves the standalone onboarding form page.
+    In production this will be accessible at join.tryarnie.com (subdomain on arnie-bot).
+    Access at http://localhost:10000/join during local dev.
+    """
+    join_path = os.path.join(os.path.dirname(__file__), "..", "landing", "join.html")
+    if not os.path.exists(join_path):
+        raise HTTPException(status_code=404, detail="Join page not found")
+    return FileResponse(join_path, media_type="text/html")
+
+
 # ── Stats API ──────────────────────────────────────────────────────────────────
 
 @app.get("/api/insights/{token}")

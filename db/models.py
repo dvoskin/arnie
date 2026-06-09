@@ -497,3 +497,21 @@ class UserAttribute(Base):
     created_at = Column(DateTime, server_default=func.now())
 
     user = relationship("User", back_populates="user_attributes")
+
+
+class PreRegistration(Base):
+    """
+    Stores profile data collected via the landing-page onboarding form.
+    When a user hits /start SETUP-XXXXXX on Telegram, we consume this record
+    and pre-populate their profile so they skip conversational onboarding.
+    Codes expire after 48 hours and are one-time-use.
+    """
+    __tablename__ = "pre_registrations"
+
+    id = Column(Integer, primary_key=True)
+    code = Column(String(20), unique=True, index=True, nullable=False)
+    profile_json = Column(Text, nullable=False)   # JSON: name, age, sex, height_cm, weight_kg, primary_goal, training_experience, dietary_preferences
+    expires_at = Column(DateTime, nullable=False)
+    consumed_at = Column(DateTime, nullable=True)  # null until redeemed
+    telegram_id = Column(String, nullable=True)    # set when consumed
+    created_at = Column(DateTime, server_default=func.now())

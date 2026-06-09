@@ -927,6 +927,109 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
             return
 
+        # Web onboarding pre-registration: /start SETUP-XXXXXX
+        # Profile was collected on the landing page — consume it and skip conversational onboarding.
+        # Guard: ONLY apply to brand-new users (onboarding_completed=False).
+        # An existing user clicking a SETUP link (e.g. while testing) must never have their
+        # real profile overwritten — consume the code so it can't be replayed, but leave
+        # their account untouched and send a safe "you're already set up" reply.
+        if raw_arg.upper().startswith("SETUP-"):
+            user = await get_or_create_user(db, str(update.effective_user.id))
+            from db.queries import consume_pre_registration, enable_check_ins, get_or_create_webhook_token
+            profile = await consume_pre_registration(db, raw_arg.upper())
+
+            # Existing onboarded user — protect their account
+            if user.onboarding_completed:
+                first_name = (user.name or "").split()[0] if user.name else "there"
+                await update.message.reply_text(
+                    f"hey {first_name} — you're already fully set up. "
+                    "your profile and history are all intact."
+                )
+                return
+
+            if profile:
+                # Brand-new user — apply the pre-filled profile and skip conversational onboarding
+                user.name                = profile.get("name") or user.name
+                user.age                 = profile.get("age") or user.age
+                user.sex                 = profile.get("sex") or user.sex
+                user.height_cm           = profile.get("height_cm") or user.height_cm
+                user.current_weight_kg   = profile.get("weight_kg") or user.current_weight_kg
+                user.primary_goal        = profile.get("primary_goal") or user.primary_goal
+                user.training_experience = profile.get("training_experience") or user.training_experience
+                if profile.get("dietary_preferences"):
+                    user.dietary_preferences = profile["dietary_preferences"]
+                user.onboarding_completed = True
+                await db.commit()
+
+                # Enable check-ins and ensure webhook token exists
+                await enable_check_ins(db, user.id)
+                await get_or_create_webhook_token(db, user.id)
+
+                # Personalised greeting — feels like a coach who was already briefed
+                first_name = (user.name or "").split()[0] if user.name else "there"
+                exp_str = (user.training_experience or "").lower()
+                weight_lbs = (
+                    round(user.current_weight_kg * 2.20462)
+                    if user.current_weight_kg else None
+                )
+
+                # Build a crisp profile line: "advanced lifter · 185 lbs · here to cut"
+                _goal_phrase = {
+                    "cut":         "here to cut",
+                    "bulk":        "here to build",
+                    "maintain":    "here to stay lean",
+                    "performance": "here for performance",
+                    "health":      "here for health",
+                }
+                goal_phrase = _goal_phrase.get(
+                    user.primary_goal or "", f"goal: {user.primary_goal}"
+                )
+                profile_parts = []
+                if exp_str:
+                    profile_parts.append(f"{exp_str} lifter")
+                if weight_lbs:
+                    profile_parts.append(f"{weight_lbs} lbs")
+                profile_parts.append(goal_phrase)
+                if user.dietary_preferences:
+                    profile_parts.append(user.dietary_preferences)
+                profile_line = " · ".join(profile_parts)
+
+                # Goal-specific first action — no generic "what to track" question
+                _goal_cta = {
+                    "cut": (
+                        "log what you've eaten today and i'll calculate exactly where your deficit sits."
+                    ),
+                    "bulk": (
+                        "log your meals today — i'll track your surplus and make sure protein's where it needs to be."
+                    ),
+                    "maintain": (
+                        "log your meals today and i'll start watching the trend."
+                    ),
+                    "performance": (
+                        "tell me about today's session or what you've eaten — we'll build from there."
+                    ),
+                    "health": (
+                        "log what you ate today and i'll start finding your patterns."
+                    ),
+                }
+                cta = _goal_cta.get(
+                    user.primary_goal or "",
+                    "tell me what you've eaten or trained today and we'll get started."
+                )
+
+                await update.message.reply_text(
+                    f"hey {first_name} — already got your profile. nothing to fill in."
+                )
+                await update.message.reply_text(profile_line + ".")
+                await update.message.reply_text(cta)
+            else:
+                # Code expired, already used, or not found — start normal flow
+                await update.message.reply_text(
+                    "that setup link has expired or already been used. no worries — i'll walk you through it now."
+                )
+                await _send_intro_and_log(update, db, user.id, "[start]", "text", from_landing=False)
+            return
+
         user = await get_or_create_user(db, str(update.effective_user.id))
         if user.onboarding_completed:
             today_log = await get_today_log(db, user.id, user.timezone or "UTC")

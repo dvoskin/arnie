@@ -554,6 +554,63 @@ async def get_or_create_webhook_token(db: AsyncSession, user_id: int) -> str:
     return user.webhook_token
 
 
+async def create_pre_registration(db: AsyncSession, profile: dict) -> str:
+    """
+    Persist a pre-registration profile from the landing-page form.
+    Returns the one-time SETUP-XXXXXX code the user will pass to /start.
+    Generates a new code until it finds one that doesn't already exist (collision
+    probability is negligible for 36^6 ≈ 2B possibilities, but be safe).
+    """
+    import secrets
+    import json
+    from db.models import PreRegistration
+
+    for _ in range(5):
+        code = "SETUP-" + "".join(
+            secrets.choice("ABCDEFGHJKLMNPQRSTUVWXYZ23456789") for _ in range(6)
+        )
+        existing = (await db.execute(
+            select(PreRegistration).where(PreRegistration.code == code)
+        )).scalar_one_or_none()
+        if not existing:
+            break
+
+    entry = PreRegistration(
+        code=code,
+        profile_json=json.dumps(profile),
+        expires_at=datetime.utcnow() + timedelta(hours=48),
+    )
+    db.add(entry)
+    await db.commit()
+    return code
+
+
+async def consume_pre_registration(db: AsyncSession, code: str) -> Optional[dict]:
+    """
+    Validate and consume a pre-registration code.
+    Returns the stored profile dict on success, None if invalid/expired/already used.
+    Marks the record consumed so it can't be replayed.
+    """
+    import json
+    from db.models import PreRegistration
+
+    result = await db.execute(
+        select(PreRegistration).where(PreRegistration.code == code.upper())
+    )
+    entry = result.scalar_one_or_none()
+
+    if not entry:
+        return None
+    if entry.consumed_at is not None:
+        return None   # already used
+    if entry.expires_at < datetime.utcnow():
+        return None   # expired
+
+    entry.consumed_at = datetime.utcnow()
+    await db.commit()
+    return json.loads(entry.profile_json)
+
+
 async def get_user_by_webhook_token(db: AsyncSession, token: str) -> Optional[User]:
     result = await db.execute(
         select(User)

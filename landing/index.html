@@ -965,6 +965,260 @@
       /* Simpler scroll reveal — fade only, no translate, less layout thrash */
       .reveal { transform: none; transition: opacity 380ms ease; }
     }
+
+    /* ── Web onboarding modal ────────────────────────────────── */
+    .ob-overlay {
+      position: fixed; inset: 0; z-index: 900;
+      display: flex; align-items: center; justify-content: center;
+      padding: 16px;
+      background: oklch(0.05 0.01 240 / 0.74);
+      backdrop-filter: blur(14px) saturate(140%);
+      -webkit-backdrop-filter: blur(14px) saturate(140%);
+      opacity: 0; pointer-events: none;
+      transition: opacity 240ms cubic-bezier(.4,0,.2,1);
+    }
+    .ob-overlay.open { opacity: 1; pointer-events: auto; }
+    .ob-modal {
+      width: min(540px, 100%);
+      max-height: calc(100dvh - 32px);
+      overflow-y: auto;
+      border-radius: 24px;
+      position: relative;
+      transform: translateY(28px) scale(0.97);
+      transition: transform 300ms cubic-bezier(.34,1.20,.64,1);
+    }
+    .ob-overlay.open .ob-modal { transform: translateY(0) scale(1); }
+    .ob-modal-close {
+      position: absolute; top: 13px; right: 14px; z-index: 10;
+      width: 28px; height: 28px; border-radius: 50%; border: none;
+      background: color-mix(in oklch, var(--ink) 10%, transparent);
+      color: var(--ink-2); font-size: 14px; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      line-height: 1;
+      transition: background 150ms, color 150ms;
+    }
+    .ob-modal-close:hover {
+      background: color-mix(in oklch, var(--ink) 18%, transparent);
+      color: var(--ink);
+    }
+    /* Context strip at top of modal card */
+    .ob-intro-strip {
+      padding: 11px 20px 10px;
+      text-align: center;
+      font-family: var(--mono); font-size: 9px; letter-spacing: 0.13em;
+      text-transform: uppercase; color: var(--ink-3);
+      border-bottom: 1px solid var(--line);
+      line-height: 1.4;
+    }
+    /* Step enter animation */
+    @keyframes ob-step-enter {
+      from { opacity: 0; transform: translateY(10px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .ob-step-enter {
+      animation: ob-step-enter 220ms cubic-bezier(.4,0,.2,1) both;
+    }
+    /* Tap hint below goal grid */
+    .ob-tap-hint {
+      text-align: center; margin-top: 14px;
+      font-family: var(--mono); font-size: 9px; letter-spacing: 0.10em;
+      text-transform: uppercase; color: var(--ink-4);
+    }
+    .ob-card {
+      width: min(520px, 100%); margin: 0 auto;
+      border-radius: 22px;
+      background: linear-gradient(170deg,
+        color-mix(in oklch, var(--ink) 8%, transparent),
+        color-mix(in oklch, var(--ink) 3%, transparent) 80%);
+      border: 1px solid var(--line-s);
+      backdrop-filter: blur(28px) saturate(160%);
+      -webkit-backdrop-filter: blur(28px) saturate(160%);
+      box-shadow:
+        0 1px 0 oklch(1 0 0 / 0.07) inset,
+        0 32px 80px -18px oklch(0 0 0 / 0.80);
+      overflow: hidden;
+    }
+    /* Progress bar */
+    .ob-progress {
+      height: 3px;
+      background: color-mix(in oklch, var(--ink) 8%, transparent);
+    }
+    .ob-progress-bar {
+      height: 100%; width: 25%;
+      background: linear-gradient(90deg, var(--accent-s), var(--accent));
+      transition: width 500ms cubic-bezier(.4,0,.2,1);
+    }
+    /* Step wrapper */
+    .ob-step { padding: 28px 28px 24px; text-align: left; }
+    .ob-step-label {
+      font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.12em;
+      text-transform: uppercase; color: var(--ink-3); margin-bottom: 14px;
+    }
+    .ob-step-title {
+      font-family: var(--serif); font-size: 24px; letter-spacing: -0.005em;
+      color: var(--ink); margin-bottom: 22px; line-height: 1.3;
+    }
+    /* Goal grid */
+    .ob-goals {
+      display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;
+      margin-bottom: 4px;
+    }
+    @media (max-width: 420px) { .ob-goals { grid-template-columns: repeat(2, 1fr); } }
+    .ob-goal-btn {
+      display: flex; flex-direction: column; align-items: center; gap: 5px;
+      padding: 16px 10px 14px; border-radius: 14px;
+      border: 1px solid var(--line); background: transparent;
+      color: var(--ink-2); cursor: pointer;
+      transition: all 180ms;
+    }
+    .ob-goal-btn:hover {
+      border-color: var(--accent-s);
+      background: color-mix(in oklch, var(--accent) 8%, transparent);
+      color: var(--ink);
+    }
+    .ob-goal-btn.selected {
+      border-color: var(--accent);
+      background: color-mix(in oklch, var(--accent) 14%, transparent);
+      color: var(--ink);
+      box-shadow: 0 0 0 1px var(--accent) inset;
+    }
+    .ob-goal-icon { font-size: 20px; }
+    .ob-goal-name { font-size: 13px; font-weight: 600; letter-spacing: -0.01em; }
+    .ob-goal-sub  { font-size: 10px; color: var(--ink-3); }
+    .ob-goal-btn.selected .ob-goal-sub { color: var(--accent-s); }
+    /* Fields */
+    .ob-fields { display: flex; flex-direction: column; gap: 16px; margin-bottom: 24px; }
+    .ob-field { display: flex; flex-direction: column; gap: 6px; }
+    .ob-field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .ob-label {
+      font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.10em;
+      text-transform: uppercase; color: var(--ink-3); font-weight: 500;
+    }
+    .ob-input {
+      padding: 12px 14px; border-radius: 10px;
+      border: 1px solid var(--line-s);
+      background: color-mix(in oklch, var(--ink) 5%, transparent);
+      color: var(--ink); font-family: var(--sans); font-size: 15px;
+      letter-spacing: -0.01em; outline: none;
+      transition: border-color 150ms, background 150ms;
+    }
+    .ob-input::placeholder { color: var(--ink-4); }
+    .ob-input:focus {
+      border-color: var(--accent-s);
+      background: color-mix(in oklch, var(--ink) 7%, transparent);
+    }
+    .ob-input.shake { animation: ob-shake 320ms; }
+    @keyframes ob-shake {
+      0%,100% { transform: none; }
+      20%      { transform: translateX(-5px); }
+      60%      { transform: translateX(5px); }
+      80%      { transform: translateX(-3px); }
+    }
+    .ob-input-sm { width: 80px; flex-shrink: 0; }
+    .ob-height-row {
+      display: flex; align-items: center; gap: 8px;
+    }
+    .ob-unit {
+      font-family: var(--mono); font-size: 11px; color: var(--ink-3);
+      letter-spacing: 0.04em; flex-shrink: 0;
+    }
+    /* Segmented sex control */
+    .ob-seg {
+      display: flex; border-radius: 10px; overflow: hidden;
+      border: 1px solid var(--line-s);
+      background: color-mix(in oklch, var(--ink) 4%, transparent);
+    }
+    .ob-seg-btn {
+      flex: 1; padding: 11px 8px; border: none; background: transparent;
+      color: var(--ink-3); font-family: var(--sans); font-size: 13px; font-weight: 500;
+      cursor: pointer; transition: all 150ms;
+    }
+    .ob-seg-btn + .ob-seg-btn { border-left: 1px solid var(--line-s); }
+    .ob-seg-btn.active {
+      background: color-mix(in oklch, var(--accent) 16%, transparent);
+      color: var(--ink);
+    }
+    .ob-seg.shake { animation: ob-shake 320ms; }
+    /* Experience buttons */
+    .ob-exp-group { display: flex; flex-direction: column; gap: 8px; }
+    .ob-exp-btn {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 14px 18px; border-radius: 12px;
+      border: 1px solid var(--line); background: transparent;
+      color: var(--ink-2); cursor: pointer; text-align: left;
+      transition: all 180ms;
+    }
+    .ob-exp-btn strong { font-size: 14px; font-weight: 600; letter-spacing: -0.01em; color: inherit; }
+    .ob-exp-btn span   { font-family: var(--mono); font-size: 10px; color: var(--ink-3); }
+    .ob-exp-btn:hover  {
+      border-color: var(--accent-s);
+      background: color-mix(in oklch, var(--accent) 8%, transparent);
+      color: var(--ink);
+    }
+    .ob-exp-btn.selected {
+      border-color: var(--accent);
+      background: color-mix(in oklch, var(--accent) 14%, transparent);
+      color: var(--ink);
+      box-shadow: 0 0 0 1px var(--accent) inset;
+    }
+    .ob-exp-btn.selected span { color: var(--accent-s); }
+    /* Navigation row */
+    .ob-nav {
+      display: flex; justify-content: space-between; align-items: center;
+      padding-top: 8px; margin-top: 4px;
+      border-top: 1px solid var(--line);
+    }
+    .ob-back-btn {
+      background: none; border: none; color: var(--ink-3);
+      font-family: var(--sans); font-size: 13px; cursor: pointer;
+      padding: 6px 0; letter-spacing: -0.01em;
+      transition: color 150ms;
+    }
+    .ob-back-btn:hover { color: var(--ink-2); }
+    .ob-next-btn {
+      padding: 12px 22px; border-radius: 11px; border: none; cursor: pointer;
+      font-family: var(--sans); font-size: 14px; font-weight: 600;
+      letter-spacing: -0.01em; color: oklch(0.09 0.01 240);
+      background: linear-gradient(175deg,
+        oklch(0.93 0.10 165) 0%, oklch(0.86 0.155 168) 40%, oklch(0.76 0.158 172) 100%);
+      box-shadow:
+        0 1px 0 oklch(1 0 0 / 0.45) inset,
+        0 8px 24px -6px oklch(0.86 0.155 168 / 0.45);
+      transition: transform 120ms, box-shadow 180ms, opacity 150ms;
+    }
+    .ob-next-btn:hover { transform: translateY(-1px); }
+    .ob-next-btn:active { transform: scale(0.98); }
+    .ob-next-btn:disabled { opacity: 0.55; cursor: not-allowed; transform: none; }
+    /* Success */
+    .ob-success-icon {
+      width: 52px; height: 52px; border-radius: 50%;
+      background: color-mix(in oklch, var(--accent) 20%, transparent);
+      border: 1px solid color-mix(in oklch, var(--accent) 35%, transparent);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 22px; color: var(--accent); margin-bottom: 18px;
+    }
+    .ob-success-sub {
+      font-size: 14px; color: var(--ink-2); margin-bottom: 8px;
+      line-height: 1.55; text-wrap: pretty;
+    }
+    .ob-code-row {
+      display: flex; align-items: center; gap: 10px; margin-top: 18px;
+      padding: 10px 14px; border-radius: 10px;
+      background: color-mix(in oklch, var(--ink) 5%, transparent);
+      border: 1px solid var(--line);
+    }
+    .ob-code-label {
+      font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.08em;
+      text-transform: uppercase; color: var(--ink-3); white-space: nowrap;
+    }
+    .ob-code {
+      font-family: var(--mono); font-size: 13px; color: var(--accent);
+      letter-spacing: 0.06em; font-weight: 500;
+    }
+    .ob-error {
+      font-size: 12px; color: oklch(0.72 0.18 27); margin-top: 10px;
+      display: none; font-family: var(--mono); letter-spacing: 0.03em;
+    }
   </style>
 </head>
 <body>
@@ -1047,18 +1301,9 @@
     <div class="cta-wrap">
       <div class="cta-glow"></div>
       <div class="cta-card">
-        <!-- Platform selector — choose iMessage or Telegram -->
+        <!-- Platform selector — Telegram active, iMessage coming soon -->
         <div class="platform-row" style="grid-template-columns:repeat(2,1fr);">
-          <button type="button" class="platform-pill active" id="tab-imessage"
-                  style="cursor:pointer;" onclick="selectPlatform('imessage')">
-            <div class="pico" style="background:#34DA50">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="white">
-                <path d="M12 2C6.477 2 2 6.477 2 12c0 1.89.525 3.66 1.438 5.168L2 22l4.832-1.438A9.956 9.956 0 0 0 12 22c5.523 0 10-4.477 10-10S17.523 2 12 2z"/>
-              </svg>
-            </div>
-            iMessage
-          </button>
-          <button type="button" class="platform-pill" id="tab-telegram"
+          <button type="button" class="platform-pill active" id="tab-telegram"
                   style="cursor:pointer;" onclick="selectPlatform('telegram')">
             <div class="pico tg-icon">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="white">
@@ -1067,10 +1312,19 @@
             </div>
             Telegram
           </button>
+          <div class="platform-pill coming" id="tab-imessage">
+            <div class="pico" style="background:#34DA50">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="white">
+                <path d="M12 2C6.477 2 2 6.477 2 12c0 1.89.525 3.66 1.438 5.168L2 22l4.832-1.438A9.956 9.956 0 0 0 12 22c5.523 0 10-4.477 10-10S17.523 2 12 2z"/>
+              </svg>
+            </div>
+            iMessage
+            <span class="coming-lbl">back this week</span>
+          </div>
         </div>
 
-        <!-- iMessage pane — phone number, Arnie texts first -->
-        <div id="pane-imessage">
+        <!-- iMessage pane — hidden while iMessage is paused -->
+        <div id="pane-imessage" style="display:none">
           <form class="beta-form" id="imsgForm" onsubmit="handleIMessageSignup(event)">
             <input type="tel" name="phone" id="imsgPhone" placeholder="your phone number" required autocomplete="tel" inputmode="tel">
             <button type="submit" class="cta-btn beta-submit-btn" id="imsgBtn">Text me on iMessage →</button>
@@ -1084,27 +1338,32 @@
           </div>
         </div>
 
-        <!-- Telegram pane — email, then open the bot -->
-        <div id="pane-telegram" style="display:none">
-          <form class="beta-form" id="tgForm" onsubmit="handleTelegramSignup(event)">
-            <input type="email" name="email" id="tgEmail" placeholder="your@email.com" required autocomplete="email">
-            <button type="submit" class="cta-btn beta-submit-btn" id="tgBtn">Get Telegram access →</button>
-          </form>
-          <p class="cta-fineprint">We'll save your spot and open Telegram to start now.</p>
-          <div class="beta-success" id="tgSuccess" style="display:none">
-            <div class="beta-success-inner">
-              <span class="beta-check">✓</span>
-              <span>You're on the list. Open Telegram to start now:</span>
-            </div>
-            <a href="https://t.me/Arnie_1026_Bot?start=freetrial" target="_blank" rel="noopener" class="cta-btn beta-submit-btn" style="margin-top:10px;text-decoration:none;display:flex">Open Telegram →</a>
+        <!-- Telegram pane — opens onboarding modal -->
+        <div id="pane-telegram">
+          <div style="padding:8px">
+            <button type="button"
+               class="cta-btn"
+               style="width:100%;border:none;cursor:pointer"
+               onclick="openObModal()">
+              Set up Arnie in 60 seconds →
+            </button>
+            <p class="cta-fineprint" style="margin-top:9px">
+              Tell us your goals once — Arnie knows you from the first message.
+            </p>
+            <p style="text-align:center;margin-top:12px">
+              <a href="https://t.me/Arnie_1026_Bot?start=freetrial" target="_blank" rel="noopener"
+                 style="font-size:11.5px;color:var(--ink-3);letter-spacing:-0.01em">
+                or skip setup and start fresh on Telegram →
+              </a>
+            </p>
           </div>
         </div>
       </div>
 
       <div class="cta-meta">
         <span>Limited beta</span>
-        <span>Telegram + iMessage</span>
-        <span>iOS app coming</span>
+        <span>Telegram</span>
+        <span>iMessage back this week</span>
       </div>
     </div>
 
@@ -1488,6 +1747,159 @@
     </div>
   </section>
 
+  <!-- ── WEB ONBOARDING MODAL ── -->
+  <div id="ob-overlay" class="ob-overlay" role="dialog" aria-modal="true" aria-label="Set up your profile"
+       onclick="if(event.target===this)closeObModal()">
+    <div class="ob-modal">
+      <button class="ob-modal-close" onclick="closeObModal()" aria-label="Close">✕</button>
+
+    <div class="ob-card">
+      <div class="ob-intro-strip">60 seconds &nbsp;·&nbsp; Arnie knows you from the first message</div>
+      <div class="ob-progress"><div class="ob-progress-bar" id="obProgressBar"></div></div>
+
+      <!-- Step 1: Goal -->
+      <div class="ob-step ob-step-enter" id="ob-step-1">
+        <div class="ob-step-label">Step 1 of 4 &nbsp;·&nbsp; Goal</div>
+        <h3 class="ob-step-title">What are you training for?</h3>
+        <div class="ob-goals" id="ob-goals">
+          <button type="button" class="ob-goal-btn" data-val="cut">
+            <span class="ob-goal-icon">📉</span>
+            <span class="ob-goal-name">Cut</span>
+            <span class="ob-goal-sub">lose fat</span>
+          </button>
+          <button type="button" class="ob-goal-btn" data-val="bulk">
+            <span class="ob-goal-icon">📈</span>
+            <span class="ob-goal-name">Bulk</span>
+            <span class="ob-goal-sub">gain muscle</span>
+          </button>
+          <button type="button" class="ob-goal-btn" data-val="maintain">
+            <span class="ob-goal-icon">⚖️</span>
+            <span class="ob-goal-name">Maintain</span>
+            <span class="ob-goal-sub">stay lean</span>
+          </button>
+          <button type="button" class="ob-goal-btn" data-val="performance">
+            <span class="ob-goal-icon">⚡</span>
+            <span class="ob-goal-name">Performance</span>
+            <span class="ob-goal-sub">get stronger</span>
+          </button>
+          <button type="button" class="ob-goal-btn" data-val="health">
+            <span class="ob-goal-icon">🩺</span>
+            <span class="ob-goal-name">Health</span>
+            <span class="ob-goal-sub">feel better</span>
+          </button>
+        </div>
+        <p class="ob-tap-hint">tap to select · moves to next step</p>
+      </div>
+
+      <!-- Step 2: About you -->
+      <div class="ob-step" id="ob-step-2" style="display:none">
+        <div class="ob-step-label">Step 2 of 4 &nbsp;·&nbsp; About you</div>
+        <h3 class="ob-step-title">A few basics.</h3>
+        <div class="ob-fields">
+          <div class="ob-field">
+            <label class="ob-label" for="ob-name">First name</label>
+            <input type="text" class="ob-input" id="ob-name" placeholder="e.g. Alex" autocomplete="given-name">
+          </div>
+          <div class="ob-field-row">
+            <div class="ob-field">
+              <label class="ob-label" for="ob-age">Age</label>
+              <input type="number" class="ob-input" id="ob-age" placeholder="25" min="13" max="99" inputmode="numeric">
+            </div>
+            <div class="ob-field">
+              <label class="ob-label">Sex</label>
+              <div class="ob-seg" id="ob-sex">
+                <button type="button" class="ob-seg-btn" data-val="male">Male</button>
+                <button type="button" class="ob-seg-btn" data-val="female">Female</button>
+                <button type="button" class="ob-seg-btn" data-val="other">Other</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="ob-nav">
+          <button class="ob-back-btn" onclick="obGoStep(1)">← Back</button>
+          <button class="ob-next-btn" id="ob-next-2" onclick="obNextStep2()">Continue →</button>
+        </div>
+      </div>
+
+      <!-- Step 3: Body metrics -->
+      <div class="ob-step" id="ob-step-3" style="display:none">
+        <div class="ob-step-label">Step 3 of 4 &nbsp;·&nbsp; Body metrics</div>
+        <h3 class="ob-step-title">Current stats.</h3>
+        <div class="ob-fields">
+          <div class="ob-field">
+            <label class="ob-label">Height</label>
+            <div class="ob-height-row">
+              <input type="number" class="ob-input ob-input-sm" id="ob-height-ft" placeholder="5" min="3" max="8" inputmode="numeric">
+              <span class="ob-unit">ft</span>
+              <input type="number" class="ob-input ob-input-sm" id="ob-height-in" placeholder="10" min="0" max="11" inputmode="numeric">
+              <span class="ob-unit">in</span>
+            </div>
+          </div>
+          <div class="ob-field">
+            <label class="ob-label" for="ob-weight">Current weight</label>
+            <div class="ob-height-row">
+              <input type="number" class="ob-input" id="ob-weight" placeholder="175" min="50" max="600" step="0.5" inputmode="decimal" style="max-width:140px">
+              <span class="ob-unit">lbs</span>
+            </div>
+          </div>
+        </div>
+        <div class="ob-nav">
+          <button class="ob-back-btn" onclick="obGoStep(2)">← Back</button>
+          <button class="ob-next-btn" id="ob-next-3" onclick="obNextStep3()">Continue →</button>
+        </div>
+      </div>
+
+      <!-- Step 4: Training experience -->
+      <div class="ob-step" id="ob-step-4" style="display:none">
+        <div class="ob-step-label">Step 4 of 4 &nbsp;·&nbsp; Training</div>
+        <h3 class="ob-step-title">How long have you been lifting?</h3>
+        <div class="ob-exp-group" id="ob-exp-group">
+          <button type="button" class="ob-exp-btn" data-val="beginner">
+            <strong>Beginner</strong><span>0 – 1 year</span>
+          </button>
+          <button type="button" class="ob-exp-btn" data-val="intermediate">
+            <strong>Intermediate</strong><span>1 – 4 years</span>
+          </button>
+          <button type="button" class="ob-exp-btn" data-val="advanced">
+            <strong>Advanced</strong><span>4+ years</span>
+          </button>
+        </div>
+        <div class="ob-field" style="margin-top:20px">
+          <label class="ob-label" for="ob-diet">Dietary preferences <span style="color:var(--ink-3);font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></label>
+          <input type="text" class="ob-input" id="ob-diet" placeholder="e.g. vegetarian, no dairy, high protein…">
+        </div>
+        <div class="ob-error" id="ob-error"></div>
+        <div class="ob-nav" style="margin-top:20px">
+          <button class="ob-back-btn" onclick="obGoStep(3)">← Back</button>
+          <button class="ob-next-btn" id="ob-submit-btn" onclick="obSubmit()">Get my Telegram link →</button>
+        </div>
+      </div>
+
+      <!-- Success state -->
+      <div class="ob-step" id="ob-step-success" style="display:none">
+        <div class="ob-success-icon">✓</div>
+        <h3 class="ob-step-title" style="margin-bottom:10px">
+          You're all set, <span id="ob-success-name">there</span>.
+        </h3>
+        <p class="ob-success-sub" id="ob-success-sub">
+          Arnie already has your goals, stats, and training background.
+          Open Telegram — no onboarding needed.
+        </p>
+        <a href="#" id="ob-tg-link" class="cta-btn" target="_blank" rel="noopener"
+           style="margin-top:20px;text-decoration:none;display:flex;justify-content:center">
+          Open Arnie on Telegram →
+        </a>
+        <div class="ob-code-row" style="margin-top:16px">
+          <span class="ob-code-label">Your code</span>
+          <code class="ob-code" id="ob-code"></code>
+          <span style="font-size:10px;color:var(--ink-4);margin-left:auto">expires in 48 hrs</span>
+        </div>
+      </div>
+
+    </div><!-- /.ob-card -->
+    </div><!-- /.ob-modal -->
+  </div><!-- /#ob-overlay -->
+
   <!-- ── FINAL CTA ── -->
   <section class="final-cta">
     <div class="section-tag reveal">Ready</div>
@@ -1519,7 +1931,7 @@
   <div class="sticky-bar" id="stickyBar">
     <div class="sticky-left">
       <div class="sticky-title">Request Beta Access</div>
-      <div class="sticky-sub">Limited spots · Telegram + iMessage</div>
+      <div class="sticky-sub">Limited spots · Telegram · iMessage back this week</div>
     </div>
     <a href="#imsgForm" class="sticky-btn" onclick="setTimeout(()=>document.getElementById('imsgForm').querySelector('input').focus(),300)">
       Apply Now →
@@ -1537,12 +1949,12 @@
   const ARNIE_API = 'https://arnie.onrender.com';
 
   // ── Platform tab switcher ────────────────────────────────────────
+  // iMessage is temporarily hidden — Telegram is the only active platform.
   function selectPlatform(p) {
-    const isIM = p === 'imessage';
-    document.getElementById('tab-imessage').classList.toggle('active', isIM);
-    document.getElementById('tab-telegram').classList.toggle('active', !isIM);
-    document.getElementById('pane-imessage').style.display = isIM ? 'block' : 'none';
-    document.getElementById('pane-telegram').style.display = isIM ? 'none' : 'block';
+    if (p === 'imessage') return; // iMessage back this week — not interactive yet
+    document.getElementById('tab-telegram').classList.add('active');
+    document.getElementById('pane-telegram').style.display = 'block';
+    document.getElementById('pane-imessage').style.display = 'none';
   }
 
   // ── Telegram signup — capture email (Formspree), then reveal bot link ──
@@ -1782,6 +2194,216 @@
       }
     }, { threshold: 0.25 }).observe(demoSection);
   }
+
+  // ── Web onboarding modal ─────────────────────────────────────────
+  const obState = {
+    goal: null, name: null, age: null, sex: null,
+    heightFt: null, heightIn: null, weight: null,
+    experience: null, diet: null,
+  };
+
+  function openObModal() {
+    // Reset state
+    Object.assign(obState, { goal: null, name: null, age: null, sex: null,
+      heightFt: null, heightIn: null, weight: null, experience: null, diet: null });
+    // Clear selections / inputs
+    document.querySelectorAll('.ob-goal-btn').forEach(b => b.classList.remove('selected'));
+    document.querySelectorAll('#ob-sex .ob-seg-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.ob-exp-btn').forEach(b => b.classList.remove('selected'));
+    ['ob-name','ob-age','ob-height-ft','ob-height-in','ob-weight','ob-diet'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.value = '';
+    });
+    const errEl = document.getElementById('ob-error');
+    if (errEl) errEl.style.display = 'none';
+    const submitBtn = document.getElementById('ob-submit-btn');
+    if (submitBtn) { submitBtn.textContent = 'Get my Telegram link →'; submitBtn.disabled = false; }
+    // Open overlay
+    const overlay = document.getElementById('ob-overlay');
+    overlay.classList.add('open');
+    document.body.style.overflow = 'hidden';
+    obGoStep(1);
+  }
+
+  function closeObModal() {
+    document.getElementById('ob-overlay').classList.remove('open');
+    document.body.style.overflow = '';
+  }
+
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeObModal(); });
+
+  // Resolve API base dynamically so the form works both locally (served from
+  // FastAPI at localhost:10000) and in production (separate static origin).
+  const OB_API_BASE = (
+    window.location.hostname === 'localhost' ||
+    window.location.hostname === '127.0.0.1'
+  ) ? `${window.location.protocol}//${window.location.host}`
+    : 'https://arnie.onrender.com';
+
+  const _obSuccessSub = {
+    cut:         'Arnie knows your weight, training level, and that you\'re here to cut. Straight to work.',
+    bulk:        'Arnie knows your stats and you\'re here to build. No setup, no Q&A.',
+    maintain:    'Arnie knows your stats and you\'re here to stay lean. Ready when you are.',
+    performance: 'Arnie knows your background. You\'re here for performance. Let\'s go.',
+    health:      'Arnie knows your stats and you\'re here to feel better. Ready when you are.',
+  };
+
+  function obGoStep(n) {
+    document.querySelectorAll('.ob-step').forEach(el => { el.style.display = 'none'; });
+    const key   = n === 5 ? 'success' : n;
+    const stepEl = document.getElementById('ob-step-' + key);
+    if (stepEl) {
+      stepEl.style.display = 'block';
+      // Trigger enter animation
+      stepEl.classList.remove('ob-step-enter');
+      void stepEl.offsetWidth; // reflow
+      stepEl.classList.add('ob-step-enter');
+    }
+    // Update progress bar
+    const pct = n >= 5 ? 100 : (n / 4 * 100);
+    const bar = document.getElementById('obProgressBar');
+    if (bar) bar.style.width = pct + '%';
+    // On success step — inject goal-specific subtitle
+    if (n === 5) {
+      const subEl = document.getElementById('ob-success-sub');
+      if (subEl && obState.goal) {
+        subEl.textContent = _obSuccessSub[obState.goal]
+          || 'Arnie has your goals, stats, and training background. Open Telegram — no onboarding needed.';
+      }
+    }
+    // Reset modal scroll to top
+    const modal = document.querySelector('.ob-modal');
+    if (modal) modal.scrollTop = 0;
+  }
+
+  function obShake(el) {
+    el.classList.remove('shake');
+    void el.offsetWidth; // reflow to restart animation
+    el.classList.add('shake');
+    el.addEventListener('animationend', () => el.classList.remove('shake'), { once: true });
+  }
+
+  // Goal buttons (step 1 — auto-advance on selection)
+  document.querySelectorAll('#ob-goals .ob-goal-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('#ob-goals .ob-goal-btn').forEach(b => b.classList.remove('selected'));
+      btn.classList.add('selected');
+      obState.goal = btn.dataset.val;
+      setTimeout(() => obGoStep(2), 280);
+    });
+  });
+
+  // Sex segmented control (step 2)
+  document.querySelectorAll('#ob-sex .ob-seg-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('#ob-sex .ob-seg-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      obState.sex = btn.dataset.val;
+    });
+  });
+
+  function obNextStep2() {
+    const nameEl   = document.getElementById('ob-name');
+    const ageEl    = document.getElementById('ob-age');
+    const name     = nameEl.value.trim();
+    const age      = parseInt(ageEl.value, 10);
+    if (!name)                    { obShake(nameEl); nameEl.focus(); return; }
+    if (!age || age < 13 || age > 99) { obShake(ageEl);  ageEl.focus();  return; }
+    if (!obState.sex)             { obShake(document.getElementById('ob-sex')); return; }
+    obState.name = name;
+    obState.age  = age;
+    obGoStep(3);
+  }
+
+  function obNextStep3() {
+    const ftEl  = document.getElementById('ob-height-ft');
+    const inEl  = document.getElementById('ob-height-in');
+    const wEl   = document.getElementById('ob-weight');
+    const ft    = parseInt(ftEl.value, 10);
+    const ins   = parseInt(inEl.value, 10);
+    const wt    = parseFloat(wEl.value);
+    if (!ft || ft < 3 || ft > 8) { obShake(ftEl); ftEl.focus(); return; }
+    if (!wt || wt < 50)          { obShake(wEl);  wEl.focus();  return; }
+    obState.heightFt = ft;
+    obState.heightIn = isNaN(ins) ? 0 : Math.max(0, Math.min(11, ins));
+    obState.weight   = wt;
+    obGoStep(4);
+  }
+
+  // Experience buttons (step 4)
+  document.querySelectorAll('#ob-exp-group .ob-exp-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('#ob-exp-group .ob-exp-btn').forEach(b => b.classList.remove('selected'));
+      btn.classList.add('selected');
+      obState.experience = btn.dataset.val;
+    });
+  });
+
+  async function obSubmit() {
+    if (!obState.experience) {
+      obShake(document.getElementById('ob-exp-group'));
+      return;
+    }
+    obState.diet = (document.getElementById('ob-diet').value || '').trim() || null;
+
+    const submitBtn = document.getElementById('ob-submit-btn');
+    const errEl     = document.getElementById('ob-error');
+    submitBtn.textContent = 'Setting up…';
+    submitBtn.disabled = true;
+    errEl.style.display = 'none';
+
+    // Convert imperial → metric for the API
+    const heightCm = Math.round(((obState.heightFt * 12) + obState.heightIn) * 2.54 * 10) / 10;
+    const weightKg = Math.round(obState.weight * 0.453592 * 100) / 100;
+
+    try {
+      const res = await fetch(`${OB_API_BASE}/api/preregister`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name:               obState.name,
+          age:                obState.age,
+          sex:                obState.sex,
+          height_cm:          heightCm,
+          weight_kg:          weightKg,
+          primary_goal:       obState.goal,
+          training_experience: obState.experience,
+          dietary_preferences: obState.diet,
+        }),
+      });
+
+      const data = await res.json();
+      if (data.ok) {
+        const firstName = (obState.name || '').split(' ')[0] || 'there';
+        document.getElementById('ob-success-name').textContent = firstName;
+        document.getElementById('ob-tg-link').href = data.bot_link;
+        document.getElementById('ob-code').textContent = data.code;
+        obGoStep(5); // success state
+      } else {
+        errEl.textContent = data.detail || 'Something went wrong — try again.';
+        errEl.style.display = 'block';
+        submitBtn.textContent = 'Try again';
+        submitBtn.disabled = false;
+      }
+    } catch (err) {
+      errEl.textContent = 'Network error — check your connection and try again.';
+      errEl.style.display = 'block';
+      submitBtn.textContent = 'Try again';
+      submitBtn.disabled = false;
+    }
+  }
+
+  // Enter key support for text/number inputs in the form
+  ['ob-name', 'ob-age'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('keydown', e => { if (e.key === 'Enter') obNextStep2(); });
+  });
+  ['ob-height-ft', 'ob-height-in', 'ob-weight'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('keydown', e => { if (e.key === 'Enter') obNextStep3(); });
+  });
+  const dietEl = document.getElementById('ob-diet');
+  if (dietEl) dietEl.addEventListener('keydown', e => { if (e.key === 'Enter') obSubmit(); });
 
   // FAQ accordion
   document.querySelectorAll('.faq-q').forEach(btn => {

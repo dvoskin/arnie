@@ -1,0 +1,704 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Set Up Your Profile — Arnie</title>
+  <meta name="description" content="Tell Arnie your goals, stats, and training background in 60 seconds — and skip the onboarding entirely.">
+  <meta name="robots" content="noindex, nofollow">
+
+  <link rel="icon" type="image/png" href="favicon.png">
+  <link rel="apple-touch-icon" href="favicon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@300;400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+  <style>
+    :root {
+      --bg:      oklch(0.060 0.008 240);
+      --bg-2:    oklch(0.042 0.006 242);
+      --ink:     oklch(0.97 0.004 90);
+      --ink-2:   oklch(0.70 0.008 90);
+      --ink-3:   oklch(0.48 0.010 90);
+      --ink-4:   oklch(0.28 0.012 240);
+      --line:    color-mix(in oklch, var(--ink) 7%, transparent);
+      --line-s:  color-mix(in oklch, var(--ink) 13%, transparent);
+      --glass:   color-mix(in oklch, var(--ink) 4.5%, transparent);
+      --glass-2: color-mix(in oklch, var(--ink) 8%, transparent);
+      --accent:  oklch(0.86 0.155 168);
+      --accent-s:oklch(0.72 0.13 168);
+      --serif:   "Instrument Serif", "Times New Roman", serif;
+      --sans:    "Geist", ui-sans-serif, system-ui, sans-serif;
+      --mono:    "Geist Mono", ui-monospace, "SF Mono", monospace;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    body {
+      background: var(--bg);
+      color: var(--ink);
+      font-family: var(--sans);
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      overflow-x: hidden;
+      font-feature-settings: "ss01","cv11","tnum";
+      letter-spacing: -0.005em;
+      min-height: 100dvh;
+      display: flex;
+      flex-direction: column;
+    }
+    a { color: inherit; text-decoration: none; }
+    button { font-family: inherit; cursor: pointer; }
+
+    /* Ambient background */
+    .stage { position: fixed; inset: 0; pointer-events: none; overflow: hidden; z-index: 0; }
+    .orb   { position: absolute; border-radius: 50%; }
+    .orb-a {
+      width: 800px; height: 700px;
+      right: -180px; top: -100px;
+      background: radial-gradient(closest-side, oklch(0.56 0.15 168 / 0.32), transparent 65%);
+      filter: blur(90px);
+    }
+    .orb-b {
+      width: 560px; height: 500px;
+      left: -80px; bottom: 5%;
+      background: radial-gradient(closest-side, oklch(0.44 0.17 268 / 0.12), transparent 70%);
+      filter: blur(80px);
+    }
+    .grain {
+      position: fixed; inset: 0; z-index: 1; pointer-events: none;
+      background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.95' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.04 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+      mix-blend-mode: overlay; opacity: 0.55;
+    }
+
+    /* Page layout */
+    .page-wrap {
+      position: relative; z-index: 2;
+      flex: 1; display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      padding: 40px 20px 60px;
+      gap: 32px;
+    }
+
+    /* Brand header */
+    .join-brand {
+      text-align: center;
+    }
+    .join-logo {
+      font-family: var(--serif); font-size: 28px; letter-spacing: -0.02em;
+      color: var(--ink); font-style: italic;
+    }
+    .join-logo em { color: var(--accent); font-style: normal; }
+    .join-headline {
+      margin-top: 8px;
+      font-size: 14px; color: var(--ink-3);
+      font-family: var(--mono); letter-spacing: 0.06em; text-transform: uppercase;
+    }
+
+    /* CTA button — used in success step */
+    .cta-btn {
+      display: flex; align-items: center; justify-content: center; gap: 9px;
+      width: 100%; padding: 16px 20px; border-radius: 14px;
+      border: 0; margin-top: 6px;
+      font-size: 15px; font-weight: 600; letter-spacing: -0.015em;
+      color: oklch(0.09 0.01 240);
+      background: linear-gradient(175deg,
+        oklch(0.93 0.10 165) 0%,
+        oklch(0.86 0.155 168) 40%,
+        oklch(0.76 0.158 172) 100%);
+      box-shadow:
+        0 1px 0 oklch(1 0 0 / 0.45) inset,
+        0 14px 36px -8px oklch(0.86 0.155 168 / 0.50),
+        0 4px 12px -4px oklch(0.86 0.155 168 / 0.30);
+      transition: transform 130ms, box-shadow 200ms;
+      text-decoration: none; position: relative; overflow: hidden; cursor: pointer;
+    }
+    .cta-btn::after {
+      content: "";
+      position: absolute; top: -50%; left: -65%; width: 38%; height: 200%;
+      background: linear-gradient(90deg, transparent, oklch(1 0 0 / 0.18), transparent);
+      transform: skewX(-22deg);
+      animation: shimmer 3.8s ease-in-out infinite;
+      animation-delay: 2s;
+    }
+    @keyframes shimmer {
+      0%,100% { left: -65%; opacity: 0; }
+      4%       { opacity: 1; }
+      45%      { left: 115%; opacity: 0; }
+    }
+    .cta-btn:hover {
+      transform: translateY(-2px);
+      box-shadow:
+        0 1px 0 oklch(1 0 0 / 0.45) inset,
+        0 20px 44px -8px oklch(0.86 0.155 168 / 0.62),
+        0 6px 16px -4px oklch(0.86 0.155 168 / 0.38);
+    }
+    .cta-btn:active { transform: scale(0.98) translateY(0); }
+
+    /* ── Onboarding card ─────────────────────────────────────── */
+    .ob-card {
+      width: min(520px, 100%); margin: 0 auto;
+      border-radius: 22px;
+      background: linear-gradient(170deg,
+        color-mix(in oklch, var(--ink) 8%, transparent),
+        color-mix(in oklch, var(--ink) 3%, transparent) 80%);
+      border: 1px solid var(--line-s);
+      backdrop-filter: blur(28px) saturate(160%);
+      -webkit-backdrop-filter: blur(28px) saturate(160%);
+      box-shadow:
+        0 1px 0 oklch(1 0 0 / 0.07) inset,
+        0 32px 80px -18px oklch(0 0 0 / 0.80);
+      overflow: hidden;
+    }
+    /* Progress bar */
+    .ob-progress {
+      height: 3px;
+      background: color-mix(in oklch, var(--ink) 8%, transparent);
+    }
+    .ob-progress-bar {
+      height: 100%; width: 25%;
+      background: linear-gradient(90deg, var(--accent-s), var(--accent));
+      transition: width 500ms cubic-bezier(.4,0,.2,1);
+    }
+    /* Step wrapper */
+    .ob-step { padding: 28px 28px 24px; text-align: left; }
+    .ob-step-label {
+      font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.12em;
+      text-transform: uppercase; color: var(--ink-3); margin-bottom: 14px;
+    }
+    .ob-step-title {
+      font-family: var(--serif); font-size: 24px; letter-spacing: -0.005em;
+      color: var(--ink); margin-bottom: 22px; line-height: 1.3;
+    }
+    /* Goal grid */
+    .ob-goals {
+      display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;
+      margin-bottom: 4px;
+    }
+    @media (max-width: 420px) { .ob-goals { grid-template-columns: repeat(2, 1fr); } }
+    .ob-goal-btn {
+      display: flex; flex-direction: column; align-items: center; gap: 5px;
+      padding: 16px 10px 14px; border-radius: 14px;
+      border: 1px solid var(--line); background: transparent;
+      color: var(--ink-2); cursor: pointer;
+      transition: all 180ms;
+    }
+    .ob-goal-btn:hover {
+      border-color: var(--accent-s);
+      background: color-mix(in oklch, var(--accent) 8%, transparent);
+      color: var(--ink);
+    }
+    .ob-goal-btn.selected {
+      border-color: var(--accent);
+      background: color-mix(in oklch, var(--accent) 14%, transparent);
+      color: var(--ink);
+      box-shadow: 0 0 0 1px var(--accent) inset;
+    }
+    .ob-goal-icon { font-size: 20px; }
+    .ob-goal-name { font-size: 13px; font-weight: 600; letter-spacing: -0.01em; }
+    .ob-goal-sub  { font-size: 10px; color: var(--ink-3); }
+    .ob-goal-btn.selected .ob-goal-sub { color: var(--accent-s); }
+    /* Fields */
+    .ob-fields { display: flex; flex-direction: column; gap: 16px; margin-bottom: 24px; }
+    .ob-field { display: flex; flex-direction: column; gap: 6px; }
+    .ob-field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .ob-label {
+      font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.10em;
+      text-transform: uppercase; color: var(--ink-3); font-weight: 500;
+    }
+    .ob-input {
+      padding: 12px 14px; border-radius: 10px;
+      border: 1px solid var(--line-s);
+      background: color-mix(in oklch, var(--ink) 5%, transparent);
+      color: var(--ink); font-family: var(--sans); font-size: 15px;
+      letter-spacing: -0.01em; outline: none;
+      transition: border-color 150ms, background 150ms;
+    }
+    .ob-input::placeholder { color: var(--ink-4); }
+    .ob-input:focus {
+      border-color: var(--accent-s);
+      background: color-mix(in oklch, var(--ink) 7%, transparent);
+    }
+    .ob-input.shake { animation: ob-shake 320ms; }
+    @keyframes ob-shake {
+      0%,100% { transform: none; }
+      20%      { transform: translateX(-5px); }
+      60%      { transform: translateX(5px); }
+      80%      { transform: translateX(-3px); }
+    }
+    .ob-input-sm { width: 80px; flex-shrink: 0; }
+    .ob-height-row { display: flex; align-items: center; gap: 8px; }
+    .ob-unit {
+      font-family: var(--mono); font-size: 11px; color: var(--ink-3);
+      letter-spacing: 0.04em; flex-shrink: 0;
+    }
+    /* Segmented sex control */
+    .ob-seg {
+      display: flex; border-radius: 10px; overflow: hidden;
+      border: 1px solid var(--line-s);
+      background: color-mix(in oklch, var(--ink) 4%, transparent);
+    }
+    .ob-seg-btn {
+      flex: 1; padding: 11px 8px; border: none; background: transparent;
+      color: var(--ink-3); font-family: var(--sans); font-size: 13px; font-weight: 500;
+      cursor: pointer; transition: all 150ms;
+    }
+    .ob-seg-btn + .ob-seg-btn { border-left: 1px solid var(--line-s); }
+    .ob-seg-btn.active {
+      background: color-mix(in oklch, var(--accent) 16%, transparent);
+      color: var(--ink);
+    }
+    .ob-seg.shake { animation: ob-shake 320ms; }
+    /* Experience buttons */
+    .ob-exp-group { display: flex; flex-direction: column; gap: 8px; }
+    .ob-exp-btn {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 14px 18px; border-radius: 12px;
+      border: 1px solid var(--line); background: transparent;
+      color: var(--ink-2); cursor: pointer; text-align: left;
+      transition: all 180ms;
+    }
+    .ob-exp-btn strong { font-size: 14px; font-weight: 600; letter-spacing: -0.01em; color: inherit; }
+    .ob-exp-btn span   { font-family: var(--mono); font-size: 10px; color: var(--ink-3); }
+    .ob-exp-btn:hover  {
+      border-color: var(--accent-s);
+      background: color-mix(in oklch, var(--accent) 8%, transparent);
+      color: var(--ink);
+    }
+    .ob-exp-btn.selected {
+      border-color: var(--accent);
+      background: color-mix(in oklch, var(--accent) 14%, transparent);
+      color: var(--ink);
+      box-shadow: 0 0 0 1px var(--accent) inset;
+    }
+    .ob-exp-btn.selected span { color: var(--accent-s); }
+    /* Navigation row */
+    .ob-nav {
+      display: flex; justify-content: space-between; align-items: center;
+      padding-top: 8px; margin-top: 4px;
+      border-top: 1px solid var(--line);
+    }
+    .ob-back-btn {
+      background: none; border: none; color: var(--ink-3);
+      font-family: var(--sans); font-size: 13px; cursor: pointer;
+      padding: 6px 0; letter-spacing: -0.01em;
+      transition: color 150ms;
+    }
+    .ob-back-btn:hover { color: var(--ink-2); }
+    .ob-next-btn {
+      padding: 12px 22px; border-radius: 11px; border: none; cursor: pointer;
+      font-family: var(--sans); font-size: 14px; font-weight: 600;
+      letter-spacing: -0.01em; color: oklch(0.09 0.01 240);
+      background: linear-gradient(175deg,
+        oklch(0.93 0.10 165) 0%, oklch(0.86 0.155 168) 40%, oklch(0.76 0.158 172) 100%);
+      box-shadow:
+        0 1px 0 oklch(1 0 0 / 0.45) inset,
+        0 8px 24px -6px oklch(0.86 0.155 168 / 0.45);
+      transition: transform 120ms, box-shadow 180ms, opacity 150ms;
+    }
+    .ob-next-btn:hover { transform: translateY(-1px); }
+    .ob-next-btn:active { transform: scale(0.98); }
+    .ob-next-btn:disabled { opacity: 0.55; cursor: not-allowed; transform: none; }
+    /* Success */
+    .ob-success-icon {
+      width: 52px; height: 52px; border-radius: 50%;
+      background: color-mix(in oklch, var(--accent) 20%, transparent);
+      border: 1px solid color-mix(in oklch, var(--accent) 35%, transparent);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 22px; color: var(--accent); margin-bottom: 18px;
+    }
+    .ob-success-sub {
+      font-size: 14px; color: var(--ink-2); margin-bottom: 8px;
+      line-height: 1.55; text-wrap: pretty;
+    }
+    .ob-code-row {
+      display: flex; align-items: center; gap: 10px; margin-top: 18px;
+      padding: 10px 14px; border-radius: 10px;
+      background: color-mix(in oklch, var(--ink) 5%, transparent);
+      border: 1px solid var(--line);
+    }
+    .ob-code-label {
+      font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.08em;
+      text-transform: uppercase; color: var(--ink-3); white-space: nowrap;
+    }
+    .ob-code {
+      font-family: var(--mono); font-size: 13px; color: var(--accent);
+      letter-spacing: 0.06em; font-weight: 500;
+    }
+    .ob-error {
+      font-size: 12px; color: oklch(0.72 0.18 27); margin-top: 10px;
+      display: none; font-family: var(--mono); letter-spacing: 0.03em;
+    }
+
+    /* Footer note */
+    .join-footer {
+      text-align: center; position: relative; z-index: 2;
+      font-size: 12px; color: var(--ink-4); padding: 0 20px 32px;
+      font-family: var(--mono); letter-spacing: 0.04em;
+    }
+    .join-footer a { color: var(--ink-3); }
+    .join-footer a:hover { color: var(--ink-2); }
+    /* Intro strip */
+    .ob-intro-strip {
+      padding: 11px 20px 10px;
+      text-align: center;
+      font-family: var(--mono); font-size: 9px; letter-spacing: 0.13em;
+      text-transform: uppercase; color: var(--ink-3);
+      border-bottom: 1px solid var(--line);
+      line-height: 1.4;
+    }
+    /* Step animation */
+    @keyframes ob-step-enter {
+      from { opacity: 0; transform: translateY(10px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .ob-step-enter { animation: ob-step-enter 220ms cubic-bezier(.4,0,.2,1) both; }
+    /* Tap hint */
+    .ob-tap-hint {
+      text-align: center; margin-top: 14px;
+      font-family: var(--mono); font-size: 9px; letter-spacing: 0.10em;
+      text-transform: uppercase; color: var(--ink-4);
+    }
+  </style>
+</head>
+<body>
+
+<div class="stage">
+  <div class="orb orb-a"></div>
+  <div class="orb orb-b"></div>
+</div>
+<div class="grain"></div>
+
+<main class="page-wrap">
+
+  <!-- Brand mark -->
+  <div class="join-brand">
+    <div class="join-logo"><em>Arnie</em></div>
+    <div class="join-headline">Set up your profile</div>
+  </div>
+
+  <!-- Onboarding card — directly visible, no modal wrapper -->
+  <div class="ob-card">
+    <div class="ob-intro-strip">60 seconds &nbsp;·&nbsp; Arnie knows you from the first message</div>
+    <div class="ob-progress"><div class="ob-progress-bar" id="obProgressBar"></div></div>
+
+    <!-- Step 1: Goal -->
+    <div class="ob-step ob-step-enter" id="ob-step-1">
+      <div class="ob-step-label">Step 1 of 4 &nbsp;·&nbsp; Goal</div>
+      <h3 class="ob-step-title">What are you training for?</h3>
+      <div class="ob-goals" id="ob-goals">
+        <button type="button" class="ob-goal-btn" data-val="cut">
+          <span class="ob-goal-icon">📉</span>
+          <span class="ob-goal-name">Cut</span>
+          <span class="ob-goal-sub">lose fat</span>
+        </button>
+        <button type="button" class="ob-goal-btn" data-val="bulk">
+          <span class="ob-goal-icon">📈</span>
+          <span class="ob-goal-name">Bulk</span>
+          <span class="ob-goal-sub">gain muscle</span>
+        </button>
+        <button type="button" class="ob-goal-btn" data-val="maintain">
+          <span class="ob-goal-icon">⚖️</span>
+          <span class="ob-goal-name">Maintain</span>
+          <span class="ob-goal-sub">stay lean</span>
+        </button>
+        <button type="button" class="ob-goal-btn" data-val="performance">
+          <span class="ob-goal-icon">⚡</span>
+          <span class="ob-goal-name">Performance</span>
+          <span class="ob-goal-sub">get stronger</span>
+        </button>
+        <button type="button" class="ob-goal-btn" data-val="health">
+          <span class="ob-goal-icon">🩺</span>
+          <span class="ob-goal-name">Health</span>
+          <span class="ob-goal-sub">feel better</span>
+        </button>
+      </div>
+      <p class="ob-tap-hint">tap to select · moves to next step</p>
+    </div>
+
+    <!-- Step 2: About you -->
+    <div class="ob-step" id="ob-step-2" style="display:none">
+      <div class="ob-step-label">Step 2 of 4 &nbsp;·&nbsp; About you</div>
+      <h3 class="ob-step-title">A few basics.</h3>
+      <div class="ob-fields">
+        <div class="ob-field">
+          <label class="ob-label" for="ob-name">First name</label>
+          <input type="text" class="ob-input" id="ob-name" placeholder="e.g. Alex" autocomplete="given-name">
+        </div>
+        <div class="ob-field-row">
+          <div class="ob-field">
+            <label class="ob-label" for="ob-age">Age</label>
+            <input type="number" class="ob-input" id="ob-age" placeholder="25" min="13" max="99" inputmode="numeric">
+          </div>
+          <div class="ob-field">
+            <label class="ob-label">Sex</label>
+            <div class="ob-seg" id="ob-sex">
+              <button type="button" class="ob-seg-btn" data-val="male">Male</button>
+              <button type="button" class="ob-seg-btn" data-val="female">Female</button>
+              <button type="button" class="ob-seg-btn" data-val="other">Other</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="ob-nav">
+        <button class="ob-back-btn" onclick="obGoStep(1)">← Back</button>
+        <button class="ob-next-btn" id="ob-next-2" onclick="obNextStep2()">Continue →</button>
+      </div>
+    </div>
+
+    <!-- Step 3: Body metrics -->
+    <div class="ob-step" id="ob-step-3" style="display:none">
+      <div class="ob-step-label">Step 3 of 4 &nbsp;·&nbsp; Body metrics</div>
+      <h3 class="ob-step-title">Current stats.</h3>
+      <div class="ob-fields">
+        <div class="ob-field">
+          <label class="ob-label">Height</label>
+          <div class="ob-height-row">
+            <input type="number" class="ob-input ob-input-sm" id="ob-height-ft" placeholder="5" min="3" max="8" inputmode="numeric">
+            <span class="ob-unit">ft</span>
+            <input type="number" class="ob-input ob-input-sm" id="ob-height-in" placeholder="10" min="0" max="11" inputmode="numeric">
+            <span class="ob-unit">in</span>
+          </div>
+        </div>
+        <div class="ob-field">
+          <label class="ob-label" for="ob-weight">Current weight</label>
+          <div class="ob-height-row">
+            <input type="number" class="ob-input" id="ob-weight" placeholder="175" min="50" max="600" step="0.5" inputmode="decimal" style="max-width:140px">
+            <span class="ob-unit">lbs</span>
+          </div>
+        </div>
+      </div>
+      <div class="ob-nav">
+        <button class="ob-back-btn" onclick="obGoStep(2)">← Back</button>
+        <button class="ob-next-btn" id="ob-next-3" onclick="obNextStep3()">Continue →</button>
+      </div>
+    </div>
+
+    <!-- Step 4: Training experience -->
+    <div class="ob-step" id="ob-step-4" style="display:none">
+      <div class="ob-step-label">Step 4 of 4 &nbsp;·&nbsp; Training</div>
+      <h3 class="ob-step-title">How long have you been lifting?</h3>
+      <div class="ob-exp-group" id="ob-exp-group">
+        <button type="button" class="ob-exp-btn" data-val="beginner">
+          <strong>Beginner</strong><span>0 – 1 year</span>
+        </button>
+        <button type="button" class="ob-exp-btn" data-val="intermediate">
+          <strong>Intermediate</strong><span>1 – 4 years</span>
+        </button>
+        <button type="button" class="ob-exp-btn" data-val="advanced">
+          <strong>Advanced</strong><span>4+ years</span>
+        </button>
+      </div>
+      <div class="ob-field" style="margin-top:20px">
+        <label class="ob-label" for="ob-diet">Dietary preferences <span style="color:var(--ink-3);font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></label>
+        <input type="text" class="ob-input" id="ob-diet" placeholder="e.g. vegetarian, no dairy, high protein…">
+      </div>
+      <div class="ob-error" id="ob-error"></div>
+      <div class="ob-nav" style="margin-top:20px">
+        <button class="ob-back-btn" onclick="obGoStep(3)">← Back</button>
+        <button class="ob-next-btn" id="ob-submit-btn" onclick="obSubmit()">Get my Telegram link →</button>
+      </div>
+    </div>
+
+    <!-- Success state -->
+    <div class="ob-step" id="ob-step-success" style="display:none">
+      <div class="ob-success-icon">✓</div>
+      <h3 class="ob-step-title" style="margin-bottom:10px">
+        You're all set, <span id="ob-success-name">there</span>.
+      </h3>
+      <p class="ob-success-sub" id="ob-success-sub">
+        Arnie already has your goals, stats, and training background.
+        Open Telegram — no onboarding needed.
+      </p>
+      <a href="#" id="ob-tg-link" class="cta-btn" target="_blank" rel="noopener"
+         style="margin-top:20px;text-decoration:none;display:flex;justify-content:center">
+        Open Arnie on Telegram →
+      </a>
+      <div class="ob-code-row" style="margin-top:16px">
+        <span class="ob-code-label">Your code</span>
+        <code class="ob-code" id="ob-code"></code>
+        <span style="font-size:10px;color:var(--ink-4);margin-left:auto">expires in 48 hrs</span>
+      </div>
+    </div>
+
+  </div><!-- /.ob-card -->
+
+</main>
+
+<footer class="join-footer">
+  Already using Arnie? Just open <a href="https://t.me/Arnie_1026_Bot" target="_blank" rel="noopener">Telegram</a>.
+</footer>
+
+<script>
+  const obState = {
+    goal: null, name: null, age: null, sex: null,
+    heightFt: null, heightIn: null, weight: null,
+    experience: null, diet: null,
+  };
+
+  const OB_API_BASE = (
+    window.location.hostname === 'localhost' ||
+    window.location.hostname === '127.0.0.1'
+  ) ? `${window.location.protocol}//${window.location.host}`
+    : 'https://arnie.onrender.com';
+
+  const _obSuccessSub = {
+    cut:         "Arnie knows your weight, training level, and that you're here to cut. Straight to work.",
+    bulk:        "Arnie knows your stats and you're here to build. No setup, no Q&A.",
+    maintain:    "Arnie knows your stats and you're here to stay lean. Ready when you are.",
+    performance: "Arnie knows your background. You're here for performance. Let's go.",
+    health:      "Arnie knows your stats and you're here to feel better. Ready when you are.",
+  };
+
+  function obGoStep(n) {
+    document.querySelectorAll('.ob-step').forEach(el => { el.style.display = 'none'; });
+    const stepEl = document.getElementById('ob-step-' + (n === 5 ? 'success' : n));
+    if (stepEl) {
+      stepEl.style.display = 'block';
+      stepEl.classList.remove('ob-step-enter');
+      void stepEl.offsetWidth;
+      stepEl.classList.add('ob-step-enter');
+    }
+    const pct = n >= 5 ? 100 : (n / 4 * 100);
+    const bar = document.getElementById('obProgressBar');
+    if (bar) bar.style.width = pct + '%';
+    if (n === 5) {
+      const subEl = document.getElementById('ob-success-sub');
+      if (subEl && obState.goal) {
+        subEl.textContent = _obSuccessSub[obState.goal]
+          || 'Arnie has your goals, stats, and training background. Open Telegram — no onboarding needed.';
+      }
+    }
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  function obShake(el) {
+    el.classList.remove('shake');
+    void el.offsetWidth;
+    el.classList.add('shake');
+    el.addEventListener('animationend', () => el.classList.remove('shake'), { once: true });
+  }
+
+  // Goal buttons (step 1 — auto-advance on selection)
+  document.querySelectorAll('#ob-goals .ob-goal-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('#ob-goals .ob-goal-btn').forEach(b => b.classList.remove('selected'));
+      btn.classList.add('selected');
+      obState.goal = btn.dataset.val;
+      setTimeout(() => obGoStep(2), 280);
+    });
+  });
+
+  // Sex segmented control (step 2)
+  document.querySelectorAll('#ob-sex .ob-seg-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('#ob-sex .ob-seg-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      obState.sex = btn.dataset.val;
+    });
+  });
+
+  function obNextStep2() {
+    const nameEl = document.getElementById('ob-name');
+    const ageEl  = document.getElementById('ob-age');
+    const name   = nameEl.value.trim();
+    const age    = parseInt(ageEl.value, 10);
+    if (!name)                     { obShake(nameEl); nameEl.focus(); return; }
+    if (!age || age < 13 || age > 99) { obShake(ageEl); ageEl.focus(); return; }
+    if (!obState.sex)              { obShake(document.getElementById('ob-sex')); return; }
+    obState.name = name;
+    obState.age  = age;
+    obGoStep(3);
+  }
+
+  function obNextStep3() {
+    const ftEl = document.getElementById('ob-height-ft');
+    const inEl = document.getElementById('ob-height-in');
+    const wEl  = document.getElementById('ob-weight');
+    const ft   = parseInt(ftEl.value, 10);
+    const ins  = parseInt(inEl.value, 10);
+    const wt   = parseFloat(wEl.value);
+    if (!ft || ft < 3 || ft > 8) { obShake(ftEl); ftEl.focus(); return; }
+    if (!wt || wt < 50)          { obShake(wEl);  wEl.focus();  return; }
+    obState.heightFt = ft;
+    obState.heightIn = isNaN(ins) ? 0 : Math.max(0, Math.min(11, ins));
+    obState.weight   = wt;
+    obGoStep(4);
+  }
+
+  // Experience buttons (step 4)
+  document.querySelectorAll('#ob-exp-group .ob-exp-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('#ob-exp-group .ob-exp-btn').forEach(b => b.classList.remove('selected'));
+      btn.classList.add('selected');
+      obState.experience = btn.dataset.val;
+    });
+  });
+
+  async function obSubmit() {
+    if (!obState.experience) {
+      obShake(document.getElementById('ob-exp-group'));
+      return;
+    }
+    obState.diet = (document.getElementById('ob-diet').value || '').trim() || null;
+
+    const submitBtn = document.getElementById('ob-submit-btn');
+    const errEl     = document.getElementById('ob-error');
+    submitBtn.textContent = 'Setting up…';
+    submitBtn.disabled = true;
+    errEl.style.display = 'none';
+
+    const heightCm = Math.round(((obState.heightFt * 12) + obState.heightIn) * 2.54 * 10) / 10;
+    const weightKg = Math.round(obState.weight * 0.453592 * 100) / 100;
+
+    try {
+      const res = await fetch(`${OB_API_BASE}/api/preregister`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name:                obState.name,
+          age:                 obState.age,
+          sex:                 obState.sex,
+          height_cm:           heightCm,
+          weight_kg:           weightKg,
+          primary_goal:        obState.goal,
+          training_experience: obState.experience,
+          dietary_preferences: obState.diet,
+        }),
+      });
+
+      const data = await res.json();
+      if (data.ok) {
+        const firstName = (obState.name || '').split(' ')[0] || 'there';
+        document.getElementById('ob-success-name').textContent = firstName;
+        document.getElementById('ob-tg-link').href = data.bot_link;
+        document.getElementById('ob-code').textContent = data.code;
+        obGoStep(5);
+      } else {
+        errEl.textContent = data.detail || 'Something went wrong — try again.';
+        errEl.style.display = 'block';
+        submitBtn.textContent = 'Try again';
+        submitBtn.disabled = false;
+      }
+    } catch (err) {
+      errEl.textContent = 'Network error — check your connection and try again.';
+      errEl.style.display = 'block';
+      submitBtn.textContent = 'Try again';
+      submitBtn.disabled = false;
+    }
+  }
+
+  // Enter key support
+  ['ob-name', 'ob-age'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('keydown', e => { if (e.key === 'Enter') obNextStep2(); });
+  });
+  ['ob-height-ft', 'ob-height-in', 'ob-weight'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('keydown', e => { if (e.key === 'Enter') obNextStep3(); });
+  });
+  const dietEl = document.getElementById('ob-diet');
+  if (dietEl) dietEl.addEventListener('keydown', e => { if (e.key === 'Enter') obSubmit(); });
+</script>
+</body>
+</html>
