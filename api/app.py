@@ -60,6 +60,9 @@ app.add_middleware(
     allow_origins=[
         "https://tryarnie.com", "https://www.tryarnie.com",
         "https://arnie-landing.onrender.com",
+        # Local dev — landing page is served from the same FastAPI origin
+        "http://localhost:10000",
+        "http://127.0.0.1:10000",
     ],
     allow_methods=["POST", "GET", "OPTIONS"],
     allow_headers=["*"],
@@ -193,23 +196,25 @@ def _dashboard_msg(action: str, **kw) -> str:
     cal_t = kw.get("cal_target")
     cal_str = f"{cal}/{cal_t}" if cal_t else str(cal)
     if action == "food_edit":
-        return f"got it, updated {label}.|||you're at {cal_str} cal today."
+        return f"updated {label}.|||sitting at {cal_str} cal today."
     if action == "food_delete":
-        return f"pulled {label} from your log.|||{cal_str} cal on the day."
+        return f"pulled {label} off the log.|||{cal_str} cal on the day."
     if action == "exercise_edit":
-        return "training log updated."
+        name = f" {label}" if label else ""
+        return f"updated{name} in your training log. how'd the session go?"
     if action == "exercise_delete":
-        return "pulled that from your training log."
+        name = label if label else "that"
+        return f"pulled {name} from your training log."
     if action == "profile_targets":
-        return f"locked in your new targets.|||{label}"
+        return f"new targets locked in.|||{label}"
     if action == "profile_reminders_on":
-        return "check-ins back on. i'll be in touch."
+        return "check-ins back on, i'll be in touch."
     if action == "profile_reminders_off":
-        return "going quiet. ping me whenever you need."
+        return "going quiet. ping me when you need."
     if action == "profile_quick":
-        return "quick mode on — i'll log without the back and forth."
+        return "quick mode on, logging without the back and forth from now."
     if action == "profile_strict":
-        return "strict mode on — i'll confirm everything before it goes in."
+        return "strict mode on, i'll confirm before anything goes in."
     if action == "profile_field":
         return f"updated your {label}."
     return ""
@@ -650,6 +655,95 @@ async def imessage_start(payload: IMessageSignup, request: Request):
         "already_started": "You're already set up — check your messages for Arnie.",
     }
     return {"ok": False, "message": reasons.get(result["reason"], "Something went wrong — try again.")}
+
+
+# ── Web onboarding pre-registration ───────────────────────────────────────────
+
+class PreRegisterPayload(BaseModel):
+    name: str
+    age: int
+    sex: str                               # "male" | "female" | "other"
+    height_cm: float
+    weight_kg: float
+    primary_goal: str                      # cut | bulk | maintain | performance | health
+    training_experience: str              # beginner | intermediate | advanced
+    dietary_preferences: Optional[str] = None
+
+
+_VALID_GOALS = {"cut", "bulk", "maintain", "performance", "health"}
+_VALID_EXPERIENCE = {"beginner", "intermediate", "advanced"}
+_VALID_SEX = {"male", "female", "other"}
+
+
+@app.post("/api/preregister")
+async def api_preregister(payload: PreRegisterPayload, request: Request):
+    """
+    Landing-page onboarding form submission.
+    Stores the profile, returns a one-time SETUP-XXXXXX code and the Telegram deep link.
+    When the user hits /start SETUP-XXXXXX on Telegram, their profile is pre-loaded
+    and they skip conversational onboarding entirely.
+    Rate-limited per IP: max 5 per 10 min.
+    """
+    import time as _t
+    ip = request.client.host if request.client else "?"
+    rl = getattr(app.state, "_prereg_rl", {})
+    now = _t.time()
+    hits = [t for t in rl.get(ip, []) if now - t < 600]
+    if len(hits) >= 5:
+        raise HTTPException(status_code=429, detail="Too many attempts — try again shortly.")
+    hits.append(now)
+    rl[ip] = hits
+    app.state._prereg_rl = rl
+
+    # Validate enum fields
+    if payload.primary_goal not in _VALID_GOALS:
+        raise HTTPException(status_code=422, detail=f"Invalid goal: {payload.primary_goal}")
+    if payload.training_experience not in _VALID_EXPERIENCE:
+        raise HTTPException(status_code=422, detail=f"Invalid experience: {payload.training_experience}")
+    if payload.sex not in _VALID_SEX:
+        raise HTTPException(status_code=422, detail=f"Invalid sex: {payload.sex}")
+    if not (1 <= payload.age <= 120):
+        raise HTTPException(status_code=422, detail="Age out of range")
+    if not (50 <= payload.height_cm <= 280):
+        raise HTTPException(status_code=422, detail="Height out of range")
+    if not (20 <= payload.weight_kg <= 400):
+        raise HTTPException(status_code=422, detail="Weight out of range")
+
+    profile = {
+        "name": payload.name.strip()[:80],
+        "age": payload.age,
+        "sex": payload.sex,
+        "height_cm": round(payload.height_cm, 1),
+        "weight_kg": round(payload.weight_kg, 2),
+        "primary_goal": payload.primary_goal,
+        "training_experience": payload.training_experience,
+        "dietary_preferences": (payload.dietary_preferences or "").strip()[:200] or None,
+    }
+
+    from db.queries import create_pre_registration
+    async with AsyncSessionLocal() as db:
+        code = await create_pre_registration(db, profile)
+
+    bot_username = os.getenv("TELEGRAM_BOT_USERNAME", "Arnie_1026_Bot")
+    bot_link = f"https://t.me/{bot_username}?start={code}"
+
+    logger.info(f"Pre-registration created: code={code} name={profile['name']} goal={profile['primary_goal']}")
+    return {"ok": True, "code": code, "bot_link": bot_link}
+
+
+# ── Local dev: serve landing page from the API ─────────────────────────────────
+
+@app.get("/landing", response_class=HTMLResponse, include_in_schema=False)
+async def landing_page():
+    """
+    Serves the landing page from the FastAPI app for local development.
+    In production, the landing is a separate Render static service (arnie-landing).
+    Access at http://localhost:10000/landing during local dev.
+    """
+    landing_path = os.path.join(os.path.dirname(__file__), "..", "landing", "index.html")
+    if not os.path.exists(landing_path):
+        raise HTTPException(status_code=404, detail="Landing page not found")
+    return FileResponse(landing_path, media_type="text/html")
 
 
 # ── Stats API ──────────────────────────────────────────────────────────────────
@@ -1191,7 +1285,7 @@ async def api_edit_exercise(entry_id: int, patch: ExercisePatch, token: str = Qu
         if not entry:
             raise HTTPException(status_code=404, detail="Entry not found")
         notify = dict(send_target=await resolve_send_target(db, user),
-                      text=_dashboard_msg("exercise_edit"))
+                      text=_dashboard_msg("exercise_edit", label=entry.exercise_name or ""))
     asyncio.create_task(_send_dashboard_notification(**notify))
     return {"status": "ok", "id": entry_id}
 
@@ -1204,11 +1298,15 @@ async def api_delete_exercise(entry_id: int, token: str = Query(...)):
         user = await get_user_by_webhook_token(db, token)
         if not user:
             raise HTTPException(status_code=401, detail="Invalid token")
+        from sqlalchemy import select as _sel
+        from db.models import ExerciseEntry
+        entry = (await db.execute(_sel(ExerciseEntry).where(ExerciseEntry.id == entry_id))).scalar_one_or_none()
+        exercise_name = entry.exercise_name if entry else ""
         ok = await delete_exercise_entry(db, entry_id, user.id)
         if not ok:
             raise HTTPException(status_code=404, detail="Entry not found")
         notify = dict(send_target=await resolve_send_target(db, user),
-                      text=_dashboard_msg("exercise_delete"))
+                      text=_dashboard_msg("exercise_delete", label=exercise_name))
     asyncio.create_task(_send_dashboard_notification(**notify))
     return {"status": "ok"}
 
