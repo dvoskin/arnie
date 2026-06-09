@@ -383,32 +383,16 @@
       text-transform: uppercase; color: var(--ink-4);
     }
 
-    /* ── iPhone optimizations ──────────────────────────────── */
+    /* ── Mobile / iPhone ──────────────────────────────────── */
     @media (max-width: 600px) {
-      /* Less vertical breathing room — card takes center stage */
-      .page-wrap { padding: 24px 0 0; gap: 20px; justify-content: flex-start; }
-      /* Card fills full width, flush to sides */
-      .ob-card {
-        width: 100%; border-radius: 22px 22px 0 0;
-        border-left: none; border-right: none; border-bottom: none;
-        min-height: calc(100dvh - 120px);
-      }
-      /* Tighter step padding */
-      .ob-step { padding: 20px 20px calc(20px + env(safe-area-inset-bottom)); }
-      /* Smaller title */
-      .ob-step-title { font-size: 21px; margin-bottom: 16px; }
-      /* Prevent iOS auto-zoom on tap (must be ≥ 16px) */
-      .ob-input { font-size: 16px; }
-      /* Stretch next button */
-      .ob-next-btn { flex: 1; padding: 14px 16px; font-size: 15px; }
-      /* 2-column goal grid */
-      .ob-goal-btn { flex: 0 0 calc(50% - 4px); padding: 14px 10px 12px; }
-      /* Taller experience rows */
-      .ob-exp-btn { padding: 15px 16px; }
-      /* Full-width Telegram CTA */
+      .ob-step { padding: 20px 18px 20px; }
+      .ob-step-title { font-size: 20px; margin-bottom: 14px; }
+      .ob-input { font-size: 16px; } /* prevents iOS auto-zoom on focus */
+      .ob-next-btn { flex: 1; padding: 13px 16px; }
+      .ob-goal-btn { flex: 0 0 calc(50% - 4px); padding: 12px 8px 10px; }
+      .ob-goal-icon { font-size: 18px; }
+      .ob-exp-btn { padding: 14px 16px; }
       #ob-tg-link { width: 100%; }
-      /* Footer safe-area */
-      .join-footer { padding-bottom: calc(20px + env(safe-area-inset-bottom)); }
     }
   </style>
 </head>
