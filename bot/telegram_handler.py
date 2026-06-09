@@ -839,9 +839,10 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return
 
-        # Respond to the voice note like any other message — no transcript echo.
-        # Arnie just coaches on what was said (a human coach doesn't parrot you back).
-        await _run_pipeline(update, context, transcript, "voice", db)
+        # Prepend [Voice note]: so the LLM applies voice-specific rules (multi-item
+        # parsing, filler-word tolerance). Mirrors [Food photo]: for photos.
+        # Arnie still coaches naturally — the prefix is invisible plumbing, never echoed.
+        await _run_pipeline(update, context, f"[Voice note]: {transcript}", "voice", db)
 
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -958,6 +959,8 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 user.training_experience = profile.get("training_experience") or user.training_experience
                 if profile.get("dietary_preferences"):
                     user.dietary_preferences = profile["dietary_preferences"]
+                if profile.get("timezone"):
+                    user.timezone = profile["timezone"]
                 user.onboarding_completed = True
                 await db.commit()
 

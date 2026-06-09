@@ -668,6 +668,7 @@ class PreRegisterPayload(BaseModel):
     primary_goal: str                      # cut | bulk | maintain | performance | health
     training_experience: str              # beginner | intermediate | advanced
     dietary_preferences: Optional[str] = None
+    timezone: Optional[str] = None       # IANA tz string, e.g. "America/New_York"
 
 
 _VALID_GOALS = {"cut", "bulk", "maintain", "performance", "health"}

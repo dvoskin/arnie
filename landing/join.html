@@ -557,8 +557,10 @@
   const obState = {
     goal: null, name: null, age: null, sex: null,
     heightFt: null, heightIn: null, weight: null,
-    experience: null, diet: null,
+    experience: null, diet: null, timezone: null,
   };
+  // Capture timezone silently on page load
+  try { obState.timezone = Intl.DateTimeFormat().resolvedOptions().timeZone; } catch(e) {}
 
   const OB_API_BASE = (
     window.location.hostname === 'localhost' ||
@@ -688,6 +690,7 @@
           primary_goal:        obState.goal,
           training_experience: obState.experience,
           dietary_preferences: obState.diet,
+          timezone:            obState.timezone || null,
         }),
       });
 

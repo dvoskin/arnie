@@ -2263,13 +2263,14 @@
   const obState = {
     goal: null, name: null, age: null, sex: null,
     heightFt: null, heightIn: null, weight: null,
-    experience: null, diet: null,
+    experience: null, diet: null, timezone: null,
   };
 
   function openObModal() {
     // Reset state
     Object.assign(obState, { goal: null, name: null, age: null, sex: null,
       heightFt: null, heightIn: null, weight: null, experience: null, diet: null });
+    try { obState.timezone = Intl.DateTimeFormat().resolvedOptions().timeZone; } catch(e) {}
     // Clear selections / inputs
     document.querySelectorAll('.ob-goal-btn').forEach(b => b.classList.remove('selected'));
     document.querySelectorAll('#ob-sex .ob-seg-btn').forEach(b => b.classList.remove('active'));
@@ -2433,6 +2434,7 @@
           primary_goal:       obState.goal,
           training_experience: obState.experience,
           dietary_preferences: obState.diet,
+          timezone:           obState.timezone || null,
         }),
       });
 
