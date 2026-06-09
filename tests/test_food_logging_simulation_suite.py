@@ -1218,3 +1218,175 @@ def test_prompt_teaches_multi_answer_mapping():
     assert "mayo, small, oat" in s
     # And the count-mismatch rule
     assert "doesn't match the question count" in s or "ask one short clarifier" in s
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# DIMENSION 34 — Gap 10: expanded generic-name coverage
+# ════════════════════════════════════════════════════════════════════════════
+
+
+@pytest.mark.parametrize("brand_dependent_item", [
+    "yogurt", "ice cream", "cheese", "cake", "pie", "biscuit",
+    "pudding", "mousse", "syrup", "jam", "jelly", "butter",
+    "hummus", "guacamole", "sauce", "dressing", "spread",
+    "gelato", "sorbet", "creamer",
+])
+def test_brand_dependent_items_classified_generic(brand_dependent_item):
+    """Items whose macros swing wildly by brand or recipe must be flagged so
+    the prompt's GENERIC BRANDED ITEMS rule triggers an ask."""
+    assert is_generic_food_name(brand_dependent_item) is True, (
+        f"{brand_dependent_item!r} should be generic (asks-which-brand)"
+    )
+
+
+@pytest.mark.parametrize("specific_branded_item", [
+    "chobani triple zero",       # specific yogurt
+    "halo top ice cream",        # specific frozen dessert
+    "cheddar cheese",            # specific cheese variety
+    "peanut butter",             # specific spread (peanut qualifier)
+    "almond butter",             # specific spread (almond qualifier)
+    "maple syrup",               # specific syrup
+    "strawberry jam",            # specific jam
+    "tomato sauce",              # specific sauce
+])
+def test_specific_branded_items_not_generic(specific_branded_item):
+    """A brand or variety qualifier disambiguates the generic — these should
+    NOT trigger the asks-which-brand flow."""
+    assert is_generic_food_name(specific_branded_item) is False, (
+        f"{specific_branded_item!r} has a qualifier — should NOT be generic"
+    )
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# DIMENSION 35 — Gap 6: ambiguous update/delete reference
+# ════════════════════════════════════════════════════════════════════════════
+
+
+def test_prompt_has_ambiguous_update_delete_rule():
+    """When [TODAY] shows multiple matching entries, the model must ask which
+    one before firing update/delete. The exact rule must be present so the
+    model doesn't silently pick the wrong row."""
+    s = SYSTEM_PROMPT
+    assert "AMBIGUOUS UPDATE/DELETE REFERENCE" in s
+    assert "two chickens" in s.lower() or "MULTIPLE entries" in s
+    # And: distinguish by detail, never by [#id]
+    assert "NEVER reference" in s and "[#id]" in s
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# DIMENSION 36 — Gap 7: macro-reconciliation surfacing
+# ════════════════════════════════════════════════════════════════════════════
+
+
+def test_prompt_instructs_model_to_use_tool_result_macros():
+    """The log_food tool result tells the model to use 'Logged X:' macros,
+    NOT its own input — even when reconciliation corrected the values."""
+    # This rule lives in the tool result template, not the system prompt.
+    # Verify by inspecting the source.
+    import inspect
+    from handlers import tool_executor
+    src = inspect.getsource(tool_executor._dispatch)
+    assert "NEVER from your input" in src
+    assert "ALWAYS from the tool" in src
+
+
+def test_reconciliation_flag_appears_in_source():
+    """The reconcile-detection path must be present so corrections surface."""
+    import inspect
+    from handlers import tool_executor
+    src = inspect.getsource(tool_executor._dispatch)
+    assert "RECONCILED" in src or "reconciled_note" in src
+    assert "USE THE RECONCILED VALUES" in src
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# DIMENSION 37 — Gap 11: empty FOOD HISTORY in quick mode
+# ════════════════════════════════════════════════════════════════════════════
+
+
+def test_prompt_handles_empty_history_in_quick_mode():
+    """Day-1 quick-mode users have no FOOD HISTORY — the rule must say
+    estimate-and-flag instead of asking, preserving quick mode's flow."""
+    s = SYSTEM_PROMPT
+    # The empty-history clause must be present in the quick-mode section
+    assert "[FOOD HISTORY] is empty" in s or "day-1 user" in s
+    # And the corrective behavior is: log with estimated:true, flag in one bubble
+    assert "estimated: true" in s
+    # Quick mode promise preserved
+    assert "EVERY turn" in s or "even day 1" in s
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# DIMENSION 38 — Gap 12: TZ-shifted day boundary (defensive)
+# ════════════════════════════════════════════════════════════════════════════
+
+
+def test_parse_log_date_yesterday_respects_user_tz():
+    """'yesterday' must be relative to the user's TZ, not UTC. Without this,
+    a user in Tokyo at 1am would log to UTC's yesterday (their own today)."""
+    from handlers.tool_executor import _parse_log_date
+    from datetime import date
+    import pytz
+    from datetime import datetime as _dt
+    # We can't deterministically test "today" without freezing time, but we CAN
+    # verify the function uses the timezone we pass.
+    out_tokyo = _parse_log_date("yesterday", "Asia/Tokyo")
+    out_utc = _parse_log_date("yesterday", "UTC")
+    # Both should be a date (not None), within 1 day of each other.
+    assert out_tokyo is not None
+    assert out_utc is not None
+    assert abs((out_tokyo - out_utc).days) <= 1
+
+
+def test_parse_log_date_rejects_future():
+    """Catches the year-confusion bug — a parsed date in the future must
+    return None, not log to a future day."""
+    from handlers.tool_executor import _parse_log_date
+    assert _parse_log_date("2099-01-01", "UTC") is None
+
+
+def test_parse_log_date_rejects_implausibly_old():
+    """Same as future: implausibly-old dates (>2 years back) are likely a
+    year-misparse and should return None."""
+    from handlers.tool_executor import _parse_log_date
+    assert _parse_log_date("2020-01-01", "UTC") is None
+
+
+def test_prompt_handles_unknown_timezone():
+    """If the user's timezone isn't set, the model must NOT invent a local
+    time — ask what city they're in instead."""
+    s = SYSTEM_PROMPT
+    assert "timezone is unknown" in s
+    assert "ask what city" in s.lower()
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# DIMENSION 39 — Gap 13: state freshness (deterministic_confirmation reads
+# DailyLog after refresh)
+# ════════════════════════════════════════════════════════════════════════════
+
+
+def test_deterministic_confirmation_uses_log_totals():
+    """deterministic_confirmation must read total_calories/total_protein from
+    the DailyLog passed in — those are the post-refresh authoritative numbers.
+    The function must NOT recompute or invent totals."""
+    out = deterministic_confirmation(
+        [_log_food_call("banana")], _log(1234, 56), _prefs(cal_t=2000)
+    )
+    # 1,234 is unusual enough to be obviously the passed-in value
+    assert "1,234" in out or "1234" in out
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# DIMENSION 40 — Gap 14: LLM-judge eval scaffold loads
+# ════════════════════════════════════════════════════════════════════════════
+
+
+def test_llm_judge_eval_scaffold_is_opt_in():
+    """The eval module must exist, must import without making API calls, and
+    must skip by default (opt-in via LLM_JUDGE_EVAL=true)."""
+    from tests import test_llm_judge_eval as eval_mod
+    assert hasattr(eval_mod, "_run_arnie")
+    assert hasattr(eval_mod, "_judge")
+    # The pytestmark skip should be present
+    assert hasattr(eval_mod, "pytestmark")

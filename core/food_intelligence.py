@@ -75,20 +75,31 @@ _GENERIC_FOOD = {
     # bars / packaged snacks (brand swings 100-400 cal)
     "bar", "protein", "granola", "energy", "cereal", "snack", "snacks",
     "cookie", "cookies", "brownie", "muffin", "donut", "doughnut", "pastry",
-    "chips", "crackers", "popcorn", "pretzels", "jerky", "candy", "chocolate",
-    "gummies", "gummy", "nuts", "trail", "mix", "supplement", "supplements",
-    "preworkout", "creatine", "powder", "scoop",
+    "chips", "crackers", "cracker", "popcorn", "pretzels", "pretzel", "jerky",
+    "candy", "chocolate", "gummies", "gummy", "nuts", "trail", "mix",
+    "supplement", "supplements", "preworkout", "creatine", "powder", "scoop",
     # drinks (brand / prep dependent)
     "shake", "smoothie", "drink", "juice", "soda", "coffee", "tea", "latte",
     "cappuccino", "mocha", "americano", "macchiato", "espresso", "frappe",
     "frappuccino", "milkshake", "kombucha", "lemonade", "milk", "beer", "wine",
-    "cocktail", "margarita", "alcohol",
+    "cocktail", "margarita", "alcohol", "creamer",
     # composite dishes (recipe dependent — USDA averages are meaningless here)
     "sandwich", "wrap", "bowl", "salad", "burrito", "taco", "quesadilla",
     "nachos", "burger", "pizza", "pasta", "noodles", "ramen", "curry", "soup",
     "stew", "stirfry", "sushi", "poke", "omelette", "omelet", "scramble",
-    "toast", "bagel", "pancakes", "waffles", "oatmeal", "porridge", "casserole",
-    "fries", "quiche", "dumplings",
+    "toast", "bagel", "pancakes", "pancake", "waffles", "waffle", "oatmeal",
+    "porridge", "casserole", "fries", "quiche", "dumplings", "bread", "roll",
+    "biscuit", "scone", "patty",
+    # dairy & dairy-adjacent (brand drives macros — Chobani 100 vs Fage 220)
+    "yogurt", "yoghurt", "cheese", "cottage", "ricotta",
+    # frozen desserts (Halo Top 280/pint vs Häagen-Dazs 1,200/pint)
+    "ice", "cream", "icecream", "gelato", "sorbet", "sherbet", "froyo",
+    # baked desserts (cheesecake vs angel food = ~5x range)
+    "cake", "cupcake", "pie", "tart", "pudding", "mousse", "custard",
+    # spreads / condiments / sauces (200-400 cal range from "a drizzle")
+    "syrup", "jam", "jelly", "preserves", "spread", "spreads", "dip", "dips",
+    "sauce", "sauces", "dressing", "dressings", "butter",
+    "mayo", "mayonnaise", "hummus", "guac", "guacamole",
     # vague meal references
     "meal", "lunch", "dinner", "breakfast", "brunch", "food", "dish",
     "leftovers", "combo", "platter", "takeout", "serving", "piece", "plate",

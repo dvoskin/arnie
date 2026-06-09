@@ -558,6 +558,12 @@ async def _dispatch(name, inp, user, today_log, db, source_type):  # noqa: C901
         target_log, past_date = await _resolve_log(inp, user, today_log, db)
 
         food_name = inp.get("food_name") or ""
+        # Capture raw LLM-submitted macros before _analyze_food runs
+        # reconcile_macros, so we can flag corrections in the tool result.
+        _raw_cal = inp.get("calories")
+        _raw_protein = inp.get("protein")
+        _raw_carbs = inp.get("carbs")
+        _raw_fat = inp.get("fats")
         analysis = await _analyze_food(db, user, food_name, inp)
 
         # T2.3 — capture meal timing / alcohol / photo provenance. Photos are
@@ -617,13 +623,42 @@ async def _dispatch(name, inp, user, today_log, db, source_type):  # noqa: C901
             remaining += f" {cal_t - target_log.total_calories:.0f} cal left"
         if pro_t:
             remaining += f", {pro_t - target_log.total_protein:.0f}g protein to go"
+
+        # Surface macro-reconciliation corrections so the model uses the
+        # reconciled numbers in its reply (not the LLM-input it remembers).
+        # We flag when ANY macro shifted by >=5% — small rounding differences
+        # don't deserve the noise.
+        reconciled_note = ""
+        try:
+            def _pct_off(orig, new):
+                if not orig or orig == 0:
+                    return 0.0
+                return abs(float(new) - float(orig)) / float(orig)
+            shifted = []
+            if _raw_protein is not None and _pct_off(_raw_protein, analysis.protein) >= 0.05:
+                shifted.append(f"protein {float(_raw_protein):.0f}g→{analysis.protein:.0f}g")
+            if _raw_carbs is not None and _pct_off(_raw_carbs, analysis.carbs) >= 0.05:
+                shifted.append(f"carbs {float(_raw_carbs):.0f}g→{analysis.carbs:.0f}g")
+            if _raw_fat is not None and _pct_off(_raw_fat, analysis.fat) >= 0.05:
+                shifted.append(f"fat {float(_raw_fat):.0f}g→{analysis.fat:.0f}g")
+            if shifted:
+                reconciled_note = (
+                    f" RECONCILED: your submitted macros didn't add up to your "
+                    f"submitted calories ({', '.join(shifted)} after rebalance). "
+                    f"USE THE RECONCILED VALUES from 'Logged X:' above — those are "
+                    f"what's in the DB. Don't mention the rebalance to the user."
+                )
+        except Exception as _e:
+            logger.warning(f"reconciliation diff failed: {_e}")
+
         return (
             f"Logged {food_name}: {analysis.calories} cal, {analysis.protein:.0f}g protein"
-            f"{date_label}. ANALYSIS: {analysis.coach_note}. "
+            f"{date_label}. ANALYSIS: {analysis.coach_note}.{reconciled_note} "
             f"DAY TOTAL: {target_log.total_calories:.0f} cal, {target_log.total_protein:.0f}g protein"
             f"{(' (' + remaining.strip() + ')') if remaining else ''}. "
             f"Scale the reply to the log. Meaningful meal: name the food and its macros "
-            f"(from 'Logged X:' above), day total from DAY TOTAL (verbatim — never recompute), "
+            f"(from 'Logged X:' above — NEVER from your input, ALWAYS from the tool "
+            f"result), day total from DAY TOTAL (verbatim — never recompute), "
             f"protein standing if a target exists, one short next step. "
             f"Small item (coffee, condiment, drink under ~150 cal): 2 lines max — confirm the food "
             f"and a brief day note, skip the full macro breakdown. "
