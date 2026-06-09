@@ -10,16 +10,30 @@ from db.queries import get_recent_logs, get_recent_weights, get_recent_health_sn
 from memory.memory_manager import read_memory
 
 
-def render_pending_clarification_block(pending_rows, now=None, freshness_minutes: int = 30) -> str:
+_CLARIFICATION_FRESHNESS = {
+    "quick": 15,       # quick mode: fewer questions, shorter window — don't block flow
+    "moderate": 30,    # default: standard 30-minute window
+    "strict": 60,      # strict mode: user wants accuracy, questions stay live longer
+}
+
+
+def render_pending_clarification_block(
+    pending_rows, now=None, freshness_minutes: int = 30, food_mode: str = None
+) -> str:
     """Render the [PENDING CLARIFICATION] context block from a list of
     PendingQuestion rows. Filters to food_clarification kind, freshness window,
     unanswered. Pure + testable — no DB dependency. now= injectable for tests.
 
+    freshness_minutes scales with food_logging_mode: quick=15, moderate=30, strict=60.
     Caps at 3 rows so the prompt stays lean even if the model accumulated many.
     Returns "" when nothing fresh — context_builder will skip the line entirely.
     """
     from datetime import datetime as _dt, timedelta as _td
     now = now or _dt.utcnow()
+    if food_mode:
+        freshness_minutes = _CLARIFICATION_FRESHNESS.get(
+            food_mode.strip().lower(), freshness_minutes
+        )
     cutoff = now - _td(minutes=freshness_minutes)
 
     fresh = [
@@ -605,14 +619,15 @@ async def build_context(user: User, today_log: Optional[DailyLog], db,
         attr_block = ""
 
     # T2.2 — Pending food clarifications (open questions Arnie asked but the
-    # user hasn't answered yet). Surface fresh ones (< 30 min) so Arnie sees
-    # what's outstanding and doesn't re-ask. Auto-resolves on log_food fire,
-    # so once the model logs the food its row is closed by the executor.
+    # user hasn't answered yet). Freshness window scales with food_logging_mode:
+    # quick=15 min (don't block flow), moderate=30 min (default), strict=60 min
+    # (user wants accuracy, questions stay live longer). Auto-resolves on log_food.
     pending_clarification_block = ""
     try:
         from db.queries import get_open_pending_questions
         _pending = await get_open_pending_questions(db, user.id)
-        pending_clarification_block = render_pending_clarification_block(_pending)
+        _food_mode = getattr(user.preferences, "food_logging_mode", None) if user.preferences else None
+        pending_clarification_block = render_pending_clarification_block(_pending, food_mode=_food_mode)
     except Exception as e:
         # Telemetry only — never fail the turn for a clarification fetch error.
         import logging as _l

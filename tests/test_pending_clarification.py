@@ -167,6 +167,59 @@ def test_note_food_clarification_schema_requires_question_and_food_item():
     assert {"question", "food_item"} <= required
 
 
+# ── mode-based freshness window ──────────────────────────────────────────────
+
+
+def test_quick_mode_expires_after_15_minutes():
+    """quick mode users want flow — questions expire after 15 min, not 30."""
+    from core.context_builder import render_pending_clarification_block
+    # 20 min ago — stale for quick (15), fresh for moderate (30)
+    rows = [_stub_row(asked_minutes_ago=20)]
+    assert render_pending_clarification_block(rows, food_mode="quick") == ""
+    assert render_pending_clarification_block(rows, food_mode="moderate") != ""
+
+
+def test_quick_mode_still_surfaces_very_fresh_questions():
+    """quick mode: a 10-min-old question is still within the 15-min window."""
+    from core.context_builder import render_pending_clarification_block
+    rows = [_stub_row(asked_minutes_ago=10)]
+    block = render_pending_clarification_block(rows, food_mode="quick")
+    assert "[PENDING CLARIFICATION]" in block
+
+
+def test_strict_mode_keeps_questions_live_for_60_minutes():
+    """strict mode users are deliberate — questions stay live for 60 min."""
+    from core.context_builder import render_pending_clarification_block
+    # 45 min ago — stale for moderate (30), fresh for strict (60)
+    rows = [_stub_row(asked_minutes_ago=45)]
+    assert render_pending_clarification_block(rows, food_mode="moderate") == ""
+    assert render_pending_clarification_block(rows, food_mode="strict") != ""
+
+
+def test_strict_mode_expires_after_60_minutes():
+    """strict mode questions still expire — 65 min old is gone."""
+    from core.context_builder import render_pending_clarification_block
+    rows = [_stub_row(asked_minutes_ago=65)]
+    assert render_pending_clarification_block(rows, food_mode="strict") == ""
+
+
+def test_unknown_mode_falls_back_to_default_30_minutes():
+    """An unrecognised mode string uses the 30-min default — no crash."""
+    from core.context_builder import render_pending_clarification_block
+    rows = [_stub_row(asked_minutes_ago=20)]
+    # 20 min — should be fresh under default (30)
+    assert render_pending_clarification_block(rows, food_mode="typo_mode") != ""
+
+
+def test_block_includes_log_all_foods_instruction():
+    """After our multi-item fix, the block must tell the LLM to log ALL foods,
+    not just the one the question was about."""
+    from core.context_builder import render_pending_clarification_block
+    rows = [_stub_row(asked_minutes_ago=5)]
+    block = render_pending_clarification_block(rows)
+    assert "all" in block.lower()
+
+
 def test_prompt_teaches_clarification_tool_and_context_block():
     """The model must be taught to call note_food_clarification when asking
     AND to consume the [PENDING CLARIFICATION] block next turn. The rule was
