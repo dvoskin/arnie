@@ -894,24 +894,12 @@ body{{
 .exrow.open .ex-meta{{display:none}}
 .exrow-actions .ibtn{{width:24px;height:24px;font-size:11px}}
 .exrow-actions .ibtn.del{{font-size:13px}}
-/* Bare wrapper for the workout log — no card chrome at this level so
-   the .ex-group / .ex-card cards inside don't get clipped by an outer
-   rounded corner. Empty/loading state gets a dashed-card affordance. */
-.ex-log-wrap .lempty{{
-  background:var(--sf);border:1px dashed var(--bd);border-radius:12px;
-  padding:14px 16px;color:var(--mu);font-size:13px;text-align:center;
-}}
-/* Mobile polish: shrink workout rows the same 1-2px as food rows so
-   long meta strings ("3×15/15/13 · 70/80/80 lb") don't crowd the name. */
-@media(max-width:700px){{
-  .ex-group-hd{{font-size:8.5px;letter-spacing:.07em;margin-bottom:3px}}
-  .exrow{{padding:6px 12px;gap:8px}}
-  .ex-name{{font-size:12.5px;line-height:1.25}}
-  .ex-meta{{font-size:10.5px}}
-}}
-/* Workouts log spacing — tighter gap between Cardio and Strength groups
-   so the section reads as one connected list, not two floating cards. */
-.ex-log-wrap .ex-group + .ex-group{{margin-top:6px}}
+/* Workout log restored to use the original .lcrd + .eg-row layout —
+   the .ex-log-wrap / .ex-group / .ex-card / .exrow rules introduced
+   during the preview port are no longer referenced by the markup or
+   renderer. Left in the stylesheet as harmless dead code; cheap to
+   resurrect if we ever want the split-by-category cardio/strength
+   layout back. */
 
 /* ── LOG CARDS — preview-style connected list with hairline dividers ──
    Flat informational rows; tap reveals edit/delete via .lrow.open. */
@@ -960,17 +948,13 @@ body{{
   font-size:13.5px;font-weight:500;line-height:1.3;word-break:break-word;
   color:var(--tx);display:flex;align-items:center;gap:6px;flex-wrap:wrap;
 }}
-/* Mobile: shrink food rows by ~1-2px across the board so long line
-   items (multi-ingredient meals like "Chipotle — double chicken bowl")
-   don't crowd the right-aligned cal column or wrap awkwardly. */
+/* Mobile food rows — modest padding tightening only. Type sizes match
+   desktop (overridden again in the ≤560px block below for smaller
+   phones if needed). Earlier aggressive shrink (12.5/10/11) made
+   the names hard to read on phones — reverted. */
 @media(max-width:700px){{
-  .lrow{{padding:7px 12px;gap:8px}}
-  .lname{{font-size:12.5px;line-height:1.25;gap:5px}}
-  .lmeta{{font-size:10px;margin-top:1px;line-height:1.25}}
+  .lrow{{padding:8px 13px;gap:9px}}
   .lmeta .sep{{margin:0 3px}}
-  .lcal{{font-size:11px}}
-  .lcal-unit{{font-size:9px}}
-  .est-tag{{font-size:7.5px}}
 }}
 .est-tag{{
   font-family:'Geist Mono','SF Mono',monospace;
@@ -1650,17 +1634,16 @@ footer{{
   /* Goal */
   .goal-lbs{{font-size:32px}}
   .goal-title{{font-size:21px}}
-  /* Food — small-phone overrides for the new compact row layout.
-     Steps DOWN from the 700px breakpoint (12.5px / 10px / 11px) to
-     squeeze a touch more breathing room out of narrow viewports.
-     Legacy .lqty / .lmac rules removed — unused after the food row
-     port (.lname + .lmeta + .lcal now). */
+  /* Food — readable sizes on phones. Earlier passes over-shrunk these;
+     reverted toward the desktop ladder. .lname stays at the desktop
+     13.5px (font is fine on phone too — long meal names get the
+     compactness from the 8px row padding, not from cramming the type). */
   .ficon{{width:38px;height:38px;font-size:20px;border-radius:10px}}
-  .lname{{font-size:12px;line-height:1.25;gap:5px}}
-  .lmeta{{font-size:9.5px}}
-  .lcal{{font-size:10.5px}}
-  .lcal-unit{{font-size:8.5px}}
-  .est-tag{{font-size:7px}}
+  .lname{{font-size:13.5px;line-height:1.3;gap:6px}}
+  .lmeta{{font-size:11px}}
+  .lcal{{font-size:12px}}
+  .lcal-unit{{font-size:9.5px}}
+  .est-tag{{font-size:8px}}
   /* Insights */
   .itxt{{font-size:14px;line-height:1.5}}
   /* Profile */
@@ -2023,21 +2006,15 @@ footer{{
           </div>
           <button class="add-submit" id="ex-submit" onclick="submitExerciseInline()">Save workout</button>
         </div>
-        <!-- #ex-log is a bare container (no .lcrd chrome) — the renderer
-             builds its own .ex-group / .ex-card cards inside. Using .lcrd
-             here clipped the CARDIO/STRENGTH group labels with the outer
-             rounded corner. -->
-        <div id="ex-log" class="ex-log-wrap"><div class="lempty">Loading&hellip;</div></div>
+        <div class="lcrd" id="ex-log"><div class="lempty">Loading&hellip;</div></div>
       </div>
     </div>
 
-    <!-- WEARABLES — bottom of day; renders Whoop + Apple Health side-by-side
-         (each as a top-level .hsec card) when connected. Section title is
-         always "Wearables" — covers recovery + activity + sleep equally,
-         no longer titled after a single device. -->
+    <!-- WHOOP RECOVERY — bottom of day, only when connected. Title is the
+         active device name (Whoop / Apple Health) via #health-mod-title. -->
     <div id="whoop-module" style="display:none">
       <div class="stitle spaced">
-        <span>Wearables <span id="whoop-date" style="font-family:'Geist Mono','SF Mono',monospace;font-weight:400;opacity:.55;font-size:9px;letter-spacing:.04em;margin-left:6px"></span></span>
+        <span style="display:inline-flex;align-items:center"><span id="health-brand" style="display:inline-flex;margin-right:7px"></span><span id="health-mod-title">Whoop</span> <span id="whoop-date" style="font-family:'Geist Mono','SF Mono',monospace;font-weight:400;opacity:.6;font-size:9px;letter-spacing:.04em;margin-left:6px"></span></span>
         <button class="add-toggle" id="whoop-sync-btn" onclick="syncWhoop()" title="Sync" style="font-size:15px;font-family:inherit">&#8635;</button>
       </div>
       <div id="whoop-grid"></div>
@@ -3288,179 +3265,97 @@ var APPLE_MARK='<svg width="15" height="15" viewBox="0 0 24 24" style="display:b
   '<circle cx="12" cy="12" r="6" fill="none" stroke="#92e82a" stroke-width="2.6"/>'+
   '<circle cx="12" cy="12" r="3" fill="none" stroke="#1ad4fd" stroke-width="2.6"/></svg>';
 
-// ── Wearables (Whoop + Apple Health) ──────────────────────────────────────
-// Section is now titled "Wearables" (constant) and renders BOTH devices as
-// stacked .hsec cards when both are connected. Whoop snapshot is still
-// preferred for shared rendering (richer data); Apple Health renders
-// alongside when its own connection flag is set, regardless of Whoop.
+// ── Whoop stats module — RESTORED to original pre-edit production
+// design: 4 sub-accordions (Activity / Workouts / Recovery / Sleep),
+// Whoop-OR-Apple priority, per-device title. The renderWhoopCard /
+// renderAppleCard helpers from the preview port have been removed. */
 function renderWhoopModule(snap, profile){{
   var mod=document.getElementById('whoop-module');
   var grid=document.getElementById('whoop-grid');
   var dateEl=document.getElementById('whoop-date');
+  var titleEl=document.getElementById('health-mod-title');
   var syncBtn=document.getElementById('whoop-sync-btn');
   if(!mod||!grid)return;
 
-  var whoopConnected  = !!(profile && profile.whoop_connected);
-  var appleConnected  = !!(profile && profile.apple_health_connected);
+  // Whoop takes priority (richer data). Apple Health users get a simple panel.
+  if(!profile||!profile.whoop_connected){{
+    if(profile&&profile.apple_health_connected){{
+      renderAppleHealthModule(snap,mod,grid,dateEl,titleEl,syncBtn);
+    }}else{{
+      mod.style.display='none';
+    }}
+    return;
+  }}
 
-  // Neither connected → hide the whole section, including the title.
-  if(!whoopConnected && !appleConnected){{ mod.style.display='none'; return; }}
+  if(titleEl)titleEl.textContent='Whoop';
+  var brandEl=document.getElementById('health-brand'); if(brandEl)brandEl.innerHTML=WHOOP_MARK;
+  if(syncBtn)syncBtn.style.display='';
   mod.style.display='block';
-  if(syncBtn) syncBtn.style.display = whoopConnected ? '' : 'none';
 
-  // Date label uses whichever snapshot is for the viewing day.
-  if(dateEl) dateEl.textContent = (snap && snap.date) ? snap.date : '';
-
-  // Build the two cards. Each is a top-level .hsec; default Whoop open,
-  // Apple Health closed (Whoop is the more action-relevant of the two
-  // for users on a cut/bulk; Apple is mostly activity context).
-  var parts = [];
-  if(whoopConnected){{
-    parts.push(renderWhoopCard(snap && snap.source === 'whoop' ? snap : null));
+  if(!snap||snap.source!=='whoop'){{
+    if(dateEl)dateEl.textContent='';
+    grid.innerHTML='<div style="color:var(--mu);font-size:13px;padding:4px 0">No data for this day — tap &#8635; to sync, or check that your Whoop band has synced to the app.</div>';
+    return;
   }}
-  if(appleConnected){{
-    parts.push(renderAppleCard(snap && snap.source === 'apple_health' ? snap : null));
-  }}
-  grid.innerHTML = parts.join('');
-}}
 
-// Build the single Whoop card (.hsec with all Whoop metrics inside).
-// Displays EVERY field Whoop pushes via the daily snapshot — recovery
-// (score + zone + HRV + RHR), sleep (hrs + efficiency + performance +
-// deep + REM + need + respiratory + SpO2 + skin temp), activity (strain
-// + avg HR + steps + active cal), and a per-workout breakdown below
-// when whoop_workouts is populated. Empty cells (hcell returns '') are
-// omitted by the grid so we never render "—" placeholders.
-function renderWhoopCard(snap){{
+  mod.style.display='block';
+  if(dateEl)dateEl.textContent=snap.date||'';
+
   function fmtSleep(h){{
     if(!h)return null;
     var hrs=Math.floor(h),mins=Math.round((h-hrs)*60);
     return hrs+'h'+(mins>0?' '+mins+'m':'');
   }}
-  var headerSummary = '';
-  var bodyContent = '';
-  if(!snap){{
-    bodyContent = '<div style="color:var(--mu);font-size:13px;padding:12px 14px">No data for this day — tap &#8635; to sync, or check that your Whoop band has synced.</div>';
-  }}else{{
-    var recScore = snap.recovery_score;
-    var recColor = recScore != null
-      ? (recScore >= 67 ? 'var(--ac)' : recScore >= 34 ? 'var(--ye)' : 'var(--re)')
-      : null;
-    var recZone = recScore != null
-      ? (recScore >= 67 ? 'Green' : recScore >= 34 ? 'Yellow' : 'Red')
-      : null;
 
-    // Header summary line — most-glanceable stats when the card is collapsed.
-    var summaryBits = [];
-    if(recScore != null) summaryBits.push(recScore + '% recovery');
-    if(snap.strain != null) summaryBits.push(snap.strain.toFixed(1) + ' strain');
-    if(snap.sleep_hours != null) summaryBits.push(fmtSleep(snap.sleep_hours) + ' sleep');
-    headerSummary = summaryBits.join(' · ');
+  var recZone=snap.recovery_score!=null?(snap.recovery_score>=67?'Green':snap.recovery_score>=34?'Yellow':'Red'):null;
+  var recColor=snap.recovery_score!=null?(snap.recovery_score>=67?'var(--ac)':snap.recovery_score>=34?'var(--ye)':'var(--re)'):null;
 
-    // Per-workout list (Whoop activities — runs, lifts, etc.) — rendered
-    // as compact text rows below the metric grid when whoop_workouts is
-    // populated. JSON-parsed snake on the snapshot; safe-default if malformed.
-    var workoutsHtml = '';
-    if(snap.whoop_workouts){{
-      try{{
-        var wos = JSON.parse(snap.whoop_workouts);
-        if(wos && wos.length){{
-          workoutsHtml = '<div style="padding:8px 14px;border-top:1px solid var(--bd)">'+
-            '<div style="font-family:\\'Geist Mono\\',monospace;font-size:8.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--mu);margin-bottom:5px;font-weight:600">Workouts</div>';
-          wos.forEach(function(w){{
-            var parts = [];
-            if(w.strain != null) parts.push(w.strain.toFixed(1) + ' strain');
-            if(w.duration_min) parts.push(w.duration_min + ' min');
-            if(w.avg_hr) parts.push('HR ' + w.avg_hr);
-            if(w.calories) parts.push(w.calories + ' cal');
-            workoutsHtml += '<div style="display:flex;justify-content:space-between;align-items:baseline;padding:3px 0;font-size:12.5px">'+
-              '<span style="color:var(--tx);font-weight:500">'+esc(w.sport||'Workout')+'</span>'+
-              '<span style="font-family:\\'Geist Mono\\',monospace;font-size:11px;color:var(--mu)">'+esc(parts.join(' · '))+'</span>'+
-            '</div>';
-          }});
-          workoutsHtml += '</div>';
-        }}
-      }}catch(e){{}}
-    }}
+  var recovery=grid3(
+    hcell('Recovery',snap.recovery_score!=null?snap.recovery_score+'%':null,recColor)+
+    hcell('Zone',recZone,recColor)+
+    hcell('HRV',snap.hrv!=null?snap.hrv+'ms':null)+
+    hcell('Resting HR',snap.resting_hr!=null?snap.resting_hr+'bpm':null));
 
-    bodyContent =
-      '<div class="wgrid">'+
-        // ── Recovery row ─────────────────────────────────────────
-        hcell('Recovery',   recScore != null ? recScore + '%' : null, recColor) +
-        hcell('Zone',       recZone, recColor) +
-        hcell('HRV',        snap.hrv != null ? snap.hrv + ' ms' : null) +
-        hcell('Resting HR', snap.resting_hr != null ? snap.resting_hr + ' bpm' : null) +
-        // ── Sleep row(s) ─────────────────────────────────────────
-        hcell('Sleep',      fmtSleep(snap.sleep_hours), 'var(--bl)') +
-        hcell('Sleep Perf', snap.sleep_performance_pct != null ? Math.round(snap.sleep_performance_pct) + '%' : null) +
-        hcell('Efficiency', snap.sleep_efficiency_pct != null ? Math.round(snap.sleep_efficiency_pct) + '%' : null) +
-        hcell('Need',       fmtSleep(snap.sleep_need_hours)) +
-        hcell('Deep',       fmtSleep(snap.sleep_deep_hours)) +
-        hcell('REM',        fmtSleep(snap.sleep_rem_hours)) +
-        hcell('Resp Rate',  snap.respiratory_rate != null ? snap.respiratory_rate.toFixed(1) : null) +
-        hcell('SpO2',       snap.spo2_percentage != null ? snap.spo2_percentage.toFixed(1) + '%' : null) +
-        hcell('Skin Temp',  snap.skin_temp_celsius != null ? snap.skin_temp_celsius.toFixed(1) + '°C' : null) +
-        // ── Activity row ─────────────────────────────────────────
-        hcell('Strain',     snap.strain != null ? snap.strain.toFixed(1) + '/21' : null, 'var(--bl)') +
-        hcell('Avg HR',     snap.avg_hr != null ? snap.avg_hr + ' bpm' : null) +
-        hcell('Steps',      snap.steps != null ? snap.steps.toLocaleString() : null) +
-        hcell('Active Cal', snap.active_calories != null ? Math.round(snap.active_calories) + ' cal' : null, 'var(--or)') +
-      '</div>' + workoutsHtml;
+  var sleep=grid3(
+    hcell('Sleep',fmtSleep(snap.sleep_hours),'var(--bl)')+
+    hcell('Quality',snap.sleep_performance_pct!=null?Math.round(snap.sleep_performance_pct)+'%':null)+
+    hcell('Efficiency',snap.sleep_efficiency_pct!=null?Math.round(snap.sleep_efficiency_pct)+'%':null)+
+    hcell('Deep',fmtSleep(snap.sleep_deep_hours))+
+    hcell('REM',fmtSleep(snap.sleep_rem_hours))+
+    hcell('Need',fmtSleep(snap.sleep_need_hours))+
+    hcell('Resp rate',snap.respiratory_rate!=null?snap.respiratory_rate.toFixed(1):null)+
+    hcell('SpO2',snap.spo2_percentage!=null?snap.spo2_percentage.toFixed(1)+'%':null)+
+    hcell('Skin temp',snap.skin_temp_celsius!=null?snap.skin_temp_celsius.toFixed(1)+'°C':null));
+
+  var activity=grid3(
+    hcell('Strain',snap.strain!=null?snap.strain.toFixed(1)+'/21':null,'var(--bl)')+
+    hcell('Avg HR',snap.avg_hr!=null?snap.avg_hr+'bpm':null)+
+    hcell('Steps',snap.steps?snap.steps.toLocaleString():null)+
+    hcell('Active cal',snap.active_calories?Math.round(snap.active_calories)+'':null,'var(--or)'));
+
+  var workouts='',woCount=0;
+  if(snap.whoop_workouts){{
+    try{{
+      var wos=JSON.parse(snap.whoop_workouts);
+      wos.forEach(function(w){{
+        woCount++;
+        var sub=[];
+        if(w.strain!=null)sub.push(w.strain.toFixed(1)+' strain');
+        if(w.duration_min)sub.push(w.duration_min+'min');
+        if(w.avg_hr)sub.push('HR '+w.avg_hr);
+        if(w.calories)sub.push(w.calories+' cal');
+        workouts+=hrow(w.sport,sub.join(' · ')||'—');
+      }});
+    }}catch(e){{}}
   }}
-  return '<div class="hsec open" id="hsec-whoop">'+
-    '<div class="hsec-hd" onclick="toggleHsec(\\'whoop\\')">'+
-      '<span class="hsec-brand">'+WHOOP_MARK+'</span>'+
-      '<span class="hsec-name">Whoop</span>'+
-      (headerSummary?'<span class="hsec-summary">'+esc(headerSummary)+'</span>':'')+
-      '<span class="hsec-chev">&#9658;</span>'+
-    '</div>'+
-    '<div class="hsec-body">'+bodyContent+'</div>'+
-  '</div>';
-}}
 
-// Build the single Apple Health card. 8 reliably-synced metrics only —
-// Active/Resting Energy, Steps, Distance, Stand, Resting/Walking HR,
-// Heart Rate. Sleep / SpO2 / Wrist Temp deliberately omitted because
-// they sync intermittently from Apple Watch (would mislead).
-function renderAppleCard(snap){{
-  var headerSummary = '';
-  var bodyContent = '';
-  if(!snap){{
-    bodyContent = '<div style="color:var(--mu);font-size:13px;padding:12px 14px">No Apple Health data for this day yet — it syncs automatically each morning.</div>';
-  }}else{{
-    headerSummary = [];
-    if(snap.steps != null) headerSummary.push(snap.steps.toLocaleString() + ' steps');
-    if(snap.active_calories != null) headerSummary.push(Math.round(snap.active_calories) + ' active cal');
-    headerSummary = headerSummary.join(' · ');
-    bodyContent =
-      '<div class="wgrid">'+
-        hcell('Steps',        snap.steps!=null ? snap.steps.toLocaleString() : null)+
-        hcell('Active',       snap.active_calories!=null ? Math.round(snap.active_calories)+' cal' : null)+
-        hcell('Resting',      snap.resting_calories!=null ? Math.round(snap.resting_calories)+' cal' : null)+
-        // Distance / Stand / Walking HR / Heart Rate are Apple-only metrics
-        // that may land on the snapshot via HealthKit push but aren't in
-        // every schema yet. Render only when present.
-        hcell('Distance',     snap.distance_miles!=null ? snap.distance_miles.toFixed(1)+' mi' : null)+
-        hcell('Stand',        snap.stand_hours!=null ? snap.stand_hours+' / 12' : null)+
-        hcell('Resting HR',   snap.resting_hr!=null ? snap.resting_hr+' bpm' : null)+
-        hcell('Walking HR',   snap.walking_hr!=null ? snap.walking_hr+' bpm' : null)+
-        hcell('Heart Rate',   snap.avg_hr!=null ? snap.avg_hr+' bpm' : null)+
-      '</div>';
-  }}
-  return '<div class="hsec" id="hsec-apple">'+
-    '<div class="hsec-hd" onclick="toggleHsec(\\'apple\\')">'+
-      '<span class="hsec-brand">'+APPLE_MARK+'</span>'+
-      '<span class="hsec-name">Apple Health</span>'+
-      (headerSummary?'<span class="hsec-summary">'+esc(headerSummary)+'</span>':'')+
-      '<span class="hsec-chev">&#9658;</span>'+
-    '</div>'+
-    '<div class="hsec-body">'+bodyContent+'</div>'+
-  '</div>';
+  grid.innerHTML=
+    (hsec('activity','Activity',snap.strain!=null?snap.strain.toFixed(1)+' strain':'',activity,!wIsMobile())+
+     hsec('workouts','Workouts',woCount?(woCount+(woCount>1?' sessions':' session')):'',workouts,false)+
+     hsec('recovery','Recovery',snap.recovery_score!=null?snap.recovery_score+'%':'',recovery,false)+
+     hsec('sleep','Sleep',fmtSleep(snap.sleep_hours)||'',sleep,false))
+    ||'<div style="color:var(--mu);font-size:13px;padding:8px 0">No data for this day yet — run /whoop sync in Telegram.</div>';
 }}
-
-// (Legacy renderWhoopModule body removed — replaced by renderWhoopCard /
-//  renderAppleCard above. renderAppleHealthModule below is also no longer
-//  called from the new module, kept temporarily for any stray references.)
 
 // ── Apple Health module — simple panel (push-only, no sync button) ─────────
 function renderAppleHealthModule(snap,mod,grid,dateEl,titleEl,syncBtn){{
@@ -3860,21 +3755,18 @@ function renderAIProfile(data) {{
   var section = document.getElementById('ai-profile-section');
 
   if (loadEl) loadEl.style.display = 'none';
+  // Always show the section — Goals declared fields render even with no AI data yet
+  if (section) section.style.display = 'block';
+  if (emptyEl) emptyEl.style.display = 'none';
 
   var basics = (data && data.basics) || [];
   var hasStd = !!(data && data.standard && Object.keys(data.standard).length);
-  if (!data || (!data.bio && !basics.length && !hasStd)) {{
-    if (emptyEl) emptyEl.style.display = 'block';
-    return;
-  }}
-
-  if (section) section.style.display = 'block';
-  if (emptyEl) emptyEl.style.display = 'none';
+  var hasAI  = !!(data && (data.bio || basics.length || hasStd));
 
   // Bio
   var bioEl = document.getElementById('ai-bio-card');
   if (bioEl) {{
-    if (data.bio) {{
+    if (data && data.bio) {{
       // Parse "Label: insight" lines into the AI-read panel; fall back to a
       // plain paragraph for older unstructured bios.
       var rows = [];
@@ -4345,79 +4237,60 @@ function renderFoodRow(f){{
     '</div>';
 }}
 
-// Preview-style: Cardio + Strength shown as separate .ex-group cards.
-// Each row is a flat name + mono-meta pair (e.g. "Bench Press · 4×8 ·
-// 185 lb"). Tap a row to reveal edit/delete via .exrow.open. Cardio
-// rows render duration as the meta; strength rows render sets × reps
-// @ weight. Grouping by exercise name preserves "4 sets of bench" as
-// one row instead of four — matches what users see in chat.
+// Restored to the original pre-edit .eg-row expandable layout — each
+// grouped exercise renders one row with name + summary + chevron, and
+// tapping expands to reveal the individual sets + delete buttons.
+// The flat-row redesign read backwards on mobile (tap hid the meta);
+// this version follows the conventional "tap to reveal more" pattern.
 function renderGroupedExercises(entries){{
-  if(!entries || !entries.length) return '';
-
-  function groupByName(list){{
-    var groups={{}};
-    var order=[];
-    list.forEach(function(e){{
-      var key=(e.name||'?').toLowerCase().trim();
-      if(!groups[key]){{groups[key]={{name:e.name||'?',items:[],ids:[]}};order.push(key);}}
-      groups[key].items.push(e);
-      if(e.id!=null) groups[key].ids.push(e.id);
-    }});
-    return order.map(function(k){{return groups[k];}});
-  }}
-
-  function metaFor(items, isCardio){{
-    if(isCardio){{
-      var totalDur=items.reduce(function(s,e){{return s+(e.duration_minutes||0);}},0);
-      var type=items.map(function(e){{return e.cardio_type;}}).filter(Boolean)[0];
-      return (totalDur?totalDur+' min':'logged')+(type?' · '+type:'');
-    }}
-    var allReps=items.map(function(e){{return e.reps;}}).filter(Boolean);
-    var allWts=items.map(function(e){{return e.weight;}}).filter(Boolean);
-    var totalSets=items.length;
-    if(!totalSets) return 'logged';
-    var sameRep=allReps.length===totalSets && new Set(allReps).size===1;
-    var repStr=sameRep?allReps[0]:(allReps.length?allReps.join('/'):'');
-    var sameWt=new Set(allWts).size<=1;
-    var wtStr=allWts.length?(sameWt?allWts[0]+' lb':allWts.map(Math.round).join('/')+' lb'):'';
-    var leftPart=totalSets+(repStr?'×'+repStr:'');
-    return leftPart+(wtStr?' · '+wtStr:'');
-  }}
-
-  function renderRow(g, isCardio){{
-    var meta=metaFor(g.items, isCardio);
-    // Use the first item's id for edit/delete — production already
-    // groups same-name entries together so this is the canonical row.
-    var primaryId=g.ids[0];
-    return '<div class="exrow" onclick="this.classList.toggle(&quot;open&quot;)">'+
-      '<div class="ex-name">'+esc(g.name)+'</div>'+
-      '<div class="ex-meta">'+esc(meta)+'</div>'+
-      '<div class="exrow-actions">'+
-        '<button class="ibtn" onclick="event.stopPropagation();editExercise('+primaryId+')" aria-label="Edit">&#9998;</button>'+
-        '<button class="ibtn del" onclick="event.stopPropagation();deleteExercise('+primaryId+')" aria-label="Delete">&#215;</button>'+
-      '</div>'+
-    '</div>';
-  }}
-
-  function renderGroup(label, groupedItems, isCardio){{
-    if(!groupedItems.length) return '';
-    var rows=groupedItems.map(function(g){{return renderRow(g, isCardio);}}).join('');
-    return '<div class="ex-group">'+
-      '<div class="ex-group-hd">'+esc(label)+'</div>'+
-      '<div class="ex-card">'+rows+'</div>'+
-    '</div>';
-  }}
-
-  // Split into cardio vs strength based on the is_cardio flag (or
-  // presence of duration without sets, as a fallback for legacy rows).
-  var cardio=[], strength=[];
+  var groups={{}};
+  var order=[];
   entries.forEach(function(e){{
-    if(e.is_cardio || (!e.sets && !e.reps && e.duration_minutes)) cardio.push(e);
-    else strength.push(e);
+    var key=(e.name||'?').toLowerCase().trim();
+    if(!groups[key]){{groups[key]={{name:e.name||'?',items:[]}};order.push(key);}}
+    groups[key].items.push(e);
   }});
 
-  return renderGroup('Cardio', groupByName(cardio), true) +
-         renderGroup('Strength', groupByName(strength), false);
+  return order.map(function(key,gi){{
+    var g=groups[key];
+    var items=g.items;
+    var totalSets=items.length;
+
+    var summaryParts=[];
+    var allReps=items.map(function(e){{return e.reps;}}).filter(Boolean);
+    var allWts=items.map(function(e){{return e.weight;}}).filter(Boolean);
+    var allDur=items.map(function(e){{return e.duration_minutes;}}).filter(Boolean);
+    if(allDur.length){{
+      summaryParts.push(allDur.reduce(function(a,b){{return a+b;}},0)+' min');
+    }}else if(totalSets>0){{
+      var repStr=allReps.length===totalSets&&new Set(allReps).size===1?allReps[0]:allReps.join('/');
+      var sameWt=new Set(allWts).size<=1;
+      var wtStr=allWts.length?(sameWt?allWts[0]+'lb':allWts.map(Math.round).join('/')+'lb'):'';
+      summaryParts.push(totalSets+(repStr?' × '+repStr:'')+(wtStr?' @ '+wtStr:''));
+    }}
+    var summary=summaryParts.join(' · ');
+
+    var setsHtml=items.map(function(e,i){{
+      var detail='';
+      if(e.duration_minutes){{detail=e.duration_minutes+' min'+(e.cardio_type?' ('+esc(e.cardio_type)+')':'');}}
+      else if(e.sets||e.reps){{detail=(e.sets?e.sets+'×':'')+esc(e.reps||'')+(e.weight?' @ '+e.weight+'lb':'');}}
+      return '<div class="eg-set">'+
+        '<span class="eg-set-num">S'+(i+1)+'</span>'+
+        (detail?'<span class="eg-set-detail">'+detail+'</span>':'<span style="color:var(--di);font-size:11px">logged</span>')+
+        '<span style="flex:1"></span>'+
+        '<button class="eg-del" onclick="event.stopPropagation();deleteExercise('+e.id+')" title="Remove">&#215;</button>'+
+        '</div>';
+    }}).join('');
+
+    return '<div class="eg-row" onclick="this.classList.toggle(&quot;open&quot;)">'+
+      '<div class="eg-hd">'+
+      '<span class="eg-name">'+esc(g.name)+'</span>'+
+      (summary?'<span class="eg-summary">'+esc(summary)+'</span>':'')+
+      '<span class="eg-chevron">&#9658;</span>'+
+      '</div>'+
+      '<div class="eg-sets">'+setsHtml+'</div>'+
+      '</div>';
+  }}).join('');
 }}
 
 function renderExerciseRow(e){{
