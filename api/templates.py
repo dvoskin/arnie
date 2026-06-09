@@ -2107,10 +2107,6 @@ footer{{
       <div class="lempty">Keep logging and chatting — Arnie builds your profile from your interactions. Check back after a few days.</div>
     </div>
 
-    <!-- Goals & targets -->
-    <div class="stitle" style="margin-top:24px">Goals &amp; targets</div>
-    <div class="infocrd" id="goals-card" style="overflow:hidden"></div>
-
     <!-- Training program — sits with the fitness content; full structured split
          lives in WorkoutProgram, a summary mirrors into the Fitness attributes -->
     <div class="stitle spaced" style="margin-top:24px">
@@ -3812,37 +3808,6 @@ function renderProfileTab(d){{
   var p=d.profile||{{}};
   var tgt=d.targets||{{}};
 
-  // ── Goals & targets card ──────────────────────────────────────────────────
-  var gc=document.getElementById('goals-card');
-  if(gc){{
-    // Numeric target row: shows "X unit" when set, "—" (muted) when unset.
-    // rawNum goes into the edit input so the user edits just the number.
-    function _trow(lbl,rawNum,unit,field,setColor){{
-      var raw=rawNum!=null?String(rawNum):'';
-      var disp=rawNum!=null?(rawNum+unit):'—';
-      var col=rawNum!=null?setColor:'var(--mu)';
-      var slug=lbl.toLowerCase().replace(/[^a-z0-9]/g,'_');
-      // Double-escape \\' so the rendered JS contains \' (escaped quote
-      // inside the string literal). Single-escape \' would render as
-      // bare ' and prematurely terminate the string — SyntaxError that
-      // breaks the entire <script> block and blocks init() / data load.
-      var eb='<button class="ibtn inrow-edit" onclick="editProw(\\'pr-'+slug+'\\',\\''+field+'\\',\\''+raw+'\\')">&#9998;</button>';
-      return '<div class="inrow" id="pr-'+slug+'"><span class="inlbl">'+esc(lbl)+'</span>'+
-        '<div class="inrow-right"><span class="inval" style="color:'+col+'">'+esc(disp)+'</span>'+eb+'</div></div>';
-    }}
-
-    var goalColor={{cut:'var(--re)',bulk:'var(--ac)',maintain:'var(--mu)',performance:'var(--or)',health:'var(--bl)'}}[p.primary_goal]||'var(--tx)';
-
-    gc.innerHTML=
-      _inrow('Goal',        p.primary_goal||'',  _PEDIT, goalColor)+
-      _inrow('Goal weight', p.goal_weight_lbs!=null?String(p.goal_weight_lbs):'', _PEDIT, p.goal_weight_lbs?'var(--tx)':'var(--mu)')+
-      '<div style="border-top:1px solid var(--bd);margin:2px 0"></div>'+
-      _trow('Calories', p.calorie_target, ' kcal', 'calorie_target', 'var(--tx)')+
-      _trow('Protein',  p.protein_target, 'g',     'protein_target', 'var(--ac)')+
-      _trow('Carbs',    p.carb_target,    'g',     'carb_target',    'var(--or)')+
-      _trow('Fat',      p.fat_target,     'g',     'fat_target',     'var(--ye)');
-  }}
-
   var dc=document.getElementById('devices-card');
   if(!dc) return;
   var devs=[
@@ -4025,6 +3990,18 @@ function renderAIProfile(data) {{
     (customByCat[k] = customByCat[k] || []).push(c);
   }});
 
+  // Row builder for declared numeric targets — shows "X unit" or "—" (muted).
+  // disp = display text, raw = value that goes into the edit input.
+  function _declRow(lbl, disp, raw, field, setColor) {{
+    var id = 'pr-' + lbl.toLowerCase().replace(/[^a-z0-9]/g,'_');
+    var hasVal = raw != null && raw !== '';
+    var col = hasVal ? setColor : 'var(--mu)';
+    var dispTxt = hasVal ? disp : '—';
+    var eb = '<button class="ibtn inrow-edit" onclick="editProw(\\''+id+'\\',\\''+escA(field)+'\\',\\''+escA(raw||'')+'\\')">&#9998;</button>';
+    return '<div class="inrow" id="'+id+'"><span class="inlbl">'+esc(lbl)+'</span>'+
+      '<div class="inrow-right"><span class="inval" style="color:'+col+'">'+esc(dispTxt)+'</span>'+eb+'</div></div>';
+  }}
+
   var html = '';
   STD_ORDER.forEach(function(cat) {{
     var slots = std[cat] || [];
@@ -4032,10 +4009,34 @@ function renderAIProfile(data) {{
       .map(function(s){{ return _slotRow(s, cat); }});
     var custRowsArr = (customByCat[cat] || []).map(_customRow);
     delete customByCat[cat];
-    // Empty standard slots collapse into one compact "still learning" footer.
     var learnLabels = slots.filter(function(s){{ return !s.filled; }})
       .map(function(s){{ return s.label; }});
-    html += _section(CATEGORY_LABELS[cat]||cat, slotRowsArr.concat(custRowsArr), learnLabels);
+
+    if (cat === 'goals') {{
+      // Inject declared fields at the top of the Goals section, then AI-learned below.
+      var bp = (_baseData && _baseData.profile) || {{}};
+      var goalColor = {{cut:'var(--re)',bulk:'var(--ac)',maintain:'var(--mu)',performance:'var(--or)',health:'var(--bl)'}}[bp.primary_goal] || 'var(--tx)';
+      var goalDisp = (bp.primary_goal || '').replace(/_/g,' ') || '—';
+
+      var pinnedHtml =
+        _declRow('Goal',        goalDisp,                                      bp.primary_goal||'',          'primary_goal',    goalColor)+
+        _declRow('Goal weight', bp.goal_weight_lbs!=null?(bp.goal_weight_lbs+' lbs'):'', bp.goal_weight_lbs!=null?String(bp.goal_weight_lbs):'', 'goal_weight_lbs', 'var(--tx)')+
+        '<div style="border-top:1px solid var(--bd);margin:2px 0"></div>'+
+        _declRow('Calories',    bp.calorie_target!=null?(bp.calorie_target+' kcal'):'',  bp.calorie_target!=null?String(bp.calorie_target):'',    'calorie_target',  'var(--tx)')+
+        _declRow('Protein',     bp.protein_target!=null?(bp.protein_target+'g'):'',      bp.protein_target!=null?String(bp.protein_target):'',    'protein_target',  'var(--ac)')+
+        _declRow('Carbs',       bp.carb_target!=null?(bp.carb_target+'g'):'',            bp.carb_target!=null?String(bp.carb_target):'',          'carb_target',     'var(--or)')+
+        _declRow('Fat',         bp.fat_target!=null?(bp.fat_target+'g'):'',              bp.fat_target!=null?String(bp.fat_target):'',            'fat_target',      'var(--ye)');
+
+      var learnedHtml = slotRowsArr.concat(custRowsArr).join('');
+      var learnFooter = (learnLabels && learnLabels.length)
+        ? '<div class="pf-learning"><span class="pf-learn-dot"></span>Still learning &middot; '+learnLabels.map(esc).join(' &middot; ')+'</div>' : '';
+      var divider = learnedHtml ? '<div style="border-top:1px solid var(--bd);margin:2px 0"></div>' : '';
+
+      html += '<div style="margin-top:20px"><div class="stitle" style="margin-top:0">Goals</div>'+
+        '<div class="infocrd">'+pinnedHtml+divider+learnedHtml+learnFooter+'</div></div>';
+    }} else {{
+      html += _section(CATEGORY_LABELS[cat]||cat, slotRowsArr.concat(custRowsArr), learnLabels);
+    }}
   }});
 
   // Any custom attrs whose category isn't a standard section → one "Other" group.
