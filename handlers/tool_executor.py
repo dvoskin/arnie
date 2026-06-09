@@ -309,22 +309,46 @@ def _macros_from_search(result: str) -> str:
 # helpdesk holding pattern. Use short, in-voice phrasings tied to what's
 # actually being looked up (food/history/image), so when this fallback
 # DOES fire the user just sees a slightly terser Arnie, not a different bot.
+#
+# VARIANCE: each tool has 6 short generic variants. The deterministic index
+# (seed length % len(bubbles)) maps different tool inputs to different
+# bubbles, so two consecutive lookups don't always emit the same line. Each
+# stays ≤30 chars / no "lemme"/"real quick"/"hang tight"/"hang on" filler —
+# pinned by test_deterministic_fallback_is_intentionally_generic. The wit
+# and personality lives in the model-written heads-up (see SLOW TOOLS in
+# core/prompts/arnie.py), NOT in these emergency strings.
 _TOOL_HEADS_UP_BUBBLES = {
     "web_search": (
         "checking that.",
         "looking it up.",
+        "checking the source.",
+        "finding it.",
+        "looking that up.",
+        "checking it now.",
     ),
     "search_food_database": (
         "pulling the macros.",
         "grabbing the numbers.",
+        "checking the macros.",
+        "looking those up.",
+        "finding the macros.",
+        "macro check.",
     ),
     "query_history": (
-        "checking your history.",
+        "checking your log.",
         "pulling that up.",
+        "scrolling back.",
+        "checking the log.",
+        "digging it up.",
+        "finding it.",
     ),
     "generate_image": (
-        "working on the image.",
+        "working on it.",
         "rendering that.",
+        "drawing it up.",
+        "putting it together.",
+        "drawing it now.",
+        "rendering now.",
     ),
 }
 
