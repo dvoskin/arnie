@@ -1423,6 +1423,9 @@ async def _dispatch(name, inp, user, today_log, db, source_type):  # noqa: C901
         value = inp.get("value", "")
         if not key or not value:
             return "Missing key or value"
+        confidence = inp.get("confidence", "confirmed")
+        if confidence not in ("confirmed", "inferred", "needs_verification"):
+            confidence = "confirmed"
         try:
             await upsert_attribute(
                 db, user.id,
@@ -1431,11 +1434,11 @@ async def _dispatch(name, inp, user, today_log, db, source_type):  # noqa: C901
                 unit=inp.get("unit"),
                 category=inp.get("category"),
                 source="conversation",
-                confidence="confirmed",
+                confidence=confidence,
             )
             display_key = key.replace("_", " ").title()
             unit_str = f" {inp['unit']}" if inp.get("unit") else ""
-            return f"Stored attribute '{display_key}': {value}{unit_str}"
+            return f"Stored: {display_key} = {value}{unit_str} [{confidence}]"
         except Exception as e:
             logger.error(f"store_attribute failed: {e}")
             return f"Failed to store attribute: {e}"

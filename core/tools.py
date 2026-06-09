@@ -237,18 +237,22 @@ _PROFILE_TOOLS = [
     {
         "name": "update_profile",
         "description": (
-            "Update user profile or preference fields. "
-            "ONLY call when user explicitly asks to change profile settings, targets, or preferences. "
+            "Update structured user profile or preference fields. Call this whenever the user "
+            "states, confirms, or changes a fact that maps to one of the fields below — "
+            "proactively, not just when explicitly asked. "
             "Do NOT call for food, exercise, or weight logging — use the dedicated tools for those. "
+            "For learned behavioral/lifestyle facts (supplements, habits, food preferences, etc.) "
+            "use store_attribute instead. "
             "Profile fields: name, age, sex, height_cm, current_weight_kg, goal_weight_kg, "
+            "goal_weight_lbs (auto-converts to kg), "
             "primary_goal (cut/bulk/maintain/performance/health), "
             "training_experience (beginner/intermediate/advanced), dietary_preferences, "
             "injuries, sport, units_preference, timezone. "
             "Preference fields: coaching_style, accountability_level, calorie_target, "
-            "protein_target, wake_time, sleep_time, proactive_messaging_enabled, preferred_language, "
+            "protein_target, carb_target, fat_target, "
+            "wake_time, sleep_time, proactive_messaging_enabled, preferred_language, "
             "reminder_frequency (none/light/moderate/heavy, or relative less/more), "
-            "food_logging_mode (quick/moderate/strict, or relative less/more — how much Arnie "
-            "confirms food amounts and prep before logging)."
+            "food_logging_mode (quick/moderate/strict, or relative less/more)."
         ),
         "input_schema": {
             "type": "object",
@@ -430,12 +434,17 @@ _ATTRIBUTE_TOOLS = [
     {
         "name": "store_attribute",
         "description": (
-            "Persist a structured fact you've learned about this user to their permanent profile. "
-            "Use for clear, discrete, queryable facts: supplement dosages, biomarkers (testosterone, HRV), "
-            "food intolerances, training habits, lifestyle details, behavioral patterns. "
-            "Each call stores ONE fact under one key. "
-            "Prefer this over update_memory when the fact has a single value and a clear category. "
-            "Use update_memory only for multi-part coaching observations or narrative notes."
+            "Write a learned fact to the user's AI profile — the central source of truth "
+            "that Arnie reads on every turn. Call this proactively whenever you learn "
+            "ANYTHING specific and durable about the user from conversation: supplement "
+            "dosages, food intolerances, injuries, training habits, meal patterns, "
+            "lifestyle details, biomarkers, behavioral patterns, motivators, schedule. "
+            "The AI profile IS how Arnie knows this person — update it aggressively. "
+            "Confirmed facts (user stated directly) set confidence=confirmed. "
+            "Inferred facts (you picked up from context) set confidence=inferred. "
+            "Each call stores ONE fact under one key. Silent — never tell the user you're saving it. "
+            "Use update_memory ONLY for multi-sentence coaching observations that can't be "
+            "expressed as a key-value pair."
         ),
         "input_schema": {
             "type": "object",
@@ -460,6 +469,11 @@ _ATTRIBUTE_TOOLS = [
                 "category": {
                     "type": "string",
                     "enum": ["nutrition", "fitness", "health", "lifestyle", "behavior", "mental", "custom"],
+                },
+                "confidence": {
+                    "type": "string",
+                    "enum": ["confirmed", "inferred"],
+                    "description": "confirmed = user stated it directly. inferred = you picked it up from context.",
                 },
             },
             "required": ["key", "value", "category"],
