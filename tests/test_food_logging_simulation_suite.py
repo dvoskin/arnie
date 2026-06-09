@@ -1473,3 +1473,76 @@ def test_telegram_webhook_holds_task_reference():
     src = inspect.getsource(app.telegram_webhook)
     assert "_tg_bg_tasks" in src
     assert "add_done_callback" in src
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# DIMENSION 45 — Dashboard is the single source of truth
+# ════════════════════════════════════════════════════════════════════════════
+
+
+def test_prompt_has_dashboard_recap_section():
+    """The DASHBOARD_RECAP section must be present so recap requests pull
+    from the DB, not chat history."""
+    s = SYSTEM_PROMPT
+    assert "DASHBOARD IS THE SOURCE OF TRUTH" in s
+    assert "FOOD RECAP REQUESTS" in s
+
+
+@pytest.mark.parametrize("food_recap_trigger", [
+    "what have I eaten today?",
+    "what's on my log?",
+    "show my food",
+    "what did I have so far?",
+    "what's my day looking like?",
+    "give me my food log",
+    "what's logged so far?",
+])
+def test_prompt_lists_food_recap_triggers(food_recap_trigger):
+    """Each canonical 'recap my food' phrasing must be in the prompt so the
+    model recognizes it as a recap request, not a logging request."""
+    s = SYSTEM_PROMPT
+    assert food_recap_trigger in s, (
+        f"recap trigger phrase {food_recap_trigger!r} missing from prompt"
+    )
+
+
+def test_prompt_requires_listing_every_entry_in_food_recap():
+    """The food recap rule must say 'list every entry' so the model doesn't
+    paraphrase ('a few items') or skip small items."""
+    s = SYSTEM_PROMPT
+    assert "List EVERY food entry" in s
+    # And ban paraphrases
+    assert "Never paraphrase" in s
+    assert "a bunch of stuff" in s or "the usual lunch" in s
+
+
+def test_prompt_food_recap_uses_calories_format():
+    """The food recap example must use 'calories' with spaces around the
+    slash — keep the format consistent with the FOOD_LOGGING rule."""
+    s = SYSTEM_PROMPT
+    # The canonical example
+    assert "805 / 2,000 calories" in s
+
+
+def test_prompt_includes_past_day_food_recap_branch():
+    """When the user asks about past days, the model must use FOOD HISTORY
+    or query_history honestly — not invent details."""
+    s = SYSTEM_PROMPT
+    assert "PAST-DAY FOOD RECAPS" in s
+    assert "query_history" in s
+
+
+def test_prompt_covers_exercise_and_weight_recap():
+    """The recap rule must extend beyond food — exercise, weight, water,
+    custom tracking all get the same dashboard-is-truth treatment."""
+    s = SYSTEM_PROMPT
+    assert "EXERCISE / ACTIVITY RECAP" in s
+    assert "WEIGHT / WATER" in s
+
+
+def test_prompt_bans_chat_memory_for_recaps():
+    """Even if chat history mentioned a number, [TODAY] wins. Lock the rule."""
+    s = SYSTEM_PROMPT
+    assert "NUMBERS COME FROM THE DB" in s
+    # The phrase wraps in source — verify the key tokens are present.
+    assert "more recent than" in s and "chat memory" in s
