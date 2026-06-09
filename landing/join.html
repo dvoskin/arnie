@@ -504,6 +504,13 @@
             <span class="ob-unit">lbs</span>
           </div>
         </div>
+        <div class="ob-field" id="ob-goal-wt-wrap" style="display:none">
+          <label class="ob-label" for="ob-goal-weight">Goal weight <span style="color:var(--ink-3);font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></label>
+          <div class="ob-height-row">
+            <input type="number" class="ob-input" id="ob-goal-weight" placeholder="160" min="50" max="600" step="0.5" inputmode="decimal" style="max-width:140px">
+            <span class="ob-unit">lbs</span>
+          </div>
+        </div>
       </div>
       <div class="ob-nav">
         <button class="ob-back-btn" onclick="obGoStep(2)">← Back</button>
@@ -569,7 +576,7 @@
 <script>
   const obState = {
     goal: null, name: null, age: null, sex: null,
-    heightFt: null, heightIn: null, weight: null,
+    heightFt: null, heightIn: null, weight: null, goalWeight: null,
     experience: null, diet: null, timezone: null,
   };
   // Capture timezone silently on page load
@@ -647,6 +654,9 @@
     if (!obState.sex)              { obShake(document.getElementById('ob-sex')); return; }
     obState.name = name;
     obState.age  = age;
+    // Show goal weight field only for cut/bulk
+    const gwWrap = document.getElementById('ob-goal-wt-wrap');
+    if (gwWrap) gwWrap.style.display = ['cut','bulk'].includes(obState.goal) ? '' : 'none';
     obGoStep(3);
   }
 
@@ -662,6 +672,14 @@
     obState.heightFt = ft;
     obState.heightIn = isNaN(ins) ? 0 : Math.max(0, Math.min(11, ins));
     obState.weight   = wt;
+    // Capture goal weight (optional, only shown for cut/bulk)
+    const gwEl = document.getElementById('ob-goal-weight');
+    if (gwEl && gwEl.value && ['cut','bulk'].includes(obState.goal)) {
+      const gw = parseFloat(gwEl.value);
+      obState.goalWeight = (gw >= 50 && gw <= 600) ? gw : null;
+    } else {
+      obState.goalWeight = null;
+    }
     obGoStep(4);
   }
 
@@ -704,6 +722,7 @@
           training_experience: obState.experience,
           dietary_preferences: obState.diet,
           timezone:            obState.timezone || null,
+          goal_weight_lbs:     obState.goalWeight || null,
         }),
       });
 

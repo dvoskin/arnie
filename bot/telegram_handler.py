@@ -228,6 +228,16 @@ async def _run_pipeline(update: Update, context: ContextTypes.DEFAULT_TYPE,
                     if _prefs:
                         _prefs.calorie_target = targets["calories"]
                         _prefs.protein_target = targets["protein"]
+                        # Auto-derive carb/fat split from goal-specific ratios
+                        from api.app import compute_macro_split
+                        _c, _f = compute_macro_split(
+                            targets["calories"], targets["protein"],
+                            user.primary_goal or "maintain"
+                        )
+                        if _c:
+                            _prefs.carb_target = _c
+                        if _f:
+                            _prefs.fat_target = _f
                     user.onboarding_completed = True
                     await db.commit()
                     user = await reload_user(db, user.id)
@@ -612,6 +622,8 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     user.dietary_preferences = profile["dietary_preferences"]
                 if profile.get("timezone"):
                     user.timezone = profile["timezone"]
+                if profile.get("goal_weight_lbs"):
+                    user.goal_weight_kg = round(profile["goal_weight_lbs"] / 2.20462, 2)
                 user.onboarding_completed = True
                 await db.commit()
 

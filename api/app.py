@@ -693,6 +693,32 @@ async def imessage_start(payload: IMessageSignup, request: Request):
     return {"ok": False, "message": reasons.get(result["reason"], "Something went wrong — try again.")}
 
 
+# ── Macro split helper ─────────────────────────────────────────────────────────
+
+def compute_macro_split(calorie_target: int, protein_target: int, goal: str):
+    """
+    Derive carb + fat gram targets from calorie/protein targets using
+    goal-specific ratios for the remaining calories after protein.
+
+    Bulk:        65 / 35  carb/fat  (hypertrophy favours carbs)
+    Cut:         45 / 55  (higher fat for satiety on a deficit)
+    Performance: 70 / 30  (carb-dominant)
+    Maintain:    55 / 45  (balanced)
+    Health:      55 / 45  (balanced)
+
+    Returns (carb_g, fat_g) or (None, None) if data is insufficient.
+    """
+    if not calorie_target or not protein_target:
+        return None, None
+    remaining = calorie_target - protein_target * 4
+    if remaining <= 50:          # degenerate — protein alone fills almost all calories
+        return None, None
+    carb_frac = {"bulk": 0.65, "cut": 0.45, "performance": 0.70}.get(goal, 0.55)
+    carb_g = round(remaining * carb_frac / 4)
+    fat_g = round(remaining * (1 - carb_frac) / 9)
+    return carb_g, fat_g
+
+
 # ── Web onboarding pre-registration ───────────────────────────────────────────
 
 class PreRegisterPayload(BaseModel):
@@ -705,6 +731,7 @@ class PreRegisterPayload(BaseModel):
     training_experience: str              # beginner | intermediate | advanced
     dietary_preferences: Optional[str] = None
     timezone: Optional[str] = None       # IANA tz string, e.g. "America/New_York"
+    goal_weight_lbs: Optional[float] = None  # only meaningful for cut/bulk goals
 
 
 _VALID_GOALS = {"cut", "bulk", "maintain", "performance", "health"}
@@ -755,6 +782,8 @@ async def api_preregister(payload: PreRegisterPayload, request: Request):
         "primary_goal": payload.primary_goal,
         "training_experience": payload.training_experience,
         "dietary_preferences": (payload.dietary_preferences or "").strip()[:200] or None,
+        "timezone": payload.timezone or None,
+        "goal_weight_lbs": round(payload.goal_weight_lbs, 1) if payload.goal_weight_lbs else None,
     }
 
     from db.queries import create_pre_registration
@@ -1424,7 +1453,7 @@ async def api_edit_profile(token: str, patch: ProfilePatch):
             "goal_weight_lbs":    "goal_weight_kg",
         }
         _pref_str = {"coaching_style", "reminder_frequency", "food_logging_mode"}
-        _pref_int = {"calorie_target", "protein_target"}
+        _pref_int = {"calorie_target", "protein_target", "carb_target", "fat_target"}
         _pref_bool = {"proactive_messaging_enabled"}
 
         try:
@@ -1453,6 +1482,19 @@ async def api_edit_profile(token: str, patch: ProfilePatch):
                 setattr(user.preferences, field, _val)
             elif field in _pref_int and user.preferences:
                 setattr(user.preferences, field, int(raw) if raw else None)
+                # When calorie or protein target changes, auto-derive carb/fat
+                # unless the user has already set them explicitly.
+                if field in ("calorie_target", "protein_target"):
+                    _cal = getattr(user.preferences, "calorie_target", None)
+                    _pro = getattr(user.preferences, "protein_target", None)
+                    _no_carb = not getattr(user.preferences, "carb_target", None)
+                    _no_fat  = not getattr(user.preferences, "fat_target", None)
+                    if _cal and _pro and (_no_carb or _no_fat):
+                        _c, _f = compute_macro_split(_cal, _pro, user.primary_goal or "maintain")
+                        if _c and _no_carb:
+                            user.preferences.carb_target = _c
+                        if _f and _no_fat:
+                            user.preferences.fat_target = _f
             elif field in _pref_bool and user.preferences:
                 setattr(user.preferences, field, str(raw).lower() in ("true", "1", "yes", "on"))
             else:

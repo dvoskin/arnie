@@ -154,7 +154,9 @@ def fmt_profile(user: User, prefs: Optional[UserPreferences]) -> str:
             f"Coaching: {prefs.coaching_style}  |  Accountability: {prefs.accountability_level}",
             f"Response length: {prefs.preferred_response_length}",
             f"Targets — calories: {prefs.calorie_target or 'not set'}  "
-            f"protein: {prefs.protein_target or 'not set'}g",
+            f"protein: {prefs.protein_target or 'not set'}g  "
+            f"carbs: {prefs.carb_target or 'not set'}g  "
+            f"fat: {prefs.fat_target or 'not set'}g",
         ]
     return "\n".join(lines)
 
@@ -826,10 +828,27 @@ async def build_context(user: User, today_log: Optional[DailyLog], db,
     # Food logging mode — quick/strict inject an override; moderate is the static default.
     food_mode_inj = food_mode_directive(getattr(prefs, "food_logging_mode", None))
 
+    # Goal weight nudge — inject once if cut/bulk user has no goal weight set.
+    # Arnie asks naturally at the right moment; never blocks or repeats.
+    _needs_goal_wt = (
+        user.primary_goal in ("cut", "bulk")
+        and not user.goal_weight_kg
+        and user.onboarding_completed
+    )
+    goal_wt_nudge = (
+        "[COACH NOTE] This user is on a {} plan but hasn't set a goal weight yet. "
+        "If it comes up naturally in the next message (e.g. they mention targets, "
+        "progress, or where they want to get to), ask once: what weight are you "
+        "aiming for? Then call update_profile(goal_weight_lbs=...). "
+        "Don't force it if the message is about something unrelated.".format(user.primary_goal)
+        if _needs_goal_wt else ""
+    )
+
     sections = [
         current_time_line,
         "=== PROFILE ===",
         fmt_profile(user, prefs),
+        (goal_wt_nudge if goal_wt_nudge else ""),
         (progress if progress else ""),
         # Live learned attributes — placed here so they influence every skill,
         # not buried after 35 days of logs. core tier always; daily if ≤7d old;
