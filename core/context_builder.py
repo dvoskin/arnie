@@ -175,6 +175,48 @@ def fmt_history(logs: List[DailyLog]) -> str:
     return "\n".join(lines)
 
 
+def fmt_recent_day_detail(logs: List[DailyLog], days: int = 3) -> str:
+    """
+    Lists every food entry from the last `days` PAST days (excluding today,
+    which has its own [TODAY] block). Lets the model answer "what did I eat
+    yesterday?" / "Sunday?" / "2 days ago?" directly from context, without
+    promising to "pull that up" and going silent.
+
+    Each entry: name + quantity + macros. Same shape the user sees on the
+    dashboard. Capped at `days` days to keep the prompt lean.
+    """
+    today_d = date.today()
+    past = sorted(
+        [l for l in (logs or []) if l.date < today_d],
+        key=lambda l: l.date,
+        reverse=True,
+    )[:days]
+    if not past:
+        return ""
+    blocks = []
+    weekdays = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+    for l in past:
+        day_name = weekdays[l.date.weekday()]
+        header = f"{l.date} ({day_name}):"
+        if not l.food_entries:
+            blocks.append(f"{header}\n  (no food logged that day)")
+            continue
+        lines = [header]
+        for f in l.food_entries:
+            cal = f.calories or 0
+            pro = f.protein or 0
+            qty = f"({f.quantity}) " if f.quantity else ""
+            est = "~" if f.estimated_flag else ""
+            lines.append(
+                f"  • {f.parsed_food_name or '?'} {qty}— {est}{cal:.0f} cal, {pro:.0f}g protein"
+            )
+        lines.append(
+            f"  total: {l.total_calories:.0f} cal, {l.total_protein:.0f}g protein"
+        )
+        blocks.append("\n".join(lines))
+    return "[RECENT DAY DETAIL — per-entry food logs for the last few days]\n" + "\n\n".join(blocks)
+
+
 def fmt_exercise_history(logs: List[DailyLog]) -> str:
     """Per-session exercise history with weights/reps for progressive overload context."""
     sessions = []
@@ -818,6 +860,8 @@ async def build_context(user: User, today_log: Optional[DailyLog], db,
         fmt_history(recent_logs),
         (weight_progress if weight_progress else fmt_weight_trend(recent_weights)),
         (weekly_breakdown if weekly_breakdown else ""),
+        "",
+        fmt_recent_day_detail(recent_logs, days=3),
         "",
         "=== FOOD HISTORY ===",
         (food_history if food_history else "No food history yet."),

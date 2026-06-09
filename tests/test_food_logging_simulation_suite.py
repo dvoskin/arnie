@@ -1604,3 +1604,125 @@ def test_prompt_bans_inventing_items():
     name."""
     s = SYSTEM_PROMPT
     assert "DO NOT INVENT ITEMS the user didn't name" in s
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# DIMENSION 47 — Past-day food recap + no-empty-promises
+# ════════════════════════════════════════════════════════════════════════════
+
+
+def test_fmt_recent_day_detail_lists_entries_for_each_day():
+    """The new context formatter must list every food entry with macros for
+    each of the last 3 past days. This is what makes 'what did I eat
+    Sunday?' answerable from context."""
+    from datetime import date, timedelta
+    from types import SimpleNamespace
+    from core.context_builder import fmt_recent_day_detail
+
+    today = date.today()
+    yesterday = today - timedelta(days=1)
+    two_days = today - timedelta(days=2)
+
+    y_food = [SimpleNamespace(parsed_food_name="Banana", quantity="1 medium",
+                              calories=105, protein=1, carbs=27, fats=0,
+                              estimated_flag=False)]
+    y_log = SimpleNamespace(date=yesterday, food_entries=y_food,
+                            total_calories=105, total_protein=1)
+    t_food = [SimpleNamespace(parsed_food_name="Chicken sandwich",
+                              quantity="~10in", calories=550, protein=38,
+                              carbs=45, fats=22, estimated_flag=True)]
+    t_log = SimpleNamespace(date=two_days, food_entries=t_food,
+                            total_calories=550, total_protein=38)
+
+    out = fmt_recent_day_detail([y_log, t_log])
+    assert "[RECENT DAY DETAIL" in out
+    assert "Banana" in out
+    assert "Chicken sandwich" in out
+    assert "105 cal" in out
+    assert "550 cal" in out
+    assert "38g protein" in out
+
+
+def test_fmt_recent_day_detail_marks_estimated_with_tilde():
+    from datetime import date, timedelta
+    from types import SimpleNamespace
+    from core.context_builder import fmt_recent_day_detail
+    yesterday = date.today() - timedelta(days=1)
+    log = SimpleNamespace(
+        date=yesterday,
+        food_entries=[SimpleNamespace(parsed_food_name="X", quantity="",
+                                       calories=300, protein=20, carbs=20,
+                                       fats=10, estimated_flag=True)],
+        total_calories=300, total_protein=20,
+    )
+    out = fmt_recent_day_detail([log])
+    assert "~300 cal" in out
+
+
+def test_fmt_recent_day_detail_caps_at_3_days():
+    """Even when 10 past logs are passed in, the block caps at 3 days to keep
+    the prompt lean."""
+    from datetime import date, timedelta
+    from types import SimpleNamespace
+    from core.context_builder import fmt_recent_day_detail
+
+    today = date.today()
+    logs = []
+    for i in range(1, 11):
+        d = today - timedelta(days=i)
+        logs.append(SimpleNamespace(
+            date=d,
+            food_entries=[SimpleNamespace(parsed_food_name=f"food{i}",
+                                           quantity="", calories=100,
+                                           protein=10, carbs=0, fats=0,
+                                           estimated_flag=False)],
+            total_calories=100, total_protein=10,
+        ))
+    out = fmt_recent_day_detail(logs)
+    # Exactly 3 days appear
+    headers = [l for l in out.split("\n") if l.startswith("202") and ":" in l]
+    assert len(headers) <= 3
+
+
+def test_fmt_recent_day_detail_excludes_today():
+    """Today's data has its own [TODAY] block — exclude it from this one."""
+    from datetime import date
+    from types import SimpleNamespace
+    from core.context_builder import fmt_recent_day_detail
+    today = date.today()
+    log = SimpleNamespace(
+        date=today,
+        food_entries=[SimpleNamespace(parsed_food_name="X", quantity="",
+                                       calories=100, protein=10, carbs=0,
+                                       fats=0, estimated_flag=False)],
+        total_calories=100, total_protein=10,
+    )
+    assert fmt_recent_day_detail([log]) == ""
+
+
+def test_fmt_recent_day_detail_empty_returns_empty():
+    """No past logs → empty string, not a header with nothing below."""
+    from core.context_builder import fmt_recent_day_detail
+    assert fmt_recent_day_detail([]) == ""
+    assert fmt_recent_day_detail(None) == ""
+
+
+def test_prompt_references_recent_day_detail_block():
+    """The PAST-DAY FOOD RECAPS rule must point the model at the new
+    [RECENT DAY DETAIL] block so it knows where to look."""
+    s = SYSTEM_PROMPT
+    assert "[RECENT DAY DETAIL]" in s
+    assert "USE IT DIRECTLY" in s
+
+
+def test_prompt_bans_empty_promises_on_data_requests():
+    """The 'let me pull that up — one sec' silent-fail pattern must be
+    explicitly banned for data requests."""
+    s = SYSTEM_PROMPT
+    assert "NO EMPTY PROMISES ON DATA REQUESTS" in s
+    # Each banned phrase from the live bug must appear in the ban list
+    for banned in ("let me pull that up", "one sec", "let me check",
+                   "let me actually pull it"):
+        assert banned in s, f"missing ban example: {banned!r}"
+    # And the corrective: honest admission beats fake stall
+    assert "honest" in s.lower() or "admit" in s.lower()
