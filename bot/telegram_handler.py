@@ -1214,13 +1214,17 @@ async def cmd_connect(update: Update, context: ContextTypes.DEFAULT_TYPE):
         base_url = os.getenv("RENDER_EXTERNAL_URL", "http://localhost:10000").rstrip("/")
         guide_url = f"{base_url}/health/apple/guide?token={token}"
 
-        await update.message.reply_text(
+                await update.message.reply_text(
             "<b>Connect Apple Health</b>\n\n"
-            "Apple Health syncs via an iOS Shortcut that runs automatically each morning "
-            "and sends your metrics (steps, HRV, resting HR, sleep, calories) to Arnie.\n\n"
-            f'<a href="{guide_url}">→ Open setup guide on your iPhone</a>\n\n'
-            "<i>The guide has your personal endpoint URL pre-filled and walks you through "
-            "the Shortcut in 5 steps. Open it on your iPhone for the best experience.</i>",
+            "Open this setup link on your iPhone in Safari:\n\n"
+            f'<a href="{guide_url}">→ Set up Apple Health sync</a>\n\n'
+            "Setup takes about 2 minutes:\n"
+            "1. Copy your sync URL\n"
+            "2. Download the Arnie Health Shortcut\n"
+            "3. Paste the URL when iOS asks\n"
+            "4. Run it once and allow Health access\n"
+            "5. Add a daily automation\n\n"
+            "<i>You never need to share your Apple ID, iCloud, or Health password.</i>",
             parse_mode="HTML",
             disable_web_page_preview=True,
         )
