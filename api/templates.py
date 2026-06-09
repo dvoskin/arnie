@@ -1218,6 +1218,12 @@ body{{
   align-self:flex-start;margin-top:6px;
 }}
 /* Basics — compact demographic grid (short scalar values) */
+/* Sub-section labels inside the "Your settings" block (Demographics, Goals & targets).
+   Lighter weight than .stitle so the section header stays the dominant label. */
+.settings-sub{{
+  font-family:'Geist Mono','SF Mono',monospace;font-size:9.5px;letter-spacing:.11em;
+  text-transform:uppercase;color:var(--mu);font-weight:500;margin:8px 2px 6px;
+}}
 .basics-grid{{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin-bottom:9px}}
 .basic-cell{{
   background:var(--sf);border:1px solid var(--bd);border-radius:12px;
@@ -2070,28 +2076,38 @@ footer{{
   <!-- PROFILE TAB -->
   <div class="tab-panel" id="panel-profile">
 
-    <!-- Goals & targets — user-controlled settings (separate from AI brain below) -->
+    <!-- ─── YOUR SETTINGS ─── user-controlled facts (demographics + targets).
+         Single source of truth for everything the user explicitly sets. Lives
+         above Arnie's brain so the structure is unmistakable: settings here,
+         learned facts below. -->
     <div class="stitle spaced" style="margin-top:4px">
-      <span>Goals &amp; targets</span>
+      <span>Your settings</span>
     </div>
+
+    <div class="settings-sub">Demographics</div>
+    <div id="demographics-card" class="basics-grid"></div>
+
+    <div class="settings-sub" style="margin-top:14px">Goals &amp; targets</div>
     <div id="goals-card" class="infocrd"></div>
 
-    <!-- AI Profile — bio + learned attributes -->
-    <div id="ai-profile-section" style="display:none;margin-top:24px">
+    <!-- ─── ARNIE'S BRAIN ─── learned facts only. Bio + AI attributes by
+         category. NEVER duplicates what's in the settings section above. -->
+    <div id="ai-profile-section" style="display:none;margin-top:28px">
       <div class="stitle spaced" style="margin-top:4px;cursor:pointer" onclick="toggleBio()">
-        <span>Arnie's profile <span class="ai-pill">AI</span> <span id="bio-chevron" style="font-size:11px;opacity:.5">▼</span></span>
+        <span>Arnie's brain <span class="ai-pill">AI</span> <span id="bio-chevron" style="font-size:11px;opacity:.5">▼</span></span>
         <button class="add-toggle" onclick="event.stopPropagation();refreshAIProfile()" title="Refresh">&#8635;</button>
       </div>
       <!-- Bio card — collapsed by default -->
       <div class="infocrd" id="ai-bio-card" style="padding:14px 16px;line-height:1.6;font-size:14px;color:var(--tx);display:none"></div>
-      <!-- Basics: compact demographic grid -->
-      <div id="ai-basics" class="basics-grid"></div>
-      <!-- Declared + learned facts, merged by category -->
+      <!-- Learned facts grouped by category -->
       <div id="ai-attributes-section"></div>
     </div>
-    <div id="ai-profile-loading" style="padding:24px 16px;text-align:center;color:var(--mu);font-size:13px">Building your profile&#8230;</div>
-    <div id="ai-profile-empty" style="display:none;padding:16px 0">
-      <div class="lempty">Keep logging and chatting — Arnie builds your profile from your interactions. Check back after a few days.</div>
+    <div id="ai-profile-loading" style="padding:24px 16px;text-align:center;color:var(--mu);font-size:13px;margin-top:28px">Building Arnie's brain&#8230;</div>
+    <div id="ai-profile-empty" style="display:none;padding:16px 0;margin-top:28px">
+      <div class="stitle spaced" style="margin-top:4px">
+        <span>Arnie's brain <span class="ai-pill">AI</span></span>
+      </div>
+      <div class="lempty">Keep logging and chatting — Arnie builds this from your interactions. Check back after a few days.</div>
     </div>
 
     <!-- Training program — sits with the fitness content; full structured split
@@ -3713,6 +3729,34 @@ function renderProfileTab(d){{
   var p=d.profile||{{}};
   var tgt=d.targets||{{}};
 
+  // Demographics — who the user is. Renders into the compact grid at the top
+  // of the "Your settings" section. Editable cells use editBasic (same flow
+  // as before, just owned by renderProfileTab now instead of renderAIProfile).
+  var dem=document.getElementById('demographics-card');
+  if(dem){{
+    function _ht(){{
+      if(p.height_ft) return p.height_ft;
+      if(p.height_cm) return Math.round(p.height_cm)+' cm';
+      return null;
+    }}
+    var rows=[
+      {{label:'Name',           value:p.name||null,                                edit:'name',                 raw:p.name||''}},
+      {{label:'Age',            value:p.age?p.age+' yrs':null,                    edit:'age',                  raw:p.age||''}},
+      {{label:'Sex',            value:(p.sex?String(p.sex).charAt(0).toUpperCase()+String(p.sex).slice(1):null), edit:null, raw:''}},
+      {{label:'Height',         value:_ht(),                                       edit:null,                   raw:''}},
+      {{label:'Current weight', value:p.current_weight_lbs!=null?(p.current_weight_lbs+' lbs'):null, edit:'current_weight_lbs', raw:p.current_weight_lbs!=null?String(p.current_weight_lbs):''}},
+    ];
+    dem.innerHTML=rows.filter(function(r){{return r.value!=null;}}).map(function(r){{
+      var id='pd-'+r.label.toLowerCase().replace(/[^a-z0-9]/g,'_');
+      var eb=r.edit
+        ? '<button class="basic-edit" onclick="editBasic(\\''+id+'\\',\\''+escA(r.edit)+'\\',\\''+escA(r.raw)+'\\',\\''+escA(r.label)+'\\')">&#9998;</button>'
+        : '';
+      return '<div class="basic-cell" id="'+id+'">'+
+        '<div class="basic-lbl">'+esc(r.label)+'</div>'+
+        '<div class="basic-val">'+esc(r.value)+'</div>'+eb+'</div>';
+    }}).join('');
+  }}
+
   // Goals & targets card — user-controlled settings, distinct from Arnie's brain.
   // Renders 6 editable rows: goal, goal weight, calories, protein, carbs, fat.
   // Each row uses the existing editProw/saveProw flow; saves PATCH the profile API
@@ -3793,11 +3837,13 @@ function renderAIProfile(data) {{
 
   if (loadEl) loadEl.style.display = 'none';
 
-  var basics = (data && data.basics) || [];
+  // hasAI checks ONLY for AI-learned content (bio + learned attributes).
+  // Demographics are no longer part of this check — they live in the settings
+  // section above and always render regardless of what Arnie has learned.
   var hasStd = !!(data && data.standard && Object.keys(data.standard).length);
-  var hasAI  = !!(data && (data.bio || basics.length || hasStd));
+  var hasAI  = !!(data && (data.bio || hasStd));
 
-  // No AI data yet → show empty state, hide the section. Goals & targets card
+  // No AI data yet → show empty state, hide the section. Your settings card
   // above (rendered by renderProfileTab) still appears — settings are independent.
   if (!hasAI) {{
     if (section) section.style.display = 'none';
@@ -3846,20 +3892,10 @@ function renderAIProfile(data) {{
     bioEl.style.display = 'none';  // collapsed by default (toggleBio expands it)
   }}
 
-  // Basics — compact demographic grid
-  var basicsEl = document.getElementById('ai-basics');
-  if (basicsEl) {{
-    basicsEl.innerHTML = basics.map(function(b) {{
-      var id = 'pb-' + _pslug(b.label);
-      var edit = b.edit_field
-        ? '<button class="basic-edit" onclick="editBasic(\\''+id+'\\',\\''+escA(b.edit_field)+'\\',\\''+escA(b.raw)+'\\',\\''+escA(b.label)+'\\')">&#9998;</button>'
-        : '';
-      return '<div class="basic-cell" id="'+id+'">' +
-        '<div class="basic-lbl">'+esc(b.label)+'</div>' +
-        '<div class="basic-val">'+esc(b.value)+'</div>' + edit +
-        '</div>';
-    }}).join('');
-  }}
+  // Basics grid removed — demographics now live in the "Your settings" section
+  // at the top of the profile tab, rendered by renderProfileTab. The basics array
+  // from /api/profile/{token} is no longer used here; only AI-learned attributes
+  // belong in Arnie's brain section.
 
   // Standard skeleton (always-present slots) + Custom Tracking
   var attrsEl = document.getElementById('ai-attributes-section');
@@ -4012,10 +4048,18 @@ function editBasic(cellId, field, raw, label) {{
     '<input type="text" id="bi-'+cellId+'" value="'+escA(raw)+'" ' +
     'style="flex:1;min-width:0;background:var(--inp);border:1px solid var(--ac);color:var(--tx);padding:4px 7px;border-radius:7px;font-size:13px;font-family:inherit;outline:none">' +
     '<button class="sbtn" style="flex:none;padding:4px 9px;font-size:11px;min-height:0" onclick="saveBasic(\\''+cellId+'\\',\\''+escA(field)+'\\')">&#10003;</button>' +
-    '<button class="cbtn" style="flex:none;padding:4px 7px;font-size:11px;min-height:0" onclick="reloadAIProfile()">&#10005;</button>' +
+    '<button class="cbtn" style="flex:none;padding:4px 7px;font-size:11px;min-height:0" onclick="cancelBasic()">&#10005;</button>' +
     '</div>';
   var inp = document.getElementById('bi-'+cellId);
   if (inp) {{ inp.focus(); inp.select(); }}
+}}
+
+function cancelBasic(){{
+  // Demographics cells (pd-*) live in the settings section — re-render from
+  // _baseData. AI section's pb-* cells no longer exist (basics moved out),
+  // but reloadAIProfile is still cheap and safe to call.
+  if (_baseData) renderProfileTab(_baseData);
+  reloadAIProfile();
 }}
 
 async function saveBasic(cellId, field) {{
