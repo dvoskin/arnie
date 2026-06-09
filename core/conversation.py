@@ -24,7 +24,7 @@ from core.turn_health import (
     detect_turn_flags,
 )
 from handlers.tool_executor import (
-    execute_tool_calls, deterministic_confirmation,
+    execute_tool_calls, deterministic_confirmation, recovery_message,
     tool_heads_up, _heads_up_seed, NEEDS_HEADS_UP_TOOLS,
 )
 
@@ -218,9 +218,11 @@ async def run_turn(
             _messages_for_followup = retry_messages
     except Exception as e:
         logger.error(f"LLM call failed for {_tag}: {e}")
-        resp = Response.from_text(
-            "Something went wrong on my end — try again in a moment."
-        )
+        # Whole turn errored — give the user an honest recovery line in voice,
+        # with a concrete next move ("resend that"). NEVER drop them into
+        # silence or a vague "try again later" — that reads as broken; this
+        # reads as "we had a sec, send it again." Retention play.
+        resp = Response.from_text(recovery_message("llm_error", seed=_user_text))
         return TurnResult(
             response=resp, tool_calls=[], just_completed=False,
             in_onboarding=in_onboarding, onboarding_field_saved=None,
@@ -437,13 +439,21 @@ async def run_turn(
         if tool_calls and raw_content and not _followup_tried:
             response_text = await _try_follow_up()
         if not response_text:
-            # Never a bare "done." — real confirmation or keep-alive
+            # Never a bare "done." — real confirmation or recovery line.
+            # Branches:
+            #   • tool_calls present → deterministic_confirmation reads the
+            #     real numbers from the tool results (or surfaces a
+            #     tool-error recovery line if a save failed).
+            #   • no tool_calls AND no text → the degenerate stall case
+            #     (model produced nothing usable, every repair failed).
+            #     Admit confusion and tell the user what to send to
+            #     recover. Retention play — beats silent dead-air.
             if tool_calls:
                 response_text = deterministic_confirmation(
                     tool_calls, today_log, user.preferences, tool_results
                 )
             else:
-                response_text = "Still here. What's the move?"
+                response_text = recovery_message("stall", seed=_user_text)
             _response_streamed = False  # neither path was streamed
 
     # ── Anti-dead-end guard ────────────────────────────────────────────────────

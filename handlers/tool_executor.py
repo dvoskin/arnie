@@ -89,6 +89,66 @@ async def _resolve_log(inp: dict, user, today_log, db):
     return target, past_date
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# RECOVERY MESSAGES — short user-facing fallback lines for failure / dead-end
+# paths. The user should NEVER be left staring at silence or a confusing reply
+# when the pipeline trips. Every recovery line:
+#   • acknowledges the snag honestly (no system-blaming, no pretending)
+#   • gives ONE concrete next move ("resend", "say it again simpler")
+#   • is short (1-2 bubbles, |||-split)
+#   • is in Arnie's voice (sentence case, no em dashes, no helpdesk filler)
+# This is a retention play: the user knows what happened and what to do,
+# instead of wondering whether Arnie is broken.
+#
+# Variance is deterministic (seed-length index) so the same input always
+# yields the same line — resume-safe, testable, and avoids the same bubble
+# firing back-to-back when seeds differ.
+# ─────────────────────────────────────────────────────────────────────────────
+
+_RECOVERY_BUBBLES = {
+    # A tool call returned Error:/Skipped/Failed to — the action did NOT land.
+    "tool_error": (
+        "That didn't go through.|||resend and it usually catches the second try.",
+        "Something hiccupped saving that.|||try once more, should land cleanly.",
+        "That one didn't save right.|||resend it and I'll get it.",
+    ),
+    # The whole LLM turn errored out (exception in chat()). Pipeline can't
+    # produce a coached reply — fall back to an honest "try again" line.
+    "llm_error": (
+        "Something went sideways on my end.|||resend that and I'll catch it.",
+        "Hit a snag on that one.|||send it again, I'll be back on track.",
+        "Wires crossed for a sec.|||resend it and I'll get it cleanly.",
+    ),
+    # Degenerate fallback: model produced no text AND no tool calls (or every
+    # repair attempt failed). We have nothing to coach on — admit confusion
+    # and ask for a simpler restate.
+    "stall": (
+        "Got a bit confused on that one.|||say it again, simpler if you can.",
+        "Didn't quite land for me.|||resend it, shorter is fine.",
+        "Lost the thread there.|||try one more time and I'll catch it.",
+    ),
+}
+
+
+def recovery_message(kind: str, seed: str = "") -> str:
+    """Short user-facing recovery line for failure / dead-end fallbacks.
+
+    Acknowledges the snag in Arnie's voice + gives one concrete recovery
+    action (resend, simplify, try again). Helps retention — the user knows
+    what went wrong and what to do, instead of staring at silence or a
+    confusing reply.
+
+    kind: 'tool_error' (a save failed), 'llm_error' (the whole turn errored),
+          'stall' (no usable response_text). Unknown kinds fall back to
+          'stall' so a typo can't return empty.
+    seed: text the deterministic index keys off — same input maps to the
+          same variant. Pass the user's message or a tool-input string.
+    """
+    pool = _RECOVERY_BUBBLES.get(kind) or _RECOVERY_BUBBLES["stall"]
+    idx = (len(seed or "") + len(kind)) % len(pool)
+    return pool[idx]
+
+
 def deterministic_confirmation(tool_calls, log, prefs, tool_results=None) -> str:
     """
     Build a meaningful confirmation from what was actually logged, used when the
@@ -105,6 +165,8 @@ def deterministic_confirmation(tool_calls, log, prefs, tool_results=None) -> str
     # If the tool result for the active logging call is an error, surface that
     # honestly instead of confirming a success that didn't happen. This is the
     # silent-failure mode: user sees "logged it ✅", dashboard is empty.
+    # Route through recovery_message for varied phrasing — same seed (tool name
+    # + first 32 chars of error) always returns the same line for resume safety.
     for k in ("log_food", "log_exercise", "log_water", "log_body_weight"):
         if k in names:
             r = tool_results.get(k)
@@ -112,8 +174,7 @@ def deterministic_confirmation(tool_calls, log, prefs, tool_results=None) -> str
                 r.startswith("Error:") or r.startswith("Skipped")
                 or r.startswith("Failed to")
             ):
-                return ("That didn't go through.|||"
-                        "give me one sec and resend — usually it lands the second try.")
+                return recovery_message("tool_error", seed=f"{k}:{r[:32]}")
 
     # A macro lookup that produced no model text — surface the actual numbers from
     # the USDA result rather than a content-free "all set." The user asked about a
