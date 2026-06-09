@@ -877,6 +877,9 @@ async def _run_reminders():
                         if day_key not in sent_slots:
                             name = user.name or "hey"
                             report = _fmt_day_report(log, prefs, name, user=user)
+                            _report_lang = getattr(prefs, "preferred_language", None) or "English"
+                            if _report_lang.lower() not in ("english", "en"):
+                                report = await _translate_report(report, _report_lang)
                             await _send_logged(db, user.id, send_id, report, "day_report")
                             sent_slots.add(day_key)
                             user.nudges_sent = ",".join(sorted(sent_slots))
@@ -1185,6 +1188,37 @@ def _fmt_whoop_notification(snap) -> str:
     if snap.strain is not None:
         lines.append(f"💪 Strain: {snap.strain:.1f}")
     return "\n".join(lines)
+
+
+async def _translate_report(text: str, language: str) -> str:
+    """
+    Translate a template-generated EOD report to the user's preferred language.
+    Preserves ||| bubble separators. Falls back to original English on any failure.
+    Used only when preferred_language is set to a non-English language.
+    """
+    from core.llm import chat
+    try:
+        result = await chat(
+            [{"role": "user", "content": (
+                f"Translate this coaching message to {language}. "
+                f"Keep the same casual, direct coach tone — like a real coach texting. "
+                f"Preserve the ||| separators exactly as-is between message bubbles. "
+                f"Return ONLY the translated text, no explanation or preamble:\n\n{text}"
+            )}],
+            system=(
+                "You are a sports coach translator. Translate the message into the specified "
+                "language in a casual, direct coaching voice. Preserve ||| separators. "
+                "Return only the translated text."
+            ),
+            tools=False,
+            max_tokens=220,
+            model="claude-haiku-4-5-20251001",
+        )
+        translated = (result.get("text") or "").strip()
+        return translated if translated else text
+    except Exception as e:
+        logger.error(f"Report translation failed ({language}): {e}")
+        return text
 
 
 def _fmt_day_report(log, prefs, user_name: str, user=None) -> str:
