@@ -62,10 +62,16 @@ _GOAL_LABELS = {
 STANDARD_ORDER = ["goals", "nutrition", "fitness", "health", "lifestyle", "behavior"]
 
 STANDARD_SCHEMA = {
+    # Goals category in the AI profile is for LEARNED goal-related facts only
+    # (motivation drivers, deeper "why", timelines Arnie picks up from conversation).
+    # The structured settings — primary goal, goal weight, calories/protein/carbs/fat —
+    # live in the "Goals & targets" card at the top of the profile tab, NOT here.
+    # Empty by default; populates as Arnie learns specifics about the user's goals.
     "goals": [
-        {"key": "goal_primary",  "label": "Primary goal",   "type": "single", "col": "goal"},
-        {"key": "goal_calories", "label": "Calorie target", "type": "single", "col": "cal"},
-        {"key": "goal_protein",  "label": "Protein target", "type": "single", "col": "pro"},
+        {"key": "goal_why",      "label": "Why this goal", "type": "single",
+         "match": ["why_goal", "goal_why", "goal_reason", "goal_driver"], "hide_empty": True},
+        {"key": "goal_timeline", "label": "Timeline",       "type": "single",
+         "match": ["goal_timeline", "goal_deadline", "by_when", "target_date"], "hide_empty": True},
     ],
     "nutrition": [
         {"key": "nutrition_staple_foods", "label": "Staple foods", "type": "list",
@@ -168,14 +174,16 @@ def build_unified_profile(
             "edit_field": edit_field, "raw": "" if raw is None else str(raw),
         })
 
+    # Demographics — who the user is. Goal/targets live in the dedicated
+    # "Goals & targets" card at the top of the profile tab and are NOT
+    # duplicated here. Current weight stays because it's a measurement the
+    # user logs regularly, not a target.
     basic("Name", _clean(user.name), "name", user.name)
     basic("Age", f"{user.age} yrs" if user.age else None, "age", user.age)
     basic("Sex", (_clean(user.sex) or "").title() or None)
     basic("Height", _height_str(user.height_cm))
     _cw = _lbs(user.current_weight_kg)
-    basic("Current", f"{_cw} lbs" if _cw else None, "current_weight_lbs", _cw)
-    _gw = _lbs(user.goal_weight_kg)
-    basic("Goal", f"{_gw} lbs" if _gw else None, "goal_weight_lbs", _gw)
+    basic("Current weight", f"{_cw} lbs" if _cw else None, "current_weight_lbs", _cw)
 
     # ── Index active learned attributes by key ─────────────────────────────
     active = [a for a in attributes if getattr(a, "attribute_status", "active") == "active"]
