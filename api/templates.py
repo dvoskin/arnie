@@ -1650,11 +1650,17 @@ footer{{
   /* Goal */
   .goal-lbs{{font-size:32px}}
   .goal-title{{font-size:21px}}
-  /* Food */
+  /* Food — small-phone overrides for the new compact row layout.
+     Steps DOWN from the 700px breakpoint (12.5px / 10px / 11px) to
+     squeeze a touch more breathing room out of narrow viewports.
+     Legacy .lqty / .lmac rules removed — unused after the food row
+     port (.lname + .lmeta + .lcal now). */
   .ficon{{width:38px;height:38px;font-size:20px;border-radius:10px}}
-  .lname{{font-size:15px}}
-  .lqty{{font-size:13px}}
-  .lmac{{font-size:12px}}
+  .lname{{font-size:12px;line-height:1.25;gap:5px}}
+  .lmeta{{font-size:9.5px}}
+  .lcal{{font-size:10.5px}}
+  .lcal-unit{{font-size:8.5px}}
+  .est-tag{{font-size:7px}}
   /* Insights */
   .itxt{{font-size:14px;line-height:1.5}}
   /* Profile */
@@ -2100,6 +2106,10 @@ footer{{
     <div id="ai-profile-empty" style="display:none;padding:16px 0">
       <div class="lempty">Keep logging and chatting — Arnie builds your profile from your interactions. Check back after a few days.</div>
     </div>
+
+    <!-- Goals & targets -->
+    <div class="stitle" style="margin-top:24px">Goals &amp; targets</div>
+    <div class="infocrd" id="goals-card" style="overflow:hidden"></div>
 
     <!-- Training program — sits with the fitness content; full structured split
          lives in WorkoutProgram, a summary mirrors into the Fitness attributes -->
@@ -3624,7 +3634,7 @@ var _PEDIT={{
   'Diet':'dietary_preferences','Injuries':'injuries',
   'Timezone':'timezone','Coaching style':'coaching_style',
 }};
-var _TEDIT={{'Calorie target':'calorie_target','Protein target':'protein_target'}};
+var _TEDIT={{'Calorie target':'calorie_target','Protein target':'protein_target','Calories':'calorie_target','Protein':'protein_target','Carbs':'carb_target','Fat':'fat_target'}};
 
 function _pslug(l){{return l.toLowerCase().replace(/[^a-z0-9]/g,'_');}}
 
@@ -3788,6 +3798,38 @@ async function deleteWorkoutProgram(){{
 // plus the settings cards for reminders and food logging mode (sourced from d.profile).
 function renderProfileTab(d){{
   var p=d.profile||{{}};
+  var tgt=d.targets||{{}};
+
+  // ── Goals & targets card ──────────────────────────────────────────────────
+  var gc=document.getElementById('goals-card');
+  if(gc){{
+    // Goal row: uses _PEDIT picklist
+    var goalColor={{cut:'var(--re)',bulk:'var(--ac)',maintain:'var(--mu)',performance:'var(--or)',health:'var(--bl)'}}[p.primary_goal]||'var(--tx)';
+    var goalDisp=(p.primary_goal||'—').replace(/_/g,' ');
+
+    // Goal weight row
+    var gwDisp=p.goal_weight_lbs?p.goal_weight_lbs+' lbs':'—';
+
+    // Macro target rows — show "—" when unset, unit appended when set
+    var calDisp=p.calorie_target?p.calorie_target+' kcal':'—';
+    var proDisp=p.protein_target?p.protein_target+'g':'—';
+    var carbDisp=p.carb_target?p.carb_target+'g':'—';
+    var fatDisp=p.fat_target?p.fat_target+'g':'—';
+
+    var calColor=p.calorie_target?'var(--tx)':'var(--mu)';
+    var proColor=p.protein_target?'var(--ac)':'var(--mu)';
+    var carbColor=p.carb_target?'var(--or)':'var(--mu)';
+    var fatColor=p.fat_target?'var(--ye)':'var(--mu)';
+
+    gc.innerHTML=
+      _inrow('Goal',         p.primary_goal||'',  _PEDIT, goalColor)+
+      _inrow('Goal weight',  p.goal_weight_lbs!=null?String(p.goal_weight_lbs):'', _PEDIT, p.goal_weight_lbs?'var(--tx)':'var(--mu)')+
+      '<div style="border-top:1px solid var(--bd);margin:2px 0"></div>'+
+      _inrow('Calories',     p.calorie_target!=null?String(p.calorie_target):'',   _TEDIT, calColor)+
+      _inrow('Protein',      p.protein_target!=null?String(p.protein_target):'',   _TEDIT, proColor)+
+      _inrow('Carbs',        p.carb_target!=null?String(p.carb_target):'',         _TEDIT, carbColor)+
+      _inrow('Fat',          p.fat_target!=null?String(p.fat_target):'',           _TEDIT, fatColor);
+  }}
 
   var dc=document.getElementById('devices-card');
   if(!dc) return;
