@@ -679,10 +679,10 @@ body{{
 }}
 .est-tag{{
   font-family:'Geist Mono','SF Mono',monospace;
-  font-size:8.5px;letter-spacing:.07em;text-transform:uppercase;
-  color:var(--mu);background:var(--sf2);border:1px solid var(--bd);
-  border-radius:5px;padding:2px 6px;flex-shrink:0;font-weight:500;
+  font-size:8px;letter-spacing:.05em;text-transform:uppercase;
+  color:var(--ye);font-weight:500;flex-shrink:0;opacity:.8;
 }}
+.est-tag::before{{content:'●';font-size:6px;margin-right:2.5px;vertical-align:1px;}}
 .lqty{{font-size:13px;color:var(--mu);margin-top:3px;font-weight:400}}
 .lmac{{
   display:flex;gap:0;font-size:12px;margin-top:5px;flex-wrap:wrap;
