@@ -1279,6 +1279,56 @@
       font-size: 12px; color: oklch(0.72 0.18 27); margin-top: 10px;
       display: none; font-family: var(--mono); letter-spacing: 0.03em;
     }
+
+    /* Sticky header — ensures brand + close always visible when modal scrolls */
+    .ob-modal-head {
+      position: sticky; top: 0; z-index: 2;
+    }
+
+    /* Drag handle — shown only on mobile (bottom-sheet affordance) */
+    .ob-drag-handle {
+      display: none;
+      width: 36px; height: 4px; border-radius: 2px;
+      background: color-mix(in oklch, var(--ink) 22%, transparent);
+      margin: 10px auto 6px;
+      flex-shrink: 0;
+    }
+
+    /* ── iPhone / bottom-sheet optimizations ──────────────── */
+    @media (max-width: 600px) {
+      /* Slide up from bottom instead of scale-in from center */
+      .ob-overlay {
+        align-items: flex-end;
+        padding: 0;
+      }
+      .ob-modal {
+        width: 100%;
+        max-height: 92dvh;
+        border-radius: 22px 22px 0 0;
+        transform: translateY(100%);
+        transition: transform 400ms cubic-bezier(.16,1,.3,1);
+      }
+      .ob-overlay.open .ob-modal { transform: translateY(0); }
+      /* Show drag handle */
+      .ob-drag-handle { display: block; }
+      /* Tighter horizontal padding, safe-area on the bottom */
+      .ob-step { padding: 20px 20px 20px; }
+      .ob-overlay .ob-step { padding-bottom: calc(16px + env(safe-area-inset-bottom)); }
+      /* Smaller title, tighter margin */
+      .ob-step-title { font-size: 21px; margin-bottom: 16px; }
+      /* Prevent iOS auto-zoom on focus (must be ≥ 16px) */
+      .ob-input { font-size: 16px; }
+      /* Bigger close-button tap target */
+      .ob-modal-close { width: 36px; height: 36px; font-size: 14px; }
+      /* Stretch next button so it's easy to hit */
+      .ob-next-btn { flex: 1; padding: 14px 16px; font-size: 15px; }
+      /* 2-column goal grid (3 cols get cramped on 375px) */
+      .ob-goal-btn { flex: 0 0 calc(50% - 4px); padding: 14px 10px 12px; }
+      /* Taller experience rows — easier to tap */
+      .ob-exp-btn { padding: 15px 16px; }
+      /* Full-width Telegram button on success screen */
+      #ob-tg-link { width: 100%; box-sizing: border-box; }
+    }
   </style>
 </head>
 <body>
@@ -1811,6 +1861,7 @@
   <div id="ob-overlay" class="ob-overlay" role="dialog" aria-modal="true" aria-label="Set up your profile"
        onclick="if(event.target===this)closeObModal()">
     <div class="ob-modal">
+      <div class="ob-drag-handle" aria-hidden="true"></div>
       <div class="ob-modal-head">
         <span class="ob-modal-brand"><em>Arnie</em></span>
         <span class="ob-modal-sep"></span>
