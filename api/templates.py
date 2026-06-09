@@ -942,6 +942,18 @@ body{{
   font-size:13.5px;font-weight:500;line-height:1.3;word-break:break-word;
   color:var(--tx);display:flex;align-items:center;gap:6px;flex-wrap:wrap;
 }}
+/* Mobile: shrink food rows by ~1-2px across the board so long line
+   items (multi-ingredient meals like "Chipotle — double chicken bowl")
+   don't crowd the right-aligned cal column or wrap awkwardly. */
+@media(max-width:700px){{
+  .lrow{{padding:7px 12px;gap:8px}}
+  .lname{{font-size:12.5px;line-height:1.25;gap:5px}}
+  .lmeta{{font-size:10px;margin-top:1px;line-height:1.25}}
+  .lmeta .sep{{margin:0 3px}}
+  .lcal{{font-size:11px}}
+  .lcal-unit{{font-size:9px}}
+  .est-tag{{font-size:7.5px}}
+}}
 .est-tag{{
   font-family:'Geist Mono','SF Mono',monospace;
   font-size:8px;letter-spacing:.05em;text-transform:uppercase;
