@@ -6,6 +6,7 @@ Exposes:
   GET  /api/stats/{token}       — dashboard data (JSON)
   POST /health/apple?token=...  — Apple Health inbound webhook
 """
+import asyncio
 import os
 import hmac
 import html
@@ -479,7 +480,9 @@ async def telegram_webhook(token: str, request: Request):
     from telegram import Update
     data = await request.json()
     update = Update.de_json(data, ptb_app.bot)
-    await ptb_app.process_update(update)
+    # Fire-and-forget: return 200 immediately so Telegram doesn't retry on slow
+    # LLM responses (Telegram webhook timeout is 15s). Same pattern as iMessage.
+    asyncio.create_task(ptb_app.process_update(update))
     return {"ok": True}
 
 
