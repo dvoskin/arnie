@@ -1115,6 +1115,8 @@ async def _build_stats_for_user(db, user, target_date=None):
         "coaching_style": prefs.coaching_style if prefs else None,
         "calorie_target": prefs.calorie_target if prefs else None,
         "protein_target": prefs.protein_target if prefs else None,
+        "carb_target": prefs.carb_target if prefs else None,
+        "fat_target": prefs.fat_target if prefs else None,
         "reminder_frequency": (prefs.reminder_frequency if prefs else None) or "moderate",
         "reminders_on": _reminders_on,
         "reminders_blocked_reason": _reminders_blocked_reason,
@@ -1130,6 +1132,8 @@ async def _build_stats_for_user(db, user, target_date=None):
         "targets": {
             "calories": prefs.calorie_target if prefs else None,
             "protein": prefs.protein_target if prefs else None,
+            "carbs": prefs.carb_target if prefs else None,
+            "fats": prefs.fat_target if prefs else None,
         },
         "day": _log_to_day(day_log),
         "history": hist_data,

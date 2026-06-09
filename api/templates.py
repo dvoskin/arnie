@@ -3803,32 +3803,28 @@ function renderProfileTab(d){{
   // ── Goals & targets card ──────────────────────────────────────────────────
   var gc=document.getElementById('goals-card');
   if(gc){{
-    // Goal row: uses _PEDIT picklist
+    // Numeric target row: shows "X unit" when set, "—" (muted) when unset.
+    // rawNum goes into the edit input so the user edits just the number.
+    function _trow(lbl,rawNum,unit,field,setColor){{
+      var raw=rawNum!=null?String(rawNum):'';
+      var disp=rawNum!=null?(rawNum+unit):'—';
+      var col=rawNum!=null?setColor:'var(--mu)';
+      var slug=lbl.toLowerCase().replace(/[^a-z0-9]/g,'_');
+      var eb='<button class="ibtn inrow-edit" onclick="editProw(\'pr-'+slug+'\',\''+field+'\',\''+raw+'\')">&#9998;</button>';
+      return '<div class="inrow" id="pr-'+slug+'"><span class="inlbl">'+esc(lbl)+'</span>'+
+        '<div class="inrow-right"><span class="inval" style="color:'+col+'">'+esc(disp)+'</span>'+eb+'</div></div>';
+    }}
+
     var goalColor={{cut:'var(--re)',bulk:'var(--ac)',maintain:'var(--mu)',performance:'var(--or)',health:'var(--bl)'}}[p.primary_goal]||'var(--tx)';
-    var goalDisp=(p.primary_goal||'—').replace(/_/g,' ');
-
-    // Goal weight row
-    var gwDisp=p.goal_weight_lbs?p.goal_weight_lbs+' lbs':'—';
-
-    // Macro target rows — show "—" when unset, unit appended when set
-    var calDisp=p.calorie_target?p.calorie_target+' kcal':'—';
-    var proDisp=p.protein_target?p.protein_target+'g':'—';
-    var carbDisp=p.carb_target?p.carb_target+'g':'—';
-    var fatDisp=p.fat_target?p.fat_target+'g':'—';
-
-    var calColor=p.calorie_target?'var(--tx)':'var(--mu)';
-    var proColor=p.protein_target?'var(--ac)':'var(--mu)';
-    var carbColor=p.carb_target?'var(--or)':'var(--mu)';
-    var fatColor=p.fat_target?'var(--ye)':'var(--mu)';
 
     gc.innerHTML=
-      _inrow('Goal',         p.primary_goal||'',  _PEDIT, goalColor)+
-      _inrow('Goal weight',  p.goal_weight_lbs!=null?String(p.goal_weight_lbs):'', _PEDIT, p.goal_weight_lbs?'var(--tx)':'var(--mu)')+
+      _inrow('Goal',        p.primary_goal||'',  _PEDIT, goalColor)+
+      _inrow('Goal weight', p.goal_weight_lbs!=null?String(p.goal_weight_lbs):'', _PEDIT, p.goal_weight_lbs?'var(--tx)':'var(--mu)')+
       '<div style="border-top:1px solid var(--bd);margin:2px 0"></div>'+
-      _inrow('Calories',     p.calorie_target!=null?String(p.calorie_target):'',   _TEDIT, calColor)+
-      _inrow('Protein',      p.protein_target!=null?String(p.protein_target):'',   _TEDIT, proColor)+
-      _inrow('Carbs',        p.carb_target!=null?String(p.carb_target):'',         _TEDIT, carbColor)+
-      _inrow('Fat',          p.fat_target!=null?String(p.fat_target):'',           _TEDIT, fatColor);
+      _trow('Calories', p.calorie_target, ' kcal', 'calorie_target', 'var(--tx)')+
+      _trow('Protein',  p.protein_target, 'g',     'protein_target', 'var(--ac)')+
+      _trow('Carbs',    p.carb_target,    'g',     'carb_target',    'var(--or)')+
+      _trow('Fat',      p.fat_target,     'g',     'fat_target',     'var(--ye)');
   }}
 
   var dc=document.getElementById('devices-card');
