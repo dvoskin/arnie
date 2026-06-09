@@ -148,8 +148,15 @@ def deterministic_confirmation(tool_calls, log, prefs, tool_results=None) -> str
             head = "Logged: " + ", ".join(foods) + "."
         else:
             head = "Meal logged."
-        tail = (f"You're at {cal} / {cal_t} calories today." if cal_t
-                else f"That's {cal} calories so far today.")
+        if cal_t:
+            if cal >= cal_t:
+                tail = f"You're at {cal} / {cal_t} calories today — keep the rest controlled."
+            elif cal >= cal_t * 0.85:
+                tail = f"You're at {cal} / {cal_t} calories today, tight finish."
+            else:
+                tail = f"You're at {cal} / {cal_t} calories today, good room left."
+        else:
+            tail = f"That's {cal} calories so far today."
         if pro_t and pro < pro_t * 0.85:
             return f"{head}|||{tail}|||Protein's at {pro} / {pro_t}g — go protein-first next."
         if pro_t:
@@ -474,11 +481,16 @@ async def _dispatch(name, inp, user, today_log, db, source_type):  # noqa: C901
             f"{date_label}. ANALYSIS: {analysis.coach_note}. "
             f"DAY TOTAL: {target_log.total_calories:.0f} cal, {target_log.total_protein:.0f}g protein"
             f"{(' (' + remaining.strip() + ')') if remaining else ''}. "
-            f"Confirm in 2-4 short lines: name the food and its macros (from 'Logged X:' above), "
-            f"then the day total using EXACTLY the DAY TOTAL numbers (verbatim — never recompute), "
-            f"protein standing if a target exists, and one short next step. "
-            f"Spell out 'calories' not 'cal' — write '1,340 / 2,200 calories', not '1,340/2,200 cal'. "
-            f"Never skip the numbers."
+            f"Scale the reply to the log. Meaningful meal: name the food and its macros "
+            f"(from 'Logged X:' above), day total from DAY TOTAL (verbatim — never recompute), "
+            f"protein standing if a target exists, one short next step. "
+            f"Small item (coffee, condiment, drink under ~150 cal): 2 lines max — confirm the food "
+            f"and a brief day note, skip the full macro breakdown. "
+            f"Protein-heavy meal: lead with protein progress. "
+            f"Near or over calorie target: brief control nudge, no shame. "
+            f"Sentence case. One emoji if it fits naturally. "
+            f"Spell 'calories' not 'cal' — '1,340 / 2,200 calories', not '1,340/2,200 cal'. "
+            f"Never skip the day total when a target exists. Never invent numbers."
         )
 
     elif name == "log_exercise":
