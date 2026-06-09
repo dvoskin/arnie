@@ -3822,7 +3822,11 @@ function renderProfileTab(d){{
       var disp=rawNum!=null?(rawNum+unit):'—';
       var col=rawNum!=null?setColor:'var(--mu)';
       var slug=lbl.toLowerCase().replace(/[^a-z0-9]/g,'_');
-      var eb='<button class="ibtn inrow-edit" onclick="editProw(\'pr-'+slug+'\',\''+field+'\',\''+raw+'\')">&#9998;</button>';
+      // Double-escape \\' so the rendered JS contains \' (escaped quote
+      // inside the string literal). Single-escape \' would render as
+      // bare ' and prematurely terminate the string — SyntaxError that
+      // breaks the entire <script> block and blocks init() / data load.
+      var eb='<button class="ibtn inrow-edit" onclick="editProw(\\'pr-'+slug+'\\',\\''+field+'\\',\\''+raw+'\\')">&#9998;</button>';
       return '<div class="inrow" id="pr-'+slug+'"><span class="inlbl">'+esc(lbl)+'</span>'+
         '<div class="inrow-right"><span class="inval" style="color:'+col+'">'+esc(disp)+'</span>'+eb+'</div></div>';
     }}
