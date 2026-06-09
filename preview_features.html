@@ -512,7 +512,7 @@ body{
 
 /* ── WEARABLE SECTIONS — production design (.hsec accordion) ─────
    These rules mirror the existing api/templates.py wearable styling so
-   the preview's Recovery section reflects what's actually live: a
+   the preview's Wearables section reflects what's actually live: a
    collapsible card per device (Whoop / Apple Health), header with
    brand mark + name + summary + chevron, body with a 3-column metric
    grid. Open by default in preview so all data is visible at once. */
@@ -961,14 +961,16 @@ body{
     </div>
   </div>
 
-  <!-- RECOVERY / WEARABLES — LAST section on the day view. Mirrors the
-       live dashboard's existing .hsec accordion design (api/templates.py):
-       a collapsible card per device. Sits at the bottom because wearable
-       data is supporting context, not a primary KPI — read after the
-       user's logged work for the day. -->
+  <!-- WEARABLES — LAST section on the day view. Mirrors the live
+       dashboard's existing .hsec accordion design (api/templates.py):
+       a collapsible card per device. Section title is "Wearables" (not
+       "Recovery") because both Whoop and Apple Health stream activity
+       metrics too — Strain, Steps, Distance, Stand Hours, Walking HR.
+       Sits at the bottom because wearable data is supporting context,
+       not a primary KPI — read after the user's logged work for the day. -->
   <div class="log-section">
     <div class="stitle spaced">
-      <span>Recovery</span>
+      <span>Wearables</span>
       <span style="font-family:'Geist Mono',monospace;font-size:9px;letter-spacing:.04em;color:var(--mu);opacity:.55">JUN 9</span>
     </div>
 
