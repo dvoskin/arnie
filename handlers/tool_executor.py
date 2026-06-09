@@ -102,6 +102,19 @@ def deterministic_confirmation(tool_calls, log, prefs, tool_results=None) -> str
     names = {tc.get("name") for tc in (tool_calls or [])}
     tool_results = tool_results or {}
 
+    # If the tool result for the active logging call is an error, surface that
+    # honestly instead of confirming a success that didn't happen. This is the
+    # silent-failure mode: user sees "logged it ✅", dashboard is empty.
+    for k in ("log_food", "log_exercise", "log_water", "log_body_weight"):
+        if k in names:
+            r = tool_results.get(k)
+            if isinstance(r, str) and (
+                r.startswith("Error:") or r.startswith("Skipped")
+                or r.startswith("Failed to")
+            ):
+                return ("That didn't go through.|||"
+                        "give me one sec and resend — usually it lands the second try.")
+
     # A macro lookup that produced no model text — surface the actual numbers from
     # the USDA result rather than a content-free "all set." The user asked about a
     # food's macros (or to log it); they must leave with the numbers, never a blank.
@@ -139,7 +152,22 @@ def deterministic_confirmation(tool_calls, log, prefs, tool_results=None) -> str
         return "Wiped today clean ✅|||send me what you actually had and I'll rebuild it."
 
     if names & {"update_food_entry", "update_exercise_entry"} and not (names & {"log_food", "log_exercise"}):
-        return "Updated. ✅|||totals are resynced."
+        # Pull the item name from the tool call so the confirmation names what changed.
+        up_names = [
+            ((tc.get("input") or {}).get("food_name") or
+             (tc.get("input") or {}).get("exercise_name") or "").strip()
+            for tc in (tool_calls or [])
+            if tc.get("name") in ("update_food_entry", "update_exercise_entry")
+        ]
+        up_names = [n for n in up_names if n]
+        if cal_t:
+            up_tail = f"You're at {cal} / {cal_t} calories now."
+        else:
+            up_tail = f"That's {cal} calories now."
+        if up_names:
+            item = up_names[0][:1].upper() + up_names[0][1:]
+            return f"{item} fixed. ✅|||{up_tail}"
+        return f"Fixed. ✅|||{up_tail}"
 
     if names & {"log_food", "update_food_entry"}:
         if len(foods) == 1:
@@ -204,14 +232,37 @@ def deterministic_confirmation(tool_calls, log, prefs, tool_results=None) -> str
     if "log_water" in names:
         return "Water logged. 💧|||Keep sipping."
     if names & {"delete_food_entry", "delete_exercise_entry"}:
-        tail = (f"You're at {cal}/{cal_t} cal now." if cal_t else f"That's {cal} cal now.")
+        tail = (f"You're at {cal} / {cal_t} calories now." if cal_t
+                else f"That's {cal} calories now.")
         return f"Done, removed it.|||{tail}"
     if "update_profile" in names:
-        return "Got it, locked in. 👍|||Send me what you've eaten today and we'll keep building."
+        # Make the response contextual to what was actually changed — "send me your
+        # food" is a non-sequitur if the user just toggled reminders or changed mode.
+        up_tc = next((tc for tc in (tool_calls or []) if tc.get("name") == "update_profile"), None)
+        fields = ((up_tc.get("input") or {}).get("fields") or {}) if up_tc else {}
+        if "food_logging_mode" in fields:
+            mode = str(fields["food_logging_mode"]).lower()
+            if mode == "quick":
+                return "Got it — logging on best estimate from now.|||Send me what you've eaten."
+            if mode == "strict":
+                return "Got it — confirming details before every log.|||Send me what you've eaten."
+            return "Logging mode updated.|||Send me what you've eaten."
+        if "proactive_messaging_enabled" in fields:
+            on = fields["proactive_messaging_enabled"]
+            return ("Reminders on. I'll check in.|||What's today looking like?" if on
+                    else "Reminders off. I'll be here when you log.|||Send me what you've eaten.")
+        if "reminder_frequency" in fields:
+            freq = str(fields.get("reminder_frequency", "")).lower()
+            return ("Noted, dialing back.|||I'll be here when you log." if freq == "less"
+                    else "Got it, checking in more.|||What's today looking like?")
+        if any(k in fields for k in ("calorie_target", "protein_target")):
+            return "Targets locked in. ✅|||Send me what you've eaten and we'll track against them."
+        # Generic profile update (timezone, language, attributes, etc.)
+        return "Got it, locked in. ✅|||Send me what you've eaten today."
     # Generic net — only hit for tool turns with no specific branch above. Never a
     # content-free "all set"; keep the ball in their court with the day's standing.
-    tail = (f"You're at {cal}/{cal_t} cal today." if cal_t
-            else f"That's {cal} cal so far today." if cal
+    tail = (f"You're at {cal} / {cal_t} calories today." if cal_t
+            else f"That's {cal} calories so far today." if cal
             else "What do you want to log next?")
     return f"Got that.|||{tail}"
 
@@ -253,27 +304,27 @@ def _macros_from_search(result: str) -> str:
 # EMERGENCY FALLBACK ONLY. The model is instructed to ALWAYS write its own
 # in-voice heads-up before a slow-tool call. These deterministic lines fire
 # ONLY when the model skipped text entirely (just emitted the tool_use
-# block with no preceding text) — a rare degenerate case. Kept deliberately
-# generic and minimal so they read as "system was a little behind" rather
-# than impersonating Arnie's voice. If users start seeing these lines
-# routinely, the bug is upstream (model skipping text) — fix the prompt,
-# not these strings.
+# block with no preceding text) — a rare degenerate case. They still need to
+# sound like Arnie, not a customer-service rep: "one sec." reads as a
+# helpdesk holding pattern. Use short, in-voice phrasings tied to what's
+# actually being looked up (food/history/image), so when this fallback
+# DOES fire the user just sees a slightly terser Arnie, not a different bot.
 _TOOL_HEADS_UP_BUBBLES = {
     "web_search": (
-        "one sec.",
-        "checking.",
+        "checking that.",
+        "looking it up.",
     ),
     "search_food_database": (
-        "one sec.",
-        "checking.",
+        "pulling the macros.",
+        "grabbing the numbers.",
     ),
     "query_history": (
-        "one sec.",
-        "looking back.",
+        "checking your history.",
+        "pulling that up.",
     ),
     "generate_image": (
-        "one sec.",
-        "working on it.",
+        "working on the image.",
+        "rendering that.",
     ),
 }
 
@@ -392,18 +443,108 @@ async def execute_tool_calls(
     the pipeline detects and sends as a photo to the user.
     """
     results = {}
+    # Track per-call outcomes so the batch coaching can name individual
+    # failures (otherwise the name-keyed `results` dict only retains the LAST
+    # log_food's tool result and partial-failure detail is lost).
+    per_call: list[tuple[str, str, bool]] = []  # (name, food_name, succeeded)
 
     for tc in tool_calls:
         name = tc["name"]
-        inp = tc["input"]
+        inp = tc["input"] or {}
+        food_name = (inp.get("food_name") or "").strip() if isinstance(inp, dict) else ""
         try:
-            results[name] = await _dispatch(
-                name, inp, user, today_log, db, source_type
-            )
+            r = await _dispatch(name, inp, user, today_log, db, source_type)
+            results[name] = r
+            ok = not (isinstance(r, str) and (
+                r.startswith("Error:") or r.startswith("Skipped")
+                or r.startswith("Failed to")
+            ))
+            per_call.append((name, food_name, ok))
         except Exception as e:
             logger.error(f"Tool {name} failed: {e}", exc_info=True)
             results[name] = f"Error: {e}"
+            per_call.append((name, food_name, False))
 
+    # Multi-item batch: when several log_food calls fire in one turn, the
+    # single-item coaching ("name the food and its macros") is wrong — it makes
+    # the model recap one item, ignoring the rest. Swap to batch coaching so the
+    # model confirms the whole batch in 1-2 bubbles with the combined total.
+    return _apply_multi_item_batch_coaching(results, tool_calls, per_call=per_call)
+
+
+def _apply_multi_item_batch_coaching(
+    results: Dict[str, Any],
+    tool_calls: List[Dict[str, Any]],
+    per_call: List[tuple] = None,
+) -> Dict[str, Any]:
+    """If 2+ log_food calls fired in one turn, replace the single-item coaching
+    section of the log_food tool result with a batch-summary directive. Pure
+    helper so it's unit-testable without spinning up a DB session.
+
+    per_call: optional [(tool_name, food_name, succeeded), ...] capturing each
+    individual log_food's outcome (the name-keyed `results` dict loses this
+    because last-write-wins). When supplied and any log_food failed, the
+    coaching branches into partial-failure mode.
+    """
+    log_food_calls = [tc for tc in (tool_calls or []) if tc.get("name") == "log_food"]
+    if len(log_food_calls) <= 1 or "log_food" not in results:
+        return results
+    food_names = [
+        ((tc.get("input") or {}).get("food_name") or "").strip()
+        for tc in log_food_calls
+    ]
+    food_names = [n for n in food_names if n]
+    existing = results.get("log_food")
+    if not isinstance(existing, str) or "Scale the reply" not in existing:
+        return results
+    head, _, _ = existing.partition("Scale the reply")
+    n_items = len(food_names) or len(log_food_calls)
+
+    # Detect partial failure from per_call status, if provided.
+    failed_names: list[str] = []
+    succeeded_names: list[str] = []
+    if per_call:
+        for nm, fn, ok in per_call:
+            if nm != "log_food":
+                continue
+            (succeeded_names if ok else failed_names).append(fn or "(unnamed)")
+    n_failed = len(failed_names)
+    n_success = n_items - n_failed if per_call else n_items
+
+    if n_failed > 0:
+        # Partial-failure mode: name the failures, name what succeeded.
+        succ_preview = ", ".join(succeeded_names[:3]) + (
+            f" + {len(succeeded_names) - 3} more" if len(succeeded_names) > 3 else ""
+        ) if succeeded_names else "nothing"
+        fail_preview = ", ".join(failed_names)
+        batch_coaching = (
+            f"MULTI-ITEM BATCH WITH FAILURES ({n_success} of {n_items} succeeded). "
+            f"Succeeded: {succ_preview}. FAILED: {fail_preview}. "
+            f"Tell the user honestly: confirm the {n_success} that went in (combined "
+            f"macros + day total from DAY TOTAL above, verbatim) and CALL OUT the "
+            f"failures by name ('{failed_names[0]} didn't go through — resend?'). "
+            f"NEVER say 'all logged' or 'got everything' when some failed. NEVER "
+            f"invent a day total that includes the failed items. 2-3 short bubbles. "
+            f"Spell 'calories' not 'cal'. No emoji."
+        )
+    else:
+        preview = ", ".join(food_names[:3]) + (
+            f" + {n_items - 3} more" if n_items > 3 else ""
+        )
+        second = food_names[1] if len(food_names) > 1 else ""
+        batch_coaching = (
+            f"MULTI-ITEM BATCH ({n_items} foods just logged this turn: {preview}). "
+            f"Confirm the WHOLE batch in 1-2 short bubbles — do NOT list each item "
+            f"line by line. Combined macros, day total (from DAY TOTAL above, "
+            f"verbatim — never recompute), one short next step. Spell 'calories' "
+            f"not 'cal'. Examples of the shape: "
+            f"\"all logged — bowl, shake, bar came to ~780.|||you're at 1,560 / 2,100 calories.\" "
+            f"or \"{food_names[0] if food_names else 'item'}, {second} and the rest "
+            f"came to ~X. that's A / B calories today.\" "
+            f"Never mention items NOT in this turn's batch. Never restore foods the "
+            f"user deleted from the dashboard. One emoji max."
+        )
+    results["log_food"] = head.rstrip() + " " + batch_coaching
     return results
 
 
@@ -454,14 +595,14 @@ async def _dispatch(name, inp, user, today_log, db, source_type):  # noqa: C901
         )
         await db.refresh(target_log)
 
-        # T2.2 — auto-resolve any open food_clarification rows. The user's
-        # answer arrived and the log fired; the clarification is satisfied.
-        # Closing ALL open food_clarification rows is intentional: if multiple
-        # are pending, the model may be answering one specific question with a
-        # log, and stale ones from earlier turns shouldn't linger either.
+        # Item-scoped auto-resolve: close only the food_clarification rows whose
+        # item_referenced matches THIS logged food. A log of item A must NOT
+        # silently close an open question about item B (cross-item collision).
+        # Generic-item questions ("protein bar") still close on any specific log —
+        # the user named the specific item, that's the answer.
         try:
-            from db.queries import resolve_pending_questions
-            await resolve_pending_questions(db, user.id, kinds=["food_clarification"])
+            from db.queries import resolve_pending_questions_for_logged_items
+            await resolve_pending_questions_for_logged_items(db, user.id, [food_name])
         except Exception as e:
             logger.warning(f"food_clarification auto-resolve failed: {e}")
 
@@ -1148,7 +1289,10 @@ async def _dispatch(name, inp, user, today_log, db, source_type):  # noqa: C901
                 await db.commit()
             return (
                 f"Recorded pending clarification: '{question}' about '{food_item}'. "
-                f"Don't say anything about saving it — just ask the question naturally."
+                f"Don't say anything about saving it — just ask the question naturally. "
+                f"If the user's original turn mentioned OTHER foods too (multi-item batch), "
+                f"hold those as well: log ALL of them together once the user answers, "
+                f"not just '{food_item}'."
             )
         except Exception as e:
             logger.error(f"note_food_clarification failed: {e}")

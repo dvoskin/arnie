@@ -352,16 +352,19 @@ class TestDeterministicConfirmationCombos:
 
     # ── update-only path ──────────────────────────────────────────────────────
 
-    def test_update_food_only_gives_updated_message(self):
+    def test_update_food_only_gives_fixed_message(self):
+        # "Updated." and "resynced" are banned words — the fallback now says "Fixed."
         tc = [{"name": "update_food_entry", "input": {"entry_id": 5}}]
         out = deterministic_confirmation(tc, _log(800, 70), _prefs())
-        assert "updated" in out.lower()
-        assert "resynced" in out.lower()
+        assert "fixed" in out.lower()
+        assert "updated." not in out.lower()
+        assert "resynced" not in out.lower()
 
-    def test_update_exercise_only_gives_updated_message(self):
+    def test_update_exercise_only_gives_fixed_message(self):
         tc = [{"name": "update_exercise_entry", "input": {"entry_id": 3}}]
         out = deterministic_confirmation(tc, _log(), _prefs())
-        assert "updated" in out.lower()
+        assert "fixed" in out.lower()
+        assert "updated." not in out.lower()
 
     def test_update_food_plus_log_food_uses_food_path(self):
         """update_food_entry + log_food in same turn → food path, not update-only."""

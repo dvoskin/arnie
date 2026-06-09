@@ -760,6 +760,61 @@ async def resolve_pending_questions(
     return len(rows)
 
 
+async def resolve_pending_questions_for_logged_items(
+    db: AsyncSession, user_id: int, logged_names: List[str],
+) -> int:
+    """
+    Close ONLY the food_clarification rows whose item_referenced matches one of
+    the foods just logged. Used by the log_food auto-resolve so a log of item A
+    no longer silently closes an open question about item B.
+
+    Match rules (any one closes the row):
+      • exact normalized-name match
+      • one normalized name contains the other (substring)
+      • shared non-filler content token (so 'protein bar' question closes when
+        'built bar' is logged — 'bar' overlaps, the user named the specific brand)
+
+    Returns the number of rows closed.
+    """
+    from core.food_intelligence import normalize_name, _FOOD_FILLER
+    logged_norm = [normalize_name(n) for n in (logged_names or []) if n]
+    logged_norm = [n for n in logged_norm if n]
+    if not logged_norm:
+        return 0
+    conds = [
+        PendingQuestion.user_id == user_id,
+        PendingQuestion.answered_at.is_(None),
+        PendingQuestion.kind == "food_clarification",
+    ]
+    result = await db.execute(select(PendingQuestion).where(and_(*conds)))
+    rows = result.scalars().all()
+    now = datetime.utcnow()
+    closed = 0
+    for pq in rows:
+        item = (pq.item_referenced or "").strip()
+        if not item:
+            continue
+        item_norm = normalize_name(item)
+        if not item_norm:
+            continue
+        item_tokens = set(item_norm.split()) - _FOOD_FILLER
+        matched = False
+        for n in logged_norm:
+            if item_norm == n or item_norm in n or n in item_norm:
+                matched = True
+                break
+            n_tokens = set(n.split()) - _FOOD_FILLER
+            if item_tokens and n_tokens and (item_tokens & n_tokens):
+                matched = True
+                break
+        if matched:
+            pq.answered_at = now
+            closed += 1
+    if closed:
+        await db.commit()
+    return closed
+
+
 # ── Food/Exercise edit + delete (with auto totals recalc) ─────────────────────
 
 async def update_food_entry(

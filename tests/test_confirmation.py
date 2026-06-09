@@ -51,7 +51,7 @@ def test_low_protein_nudge():
 def test_delete_reports_new_total_not_blank():
     tc = [{"name": "delete_food_entry", "input": {}}]
     out = deterministic_confirmation(tc, _log(200, 20), _prefs())
-    assert "removed it" in out and "200/1800 cal now" in out
+    assert "removed it" in out and "200 / 1800 calories now" in out
 
 
 def test_no_bare_got_it_fallback():

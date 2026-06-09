@@ -45,12 +45,22 @@ def render_pending_clarification_block(
     ]
     if not fresh:
         return ""
+    # Newest-first so the [:3] cap surfaces the most recently asked questions —
+    # the ones the user is most likely responding to. Stable secondary sort by
+    # item_referenced so the order is deterministic when ties occur.
+    fresh.sort(
+        key=lambda p: (p.asked_at, getattr(p, "item_referenced", "") or ""),
+        reverse=True,
+    )
 
     lines = [
-        "[PENDING CLARIFICATION] You asked these clarifying questions "
-        "RECENTLY about foods and the user may be answering you now. "
-        "Use their reply to log ALL the foods from that turn — not just the ones "
-        "you asked about. DON'T re-ask:"
+        "[PENDING CLARIFICATION] You asked these RECENTLY about foods. "
+        "The user's current message MAY be answering you, or may be a NEW "
+        "food unrelated to the question. DON'T re-ask either way. Then decide: "
+        "IF this turn answers your question → log ALL the foods from that "
+        "original turn (every item the user mentioned, not just the asked-about ones). "
+        "IF this turn is a NEW food (not an answer) → log ONLY the new food and "
+        "leave the pending question open for the user to answer later:"
     ]
     for p in fresh[:3]:
         age_min = max(0, int((now - p.asked_at).total_seconds() / 60))
