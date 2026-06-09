@@ -2368,7 +2368,7 @@ async function init(){{
     var sn=document.getElementById('sb-name');
     var sg=document.getElementById('sb-goal-lbl');
     if(sn)sn.textContent=nm;
-    if(sg)sg.textContent=(gl?gl.toUpperCase():'')+(wt?' · '+wt+' LB':'');
+    if(sg)sg.textContent=(gl?goalLabel(gl).toUpperCase():'')+(wt?' · '+wt+' LB':'');
     if(su&&nm)su.style.display='flex';
     document.getElementById('app-load').style.display='none';
     renderDateNav();
@@ -3764,7 +3764,7 @@ function renderProfileTab(d){{
   var gc=document.getElementById('goals-card');
   if(gc){{
     var goalColor={{cut:'var(--re)',bulk:'var(--ac)',maintain:'var(--mu)',performance:'var(--or)',health:'var(--bl)'}}[p.primary_goal]||'var(--tx)';
-    var goalDisp=(p.primary_goal||'').replace(/_/g,' ')||'';
+    var goalDisp=goalLabel(p.primary_goal);
     function gRow(lbl,disp,raw,field,col){{
       var id='pg-'+lbl.toLowerCase().replace(/[^a-z0-9]/g,'_');
       var hasVal=raw!=null&&raw!=='';
@@ -3821,6 +3821,14 @@ const CATEGORY_LABELS = {{
   behavior: 'Behavior', mental: 'Mental', custom: 'Custom Tracking',
 }};
 const CONF_COLORS = {{ confirmed: 'var(--ac)', inferred: 'var(--mu)', needs_verification: '#f0a500' }};
+// User-facing labels for goal values. DB still stores 'cut'/'bulk' (don't change —
+// LLM prompts, tests, and existing user records all reference those keys), but
+// the UI shows plain-English equivalents. Mirror of memory/profile_view._GOAL_LABELS.
+const GOAL_LABELS = {{
+  cut: 'Losing weight', bulk: 'Gaining weight', maintain: 'Maintain',
+  performance: 'Performance', health: 'Health',
+}};
+function goalLabel(v){{ return GOAL_LABELS[v] || (v ? String(v).charAt(0).toUpperCase()+String(v).slice(1) : ''); }}
 // Enum edit fields → fixed option vocabularies (picklist instead of free text).
 // Free-text/numeric fields (name, weight, injuries, diet…) keep their input;
 // learned attributes aren't manually edited (they backfill from conversation).
@@ -4489,10 +4497,13 @@ function editProw(rowId,field,current){{
   var opts=EDIT_OPTIONS[field], editor;
   if(opts){{
     // Picklist for enum fields. Keep any current off-list value selectable.
+    // Friendly labels for primary_goal — option VALUE stays as DB key
+    // (cut/bulk/…) so saves are wire-compatible, only the LABEL text changes.
     var cur=(current||'').toLowerCase(), list=opts.slice();
     if(cur && list.indexOf(cur)===-1) list.unshift(cur);
+    var _opLbl = (field==='primary_goal') ? goalLabel : function(o){{ return o; }};
     editor='<select id="pi-'+rowId+'" style="'+_style+';text-transform:capitalize">'+
-      list.map(function(o){{return '<option value="'+escA(o)+'"'+(o===cur?' selected':'')+'>'+esc(o)+'</option>';}}).join('')+
+      list.map(function(o){{return '<option value="'+escA(o)+'"'+(o===cur?' selected':'')+'>'+esc(_opLbl(o))+'</option>';}}).join('')+
       '</select>';
   }}else{{
     editor='<input type="text" id="pi-'+rowId+'" value="'+escA(current)+'" style="'+_style+'">';
@@ -4525,7 +4536,7 @@ async function saveProw(rowId,field){{
       _baseData=data;_dayCache[_todayStr]=data;
       renderProfileTab(data);
       var nm=document.getElementById('user-name'); if(nm) nm.textContent=data.profile?.name||'';
-      var gt=document.getElementById('goal-tag'); if(gt) gt.textContent=data.profile?.primary_goal||'';
+      var gt=document.getElementById('goal-tag'); if(gt) gt.textContent=goalLabel(data.profile?.primary_goal);
     }}
     reloadAIProfile();   // re-render the unified profile so the edited value shows
   }}catch(e){{

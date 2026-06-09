@@ -46,7 +46,7 @@ CATEGORY_ORDER = [
 ]
 
 _GOAL_LABELS = {
-    "cut": "Cut", "bulk": "Bulk", "maintain": "Maintain",
+    "cut": "Losing weight", "bulk": "Gaining weight", "maintain": "Maintain",
     "performance": "Performance", "health": "Health",
 }
 
