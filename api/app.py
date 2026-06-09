@@ -19,7 +19,7 @@ from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
 from api.templates import _dashboard_html, _apple_guide_html
 from core.urls import dashboard_url
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 from db.database import AsyncSessionLocal
 from db.queries import (
@@ -2825,7 +2825,68 @@ class AppleHealthPayload(BaseModel):
     stand_hours: Optional[int] = None
     exercise_minutes: Optional[int] = None
     workouts: Optional[list[AppleWorkout]] = None  # Apple Watch workout records
+    @staticmethod
+    def _numeric_parts(value) -> list[float]:
+        """
+        iOS Shortcuts sometimes serializes Health Samples as newline-separated
+        text, e.g. "2376\n0". Treat blank strings as missing and parse the
+        numeric pieces so the webhook stays forgiving.
+        """
+        if value is None or value == "":
+            return []
+        if isinstance(value, (int, float)):
+            return [float(value)]
+        if isinstance(value, list):
+            parts: list[float] = []
+            for item in value:
+                parts.extend(AppleHealthPayload._numeric_parts(item))
+            return parts
+        if isinstance(value, str):
+            raw_parts = value.replace(",", "").splitlines()
+            parts = []
+            for raw in raw_parts:
+                raw = raw.strip()
+                if not raw:
+                    continue
+                try:
+                    parts.append(float(raw))
+                except ValueError:
+                    continue
+            return parts
+        return []
 
+    @field_validator("steps", "stand_hours", "exercise_minutes", mode="before")
+    @classmethod
+    def _coerce_int_field(cls, value):
+        parts = cls._numeric_parts(value)
+        if not parts:
+            return None
+        return int(round(sum(parts)))
+
+    @field_validator(
+        "active_calories",
+        "resting_calories",
+        "sleep_hours",
+        "sleep_seconds",
+        "sleep_deep_hours",
+        "sleep_rem_hours",
+        mode="before",
+    )
+    @classmethod
+    def _coerce_summed_float_field(cls, value):
+        parts = cls._numeric_parts(value)
+        if not parts:
+            return None
+        return float(sum(parts))
+
+    @field_validator("resting_hr", "avg_hr", "hrv", mode="before")
+    @classmethod
+    def _coerce_single_float_field(cls, value):
+        parts = cls._numeric_parts(value)
+        if not parts:
+            return None
+        non_zero = [p for p in parts if p != 0]
+        return float(non_zero[0] if non_zero else parts[0])
 
 async def _process_apple_workouts(db, user_id: int, snap_date, workouts: list) -> None:
     """
