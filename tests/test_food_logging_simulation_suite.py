@@ -1566,6 +1566,33 @@ def test_prompt_has_item_count_self_check():
     assert "THEY MUST MATCH" in s
 
 
+def test_prompt_has_category_dedupe_trap_rule():
+    """The 'melon, watermelon and mango' regression: the model silently
+    merged a generic + specific into one item, logged only 2 of 3 foods.
+    The CATEGORY ≠ DEDUPE rule names this trap explicitly with worked
+    examples so the model treats comma-separated nouns as distinct items
+    even when one is a category and the next is a specific instance."""
+    s = SYSTEM_PROMPT
+    assert "CATEGORY ≠ DEDUPE" in s
+    # Pin the canonical example from the screenshot.
+    assert "melon, watermelon and mango" in s
+    assert "3 items" in s
+    # Pin the apposition exception (the only valid merge case).
+    assert "apposition" in s
+    assert "specifically watermelon" in s
+
+
+def test_prompt_has_multi_item_confirmation_integrity_rule():
+    """Even if log_food calls are right, a confirmation that names only
+    2 of 3 items (the user-visible symptom in the screenshot) is the
+    canary. The model must re-count when its confirmation list is
+    shorter than the user's input list."""
+    s = SYSTEM_PROMPT
+    assert "CONFIRMATION INTEGRITY for multi-item" in s
+    assert "name EVERY item that was logged" in s
+    assert "STOP, re-count" in s
+
+
 def test_prompt_has_logging_fidelity_section():
     """LOGGING FIDELITY rule must be present in FOOD_ACCURACY so the model
     knows what gets stored is what gets restated."""

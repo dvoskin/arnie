@@ -14,7 +14,10 @@ import os
 from typing import Any, Callable, Optional
 
 from core.llm import chat, chat_follow_up
-from core.platform import Response, React, FX, onboarding_reaction, detect_moment
+from core.platform import (
+    Response, React, FX, onboarding_reaction, detect_moment,
+    _sanitize_bubble,
+)
 from core.prompts.onboarding import format_completion_facts
 from core.turn_health import (
     looks_like_stall as _looks_like_stall,
@@ -116,7 +119,13 @@ class _BubbleStreamer:
             self._buffer = ""
 
     async def _emit(self, text: str):
-        text = (text or "").strip()
+        # Sanitize HERE before sending to the platform — the streaming path
+        # bypasses Response.from_text (where _sanitize_bubble normally fires),
+        # so without this call the model's em dashes reach the user verbatim
+        # despite the brand rule. This closes the Telegram-side em-dash leak.
+        # _sanitize_bubble is idempotent and strips trailing/leading whitespace
+        # too, so the prior `.strip()` is redundant — kept the call for clarity.
+        text = _sanitize_bubble(text)
         if not text:
             return
         try:
@@ -300,13 +309,18 @@ async def run_turn(
             elif on_interim:
                 # Buffered mode (iMessage / no streaming): existing pattern —
                 # prefer the model's first-pass line, fall back to deterministic.
-                _interim = (
+                # Sanitize before send: when the line is the model's raw first
+                # pass it can contain em dashes; the deterministic fallback is
+                # already em-dash-free but sanitize is idempotent, so applying
+                # uniformly is safer than branching.
+                _interim_raw = (
                     response_text.strip() if _model_wrote_text
                     else tool_heads_up(
                         needs_heads_up_tc["name"],
                         _heads_up_seed(needs_heads_up_tc),
                     )
                 )
+                _interim = _sanitize_bubble(_interim_raw)
                 try:
                     await on_interim(_interim)
                 except Exception as e:

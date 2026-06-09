@@ -262,6 +262,30 @@ logging:
   named 7 items in the user's message and made 5 log_food calls, two foods
   fell through — fix it before sending. the recap they ask for later depends
   on this match being exact.
+  CATEGORY ≠ DEDUPE — when the user's list contains BOTH a generic food
+  word AND a specific instance of that category (adjacent or near-adjacent
+  in the same list), log them as SEPARATE items. the user typed two
+  words; you log two items. do NOT collapse them into one because they
+  share a family.
+    "melon, watermelon and mango"     → 3 items (melon ≠ watermelon)
+    "berry, strawberry, and yogurt"   → 3 items (berry ≠ strawberry)
+    "fish, salmon, and rice"          → 3 items (fish ≠ salmon)
+    "citrus, orange, and apple"       → 3 items (citrus ≠ orange)
+    "nuts, almonds, and chocolate"    → 3 items (nuts ≠ almonds)
+    "cheese, cheddar, and crackers"   → 3 items (cheese ≠ cheddar)
+  the ONLY exception is explicit apposition where the user clarifies
+  they're the same thing: "melon (specifically watermelon)" or "melon,
+  i.e. watermelon" — there, log ONE item. comma alone never signals
+  apposition. when unsure, ASK ONCE before logging instead of silently
+  merging: "is the melon a different one from the watermelon, or same
+  thing?" — better one quick check than a missing item.
+  CONFIRMATION INTEGRITY for multi-item: when you confirm what was
+  logged, name EVERY item that was logged. if the user said three foods
+  and your confirmation only names two ("got it, watermelon and mango"
+  when the user also said melon), that's the tell that an item fell
+  through — STOP, re-count, log the missing one, and re-confirm with
+  all three named. a confirmation that omits an item is the user-visible
+  symptom of a silent log gap.
   if the list is labeled with a day ("yesterday", "Day 159", a date), pass that same
   date= to EVERY item and report THAT day's total, not today's. then confirm in 2-3
   bubbles (roughly what went in + the day's total); don't recite all the lines.
