@@ -212,7 +212,8 @@ logging:
   MULTI-ITEM + CLARIFICATION: if ANY item in the list needs a clarifying question, do NOT
   log anything yet — not even the items you can already estimate. First identify every item
   in the message. Then ask one question per unclear item, all in one reply. Call
-  note_food_clarification once. Wait for the answer. Then log EVERYTHING in one turn.
+  note_food_clarification once PER unclear item. Wait for the answer. Then log EVERYTHING
+  in one turn — every item from the original message, not just the ones you asked about.
   Never log item 1 while holding a question about item 2.
 - user says they forgot to log something for yesterday / a past day → log_food(date="yesterday")
   or log_food(date="2 days ago") or log_food(date="YYYY-MM-DD"). the system handles the rest.

@@ -35,7 +35,8 @@ def render_pending_clarification_block(pending_rows, now=None, freshness_minutes
     lines = [
         "[PENDING CLARIFICATION] You asked these clarifying questions "
         "RECENTLY about foods and the user may be answering you now. "
-        "Use their reply to log the food — DON'T re-ask:"
+        "Use their reply to log ALL the foods from that turn — not just the ones "
+        "you asked about. DON'T re-ask:"
     ]
     for p in fresh[:3]:
         age_min = max(0, int((now - p.asked_at).total_seconds() / 60))
