@@ -4433,15 +4433,14 @@ footer{{text-align:center;padding:24px 0 0;color:#2a3040;font-size:12px}}
 <main>
 
 <h1>Connect Apple Health</h1>
-<p class="sub">Use the shortcut below for the quickest setup, or follow the manual steps if preferred.</p>
+<p class="sub">Open this page on your iPhone in Safari. Download the ready-made Shortcut, paste your sync URL once, then run it and allow Health access.</p>
 
 {f"""
 <!-- ONE-TAP SETUP -->
 <div class="onetap">
   <div class="ot-badge">Recommended</div>
-  <div class="ot-title">3-step setup</div>
-  <div class="ot-sub">No variable insertion needed. Copy, download, paste &mdash; done.</div>
-
+  <div class="ot-title">Fast setup</div>
+<div class="ot-sub">No manual Shortcut building. Copy your URL, download the Shortcut, paste once, then run it.</div>
   <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:14px">
     <div class="ot-step"><span class="ot-n">1</span><div><b>Copy your sync URL</b> using the button below</div></div>
     <div class="ot-step"><span class="ot-n">2</span><div>Open this page in <b>Safari</b> &rarr; tap <b>Download Shortcut</b> &rarr; tap <b>Add Shortcut</b></div></div>
