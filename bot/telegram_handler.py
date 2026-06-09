@@ -1214,7 +1214,7 @@ async def cmd_connect(update: Update, context: ContextTypes.DEFAULT_TYPE):
         base_url = os.getenv("RENDER_EXTERNAL_URL", "http://localhost:10000").rstrip("/")
         guide_url = f"{base_url}/health/apple/guide?token={token}"
 
-                await update.message.reply_text(
+        await update.message.reply_text(
             "<b>Connect Apple Health</b>\n\n"
             "Open this setup link on your iPhone in Safari:\n\n"
             f'<a href="{guide_url}">→ Set up Apple Health sync</a>\n\n'
