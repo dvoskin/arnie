@@ -18,8 +18,8 @@ def test_food_confirmation_uses_exact_log_totals():
     tc = [{"name": "log_food", "input": {"food_name": "Royo Bagel"}}]
     out = deterministic_confirmation(tc, _log(435, 190), _prefs())
     # the real numbers must appear; the hallucinated 1601/192 must not
-    assert "435/1800 cal" in out
-    assert "190/200" in out
+    assert "435 / 1800 calories" in out
+    assert "190 / 200" in out
     assert "1,601" not in out and "1601" not in out
     # names the food, multi-bubble, ends with a hook
     assert out.lower().startswith("royo bagel logged")
@@ -31,7 +31,7 @@ def test_food_confirmation_low_protein_path_uses_real_totals():
     # the screenshot scenario: 435 cal / 60g protein, target 1800 / 200
     tc = [{"name": "log_food", "input": {"food_name": "Royo Bagel"}}]
     out = deterministic_confirmation(tc, _log(435, 60), _prefs())
-    assert "435/1800 cal" in out and "60/200g" in out
+    assert "435 / 1800 calories" in out and "60 / 200g" in out
     assert "1,601" not in out and "1601" not in out and "192g" not in out
     assert out.lower().startswith("royo bagel logged")
 
@@ -39,13 +39,13 @@ def test_food_confirmation_low_protein_path_uses_real_totals():
 def test_no_protein_target_still_states_calories():
     tc = [{"name": "log_food", "input": {"food_name": "eggs"}}]
     out = deterministic_confirmation(tc, _log(140, 12), _prefs(cal_t=None, pro_t=None))
-    assert "140 cal" in out
+    assert "140 calories" in out
 
 
 def test_low_protein_nudge():
     tc = [{"name": "log_food", "input": {"food_name": "toast"}}]
     out = deterministic_confirmation(tc, _log(300, 40), _prefs())  # 40 << 200*0.85
-    assert "40/200g" in out and "keep it coming" in out
+    assert "40 / 200g" in out and "protein-first" in out
 
 
 def test_delete_reports_new_total_not_blank():

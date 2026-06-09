@@ -142,14 +142,19 @@ def deterministic_confirmation(tool_calls, log, prefs, tool_results=None) -> str
         return "Updated. ✅|||totals are resynced."
 
     if names & {"log_food", "update_food_entry"}:
-        head = (f"{foods[0][:1].upper() + foods[0][1:]} logged." if len(foods) == 1 else "Logged.")
-        tail = (f"You're at {cal}/{cal_t} cal today." if cal_t
-                else f"That's {cal} cal so far today.")
+        if len(foods) == 1:
+            head = f"{foods[0][:1].upper() + foods[0][1:]} logged."
+        elif foods:
+            head = "Logged: " + ", ".join(foods) + "."
+        else:
+            head = "Meal logged."
+        tail = (f"You're at {cal} / {cal_t} calories today." if cal_t
+                else f"That's {cal} calories so far today.")
         if pro_t and pro < pro_t * 0.85:
-            return f"{head}|||{tail}|||Protein's at {pro}/{pro_t}g, keep it coming."
+            return f"{head}|||{tail}|||Protein's at {pro} / {pro_t}g — go protein-first next."
         if pro_t:
-            return f"{head}|||{tail}|||{pro}/{pro_t}g protein so far. What's next?"
-        return f"{head}|||{tail}|||What's next?"
+            return f"{head}|||{tail}|||{pro} / {pro_t}g protein so far. What's next?"
+        return f"{head}|||{tail}|||Send the next meal."
 
     if "log_exercise" in names:
         # Mid-workout detection: if more than one exercise logged today (including this
@@ -469,8 +474,10 @@ async def _dispatch(name, inp, user, today_log, db, source_type):  # noqa: C901
             f"{date_label}. ANALYSIS: {analysis.coach_note}. "
             f"DAY TOTAL: {target_log.total_calories:.0f} cal, {target_log.total_protein:.0f}g protein"
             f"{(' (' + remaining.strip() + ')') if remaining else ''}. "
-            f"Confirm what was logged: state the food, its exact cal + protein, and the day total "
-            f"from DAY TOTAL above — use those numbers verbatim. Then coach on quality or goal fit. "
+            f"Confirm in 2-4 short lines: name the food and its macros (from 'Logged X:' above), "
+            f"then the day total using EXACTLY the DAY TOTAL numbers (verbatim — never recompute), "
+            f"protein standing if a target exists, and one short next step. "
+            f"Spell out 'calories' not 'cal' — write '1,340 / 2,200 calories', not '1,340/2,200 cal'. "
             f"Never skip the numbers."
         )
 
