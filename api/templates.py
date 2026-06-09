@@ -1612,10 +1612,14 @@ footer{{
   #learn-wrap{{margin-top:10px!important}}
   .lrn-card{{padding:9px 12px}}
   .lrn-top{{gap:8px;margin-bottom:6px}}
-  /* Today counters — quiet label, clear weighted number, even bars */
+  /* Today counters — quiet label, clear weighted number, even bars.
+     Macro number drops a notch (700 → 600) on mobile — the desktop
+     weight reads heavier on phones than intended at smaller pixel
+     densities; 600 keeps the value as the dominant element without
+     shouting. */
   .macro-cell{{padding:10px 12px}}
   .mc-label{{font-size:9px;letter-spacing:.08em;margin-bottom:4px;color:var(--mu);font-weight:500}}
-  .mc-num{{font-size:26px;line-height:1.1}}
+  .mc-num{{font-size:26px;font-weight:600;line-height:1.1}}
   .mc-sub{{font-size:10px;margin-top:3px;color:var(--mu)}}
   .mc-bar{{margin-top:6px;height:3px}}
   /* Coach insights — hide timestamp on narrow screens, tighten banner */
