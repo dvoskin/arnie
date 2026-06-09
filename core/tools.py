@@ -313,28 +313,53 @@ _HISTORY_TOOLS = [
     {
         "name": "query_history",
         "description": (
-            "Look up the user's historical data beyond what's in context (which only covers ~7 days). "
-            "Use when asked about past performance, averages, trends, or a specific date more than "
-            "7 days ago: 'what was I averaging last month?', 'show my weight over the last 30 days', "
-            "'what was my bench press 3 weeks ago?', 'how consistent have I been?'. "
-            "Do NOT use for data already visible in today's log or the recent history block."
+            "Pull ANY data point from the user's history — the canonical way to "
+            "answer questions about past food, workouts, weight, water, sleep, or "
+            "recovery beyond what's already in context. Use whenever the user "
+            "asks about a specific past date, day-of-week, or window: "
+            "'what did I eat on sunday?', 'show me last monday's workout', "
+            "'what was my weight on june 1?', 'how was my sleep this week?', "
+            "'water intake yesterday?', 'bench press 3 weeks ago?'. "
+            "Do NOT use for data already visible in [TODAY] / [RECENT DAY DETAIL] / "
+            "[FOOD HISTORY] context blocks — those are already in front of you. "
+            "Period accepts: 'yesterday', 'today', 'N days ago', weekday names "
+            "('sunday', 'last monday'), 'this week', 'last week', month-day "
+            "('june 7'), ISO dates ('2026-06-07'), date ranges ('2026-06-01:2026-06-07'), "
+            "or rolling windows ('last_7', 'last_30', 'last_90')."
         ),
         "input_schema": {
             "type": "object",
             "properties": {
                 "metric": {
                     "type": "string",
-                    "enum": ["calories", "protein", "weight", "workouts", "exercise", "all"],
+                    "enum": [
+                        "calories", "protein", "weight", "workouts", "exercise", "all",
+                        "food_entries", "exercise_entries", "water",
+                        "body_metrics", "day_detail",
+                    ],
                     "description": (
-                        "What to pull. Use 'exercise' with exercise_name for a specific lift's history. "
-                        "'all' returns a compact daily summary for the period."
+                        "What to pull. PER-ENTRY shapes (return individual rows): "
+                        "'food_entries' = every food logged in the period; "
+                        "'exercise_entries' = every lift/cardio session; "
+                        "'water' = water entries + daily totals; "
+                        "'body_metrics' = sleep/HRV/recovery/steps from Apple Health or Whoop; "
+                        "'day_detail' = comprehensive single-day or range recap "
+                        "(food + exercise + water + totals). "
+                        "AGGREGATE shapes (return averages/totals): "
+                        "'calories', 'protein', 'workouts' = daily rollups + averages; "
+                        "'weight' = body weight time series; "
+                        "'exercise' = a specific lift's history (requires exercise_name); "
+                        "'all' = compact daily summary."
                     ),
                 },
                 "period": {
                     "type": "string",
                     "description": (
-                        "Time window: 'last_7', 'last_14', 'last_30', 'last_60', 'last_90', "
-                        "or 'YYYY-MM-DD' for a single specific date."
+                        "When. Accepts natural language ('yesterday', 'sunday', "
+                        "'last monday', '2 days ago', 'this week', 'last week', "
+                        "'june 7'), ISO dates ('2026-06-07'), date ranges "
+                        "('2026-06-01:2026-06-07'), or rolling windows "
+                        "('last_7', 'last_14', 'last_30', 'last_60', 'last_90')."
                     ),
                 },
                 "exercise_name": {

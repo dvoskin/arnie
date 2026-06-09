@@ -1166,10 +1166,102 @@ async def _dispatch(name, inp, user, today_log, db, source_type):  # noqa: C901
                 lines.append(
                     f"  {r['date']} {w}: {r.get('calories','?')} cal, {r.get('protein','?')}g P"
                 )
+        # ── NEW PER-ENTRY METRICS ───────────────────────────────────────────
+        if metric == "food_entries" and "rows" in data:
+            rows = data["rows"]
+            lines.append(f"FOOD ENTRIES ({data.get('entries', 0)} items across "
+                         f"{data.get('days_with_data', 0)} days):")
+            current_date = None
+            for r in rows:
+                if r["date"] != current_date:
+                    current_date = r["date"]
+                    lines.append(f"  {current_date}:")
+                est = "~" if r.get("estimated") else ""
+                qty = f" ({r['quantity']})" if r.get("quantity") else ""
+                lines.append(
+                    f"    • {r['food_name']}{qty} — {est}{r['calories']} calories, "
+                    f"{r['protein']}g protein"
+                )
+        if metric == "exercise_entries" and "rows" in data:
+            lines.append(f"EXERCISE ENTRIES ({data.get('entries', 0)} entries across "
+                         f"{data.get('days_with_data', 0)} days):")
+            current_date = None
+            for r in data["rows"]:
+                if r["date"] != current_date:
+                    current_date = r["date"]
+                    lines.append(f"  {current_date}:")
+                if r.get("sets") and r.get("reps"):
+                    w = f" @ {r['weight_lbs']}lb" if r.get("weight_lbs") else ""
+                    lines.append(f"    • {r['exercise_name']}: {r['sets']}×{r['reps']}{w}")
+                elif r.get("duration_minutes"):
+                    ct = f" {r['cardio_type']}" if r.get("cardio_type") else ""
+                    lines.append(f"    • {r['exercise_name']}:{ct} {r['duration_minutes']:.0f} min")
+                else:
+                    lines.append(f"    • {r['exercise_name']}")
+        if metric == "water":
+            lines.append(f"WATER (period={period}):")
+            for d in data.get("daily_totals", []):
+                lines.append(f"  {d['date']}: {d['total_water_ml']} ml total")
+            if data.get("rows"):
+                lines.append(f"  individual entries: {data['entries']}")
+                for r in data["rows"][-10:]:
+                    ctx = f" ({r['context']})" if r.get("context") else ""
+                    lines.append(f"    {r['date']}: {r['amount_ml']} ml{ctx}")
+        if metric == "body_metrics" and "rows" in data:
+            lines.append(f"BODY METRICS / RECOVERY ({data.get('entries', 0)} days):")
+            for r in data["rows"]:
+                parts = [r["date"] + ":"]
+                if r.get("sleep_hours") is not None:
+                    parts.append(f"sleep {r['sleep_hours']:.1f}h")
+                if r.get("hrv") is not None:
+                    parts.append(f"HRV {r['hrv']:.0f}")
+                if r.get("resting_hr") is not None:
+                    parts.append(f"RHR {r['resting_hr']:.0f}")
+                if r.get("recovery_score") is not None:
+                    parts.append(f"recovery {r['recovery_score']}")
+                if r.get("strain") is not None:
+                    parts.append(f"strain {r['strain']:.1f}")
+                if r.get("steps") is not None:
+                    parts.append(f"{r['steps']} steps")
+                if r.get("source"):
+                    parts.append(f"[{r['source']}]")
+                lines.append("  " + " | ".join(parts))
+        if metric == "day_detail" and "days" in data:
+            lines.append(f"DAY DETAIL — {data.get('days_with_data', 0)} day(s) with data:")
+            for d in data["days"]:
+                t = d["totals"]
+                lines.append(f"  {d['date']}: {t['calories']} cal, {t['protein']}g P, "
+                             f"{t['carbs']}g C, {t['fats']}g F | water {t['water_ml']}ml | "
+                             f"workout={'✓' if d['workout_completed'] else '✗'} "
+                             f"cardio={'✓' if d['cardio_completed'] else '✗'}")
+                if d["food"]:
+                    lines.append("    FOOD:")
+                    for f in d["food"]:
+                        est = "~" if f.get("estimated") else ""
+                        qty = f" ({f['quantity']})" if f.get("quantity") else ""
+                        lines.append(
+                            f"      • {f['food_name']}{qty} — {est}{f['calories']} cal, "
+                            f"{f['protein']}g protein"
+                        )
+                if d["exercise"]:
+                    lines.append("    EXERCISE:")
+                    for e in d["exercise"]:
+                        if e.get("sets") and e.get("reps"):
+                            w = f" @ {e['weight_lbs']}lb" if e.get("weight_lbs") else ""
+                            lines.append(f"      • {e['exercise_name']}: {e['sets']}×{e['reps']}{w}")
+                        elif e.get("duration_minutes"):
+                            ct = f" {e['cardio_type']}" if e.get("cardio_type") else ""
+                            lines.append(f"      • {e['exercise_name']}:{ct} {e['duration_minutes']:.0f} min")
+                        else:
+                            lines.append(f"      • {e['exercise_name']}")
         return (
             "\n".join(lines) + "\n\n"
             "COACH INSTRUCTION: present this data conversationally — give the read, not a table. "
-            "Highlight the trend, flag anything notable, then give one concrete next step."
+            "Highlight the trend, flag anything notable, then give one concrete next step. "
+            "For per-entry food/exercise/day_detail recaps the user asked for, list every "
+            "entry verbatim with the EXACT names and macros from the data above (this is the "
+            "DB source of truth — same data they see on the dashboard). Use 'calories' not 'cal'. "
+            "Never paraphrase entries or skip items."
         )
 
     elif name == "search_food_database":

@@ -972,6 +972,132 @@ async def set_subscription_cancelled(db: AsyncSession, stripe_customer_id: str) 
     return None
 
 
+_WEEKDAYS = {
+    "monday": 0, "mon": 0,
+    "tuesday": 1, "tue": 1, "tues": 1,
+    "wednesday": 2, "wed": 2,
+    "thursday": 3, "thu": 3, "thurs": 3,
+    "friday": 4, "fri": 4,
+    "saturday": 5, "sat": 5,
+    "sunday": 6, "sun": 6,
+}
+_MONTHS = {
+    "january": 1, "jan": 1, "february": 2, "feb": 2, "march": 3, "mar": 3,
+    "april": 4, "apr": 4, "may": 5, "june": 6, "jun": 6, "july": 7, "jul": 7,
+    "august": 8, "aug": 8, "september": 9, "sep": 9, "sept": 9,
+    "october": 10, "oct": 10, "november": 11, "nov": 11,
+    "december": 12, "dec": 12,
+}
+
+
+def parse_natural_period(period: str, today):
+    """Resolve a period string to a (since, until) inclusive date range.
+
+    Accepts: existing 'last_N' tags, 'YYYY-MM-DD' single dates, 'YYYY-MM-DD:YYYY-MM-DD'
+    ranges, and natural-language inputs: 'today', 'yesterday', 'N days ago',
+    'monday'/'sun'/'sunday', 'last monday'/'last sun', 'this week',
+    'last week', 'june 7', 'june 7 2026'.
+
+    Returns (since: date, until: date) or None if unparseable. Pure helper —
+    no DB access, so it's cheap to unit-test.
+    """
+    from datetime import date as _date, timedelta as _td
+    if not period:
+        return None
+    p = period.strip().lower()
+
+    # 'last_N' window aliases
+    _window = {"last_7": 7, "last_14": 14, "last_30": 30, "last_60": 60, "last_90": 90}
+    if p in _window:
+        return (today - _td(days=_window[p]), today)
+
+    # 'YYYY-MM-DD:YYYY-MM-DD' range
+    if ":" in p:
+        a, b = p.split(":", 1)
+        try:
+            d1 = _date.fromisoformat(a.strip())
+            d2 = _date.fromisoformat(b.strip())
+            if d1 > d2:
+                d1, d2 = d2, d1
+            return (d1, d2)
+        except ValueError:
+            return None
+
+    # Single ISO date
+    try:
+        d = _date.fromisoformat(p)
+        return (d, d)
+    except ValueError:
+        pass
+
+    # Natural language single days
+    if p in ("today", "now"):
+        return (today, today)
+    if p in ("yesterday", "yday", "y'day"):
+        d = today - _td(days=1)
+        return (d, d)
+    if p in ("tomorrow",):
+        return None  # never log forward
+    # "N days ago"
+    import re
+    m = re.match(r"^(\d+)\s*days?\s*ago$", p)
+    if m:
+        d = today - _td(days=int(m.group(1)))
+        return (d, d)
+    # word-numbers for small N
+    _word_n = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
+               "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10}
+    m = re.match(r"^(one|two|three|four|five|six|seven|eight|nine|ten)\s+days?\s+ago$", p)
+    if m:
+        d = today - _td(days=_word_n[m.group(1)])
+        return (d, d)
+    # "last week" / "this week" → 7-day windows
+    if p == "this week":
+        # ISO week: Monday is start
+        start = today - _td(days=today.weekday())
+        return (start, today)
+    if p == "last week":
+        start_this = today - _td(days=today.weekday())
+        start_last = start_this - _td(days=7)
+        end_last = start_this - _td(days=1)
+        return (start_last, end_last)
+
+    # Weekday names with optional "last" prefix → most recent occurrence
+    # "monday" / "sunday" / "last monday" / "last sun"
+    parts = p.split()
+    if 1 <= len(parts) <= 2:
+        candidate = parts[-1]
+        if candidate in _WEEKDAYS:
+            target = _WEEKDAYS[candidate]
+            # Days back from today: weekday() - target (mod 7).
+            # If today IS that weekday, "monday" today means today; "last monday" means 7 days back.
+            diff = (today.weekday() - target) % 7
+            if diff == 0 and (len(parts) == 2 and parts[0] == "last"):
+                diff = 7
+            d = today - _td(days=diff)
+            return (d, d)
+
+    # "june 7" / "june 7 2026" / "june 7, 2026"
+    m = re.match(r"^([a-z]+)\s+(\d{1,2})(?:[,\s]+(\d{4}))?$", p)
+    if m:
+        mon_name = m.group(1)
+        day_num = int(m.group(2))
+        year = int(m.group(3)) if m.group(3) else today.year
+        mon = _MONTHS.get(mon_name)
+        if mon and 1 <= day_num <= 31:
+            try:
+                d = _date(year, mon, day_num)
+                # If no year was provided and the resolved date is in the future
+                # (e.g. "december 31" said in january), it likely meant LAST year.
+                if not m.group(3) and d > today:
+                    d = _date(year - 1, mon, day_num)
+                return (d, d)
+            except ValueError:
+                return None
+
+    return None
+
+
 async def query_history_stats(
     db: AsyncSession,
     user_id: int,
@@ -982,29 +1108,31 @@ async def query_history_stats(
 ) -> dict:
     """
     Pull historical stats for a user beyond the 7-day context window.
-    period: 'last_7'|'last_14'|'last_30'|'last_60'|'last_90' or 'YYYY-MM-DD'
-    metric: 'calories'|'protein'|'weight'|'workouts'|'exercise'|'all'
+
+    period:
+      • 'last_7'|'last_14'|'last_30'|'last_60'|'last_90' — rolling window
+      • 'YYYY-MM-DD' — single date
+      • 'YYYY-MM-DD:YYYY-MM-DD' — inclusive range
+      • natural language: 'today', 'yesterday', 'N days ago', 'sunday',
+        'last monday', 'this week', 'last week', 'june 7'
+
+    metric:
+      • aggregates (legacy): 'calories'|'protein'|'workouts'|'all'
+      • single-domain (legacy): 'weight'|'exercise'
+      • per-entry (new): 'food_entries'|'exercise_entries'|'water'|
+        'body_metrics'|'day_detail'
+
     Returns a dict the executor formats into a result string.
     """
     tz = pytz.timezone(user_timezone or "UTC")
     today = datetime.now(tz).date()
 
-    # Resolve period to a date range
-    single_date = None
-    _period_days = {
-        "last_7": 7, "last_14": 14, "last_30": 30, "last_60": 60, "last_90": 90,
-    }
-    if period in _period_days:
-        since = today - timedelta(days=_period_days[period])
-        until = today
-    else:
-        try:
-            from datetime import date as _date
-            single_date = _date.fromisoformat(period)
-            since = single_date
-            until = single_date
-        except ValueError:
-            return {"error": f"Unrecognised period: {period!r}"}
+    # Resolve period to a date range — supports legacy + natural-language.
+    parsed = parse_natural_period(period, today)
+    if parsed is None:
+        return {"error": f"Unrecognised period: {period!r}"}
+    since, until = parsed
+    single_date = since if since == until else None
 
     if metric in ("calories", "protein", "workouts", "all"):
         logs = (await db.execute(
@@ -1108,6 +1236,199 @@ async def query_history_stats(
         return {
             "metric": "exercise", "exercise": exercise_name,
             "period": period, "sessions": len(sessions), "data": sessions,
+        }
+
+    # ── NEW PER-ENTRY METRICS ────────────────────────────────────────────────
+
+    if metric == "food_entries":
+        logs = (await db.execute(
+            select(DailyLog)
+            .where(and_(
+                DailyLog.user_id == user_id,
+                DailyLog.date >= since,
+                DailyLog.date <= until,
+            ))
+            .options(selectinload(DailyLog.food_entries))
+            .order_by(DailyLog.date)
+            .execution_options(populate_existing=True)
+        )).scalars().all()
+        rows = []
+        for l in logs:
+            for f in (l.food_entries or []):
+                rows.append({
+                    "date": str(l.date),
+                    "food_name": f.parsed_food_name or "",
+                    "quantity": f.quantity or "",
+                    "calories": round(f.calories or 0),
+                    "protein": round(f.protein or 0),
+                    "carbs": round(f.carbs or 0),
+                    "fats": round(f.fats or 0),
+                    "estimated": bool(f.estimated_flag),
+                })
+        return {
+            "metric": "food_entries", "period": period,
+            "days_with_data": sum(1 for l in logs if l.food_entries),
+            "entries": len(rows),
+            "rows": rows,
+        }
+
+    if metric == "exercise_entries":
+        logs = (await db.execute(
+            select(DailyLog)
+            .where(and_(
+                DailyLog.user_id == user_id,
+                DailyLog.date >= since,
+                DailyLog.date <= until,
+            ))
+            .options(selectinload(DailyLog.exercise_entries))
+            .order_by(DailyLog.date)
+            .execution_options(populate_existing=True)
+        )).scalars().all()
+        rows = []
+        for l in logs:
+            for e in (l.exercise_entries or []):
+                w_lbs = round(e.weight * 2.20462, 1) if e.weight else None
+                rows.append({
+                    "date": str(l.date),
+                    "exercise_name": e.exercise_name or "",
+                    "sets": e.sets, "reps": e.reps,
+                    "weight_lbs": w_lbs,
+                    "weight_kg": round(e.weight, 2) if e.weight else None,
+                    "duration_minutes": e.duration_minutes,
+                    "cardio_type": e.cardio_type,
+                })
+        return {
+            "metric": "exercise_entries", "period": period,
+            "days_with_data": sum(1 for l in logs if l.exercise_entries),
+            "entries": len(rows),
+            "rows": rows,
+        }
+
+    if metric == "water":
+        try:
+            from db.models import WaterEntry
+        except ImportError:
+            WaterEntry = None
+        rows = []
+        if WaterEntry is not None:
+            entries = (await db.execute(
+                select(WaterEntry)
+                .where(and_(
+                    WaterEntry.user_id == user_id,
+                    WaterEntry.timestamp >= datetime.combine(since, datetime.min.time()),
+                    WaterEntry.timestamp <= datetime.combine(until, datetime.max.time()),
+                ))
+                .order_by(WaterEntry.timestamp)
+            )).scalars().all()
+            for w in entries:
+                rows.append({
+                    "date": w.timestamp.strftime("%Y-%m-%d"),
+                    "amount_ml": round(w.amount_ml or 0),
+                    "context": w.context or "",
+                })
+        # Also include daily aggregates from DailyLog for days in range
+        logs = (await db.execute(
+            select(DailyLog)
+            .where(and_(
+                DailyLog.user_id == user_id,
+                DailyLog.date >= since,
+                DailyLog.date <= until,
+            ))
+            .order_by(DailyLog.date)
+        )).scalars().all()
+        daily_totals = [
+            {"date": str(l.date), "total_water_ml": round(l.total_water_ml or 0)}
+            for l in logs
+        ]
+        return {
+            "metric": "water", "period": period,
+            "entries": len(rows),
+            "rows": rows,
+            "daily_totals": daily_totals,
+        }
+
+    if metric == "body_metrics":
+        snaps = (await db.execute(
+            select(HealthSnapshot)
+            .where(and_(
+                HealthSnapshot.user_id == user_id,
+                HealthSnapshot.date >= since,
+                HealthSnapshot.date <= until,
+            ))
+            .order_by(HealthSnapshot.date)
+        )).scalars().all()
+        rows = []
+        for s in snaps:
+            rows.append({
+                "date": str(s.date),
+                "sleep_hours": s.sleep_hours,
+                "sleep_efficiency_pct": s.sleep_efficiency_pct,
+                "hrv": s.hrv,
+                "resting_hr": s.resting_hr,
+                "recovery_score": s.recovery_score,
+                "strain": s.strain,
+                "steps": s.steps,
+                "active_calories": s.active_calories,
+                "exercise_minutes": s.exercise_minutes,
+                "source": s.source,
+            })
+        return {
+            "metric": "body_metrics", "period": period,
+            "entries": len(rows),
+            "rows": rows,
+        }
+
+    if metric == "day_detail":
+        # Comprehensive single-day or range view: food + exercise + water +
+        # body weight + health snapshot. The recap-friendly metric.
+        logs = (await db.execute(
+            select(DailyLog)
+            .where(and_(
+                DailyLog.user_id == user_id,
+                DailyLog.date >= since,
+                DailyLog.date <= until,
+            ))
+            .options(
+                selectinload(DailyLog.food_entries),
+                selectinload(DailyLog.exercise_entries),
+            )
+            .order_by(DailyLog.date)
+            .execution_options(populate_existing=True)
+        )).scalars().all()
+        days = []
+        for l in logs:
+            days.append({
+                "date": str(l.date),
+                "totals": {
+                    "calories": round(l.total_calories or 0),
+                    "protein": round(l.total_protein or 0),
+                    "carbs": round(l.total_carbs or 0),
+                    "fats": round(l.total_fats or 0),
+                    "water_ml": round(l.total_water_ml or 0),
+                },
+                "workout_completed": bool(l.workout_completed),
+                "cardio_completed": bool(l.cardio_completed),
+                "food": [{
+                    "food_name": f.parsed_food_name or "",
+                    "quantity": f.quantity or "",
+                    "calories": round(f.calories or 0),
+                    "protein": round(f.protein or 0),
+                    "carbs": round(f.carbs or 0),
+                    "fats": round(f.fats or 0),
+                    "estimated": bool(f.estimated_flag),
+                } for f in (l.food_entries or [])],
+                "exercise": [{
+                    "exercise_name": e.exercise_name or "",
+                    "sets": e.sets, "reps": e.reps,
+                    "weight_lbs": (round(e.weight * 2.20462, 1) if e.weight else None),
+                    "duration_minutes": e.duration_minutes,
+                    "cardio_type": e.cardio_type,
+                } for e in (l.exercise_entries or [])],
+            })
+        return {
+            "metric": "day_detail", "period": period,
+            "days_with_data": sum(1 for d in days if d["food"] or d["exercise"]),
+            "days": days,
         }
 
     return {"error": f"Unknown metric: {metric!r}"}
