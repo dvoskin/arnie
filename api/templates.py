@@ -1672,28 +1672,20 @@ footer{{
 }}
 
 /* ── 5-day trend strip ───────────────────────────────────── */
-/* 5-day trend cells — restored to the original production styling
-   (--sf surface, --tx full-contrast values, mono caps labels). Was
-   temporarily muted during the preview port; reverted here per user
-   feedback ("consistent with old pre-edit"). */
-.trend-strip{{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:8px}}
+/* 5-day trend cells — pre-edit production styling, restored verbatim
+   from 8021b58. Muted by design: --sf2 surface, --tx2 values (not full
+   contrast), all arrows in --mu (no green/orange), no mono font on the
+   label. The strip reads as quiet ambient context, never competing
+   with the macro strip above for attention. */
+.trend-strip{{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:4px}}
 .tcell{{
-  background:var(--sf);border:1px solid var(--bd);border-radius:12px;
-  padding:11px 13px;
+  background:var(--sf2);border:1px solid var(--bd);border-radius:12px;
+  padding:10px 12px;display:flex;flex-direction:column;gap:2px;
 }}
-.tc-lbl{{
-  font-family:'Geist Mono','SF Mono',monospace;font-size:9px;
-  letter-spacing:.08em;text-transform:uppercase;color:var(--mu);
-  margin-bottom:4px;font-weight:500;
-}}
-.tc-val{{
-  font-size:16px;font-weight:600;color:var(--tx);
-  letter-spacing:-.01em;font-variant-numeric:tabular-nums;line-height:1.15;
-}}
-.tc-sub{{font-size:10.5px;color:var(--mu);margin-top:3px;line-height:1.3}}
-.tc-dn{{color:var(--ac)}}
-.tc-up{{color:var(--or)}}
-.tc-fl{{color:var(--mu)}}
+.tc-lbl{{font-size:9px;letter-spacing:.06em;text-transform:uppercase;color:var(--mu);font-weight:500}}
+.tc-val{{font-size:16px;font-weight:600;color:var(--tx2);line-height:1.1}}
+.tc-sub{{font-size:10px;color:var(--mu);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}
+.tc-up{{color:var(--mu)}} .tc-dn{{color:var(--mu)}} .tc-fl{{color:var(--di)}}
 .tc-up{{color:var(--mu)}} .tc-dn{{color:var(--mu)}} .tc-fl{{color:var(--di)}}
 
 /* ── Arnie's learning progress ───────────────────────────── */
