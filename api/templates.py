@@ -183,6 +183,35 @@ body{{
 /* ── MAIN ────────────────────────────────────────────────── */
 .main{{min-width:0;overflow-x:clip}}
 .main-inner{{padding:0 48px 100px;width:100%;max-width:900px;margin:0 auto}}
+
+/* ── STREAK CHIP — top-right of pagehead ────────────────────────────
+   Compact "🔥 X D" indicator showing the user's current consecutive-
+   logging streak. Hidden by JS until streak_days ≥ 3 so new users never
+   see "1 d" / "2 d" (premature gamification). Uses the same accent
+   tokens as .ds-pill.on / .ph-pill so done-state coloring is unified. */
+.streak-chip{{
+  display:inline-flex;align-items:center;gap:5px;
+  padding:6px 10px;border-radius:10px;
+  background:var(--ac-dim);border:1px solid rgba(var(--ac-rgb),.28);
+  color:var(--ac);
+  font-family:'Geist',ui-sans-serif,system-ui,sans-serif;
+  font-size:13px;font-weight:600;letter-spacing:-.01em;line-height:1;
+  cursor:pointer;transition:all .15s;
+  font-variant-numeric:tabular-nums;user-select:none;
+  flex-shrink:0;
+}}
+.streak-chip:hover{{
+  background:rgba(var(--ac-rgb),.18);
+  border-color:rgba(var(--ac-rgb),.42);
+}}
+.streak-chip:active{{transform:scale(.96)}}
+.streak-ico{{width:12px;height:12px;display:block;flex-shrink:0}}
+.streak-unit{{
+  font-family:'Geist Mono','SF Mono',monospace;
+  font-size:9px;font-weight:500;letter-spacing:.06em;text-transform:uppercase;
+  opacity:.75;margin-left:1px;
+}}
+
 .hbtn{{
   background:var(--sf2);border:1px solid var(--bd);color:var(--mu);
   width:34px;height:34px;border-radius:10px;cursor:pointer;font-size:14px;
@@ -290,6 +319,121 @@ body{{
 .mc-fill{{height:100%;border-radius:999px;transition:width .8s cubic-bezier(.4,0,.2,1);}}
 @media(max-width:560px){{.macro-strip{{grid-template-columns:repeat(2,1fr);}}}}
 
+/* ── MACRO CONSUMED / REMAINING TOGGLE ─────────────────────────────
+   Small pill sitting above the macro strip — flips the strip between
+   "what you've eaten" (default) and "what's left vs target". Persists
+   choice in localStorage so toggle survives reloads/tab swaps. */
+.macro-header{{display:flex;align-items:center;justify-content:space-between;margin:10px 0 8px}}
+.macro-header-lbl{{
+  font-family:'Geist Mono','SF Mono',monospace;
+  font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--mu);font-weight:500;
+}}
+.macro-toggle-btn{{
+  display:inline-flex;align-items:center;gap:5px;
+  background:var(--sf);border:1px solid var(--bd);border-radius:8px;
+  padding:5px 10px;cursor:pointer;transition:all .18s;
+  font-family:'Geist Mono','SF Mono',monospace;font-size:9px;font-weight:500;
+  letter-spacing:.06em;text-transform:uppercase;color:var(--mu);user-select:none;
+}}
+.macro-toggle-btn:hover{{border-color:var(--bd2);color:var(--tx)}}
+.macro-toggle-btn.remaining{{
+  background:var(--ac-dim);border-color:rgba(var(--ac-rgb),.3);color:var(--ac);
+}}
+.macro-toggle-dot{{width:5px;height:5px;border-radius:50%;background:currentColor}}
+
+/* ── ACTION TILES — replaces the legacy .day-status row ──────────────
+   Two-column compact tile grid. Insights · Share · Workout · Cardio,
+   plus a full-width Water tile that only appears when water was logged.
+   Workout/Cardio tiles show 3 states via the right-side indicator:
+     ✓ done (accent green background, brighter text)
+     ● today, pending — soft yellow dot + gentle pulse
+     ● past, not logged — muted gray dot, no animation
+   Tiles use the same accent / chip tokens as .ds-pill.on so the visual
+   language stays unified with the rest of the dashboard. */
+.action-tiles{{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:0}}
+.atile{{
+  display:flex;align-items:center;gap:8px;
+  padding:8px 12px;border-radius:10px;
+  background:var(--sf);border:1px solid var(--bd);
+  font-family:inherit;font-size:12px;font-weight:500;
+  color:var(--tx2);cursor:pointer;text-align:left;width:100%;
+  transition:background .15s,border-color .15s,color .15s;
+  line-height:1.25;
+}}
+.atile:hover{{background:var(--sf2);border-color:var(--bd2);color:var(--tx)}}
+.atile:active{{opacity:.8}}
+.atile.done{{
+  background:var(--ac-dim);border-color:rgba(var(--ac-rgb),.25);
+  color:var(--tx);
+}}
+.atile-ico{{
+  width:14px;height:14px;display:flex;align-items:center;justify-content:center;
+  flex-shrink:0;color:var(--mu);
+}}
+.atile:hover .atile-ico{{color:var(--tx2)}}
+.atile.done .atile-ico{{color:var(--ac)}}
+.atile-lbl{{
+  flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  transition:opacity .2s;
+}}
+.atile-state{{
+  font-family:'Geist Mono','SF Mono',monospace;
+  font-size:9.5px;letter-spacing:.05em;color:var(--mu);flex-shrink:0;
+}}
+.atile.done .atile-state{{color:var(--ac)}}
+.atile.full{{grid-column:1/-1}}
+.atile-dot{{width:7px;height:7px;border-radius:50%;display:inline-block;flex-shrink:0}}
+.atile-dot.today{{
+  background:var(--ye);box-shadow:0 0 0 0 rgba(234,179,8,.35);
+  animation:atileDotPulse 2.6s ease-in-out infinite;
+}}
+.atile-dot.past{{background:var(--di);opacity:.7}}
+@keyframes atileDotPulse{{
+  0%,100%{{box-shadow:0 0 0 0 rgba(234,179,8,.35)}}
+  50%{{box-shadow:0 0 0 4px rgba(234,179,8,0)}}
+}}
+/* Fade the label of pending tiles so "incomplete" reads from typography
+   too, not just the dot. */
+.atile:has(.atile-dot.today) .atile-lbl{{opacity:.62}}
+.atile:has(.atile-dot.past)  .atile-lbl{{opacity:.5}}
+
+/* ── WEIGHT MODULE — cut/bulk users only ─────────────────────────
+   Sibling of the macro cells; same card chrome and number ladder, just
+   wider (full row). Two-column row: WEIGHT label + value left, delta
+   + distance-to-goal right. Thin progress bar tracks start → goal
+   traversal. Rendered only when primary_goal is 'cut' or 'bulk' —
+   for maintain/performance/health users, weight isn't a primary KPI. */
+.weight-module{{
+  background:var(--sf);border:1px solid var(--bd);border-radius:12px;
+  padding:9px 12px;margin-bottom:12px;box-shadow:var(--sh);
+}}
+.wm-row{{display:flex;align-items:flex-end;justify-content:space-between;gap:12px}}
+.wm-stack-l{{display:flex;flex-direction:column;min-width:0}}
+.wm-stack-r{{display:flex;flex-direction:column;align-items:flex-end;gap:1px;text-align:right;flex-shrink:0}}
+.wm-label{{
+  font-size:9px;font-weight:500;text-transform:uppercase;letter-spacing:.06em;
+  color:var(--mu);margin-bottom:2px;line-height:1;
+}}
+.wm-num{{
+  font-size:22px;font-weight:600;letter-spacing:-.02em;line-height:1;color:var(--tx);
+}}
+.wm-unit{{font-size:12px;font-weight:500;color:var(--mu);margin-left:1px}}
+.wm-delta{{
+  font-family:'Geist Mono','SF Mono',monospace;
+  font-size:10.5px;font-weight:500;letter-spacing:.02em;
+  white-space:nowrap;line-height:1.2;color:var(--mu);
+}}
+.wm-delta-strong{{font-weight:600}}
+.wm-delta.down .wm-delta-strong{{color:var(--ac)}}
+.wm-delta.up   .wm-delta-strong{{color:var(--or)}}
+.wm-delta.flat .wm-delta-strong{{color:var(--mu)}}
+.wm-sub{{
+  font-family:'Geist Mono','SF Mono',monospace;
+  font-size:9.5px;color:var(--mu);line-height:1.25;letter-spacing:.02em;
+}}
+.wm-bar{{background:var(--sf3);border-radius:999px;height:3px;margin-top:6px;overflow:hidden}}
+.wm-fill{{height:100%;border-radius:999px;background:var(--ac);transition:width .8s cubic-bezier(.4,0,.2,1)}}
+
 /* ── BOTTOM NAV (mobile) ─────────────────────────────────── */
 .bottomnav{{
   display:none;position:fixed;bottom:0;left:0;right:0;z-index:60;
@@ -302,10 +446,29 @@ body{{
   background:transparent;border:none;
   font-family:'Geist Mono','SF Mono',monospace;
   font-size:9px;letter-spacing:.07em;text-transform:uppercase;
-  color:var(--mu);cursor:pointer;padding:6px 0 2px;transition:color .15s;
+  color:var(--mu);cursor:pointer;padding:6px 0 2px;
+  transition:color .18s,transform .18s;
+  position:relative;font-weight:500;
 }}
-.bn-ico{{width:24px;height:24px;display:grid;place-items:center}}
+.bn-item:hover{{color:var(--tx2)}}
+.bn-item:active{{transform:scale(.94)}}
+.bn-ico{{
+  width:24px;height:24px;display:grid;place-items:center;
+  transition:transform .25s cubic-bezier(.34,1.56,.64,1);
+}}
+.bn-item:hover .bn-ico{{transform:translateY(-1px)}}
 .bn-item.active{{color:var(--ac)}}
+.bn-item.active .bn-ico{{color:var(--ac)}}
+/* Subtle accent halo under the active tile — Apple-Health-style "you
+   are here" indicator, no heavy underline bar. */
+.bn-item.active::before{{
+  content:'';position:absolute;
+  top:4px;left:50%;transform:translateX(-50%);
+  width:26px;height:26px;border-radius:50%;
+  background:var(--ac);opacity:.10;
+  filter:blur(9px);
+  pointer-events:none;
+}}
 
 /* ── CHAT PANEL (opened from the header Chat button · consolidated Telegram + iMessage) ─── */
 .cw-panel{{
@@ -1474,6 +1637,15 @@ footer{{
     <div class="ph-sub" id="ph-sub"></div>
   </div>
   <div class="ph-actions">
+    <!-- Streak chip — hidden by default; renderStreakChip() reveals when
+         profile.streak_days ≥ 3. Tap surfaces a brief toast in production. -->
+    <div class="streak-chip" id="streak-chip" style="display:none" onclick="handleStreakTap()" title="Logging streak">
+      <svg class="streak-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.07-2.14-.22-4.05 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.15.43-2.29 1-3a2.5 2.5 0 0 0 2.5 2.5z"/>
+      </svg>
+      <span class="streak-num" id="streak-num">0</span>
+      <span class="streak-unit">d</span>
+    </div>
     <button class="ph-log-btn" id="chat-btn" onclick="toggleChatWidget()"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15.5a2.5 2.5 0 0 1-2.5 2.5H7.8L3 22V5.5A2.5 2.5 0 0 1 5.5 3h13A2.5 2.5 0 0 1 21 5.5z"/></svg>Chat</button>
     <button class="hbtn" id="theme-btn" onclick="toggleTheme()" title="Toggle theme">&#9790;</button>
     <button class="hbtn" onclick="refreshCurrent()" title="Refresh">&#8635;</button>
@@ -1504,8 +1676,34 @@ footer{{
       </div>
     </div>
 
+    <!-- WEIGHT MODULE — cut/bulk only; hidden by JS otherwise. -->
+    <div class="weight-module" id="weight-module" style="display:none;margin-top:16px">
+      <div class="wm-row">
+        <div class="wm-stack-l">
+          <div class="wm-label">Weight</div>
+          <div><span class="wm-num" id="wm-val">&mdash;</span><span class="wm-unit" id="wm-unit">lbs</span></div>
+        </div>
+        <div class="wm-stack-r">
+          <div class="wm-delta down" id="wm-delta">
+            <span class="wm-delta-strong"><span id="wm-delta-arrow">→</span> <span id="wm-delta-val">0.0 lbs</span></span> from start
+          </div>
+          <div class="wm-sub" id="wm-sub"></div>
+        </div>
+      </div>
+      <div class="wm-bar" id="wm-bar-wrap"><div class="wm-fill" id="wm-fill" style="width:0%"></div></div>
+    </div>
+
+    <!-- MACRO HEADER + Consumed/Remaining toggle -->
+    <div class="macro-header" style="margin-top:16px">
+      <div class="macro-header-lbl">Macros</div>
+      <button class="macro-toggle-btn" id="macro-toggle" onclick="toggleMacroView()" type="button">
+        <span class="macro-toggle-dot"></span>
+        <span id="macro-toggle-lbl">Consumed</span>
+      </button>
+    </div>
+
     <!-- MACRO STRIP -->
-    <div class="macro-strip" style="margin-top:16px">
+    <div class="macro-strip" style="margin-top:0">
       <div class="macro-cell">
         <div class="mc-label">Calories</div>
         <div class="mc-num" id="cal-val">&mdash;</div>
@@ -1532,12 +1730,46 @@ footer{{
       </div>
     </div>
 
-    <!-- STATUS (workout / cardio / water) — pills only shown when logged -->
-    <div class="day-status">
-      <span id="wo-badge" class="ds-pill on" style="display:none"></span>
-      <span id="ca-badge" class="ds-pill on" style="display:none"></span>
-      <span id="wt-badge" class="ds-pill on" style="display:none"></span>
-      <button class="ds-share" onclick="shareDay()" aria-label="Share day" style="display:none">&#8679;</button>
+    <!-- ACTION TILES — Insights · Share · Workout · Cardio (+ Water if logged).
+         Replaces the legacy .day-status pill row. State (done / today
+         pending / past pending) is set by renderActionTiles in renderDayTab. -->
+    <div class="action-tiles" id="action-tiles" style="margin-top:10px">
+      <button class="atile" id="tile-insights" onclick="handleInsightsTile()" type="button">
+        <svg class="atile-ico" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+          <path d="M8 1.4l1.1 3.2 3.2 1.1-3.2 1.1L8 10l-1.1-3.2L3.7 5.7l3.2-1.1z"/>
+          <path d="M12.6 9.4l.55 1.45 1.45.55-1.45.55-.55 1.45-.55-1.45L10.6 11.4l1.45-.55z" opacity=".75"/>
+        </svg>
+        <span class="atile-lbl">Insights</span>
+        <span class="atile-state" id="tile-insights-state"></span>
+      </button>
+      <button class="atile" id="tile-share" onclick="shareDay()" type="button">
+        <svg class="atile-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M8 2v9M5 5l3-3 3 3M3 11v2a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1v-2"/>
+        </svg>
+        <span class="atile-lbl">Share day</span>
+      </button>
+      <button class="atile" id="tile-workout" type="button">
+        <svg class="atile-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M3 6v4M13 6v4M5 5v6M11 5v6M1 8h2M13 8h2"/>
+        </svg>
+        <span class="atile-lbl">Workout</span>
+        <span class="atile-state" id="tile-workout-state">—</span>
+      </button>
+      <button class="atile" id="tile-cardio" type="button">
+        <svg class="atile-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="11" cy="3" r="1.5"/>
+          <path d="M5 14l2-4 2 2 3-4M5 9l-3-2"/>
+        </svg>
+        <span class="atile-lbl">Cardio</span>
+        <span class="atile-state" id="tile-cardio-state">—</span>
+      </button>
+      <button class="atile full" id="tile-water" style="display:none" type="button">
+        <svg class="atile-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M8 2l3.5 5.5a4.2 4.2 0 1 1-7 0L8 2z"/>
+        </svg>
+        <span class="atile-lbl">Water</span>
+        <span class="atile-state" id="tile-water-state"></span>
+      </button>
     </div>
 
     <!-- AI INSIGHTS — collapsed banner, expands on tap -->
@@ -2513,8 +2745,150 @@ async function submitExerciseInline(){{
   finally{{btn.textContent='+ Add workout';btn.disabled=false;}}
 }}
 
+// Insights tile — scrolls to + expands the existing AI insights banner.
+// Kept as a thin wrapper around the production toggleInsights('day') so
+// all the existing fetch / refresh / streaming logic is reused as-is.
+function handleInsightsTile(){{
+  var banner = document.getElementById('ins-day');
+  if(!banner) return;
+  if(!banner.classList.contains('open')){{ try{{ toggleInsights('day'); }}catch(e){{}} }}
+  banner.scrollIntoView({{behavior:'smooth', block:'center'}});
+}}
+
+// Macro Consumed / Remaining toggle — flips the macro strip between
+// what's been eaten (default) and what's left vs target. Choice persists
+// in localStorage so the user's preference survives reloads / tab swaps.
+// Snapshots the last-rendered consumed values so the toggle is fully
+// client-side (no extra API call). The macro renderer below repopulates
+// the snapshot every time it draws, so toggling stays correct as the day
+// progresses and new entries land.
+var _macroView = localStorage.getItem('arnie-macro-view') || 'consumed';
+var _macroSnap = {{cal:null, pro:null, carb:null, fat:null,
+                   tCal:null, tPro:null, tCarb:null, tFat:null}};
+
+function toggleMacroView(){{
+  _macroView = (_macroView === 'consumed') ? 'remaining' : 'consumed';
+  localStorage.setItem('arnie-macro-view', _macroView);
+  applyMacroView();
+}}
+
+function applyMacroView(){{
+  var btn = document.getElementById('macro-toggle');
+  var lbl = document.getElementById('macro-toggle-lbl');
+  if(!btn || !lbl) return;
+  var rem = _macroView === 'remaining';
+  btn.classList.toggle('remaining', rem);
+  lbl.textContent = rem ? 'Remaining' : 'Consumed';
+
+  var s = _macroSnap;
+  function setCell(numId, subId, val, tgt, color){{
+    var nEl = document.getElementById(numId);
+    var sEl = document.getElementById(subId);
+    if(!nEl) return;
+    if(val == null){{ nEl.textContent='—'; if(sEl) sEl.textContent=''; return; }}
+    if(rem){{
+      if(tgt == null){{
+        nEl.textContent = '—';
+        if(sEl) sEl.textContent = 'no target';
+      }}else{{
+        var left = Math.max(0, tgt - val);
+        nEl.textContent = (numId === 'cal-val') ? left.toLocaleString() : (left + 'g');
+        if(sEl) sEl.textContent = (numId === 'cal-val') ? 'calories left' : 'protein left';
+      }}
+    }}else{{
+      nEl.textContent = (numId === 'cal-val') ? val.toLocaleString() : (val + 'g');
+      if(sEl){{
+        if(tgt) sEl.textContent = '/ ' + (numId === 'cal-val' ? tgt.toLocaleString() : tgt+'g') + ' (' + Math.round(val/tgt*100) + '%)';
+        else    sEl.textContent = (numId === 'cal-val') ? 'kcal' : 'grams';
+      }}
+    }}
+  }}
+  setCell('cal-val', 'cal-sub', s.cal, s.tCal);
+  setCell('pro-val', 'pro-sub', s.pro, s.tPro);
+  // Carbs/Fats only meaningful in consumed mode (no targets usually); in
+  // remaining mode we just show "—" with a "no target" sub.
+  setCell('carb-val','carb-sub', s.carb, s.tCarb);
+  setCell('fat-val', 'fat-sub',  s.fat,  s.tFat);
+}}
+
+// Streak chip — only surfaced when ≥ STREAK_MIN_DAYS so new users never
+// see "1 d" / "2 d" (premature gamification). Driven entirely by the
+// server-computed profile.streak_days from /api/stats.
+var STREAK_MIN_DAYS = 3;
+function renderStreakChip(d){{
+  var chip = document.getElementById('streak-chip');
+  if(!chip) return;
+  var days = (d && d.profile && d.profile.streak_days) || 0;
+  if(days < STREAK_MIN_DAYS){{ chip.style.display='none'; return; }}
+  chip.style.display = '';
+  var n = document.getElementById('streak-num'); if(n) n.textContent = String(days);
+  chip.title = days + '-day logging streak';
+}}
+function handleStreakTap(){{
+  // No-op for now; production may surface a popover with the last 14 days
+  // as filled / empty dots. Toast is intentionally minimal.
+  var chip = document.getElementById('streak-chip');
+  if(!chip) return;
+  var days = chip.querySelector('#streak-num');
+  var txt = (days ? days.textContent : '') + '-day logging streak';
+  console.log(txt);
+}}
+
+// Weight Module — cut/bulk only. Computes delta from earliest weigh-in
+// to most recent, and percent traversal toward goal_weight_lbs. Hides
+// entirely for maintain/performance/health goals (or when no weight data).
+function renderWeightModule(d){{
+  var module = document.getElementById('weight-module');
+  if(!module) return;
+  var p = (d && d.profile) || {{}};
+  var goal = p.primary_goal || '';
+  var eligible = goal === 'cut' || goal === 'bulk';
+  if(!eligible){{ module.style.display='none'; return; }}
+  var weights = (d && d.weights) || [];
+  if(!weights.length){{ module.style.display='none'; return; }}
+  module.style.display = '';
+
+  var current = weights[weights.length-1].lbs;
+  var start = weights[0].lbs;
+  var delta = current - start;
+  var isCut = goal === 'cut';
+  // "down" class = going the right direction (accent green), "up" = wrong
+  // direction (orange), "flat" = no meaningful change. Class name reflects
+  // semantic, not literal arrow direction.
+  var goingRightWay = (isCut && delta < 0) || (!isCut && delta > 0);
+  var deltaCls = Math.abs(delta) < 0.2 ? 'flat' : (goingRightWay ? 'down' : 'up');
+
+  var valEl = document.getElementById('wm-val');
+  if(valEl) valEl.textContent = current.toFixed(1);
+
+  var deltaEl = document.getElementById('wm-delta');
+  if(deltaEl) deltaEl.className = 'wm-delta ' + deltaCls;
+  var arrowEl = document.getElementById('wm-delta-arrow');
+  if(arrowEl) arrowEl.textContent = Math.abs(delta) < 0.2 ? '→' : (delta < 0 ? '↓' : '↑');
+  var dvEl = document.getElementById('wm-delta-val');
+  if(dvEl) dvEl.textContent = Math.abs(delta).toFixed(1) + ' lbs';
+
+  var goalLbs = p.goal_weight_lbs;
+  var subEl = document.getElementById('wm-sub');
+  var fillEl = document.getElementById('wm-fill');
+  if(goalLbs){{
+    var totalDistance = Math.abs(start - goalLbs);
+    var traveled = Math.abs(start - current);
+    var remaining = Math.max(0, Math.abs(current - goalLbs));
+    var pctv = totalDistance ? Math.max(0, Math.min(100, (traveled/totalDistance)*100)) : 0;
+    if(subEl) subEl.innerHTML = remaining.toFixed(1) + ' lbs to go &nbsp;→&nbsp; ' + goalLbs.toFixed(1);
+    if(fillEl) fillEl.style.width = pctv + '%';
+  }}else{{
+    if(subEl) subEl.textContent = weights.length + ' weigh-ins';
+    var barWrap = document.getElementById('wm-bar-wrap');
+    if(barWrap) barWrap.style.display = 'none';
+  }}
+}}
+
 function renderDayTab(d){{
   if(_activeTab==='day') renderPageHead(d);
+  renderStreakChip(d);
+  renderWeightModule(d);
   var isToday=_viewingDate===_todayStr;
   var day=d.day||{{}},tgt=d.targets||{{}};
   var cp=pct(day.calories,tgt.calories),pp=pct(day.protein,tgt.protein);
@@ -2539,19 +2913,47 @@ function renderDayTab(d){{
   [['cal-bar',tgt.calories],['pro-bar',tgt.protein],['carb-bar',tgt.carbs],['fat-bar',tgt.fats]]
     .forEach(function(x){{var f=document.getElementById(x[0]);if(f)f.parentNode.style.display=x[1]?'':'none';}});
 
-  var wb=document.getElementById('wo-badge');
-  if(wb){{var woOn=!!day.workout_completed;wb.style.display=woOn?'':'none';if(woOn){{wb.className='ds-pill on';wb.innerHTML='<span class="tcb">&#10003;</span>Workout';}}}}
-  var cb=document.getElementById('ca-badge');
-  if(cb){{var caOn=!!day.cardio_completed;cb.style.display=caOn?'':'none';if(caOn){{cb.className='ds-pill on';cb.innerHTML='<span class="tcb">&#10003;</span>Cardio';}}}}
-  var wb2=document.getElementById('wt-badge');
+  // Snapshot current macro values + targets so the Consumed/Remaining toggle
+  // can flip the display client-side. Re-applied immediately so if the user
+  // is in remaining-mode, new data swaps to remaining values instead of
+  // briefly flashing the consumed numbers.
+  _macroSnap = {{
+    cal: day.calories, pro: day.protein, carb: day.carbs, fat: day.fats,
+    tCal: tgt.calories, tPro: tgt.protein, tCarb: tgt.carbs, tFat: tgt.fats,
+  }};
+  applyMacroView();
+
+  // ── Action tiles: Workout / Cardio / Water state ─────────────────
+  // Today + not logged → soft yellow dot (gentle nudge).
+  // Past day + not logged → muted gray dot (info only, no nudge).
+  // Done → ✓ in accent green.
+  function _setActivityTile(tileId, stateId, done){{
+    var tile = document.getElementById(tileId);
+    var slot = document.getElementById(stateId);
+    if(!tile || !slot) return;
+    if(done){{
+      tile.classList.add('done');
+      slot.className = 'atile-state';
+      slot.textContent = '✓';
+    }}else{{
+      tile.classList.remove('done');
+      slot.className = 'atile-dot ' + (isToday ? 'today' : 'past');
+      slot.textContent = '';
+    }}
+  }}
+  _setActivityTile('tile-workout', 'tile-workout-state', !!day.workout_completed);
+  _setActivityTile('tile-cardio',  'tile-cardio-state',  !!day.cardio_completed);
+  var wb2=document.getElementById('tile-water');
+  var wbState=document.getElementById('tile-water-state');
   if(wb2){{
-    // Water is opt-in — only show the pill when the user actually logs it, so it's
-    // never a permanent "No water" guilt-chip for people who don't track it.
+    // Water is opt-in — only show the tile when the user actually logs it,
+    // so it's never a permanent "No water" guilt-chip for people who don't
+    // track it. When shown, it's full-width below the Workout/Cardio row.
     if(day.water_ml>0){{
-      var wAmt=day.water_ml>=1000?(day.water_ml/1000).toFixed(1)+'L':Math.round(day.water_ml)+'ml';
-      wb2.style.display='inline-flex';
-      wb2.className='ds-pill on';
-      wb2.innerHTML='<span class="tcb">&#10003;</span>Water '+wAmt;
+      var wAmt=day.water_ml>=1000?(day.water_ml/1000).toFixed(1)+' L':Math.round(day.water_ml)+' ml';
+      wb2.style.display='';
+      wb2.classList.add('done');
+      if(wbState) wbState.textContent = wAmt;
     }}else{{
       wb2.style.display='none';
     }}

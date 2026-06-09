@@ -998,6 +998,32 @@ async def _build_stats_for_user(db, user, target_date=None):
     available_dates = sorted({d["date"] for d in hist_data})
     analytics = _compute_analytics(user, prefs, weight_data)
 
+    # ── Logging streak — consecutive days (walking back from today) with any
+    # entry logged. "Logged" = calories > 0 OR workout completed (food or
+    # exercise activity). Returned as profile.streak_days; dashboard only
+    # surfaces it as a chip when ≥ 3 (see streak chip in api/templates.py).
+    def _compute_streak(hist_rows):
+        if not hist_rows:
+            return 0
+        # hist_rows is oldest→newest. Build a set of "logged" date strings.
+        logged_set = {h["date"] for h in hist_rows if (h.get("calories") or 0) > 0 or h.get("workout")}
+        if not logged_set:
+            return 0
+        # Walk backward from the user's "today" date by 1-day steps, count
+        # consecutive logged days, stop on the first gap.
+        from datetime import date as _dt_date, timedelta as _td
+        try:
+            cur = _dt_date.fromisoformat(_user_today(user.timezone or "UTC").isoformat())
+        except Exception:
+            cur = _dt_date.fromisoformat(max(logged_set))
+        streak = 0
+        while cur.isoformat() in logged_set:
+            streak += 1
+            cur = cur - _td(days=1)
+        return streak
+
+    streak_days = _compute_streak(hist_data)
+
     def _ht():
         if not user.height_cm:
             return ""
@@ -1055,6 +1081,7 @@ async def _build_stats_for_user(db, user, target_date=None):
         "whoop_connected": _whoop_connected,
         "apple_health_connected": any(s.source == "apple_health" for s in health_snaps),
         "analytics": analytics,
+        "streak_days": streak_days,
     }
 
     return {
