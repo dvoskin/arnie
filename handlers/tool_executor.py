@@ -1078,6 +1078,7 @@ async def _dispatch(name, inp, user, today_log, db, source_type):  # noqa: C901
             "reminder_frequency", "preferred_response_length",
             "profanity_tolerance", "proactive_messaging_enabled",
             "wake_time", "sleep_time", "calorie_target", "protein_target",
+            "carb_target", "fat_target",
             "preferred_language", "food_logging_mode",
         }
         # Separate attr: prefixed keys (→ user_attributes table) from profile fields
@@ -1156,23 +1157,33 @@ async def _dispatch(name, inp, user, today_log, db, source_type):  # noqa: C901
 
         # AUTO-CALC TARGETS — the moment all stats are present (weight, height,
         # age, sex, goal) and no targets are set yet, compute them automatically.
-        # This fires when the post-onboarding nudges finish collecting age/sex/height.
+        # Uses the canonical compute_macro_targets() so all 4 macros land
+        # (most existing users had only calories/protein populated; this fix
+        # fills carb_target + fat_target too for new auto-calc events).
         _targets_msg = ""
         prefs_check = user.preferences
         if prefs_check and prefs_check.calorie_target is None:
-            from core.targets import calc_targets
-            t = calc_targets(user)
+            from core.targets import compute_macro_targets
+            t = compute_macro_targets(user)
             if t:
-                prefs_check.calorie_target = t["calories"]
-                prefs_check.protein_target = t["protein"]
+                prefs_check.calorie_target = t["calorie_target"]
+                prefs_check.protein_target = t["protein_target"]
+                prefs_check.carb_target    = t["carb_target"]
+                prefs_check.fat_target     = t["fat_target"]
                 await db.commit()
                 user = await reload_user(db, user.id)
-                logger.info(f"Auto-calculated targets for user {user.id}: "
-                            f"{t['calories']}cal/{t['protein']}p")
+                logger.info(
+                    f"Auto-calculated targets for user {user.id}: "
+                    f"{t['calorie_target']} kcal · "
+                    f"{t['protein_target']}g P / {t['carb_target']}g C / {t['fat_target']}g F "
+                    f"(BMR {t['bmr']}, TDEE {t['tdee']}, {t['deficit_pct']:+.1f}%)"
+                )
                 _targets_msg = (
-                    f" | TARGETS JUST CALCULATED: {t['calories']} cal, {t['protein']}g protein. "
-                    f"Tell the user you now have their full picture and these are their daily "
-                    f"targets — briefly and naturally, in your voice."
+                    f" | TARGETS JUST CALCULATED: {t['calorie_target']} cal, "
+                    f"{t['protein_target']}g protein, {t['carb_target']}g carbs, "
+                    f"{t['fat_target']}g fat. Tell the user you now have their full "
+                    f"picture and these are their daily targets — briefly and "
+                    f"naturally, in your voice."
                 )
 
         # When onboarding completes, set sensible preference defaults + init memory
@@ -1199,6 +1210,59 @@ async def _dispatch(name, inp, user, today_log, db, source_type):  # noqa: C901
                 logger.warning(f"ensure_profile failed: {e}")
 
         return f"Profile updated: {list(fields.keys())}{_targets_msg}"
+
+    elif name == "set_macro_targets":
+        # Direct write path for calorie + macro targets — used when the
+        # user agrees to Arnie's recommended targets (from the
+        # [COACH NOTE — targets_unset] block) or names specific values.
+        # Mirrors the dashboard POST /api/profile/{token}/auto-targets
+        # behavior: same fields, same persistence, same audit log.
+        prefs = user.preferences
+        if not prefs:
+            from db.models import UserPreferences
+            prefs = UserPreferences(user_id=user.id)
+            db.add(prefs)
+
+        # Accept either the documented arg names or a few sensible
+        # aliases (some models emit synonyms — be liberal in what we
+        # take, strict in what we save).
+        _aliases = {
+            "calorie_target": "calories", "kcal": "calories", "cals": "calories",
+            "protein_target": "protein", "p": "protein",
+            "carb_target":    "carbs",   "carbohydrates": "carbs", "c": "carbs",
+            "fat_target":     "fat",     "fats": "fat",            "f": "fat",
+        }
+        normed = {_aliases.get(k, k): v for k, v in (inp or {}).items()}
+
+        written = []
+        if normed.get("calories") is not None:
+            prefs.calorie_target = int(normed["calories"]); written.append("calories")
+        if normed.get("protein") is not None:
+            prefs.protein_target = int(normed["protein"]);  written.append("protein")
+        if normed.get("carbs") is not None:
+            prefs.carb_target    = int(normed["carbs"]);    written.append("carbs")
+        if normed.get("fat") is not None:
+            prefs.fat_target     = int(normed["fat"]);      written.append("fat")
+
+        if not written:
+            return (
+                "set_macro_targets called with no values — pass at least one of "
+                "calories, protein, carbs, fat. If accepting the recommended "
+                "targets from context, pass all four."
+            )
+
+        await db.commit()
+        user = await reload_user(db, user.id)
+        logger.info(
+            f"Macro targets set via tool for user {user.id}: "
+            f"cals={prefs.calorie_target} P={prefs.protein_target}g "
+            f"C={prefs.carb_target}g F={prefs.fat_target}g"
+        )
+        return (
+            f"Macro targets saved: {prefs.calorie_target} kcal, "
+            f"{prefs.protein_target}g protein, {prefs.carb_target}g carbs, "
+            f"{prefs.fat_target}g fat. Confirm briefly to the user in your voice."
+        )
 
     elif name == "query_history":
         from db.queries import query_history_stats

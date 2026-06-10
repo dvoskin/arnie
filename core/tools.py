@@ -261,6 +261,31 @@ _PROFILE_TOOLS = [
             "required": ["fields"],
         },
     },
+    {
+        "name": "set_macro_targets",
+        "description": (
+            "Set the user's daily calorie and/or macro targets in a single call. "
+            "Use this ONLY when the user has agreed (explicitly or implicitly: "
+            "'sure', 'go ahead', 'sounds good', 'set them for me') to having Arnie "
+            "lock in targets. The recommended values come from the [COACH NOTE — "
+            "targets_unset] block in the user context: they're already math-derived "
+            "from BMR + goal + body comp using the same formula as the dashboard "
+            "'Calculate for me' button. "
+            "All four fields are optional, but pass at least one. Pass the full set "
+            "when accepting Arnie's recommendation; pass only what the user named "
+            "(e.g. just `calories=2500`) when they specify a single value. "
+            "Saves to user_preferences. Confirm to the user briefly in your reply."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "calories": {"type": "integer", "description": "Daily calorie target (kcal)"},
+                "protein":  {"type": "integer", "description": "Daily protein target (grams)"},
+                "carbs":    {"type": "integer", "description": "Daily carbohydrate target (grams)"},
+                "fat":      {"type": "integer", "description": "Daily fat target (grams)"},
+            },
+        },
+    },
     # update_memory was removed — store_attribute is now the single proactive
     # write path for everything Arnie learns. Multi-fact insights become
     # multiple store_attribute calls (one per discrete fact), and the

@@ -1,47 +1,126 @@
 """
-Target calculation — Mifflin-St Jeor BMR → calorie + protein targets.
+Target calculation — Mifflin-St Jeor BMR → calorie + macro targets.
 
-Shared by the bot handlers and tool_executor so targets can be auto-computed
-the moment the required stats (weight, height, age, sex, goal) are all present —
-including when height/age/sex are collected post-onboarding via proactive nudges.
+Shared by the bot handlers, tool_executor, and dashboard so targets can be
+auto-computed identically everywhere. Use compute_macro_targets() for full
+4-macro output (calories + protein + carbs + fat). The legacy calc_targets()
+shim is kept for backward compatibility but now wraps the unified math.
 """
 import logging
 
 logger = logging.getLogger(__name__)
 
 
-def calc_targets(user) -> dict | None:
+def compute_macro_targets(user) -> dict | None:
+    """Canonical calorie + 4-macro calculator. Used by:
+      · dashboard POST /api/profile/{token}/auto-targets
+      · bot post-onboarding auto-set (handlers/tool_executor.py)
+      · bot set_macro_targets tool (handlers/tool_executor.py)
+
+    Returns {calorie_target, protein_target, carb_target, fat_target, bmr,
+    tdee, deficit_pct, goal} or None if essentials are missing (weight,
+    height, age, sex).
+
+    Logic (per macro-rules spec):
+      Calories
+        cut          : TDEE × 0.825  (mid of 10-25% deficit)
+        bulk (lean)  : TDEE × 1.10   (mid of 5-15% surplus)
+        performance  : TDEE × 1.05
+        maintain     : TDEE
+        health       : TDEE
+      Macros
+        cut          : 1.0 g/lb of GOAL weight protein,
+                       0.3 g/lb of current weight fat,
+                       carbs = remainder.
+        bulk         : 0.9 g/lb current protein,
+                       0.35 g/lb current fat, carbs = remainder.
+        maintain     : 0.9 g/lb · 0.35 g/lb · carbs remainder.
+        performance  : 0.9 g/lb protein, 25% kcal from fat, carbs remainder.
+        health       : 30% kcal protein, 30% kcal fat, 40% carbs.
     """
-    Returns {tdee, calories, protein, goal} or None if required fields missing.
-    Requires: current_weight_kg, height_cm, age, sex (male/female), primary_goal.
-    """
-    try:
-        w = user.current_weight_kg
-        h = user.height_cm
-        a = user.age
-        s = (user.sex or "").lower()
-        g = user.primary_goal
-        if not all([w, h, a, s in ("male", "female"), g]):
-            return None
-
-        bmr = 10 * w + 6.25 * h - 5 * a + (5 if s == "male" else -161)
-        tdee = round(bmr * 1.55)  # moderately active lifter
-
-        if g == "cut":
-            cal = round((tdee - 450) / 50) * 50
-        elif g == "bulk":
-            cal = round((tdee + 300) / 50) * 50
-        else:
-            cal = round(tdee / 50) * 50
-
-        w_lbs = w * 2.20462
-        protein = round(w_lbs * (0.9 if g in ("cut", "maintain") else 0.8) / 5) * 5
-
-        return {"tdee": tdee, "calories": max(cal, 1200),
-                "protein": max(protein, 100), "goal": g}
-    except Exception as e:
-        logger.warning(f"calc_targets failed: {e}")
+    if not all([user.current_weight_kg, user.height_cm, user.age, user.sex]):
         return None
+
+    w_kg = user.current_weight_kg
+    h_cm = user.height_cm
+    age = user.age
+    sex = (user.sex or "").lower()
+
+    if sex in ("m", "male", "man"):
+        bmr = 10 * w_kg + 6.25 * h_cm - 5 * age + 5
+    else:
+        bmr = 10 * w_kg + 6.25 * h_cm - 5 * age - 161
+
+    # Activity factor — defaults to moderate (1.55).
+    exp = (user.training_experience or "").lower()
+    if any(k in exp for k in ("advanced", "athlete", "very")):
+        factor = 1.725
+    elif any(k in exp for k in ("beginner", "new", "start")):
+        factor = 1.375
+    else:
+        factor = 1.55
+
+    tdee = bmr * factor
+    goal = (user.primary_goal or "maintain").lower()
+    w_lb = w_kg * 2.20462
+    goal_lb = (user.goal_weight_kg * 2.20462) if user.goal_weight_kg else w_lb
+
+    if goal == "cut":
+        cals, deficit_pct = round(tdee * 0.825), -17.5
+    elif goal == "bulk":
+        cals, deficit_pct = round(tdee * 1.10), 10.0
+    elif goal == "performance":
+        cals, deficit_pct = round(tdee * 1.05), 5.0
+    else:  # maintain, health
+        cals, deficit_pct = round(tdee), 0.0
+
+    if goal == "cut":
+        protein = round(1.0 * goal_lb)
+        fat = round(0.3 * w_lb)
+    elif goal == "bulk":
+        protein = round(0.9 * w_lb)
+        fat = round(0.35 * w_lb)
+    elif goal == "performance":
+        protein = round(0.9 * w_lb)
+        fat = round((cals * 0.25) / 9)
+    elif goal == "health":
+        protein = round((cals * 0.30) / 4)
+        fat = round((cals * 0.30) / 9)
+    else:  # maintain
+        protein = round(0.9 * w_lb)
+        fat = round(0.35 * w_lb)
+
+    protein_cals = protein * 4
+    fat_cals = fat * 9
+    carb_cals = max(0, cals - protein_cals - fat_cals)
+    carbs = round(carb_cals / 4)
+
+    return {
+        "calorie_target": cals,
+        "protein_target": protein,
+        "carb_target":    carbs,
+        "fat_target":     fat,
+        "bmr":            round(bmr),
+        "tdee":           round(tdee),
+        "deficit_pct":    deficit_pct,
+        "goal":           goal,
+    }
+
+
+def calc_targets(user) -> dict | None:
+    """Legacy shim — wraps compute_macro_targets() with the older return
+    shape ({tdee, calories, protein, goal}). Existing callers keep working;
+    the post-onboarding auto-set should migrate to compute_macro_targets()
+    so carbs + fat get populated too."""
+    t = compute_macro_targets(user)
+    if not t:
+        return None
+    return {
+        "tdee":     t["tdee"],
+        "calories": max(t["calorie_target"], 1200),
+        "protein":  max(t["protein_target"], 100),
+        "goal":     t["goal"],
+    }
 
 
 def missing_profile_stats(user) -> list[str]:

@@ -840,11 +840,59 @@ async def build_context(user: User, today_log: Optional[DailyLog], db,
         if _needs_goal_wt else ""
     )
 
+    # Targets-missing nudge — inject when user has no calorie target set.
+    # Includes the math-derived recommendation so Arnie can offer concrete
+    # numbers in a single turn instead of guessing. The recommended values
+    # match what the dashboard "Calculate for me" button would compute
+    # (same compute_auto_macro_targets() helper). Fact-style block, not a
+    # directive — Arnie decides if the conversational moment fits.
+    _needs_targets = (
+        user.onboarding_completed
+        and (not prefs or not prefs.calorie_target)
+    )
+    targets_nudge = ""
+    if _needs_targets:
+        try:
+            from api.app import compute_auto_macro_targets
+            rec = compute_auto_macro_targets(user)
+        except Exception:
+            rec = None
+        if rec:
+            targets_nudge = (
+                "[COACH NOTE — targets_unset] User has no calorie/macro targets. "
+                "Math from their {goal} goal + body comp suggests ~{cals} kcal, "
+                "{p}g P / {c}g C / {f}g F (BMR {bmr}, TDEE {tdee}, "
+                "{pct:+.1f}% from TDEE). If they bring up calories/macros/goals "
+                "or it fits the conversation naturally, offer to lock those in. "
+                "Call set_macro_targets(calories, protein, carbs, fat) to save. "
+                "Or point them to the 'Calculate for me' button on the dashboard "
+                "if they prefer to confirm visually. Don't force it on unrelated "
+                "messages."
+            ).format(
+                goal=user.primary_goal or "current",
+                cals=rec["calorie_target"],
+                p=rec["protein_target"],
+                c=rec["carb_target"],
+                f=rec["fat_target"],
+                bmr=rec["bmr"],
+                tdee=rec["tdee"],
+                pct=rec["deficit_pct"],
+            )
+        else:
+            # Missing essentials (weight/height/age/sex) — can't compute yet.
+            targets_nudge = (
+                "[COACH NOTE — targets_unset] User has no calorie/macro targets "
+                "AND is missing some of weight/height/age/sex on profile, so "
+                "auto-calc won't work yet. If they bring up calories/macros, "
+                "ask for the missing field(s) and call update_profile()."
+            )
+
     sections = [
         current_time_line,
         "=== PROFILE ===",
         fmt_profile(user, prefs),
         (goal_wt_nudge if goal_wt_nudge else ""),
+        (targets_nudge if targets_nudge else ""),
         (progress if progress else ""),
         # Live learned attributes — placed here so they influence every skill,
         # not buried after 35 days of logs. core tier always; daily if ≤7d old;

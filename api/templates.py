@@ -4163,6 +4163,17 @@ function toggleCalcInfo(){{
 }}
 
 async function calculateTargetsForMe(){{
+  // Guard against silently overwriting values the user set manually —
+  // if ANY of the 4 targets is already populated, ask before clobbering.
+  var p = (_baseData && _baseData.profile) || {{}};
+  var hasManual = p.calorie_target || p.protein_target || p.carb_target || p.fat_target;
+  if(hasManual){{
+    var ok = confirm(
+      'You already have targets set. Replace them with Arnie\\'s '
+      + 'recommended values based on your goal and body comp?'
+    );
+    if(!ok) return;
+  }}
   var btn = document.getElementById('calc-btn');
   if(btn){{ btn.disabled = true; btn.textContent = 'Calculating…'; }}
   try{{
