@@ -2561,9 +2561,6 @@ footer{{
   <button class="bn-item" id="bn-week" onclick="switchTab('week')">
     <span class="bn-ico"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 17l5-5 3.5 3.5 8-8.5"/><path d="M15 7h5.5v5.5"/></svg></span>Trends
   </button>
-  <button class="bn-item" id="bn-profile" onclick="switchTab('profile')">
-    <span class="bn-ico"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8.5" r="3.5"/><path d="M5.5 20.5c.7-3.5 3.4-5.5 6.5-5.5s5.8 2 6.5 5.5"/></svg></span>Client
-  </button>
   <button class="bn-item" id="bn-brain" onclick="switchTab('brain')">
     <span class="bn-ico"><svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
       <path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z"/>
@@ -2574,6 +2571,9 @@ footer{{
         <animate attributeName="opacity" values="1;.55;1" dur="2.6s" repeatCount="indefinite"/>
       </circle>
     </svg></span>Brain
+  </button>
+  <button class="bn-item" id="bn-profile" onclick="switchTab('profile')">
+    <span class="bn-ico"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8.5" r="3.5"/><path d="M5.5 20.5c.7-3.5 3.4-5.5 6.5-5.5s5.8 2 6.5 5.5"/></svg></span>Client
   </button>
 </nav>
 
@@ -2733,7 +2733,15 @@ function loadBrainTab(){{
   var f = document.getElementById('brain-frame');
   if(!f) return;
   var theme = document.documentElement.getAttribute('data-theme') || 'dark';
-  f.src = '/brain/' + encodeURIComponent(TOKEN) + '?theme=' + theme;
+  // Pass through ?sim= from the dashboard URL so /dashboard/{{TOKEN}}?sim=full
+  // produces a fully-populated brain just like the direct /brain/...?sim=full
+  // link does. Keeps the previews consistent for local testing/demos.
+  var sim = '';
+  try {{
+    var p = new URLSearchParams(window.location.search).get('sim');
+    if (p) sim = '&sim=' + encodeURIComponent(p);
+  }} catch (e) {{}}
+  f.src = '/brain/' + encodeURIComponent(TOKEN) + '?theme=' + theme + '&bot={bot_username}' + sim;
   _brainLoaded = true;
 }}
 // Push the dashboard's current theme into the brain iframe (if it's mounted
