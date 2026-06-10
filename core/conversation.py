@@ -24,6 +24,7 @@ from core.turn_health import (
     looks_like_dead_end as _looks_like_dead_end,
     looks_like_bare_log_ack as _looks_like_bare_log_ack,
     looks_like_mechanics as _looks_like_mechanics,
+    looks_like_empty_praise as _looks_like_empty_praise,
     detect_turn_flags,
     user_is_signing_off as _user_is_signing_off,
 )
@@ -551,12 +552,19 @@ async def run_turn(
     # and update response_text so history stores the repaired version.
     _REPAIR_PROMPT = (
         "your last reply was either a bare acknowledgment ('Logged that.', 'Done.', "
-        "'Sleep well.') or contained internal mechanics language ('totals resynced', "
-        "'entry updated', 'changes saved') the user should never see. "
-        "send a real coaching reply in your normal voice RIGHT NOW: "
-        "react to what was logged/changed, give the exact day total from [TODAY], "
-        "then one clear next move. 2-3 short bubbles (|||). no acknowledgment of "
-        "the previous bad reply — just the coaching."
+        "'Sleep well.'), contained internal mechanics language ('totals resynced', "
+        "'entry updated', 'changes saved') the user should never see, or was a "
+        "generic empty-praise phrase ('Great workout!', 'Nice job!', 'Amazing session!') "
+        "with no real coaching content. "
+        "send a real coaching reply in your normal voice RIGHT NOW. "
+        "if tool calls ran this turn: react to what was logged/changed, give the exact "
+        "day total from [TODAY], then one clear next move. "
+        "if NO tool calls ran (you got confused / lost the thread): briefly acknowledge "
+        "the confusion in one line, then ask ONE specific question to get back on track "
+        "— reference what the user said specifically, not a generic 'how did it feel?' "
+        "example: 'lost my thread for a sec — what were you logging just now?' "
+        "2-3 short bubbles (|||). no acknowledgment of the previous bad reply — "
+        "just the coaching or the reset question."
     )
     _streaming_dead_end = _dead_ended and _streamer is not None
     # Use the narrow _looks_like_bare_log_ack (not the broad dead-end set) for logging
@@ -564,6 +572,11 @@ async def run_turn(
     # would be incorrectly flagged and replaced with a full coaching prompt.
     _logging_dead_end = _logging_turn and _looks_like_bare_log_ack(response_text)
     _mechanics = _looks_like_mechanics(response_text)
+    # Empty-praise detection: catches "Great workout! How did it feel?" and similar
+    # LLM-generated phrases that contain no numbers, no next move, and create a
+    # lifecycle loop (pending question keeps firing until answered). Short replies
+    # only — long coaching replies with incidental praise are not caught.
+    _empty_praise = _looks_like_empty_praise(response_text)
 
     # Never repair a sign-off reply. If the user said goodnight/going to sleep/etc.,
     # Arnie's "Sleep well 🌙" is intentional and correct — NOT a dead end. Without
@@ -572,7 +585,7 @@ async def run_turn(
     # context (the "Logged: Ground turkey" after goodnight bug).
     _signing_off = _user_is_signing_off(_user_text if isinstance(_user_text, str) else "")
 
-    if (_streaming_dead_end or _logging_dead_end or _mechanics) and not _signing_off:
+    if (_streaming_dead_end or _logging_dead_end or _mechanics or _empty_praise) and not _signing_off:
         try:
             _repair = await chat(
                 messages + [{"role": "assistant", "content": response_text}],
