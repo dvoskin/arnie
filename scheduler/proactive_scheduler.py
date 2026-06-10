@@ -1068,6 +1068,22 @@ async def _run_reminders():
                             and w.timestamp.replace(tzinfo=timezone.utc).astimezone(tz).date() == now.date()
                             for w in _morning_weights
                         )
+                        # Also check linked accounts (iMessage user logged weight but
+                        # Telegram user is canonical — the data lives on the linked user_id).
+                        if not _today_has_weight and getattr(user, "linked_users", None):
+                            try:
+                                from db.queries import get_recent_weights as _grw
+                                for _linked_uid in [lu.id for lu in user.linked_users]:
+                                    _linked_weights = await _grw(db, _linked_uid, days=2)
+                                    if any(
+                                        w.weight_kg is not None and w.timestamp is not None
+                                        and w.timestamp.replace(tzinfo=timezone.utc).astimezone(tz).date() == now.date()
+                                        for w in _linked_weights
+                                    ):
+                                        _today_has_weight = True
+                                        break
+                            except Exception:
+                                pass
                         _needs_weight = _goal in ("cut", "bulk") and not _today_has_weight
 
                         # Data-rich performance briefing (momentum + trend + leverage action)
