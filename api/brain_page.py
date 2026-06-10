@@ -303,11 +303,11 @@ function NodeDot({ node, e, theme, sel, fresh, freshTick, onSelect, pulse, offse
   const [hover, setHover] = useStateL(false);
   const ds = dotStyle(node, theme, sel, fresh);
   const lit = sel || fresh || hover;
-  // Label visibility: hover + fresh-flash still show the inline name so
-  // the user can see what they're about to tap. Selection HIDES the
-  // label — the detail card already surfaces the name, and the dual
-  // label feels redundant when the card is open.
-  const showLabel = !sel && (hover || fresh);
+  // The inline dot label is permanently suppressed — names appear only
+  // in the detail card. The fresh-flash ripple ring still signals new
+  // learning, but the word floating next to a dot felt like noise on
+  // load (a brief "Banana" appearing for ~3s after a sample event).
+  const showLabel = false;
   // pulse (0..1) is the wave amplification from the ripple emitted on
   // the most recent click. Boosts scale + glow as the ring sweeps past.
   const p = pulse || 0;
@@ -1032,11 +1032,10 @@ function BrainListView({ lobes, theme, freshId }) {
   })();
   return (
     <div style={{ maxWidth: 600, margin: "0 auto",
-      // Tighter side gutters on mobile (8px) so the list uses the full
-      // viewport width without crowding the dividers. Tablet+ scales up
-      // with viewport via clamp so wider screens still get a centred,
-      // breathable column.
-      padding: "6px clamp(8px, 3vw, 32px) 120px",
+      // Side gutters scale with viewport: 16px floor on mobile (so the
+      // list reads like a proper indented column instead of bleeding
+      // edge-to-edge), 32px ceiling on desktop.
+      padding: "6px clamp(16px, 5vw, 32px) 120px",
       fontFamily: "'Geist Mono','SF Mono', monospace" }}>
       {ordered.map((l) => {
         const consolidated = consolidateChipNodes(l.nodes);
