@@ -903,6 +903,114 @@ def _compute_analytics(user, prefs, weight_data):
     return result
 
 
+def compute_auto_macro_targets(user) -> dict | None:
+    """Compute recommended calorie + macro targets from BMR, goal, and body
+    composition. Used by:
+      · POST /api/profile/{token}/auto-targets (dashboard "Calculate for me")
+      · Bot tools (Arnie suggesting targets when prefs are empty)
+
+    Returns {calorie_target, protein_target, carb_target, fat_target,
+    bmr, tdee, deficit_pct} or None if essentials are missing
+    (weight, height, age, sex).
+
+    Logic (per spec):
+      Calories
+        cut          : TDEE × 0.825  (mid of 10-25% deficit)
+        bulk (lean)  : TDEE × 1.10   (mid of 5-15% surplus)
+        performance  : TDEE × 1.05   (slight surplus, performance-focused)
+        maintain     : TDEE
+        health       : TDEE
+      Macros
+        cut          : 1.0 g/lb of GOAL body weight protein,
+                       0.3 g/lb of current body weight fat,
+                       carbs = remainder.
+        bulk         : 0.9 g/lb current weight protein,
+                       0.35 g/lb current weight fat,
+                       carbs = remainder.
+        maintain     : 0.9 g/lb protein, 0.35 g/lb fat, carbs remainder.
+        performance  : 0.9 g/lb protein, 25% calories fat, carbs remainder
+                       (carbs end up high — drives training output).
+        health       : 30% calories protein, 30% fat, 40% carbs.
+    """
+    if not all([user.current_weight_kg, user.height_cm, user.age, user.sex]):
+        return None
+
+    w_kg = user.current_weight_kg
+    h_cm = user.height_cm
+    age = user.age
+    sex = (user.sex or "").lower()
+
+    # Mifflin-St Jeor BMR (kcal/day)
+    if sex in ("m", "male", "man"):
+        bmr = 10 * w_kg + 6.25 * h_cm - 5 * age + 5
+    else:
+        bmr = 10 * w_kg + 6.25 * h_cm - 5 * age - 161
+
+    # Activity factor — defaults to moderate (1.55) when training experience
+    # isn't set. Same mapping as _compute_analytics so the dashboard's
+    # implied TDEE matches what we use here.
+    exp = (user.training_experience or "").lower()
+    if any(k in exp for k in ("advanced", "athlete", "very")):
+        factor = 1.725
+    elif any(k in exp for k in ("beginner", "new", "start")):
+        factor = 1.375
+    else:
+        factor = 1.55
+
+    tdee = bmr * factor
+    goal = (user.primary_goal or "maintain").lower()
+    w_lb = w_kg * 2.20462
+    goal_lb = (user.goal_weight_kg * 2.20462) if user.goal_weight_kg else w_lb
+
+    # Calorie target by goal
+    if goal == "cut":
+        cals = round(tdee * 0.825)
+        deficit_pct = -17.5
+    elif goal == "bulk":
+        cals = round(tdee * 1.10)
+        deficit_pct = 10.0
+    elif goal == "performance":
+        cals = round(tdee * 1.05)
+        deficit_pct = 5.0
+    else:  # maintain, health
+        cals = round(tdee)
+        deficit_pct = 0.0
+
+    # Macro targets
+    if goal == "cut":
+        protein = round(1.0 * goal_lb)
+        fat = round(0.3 * w_lb)
+    elif goal == "bulk":
+        protein = round(0.9 * w_lb)
+        fat = round(0.35 * w_lb)
+    elif goal == "performance":
+        protein = round(0.9 * w_lb)
+        fat = round((cals * 0.25) / 9)
+    elif goal == "health":
+        protein = round((cals * 0.30) / 4)
+        fat = round((cals * 0.30) / 9)
+    else:  # maintain
+        protein = round(0.9 * w_lb)
+        fat = round(0.35 * w_lb)
+
+    # Carbs = remainder of calories after protein (4 cal/g) + fat (9 cal/g)
+    protein_cals = protein * 4
+    fat_cals = fat * 9
+    carb_cals = max(0, cals - protein_cals - fat_cals)
+    carbs = round(carb_cals / 4)
+
+    return {
+        "calorie_target": cals,
+        "protein_target": protein,
+        "carb_target": carbs,
+        "fat_target": fat,
+        "bmr": round(bmr),
+        "tdee": round(tdee),
+        "deficit_pct": deficit_pct,
+        "goal": goal,
+    }
+
+
 async def _build_stats_for_user(db, user, target_date=None):
     """Shared stats-building logic for /api/stats and /api/insights."""
     from datetime import date as dt_date
@@ -1534,6 +1642,46 @@ async def api_edit_profile(token: str, patch: ProfilePatch):
     if _msg:
         _asyncio.create_task(_send_dashboard_notification(_send_target, _msg))
     return {"status": "ok", "field": field}
+
+
+@app.post("/api/profile/{token}/auto-targets")
+async def api_auto_targets(token: str):
+    """Calculate + save calorie and macro targets from BMR, goal, and body
+    composition. Driven by the dashboard's "Calculate for me" button under
+    Profile → Goals & targets. Overwrites whatever's in user_preferences.
+    The bot can call compute_auto_macro_targets() directly to suggest the
+    same values in chat without persisting them."""
+    async with AsyncSessionLocal() as db:
+        user = await get_user_by_webhook_token(db, token)
+        if not user:
+            raise HTTPException(status_code=401, detail="Invalid token")
+
+        targets = compute_auto_macro_targets(user)
+        if not targets:
+            raise HTTPException(
+                status_code=400,
+                detail="Set your weight, height, age, and sex in Demographics first.",
+            )
+
+        prefs = user.preferences
+        if not prefs:
+            from db.models import UserPreferences
+            prefs = UserPreferences(user_id=user.id)
+            db.add(prefs)
+
+        prefs.calorie_target = targets["calorie_target"]
+        prefs.protein_target = targets["protein_target"]
+        prefs.carb_target    = targets["carb_target"]
+        prefs.fat_target     = targets["fat_target"]
+        await db.commit()
+
+        logger.info(
+            f"Auto-targets set for user {user.id}: "
+            f"goal={targets['goal']} cals={targets['calorie_target']} "
+            f"P={targets['protein_target']}g C={targets['carb_target']}g F={targets['fat_target']}g "
+            f"(BMR={targets['bmr']}, TDEE={targets['tdee']}, deficit={targets['deficit_pct']:+.1f}%)"
+        )
+        return targets
 
 
 # ── Admin: per-user consistency audit (read-only) ──────────────────────────────

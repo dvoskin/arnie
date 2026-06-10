@@ -1224,6 +1224,58 @@ body{{
   font-family:'Geist Mono','SF Mono',monospace;font-size:9.5px;letter-spacing:.11em;
   text-transform:uppercase;color:var(--mu);font-weight:500;margin:8px 2px 6px;
 }}
+
+/* ── "Calculate for me" card — auto-derive calorie + macro targets ───
+   Sits below the user-defined goals card on the Profile tab. Title
+   bar shows an (i) glyph that toggles the rules panel below. */
+.calc-card{{
+  background:var(--sf);border:1px solid var(--bd);border-radius:12px;
+  padding:11px 14px;margin-top:8px;
+}}
+.calc-card-hd{{display:flex;align-items:center;gap:8px;margin-bottom:3px}}
+.calc-card-title{{font-size:13.5px;font-weight:600;color:var(--tx);flex:1}}
+.calc-info-btn{{
+  background:transparent;border:1px solid var(--bd);border-radius:7px;
+  width:24px;height:24px;display:grid;place-items:center;cursor:pointer;
+  color:var(--mu);transition:color .15s,border-color .15s,background .15s;
+  font-family:inherit;flex-shrink:0;
+}}
+.calc-info-btn:hover{{color:var(--ac);border-color:var(--ac);background:var(--ac-dim)}}
+.calc-info-btn.active{{color:var(--ac);border-color:rgba(var(--ac-rgb),.4);background:var(--ac-dim)}}
+.calc-card-sub{{font-size:12px;color:var(--mu);margin-bottom:10px;line-height:1.4}}
+.calc-btn{{
+  width:100%;padding:9px;border-radius:10px;border:1px solid rgba(var(--ac-rgb),.35);
+  background:var(--ac-dim);color:var(--ac);
+  font-family:inherit;font-size:13px;font-weight:600;letter-spacing:.01em;
+  cursor:pointer;transition:all .15s;
+}}
+.calc-btn:hover{{background:rgba(var(--ac-rgb),.18);border-color:rgba(var(--ac-rgb),.55)}}
+.calc-btn:active{{transform:scale(.98)}}
+.calc-btn:disabled{{opacity:.55;cursor:wait}}
+
+/* Explainer — collapsed by default; .open reveals it with an animated
+   height transition. Rules are mono-caps headers + plain text bodies. */
+.calc-explain{{
+  max-height:0;overflow:hidden;
+  transition:max-height .3s cubic-bezier(.4,0,.2,1),margin-top .2s;
+  margin-top:0;
+}}
+.calc-card.open .calc-explain{{max-height:600px;margin-top:12px}}
+.calc-rule{{padding-top:8px;margin-top:8px;border-top:1px solid var(--bd)}}
+.calc-rule:first-child{{padding-top:0;margin-top:0;border-top:none}}
+.calc-rule-h{{
+  font-family:'Geist Mono','SF Mono',monospace;font-size:9px;
+  letter-spacing:.08em;text-transform:uppercase;color:var(--mu);
+  font-weight:600;margin-bottom:4px;
+}}
+.calc-rule-b{{font-size:12px;color:var(--tx2);line-height:1.5;display:flex;flex-direction:column;gap:2px}}
+.calc-rule-b b{{color:var(--tx);font-weight:600}}
+.calc-kv{{display:block}}
+.calc-foot{{
+  font-size:10.5px;color:var(--mu);line-height:1.4;
+  margin-top:10px;padding-top:8px;border-top:1px dashed var(--bd);
+  font-style:italic;
+}}
 .basics-grid{{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin-bottom:9px}}
 .basic-cell{{
   background:var(--sf);border:1px solid var(--bd);border-radius:12px;
@@ -2089,6 +2141,55 @@ footer{{
 
     <div class="settings-sub" style="margin-top:14px">Goals &amp; targets</div>
     <div id="goals-card" class="infocrd"></div>
+
+    <!-- Auto-calculate targets card — sits below the user-defined goals.
+         Tap the (i) glyph to reveal the calculation rules; tap the button
+         to compute & save the recommended calorie + macro targets from
+         BMR + goal + body composition (see compute_auto_macro_targets in
+         api/app.py). -->
+    <div class="calc-card" id="calc-card">
+      <div class="calc-card-hd">
+        <div class="calc-card-title">Not sure what to set?</div>
+        <button class="calc-info-btn" onclick="toggleCalcInfo()" type="button" aria-label="How is this calculated?" title="How is this calculated?">
+          <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="8" cy="8" r="6.5"/>
+            <path d="M8 5.5v.01M7.3 7.5h.7v3.5h.7"/>
+          </svg>
+        </button>
+      </div>
+      <div class="calc-card-sub">Let Arnie set your calories and macros from your goal + body comp.</div>
+      <button class="calc-btn" id="calc-btn" onclick="calculateTargetsForMe()" type="button">Calculate for me</button>
+      <!-- Explainer panel — collapsed by default. -->
+      <div class="calc-explain" id="calc-explain">
+        <div class="calc-rule">
+          <div class="calc-rule-h">1 · BMR</div>
+          <div class="calc-rule-b">Mifflin-St Jeor — uses your weight, height, age, sex.</div>
+        </div>
+        <div class="calc-rule">
+          <div class="calc-rule-h">2 · TDEE</div>
+          <div class="calc-rule-b">BMR × activity factor — beginner ×1.375, moderate ×1.55 (default), advanced ×1.725.</div>
+        </div>
+        <div class="calc-rule">
+          <div class="calc-rule-h">3 · Calories by goal</div>
+          <div class="calc-rule-b">
+            <span class="calc-kv"><b>Cut</b>: TDEE − 17.5%</span>
+            <span class="calc-kv"><b>Maintain</b>: TDEE</span>
+            <span class="calc-kv"><b>Lean bulk</b>: TDEE + 10%</span>
+            <span class="calc-kv"><b>Performance</b>: TDEE + 5%</span>
+          </div>
+        </div>
+        <div class="calc-rule">
+          <div class="calc-rule-h">4 · Macros</div>
+          <div class="calc-rule-b">
+            <span class="calc-kv"><b>Cut</b>: 1.0g protein/lb goal · 0.3g fat/lb current</span>
+            <span class="calc-kv"><b>Bulk / maintain</b>: 0.9g protein/lb · 0.35g fat/lb</span>
+            <span class="calc-kv"><b>Performance</b>: 0.9g protein/lb · 25% cal from fat</span>
+            <span class="calc-kv"><b>Carbs</b>: fill the remainder.</span>
+          </div>
+        </div>
+        <div class="calc-foot">Re-run any time your weight or goal changes — Arnie won't touch values you've set manually unless you tap again.</div>
+      </div>
+    </div>
 
     <!-- ─── ARNIE'S BRAIN ─── learned facts only. Bio + AI attributes by
          category. NEVER duplicates what's in the settings section above. -->
@@ -4046,6 +4147,50 @@ async function reloadAIProfile() {{
     _aiProfileLoaded = true;
     renderAIProfile(await r.json());
   }} catch(e) {{}}
+}}
+
+// ── Calculate-for-me — auto-derive calorie + macro targets ─────────
+// Tap the (i) glyph to reveal the calculation rules; tap the button to
+// hit POST /api/profile/<token>/auto-targets which runs the BMR + goal
+// + body-comp math server-side, saves the result to user_preferences,
+// and returns the new targets so we can refresh the stats payload.
+function toggleCalcInfo(){{
+  var card = document.getElementById('calc-card');
+  if(!card) return;
+  card.classList.toggle('open');
+  var btn = card.querySelector('.calc-info-btn');
+  if(btn) btn.classList.toggle('active', card.classList.contains('open'));
+}}
+
+async function calculateTargetsForMe(){{
+  var btn = document.getElementById('calc-btn');
+  if(btn){{ btn.disabled = true; btn.textContent = 'Calculating…'; }}
+  try{{
+    var r = await fetch('/api/profile/' + TOKEN + '/auto-targets', {{ method:'POST' }});
+    var data = {{}};
+    try{{ data = await r.json(); }}catch(e){{}}
+    if(!r.ok){{
+      alert(data.detail || 'Could not calculate — make sure your weight, height, age and sex are set above first.');
+      if(btn){{ btn.disabled=false; btn.textContent='Calculate for me'; }}
+      return;
+    }}
+    // Refresh the stats payload (drives the dashboard) AND the profile
+    // tab so the new values populate everywhere.
+    try{{
+      delete _dayCache[_viewingDate];
+      var fresh = await fetchStats(null);
+      _baseData = fresh; _dayCache[_todayStr] = fresh;
+      if(_activeTab === 'day') renderDayTab(fresh);
+      if(_activeTab === 'profile') renderProfileTab(fresh);
+    }}catch(e){{}}
+    if(btn){{
+      btn.textContent = '✓ Targets set — ' + data.calorie_target + ' kcal · ' + data.protein_target + 'g P';
+      setTimeout(function(){{ btn.disabled=false; btn.textContent='Calculate for me'; }}, 2200);
+    }}
+  }}catch(e){{
+    alert('Network error — try again.');
+    if(btn){{ btn.disabled=false; btn.textContent='Calculate for me'; }}
+  }}
 }}
 
 // Inline edit for a Basics grid cell.
