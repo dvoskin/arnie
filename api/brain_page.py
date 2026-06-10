@@ -420,17 +420,28 @@ function BrainConstellationLive({ lobes, theme, freshId, freshTick, selectedId, 
     });
   }
   // Wrap onSelect / onSelectLobe so the click also emits the ripple AND
-  // forwards the dot's world-space origin upstream — the App uses that to
-  // anchor the mini detail card right next to the tapped dot instead of
-  // pinning it to the bottom of the screen.
+  // forwards the dot's origin to the App. We convert world → screen
+  // coordinates here because the detail card lives OUTSIDE the pan/zoom
+  // transform layer — passing raw world coords would anchor the card to
+  // the wrong screen position whenever the user has zoomed or panned.
+  // The ripple wave stays in world space (it's inside the transform).
   //
   // Mobile skips the ripple wave on a single-dot click — the expanding
   // ring + spark plays badly on phone GPUs and the visual win isn't
   // worth the dropped frames. Lobe clicks still ripple because there
   // are fewer of them and the larger animation reads as deliberate.
+  const worldToScreen = (wx, wy) => {
+    if (wx == null || !size || !size.w || !size.h) return { x: wx, y: wy };
+    const W = size.w, H = size.h;
+    return {
+      x: (wx - W / 2) * zoom + W / 2 + pan.x,
+      y: (wy - H / 2) * zoom + H / 2 + pan.y,
+    };
+  };
   function selectWithRipple(id, originX, originY) {
     if (!isMobile && id != null && originX != null) emitWave(originX, originY);
-    onSelect(id, originX, originY);
+    const s = worldToScreen(originX, originY);
+    onSelect(id, s.x, s.y);
   }
   function selectLobeWithRipple(lobeId, originX, originY) {
     if (!isMobile && originX != null) emitWave(originX, originY, waveLobeRange, waveLobeDur);
@@ -587,7 +598,13 @@ function BrainConstellationLive({ lobes, theme, freshId, freshTick, selectedId, 
   return (
     <div onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}
       onWheel={onWheel} onDoubleClick={resetView}
-      style={{ position: "absolute", inset: 0, overflow: "hidden", touchAction: "none",
+      style={{ position: "absolute", inset: 0, overflow: "hidden",
+        // Mobile keeps native pinch-zoom — the iframe lets the browser
+        // handle two-finger gestures. Desktop blocks all touch gestures
+        // so our custom drag-to-pan and wheel-to-zoom don't fight with
+        // the OS. (Tap still works on mobile because single-pointer
+        // touch goes through to React's onClick handlers.)
+        touchAction: isMobile ? "pinch-zoom" : "none",
         cursor: drag.current ? "grabbing" : "grab" }}>
       <div style={{ position: "absolute", inset: 0,
         transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, transformOrigin: "50% 50%",
@@ -719,15 +736,25 @@ function BrainConstellationLive({ lobes, theme, freshId, freshTick, selectedId, 
                 // Skipped on mobile: the per-dot Math.sqrt + tween every
                 // frame was a major source of dropped frames on phone
                 // GPUs. The card simply overlays the dots on mobile.
+                //
+                // cardCenter is in screen coords (so the App can anchor
+                // the card correctly when zoomed/panned). Compare to the
+                // dot's screen position so the scatter halo still tracks
+                // the card visually rather than the dot's underlying
+                // world position.
                 if (!isMobile && cardCenter && cardRadius && selectedId !== node.id) {
-                  const fcx = worldX - cardCenter.x;
-                  const fcy = worldY - cardCenter.y;
+                  const screenDotX = (worldX - W / 2) * zoom + W / 2 + pan.x;
+                  const screenDotY = (worldY - H / 2) * zoom + H / 2 + pan.y;
+                  const fcx = screenDotX - cardCenter.x;
+                  const fcy = screenDotY - cardCenter.y;
                   const d = Math.sqrt(fcx * fcx + fcy * fcy);
                   if (d > 0.5 && d < cardRadius) {
                     const force = Math.pow(1 - d / cardRadius, 1.6);
                     const push = force * 46;
-                    e.dxT = (fcx / d) * push;
-                    e.dyT = (fcy / d) * push;
+                    // Push is applied in world space (dx, dy are world
+                    // offsets), so undo the zoom on the unit vector.
+                    e.dxT = (fcx / d) * push / zoom;
+                    e.dyT = (fcy / d) * push / zoom;
                   } else {
                     e.dxT = 0; e.dyT = 0;
                   }
