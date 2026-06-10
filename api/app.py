@@ -1496,6 +1496,13 @@ async def api_edit_profile(token: str, patch: ProfilePatch):
             "current_weight_lbs": "current_weight_kg",
             "goal_weight_lbs":    "goal_weight_kg",
         }
+        # Enum field with explicit normalization — keep the allowed values in
+        # lockstep with compute_macro_targets() in core/targets.py (which only
+        # branches on "male"/"man"/"m"). Anything outside → "other".
+        _sex_aliases = {
+            "m": "male", "male": "male", "man": "male", "boy": "male",
+            "f": "female", "female": "female", "woman": "female", "girl": "female",
+        }
         _pref_str = {"coaching_style", "reminder_frequency", "food_logging_mode"}
         _pref_int = {"calorie_target", "protein_target", "carb_target", "fat_target"}
         _pref_bool = {"proactive_messaging_enabled"}
@@ -1503,6 +1510,34 @@ async def api_edit_profile(token: str, patch: ProfilePatch):
         try:
             if field in _str_fields:
                 setattr(user, field, str(raw).strip() if raw else None)
+            elif field == "sex":
+                # Normalize free-text or dropdown values to {male, female, other}
+                # so the BMR formula in core/targets.py picks the right branch.
+                if raw:
+                    v = str(raw).strip().lower()
+                    user.sex = _sex_aliases.get(v, "other")
+                else:
+                    user.sex = None
+            elif field == "height_in":
+                # Accept inches as a plain number ("70"), feet'inches ("5'10",
+                # "5'10\""), or feet-space-inches ("5 10"). Convert to cm.
+                if not raw:
+                    user.height_cm = None
+                else:
+                    s = str(raw).strip().lower().replace('"', '').replace("ft", "'").replace("in", "")
+                    if "'" in s:
+                        a, b = s.split("'", 1)
+                        ft = float(a.strip() or "0")
+                        ins = float(b.strip() or "0")
+                        total_in = ft * 12 + ins
+                    elif " " in s:
+                        a, b = s.split(" ", 1)
+                        total_in = float(a.strip()) * 12 + float(b.strip())
+                    else:
+                        total_in = float(s)
+                    if not (24 <= total_in <= 110):  # 2ft–9ft sanity
+                        raise ValueError("Height out of range")
+                    user.height_cm = round(total_in * 2.54, 1)
             elif field in _int_fields:
                 setattr(user, field, int(raw) if raw else None)
             elif field in _weight_fields:
@@ -1588,9 +1623,17 @@ async def api_auto_targets(token: str):
 
         targets = compute_auto_macro_targets(user)
         if not targets:
+            # Name the EXACT missing fields so the dashboard can highlight them
+            # instead of telling the user to hunt through Demographics.
+            _missing = []
+            if not user.current_weight_kg: _missing.append("weight")
+            if not user.height_cm:         _missing.append("height")
+            if not user.age:               _missing.append("age")
+            if not user.sex:               _missing.append("sex")
+            _list = ", ".join(_missing) if _missing else "weight, height, age, sex"
             raise HTTPException(
                 status_code=400,
-                detail="Set your weight, height, age, and sex in Demographics first.",
+                detail=f"Add your {_list} in Demographics above and we'll calculate from there.",
             )
 
         prefs = user.preferences

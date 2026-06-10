@@ -1268,13 +1268,32 @@ body{{
   letter-spacing:.08em;text-transform:uppercase;color:var(--mu);
   font-weight:600;margin-bottom:4px;
 }}
-.calc-rule-b{{font-size:12px;color:var(--tx2);line-height:1.5;display:flex;flex-direction:column;gap:2px}}
+.calc-rule-b{{font-size:12px;color:var(--tx2);line-height:1.5;display:flex;flex-direction:column;gap:3px}}
 .calc-rule-b b{{color:var(--tx);font-weight:600}}
 .calc-kv{{display:block}}
+/* Intro line at the top of the explainer — sets the tone of trust before
+   the rules drop. Slightly larger, normal weight, full contrast. */
+.calc-intro{{
+  font-size:12px;color:var(--tx2);line-height:1.5;
+  padding-bottom:10px;margin-bottom:4px;border-bottom:1px solid var(--bd);
+}}
+/* Citation / source line — smaller, muted, italic. Sits at the bottom of
+   each rule body so the verifiable source is always visible. */
+.calc-meta{{
+  font-size:10.5px;color:var(--mu);font-style:italic;
+  margin-top:4px;letter-spacing:.005em;
+}}
+.calc-meta b{{font-style:normal;color:var(--tx2);font-weight:500}}
+/* Inline aside — parenthetical context that doesn't compete with the rule. */
+.calc-aside{{color:var(--mu);font-size:11px;font-weight:400}}
+/* Macro section headers (Protein / Fat / Carbs) — anchor + one-liner. */
+.calc-macro-row{{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}}
+.calc-macro-row b{{font-size:12px;color:var(--tx);min-width:54px}}
+/* Sub-bullet under a macro header — indented, smaller. */
+.calc-sub{{padding-left:14px;font-size:11.5px}}
 .calc-foot{{
-  font-size:10.5px;color:var(--mu);line-height:1.4;
-  margin-top:10px;padding-top:8px;border-top:1px dashed var(--bd);
-  font-style:italic;
+  font-size:10.5px;color:var(--mu);line-height:1.45;
+  margin-top:12px;padding-top:10px;border-top:1px dashed var(--bd);
 }}
 .basics-grid{{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin-bottom:9px}}
 .basic-cell{{
@@ -2159,35 +2178,79 @@ footer{{
       </div>
       <div class="calc-card-sub">Let Arnie set your calories and macros from your goal + body comp.</div>
       <button class="calc-btn" id="calc-btn" onclick="calculateTargetsForMe()" type="button">Calculate for me</button>
-      <!-- Explainer panel — collapsed by default. -->
+      <!-- Explainer panel — collapsed by default. Industry-standard breakdown
+           with citations so users can verify the math against established
+           sources (Mifflin-St Jeor, ACSM, ISSN, Dietary Guidelines). -->
       <div class="calc-explain" id="calc-explain">
-        <div class="calc-rule">
-          <div class="calc-rule-h">1 · BMR</div>
-          <div class="calc-rule-b">Mifflin-St Jeor — uses your weight, height, age, sex.</div>
+        <div class="calc-intro">
+          The same math evidence-based nutrition coaches use. Four steps, each
+          grounded in published standards — no proprietary "secret formula".
         </div>
+
         <div class="calc-rule">
-          <div class="calc-rule-h">2 · TDEE</div>
-          <div class="calc-rule-b">BMR × activity factor — beginner ×1.375, moderate ×1.55 (default), advanced ×1.725.</div>
-        </div>
-        <div class="calc-rule">
-          <div class="calc-rule-h">3 · Calories by goal</div>
+          <div class="calc-rule-h">Step 1 &nbsp;·&nbsp; Resting metabolic rate</div>
           <div class="calc-rule-b">
-            <span class="calc-kv"><b>Cut</b>: TDEE − 17.5%</span>
-            <span class="calc-kv"><b>Maintain</b>: TDEE</span>
-            <span class="calc-kv"><b>Lean bulk</b>: TDEE + 10%</span>
-            <span class="calc-kv"><b>Performance</b>: TDEE + 5%</span>
+            <span class="calc-kv">Mifflin-St Jeor equation — the most accurate BMR estimator validated against indirect calorimetry.</span>
+            <span class="calc-kv calc-meta">Inputs: <b>weight, height, age, sex</b>. Source: Mifflin et al., 1990 · adopted by the Academy of Nutrition &amp; Dietetics.</span>
           </div>
         </div>
+
         <div class="calc-rule">
-          <div class="calc-rule-h">4 · Macros</div>
+          <div class="calc-rule-h">Step 2 &nbsp;·&nbsp; Total daily energy</div>
           <div class="calc-rule-b">
-            <span class="calc-kv"><b>Cut</b>: 1.0g protein/lb goal · 0.3g fat/lb current</span>
-            <span class="calc-kv"><b>Bulk / maintain</b>: 0.9g protein/lb · 0.35g fat/lb</span>
-            <span class="calc-kv"><b>Performance</b>: 0.9g protein/lb · 25% cal from fat</span>
-            <span class="calc-kv"><b>Carbs</b>: fill the remainder.</span>
+            <span class="calc-kv">BMR × activity multiplier. Set automatically from your training experience.</span>
+            <span class="calc-kv"><b>Beginner</b> &nbsp;×1.375 &nbsp;<span class="calc-aside">light exercise, 1–3 d/wk</span></span>
+            <span class="calc-kv"><b>Moderate</b> &nbsp;×1.55 &nbsp;<span class="calc-aside">3–5 d/wk &nbsp;· default</span></span>
+            <span class="calc-kv"><b>Advanced</b> &nbsp;×1.725 &nbsp;<span class="calc-aside">6+ d/wk, intense</span></span>
+            <span class="calc-kv calc-meta">Source: ACSM Resource Manual for Guidelines for Exercise Testing.</span>
           </div>
         </div>
-        <div class="calc-foot">Re-run any time your weight or goal changes — Arnie won't touch values you've set manually unless you tap again.</div>
+
+        <div class="calc-rule">
+          <div class="calc-rule-h">Step 3 &nbsp;·&nbsp; Calorie target</div>
+          <div class="calc-rule-b">
+            <span class="calc-kv">Calorie surplus or deficit applied to TDEE based on your goal.</span>
+            <span class="calc-kv"><b>Cut</b> &nbsp;TDEE − 17.5% &nbsp;<span class="calc-aside">mid of the 10–25% deficit range, preserves lean mass</span></span>
+            <span class="calc-kv"><b>Maintain</b> &nbsp;TDEE &nbsp;<span class="calc-aside">no surplus, no deficit</span></span>
+            <span class="calc-kv"><b>Lean bulk</b> &nbsp;TDEE + 10% &nbsp;<span class="calc-aside">≈ 0.25–0.5 lb/wk lean gain</span></span>
+            <span class="calc-kv"><b>Performance</b> &nbsp;TDEE + 5% &nbsp;<span class="calc-aside">output without fat gain</span></span>
+            <span class="calc-kv calc-meta">Source: Helms et al. (2014) Evidence-Based Recommendations; Aragon &amp; Schoenfeld (2013).</span>
+          </div>
+        </div>
+
+        <div class="calc-rule">
+          <div class="calc-rule-h">Step 4 &nbsp;·&nbsp; Macros</div>
+          <div class="calc-rule-b">
+            <span class="calc-kv">Protein anchors first, fat second, carbs fill the remaining calories.</span>
+            <span class="calc-kv calc-macro-row">
+              <b>Protein</b>
+              <span class="calc-aside">1.6–2.2 g/kg for active adults (ISSN, 2017). We use:</span>
+            </span>
+            <span class="calc-kv calc-sub">· Cut: <b>1.0 g/lb of goal weight</b> &nbsp;<span class="calc-aside">(≈2.2 g/kg)</span></span>
+            <span class="calc-kv calc-sub">· Bulk &amp; maintain: <b>0.9 g/lb current</b> &nbsp;<span class="calc-aside">(≈2.0 g/kg)</span></span>
+            <span class="calc-kv calc-sub">· Health: <b>30% of calories</b></span>
+
+            <span class="calc-kv calc-macro-row" style="margin-top:6px">
+              <b>Fat</b>
+              <span class="calc-aside">20–35% kcal (Dietary Guidelines for Americans). We use:</span>
+            </span>
+            <span class="calc-kv calc-sub">· Cut: <b>0.3 g/lb current</b> &nbsp;<span class="calc-aside">(≈25% kcal)</span></span>
+            <span class="calc-kv calc-sub">· Bulk &amp; maintain: <b>0.35 g/lb current</b> &nbsp;<span class="calc-aside">(≈30% kcal)</span></span>
+            <span class="calc-kv calc-sub">· Performance: <b>25% of calories</b></span>
+            <span class="calc-kv calc-sub">· Health: <b>30% of calories</b></span>
+
+            <span class="calc-kv calc-macro-row" style="margin-top:6px">
+              <b>Carbs</b>
+              <span class="calc-aside">whatever's left — typically 40–60% kcal, powers training &amp; recovery.</span>
+            </span>
+          </div>
+        </div>
+
+        <div class="calc-foot">
+          Re-run any time your weight, goal, or training changes. Tap a target
+          row above to override any value — your manual edits stick until you
+          tap "Calculate for me" again.
+        </div>
       </div>
     </div>
 
@@ -3840,21 +3903,29 @@ function renderProfileTab(d){{
       if(p.height_cm) return Math.round(p.height_cm)+' cm';
       return null;
     }}
+    // ALL five demographics rows are now editable so "Calculate for me" can
+    // never get stuck on a missing-field error the user can't fix in the UI.
+    // Sex normalizes server-side (any reasonable spelling → male/female/other),
+    // Height accepts "5'10", "5 10", or plain inches.
     var rows=[
-      {{label:'Name',           value:p.name||null,                                edit:'name',                 raw:p.name||''}},
-      {{label:'Age',            value:p.age?p.age+' yrs':null,                    edit:'age',                  raw:p.age||''}},
-      {{label:'Sex',            value:(p.sex?String(p.sex).charAt(0).toUpperCase()+String(p.sex).slice(1):null), edit:null, raw:''}},
-      {{label:'Height',         value:_ht(),                                       edit:null,                   raw:''}},
+      {{label:'Name',           value:p.name||null,                                edit:'name',              raw:p.name||''}},
+      {{label:'Age',            value:p.age?p.age+' yrs':null,                    edit:'age',               raw:p.age||''}},
+      {{label:'Sex',            value:(p.sex?String(p.sex).charAt(0).toUpperCase()+String(p.sex).slice(1):null), edit:'sex',     raw:p.sex||''}},
+      {{label:'Height',         value:_ht(),                                       edit:'height_in',         raw:p.height_ft||''}},
       {{label:'Current weight', value:p.current_weight_lbs!=null?(p.current_weight_lbs+' lbs'):null, edit:'current_weight_lbs', raw:p.current_weight_lbs!=null?String(p.current_weight_lbs):''}},
     ];
-    dem.innerHTML=rows.filter(function(r){{return r.value!=null;}}).map(function(r){{
+    // Always render all 5 cells (empty value renders as "—") so the user can
+    // edit missing values too. The basic-edit pencil is always visible.
+    dem.innerHTML=rows.map(function(r){{
       var id='pd-'+r.label.toLowerCase().replace(/[^a-z0-9]/g,'_');
+      var disp = (r.value!=null && r.value!=='') ? r.value : '—';
+      var muted = (r.value==null || r.value==='') ? ' style="color:var(--mu);font-weight:400"' : '';
       var eb=r.edit
         ? '<button class="basic-edit" onclick="editBasic(\\''+id+'\\',\\''+escA(r.edit)+'\\',\\''+escA(r.raw)+'\\',\\''+escA(r.label)+'\\')">&#9998;</button>'
         : '';
       return '<div class="basic-cell" id="'+id+'">'+
         '<div class="basic-lbl">'+esc(r.label)+'</div>'+
-        '<div class="basic-val">'+esc(r.value)+'</div>'+eb+'</div>';
+        '<div class="basic-val"'+muted+'>'+esc(disp)+'</div>'+eb+'</div>';
     }}).join('');
   }}
 
@@ -4163,9 +4234,31 @@ function toggleCalcInfo(){{
 }}
 
 async function calculateTargetsForMe(){{
+  // Pre-flight: catch missing demographics BEFORE the round-trip so we can
+  // scroll the user to the exact field and pulse-highlight it instead of
+  // showing a generic error banner.
+  var p = (_baseData && _baseData.profile) || {{}};
+  var missing = [];
+  if(!p.current_weight_lbs) missing.push({{key:'current_weight', label:'weight'}});
+  if(!p.height_cm)          missing.push({{key:'height',         label:'height'}});
+  if(!p.age)                missing.push({{key:'age',            label:'age'}});
+  if(!p.sex)                missing.push({{key:'sex',            label:'sex'}});
+  if(missing.length){{
+    var first = missing[0];
+    var cell = document.getElementById('pd-'+first.key);
+    if(cell){{
+      cell.scrollIntoView({{behavior:'smooth', block:'center'}});
+      cell.style.boxShadow = '0 0 0 2px var(--ac) inset';
+      cell.style.transition = 'box-shadow .25s';
+      setTimeout(function(){{ cell.style.boxShadow=''; }}, 1800);
+    }}
+    var names = missing.map(function(m){{return m.label;}}).join(', ');
+    alert('Add your ' + names + ' first — Demographics card above. We\\'ll calculate the moment those are set.');
+    return;
+  }}
+
   // Guard against silently overwriting values the user set manually —
   // if ANY of the 4 targets is already populated, ask before clobbering.
-  var p = (_baseData && _baseData.profile) || {{}};
   var hasManual = p.calorie_target || p.protein_target || p.carb_target || p.fat_target;
   if(hasManual){{
     var ok = confirm(
@@ -4204,18 +4297,35 @@ async function calculateTargetsForMe(){{
   }}
 }}
 
-// Inline edit for a Basics grid cell.
+// Inline edit for a Basics grid cell. Renders a select for the `sex` enum and
+// a text input for everything else. Height accepts free-text in a few formats
+// (5'10, 5 10, 70 — server parses), Weight expects a number in lbs.
 function editBasic(cellId, field, raw, label) {{
   var cell = document.getElementById(cellId); if (!cell) return;
+  var editor;
+  if (field === 'sex') {{
+    var cur = (raw || '').toLowerCase();
+    var opts = ['male','female','other'];
+    if (cur && opts.indexOf(cur) === -1) opts.unshift(cur);
+    editor = '<select id="bi-'+cellId+'" style="flex:1;min-width:0;background:var(--inp);border:1px solid var(--ac);color:var(--tx);padding:4px 7px;border-radius:7px;font-size:13px;font-family:inherit;outline:none;text-transform:capitalize">' +
+      opts.map(function(o){{ return '<option value="'+escA(o)+'"'+(o===cur?' selected':'')+'>'+esc(o)+'</option>'; }}).join('') +
+      '</select>';
+  }} else {{
+    var ph = '';
+    if (field === 'height_in')          ph = 'e.g. 5\\'10 or 70';
+    else if (field === 'current_weight_lbs') ph = 'lbs';
+    else if (field === 'age')           ph = 'years';
+    editor = '<input type="text" id="bi-'+cellId+'" value="'+escA(raw)+'" placeholder="'+escA(ph)+'" ' +
+      'style="flex:1;min-width:0;background:var(--inp);border:1px solid var(--ac);color:var(--tx);padding:4px 7px;border-radius:7px;font-size:13px;font-family:inherit;outline:none">';
+  }}
   cell.innerHTML = '<div class="basic-lbl">'+esc(label)+'</div>' +
     '<div style="display:flex;gap:4px;align-items:center;margin-top:1px">' +
-    '<input type="text" id="bi-'+cellId+'" value="'+escA(raw)+'" ' +
-    'style="flex:1;min-width:0;background:var(--inp);border:1px solid var(--ac);color:var(--tx);padding:4px 7px;border-radius:7px;font-size:13px;font-family:inherit;outline:none">' +
+    editor +
     '<button class="sbtn" style="flex:none;padding:4px 9px;font-size:11px;min-height:0" onclick="saveBasic(\\''+cellId+'\\',\\''+escA(field)+'\\')">&#10003;</button>' +
     '<button class="cbtn" style="flex:none;padding:4px 7px;font-size:11px;min-height:0" onclick="cancelBasic()">&#10005;</button>' +
     '</div>';
   var inp = document.getElementById('bi-'+cellId);
-  if (inp) {{ inp.focus(); inp.select(); }}
+  if (inp) {{ inp.focus(); if (inp.select) inp.select(); }}
 }}
 
 function cancelBasic(){{
