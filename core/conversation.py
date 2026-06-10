@@ -25,6 +25,7 @@ from core.turn_health import (
     looks_like_bare_log_ack as _looks_like_bare_log_ack,
     looks_like_mechanics as _looks_like_mechanics,
     detect_turn_flags,
+    user_is_signing_off as _user_is_signing_off,
 )
 from handlers.tool_executor import (
     execute_tool_calls, deterministic_confirmation, recovery_message,
@@ -239,8 +240,22 @@ async def run_turn(
         )
 
     response_text = result["text"]
-    tool_calls    = result["tool_calls"]
     raw_content   = result["raw_content"]
+
+    # Deduplicate tool calls — the LLM sometimes emits two identical log_exercise /
+    # log_food calls for the same item in one response (seen in screenshots: same
+    # exercise logged twice at the same timestamp). Keep only the FIRST call per
+    # (tool_name, input_hash). Preserves order; safe for all tool types.
+    import json as _json
+    _seen_calls: set = set()
+    tool_calls = []
+    for _tc in result["tool_calls"]:
+        _k = (_tc["name"], _json.dumps(_tc.get("input", {}), sort_keys=True))
+        if _k not in _seen_calls:
+            _seen_calls.add(_k)
+            tool_calls.append(_tc)
+        else:
+            logger.warning(f"Duplicate tool call suppressed for {_tag}: {_tc['name']} {_k[1][:80]}")
     onboarding_field_saved: Optional[str] = None
     # Tracks whether the final response_text was delivered via the live stream.
     # Streamed paths leave it True; any non-streamed assignment (deterministic
@@ -550,7 +565,14 @@ async def run_turn(
     _logging_dead_end = _logging_turn and _looks_like_bare_log_ack(response_text)
     _mechanics = _looks_like_mechanics(response_text)
 
-    if _streaming_dead_end or _logging_dead_end or _mechanics:
+    # Never repair a sign-off reply. If the user said goodnight/going to sleep/etc.,
+    # Arnie's "Sleep well 🌙" is intentional and correct — NOT a dead end. Without
+    # this gate, quality repair fires and generates a full coaching reply (with "give
+    # the day total, next move") after a goodnight, sometimes re-logging food from
+    # context (the "Logged: Ground turkey" after goodnight bug).
+    _signing_off = _user_is_signing_off(_user_text if isinstance(_user_text, str) else "")
+
+    if (_streaming_dead_end or _logging_dead_end or _mechanics) and not _signing_off:
         try:
             _repair = await chat(
                 messages + [{"role": "assistant", "content": response_text}],
