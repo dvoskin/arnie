@@ -177,6 +177,7 @@ ALWAYS_CORE = {
     "health_physical_limitations",
     "behavior_motivation_driver",
     "behavior_coaching_tone",
+    "lifestyle_stress_level",   # ← добавить
 }
 
 
