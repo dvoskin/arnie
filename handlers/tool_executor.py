@@ -1217,6 +1217,28 @@ async def _dispatch(name, inp, user, today_log, db, source_type):  # noqa: C901
         # [COACH NOTE — targets_unset] block) or names specific values.
         # Mirrors the dashboard POST /api/profile/{token}/auto-targets
         # behavior: same fields, same persistence, same audit log.
+        #
+        # CLASSIFICATION (matches update_profile — instant prefs write):
+        #   · NOT in NEEDS_HEADS_UP_TOOLS / _TOOL_HEADS_UP_BUBBLES — the
+        #     write is microseconds, a heads-up bubble would feel jarring
+        #     ("setting your targets..." → immediate confirmation). Heads-
+        #     ups are for slow I/O only (web_search, search_food_database,
+        #     query_history, generate_image).
+        #   · NOT in _LOGGING_TOOLS (core/conversation.py) — not a log
+        #     entry. That set triggers the coach-unmute path with
+        #     deterministic_confirmation as fallback, which reads totals
+        #     from today_log + user.preferences and is the wrong shape
+        #     for a 4-macro prefs write.
+        #   · NOT in _VOICED_RESULT_TOOLS — the recommended values live
+        #     in the [COACH NOTE — targets_unset] block already injected
+        #     into the system prompt, so the model can voice them in its
+        #     first pass before calling the tool. Nothing to re-voice.
+        #
+        # Streaming behavior falls through to the standard inline path:
+        # Arnie writes his confirmation in the first pass, the tool fires
+        # silently, and the existing need_followup safety net (line ~443
+        # in core/conversation.py) generates a follow-up confirmation if
+        # the model fired the tool with no text.
         prefs = user.preferences
         if not prefs:
             from db.models import UserPreferences
