@@ -4901,12 +4901,81 @@ function findEx(id){{
   return(_dayCache[_viewingDate]?.day?.exercise_entries||[]).find(e=>e.id===id);
 }}
 
+// Parse a quantity string into a number+unit pair, or null if no leading
+// number is found. Handles decimals (1.5), fractions (1/2 -> 0.5), and
+// whitespace. Unit is whatever follows the number, lower-cased + trimmed.
+// Examples (input -> output):
+//   "200g"       -> n=200, u="g"
+//   "1.5 cups"   -> n=1.5, u="cups"
+//   "1/2 cup"    -> n=0.5, u="cup"
+//   "two slices" -> null  (no leading numeric)
+//   "200"        -> n=200, u=""
+function _parseServing(s){{
+  if(s==null)return null;
+  var m=String(s).trim().match(/^(\\d+(?:\\.\\d+)?)(?:\\s*\\/\\s*(\\d+(?:\\.\\d+)?))?\\s*(.*)$/);
+  if(!m)return null;
+  var num=parseFloat(m[1]);
+  if(!isFinite(num)||num<=0)return null;
+  if(m[2]){{
+    var den=parseFloat(m[2]);
+    if(!isFinite(den)||den<=0)return null;
+    num=num/den;
+  }}
+  return {{n:num, u:(m[3]||'').trim().toLowerCase()}};
+}}
+
+// Normalize a unit for matching — strip trailing 's' so "cup" matches "cups",
+// "slice" matches "slices". "g" stays "g". Empty stays empty. Doesn't try
+// to convert between unit families (g vs kg, oz vs lb) — too risky for an
+// auto-update without an explicit conversion table.
+function _normUnit(u){{ return (u||'').toLowerCase().replace(/s$/,''); }}
+
+// Called on every keystroke in the quantity field of an editFood form.
+// Re-derives cal / P / C / F by proportional scaling FROM THE ORIGINAL
+// values stored on the input's dataset. If the units don't match (or
+// either string lacks a leading number), leaves the macro fields alone —
+// the user can edit them manually for non-trivial portion changes.
+function onServingInput(id){{
+  var qEl=document.getElementById('ef-q-'+id);
+  if(!qEl)return;
+  var op=_parseServing(qEl.dataset.origQ||'');
+  var np=_parseServing(qEl.value);
+  if(!op||!np)return;
+  if(_normUnit(op.u)!==_normUnit(np.u))return;
+  var ratio=np.n/op.n;
+  if(!isFinite(ratio)||ratio<=0)return;
+  var origC =parseFloat(qEl.dataset.origC )||0;
+  var origP =parseFloat(qEl.dataset.origP )||0;
+  var origCb=parseFloat(qEl.dataset.origCb)||0;
+  var origF =parseFloat(qEl.dataset.origF )||0;
+  // Calories as integer, grams to 1 decimal (matches how the entries display).
+  var cEl =document.getElementById('ef-c-' +id); if(cEl ) cEl .value=Math.round(origC *ratio);
+  var pEl =document.getElementById('ef-p-' +id); if(pEl ) pEl .value=Math.round(origP *ratio*10)/10;
+  var cbEl=document.getElementById('ef-cb-'+id); if(cbEl) cbEl.value=Math.round(origCb*ratio*10)/10;
+  var fEl =document.getElementById('ef-f-' +id); if(fEl ) fEl .value=Math.round(origF *ratio*10)/10;
+}}
+
 function editFood(id){{
   var f=findFood(id);if(!f)return;
+  // Stash the original quantity + macros on the quantity input's dataset so
+  // onServingInput can scale from those baselines. Means typing/erasing/
+  // re-typing the same quantity always returns to the original macros, and
+  // proportional changes are exact (not compounding from earlier scales).
+  var origQ =escA(f.quantity||'');
+  var origC =(f.calories??0);
+  var origP =(f.protein ??0);
+  var origCb=(f.carbs   ??0);
+  var origF =(f.fats    ??0);
   document.getElementById('food-row-'+id).innerHTML=
     '<div class="eform">'+
     '<input type="text" id="ef-n-'+id+'" value="'+escA(f.name)+'" placeholder="Food name">'+
-    '<input type="text" id="ef-q-'+id+'" value="'+escA(f.quantity||'')+'" placeholder="Quantity">'+
+    '<input type="text" id="ef-q-'+id+'" value="'+origQ+'" placeholder="Quantity"'+
+      ' data-orig-q="'+origQ+'"'+
+      ' data-orig-c="'+origC+'"'+
+      ' data-orig-p="'+origP+'"'+
+      ' data-orig-cb="'+origCb+'"'+
+      ' data-orig-f="'+origF+'"'+
+      ' oninput="onServingInput('+id+')">'+
     '<div class="emac">'+
     '<div class="emc"><label>Cal</label><input type="number" id="ef-c-'+id+'" value="'+(f.calories??'')+'" inputmode="numeric"></div>'+
     '<div class="emc"><label>P (g)</label><input type="number" id="ef-p-'+id+'" value="'+(f.protein??'')+'" inputmode="numeric"></div>'+
