@@ -1887,20 +1887,19 @@ footer{{
 
 /* ── COACHING PREFERENCES SUB-LABELS ──────────────────────
    Title row that sits above each .pref-card in the Coaching
-   preferences section. Sentence case Geist sans (not the
-   mono uppercase .settings-sub used by Demographics/Goals)
-   so the labels read at a glance without screaming for
-   attention. Flex container lets reminders dock its on/off
-   toggle on the right while food/coaching cards have just
-   the label. */
+   preferences section. Title Case Geist sans (not the mono
+   uppercase .settings-sub used by Demographics/Goals) so the
+   labels read at a glance as proper sub-section headers. Flex
+   container lets Reminders dock its on/off toggle on the right
+   while Logging / Coaching Style have just the label. */
 .cp-row{{
   display:flex;align-items:center;justify-content:space-between;
-  margin:14px 2px 6px;gap:10px;
+  margin:18px 2px 8px;gap:10px;
 }}
-.cp-row:first-of-type{{margin-top:6px}}
+.cp-row:first-of-type{{margin-top:10px}}
 .cp-label{{
-  font-size:12.5px;font-weight:600;letter-spacing:-.005em;
-  color:var(--tx2);line-height:1.2;
+  font-size:13px;font-weight:600;letter-spacing:-.012em;
+  color:var(--tx);line-height:1.2;
 }}
 </style>
 </head>
@@ -1915,15 +1914,15 @@ footer{{
       <div class="nav-section-lbl">Dashboard</div>
       <button class="navitem active" id="nav-day" onclick="switchTab('day')">
         <span class="ni-ico"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="16.5" rx="3"/><path d="M3 9.5h18M8 2.5v4M16 2.5v4"/><circle cx="12" cy="15" r="1.8" fill="currentColor" stroke="none"/></svg></span>
-        <span class="ni-lbl">Day</span><span class="ni-meta">Today</span>
+        <span class="ni-lbl">Daily</span><span class="ni-meta">Today</span>
       </button>
       <button class="navitem" id="nav-week" onclick="switchTab('week')">
         <span class="ni-ico"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 16l5-5 4 4 8-9"/><path d="M16 6h5v5"/><path d="M3 21h18" opacity=".4"/></svg></span>
-        <span class="ni-lbl">Week</span><span class="ni-meta">Trends</span>
+        <span class="ni-lbl">Trends</span><span class="ni-meta">30 days</span>
       </button>
       <button class="navitem" id="nav-profile" onclick="switchTab('profile')">
         <span class="ni-ico"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.2 4-6.5 8-6.5s8 2.3 8 6.5"/></svg></span>
-        <span class="ni-lbl">Profile</span><span class="ni-meta">You</span>
+        <span class="ni-lbl">Client</span><span class="ni-meta">Profile</span>
       </button>
       <button class="navitem" id="nav-brain" onclick="switchTab('brain')">
         <span class="ni-ico"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="2.5" fill="currentColor" stroke="none"/><circle cx="5.5" cy="8" r="1.6"/><circle cx="18.5" cy="8" r="1.6"/><circle cx="5.5" cy="17" r="1.6"/><circle cx="18.5" cy="17" r="1.6"/><path d="M12 12L5.5 8M12 12L18.5 8M12 12L5.5 17M12 12L18.5 17" opacity=".55"/></svg></span>
@@ -2175,9 +2174,11 @@ footer{{
       </div>
     </div>
 
-    <!-- WHOOP RECOVERY — bottom of day, only when connected. Title is the
-         active device name (Whoop / Apple Health) via #health-mod-title. -->
-    <div id="whoop-module" style="display:none">
+    <!-- WHOOP / APPLE HEALTH — bottom of day, only when connected. Title is
+         the active device name (Whoop / Apple Health) via #health-mod-title.
+         Extra top margin separates the module from the workout log above it
+         so the wearable data reads as its own zone of the day. -->
+    <div id="whoop-module" style="display:none;margin-top:32px">
       <div class="stitle spaced">
         <span style="display:inline-flex;align-items:center"><span id="health-brand" style="display:inline-flex;margin-right:7px"></span><span id="health-mod-title">Whoop</span> <span id="whoop-date" style="font-family:'Geist Mono','SF Mono',monospace;font-weight:400;opacity:.6;font-size:9px;letter-spacing:.04em;margin-left:6px"></span></span>
         <button class="add-toggle" id="whoop-sync-btn" onclick="syncWhoop()" title="Sync" style="font-size:15px;font-family:inherit">&#8635;</button>
@@ -2373,7 +2374,7 @@ footer{{
     </div>
 
     <div class="cp-row">
-      <div class="cp-label">Food logging</div>
+      <div class="cp-label">Logging Style</div>
     </div>
     <div class="pref-card" id="food-mode-card">
       <input type="range" class="pref-range" id="food-mode-range" min="0" max="2" step="1" value="1"
@@ -2387,7 +2388,7 @@ footer{{
     </div>
 
     <div class="cp-row">
-      <div class="cp-label">Coaching style</div>
+      <div class="cp-label">Coaching Style</div>
     </div>
     <div class="pref-card" id="coach-style-card">
       <input type="range" class="pref-range" id="coach-style-range" min="0" max="2" step="1" value="1"
@@ -2488,13 +2489,13 @@ footer{{
                 so AI-coaching content speaks one visual dialect). -->
 <nav class="bottomnav">
   <button class="bn-item active" id="bn-day" onclick="switchTab('day')">
-    <span class="bn-ico"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="2.5" fill="currentColor" stroke="none"/></svg></span>Day
+    <span class="bn-ico"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="2.5" fill="currentColor" stroke="none"/></svg></span>Daily
   </button>
   <button class="bn-item" id="bn-week" onclick="switchTab('week')">
-    <span class="bn-ico"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 17l5-5 3.5 3.5 8-8.5"/><path d="M15 7h5.5v5.5"/></svg></span>Week
+    <span class="bn-ico"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 17l5-5 3.5 3.5 8-8.5"/><path d="M15 7h5.5v5.5"/></svg></span>Trends
   </button>
   <button class="bn-item" id="bn-profile" onclick="switchTab('profile')">
-    <span class="bn-ico"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8.5" r="3.5"/><path d="M5.5 20.5c.7-3.5 3.4-5.5 6.5-5.5s5.8 2 6.5 5.5"/></svg></span>Profile
+    <span class="bn-ico"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8.5" r="3.5"/><path d="M5.5 20.5c.7-3.5 3.4-5.5 6.5-5.5s5.8 2 6.5 5.5"/></svg></span>Client
   </button>
   <button class="bn-item" id="bn-brain" onclick="switchTab('brain')">
     <span class="bn-ico"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="2.5" fill="currentColor" stroke="none"/><circle cx="5.5" cy="8" r="1.6"/><circle cx="18.5" cy="8" r="1.6"/><circle cx="5.5" cy="17" r="1.6"/><circle cx="18.5" cy="17" r="1.6"/><path d="M12 12L5.5 8M12 12L18.5 8M12 12L5.5 17M12 12L18.5 17" opacity=".55"/></svg></span>Brain
@@ -2612,8 +2613,8 @@ async function loadInsights(){{
 
 // ── Tab switching ─────────────────────────────────────────────────────────
 var PAGE_HEADS={{
-  week:{{title:'Your trends',sub:'LAST 30 DAYS'}},
-  profile:{{title:'Your profile',sub:'ACCOUNT &amp; SETTINGS'}},
+  week:{{title:'Trends',sub:'LAST 30 DAYS'}},
+  profile:{{title:'Client',sub:'PROFILE &amp; SETTINGS'}},
   brain:{{title:"Arnie's brain",sub:'LIVE &mdash; UPDATES AS ARNIE LEARNS'}},
 }};
 function switchTab(name){{
@@ -3330,7 +3331,16 @@ function applyMacroView(){{
       }}else{{
         var left = Math.max(0, tgt - val);
         nEl.textContent = (numId === 'cal-val') ? left.toLocaleString() : (left + 'g');
-        if(sEl) sEl.textContent = (numId === 'cal-val') ? 'calories left' : 'protein left';
+        // Per-tile label — old code hardcoded "protein left" for every
+        // non-calorie tile, which read wrong for carbs/fats once those
+        // targets started getting populated.
+        if(sEl){{
+          var _leftLbl = {{'cal-val':'calories left',
+                          'pro-val':'protein left',
+                          'carb-val':'carbs left',
+                          'fat-val':'fat left'}}[numId] || 'left';
+          sEl.textContent = _leftLbl;
+        }}
       }}
     }}else{{
       nEl.textContent = (numId === 'cal-val') ? val.toLocaleString() : (val + 'g');
