@@ -18,8 +18,6 @@ import stripe
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
 from api.templates import _dashboard_html, _apple_guide_html
-from api.brain_page import _brain_html
-from api.brain_insights import generate_lobe_insight
 from core.urls import dashboard_url
 from pydantic import BaseModel, field_validator
 
@@ -3020,52 +3018,6 @@ async def dashboard(token: str):
     return HTMLResponse(_dashboard_html(
         token, name=name, bot_username=bot_username, brain_enabled=_brain_enabled,
     ))
-
-
-@app.get("/brain/{token}", response_class=HTMLResponse)
-async def brain(token: str):
-    """Arnie's Brain — live mindmap of learned facts. Renders the React page;
-    data is fetched client-side from /api/profile/{token} (same endpoint the
-    Profile tab uses). Embedded as an iframe in panel-brain on the dashboard."""
-    async with AsyncSessionLocal() as db:
-        user = await get_user_by_webhook_token(db, token)
-        if not user:
-            return HTMLResponse("<h2>Invalid or expired link.</h2>", status_code=401)
-    return HTMLResponse(_brain_html(token))
-
-
-class _BrainInsightRequest(BaseModel):
-    """Payload from the Brain page when a lobe panel opens."""
-    lobe_id: str
-    lobe_name: Optional[str] = None     # human-readable, falls back to id
-    lobe_short: Optional[str] = None    # uppercase short, e.g. "NUTRITION"
-    nodes: list[dict]                   # [{label, value or chips, state}, ...]
-
-
-@app.post("/api/brain/insights/{token}")
-async def brain_insight(token: str, payload: _BrainInsightRequest):
-    """Generate a personalized 2–4 sentence coaching paragraph for the
-    given lobe, in Arnie's voice, referencing the user's actual parameter
-    values. Falls through with {ok: false} on any failure so the frontend
-    can drop back to its static `coaching:` string. Caches by lobe
-    signature so re-opening the same lobe is instant."""
-    async with AsyncSessionLocal() as db:
-        user = await get_user_by_webhook_token(db, token)
-        if not user:
-            raise HTTPException(status_code=401, detail="Invalid token")
-
-    result = await generate_lobe_insight(
-        user_id=user.id,
-        lobe_id=payload.lobe_id,
-        lobe_name=payload.lobe_name or payload.lobe_id.title(),
-        lobe_short=payload.lobe_short or payload.lobe_id.upper(),
-        nodes=payload.nodes or [],
-    )
-    if not result:
-        return JSONResponse({"ok": False}, status_code=200)
-    return {"ok": True, **result}
-
-
 
 
 
