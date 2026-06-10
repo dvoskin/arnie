@@ -625,6 +625,32 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 if profile.get("goal_weight_lbs"):
                     user.goal_weight_kg = round(profile["goal_weight_lbs"] / 2.20462, 2)
                 user.onboarding_completed = True
+
+                # Persist macro targets (Step 5 of /join). All four fields are
+                # optional — older /join builds won't include them, in which
+                # case the targets_unset nudge will fire on the user's first
+                # message exactly like before.
+                if any(profile.get(k) is not None for k in
+                       ("calorie_target", "protein_target", "carb_target", "fat_target")):
+                    from db.models import UserPreferences
+                    prefs = user.preferences
+                    if not prefs:
+                        prefs = UserPreferences(user_id=user.id)
+                        db.add(prefs)
+                    if profile.get("calorie_target") is not None:
+                        prefs.calorie_target = int(profile["calorie_target"])
+                    if profile.get("protein_target") is not None:
+                        prefs.protein_target = int(profile["protein_target"])
+                    if profile.get("carb_target") is not None:
+                        prefs.carb_target = int(profile["carb_target"])
+                    if profile.get("fat_target") is not None:
+                        prefs.fat_target = int(profile["fat_target"])
+                    logger.info(
+                        f"SETUP-XXX targets applied for user {user.id}: "
+                        f"cals={prefs.calorie_target} P={prefs.protein_target}g "
+                        f"C={prefs.carb_target}g F={prefs.fat_target}g"
+                    )
+
                 await db.commit()
 
                 # Enable check-ins and ensure webhook token exists

@@ -732,6 +732,14 @@ class PreRegisterPayload(BaseModel):
     dietary_preferences: Optional[str] = None
     timezone: Optional[str] = None       # IANA tz string, e.g. "America/New_York"
     goal_weight_lbs: Optional[float] = None  # only meaningful for cut/bulk goals
+    # Optional targets captured at /join Step 5. Auto-calculated client-side
+    # (same math as core/targets.py), editable by the user. Persisted into
+    # user_preferences when the SETUP-XXXXXX code is consumed so the bot
+    # skips the [COACH NOTE — targets_unset] nudge entirely for these users.
+    calorie_target: Optional[int] = None
+    protein_target: Optional[int] = None
+    carb_target:    Optional[int] = None
+    fat_target:     Optional[int] = None
 
 
 _VALID_GOALS = {"cut", "bulk", "maintain", "performance", "health"}
@@ -773,6 +781,18 @@ async def api_preregister(payload: PreRegisterPayload, request: Request):
     if not (20 <= payload.weight_kg <= 400):
         raise HTTPException(status_code=422, detail="Weight out of range")
 
+    # Validate target ranges (mirrors the client-side input min/max in /join Step 5).
+    # All four are optional — present when the user reaches Step 5, absent for
+    # legacy clients posting from an older /join build.
+    if payload.calorie_target is not None and not (800 <= payload.calorie_target <= 6000):
+        raise HTTPException(status_code=422, detail="Calorie target out of range")
+    if payload.protein_target is not None and not (20 <= payload.protein_target <= 500):
+        raise HTTPException(status_code=422, detail="Protein target out of range")
+    if payload.carb_target is not None and not (0 <= payload.carb_target <= 800):
+        raise HTTPException(status_code=422, detail="Carb target out of range")
+    if payload.fat_target is not None and not (10 <= payload.fat_target <= 300):
+        raise HTTPException(status_code=422, detail="Fat target out of range")
+
     profile = {
         "name": payload.name.strip()[:80],
         "age": payload.age,
@@ -784,6 +804,11 @@ async def api_preregister(payload: PreRegisterPayload, request: Request):
         "dietary_preferences": (payload.dietary_preferences or "").strip()[:200] or None,
         "timezone": payload.timezone or None,
         "goal_weight_lbs": round(payload.goal_weight_lbs, 1) if payload.goal_weight_lbs else None,
+        # Targets — None when missing keeps existing behavior intact.
+        "calorie_target": payload.calorie_target,
+        "protein_target": payload.protein_target,
+        "carb_target":    payload.carb_target,
+        "fat_target":     payload.fat_target,
     }
 
     from db.queries import create_pre_registration
@@ -793,7 +818,15 @@ async def api_preregister(payload: PreRegisterPayload, request: Request):
     bot_username = os.getenv("TELEGRAM_BOT_USERNAME", "Arnie_1026_Bot")
     bot_link = f"https://t.me/{bot_username}?start={code}"
 
-    logger.info(f"Pre-registration created: code={code} name={profile['name']} goal={profile['primary_goal']}")
+    _tgt = (
+        f" targets={profile['calorie_target']}/{profile['protein_target']}/"
+        f"{profile['carb_target']}/{profile['fat_target']}"
+        if profile.get("calorie_target") else ""
+    )
+    logger.info(
+        f"Pre-registration created: code={code} name={profile['name']} "
+        f"goal={profile['primary_goal']}{_tgt}"
+    )
     return {"ok": True, "code": code, "bot_link": bot_link}
 
 
