@@ -303,6 +303,11 @@ function NodeDot({ node, e, theme, sel, fresh, freshTick, onSelect, pulse, offse
   const [hover, setHover] = useStateL(false);
   const ds = dotStyle(node, theme, sel, fresh);
   const lit = sel || fresh || hover;
+  // Label visibility: hover + fresh-flash still show the inline name so
+  // the user can see what they're about to tap. Selection HIDES the
+  // label — the detail card already surfaces the name, and the dual
+  // label feels redundant when the card is open.
+  const showLabel = !sel && (hover || fresh);
   // pulse (0..1) is the wave amplification from the ripple emitted on
   // the most recent click. Boosts scale + glow as the ring sweeps past.
   const p = pulse || 0;
@@ -327,11 +332,11 @@ function NodeDot({ node, e, theme, sel, fresh, freshTick, onSelect, pulse, offse
           transition: ds.transition }}></span>
       </span>
       <span title={node.label} style={{
-        position: "absolute", top: "calc(50% + 12px)", left: "50%", transform: `translateX(-50%) translateY(${lit ? 0 : -3}px)`,
+        position: "absolute", top: "calc(50% + 12px)", left: "50%", transform: `translateX(-50%) translateY(${showLabel ? 0 : -3}px)`,
         maxWidth: 120, textAlign: "center", lineHeight: 1.18, whiteSpace: "nowrap",
         fontFamily: "'Geist Mono','DM Mono', monospace", fontSize: 10, letterSpacing: "0.02em",
         color: theme.labelSel, fontWeight: 500,
-        opacity: lit ? 1 : 0, transition: "opacity .25s ease, transform .25s ease", pointerEvents: "none",
+        opacity: showLabel ? 1 : 0, transition: "opacity .25s ease, transform .25s ease", pointerEvents: "none",
         textShadow: theme.name === "dark" ? "0 1px 8px rgba(0,0,0,0.9)" : "0 1px 6px rgba(255,255,255,0.95)" }}>
         {node.label}
       </span>
