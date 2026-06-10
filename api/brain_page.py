@@ -246,17 +246,22 @@ function lobePositions(lobes, w, h, half) {
 // as a small galaxy instead of a cramped wheel. Group consecutive nodes
 // with the same parentLabel onto the same ring when possible so each
 // chip group reads as a cohesive arc rather than alternating in-out-in.
-function layoutLocal(nodes, half) {
+function layoutLocal(nodes, half, isMobile) {
   if (half == null) half = HALF;
   // Scale internal ring radii proportional to half so dots stay inside
-  // the wrapper on smaller (mobile) lobes.
+  // the wrapper on smaller (mobile) lobes. Mobile additionally packs
+  // dense clusters ~30% tighter so a 30-37 dot lobe (NUTRITION,
+  // FITNESS, HEALTH) doesn't sprawl into adjacent lobes' wrappers on a
+  // 375px-wide ring.
   const k = half / HALF;
   const n = nodes.length;
   if (n <= 1) return nodes.map((node) => ({ id: node.id, lx: half, ly: half }));
 
   if (n <= 7) {
-    // Small lobe — single tidy ring.
-    const R = Math.min(86 * k, (28 + n * 6) * k);
+    // Small lobe — single tidy ring. Pull slightly closer on mobile.
+    const Rcap = isMobile ? 70 : 86;
+    const Rgrow = isMobile ? 4.5 : 6;
+    const R = Math.min(Rcap * k, (24 + n * Rgrow) * k);
     return nodes.map((node, i) => {
       const ang = (-90 + i * (360 / n)) * Math.PI / 180;
       return { id: node.id, lx: half + Math.cos(ang) * R, ly: half + Math.sin(ang) * R };
@@ -270,7 +275,10 @@ function layoutLocal(nodes, half) {
   // a star). sqrt(i/n) radius distribution keeps the density uniform from
   // centre to rim instead of bunching at the edge.
   const goldenAngle = Math.PI * (3 - Math.sqrt(5));     // ~137.508°
-  const maxR = Math.min(108 * k, (50 + n * 3.5) * k);
+  const cap   = isMobile ? 76  : 108;
+  const grow  = isMobile ? 2.4 : 3.5;
+  const baseR = isMobile ? 34  : 50;
+  const maxR = Math.min(cap * k, (baseR + n * grow) * k);
   const minR = 6 * k;                                    // hollow centre
   return nodes.map((node, i) => {
     const t = (i + 0.5) / n;                             // 0..1
@@ -410,21 +418,29 @@ function BrainConstellationLive({ lobes, theme, freshId, freshTick, selectedId, 
   // forwards the dot's world-space origin upstream — the App uses that to
   // anchor the mini detail card right next to the tapped dot instead of
   // pinning it to the bottom of the screen.
+  //
+  // Mobile skips the ripple wave on a single-dot click — the expanding
+  // ring + spark plays badly on phone GPUs and the visual win isn't
+  // worth the dropped frames. Lobe clicks still ripple because there
+  // are fewer of them and the larger animation reads as deliberate.
   function selectWithRipple(id, originX, originY) {
-    if (id != null && originX != null) emitWave(originX, originY);
+    if (!isMobile && id != null && originX != null) emitWave(originX, originY);
     onSelect(id, originX, originY);
   }
   function selectLobeWithRipple(lobeId, originX, originY) {
-    if (originX != null) emitWave(originX, originY, waveLobeRange, waveLobeDur);
+    if (!isMobile && originX != null) emitWave(originX, originY, waveLobeRange, waveLobeDur);
     if (onSelectLobe) onSelectLobe(lobeId);
   }
 
   // Wave-pulse multiplier for a given (x,y). Returns 0 outside the
-  // sweeping band, 0..1 inside it. Computed on every render — fine
-  // because the constellation's existing animation loop is constantly
-  // re-rendering anyway via setTick.
+  // sweeping band, 0..1 inside it. Computed on every render — fine on
+  // desktop because the constellation's existing animation loop is
+  // constantly re-rendering anyway via setTick. Skipped on mobile
+  // because the per-dot Math.sqrt() per frame was the biggest perf hit
+  // and mobile already skips the originating ripple, so there's no
+  // wave to sweep across.
   function wavePulseFor(x, y) {
-    if (!wave) return 0;
+    if (isMobile || !wave) return 0;
     const elapsed = (typeof performance !== "undefined" ? performance.now() : 0) - wave.t0;
     if (elapsed < 0 || elapsed > wave.dur) return 0;
     const progress = elapsed / wave.dur;
@@ -470,18 +486,24 @@ function BrainConstellationLive({ lobes, theme, freshId, freshTick, selectedId, 
     });
     lobes.forEach((l, li) => {
       const c = centers[l.id] || { x: W / 2, y: H / 2 };
-      const bornX = W / 2 - c.x + half;
-      const bornY = H / 2 - c.y + half;
-      layoutLocal(l.nodes, half).forEach((loc, ni) => {
+      // Mobile skips the big-bang origin and just drops every dot at its
+      // final position with full opacity — the animated cascade was the
+      // single biggest source of dropped frames on phone GPUs. Desktop
+      // keeps the originate-from-centre flourish.
+      const bornX = isMobile ? null : (W / 2 - c.x + half);
+      const bornY = isMobile ? null : (H / 2 - c.y + half);
+      layoutLocal(l.nodes, half, isMobile).forEach((loc, ni) => {
         present.add(loc.id);
         const e = pos.current.get(loc.id);
         if (!e) {
-          // First time we've seen this dot — schedule it into the cascade.
-          // Faster lobe stagger (35ms vs 75ms) so all dots feel like part
-          // of the same outward burst, not lobe-by-lobe waves.
-          const delay = 50 + li * 35 + ni * 12;     // ms before this dot starts tweening
+          // First time we've seen this dot — schedule it into the cascade
+          // on desktop; on mobile, snap straight to the target.
+          const delay = isMobile ? 0 : (50 + li * 35 + ni * 12);
           pos.current.set(loc.id, {
-            x: bornX, y: bornY, s: 0, o: 0,
+            x: isMobile ? loc.lx : bornX,
+            y: isMobile ? loc.ly : bornY,
+            s: isMobile ? 1 : 0,
+            o: isMobile ? 1 : 0,
             tx: loc.lx, ty: loc.ly, ts: 1, to: 1,
             // Scatter displacement (world-space offset applied when the
             // detail card opens nearby). Tweens smoothly to 0 when the
@@ -491,9 +513,7 @@ function BrainConstellationLive({ lobes, theme, freshId, freshTick, selectedId, 
             lobe: l.id, removing: false,
             wcx: 0, wcy: 0,  // last computed world centre — set on render
             startAt: t0 + delay,
-            // Brief overshoot so the dot pops on arrival instead of
-            // creeping in.  Cleared a few frames after startAt fires.
-            popUntil: t0 + delay + 340,
+            popUntil: isMobile ? 0 : (t0 + delay + 340),
           });
         } else {
           e.tx = loc.lx; e.ty = loc.ly; e.ts = 1; e.to = 1; e.lobe = l.id; e.removing = false;
@@ -690,17 +710,17 @@ function BrainConstellationLive({ lobes, theme, freshId, freshTick, selectedId, 
                 // outside the influence zone barely budge, while dots right
                 // under the card open a clear pocket. The loop tweens
                 // e.dx/e.dy toward these targets each frame.
-                if (cardCenter && cardRadius && selectedId !== node.id) {
+                //
+                // Skipped on mobile: the per-dot Math.sqrt + tween every
+                // frame was a major source of dropped frames on phone
+                // GPUs. The card simply overlays the dots on mobile.
+                if (!isMobile && cardCenter && cardRadius && selectedId !== node.id) {
                   const fcx = worldX - cardCenter.x;
                   const fcy = worldY - cardCenter.y;
                   const d = Math.sqrt(fcx * fcx + fcy * fcy);
                   if (d > 0.5 && d < cardRadius) {
-                    // Quadratic falloff — dots right under the card get a
-                    // big push, dots at the edge of the influence zone
-                    // barely move. Mobile pushes harder (smaller stage, so
-                    // displacement reads as a stronger effect).
                     const force = Math.pow(1 - d / cardRadius, 1.6);
-                    const push = force * (isMobile ? 58 : 46);
+                    const push = force * 46;
                     e.dxT = (fcx / d) * push;
                     e.dyT = (fcy / d) * push;
                   } else {
@@ -2127,7 +2147,13 @@ function App() {
           parameter count + view toggle. Mobile collapses the trailing
           status suffix so the line doesn't crowd the BRAIN/LIST toggle. */}
       <div style={{ position: "absolute", top: 0, left: 0, right: 0, zIndex: 20,
-        padding: (size && size.w < 480) ? "14px 14px 10px" : "18px 22px 12px",
+        // Mobile reserves safe-area-inset-top so the iframe header
+        // doesn't tuck under the iPhone status bar / notch. The
+        // dashboard hides its own pagehead in brain-active mode, so the
+        // brain page is responsible for its own top safe area.
+        padding: (size && size.w < 480)
+          ? "calc(14px + env(safe-area-inset-top, 0px)) 14px 10px"
+          : "18px 22px 12px",
         display: "flex", alignItems: "center", gap: 10, pointerEvents: "none",
         background: view === "list" ? `linear-gradient(${mode === "dark" ? "#0a110fcc" : "#ffffffcc"}, transparent)` : "none",
         backdropFilter: view === "list" ? "blur(2px)" : "none" }}>
@@ -2327,7 +2353,7 @@ function App() {
           try { return new URLSearchParams(window.location.search).get("bot") || "arnie"; }
           catch (e) { return "arnie"; }
         })();
-        const telegramHref = "https://t.me/" + botUsername.replace(/^@/, "");
+        const telegramHref = "tg://resolve?domain=" + botUsername.replace(/^@/, "");
         return (
           <>
             {/* Backdrop — lets the constellation peek through (faded teaser
@@ -2463,22 +2489,25 @@ function App() {
           escalates to the full lobe panel. */}
       {view === "brain" && (() => {
         const compact = size && size.w < 480;
-        const cardW = compact ? 248 : 320;
-        // Anchor — position the card at the selected dot's world coords.
-        // Without pan/zoom (the common case on mobile) world ≈ screen, so
-        // a `position: absolute` layer over the stage hits the same spot.
-        const stageH = (size && size.h) || 0;
+        // Mobile cards now span nearly the full viewport (12px gutter
+        // each side) so info has room to lay out horizontally — chip
+        // groups, spec lines, escalation can all sit closer to their
+        // labels. Desktop stays as a focused 320px floating card.
         const stageW = (size && size.w) || 0;
+        const cardW = compact ? Math.min(stageW - 24, 360) : 320;
+        const stageH = (size && size.h) || 0;
         const px = selectedPos ? selectedPos.x : (stageW / 2);
         const py = selectedPos ? selectedPos.y : (stageH / 2);
         // Place card above when the dot is in the lower half of the stage,
         // else below — keeps it from running off the edge.
         const placeAbove = py > stageH * 0.55;
-        const cardMaxH = compact ? 240 : 300;
-        const gap = compact ? 28 : 32;
+        const cardMaxH = compact ? 220 : 300;
+        const gap = compact ? 24 : 32;
         // Clamp horizontal centre so card never bleeds past the viewport.
         const halfW = cardW / 2;
-        const cx = Math.max(halfW + 10, Math.min(stageW - halfW - 10, px));
+        const cx = compact
+          ? (stageW / 2)
+          : Math.max(halfW + 10, Math.min(stageW - halfW - 10, px));
         return (
           <div onClick={() => { setSelectedId(null); setSelectedPos(null); }}
             style={{ position: "absolute", inset: 0, zIndex: 22,
@@ -2489,77 +2518,68 @@ function App() {
               transform: `translate(-50%, ${placeAbove ? `calc(-100% - ${gap}px)` : `${gap}px`}) translateY(${node ? 0 : (placeAbove ? -8 : 8)}px)`,
               width: cardW,
               background: theme.cardBg, border: `1px solid ${theme.cardBorder}`,
-              borderRadius: compact ? 12 : 14,
+              borderRadius: compact ? 10 : 14,
               backdropFilter: "blur(14px)",
               boxShadow: "0 18px 44px -18px rgba(0,0,0,0.5)",
-              padding: node ? (compact ? "10px 12px 9px" : "13px 15px 11px") : 0,
+              padding: node ? (compact ? "9px 12px 8px" : "13px 15px 11px") : 0,
               maxHeight: node ? cardMaxH : 0, opacity: node ? 1 : 0,
               overflow: "hidden",
-              transition: "all .26s cubic-bezier(.4,0,.2,1)",
+              transition: "all .22s cubic-bezier(.4,0,.2,1)",
               cursor: "default" }}>
               {node && (
                 <>
-                  {/* Header — LOBE caption gets the visual weight: brighter
-                      colour, slightly larger letter-spacing, a green dot at
-                      the head. The dot's STATE indicator collapses to a
-                      single colour cue on the lobe dot when confirmed; for
-                      learning/inferred a tiny hollow ring replaces it.
-                      Mobile drops the verbose state pill entirely — dot
-                      colour + the constellation context already convey it. */}
+                  {/* Header — quiet metadata strip. Tiny state dot, lobe
+                      name in muted mono caps, close × on the far right.
+                      No state badge — the dot colour already says it and
+                      the visual weight belongs to the value below. */}
                   <div style={{ display: "flex", alignItems: "center",
                     gap: compact ? 7 : 8,
-                    marginBottom: compact ? 7 : 9 }}>
-                    <span style={{ width: 6, height: 6, borderRadius: "50%", flexShrink: 0,
+                    marginBottom: compact ? 8 : 10 }}>
+                    <span style={{ width: 5.5, height: 5.5, borderRadius: "50%", flexShrink: 0,
                       background: node.state === "confirmed" ? theme.known : "transparent",
-                      border: node.state === "confirmed" ? "none" : `1.3px solid ${stateCol(node.state)}`,
-                      boxShadow: node.state === "confirmed" ? `0 0 7px ${theme.known}` : "none" }}></span>
+                      border: node.state === "confirmed" ? "none" : `1.3px solid ${stateCol(node.state)}` }}></span>
                     <span style={{ fontFamily: "'Geist Mono','SF Mono', monospace",
-                      fontSize: compact ? 10 : 10.5, fontWeight: 600,
-                      letterSpacing: "0.14em", textTransform: "uppercase",
-                      color: compact ? theme.cardTitle : theme.subText,
+                      fontSize: compact ? 9 : 9.5, fontWeight: 500,
+                      letterSpacing: "0.16em", textTransform: "uppercase",
+                      color: theme.subText, opacity: 0.7,
                       flex: 1, minWidth: 0,
                       overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                       {node.lobe}
                     </span>
-                    {!compact && (
-                      <span style={{ fontFamily: "'Geist Mono','SF Mono', monospace",
-                        fontSize: 9.5, fontWeight: 500,
-                        letterSpacing: "0.06em", color: stateCol(node.state), textTransform: "lowercase",
-                        border: `1px solid ${stateCol(node.state)}`, opacity: 0.85,
-                        borderRadius: 6, padding: "2px 7px", whiteSpace: "nowrap" }}>{stateMeta(node.state)}</span>
-                    )}
                     <button onClick={() => { setSelectedId(null); setSelectedPos(null); }} aria-label="Close" style={{
-                      width: compact ? 18 : 22, height: compact ? 18 : 22, borderRadius: 5, border: "none", background: "transparent",
+                      width: compact ? 18 : 20, height: compact ? 18 : 20,
+                      borderRadius: 4, border: "none", background: "transparent",
                       color: theme.iconText, cursor: "pointer", display: "grid", placeItems: "center",
-                      fontSize: compact ? 13 : 15, lineHeight: 1, opacity: 0.5, padding: 0, flexShrink: 0 }}>×</button>
+                      fontSize: compact ? 13 : 14, lineHeight: 1, opacity: 0.4, padding: 0, flexShrink: 0 }}>×</button>
                   </div>
 
                   {/* Title + value rhythm — exploded chip vs regular slot.
-                      Mobile shrinks both type sizes and tightens spacing so
-                      the card reads as a quiet card-within-the-constellation
-                      instead of a separate sheet. */}
+                      Title takes the visual weight; spec sits right under
+                      it as a soft sub-line; parent caption tucked above
+                      the sibling chips as the smallest hint. */}
                   {node.parentLabel ? (
                     <>
                       <div style={{ fontFamily: "'Geist', system-ui, sans-serif",
                         fontSize: compact ? 15 : 22, fontWeight: 600,
-                        color: theme.cardVal, lineHeight: 1.2, letterSpacing: "-.011em",
-                        marginBottom: node.spec ? (compact ? 2 : 4) : (compact ? 4 : 10),
+                        color: theme.cardVal, lineHeight: 1.15, letterSpacing: "-.013em",
+                        marginBottom: node.spec ? (compact ? 2 : 5) : (compact ? 6 : 12),
                         overflow: "hidden", textOverflow: "ellipsis",
                         display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>{node.label}</div>
                       {node.spec && (
                         <div style={{ fontFamily: "'Geist', system-ui, sans-serif",
-                          fontSize: compact ? 11 : 12, fontWeight: 400,
-                          color: theme.subText, opacity: 0.85, lineHeight: 1.3,
+                          fontSize: compact ? 11 : 13, fontWeight: 400,
+                          color: theme.subText, opacity: 0.9, lineHeight: 1.3,
                           letterSpacing: "-.003em",
-                          marginBottom: compact ? 6 : 8,
+                          marginBottom: compact ? 7 : 11,
                           overflow: "hidden", textOverflow: "ellipsis",
                           display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>{node.spec}</div>
                       )}
                       <div style={{ fontFamily: "'Geist Mono','SF Mono', monospace",
-                        fontSize: compact ? 8.5 : 9.5, fontWeight: 500,
-                        letterSpacing: "0.10em", textTransform: "uppercase", color: theme.subText,
-                        opacity: 0.65, marginBottom: compact ? 6 : 8 }}>
-                        Part of · {node.parentLabel}
+                        fontSize: 8.5, fontWeight: 500,
+                        letterSpacing: "0.14em", textTransform: "uppercase", color: theme.subText,
+                        opacity: 0.5,
+                        marginBottom: compact ? 4 : 7 }}>
+                        {node.parentLabel}
                       </div>
                       {(() => {
                         const parent = lobes.find((l) => l.id === node.lobeId);
@@ -2570,28 +2590,26 @@ function App() {
                         const visible = compact && siblings.length > 4 ? siblings.slice(0, 3) : siblings;
                         const hiddenCount = siblings.length - visible.length;
                         return (
-                          <div style={{ display: "flex", flexWrap: "wrap", gap: compact ? 4 : 6 }}>
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: compact ? 5 : 6 }}>
                             {visible.map((s) => {
                               const isCurrent = s.id === node.id;
                               return (
                                 <span key={s.id} style={{
-                                  fontFamily: "'Geist Mono','SF Mono', monospace",
-                                  fontSize: compact ? 9.5 : 11, fontWeight: 500, letterSpacing: "0.02em",
+                                  fontFamily: "'Geist', system-ui, sans-serif",
+                                  fontSize: compact ? 11 : 12, fontWeight: 500, letterSpacing: "-.005em",
                                   color: isCurrent ? theme.known : theme.cardVal,
-                                  background: "transparent",
-                                  border: `1px solid ${isCurrent ? theme.known : theme.cardBorder}`,
-                                  borderRadius: 4, padding: compact ? "2.5px 7px" : "4px 9px 4px 8px",
+                                  background: isCurrent ? `${theme.known}14` : (theme.name === "dark" ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.03)"),
+                                  border: `1px solid ${isCurrent ? theme.known + "88" : "transparent"}`,
+                                  borderRadius: 999,
+                                  padding: compact ? "3px 9px" : "4px 11px",
                                   whiteSpace: "nowrap",
-                                  boxShadow: isCurrent
-                                    ? `0 0 14px ${theme.known}44, inset 0 0 8px ${theme.known}22`
-                                    : "none",
-                                  transition: "all .22s ease",
-                                  display: "inline-flex", alignItems: "center", gap: compact ? 4 : 6 }}>
-                                  <span style={{ width: 3.5, height: 3.5, borderRadius: "50%",
-                                    flexShrink: 0,
-                                    background: isCurrent ? theme.known : "transparent",
-                                    border: isCurrent ? "none" : `1px solid ${theme.subText}`,
-                                    boxShadow: isCurrent ? `0 0 4px ${theme.known}` : "none" }} />
+                                  transition: "all .18s ease",
+                                  display: "inline-flex", alignItems: "center", gap: compact ? 5 : 6 }}>
+                                  {isCurrent && (
+                                    <span style={{ width: 4, height: 4, borderRadius: "50%",
+                                      flexShrink: 0, background: theme.known,
+                                      boxShadow: `0 0 5px ${theme.known}` }} />
+                                  )}
                                   {s.label}
                                 </span>
                               );
@@ -2599,9 +2617,9 @@ function App() {
                             {hiddenCount > 0 && (
                               <span style={{
                                 fontFamily: "'Geist Mono','SF Mono', monospace",
-                                fontSize: compact ? 9.5 : 10, fontWeight: 500, letterSpacing: "0.04em",
-                                color: theme.subText, opacity: 0.7,
-                                alignSelf: "center", padding: "3px 4px" }}>
+                                fontSize: compact ? 10 : 11, fontWeight: 500, letterSpacing: "0.02em",
+                                color: theme.subText, opacity: 0.55,
+                                alignSelf: "center", padding: "3px 6px" }}>
                                 +{hiddenCount}
                               </span>
                             )}
@@ -2611,15 +2629,15 @@ function App() {
                     </>
                   ) : (
                     <>
-                      <div style={{ fontFamily: "'Geist Mono','SF Mono', monospace",
-                        fontSize: compact ? 9.5 : 11, fontWeight: 500,
-                        letterSpacing: "0.02em", color: theme.cardTitle,
-                        opacity: 0.78,
-                        marginBottom: compact ? 3 : 6 }}>{node.label}</div>
+                      <div style={{ fontFamily: "'Geist', system-ui, sans-serif",
+                        fontSize: compact ? 11 : 13, fontWeight: 400,
+                        letterSpacing: "-.003em", color: theme.subText,
+                        opacity: 0.85,
+                        marginBottom: compact ? 2 : 6 }}>{node.label}</div>
                       {node.value ? (
                         <div style={{ fontFamily: "'Geist', system-ui, sans-serif",
-                          fontSize: compact ? 13 : 16, fontWeight: 600,
-                          color: theme.cardVal, lineHeight: 1.32, letterSpacing: "-.005em",
+                          fontSize: compact ? 16 : 20, fontWeight: 600,
+                          color: theme.cardVal, lineHeight: 1.22, letterSpacing: "-.012em",
                           textWrap: "pretty",
                           overflow: "hidden", textOverflow: "ellipsis",
                           display: "-webkit-box", WebkitLineClamp: compact ? 3 : 4, WebkitBoxOrient: "vertical" }}>{node.value}</div>
@@ -2627,17 +2645,15 @@ function App() {
                     </>
                   )}
 
-                  {/* Provenance footer — when the value carries an inline
-                      "(date, source)" we surface it as a tiny mono caption.
-                      Reads as system metadata, never competes with the
-                      headline. Hidden when neither field is present. */}
+                  {/* Provenance footer — tiny mono caption with the
+                      relative-time + source. Reads as system metadata. */}
                   {(node.date || node.source) && (
                     <div style={{
                       fontFamily: "'Geist Mono','SF Mono', monospace",
-                      fontSize: compact ? 8.5 : 9.5, fontWeight: 500,
-                      letterSpacing: "0.08em", textTransform: "uppercase",
-                      color: theme.subText, opacity: 0.6,
-                      marginTop: compact ? 7 : 9,
+                      fontSize: 8.5, fontWeight: 500,
+                      letterSpacing: "0.12em", textTransform: "uppercase",
+                      color: theme.subText, opacity: 0.45,
+                      marginTop: compact ? 6 : 12,
                       whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                       {[
                         node.date ? (window.brainFormatRelTime(node.date) || node.date) : null,
@@ -2646,28 +2662,28 @@ function App() {
                     </div>
                   )}
 
-                  {/* Escalation row — inline mono link to open the full
-                      lobe panel. Smaller, lighter type on mobile so it
-                      doesn't compete with the title. */}
+                  {/* Escalation row — small caption that opens the full
+                      lobe panel. Lighter than before (subtle divider,
+                      lowercase, no all-caps) so it doesn't compete with
+                      the value above. */}
                   {node.lobeId && (() => {
                     const parent = lobes.find((l) => l.id === node.lobeId);
                     if (!parent) return null;
                     return (
                       <div style={{
                         borderTop: `1px solid ${theme.cardBorder}`,
-                        marginTop: compact ? 8 : 11, paddingTop: compact ? 6 : 9 }}>
+                        marginTop: compact ? 7 : 13, paddingTop: compact ? 6 : 10,
+                        opacity: 0.85 }}>
                         <button onClick={() => { setSelectedLobeId(node.lobeId); setSelectedId(null); setSelectedPos(null); }}
                           style={{ background: "transparent", border: "none", padding: 0, cursor: "pointer",
-                            fontFamily: "'Geist Mono','SF Mono', monospace",
-                            fontSize: compact ? 9 : 10.5, fontWeight: 500,
-                            letterSpacing: "0.06em", color: theme.subText, textTransform: "uppercase",
-                            display: "inline-flex", alignItems: "center", gap: 5, transition: "color .15s",
-                            opacity: 0.85 }}
-                          onMouseEnter={(e) => { e.currentTarget.style.color = theme.cardVal; e.currentTarget.style.opacity = 1; }}
-                          onMouseLeave={(e) => { e.currentTarget.style.color = theme.subText; e.currentTarget.style.opacity = 0.85; }}>
-                          {compact
-                            ? `View all ${parent.nodes.length} →`
-                            : `View all ${parent.nodes.length} ${parent.short.toLowerCase()} parameters →`}
+                            fontFamily: "'Geist', system-ui, sans-serif",
+                            fontSize: compact ? 10.5 : 12, fontWeight: 500,
+                            letterSpacing: "-.003em", color: theme.subText,
+                            display: "inline-flex", alignItems: "center", gap: 4, transition: "color .15s" }}
+                          onMouseEnter={(e) => { e.currentTarget.style.color = theme.cardVal; }}
+                          onMouseLeave={(e) => { e.currentTarget.style.color = theme.subText; }}>
+                          View all {parent.nodes.length}
+                          <span aria-hidden="true" style={{ opacity: 0.6, marginLeft: 1 }}>→</span>
                         </button>
                       </div>
                     );

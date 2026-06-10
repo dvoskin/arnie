@@ -5659,7 +5659,7 @@ function renderChatThread(turns,initial){{
     <button class="cw-close" onclick="toggleChatWidget()" aria-label="Close">&#215;</button>
   </div>
   <div class="cw-thread" id="cw-thread"><div class="cw-state">Loading&hellip;</div></div>
-  <a class="cw-tg" href="https://t.me/{bot_username}" target="_blank" rel="noopener">
+  <a class="cw-tg" href="tg://resolve?domain={bot_username}" target="_blank" rel="noopener">
     <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M22 3 11 14"/><path d="M22 3 15 22l-4-8-8-4z"/></svg>
     New message on Telegram
   </a>

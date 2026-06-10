@@ -7,7 +7,7 @@ import stripe
 stripe.api_key = os.getenv("STRIPE_SECRET_KEY", "")
 
 PRICE_ID   = os.getenv("STRIPE_PRICE_ID", "")
-BOT_URL    = "https://t.me/Arnie_1026_Bot"
+BOT_URL    = "tg://resolve?domain=Arnie_1026_Bot"
 SITE_URL   = "https://tryarnie.com"
 
 

@@ -799,7 +799,7 @@ async def api_preregister(payload: PreRegisterPayload, request: Request):
         code = await create_pre_registration(db, profile)
 
     bot_username = os.getenv("TELEGRAM_BOT_USERNAME", "Arnie_1026_Bot")
-    bot_link = f"https://t.me/{bot_username}?start={code}"
+    bot_link = f"tg://resolve?domain={bot_username}&start={code}"
 
     _tgt = (
         f" targets={profile['calorie_target']}/{profile['protein_target']}/"
