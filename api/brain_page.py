@@ -354,6 +354,19 @@ function NodeDot({ node, e, theme, sel, fresh, freshTick, onSelect, pulse, offse
   const py = e.y + (offsetY || 0);
   const lx = isPhonePos ? Math.round(px) : px;
   const ly = isPhonePos ? Math.round(py) : py;
+  // Per-dot ambient drift — only on mobile, only when this dot isn't
+  // the selected/focused one (otherwise the card anchor would wobble).
+  // Each dot gets a stable phase derived from its id so the cluster
+  // breathes organically instead of pulsing in unison.
+  const driftHash = (() => {
+    const id = node.id || "";
+    let h = 5381;
+    for (let i = 0; i < id.length; i++) h = ((h << 5) + h + id.charCodeAt(i)) | 0;
+    return Math.abs(h);
+  })();
+  const driftDur = 9000 + (driftHash % 5000);                   // 9–14s
+  const driftDelay = -(driftHash % driftDur);                    // start mid-cycle
+  const drifting = isPhonePos && !sel && p < 0.05;
   return (
     <div onClick={(ev) => { ev.stopPropagation(); onSelect(sel ? null : node.id); }}
       onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
@@ -361,7 +374,10 @@ function NodeDot({ node, e, theme, sel, fresh, freshTick, onSelect, pulse, offse
         transform: `translate(-50%,-50%) scale(${(e.s * waveScale).toFixed(3)})`, opacity: e.o.toFixed(3),
         cursor: "pointer", zIndex: sel ? 8 : hover ? 7 : (p > 0.1 ? 6 : 2),
         transition: "z-index 0s" }}>
-      <span style={{ position: "relative", display: "grid", placeItems: "center" }}>
+      <span style={{ position: "relative", display: "grid", placeItems: "center",
+        animation: drifting ? `lvDotDrift ${driftDur}ms ease-in-out infinite` : "none",
+        animationDelay: drifting ? `${driftDelay}ms` : undefined,
+        willChange: drifting ? "transform" : "auto" }}>
         {fresh && <span key={freshTick} className="lvRipple" style={{ position: "absolute", width: ds.size + 4, height: ds.size + 4, borderRadius: "50%", border: `1.4px solid ${ds.col}` }}></span>}
         <svg width={ds.size} height={ds.size} viewBox={`0 0 ${ds.size} ${ds.size}`}
           shapeRendering="geometricPrecision"
@@ -1751,6 +1767,15 @@ function LobeInsightsPanel({ lobe, theme, onClose, stateMeta, stateCol }) {
   const confirmedCount = shown ? shown.nodes.filter((n) => n.state === "confirmed").length : 0;
   const learningCount = shown ? shown.nodes.filter((n) => n.state === "learning").length : 0;
 
+  // Collapsible parent groups. Every group of chip rows (Supplements,
+  // Exercises, etc.) starts closed so the panel reads as a glance-able
+  // table of contents rather than a wall of data. Single-value rows
+  // remain visible — they're already terse.  Resets per-lobe so opening
+  // a fresh lobe doesn't carry stale expanded keys from the previous one.
+  const [expanded, setExpanded] = useState({});
+  useEffect(() => { setExpanded({}); }, [lobe && lobe.id]);
+  const toggleGroup = (key) => setExpanded((e) => ({ ...e, [key]: !e[key] }));
+
   // ── AI-generated coaching insight ──────────────────────────────────────
   // Hits /api/brain/insights/{token} when the panel opens for a new lobe.
   // While the request is in flight we show a subtle "Arnie's thinking..."
@@ -1893,11 +1918,27 @@ function LobeInsightsPanel({ lobe, theme, onClose, stateMeta, stateCol }) {
                 const isPhonePanel = (typeof window !== "undefined" && window.innerWidth < 480);
                 const railBgAlpha = isPhonePanel ? "0.055" : "0.018";
                 const railBg = `rgba(${theme.name === "dark" ? "255,255,255," + railBgAlpha : "0,0,0," + (isPhonePanel ? "0.04" : "0.018")})`;
+                // Group collapsed by default. If the row belongs to a
+                // collapsed parent group, render nothing (the toggle row
+                // already rendered when isNewGroup fired).
+                const isOpen = !n.parentLabel || !!expanded[n.parentLabel];
+                if (n.parentLabel && !isNewGroup && !isOpen) return null;
                 return (
                   <React.Fragment key={n.id}>
                     {isNewGroup && (
-                      <div style={{ padding: "14px 14px 6px",
-                        display: "flex", alignItems: "center", gap: 10 }}>
+                      <button onClick={() => toggleGroup(n.parentLabel)}
+                        style={{ width: "100%", padding: "14px 14px 6px",
+                          display: "flex", alignItems: "center", gap: 10,
+                          background: "transparent", border: "none", cursor: "pointer",
+                          textAlign: "left", color: "inherit", font: "inherit" }}>
+                        {/* Chevron — rotates 90° when expanded. SVG so it
+                            stays crisp at any DPR. */}
+                        <svg width={9} height={9} viewBox="0 0 9 9"
+                          style={{ flexShrink: 0, opacity: 0.55,
+                            transform: isOpen ? "rotate(90deg)" : "rotate(0deg)",
+                            transition: "transform .22s ease" }}>
+                          <path d="M2.5 1.5 L6 4.5 L2.5 7.5" fill="none" stroke={theme.subText} strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
                         {/* Group header label + count badge */}
                         <span style={{ fontFamily: "'Geist Mono','SF Mono', monospace", fontSize: 9.5, fontWeight: 500,
                           letterSpacing: "0.10em", textTransform: "uppercase", color: theme.subText, opacity: 0.85 }}>
@@ -1908,8 +1949,9 @@ function LobeInsightsPanel({ lobe, theme, onClose, stateMeta, stateCol }) {
                           {groupSize}
                         </span>
                         <span style={{ flex: 1, height: 1, background: theme.cardBorder, opacity: 0.6 }} />
-                      </div>
+                      </button>
                     )}
+                    {n.parentLabel && isNewGroup && !isOpen ? null : (
                     <div style={{ position: "relative", display: "flex", alignItems: "baseline", gap: 12,
                       // Uniform vertical padding for both grouped chip rows
                       // and single-value rows so the panel reads as one
@@ -1992,67 +2034,11 @@ function LobeInsightsPanel({ lobe, theme, onClose, stateMeta, stateCol }) {
                         background: n.state === "confirmed" ? theme.known : "transparent",
                         border: n.state === "confirmed" ? "none" : `1.2px solid ${stateCol(n.state)}` }} />
                     </div>
+                    )}
                   </React.Fragment>
                 );
               })}
 
-              {/* How Arnie uses this — inlined, no nested card. Just a
-                  small section caption with the "thinking/live" badge,
-                  followed by the prose at quiet body text size. */}
-              {(shown.coaching || insight || thinking) && (
-                <div style={{ padding: "16px 16px 4px", borderTop: `1px solid ${theme.cardBorder}`,
-                  marginTop: 4 }}>
-                  <div style={{ fontFamily: "'Geist Mono','SF Mono', monospace", fontSize: 9.5, fontWeight: 500,
-                    letterSpacing: "0.10em", textTransform: "uppercase", color: theme.subText,
-                    margin: "0 0 8px", display: "flex", alignItems: "center", gap: 8 }}>
-                    <span>How Arnie uses this</span>
-                    {(thinking || insight) && (
-                      <span style={{ display: "inline-flex", alignItems: "center", gap: 6, marginLeft: "auto" }}>
-                        <span style={{ width: 5, height: 5, borderRadius: "50%", background: theme.known,
-                          boxShadow: `0 0 4px ${theme.known}`,
-                          animation: thinking ? "lvThink 1.4s ease-in-out infinite" : "none" }} />
-                        <span style={{ fontSize: 9, letterSpacing: "0.06em", textTransform: "none",
-                          color: thinking ? theme.subText : theme.known,
-                          fontWeight: 500,
-                          transition: "color .3s ease" }}>
-                          {thinking ? "thinking" : "live"}
-                        </span>
-                      </span>
-                    )}
-                  </div>
-                  <div style={{ position: "relative", minHeight: 64,
-                    fontFamily: "'Geist', system-ui, sans-serif", fontSize: 13, fontWeight: 400,
-                    color: theme.cardVal, lineHeight: 1.5, letterSpacing: "-.003em", textWrap: "pretty" }}>
-                    {/* Fallback coaching string under-layer. While thinking
-                        it stays visible at quiet opacity AND gets a soft
-                        horizontal shimmer to read as "loading". When the
-                        AI insight arrives the fallback fades to 0 over
-                        the same .3s window the insight fades in over. */}
-                    <span className={thinking ? "lvShimmer" : ""}
-                      style={{
-                        opacity: insight ? 0 : (thinking ? 0.62 : 0.92),
-                        transition: "opacity .35s ease",
-                        position: insight ? "absolute" : "static",
-                        inset: insight ? 0 : "auto",
-                        display: "block",
-                        color: thinking ? "transparent" : theme.cardVal,
-                        WebkitTextFillColor: thinking ? "transparent" : "currentColor",
-                      }}>
-                      {shown.coaching}
-                    </span>
-                    {insight && (
-                      <span style={{
-                        opacity: 1,
-                        transition: "opacity .55s ease",
-                        display: "block",
-                        color: theme.cardVal, opacity: 0.95,
-                      }}>
-                        {insight.text}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              )}
             </div>
           </>
         )}
@@ -2864,6 +2850,19 @@ _PAGE_HEAD = r"""<!DOCTYPE html>
   .lvFloatC{animation:lvFloatC 12s ease-in-out infinite}
   .lvFloatD{animation:lvFloatD 16s ease-in-out infinite}
   .lvFloatE{animation:lvFloatE 14s ease-in-out infinite}
+  /* Per-dot ambient drift — applied on mobile so the constellation
+     reads as alive instead of frozen. Each dot gets a unique phase
+     via inline negative animation-delay (derived from node id hash)
+     so neighbouring dots move out-of-sync — the cluster appears to
+     breathe rather than slide as one rigid sheet. Amplitude is kept
+     under 3px so the underlying ring layout still reads at a glance. */
+  @keyframes lvDotDrift {
+    0%   { transform: translate(0px,    0px); }
+    20%  { transform: translate(1.8px, -1.0px); }
+    45%  { transform: translate(0.6px, -2.2px); }
+    70%  { transform: translate(-1.6px, -0.8px); }
+    100% { transform: translate(0px,    0px); }
+  }
   @keyframes lvPulse { 0%,100%{opacity:.4} 50%{opacity:1} }
   @keyframes lvRipple { from{transform:scale(.5);opacity:.6} to{transform:scale(2.6);opacity:0} }
   .lvRipple{animation:lvRipple 2.6s ease-out forwards}
