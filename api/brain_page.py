@@ -303,25 +303,27 @@ function dotStyle(node, theme, sel, fresh) {
   const learning = node.state === "learning";
   const inferred = node.state === "inferred";
   const col = learning ? theme.learning : inferred ? theme.inferred : theme.known;
-  // Larger, crisper dots on mobile (13 / 16 selected vs 9 / 13 desktop).
-  // Phones have higher pixel density but the eye is also closer to the
-  // screen — small CSS dots covered by box-shadow halo looked fuzzy.
-  // Bigger solid circle + no halo = crisp regardless of DPR.
+  // Vector-rendered dots (see NodeDot below) — sized down from the
+  // previous CSS-span pass. Earlier "bigger dot" attempt backfired
+  // because span borders + box-shadow blur fight the device pixel grid;
+  // SVG circles with shapeRendering="geometricPrecision" are sub-pixel
+  // sharp at any DPR, so we can go smaller and read cleaner.
   const isPhone = (typeof window !== "undefined" && window.innerWidth < 480);
-  const baseSize = isPhone ? 13 : 9;
-  const selSize  = isPhone ? 16 : 13;
-  const base = { width: sel ? selSize : baseSize, height: sel ? selSize : baseSize, borderRadius: "50%",
-    transition: "width .22s, height .22s, box-shadow .3s, background .3s, border-color .3s" };
-  if (learning) return { ...base, background: "transparent", border: `1.4px solid ${col}`, animation: "lvPulse 2.8s ease-in-out infinite", boxShadow: "none", col };
-  if (inferred) return { ...base, background: "transparent", border: `1.4px solid ${col}`, boxShadow: "none", col };
-  // No glow on mobile — the box-shadow blur diffused the dot edge so
-  // the whole constellation read as fuzzy at high DPR. Solid filled
-  // circle with no shadow gives a crisp, anti-aliased ring that looks
-  // sharp regardless of screen density. Desktop keeps the soft glow
-  // because it reads as ambient-light texture at arm's length.
-  const boxShadow = isPhone ? "none" :
-    `0 0 ${sel ? 14 : fresh ? 13 : 7}px ${col}${theme.glowA}`;
-  return { ...base, background: col, border: "none", boxShadow, col };
+  const baseSize = isPhone ? 10 : 9;
+  const selSize  = isPhone ? 13 : 12;
+  const size = sel ? selSize : baseSize;
+  // Design language:
+  //   confirmed → solid filled disc
+  //   inferred  → hollow ring (transparent fill)
+  //   learning  → hollow ring with breathing pulse
+  // SVG halo via drop-shadow filter (respects the circle's geometry
+  // instead of bleeding from a box-shadow rectangle). Mobile keeps the
+  // bare crisp circle — at arm's-length-screen distance the halo just
+  // smeared the edge.
+  const variant = (learning || inferred) ? "ring" : "fill";
+  const glow = isPhone ? "" :
+    `drop-shadow(0 0 ${sel ? 5 : fresh ? 4.5 : 2.5}px ${col}${theme.glowA})`;
+  return { size, variant, col, glow, learning };
 }
 
 function NodeDot({ node, e, theme, sel, fresh, freshTick, onSelect, pulse, offsetX, offsetY }) {
@@ -338,8 +340,9 @@ function NodeDot({ node, e, theme, sel, fresh, freshTick, onSelect, pulse, offse
   const p = pulse || 0;
   const waveScale = 1 + p * 0.55;
   const waveGlow = p > 0
-    ? `, 0 0 ${(p * 18).toFixed(1)}px ${ds.col}, 0 0 ${(p * 36).toFixed(1)}px ${ds.col}66`
+    ? ` drop-shadow(0 0 ${(p * 7).toFixed(1)}px ${ds.col}) drop-shadow(0 0 ${(p * 14).toFixed(1)}px ${ds.col}66)`
     : "";
+  const dotFilter = ((ds.glow || "") + waveGlow).trim() || "none";
   // Labels hidden by default — they appear only when this dot is in focus
   // (hover, selection, or just-learned ripple). Keeps the constellation
   // breathing instead of drowning in text.
@@ -359,10 +362,16 @@ function NodeDot({ node, e, theme, sel, fresh, freshTick, onSelect, pulse, offse
         cursor: "pointer", zIndex: sel ? 8 : hover ? 7 : (p > 0.1 ? 6 : 2),
         transition: "z-index 0s" }}>
       <span style={{ position: "relative", display: "grid", placeItems: "center" }}>
-        {fresh && <span key={freshTick} className="lvRipple" style={{ position: "absolute", width: 13, height: 13, borderRadius: "50%", border: `1.4px solid ${ds.col}` }}></span>}
-        <span style={{ width: ds.width, height: ds.height, borderRadius: ds.borderRadius, background: ds.background, border: ds.border,
-          boxShadow: (ds.boxShadow || "0 0 0 transparent") + waveGlow,
-          transition: ds.transition }}></span>
+        {fresh && <span key={freshTick} className="lvRipple" style={{ position: "absolute", width: ds.size + 4, height: ds.size + 4, borderRadius: "50%", border: `1.4px solid ${ds.col}` }}></span>}
+        <svg width={ds.size} height={ds.size} viewBox={`0 0 ${ds.size} ${ds.size}`}
+          shapeRendering="geometricPrecision"
+          style={{ display: "block", overflow: "visible", filter: dotFilter,
+            animation: ds.learning ? "lvPulse 2.8s ease-in-out infinite" : "none",
+            transition: "filter .28s ease, width .22s ease, height .22s ease" }}>
+          {ds.variant === "ring"
+            ? <circle cx={ds.size/2} cy={ds.size/2} r={(ds.size - 1.4)/2} fill="none" stroke={ds.col} strokeWidth={1.4} />
+            : <circle cx={ds.size/2} cy={ds.size/2} r={ds.size/2} fill={ds.col} />}
+        </svg>
       </span>
       <span title={node.label} style={{
         position: "absolute", top: "calc(50% + 12px)", left: "50%", transform: `translateX(-50%) translateY(${showLabel ? 0 : -3}px)`,
