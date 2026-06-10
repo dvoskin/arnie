@@ -303,23 +303,25 @@ function dotStyle(node, theme, sel, fresh) {
   const learning = node.state === "learning";
   const inferred = node.state === "inferred";
   const col = learning ? theme.learning : inferred ? theme.inferred : theme.known;
-  // Slightly larger dots on mobile (11 / 14 selected vs 9 / 13) make
-  // them feel sharp on high-DPR phone screens — at 9px the dot was
-  // crisp on a single pixel grid but read as a blurry haze surrounded
-  // by box-shadow glow. Bigger dot = more solid pixels for the
-  // colour, less reliance on the glow halo.
+  // Larger, crisper dots on mobile (13 / 16 selected vs 9 / 13 desktop).
+  // Phones have higher pixel density but the eye is also closer to the
+  // screen — small CSS dots covered by box-shadow halo looked fuzzy.
+  // Bigger solid circle + no halo = crisp regardless of DPR.
   const isPhone = (typeof window !== "undefined" && window.innerWidth < 480);
-  const baseSize = isPhone ? 11 : 9;
-  const selSize  = isPhone ? 14 : 13;
+  const baseSize = isPhone ? 13 : 9;
+  const selSize  = isPhone ? 16 : 13;
   const base = { width: sel ? selSize : baseSize, height: sel ? selSize : baseSize, borderRadius: "50%",
     transition: "width .22s, height .22s, box-shadow .3s, background .3s, border-color .3s" };
   if (learning) return { ...base, background: "transparent", border: `1.4px solid ${col}`, animation: "lvPulse 2.8s ease-in-out infinite", boxShadow: "none", col };
   if (inferred) return { ...base, background: "transparent", border: `1.4px solid ${col}`, boxShadow: "none", col };
-  // Tighter glow on mobile so the dot's outline reads as a crisp circle
-  // instead of being lost in a wide soft halo (the box-shadow blur was
-  // making 9px dots feel blurry at typical viewing distance).
-  const glow = isPhone ? (sel ? 8 : fresh ? 7 : 3) : (sel ? 14 : fresh ? 13 : 7);
-  return { ...base, background: col, border: "none", boxShadow: `0 0 ${glow}px ${col}${theme.glowA}`, col };
+  // No glow on mobile — the box-shadow blur diffused the dot edge so
+  // the whole constellation read as fuzzy at high DPR. Solid filled
+  // circle with no shadow gives a crisp, anti-aliased ring that looks
+  // sharp regardless of screen density. Desktop keeps the soft glow
+  // because it reads as ambient-light texture at arm's length.
+  const boxShadow = isPhone ? "none" :
+    `0 0 ${sel ? 14 : fresh ? 13 : 7}px ${col}${theme.glowA}`;
+  return { ...base, background: col, border: "none", boxShadow, col };
 }
 
 function NodeDot({ node, e, theme, sel, fresh, freshTick, onSelect, pulse, offsetX, offsetY }) {
@@ -341,10 +343,18 @@ function NodeDot({ node, e, theme, sel, fresh, freshTick, onSelect, pulse, offse
   // Labels hidden by default — they appear only when this dot is in focus
   // (hover, selection, or just-learned ripple). Keeps the constellation
   // breathing instead of drowning in text.
+  // Snap to integer pixels on mobile so the dot doesn't sit on a sub-
+  // pixel grid (which the browser would smear across two real pixels,
+  // producing the fuzzy look users were reporting in production).
+  const isPhonePos = (typeof window !== "undefined" && window.innerWidth < 480);
+  const px = e.x + (offsetX || 0);
+  const py = e.y + (offsetY || 0);
+  const lx = isPhonePos ? Math.round(px) : px;
+  const ly = isPhonePos ? Math.round(py) : py;
   return (
     <div onClick={(ev) => { ev.stopPropagation(); onSelect(sel ? null : node.id); }}
       onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
-      style={{ position: "absolute", left: e.x + (offsetX || 0), top: e.y + (offsetY || 0),
+      style={{ position: "absolute", left: lx, top: ly,
         transform: `translate(-50%,-50%) scale(${(e.s * waveScale).toFixed(3)})`, opacity: e.o.toFixed(3),
         cursor: "pointer", zIndex: sel ? 8 : hover ? 7 : (p > 0.1 ? 6 : 2),
         transition: "z-index 0s" }}>
@@ -2315,9 +2325,9 @@ function App() {
         const verb = (() => {
           if (!toast || !toast.label) return "";
           const raw = toast.label.toLowerCase();
-          if (raw.includes("noticed") || raw.includes("new")) return "new";
-          if (raw.includes("confirmed")) return "confirmed";
-          if (raw.includes("updated") || raw.includes("refined")) return "updated";
+          if (raw.includes("noticed") || raw.includes("new")) return "New Attribute Learned";
+          if (raw.includes("confirmed")) return "Attribute Confirmed";
+          if (raw.includes("updated") || raw.includes("refined")) return "Attribute Updated";
           return raw.replace(/^arnie\s+/, "").replace(/\s+your$/, "").split(/\s+/).pop();
         })();
         return (
