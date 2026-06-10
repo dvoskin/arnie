@@ -137,6 +137,52 @@ def looks_like_bare_log_ack(text: str) -> bool:
     return core in _LOG_ACK_PHRASES
 
 
+# Empty-praise patterns that the voice rules ban but the LLM still occasionally
+# generates. These sound like coaching but contain zero substance: no numbers,
+# no specific next move. "Great workout! How did it feel?" is the canonical
+# example — it loops in lifecycle (pending question) until answered, making
+# it look like Arnie is glitching. We catch it here and trigger quality repair
+# the same way we catch mechanics narration.
+#
+# Guard: only fire on SHORT replies (< 150 chars) with NO digits. A reply like
+# "Great macro split — 165g protein" has real data and is fine. "Great workout!
+# How did it feel?" has no numbers and is caught.
+_EMPTY_PRAISE_PATTERNS = re.compile(
+    r"\b(great (workout|session|job|work|effort|progress|stuff)|"
+    r"amazing (workout|session|job|work|effort)|"
+    r"nice (workout|session|job|work|effort)|"
+    r"good (workout|session|job|work|effort)|"
+    r"solid (workout|session|job|work)(?!\s+\w)|"
+    r"excellent (workout|session|job|effort)|"
+    r"way to go|"
+    r"you('?ve)? got this|"
+    r"keep it up|"
+    r"proud of you|"
+    r"you'?re doing (great|amazing|well|good)|"
+    r"stay (consistent|strong|focused|on track))\b",
+    re.IGNORECASE,
+)
+
+
+def looks_like_empty_praise(text: str) -> bool:
+    """
+    True if the reply is short, contains no numeric data, and leads with a
+    banned empty-praise phrase ("Great workout!", "Nice job!", etc.).
+
+    These replies are bad because they contain zero coaching value — no
+    numbers, no next move — and when stored as conversation hooks they create
+    a loop where proactive messages keep re-asking the generic question until
+    the user answers. Catching them here triggers the same quality repair as
+    mechanics narration.
+    """
+    t = (text or "").replace("|||", " ").strip()
+    if not t or len(t) > 150:
+        return False
+    if re.search(r'\d', t):  # real numeric data present → not empty praise
+        return False
+    return bool(_EMPTY_PRAISE_PATTERNS.search(t))
+
+
 def looks_like_mechanics(text: str) -> bool:
     """
     True if the response leaks internal plumbing language the user should never see
@@ -206,6 +252,8 @@ def detect_turn_flags(
         flags.append("user_frustrated")
     if looks_like_mechanics(response_text):
         flags.append("mechanics_narration")
+    if looks_like_empty_praise(response_text):
+        flags.append("empty_praise")
     # Image turn where log_body_weight fired without log_food — almost always a
     # nutrition-analysis false positive (macro gram numbers mistaken for body weight).
     if (source_type == "image"
