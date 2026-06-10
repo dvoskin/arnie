@@ -200,6 +200,38 @@ body{{
 .main{{min-width:0;overflow-x:clip}}
 .main-inner{{padding:0 48px 100px;width:100%;max-width:900px;margin:0 auto}}
 
+/* ── BRAIN TAB — full-bleed override ──────────────────────────
+   When the Brain tab is active, the dashboard's max-width column
+   gets in the way of the cinematic constellation. We bust the
+   iframe out to fill the entire right side of the shell (i.e.
+   everything that isn't the sidebar). The pagehead stays so the
+   "Arnie's brain | LIVE" title is still readable. */
+body.brain-active .pagehead{{display:none}}
+body.brain-active #app-load{{display:none}}
+body.brain-active footer{{display:none}}
+#panel-brain.active{{
+  position:fixed;
+  top:0;
+  left:252px;            /* sidebar width — keep nav visible */
+  right:0;
+  bottom:0;
+  padding:0;
+  margin:0;
+  z-index:5;
+  background:transparent;
+}}
+#panel-brain #brain-frame-wrap{{
+  position:absolute;
+  inset:0;
+  margin:0;
+  border-radius:0;
+}}
+@media(max-width:760px){{
+  /* Mobile: sidebar is hidden, brain fills the entire viewport above
+     the bottom nav (.bottomnav lives at the page root). */
+  #panel-brain.active{{left:0;bottom:64px}}
+}}
+
 /* ── STREAK CHIP — top-right of pagehead ────────────────────────────
    Compact "🔥 X D" indicator showing the user's current consecutive-
    logging streak. Hidden by JS until streak_days ≥ 3 so new users never
@@ -1939,7 +1971,19 @@ footer{{
         <span class="ni-lbl">Client</span><span class="ni-meta">Profile</span>
       </button>
       <button class="navitem" id="nav-brain" onclick="switchTab('brain')">
-        <span class="ni-ico"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="2.5" fill="currentColor" stroke="none"/><circle cx="5.5" cy="8" r="1.6"/><circle cx="18.5" cy="8" r="1.6"/><circle cx="5.5" cy="17" r="1.6"/><circle cx="18.5" cy="17" r="1.6"/><path d="M12 12L5.5 8M12 12L18.5 8M12 12L5.5 17M12 12L18.5 17" opacity=".55"/></svg></span>
+        <!-- Anatomical brain silhouette (Lucide-derived): scalloped gyri at
+             the top edges read as "brain" at small sizes, central divide
+             marks the hemispheres, and a softly pulsing core dot mirrors
+             the constellation hub inside the Brain tab. -->
+        <span class="ni-ico"><svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.55" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z"/>
+          <path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z"/>
+          <path d="M15 13a4.5 4.5 0 0 1-3-4 4.5 4.5 0 0 1-3 4" opacity=".55"/>
+          <circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none">
+            <animate attributeName="r" values="1.5;2.2;1.5" dur="2.6s" repeatCount="indefinite"/>
+            <animate attributeName="opacity" values="1;.55;1" dur="2.6s" repeatCount="indefinite"/>
+          </circle>
+        </svg></span>
         <span class="ni-lbl">Brain</span><span class="ni-meta">Learning</span>
       </button>
     </nav>
@@ -2486,11 +2530,12 @@ footer{{
 
   <!-- BRAIN TAB —— live mindmap of what Arnie has learned. The iframe loads
        /brain/{token}, which polls /api/profile/{token} every ~20s and
-       animates new/changed nodes. Lazy-loaded the first time the tab is
-       opened (see switchTab handler) so the dashboard's initial paint isn't
-       slowed by React+Babel from CDN. -->
-  <div class="tab-panel" id="panel-brain" style="padding:0">
-    <div id="brain-frame-wrap" style="position:relative;height:calc(100vh - 130px);min-height:520px;margin:-12px -24px 0;border-radius:14px;overflow:hidden">
+       animates new/changed nodes. Lazy-loaded on first tab open so
+       React+Babel from CDN don't slow the dashboard's initial paint.
+       Panel breaks out of .main-inner's 900px max-width via the
+       body.brain-active CSS block above for a true full-bleed canvas. -->
+  <div class="tab-panel" id="panel-brain">
+    <div id="brain-frame-wrap">
       <iframe id="brain-frame" title="Arnie's Brain" style="border:0;width:100%;height:100%;display:block;background:transparent" loading="lazy"></iframe>
     </div>
   </div>
@@ -2520,7 +2565,15 @@ footer{{
     <span class="bn-ico"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8.5" r="3.5"/><path d="M5.5 20.5c.7-3.5 3.4-5.5 6.5-5.5s5.8 2 6.5 5.5"/></svg></span>Client
   </button>
   <button class="bn-item" id="bn-brain" onclick="switchTab('brain')">
-    <span class="bn-ico"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="2.5" fill="currentColor" stroke="none"/><circle cx="5.5" cy="8" r="1.6"/><circle cx="18.5" cy="8" r="1.6"/><circle cx="5.5" cy="17" r="1.6"/><circle cx="18.5" cy="17" r="1.6"/><path d="M12 12L5.5 8M12 12L18.5 8M12 12L5.5 17M12 12L18.5 17" opacity=".55"/></svg></span>Brain
+    <span class="bn-ico"><svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z"/>
+      <path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z"/>
+      <path d="M15 13a4.5 4.5 0 0 1-3-4 4.5 4.5 0 0 1-3 4" opacity=".55"/>
+      <circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none">
+        <animate attributeName="r" values="1.5;2.2;1.5" dur="2.6s" repeatCount="indefinite"/>
+        <animate attributeName="opacity" values="1;.55;1" dur="2.6s" repeatCount="indefinite"/>
+      </circle>
+    </svg></span>Brain
   </button>
 </nav>
 
@@ -2573,6 +2626,7 @@ function toggleTheme(){{
   updateThemeUI(next);
   localStorage.setItem('arnie-theme',next);
   if(_baseData && _activeTab==='week') setTimeout(()=>renderWeekTab(_baseData),50);
+  if(typeof postBrainTheme==='function') postBrainTheme(next);
 }}
 
 // ── Utils ─────────────────────────────────────────────────────────────────
@@ -2643,6 +2697,9 @@ function switchTab(name){{
   _activeTab=name;
   document.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('active'));
   document.getElementById('panel-'+name).classList.add('active');
+  // brain tab takes over the full main column — toggle a body flag so the
+  // pagehead hides and #panel-brain breaks out of the 900px max-width.
+  document.body.classList.toggle('brain-active', name==='brain');
   document.querySelectorAll('.navitem[id^="nav-"]').forEach(b=>b.classList.remove('active'));
   var ni=document.getElementById('nav-'+name);if(ni)ni.classList.add('active');
   document.querySelectorAll('.bn-item').forEach(b=>b.classList.remove('active'));
@@ -2663,7 +2720,9 @@ function switchTab(name){{
 
 // Brain tab —— lazy-mount the /brain/{token} iframe on first tab open. We set
 // the src exactly once so the React app keeps its state (selected node, view
-// toggle, polling timer) across subsequent tab switches.
+// toggle, polling timer) across subsequent tab switches. The current dashboard
+// theme is passed via ?theme=... so the iframe paints correctly on first
+// frame; subsequent toggles are pushed live by postBrainTheme().
 var _brainLoaded = false;
 function loadBrainTab(){{
   // Feature gate — when BRAIN_TAB_ENABLED is unset in prod env, this
@@ -2673,8 +2732,16 @@ function loadBrainTab(){{
   if(_brainLoaded) return;
   var f = document.getElementById('brain-frame');
   if(!f) return;
-  f.src = '/brain/' + encodeURIComponent(TOKEN);
+  var theme = document.documentElement.getAttribute('data-theme') || 'dark';
+  f.src = '/brain/' + encodeURIComponent(TOKEN) + '?theme=' + theme;
   _brainLoaded = true;
+}}
+// Push the dashboard's current theme into the brain iframe (if it's mounted
+// and same-origin). Called from toggleTheme below.
+function postBrainTheme(mode){{
+  var f = document.getElementById('brain-frame');
+  if(!f || !f.contentWindow) return;
+  try{{ f.contentWindow.postMessage({{type:'arnie-brain-theme', mode:mode}}, '*'); }}catch(e){{}}
 }}
 
 // ── Boot ──────────────────────────────────────────────────────────────────
