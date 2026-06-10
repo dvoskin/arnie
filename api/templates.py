@@ -236,6 +236,8 @@ body{{
 }}
 .hbtn:hover{{border-color:var(--ac);color:var(--ac)}}
 .hbtn:active{{transform:scale(.91)}}
+.hbtn.spinning{{color:var(--ac);border-color:var(--ac);animation:hbtn-spin .7s linear infinite}}
+@keyframes hbtn-spin{{to{{transform:rotate(360deg)}}}}
 #app-load{{text-align:center;padding:80px 20px;color:var(--mu);font-size:14px}}
 .tab-panel{{display:none;animation:fadeUp .28s ease}}
 .tab-panel.active{{display:block}}
@@ -1737,8 +1739,12 @@ footer{{
 
 /* ═══ MOBILE TYPOGRAPHY + LAYOUT FIXES ═════════════════════ */
 @media(max-width:560px){{
-  /* Pagehead: hide icon-only buttons, keep just the Chat button */
+  /* Pagehead: hide icon-only buttons EXCEPT the refresh button — it's the
+     fastest way to re-pull today's log on mobile (pull-to-refresh isn't
+     reliable inside a scrolled tab panel). Sized to sit next to the
+     streak chip without crowding it. */
   .pagehead .hbtn{{display:none}}
+  .pagehead #refresh-btn{{display:flex;width:30px;height:30px;border-radius:9px;font-size:13px}}
   .pagehead{{padding:10px 0 6px;gap:10px;align-items:center;margin-bottom:4px}}
   .ph-title{{font-size:22px!important;letter-spacing:-.01em}}
   .ph-sub{{font-size:12px;margin-top:3px;gap:8px}}
@@ -1974,7 +1980,7 @@ footer{{
          existing toggleChatWidget() + .cw-panel remain in the file but
          are no longer reachable from the header. -->
     <button class="hbtn" id="theme-btn" onclick="toggleTheme()" title="Toggle theme">&#9790;</button>
-    <button class="hbtn" onclick="refreshCurrent()" title="Refresh">&#8635;</button>
+    <button class="hbtn" id="refresh-btn" onclick="refreshCurrent(this)" title="Refresh today's data">&#8635;</button>
   </div>
 </div>
 
@@ -2704,19 +2710,24 @@ async function init(){{
   }}
 }}
 
-async function refreshCurrent(){{
+async function refreshCurrent(btn){{
+  // Visible tap feedback: spin the icon while the fetch is in flight so
+  // the user knows the action took. Auto-clears on completion (success
+  // or failure) so a stuck network doesn't leave it spinning forever.
+  if(btn) btn.classList.add('spinning');
   delete _dayCache[_viewingDate];
-  if(_viewingDate===_todayStr){{
-    try{{
+  try{{
+    if(_viewingDate===_todayStr){{
       var data=await fetchStats(null);
       _baseData=data;_dayCache[_todayStr]=data;
       renderDayTab(data);
       if(_activeTab==='week') renderWeekTab(data);
       if(_activeTab==='profile') renderProfileTab(data);
-    }}catch(e){{}}
-  }}else{{
-    await loadDayData(_viewingDate);
-  }}
+    }}else{{
+      await loadDayData(_viewingDate);
+    }}
+  }}catch(e){{}}
+  finally{{ if(btn) btn.classList.remove('spinning'); }}
 }}
 
 // ── Date nav ──────────────────────────────────────────────────────────────
