@@ -137,6 +137,128 @@ def calc_targets(user) -> dict | None:
     }
 
 
+def compute_macros_for_calorie_target(user, calorie_target: int) -> dict | None:
+    """Given a manually-set calorie target, derive goal-aligned protein,
+    carb, and fat grams. Same macro rules as compute_macro_targets(), but
+    anchored on the user's chosen calorie level instead of TDEE-derived
+    calories. Needs current_weight_kg + primary_goal at minimum.
+
+    Returns {protein_target, carb_target, fat_target} or None if essentials
+    are missing.
+    """
+    if not (user.current_weight_kg and calorie_target):
+        return None
+    cals = int(calorie_target)
+    w_lb = user.current_weight_kg * 2.20462
+    goal_lb = (user.goal_weight_kg * 2.20462) if user.goal_weight_kg else w_lb
+    goal = (user.primary_goal or "maintain").lower()
+
+    if goal == "cut":
+        protein = round(1.0 * goal_lb)
+        fat = round(0.3 * w_lb)
+    elif goal == "bulk":
+        protein = round(0.9 * w_lb)
+        fat = round(0.35 * w_lb)
+    elif goal == "performance":
+        protein = round(0.9 * w_lb)
+        fat = round((cals * 0.25) / 9)
+    elif goal == "health":
+        protein = round((cals * 0.30) / 4)
+        fat = round((cals * 0.30) / 9)
+    else:  # maintain
+        protein = round(0.9 * w_lb)
+        fat = round(0.35 * w_lb)
+
+    carb_cals = max(0, cals - protein * 4 - fat * 9)
+    carbs = round(carb_cals / 4)
+    return {"protein_target": protein, "carb_target": carbs, "fat_target": fat}
+
+
+def compute_macro_split(calorie_target: int, protein_target: int, goal: str):
+    """Derive carb + fat grams from calorie + protein targets using
+    goal-specific ratios for the calories remaining after protein.
+
+      bulk: 65/35 carb/fat   cut: 45/55   performance: 70/30
+      maintain/health: 55/45 (balanced)
+
+    Returns (carb_g, fat_g) or (None, None) when data is insufficient or
+    protein alone fills almost all calories.
+    """
+    if not calorie_target or not protein_target:
+        return None, None
+    remaining = calorie_target - protein_target * 4
+    if remaining <= 50:
+        return None, None
+    carb_frac = {"bulk": 0.65, "cut": 0.45, "performance": 0.70}.get(goal, 0.55)
+    carb_g = round(remaining * carb_frac / 4)
+    fat_g = round(remaining * (1 - carb_frac) / 9)
+    return carb_g, fat_g
+
+
+def sync_macros_after_change(user, prefs, changed_field: str) -> bool:
+    """After a single macro target is edited, re-derive the others so that
+    calories = protein*4 + carbs*4 + fat*9 stays self-consistent.
+
+    Calories are the total energy budget; protein anchors first; carbs and
+    fat absorb what's left. Behavior by field:
+      calorie_target → re-derive all three macros from goal+weight rules
+      protein_target → keep calories, split remainder into carbs/fat
+                       using the goal-based carb/fat ratio
+      carb_target    → keep calories+protein, fat = remainder / 9
+      fat_target     → keep calories+protein, carbs = remainder / 4
+
+    Mutates prefs in place. Returns True if dependent targets were written,
+    False if there wasn't enough data to derive (e.g. calories not set, or
+    protein alone already overshoots the calorie budget).
+    """
+    cal  = prefs.calorie_target
+    pro  = prefs.protein_target
+    carb = prefs.carb_target
+    fat  = prefs.fat_target
+    goal = (user.primary_goal or "maintain").lower()
+
+    if changed_field == "calorie_target":
+        if not cal:
+            return False
+        m = compute_macros_for_calorie_target(user, cal)
+        if not m:
+            return False
+        prefs.protein_target = m["protein_target"]
+        prefs.carb_target    = m["carb_target"]
+        prefs.fat_target     = m["fat_target"]
+        return True
+
+    if changed_field == "protein_target":
+        if not (cal and pro):
+            return False
+        c, f = compute_macro_split(cal, pro, goal)
+        if c is None:
+            return False
+        prefs.carb_target = c
+        prefs.fat_target  = f
+        return True
+
+    if changed_field == "carb_target":
+        if not (cal and pro and carb is not None):
+            return False
+        remaining = cal - pro * 4 - carb * 4
+        if remaining <= 0:
+            return False
+        prefs.fat_target = round(remaining / 9)
+        return True
+
+    if changed_field == "fat_target":
+        if not (cal and pro and fat is not None):
+            return False
+        remaining = cal - pro * 4 - fat * 9
+        if remaining <= 0:
+            return False
+        prefs.carb_target = round(remaining / 4)
+        return True
+
+    return False
+
+
 def missing_profile_stats(user) -> list[str]:
     """Which target-calc stats are still missing. Used by proactive collection."""
     missing = []

@@ -18,6 +18,8 @@ import stripe
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
 from api.templates import _dashboard_html, _apple_guide_html
+from api.brain_page import _brain_html
+from api.brain_insights import generate_lobe_insight
 from core.urls import dashboard_url
 from pydantic import BaseModel, field_validator
 
@@ -694,29 +696,10 @@ async def imessage_start(payload: IMessageSignup, request: Request):
 
 
 # ── Macro split helper ─────────────────────────────────────────────────────────
-
-def compute_macro_split(calorie_target: int, protein_target: int, goal: str):
-    """
-    Derive carb + fat gram targets from calorie/protein targets using
-    goal-specific ratios for the remaining calories after protein.
-
-    Bulk:        65 / 35  carb/fat  (hypertrophy favours carbs)
-    Cut:         45 / 55  (higher fat for satiety on a deficit)
-    Performance: 70 / 30  (carb-dominant)
-    Maintain:    55 / 45  (balanced)
-    Health:      55 / 45  (balanced)
-
-    Returns (carb_g, fat_g) or (None, None) if data is insufficient.
-    """
-    if not calorie_target or not protein_target:
-        return None, None
-    remaining = calorie_target - protein_target * 4
-    if remaining <= 50:          # degenerate — protein alone fills almost all calories
-        return None, None
-    carb_frac = {"bulk": 0.65, "cut": 0.45, "performance": 0.70}.get(goal, 0.55)
-    carb_g = round(remaining * carb_frac / 4)
-    fat_g = round(remaining * (1 - carb_frac) / 9)
-    return carb_g, fat_g
+# Canonical implementation lives in core/targets.py so the dashboard and bot
+# share one rule set. Re-exported here for back-compat (bot/telegram_handler.py
+# still imports `from api.app import compute_macro_split`).
+from core.targets import compute_macro_split  # noqa: E402,F401
 
 
 # ── Web onboarding pre-registration ───────────────────────────────────────────
@@ -1578,19 +1561,15 @@ async def api_edit_profile(token: str, patch: ProfilePatch):
                 setattr(user.preferences, field, _val)
             elif field in _pref_int and user.preferences:
                 setattr(user.preferences, field, int(raw) if raw else None)
-                # When calorie or protein target changes, auto-derive carb/fat
-                # unless the user has already set them explicitly.
-                if field in ("calorie_target", "protein_target"):
-                    _cal = getattr(user.preferences, "calorie_target", None)
-                    _pro = getattr(user.preferences, "protein_target", None)
-                    _no_carb = not getattr(user.preferences, "carb_target", None)
-                    _no_fat  = not getattr(user.preferences, "fat_target", None)
-                    if _cal and _pro and (_no_carb or _no_fat):
-                        _c, _f = compute_macro_split(_cal, _pro, user.primary_goal or "maintain")
-                        if _c and _no_carb:
-                            user.preferences.carb_target = _c
-                        if _f and _no_fat:
-                            user.preferences.fat_target = _f
+                # Keep the four macro targets self-consistent: whenever one
+                # changes, the others recompute so cal = p*4 + c*4 + f*9
+                # stays physical. Field-specific behavior lives in targets.py:
+                #   calories → re-derive all three macros from goal+weight
+                #   protein  → split remainder into carbs/fat (goal ratio)
+                #   carbs/fat → the other absorbs the remainder
+                if raw:
+                    from core.targets import sync_macros_after_change
+                    sync_macros_after_change(user, user.preferences, field)
             elif field in _pref_bool and user.preferences:
                 setattr(user.preferences, field, str(raw).lower() in ("true", "1", "yes", "on"))
             else:
@@ -3024,6 +3003,50 @@ async def dashboard(token: str):
     return HTMLResponse(_dashboard_html(
         token, name=name, bot_username=bot_username, brain_enabled=_brain_enabled,
     ))
+
+
+@app.get("/brain/{token}", response_class=HTMLResponse)
+async def brain(token: str):
+    """Arnie's Brain — live mindmap of learned facts. Renders the React page;
+    data is fetched client-side from /api/profile/{token} (same endpoint the
+    Profile tab uses). Embedded as an iframe in panel-brain on the dashboard."""
+    async with AsyncSessionLocal() as db:
+        user = await get_user_by_webhook_token(db, token)
+        if not user:
+            return HTMLResponse("<h2>Invalid or expired link.</h2>", status_code=401)
+    return HTMLResponse(_brain_html(token))
+
+
+class _BrainInsightRequest(BaseModel):
+    """Payload from the Brain page when a lobe panel opens."""
+    lobe_id: str
+    lobe_name: Optional[str] = None     # human-readable, falls back to id
+    lobe_short: Optional[str] = None    # uppercase short, e.g. "NUTRITION"
+    nodes: list[dict]                   # [{label, value or chips, state}, ...]
+
+
+@app.post("/api/brain/insights/{token}")
+async def brain_insight(token: str, payload: _BrainInsightRequest):
+    """Generate a personalized 2–4 sentence coaching paragraph for the
+    given lobe, in Arnie's voice, referencing the user's actual parameter
+    values. Falls through with {ok: false} on any failure so the frontend
+    can drop back to its static `coaching:` string. Caches by lobe
+    signature so re-opening the same lobe is instant."""
+    async with AsyncSessionLocal() as db:
+        user = await get_user_by_webhook_token(db, token)
+        if not user:
+            raise HTTPException(status_code=401, detail="Invalid token")
+
+    result = await generate_lobe_insight(
+        user_id=user.id,
+        lobe_id=payload.lobe_id,
+        lobe_name=payload.lobe_name or payload.lobe_id.title(),
+        lobe_short=payload.lobe_short or payload.lobe_id.upper(),
+        nodes=payload.nodes or [],
+    )
+    if not result:
+        return JSONResponse({"ok": False}, status_code=200)
+    return {"ok": True, **result}
 
 
 

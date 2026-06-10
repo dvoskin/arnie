@@ -47,18 +47,20 @@ async def test_basics_and_category_merge(db, make_user):
     attrs = await get_all_attributes(db, u.id)
     m = build_unified_profile(u, prefs, attrs)
 
-    # Basics: short scalars, in order
+    # Basics: short scalars, in order. Goal/targets intentionally NOT in basics
+    # — they live in the dedicated "Goals & targets" card on the profile tab.
     assert [b["label"] for b in m["basics"]] == \
-        ["Name", "Age", "Sex", "Height", "Current", "Goal"]
-    cur = next(b for b in m["basics"] if b["label"] == "Current")
+        ["Name", "Age", "Sex", "Height", "Current weight"]
+    cur = next(b for b in m["basics"] if b["label"] == "Current weight")
     assert cur["edit_field"] == "current_weight_lbs" and cur["value"] == "188.7 lbs"
 
     std = m["standard"]
 
-    # Goals skeleton, column-filled + editable
-    goals = {s["label"]: s for s in std["goals"]}
-    assert goals["Primary goal"]["filled"] and goals["Primary goal"]["edit_field"] == "primary_goal"
-    assert goals["Calorie target"]["value"] == "2000 kcal/day"
+    # Goals category now holds LEARNED goal facts only (why, timeline). The
+    # structured fields (primary_goal, calorie_target, etc.) moved to the
+    # dedicated "Goals & targets" card. Both learned slots are hide_empty
+    # and unpopulated here, so std["goals"] is an empty list for this user.
+    assert std["goals"] == []
 
     # Health: injuries column slot (editable) + supplements aggregate (zinc as a chip)
     health = {s["label"]: s for s in std["health"]}
