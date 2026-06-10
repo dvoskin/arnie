@@ -1086,31 +1086,39 @@ body{{
 .goal-badge{{color:var(--ac);border:1px solid rgba(var(--ac-rgb),.35)}}
 .coach-badge{{color:var(--pu);border:1px solid rgba(168,85,247,.35)}}
 
-/* ── DEVICE CARDS ────────────────────────────────────────── */
-.dev-grid{{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:14px}}
+/* ── DEVICE CARDS — compact horizontal tiles, 3-up grid ────
+   3 columns on desktop, 2 on mobile. Smaller icons + tighter
+   padding than the original chunky 2-up cards so the section
+   scales when we add Fitbit/Hume/Garmin/etc. No outer .infocrd
+   wrapper — each card's border does the visual containment. */
+.dev-grid{{display:grid;grid-template-columns:repeat(3,1fr);gap:7px}}
 .dev-card{{
-  display:flex;align-items:center;gap:11px;padding:13px;
-  border-radius:12px;border:1px solid var(--bd);background:var(--sf);
-  transition:all .2s;
+  display:flex;align-items:center;gap:9px;padding:9px 11px;
+  border-radius:11px;border:1px solid var(--bd);background:var(--sf);
+  min-width:0;transition:all .2s;
 }}
 .dev-card:hover{{border-color:var(--bd2);background:var(--sf2)}}
-.dev-card.dev-soon{{opacity:.6}}
+.dev-card.dev-soon{{opacity:.55}}
 .dev-logo{{
-  width:40px;height:40px;border-radius:10px;flex-shrink:0;
+  width:28px;height:28px;border-radius:8px;flex-shrink:0;
   background:var(--sf2);border:1px solid var(--bd);
-  display:grid;place-items:center;font-size:18px;
+  display:grid;place-items:center;font-size:14px;line-height:1;
 }}
-.dev-body{{min-width:0}}
-.dev-name{{font-size:13px;font-weight:500;color:var(--tx)}}
+.dev-body{{min-width:0;display:flex;flex-direction:column;gap:2px}}
+.dev-name{{
+  font-size:12px;font-weight:500;color:var(--tx);line-height:1.2;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}}
 .dev-status{{
   font-family:'Geist Mono','SF Mono',monospace;
-  font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;
-  color:var(--mu);margin-top:3px;display:inline-flex;align-items:center;gap:5px;
+  font-size:8.5px;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--mu);display:inline-flex;align-items:center;gap:4px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.2;
 }}
 .dev-status.dev-live{{color:var(--ac)}}
 .dev-dot{{
-  width:6px;height:6px;border-radius:50%;
-  background:currentColor;box-shadow:0 0 6px currentColor;flex-shrink:0;
+  width:5px;height:5px;border-radius:50%;
+  background:currentColor;box-shadow:0 0 5px currentColor;flex-shrink:0;
 }}
 
 /* ── CHART TITLES ────────────────────────────────────────── */
@@ -1810,7 +1818,7 @@ footer{{
   .angrid{{grid-template-columns:repeat(2,1fr)}}
   .anval{{font-size:20px}}
   .anlbl{{font-size:9px}}
-  .dev-grid{{grid-template-columns:1fr;gap:8px}}
+  .dev-grid{{grid-template-columns:repeat(2,1fr);gap:6px}}
   /* Main padding */
   .main-inner{{padding:0 18px 90px}}
 }}
@@ -2401,6 +2409,17 @@ footer{{
       <div class="pref-hint" id="coach-style-desc"></div>
     </div>
 
+    <!-- ─── CONNECTED DEVICES ─── moved up from the bottom of the tab so
+         wearable integrations are visible before the dense Arnie's brain
+         section. Compact 3-up grid (2-up on mobile) — designed to scale
+         when we add more integrations (Fitbit, Hume, Garmin, etc.). The
+         #devices-card is a bare div: each .dev-card has its own border
+         and the .dev-grid handles layout. -->
+    <div class="stitle spaced" style="margin-top:28px">
+      <span>Connected devices</span>
+    </div>
+    <div id="devices-card" style="margin-top:6px"></div>
+
     <!-- ─── ARNIE'S BRAIN ─── learned facts only. Bio + AI attributes by
          category. NEVER duplicates what's in the settings section above. -->
     <div id="ai-profile-section" style="display:none;margin-top:28px">
@@ -2457,9 +2476,6 @@ footer{{
         </div>
       </div>
     </div>
-
-    <div class="stitle" style="margin-top:16px">Connected devices</div>
-    <div class="infocrd" style="overflow:hidden" id="devices-card"></div>
   </div>
 
   <!-- BRAIN TAB —— live mindmap of what Arnie has learned. The iframe loads
@@ -4167,11 +4183,14 @@ function renderProfileTab(d){{
 
   var dc=document.getElementById('devices-card');
   if(!dc) return;
+  // Shortened labels — the compact cards truncate via CSS, so we use
+  // terse status text instead of long calls-to-action. Onboarding +
+  // chat handle the actual "how to connect" copy.
   var devs=[
     {{name:'Apple Health',icon:'♥',live:p.apple_health_connected,label:p.apple_health_connected?'Syncing':'Not connected'}},
-    {{name:'Whoop',icon:'〰',live:p.whoop_connected,label:p.whoop_connected?'Connected':'Run /connect whoop in Telegram to link'}},
-    {{name:'Fitbit',icon:'⊕',live:false,label:'Coming soon',soon:true}},
-    {{name:'Hume',icon:'◉',live:false,label:'Coming soon',soon:true}},
+    {{name:'Whoop',       icon:'〰',live:p.whoop_connected,        label:p.whoop_connected?'Connected':'Not connected'}},
+    {{name:'Fitbit',      icon:'⊕',live:false,                     label:'Coming soon',soon:true}},
+    {{name:'Hume',        icon:'◉',live:false,                     label:'Coming soon',soon:true}},
   ];
   dc.innerHTML=
     '<div class="dev-grid">'+devs.map(function(d){{
