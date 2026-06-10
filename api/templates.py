@@ -1911,10 +1911,6 @@ footer{{
         <span class="ni-ico"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="2.5" fill="currentColor" stroke="none"/><circle cx="5.5" cy="8" r="1.6"/><circle cx="18.5" cy="8" r="1.6"/><circle cx="5.5" cy="17" r="1.6"/><circle cx="18.5" cy="17" r="1.6"/><path d="M12 12L5.5 8M12 12L18.5 8M12 12L5.5 17M12 12L18.5 17" opacity=".55"/></svg></span>
         <span class="ni-lbl">Brain</span><span class="ni-meta">Learning</span>
       </button>
-      <button class="navitem" id="nav-coaching" onclick="switchTab('coaching')">
-        <span class="ni-ico"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3C7 3 3 6.6 3 11c0 2.4 1.1 4.5 2.9 6L5 21l4.3-1.4A9.6 9.6 0 0 0 12 20c5 0 9-3.6 9-8s-4-9-9-9Z"/><path d="M9 11h.01M12 11h.01M15 11h.01" stroke-width="2.2" stroke-linecap="round"/></svg></span>
-        <span class="ni-lbl">Coaching</span><span class="ni-meta">Settings</span>
-      </button>
     </nav>
   </div>
   <div class="sb-foot">
@@ -2326,6 +2322,62 @@ footer{{
       </div>
     </div>
 
+    <!-- ─── COACHING PREFERENCES ─── moved here from the (now removed)
+         Coaching tab. Same controls, same JS handlers (renderRemindSettings
+         / renderFoodModeSettings / renderCoachingStyleSettings) — just lives
+         on the Profile tab now under a top-level section header that mirrors
+         "Your settings" structurally: stitle.spaced for the section, then
+         .settings-sub labels above each .pref-card. -->
+    <div class="stitle spaced" style="margin-top:28px">
+      <span>Coaching preferences</span>
+    </div>
+
+    <div class="settings-sub">Reminders</div>
+    <div class="pref-card" id="remind-card">
+      <div class="pref-row">
+        <span class="pref-lbl">Daily check-ins</span>
+        <label class="pref-toggle">
+          <input type="checkbox" id="remind-toggle" onchange="saveRemindOn(this.checked)">
+          <span class="pref-slider"></span>
+        </label>
+      </div>
+      <div id="remind-freq-wrap" style="margin-top:12px">
+        <input type="range" class="pref-range" id="remind-range" min="0" max="3" step="1" value="2"
+               oninput="onRemindSlide(this.value)" onchange="commitRemindSlide(this.value)">
+        <div class="pref-ticks" id="remind-ticks">
+          <span class="pref-tick">Minimal</span>
+          <span class="pref-tick">Light</span>
+          <span class="pref-tick">Regular</span>
+          <span class="pref-tick">All-day</span>
+        </div>
+        <div class="pref-hint" id="remind-desc"></div>
+      </div>
+    </div>
+
+    <div class="settings-sub" style="margin-top:14px">Food logging</div>
+    <div class="pref-card" id="food-mode-card">
+      <input type="range" class="pref-range" id="food-mode-range" min="0" max="2" step="1" value="1"
+             oninput="onFoodSlide(this.value)" onchange="commitFoodSlide(this.value)">
+      <div class="pref-ticks" id="food-mode-ticks">
+        <span class="pref-tick">Quick</span>
+        <span class="pref-tick">Balanced</span>
+        <span class="pref-tick">Strict</span>
+      </div>
+      <div class="pref-hint" id="food-mode-desc"></div>
+    </div>
+
+    <div class="settings-sub" style="margin-top:14px">Coaching style</div>
+    <div class="pref-card" id="coach-style-card">
+      <input type="range" class="pref-range" id="coach-style-range" min="0" max="2" step="1" value="1"
+             oninput="onCoachSlide(this.value)" onchange="commitCoachSlide(this.value)">
+      <div class="pref-ticks" id="coach-style-ticks">
+        <span class="pref-tick">Supportive</span>
+        <span class="pref-tick">Balanced</span>
+        <span class="pref-tick">Strict</span>
+      </div>
+      <div class="pref-hint" id="coach-style-desc"></div>
+    </div>
+
     <!-- ─── ARNIE'S BRAIN ─── learned facts only. Bio + AI attributes by
          category. NEVER duplicates what's in the settings section above. -->
     <div id="ai-profile-section" style="display:none;margin-top:28px">
@@ -2352,24 +2404,35 @@ footer{{
       <div class="lempty">Keep logging and chatting — Arnie builds this from your interactions. Check back after a few days.</div>
     </div>
 
-    <!-- Training program — sits with the fitness content; full structured split
-         lives in WorkoutProgram, a summary mirrors into the Fitness attributes -->
-    <div class="stitle spaced" style="margin-top:24px">
-      <span>Training program</span>
-      <button class="add-toggle" id="wp-edit-btn" onclick="openWorkoutEditor()" title="Set up / edit">+</button>
-    </div>
-    <div id="workout-program-card"><div class="lempty" style="margin-top:6px">No training program saved yet. Tap + to set one up — Arnie will use it in every session.</div></div>
-    <div class="add-card" id="workout-editor" style="display:none;margin-top:10px">
-      <div style="display:flex;gap:8px;padding:12px 14px;border-bottom:1px solid var(--bd)">
-        <button class="add-submit" style="flex:1;text-align:center;padding:10px" onclick="autoFillWorkout()">&#10024; Auto-fill from Arnie chat</button>
+    <!-- Training program — collapsed by default to match the Arnie's brain
+         category pattern. Uses .pf-cat-section + .pf-cat-hd for the header,
+         .pf-cat-body for the collapsible region. The "+" button gets
+         event.stopPropagation so it opens the editor without toggling the
+         section, and openWorkoutEditor() force-expands the section so the
+         editor is actually visible when it slides open. -->
+    <div class="pf-cat-section collapsed" id="pf-training-section">
+      <div class="stitle spaced pf-cat-hd" style="margin-top:24px" onclick="togglePfCat(this)">
+        <span>Training program</span>
+        <div style="display:flex;align-items:center;gap:6px">
+          <button class="pf-chevron" title="Toggle">&#8249;</button>
+          <button class="add-toggle" id="wp-edit-btn" onclick="event.stopPropagation();openWorkoutEditor()" title="Set up / edit">+</button>
+        </div>
       </div>
-      <div style="padding:6px 14px;font-family:'Geist Mono','SF Mono',monospace;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--di)">or paste manually</div>
-      <textarea class="add-inp" id="workout-raw" rows="10" placeholder="Paste your workout split — exercises, goals, recent lifts, rotation." style="height:160px;resize:vertical;font-size:13px;line-height:1.5"></textarea>
-      <div style="display:flex;gap:8px;padding:10px 14px;border-top:1px solid var(--bd)">
-        <button class="add-submit" style="flex:1" onclick="saveWorkoutProgram()">&#9889; Parse &amp; save</button>
-        <button class="cbtn" onclick="closeWorkoutEditor()">Cancel</button>
+      <div class="pf-cat-body">
+        <div id="workout-program-card"><div class="lempty" style="margin-top:6px">No training program saved yet. Tap + to set one up — Arnie will use it in every session.</div></div>
+        <div class="add-card" id="workout-editor" style="display:none;margin-top:10px">
+          <div style="display:flex;gap:8px;padding:12px 14px;border-bottom:1px solid var(--bd)">
+            <button class="add-submit" style="flex:1;text-align:center;padding:10px" onclick="autoFillWorkout()">&#10024; Auto-fill from Arnie chat</button>
+          </div>
+          <div style="padding:6px 14px;font-family:'Geist Mono','SF Mono',monospace;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--di)">or paste manually</div>
+          <textarea class="add-inp" id="workout-raw" rows="10" placeholder="Paste your workout split — exercises, goals, recent lifts, rotation." style="height:160px;resize:vertical;font-size:13px;line-height:1.5"></textarea>
+          <div style="display:flex;gap:8px;padding:10px 14px;border-top:1px solid var(--bd)">
+            <button class="add-submit" style="flex:1" onclick="saveWorkoutProgram()">&#9889; Parse &amp; save</button>
+            <button class="cbtn" onclick="closeWorkoutEditor()">Cancel</button>
+          </div>
+          <div id="workout-parse-status" style="padding:0 14px 10px;font-size:12px;color:var(--mu)"></div>
+        </div>
       </div>
-      <div id="workout-parse-status" style="padding:0 14px 10px;font-size:12px;color:var(--mu)"></div>
     </div>
 
     <div class="stitle" style="margin-top:16px">Connected devices</div>
@@ -2387,54 +2450,9 @@ footer{{
     </div>
   </div>
 
-  <!-- COACHING TAB -->
-  <div class="tab-panel" id="panel-coaching">
-    <div class="stitle" style="margin-top:4px">Reminders</div>
-    <div class="pref-card" id="remind-card">
-      <div class="pref-row">
-        <span class="pref-lbl">Daily check-ins</span>
-        <label class="pref-toggle">
-          <input type="checkbox" id="remind-toggle" onchange="saveRemindOn(this.checked)">
-          <span class="pref-slider"></span>
-        </label>
-      </div>
-      <div id="remind-freq-wrap" style="margin-top:12px">
-        <input type="range" class="pref-range" id="remind-range" min="0" max="3" step="1" value="2"
-               oninput="onRemindSlide(this.value)" onchange="commitRemindSlide(this.value)">
-        <div class="pref-ticks" id="remind-ticks">
-          <span class="pref-tick">Minimal</span>
-          <span class="pref-tick">Light</span>
-          <span class="pref-tick">Regular</span>
-          <span class="pref-tick">All-day</span>
-        </div>
-        <div class="pref-hint" id="remind-desc"></div>
-      </div>
-    </div>
-
-    <div class="stitle" style="margin-top:16px">Food logging</div>
-    <div class="pref-card" id="food-mode-card">
-      <input type="range" class="pref-range" id="food-mode-range" min="0" max="2" step="1" value="1"
-             oninput="onFoodSlide(this.value)" onchange="commitFoodSlide(this.value)">
-      <div class="pref-ticks" id="food-mode-ticks">
-        <span class="pref-tick">Quick</span>
-        <span class="pref-tick">Balanced</span>
-        <span class="pref-tick">Strict</span>
-      </div>
-      <div class="pref-hint" id="food-mode-desc"></div>
-    </div>
-
-    <div class="stitle" style="margin-top:16px">Coaching style</div>
-    <div class="pref-card" id="coach-style-card">
-      <input type="range" class="pref-range" id="coach-style-range" min="0" max="2" step="1" value="1"
-             oninput="onCoachSlide(this.value)" onchange="commitCoachSlide(this.value)">
-      <div class="pref-ticks" id="coach-style-ticks">
-        <span class="pref-tick">Supportive</span>
-        <span class="pref-tick">Balanced</span>
-        <span class="pref-tick">Strict</span>
-      </div>
-      <div class="pref-hint" id="coach-style-desc"></div>
-    </div>
-  </div>
+  <!-- COACHING TAB removed — controls migrated to the Profile tab above
+       under a "Coaching preferences" section. The render functions still
+       live in JS unchanged (just called from renderProfileTab now). -->
 
 <footer>Arnie &middot; auto-refresh 5 min</footer>
 </div><!-- /main-inner -->
@@ -2458,9 +2476,6 @@ footer{{
   </button>
   <button class="bn-item" id="bn-brain" onclick="switchTab('brain')">
     <span class="bn-ico"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="2.5" fill="currentColor" stroke="none"/><circle cx="5.5" cy="8" r="1.6"/><circle cx="18.5" cy="8" r="1.6"/><circle cx="5.5" cy="17" r="1.6"/><circle cx="18.5" cy="17" r="1.6"/><path d="M12 12L5.5 8M12 12L18.5 8M12 12L5.5 17M12 12L18.5 17" opacity=".55"/></svg></span>Brain
-  </button>
-  <button class="bn-item" id="bn-coaching" onclick="switchTab('coaching')">
-    <span class="bn-ico"><svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M11 3l1.5 4.6L17 9l-4.5 1.4L11 15l-1.5-4.6L5 9l4.5-1.4z"/><path d="M18 14l.7 2.3 2.3.7-2.3.7-.7 2.3-.7-2.3-2.3-.7 2.3-.7z" opacity=".7"/></svg></span>Coaching
   </button>
 </nav>
 
@@ -2578,14 +2593,7 @@ var PAGE_HEADS={{
   week:{{title:'Your trends',sub:'LAST 30 DAYS'}},
   profile:{{title:'Your profile',sub:'ACCOUNT &amp; SETTINGS'}},
   brain:{{title:"Arnie's brain",sub:'LIVE &mdash; UPDATES AS ARNIE LEARNS'}},
-  coaching:{{title:'Coaching',sub:'PREFERENCES &amp; REMINDERS'}},
 }};
-function renderCoachingTab(d) {{
-  var p = (d && d.profile) || {{}};
-  renderRemindSettings(p);
-  renderFoodModeSettings(p);
-  renderCoachingStyleSettings(p);
-}}
 function switchTab(name){{
   _activeTab=name;
   document.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('active'));
@@ -2606,7 +2614,6 @@ function switchTab(name){{
   if(name==='week'){{if(_baseData)renderWeekTab(_baseData);loadWeekInsights();}}
   if(name==='profile' && _baseData){{renderProfileTab(_baseData);loadWorkoutProgram();loadAIProfile();}}
   if(name==='brain') loadBrainTab();
-  if(name==='coaching' && _baseData){{renderCoachingTab(_baseData);}}
 }}
 
 // Brain tab —— lazy-mount the /brain/{token} iframe on first tab open. We set
@@ -3930,6 +3937,13 @@ function openWorkoutEditor(){{
   if(!ed)return;
   var isOpen=ed.style.display!=='none';
   if(isOpen){{closeWorkoutEditor();return;}}
+  // Force-expand the parent .pf-cat-section if it's collapsed — otherwise
+  // the editor opens inside a max-height:0 container and the user sees
+  // nothing happen. The "+" button uses stopPropagation so it doesn't
+  // toggle the section twice, but it DOES need to explicitly expand
+  // the section the first time.
+  var sec=document.getElementById('pf-training-section');
+  if(sec)sec.classList.remove('collapsed');
   if(_wpCache&&_wpCache.raw_text)ta.value=_wpCache.raw_text;
   ed.style.display='block';
   if(btn)btn.classList.add('open');
@@ -4006,6 +4020,14 @@ async function deleteWorkoutProgram(){{
 function renderProfileTab(d){{
   var p=d.profile||{{}};
   var tgt=d.targets||{{}};
+
+  // Coaching preferences — moved from the removed Coaching tab. These three
+  // settings have their own DOM nodes inside #panel-profile now; the existing
+  // render functions read state from the profile dict and update the controls
+  // in place. No new state plumbing; just invoking the old renderers from here.
+  renderRemindSettings(p);
+  renderFoodModeSettings(p);
+  renderCoachingStyleSettings(p);
 
   // Demographics — who the user is. Renders into the compact grid at the top
   // of the "Your settings" section. Editable cells use editBasic (same flow
