@@ -68,9 +68,20 @@ _DEAD_END_PHRASES = {
     # two-word variants that slip past the single-token filter
     "logged that", "logged it", "got it logged", "all logged", "got that",
     "got that logged", "done for now", "all good", "that's logged",
-    # sign-off used as a COMPLETE reply (valid only when paired with coaching content)
-    "sleep well", "good night", "goodnight", "night night",
+    # NOTE: "sleep well" / "goodnight" intentionally NOT here — they are correct
+    # contextual responses when the user signs off. Including them caused quality
+    # repair to fire after a goodnight and re-log food from context (real bug).
 }
+
+# Sign-off phrases that the user might say to trigger a goodnight response.
+# When the user's message contains one of these, Arnie's "Sleep well 🌙" is
+# intentional — NOT a dead-end. Used to gate quality repair.
+_USER_SIGNOFF_PATTERNS = re.compile(
+    r"\b(goodnight|good night|night|nite|gn|sleep well|going to sleep|"
+    r"going to bed|off to bed|heading to bed|спокойной ночи|ночи|"
+    r"dormir|buenas noches|bonne nuit)\b",
+    re.IGNORECASE,
+)
 
 
 def looks_like_dead_end(text: str) -> bool:
@@ -134,6 +145,11 @@ def looks_like_mechanics(text: str) -> bool:
     """
     t = (text or "").strip().lower()
     return any(phrase in t for phrase in _MECHANICS_PHRASES)
+
+
+def user_is_signing_off(user_text: str) -> bool:
+    """True if the user's message is a sign-off (goodnight, going to sleep, etc.)."""
+    return bool(user_text and _USER_SIGNOFF_PATTERNS.search(user_text))
 
 
 def detect_frustration(user_text: str) -> bool:
