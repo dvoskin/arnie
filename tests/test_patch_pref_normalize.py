@@ -65,3 +65,55 @@ async def test_food_logging_mode_exact_passes_through(monkeypatch, db):
     await _patch(monkeypatch, db, "food_logging_mode", "quick")
     await db.refresh(u.preferences)
     assert u.preferences.food_logging_mode == "quick"
+
+
+# ── Macro target bounds + auto-sync on PATCH ─────────────────────────────────
+
+async def _seed_macro_user(db, **demographics):
+    base = dict(current_weight_kg=80.0, height_cm=180.0, age=30, sex="male",
+                primary_goal="maintain", training_experience="intermediate")
+    base.update(demographics)
+    u = User(telegram_id="patch-macro", name="Macro", onboarding_completed=True,
+             webhook_token="tok-patch", **base)
+    db.add(u)
+    await db.flush()
+    db.add(UserPreferences(user_id=u.id, proactive_messaging_enabled=True))
+    await db.commit()
+    return u
+
+
+@pytest.mark.asyncio
+async def test_patch_rejects_calorie_target_out_of_range(monkeypatch, db):
+    """A 999999 typo in the calorie input must be rejected, not saved and
+    then expanded by the sync into absurd downstream macros."""
+    from fastapi import HTTPException
+    u = await _seed_macro_user(db)
+    with pytest.raises(HTTPException) as ei:
+        await _patch(monkeypatch, db, "calorie_target", "999999")
+    assert ei.value.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_patch_calorie_target_in_range_syncs_all_macros(monkeypatch, db):
+    u = await _seed_macro_user(db)
+    await _patch(monkeypatch, db, "calorie_target", "2500")
+    await db.refresh(u.preferences)
+    p = u.preferences
+    assert p.calorie_target == 2500
+    # protein/carbs/fat now derived from goal+weight (maintain, 80kg)
+    assert p.protein_target and p.carb_target and p.fat_target
+    # macro sum honors the calorie target within rounding noise
+    macro_sum = p.protein_target * 4 + p.carb_target * 4 + p.fat_target * 9
+    assert abs(macro_sum - p.calorie_target) <= 10
+
+
+@pytest.mark.asyncio
+async def test_patch_protein_change_preserves_calories(monkeypatch, db):
+    u = await _seed_macro_user(db)
+    await _patch(monkeypatch, db, "calorie_target", "2500")
+    await _patch(monkeypatch, db, "protein_target", "220")
+    await db.refresh(u.preferences)
+    p = u.preferences
+    assert p.calorie_target == 2500 and p.protein_target == 220
+    macro_sum = p.protein_target * 4 + p.carb_target * 4 + p.fat_target * 9
+    assert abs(macro_sum - p.calorie_target) <= 10

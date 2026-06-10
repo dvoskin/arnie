@@ -154,21 +154,35 @@ def compute_macros_for_calorie_target(user, calorie_target: int) -> dict | None:
     goal = (user.primary_goal or "maintain").lower()
 
     if goal == "cut":
-        protein = round(1.0 * goal_lb)
-        fat = round(0.3 * w_lb)
+        protein = 1.0 * goal_lb
+        fat = 0.3 * w_lb
     elif goal == "bulk":
-        protein = round(0.9 * w_lb)
-        fat = round(0.35 * w_lb)
+        protein = 0.9 * w_lb
+        fat = 0.35 * w_lb
     elif goal == "performance":
-        protein = round(0.9 * w_lb)
-        fat = round((cals * 0.25) / 9)
+        protein = 0.9 * w_lb
+        fat = (cals * 0.25) / 9
     elif goal == "health":
-        protein = round((cals * 0.30) / 4)
-        fat = round((cals * 0.30) / 9)
+        protein = (cals * 0.30) / 4
+        fat = (cals * 0.30) / 9
     else:  # maintain
-        protein = round(0.9 * w_lb)
-        fat = round(0.35 * w_lb)
+        protein = 0.9 * w_lb
+        fat = 0.35 * w_lb
 
+    # Safety scaling: if goal-rule protein + fat overshoots the calorie
+    # budget (rare — happens when a heavy lifter sets calories very low,
+    # e.g. an aggressive cut), scale both down proportionally so the
+    # macro sum lands at exactly the calorie target with carbs = 0. Keeps
+    # cal = p*4 + c*4 + f*9 honest at the boundary; without this the
+    # tiles would show "800 kcal target" but macros summing to ~1200.
+    fixed_cals = protein * 4 + fat * 9
+    if fixed_cals > cals:
+        scale = cals / fixed_cals
+        protein *= scale
+        fat *= scale
+
+    protein = round(protein)
+    fat = round(fat)
     carb_cals = max(0, cals - protein * 4 - fat * 9)
     carbs = round(carb_cals / 4)
     return {"protein_target": protein, "carb_target": carbs, "fat_target": fat}

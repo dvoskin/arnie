@@ -1259,6 +1259,10 @@ async def _dispatch(name, inp, user, today_log, db, source_type):  # noqa: C901
         }
         normed = {_aliases.get(k, k): v for k, v in (inp or {}).items()}
 
+        _field_for_arg = {
+            "calories": "calorie_target", "protein": "protein_target",
+            "carbs":    "carb_target",    "fat":     "fat_target",
+        }
         written = []
         if normed.get("calories") is not None:
             prefs.calorie_target = int(normed["calories"]); written.append("calories")
@@ -1275,6 +1279,15 @@ async def _dispatch(name, inp, user, today_log, db, source_type):  # noqa: C901
                 "calories, protein, carbs, fat. If accepting the recommended "
                 "targets from context, pass all four."
             )
+
+        # If the LLM passed exactly ONE macro (e.g. user said "set my
+        # calories to 2800"), auto-sync the other three using the same
+        # rules as the dashboard PATCH path. When the LLM passes the full
+        # 4-macro recommendation (the targets_unset accept-flow), trust
+        # its coherent set and skip the sync.
+        if len(written) == 1:
+            from core.targets import sync_macros_after_change
+            sync_macros_after_change(user, prefs, _field_for_arg[written[0]])
 
         await db.commit()
         user = await reload_user(db, user.id)

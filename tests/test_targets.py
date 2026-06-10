@@ -136,3 +136,23 @@ def test_sync_no_op_when_protein_overshoots_calories():
     p = _prefs(calorie_target=900, protein_target=300)
     # protein alone = 1200 cals > 900 → remainder negative → bail
     assert sync_macros_after_change(u, p, "protein_target") is False
+
+
+def test_low_calorie_scales_protein_and_fat_to_fit():
+    """When goal-rule protein+fat exceeds the calorie budget (aggressive
+    cut at heavy body weight), scale BOTH down proportionally so the
+    macro sum lands at the calorie target. Previously this returned
+    incoherent values: target=800 with macros summing to 1194."""
+    u = _user(primary_goal="maintain", current_weight_kg=80)
+    m = compute_macros_for_calorie_target(u, 800)
+    sum_kcal = m["protein_target"] * 4 + m["carb_target"] * 4 + m["fat_target"] * 9
+    # rounding may push 1-2 kcal over; the macro sum must NOT wildly
+    # exceed the budget the way pre-fix did (1194 vs 800).
+    assert sum_kcal <= 810, f"low-cal incoherence: {m} sums to {sum_kcal}"
+    # carbs collapse to near-zero (rounding may leave 1-2g of residual remainder)
+    assert m["carb_target"] <= 2
+    # Protein and fat scaled in fixed proportion: maintain has p=0.9*lb
+    # and f=0.35*lb → ratio p_cal/f_cal = (159*4)/(62*9) ≈ 1.14, preserved
+    # after scaling (within rounding).
+    ratio = (m["protein_target"] * 4) / (m["fat_target"] * 9)
+    assert 1.05 <= ratio <= 1.25

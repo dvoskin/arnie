@@ -1560,14 +1560,31 @@ async def api_edit_profile(token: str, patch: ProfilePatch):
                         _val, getattr(user.preferences, "food_logging_mode", "moderate") or "moderate")
                 setattr(user.preferences, field, _val)
             elif field in _pref_int and user.preferences:
-                setattr(user.preferences, field, int(raw) if raw else None)
+                # Range-check before write — same bands as api_preregister so
+                # a "999999" typo can't poison the sync below into computing
+                # absurd derived macros (a 250kg-carb target etc.). None/blank
+                # clears the field, which the sync gracefully no-ops on.
+                _v = int(raw) if raw else None
+                if _v is not None:
+                    _bounds = {
+                        "calorie_target": (800, 6000),
+                        "protein_target": (20,  500),
+                        "carb_target":    (0,   800),
+                        "fat_target":     (10,  300),
+                    }[field]
+                    if not (_bounds[0] <= _v <= _bounds[1]):
+                        raise HTTPException(
+                            status_code=400,
+                            detail=f"{field.replace('_',' ')} must be between {_bounds[0]} and {_bounds[1]}",
+                        )
+                setattr(user.preferences, field, _v)
                 # Keep the four macro targets self-consistent: whenever one
                 # changes, the others recompute so cal = p*4 + c*4 + f*9
                 # stays physical. Field-specific behavior lives in targets.py:
                 #   calories → re-derive all three macros from goal+weight
                 #   protein  → split remainder into carbs/fat (goal ratio)
                 #   carbs/fat → the other absorbs the remainder
-                if raw:
+                if _v is not None:
                     from core.targets import sync_macros_after_change
                     sync_macros_after_change(user, user.preferences, field)
             elif field in _pref_bool and user.preferences:
