@@ -165,7 +165,10 @@ function lobePositions(lobes, w, h, half) {
   // 1 lobe -> tiny ring near centre; 5 -> filling the canvas. Caps at 1.
   const countScale = Math.min(1, 0.40 + n * 0.11);
   let rx = Math.min(0.40, (0.26 + aspect * 0.06)) * countScale;
-  let ry = Math.min(0.32, (0.20 + (1 / aspect) * 0.06)) * countScale;
+  // Mobile rings stretch a touch taller (0.36 vs 0.32) so the 8-lobe
+  // distribution feels more impressive instead of cramped vertically.
+  const ryCap = (w && w < 480) ? 0.36 : 0.32;
+  let ry = Math.min(ryCap, (0.20 + (1 / aspect) * 0.06)) * countScale;
   // Geometric clamp — keep the lobe wrapper (sized HALF*2) fully on-screen
   // by limiting the centre's distance from canvas centre to (W/2 - half - margin).
   // Without this, mobile viewports (W < ~600) would push the wrapper off
@@ -275,9 +278,11 @@ function layoutLocal(nodes, half, isMobile) {
   // a star). sqrt(i/n) radius distribution keeps the density uniform from
   // centre to rim instead of bunching at the edge.
   const goldenAngle = Math.PI * (3 - Math.sqrt(5));     // ~137.508°
-  const cap   = isMobile ? 76  : 108;
-  const grow  = isMobile ? 2.4 : 3.5;
-  const baseR = isMobile ? 34  : 50;
+  // Mobile clusters loosened slightly (86 vs 76 cap) so dense lobes
+  // read with more presence now that the ring has more vertical room.
+  const cap   = isMobile ? 86  : 108;
+  const grow  = isMobile ? 2.8 : 3.5;
+  const baseR = isMobile ? 38  : 50;
   const maxR = Math.min(cap * k, (baseR + n * grow) * k);
   const minR = 6 * k;                                    // hollow centre
   return nodes.map((node, i) => {
@@ -872,7 +877,13 @@ function ListRow({ node, theme, fresh, first }) {
     <div onClick={() => { if (!editing && canExpand) setExpanded(v => !v); }}
       style={{ display: "flex", flexDirection: "column",
         padding: rowPad,
-        borderTop: first ? "none" : `1px solid ${theme.listDivider}`,
+        // Row-to-row dividers are softer than the section dividers so
+        // the eye reads the section header as the chapter break and the
+        // row separator as just a rhythm guide. The section's own
+        // bottom border still uses the full theme.listDivider opacity.
+        borderTop: first
+          ? "none"
+          : `1px solid ${theme.name === "dark" ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.04)"}`,
         background: fresh ? theme.freshWash : (editing ? theme.freshWash : "transparent"),
         transition: "background .25s ease",
         cursor: (!editing && canExpand) ? "pointer" : "default" }}>
@@ -1035,29 +1046,34 @@ function BrainListView({ lobes, theme, freshId }) {
       // Side gutters scale with viewport: 16px floor on mobile (so the
       // list reads like a proper indented column instead of bleeding
       // edge-to-edge), 32px ceiling on desktop.
-      padding: "6px clamp(16px, 5vw, 32px) 120px",
+      // Bottom padding is generous on mobile so the sticky Telegram /
+      // browser nav bar at the bottom of the device doesn't overlap the
+      // last few rows. calc adds the iOS home-indicator safe area on top.
+      padding: "6px clamp(16px, 5vw, 32px) calc(160px + env(safe-area-inset-bottom, 0px))",
       fontFamily: "'Geist Mono','SF Mono', monospace" }}>
       {ordered.map((l) => {
         const consolidated = consolidateChipNodes(l.nodes);
         const confirmed = consolidated.filter((n) => n.state === "confirmed").length;
         const isPhoneSection = (typeof window !== "undefined" && window.innerWidth < 480);
         return (
-          <div key={l.id} style={{ marginBottom: isPhoneSection ? 14 : 12 }}>
-            {/* Section header — tight mono caps in the terminal/stdout
-                style. Mobile gives the header a touch more breathing
-                room and a slightly larger key so the sections feel
-                scannable on a phone. */}
+          <div key={l.id} style={{ marginBottom: isPhoneSection ? 18 : 14 }}>
+            {/* Section header — mono caps. Mobile gets more vertical
+                breathing room (20px top vs 12px desktop) so each lobe's
+                section reads as a distinct chapter rather than a stream
+                of rows.  Divider is intentionally lighter than the row
+                dividers so the eye reads it as a chapter break. */}
             <div style={{ display: "flex", alignItems: "baseline", gap: 10,
-              padding: isPhoneSection ? "16px 0 7px" : "12px 0 5px",
-              borderBottom: `1px solid ${theme.listDivider}` }}>
+              padding: isPhoneSection ? "20px 0 9px" : "12px 0 5px",
+              borderBottom: `1px solid ${theme.listDivider}`,
+              opacity: 0.95 }}>
               <span style={{ fontSize: isPhoneSection ? 10.5 : 10, fontWeight: 500,
-                letterSpacing: "0.18em",
+                letterSpacing: "0.2em",
                 textTransform: "uppercase", color: theme.secLabel }}>
                 {tableKey(l.name)}
               </span>
               <span style={{ flex: 1, height: 1 }} />
               <span style={{ fontSize: 9.5, fontWeight: 500, letterSpacing: "0.06em",
-                color: theme.subText, opacity: 0.55 }}>
+                color: theme.subText, opacity: 0.45 }}>
                 {confirmed}/{consolidated.length}
               </span>
             </div>
@@ -2292,7 +2308,9 @@ function App() {
         if (compact) {
           return (
             <div style={{ position: "absolute",
-              left: 0, right: 0, bottom: "calc(10px + env(safe-area-inset-bottom, 0px))",
+              // Push the legend further up on mobile so the sticky Telegram
+              // nav at the very bottom of the device never overlaps it.
+              left: 0, right: 0, bottom: "calc(28px + env(safe-area-inset-bottom, 0px))",
               zIndex: 15,
               display: "flex", justifyContent: "center", alignItems: "center",
               gap: 14,
