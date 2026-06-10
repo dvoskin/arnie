@@ -1884,6 +1884,24 @@ footer{{
 .pref-tick:last-child{{text-align:right}}
 .pref-tick.active{{color:var(--ac);font-weight:600}}
 .pref-hint{{font-size:11px;color:var(--mu);margin-top:7px}}
+
+/* ── COACHING PREFERENCES SUB-LABELS ──────────────────────
+   Title row that sits above each .pref-card in the Coaching
+   preferences section. Sentence case Geist sans (not the
+   mono uppercase .settings-sub used by Demographics/Goals)
+   so the labels read at a glance without screaming for
+   attention. Flex container lets reminders dock its on/off
+   toggle on the right while food/coaching cards have just
+   the label. */
+.cp-row{{
+  display:flex;align-items:center;justify-content:space-between;
+  margin:14px 2px 6px;gap:10px;
+}}
+.cp-row:first-of-type{{margin-top:6px}}
+.cp-label{{
+  font-size:12.5px;font-weight:600;letter-spacing:-.005em;
+  color:var(--tx2);line-height:1.2;
+}}
 </style>
 </head>
 <body>
@@ -2332,29 +2350,31 @@ footer{{
       <span>Coaching preferences</span>
     </div>
 
-    <div class="settings-sub">Reminders</div>
+    <!-- Reminders — toggle lives in the title row so the card itself has
+         identical innards to Food logging / Coaching style (slider + ticks
+         + hint). When the toggle is off, dim the whole card. -->
+    <div class="cp-row">
+      <div class="cp-label">Reminders</div>
+      <label class="pref-toggle">
+        <input type="checkbox" id="remind-toggle" onchange="saveRemindOn(this.checked)">
+        <span class="pref-slider"></span>
+      </label>
+    </div>
     <div class="pref-card" id="remind-card">
-      <div class="pref-row">
-        <span class="pref-lbl">Daily check-ins</span>
-        <label class="pref-toggle">
-          <input type="checkbox" id="remind-toggle" onchange="saveRemindOn(this.checked)">
-          <span class="pref-slider"></span>
-        </label>
+      <input type="range" class="pref-range" id="remind-range" min="0" max="3" step="1" value="2"
+             oninput="onRemindSlide(this.value)" onchange="commitRemindSlide(this.value)">
+      <div class="pref-ticks" id="remind-ticks">
+        <span class="pref-tick">Minimal</span>
+        <span class="pref-tick">Light</span>
+        <span class="pref-tick">Regular</span>
+        <span class="pref-tick">All-day</span>
       </div>
-      <div id="remind-freq-wrap" style="margin-top:12px">
-        <input type="range" class="pref-range" id="remind-range" min="0" max="3" step="1" value="2"
-               oninput="onRemindSlide(this.value)" onchange="commitRemindSlide(this.value)">
-        <div class="pref-ticks" id="remind-ticks">
-          <span class="pref-tick">Minimal</span>
-          <span class="pref-tick">Light</span>
-          <span class="pref-tick">Regular</span>
-          <span class="pref-tick">All-day</span>
-        </div>
-        <div class="pref-hint" id="remind-desc"></div>
-      </div>
+      <div class="pref-hint" id="remind-desc"></div>
     </div>
 
-    <div class="settings-sub" style="margin-top:14px">Food logging</div>
+    <div class="cp-row">
+      <div class="cp-label">Food logging</div>
+    </div>
     <div class="pref-card" id="food-mode-card">
       <input type="range" class="pref-range" id="food-mode-range" min="0" max="2" step="1" value="1"
              oninput="onFoodSlide(this.value)" onchange="commitFoodSlide(this.value)">
@@ -2366,7 +2386,9 @@ footer{{
       <div class="pref-hint" id="food-mode-desc"></div>
     </div>
 
-    <div class="settings-sub" style="margin-top:14px">Coaching style</div>
+    <div class="cp-row">
+      <div class="cp-label">Coaching style</div>
+    </div>
     <div class="pref-card" id="coach-style-card">
       <input type="range" class="pref-range" id="coach-style-range" min="0" max="2" step="1" value="1"
              oninput="onCoachSlide(this.value)" onchange="commitCoachSlide(this.value)">
@@ -2893,8 +2915,10 @@ function renderRemindSettings(p){{
   // frequency control when a durable gate is blocking delivery — the slider
   // can't change anything until the block clears.
   if(rng){{rng.value=idx;rng.disabled=!on||!!blocked;}}
-  var wrap=document.getElementById('remind-freq-wrap');
-  if(wrap)wrap.style.opacity=(on&&!blocked)?'1':'.4';
+  // Dim the whole card now that the toggle moved out into the title row.
+  // (Was the inner #remind-freq-wrap; that wrapper no longer exists.)
+  var card=document.getElementById('remind-card');
+  if(card)card.style.opacity=(on&&!blocked)?'1':'.4';
   _setTicks('remind-ticks',idx);
   var desc=document.getElementById('remind-desc');
   if(desc)desc.textContent=(on&&blocked)?(_REMIND_BLOCKED_MSGS[blocked]||'')
@@ -2954,8 +2978,10 @@ async function saveRemindOn(checked){{
   if(_baseData&&_baseData.profile)_baseData.profile.reminders_on=checked;
   var rng=document.getElementById('remind-range');
   if(rng)rng.disabled=!checked;
-  var wrap=document.getElementById('remind-freq-wrap');
-  if(wrap)wrap.style.opacity=checked?'1':'.4';
+  // Dim the card — was #remind-freq-wrap, now the card itself since the
+  // toggle moved into the title row above.
+  var card=document.getElementById('remind-card');
+  if(card)card.style.opacity=checked?'1':'.4';
   await _patchPref('proactive_messaging_enabled',checked?'true':'false');
 }}
 
