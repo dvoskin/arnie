@@ -17,7 +17,20 @@ def _dashboard_title(name: str) -> str:
     return f"ArnieOS ⏐ {owner} Dashboard"
 
 
-def _dashboard_html(token: str, name: str = "", bot_username: str = "Arnie_1026_Bot") -> str:
+def _dashboard_html(token: str, name: str = "", bot_username: str = "Arnie_1026_Bot",
+                    brain_enabled: bool = False) -> str:
+    # Brain tab gating — defaults to OFF so the production environment
+    # never renders the half-built /brain/{token} iframe. The CSS rule
+    # uses !important so it wins regardless of cascade position, even
+    # against a .brain-active body class for full-bleed override. The
+    # JS const is read by loadBrainTab below to short-circuit the iframe
+    # src write. Flip BRAIN_TAB_ENABLED=true in Render env when the route
+    # + page are ready to ship.
+    _brain_off_css = (
+        "" if brain_enabled
+        else "#nav-brain,#bn-brain,#panel-brain{display:none!important}"
+    )
+    _brain_enabled_js = "true" if brain_enabled else "false"
     return f"""<!DOCTYPE html>
 <html lang="en" data-theme="dark">
 <head>
@@ -74,6 +87,9 @@ def _dashboard_html(token: str, name: str = "", bot_username: str = "Arnie_1026_
 }}
 
 /* ── BASE ────────────────────────────────────────────────── */
+/* Brain-tab feature gate — empty string when enabled, hard-hides
+   sidebar nav button, bottom-nav button, and tab panel when off. */
+{_brain_off_css}
 html{{background:var(--bg);transition:background .35s,color .3s}}
 body{{
   font-family:'Geist',ui-sans-serif,system-ui,-apple-system,sans-serif;
@@ -593,6 +609,32 @@ body{{
   .log-section-body{{max-height:none!important}}
   .log-section-hd{{cursor:default}}
 }}
+
+/* ── PROFILE COLLAPSIBLE SECTIONS ──────────────────────────
+   Same visual language as .log-section but collapsed by default
+   AND togglable on every screen size (Arnie's brain sections
+   should opt-in to detail, not blast it on first load). */
+.pf-cat-section{{margin-top:14px}}
+.pf-cat-hd{{cursor:pointer;user-select:none}}
+.pf-cat-body{{
+  overflow:hidden;
+  transition:max-height .3s cubic-bezier(.4,0,.2,1);
+  max-height:3000px;
+}}
+.pf-cat-section.collapsed .pf-cat-body{{max-height:0}}
+/* Chevron — `‹` glyph, defaults to rotated -90deg (pointing down)
+   to cue "tap to expand". Settles to 0deg when expanded. The same
+   button serves both .pf-cat-section .collapsed and the standalone
+   .pf-chevron.expanded case (Arnie's brain top header). */
+.pf-chevron{{
+  background:transparent;border:none;color:var(--mu);cursor:pointer;
+  font-size:18px;line-height:1;padding:0;font-family:inherit;
+  display:grid;place-items:center;width:20px;
+  transition:transform .2s,color .15s;transform:rotate(-90deg);
+}}
+.pf-cat-hd:hover .pf-chevron{{color:var(--tx2)}}
+.pf-chevron.expanded,
+.pf-cat-section:not(.collapsed) .pf-chevron{{transform:none}}
 
 /* ── ADD FOOD / WORKOUT FORMS ────────────────────────────── */
 .add-card{{
@@ -1313,6 +1355,30 @@ body{{
 .basic-cell:hover .basic-edit{{opacity:1}}
 .basic-edit:hover{{background:var(--sf2);color:var(--tx)}}
 @media(max-width:560px){{.basics-grid{{grid-template-columns:repeat(2,1fr)}}}}
+/* Goals & targets — reuses .basic-cell tiles in two stacked grids:
+   meta row (Goal + Goal weight, 2-up) and macros row (Cal/P/C/F, 4-up).
+   Mobile collapses macros to 2-col, matching the Demographics grid. */
+.goals-meta-grid{{display:grid;grid-template-columns:repeat(2,1fr);gap:7px;margin-bottom:7px}}
+.macros-grid{{display:grid;grid-template-columns:repeat(4,1fr);gap:7px;margin-bottom:9px}}
+@media(max-width:560px){{.macros-grid{{grid-template-columns:repeat(2,1fr)}}}}
+/* Macro tile — same shell as .basic-cell, but the value gets a small color
+   dot so the macro signal carries through at a glance (matches the macro
+   tiles on the Day tab). Color is driven by --macro-c on the tile. */
+.macro-cell .basic-val{{display:flex;align-items:baseline;gap:6px;font-variant-numeric:tabular-nums}}
+.macro-cell .basic-val::before{{
+  content:"";width:5px;height:5px;border-radius:50%;flex-shrink:0;
+  background:var(--macro-c, var(--mu));align-self:center;margin-top:-1px;
+}}
+.macro-cell .basic-unit{{font-size:10.5px;color:var(--mu);font-weight:400;letter-spacing:.01em}}
+/* Goal-pill cell — value renders as a colored pill on the goal-name tile so
+   the cut/bulk/maintain/perf/health signal is visible without a separate dot. */
+.goal-pill{{
+  display:inline-flex;align-items:center;gap:5px;padding:2px 8px;
+  border-radius:999px;font-size:12.5px;font-weight:600;line-height:1.4;
+  color:var(--goal-c, var(--tx));
+  background:color-mix(in oklch, var(--goal-c, var(--tx)) 14%, transparent);
+  border:1px solid color-mix(in oklch, var(--goal-c, var(--tx)) 26%, transparent);
+}}
 /* Standard-skeleton extras: "waiting" dot for empty slots + value chips */
 .slot-wait{{
   width:6px;height:6px;border-radius:50%;flex-shrink:0;align-self:center;
@@ -1841,6 +1907,10 @@ footer{{
         <span class="ni-ico"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.2 4-6.5 8-6.5s8 2.3 8 6.5"/></svg></span>
         <span class="ni-lbl">Profile</span><span class="ni-meta">You</span>
       </button>
+      <button class="navitem" id="nav-brain" onclick="switchTab('brain')">
+        <span class="ni-ico"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="2.5" fill="currentColor" stroke="none"/><circle cx="5.5" cy="8" r="1.6"/><circle cx="18.5" cy="8" r="1.6"/><circle cx="5.5" cy="17" r="1.6"/><circle cx="18.5" cy="17" r="1.6"/><path d="M12 12L5.5 8M12 12L18.5 8M12 12L5.5 17M12 12L18.5 17" opacity=".55"/></svg></span>
+        <span class="ni-lbl">Brain</span><span class="ni-meta">Learning</span>
+      </button>
       <button class="navitem" id="nav-coaching" onclick="switchTab('coaching')">
         <span class="ni-ico"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3C7 3 3 6.6 3 11c0 2.4 1.1 4.5 2.9 6L5 21l4.3-1.4A9.6 9.6 0 0 0 12 20c5 0 9-3.6 9-8s-4-9-9-9Z"/><path d="M9 11h.01M12 11h.01M15 11h.01" stroke-width="2.2" stroke-linecap="round"/></svg></span>
         <span class="ni-lbl">Coaching</span><span class="ni-meta">Settings</span>
@@ -2159,7 +2229,10 @@ footer{{
     <div id="demographics-card" class="basics-grid"></div>
 
     <div class="settings-sub" style="margin-top:14px">Goals &amp; targets</div>
-    <div id="goals-card" class="infocrd"></div>
+    <!-- Container is a bare div now — per-tile borders provide the card
+         framing. Matches the Demographics section's structure (no .infocrd
+         wrapper, tiles do the visual work). -->
+    <div id="goals-card"></div>
 
     <!-- Auto-calculate targets card — sits below the user-defined goals.
          Tap the (i) glyph to reveal the calculation rules; tap the button
@@ -2198,11 +2271,10 @@ footer{{
         <div class="calc-rule">
           <div class="calc-rule-h">Step 2 &nbsp;·&nbsp; Total daily energy</div>
           <div class="calc-rule-b">
-            <span class="calc-kv">BMR × activity multiplier. Set automatically from your training experience.</span>
-            <span class="calc-kv"><b>Beginner</b> &nbsp;×1.375 &nbsp;<span class="calc-aside">light exercise, 1–3 d/wk</span></span>
-            <span class="calc-kv"><b>Moderate</b> &nbsp;×1.55 &nbsp;<span class="calc-aside">3–5 d/wk &nbsp;· default</span></span>
-            <span class="calc-kv"><b>Advanced</b> &nbsp;×1.725 &nbsp;<span class="calc-aside">6+ d/wk, intense</span></span>
-            <span class="calc-kv calc-meta">Source: ACSM Resource Manual for Guidelines for Exercise Testing.</span>
+            <span class="calc-kv">BMR × <b>1.4</b> — a single conservative multiplier, not derived from your lifting experience.</span>
+            <span class="calc-kv calc-aside">Years lifting tells us how to coach you; it doesn't tell us how much you burn outside the gym. Until we ask about your job and weekly activity directly, we use one realistic default: slightly above textbook "lightly active" (1.375) to account for gym sessions, well below "moderate" (1.55) which assumes a non-sedentary occupation.</span>
+            <span class="calc-kv calc-aside">Edit the calorie target directly above if you know your real TDEE — manual edits stick and the rest of the macros recompute from your number.</span>
+            <span class="calc-kv calc-meta">Source: ACSM Resource Manual activity tiers; conservative calibration per Helms (Muscle &amp; Strength Pyramid) &amp; Lyle McDonald — start lower, adjust by results.</span>
           </div>
         </div>
 
@@ -2257,9 +2329,15 @@ footer{{
     <!-- ─── ARNIE'S BRAIN ─── learned facts only. Bio + AI attributes by
          category. NEVER duplicates what's in the settings section above. -->
     <div id="ai-profile-section" style="display:none;margin-top:28px">
-      <div class="stitle spaced" style="margin-top:4px;cursor:pointer" onclick="toggleBio()">
-        <span>Arnie's brain <span class="ai-pill">AI</span> <span id="bio-chevron" style="font-size:11px;opacity:.5">▼</span></span>
-        <button class="add-toggle" onclick="event.stopPropagation();refreshAIProfile()" title="Refresh">&#8635;</button>
+      <!-- Top header — mirrors the Day-tab .log-section-hd pattern: label
+           on the left, chevron + action buttons on the right inside a flex
+           container. Chevron rotates via .expanded class on click. -->
+      <div class="stitle spaced pf-cat-hd" style="margin-top:4px" onclick="toggleBio()">
+        <span>Arnie's brain <span class="ai-pill">AI</span></span>
+        <div style="display:flex;align-items:center;gap:6px">
+          <button class="pf-chevron" id="bio-chevron-btn" title="Expand">&#8249;</button>
+          <button class="add-toggle" onclick="event.stopPropagation();refreshAIProfile()" title="Refresh">&#8635;</button>
+        </div>
       </div>
       <!-- Bio card — collapsed by default -->
       <div class="infocrd" id="ai-bio-card" style="padding:14px 16px;line-height:1.6;font-size:14px;color:var(--tx);display:none"></div>
@@ -2296,6 +2374,17 @@ footer{{
 
     <div class="stitle" style="margin-top:16px">Connected devices</div>
     <div class="infocrd" style="overflow:hidden" id="devices-card"></div>
+  </div>
+
+  <!-- BRAIN TAB —— live mindmap of what Arnie has learned. The iframe loads
+       /brain/{token}, which polls /api/profile/{token} every ~20s and
+       animates new/changed nodes. Lazy-loaded the first time the tab is
+       opened (see switchTab handler) so the dashboard's initial paint isn't
+       slowed by React+Babel from CDN. -->
+  <div class="tab-panel" id="panel-brain" style="padding:0">
+    <div id="brain-frame-wrap" style="position:relative;height:calc(100vh - 130px);min-height:520px;margin:-12px -24px 0;border-radius:14px;overflow:hidden">
+      <iframe id="brain-frame" title="Arnie's Brain" style="border:0;width:100%;height:100%;display:block;background:transparent" loading="lazy"></iframe>
+    </div>
   </div>
 
   <!-- COACHING TAB -->
@@ -2367,6 +2456,9 @@ footer{{
   <button class="bn-item" id="bn-profile" onclick="switchTab('profile')">
     <span class="bn-ico"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8.5" r="3.5"/><path d="M5.5 20.5c.7-3.5 3.4-5.5 6.5-5.5s5.8 2 6.5 5.5"/></svg></span>Profile
   </button>
+  <button class="bn-item" id="bn-brain" onclick="switchTab('brain')">
+    <span class="bn-ico"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="2.5" fill="currentColor" stroke="none"/><circle cx="5.5" cy="8" r="1.6"/><circle cx="18.5" cy="8" r="1.6"/><circle cx="5.5" cy="17" r="1.6"/><circle cx="18.5" cy="17" r="1.6"/><path d="M12 12L5.5 8M12 12L18.5 8M12 12L5.5 17M12 12L18.5 17" opacity=".55"/></svg></span>Brain
+  </button>
   <button class="bn-item" id="bn-coaching" onclick="switchTab('coaching')">
     <span class="bn-ico"><svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M11 3l1.5 4.6L17 9l-4.5 1.4L11 15l-1.5-4.6L5 9l4.5-1.4z"/><path d="M18 14l.7 2.3 2.3.7-2.3.7-.7 2.3-.7-2.3-2.3-.7 2.3-.7z" opacity=".7"/></svg></span>Coaching
   </button>
@@ -2380,6 +2472,10 @@ const TOKEN        = '{token}';
 const STATS_BASE   = '/api/stats/'    + TOKEN;
 const INSIGHTS_API = '/api/insights/' + TOKEN;
 const PROFILE_API  = '/api/profile/'  + TOKEN;
+// Brain-tab feature gate. Driven by BRAIN_TAB_ENABLED env var on the
+// server. Default false in production so the half-built tab never paints,
+// and loadBrainTab() below short-circuits before touching the iframe src.
+const _BRAIN_ENABLED = {_brain_enabled_js};
 
 // ── State ─────────────────────────────────────────────────────────────────
 let _baseData=null, _dayCache={{}}, _viewingDate=null, _todayStr=null;
@@ -2481,6 +2577,7 @@ async function loadInsights(){{
 var PAGE_HEADS={{
   week:{{title:'Your trends',sub:'LAST 30 DAYS'}},
   profile:{{title:'Your profile',sub:'ACCOUNT &amp; SETTINGS'}},
+  brain:{{title:"Arnie's brain",sub:'LIVE &mdash; UPDATES AS ARNIE LEARNS'}},
   coaching:{{title:'Coaching',sub:'PREFERENCES &amp; REMINDERS'}},
 }};
 function renderCoachingTab(d) {{
@@ -2508,7 +2605,24 @@ function switchTab(name){{
   if(name==='day') loadInsights();
   if(name==='week'){{if(_baseData)renderWeekTab(_baseData);loadWeekInsights();}}
   if(name==='profile' && _baseData){{renderProfileTab(_baseData);loadWorkoutProgram();loadAIProfile();}}
+  if(name==='brain') loadBrainTab();
   if(name==='coaching' && _baseData){{renderCoachingTab(_baseData);}}
+}}
+
+// Brain tab —— lazy-mount the /brain/{token} iframe on first tab open. We set
+// the src exactly once so the React app keeps its state (selected node, view
+// toggle, polling timer) across subsequent tab switches.
+var _brainLoaded = false;
+function loadBrainTab(){{
+  // Feature gate — when BRAIN_TAB_ENABLED is unset in prod env, this
+  // returns before touching the iframe src so /brain/{{token}} is never
+  // fetched (route doesn't exist in prod yet → would 404).
+  if(!_BRAIN_ENABLED) return;
+  if(_brainLoaded) return;
+  var f = document.getElementById('brain-frame');
+  if(!f) return;
+  f.src = '/brain/' + encodeURIComponent(TOKEN);
+  _brainLoaded = true;
 }}
 
 // ── Boot ──────────────────────────────────────────────────────────────────
@@ -3903,16 +4017,25 @@ function renderProfileTab(d){{
       if(p.height_cm) return Math.round(p.height_cm)+' cm';
       return null;
     }}
-    // ALL five demographics rows are now editable so "Calculate for me" can
+    // ALL six demographics rows are now editable so "Calculate for me" can
     // never get stuck on a missing-field error the user can't fix in the UI.
     // Sex normalizes server-side (any reasonable spelling → male/female/other),
-    // Height accepts "5'10", "5 10", or plain inches.
+    // Height accepts "5'10", "5 10", or plain inches. Daily activity uses a
+    // 4-option picklist (sedentary / lightly / moderately / very active) —
+    // currently captured-only, not yet wired into compute_macro_targets().
+    var _actLabel = {{
+      sedentary:          'Sedentary',
+      lightly_active:     'Lightly active',
+      moderately_active:  'Moderately active',
+      very_active:        'Very active',
+    }};
     var rows=[
       {{label:'Name',           value:p.name||null,                                edit:'name',              raw:p.name||''}},
       {{label:'Age',            value:p.age?p.age+' yrs':null,                    edit:'age',               raw:p.age||''}},
       {{label:'Sex',            value:(p.sex?String(p.sex).charAt(0).toUpperCase()+String(p.sex).slice(1):null), edit:'sex',     raw:p.sex||''}},
       {{label:'Height',         value:_ht(),                                       edit:'height_in',         raw:p.height_ft||''}},
       {{label:'Current weight', value:p.current_weight_lbs!=null?(p.current_weight_lbs+' lbs'):null, edit:'current_weight_lbs', raw:p.current_weight_lbs!=null?String(p.current_weight_lbs):''}},
+      {{label:'Daily activity',  value:p.non_training_activity?_actLabel[p.non_training_activity]||p.non_training_activity:null, edit:'non_training_activity', raw:p.non_training_activity||''}},
     ];
     // Always render all 5 cells (empty value renders as "—") so the user can
     // edit missing values too. The basic-edit pencil is always visible.
@@ -3929,31 +4052,59 @@ function renderProfileTab(d){{
     }}).join('');
   }}
 
-  // Goals & targets card — user-controlled settings, distinct from Arnie's brain.
-  // Renders 6 editable rows: goal, goal weight, calories, protein, carbs, fat.
-  // Each row uses the existing editProw/saveProw flow; saves PATCH the profile API
-  // and re-fetch stats, which triggers renderProfileTab again to show new values.
+  // Goals & targets card — visually unified with Demographics:
+  // top row of two .basic-cell tiles (Goal + Goal weight) above a 4-up
+  // grid of macro tiles (Cal/P/C/F). Macros use a color dot per macro that
+  // mirrors the Day-tab macro tiles; Goal renders as a colored pill so the
+  // cut/bulk/perf/health signal is visible at a glance.
+  // The cell IDs stay 'pg-*' for editProw discovery (editProw can find the
+  // label via either .inlbl or .basic-lbl now — see editProw below).
   var gc=document.getElementById('goals-card');
   if(gc){{
     var goalColor={{cut:'var(--re)',bulk:'var(--ac)',maintain:'var(--mu)',performance:'var(--or)',health:'var(--bl)'}}[p.primary_goal]||'var(--tx)';
     var goalDisp=goalLabel(p.primary_goal);
-    function gRow(lbl,disp,raw,field,col){{
+
+    // Meta tile (Goal / Goal weight) — value renders plain. Goal cell wraps
+    // value in a goal-pill so the goal type pops without a separate badge.
+    function metaTile(lbl,disp,raw,field,asPill,pillColor){{
       var id='pg-'+lbl.toLowerCase().replace(/[^a-z0-9]/g,'_');
       var hasVal=raw!=null&&raw!=='';
-      var c=hasVal?col:'var(--mu)';
-      var d=hasVal?disp:'—';
-      var eb='<button class="ibtn inrow-edit" onclick="editProw(\\''+id+'\\',\\''+escA(field)+'\\',\\''+escA(raw||'')+'\\')">&#9998;</button>';
-      return '<div class="inrow" id="'+id+'"><span class="inlbl">'+esc(lbl)+'</span>'+
-        '<div class="inrow-right"><span class="inval" style="color:'+c+'">'+esc(d)+'</span>'+eb+'</div></div>';
+      var val = hasVal
+        ? (asPill
+            ? '<span class="goal-pill" style="--goal-c:'+pillColor+'">'+esc(disp)+'</span>'
+            : esc(disp))
+        : '<span style="color:var(--mu);font-weight:400">—</span>';
+      var eb='<button class="basic-edit" onclick="editProw(\\''+id+'\\',\\''+escA(field)+'\\',\\''+escA(raw||'')+'\\')">&#9998;</button>';
+      return '<div class="basic-cell" id="'+id+'">'+
+        '<div class="basic-lbl">'+esc(lbl)+'</div>'+
+        '<div class="basic-val">'+val+'</div>'+eb+'</div>';
     }}
+
+    // Macro tile — colored dot + value + unit. Color drives --macro-c on
+    // the tile so the ::before dot picks it up via CSS.
+    function macroTile(lbl,num,unit,field,col){{
+      var id='pg-'+lbl.toLowerCase().replace(/[^a-z0-9]/g,'_');
+      var hasVal=num!=null&&num!=='';
+      var inner = hasVal
+        ? (esc(String(num))+'<span class="basic-unit">'+esc(unit)+'</span>')
+        : '<span style="color:var(--mu);font-weight:400">—</span>';
+      var eb='<button class="basic-edit" onclick="editProw(\\''+id+'\\',\\''+escA(field)+'\\',\\''+escA(num!=null?String(num):'')+'\\')">&#9998;</button>';
+      return '<div class="basic-cell macro-cell" id="'+id+'" style="--macro-c:'+col+'">'+
+        '<div class="basic-lbl">'+esc(lbl)+'</div>'+
+        '<div class="basic-val">'+inner+'</div>'+eb+'</div>';
+    }}
+
     gc.innerHTML=
-      gRow('Goal',        goalDisp,                                                p.primary_goal||'',                                  'primary_goal',    goalColor)+
-      gRow('Goal weight', p.goal_weight_lbs!=null?(p.goal_weight_lbs+' lbs'):'',   p.goal_weight_lbs!=null?String(p.goal_weight_lbs):'','goal_weight_lbs', 'var(--tx)')+
-      '<div style="border-top:1px solid var(--bd);margin:2px 0"></div>'+
-      gRow('Calories',    tgt.calories!=null?(tgt.calories+' kcal'):'',            tgt.calories!=null?String(tgt.calories):'',          'calorie_target',  'var(--tx)')+
-      gRow('Protein',     tgt.protein!=null?(tgt.protein+'g'):'',                  tgt.protein!=null?String(tgt.protein):'',            'protein_target',  'var(--ac)')+
-      gRow('Carbs',       tgt.carbs!=null?(tgt.carbs+'g'):'',                      tgt.carbs!=null?String(tgt.carbs):'',                'carb_target',     'var(--or)')+
-      gRow('Fat',         tgt.fats!=null?(tgt.fats+'g'):'',                        tgt.fats!=null?String(tgt.fats):'',                  'fat_target',      'var(--ye)');
+      '<div class="goals-meta-grid">'+
+        metaTile('Goal',        goalDisp,                                              p.primary_goal||'',                                  'primary_goal',    true, goalColor)+
+        metaTile('Goal weight', p.goal_weight_lbs!=null?(p.goal_weight_lbs+' lbs'):'', p.goal_weight_lbs!=null?String(p.goal_weight_lbs):'','goal_weight_lbs', false, null)+
+      '</div>'+
+      '<div class="macros-grid">'+
+        macroTile('Calories', tgt.calories, 'kcal', 'calorie_target', 'var(--tx)')+
+        macroTile('Protein',  tgt.protein,  'g',    'protein_target', 'var(--ac)')+
+        macroTile('Carbs',    tgt.carbs,    'g',    'carb_target',    'var(--or)')+
+        macroTile('Fat',      tgt.fats,     'g',    'fat_target',     'var(--ye)')+
+      '</div>';
   }}
 
   var dc=document.getElementById('devices-card');
@@ -4129,8 +4280,19 @@ function renderAIProfile(data) {{
     var learn = (learnLabels && learnLabels.length)
       ? '<div class="pf-learning"><span class="pf-learn-dot"></span>Still learning &middot; ' +
         learnLabels.map(esc).join(' &middot; ') + '</div>' : '';
-    return '<div style="margin-top:20px"><div class="stitle" style="margin-top:0">' + esc(label) + '</div>' +
-      '<div class="infocrd">' + visible + extraHtml + learn + '</div></div>';
+    // Collapsible category section — starts in .collapsed state (chevron
+    // rotated -90deg, body max-height:0). Click the header to expand.
+    // Markup mirrors the Day-tab .log-section-hd pattern so the Profile
+    // tab reads as the same visual family as the rest of the dashboard.
+    return '<div class="pf-cat-section collapsed">' +
+      '<div class="stitle spaced pf-cat-hd" style="margin-top:0" onclick="togglePfCat(this)">' +
+        '<span>' + esc(label) + '</span>' +
+        '<button class="pf-chevron" title="Toggle">&#8249;</button>' +
+      '</div>' +
+      '<div class="pf-cat-body">' +
+        '<div class="infocrd" style="margin-top:10px">' + visible + extraHtml + learn + '</div>' +
+      '</div>' +
+    '</div>';
   }}
 
   // Nest custom/learned attributes under the section their category belongs to,
@@ -4302,13 +4464,34 @@ async function calculateTargetsForMe(){{
 // (5'10, 5 10, 70 — server parses), Weight expects a number in lbs.
 function editBasic(cellId, field, raw, label) {{
   var cell = document.getElementById(cellId); if (!cell) return;
+  // Picklist option map — keep wire values in DB-form (snake_case for
+  // multi-word), show friendly labels in the UI. Sex stays single-word so
+  // value == label. Activity needs both since wire is snake_case.
+  var _basicPicklists = {{
+    sex: {{
+      options: ['male','female','other'],
+      label: function(v){{ return v.charAt(0).toUpperCase()+v.slice(1); }},
+    }},
+    non_training_activity: {{
+      options: ['sedentary','lightly_active','moderately_active','very_active'],
+      label: function(v){{
+        return ({{
+          sedentary: 'Sedentary — desk job, minimal movement',
+          lightly_active: 'Lightly active — light walking through the day',
+          moderately_active: 'Moderately active — on your feet often',
+          very_active: 'Very active — manual labor, active job',
+        }})[v] || v;
+      }},
+    }},
+  }};
   var editor;
-  if (field === 'sex') {{
+  var pl = _basicPicklists[field];
+  if (pl) {{
     var cur = (raw || '').toLowerCase();
-    var opts = ['male','female','other'];
+    var opts = pl.options.slice();
     if (cur && opts.indexOf(cur) === -1) opts.unshift(cur);
-    editor = '<select id="bi-'+cellId+'" style="flex:1;min-width:0;background:var(--inp);border:1px solid var(--ac);color:var(--tx);padding:4px 7px;border-radius:7px;font-size:13px;font-family:inherit;outline:none;text-transform:capitalize">' +
-      opts.map(function(o){{ return '<option value="'+escA(o)+'"'+(o===cur?' selected':'')+'>'+esc(o)+'</option>'; }}).join('') +
+    editor = '<select id="bi-'+cellId+'" style="flex:1;min-width:0;background:var(--inp);border:1px solid var(--ac);color:var(--tx);padding:4px 7px;border-radius:7px;font-size:13px;font-family:inherit;outline:none">' +
+      opts.map(function(o){{ return '<option value="'+escA(o)+'"'+(o===cur?' selected':'')+'>'+esc(pl.label(o))+'</option>'; }}).join('') +
       '</select>';
   }} else {{
     var ph = '';
@@ -4370,11 +4553,26 @@ async function refreshAIProfile() {{
 }}
 function toggleBio(){{
   var el=document.getElementById('ai-bio-card');
-  var ch=document.getElementById('bio-chevron');
+  var ch=document.getElementById('bio-chevron-btn');
   if(!el)return;
   var open=el.style.display==='none'||!el.style.display;
   el.style.display=open?'block':'none';
-  if(ch)ch.textContent=open?'▲':'▼';
+  // .expanded settles the chevron to 0deg (default state is rotated
+  // -90deg via .pf-chevron base style). Pattern matches the Day-tab
+  // section chevrons — defined in CSS above.
+  if(ch)ch.classList.toggle('expanded',open);
+}}
+
+// Toggle a single Arnie's brain category section (Goals/Nutrition/Fitness/…)
+// Called from the header onclick; finds the parent .pf-cat-section and flips
+// the .collapsed class — CSS handles the chevron rotation + body max-height
+// transition. Designed to mirror Day-tab toggleLogSection() behavior, except
+// it's togglable on every screen size (categories opt-in to detail).
+function togglePfCat(hd){{
+  var sec = hd && hd.parentElement;
+  if (sec && sec.classList.contains('pf-cat-section')) {{
+    sec.classList.toggle('collapsed');
+  }}
 }}
 // ── Insights ──────────────────────────────────────────────────────────────
 function toggleInsights(which){{
@@ -4757,9 +4955,15 @@ function cancelEdit(){{
 // ── Profile inline editing ────────────────────────────────────────────────
 function editProw(rowId,field,current){{
   var row=document.getElementById(rowId);if(!row)return;
-  var lbl=row.querySelector('.inlbl').textContent;
-  var _style='flex:1;max-width:170px;background:var(--inp);border:1px solid var(--ac);color:var(--tx);'+
+  // Label discovery — older .inrow layouts use .inlbl, the new tile layout
+  // (Goals & targets) uses .basic-lbl. Try both so the editor works in either.
+  var lblEl = row.querySelector('.inlbl') || row.querySelector('.basic-lbl');
+  var lbl = lblEl ? lblEl.textContent : '';
+  var isTile = row.classList.contains('basic-cell');
+
+  var _style='flex:1;min-width:0;background:var(--inp);border:1px solid var(--ac);color:var(--tx);'+
     'padding:5px 8px;border-radius:8px;font-size:12px;font-family:inherit;outline:none';
+  if(!isTile) _style += ';max-width:170px';
   var opts=EDIT_OPTIONS[field], editor;
   if(opts){{
     // Picklist for enum fields. Keep any current off-list value selectable.
@@ -4774,13 +4978,27 @@ function editProw(rowId,field,current){{
   }}else{{
     editor='<input type="text" id="pi-'+rowId+'" value="'+escA(current)+'" style="'+_style+'">';
   }}
-  row.innerHTML='<span class="inlbl">'+esc(lbl)+'</span>'+
-    '<div style="display:flex;align-items:center;gap:5px;flex:1;justify-content:flex-end">'+
-    editor+
-    '<button class="sbtn" style="flex:none;padding:5px 12px;font-size:12px;min-height:0" '+
-    'onclick="saveProw(\\''+rowId+'\\',\\''+escA(field)+'\\')">✓</button>'+
-    '<button class="cbtn" style="flex:none;padding:5px 10px;font-size:12px;min-height:0" '+
-    'onclick="cancelProw()">✗</button></div>';
+
+  if(isTile){{
+    // Tile layout — keep the mono uppercase label on top, replace the value
+    // row with the editor + save/cancel underneath. Compact buttons so the
+    // tile doesn't grow during edit.
+    row.innerHTML='<div class="basic-lbl">'+esc(lbl)+'</div>'+
+      '<div style="display:flex;align-items:center;gap:4px;margin-top:1px">'+
+      editor+
+      '<button class="sbtn" style="flex:none;padding:4px 8px;font-size:11px;min-height:0" '+
+      'onclick="saveProw(\\''+rowId+'\\',\\''+escA(field)+'\\')">✓</button>'+
+      '<button class="cbtn" style="flex:none;padding:4px 6px;font-size:11px;min-height:0" '+
+      'onclick="cancelProw()">✗</button></div>';
+  }} else {{
+    row.innerHTML='<span class="inlbl">'+esc(lbl)+'</span>'+
+      '<div style="display:flex;align-items:center;gap:5px;flex:1;justify-content:flex-end">'+
+      editor+
+      '<button class="sbtn" style="flex:none;padding:5px 12px;font-size:12px;min-height:0" '+
+      'onclick="saveProw(\\''+rowId+'\\',\\''+escA(field)+'\\')">✓</button>'+
+      '<button class="cbtn" style="flex:none;padding:5px 10px;font-size:12px;min-height:0" '+
+      'onclick="cancelProw()">✗</button></div>';
+  }}
   var inp=document.getElementById('pi-'+rowId);
   if(inp){{inp.focus();if(inp.select)inp.select();}}
 }}

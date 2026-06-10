@@ -1149,6 +1149,7 @@ async def _build_stats_for_user(db, user, target_date=None):
         "goal_weight_lbs": round(user.goal_weight_kg * 2.20462, 1) if user.goal_weight_kg else None,
         "primary_goal": user.primary_goal,
         "training_experience": user.training_experience,
+        "non_training_activity": user.non_training_activity,
         "dietary_preferences": user.dietary_preferences,
         "injuries": user.injuries,
         "timezone": user.timezone,
@@ -1491,6 +1492,11 @@ async def api_edit_profile(token: str, patch: ProfilePatch):
 
         _str_fields = {"name", "primary_goal", "training_experience",
                        "dietary_preferences", "injuries", "timezone"}
+        # Enum allowlist for non_training_activity — values must match the
+        # ACSM tier names. Bot-side code can also write via update_profile,
+        # so the same vocabulary is enforced in both paths.
+        _activity_values = {"sedentary", "lightly_active",
+                            "moderately_active", "very_active"}
         _int_fields = {"age"}
         _weight_fields = {
             "current_weight_lbs": "current_weight_kg",
@@ -1510,6 +1516,17 @@ async def api_edit_profile(token: str, patch: ProfilePatch):
         try:
             if field in _str_fields:
                 setattr(user, field, str(raw).strip() if raw else None)
+            elif field == "non_training_activity":
+                if not raw:
+                    user.non_training_activity = None
+                else:
+                    v = str(raw).strip().lower().replace(" ", "_").replace("-", "_")
+                    if v not in _activity_values:
+                        raise HTTPException(
+                            status_code=400,
+                            detail=f"non_training_activity must be one of {sorted(_activity_values)}",
+                        )
+                    user.non_training_activity = v
             elif field == "sex":
                 # Normalize free-text or dropdown values to {male, female, other}
                 # so the BMR formula in core/targets.py picks the right branch.
@@ -2999,7 +3016,14 @@ async def dashboard(token: str):
         name = user.name or ""
 
     bot_username = os.getenv("TELEGRAM_BOT_USERNAME", "Arnie_1026_Bot")
-    return HTMLResponse(_dashboard_html(token, name=name, bot_username=bot_username))
+    # Brain tab feature flag — default OFF so production never paints the
+    # half-built /brain/{token} iframe. Flip BRAIN_TAB_ENABLED=true in the
+    # Render env (or any other deploy target) when the route + page are
+    # ready to ship.
+    _brain_enabled = os.getenv("BRAIN_TAB_ENABLED", "").lower() in ("true", "1", "yes", "on")
+    return HTMLResponse(_dashboard_html(
+        token, name=name, bot_username=bot_username, brain_enabled=_brain_enabled,
+    ))
 
 
 

@@ -51,14 +51,28 @@ def compute_macro_targets(user) -> dict | None:
     else:
         bmr = 10 * w_kg + 6.25 * h_cm - 5 * age - 161
 
-    # Activity factor — defaults to moderate (1.55).
-    exp = (user.training_experience or "").lower()
-    if any(k in exp for k in ("advanced", "athlete", "very")):
-        factor = 1.725
-    elif any(k in exp for k in ("beginner", "new", "start")):
-        factor = 1.375
-    else:
-        factor = 1.55
+    # Activity factor — DECOUPLED from training_experience.
+    #
+    # Earlier versions of this function used training_experience (years
+    # lifting) to pick an activity multiplier. That was a category error:
+    # "advanced" describes EXPERIENCE, not daily energy burn. A 5-year
+    # lifter with a desk job burns roughly the same per day as a 2-year
+    # lifter with the same routine. Conflating the two systematically
+    # over-projected TDEE for the most common case (4-year lifter +
+    # desk job) and produced cut targets that were too generous.
+    #
+    # Until we add an explicit `non_training_activity` field (sedentary /
+    # lightly active / moderately active / very active — what the textbook
+    # multipliers actually measure), we use a SINGLE conservative default
+    # of 1.4 — slightly above textbook "lightly active" (1.375) to account
+    # for the gym sessions themselves, but well below "moderate" (1.55)
+    # which assumes a non-sedentary occupation.
+    #
+    # Per Helms (Muscle & Strength Pyramid) and Lyle McDonald: start LOW
+    # and let real-world weight change tell you where TDEE actually is.
+    # The user can edit the calorie target directly after the calc runs
+    # if they know they're truly more (or less) active than the default.
+    factor = 1.4
 
     tdee = bmr * factor
     goal = (user.primary_goal or "maintain").lower()

@@ -1070,6 +1070,9 @@ async def _dispatch(name, inp, user, today_log, db, source_type):  # noqa: C901
         _user_fields = {
             "name", "age", "sex", "height_cm", "current_weight_kg",
             "goal_weight_kg", "primary_goal", "training_experience",
+            "non_training_activity",  # NOT yet wired to compute_macro_targets,
+                                       # but allow conversational capture so the
+                                       # data is there when the math switches over.
             "dietary_preferences", "injuries", "timezone", "city",
             "channel_preference",
         }

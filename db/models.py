@@ -23,6 +23,12 @@ class User(Base):
     channel_preference = Column(String)     # "telegram" | "imessage" — where proactive reminders go (linked users)
     primary_goal = Column(String)          # cut / bulk / maintain / performance / health
     training_experience = Column(String)   # beginner / intermediate / advanced
+    # Daily occupational / non-training activity — distinct from training
+    # experience above. ACSM tier labels: sedentary, lightly_active,
+    # moderately_active, very_active. NOT yet wired into compute_macro_targets()
+    # (which still uses a single 1.4 multiplier); this column captures the
+    # signal so users can populate it ahead of the math switching over.
+    non_training_activity = Column(String)
     dietary_preferences = Column(String)
     injuries = Column(Text)
     onboarding_completed = Column(Boolean, default=False)

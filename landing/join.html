@@ -733,10 +733,13 @@
       ? (10 * wKg + 6.25 * hCm - 5 * age + 5)
       : (10 * wKg + 6.25 * hCm - 5 * age - 161);
 
-    // Activity factor — defaults to moderate (1.55)
-    let factor = 1.55;
-    if (exp === 'advanced' || exp.includes('athlete') || exp.includes('very')) factor = 1.725;
-    else if (exp === 'beginner' || exp.includes('new') || exp.includes('start')) factor = 1.375;
+    // Activity factor — MUST mirror core/targets.py exactly.
+    // DECOUPLED from training_experience: experience (years lifting) is not
+    // the same as activity (daily energy burn). Until an explicit activity
+    // input exists, use a single conservative default (1.4 — slightly above
+    // textbook "lightly active" 1.375 to account for gym sessions, well
+    // below "moderate" 1.55 which assumes a non-sedentary occupation).
+    const factor = 1.4;
 
     const tdee = bmr * factor;
     const wLb = wKg * 2.20462;
