@@ -57,21 +57,25 @@ window.BRAIN_SAMPLE_EVENTS = [
 window.applySampleEvent = function (lobes, ev) {
   const clone = lobes.map((l) => ({ ...l, nodes: l.nodes.map((n) => ({ ...n })) }));
   const find = (id) => { for (const l of clone) { const n = l.nodes.find((x) => x.id === id); if (n) return n; } return null; };
+  // Toast always shows the parameter NAME (parentLabel for chip nodes,
+  // label for everything else) — not the specific value. The user cares
+  // which parameter Arnie learned, not which item got added.
+  const paramName = (n) => (n && (n.parentLabel || n.label)) || "";
   let toast = null;
   if (ev.t === "add") {
     const lobe = clone.find((l) => l.id === ev.lobe);
     const existing = lobe && lobe.nodes.find((n) => n.id === ev.id);
     if (!existing && lobe) {
       lobe.nodes.push({ id: ev.id, label: ev.label, value: ev.value, state: ev.state });
-      toast = { label: "Arnie noticed something new", text: ev.label };
-    } else { toast = { label: "Arnie reconfirmed", text: (existing && existing.label) || ev.label }; }
+      toast = { label: "Arnie noticed something new", text: paramName({ parentLabel: ev.parentLabel, label: ev.label }) };
+    } else { toast = { label: "Arnie reconfirmed", text: paramName(existing) || ev.label }; }
   } else if (ev.t === "promote") {
     const n = find(ev.id);
     if (n) { n.state = "confirmed"; if (ev.value) n.value = ev.value;
-      toast = { label: "Arnie confirmed your", text: n.label }; }
+      toast = { label: "Arnie confirmed your", text: paramName(n) }; }
   } else if (ev.t === "refine") {
     const n = find(ev.id);
-    if (n) { n.value = ev.value; toast = { label: "Arnie updated your", text: n.label }; }
+    if (n) { n.value = ev.value; toast = { label: "Arnie updated your", text: paramName(n) }; }
   }
   return { lobes: clone, freshId: ev.id, toast };
 };
@@ -212,15 +216,13 @@ function lobePositions(lobes, w, h, half) {
     };
   });
   // Pair up sibling lobes into tight vertical stacks on the left and
-  // right flanks of the constellation. This frees the top + bottom of
-  // the ring for the more actionable categories (NUTRITION, FITNESS)
-  // and lets the engagement-shaping (THOUGHTS + BEHAVIOR) and
-  // contextual (DEMOGRAPHICS + LIFESTYLE) groups read as single zones.
+  // right flanks of the constellation. Keeps the related categories
+  // visually grouped (Thoughts + Behavior on the left, Fitness +
+  // Lifestyle on the right) instead of scattering them around the ring.
   //
-  // Skip the pair overrides on mobile — phone-width viewports don't have
-  // the horizontal room for two stacked-pair columns plus a dense central
-  // ring without labels piling on each other. On mobile we keep the
-  // plain ring layout so each lobe gets its own breathing room.
+  // Skip on mobile — phone-width viewports don't have horizontal room
+  // for two flank columns plus the central ring without labels piling
+  // up. Mobile uses the plain ring layout.
   const skipPairs = (w && w < 480);
   const stackPair = (topId, bottomId, sideX) => {
     if (skipPairs) return;
@@ -229,16 +231,20 @@ function lobePositions(lobes, w, h, half) {
     res[topId] = { x: sideX, y: cy - offset };
     res[bottomId] = { x: sideX, y: cy + offset };
   };
-  // Calculate flanking x positions — push out toward the edges as far
-  // as the geometric clamp allows so the central column (Nutrition,
-  // Fitness, Goals) keeps its breathing room. Falls back to .25 / .75
-  // (legible third positions) if half/W aren't available yet.
+  // Flanking x positions — push out toward the edges as far as the
+  // geometric clamp allows so the central column (Nutrition, Health,
+  // Goals) keeps its breathing room.
   const flankInset = (w && half) ? (half + 14) / w : 0.18;
   const leftX  = Math.max(0.12, flankInset);
   const rightX = Math.min(0.88, 1 - flankInset);
   // Thoughts lobe id is "custom" (renamed-display only).
   stackPair("custom", "behavior", leftX);
-  stackPair("demographics", "lifestyle", rightX);
+  // FITNESS + LIFESTYLE pair on the right flank. Previously DEMOGRAPHICS
+  // sat there but it left FITNESS at its ring position (~87% horizontal
+  // for 8 lobes) crashing into the right-flank stack. Pairing them
+  // explicitly resolves the desktop overlap and reads as an intentional
+  // grouping (workout cadence + lifestyle calibration).
+  stackPair("fitness", "lifestyle", rightX);
   // Expose cy so the core pulse follows the same vertical centre.
   res.__cy = cy;
   return res;
@@ -297,11 +303,23 @@ function dotStyle(node, theme, sel, fresh) {
   const learning = node.state === "learning";
   const inferred = node.state === "inferred";
   const col = learning ? theme.learning : inferred ? theme.inferred : theme.known;
-  const base = { width: sel ? 13 : 9, height: sel ? 13 : 9, borderRadius: "50%",
+  // Slightly larger dots on mobile (11 / 14 selected vs 9 / 13) make
+  // them feel sharp on high-DPR phone screens — at 9px the dot was
+  // crisp on a single pixel grid but read as a blurry haze surrounded
+  // by box-shadow glow. Bigger dot = more solid pixels for the
+  // colour, less reliance on the glow halo.
+  const isPhone = (typeof window !== "undefined" && window.innerWidth < 480);
+  const baseSize = isPhone ? 11 : 9;
+  const selSize  = isPhone ? 14 : 13;
+  const base = { width: sel ? selSize : baseSize, height: sel ? selSize : baseSize, borderRadius: "50%",
     transition: "width .22s, height .22s, box-shadow .3s, background .3s, border-color .3s" };
   if (learning) return { ...base, background: "transparent", border: `1.4px solid ${col}`, animation: "lvPulse 2.8s ease-in-out infinite", boxShadow: "none", col };
   if (inferred) return { ...base, background: "transparent", border: `1.4px solid ${col}`, boxShadow: "none", col };
-  return { ...base, background: col, border: "none", boxShadow: `0 0 ${sel ? 14 : fresh ? 13 : 7}px ${col}${theme.glowA}`, col };
+  // Tighter glow on mobile so the dot's outline reads as a crisp circle
+  // instead of being lost in a wide soft halo (the box-shadow blur was
+  // making 9px dots feel blurry at typical viewing distance).
+  const glow = isPhone ? (sel ? 8 : fresh ? 7 : 3) : (sel ? 14 : fresh ? 13 : 7);
+  return { ...base, background: col, border: "none", boxShadow: `0 0 ${glow}px ${col}${theme.glowA}`, col };
 }
 
 function NodeDot({ node, e, theme, sel, fresh, freshTick, onSelect, pulse, offsetX, offsetY }) {
@@ -1664,19 +1682,24 @@ function diffLobes(prev, next) {
     snap.forEach((l) => l.nodes.forEach((n) => { m[n.id] = { lobe: l.id, node: n }; }));
     return m;
   };
+  // toastText prefers the parameter NAME over the individual value. A new
+  // "Banana" chip under "Staple foods" surfaces as "Staple foods" — the
+  // user cares which parameter learned something, not which specific item
+  // got added (they can tap the dot to see the value).
+  const toastText = (n) => n.parentLabel || n.label;
   const a = idx(prev || []), b = idx(next || []);
   for (const id in b) {
     const nx = b[id], pv = a[id];
     if (!pv) {
-      events.push({ t: "add", lobe: nx.lobe, id, label: nx.node.label, value: nx.node.value });
+      events.push({ t: "add", lobe: nx.lobe, id, label: toastText(nx.node), value: nx.node.value });
     } else if (pv.node.state !== nx.node.state) {
-      if (nx.node.state === "confirmed") events.push({ t: "promote", id, label: nx.node.label, value: nx.node.value });
-      else if (nx.node.state === "learning") events.push({ t: "refine", id, label: nx.node.label, value: nx.node.value });
-      else events.push({ t: "refine", id, label: nx.node.label, value: nx.node.value });
+      if (nx.node.state === "confirmed") events.push({ t: "promote", id, label: toastText(nx.node), value: nx.node.value });
+      else if (nx.node.state === "learning") events.push({ t: "refine", id, label: toastText(nx.node), value: nx.node.value });
+      else events.push({ t: "refine", id, label: toastText(nx.node), value: nx.node.value });
     } else {
       const va = JSON.stringify(pv.node.value || pv.node.chips || "");
       const vb = JSON.stringify(nx.node.value || nx.node.chips || "");
-      if (va !== vb) events.push({ t: "refine", id, label: nx.node.label, value: nx.node.value });
+      if (va !== vb) events.push({ t: "refine", id, label: toastText(nx.node), value: nx.node.value });
     }
   }
   return events;
