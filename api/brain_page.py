@@ -183,16 +183,55 @@ function lobePositions(lobes, w, h) {
   return res;
 }
 
-// Per-lobe node ring. Tighter cap than before so dot clusters stay
-// readable instead of sprawling. Scales gently with node count.
+// Per-lobe node ring. Tight single-ring for sparse lobes; once n > 8 we
+// split into two concentric rings (inner + outer) so the cluster reads
+// as a small galaxy instead of a cramped wheel. Group consecutive nodes
+// with the same parentLabel onto the same ring when possible so each
+// chip group reads as a cohesive arc rather than alternating in-out-in.
 function layoutLocal(nodes) {
   const n = nodes.length;
-  const R = n <= 1 ? 0 : Math.min(86, 28 + n * 6);
-  return nodes.map((node, i) => {
-    const ang = (-90 + i * (360 / n)) * Math.PI / 180;
-    const r = n > 6 ? R - (i % 2) * 18 : R;
-    return { id: node.id, lx: HALF + Math.cos(ang) * r, ly: HALF + Math.sin(ang) * r };
-  });
+  if (n <= 1) return nodes.map((node) => ({ id: node.id, lx: HALF, ly: HALF }));
+
+  if (n <= 8) {
+    const R = Math.min(86, 28 + n * 6);
+    return nodes.map((node, i) => {
+      const ang = (-90 + i * (360 / n)) * Math.PI / 180;
+      return { id: node.id, lx: HALF + Math.cos(ang) * R, ly: HALF + Math.sin(ang) * R };
+    });
+  }
+
+  // Dense lobe — two concentric rings. Split nodes ~60/40 outer/inner so
+  // the outer ring (the eye-catching one) carries the majority and the
+  // inner ring fills the breathing room without overlapping the outer
+  // dots. Keep parentLabel runs intact: if a chip group spans the split,
+  // shift the boundary forward so the whole group stays together.
+  const outerCount = Math.ceil(n * 0.62);
+  let split = outerCount;
+  for (let k = split; k > Math.floor(n * 0.4); k--) {
+    if (!nodes[k] || !nodes[k - 1]) break;
+    if (nodes[k].parentLabel && nodes[k].parentLabel === nodes[k - 1].parentLabel) {
+      split = k - 1;
+    } else {
+      break;
+    }
+  }
+  const outerN = Math.max(2, split);
+  const innerN = n - outerN;
+  const Router = Math.min(110, 60 + outerN * 4);
+  const Rinner = Math.max(28, Router - 40);
+
+  const out = [];
+  // Outer ring — start at top, full circle
+  for (let i = 0; i < outerN; i++) {
+    const ang = (-90 + (i * 360) / outerN) * Math.PI / 180;
+    out.push({ id: nodes[i].id, lx: HALF + Math.cos(ang) * Router, ly: HALF + Math.sin(ang) * Router });
+  }
+  // Inner ring — offset half a slice so dots stagger from the outer ones
+  for (let j = 0; j < innerN; j++) {
+    const ang = (-90 + 180 / outerN + (j * 360) / innerN) * Math.PI / 180;
+    out.push({ id: nodes[outerN + j].id, lx: HALF + Math.cos(ang) * Rinner, ly: HALF + Math.sin(ang) * Rinner });
+  }
+  return out;
 }
 
 function dotStyle(node, theme, sel, fresh) {
@@ -273,14 +312,34 @@ function BrainConstellationLive({ lobes, theme, freshId, freshTick, selectedId, 
   }
   function resetView() { setPan({ x: 0, y: 0 }); setZoom(1); }
 
+  // Stagger schedule — new dots get a startAt timestamp so they hold at
+  // the centre invisible until their wave fires. Outer-lobe dots (li=0
+  // is the topmost lobe in the ring) lead, and within each lobe the
+  // dots fan out by index. Result: dots cascade out from Arnie like a
+  // Big Bang lobe-by-lobe, then settle, instead of all blooming at once.
+  // Refresh / re-render existing dots keep their position (no delay).
   useEffectL(() => {
     const present = new Set();
-    lobes.forEach((l) => {
-      layoutLocal(l.nodes).forEach((loc) => {
+    const t0 = (typeof performance !== "undefined" ? performance.now() : 0);
+    lobes.forEach((l, li) => {
+      layoutLocal(l.nodes).forEach((loc, ni) => {
         present.add(loc.id);
         const e = pos.current.get(loc.id);
-        if (!e) pos.current.set(loc.id, { x: HALF, y: HALF, s: 0, o: 0, tx: loc.lx, ty: loc.ly, ts: 1, to: 1, lobe: l.id, removing: false });
-        else { e.tx = loc.lx; e.ty = loc.ly; e.ts = 1; e.to = 1; e.lobe = l.id; e.removing = false; }
+        if (!e) {
+          // First time we've seen this dot — schedule it into the cascade.
+          const delay = 50 + li * 75 + ni * 18;     // ms before this dot starts tweening
+          pos.current.set(loc.id, {
+            x: HALF, y: HALF, s: 0, o: 0,
+            tx: loc.lx, ty: loc.ly, ts: 1, to: 1,
+            lobe: l.id, removing: false,
+            startAt: t0 + delay,
+            // Brief overshoot so the dot pops on arrival instead of
+            // creeping in.  Cleared a few frames after startAt fires.
+            popUntil: t0 + delay + 340,
+          });
+        } else {
+          e.tx = loc.lx; e.ty = loc.ly; e.ts = 1; e.to = 1; e.lobe = l.id; e.removing = false;
+        }
       });
     });
     pos.current.forEach((e, id) => { if (!present.has(id)) { e.removing = true; e.ts = 0; e.to = 0; } });
@@ -290,10 +349,26 @@ function BrainConstellationLive({ lobes, theme, freshId, freshTick, selectedId, 
 
   function loop() {
     let active = false;
+    const now = (typeof performance !== "undefined" ? performance.now() : 0);
     pos.current.forEach((e, id) => {
-      e.x += (e.tx - e.x) * 0.15; e.y += (e.ty - e.y) * 0.15;
-      e.s += (e.ts - e.s) * 0.15;  e.o += (e.to - e.o) * 0.15;
-      if (Math.abs(e.tx - e.x) > 0.4 || Math.abs(e.ty - e.y) > 0.4 || Math.abs(e.ts - e.s) > 0.01 || Math.abs(e.to - e.o) > 0.01) active = true;
+      // Cascade gate — hold the dot at the centre, invisible, until its
+      // scheduled startAt. Keep the loop active so we re-check next frame.
+      if (e.startAt && now < e.startAt) { active = true; return; }
+
+      // Pop window — temporarily aim past the final scale so the dot
+      // overshoots to ~1.18 then settles to 1.0 once the window closes.
+      const ts = (e.popUntil && now < e.popUntil) ? 1.18 : 1;
+
+      e.x += (e.tx - e.x) * 0.18;
+      e.y += (e.ty - e.y) * 0.18;
+      e.s += (ts - e.s) * 0.22;
+      e.o += (e.to - e.o) * 0.20;
+      if (
+        Math.abs(e.tx - e.x) > 0.4 ||
+        Math.abs(e.ty - e.y) > 0.4 ||
+        Math.abs(ts - e.s) > 0.01 ||
+        Math.abs(e.to - e.o) > 0.01
+      ) active = true;
       if (e.removing && e.o < 0.03) pos.current.delete(id);
     });
     setTick((t) => t + 1);
@@ -391,29 +466,54 @@ function Dot({ state, theme }) {
     background: filled ? col : "transparent", border: filled ? "none" : `1.4px solid ${col}`,
     animation: state === "learning" ? "lvPulse 2.8s ease-in-out infinite" : "none" }}></span>;
 }
+// Snake-case a label for the tabulated list view so it reads as a backend
+// data key ("Coaching style" -> "coaching_style"). Preserves alphanumerics
+// and dashes; collapses everything else to underscores.
+function tableKey(s) {
+  return String(s || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9-]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
 function ListRow({ node, theme, fresh, first }) {
+  // Tabulated, backend-style row: fixed-width mono key on the left,
+  // value/chips column flexing in the middle, tight state dot on the
+  // right. No padding inflation, single 1px divider, no card chrome.
   return (
-    <div style={{ display: "flex", alignItems: "baseline", gap: 14, padding: "14px 20px",
+    <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "7px 0",
       borderTop: first ? "none" : `1px solid ${theme.listDivider}`,
-      background: fresh ? theme.freshWash : "transparent", transition: "background 1.4s ease" }}>
-      {/* Row label = quiet mono, matches the dashboard's micro-label style */}
+      background: fresh ? theme.freshWash : "transparent",
+      transition: "background 1.4s ease", minHeight: 26 }}>
       <div style={{ fontFamily: "'Geist Mono','SF Mono', monospace", fontSize: 11, fontWeight: 500,
-        letterSpacing: "0.02em", color: theme.rowLabel, flex: "none", maxWidth: 130 }}>{node.label}</div>
+        letterSpacing: "0.02em", color: theme.subText, flex: "0 0 38%", minWidth: 0,
+        overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        {tableKey(node.label)}
+      </div>
       {node.chips ? (
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 5, justifyContent: "flex-end", marginLeft: "auto", maxWidth: 280 }}>
-          {node.chips.map((c, i) => (
-            <span key={i} style={{ fontFamily: "'Geist', system-ui, sans-serif", fontSize: 12, fontWeight: 500,
-              color: theme.rowVal, border: `1px solid ${theme.listDivider}`,
-              borderRadius: 7, padding: "3px 9px", whiteSpace: "nowrap" }}>{c}</span>
-          ))}
+        <div style={{ flex: "1 1 auto", minWidth: 0, textAlign: "right",
+          fontFamily: "'Geist Mono','SF Mono', monospace", fontSize: 11.5, fontWeight: 500,
+          letterSpacing: "0.01em", color: theme.rowVal,
+          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {node.chips.join(" · ")}
         </div>
       ) : node.value ? (
-        <div style={{ marginLeft: "auto", textAlign: "right", fontFamily: "'Geist', system-ui, sans-serif",
-          fontSize: 14, fontWeight: 600, color: theme.rowVal, lineHeight: 1.36, textWrap: "pretty", maxWidth: 290 }}>{node.value}</div>
+        <div style={{ flex: "1 1 auto", minWidth: 0, textAlign: "right",
+          fontFamily: "'Geist Mono','SF Mono', monospace", fontSize: 11.5, fontWeight: 500,
+          letterSpacing: "0.01em", color: theme.rowVal,
+          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+          title={node.value}>
+          {node.value}
+        </div>
       ) : (
-        <div style={{ marginLeft: "auto" }} />
+        <div style={{ flex: "1 1 auto", textAlign: "right",
+          fontFamily: "'Geist Mono','SF Mono', monospace", fontSize: 11.5,
+          color: theme.subText, opacity: 0.35 }}>—</div>
       )}
-      <Dot state={node.state} theme={theme} />
+      <span style={{ width: 6, height: 6, borderRadius: "50%", flexShrink: 0,
+        background: node.state === "confirmed" ? theme.known : "transparent",
+        border: node.state === "confirmed" ? "none" : `1.2px solid ${stateColor(node.state, theme)}` }} />
     </div>
   );
 }
@@ -447,22 +547,32 @@ function consolidateChipNodes(nodes) {
 }
 
 function BrainListView({ lobes, theme, freshId }) {
+  // Tabulated data view — feels like a tidy stdout / db dump rather than a
+  // designed component. Flat section headers with key/count + a thin hairline,
+  // no card backgrounds, monospace alignment throughout.
   return (
-    <div style={{ maxWidth: 520, margin: "0 auto", padding: "8px 16px 120px" }}>
+    <div style={{ maxWidth: 560, margin: "0 auto", padding: "6px 18px 120px",
+      fontFamily: "'Geist Mono','SF Mono', monospace" }}>
       {lobes.map((l) => {
         const consolidated = consolidateChipNodes(l.nodes);
         const confirmed = consolidated.filter((n) => n.state === "confirmed").length;
         return (
-          <div key={l.id} style={{ marginBottom: 22 }}>
-            {/* Section title — direct port of .stitle from the Day tab */}
-            <div style={{ fontFamily: "'Geist Mono','SF Mono', monospace", fontSize: 10.5, fontWeight: 500,
-              letterSpacing: "0.10em", textTransform: "uppercase", color: theme.secLabel,
-              margin: "22px 2px 10px", display: "flex", alignItems: "center", gap: 10 }}>
-              {l.name}
-              <span style={{ opacity: 0.6, letterSpacing: "0.04em" }}>{confirmed}/{consolidated.length}</span>
+          <div key={l.id} style={{ marginBottom: 18 }}>
+            {/* Flat section header row: KEY  count/total ───────── */}
+            <div style={{ display: "flex", alignItems: "baseline", gap: 10,
+              padding: "16px 0 6px", borderBottom: `1px solid ${theme.listDivider}` }}>
+              <span style={{ fontSize: 10.5, fontWeight: 500, letterSpacing: "0.18em",
+                textTransform: "uppercase", color: theme.secLabel }}>
+                {tableKey(l.name)}
+              </span>
+              <span style={{ flex: 1, height: 1 }} />
+              <span style={{ fontSize: 9.5, fontWeight: 500, letterSpacing: "0.06em",
+                color: theme.subText, opacity: 0.6 }}>
+                {confirmed}/{consolidated.length}
+              </span>
             </div>
-            <div style={{ background: theme.cardBg, border: `1px solid ${theme.cardBorder}`, borderRadius: 14, overflow: "hidden",
-              backdropFilter: "blur(8px)" }}>
+            {/* Rows */}
+            <div>
               {consolidated.map((n, i) => (
                 <ListRow key={n.id} node={n} theme={theme} fresh={freshId === n.id} first={i === 0} />
               ))}
@@ -470,14 +580,15 @@ function BrainListView({ lobes, theme, freshId }) {
           </div>
         );
       })}
-      {/* Legend mirrors the dashboard's .pf-legend (Geist sans, faded var(--mu)) */}
-      <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 15px", justifyContent: "center", marginTop: 16,
-        fontFamily: "'Geist', system-ui, sans-serif", fontSize: 10.5, color: theme.subText, opacity: 0.7, lineHeight: 1.4 }}>
-        {[["confirmed", "confirmed"], ["inferred", "inferred from patterns"], ["learning", "needs verification"]].map(([st, txt]) => (
-          <span key={st} style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+      {/* Legend — flat mono row matching the table aesthetic */}
+      <div style={{ display: "flex", gap: 18, flexWrap: "wrap", justifyContent: "flex-start",
+        marginTop: 28, paddingTop: 14, borderTop: `1px solid ${theme.listDivider}`,
+        fontSize: 9.5, fontWeight: 500, letterSpacing: "0.06em", color: theme.subText, opacity: 0.65 }}>
+        {[["confirmed", "confirmed"], ["inferred", "inferred"], ["learning", "needs_verification"]].map(([st, txt]) => (
+          <span key={st} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
             <span style={{ width: 5, height: 5, borderRadius: "50%", flexShrink: 0,
               background: st === "confirmed" ? theme.known : "transparent",
-              border: st === "confirmed" ? "none" : `1.3px solid ${stateColor(st, theme)}` }}></span>
+              border: st === "confirmed" ? "none" : `1.2px solid ${stateColor(st, theme)}` }}></span>
             {txt}
           </span>
         ))}
@@ -525,6 +636,24 @@ function confState(c) {
   if (c === "needs_verification") return "learning";
   return "inferred";
 }
+
+// Simulation hook — when ?sim=health is set on the page URL, the Health
+// lobe gets a realistic mock supplement stack + peptide stack injected
+// after the real data lands. Lets us preview a packed lobe without
+// touching the user's actual profile. Off by default.
+const SIM_HEALTH = (() => {
+  try { return new URLSearchParams(window.location.search).get("sim") === "health"; }
+  catch (e) { return false; }
+})();
+const SIM_SUPPLEMENTS = [
+  "Creatine 5g", "Fish oil 2g", "Vitamin D 5000IU",
+  "Magnesium glycinate 400mg", "Multivitamin", "NMN 500mg",
+  "Taurine 1g", "L-citrulline 6g", "Ashwagandha 600mg",
+];
+const SIM_PEPTIDES = [
+  "BPC-157 250mcg", "TB-500 500mcg", "Ipamorelin 200mcg",
+  "CJC-1295 100mcg", "MK-677 10mg",
+];
 
 // Adapt /api/profile/{token} response into [{id,name,short,nodes:[...]}, ...].
 // Unfilled standard slots show as "still learning" pulsing nodes; custom
@@ -662,6 +791,27 @@ function profileToLobes(data) {
     if (existing) existing.nodes = existing.nodes.concat(leftover);
     else lobes.push({ id: "custom", name: "Custom", short: "CUSTOM", nodes: leftover });
   }
+
+  // Simulation injection — only on ?sim=health
+  if (SIM_HEALTH) {
+    let health = lobes.find((l) => l.id === "health");
+    if (!health) {
+      const meta = LOBE_ORDER.find((l) => l.id === "health");
+      health = { ...meta, nodes: [] };
+      lobes.push(health);
+    }
+    SIM_SUPPLEMENTS.forEach((s, i) => {
+      health.nodes.push({
+        id: "sim.supp." + i, label: s, parentLabel: "Supplements", state: "confirmed",
+      });
+    });
+    SIM_PEPTIDES.forEach((p, i) => {
+      health.nodes.push({
+        id: "sim.pep." + i, label: p, parentLabel: "Peptides", state: "confirmed",
+      });
+    });
+  }
+
   return lobes;
 }
 
@@ -797,38 +947,54 @@ function LobeInsightsPanel({ lobe, theme, onClose, stateMeta, stateCol }) {
               {shown.nodes.map((n, i) => {
                 const hasValue = (n.chips && n.chips.length) || (n.value && n.value.length);
                 const prev = i > 0 ? shown.nodes[i - 1] : null;
-                // Emit a small uppercase caption row whenever the
-                // parentLabel changes — groups exploded chips together
-                // ("TRAINING SPLIT" header above chest, back, shoulders...)
-                // so individual dots stop reading as orphans.
+                const next = i < shown.nodes.length - 1 ? shown.nodes[i + 1] : null;
+                // Group bookkeeping — when does this row start/end a parent
+                // group, and how many items are in the group? The visual
+                // treatment depends on these (left rail, group header, count).
                 const isNewGroup = n.parentLabel && (!prev || prev.parentLabel !== n.parentLabel);
+                const isGroupEnd = n.parentLabel && (!next || next.parentLabel !== n.parentLabel);
+                let groupSize = 0;
+                if (n.parentLabel) {
+                  for (const m of shown.nodes) if (m.parentLabel === n.parentLabel) groupSize++;
+                }
+                const railColor = `rgba(${theme.name === "dark" ? "0,230,118" : "5,150,105"},0.32)`;
+                const railBg = `rgba(${theme.name === "dark" ? "255,255,255,0.018" : "0,0,0,0.018"})`;
                 return (
                   <React.Fragment key={n.id}>
                     {isNewGroup && (
-                      <div style={{ padding: "12px 14px 6px", display: "flex", alignItems: "center", gap: 8 }}>
+                      <div style={{ padding: "14px 14px 6px",
+                        display: "flex", alignItems: "center", gap: 10 }}>
+                        {/* Group header label + count badge */}
                         <span style={{ fontFamily: "'Geist Mono','SF Mono', monospace", fontSize: 9.5, fontWeight: 500,
-                          letterSpacing: "0.10em", textTransform: "uppercase", color: theme.subText, opacity: 0.7 }}>
+                          letterSpacing: "0.10em", textTransform: "uppercase", color: theme.subText, opacity: 0.85 }}>
                           {n.parentLabel}
                         </span>
-                        <span style={{ flex: 1, height: 1, background: theme.cardBorder, opacity: 0.8 }} />
+                        <span style={{ fontFamily: "'Geist Mono','SF Mono', monospace", fontSize: 9, fontWeight: 500,
+                          letterSpacing: "0.04em", color: theme.subText, opacity: 0.5 }}>
+                          {groupSize}
+                        </span>
+                        <span style={{ flex: 1, height: 1, background: theme.cardBorder, opacity: 0.6 }} />
                       </div>
                     )}
-                    <div style={{ display: "flex", alignItems: "baseline", gap: 12,
-                      padding: n.parentLabel ? "6px 14px 6px 22px" : "10px 14px",
-                      borderBottom: (i === shown.nodes.length - 1) ? "none" : `1px solid ${theme.cardBorder}` }}>
-                      {/* Label: doesn't shrink past its content; truncates with
-                          ellipsis if extremely long. When the slot has no value
-                          yet, the label gets a soft opacity so the empty row
-                          reads as "in progress" instead of broken. */}
+                    <div style={{ position: "relative", display: "flex", alignItems: "baseline", gap: 12,
+                      padding: n.parentLabel ? "5px 14px 5px 24px" : "10px 14px",
+                      background: n.parentLabel ? railBg : "transparent",
+                      borderBottom: (i === shown.nodes.length - 1 || (isGroupEnd && next && !next.parentLabel)) ? "none"
+                        : (n.parentLabel && next && next.parentLabel === n.parentLabel) ? "none"
+                        : `1px solid ${theme.cardBorder}` }}>
+                      {/* Left accent rail — visible only on rows inside a
+                          parent group. Stops just before the next group/row. */}
+                      {n.parentLabel && (
+                        <span style={{ position: "absolute", left: 14, top: isNewGroup ? 0 : -1,
+                          bottom: isGroupEnd ? 4 : -1, width: 1.5, borderRadius: 1,
+                          background: railColor }} />
+                      )}
                       <span style={{ fontFamily: "'Geist', system-ui, sans-serif", fontSize: 12.5, fontWeight: 400,
                         color: theme.subText, flex: "0 0 auto", maxWidth: "45%",
                         overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
                         opacity: hasValue ? 1 : 0.55 }}>
                         {n.label}
                       </span>
-                      {/* Value column — only rendered when there is one. The
-                          confidence dot still anchors the right edge so every
-                          row keeps the same rhythm even when blank. */}
                       {n.chips ? (
                         <div style={{ display: "flex", flexWrap: "wrap", gap: 4, justifyContent: "flex-end",
                           flex: "1 1 auto", minWidth: 0 }}>
@@ -865,29 +1031,46 @@ function LobeInsightsPanel({ lobe, theme, onClose, stateMeta, stateCol }) {
                     margin: "0 0 8px", display: "flex", alignItems: "center", gap: 8 }}>
                     <span>How Arnie uses this</span>
                     {(thinking || insight) && (
-                      <span style={{ display: "inline-flex", alignItems: "center", gap: 5, marginLeft: "auto",
-                        opacity: 0.75 }}>
-                        <span style={{ width: 4, height: 4, borderRadius: "50%", background: theme.known,
-                          boxShadow: `0 0 5px ${theme.known}`,
-                          animation: thinking ? "lvPulse 1.6s ease-in-out infinite" : "none" }} />
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: 6, marginLeft: "auto" }}>
+                        <span style={{ width: 5, height: 5, borderRadius: "50%", background: theme.known,
+                          boxShadow: `0 0 4px ${theme.known}`,
+                          animation: thinking ? "lvThink 1.4s ease-in-out infinite" : "none" }} />
                         <span style={{ fontSize: 9, letterSpacing: "0.06em", textTransform: "none",
-                          color: thinking ? theme.subText : theme.known }}>
+                          color: thinking ? theme.subText : theme.known,
+                          fontWeight: 500,
+                          transition: "color .3s ease" }}>
                           {thinking ? "thinking" : "live"}
                         </span>
                       </span>
                     )}
                   </div>
-                  <div style={{ position: "relative", minHeight: 56,
+                  <div style={{ position: "relative", minHeight: 64,
                     fontFamily: "'Geist', system-ui, sans-serif", fontSize: 13, fontWeight: 400,
-                    color: theme.cardVal, lineHeight: 1.5, letterSpacing: "-.003em", textWrap: "pretty",
-                    opacity: 0.92 }}>
-                    <span style={{ opacity: insight ? 0 : (thinking ? 0.5 : 1),
-                      transition: "opacity .35s ease",
-                      position: insight ? "absolute" : "static", inset: insight ? 0 : "auto" }}>
+                    color: theme.cardVal, lineHeight: 1.5, letterSpacing: "-.003em", textWrap: "pretty" }}>
+                    {/* Fallback coaching string under-layer. While thinking
+                        it stays visible at quiet opacity AND gets a soft
+                        horizontal shimmer to read as "loading". When the
+                        AI insight arrives the fallback fades to 0 over
+                        the same .3s window the insight fades in over. */}
+                    <span className={thinking ? "lvShimmer" : ""}
+                      style={{
+                        opacity: insight ? 0 : (thinking ? 0.62 : 0.92),
+                        transition: "opacity .35s ease",
+                        position: insight ? "absolute" : "static",
+                        inset: insight ? 0 : "auto",
+                        display: "block",
+                        color: thinking ? "transparent" : theme.cardVal,
+                        WebkitTextFillColor: thinking ? "transparent" : "currentColor",
+                      }}>
                       {shown.coaching}
                     </span>
                     {insight && (
-                      <span style={{ opacity: 1, transition: "opacity .45s ease", display: "block" }}>
+                      <span style={{
+                        opacity: 1,
+                        transition: "opacity .55s ease",
+                        display: "block",
+                        color: theme.cardVal, opacity: 0.95,
+                      }}>
                         {insight.text}
                       </span>
                     )}
@@ -950,6 +1133,13 @@ function App() {
   const theme = THEMES[mode];
 
   useEffect(() => { localStorage.setItem("arnie.mode", mode); }, [mode]);
+  // Expose the theme accent + shimmer tints as CSS variables so the
+  // keyframe animations defined in <style> can reference them.
+  useEffect(() => {
+    const root = document.documentElement;
+    root.style.setProperty("--lv-known", THEMES[mode].known);
+    root.style.setProperty("--lv-shimmer", mode === "dark" ? "rgba(255,255,255,0.16)" : "rgba(40,55,70,0.22)");
+  }, [mode]);
   useEffect(() => { localStorage.setItem("arnie.view", view); }, [view]);
 
   // measure the stage so the constellation knows its canvas
@@ -1287,6 +1477,30 @@ _PAGE_HEAD = r"""<!DOCTYPE html>
   @keyframes lvPulse { 0%,100%{opacity:.4} 50%{opacity:1} }
   @keyframes lvRipple { from{transform:scale(.5);opacity:.6} to{transform:scale(2.6);opacity:0} }
   .lvRipple{animation:lvRipple 2.6s ease-out forwards}
+
+  /* Thinking dot: gentle expand/contract with a soft halo. Read as the
+     "I'm working on it" pulse beside the live badge in the insights card. */
+  @keyframes lvThink {
+    0%,100% { transform: scale(1); box-shadow: 0 0 4px var(--lv-known); opacity: .6; }
+    50%     { transform: scale(1.55); box-shadow: 0 0 10px var(--lv-known); opacity: 1; }
+  }
+  /* Shimmer: a soft horizontal light-sweep across the fallback coaching
+     text while the AI insight is generating, so the text feels "loading"
+     rather than just sitting at half opacity. */
+  @keyframes lvShimmer {
+    0%   { background-position: -180% 0; }
+    100% { background-position: 280% 0; }
+  }
+  .lvShimmer {
+    background-image: linear-gradient(110deg,
+      transparent 35%,
+      var(--lv-shimmer) 50%,
+      transparent 65%);
+    background-size: 220% 100%;
+    background-repeat: no-repeat;
+    -webkit-background-clip: text; background-clip: text;
+    animation: lvShimmer 1.8s linear infinite;
+  }
 
   .brain-list::-webkit-scrollbar{width:0}
   .brain-list{scrollbar-width:none}
