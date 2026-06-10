@@ -827,33 +827,32 @@ function tableKey(s) {
     .replace(/^_+|_+$/g, "");
 }
 
-function ListRow({ node, theme, fresh, first }) {
-  // Tabulated, backend-style row with two affordances stacked on the
-  // right-hand column:
-  //  • Tap the row → expand (full value wraps below)
-  //  • Tap the value text → inline edit (PATCHes /api/profile/{token})
-  // Edit is only enabled for nodes that carry editField (set during the
-  // profile adapter pass). Chips and unfilled slots fall back to expand.
-  // Mobile tuning — bigger type, looser row height, wider value column,
-  // larger tap targets for inline edit. Reads at-a-glance on a phone
-  // instead of squinting at 11px mono.
+function ListRow({ node, nodes, index, theme, fresh, first }) {
+  // Panel-style row to mirror the lobe-insights panel exactly: sentence-
+  // case labels, sans-serif body, chip groups get a left accent rail +
+  // wash background, single-value rows are plain. Inline tap-to-edit
+  // still works on value rows that carry editField.
   const isPhone = (typeof window !== "undefined" && window.innerWidth < 480);
-  const keyFont = isPhone ? 12 : 11;
-  const valFont = isPhone ? 12.5 : 11.5;
-  const rowMin = isPhone ? 30 : 22;
-  const rowPad = isPhone ? "7px 0" : "4px 0";
-  const labelFlex = isPhone ? "0 0 36%" : "0 0 38%";
-  const [expanded, setExpanded] = useStateL(false);
   const [editing, setEditing] = useStateL(false);
   const [draft, setDraft] = useStateL("");
   const [saving, setSaving] = useStateL(false);
   const [saveErr, setSaveErr] = useStateL(null);
-  // Local override of the displayed value after a successful save. The
-  // backend poll catches up within 20s and refreshes via props; until
-  // then this keeps the optimistic UI value on screen.
   const [override, setOverride] = useStateL(null);
-  const baseValue = node.chips ? node.chips.join(" · ") : (node.value || "");
+  const baseValue = node.value || "";
   const displayValue = override != null ? override : baseValue;
+  // Group bookkeeping — when does this row start/end a parent group?
+  const prev = index > 0 ? nodes[index - 1] : null;
+  const next = index < nodes.length - 1 ? nodes[index + 1] : null;
+  const isNewGroup = node.parentLabel && (!prev || prev.parentLabel !== node.parentLabel);
+  const isGroupEnd = node.parentLabel && (!next || next.parentLabel !== node.parentLabel);
+  let groupSize = 0;
+  if (node.parentLabel) {
+    for (const m of nodes) if (m.parentLabel === node.parentLabel) groupSize++;
+  }
+  const hasValue = (node.chips && node.chips.length) || (node.value && node.value.length);
+  const railColor = `rgba(${theme.name === "dark" ? "0,230,118" : "5,150,105"},0.32)`;
+  const railBgAlpha = isPhone ? "0.055" : "0.018";
+  const railBg = `rgba(${theme.name === "dark" ? "255,255,255," + railBgAlpha : "0,0,0," + (isPhone ? "0.04" : "0.018")})`;
   const canExpand = !!displayValue && (displayValue.length > 28 || /[.;,]/.test(displayValue));
   const canEdit = !!node.editField && !node.chips;
   const startEdit = (ev) => {
@@ -892,30 +891,59 @@ function ListRow({ node, theme, fresh, first }) {
     }
   };
   return (
-    <div onClick={() => { if (!editing && canExpand) setExpanded(v => !v); }}
-      style={{ display: "flex", flexDirection: "column",
-        padding: rowPad,
-        // Row-to-row dividers are softer than the section dividers so
-        // the eye reads the section header as the chapter break and the
-        // row separator as just a rhythm guide. The section's own
-        // bottom border still uses the full theme.listDivider opacity.
-        borderTop: first
-          ? "none"
-          : `1px solid ${theme.name === "dark" ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.04)"}`,
-        background: fresh ? theme.freshWash : (editing ? theme.freshWash : "transparent"),
-        transition: "background .25s ease",
-        cursor: (!editing && canExpand) ? "pointer" : "default" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 12, minHeight: rowMin }}>
-        <div style={{ fontFamily: "'Geist Mono','SF Mono', monospace", fontSize: keyFont, fontWeight: 500,
-          letterSpacing: "0.02em", color: theme.subText, flex: labelFlex, minWidth: 0,
-          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-          {tableKey(node.label)}
+    <React.Fragment>
+      {/* Group header — fires only on the first chip in a parent run.
+          Same mono caps + count badge style as the lobe-insights panel. */}
+      {isNewGroup && (
+        <div style={{ padding: "14px 14px 6px",
+          display: "flex", alignItems: "center", gap: 10 }}>
+          <span style={{ fontFamily: "'Geist Mono','SF Mono', monospace", fontSize: 9.5, fontWeight: 500,
+            letterSpacing: "0.10em", textTransform: "uppercase", color: theme.subText, opacity: 0.85 }}>
+            {node.parentLabel}
+          </span>
+          <span style={{ fontFamily: "'Geist Mono','SF Mono', monospace", fontSize: 9, fontWeight: 500,
+            letterSpacing: "0.04em", color: theme.subText, opacity: 0.5 }}>
+            {groupSize}
+          </span>
+          <span style={{ flex: 1, height: 1, background: theme.cardBorder, opacity: 0.6 }} />
         </div>
+      )}
+      <div style={{ position: "relative", display: "flex", alignItems: "baseline", gap: 12,
+        padding: node.parentLabel ? "8px 14px 8px 24px" : "8px 14px",
+        background: node.parentLabel ? railBg : (fresh ? theme.freshWash : (editing ? theme.freshWash : "transparent")),
+        borderBottom: (index === nodes.length - 1 || (isGroupEnd && next && !next.parentLabel)) ? "none"
+          : (node.parentLabel && next && next.parentLabel === node.parentLabel) ? "none"
+          : `1px solid ${theme.cardBorder}`,
+        transition: "background .25s ease" }}>
+        {/* Left accent rail — visible only on rows inside a parent
+            group. Stops just before the next group/row. */}
+        {node.parentLabel && (
+          <span style={{ position: "absolute", left: 14, top: isNewGroup ? 0 : -1,
+            bottom: isGroupEnd ? 4 : -1, width: 1.5, borderRadius: 1,
+            background: railColor }} />
+        )}
+        <span style={{ fontFamily: "'Geist', system-ui, sans-serif",
+          fontSize: 12.5,
+          fontWeight: node.parentLabel ? 500 : 400,
+          color: node.parentLabel ? theme.cardVal : theme.subText,
+          flex: "0 0 auto", maxWidth: "45%",
+          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+          opacity: hasValue ? 1 : 0.55 }}>
+          {node.label}
+        </span>
+        {/* Spec line for chip rows (e.g. "120mg · 4x per week") */}
+        {node.parentLabel && node.spec && (
+          <span style={{ fontFamily: "'Geist', system-ui, sans-serif",
+            fontSize: 11, fontWeight: 400, color: theme.subText,
+            opacity: 0.75, marginLeft: 4, flex: "0 1 auto",
+            overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {node.spec}
+          </span>
+        )}
+        {/* Value column — inline editor when active, else value text */}
         {editing ? (
           <input
-            autoFocus
-            value={draft}
-            disabled={saving}
+            autoFocus value={draft} disabled={saving}
             onClick={(ev) => ev.stopPropagation()}
             onChange={(ev) => setDraft(ev.target.value)}
             onKeyDown={(ev) => {
@@ -924,83 +952,63 @@ function ListRow({ node, theme, fresh, first }) {
             }}
             onBlur={() => { if (!saving) commitEdit(); }}
             style={{ flex: "1 1 auto", minWidth: 0, textAlign: "right",
-              fontFamily: "'Geist Mono','SF Mono', monospace",
-              fontSize: valFont, fontWeight: 500, letterSpacing: "0.01em",
+              fontFamily: "'Geist', system-ui, sans-serif",
+              fontSize: 12.5, fontWeight: 500, letterSpacing: "-.005em",
               color: theme.rowVal,
-              background: "transparent",
-              border: "none",
+              background: "transparent", border: "none",
               borderBottom: `1px solid ${saveErr ? "rgba(255,90,80,0.7)" : theme.known}`,
-              outline: "none",
-              padding: isPhone ? "4px 0" : "1px 0",
+              outline: "none", padding: "1px 0",
               opacity: saving ? 0.6 : 1 }} />
         ) : displayValue ? (
-          <div onClick={canEdit ? startEdit : undefined}
+          <span onClick={canEdit ? startEdit : undefined}
             style={{ flex: "1 1 auto", minWidth: 0, textAlign: "right",
-              fontFamily: "'Geist Mono','SF Mono', monospace", fontSize: valFont, fontWeight: 500,
-              letterSpacing: "0.01em", color: theme.rowVal,
+              fontFamily: "'Geist', system-ui, sans-serif", fontSize: 12.5, fontWeight: 500,
+              color: theme.rowVal, lineHeight: 1.42, textWrap: "pretty",
               overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
               cursor: canEdit ? "text" : "inherit",
               borderBottom: canEdit ? `1px dashed ${theme.cardBorder}` : "none",
-              // Larger tap target on mobile — the value's hit area grows
-              // to the full cell so a finger doesn't have to land on the
-              // text itself.
-              padding: canEdit ? (isPhone ? "5px 0 6px" : "0 0 1px") : 0 }}
+              padding: canEdit ? "0 0 1px" : 0 }}
             title={canEdit ? "Tap to edit" : displayValue}>
             {displayValue}
-          </div>
+          </span>
         ) : canEdit ? (
-          <div onClick={startEdit}
+          <span onClick={startEdit}
             style={{ flex: "1 1 auto", textAlign: "right",
-              fontFamily: "'Geist Mono','SF Mono', monospace", fontSize: valFont,
+              fontFamily: "'Geist', system-ui, sans-serif", fontSize: 12.5,
               color: theme.subText, opacity: 0.45,
               cursor: "text",
               borderBottom: `1px dashed ${theme.cardBorder}`,
-              padding: isPhone ? "5px 0 6px" : "0 0 1px" }}
+              padding: "0 0 1px" }}
             title="Tap to add">
             add
-          </div>
+          </span>
+        ) : !node.parentLabel ? (
+          <span style={{ flex: "1 1 auto", textAlign: "right",
+            fontFamily: "'Geist', system-ui, sans-serif", fontSize: 12.5,
+            color: theme.subText, opacity: 0.35 }}>—</span>
         ) : (
-          <div style={{ flex: "1 1 auto", textAlign: "right",
-            fontFamily: "'Geist Mono','SF Mono', monospace", fontSize: valFont,
-            color: theme.subText, opacity: 0.35 }}>—</div>
+          <span style={{ flex: "1 1 auto" }} />
         )}
-        {/* Right-edge affordance — expand caret OR saving spinner OR state dot */}
-        {!editing && canExpand ? (
-          <span aria-hidden="true" style={{ width: 10, height: 10, color: theme.subText,
-            opacity: 0.45, fontSize: 9, lineHeight: 1, flexShrink: 0,
-            transform: expanded ? "rotate(90deg)" : "none", transition: "transform .18s ease" }}>›</span>
-        ) : null}
+        {/* Right-edge state dot OR saving spinner */}
         {editing && saving ? (
-          <span aria-hidden="true" style={{ width: 8, height: 8, borderRadius: "50%", flexShrink: 0,
+          <span aria-hidden="true" style={{ width: 7, height: 7, borderRadius: "50%", flexShrink: 0,
             background: theme.known, opacity: 0.65,
             animation: "lvThink 1.2s ease-in-out infinite" }} />
         ) : (
-          <span style={{ width: 6, height: 6, borderRadius: "50%", flexShrink: 0,
+          <span style={{ width: 5, height: 5, borderRadius: "50%", flexShrink: 0,
             background: node.state === "confirmed" ? theme.known : "transparent",
             border: node.state === "confirmed" ? "none" : `1.2px solid ${stateColor(node.state, theme)}` }} />
         )}
       </div>
       {editing && saveErr && (
-        <div style={{ marginTop: 3, padding: "0",
+        <div style={{ padding: "2px 14px 4px",
           fontFamily: "'Geist Mono','SF Mono', monospace",
           fontSize: 9.5, color: "rgba(255,120,110,0.85)",
           letterSpacing: "0.06em", textAlign: "right" }}>
           {saveErr}
         </div>
       )}
-      {/* Expanded body — shows the full value with proper wrapping so
-          long sentences and chip lists become legible. Stays inside the
-          row's existing left/right gutters. */}
-      {canExpand && expanded && (
-        <div style={{ marginTop: 4, padding: isPhone ? "6px 0 9px" : "4px 0 6px",
-          fontFamily: "'Geist Mono','SF Mono', monospace",
-          fontSize: isPhone ? 12.5 : 11.5, fontWeight: 400,
-          color: theme.cardVal, lineHeight: 1.55, letterSpacing: "0.01em",
-          textWrap: "pretty", whiteSpace: "normal", wordBreak: "break-word" }}>
-          {displayValue}
-        </div>
-      )}
-    </div>
+    </React.Fragment>
   );
 }
 // Re-bundle exploded chip nodes back under their parent slot for the
@@ -1070,16 +1078,17 @@ function BrainListView({ lobes, theme, freshId }) {
       padding: "6px clamp(16px, 5vw, 32px) calc(160px + env(safe-area-inset-bottom, 0px))",
       fontFamily: "'Geist Mono','SF Mono', monospace" }}>
       {ordered.map((l) => {
-        const consolidated = consolidateChipNodes(l.nodes);
-        const confirmed = consolidated.filter((n) => n.state === "confirmed").length;
+        // Use the raw nodes — no consolidation. The list view now renders
+        // each chip as its own row (with the group rail) so it visually
+        // mirrors the lobe-insights panel under "Arnie's brain".
+        const nodes = l.nodes;
+        const confirmed = nodes.filter((n) => n.state === "confirmed").length;
         const isPhoneSection = (typeof window !== "undefined" && window.innerWidth < 480);
         return (
           <div key={l.id} style={{ marginBottom: isPhoneSection ? 18 : 14 }}>
-            {/* Section header — mono caps. Mobile gets more vertical
-                breathing room (20px top vs 12px desktop) so each lobe's
-                section reads as a distinct chapter rather than a stream
-                of rows.  Divider is intentionally lighter than the row
-                dividers so the eye reads it as a chapter break. */}
+            {/* Section header — mono caps. Each lobe section reads as a
+                distinct chapter. Divider is intentionally lighter than the
+                row dividers so the eye picks it up as a chapter break. */}
             <div style={{ display: "flex", alignItems: "baseline", gap: 10,
               padding: isPhoneSection ? "20px 0 9px" : "12px 0 5px",
               borderBottom: `1px solid ${theme.listDivider}`,
@@ -1092,13 +1101,16 @@ function BrainListView({ lobes, theme, freshId }) {
               <span style={{ flex: 1, height: 1 }} />
               <span style={{ fontSize: 9.5, fontWeight: 500, letterSpacing: "0.06em",
                 color: theme.subText, opacity: 0.45 }}>
-                {confirmed}/{consolidated.length}
+                {confirmed}/{nodes.length}
               </span>
             </div>
-            {/* Rows */}
+            {/* Rows — panel-style: chip groups get a left accent rail +
+                wash background, single-value rows are plain. Mirrors the
+                lobe-insights panel exactly. */}
             <div>
-              {consolidated.map((n, i) => (
-                <ListRow key={n.id} node={n} theme={theme} fresh={freshId === n.id} first={i === 0} />
+              {nodes.map((n, i) => (
+                <ListRow key={n.id} node={n} nodes={nodes} index={i}
+                  theme={theme} fresh={freshId === n.id} first={i === 0} />
               ))}
             </div>
           </div>
@@ -1801,8 +1813,42 @@ function LobeInsightsPanel({ lobe, theme, onClose, stateMeta, stateCol }) {
                 display: "grid", placeItems: "center", fontSize: 15, lineHeight: 1, opacity: 0.55, padding: 0 }}>×</button>
             </div>
 
-            {/* Body — scrollable */}
-            <div style={{ overflowY: "auto", flex: 1, padding: "4px 0 18px" }}>
+            {/* Body — scrollable. Bottom padding generous on mobile so
+                the sticky Telegram nav at the device bottom never
+                obscures the last few rows of the panel. */}
+            <div style={{ overflowY: "auto", flex: 1,
+              padding: "4px 0 calc(72px + env(safe-area-inset-bottom, 0px))" }}>
+              {/* AI insight at the TOP — gives the user the coaching
+                  "why" before they scroll the parameter list. Renders
+                  as a quiet header strip with the live/thinking badge. */}
+              {(shown.coaching || insight || thinking) && (
+                <div style={{ padding: "10px 16px 14px",
+                  borderBottom: `1px solid ${theme.cardBorder}`,
+                  marginBottom: 4 }}>
+                  <div style={{ fontFamily: "'Geist Mono','SF Mono', monospace", fontSize: 9.5, fontWeight: 500,
+                    letterSpacing: "0.10em", textTransform: "uppercase", color: theme.subText,
+                    margin: "0 0 8px", display: "flex", alignItems: "center", gap: 8 }}>
+                    <span>How Arnie uses this</span>
+                    {(thinking || insight) && (
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: 6, marginLeft: "auto" }}>
+                        <span style={{ width: 5, height: 5, borderRadius: "50%", background: theme.known,
+                          boxShadow: `0 0 4px ${theme.known}`,
+                          animation: thinking ? "lvThink 1.4s ease-in-out infinite" : "none" }} />
+                        <span style={{ fontSize: 9, letterSpacing: "0.06em", textTransform: "none",
+                          color: thinking ? theme.subText : theme.known, fontWeight: 500,
+                          transition: "color .3s ease" }}>
+                          {thinking ? "thinking" : "live"}
+                        </span>
+                      </span>
+                    )}
+                  </div>
+                  <div style={{ fontFamily: "'Geist', system-ui, sans-serif", fontSize: 13, fontWeight: 400,
+                    color: theme.cardVal, lineHeight: 1.5, letterSpacing: "-.003em", textWrap: "pretty",
+                    opacity: insight ? 1 : 0.78 }}>
+                    {insight ? insight.text : shown.coaching}
+                  </div>
+                </div>
+              )}
               {/* Parameter list — tight rows, no card wrapper. Each row is
                   a thin div with label on the left, value on the right, and
                   a tiny confidence dot at the far right (matches the
