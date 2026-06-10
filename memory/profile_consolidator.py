@@ -23,7 +23,9 @@ Rules for discontinue:
 - Flag keys that are CLEARLY superseded by a better-named key for the same concept
 - Flag keys that are redundant (same concept tracked twice under different names)
 - NEVER discontinue confirmed facts
-
+- NEVER flag lifestyle_stress_level and mental_stress_patterns as duplicates — they
+  track different things: current stress level vs. recurring stress patterns over time
+  
 Rules for shorten:
 - Flag keys whose values exceed 80 characters
 - Provide the compressed value (≤ 80 chars), preserving the core pattern
