@@ -1776,6 +1776,12 @@ function LobeInsightsPanel({ lobe, theme, onClose, stateMeta, stateCol }) {
   useEffect(() => { setExpanded({}); }, [lobe && lobe.id]);
   const toggleGroup = (key) => setExpanded((e) => ({ ...e, [key]: !e[key] }));
 
+  // Mobile-specific tightening — the panel header + AI insight + bottom
+  // safe-area together eat ~200px of viewport, leaving the param list
+  // squeezed on a phone. Tighten padding everywhere on mobile to claw
+  // back vertical space without changing structure.
+  const isPhonePanel = (typeof window !== "undefined" && window.innerWidth < 480);
+
   // ── AI-generated coaching insight ──────────────────────────────────────
   // Hits /api/brain/insights/{token} when the panel opens for a new lobe.
   // While the request is in flight we show a subtle "Arnie's thinking..."
@@ -1837,8 +1843,15 @@ function LobeInsightsPanel({ lobe, theme, onClose, stateMeta, stateCol }) {
         display: "flex", flexDirection: "column", overflow: "hidden" }}>
         {shown && (
           <>
-            {/* Compact header: lobe name + count + close, all in one row */}
-            <div style={{ padding: "14px 16px 12px", borderBottom: `1px solid ${theme.cardBorder}`,
+            {/* Compact header: lobe name + count + close, all in one row.
+                Mobile tightens the top inset to claw back vertical space
+                and adds safe-area-inset-top so the header doesn't slide
+                under the iPhone status bar when the iframe goes edge-to-edge. */}
+            <div style={{
+              padding: isPhonePanel
+                ? "calc(10px + env(safe-area-inset-top, 0px)) 14px 8px"
+                : "14px 16px 12px",
+              borderBottom: `1px solid ${theme.cardBorder}`,
               display: "flex", alignItems: "center", gap: 8 }}>
               <span style={{ width: 6, height: 6, borderRadius: "50%", background: theme.known,
                 flexShrink: 0, boxShadow: `0 0 6px ${theme.known}55` }} />
@@ -1866,12 +1879,12 @@ function LobeInsightsPanel({ lobe, theme, onClose, stateMeta, stateCol }) {
                   "why" before they scroll the parameter list. Renders
                   as a quiet header strip with the live/thinking badge. */}
               {(shown.coaching || insight || thinking) && (
-                <div style={{ padding: "10px 16px 14px",
+                <div style={{ padding: isPhonePanel ? "8px 14px 10px" : "10px 16px 14px",
                   borderBottom: `1px solid ${theme.cardBorder}`,
                   marginBottom: 4 }}>
                   <div style={{ fontFamily: "'Geist Mono','SF Mono', monospace", fontSize: 9.5, fontWeight: 500,
                     letterSpacing: "0.10em", textTransform: "uppercase", color: theme.subText,
-                    margin: "0 0 8px", display: "flex", alignItems: "center", gap: 8 }}>
+                    margin: isPhonePanel ? "0 0 6px" : "0 0 8px", display: "flex", alignItems: "center", gap: 8 }}>
                     <span>How Arnie uses this</span>
                     {(thinking || insight) && (
                       <span style={{ display: "inline-flex", alignItems: "center", gap: 6, marginLeft: "auto" }}>
@@ -1886,21 +1899,62 @@ function LobeInsightsPanel({ lobe, theme, onClose, stateMeta, stateCol }) {
                       </span>
                     )}
                   </div>
-                  <div style={{ fontFamily: "'Geist', system-ui, sans-serif", fontSize: 13, fontWeight: 400,
-                    color: theme.cardVal, lineHeight: 1.5, letterSpacing: "-.003em", textWrap: "pretty",
-                    opacity: insight ? 1 : 0.78 }}>
-                    {insight ? insight.text : shown.coaching}
-                  </div>
+                  {(() => {
+                    // Render AI insight as a 3-4 item bullet list when the
+                    // model returns the new bullet format (prompted for in
+                    // brain_insights.py). Falls back to prose for the static
+                    // `coaching` string and for any non-bullet AI response.
+                    const text = (insight ? insight.text : shown.coaching) || "";
+                    const lines = text.split(/\n+/).map((l) => l.trim()).filter(Boolean);
+                    const bullets = lines
+                      .filter((l) => /^[•\-\*]\s+/.test(l))
+                      .map((l) => l.replace(/^[•\-\*]\s+/, ""));
+                    const bulletMode = bullets.length >= 2;
+                    if (bulletMode) {
+                      return (
+                        <ul style={{ margin: 0, padding: 0, listStyle: "none",
+                          display: "flex", flexDirection: "column", gap: 6,
+                          fontFamily: "'Geist', system-ui, sans-serif", fontSize: 13,
+                          fontWeight: 400, color: theme.cardVal, letterSpacing: "-.003em",
+                          opacity: insight ? 1 : 0.78 }}>
+                          {bullets.map((line, i) => (
+                            <li key={i} style={{ display: "flex", gap: 8, lineHeight: 1.42, textWrap: "pretty" }}>
+                              <span style={{ flexShrink: 0, color: theme.known, fontWeight: 600 }}>•</span>
+                              <span>{line}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      );
+                    }
+                    return (
+                      <div style={{ fontFamily: "'Geist', system-ui, sans-serif", fontSize: 13, fontWeight: 400,
+                        color: theme.cardVal, lineHeight: 1.5, letterSpacing: "-.003em", textWrap: "pretty",
+                        opacity: insight ? 1 : 0.78 }}>
+                        {text}
+                      </div>
+                    );
+                  })()}
                 </div>
               )}
               {/* Parameter list — tight rows, no card wrapper. Each row is
                   a thin div with label on the left, value on the right, and
                   a tiny confidence dot at the far right (matches the
-                  original .inrow + .conf-dot pattern). */}
-              {shown.nodes.map((n, i) => {
+                  original .inrow + .conf-dot pattern).
+                  Order: single-value rows up top so the user gets a quick
+                  glance read (Diet style, Weakness, Goal), grouped chip
+                  sections (Staple foods, Supplements, Exercises) below so
+                  the dense collapsible blocks live at the bottom. Within
+                  each bucket the source order is preserved. */}
+              {(() => {
+                const singles = shown.nodes.filter((n) => !n.parentLabel);
+                const grouped = shown.nodes.filter((n) => n.parentLabel);
+                return [...singles, ...grouped];
+              })().map((n, i, arr) => {
+                // Map uses the reordered array `arr`, not shown.nodes,
+                // for prev/next lookups so group bookkeeping stays correct.
                 const hasValue = (n.chips && n.chips.length) || (n.value && n.value.length);
-                const prev = i > 0 ? shown.nodes[i - 1] : null;
-                const next = i < shown.nodes.length - 1 ? shown.nodes[i + 1] : null;
+                const prev = i > 0 ? arr[i - 1] : null;
+                const next = i < arr.length - 1 ? arr[i + 1] : null;
                 // Group bookkeeping — when does this row start/end a parent
                 // group, and how many items are in the group? The visual
                 // treatment depends on these (left rail, group header, count).
@@ -1908,14 +1962,13 @@ function LobeInsightsPanel({ lobe, theme, onClose, stateMeta, stateCol }) {
                 const isGroupEnd = n.parentLabel && (!next || next.parentLabel !== n.parentLabel);
                 let groupSize = 0;
                 if (n.parentLabel) {
-                  for (const m of shown.nodes) if (m.parentLabel === n.parentLabel) groupSize++;
+                  for (const m of arr) if (m.parentLabel === n.parentLabel) groupSize++;
                 }
                 const railColor = `rgba(${theme.name === "dark" ? "0,230,118" : "5,150,105"},0.32)`;
                 // Rail wash behind grouped chip rows. Mobile bumps the
                 // alpha noticeably — at 0.018 these rows are invisible
                 // on a phone, which made supplement/exercise lists hard
                 // to parse from the surrounding single-value rows.
-                const isPhonePanel = (typeof window !== "undefined" && window.innerWidth < 480);
                 const railBgAlpha = isPhonePanel ? "0.055" : "0.018";
                 const railBg = `rgba(${theme.name === "dark" ? "255,255,255," + railBgAlpha : "0,0,0," + (isPhonePanel ? "0.04" : "0.018")})`;
                 // Group collapsed by default. If the row belongs to a
@@ -1927,7 +1980,8 @@ function LobeInsightsPanel({ lobe, theme, onClose, stateMeta, stateCol }) {
                   <React.Fragment key={n.id}>
                     {isNewGroup && (
                       <button onClick={() => toggleGroup(n.parentLabel)}
-                        style={{ width: "100%", padding: "14px 14px 6px",
+                        style={{ width: "100%",
+                          padding: isPhonePanel ? "10px 12px 4px" : "14px 14px 6px",
                           display: "flex", alignItems: "center", gap: 10,
                           background: "transparent", border: "none", cursor: "pointer",
                           textAlign: "left", color: "inherit", font: "inherit" }}>
@@ -1957,10 +2011,14 @@ function LobeInsightsPanel({ lobe, theme, onClose, stateMeta, stateCol }) {
                       // and single-value rows so the panel reads as one
                       // consistent list rhythm. Left padding is 24px for
                       // grouped rows (to clear the accent rail) and 14px
-                      // for single rows.
-                      padding: n.parentLabel ? "8px 14px 8px 24px" : "8px 14px",
+                      // for single rows. Mobile trims to 6px vertical so
+                      // more rows fit between the header/AI-block and the
+                      // safe-area-bottom padding.
+                      padding: isPhonePanel
+                        ? (n.parentLabel ? "6px 12px 6px 22px" : "6px 12px")
+                        : (n.parentLabel ? "8px 14px 8px 24px" : "8px 14px"),
                       background: n.parentLabel ? railBg : "transparent",
-                      borderBottom: (i === shown.nodes.length - 1 || (isGroupEnd && next && !next.parentLabel)) ? "none"
+                      borderBottom: (i === arr.length - 1 || (isGroupEnd && next && !next.parentLabel)) ? "none"
                         : (n.parentLabel && next && next.parentLabel === n.parentLabel) ? "none"
                         : `1px solid ${theme.cardBorder}` }}>
                       {/* Left accent rail — visible only on rows inside a
@@ -2216,13 +2274,18 @@ function App() {
   const allNodes = lobes.flatMap((l) => l.nodes.map((n) => ({ ...n, lobe: l.name, lobeId: l.id })));
   const node = selectedId ? allNodes.find((n) => n.id === selectedId) : null;
   const total = allNodes.length;
-  // Overall "Arnie knows you" percentage, used to gate the still-loading
-  // nudge. Confirmed = the user has either told Arnie directly or he's
-  // extracted it from enough patterns to be sure. Learning/inferred dots
-  // don't count — those are works in progress.
+  // Overall "Arnie knows you" tally. Confirmed = the user has either told
+  // Arnie directly or he's extracted it from enough patterns to be sure.
+  // Learning/inferred dots still count toward the gate — they signal
+  // engagement and disappear from the gate once the user crosses the
+  // threshold. The gate is a hard node-count threshold so it mirrors the
+  // dashboard's "X / 50 learned" learning-progress bar and stays
+  // predictable regardless of confirmed-vs-learning mix.
   const confirmedTotal = allNodes.filter((n) => n.state === "confirmed").length;
   const confirmedPct = total > 0 ? Math.round((confirmedTotal / total) * 100) : 0;
-  const stillLoading = total > 0 && confirmedPct < 60;
+  const UNLOCK_NODES = 50;
+  const learnedPct = Math.min(100, Math.round((total / UNLOCK_NODES) * 100));
+  const stillLoading = total > 0 && total < UNLOCK_NODES;
   const stateMeta = (st) => st === "learning" ? "needs verification" : st === "inferred" ? "inferred from patterns" : "confirmed";
   const stateCol = (st) => st === "learning" ? theme.learning : st === "inferred" ? theme.inferred : theme.known;
 
@@ -2518,7 +2581,7 @@ function App() {
                   <span style={{ fontFamily: "'Geist Mono','SF Mono', monospace", fontSize: 10,
                     fontWeight: 500, letterSpacing: "0.14em", textTransform: "uppercase",
                     color: theme.subText }}>
-                    Brain · {confirmedPct}% loaded
+                    Brain · {total}/{UNLOCK_NODES} learned
                   </span>
                 </div>
 
@@ -2529,28 +2592,25 @@ function App() {
                 </div>
                 <div style={{ fontSize: 13, color: theme.subText, lineHeight: 1.5,
                   textWrap: "pretty", marginBottom: 16 }}>
-                  I unlock at <strong style={{ color: theme.cardVal, fontWeight: 600 }}>60%</strong>.
+                  I unlock at <strong style={{ color: theme.cardVal, fontWeight: 600 }}>{UNLOCK_NODES} facts</strong>.
                   Chat with me on Telegram — every thing you share fills a dot.
                 </div>
 
-                {/* Progress bar — slim, with the 60% tick + inline labels */}
-                <div style={{ position: "relative", height: 4, borderRadius: 2,
+                {/* Progress bar — 2px slim, single fill, no tick. Matches
+                    the homepage .learn-bar so both surfaces read as one
+                    progress system. Count label sits below right. */}
+                <div style={{ position: "relative", height: 2, borderRadius: 2,
                   background: `rgba(${theme.name === "dark" ? "255,255,255,0.07" : "0,0,0,0.07"})`,
-                  overflow: "visible", marginBottom: 6 }}>
+                  overflow: "hidden", marginBottom: 6 }}>
                   <div style={{ position: "absolute", left: 0, top: 0, bottom: 0,
-                    width: `${confirmedPct}%`, background: theme.known,
-                    boxShadow: `0 0 6px ${theme.known}`,
-                    borderRadius: 2, transition: "width .6s ease" }} />
-                  {/* 60% tick mark — minimal vertical line */}
-                  <div style={{ position: "absolute", left: "60%", top: -3, bottom: -3,
-                    width: 1, background: theme.subText, opacity: 0.5 }} />
+                    width: `${learnedPct}%`, background: theme.known,
+                    borderRadius: 2, transition: "width .5s ease" }} />
                 </div>
-                <div style={{ display: "flex", justifyContent: "space-between",
+                <div style={{ display: "flex", justifyContent: "flex-end",
                   fontFamily: "'Geist Mono','SF Mono', monospace", fontSize: 9,
                   fontWeight: 500, letterSpacing: "0.04em", color: theme.subText,
                   opacity: 0.6, marginBottom: 16 }}>
-                  <span>{confirmedPct}%</span>
-                  <span>60%</span>
+                  <span>{total} / {UNLOCK_NODES}</span>
                 </div>
 
                 {/* Suggested categories — single mono line, comma-separated,
