@@ -1870,11 +1870,16 @@ function LobeInsightsPanel({ lobe, theme, onClose, stateMeta, stateCol }) {
                 display: "grid", placeItems: "center", fontSize: 15, lineHeight: 1, opacity: 0.55, padding: 0 }}>×</button>
             </div>
 
-            {/* Body — scrollable. Bottom padding generous on mobile so
-                the sticky Telegram nav at the device bottom never
-                obscures the last few rows of the panel. */}
+            {/* Body — scrollable. The dashboard already reserves 64px at
+                the bottom of the iframe for the Telegram nav (see
+                #panel-brain.active{{bottom:64px}}), so adding another 72px
+                of body padding pushed the last row out of the visible
+                area on phones. Trim it down — 16px + safe-area is enough
+                breathing room above the iframe edge / home indicator. */}
             <div style={{ overflowY: "auto", flex: 1,
-              padding: "4px 0 calc(72px + env(safe-area-inset-bottom, 0px))" }}>
+              padding: isPhonePanel
+                ? "4px 0 calc(16px + env(safe-area-inset-bottom, 0px))"
+                : "4px 0 calc(72px + env(safe-area-inset-bottom, 0px))" }}>
               {/* AI insight at the TOP — gives the user the coaching
                   "why" before they scroll the parameter list. Renders
                   as a quiet header strip with the live/thinking badge. */}

@@ -1151,6 +1151,14 @@ async def _build_stats_for_user(db, user, target_date=None):
         "streak_days": streak_days,
     }
 
+    # Active-attribute count — the same authoritative number that powers the
+    # Brain tab's unlock gate. Including it here lets the dashboard's
+    # learning-progress bar tick in lockstep with the brain (both read off
+    # /api/stats, so this stays cheap and synchronous with everything else).
+    from memory.attribute_store import get_all_attributes as _get_attrs
+    _attrs = await _get_attrs(db, user.id)
+    _attribute_count = len([a for a in _attrs if a.attribute_status == "active"])
+
     return {
         "profile": profile,
         "targets": {
@@ -1165,6 +1173,7 @@ async def _build_stats_for_user(db, user, target_date=None):
         "health": health_data,
         "available_dates": available_dates,
         "viewing_date": str(target_date or _user_today(user.timezone or "UTC")),
+        "attribute_count": _attribute_count,
         # keep legacy 'today' + 'user' keys so existing insights endpoint works unchanged
         "today": _log_to_day(day_log),
         "user": {"name": user.name or "User", "goal": user.primary_goal or "—",

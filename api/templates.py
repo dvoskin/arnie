@@ -1806,11 +1806,26 @@ footer{{
      weight reads heavier on phones than intended at smaller pixel
      densities; 600 keeps the value as the dominant element without
      shouting. */
-  .macro-cell{{padding:10px 12px}}
-  .mc-label{{font-size:9px;letter-spacing:.08em;margin-bottom:4px;color:var(--mu);font-weight:500}}
-  .mc-num{{font-size:26px;font-weight:600;line-height:1.1}}
-  .mc-sub{{font-size:10px;margin-top:3px;color:var(--mu)}}
-  .mc-bar{{margin-top:6px;height:3px}}
+  /* Compact mobile macro layout — label on top, the big number and the
+     "/ 180g (67%)" fraction share one baseline-aligned row so the card
+     halves vertically. The .mc-num size is preserved; .mc-sub keeps its
+     small fraction sizing and just slides next to the number. */
+  .macro-cell{{
+    padding:10px 12px;
+    display:grid;
+    grid-template-areas:
+      "label label"
+      "num   sub"
+      "bar   bar";
+    grid-template-columns:auto 1fr;
+    column-gap:8px;
+    align-items:baseline;
+  }}
+  .mc-label{{grid-area:label;font-size:9px;letter-spacing:.08em;margin-bottom:2px;color:var(--mu);font-weight:500}}
+  .mc-num{{grid-area:num;font-size:26px;font-weight:600;line-height:1.1}}
+  .mc-sub{{grid-area:sub;font-size:10px;margin-top:0;color:var(--mu);
+          white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}
+  .mc-bar{{grid-area:bar;margin-top:6px;height:3px}}
   /* Coach insights — hide timestamp on narrow screens, tighten banner */
   .ins-time{{display:none}}
   .ins-banner{{padding:10px 12px;gap:8px}}
