@@ -30,7 +30,7 @@ from db.queries import (
     get_recent_health_snapshots,
     update_food_entry, delete_food_entry,
     update_exercise_entry, delete_exercise_entry,
-    add_food_entry, add_exercise_entry,
+    add_food_entry, add_exercise_entry, add_body_metric,
     get_or_create_today_log, get_or_create_log_for_date,
     resolve_send_target,
     _user_today,
@@ -225,6 +225,48 @@ def _dashboard_msg(action: str, **kw) -> str:
         return "strict mode on, i'll confirm before anything goes in."
     if action == "profile_field":
         return f"updated your {label}."
+    if action == "weight_log":
+        # Goal/delta-aware reaction to a dashboard weigh-in. Kept short and in
+        # Arnie's voice (lower-case, no emoji), with a second bubble after |||
+        # that adds context only when we actually have it. Inputs:
+        #   label      — formatted weight, e.g. "182.4 lbs"
+        #   goal       — 'cut' | 'bulk' | other
+        #   prev_lbs   — most recent prior weigh-in in lbs (None if first ever)
+        #   delta_lbs  — current - prev (signed); ignored if prev_lbs is None
+        #   to_goal    — abs distance remaining to goal_weight_lbs (None if no goal)
+        goal_v = kw.get("goal") or ""
+        prev = kw.get("prev_lbs")
+        delta = kw.get("delta_lbs")
+        to_goal = kw.get("to_goal")
+        first = f"logged you at {label}."
+        # Subtle "you can text me too" hint, on its own bubble. Fires only on
+        # the user's first-ever weigh-in (no prior BodyMetric → prev_lbs is
+        # None) — after that they either already use chat or have decided the
+        # dashboard is their lane. Suppressing on subsequent logs is the
+        # "not repetitive" requirement.
+        if prev is None or delta is None:
+            tail = "first weigh-in saved — i'll watch the trend from here."
+            hint = "you can also just text me the number next time, same thing."
+            return f"{first}|||{tail}|||{hint}"
+        adelta = abs(delta)
+        # < 0.3 lbs of movement reads as noise on most scales; don't over-narrate.
+        if adelta < 0.3:
+            tail = "basically flat from last time — that's still data."
+        else:
+            right_way = (goal_v == "cut" and delta < 0) or (goal_v == "bulk" and delta > 0)
+            direction = "down" if delta < 0 else "up"
+            if right_way:
+                tail = f"{direction} {adelta:.1f} from last time — that's the direction we want."
+            else:
+                # Wrong way for the goal, or no goal set. Stay even-keeled — one
+                # data point isn't a trend, and Arnie shouldn't sound alarmed.
+                if goal_v in ("cut", "bulk"):
+                    tail = f"{direction} {adelta:.1f} from last time — one read, not a trend. keep logging."
+                else:
+                    tail = f"{direction} {adelta:.1f} from last time."
+        if to_goal is not None and to_goal > 0:
+            tail += f" {to_goal:.1f} to go."
+        return f"{first}|||{tail}"
     return ""
 
 
@@ -2696,6 +2738,70 @@ class ExerciseLogBody(BaseModel):
     duration_minutes: Optional[float] = None
     is_cardio: bool = False
     log_date: Optional[str] = None
+
+
+class WeightLogBody(BaseModel):
+    weight: float            # value as the user typed it
+    unit: str = "lbs"        # "lbs" or "kg"
+
+
+@app.post("/api/weight/log")
+async def api_log_weight(body: WeightLogBody, token: str = Query(...)):
+    """Persist a dashboard weigh-in and ping the user's chat with a short,
+    goal-aware Arnie reaction. Same reactive-confirmation pattern as the
+    food/exercise edit endpoints — no proactive gate."""
+    import asyncio
+    unit = (body.unit or "lbs").lower()
+    if unit not in ("lbs", "kg"):
+        raise HTTPException(status_code=400, detail="unit must be 'lbs' or 'kg'")
+    weight_kg = body.weight * 0.453592 if unit == "lbs" else body.weight
+    if not (20.0 <= weight_kg <= 410.0):
+        raise HTTPException(status_code=400, detail="weight out of range")
+
+    notify: dict = {}
+    async with AsyncSessionLocal() as db:
+        user = await get_user_by_webhook_token(db, token)
+        if not user:
+            raise HTTPException(status_code=401, detail="Invalid token")
+
+        prior = await get_recent_weights(db, user.id, days=120)
+        # get_recent_weights returns newest-first; pick the most recent prior
+        # reading BEFORE we insert this one.
+        prev_lbs = None
+        if prior:
+            prev_lbs = round(prior[0].weight_kg * 2.20462, 1)
+
+        metric = await add_body_metric(db, user.id, weight_kg=weight_kg)
+
+        current_lbs = round(weight_kg * 2.20462, 1)
+        delta_lbs = round(current_lbs - prev_lbs, 1) if prev_lbs is not None else None
+
+        goal_kg = getattr(user, "goal_weight_kg", None)
+        to_goal_lbs = None
+        if goal_kg:
+            to_goal_lbs = round(abs(weight_kg - goal_kg) * 2.20462, 1)
+
+        goal_v = (user.primary_goal or "").strip()
+
+        # Show the weight in the unit the user entered — feels native.
+        label = f"{body.weight:.1f} {unit}"
+        text = _dashboard_msg(
+            "weight_log",
+            label=label,
+            goal=goal_v,
+            prev_lbs=prev_lbs,
+            delta_lbs=delta_lbs,
+            to_goal=to_goal_lbs,
+        )
+        notify = dict(
+            send_target=await resolve_send_target(db, user),
+            text=text,
+        )
+        entry_id = metric.id
+
+    asyncio.create_task(_send_dashboard_notification(**notify))
+    return {"status": "ok", "id": entry_id,
+            "weight_lbs": current_lbs, "weight_kg": round(weight_kg, 2)}
 
 
 @app.post("/api/exercise/log")

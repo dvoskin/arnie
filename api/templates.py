@@ -484,6 +484,94 @@ body.brain-active footer{{display:none}}
 .wm-bar{{background:var(--sf3);border-radius:999px;height:3px;margin-top:6px;overflow:hidden}}
 .wm-fill{{height:100%;border-radius:999px;background:var(--ac);transition:width .8s cubic-bezier(.4,0,.2,1)}}
 
+/* Tiny "log" affordance in the top-right of the weight module. Mono micro-text
+   so it never competes with the number ladder. Pending dot pulses only when
+   today has no weigh-in. */
+.weight-module{{position:relative}}
+.wm-log{{
+  position:absolute;top:8px;right:10px;display:inline-flex;align-items:center;
+  gap:5px;background:transparent;border:none;cursor:pointer;padding:2px 4px;
+  border-radius:6px;font-family:'Geist Mono','SF Mono',monospace;
+  font-size:9px;font-weight:500;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--mu);transition:color .15s,background .15s;
+}}
+.wm-log:hover{{color:var(--ac);background:var(--ac-dim)}}
+.wm-log.open{{color:var(--ac)}}
+.wm-pending-dot{{
+  width:5px;height:5px;border-radius:50%;background:var(--ac);
+  box-shadow:0 0 0 0 rgba(var(--ac-rgb),.55);
+  animation:wmPendingPulse 2.4s ease-in-out infinite;display:none;
+}}
+.wm-log.has-pending .wm-pending-dot{{display:inline-block}}
+@keyframes wmPendingPulse{{
+  0%,100%{{box-shadow:0 0 0 0 rgba(var(--ac-rgb),.45)}}
+  50%{{box-shadow:0 0 0 4px rgba(var(--ac-rgb),0)}}
+}}
+
+/* Slide-down log form sits beneath the progress bar. Single row: number input,
+   kg/lbs segmented toggle, save. Mirrors the .add-card aesthetic but tighter. */
+.wm-logform{{
+  display:none;margin-top:10px;padding-top:10px;border-top:1px solid var(--bd);
+  align-items:center;gap:8px;animation:fadeUp .22s ease;
+}}
+.wm-logform.open{{display:flex}}
+.wm-logform-inp{{
+  flex:1;min-width:0;background:var(--sf2);border:1px solid var(--bd);
+  border-radius:8px;padding:7px 10px;color:var(--tx);font-family:inherit;
+  font-size:14px;font-weight:600;letter-spacing:-.01em;outline:none;
+  transition:border-color .15s,background .15s;
+}}
+.wm-logform-inp:focus{{border-color:var(--ac);background:var(--sf)}}
+.wm-logform-inp::placeholder{{color:var(--di);font-weight:500}}
+.wm-unit-toggle{{
+  display:inline-flex;background:var(--sf2);border:1px solid var(--bd);
+  border-radius:8px;padding:2px;gap:2px;flex-shrink:0;
+}}
+.wm-unit-toggle button{{
+  background:transparent;border:none;color:var(--mu);cursor:pointer;
+  font-family:'Geist Mono','SF Mono',monospace;font-size:10px;font-weight:600;
+  letter-spacing:.06em;text-transform:uppercase;padding:5px 9px;border-radius:6px;
+  transition:color .15s,background .15s;
+}}
+.wm-unit-toggle button.active{{background:var(--ac-dim);color:var(--ac)}}
+.wm-logform-save{{
+  background:var(--ac-dim);color:var(--ac);border:1px solid rgba(var(--ac-rgb),.35);
+  border-radius:8px;padding:7px 12px;font-family:'Geist Mono','SF Mono',monospace;
+  font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;
+  cursor:pointer;flex-shrink:0;transition:background .15s,opacity .15s;
+}}
+.wm-logform-save:hover{{background:rgba(var(--ac-rgb),.18)}}
+.wm-logform-save:disabled{{opacity:.5;cursor:default}}
+
+/* Minimal "logged!" celebration. Number gets a brief pulse, a checkmark fades
+   in/out over the right side, and a soft accent ring rides the module border. */
+.wm-celebrate .wm-num{{animation:wmNumPulse .9s ease-out}}
+.weight-module.wm-celebrate{{animation:wmRing 1.1s ease-out}}
+.wm-check{{
+  position:absolute;top:8px;right:10px;display:inline-flex;align-items:center;
+  gap:5px;font-family:'Geist Mono','SF Mono',monospace;font-size:10px;
+  font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--ac);
+  opacity:0;pointer-events:none;transition:opacity .18s;
+}}
+.wm-check.show{{opacity:1;animation:wmCheck 1.4s ease-out forwards}}
+@keyframes wmNumPulse{{
+  0%{{transform:scale(1);color:var(--tx)}}
+  35%{{transform:scale(1.06);color:var(--ac)}}
+  100%{{transform:scale(1);color:var(--tx)}}
+}}
+@keyframes wmRing{{
+  0%{{box-shadow:var(--sh),0 0 0 0 rgba(var(--ac-rgb),.45)}}
+  60%{{box-shadow:var(--sh),0 0 0 8px rgba(var(--ac-rgb),0)}}
+  100%{{box-shadow:var(--sh),0 0 0 0 rgba(var(--ac-rgb),0)}}
+}}
+@keyframes wmCheck{{
+  0%{{opacity:0;transform:translateY(2px)}}
+  18%{{opacity:1;transform:none}}
+  78%{{opacity:1;transform:none}}
+  100%{{opacity:0;transform:translateY(-2px)}}
+}}
+.wm-num{{display:inline-block;transform-origin:left center}}
+
 /* ── BOTTOM NAV (mobile) ─────────────────────────────────── */
 .bottomnav{{
   display:none;position:fixed;bottom:0;left:0;right:0;z-index:60;
@@ -2067,8 +2155,16 @@ footer{{
       </div>
     </div>
 
-    <!-- WEIGHT MODULE — cut/bulk only; hidden by JS otherwise. -->
+    <!-- WEIGHT MODULE — cut/bulk only; hidden by JS otherwise.
+         Tiny "Log" affordance top-right; pending dot appears when today has
+         no weigh-in. Tap reveals the inline kg/lbs form beneath the bar. -->
     <div class="weight-module" id="weight-module" style="display:none;margin-top:16px">
+      <button class="wm-log" id="wm-log-toggle" type="button"
+              onclick="toggleWeightLogForm()" title="Log today's weight">
+        <span class="wm-pending-dot" aria-hidden="true"></span>
+        <span id="wm-log-label">Log</span>
+      </button>
+      <span class="wm-check" id="wm-check" aria-hidden="true">&#10003; logged</span>
       <div class="wm-row">
         <div class="wm-stack-l">
           <div class="wm-label">Weight</div>
@@ -2082,6 +2178,18 @@ footer{{
         </div>
       </div>
       <div class="wm-bar" id="wm-bar-wrap"><div class="wm-fill" id="wm-fill" style="width:0%"></div></div>
+      <div class="wm-logform" id="wm-logform">
+        <input class="wm-logform-inp" id="wm-logform-val" type="number"
+               step="0.1" min="20" max="900" inputmode="decimal" placeholder="weight">
+        <div class="wm-unit-toggle" role="tablist" aria-label="Unit">
+          <button type="button" id="wm-unit-lbs" class="active"
+                  onclick="setWeightLogUnit('lbs')">lbs</button>
+          <button type="button" id="wm-unit-kg"
+                  onclick="setWeightLogUnit('kg')">kg</button>
+        </div>
+        <button class="wm-logform-save" id="wm-logform-save"
+                onclick="submitWeightLog()" type="button">Save</button>
+      </div>
     </div>
 
     <!-- MACRO HEADER + Consumed/Remaining toggle -->
@@ -3576,6 +3684,126 @@ function renderWeightModule(d){{
       subEl.onclick = function(){{ try{{ switchTab('profile'); }}catch(e){{}} }};
     }}
   }}
+
+  // Pending indicator: cut/bulk users who haven't weighed in today get a
+  // tiny pulsing dot next to the "Log" link. Only meaningful when viewing
+  // today — past days are immutable and the dot would just confuse.
+  var logBtn = document.getElementById('wm-log-toggle');
+  if(logBtn){{
+    var loggedToday = false;
+    for(var i=0;i<weights.length;i++){{
+      if(weights[i] && weights[i].date === _todayStr){{ loggedToday = true; break; }}
+    }}
+    var showPending = (_viewingDate === _todayStr) && !loggedToday;
+    logBtn.classList.toggle('has-pending', showPending);
+    logBtn.title = showPending
+      ? 'Log today\\'s weight' : 'Update today\\'s weight';
+    // Keep the input pre-populated with the most recent reading so a quick
+    // tap-and-save doesn't require typing the digits over again.
+    var inp = document.getElementById('wm-logform-val');
+    if(inp && !inp.value){{
+      var unit = _weightLogUnit || 'lbs';
+      inp.value = unit === 'kg' ? (current/2.20462).toFixed(1) : current.toFixed(1);
+    }}
+  }}
+}}
+
+// ── Weight log form (compact inline) ──────────────────────────
+// Single shared unit state across renders. lbs is the default because the
+// dashboard renders weights in lbs everywhere else; user can flip per-input.
+var _weightLogUnit = 'lbs';
+function setWeightLogUnit(u){{
+  if(u !== 'kg' && u !== 'lbs') return;
+  var inp = document.getElementById('wm-logform-val');
+  // Convert the current input value so the user doesn't lose their typing
+  // when they flip units mid-entry.
+  if(inp && inp.value){{
+    var v = parseFloat(inp.value);
+    if(!isNaN(v)){{
+      if(_weightLogUnit === 'lbs' && u === 'kg') inp.value = (v/2.20462).toFixed(1);
+      if(_weightLogUnit === 'kg' && u === 'lbs') inp.value = (v*2.20462).toFixed(1);
+    }}
+  }}
+  _weightLogUnit = u;
+  var lbsBtn = document.getElementById('wm-unit-lbs');
+  var kgBtn  = document.getElementById('wm-unit-kg');
+  if(lbsBtn) lbsBtn.classList.toggle('active', u === 'lbs');
+  if(kgBtn)  kgBtn.classList.toggle('active', u === 'kg');
+}}
+function toggleWeightLogForm(){{
+  var form = document.getElementById('wm-logform');
+  var btn  = document.getElementById('wm-log-toggle');
+  if(!form || !btn) return;
+  var willOpen = !form.classList.contains('open');
+  form.classList.toggle('open', willOpen);
+  btn.classList.toggle('open', willOpen);
+  if(willOpen){{
+    var inp = document.getElementById('wm-logform-val');
+    if(inp){{ inp.focus(); inp.select && inp.select(); }}
+  }}
+}}
+async function submitWeightLog(){{
+  var inp = document.getElementById('wm-logform-val');
+  var btn = document.getElementById('wm-logform-save');
+  if(!inp || !btn) return;
+  var raw = parseFloat(inp.value);
+  if(isNaN(raw) || raw <= 0){{ inp.focus(); return; }}
+  // Sanity bounds — generous, just to catch typos like a stray digit. Convert
+  // before bounds-check so kg entries don't trip the lbs ceiling.
+  var lbs = _weightLogUnit === 'kg' ? raw * 2.20462 : raw;
+  if(lbs < 50 || lbs > 900){{
+    alert('That weight looks off — double-check the number and unit.');
+    return;
+  }}
+  btn.disabled = true;
+  var originalLabel = btn.textContent;
+  btn.textContent = 'Saving…';
+  try{{
+    var r = await fetch('/api/weight/log?token=' + TOKEN, {{
+      method:'POST', headers:{{'Content-Type':'application/json'}},
+      body: JSON.stringify({{ weight: raw, unit: _weightLogUnit }}),
+    }});
+    if(!r.ok) throw new Error('HTTP ' + r.status);
+    weightCelebrate();
+    // Clear the input so the next render re-populates it with the freshly
+    // logged reading. Close the form. Then refresh the day so the module
+    // re-renders with the new reading + cleared pending dot.
+    inp.value = '';
+    setTimeout(function(){{
+      var form = document.getElementById('wm-logform');
+      var tBtn = document.getElementById('wm-log-toggle');
+      if(form) form.classList.remove('open');
+      if(tBtn) tBtn.classList.remove('open');
+    }}, 200);
+    delete _dayCache[_viewingDate];
+    await loadDayData(_viewingDate);
+  }}catch(e){{
+    alert('Failed to save: ' + e.message);
+  }}finally{{
+    btn.disabled = false;
+    btn.textContent = originalLabel;
+  }}
+}}
+// Minimal celebrate: a soft accent ring around the module + a 1-beat pulse
+// on the weight number + a fading "✓ logged" chip in the top-right. No
+// confetti, no sound — the requirement was "super minimal".
+function weightCelebrate(){{
+  var module = document.getElementById('weight-module');
+  var check  = document.getElementById('wm-check');
+  if(!module) return;
+  module.classList.remove('wm-celebrate');
+  // Force reflow so re-adding the class restarts the animation.
+  void module.offsetWidth;
+  module.classList.add('wm-celebrate');
+  if(check){{
+    check.classList.remove('show');
+    void check.offsetWidth;
+    check.classList.add('show');
+  }}
+  setTimeout(function(){{
+    module.classList.remove('wm-celebrate');
+    if(check) check.classList.remove('show');
+  }}, 1500);
 }}
 
 function renderDayTab(d){{
