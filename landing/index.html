@@ -1191,6 +1191,46 @@
       font-family: var(--mono); font-size: 11px; color: var(--ink-3);
       letter-spacing: 0.04em; flex-shrink: 0;
     }
+    /* Step 5 — targets */
+    .ob-tgt-sub {
+      font-size: 13px; line-height: 1.5; color: var(--ink-3);
+      margin: -10px 0 22px; letter-spacing: -0.005em;
+    }
+    .ob-tgt-row { display: flex; align-items: center; gap: 8px; }
+    .ob-tgt-input { max-width: 130px; }
+    .ob-tgt-macro-grid { grid-template-columns: repeat(3, 1fr); gap: 10px; }
+    .ob-tgt-macro-grid .ob-tgt-input { max-width: 100%; }
+    .ob-tgt-explain {
+      margin-bottom: 4px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: color-mix(in oklch, var(--ink) 3%, transparent);
+      font-size: 12px;
+    }
+    .ob-tgt-explain > summary {
+      padding: 11px 14px; cursor: pointer;
+      color: var(--ink-2); font-weight: 500; letter-spacing: -0.005em;
+      list-style: none; user-select: none;
+    }
+    .ob-tgt-explain > summary::-webkit-details-marker { display: none; }
+    .ob-tgt-explain > summary::after {
+      content: "+"; float: right; color: var(--ink-3);
+      font-family: var(--mono); font-size: 14px;
+    }
+    .ob-tgt-explain[open] > summary::after { content: "−"; }
+    .ob-tgt-explain-body {
+      padding: 0 14px 14px; color: var(--ink-3); line-height: 1.55;
+      font-size: 11.5px;
+    }
+    .ob-tgt-explain-body strong { color: var(--ink-2); font-weight: 600; }
+    .ob-tgt-explain-body .ob-tgt-row-info {
+      display: flex; justify-content: space-between;
+      padding: 4px 0; border-bottom: 1px dashed var(--line);
+    }
+    .ob-tgt-explain-body .ob-tgt-row-info:last-of-type { border-bottom: 0; }
+    @media (max-width: 480px) {
+      .ob-tgt-macro-grid { grid-template-columns: 1fr; }
+    }
     /* Segmented sex control */
     .ob-seg {
       display: flex; border-radius: 10px; overflow: hidden;
@@ -1873,7 +1913,7 @@
 
       <!-- Step 1: Goal -->
       <div class="ob-step ob-step-enter" id="ob-step-1">
-        <div class="ob-step-label">Step 1 of 4 &nbsp;·&nbsp; Goal</div>
+        <div class="ob-step-label">Step 1 of 5 &nbsp;·&nbsp; Goal</div>
         <h3 class="ob-step-title">What are you training for?</h3>
         <div class="ob-goals" id="ob-goals">
           <button type="button" class="ob-goal-btn" data-val="cut">
@@ -1907,7 +1947,7 @@
 
       <!-- Step 2: About you -->
       <div class="ob-step" id="ob-step-2" style="display:none">
-        <div class="ob-step-label">Step 2 of 4 &nbsp;·&nbsp; About you</div>
+        <div class="ob-step-label">Step 2 of 5 &nbsp;·&nbsp; About you</div>
         <h3 class="ob-step-title">A few basics.</h3>
         <div class="ob-fields">
           <div class="ob-field">
@@ -1937,7 +1977,7 @@
 
       <!-- Step 3: Body metrics -->
       <div class="ob-step" id="ob-step-3" style="display:none">
-        <div class="ob-step-label">Step 3 of 4 &nbsp;·&nbsp; Body metrics</div>
+        <div class="ob-step-label">Step 3 of 5 &nbsp;·&nbsp; Body metrics</div>
         <h3 class="ob-step-title">Current stats.</h3>
         <div class="ob-fields">
           <div class="ob-field">
@@ -1972,7 +2012,7 @@
 
       <!-- Step 4: Training experience -->
       <div class="ob-step" id="ob-step-4" style="display:none">
-        <div class="ob-step-label">Step 4 of 4 &nbsp;·&nbsp; Training</div>
+        <div class="ob-step-label">Step 4 of 5 &nbsp;·&nbsp; Training</div>
         <h3 class="ob-step-title">How long have you been lifting?</h3>
         <div class="ob-exp-group" id="ob-exp-group">
           <button type="button" class="ob-exp-btn" data-val="beginner">
@@ -1989,9 +2029,61 @@
           <label class="ob-label" for="ob-diet">Dietary preferences <span style="color:var(--ink-3);font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></label>
           <input type="text" class="ob-input" id="ob-diet" placeholder="e.g. vegetarian, no dairy, high protein…">
         </div>
-        <div class="ob-error" id="ob-error"></div>
         <div class="ob-nav" style="margin-top:20px">
           <button class="ob-back-btn" onclick="obGoStep(3)">← Back</button>
+          <button class="ob-next-btn" id="ob-next-4" onclick="obNextStep4()">Continue →</button>
+        </div>
+      </div>
+
+      <!-- Step 5: Targets (auto-calculated, editable) -->
+      <div class="ob-step" id="ob-step-5" style="display:none">
+        <div class="ob-step-label">Step 5 of 5 &nbsp;·&nbsp; Your targets</div>
+        <h3 class="ob-step-title">Your daily targets.</h3>
+        <p class="ob-tgt-sub">
+          Auto-calculated from your goal, body comp, and training level.
+          Adjust anything if you have numbers you trust.
+        </p>
+        <div class="ob-fields">
+          <div class="ob-field">
+            <label class="ob-label" for="ob-tgt-cals">Calories</label>
+            <div class="ob-tgt-row">
+              <input type="number" class="ob-input ob-tgt-input" id="ob-tgt-cals" min="800" max="6000" step="10" inputmode="numeric">
+              <span class="ob-unit">kcal</span>
+            </div>
+          </div>
+          <div class="ob-field-row ob-tgt-macro-grid">
+            <div class="ob-field">
+              <label class="ob-label" for="ob-tgt-protein">Protein</label>
+              <div class="ob-tgt-row">
+                <input type="number" class="ob-input ob-tgt-input" id="ob-tgt-protein" min="20" max="500" step="1" inputmode="numeric">
+                <span class="ob-unit">g</span>
+              </div>
+            </div>
+            <div class="ob-field">
+              <label class="ob-label" for="ob-tgt-carbs">Carbs</label>
+              <div class="ob-tgt-row">
+                <input type="number" class="ob-input ob-tgt-input" id="ob-tgt-carbs" min="0" max="800" step="1" inputmode="numeric">
+                <span class="ob-unit">g</span>
+              </div>
+            </div>
+            <div class="ob-field">
+              <label class="ob-label" for="ob-tgt-fat">Fat</label>
+              <div class="ob-tgt-row">
+                <input type="number" class="ob-input ob-tgt-input" id="ob-tgt-fat" min="10" max="300" step="1" inputmode="numeric">
+                <span class="ob-unit">g</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <details class="ob-tgt-explain">
+          <summary>How we calculate these</summary>
+          <div class="ob-tgt-explain-body" id="ob-tgt-explain-body">
+            <!-- Filled in JS with BMR/TDEE/deficit + macro split rule -->
+          </div>
+        </details>
+        <div class="ob-error" id="ob-error"></div>
+        <div class="ob-nav" style="margin-top:20px">
+          <button class="ob-back-btn" onclick="obGoStep(4)">← Back</button>
           <button class="ob-next-btn" id="ob-submit-btn" onclick="obSubmit()">Get my Telegram link →</button>
         </div>
       </div>
@@ -2321,18 +2413,22 @@
     goal: null, name: null, age: null, sex: null,
     heightFt: null, heightIn: null, weight: null, goalWeight: null,
     experience: null, diet: null, timezone: null,
+    // Step 5 — targets (auto-filled on entry, user-editable)
+    calorieTarget: null, proteinTarget: null, carbTarget: null, fatTarget: null,
   };
 
   function openObModal() {
     // Reset state
     Object.assign(obState, { goal: null, name: null, age: null, sex: null,
-      heightFt: null, heightIn: null, weight: null, goalWeight: null, experience: null, diet: null });
+      heightFt: null, heightIn: null, weight: null, goalWeight: null, experience: null, diet: null,
+      calorieTarget: null, proteinTarget: null, carbTarget: null, fatTarget: null });
     try { obState.timezone = Intl.DateTimeFormat().resolvedOptions().timeZone; } catch(e) {}
     // Clear selections / inputs
     document.querySelectorAll('.ob-goal-btn').forEach(b => b.classList.remove('selected'));
     document.querySelectorAll('#ob-sex .ob-seg-btn').forEach(b => b.classList.remove('active'));
     document.querySelectorAll('.ob-exp-btn').forEach(b => b.classList.remove('selected'));
-    ['ob-name','ob-age','ob-height-ft','ob-height-in','ob-weight','ob-goal-weight','ob-diet'].forEach(id => {
+    ['ob-name','ob-age','ob-height-ft','ob-height-in','ob-weight','ob-goal-weight','ob-diet',
+     'ob-tgt-cals','ob-tgt-protein','ob-tgt-carbs','ob-tgt-fat'].forEach(id => {
       const el = document.getElementById(id);
       if (el) el.value = '';
     });
@@ -2372,7 +2468,8 @@
 
   function obGoStep(n) {
     document.querySelectorAll('.ob-step').forEach(el => { el.style.display = 'none'; });
-    const key   = n === 5 ? 'success' : n;
+    // n=6 is the success state; n=1..5 are the numbered steps.
+    const key   = n === 6 ? 'success' : n;
     const stepEl = document.getElementById('ob-step-' + key);
     if (stepEl) {
       stepEl.style.display = 'block';
@@ -2382,11 +2479,11 @@
       stepEl.classList.add('ob-step-enter');
     }
     // Update progress bar
-    const pct = n >= 5 ? 100 : (n / 4 * 100);
+    const pct = n >= 6 ? 100 : (n / 5 * 100);
     const bar = document.getElementById('obProgressBar');
     if (bar) bar.style.width = pct + '%';
     // On success step — inject goal-specific subtitle
-    if (n === 5) {
+    if (n === 6) {
       const subEl = document.getElementById('ob-success-sub');
       if (subEl && obState.goal) {
         subEl.textContent = _obSuccessSub[obState.goal]
@@ -2396,6 +2493,95 @@
     // Reset modal scroll to top
     const modal = document.querySelector('.ob-modal');
     if (modal) modal.scrollTop = 0;
+  }
+
+  // Targets math — mirrors core/targets.py:compute_macro_targets() exactly.
+  // Anything changed here MUST be mirrored there (and vice versa) or the
+  // form's preview will diverge from what Arnie + the dashboard compute.
+  function _obComputeTargets() {
+    const wKg = obState.weight * 0.453592;
+    const hCm = ((obState.heightFt * 12) + (obState.heightIn || 0)) * 2.54;
+    const age = obState.age;
+    const sex = (obState.sex || '').toLowerCase();
+    const goal = (obState.goal || 'maintain').toLowerCase();
+
+    const bmr = (sex === 'male' || sex === 'm' || sex === 'man')
+      ? (10 * wKg + 6.25 * hCm - 5 * age + 5)
+      : (10 * wKg + 6.25 * hCm - 5 * age - 161);
+    const factor = 1.4;
+    const tdee = bmr * factor;
+    const wLb = wKg * 2.20462;
+    const goalLb = obState.goalWeight ? obState.goalWeight : wLb;
+
+    let cals, deficitPct;
+    if (goal === 'cut')              { cals = Math.round(tdee * 0.825); deficitPct = -17.5; }
+    else if (goal === 'bulk')        { cals = Math.round(tdee * 1.10);  deficitPct = 10.0; }
+    else if (goal === 'performance') { cals = Math.round(tdee * 1.05);  deficitPct = 5.0; }
+    else                             { cals = Math.round(tdee);         deficitPct = 0.0; }
+
+    let protein, fat;
+    if (goal === 'cut')              { protein = Math.round(1.0 * goalLb); fat = Math.round(0.3 * wLb); }
+    else if (goal === 'bulk')        { protein = Math.round(0.9 * wLb);    fat = Math.round(0.35 * wLb); }
+    else if (goal === 'performance') { protein = Math.round(0.9 * wLb);    fat = Math.round((cals * 0.25) / 9); }
+    else if (goal === 'health')      { protein = Math.round((cals * 0.30) / 4); fat = Math.round((cals * 0.30) / 9); }
+    else                             { protein = Math.round(0.9 * wLb);    fat = Math.round(0.35 * wLb); }
+
+    const carbCals = Math.max(0, cals - protein * 4 - fat * 9);
+    const carbs = Math.round(carbCals / 4);
+    return { calories: cals, protein, carbs, fat,
+      bmr: Math.round(bmr), tdee: Math.round(tdee), deficitPct, goal };
+  }
+
+  function obShowStep5() {
+    const t = _obComputeTargets();
+    obState.calorieTarget = t.calories;
+    obState.proteinTarget = t.protein;
+    obState.carbTarget    = t.carbs;
+    obState.fatTarget     = t.fat;
+
+    document.getElementById('ob-tgt-cals').value    = t.calories;
+    document.getElementById('ob-tgt-protein').value = t.protein;
+    document.getElementById('ob-tgt-carbs').value   = t.carbs;
+    document.getElementById('ob-tgt-fat').value     = t.fat;
+
+    const _goalMacroRule = {
+      cut:         '1.0 g/lb of goal weight protein, 0.3 g/lb current fat, carbs fill the rest',
+      bulk:        '0.9 g/lb current protein, 0.35 g/lb current fat, carbs fill the rest',
+      maintain:    '0.9 g/lb current protein, 0.35 g/lb current fat, carbs fill the rest',
+      performance: '0.9 g/lb current protein, 25% kcal from fat, carbs fill the rest',
+      health:      '30% kcal protein, 30% kcal fat, 40% kcal carbs',
+    };
+    const _goalCalRule = {
+      cut:         'TDEE × 0.825 (≈17.5% deficit, middle of the 10–25% cut range)',
+      bulk:        'TDEE × 1.10 (≈10% lean surplus)',
+      maintain:    'TDEE (no surplus, no deficit)',
+      performance: 'TDEE × 1.05 (5% surplus for output)',
+      health:      'TDEE (maintain for general wellness)',
+    };
+    const macroRule = _goalMacroRule[t.goal] || _goalMacroRule.maintain;
+    const calRule = _goalCalRule[t.goal] || _goalCalRule.maintain;
+    const body = document.getElementById('ob-tgt-explain-body');
+    if (body) {
+      body.innerHTML = `
+        <div class="ob-tgt-row-info"><span>BMR (Mifflin-St Jeor)</span><strong>${t.bmr} kcal</strong></div>
+        <div class="ob-tgt-row-info"><span>TDEE (× activity factor)</span><strong>${t.tdee} kcal</strong></div>
+        <div class="ob-tgt-row-info"><span>Calorie rule</span><strong>${calRule}</strong></div>
+        <div class="ob-tgt-row-info"><span>Macro split</span><strong>${macroRule}</strong></div>
+        <p style="margin:10px 0 0;color:var(--ink-4);font-size:11px">
+          Same math the dashboard "Calculate for me" button uses. Edit freely — your numbers, your call.
+        </p>
+      `;
+    }
+    obGoStep(5);
+  }
+
+  function obNextStep4() {
+    if (!obState.experience) {
+      obShake(document.getElementById('ob-exp-group'));
+      return;
+    }
+    obState.diet = (document.getElementById('ob-diet').value || '').trim() || null;
+    obShowStep5();
   }
 
   function obShake(el) {
@@ -2473,14 +2659,30 @@
   });
 
   async function obSubmit() {
-    if (!obState.experience) {
-      obShake(document.getElementById('ob-exp-group'));
-      return;
-    }
-    obState.diet = (document.getElementById('ob-diet').value || '').trim() || null;
+    // Step 5 review — re-read the target inputs in case the user edited them
+    // after auto-fill. Bounds mirror the input min/max so an out-of-range
+    // value shakes the offending field instead of throwing a vague banner.
+    const calsEl    = document.getElementById('ob-tgt-cals');
+    const proteinEl = document.getElementById('ob-tgt-protein');
+    const carbsEl   = document.getElementById('ob-tgt-carbs');
+    const fatEl     = document.getElementById('ob-tgt-fat');
+    const cals      = parseInt(calsEl.value, 10);
+    const protein   = parseInt(proteinEl.value, 10);
+    const carbs     = parseInt(carbsEl.value, 10);
+    const fat       = parseInt(fatEl.value, 10);
+
+    const errEl     = document.getElementById('ob-error');
+    if (!cals    || cals    < 800 || cals    > 6000) { obShake(calsEl);    calsEl.focus();    return; }
+    if (!protein || protein < 20  || protein > 500)  { obShake(proteinEl); proteinEl.focus(); return; }
+    if (isNaN(carbs) || carbs < 0 || carbs > 800)    { obShake(carbsEl);   carbsEl.focus();   return; }
+    if (!fat     || fat     < 10  || fat     > 300)  { obShake(fatEl);     fatEl.focus();     return; }
+
+    obState.calorieTarget = cals;
+    obState.proteinTarget = protein;
+    obState.carbTarget    = carbs;
+    obState.fatTarget     = fat;
 
     const submitBtn = document.getElementById('ob-submit-btn');
-    const errEl     = document.getElementById('ob-error');
     submitBtn.textContent = 'Setting up…';
     submitBtn.disabled = true;
     errEl.style.display = 'none';
@@ -2504,6 +2706,12 @@
           dietary_preferences: obState.diet,
           timezone:           obState.timezone || null,
           goal_weight_lbs:    obState.goalWeight || null,
+          // Targets — captured at Step 5, persisted on consume so the bot
+          // skips the [COACH NOTE — targets_unset] nudge for these users.
+          calorie_target:     cals,
+          protein_target:     protein,
+          carb_target:        carbs,
+          fat_target:         fat,
         }),
       });
 
@@ -2513,7 +2721,7 @@
         document.getElementById('ob-success-name').textContent = firstName;
         document.getElementById('ob-tg-link').href = data.bot_link;
         document.getElementById('ob-code').textContent = data.code;
-        obGoStep(5); // success state
+        obGoStep(6); // success state
       } else {
         errEl.textContent = data.detail || 'Something went wrong — try again.';
         errEl.style.display = 'block';
@@ -2538,7 +2746,12 @@
     if (el) el.addEventListener('keydown', e => { if (e.key === 'Enter') obNextStep3(); });
   });
   const dietEl = document.getElementById('ob-diet');
-  if (dietEl) dietEl.addEventListener('keydown', e => { if (e.key === 'Enter') obSubmit(); });
+  if (dietEl) dietEl.addEventListener('keydown', e => { if (e.key === 'Enter') obNextStep4(); });
+  // Step 5 target inputs — Enter on any of them submits the form
+  ['ob-tgt-cals', 'ob-tgt-protein', 'ob-tgt-carbs', 'ob-tgt-fat'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('keydown', e => { if (e.key === 'Enter') obSubmit(); });
+  });
 
   // FAQ accordion
   document.querySelectorAll('.faq-q').forEach(btn => {
