@@ -109,7 +109,16 @@ async def _typing_keepalive(bot, chat_id: int, stop_event: asyncio.Event):
             await asyncio.wait_for(asyncio.shield(stop_event.wait()), timeout=4.0)
         except asyncio.TimeoutError:
             pass
-
+          
+def _telegram_streaming_eligible(in_onboarding: bool, was_onboarding: bool,
+                                 raw_text: str) -> bool:
+    """True when Telegram can safely stream LLM bubbles before turn finalization."""
+    from core.turn_health import user_is_signing_off
+    return (
+        (not in_onboarding)
+        and (not was_onboarding)
+        and (not user_is_signing_off(raw_text))
+    )
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -339,7 +348,12 @@ async def _run_pipeline(update: Update, context: ContextTypes.DEFAULT_TYPE,
     # Stream only when: not in onboarding AND not the just-completed transition.
     # Both keyboard-bearing paths need the LAST bubble identifiable for
     # reply_markup attachment, which streaming can't promise mid-flight.
-    _streaming_eligible = (not in_onboarding) and (not was_onboarding)
+    # Sign-off turns stay buffered too. If the model emits text plus a tool call,
+    # the first pass is only a draft; streaming it would send "Sleep well" before
+    # the post-tool follow-up and duplicate the closeout.
+    _streaming_eligible = _telegram_streaming_eligible(
+        in_onboarding, was_onboarding, raw_text
+    )
     _on_text_bubble_arg = _on_text_bubble if _streaming_eligible else None
     turn = None
     try:
