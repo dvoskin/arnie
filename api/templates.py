@@ -2899,7 +2899,7 @@ function renderLearningProgress(d){{
   if(facts>=TARGET){{wrap.style.display='none';return;}}
   var pctv=Math.min(100,Math.round(facts/TARGET*100));
   var fill=document.getElementById('learn-fill');if(fill)fill.style.width=pctv+'%';
-  var lbl=document.getElementById('learn-pct');if(lbl)lbl.textContent=facts+' / '+TARGET;
+  var lbl=document.getElementById('learn-pct');if(lbl)lbl.textContent=pctv+'%';
   // Chip row repurposed as a quiet hint that the bar is live + what to do.
   var list=document.getElementById('learn-list');
   if(list)list.innerHTML='<span class="learn-chip done">facts learned</span>'

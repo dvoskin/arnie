@@ -2596,7 +2596,7 @@ function App() {
                   <span style={{ fontFamily: "'Geist Mono','SF Mono', monospace", fontSize: 10,
                     fontWeight: 500, letterSpacing: "0.14em", textTransform: "uppercase",
                     color: theme.subText }}>
-                    Brain · {liveFacts}/{UNLOCK_NODES} learned
+                    Brain · {learnedPct}% loaded
                   </span>
                 </div>
 
@@ -2625,7 +2625,7 @@ function App() {
                   fontFamily: "'Geist Mono','SF Mono', monospace", fontSize: 9,
                   fontWeight: 500, letterSpacing: "0.04em", color: theme.subText,
                   opacity: 0.6, marginBottom: 16 }}>
-                  <span>{liveFacts} / {UNLOCK_NODES}</span>
+                  <span>{learnedPct}%</span>
                 </div>
 
                 {/* Suggested categories — single mono line, comma-separated,

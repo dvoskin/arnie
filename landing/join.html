@@ -990,6 +990,49 @@
     const el = document.getElementById(id);
     if (el) el.addEventListener('keydown', e => { if (e.key === 'Enter') obSubmit(); });
   });
+  // Live re-derivation on Step 5. Editing the calorie anchor re-runs the
+  // goal-specific protein/fat rule and rebalances carbs. Editing protein
+  // or fat alone just rebalances carbs (= remaining kcal / 4) so the
+  // macro equation always sums back to the calorie total. Carbs are the
+  // free variable — editing them doesn't cascade.
+  let _obLiveDebounce = null;
+  function _obRecalcFromCals() {
+    const calsEl = document.getElementById('ob-tgt-cals');
+    const cals = parseInt(calsEl.value, 10);
+    if (!cals || cals < 800 || cals > 6000) return;
+    const wKg = obState.weight * 0.453592;
+    const wLb = wKg * 2.20462;
+    const goalLb = obState.goalWeight ? obState.goalWeight : wLb;
+    const goal = (obState.goal || 'maintain').toLowerCase();
+    let protein, fat;
+    if (goal === 'cut')              { protein = Math.round(1.0 * goalLb); fat = Math.round(0.3 * wLb); }
+    else if (goal === 'bulk')        { protein = Math.round(0.9 * wLb);    fat = Math.round(0.35 * wLb); }
+    else if (goal === 'performance') { protein = Math.round(0.9 * wLb);    fat = Math.round((cals * 0.25) / 9); }
+    else if (goal === 'health')      { protein = Math.round((cals * 0.30) / 4); fat = Math.round((cals * 0.30) / 9); }
+    else                             { protein = Math.round(0.9 * wLb);    fat = Math.round(0.35 * wLb); }
+    const carbs = Math.max(0, Math.round((cals - protein * 4 - fat * 9) / 4));
+    document.getElementById('ob-tgt-protein').value = protein;
+    document.getElementById('ob-tgt-fat').value     = fat;
+    document.getElementById('ob-tgt-carbs').value   = carbs;
+  }
+  function _obRebalanceCarbs() {
+    const cals    = parseInt(document.getElementById('ob-tgt-cals').value, 10);
+    const protein = parseInt(document.getElementById('ob-tgt-protein').value, 10);
+    const fat     = parseInt(document.getElementById('ob-tgt-fat').value, 10);
+    if (!cals || isNaN(protein) || isNaN(fat)) return;
+    const carbs = Math.max(0, Math.round((cals - protein * 4 - fat * 9) / 4));
+    document.getElementById('ob-tgt-carbs').value = carbs;
+  }
+  function _obDebounce(fn) {
+    clearTimeout(_obLiveDebounce);
+    _obLiveDebounce = setTimeout(fn, 220);
+  }
+  const _calsLive = document.getElementById('ob-tgt-cals');
+  if (_calsLive) _calsLive.addEventListener('input', () => _obDebounce(_obRecalcFromCals));
+  ['ob-tgt-protein', 'ob-tgt-fat'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('input', () => _obDebounce(_obRebalanceCarbs));
+  });
 </script>
 </body>
 </html>
