@@ -16,6 +16,7 @@ from db.queries import (
     update_exercise_entry as q_update_exercise_entry,
     delete_exercise_entry as q_delete_exercise_entry,
     get_or_create_log_for_date,
+    get_recent_weights,
 )
 from handlers.onboarding import is_onboarding_complete
 from memory.memory_manager import append_memory_update, init_memory
@@ -70,6 +71,7 @@ def _lbs_to_kg(weight, unit: str = "lbs"):
     """Convert a weight value to kg. Returns None for None input, passes kg through."""
     if weight is None:
         return None
+    weight = float(weight)
     return weight * 0.453592 if (unit or "lbs").lower().strip() == "lbs" else weight
 
 
@@ -288,7 +290,7 @@ def deterministic_confirmation(tool_calls, log, prefs, tool_results=None) -> str
             except (TypeError, ValueError):
                 _has_weight = False
             if _has_weight:
-                return "Got your weight down. 📉|||Consistency is the whole game."
+                return _weight_fallback(_bw)
             # fall through to the generic net rather than claim a weigh-in happened
     if "log_water" in names:
         return "Water logged. 💧|||Keep sipping."
@@ -326,6 +328,18 @@ def deterministic_confirmation(tool_calls, log, prefs, tool_results=None) -> str
             else f"That's {cal} calories so far today." if cal
             else "What do you want to log next?")
     return f"Got that.|||{tail}"
+
+
+def _weight_fallback(weight_seed: Any = "") -> str:
+    """Last-resort body-weight confirmation, varied so one phrase doesn't haunt users."""
+    fallbacks = (
+        "Weigh-in logged.|||Same conditions next time gives us the cleanest trend.",
+        "Weight logged.|||One point is noise, the trend is the signal.",
+        "Scale check logged.|||We'll judge it by the rolling trend, not one reading.",
+    )
+    seed = str(weight_seed or "")
+    idx = sum(ord(c) for c in seed) % len(fallbacks)
+    return fallbacks[idx]
 
 
 def _macros_from_search(result: str) -> str:
@@ -827,9 +841,66 @@ async def _dispatch(name, inp, user, today_log, db, source_type):  # noqa: C901
         # the gold standard; anything else carries noise the coach should
         # weight accordingly.
         context_val = inp.get("context")
-        await add_body_metric(db, user.id, weight_kg, context=context_val)
-        ctx_note = f" ({context_val})" if context_val else ""
-        return f"Logged weight: {weight} {unit} ({weight_kg:.1f} kg){ctx_note}"
+        metric = await add_body_metric(db, user.id, weight_kg, context=context_val)
+        recent = await get_recent_weights(db, user.id, days=14)
+        ordered = sorted(
+            [w for w in recent if getattr(w, "weight_kg", None) is not None],
+            key=lambda w: w.timestamp,
+        )
+        previous = next(
+            (w for w in reversed(ordered)
+             if getattr(w, "id", None) != getattr(metric, "id", None)),
+            None,
+        )
+
+        logged_lbs = weight_kg * 2.20462
+        if previous:
+            delta_lbs = (weight_kg - previous.weight_kg) * 2.20462
+            delta_note = f"Change vs previous weigh-in: {delta_lbs:+.1f}lb."
+        else:
+            delta_note = "No prior weigh-in in the last 14 days."
+
+        if len(ordered) >= 2:
+            first = ordered[0]
+            trend_lbs = (weight_kg - first.weight_kg) * 2.20462
+            trend_note = (
+                f"14-day trend window: {len(ordered)} weigh-ins, "
+                f"{trend_lbs:+.1f}lb from first to now."
+            )
+        else:
+            trend_note = "Trend status: first point only; do not over-read it."
+
+        goal_kg = getattr(user, "goal_weight_kg", None)
+        if goal_kg:
+            goal_lbs = goal_kg * 2.20462
+            remaining_lbs = (weight_kg - goal_kg) * 2.20462
+            if abs(remaining_lbs) < 0.25:
+                goal_note = f"Goal: {goal_lbs:.1f}lb; essentially at goal."
+            elif remaining_lbs > 0:
+                goal_note = f"Goal: {goal_lbs:.1f}lb; {remaining_lbs:.1f}lb above goal."
+            else:
+                goal_note = f"Goal: {goal_lbs:.1f}lb; {abs(remaining_lbs):.1f}lb below goal."
+        else:
+            goal_note = "Goal weight: not set; do not invent one."
+
+        context_notes = {
+            "morning_fasted": "Context: morning fasted, best signal for trend comparison.",
+            "post_meal": "Context: post-meal, noisier reading; mention food/water can move it.",
+            "evening": "Context: evening, noisier reading; compare cautiously.",
+            "post_workout": "Context: post-workout, hydration shifts can distort scale weight.",
+            "unknown": "Context: unknown; avoid strong conclusions from one point.",
+        }
+        context_note = context_notes.get(context_val or "unknown", context_notes["unknown"])
+
+        return (
+            f"Logged body weight: {float(weight):.1f} {unit} "
+            f"({weight_kg:.1f}kg / {logged_lbs:.1f}lb). "
+            f"{delta_note} {trend_note} {goal_note} {context_note} "
+            f"YOUR REPLY: 1-2 short bubbles max. Confirm the weigh-in, then give one "
+            f"specific read from the delta/trend/goal above. Do not use the canned "
+            f"weight-down or consistency slogans from the old fallback. "
+            f"Do not moralize; same-time weigh-ins and rolling trend are the coaching frame."
+        )
 
     elif name == "update_food_entry":
         if not getattr(today_log, "id", None):
