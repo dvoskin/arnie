@@ -75,14 +75,16 @@ _DEAD_END_PHRASES = {
 
 # Sign-off phrases that the user might say to trigger a goodnight response.
 # When the user's message contains one of these, Arnie's "Sleep well 🌙" is
-# intentional — NOT a dead-end. Used to gate quality repair.
+# intentional — NOT a dead-end. Used to gate quality repair and Telegram
+# streaming, where a first-pass sign-off can otherwise duplicate after tool follow-up.
 _USER_SIGNOFF_PATTERNS = re.compile(
-    r"\b(goodnight|good night|night|nite|gn|sleep well|going to sleep|"
-    r"going to bed|off to bed|heading to bed|спокойной ночи|ночи|"
+    r"\b(goodnight|good night|night|nite|gn|sleep well|done for today|"
+    r"closing it out|i'?m done|going to sleep|go(?:ing|nna)? to sleep|"
+    r"gonna sleep|going to bed|go(?:ing|nna)? to bed|off to bed|"
+    r"heading to bed|спокойной ночи|ночи|"
     r"dormir|buenas noches|bonne nuit)\b",
     re.IGNORECASE,
 )
-
 
 def looks_like_dead_end(text: str) -> bool:
     """
