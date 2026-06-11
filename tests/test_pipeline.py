@@ -224,12 +224,15 @@ async def test_redo_today_clears_then_relogs_in_one_turn(pipeline_env):
     addr, chat = "+15550001111", "iMessage;-;+15550001111"
     await _seed_user(env["Maker"])
 
-    # Turn 1: a messed-up day — the same item logged twice (the duplicate-babka problem).
+    # Turn 1: a messed-up day — distinct items, one of which the user wants to wipe.
+    # (We can't use two identical babka calls anymore because the intra-turn dedup
+    # at conversation.py and the cross-turn idempotency check at tool_executor.py
+    # both correctly collapse same-name same-quantity logs within seconds.)
     env["set_llm"](text="", tool_calls=[
-        {"name": "log_food", "input": {"food_name": "babka", "calories": 300,
-                                       "protein": 4, "carbs": 40, "fats": 15}},
-        {"name": "log_food", "input": {"food_name": "babka", "calories": 300,
-                                       "protein": 4, "carbs": 40, "fats": 15}},
+        {"name": "log_food", "input": {"food_name": "babka", "quantity": "1 slice",
+                                       "calories": 300, "protein": 4, "carbs": 40, "fats": 15}},
+        {"name": "log_food", "input": {"food_name": "babka", "quantity": "2 slices",
+                                       "calories": 600, "protein": 8, "carbs": 80, "fats": 30}},
     ], follow_up_text="logged.")
     await env["H"].run_imessage_pipeline(addr, chat, "babka and babka", message_guid="d1")
 

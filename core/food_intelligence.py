@@ -190,12 +190,13 @@ class FoodAnalysis:
     sodium: Optional[float] = None
     fdc_id: Optional[str] = None
     confidence: str = "estimated"          # exact|likely|estimated|user-confirmed
-    source: str = "estimate"               # usda|memory|estimate
+    source: str = "estimate"               # usda|memory|estimate|web_label
     protein_density: Optional[float] = None  # g protein per 100 kcal
     satiety: Optional[str] = None          # low|moderate|high
     quality: Optional[str] = None          # low|solid|excellent
     per100: dict = field(default_factory=dict)
     coach_note: str = ""                   # the analysis line surfaced to the LLM
+    enrichment_source: Optional[str] = None  # "memory" | "usda" | "web_label" | None
 
 
 def _derive(cal, protein, carbs, fat, fiber, sugar) -> tuple:
@@ -261,12 +262,17 @@ def reconcile_macros(cal: float, protein: float, carbs: float, fat: float) -> tu
 
 
 def analyze(name, quantity, llm_cal, llm_protein, llm_carbs, llm_fat,
-            usda_candidate=None, memory_match=None) -> FoodAnalysis:
+            usda_candidate=None, memory_match=None,
+            web_candidate=None) -> FoodAnalysis:
     """
     Build a FoodAnalysis. Priority for the nutrient profile:
-      memory_match (user's recurring food) > usda_candidate > LLM-only.
-    The LLM's calories/protein anchor the portion; USDA/memory fill in
-    fiber/sugar/sodium and confidence.
+      memory_match (user's recurring food)
+        > web_candidate (label-accurate web lookup for packaged products)
+        > usda_candidate
+        > LLM-only.
+    The LLM's calories/protein anchor the portion; the enrichment source fills
+    in fiber/sugar/sodium and confidence. web_candidate carries the same shape
+    as usda_candidate ({"fdc_id": …, "per100g": {...}, "_match": "exact|likely"}).
     """
     cal = float(llm_cal or 0)
     protein = float(llm_protein or 0)
@@ -283,7 +289,7 @@ def analyze(name, quantity, llm_cal, llm_protein, llm_carbs, llm_fat,
     source = "estimate"
     per100 = {}
 
-    src = memory_match or usda_candidate
+    src = memory_match or web_candidate or usda_candidate
     if src:
         per100 = src.get("per100g") or {
             "calories": src.get("cal_100"), "protein": src.get("protein_100"),
@@ -293,19 +299,24 @@ def analyze(name, quantity, llm_cal, llm_protein, llm_carbs, llm_fat,
         }
         cal100 = per100.get("calories")
         if cal100 and cal100 > 0 and cal > 0:
-            # back out grams from the LLM's calories + USDA calorie density
+            # back out grams from the LLM's calories + density
             grams = cal / cal100 * 100
             ratio = grams / 100.0
             if per100.get("fiber") is not None:  fiber = round(per100["fiber"] * ratio, 1)
             if per100.get("sugar") is not None:  sugar = round(per100["sugar"] * ratio, 1)
             if per100.get("sodium") is not None: sodium = round(per100["sodium"] * ratio, 0)
-            # refine protein if USDA disagrees notably and LLM gave none
+            # refine protein if enrichment disagrees notably and LLM gave none
             if not protein and per100.get("protein"):
                 protein = round(per100["protein"] * ratio, 1)
-        fdc_id = src.get("fdc_id") or src.get("fdc_id")
+        fdc_id = src.get("fdc_id")
         if memory_match:
             source = "memory"
             confidence = "user-confirmed" if memory_match.get("user_confirmed") else (memory_match.get("confidence") or "likely")
+        elif web_candidate:
+            source = "web_label"
+            # Web hits for packaged products are typically the actual label data
+            # — confidence "likely" or "exact" depending on the parser.
+            confidence = src.get("_match", "likely")
         else:
             source = "usda"
             confidence = src.get("_match", "likely")
@@ -325,8 +336,8 @@ def analyze(name, quantity, llm_cal, llm_protein, llm_carbs, llm_fat,
     bits.append(f"satiety {satiety}, quality {quality}")
     note = "; ".join(bits)
     conf_note = {
-        "exact": "USDA exact match",
-        "likely": "USDA likely match",
+        "exact": "label exact match" if source == "web_label" else "USDA exact match",
+        "likely": "label match" if source == "web_label" else "USDA likely match",
         "user-confirmed": "your usual (confirmed)",
         "estimated": "estimate",
     }.get(confidence, confidence)
@@ -337,4 +348,5 @@ def analyze(name, quantity, llm_cal, llm_protein, llm_carbs, llm_fat,
         fdc_id=fdc_id, confidence=confidence, source=source,
         protein_density=pd, satiety=satiety, quality=quality, per100=per100,
         coach_note=f"{note} [{conf_note}]",
+        enrichment_source=(source if source != "estimate" else None),
     )

@@ -28,6 +28,15 @@ _STALL_MARKERS = (
     "logging it all", "logging all of that", "logging all of it",
     "i'll log all", "let me get all",
     "adding it all", "adding all of that", "gonna log", "going to log",
+    # Lookup-promise stalls (the screenshot pattern — "Checking the label on
+    # that one" / "Let me grab the exact macros" without ever firing the tool).
+    # These read as substantive replies but strand the user when paired with
+    # no tool_calls.
+    "checking the label", "checking exact macros", "checking the macros",
+    "let me grab the exact macros", "let me grab the macros",
+    "let me check the label", "let me look up", "let me pull up",
+    "grabbing the exact macros", "grabbing the macros",
+    "looking up the macros", "looking it up real quick",
     # Russian stall phrases
     "исправляю прямо сейчас", "исправляю сейчас", "сейчас всё занесу",
     "сейчас занесу", "сейчас залогирую", "сейчас всё залогирую",
@@ -204,6 +213,46 @@ def detect_frustration(user_text: str) -> bool:
     return bool(user_text and _FRUSTRATION.search(user_text))
 
 
+# Short praise-style acks that, on their own, sound positive but read as sarcastic
+# when the immediately prior assistant turn shipped a known-bad signal (mechanics
+# narration, generic-net fallback, bare logging ack). Matched as the WHOLE user
+# message (with punctuation stripped) so a real "Great workout!" never matches.
+_SARCASTIC_PRAISE_TOKENS = {
+    "great", "perfect", "awesome", "nice", "thanks", "cool", "sure",
+    "amazing", "wonderful", "fantastic", "lovely",
+}
+
+
+def detect_sarcastic_ack(user_text: str, prior_assistant_text: str = "") -> bool:
+    """True if the user's whole message is a one-word praise token AND the prior
+    assistant turn carried a known-bad signal (mechanics narration, generic-net
+    "Got that. / You're at X cal today", or a bare-log ack). In that context a
+    cheerful "Great" is virtually always sarcastic frustration — Arnie should
+    recover, not steam past it.
+
+    Pure function for telemetry + system-prompt enrichment; never alters the
+    user's turn itself.
+    """
+    if not user_text:
+        return False
+    import re as _re
+    core = _re.sub(r"[^a-z' ]+", " ", user_text.lower()).strip()
+    core = _re.sub(r"\s+", " ", core)
+    if core not in _SARCASTIC_PRAISE_TOKENS:
+        return False
+    if not prior_assistant_text:
+        return False
+    # Bad-signal heuristics on the prior turn — substring matched.
+    prior = prior_assistant_text.lower()
+    if looks_like_mechanics(prior):
+        return True
+    if "got that." in prior and "calories today" in prior:
+        return True  # the generic-net deterministic_confirmation pattern
+    if looks_like_bare_log_ack(prior):
+        return True
+    return False
+
+
 # Calorie/macro estimate pattern — signals that a food photo's nutrition analysis
 # text is present in the first-pass response. Used to detect when the LLM narrates
 # macro numbers instead of calling log_food (partial stall from photo turns).
@@ -232,6 +281,7 @@ def detect_turn_flags(
     tool_error: bool,
     source_type: str | None = None,
     tool_names: set | None = None,
+    prior_assistant_text: str = "",
 ) -> list[str]:
     """
     Return the list of health flags for a completed turn. Empty list = clean turn.
@@ -252,6 +302,8 @@ def detect_turn_flags(
         flags.append("stall_shipped")
     if detect_frustration(user_text):
         flags.append("user_frustrated")
+    if detect_sarcastic_ack(user_text, prior_assistant_text):
+        flags.append("user_sarcastic")
     if looks_like_mechanics(response_text):
         flags.append("mechanics_narration")
     if looks_like_empty_praise(response_text):

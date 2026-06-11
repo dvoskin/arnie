@@ -467,10 +467,118 @@ def _heads_up_seed(tc: dict) -> str:
     return str(inp)[:60]
 
 
+_BRANDED_RE = __import__("re").compile(
+    r"\b(?:[A-Z][a-z']+\s+){1,4}(?:bar|shake|drink|protein|yogurt|cereal|"
+    r"oats|granola|sauce|spread|butter|milk|powder|chips|cookies|crackers)\b"
+)
+
+
+def _looks_branded(food_name: str) -> bool:
+    """Safety-net heuristic when the model forgot to set is_packaged=True.
+
+    Targets ProperNoun-Brand + common-package-noun patterns (e.g. "Quest Bar",
+    "Elmhurst Clean Protein", "Liquid IV"). Conservative — only matches when at
+    least one capitalized brand-like token precedes a known package word.
+    Never matches "chicken breast" / "white rice" — those are lowercase generics.
+    """
+    if not food_name or len(food_name) < 6:
+        return False
+    return bool(_BRANDED_RE.search(food_name))
+
+
+async def _web_lookup_packaged(food_name: str, quantity) -> dict | None:
+    """Tavily lookup for label-accurate macros on a branded packaged product.
+
+    Returns a candidate dict shaped like USDA's (`per100g`, `_match`) on success,
+    or None on miss / outage. NEVER raises — Tavily already returns graceful
+    empty results, and any parse failure falls through to None so the existing
+    USDA → LLM cascade still runs.
+    """
+    try:
+        from core.search import search as _search
+        q = f"{food_name} nutrition facts label calories protein carbs fat"
+        if quantity:
+            q += f" per {quantity}"
+        result = await _search(q)
+        text = (result.answer or "") + "\n" + "\n".join(
+            (r.get("content") or "")[:600] for r in (result.results or [])[:3]
+        )
+        if not text.strip():
+            return None
+        import re as _re
+        # Look for "X calories ... Yg protein ... Zg carbs ... Wg fat" near each other
+        cal_m = _re.search(r"(\d{2,4})\s*(?:cal(?:ories)?|kcal)\b", text, _re.I)
+        pro_m = _re.search(r"(\d{1,3})\s*g\s*(?:of\s*)?protein\b", text, _re.I)
+        if not (cal_m and pro_m):
+            return None
+        cal = float(cal_m.group(1))
+        pro = float(pro_m.group(1))
+        carb_m = _re.search(r"(\d{1,3})\s*g\s*(?:of\s*)?(?:carb|carbohydrate)", text, _re.I)
+        fat_m = _re.search(r"(\d{1,3})\s*g\s*(?:of\s*)?(?:fat|total fat)\b", text, _re.I)
+        carbs = float(carb_m.group(1)) if carb_m else 0.0
+        fat = float(fat_m.group(1)) if fat_m else 0.0
+        # Estimate serving grams from calorie density. Most packaged foods sit
+        # at 100-500 cal/100g; assume ~200 for the back-out (rough — used only
+        # for fiber/sugar scaling, not the primary macros).
+        per100 = {
+            "calories": 200.0,
+            "protein": (pro / cal) * 200.0 if cal else None,
+            "carbs": (carbs / cal) * 200.0 if cal else None,
+            "fat": (fat / cal) * 200.0 if cal else None,
+            "fiber": None, "sugar": None, "sodium": None,
+        }
+        return {"fdc_id": None, "per100g": per100, "_match": "likely"}
+    except Exception as e:
+        logger.warning(f"web packaged lookup failed: {e}")
+        return None
+
+
+async def _check_recent_duplicate(db, target_log_id, food_name: str, quantity, window_min: int = 5):
+    """Idempotency check: same (food_name, quantity) logged on the same daily_log
+    within the last `window_min` minutes is almost always a retry, not a second
+    portion. Returns the existing entry (with id/calories/etc.) on a hit, or None.
+
+    Catches the shake re-confirmation cascade from the screenshots — when the
+    model keeps promising to "log the shake", the second attempt collapses to
+    a no-op instead of producing a duplicate row.
+    """
+    try:
+        from datetime import datetime as _dt, timedelta as _td
+        from sqlalchemy import select as _select, desc as _desc
+        from db.models import FoodEntry
+        cutoff = _dt.utcnow() - _td(minutes=window_min)
+        qn = (food_name or "").strip().lower()
+        if not qn or target_log_id is None:
+            return None
+        stmt = (_select(FoodEntry)
+                .where(FoodEntry.daily_log_id == target_log_id)
+                .order_by(_desc(FoodEntry.timestamp))
+                .limit(10))
+        rows = (await db.execute(stmt)).scalars().all()
+        for r in rows:
+            ts = getattr(r, "timestamp", None)
+            if (ts is not None and ts >= cutoff
+                    and (r.parsed_food_name or "").strip().lower() == qn
+                    and (str(r.quantity or "").strip().lower()
+                         == str(quantity or "").strip().lower())):
+                return r
+        return None
+    except Exception as e:
+        logger.warning(f"duplicate check failed: {e}")
+        return None
+
+
 async def _analyze_food(db, user, food_name, inp):
     """
-    Enrich a logged food with USDA data + recurring-food memory, returning a
-    FoodAnalysis. Always falls back to the LLM's estimate if USDA/memory miss.
+    Enrich a logged food with the right data source, returning a FoodAnalysis.
+
+    Routing:
+      memory (recurring user food) → highest priority for both branded & generic.
+      Branded packaged products (is_packaged=True or _looks_branded heuristic):
+          web search FIRST (label-accurate), USDA as backup.
+      Generic foods / meals:
+          USDA FIRST (unchanged), web as backup for items USDA misses.
+      LLM estimate is always the final fallback.
     """
     from core.food_intelligence import (
         analyze, normalize_name, best_candidate, is_generic_food_name,
@@ -479,13 +587,10 @@ async def _analyze_food(db, user, food_name, inp):
 
     llm = (inp.get("calories"), inp.get("protein"), inp.get("carbs"), inp.get("fats"))
     name_norm = normalize_name(food_name)
-
-    # A bare generic name ("protein bar", "shake") must NOT silently resolve to a
-    # previously-logged specific item or a USDA guess — the coach should have asked
-    # which one. Skip memory + USDA and just use the LLM's stated estimate.
     generic = is_generic_food_name(food_name)
+    is_packaged = bool(inp.get("is_packaged")) or _looks_branded(food_name)
 
-    # 1) Recurring memory — the user's known staples (highest priority)
+    # 1) Recurring memory — user's known staples (highest priority for any type)
     memory = None
     try:
         m = (await get_user_food_match(db, user.id, name_norm)
@@ -504,28 +609,63 @@ async def _analyze_food(db, user, food_name, inp):
     except Exception as e:
         logger.warning(f"food memory lookup failed: {e}")
 
-    # 2) USDA search (only if no memory match — saves an API call on staples).
-    # Skip for generic names too: a USDA "protein bar" row is a meaningless average.
+    # 2) Branched enrichment — branded goes web-first; generics go USDA-first.
     usda = None
+    web = None
     if memory is None and name_norm and not generic:
-        try:
-            from api.usda import search_food
-            candidates = await search_food(food_name, page_size=8)
-            best, conf = best_candidate(food_name, candidates)
-            if best:
-                best["_match"] = conf
-                usda = best
-                # Store confident matches as recurring memory for next time
-                if conf in ("exact", "likely"):
+        if is_packaged:
+            web = await _web_lookup_packaged(food_name, inp.get("quantity"))
+            if web is None:
+                # USDA does carry some branded items (Quest bars, etc.) — try as backup.
+                try:
+                    from api.usda import search_food
+                    candidates = await search_food(food_name, page_size=8)
+                    best, conf = best_candidate(food_name, candidates)
+                    if best:
+                        best["_match"] = conf
+                        usda = best
+                except Exception as e:
+                    logger.warning(f"USDA backup enrichment failed: {e}")
+            # Cache a confident web hit so the same product is instant next time.
+            if web is not None:
+                try:
                     await upsert_user_food_match(
                         db, user.id, name_norm, food_name,
-                        best.get("fdc_id"), best.get("per100g", {}), conf,
+                        web.get("fdc_id"), web.get("per100g", {}), web.get("_match") or "likely",
                     )
-        except Exception as e:
-            logger.warning(f"USDA enrichment failed: {e}")
+                except Exception as e:
+                    logger.warning(f"memory cache write failed: {e}")
+        else:
+            try:
+                from api.usda import search_food
+                candidates = await search_food(food_name, page_size=8)
+                best, conf = best_candidate(food_name, candidates)
+                if best:
+                    best["_match"] = conf
+                    usda = best
+                    if conf in ("exact", "likely"):
+                        await upsert_user_food_match(
+                            db, user.id, name_norm, food_name,
+                            best.get("fdc_id"), best.get("per100g", {}), conf,
+                        )
+            except Exception as e:
+                logger.warning(f"USDA enrichment failed: {e}")
+            # USDA missed AND it's a packaged-looking text mention → try web.
+            if usda is None and _looks_branded(food_name):
+                web = await _web_lookup_packaged(food_name, inp.get("quantity"))
+                if web is not None:
+                    try:
+                        await upsert_user_food_match(
+                            db, user.id, name_norm, food_name,
+                            web.get("fdc_id"), web.get("per100g", {}),
+                            web.get("_match") or "likely",
+                        )
+                    except Exception:
+                        pass
 
     return analyze(food_name, inp.get("quantity"), *llm,
-                   usda_candidate=usda, memory_match=memory)
+                   usda_candidate=usda, memory_match=memory,
+                   web_candidate=web)
 
 
 async def execute_tool_calls(
@@ -657,6 +797,27 @@ async def _dispatch(name, inp, user, today_log, db, source_type):  # noqa: C901
         target_log, past_date = await _resolve_log(inp, user, today_log, db)
 
         food_name = inp.get("food_name") or ""
+
+        # Cross-turn idempotency — same (food, quantity) on the same log within
+        # the last 5 min is almost always a retry from the confusion cascade.
+        # Return the existing entry's identity so the model coaches honestly
+        # ("already on your log") rather than producing a duplicate row.
+        _dup = await _check_recent_duplicate(
+            db, getattr(target_log, "id", None), food_name, inp.get("quantity")
+        )
+        if _dup is not None:
+            prefs = user.preferences
+            cal_t = prefs.calorie_target if prefs else None
+            pro_t = prefs.protein_target if prefs else None
+            tail = ""
+            if cal_t:
+                tail = (f" You're at {target_log.total_calories:.0f} / {cal_t} cal "
+                        f"({pro_t and f'{target_log.total_protein:.0f}/{pro_t}g protein' or ''}).")
+            return (f"Already logged that {food_name} a minute ago "
+                    f"[#{_dup.id}] — kept your existing entry, no duplicate."
+                    f"{tail} YOUR REPLY: one short line acknowledging it was "
+                    f"already on the board, then move on or ask what's next.")
+
         # Capture raw LLM-submitted macros before _analyze_food runs
         # reconcile_macros, so we can flag corrections in the tool result.
         _raw_cal = inp.get("calories")
@@ -665,14 +826,18 @@ async def _dispatch(name, inp, user, today_log, db, source_type):  # noqa: C901
         _raw_fat = inp.get("fats")
         analysis = await _analyze_food(db, user, food_name, inp)
 
-        # T2.3 — capture meal timing / alcohol / photo provenance. Photos are
-        # inherently noisier than text: force estimated=True and cap confidence
-        # at 0.75 regardless of what the model passed, so trend-tracking treats
-        # photo logs with appropriate skepticism.
+        # T2.3 — capture meal timing / alcohol / photo provenance.
+        # Photos are inherently noisier than text: force estimated=True and cap
+        # confidence at 0.75 — UNLESS the enrichment source is a label-accurate
+        # web hit, in which case we have the actual numbers from the packaging
+        # and the cap would unfairly downgrade trend math.
         from_photo = bool(inp.get("from_photo"))
         _conf = inp.get("confidence", 0.8)
         if from_photo:
-            _conf = min(_conf, 0.75)
+            if getattr(analysis, "enrichment_source", None) == "web_label":
+                _conf = max(_conf, 0.90)
+            else:
+                _conf = min(_conf, 0.75)
         # meal_time defaults to "now" so we capture WHEN, not just WHAT
         from datetime import datetime as _dt
         _meal_time = _dt.utcnow()
@@ -733,12 +898,24 @@ async def _dispatch(name, inp, user, today_log, db, source_type):  # noqa: C901
                 if not orig or orig == 0:
                     return 0.0
                 return abs(float(new) - float(orig)) / float(orig)
+
+            def _abs_off(orig, new):
+                return abs(float(new) - float(orig)) if orig is not None else 0.0
+            # Absolute-floor guard so tiny rounding shifts (10g → 11g protein)
+            # don't generate a reconciliation correction the user doesn't care
+            # about. Both the relative AND absolute threshold must be met.
             shifted = []
-            if _raw_protein is not None and _pct_off(_raw_protein, analysis.protein) >= 0.05:
+            if (_raw_protein is not None
+                    and _pct_off(_raw_protein, analysis.protein) >= 0.05
+                    and _abs_off(_raw_protein, analysis.protein) >= 3):
                 shifted.append(f"protein {float(_raw_protein):.0f}g→{analysis.protein:.0f}g")
-            if _raw_carbs is not None and _pct_off(_raw_carbs, analysis.carbs) >= 0.05:
+            if (_raw_carbs is not None
+                    and _pct_off(_raw_carbs, analysis.carbs) >= 0.05
+                    and _abs_off(_raw_carbs, analysis.carbs) >= 5):
                 shifted.append(f"carbs {float(_raw_carbs):.0f}g→{analysis.carbs:.0f}g")
-            if _raw_fat is not None and _pct_off(_raw_fat, analysis.fat) >= 0.05:
+            if (_raw_fat is not None
+                    and _pct_off(_raw_fat, analysis.fat) >= 0.05
+                    and _abs_off(_raw_fat, analysis.fat) >= 2):
                 shifted.append(f"fat {float(_raw_fat):.0f}g→{analysis.fat:.0f}g")
             if shifted:
                 reconciled_note = (
@@ -836,6 +1013,26 @@ async def _dispatch(name, inp, user, today_log, db, source_type):  # noqa: C901
         weight = inp["weight"]
         unit = inp.get("unit", "lbs")
         weight_kg = _lbs_to_kg(weight, unit)
+
+        # Unit-mix-up sanity check — classic bug: user enters 14 (meant 140 lbs
+        # or 14 stone), no unit, gets logged as 14 kg = ~31 lbs. That corrupts
+        # weight trends for days. If the resulting kg reading is >20% off the
+        # user's stored current_weight_kg, return a clarifying tool result
+        # instead of writing the entry — the model will re-ask cleanly.
+        cur_kg = getattr(user, "current_weight_kg", None)
+        if cur_kg and weight_kg > 0:
+            ratio = weight_kg / cur_kg
+            if ratio < 0.8 or ratio > 1.25:
+                # Suggest the most likely intended units so the model can ask
+                # specifically rather than vaguely.
+                cur_lb = cur_kg * 2.20462
+                return (f"Skipped weight log — {weight} {unit} reads as "
+                        f"{weight_kg:.1f} kg ({weight_kg*2.20462:.1f} lb), "
+                        f"but their current weight is ~{cur_kg:.1f} kg "
+                        f"({cur_lb:.1f} lb). YOUR REPLY: ask them to confirm "
+                        f"the unit — 'was that {weight} kg or {weight} lb?' "
+                        f"— before logging. One short bubble.")
+
         # T2.5 — context (morning_fasted / post_meal / evening / post_workout)
         # is captured for trend interpretation. A morning_fasted reading is
         # the gold standard; anything else carries noise the coach should
@@ -924,6 +1121,39 @@ async def _dispatch(name, inp, user, today_log, db, source_type):  # noqa: C901
         if not entry:
             return f"No food entry #{entry_id} found in today's log."
         await db.refresh(today_log)
+
+        # Recurring-memory correction backfill: when a correction notably shifts
+        # macros on a named non-generic food, update the user_food_match so the
+        # next log of the same item primes from the corrected profile. Reuses
+        # existing upsert_user_food_match. Skip on generics, partial updates,
+        # and entries with no calories to anchor the per-100g profile.
+        try:
+            from core.food_intelligence import normalize_name, is_generic_food_name
+            from db.queries import upsert_user_food_match
+            fn = entry.parsed_food_name or ""
+            if fn and entry.calories and not is_generic_food_name(fn):
+                name_norm = normalize_name(fn)
+                # Use entry.quantity to derive per-100g IF we can read grams.
+                # Fall back to direct cal as cal100 only when the entry is
+                # explicitly 100g — otherwise skip (don't taint memory).
+                qty = str(entry.quantity or "").lower()
+                if "100g" in qty or "100 g" in qty:
+                    per100 = {
+                        "calories": float(entry.calories),
+                        "protein": float(entry.protein or 0),
+                        "carbs": float(entry.carbs or 0),
+                        "fat": float(entry.fats or 0),
+                        "fiber": float(entry.fiber) if entry.fiber is not None else None,
+                        "sugar": float(entry.sugar) if entry.sugar is not None else None,
+                        "sodium": float(entry.sodium) if entry.sodium is not None else None,
+                    }
+                    await upsert_user_food_match(
+                        db, user.id, name_norm, fn,
+                        None, per100, "user-confirmed",
+                    )
+        except Exception as _e:
+            logger.warning(f"recurring-memory backfill on update failed: {_e}")
+
         moved = f", moved to {target_date}" if target_date else ""
         return (f"Updated entry #{entry_id}: {entry.parsed_food_name} → "
                 f"{entry.calories:.0f}cal{moved}")

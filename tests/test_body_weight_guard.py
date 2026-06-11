@@ -22,9 +22,13 @@ def test_body_weight_without_number_does_not_claim_weighin():
 
 
 def test_body_weight_with_number_confirms_weighin():
+    """The fallback wording rotates across three "weigh-in logged" variants
+    (handlers/tool_executor.py::_weight_fallback). All three are valid
+    confirmations; assert the response carries weigh-in language, not the
+    specific old "weight down" string."""
     tc = [{"name": "log_body_weight", "input": {"weight": 82.5}}]
-    out = deterministic_confirmation(tc, _log(), _prefs())
-    assert "weight down" in out.lower()
+    out = deterministic_confirmation(tc, _log(), _prefs()).lower()
+    assert any(s in out for s in ("weigh-in", "weight logged", "scale check"))
 
 
 def test_body_weight_zero_is_not_a_weighin():

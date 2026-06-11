@@ -500,7 +500,7 @@ async def _llm_nudge(user, log, prefs, health_snap, slot: str, name: str,
             max_tokens=130,
             model="claude-haiku-4-5-20251001",
         )
-        return (result.get("text") or "").strip()
+        return _cap_bubbles((result.get("text") or "").strip(), 3)
     except Exception as e:
         logger.error(f"LLM nudge ({slot}) failed: {e}")
         return ""
@@ -732,10 +732,64 @@ async def _llm_followup(user, pq, name: str) -> str:
             max_tokens=120,
             model="claude-haiku-4-5-20251001",
         )
-        return (result.get("text") or "").strip()
+        return _cap_bubbles((result.get("text") or "").strip(), 2)
     except Exception as e:
         logger.error(f"Follow-up generation failed for user {user.id}: {e}")
         return ""
+
+
+def _cap_bubbles(text: str, max_bubbles: int) -> str:
+    """Hard-cap a |||-separated reply to at most `max_bubbles` bubbles.
+
+    The prompts ask for 1-2 bubbles but Haiku occasionally over-shoots, which
+    is how the 3:19 PM dinner triple-nudge slipped through. Cap deterministically
+    so the model can't spam regardless of prompt drift. Drops trailing bubbles
+    (keeps the first N) since prompts lead with the most important content.
+    """
+    if not text:
+        return text
+    bubbles = [b.strip() for b in text.split("|||") if b.strip()]
+    if len(bubbles) <= max_bubbles:
+        return text
+    return "|||".join(bubbles[:max_bubbles])
+
+
+async def _eod_report_window(db, user_id: int, tz) -> tuple[int, int]:
+    """Resolve the local hour:minute the EOD report should fire for a user.
+
+    Default 21:00. If the user's median dinner-log time over the last 14 days
+    is later than 20:30, slide the report to 30 minutes after that median so
+    late-dinner users don't get the recap before dinner is logged. Clamped to
+    [20:30, 22:30].
+
+    No new DB queries beyond what scheduler already pulls — relies on
+    get_recent_logs's food_entries with meal_type='dinner'. Falls back to
+    (21, 0) on any error.
+    """
+    try:
+        from db.queries import get_recent_logs
+        logs = await get_recent_logs(db, user_id, days=14)
+        dinner_hours = []
+        for lg in logs or []:
+            for e in (getattr(lg, "food_entries", None) or []):
+                if getattr(e, "meal_type", None) == "dinner":
+                    mt = getattr(e, "meal_time", None)
+                    if mt is None:
+                        continue
+                    # meal_time is stored UTC-naive; convert to user local for hour.
+                    from datetime import timezone as _tz
+                    local = mt.replace(tzinfo=_tz.utc).astimezone(tz)
+                    dinner_hours.append(local.hour * 60 + local.minute)
+        if not dinner_hours:
+            return 21, 0
+        dinner_hours.sort()
+        median_min = dinner_hours[len(dinner_hours) // 2]
+        target_min = median_min + 30
+        # Clamp to [20:30, 22:30]
+        target_min = max(20 * 60 + 30, min(22 * 60 + 30, target_min))
+        return target_min // 60, target_min % 60
+    except Exception:
+        return 21, 0
 
 
 async def _maybe_followup_pending(db, user, send_id: str, name: str,
@@ -861,12 +915,15 @@ async def _run_reminders():
                 continue
 
             # ── Weekly recap (Sunday 18:00–18:30, once per week) ──────────────
+            # Gated by frequency_allows — "light" and "none" tiers skip the recap.
             try:
+                from reminders.eligibility import frequency_allows as _freq_allows
                 tz = pytz.timezone(user.timezone or "UTC")
                 now = datetime.now(tz)
                 iso_week = f"{now.isocalendar()[0]}-W{now.isocalendar()[1]:02d}"
                 if (now.weekday() == 6 and now.hour == 18 and now.minute < 30
                         and prefs and prefs.proactive_messaging_enabled
+                        and _freq_allows(prefs, "weekly_recap")
                         and user.weekly_recap_week != iso_week):
                     name = user.name or "hey"
                     recap = await _llm_weekly_recap(user, prefs, db, name)
@@ -911,14 +968,20 @@ async def _run_reminders():
             except Exception as e:
                 logger.error(f"Profile consolidation error for user {user.id}: {e}")
 
-            # ── End-of-day report (21:00–21:30) — proactive-opt-in users only ──
-            # Gated behind per-user proactive preference so opted-out users are
-            # never messaged. Deduped by date so a deploy restart during the window
-            # never sends the report twice. The outer `continue` at 21:00 prevents
-            # night_closeout (which lives in the slot chain) from also firing.
+            # ── End-of-day report — adaptive timing + frequency-gated ─────────
+            # Default 21:00–21:30 local. If the user's median dinner-log time over
+            # the last 14 days is later than 20:30, the report shifts to 30 min
+            # after that median, clamped to [20:30, 22:30] so it never spams late.
+            # Gated by frequency_allows("day_report") — "none" skips it entirely.
+            # Deduped by date so a deploy restart during the window never sends twice.
+            # The outer `continue` at the report hour prevents night_closeout from
+            # also firing the same tick.
             try:
-                if hour == 21 and minute < 30:
-                    if log and log.total_calories > 0 and _proactive_pref_on(prefs):
+                from reminders.eligibility import frequency_allows as _freq_allows
+                report_h, report_m = await _eod_report_window(db, user.id, tz)
+                if hour == report_h and minute < 30:
+                    if (log and log.total_calories > 0 and _proactive_pref_on(prefs)
+                            and _freq_allows(prefs, "day_report")):
                         day_key = f"day_report:{today_str}"
                         if day_key not in sent_slots:
                             name = user.name or "hey"
@@ -931,7 +994,7 @@ async def _run_reminders():
                             user.nudges_sent = ",".join(sorted(sent_slots))
                             await db.commit()
                             skip_counts["sent"] += 1
-                    continue  # skip slot chain at 21:00 regardless of send
+                    continue  # skip slot chain at report hour regardless of send
             except Exception as e:
                 logger.error(f"Day report error for user {user.id}: {e}")
 
@@ -953,9 +1016,17 @@ async def _run_reminders():
 
                 name = user.name or "hey"
 
-                # Get latest health snapshot (today's if available, else most recent)
+                # Get latest health snapshot — only use it when it's today's or
+                # yesterday's. A 3-day-old Whoop reading shouldn't drive a morning
+                # briefing claim like "Recovery's in the red today (28%)" — it
+                # might be totally stale. Falls back to None which all downstream
+                # branches already handle.
                 health_snaps = await get_recent_health_snapshots(db, user.id, days=2)
                 health_snap = health_snaps[0] if health_snaps else None
+                if health_snap is not None:
+                    _snap_date = getattr(health_snap, "date", None)
+                    if _snap_date is None or (now.date() - _snap_date).days > 1:
+                        health_snap = None
 
                 day_pct = _pacing_pct(hour, minute, wake, sleep)
 
@@ -980,25 +1051,30 @@ async def _run_reminders():
                     continue
                 if verdict == "consolidate":
                     skip_counts["consolidate"] += 1
-                    try:
-                        from db.queries import record_pending_question
-                        await record_pending_question(
-                            db, user.id, kind="proactive_hook",
-                            question=_SILENCE_HOOK_DIRECTIVE,
-                            tier="proactive_hook",
-                        )
-                    except Exception as e:
-                        logger.error(f"proactive_hook record failed for user {user.id}: {e}")
-                    # Re-ask the freshly registered hook if due; then skip individual slots.
-                    await _maybe_followup_pending(db, user, send_id, name, mins_since)
+                    # Respect reminder_frequency for consolidate hook — "none" users
+                    # explicitly want minimal contact; don't re-ask silence on them.
+                    if frequency_allows(prefs, "proactive_hook"):
+                        try:
+                            from db.queries import record_pending_question
+                            await record_pending_question(
+                                db, user.id, kind="proactive_hook",
+                                question=_SILENCE_HOOK_DIRECTIVE,
+                                tier="proactive_hook",
+                            )
+                        except Exception as e:
+                            logger.error(f"proactive_hook record failed for user {user.id}: {e}")
+                        # Re-ask the freshly registered hook if due; then skip slots.
+                        await _maybe_followup_pending(db, user, send_id, name, mins_since)
                     continue
 
                 # ── Context-aware follow-up: re-ask an unanswered open question ──
                 # Only reached when verdict == "send". Highest priority — a hanging
-                # question outranks a generic slot nudge.
-                if await _maybe_followup_pending(db, user, send_id, name, mins_since):
-                    skip_counts["sent"] += 1
-                    continue  # one proactive message per tick
+                # question outranks a generic slot nudge. Gated by frequency_allows
+                # via the followup_ prefix collapse in eligibility.py.
+                if frequency_allows(prefs, "followup_pending"):
+                    if await _maybe_followup_pending(db, user, send_id, name, mins_since):
+                        skip_counts["sent"] += 1
+                        continue  # one proactive message per tick
 
                 # ── New user engagement burst (first 72 hours post-onboarding) ──
                 # Fires at fixed intervals after account creation. Independent of
@@ -1007,7 +1083,11 @@ async def _run_reminders():
                 if user.onboarding_completed and user.created_at:
                     hours_since = _hours_since_created(user)
 
-                    if hours_since <= 50.0:
+                    # Warmup respects reminder_frequency: a user who picked "none"
+                    # (Morning only) gets no aggressive day-1 burst — they were
+                    # explicit. The morning_checkin still fires below as their one
+                    # allowed daily anchor.
+                    if hours_since <= 50.0 and frequency_allows(prefs, "warmup_15m"):
                         # NOTE: profile collection (age/sex/height for target calc)
                         # is now a PendingQuestion of kind 'profile_stats', recorded
                         # in the conversation path and re-asked by _maybe_followup_pending
@@ -1522,11 +1602,20 @@ async def _run_conversation_hooks() -> None:
     async with AsyncSessionLocal() as db:
         users = await get_all_active_users(db)
         sent = 0
+        from reminders.eligibility import frequency_allows as _freq_allows
         for user in users:
             try:
                 if not getattr(user, "onboarding_completed", False):
                     continue
                 if _should_skip_linked(user, linking_enabled()):
+                    continue
+
+                # Respect the user's reminder_frequency. "none" (Morning only)
+                # users opted into a single daily anchor — re-asking dropped
+                # questions throughout the day defeats that explicit choice.
+                # "light" (Morning & evening) is the floor that allows hooks.
+                prefs = getattr(user, "preferences", None)
+                if not _freq_allows(prefs, "conversation_hook"):
                     continue
 
                 send_id = await resolve_send_target(db, user)

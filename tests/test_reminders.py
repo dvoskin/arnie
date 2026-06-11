@@ -129,12 +129,74 @@ def test_frequency_light_only_anchors():
 
 
 def test_frequency_none_is_smallest_nonempty_not_hard_off():
-    """'none' must still permit at least one anchor — it is NOT a second kill switch."""
+    """'none' must still permit at least one anchor — it is NOT a second kill switch.
+    UI label: "Morning only" — so only morning_checkin from the timed slot chain."""
     p = _p("none")
     allowed = [s for s in ("morning_checkin", "late_morning_nolog", "midday_pacing",
                            "preworkout", "workout_check", "evening_pacing", "night_closeout")
                if elig.frequency_allows(p, s)]
     assert allowed == ["morning_checkin"]  # exactly one anchor, never empty
+
+
+def test_frequency_none_blocks_warmup_hooks_recap_eod():
+    """Minimal preference must NOT spray warmup nudges, hook re-asks, weekly
+    recap, or EOD report — that's exactly the screenshot complaint."""
+    p = _p("none")
+    # warmup_* category (prefix-collapsed): blocked at "none"
+    for k in ("warmup_15m", "warmup_1h", "warmup_48h"):
+        assert elig.frequency_allows(p, k) is False, k
+    # other proactive paths: blocked at "none"
+    assert elig.frequency_allows(p, "conversation_hook") is False
+    assert elig.frequency_allows(p, "weekly_recap") is False
+    assert elig.frequency_allows(p, "day_report") is False
+    assert elig.frequency_allows(p, "proactive_hook") is False
+    # followup_* category: blocked at "none"
+    assert elig.frequency_allows(p, "followup_profile_stats") is False
+    assert elig.frequency_allows(p, "followup_conversation_hook") is False
+    # city_ask is the one-time setup exemption (everyone gets it once)
+    assert elig.frequency_allows(p, "city_ask") is True
+
+
+def test_frequency_light_matches_morning_and_evening_label():
+    """UI label: "Morning & evening" — two daily anchors + the EOD summary."""
+    p = _p("light")
+    assert elig.frequency_allows(p, "morning_checkin") is True
+    assert elig.frequency_allows(p, "evening_pacing") is True
+    assert elig.frequency_allows(p, "day_report") is True
+    # but no warmup spam, no hooks, no weekly recap, no consolidate
+    assert elig.frequency_allows(p, "warmup_15m") is False
+    assert elig.frequency_allows(p, "conversation_hook") is False
+    assert elig.frequency_allows(p, "weekly_recap") is False
+    assert elig.frequency_allows(p, "proactive_hook") is False
+
+
+def test_frequency_moderate_matches_a_few_times_a_day_label():
+    """UI label: "A few times a day" — 3-5 slots + housekeeping."""
+    p = _p("moderate")
+    # 3 of the 5 mid-day slots plus the anchors fire
+    assert elig.frequency_allows(p, "midday_pacing") is True
+    assert elig.frequency_allows(p, "preworkout") is True
+    assert elig.frequency_allows(p, "workout_check") is True
+    # warmup, hooks, EOD, recap all on at moderate
+    assert elig.frequency_allows(p, "warmup_1h") is True
+    assert elig.frequency_allows(p, "conversation_hook") is True
+    assert elig.frequency_allows(p, "day_report") is True
+    assert elig.frequency_allows(p, "weekly_recap") is True
+    # late_morning and night_closeout still dropped at moderate
+    assert elig.frequency_allows(p, "late_morning_nolog") is False
+    assert elig.frequency_allows(p, "night_closeout") is False
+
+
+def test_frequency_heavy_includes_all_proactive_categories():
+    """UI label: "All day" — every path fires."""
+    p = _p("heavy")
+    for k in ("morning_checkin", "late_morning_nolog", "midday_pacing", "preworkout",
+              "workout_check", "evening_pacing", "night_closeout",
+              "warmup_15m", "warmup_48h",
+              "conversation_hook", "day_report", "weekly_recap",
+              "proactive_hook", "city_ask",
+              "followup_profile_stats", "followup_conversation_hook"):
+        assert elig.frequency_allows(p, k) is True, k
 
 
 def test_frequency_unknown_falls_back_to_moderate():

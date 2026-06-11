@@ -6,10 +6,10 @@ logger = logging.getLogger(__name__)
 _FOOD_PROMPT = """You are analyzing a food image for a fitness tracking app. Reply in plain text only — no markdown, no headers, no bullet symbols, no asterisks.
 
 PACKAGED PRODUCT WITH VISIBLE LABEL — TOP PRIORITY:
-If the image shows a packaged item (bottle, carton, can, bar, box, pouch, etc.) where the BRAND, FLAVOR/VARIANT, and macro callouts on the front are LEGIBLE, READ THEM and put the label data on ONE line in this exact format:
+If the image shows a packaged item (bottle, carton, can, bar, box, pouch, etc.) where the BRAND or PRODUCT NAME is LEGIBLE, ALWAYS emit a PACKAGED: line, even if some macros aren't visible:
   PACKAGED: [brand] [product name + flavor], [serving size from label, e.g. "11 fl oz (1 carton)"], [cal] cal, [protein]g P, [carbs]g C, [fat]g F
 Example: PACKAGED: Elmhurst Clean Protein Pistachio Crème, 11 fl oz (1 carton), 190 cal, 27g P, 4g C, 7g F
-Pull the brand and flavor verbatim from the package — do not paraphrase ("a pistachio shake"). If carbs/fat aren't shown on the front but cal and protein are, fill the visible numbers and write "?" for the unseen macros. Never ask the user for info that's on the label in the photo.
+Pull the brand and flavor verbatim from the package — do not paraphrase ("a pistachio shake"). If ANY macro is not visible, write "?" for that macro but ALWAYS fill brand, product name/flavor, and serving size — those are how downstream enrichment looks up the rest. Never omit the PACKAGED: line just because some macros aren't visible. Never ask the user for info that's on the label in the photo.
 
 If it's a meal (cooked / plated / unpackaged): list each distinct food item on its own line in this format:
   [item name], [quantity], [cal] cal, [protein]g P, [carbs]g C, [fat]g F

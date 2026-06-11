@@ -116,25 +116,47 @@ def gate_decision(streak: int, hours_since_created: float, prefs) -> str:
 
 
 # ── Tier-3: reminder-frequency read path ───────────────────────────────────────
-# reminder_frequency NARROWS which timed slots may fire — it is NOT a second kill
-# switch. proactive_messaging_enabled is the only hard OFF; frequency only shrinks
-# the allowed subset. "none" therefore maps to the SMALLEST non-empty set (a single
-# daily anchor), never to "nothing" — if proactive is on, at least one anchor fires.
+# reminder_frequency NARROWS which proactive paths may fire. The Client tab labels
+# the tiers as:
+#   none     → "Morning only"          (1 message a day)
+#   light    → "Morning & evening"     (2 anchors a day)
+#   moderate → "A few times a day"     (3-5 touchpoints)
+#   heavy    → "All day"               (everything)
+#
+# Every outbound proactive path (timed slots, warmup burst, conversation hooks,
+# EOD report, weekly recap, pending follow-ups, consolidate hook) is gated by
+# frequency_allows(). proactive_messaging_enabled is still the hard OFF; this
+# only shrinks WHICH paths fire when proactive is on.
+#
+# Slot categories (prefix-matched in frequency_allows):
+#   warmup_*    — new-user engagement burst (warmup_15m, warmup_1h, …)
+#   followup_*  — re-asks for open pending questions
+#   Other keys are the literal slot names from the scheduler.
 _FREQUENCY_SLOTS: dict[str, set[str]] = {
-    # everything (all seven timed touchpoints)
+    # heavy = "All day" — everything fires
     "heavy": {
         "morning_checkin", "late_morning_nolog", "midday_pacing", "preworkout",
         "workout_check", "evening_pacing", "night_closeout",
+        "warmup", "conversation_hook", "day_report", "weekly_recap",
+        "proactive_hook", "city_ask", "followup_pending",
     },
-    # default — drop the two most marginal pokes (late-morning nag, night closeout)
+    # moderate = "A few times a day" — 3-5 anchors + housekeeping
     "moderate": {
         "morning_checkin", "midday_pacing", "preworkout",
         "workout_check", "evening_pacing",
+        "warmup", "conversation_hook", "day_report", "weekly_recap",
+        "followup_pending", "city_ask",
     },
-    # just the day's two anchors
-    "light": {"morning_checkin", "evening_pacing"},
-    # smallest non-empty subset — one anchor a day, not a hard off
-    "none": {"morning_checkin"},
+    # light = "Morning & evening" — the two daily anchors + essential summaries
+    "light": {
+        "morning_checkin", "evening_pacing", "day_report",
+        "followup_pending", "city_ask",
+    },
+    # none = "Morning only" — one message a day. Setup-critical city_ask exempt
+    # because it's one-time and required for everything else to work.
+    "none": {
+        "morning_checkin", "city_ask",
+    },
 }
 
 # Unknown / unset frequency behaves like the default tier.
@@ -143,9 +165,10 @@ _DEFAULT_FREQUENCY = "moderate"
 # Frequency tiers, ascending (fewest → most pokes). A relative "less"/"more"
 # instruction shifts one step along this ladder; an exact tier name passes
 # through. Single source of the frequency vocabulary, shared with the write path.
+# "minimal" is a UI synonym for "none" (the Client tab labels it "Morning only").
 _FREQ_LADDER = ["none", "light", "moderate", "heavy"]
-_FREQ_LESS = {"less", "fewer", "down", "reduce", "lower", "quieter"}
-_FREQ_MORE = {"more", "up", "increase", "higher", "louder"}
+_FREQ_LESS = {"less", "fewer", "down", "reduce", "lower", "quieter", "minimal", "minimum"}
+_FREQ_MORE = {"more", "up", "increase", "higher", "louder", "max", "maximum"}
 
 
 def normalize_reminder_frequency(value, current=_DEFAULT_FREQUENCY) -> str:
@@ -176,11 +199,21 @@ def frequency_allows(prefs, slot_key: str) -> bool:
     True if `slot_key` is permitted under the user's reminder_frequency tier.
 
     Precedence: this is a NARROWING filter applied *after* the hard
-    proactive_messaging_enabled check — it never re-enables a disabled user and
-    "none" is the smallest non-empty subset, not a second off switch. An unknown or
-    missing frequency falls back to the moderate default.
+    proactive_messaging_enabled check — it never re-enables a disabled user.
+    "none" maps to the Client-tab "Morning only" tier (morning_checkin + the
+    one-time city_ask), not a second off switch. Unknown / missing frequency
+    falls back to moderate.
+
+    Prefix collapsing for stable category gates regardless of the per-tick
+    instance key:
+      warmup_*    (warmup_15m, warmup_1h, ...) → "warmup"
+      followup_*  (followup_profile_stats, ...) → "followup_pending"
     """
     freq = (getattr(prefs, "reminder_frequency", None) or _DEFAULT_FREQUENCY)
     freq = str(freq).strip().lower()
     allowed = _FREQUENCY_SLOTS.get(freq, _FREQUENCY_SLOTS[_DEFAULT_FREQUENCY])
+    if slot_key.startswith("warmup_"):
+        return "warmup" in allowed
+    if slot_key.startswith("followup_"):
+        return "followup_pending" in allowed
     return slot_key in allowed

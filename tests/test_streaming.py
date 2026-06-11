@@ -166,7 +166,7 @@ async def _stream_env(monkeypatch):
             food_entries=[], exercise_entries=[],
         )
 
-    async def _fake_sync_pending(db, user, llm_reply_text=""):
+    async def _fake_sync_pending(db, user, llm_reply_text="", **kwargs):
         pass
 
     import db.queries as _DBQ

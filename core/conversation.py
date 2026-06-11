@@ -27,6 +27,7 @@ from core.turn_health import (
     looks_like_empty_praise as _looks_like_empty_praise,
     detect_turn_flags,
     user_is_signing_off as _user_is_signing_off,
+    detect_sarcastic_ack as _detect_sarcastic_ack,
 )
 from handlers.tool_executor import (
     execute_tool_calls, deterministic_confirmation, recovery_message,
@@ -167,6 +168,24 @@ async def run_turn(
     _first_stop_reason = None
     _user_text = next((m.get("content", "") for m in reversed(messages)
                        if m.get("role") == "user"), "")
+    _prior_assistant = next((m.get("content", "") for m in reversed(messages)
+                             if m.get("role") == "assistant"), "")
+
+    # Sarcasm-on-error detection: a one-word "Great" / "Perfect" right after a
+    # mechanics-leak / generic-net / bare-log-ack reply is almost always
+    # frustration. Inject a recover cue into the system prompt so the model
+    # acknowledges + resets rather than steaming past it.
+    if isinstance(_user_text, str) and isinstance(_prior_assistant, str):
+        if _detect_sarcastic_ack(_user_text, _prior_assistant):
+            system = system + (
+                "\n\nUSER MAY BE FRUSTRATED: their one-word 'great'/'perfect' "
+                "right after your last reply reads as sarcastic — your previous "
+                "turn shipped a mechanics line, a generic 'got that / X cal "
+                "today' fallback, or a bare 'logged' ack. open with one short "
+                "honest line acknowledging the miss ('my bad, lost the thread "
+                "there'), then refocus on what they actually asked. don't "
+                "double down on the canned reply."
+            )
 
     # Streaming aggregator — one per turn, accumulates bubble count across the
     # first pass + follow-up + any self-heal retry. None when not streaming.
@@ -442,9 +461,36 @@ async def run_turn(
             _followup_tried = True
             response_text = await _try_follow_up()
             if not response_text:
-                response_text = deterministic_confirmation(
-                    tool_calls, today_log, user.preferences, tool_results
-                )
+                # Before falling to the canned "Keep sipping" / "Consistency is
+                # the whole game" templates, try ONE directive retry for the
+                # quick-log tools (log_water / log_body_weight). These almost
+                # always have rich tool_results data the model can voice if
+                # given a sharper instruction — the canned line was firing
+                # because the first follow-up returned empty, not because the
+                # data was missing.
+                _quick_log = {tc["name"] for tc in tool_calls} & {
+                    "log_water", "log_body_weight"
+                }
+                if _quick_log:
+                    _directive = (
+                        f"\n\nQUICK LOG: a {next(iter(_quick_log))} just ran. "
+                        "voice it in 1-2 short bubbles — use the actual numbers "
+                        "from the tool result (water total / weight kg). no "
+                        "mechanics narration, no canned 'keep sipping'. one "
+                        "real read + a forward beat."
+                    )
+                    try:
+                        _retry = await chat_follow_up(
+                            messages, system + _directive,
+                            raw_content, tool_results, max_tokens=200,
+                        )
+                        response_text = (_retry.get("text") or "").strip()
+                    except Exception:
+                        pass
+                if not response_text:
+                    response_text = deterministic_confirmation(
+                        tool_calls, today_log, user.preferences, tool_results
+                    )
                 _response_streamed = False  # deterministic fallback wasn't streamed
         else:
             # A voiced-result tool (web_search) forces a follow-up EVEN when the
@@ -553,10 +599,14 @@ async def run_turn(
     _REPAIR_PROMPT = (
         "your last reply was either a bare acknowledgment ('Logged that.', 'Done.', "
         "'Sleep well.'), contained internal mechanics language ('totals resynced', "
-        "'entry updated', 'changes saved') the user should never see, or was a "
+        "'entry updated', 'changes saved') the user should never see, was a "
         "generic empty-praise phrase ('Great workout!', 'Nice job!', 'Amazing session!') "
-        "with no real coaching content. "
+        "with no real coaching content, OR was a tool-promise stall ('Let me grab the "
+        "macros…', 'Checking the label…') without actually doing the thing. "
         "send a real coaching reply in your normal voice RIGHT NOW. "
+        "if your last reply talked about a food or topic the user did NOT mention in "
+        "their CURRENT message, that's the bug — refocus on what the user actually "
+        "said this turn. their words are the anchor, not a previous open loop. "
         "if tool calls ran this turn: react to what was logged/changed, give the exact "
         "day total from [TODAY], then one clear next move. "
         "if NO tool calls ran (you got confused / lost the thread): briefly acknowledge "
@@ -577,20 +627,31 @@ async def run_turn(
     # lifecycle loop (pending question keeps firing until answered). Short replies
     # only — long coaching replies with incidental praise are not caught.
     _empty_praise = _looks_like_empty_praise(response_text)
+    # Stall detection: "Checking the label…" / "Let me grab the macros…" without
+    # a corresponding tool call is a wrong-topic promise that strands the user.
+    # Only repair when NO tool ran AND no logging tool succeeded this turn —
+    # mid-log "let me get the chicken logged first" with a real log_food call
+    # is fine.
+    _stall = (not _logging_turn) and not tool_calls and _looks_like_stall(response_text)
 
-    # Never repair a sign-off reply. If the user said goodnight/going to sleep/etc.,
-    # Arnie's "Sleep well 🌙" is intentional and correct — NOT a dead end. Without
-    # this gate, quality repair fires and generates a full coaching reply (with "give
-    # the day total, next move") after a goodnight, sometimes re-logging food from
-    # context (the "Logged: Ground turkey" after goodnight bug).
+    # Sign-off: a clear goodnight/closing → 'Sleep well 🌙' is correct. Repair
+    # is disabled in this case so we don't generate a full coaching reply after
+    # a goodnight (the "Logged: Ground turkey" after-goodnight regression).
     _signing_off = _user_is_signing_off(_user_text if isinstance(_user_text, str) else "")
 
-    if (_streaming_dead_end or _logging_dead_end or _mechanics or _empty_praise) and not _signing_off:
+    if (_streaming_dead_end or _logging_dead_end or _mechanics
+            or _empty_praise or _stall) and not _signing_off:
         try:
+            # Stall repair runs with tools=True — the failure mode is the model
+            # promising a tool ("Let me log…") without firing one, so we need to
+            # let it actually call the tool on the retry. Other repair classes
+            # already produced text (we just want better text), so they stay
+            # tools=False to avoid spurious extra logs.
+            _repair_tools = _stall and not (_logging_dead_end or _mechanics)
             _repair = await chat(
                 messages + [{"role": "assistant", "content": response_text}],
                 system + f"\n\nQUALITY REPAIR: {_REPAIR_PROMPT}",
-                tools=False, max_tokens=400,
+                tools=_repair_tools, max_tokens=600 if _repair_tools else 400,
             )
             _repair_text = (_repair.get("text") or "").strip()
             if _repair_text:
@@ -682,7 +743,13 @@ async def run_turn(
         # INVARIANT: pass `response_text` (raw LLM reply), NOT a string rebuilt
         # from resp.bubbles. Dashboard-link bubbles are appended above and must
         # not reach hook detection.
-        await sync_pending_questions(db, user, llm_reply_text=response_text)
+        # had_logging_tool gates hook extraction — a closing "what's next?" after
+        # a meal log is coaching voice, not an abandoned question worth re-asking.
+        _had_logging = any(tc["name"] in _LOGGING_TOOLS for tc in tool_calls)
+        await sync_pending_questions(
+            db, user, llm_reply_text=response_text,
+            source_type=source_type, had_logging_tool=_had_logging,
+        )
 
     # ── Turn-health telemetry ─────────────────────────────────────────────────
     # Cheap deterministic detectors so deviations are self-evident (in logs + the
@@ -702,6 +769,7 @@ async def run_turn(
             tool_error=_tool_error,
             source_type=_source,
             tool_names={tc["name"] for tc in tool_calls},
+            prior_assistant_text=_prior_assistant if isinstance(_prior_assistant, str) else "",
         )
         if _retried and "retried" not in health_flags:
             health_flags.append("retried")

@@ -47,7 +47,19 @@ _SILENCE_HOOK_DIRECTIVE = (
 
 # Minimum characters for a hook question to be worth tracking (filters out
 # trivial "ok?" or "right?" fragments that aren't real open loops).
-_MIN_HOOK_LEN = 15
+# Raised from 15 → 25 so coaching tag-questions ("what's next?", "what're you
+# thinking?") don't queue 30-min re-asks. Real abandoned questions are longer.
+_MIN_HOOK_LEN = 25
+
+# Stall-style hook prefixes that read as substantive questions but are actually
+# short blocking clarifiers ("Checking the label on that one." / "Let me grab
+# the macros first."). These should NEVER open a hook — they're tool-promise
+# stalls, not abandoned open loops.
+_HOOK_STALL_PREFIXES = (
+    "checking", "let me", "let's", "grabbing", "pulling",
+    "looking", "looking up", "give me a sec", "hold on",
+    "one sec", "hang on",
+)
 
 # Two distinct ending classes — semantically different re-ask templates.
 # A *question* ending earns "Earlier you asked them this" framing.
@@ -86,6 +98,11 @@ def _extract_hook(response_text: str) -> tuple[str, str] | None:
     last = bubbles[-1]
     if len(last) < _MIN_HOOK_LEN:
         return None
+    # Don't open a hook for stall-prefix bubbles ("Checking the label…") —
+    # these are tool-promise stalls, not abandoned questions.
+    last_lower = last.lower().lstrip()
+    if any(last_lower.startswith(p) for p in _HOOK_STALL_PREFIXES):
+        return None
     if _HOOK_QUESTION_ENDINGS.search(last):
         return (last, "question")
     if _HOOK_ENGAGEMENT_ENDINGS.search(last):
@@ -93,7 +110,9 @@ def _extract_hook(response_text: str) -> tuple[str, str] | None:
     return None
 
 
-async def sync_pending_questions(db, user, llm_reply_text: str = "") -> None:
+async def sync_pending_questions(db, user, llm_reply_text: str = "",
+                                  source_type: str = "text",
+                                  had_logging_tool: bool = False) -> None:
     """
     Reconcile open questions for `user` against current state. Best-effort: never
     raises into the turn (a follow-up bookkeeping error must not break a reply).
@@ -101,6 +120,16 @@ async def sync_pending_questions(db, user, llm_reply_text: str = "") -> None:
     llm_reply_text: the RAW LLM reply string (pre-dashboard-append) used to detect
     hooks. Must NOT be a string rebuilt from resp.bubbles after URL injection —
     see the INVARIANT comment in core/conversation.py above the run_turn call.
+
+    source_type: "text" | "image" | "voice" | "proactive". When "proactive", this
+    is a re-ask we generated — it must NOT open a new hook (would cause the loop
+    where every follow-up's "whenever you get a sec" engagement ending registers
+    another hook, the next tick re-asks it, and the cycle never converges). The
+    3:19 PM dinner triple-nudge was this loop.
+
+    had_logging_tool: True when the user's turn actually logged something. A
+    closing coaching tag-question ("what's next?") on a logging turn is voice
+    flavor, NOT an abandoned open loop worth re-asking 30 min later.
     """
     if not getattr(user, "onboarding_completed", False):
         return  # don't open or resolve loops while still onboarding
@@ -122,14 +151,19 @@ async def sync_pending_questions(db, user, llm_reply_text: str = "") -> None:
         # proactive_hook is the silence-consolidation loop (scheduler opens it when
         # a user has ignored several check-ins); a reply ends the quiet stretch and
         # clears it just like a conversation hook.
-        await resolve_pending_questions(
-            db, user.id, kinds=["conversation_hook", "proactive_hook"]
-        )
+        # Only resolve on a real inbound turn — a proactive re-ask we sent must
+        # not silently mark its own hook answered.
+        if source_type != "proactive":
+            await resolve_pending_questions(
+                db, user.id, kinds=["conversation_hook", "proactive_hook"]
+            )
 
-        # If Arnie's new response ends on a question or engagement phrase, open a
-        # new hook loop. Store the hook_style so _llm_followup can pick the right
-        # re-ask template (question → "Earlier you asked…" / engagement → re-engage).
-        if llm_reply_text:
+        # Hook extraction is suppressed on proactive sends (Change 7): the
+        # follow-up's "whenever you get a sec" engagement endings otherwise
+        # open a new hook each tick and the loop never terminates.
+        # Suppressed on logging turns too (Change 3): a closing "what's next?"
+        # after a meal log is voice flavor, not an abandoned question.
+        if (llm_reply_text and source_type != "proactive" and not had_logging_tool):
             hook_result = _extract_hook(llm_reply_text)
             if hook_result:
                 hook_text, hook_style = hook_result

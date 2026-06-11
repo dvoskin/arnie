@@ -40,6 +40,7 @@ _NUTRITION_TOOLS = [
                 "meal_type":  {"type": "string", "enum": ["breakfast", "lunch", "dinner", "snack", "pre_workout", "post_workout"], "description": "Optional. Which meal slot this fits. Infer from time of day + user history if not stated."},
                 "alcohol_units": {"type": "number", "description": "Optional. Standard alcohol units (1 unit ≈ 1 beer / 1 glass wine / 1 shot)."},
                 "from_photo": {"type": "boolean", "description": "True when logging from a food photo — sets confidence ≤0.75 and estimated=true automatically."},
+                "is_packaged": {"type": "boolean", "description": "True when this is a branded packaged product (PACKAGED: line from a photo, OR a clearly branded text mention like 'Quest bar', 'Liquid IV', 'Elmhurst shake', 'Oikos yogurt'). Routes enrichment through web search for label-accurate macros. Leave false for generic foods (chicken breast, white rice, eggs)."},
             },
             "required": ["food_name", "quantity", "calories", "protein", "carbs", "fats", "confidence"],
         },

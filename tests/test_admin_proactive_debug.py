@@ -71,7 +71,9 @@ async def test_utc_user_blocked_by_no_timezone(monkeypatch, db):
     assert body["ok"] is True
     r = body["results"][0]
     assert r["overall"] == "BLOCKED"
-    assert r["blocked_by"] == ["no_timezone"]
+    # no_timezone is the durable blocker we care about — outside_window may also
+    # appear depending on the UTC clock-time when the test runs, which is fine.
+    assert "no_timezone" in r["blocked_by"]
     assert r["gates"]["has_timezone"] is False
 
 
