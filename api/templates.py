@@ -2858,34 +2858,37 @@ async function loadDayData(d){{
 }}
 
 // ── Arnie's learning progress ─────────────────────────────────────────────
-// A small checklist + bar that shows users Arnie sharpens as they feed it more.
-// Each item is a dimension Arnie learns about them; uses only the stats payload
-// (zero backend). Hides entirely once all dimensions are learned (100%).
+// Single live fact bar. Tracks `attribute_count` from /api/profile — the same
+// authoritative tally the Brain tab's gate uses, so both surfaces tick in
+// lockstep as Arnie learns new facts. Hides at 50+ to match the brain gate
+// unlocking, keeping the day view clean for dialed-in users.
 function renderLearningProgress(d){{
   var wrap=document.getElementById('learn-wrap');
   if(!wrap)return;
-  var p=d.profile||{{}}, tgt=d.targets||{{}};
-  var hist=d.history||[], weights=d.weights||[];
-  var loggedDays=hist.filter(function(h){{return (h.calories||0)>0;}}).length;
-  var workoutDays=hist.filter(function(h){{return h.workout;}}).length;
-  var items=[
-    {{label:'Goals',    done:!!(p.primary_goal && tgt.calories && tgt.protein)}},
-    {{label:'Eating',   done:loggedDays>=3}},
-    {{label:'Weight',   done:weights.length>=3}},
-    {{label:'Training', done:workoutDays>=1}},
-    {{label:'Recovery', done:!!(p.whoop_connected||p.apple_health_connected)}},
-  ];
-  var done=items.filter(function(i){{return i.done;}}).length;
-  // Once Arnie has learned every dimension, the indicator has served its purpose —
-  // hide it so the day view stays clean for dialed-in users.
-  if(done>=items.length){{wrap.style.display='none';return;}}
-  var pctv=Math.round(done/items.length*100);
+  var TARGET=50;
+  // Source of truth: server-side active-attribute count. Falls back to a
+  // cheap 5-dim heuristic only if the count isn't on the payload yet (older
+  // API responses) so the bar never reads as completely empty for users
+  // already deep into their journey.
+  var facts=(typeof d.attribute_count==='number')?d.attribute_count:0;
+  if(!facts){{
+    var p=d.profile||{{}}, tgt=d.targets||{{}};
+    var hist=d.history||[], weights=d.weights||[];
+    var loggedDays=hist.filter(function(h){{return (h.calories||0)>0;}}).length;
+    var workoutDays=hist.filter(function(h){{return h.workout;}}).length;
+    facts=(p.primary_goal && tgt.calories && tgt.protein?10:0)
+        +(loggedDays>=3?8:0)+(weights.length>=3?6:0)
+        +(workoutDays>=1?5:0)
+        +((p.whoop_connected||p.apple_health_connected)?6:0);
+  }}
+  if(facts>=TARGET){{wrap.style.display='none';return;}}
+  var pctv=Math.min(100,Math.round(facts/TARGET*100));
   var fill=document.getElementById('learn-fill');if(fill)fill.style.width=pctv+'%';
-  var lbl=document.getElementById('learn-pct');if(lbl)lbl.textContent=pctv+'%';
+  var lbl=document.getElementById('learn-pct');if(lbl)lbl.textContent=facts+' / '+TARGET;
+  // Chip row repurposed as a quiet hint that the bar is live + what to do.
   var list=document.getElementById('learn-list');
-  if(list)list.innerHTML=items.map(function(it){{
-    return '<span class="learn-chip'+(it.done?' done':'')+'">'+esc(it.label)+'</span>';
-  }}).join('');
+  if(list)list.innerHTML='<span class="learn-chip done">facts learned</span>'
+    +'<span class="learn-chip">chat with Arnie to fill in more</span>';
   wrap.style.display='block';
 }}
 

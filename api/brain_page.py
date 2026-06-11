@@ -2148,6 +2148,12 @@ function App() {
 
   const [lobes, setLobes] = useState([]);
   const [usingSample, setUsingSample] = useState(false);
+  // Authoritative server-side fact count (active attributes the user has
+  // stored). The constellation's node count includes exploded chip
+  // expansions for visual density, but for the gate + progress bar we
+  // want the same number the dashboard surfaces — one source of truth so
+  // both bars tick together as Arnie learns new facts.
+  const [factCount, setFactCount] = useState(0);
   const [freshId, setFreshId] = useState(null);
   const [freshTick, setFreshTick] = useState(0);
   const [selectedId, setSelectedId] = useState(null);
@@ -2215,6 +2221,9 @@ function App() {
         const data = await r.json();
         const next = profileToLobes(data);
         if (cancelled) return;
+        // Track the server-side fact count separately from the visual
+        // node count so the gate/bar stay in lockstep with the dashboard.
+        if (typeof data.attribute_count === "number") setFactCount(data.attribute_count);
         if (!next.length) {
           // Empty profile -> fall back to the sample stream so the page
           // always feels alive, even for a brand-new user.
@@ -2276,16 +2285,17 @@ function App() {
   const total = allNodes.length;
   // Overall "Arnie knows you" tally. Confirmed = the user has either told
   // Arnie directly or he's extracted it from enough patterns to be sure.
-  // Learning/inferred dots still count toward the gate — they signal
-  // engagement and disappear from the gate once the user crosses the
-  // threshold. The gate is a hard node-count threshold so it mirrors the
-  // dashboard's "X / 50 learned" learning-progress bar and stays
-  // predictable regardless of confirmed-vs-learning mix.
+  // The gate threshold uses the server-side `attribute_count` (the same
+  // number the dashboard's learning-progress bar tracks) so both surfaces
+  // tick in perfect lockstep when Arnie learns a new fact. While the
+  // initial fetch is in flight we fall back to the visual node count so
+  // the gate doesn't show 0/50 on a brain that already has data.
   const confirmedTotal = allNodes.filter((n) => n.state === "confirmed").length;
   const confirmedPct = total > 0 ? Math.round((confirmedTotal / total) * 100) : 0;
   const UNLOCK_NODES = 50;
-  const learnedPct = Math.min(100, Math.round((total / UNLOCK_NODES) * 100));
-  const stillLoading = total > 0 && total < UNLOCK_NODES;
+  const liveFacts = factCount > 0 ? factCount : total;
+  const learnedPct = Math.min(100, Math.round((liveFacts / UNLOCK_NODES) * 100));
+  const stillLoading = liveFacts > 0 && liveFacts < UNLOCK_NODES;
   const stateMeta = (st) => st === "learning" ? "needs verification" : st === "inferred" ? "inferred from patterns" : "confirmed";
   const stateCol = (st) => st === "learning" ? theme.learning : st === "inferred" ? theme.inferred : theme.known;
 
@@ -2581,7 +2591,7 @@ function App() {
                   <span style={{ fontFamily: "'Geist Mono','SF Mono', monospace", fontSize: 10,
                     fontWeight: 500, letterSpacing: "0.14em", textTransform: "uppercase",
                     color: theme.subText }}>
-                    Brain · {total}/{UNLOCK_NODES} learned
+                    Brain · {liveFacts}/{UNLOCK_NODES} learned
                   </span>
                 </div>
 
@@ -2610,7 +2620,7 @@ function App() {
                   fontFamily: "'Geist Mono','SF Mono', monospace", fontSize: 9,
                   fontWeight: 500, letterSpacing: "0.04em", color: theme.subText,
                   opacity: 0.6, marginBottom: 16 }}>
-                  <span>{total} / {UNLOCK_NODES}</span>
+                  <span>{liveFacts} / {UNLOCK_NODES}</span>
                 </div>
 
                 {/* Suggested categories — single mono line, comma-separated,
