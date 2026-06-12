@@ -118,6 +118,92 @@ _NUTRITION_TOOLS = [
             },
         },
     },
+    {
+        "name": "coach_on_photo",
+        "description": (
+            "Return a structured coaching DECISION for a photo that the preprocessor has tagged "
+            "as a decision-mode block. Call this when you see ANY of these tagged blocks in the "
+            "user's message: [MENU_DECISION], [FRIDGE], [GROCERY], [DELIVERY_APP], "
+            "[PREPARED_MEAL_DECISION], [BODY_PROGRESS]. "
+            ""
+            "DO NOT call for: "
+            "  • [FOOD_LOG] / [PACKAGED_PRODUCT] → use log_food per item with from_photo=true "
+            "  • [WORKOUT_LOG] → use log_exercise per item "
+            "  • [METRICS] with SOURCE: blood_test or wearable → use track_metric per value (and "
+            "    log_body_weight if a body-weight reading is present) "
+            "  • [FOOD_DIARY] → use log_food per item with from_photo=true AND date= from the diary "
+            "  • [PREPARED_MEAL_AMBIGUOUS] / [UNKNOWN] → ASK the user, don't call any tool yet "
+            ""
+            "The decision must be CRISP and SPECIFIC. Not 'salmon is healthy' — 'get the salmon, "
+            "sub broccoli for rice, one drink not two.' Reference the user's daily targets in "
+            "reasoning. Coach voice, not chart voice. Cap confidence at 0.85 (photos are estimates)."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "photo_type": {
+                    "type": "string",
+                    "enum": ["menu", "fridge", "grocery", "delivery_app", "prepared_meal", "body_progress"],
+                    "description": "Which decision-block this responds to (match the tag from the preprocessor block).",
+                },
+                "decision": {
+                    "type": "string",
+                    "description": (
+                        "Short, specific, actionable recommendation. Examples: "
+                        "'Get the salmon, sub broccoli for rice, one drink not two.' "
+                        "'Make scrambled eggs with spinach and toast — you have everything.' "
+                        "'Swap the granola for greek yogurt, that's the one fix worth making.' "
+                        "'Eat it, skip the bread.' For body progress: encouraging observation about "
+                        "what's actually visible (don't quote a single BF % — quote a range or describe "
+                        "the trend)."
+                    ),
+                },
+                "reasoning": {
+                    "type": "string",
+                    "description": (
+                        "1-2 sentence WHY, referencing user's daily targets concretely. "
+                        "'You're at 1200/2000 cals with 50g protein left to hit. Salmon nails it.' "
+                        "Coach voice."
+                    ),
+                },
+                "items_identified": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Short list of items the preprocessor noticed (for transparency in the rendered card).",
+                },
+                "macros_estimate": {
+                    "type": "object",
+                    "properties": {
+                        "calories": {"type": "number"},
+                        "protein":  {"type": "number"},
+                        "carbs":    {"type": "number"},
+                        "fats":     {"type": "number"},
+                    },
+                    "description": "Estimated macros for the RECOMMENDED option (menu/delivery/prepared_meal). Omit for fridge/grocery/body_progress.",
+                },
+                "bf_range": {
+                    "type": "object",
+                    "properties": {
+                        "low":  {"type": "number", "description": "Lower bound %, e.g. 14"},
+                        "high": {"type": "number", "description": "Upper bound %, e.g. 17"},
+                    },
+                    "description": (
+                        "BODY_PROGRESS only. Body fat ESTIMATE RANGE (never a single number). "
+                        "Always pair with the 'trend vs prior photo' framing in reasoning. "
+                        "Expand the range when uncertain — better to be honest than precise."
+                    ),
+                },
+                "confidence": {
+                    "type": "number",
+                    "description": (
+                        "0.0-1.0. CAP AT 0.85 for any photo decision (vision estimates are noisy). "
+                        "Body fat estimates: cap at 0.75 specifically."
+                    ),
+                },
+            },
+            "required": ["photo_type", "decision", "reasoning", "confidence"],
+        },
+    },
 ]
 
 

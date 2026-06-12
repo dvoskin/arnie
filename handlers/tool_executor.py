@@ -1488,6 +1488,58 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
             "caption": inp.get("caption", ""),
         }
 
+    elif name == "coach_on_photo":
+        # Structured DECISION on a photo (menu, fridge, grocery, delivery app,
+        # prepared meal needing verdict, body progress). The preprocessor has
+        # already classified + extracted items; the LLM has decided what to
+        # advise. We just package the structured result so the renderer can
+        # show a rich card. No DB writes — this is purely advisory.
+        photo_type = (inp.get("photo_type") or "").strip().lower()
+        decision = (inp.get("decision") or "").strip()
+        reasoning = (inp.get("reasoning") or "").strip()
+        items = inp.get("items_identified") or []
+        macros = inp.get("macros_estimate") or {}
+        bf_range = inp.get("bf_range") or {}
+
+        # Confidence caps — vision estimates are inherently noisy.
+        # Body fat photo estimates cap tighter than other photo decisions.
+        try:
+            conf = float(inp.get("confidence", 0.7))
+        except (TypeError, ValueError):
+            conf = 0.7
+        if photo_type == "body_progress":
+            conf = max(0.0, min(0.75, conf))
+        else:
+            conf = max(0.0, min(0.85, conf))
+
+        if not decision:
+            return "Error: coach_on_photo requires a non-empty decision."
+
+        logger.info(
+            f"event=coach_on_photo user_id={getattr(user, 'id', None)} "
+            f"type={photo_type} confidence={conf:.2f} items={len(items)}"
+        )
+
+        return {
+            "_type": "photo_coaching",
+            "photo_type": photo_type,
+            "decision": decision,
+            "reasoning": reasoning,
+            "items_identified": list(items)[:12],  # cap for display sanity
+            "macros_estimate": {
+                "calories": macros.get("calories"),
+                "protein": macros.get("protein"),
+                "carbs": macros.get("carbs"),
+                "fats": macros.get("fats"),
+            } if macros else {},
+            "bf_range": {
+                "low": bf_range.get("low"),
+                "high": bf_range.get("high"),
+            } if bf_range else {},
+            "confidence": conf,
+            "caption": decision,  # short version for notification text
+        }
+
     elif name == "web_search":
         # GATED upstream (web_search is only in the tool list when SEARCH_ENABLED=true).
         # This path NEVER sends and NEVER returns user-facing prose — it returns only

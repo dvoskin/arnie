@@ -534,13 +534,16 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         photo_data = bytes(await photo_file.download_as_bytearray())
         caption = update.message.caption or ""
 
-        from multimodal.image_handler import process_food_image
-        analysis = await process_food_image(photo_data)
+        # Smart preprocessor classifies + extracts. Emits a TAGGED block
+        # ([FOOD_LOG], [MENU_DECISION], [WORKOUT_LOG], [METRICS], etc.) the
+        # main LLM routes on via the PHOTO PIPELINE rules in the system prompt.
+        from multimodal.image_handler import process_photo
+        analysis = await process_photo(photo_data, caption)
         if analysis:
-            caption_part = f" {caption}" if caption else ""
+            caption_part = f" Caption: {caption}" if caption else ""
             combined = (
-                f"[Food photo]{caption_part}\n"
-                f"Photo analysis:\n{analysis}"
+                f"[Photo received]{caption_part}\n\n"
+                f"{analysis}"
             )
     finally:
         _stop_pre.set()

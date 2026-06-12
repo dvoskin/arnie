@@ -224,8 +224,14 @@ async def generate_image(prompt: str, size: str = "1024x1024") -> Optional[str]:
 
 
 async def analyze_image(image_data: bytes, prompt: str,
-                        mime_type: str = "image/jpeg") -> str:
-    """Analyze an image with Claude vision."""
+                        mime_type: str = "image/jpeg",
+                        max_tokens: int = 512) -> str:
+    """Analyze an image with Claude vision.
+
+    max_tokens override useful for: cheap classify calls (~20 tokens) or
+    extractor calls that may produce long structured output (blood panels,
+    workout logs, food diaries — bump to 1024+).
+    """
     if not ANTHROPIC_API_KEY():
         logger.warning("ANTHROPIC_API_KEY not set — image analysis unavailable")
         return ""
@@ -234,7 +240,7 @@ async def analyze_image(image_data: bytes, prompt: str,
     b64 = base64.standard_b64encode(image_data).decode()
     response = await client.messages.create(
         model=DEFAULT_MODEL(),
-        max_tokens=512,
+        max_tokens=max_tokens,
         messages=[{
             "role": "user",
             "content": [
