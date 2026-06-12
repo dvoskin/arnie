@@ -368,19 +368,20 @@ body.brain-active footer{{display:none}}
 .mc-sub{{font-size:10px;color:var(--mu);margin-top:3px;line-height:1.3;}}
 .mc-bar{{background:var(--sf3);border-radius:999px;height:4px;margin-top:8px;overflow:hidden;}}
 .mc-fill{{height:100%;border-radius:999px;transition:width .8s cubic-bezier(.4,0,.2,1);}}
-/* Target-status chip lives in the top-right of each macro cell. Three states
-   keyed off the consumed-vs-target percentage: under (<90%) reads soft, on
-   track (90-110%) reads accent, over (>110%) reads warn. Hidden when there
-   is no target for the macro (carbs/fats often) — see renderDayTab. */
+/* Target-status DOT in the top-right of each macro cell — minimal indicator
+   that registers peripherally. Three colors keyed off consumed-vs-target
+   percentage: under (<90%) yellow, on track (90-110%) accent, over (>110%)
+   red. No text — hover tooltip carries the actual %. Hidden when there's
+   no target for the macro (carbs/fats often) or no consumption — see
+   renderDayTab. Replaces the text pill: same data, less visual weight. */
 .mc-status{{
-  font-family:'Geist Mono','SF Mono',monospace;font-size:8.5px;font-weight:600;
-  letter-spacing:.06em;text-transform:uppercase;padding:1px 5px;border-radius:999px;
-  border:1px solid var(--bd);color:var(--mu);background:var(--sf2);
-  white-space:nowrap;flex-shrink:0;line-height:1.5;
+  width:7px;height:7px;border-radius:999px;
+  background:var(--mu);flex-shrink:0;
+  align-self:center;
 }}
-.mc-status.under{{color:var(--ye);border-color:rgba(234,179,8,.30);background:rgba(234,179,8,.10);}}
-.mc-status.ontrack{{color:var(--ac);border-color:rgba(var(--ac-rgb),.30);background:var(--ac-dim);}}
-.mc-status.over{{color:var(--re);border-color:rgba(239,68,68,.30);background:rgba(239,68,68,.10);}}
+.mc-status.under{{background:var(--ye);box-shadow:0 0 5px rgba(234,179,8,.45);}}
+.mc-status.ontrack{{background:var(--ac);box-shadow:0 0 5px rgba(var(--ac-rgb),.45);}}
+.mc-status.over{{background:var(--re);box-shadow:0 0 5px rgba(239,68,68,.45);}}
 @media(max-width:560px){{.macro-strip{{grid-template-columns:repeat(2,1fr);}}}}
 
 /* ── MACRO CONSUMED / REMAINING TOGGLE ─────────────────────────────
@@ -461,46 +462,40 @@ body.brain-active footer{{display:none}}
 .atile:has(.atile-dot.today) .atile-lbl{{opacity:.62}}
 .atile:has(.atile-dot.past)  .atile-lbl{{opacity:.5}}
 
-/* ── INSIGHTS TILE — distinguished as the AI engine ─────────────────
-   Subtle accent gradient + lit-up sparkle icon so the tile reads as
-   AI-powered without shouting. The other action tiles (Share / Workout
-   / Cardio) keep their muted card look — the contrast is the point.
-   Gradient stays low-saturation so dark + light themes both stay tidy. */
+/* ── INSIGHTS TILE — minimal accent treatment ─────────────────────────
+   Reads as AI-powered without shouting: same flat card as the other
+   action tiles, plus a tiny accent corner-dot and an "AI" mono tag in
+   the label. No gradient, no sparkle animation — the dot + tag carry
+   all the signal we need. Hover lifts the border to accent for affordance. */
 .atile.insights-tile{{
-  background:
-    linear-gradient(135deg,
-      var(--ac-dim) 0%,
-      rgba(var(--ac-rgb),.06) 60%,
-      rgba(99,102,241,.10) 100%);
-  border-color:rgba(var(--ac-rgb),.30);
-  color:var(--tx);
-  position:relative;overflow:hidden;
+  position:relative;
+}}
+.atile.insights-tile::before{{
+  /* Tiny accent dot, top-right corner: noticeable but understated. */
+  content:'';
+  position:absolute;top:7px;right:7px;
+  width:5px;height:5px;border-radius:999px;
+  background:var(--ac);
+  box-shadow:0 0 5px rgba(var(--ac-rgb),.55);
 }}
 .atile.insights-tile:hover{{
-  border-color:rgba(var(--ac-rgb),.50);
-  background:
-    linear-gradient(135deg,
-      rgba(var(--ac-rgb),.16) 0%,
-      rgba(var(--ac-rgb),.08) 60%,
-      rgba(99,102,241,.14) 100%);
+  border-color:rgba(var(--ac-rgb),.40);
+  background:rgba(var(--ac-rgb),.05);
 }}
 .atile.insights-tile .atile-ico{{
   color:var(--ac);
-  filter:drop-shadow(0 0 4px rgba(var(--ac-rgb),.45));
-  animation:insightsSparkle 3.4s ease-in-out infinite;
-}}
-@keyframes insightsSparkle{{
-  0%,100%{{opacity:1;transform:scale(1)}}
-  50%   {{opacity:.78;transform:scale(1.08)}}
 }}
 /* Tiny "AI" mono pill inline in the label — telegraphs that the tile
-   surfaces model-generated content, not a raw data view. */
+   surfaces model-generated content, not a raw data view. Subtler than
+   before: transparent bg + thin border so it doesn't compete with the
+   tile content. */
 .atile-ai-tag{{
   font-family:'Geist Mono','SF Mono',monospace;
-  font-size:8px;font-weight:600;letter-spacing:.08em;
-  padding:1px 4px;margin-left:6px;border-radius:4px;vertical-align:1px;
-  background:rgba(var(--ac-rgb),.18);color:var(--ac);
-  border:1px solid rgba(var(--ac-rgb),.30);
+  font-size:7.5px;font-weight:600;letter-spacing:.10em;
+  padding:0 4px;margin-left:5px;border-radius:3px;vertical-align:1px;
+  background:transparent;color:var(--ac);
+  border:1px solid rgba(var(--ac-rgb),.35);
+  opacity:.85;
 }}
 
 /* ── WEIGHT MODULE — cut/bulk users only ─────────────────────────
@@ -1206,14 +1201,16 @@ body.brain-active footer{{display:none}}
   color:var(--ye);font-weight:500;flex-shrink:0;opacity:.8;
 }}
 .est-tag::before{{content:'●';font-size:6px;margin-right:2.5px;vertical-align:1px;}}
-/* Legend row above the food log — surfaces only when an estimated item is
-   present in the day. Mirrors the est-tag styling so the connection is
-   visual rather than verbal; the explanation text reads in muted body color
-   so it doesn't compete with food rows. */
+/* Legend row BELOW the food log — footnote-style, surfaces only when an
+   estimated item is present. Top-dashed-border separates it from the food
+   rows above; subdued opacity so it reads as a footnote, not a header.
+   Mirrors the est-tag styling so the connection is visual rather than
+   verbal; the explanation text reads in muted body color. */
 .est-legend{{
   display:flex;align-items:center;gap:6px;
-  padding:6px 14px 4px;margin:-2px 0 2px;
-  font-size:10.5px;color:var(--mu);line-height:1.3;
+  padding:8px 14px 4px;margin:6px 0 -2px;
+  font-size:10px;color:var(--mu);line-height:1.3;
+  border-top:1px dashed var(--bd);opacity:.75;
 }}
 .est-tag-static{{opacity:.9;font-size:8.5px}}
 .est-legend-txt{{font-weight:400;letter-spacing:.01em}}
@@ -2404,14 +2401,6 @@ footer{{
         </div>
       </div>
       <div class="log-section-body" id="food-section-body">
-        <!-- EST legend — explains the EST pill rendered next to estimated food
-             entries. Hidden by default; renderDayTab toggles it visible only
-             when at least one item in the day's log is estimated, so users
-             never see a floating legend with no referent. -->
-        <div class="est-legend" id="est-legend" style="display:none">
-          <span class="est-tag est-tag-static">est</span>
-          <span class="est-legend-txt">= Arnie's best guess. Tap a row to edit.</span>
-        </div>
         <div class="add-card" id="food-form" style="display:none">
           <input class="add-inp" id="food-name" placeholder="Food name (e.g. chicken breast)" autocomplete="off">
           <input class="add-inp" id="food-qty" placeholder="Portion (e.g. 200g, 1 cup)">
@@ -2424,6 +2413,16 @@ footer{{
           <button class="add-submit" id="food-submit" onclick="submitFoodInline()">Save food</button>
         </div>
         <div class="lcrd" id="food-log"><div class="lempty">Loading&hellip;</div></div>
+        <!-- EST legend — footnote at the END of the food log. Explains the
+             est pill rendered next to estimated food entries. Hidden by
+             default; renderDayTab toggles it visible only when at least
+             one item is estimated, so users never see a legend with no
+             referent. Top-dashed border + muted opacity reads as footnote
+             rather than header. -->
+        <div class="est-legend" id="est-legend" style="display:none">
+          <span class="est-tag est-tag-static">est</span>
+          <span class="est-legend-txt">= Arnie's best guess. Tap a row to edit.</span>
+        </div>
       </div>
     </div>
 
@@ -3934,19 +3933,19 @@ function renderDayTab(d){{
   [['cal-bar',tgt.calories],['pro-bar',tgt.protein],['carb-bar',tgt.carbs],['fat-bar',tgt.fats]]
     .forEach(function(x){{var f=document.getElementById(x[0]);if(f)f.parentNode.style.display=x[1]?'':'none';}});
 
-  // Target-status chip per macro cell. Under <90%, on track 90-110%, over >110%.
-  // Suppressed when there's no target or no consumption yet (an empty chip
-  // would read as broken UI; the strip stays clean until there's data).
+  // Target-status DOT per macro cell. Under <90%, on track 90-110%, over >110%.
+  // Suppressed when there's no target or no consumption yet (an empty dot would
+  // float oddly; the strip stays clean until there's data). The dot is silent —
+  // no text — and the hover tooltip carries the actual % of target.
   function _setMacroStatus(id, val, tgt){{
     var el = document.getElementById(id); if(!el) return;
     if(!tgt || val==null || val===0){{ el.style.display='none'; return; }}
     var p = val / tgt * 100;
-    var cls, txt;
-    if(p < 90){{ cls='under';   txt='under'; }}
-    else if(p > 110){{ cls='over';    txt='over';  }}
-    else            {{ cls='ontrack'; txt='on track'; }}
+    var cls;
+    if(p < 90){{ cls='under'; }}
+    else if(p > 110){{ cls='over'; }}
+    else{{ cls='ontrack'; }}
     el.className = 'mc-status ' + cls;
-    el.textContent = txt;
     el.title = Math.round(p) + '% of target';
     el.style.display = '';
   }}
