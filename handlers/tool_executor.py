@@ -233,6 +233,17 @@ def deterministic_confirmation(tool_calls, log, prefs, tool_results=None) -> str
         return f"Fixed. ✅|||{up_tail}"
 
     if names & {"log_food", "update_food_entry"}:
+        # Dedup-aware fallback: if the LAST log_food tool result starts
+        # with "Already on the board:", the Phase 1.2 guard fired and
+        # the model tried to re-log a prior-turn food. Don't claim a
+        # fresh log — acknowledge the dup. Same shape as the parallel
+        # log_exercise branch below.
+        last_food_result = str(tool_results.get("log_food", "") or "")
+        if last_food_result.startswith("Already on the board"):
+            tail = (f"You're at {cal} / {cal_t} calories today." if cal_t
+                    else f"That's {cal} calories so far today." if cal
+                    else "Send the next meal.")
+            return f"Got it — already on the board. 🍳|||{tail}"
         if len(foods) == 1:
             head = f"{foods[0][:1].upper() + foods[0][1:]} logged."
         elif foods:
@@ -303,6 +314,10 @@ def deterministic_confirmation(tool_calls, log, prefs, tool_results=None) -> str
                 return _weight_fallback(_bw)
             # fall through to the generic net rather than claim a weigh-in happened
     if "log_water" in names:
+        # Same dedup-aware shape as log_food / log_exercise above.
+        last_water_result = str(tool_results.get("log_water", "") or "")
+        if last_water_result.startswith("Already on the board"):
+            return "Got it — already on the board. 💧|||Keep sipping."
         return "Water logged. 💧|||Keep sipping."
     if names & {"delete_food_entry", "delete_exercise_entry"}:
         tail = (f"You're at {cal} / {cal_t} calories now." if cal_t
@@ -697,16 +712,44 @@ async def execute_tool_calls(
     # log_food's tool result and partial-failure detail is lost).
     per_call: list[tuple[str, str, bool]] = []  # (name, food_name, succeeded)
 
-    # Snapshot exercise entry IDs that existed BEFORE this tool batch ran.
-    # The log_exercise dedup guard filters its match candidates to ONLY
-    # these IDs — so a bulk post-factum workout paste (model fires
-    # log_exercise once per identical-payload set in one batch) is NOT
-    # self-blocked. The guard still catches re-logs that reference entries
-    # created in a PRIOR turn (the re-log-on-context-shift bug).
+    # Snapshot entry IDs that existed BEFORE this tool batch ran. The
+    # log_* dedup guards filter their match candidates to ONLY these IDs —
+    # so bulk post-factum pastes (model fires the same tool multiple times
+    # in one batch) are NOT self-blocked. The guards still catch re-logs
+    # that reference entries created in a PRIOR turn (the re-log-on-
+    # context-shift bug). Phase 1 covered exercise; Phase 1.2/1.3 extend
+    # the pattern to food + water, both of which exhibit the same bug
+    # surfaced live by Danny on 2026-06-12 (chicken+rice double-log).
     pre_existing_exercise_ids: set[int] = {
         e.id for e in (getattr(today_log, "exercise_entries", None) or [])
         if getattr(e, "id", None) is not None
     }
+    pre_existing_food_ids: set[int] = {
+        e.id for e in (getattr(today_log, "food_entries", None) or [])
+        if getattr(e, "id", None) is not None
+    }
+    # Water entries aren't on today_log via relationship in the same way;
+    # the snapshot is collected from a defensive getattr so we don't crash
+    # on test stubs that omit the field. Pre-existing IDs are filtered in
+    # the log_water branch by looking them up in db at dispatch time when
+    # the kwarg is None (back-compat for direct _dispatch test callers).
+    pre_existing_water_ids: Optional[set[int]] = None
+    try:
+        water_entries = getattr(today_log, "water_entries", None)
+        if water_entries is not None:
+            pre_existing_water_ids = {
+                e.id for e in water_entries
+                if getattr(e, "id", None) is not None
+            }
+    except Exception:
+        pre_existing_water_ids = None
+
+    # Per-turn telemetry counters: how many of each log_* tool call fired,
+    # how many were skipped by a dedup guard. Greppable in Render logs as
+    # `event=tool_log_turn` for monitoring re-log-on-context-shift rates
+    # across the user base without manual log inspection.
+    log_calls = {"food": 0, "water": 0, "exercise": 0, "body_weight": 0}
+    log_skipped = {"food": 0, "water": 0, "exercise": 0, "body_weight": 0}
 
     for tc in tool_calls:
         name = tc["name"]
@@ -716,7 +759,20 @@ async def execute_tool_calls(
             r = await _dispatch(
                 name, inp, user, today_log, db, source_type,
                 pre_existing_exercise_ids=pre_existing_exercise_ids,
+                pre_existing_food_ids=pre_existing_food_ids,
+                pre_existing_water_ids=pre_existing_water_ids,
             )
+            # Increment telemetry counters for log_* tools. "Already on the
+            # board:" prefix indicates the dedup guard fired and a write
+            # was skipped — count separately.
+            _tool_key = {
+                "log_food": "food", "log_water": "water",
+                "log_exercise": "exercise", "log_body_weight": "body_weight",
+            }.get(name)
+            if _tool_key:
+                log_calls[_tool_key] += 1
+                if isinstance(r, str) and r.startswith("Already on the board"):
+                    log_skipped[_tool_key] += 1
             results[name] = r
             ok = not (isinstance(r, str) and (
                 r.startswith("Error:") or r.startswith("Skipped")
@@ -727,6 +783,26 @@ async def execute_tool_calls(
             logger.error(f"Tool {name} failed: {e}", exc_info=True)
             results[name] = f"Error: {e}"
             per_call.append((name, food_name, False))
+
+    # Emit one structured telemetry line per turn that had any log_* call.
+    # Greppable as `event=tool_log_turn` in Render logs. Measures the
+    # dedup guards' effectiveness across the user base without manual
+    # per-user inspection — see Phase 4 plan in project_arnie_live_workout.
+    if any(log_calls.values()):
+        try:
+            _u = getattr(user, "id", None)
+            _p = getattr(user, "channel_preference", None) or "?"
+            _fc, _fs = log_calls["food"], log_skipped["food"]
+            _wc, _ws = log_calls["water"], log_skipped["water"]
+            _xc, _xs = log_calls["exercise"], log_skipped["exercise"]
+            _bc, _bs = log_calls["body_weight"], log_skipped["body_weight"]
+            logger.info(
+                f"event=tool_log_turn user_id={_u} platform={_p} "
+                f"food={_fc}/{_fs} water={_wc}/{_ws} "
+                f"exercise={_xc}/{_xs} body_weight={_bc}/{_bs}"
+            )
+        except Exception:
+            pass  # never let telemetry break the turn
 
     # Multi-item batch: when several log_food calls fire in one turn, the
     # single-item coaching ("name the food and its macros") is wrong — it makes
@@ -812,7 +888,9 @@ def _apply_multi_item_batch_coaching(
 
 
 async def _dispatch(name, inp, user, today_log, db, source_type,
-                    pre_existing_exercise_ids=None):  # noqa: C901
+                    pre_existing_exercise_ids=None,
+                    pre_existing_food_ids=None,
+                    pre_existing_water_ids=None):  # noqa: C901
     # Guard: log_food/log_exercise/log_water require a real daily log
     if name in ("log_food", "log_exercise", "log_water"):
         if not getattr(today_log, "id", None):
@@ -823,25 +901,58 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
 
         food_name = inp.get("food_name") or ""
 
-        # Cross-turn idempotency — same (food, quantity) on the same log within
-        # the last 5 min is almost always a retry from the confusion cascade.
-        # Return the existing entry's identity so the model coaches honestly
-        # ("already on your log") rather than producing a duplicate row.
-        _dup = await _check_recent_duplicate(
-            db, getattr(target_log, "id", None), food_name, inp.get("quantity")
-        )
-        if _dup is not None:
-            prefs = user.preferences
-            cal_t = prefs.calorie_target if prefs else None
-            pro_t = prefs.protein_target if prefs else None
-            tail = ""
-            if cal_t:
-                tail = (f" You're at {target_log.total_calories:.0f} / {cal_t} cal "
-                        f"({pro_t and f'{target_log.total_protein:.0f}/{pro_t}g protein' or ''}).")
-            return (f"Already logged that {food_name} a minute ago "
-                    f"[#{_dup.id}] — kept your existing entry, no duplicate."
-                    f"{tail} YOUR REPLY: one short line acknowledging it was "
-                    f"already on the board, then move on or ask what's next.")
+        # Re-log-on-context-shift guard (Phase 1.2). The model occasionally
+        # re-fires log_food for a prior-turn food when the user pivots
+        # topic — Danny 2026-06-12 01:01 chicken+rice re-logged at 01:59
+        # while answering an Apple Health question. The existing 5-min
+        # idempotency check was too tight (58 min gap). 90-min snapshot-
+        # aware window catches the model-pivot case without false-positives
+        # on legitimate next-meal repeats (typically 3+ hours apart).
+        #
+        # Bulk-paste safety: when execute_tool_calls passes the snapshot
+        # of food entry IDs that existed BEFORE this batch ran, the dedup
+        # candidate set is filtered to ONLY those IDs. So a bulk post-
+        # factum food paste ("had eggs, then chicken, then rice") with
+        # multiple log_food calls in one batch is never self-blocked.
+        # When pre_existing_food_ids is None (tests calling _dispatch
+        # directly), the filter is bypassed.
+        if not past_date:
+            from datetime import datetime as _dt_now
+            from skills.nutrition.food_dedup import (
+                is_duplicate_food, format_dedup_result as _format_food_dedup,
+            )
+            now_utc = _dt_now.utcnow()
+            # Defensive: target_log.food_entries can raise MissingGreenlet
+            # if the relationship wasn't selectinloaded (rare — get_today_log
+            # always loads it, but past-date logs and some test fixtures
+            # don't). When access fails, skip the dedup gracefully rather
+            # than crashing the log. The snapshot guard from
+            # execute_tool_calls still applies if pre_existing_food_ids is
+            # supplied; if neither path can see the prior entries, the dup
+            # gets through but the existing entry stays intact.
+            try:
+                candidate_food_entries = (
+                    getattr(target_log, "food_entries", None) or []
+                )
+                # Force-trigger any lazy load BEFORE the helper runs so the
+                # error path here, not downstream.
+                _ = len(candidate_food_entries)
+            except Exception:
+                candidate_food_entries = []
+            if pre_existing_food_ids is not None:
+                candidate_food_entries = [
+                    e for e in candidate_food_entries
+                    if getattr(e, "id", None) in pre_existing_food_ids
+                ]
+            _dup_food = is_duplicate_food(
+                food_name=food_name,
+                quantity=inp.get("quantity"),
+                calories=inp.get("calories"),
+                existing_entries=candidate_food_entries,
+                now_utc=now_utc,
+            )
+            if _dup_food is not None:
+                return _format_food_dedup(_dup_food, now_utc=now_utc)
 
         # Capture raw LLM-submitted macros before _analyze_food runs
         # reconcile_macros, so we can flag corrections in the tool result.
@@ -1297,6 +1408,41 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
         # past-day correction same as food/exercise).
         target_log, past_date = await _resolve_log(inp, user, today_log, db)
         ml = inp.get("amount_ml") or (inp.get("amount_oz", 0) * 29.5735)
+
+        # Re-log-on-context-shift guard (Phase 1.3). Mirrors Phase 1.2 food
+        # dedup. The model can carry a prior-turn water log forward across
+        # context shifts; the dup inflates total_water_ml on DailyLog.
+        # 60-min window — water is sipped more often than food is eaten,
+        # so the legit-second-drink false-positive risk is higher than for
+        # food. Bulk-paste safety via the same snapshot pattern.
+        if not past_date and ml:
+            from datetime import datetime as _dt_now
+            from skills.nutrition.water_dedup import (
+                is_duplicate_water, format_dedup_result as _format_water_dedup,
+            )
+            now_utc = _dt_now.utcnow()
+            # Defensive lazy-load guard, same shape as food_dedup above.
+            try:
+                candidate_water = (
+                    getattr(target_log, "water_entries", None) or []
+                )
+                _ = len(candidate_water)
+            except Exception:
+                candidate_water = []
+            if pre_existing_water_ids is not None:
+                candidate_water = [
+                    e for e in candidate_water
+                    if getattr(e, "id", None) in pre_existing_water_ids
+                ]
+            _dup_water = is_duplicate_water(
+                amount_ml=ml,
+                context=inp.get("context"),
+                existing_entries=candidate_water,
+                now_utc=now_utc,
+            )
+            if _dup_water is not None:
+                return _format_water_dedup(_dup_water, now_utc=now_utc)
+
         if ml:
             target_log.total_water_ml = (target_log.total_water_ml or 0) + ml
             await db.commit()
