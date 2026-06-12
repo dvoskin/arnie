@@ -196,3 +196,169 @@ def test_deterministic_confirmation_logged_normal_exercise():
     out = TE.deterministic_confirmation(tc, log, prefs, tool_results=tool_results)
     assert "logged" in out.lower()
     assert "already on the board" not in out.lower()
+
+
+# ── Bulk post-factum paste: snapshot-based dedup ─────────────────────────────
+
+@pytest.mark.asyncio
+async def test_bulk_paste_identical_payloads_all_log_through(monkeypatch):
+    """A user pastes a post-factum workout where multiple sets have the
+    exact same payload (e.g. 'did 4 sets of 135x5 on bench'). The model
+    fires log_exercise multiple times in one batch (suboptimal — the
+    prompt rules say to consolidate, but it does happen). All sets MUST
+    write — the dedup must not self-block within a single tool batch.
+
+    Pre-Phase-1.1 behavior: only first set logged, others blocked.
+    Post-Phase-1.1: snapshot-based dedup ignores entries created in this
+    batch, so all 4 write through."""
+    user = SimpleNamespace(id=1, timezone="UTC")
+    # Empty pre-existing log — user logged nothing earlier today
+    today_log = SimpleNamespace(id=1, exercise_entries=[])
+
+    write_count = {"n": 0}
+
+    async def _capture(db, daily_log_id, **kw):
+        # Simulate the DB-write side effect: each write adds a row to
+        # target_log.exercise_entries (mimicking the db.refresh that
+        # tool_executor does after add_exercise_entry).
+        write_count["n"] += 1
+        new_id = 1000 + write_count["n"]
+        today_log.exercise_entries.append(SimpleNamespace(
+            id=new_id, exercise_name=kw.get("exercise_name"),
+            sets=kw.get("sets"), reps=kw.get("reps"),
+            weight=kw.get("weight"),
+            timestamp=datetime.utcnow(),
+        ))
+
+    monkeypatch.setattr(TE, "add_exercise_entry", _capture)
+
+    async def _refresh(*a, **kw):
+        pass
+
+    db = SimpleNamespace(refresh=_refresh)
+
+    # Simulate the model firing log_exercise four times in one turn for
+    # four identical-payload sets — bulk post-factum paste pattern.
+    tool_calls = [
+        {"name": "log_exercise",
+         "input": {"exercise_name": "Bench Press", "sets": 1,
+                   "reps": "5", "weight": 135, "weight_unit": "lbs"}}
+        for _ in range(4)
+    ]
+    results = await TE.execute_tool_calls(
+        tool_calls, user, today_log, db, source_type="text",
+    )
+    assert write_count["n"] == 4, (
+        f"all 4 bulk-paste identical sets should write, got {write_count['n']}. "
+        f"results: {results}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_bulk_paste_mixed_with_prior_session_still_blocks_old_dup(monkeypatch):
+    """Compound scenario: user has prior entries from earlier today, then
+    pastes a bulk paste in the next message. The bulk paste's NEW sets
+    should log. If the model re-logs an OLD set from earlier (the
+    re-log-on-context-shift bug), THAT should still be blocked.
+
+    Pins both behaviors: bulk paste passes through, prior-turn dup catches."""
+    user = SimpleNamespace(id=1, timezone="UTC")
+    # Prior session set from earlier today (in pre-existing snapshot)
+    prior = SimpleNamespace(
+        id=100, exercise_name="Cable Pushdown",
+        sets=1, reps="10", weight=86.18,
+        timestamp=datetime.utcnow() - timedelta(seconds=30),
+    )
+    today_log = SimpleNamespace(id=1, exercise_entries=[prior])
+
+    write_count = {"n": 0}
+
+    async def _capture(db, daily_log_id, **kw):
+        write_count["n"] += 1
+        new_id = 1000 + write_count["n"]
+        today_log.exercise_entries.append(SimpleNamespace(
+            id=new_id, exercise_name=kw.get("exercise_name"),
+            sets=kw.get("sets"), reps=kw.get("reps"),
+            weight=kw.get("weight"),
+            timestamp=datetime.utcnow(),
+        ))
+
+    monkeypatch.setattr(TE, "add_exercise_entry", _capture)
+
+    async def _refresh(*a, **kw):
+        pass
+
+    db = SimpleNamespace(refresh=_refresh)
+
+    # Batch with 3 calls:
+    #   1) Cable Pushdown 1×10 @ 190lb — duplicates the prior session set → BLOCKED
+    #   2) Bench Press 1×5 @ 135lb — fresh, should log
+    #   3) Bench Press 1×5 @ 135lb — identical to #2 in this batch, should log
+    tool_calls = [
+        {"name": "log_exercise",
+         "input": {"exercise_name": "Cable Pushdown", "sets": 1,
+                   "reps": "10", "weight": 190, "weight_unit": "lbs"}},
+        {"name": "log_exercise",
+         "input": {"exercise_name": "Bench Press", "sets": 1,
+                   "reps": "5", "weight": 135, "weight_unit": "lbs"}},
+        {"name": "log_exercise",
+         "input": {"exercise_name": "Bench Press", "sets": 1,
+                   "reps": "5", "weight": 135, "weight_unit": "lbs"}},
+    ]
+    await TE.execute_tool_calls(
+        tool_calls, user, today_log, db, source_type="text",
+    )
+    # The Cable Pushdown re-log was blocked; both Bench Press sets wrote
+    assert write_count["n"] == 2, (
+        f"expected 2 writes (both Bench), Cable Pushdown blocked. "
+        f"got {write_count['n']}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_bulk_paste_different_movements_all_log(monkeypatch):
+    """Bulk paste covering different movements, all NEW. Each movement
+    writes once. This is the most common bulk-paste shape — Phase 2's
+    canonicalization + the snapshot means it Just Works."""
+    user = SimpleNamespace(id=1, timezone="UTC")
+    today_log = SimpleNamespace(id=1, exercise_entries=[])
+
+    written: list = []
+
+    async def _capture(db, daily_log_id, **kw):
+        written.append(kw)
+        today_log.exercise_entries.append(SimpleNamespace(
+            id=1000 + len(written),
+            exercise_name=kw.get("exercise_name"),
+            sets=kw.get("sets"), reps=kw.get("reps"),
+            weight=kw.get("weight"),
+            timestamp=datetime.utcnow(),
+        ))
+
+    monkeypatch.setattr(TE, "add_exercise_entry", _capture)
+
+    async def _refresh(*a, **kw):
+        pass
+
+    db = SimpleNamespace(refresh=_refresh)
+
+    tool_calls = [
+        {"name": "log_exercise",
+         "input": {"exercise_name": "Back Squat", "sets": 3,
+                   "reps": "10,9,8", "weight": 225, "weight_unit": "lbs"}},
+        {"name": "log_exercise",
+         "input": {"exercise_name": "Leg Press", "sets": 3,
+                   "reps": "12,12,10", "weight": 360, "weight_unit": "lbs"}},
+        {"name": "log_exercise",
+         "input": {"exercise_name": "Leg Extension", "sets": 3,
+                   "reps": "12,12,10", "weight": 130, "weight_unit": "lbs"}},
+    ]
+    await TE.execute_tool_calls(
+        tool_calls, user, today_log, db, source_type="text",
+    )
+    assert len(written) == 3
+    # Verify canonical names were stored (Phase 2 wiring still active)
+    names = {w["exercise_name"] for w in written}
+    assert "Back Squat" in names
+    assert "Leg Press" in names
+    assert "Leg Extension" in names

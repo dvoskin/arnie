@@ -362,11 +362,25 @@ body.brain-active footer{{display:none}}
 .whoop-rec-mid  .whoop-stat-val{{color:var(--ye)}}
 .whoop-rec-low  .whoop-stat-val{{color:var(--re)}}
 .macro-cell{{background:var(--sf);border:1px solid var(--bd);border-radius:14px;padding:12px 14px;box-shadow:var(--sh);}}
-.mc-label{{font-size:9px;font-weight:500;text-transform:uppercase;letter-spacing:.06em;color:var(--mu);margin-bottom:4px;}}
+.mc-label{{font-size:9px;font-weight:500;text-transform:uppercase;letter-spacing:.06em;color:var(--mu);margin-bottom:4px;
+          display:flex;align-items:center;justify-content:space-between;gap:6px;}}
 .mc-num{{font-size:26px;font-weight:700;letter-spacing:-.02em;line-height:1.1;color:var(--tx);}}
 .mc-sub{{font-size:10px;color:var(--mu);margin-top:3px;line-height:1.3;}}
 .mc-bar{{background:var(--sf3);border-radius:999px;height:4px;margin-top:8px;overflow:hidden;}}
 .mc-fill{{height:100%;border-radius:999px;transition:width .8s cubic-bezier(.4,0,.2,1);}}
+/* Target-status chip lives in the top-right of each macro cell. Three states
+   keyed off the consumed-vs-target percentage: under (<90%) reads soft, on
+   track (90-110%) reads accent, over (>110%) reads warn. Hidden when there
+   is no target for the macro (carbs/fats often) — see renderDayTab. */
+.mc-status{{
+  font-family:'Geist Mono','SF Mono',monospace;font-size:8.5px;font-weight:600;
+  letter-spacing:.06em;text-transform:uppercase;padding:1px 5px;border-radius:999px;
+  border:1px solid var(--bd);color:var(--mu);background:var(--sf2);
+  white-space:nowrap;flex-shrink:0;line-height:1.5;
+}}
+.mc-status.under{{color:var(--ye);border-color:rgba(234,179,8,.30);background:rgba(234,179,8,.10);}}
+.mc-status.ontrack{{color:var(--ac);border-color:rgba(var(--ac-rgb),.30);background:var(--ac-dim);}}
+.mc-status.over{{color:var(--re);border-color:rgba(239,68,68,.30);background:rgba(239,68,68,.10);}}
 @media(max-width:560px){{.macro-strip{{grid-template-columns:repeat(2,1fr);}}}}
 
 /* ── MACRO CONSUMED / REMAINING TOGGLE ─────────────────────────────
@@ -446,6 +460,48 @@ body.brain-active footer{{display:none}}
    too, not just the dot. */
 .atile:has(.atile-dot.today) .atile-lbl{{opacity:.62}}
 .atile:has(.atile-dot.past)  .atile-lbl{{opacity:.5}}
+
+/* ── INSIGHTS TILE — distinguished as the AI engine ─────────────────
+   Subtle accent gradient + lit-up sparkle icon so the tile reads as
+   AI-powered without shouting. The other action tiles (Share / Workout
+   / Cardio) keep their muted card look — the contrast is the point.
+   Gradient stays low-saturation so dark + light themes both stay tidy. */
+.atile.insights-tile{{
+  background:
+    linear-gradient(135deg,
+      var(--ac-dim) 0%,
+      rgba(var(--ac-rgb),.06) 60%,
+      rgba(99,102,241,.10) 100%);
+  border-color:rgba(var(--ac-rgb),.30);
+  color:var(--tx);
+  position:relative;overflow:hidden;
+}}
+.atile.insights-tile:hover{{
+  border-color:rgba(var(--ac-rgb),.50);
+  background:
+    linear-gradient(135deg,
+      rgba(var(--ac-rgb),.16) 0%,
+      rgba(var(--ac-rgb),.08) 60%,
+      rgba(99,102,241,.14) 100%);
+}}
+.atile.insights-tile .atile-ico{{
+  color:var(--ac);
+  filter:drop-shadow(0 0 4px rgba(var(--ac-rgb),.45));
+  animation:insightsSparkle 3.4s ease-in-out infinite;
+}}
+@keyframes insightsSparkle{{
+  0%,100%{{opacity:1;transform:scale(1)}}
+  50%   {{opacity:.78;transform:scale(1.08)}}
+}}
+/* Tiny "AI" mono pill inline in the label — telegraphs that the tile
+   surfaces model-generated content, not a raw data view. */
+.atile-ai-tag{{
+  font-family:'Geist Mono','SF Mono',monospace;
+  font-size:8px;font-weight:600;letter-spacing:.08em;
+  padding:1px 4px;margin-left:6px;border-radius:4px;vertical-align:1px;
+  background:rgba(var(--ac-rgb),.18);color:var(--ac);
+  border:1px solid rgba(var(--ac-rgb),.30);
+}}
 
 /* ── WEIGHT MODULE — cut/bulk users only ─────────────────────────
    Sibling of the macro cells; same card chrome and number ladder, just
@@ -1150,6 +1206,17 @@ body.brain-active footer{{display:none}}
   color:var(--ye);font-weight:500;flex-shrink:0;opacity:.8;
 }}
 .est-tag::before{{content:'●';font-size:6px;margin-right:2.5px;vertical-align:1px;}}
+/* Legend row above the food log — surfaces only when an estimated item is
+   present in the day. Mirrors the est-tag styling so the connection is
+   visual rather than verbal; the explanation text reads in muted body color
+   so it doesn't compete with food rows. */
+.est-legend{{
+  display:flex;align-items:center;gap:6px;
+  padding:6px 14px 4px;margin:-2px 0 2px;
+  font-size:10.5px;color:var(--mu);line-height:1.3;
+}}
+.est-tag-static{{opacity:.9;font-size:8.5px}}
+.est-legend-txt{{font-weight:400;letter-spacing:.01em}}
 .lqty{{font-size:13px;color:var(--mu);margin-top:3px;font-weight:400}}
 .lmac{{
   display:flex;gap:0;font-size:12px;margin-top:5px;flex-wrap:wrap;
@@ -2229,25 +2296,25 @@ footer{{
     <!-- MACRO STRIP -->
     <div class="macro-strip" style="margin-top:0">
       <div class="macro-cell">
-        <div class="mc-label">Calories</div>
+        <div class="mc-label">Calories<span class="mc-status" id="cal-status" style="display:none"></span></div>
         <div class="mc-num" id="cal-val">&mdash;</div>
         <div class="mc-sub" id="cal-sub"></div>
         <div class="mc-bar"><div class="mc-fill" id="cal-bar" style="background:var(--ac);width:0%"></div></div>
       </div>
       <div class="macro-cell">
-        <div class="mc-label">Protein</div>
+        <div class="mc-label">Protein<span class="mc-status" id="pro-status" style="display:none"></span></div>
         <div class="mc-num" id="pro-val">&mdash;</div>
         <div class="mc-sub" id="pro-sub"></div>
         <div class="mc-bar"><div class="mc-fill" id="pro-bar" style="background:var(--bl);width:0%"></div></div>
       </div>
       <div class="macro-cell">
-        <div class="mc-label">Carbs</div>
+        <div class="mc-label">Carbs<span class="mc-status" id="carb-status" style="display:none"></span></div>
         <div class="mc-num" id="carb-val">&mdash;</div>
         <div class="mc-sub" id="carb-sub"></div>
         <div class="mc-bar"><div class="mc-fill" id="carb-bar" style="background:var(--or);width:0%"></div></div>
       </div>
       <div class="macro-cell">
-        <div class="mc-label">Fats</div>
+        <div class="mc-label">Fats<span class="mc-status" id="fat-status" style="display:none"></span></div>
         <div class="mc-num" id="fat-val">&mdash;</div>
         <div class="mc-sub" id="fat-sub"></div>
         <div class="mc-bar"><div class="mc-fill" id="fat-bar" style="background:var(--ye);width:0%"></div></div>
@@ -2258,12 +2325,12 @@ footer{{
          Replaces the legacy .day-status pill row. State (done / today
          pending / past pending) is set by renderActionTiles in renderDayTab. -->
     <div class="action-tiles" id="action-tiles" style="margin-top:10px">
-      <button class="atile" id="tile-insights" onclick="handleInsightsTile()" type="button">
+      <button class="atile insights-tile" id="tile-insights" onclick="handleInsightsTile()" type="button">
         <svg class="atile-ico" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
           <path d="M8 1.4l1.1 3.2 3.2 1.1-3.2 1.1L8 10l-1.1-3.2L3.7 5.7l3.2-1.1z"/>
           <path d="M12.6 9.4l.55 1.45 1.45.55-1.45.55-.55 1.45-.55-1.45L10.6 11.4l1.45-.55z" opacity=".75"/>
         </svg>
-        <span class="atile-lbl">Insights</span>
+        <span class="atile-lbl">Insights<span class="atile-ai-tag">AI</span></span>
         <span class="atile-state" id="tile-insights-state"></span>
       </button>
       <button class="atile" id="tile-share" onclick="shareDay()" type="button">
@@ -2337,6 +2404,14 @@ footer{{
         </div>
       </div>
       <div class="log-section-body" id="food-section-body">
+        <!-- EST legend — explains the EST pill rendered next to estimated food
+             entries. Hidden by default; renderDayTab toggles it visible only
+             when at least one item in the day's log is estimated, so users
+             never see a floating legend with no referent. -->
+        <div class="est-legend" id="est-legend" style="display:none">
+          <span class="est-tag est-tag-static">est</span>
+          <span class="est-legend-txt">= Arnie's best guess. Tap a row to edit.</span>
+        </div>
         <div class="add-card" id="food-form" style="display:none">
           <input class="add-inp" id="food-name" placeholder="Food name (e.g. chicken breast)" autocomplete="off">
           <input class="add-inp" id="food-qty" placeholder="Portion (e.g. 200g, 1 cup)">
@@ -3859,6 +3934,27 @@ function renderDayTab(d){{
   [['cal-bar',tgt.calories],['pro-bar',tgt.protein],['carb-bar',tgt.carbs],['fat-bar',tgt.fats]]
     .forEach(function(x){{var f=document.getElementById(x[0]);if(f)f.parentNode.style.display=x[1]?'':'none';}});
 
+  // Target-status chip per macro cell. Under <90%, on track 90-110%, over >110%.
+  // Suppressed when there's no target or no consumption yet (an empty chip
+  // would read as broken UI; the strip stays clean until there's data).
+  function _setMacroStatus(id, val, tgt){{
+    var el = document.getElementById(id); if(!el) return;
+    if(!tgt || val==null || val===0){{ el.style.display='none'; return; }}
+    var p = val / tgt * 100;
+    var cls, txt;
+    if(p < 90){{ cls='under';   txt='under'; }}
+    else if(p > 110){{ cls='over';    txt='over';  }}
+    else            {{ cls='ontrack'; txt='on track'; }}
+    el.className = 'mc-status ' + cls;
+    el.textContent = txt;
+    el.title = Math.round(p) + '% of target';
+    el.style.display = '';
+  }}
+  _setMacroStatus('cal-status',  day.calories, tgt.calories);
+  _setMacroStatus('pro-status',  day.protein,  tgt.protein);
+  _setMacroStatus('carb-status', day.carbs,    tgt.carbs);
+  _setMacroStatus('fat-status',  day.fats,     tgt.fats);
+
   // Snapshot current macro values + targets so the Consumed/Remaining toggle
   // can flip the display client-side. Re-applied immediately so if the user
   // is in remaining-mode, new data swaps to remaining values instead of
@@ -3910,6 +4006,11 @@ function renderDayTab(d){{
   if(flc)flc.textContent=fe.length?fe.length+' item'+(fe.length!==1?'s':''):'';
   document.getElementById('food-log').innerHTML=fe.length?fe.map(renderFoodRow).join('')
     :'<div class="lempty">'+(isToday?'Nothing logged yet — tap + to add a meal.':'Nothing logged this day.')+'</div>';
+  // EST legend — visible only when at least one row carries the EST pill, so
+  // users learn the marker on the day they first encounter it instead of
+  // staring at unexplained chrome.
+  var _estLeg=document.getElementById('est-legend');
+  if(_estLeg) _estLeg.style.display = fe.some(function(f){{return f.estimated;}}) ? 'flex' : 'none';
   var ee=day.exercise_entries||[];
   document.getElementById('ex-log').innerHTML=ee.length?renderGroupedExercises(ee)
     :'<div class="lempty">'+(isToday?'No workouts logged yet — tap + to add one.':'No workouts logged this day.')+'</div>';
@@ -4460,6 +4561,13 @@ function renderProfileTab(d){{
       moderately_active:  'Moderately active',
       very_active:        'Very active',
     }};
+    // Timezone display — strip continent prefix for compactness ("America/Los_Angeles"
+    // → "Los Angeles") since the cell is narrow. Editor preserves the full IANA value.
+    function _tzDisp(tz){{
+      if(!tz || tz==='UTC') return null;
+      var parts=String(tz).split('/');
+      return parts[parts.length-1].replace(/_/g,' ');
+    }}
     var rows=[
       {{label:'Name',           value:p.name||null,                                edit:'name',              raw:p.name||''}},
       {{label:'Age',            value:p.age?p.age+' yrs':null,                    edit:'age',               raw:p.age||''}},
@@ -4467,6 +4575,7 @@ function renderProfileTab(d){{
       {{label:'Height',         value:_ht(),                                       edit:'height_in',         raw:p.height_ft||''}},
       {{label:'Current weight', value:p.current_weight_lbs!=null?(p.current_weight_lbs+' lbs'):null, edit:'current_weight_lbs', raw:p.current_weight_lbs!=null?String(p.current_weight_lbs):''}},
       {{label:'Daily activity',  value:p.non_training_activity?_actLabel[p.non_training_activity]||p.non_training_activity:null, edit:'non_training_activity', raw:p.non_training_activity||''}},
+      {{label:'Timezone',       value:_tzDisp(p.timezone),                         edit:'timezone',          raw:p.timezone||''}},
     ];
     // Always render all 5 cells (empty value renders as "—") so the user can
     // edit missing values too. The basic-edit pencil is always visible.
@@ -4921,6 +5030,23 @@ function editBasic(cellId, field, raw, label) {{
         }})[v] || v;
       }},
     }},
+    // Common IANA timezones grouped by region. Captures the bulk of real users
+    // without becoming a 400-entry browser scroll. Free-text fallback handled
+    // by the unshift below when an existing value isn't in the list (e.g. user
+    // already had "Europe/Berlin" via /set_user_timezone.py).
+    timezone: {{
+      options: [
+        'America/Los_Angeles','America/Denver','America/Chicago','America/New_York',
+        'America/Toronto','America/Mexico_City','America/Sao_Paulo','America/Anchorage',
+        'America/Honolulu','Europe/London','Europe/Dublin','Europe/Paris','Europe/Berlin',
+        'Europe/Madrid','Europe/Rome','Europe/Amsterdam','Europe/Stockholm','Europe/Athens',
+        'Europe/Moscow','Africa/Cairo','Africa/Johannesburg','Asia/Dubai','Asia/Tehran',
+        'Asia/Kolkata','Asia/Karachi','Asia/Bangkok','Asia/Singapore','Asia/Hong_Kong',
+        'Asia/Shanghai','Asia/Tokyo','Asia/Seoul','Australia/Sydney','Australia/Perth',
+        'Pacific/Auckland','UTC',
+      ],
+      label: function(v){{ return v.replace(/_/g,' '); }},
+    }},
   }};
   var editor;
   var pl = _basicPicklists[field];
@@ -5174,7 +5300,7 @@ function foodEmoji(name){{
 // .lrow-actions slot. No chevron — the row is informational at rest, action
 // surfaces appear when needed.
 function renderFoodRow(f){{
-  var est=f.estimated?' <span class="est-tag">est</span>':'';
+  var est=f.estimated?' <span class="est-tag" title="Estimated by Arnie — tap the row to edit if you have exact macros.">est</span>':'';
   var cal=(f.calories??0);
   var qty=f.quantity||'';
   // Secondary meta line: qty (optional) followed by macros. Mono numbers

@@ -697,12 +697,26 @@ async def execute_tool_calls(
     # log_food's tool result and partial-failure detail is lost).
     per_call: list[tuple[str, str, bool]] = []  # (name, food_name, succeeded)
 
+    # Snapshot exercise entry IDs that existed BEFORE this tool batch ran.
+    # The log_exercise dedup guard filters its match candidates to ONLY
+    # these IDs — so a bulk post-factum workout paste (model fires
+    # log_exercise once per identical-payload set in one batch) is NOT
+    # self-blocked. The guard still catches re-logs that reference entries
+    # created in a PRIOR turn (the re-log-on-context-shift bug).
+    pre_existing_exercise_ids: set[int] = {
+        e.id for e in (getattr(today_log, "exercise_entries", None) or [])
+        if getattr(e, "id", None) is not None
+    }
+
     for tc in tool_calls:
         name = tc["name"]
         inp = tc["input"] or {}
         food_name = (inp.get("food_name") or "").strip() if isinstance(inp, dict) else ""
         try:
-            r = await _dispatch(name, inp, user, today_log, db, source_type)
+            r = await _dispatch(
+                name, inp, user, today_log, db, source_type,
+                pre_existing_exercise_ids=pre_existing_exercise_ids,
+            )
             results[name] = r
             ok = not (isinstance(r, str) and (
                 r.startswith("Error:") or r.startswith("Skipped")
@@ -797,7 +811,8 @@ def _apply_multi_item_batch_coaching(
     return results
 
 
-async def _dispatch(name, inp, user, today_log, db, source_type):  # noqa: C901
+async def _dispatch(name, inp, user, today_log, db, source_type,
+                    pre_existing_exercise_ids=None):  # noqa: C901
     # Guard: log_food/log_exercise/log_water require a real daily log
     if name in ("log_food", "log_exercise", "log_water"):
         if not getattr(today_log, "id", None):
@@ -976,18 +991,34 @@ async def _dispatch(name, inp, user, today_log, db, source_type):  # noqa: C901
         # within a 120s window and surface it back to the model so it doesn't
         # emit a fresh log line. Only applies to TODAY's log — past-date edits
         # via date= are legitimate corrections, not dups.
+        #
+        # Bulk-paste safety: when execute_tool_calls passes the snapshot of
+        # exercise entry IDs that existed BEFORE this tool batch ran, the
+        # dedup candidate set is filtered to ONLY those IDs. This means a
+        # user pasting a bulk post-factum workout (model fires log_exercise
+        # several times in one batch for sets with identical payloads) is
+        # NOT self-blocked. The guard still catches dups against prior turns.
+        # When pre_existing_exercise_ids is None (e.g. tests calling _dispatch
+        # directly), the filter is bypassed — the full live exercise_entries
+        # list is the candidate set, preserving the legacy behavior.
         if not past_date:
             from datetime import datetime as _dt_now
             from skills.fitness.exercise_dedup import (
                 is_duplicate_of_recent, format_dedup_result,
             )
             now_utc = _dt_now.utcnow()
+            candidate_entries = target_log.exercise_entries or []
+            if pre_existing_exercise_ids is not None:
+                candidate_entries = [
+                    e for e in candidate_entries
+                    if getattr(e, "id", None) in pre_existing_exercise_ids
+                ]
             dup = is_duplicate_of_recent(
                 exercise_name=canonical_name,
                 sets=inp.get("sets"),
                 reps=str(inp.get("reps", "")) if inp.get("reps") else None,
                 weight_kg=weight_kg,
-                existing_entries=(target_log.exercise_entries or []),
+                existing_entries=candidate_entries,
                 now_utc=now_utc,
             )
             if dup is not None:
