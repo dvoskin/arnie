@@ -1241,9 +1241,10 @@ body.brain-active footer{{display:none}}
 .dev-card{{
   display:flex;align-items:center;gap:9px;padding:9px 11px;
   border-radius:11px;border:1px solid var(--bd);background:var(--sf);
-  min-width:0;transition:all .2s;
+  min-width:0;transition:all .2s;text-decoration:none;color:inherit;
 }}
 .dev-card:hover{{border-color:var(--bd2);background:var(--sf2)}}
+.dev-card.dev-link{{cursor:pointer}}
 .dev-card.dev-soon{{opacity:.55}}
 .dev-logo{{
   width:28px;height:28px;border-radius:8px;flex-shrink:0;
@@ -4542,21 +4543,25 @@ function renderProfileTab(d){{
   // Shortened labels — the compact cards truncate via CSS, so we use
   // terse status text instead of long calls-to-action. Onboarding +
   // chat handle the actual "how to connect" copy.
+  var appleGuide='/health/apple/guide?token='+encodeURIComponent(TOKEN);
   var devs=[
-    {{name:'Apple Health',icon:'♥',live:p.apple_health_connected,label:p.apple_health_connected?'Syncing':'Not connected'}},
-    {{name:'Whoop',       icon:'〰',live:p.whoop_connected,        label:p.whoop_connected?'Connected':'Not connected'}},
-    {{name:'Fitbit',      icon:'⊕',live:false,                     label:'Coming soon',soon:true}},
-    {{name:'Hume',        icon:'◉',live:false,                     label:'Coming soon',soon:true}},
+    {{name:'Apple Health',icon:'♥',live:p.apple_health_connected,label:p.apple_health_connected?'Syncing':'Set up',href:appleGuide}},
+    {{name:'Whoop',icon:'〰',live:p.whoop_connected,label:p.whoop_connected?'Connected':'Not connected'}},
+    {{name:'Fitbit',icon:'⊕',live:false,label:'Coming soon',soon:true}},
+    {{name:'Hume',icon:'◉',live:false,label:'Coming soon',soon:true}},
   ];
   dc.innerHTML=
     '<div class="dev-grid">'+devs.map(function(d){{
-      return '<div class="dev-card'+(d.soon?' dev-soon':'')+'">'+
+      var cls='dev-card'+(d.soon?' dev-soon':'')+(d.href?' dev-link':'');
+      var open=d.href?'<a class="'+cls+'" href="'+escA(d.href)+'">':'<div class="'+cls+'">';
+      var close=d.href?'</a>':'</div>';
+      return open+
         '<div class="dev-logo">'+d.icon+'</div>'+
         '<div class="dev-body">'+
         '<div class="dev-name">'+esc(d.name)+'</div>'+
         '<div class="dev-status'+(d.live?' dev-live':'')+'">'+
         (d.live?'<span class="dev-dot"></span>':'')+esc(d.label)+
-        '</div></div></div>';
+        '</div></div>'+close;
     }}).join('')+'</div>';
 }}
 
@@ -5949,6 +5954,62 @@ def _apple_guide_html(endpoint: str, status_url: str = "", shortcut_url: str = "
         "&resting_calories=[rest]"
         "&sleep_seconds=[sleep]"
     )
+    one_tap_html = f"""
+<!-- ONE-TAP SETUP -->
+<div class="onetap">
+  <div class="ot-badge">Recommended</div>
+  <div class="ot-title">Fast setup</div>
+  <div class="ot-sub">No manual Shortcut building. Copy your URL, download the Shortcut, paste once, then run it.</div>
+  <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:14px">
+    <div class="ot-step"><span class="ot-n">1</span><div><b>Copy your sync URL</b> using the button below</div></div>
+    <div class="ot-step"><span class="ot-n">2</span><div>Open this page in <b>Safari</b> &rarr; tap <b>Download Shortcut</b> &rarr; tap <b>Add Shortcut</b></div></div>
+    <div class="ot-step"><span class="ot-n">3</span><div>When iOS asks <b>"Your Arnie sync URL"</b> &mdash; paste what you copied</div></div>
+  </div>
+
+  <div class="crow" style="margin-bottom:10px">
+    <div class="cval" id="ep-url" style="font-size:11px">{endpoint}</div>
+    <button class="cbtn" onclick="cp(document.getElementById('ep-url').textContent.trim(),this)">Copy URL</button>
+  </div>
+
+  <a href="{shortcut_url}" class="ot-btn">
+    <span style="font-size:18px">&#11015;</span> Download Shortcut
+  </a>
+  <div class="ot-hint" style="margin-top:10px">
+    Not in Safari? &nbsp;<button class="cbtn" style="font-size:11px;padding:4px 11px" onclick="cp(window.location.href,this)">Copy page link</button>&nbsp; then paste in Safari.
+  </div>
+</div>
+<div class="div-or"><span>or set up manually</span></div>
+""" if shortcut_url else ""
+    status_script = f"""
+(function poll() {{
+  fetch('{status_url}')
+    .then(function(r) {{ return r.json(); }})
+    .then(function(d) {{
+      var b = document.getElementById('sb');
+      var t = document.getElementById('stxt');
+      var m = document.getElementById('smeta');
+      if (d.connected) {{
+        b.className = 'sbanner yes';
+        t.textContent = 'Apple Health connected ✓';
+        var p = [];
+        if (d.last_sync) p.push('Last sync: ' + d.last_sync);
+        if (d.steps) p.push(Number(d.steps).toLocaleString() + ' steps');
+        if (d.active_calories) p.push(Math.round(d.active_calories) + ' active kcal');
+        if (d.resting_hr) p.push(d.resting_hr + 'bpm RHR');
+        m.textContent = p.join(' · ');
+      }} else {{
+        b.className = 'sbanner no';
+        t.textContent = 'Not connected yet';
+        m.textContent = 'Finish setup and tap ▷ in Shortcuts to test — this page auto-updates';
+        setTimeout(poll, 12000);
+      }}
+    }})
+    .catch(function() {{
+      document.getElementById('sb').className = 'sbanner no';
+      document.getElementById('stxt').textContent = 'Could not check status';
+    }});
+}})();
+""" if status_url else ""
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -6170,32 +6231,7 @@ footer{{text-align:center;padding:24px 0 0;color:#2a3040;font-size:12px}}
 <h1>Connect Apple Health</h1>
 <p class="sub">Open this page on your iPhone in Safari. Download the ready-made Shortcut, paste your sync URL once, then run it and allow Health access.</p>
 
-{f"""
-<!-- ONE-TAP SETUP -->
-<div class="onetap">
-  <div class="ot-badge">Recommended</div>
-  <div class="ot-title">Fast setup</div>
-<div class="ot-sub">No manual Shortcut building. Copy your URL, download the Shortcut, paste once, then run it.</div>
-  <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:14px">
-    <div class="ot-step"><span class="ot-n">1</span><div><b>Copy your sync URL</b> using the button below</div></div>
-    <div class="ot-step"><span class="ot-n">2</span><div>Open this page in <b>Safari</b> &rarr; tap <b>Download Shortcut</b> &rarr; tap <b>Add Shortcut</b></div></div>
-    <div class="ot-step"><span class="ot-n">3</span><div>When iOS asks <b>"Your Arnie sync URL"</b> &mdash; paste what you copied</div></div>
-  </div>
-
-  <div class="crow" style="margin-bottom:10px">
-    <div class="cval" id="ep-url" style="font-size:11px">{endpoint}</div>
-    <button class="cbtn" onclick="cp(document.getElementById('ep-url').textContent.trim(),this)">Copy URL</button>
-  </div>
-
-  <a href="{shortcut_url}" class="ot-btn">
-    <span style="font-size:18px">&#11015;</span> Download Shortcut
-  </a>
-  <div class="ot-hint" style="margin-top:10px">
-    Not in Safari? &nbsp;<button class="cbtn" style="font-size:11px;padding:4px 11px" onclick="cp(window.location.href,this)">Copy page link</button>&nbsp; then paste in Safari.
-  </div>
-</div>
-<div class="div-or"><span>or set up manually</span></div>
-""" if shortcut_url else ""}
+{one_tap_html}
 
 <!-- STATUS -->
 <div class="sbanner loading" id="sb">
@@ -6452,36 +6488,7 @@ function cp(text, btn) {{
   }});
 }}
 
-{f"""
-(function poll() {{
-  fetch('{status_url}')
-    .then(function(r) {{ return r.json(); }})
-    .then(function(d) {{
-      var b = document.getElementById('sb');
-      var t = document.getElementById('stxt');
-      var m = document.getElementById('smeta');
-      if (d.connected) {{
-        b.className = 'sbanner yes';
-        t.textContent = 'Apple Health connected ✓';
-        var p = [];
-        if (d.last_sync) p.push('Last sync: ' + d.last_sync);
-        if (d.steps) p.push(Number(d.steps).toLocaleString() + ' steps');
-        if (d.active_calories) p.push(Math.round(d.active_calories) + ' active kcal');
-        if (d.resting_hr) p.push(d.resting_hr + 'bpm RHR');
-        m.textContent = p.join(' · ');
-      }} else {{
-        b.className = 'sbanner no';
-        t.textContent = 'Not connected yet';
-        m.textContent = 'Finish setup and tap ▷ in Shortcuts to test — this page auto-updates';
-        setTimeout(poll, 12000);
-      }}
-    }})
-    .catch(function() {{
-      document.getElementById('sb').className = 'sbanner no';
-      document.getElementById('stxt').textContent = 'Could not check status';
-    }});
-}})();
-""" if status_url else ""}
+{status_script}
 </script>
 </body>
 </html>"""
