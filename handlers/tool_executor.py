@@ -962,6 +962,14 @@ async def _dispatch(name, inp, user, today_log, db, source_type):  # noqa: C901
         weight_unit = inp.get("weight_unit", "lbs")
         weight_kg = _lbs_to_kg(weight, weight_unit)
 
+        # Canonicalize the exercise name BEFORE dedup so two distinct user
+        # phrasings of the same movement ("Crunches (Cable/Machine)" vs
+        # "cable crunch") collide on the same dedup key. Unresolved names
+        # pass through unchanged.
+        from skills.fitness.exercise_catalog import canonicalize as _canon
+        raw_name = inp.get("exercise_name")
+        canonical_name, _catalog_entry = _canon(raw_name)
+
         # Re-log-on-context-shift guard. The model occasionally re-fires
         # log_exercise for already-logged sets when the user pivots exercises
         # or asks an open mid-session question. Catch the exact-payload dup
@@ -975,7 +983,7 @@ async def _dispatch(name, inp, user, today_log, db, source_type):  # noqa: C901
             )
             now_utc = _dt_now.utcnow()
             dup = is_duplicate_of_recent(
-                exercise_name=inp.get("exercise_name"),
+                exercise_name=canonical_name,
                 sets=inp.get("sets"),
                 reps=str(inp.get("reps", "")) if inp.get("reps") else None,
                 weight_kg=weight_kg,
@@ -989,7 +997,7 @@ async def _dispatch(name, inp, user, today_log, db, source_type):  # noqa: C901
         await add_exercise_entry(
             db,
             target_log.id,
-            exercise_name=inp.get("exercise_name"),
+            exercise_name=canonical_name,
             sets=inp.get("sets"),
             reps=str(inp.get("reps", "")) if inp.get("reps") else None,
             weight=weight_kg,
@@ -1002,7 +1010,9 @@ async def _dispatch(name, inp, user, today_log, db, source_type):  # noqa: C901
         await db.refresh(target_log)
         date_label = f" (for {past_date})" if past_date else ""
 
-        exercise_name = inp.get("exercise_name") or "exercise"
+        # Echo back the canonical name so the log line the model emits uses
+        # the same string we stored (avoids "you said X, we logged Y" drift).
+        exercise_name = canonical_name or "exercise"
         sets_val = inp.get("sets")
         reps_val = inp.get("reps")
         weight_val = inp.get("weight")

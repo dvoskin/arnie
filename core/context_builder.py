@@ -768,6 +768,7 @@ async def build_context(user: User, today_log: Optional[DailyLog], db,
 
     # Training program (workout split) — read from DB if saved
     training_program_str = ""
+    _prog_parsed = None  # also used by [SESSION STATE] below
     try:
         import json as _json
         from sqlalchemy import select as _select
@@ -777,6 +778,7 @@ async def build_context(user: User, today_log: Optional[DailyLog], db,
         )).scalar_one_or_none()
         if _wp_row and _wp_row.program_json:
             _prog = _json.loads(_wp_row.program_json)
+            _prog_parsed = _prog
             _days_txt = []
             for _d in (_prog.get("days") or []):
                 _ex = ", ".join(e["name"] for e in (_d.get("exercises") or []) if e.get("name"))
@@ -795,6 +797,24 @@ async def build_context(user: User, today_log: Optional[DailyLog], db,
             )
     except Exception:
         pass
+
+    # [SESSION STATE] — live workout awareness. Built whenever the user has
+    # exercise entries today (in_workout=True). Works WITH or WITHOUT a
+    # training program — the freeform path still surfaces muscle coverage,
+    # rest windows, and movement order so the model can coach actionably.
+    # See core/session_state.py for details.
+    session_state_str = ""
+    if in_workout:
+        try:
+            from core.session_state import build_session_state as _bss
+            session_state_str = _bss(
+                today_log,
+                program_json=_prog_parsed,
+                now_dt=_now if hasattr(_now, "year") else datetime.utcnow(),
+            )
+        except Exception:
+            # Never let session-state failure block the rest of the context
+            session_state_str = ""
 
     # Wearable / connection status for Arnie to reference
     # Check Whoop connection on canonical AND any linked identities (tokens may
@@ -910,6 +930,7 @@ async def build_context(user: User, today_log: Optional[DailyLog], db,
         (f"[PACING]\n{pace}" if pace else ""),
         (f"[WEARABLE]\n{health_str}" if health_str else ""),
         ("" if not in_workout else "[WORKOUT MODE: ACTIVE]"),
+        (session_state_str if session_state_str else ""),
         "",
         "=== MOMENTUM & DISCOVERY ===",
         (momentum_str if momentum_str else ""),
