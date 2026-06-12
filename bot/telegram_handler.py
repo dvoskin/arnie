@@ -20,7 +20,7 @@ from telegram.ext import (
 
 from db.database import AsyncSessionLocal, init_db
 from db.queries import (
-    get_or_create_user, get_or_create_today_log, get_today_log,
+    get_or_create_user, resolve_user, get_or_create_today_log, get_today_log,
     get_recent_conversations, log_conversation,
     reload_user, reset_today_log, reset_all_user_data, get_or_create_webhook_token,
     add_feedback, clear_today_conversations, get_recent_logs,
@@ -736,7 +736,10 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await _send_intro_and_log(update, db, user.id, "[start]", "text", from_landing=False)
             return
 
-        user = await get_or_create_user(db, str(update.effective_user.id))
+        # Welcome-back branch: resolve to canonical so a Telegram user
+        # whose brain lives on iMessage sees their real name, not the
+        # blank shim row's empty name field.
+        user = await resolve_user(db, str(update.effective_user.id))
         if user.onboarding_completed:
             today_log = await get_today_log(db, user.id, user.timezone or "UTC")
             msg = (
@@ -763,7 +766,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def cmd_today(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Today's calories, protein, water, and workout status."""
     async with AsyncSessionLocal() as db:
-        user = await get_or_create_user(db, str(update.effective_user.id))
+        user = await resolve_user(db, str(update.effective_user.id))
         log = await get_today_log(db, user.id, user.timezone or "UTC")
         prefs = user.preferences
 
@@ -817,7 +820,7 @@ async def cmd_today(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def cmd_ai(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """AI coaching insights based on today + recent history."""
     async with AsyncSessionLocal() as db:
-        user = await get_or_create_user(db, str(update.effective_user.id))
+        user = await resolve_user(db, str(update.effective_user.id))
         log = await get_today_log(db, user.id, user.timezone or "UTC")
         prefs = user.preferences
 
@@ -893,7 +896,7 @@ async def cmd_ai(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def cmd_me(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Profile + targets combined — the /me command."""
     async with AsyncSessionLocal() as db:
-        user = await get_or_create_user(db, str(update.effective_user.id))
+        user = await resolve_user(db, str(update.effective_user.id))
         p = user.preferences
 
         def _v(val, unit="", fallback="not set"):
@@ -947,7 +950,7 @@ async def cmd_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     Delivers the AI-generated bio in chat + link to the full dashboard profile tab.
     """
     async with AsyncSessionLocal() as db:
-        user = await get_or_create_user(db, str(update.effective_user.id))
+        user = await resolve_user(db, str(update.effective_user.id))
         if not user.onboarding_completed:
             await update.message.reply_text("Finish setup first — then I'll have a real picture of you.")
             return
@@ -977,7 +980,7 @@ async def cmd_targets(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def cmd_history(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Last 7 days recap."""
     async with AsyncSessionLocal() as db:
-        user = await get_or_create_user(db, str(update.effective_user.id))
+        user = await resolve_user(db, str(update.effective_user.id))
         from db.queries import get_recent_logs, get_recent_weights
         logs = await get_recent_logs(db, user.id, days=7)
         weights = await get_recent_weights(db, user.id, days=7)
@@ -1023,7 +1026,7 @@ async def cmd_history(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def cmd_memory(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """What Arnie knows about habits and tendencies."""
     async with AsyncSessionLocal() as db:
-        user = await get_or_create_user(db, str(update.effective_user.id))
+        user = await resolve_user(db, str(update.effective_user.id))
         from memory.memory_manager import read_memory
         mem = await read_memory(user.telegram_id)
         if not mem or mem.strip() == "":
@@ -1052,7 +1055,7 @@ async def cmd_reset(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     async with AsyncSessionLocal() as db:
-        user = await get_or_create_user(db, str(update.effective_user.id))
+        user = await resolve_user(db, str(update.effective_user.id))
 
         if args[0].lower() == "today":
             cleared = await reset_today_log(db, user.id, user.timezone or "UTC")
@@ -1106,7 +1109,7 @@ async def cmd_whoop(update: Update, context: ContextTypes.DEFAULT_TYPE):
     action = args[0].lower() if args else "status"
 
     async with AsyncSessionLocal() as db:
-        user = await get_or_create_user(db, str(update.effective_user.id))
+        user = await resolve_user(db, str(update.effective_user.id))
 
         if action in ("status", "info", ""):
             # A user counts as connected if they have ANY token saved.
@@ -1239,7 +1242,7 @@ async def cmd_feedback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     async with AsyncSessionLocal() as db:
-        user = await get_or_create_user(db, str(update.effective_user.id))
+        user = await resolve_user(db, str(update.effective_user.id))
         entry = await add_feedback(db, user.id, kind, text)
 
     icon = "🐛" if kind == "bug" else "💡" if kind == "feature" else "📝"
@@ -1257,7 +1260,7 @@ async def cmd_connect(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if target in ("apple", "applehealth", "health"):
         async with AsyncSessionLocal() as db:
-            user = await get_or_create_user(db, str(update.effective_user.id))
+            user = await resolve_user(db, str(update.effective_user.id))
             if not user.onboarding_completed:
                 await update.message.reply_text("Finish setup first, then we'll connect Apple Health.")
                 return
@@ -1327,7 +1330,7 @@ async def cmd_upgrade(update: Update, context: ContextTypes.DEFAULT_TYPE):
     from db.queries import is_premium
 
     async with AsyncSessionLocal() as db:
-        user = await get_or_create_user(db, str(update.effective_user.id))
+        user = await resolve_user(db, str(update.effective_user.id))
 
         if user.subscription_status == "active":
             await update.message.reply_text(
@@ -1365,7 +1368,7 @@ async def cmd_billing(update: Update, context: ContextTypes.DEFAULT_TYPE):
     from api.stripe_billing import create_billing_portal
 
     async with AsyncSessionLocal() as db:
-        user = await get_or_create_user(db, str(update.effective_user.id))
+        user = await resolve_user(db, str(update.effective_user.id))
 
         if not user.stripe_customer_id:
             await update.message.reply_text(
@@ -1394,12 +1397,17 @@ async def cmd_billing(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def cmd_dash(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Send the user their personal read-only dashboard URL."""
     async with AsyncSessionLocal() as db:
-        user = await get_or_create_user(db, str(update.effective_user.id))
+        # resolve_user follows linked_to_user_id to the canonical row.
+        # Without this, a Telegram user whose canonical brain lives on
+        # iMessage (e.g. Gi: Telegram shim row #9 → canonical row #5)
+        # gets "Finish setup first" because the shim has
+        # onboarding_completed=False even though their iMessage profile
+        # is fully set up. Discovered live 2026-06-12.
+        user = await resolve_user(db, str(update.effective_user.id))
         if not user.onboarding_completed:
             await update.message.reply_text("Finish setup first before accessing the dashboard.")
             return
-        canonical_id = user.linked_to_user_id or user.id
-        token = await get_or_create_webhook_token(db, canonical_id)
+        token = await get_or_create_webhook_token(db, user.id)
 
     from core.urls import dashboard_url
     url = dashboard_url(token)
@@ -1447,7 +1455,9 @@ async def cmd_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def cmd_remind(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Toggle proactive reminders on or off."""
     async with AsyncSessionLocal() as db:
-        user = await get_or_create_user(db, str(update.effective_user.id))
+        # Resolve to canonical — proactive reminder pref lives on the
+        # canonical user_preferences row, not the platform-linked shim.
+        user = await resolve_user(db, str(update.effective_user.id))
         prefs = user.preferences
         if not prefs:
             await update.message.reply_text("Finish setup first — tell me your name to get started.")
