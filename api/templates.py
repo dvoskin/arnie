@@ -2439,12 +2439,6 @@ footer{{
       </div>
     </div>
 
-    <!-- 5-DAY TREND -->
-    <div id="trend-wrap" style="display:none;margin-top:16px">
-      <div class="stitle" style="margin-bottom:8px">5-day trend <span id="trend-days-lbl" style="font-weight:400;opacity:.55;font-size:9px;letter-spacing:.04em"></span></div>
-      <div class="trend-strip" id="trend-strip"></div>
-    </div>
-
     <!-- FOOD -->
     <div class="log-section" id="food-section">
       <div class="stitle spaced log-section-hd" onclick="toggleLogSection('food')">
@@ -2547,6 +2541,13 @@ footer{{
     <!-- Quiet one-liner — avg cal, weight Δ, workouts. Plain text,
          no chrome. Tints carry the goal-fit signal. -->
     <div class="trend-line" id="trend-line"></div>
+
+    <!-- 5-DAY TREND — moved from the Day tab. Same strip, same renderer;
+         lives here so the Day view stays focused on today's logging. -->
+    <div id="trend-wrap" style="display:none;margin-top:16px">
+      <div class="stitle" style="margin-bottom:8px">5-day trend <span id="trend-days-lbl" style="font-weight:400;opacity:.55;font-size:9px;letter-spacing:.04em"></span></div>
+      <div class="trend-strip" id="trend-strip"></div>
+    </div>
 
     <!-- Weekly AI analysis — collapsed banner, expands on tap -->
     <div class="insights" id="ins-week" style="margin-top:14px">
@@ -4064,9 +4065,9 @@ function renderDayTab(d){{
   var snap=health.find(function(h){{return h.date===_viewingDate;}}) || (health.length?health[0]:null);
   renderWhoopModule(snap, d.profile);
 
-  // Arnie's learning progress + 5-day trend — both use only the stats payload
+  // Arnie's learning progress — uses the stats payload. The 5-day trend
+  // strip now lives on the Trends tab; renderWeekTab() calls renderTrendStrip.
   renderLearningProgress(d);
-  renderTrendStrip(d.history||[], d.weights||[], d.targets||{{}});
 }}
 
 // ── Whoop sync from dashboard ─────────────────────────────────────────────
@@ -4312,6 +4313,10 @@ function renderWeekTab(d){{
   var wEl2=document.getElementById('wt-now-lbl');if(wEl2)wEl2.textContent=curW?curW+' LB NOW':'';
   _renderTrendsMeta(hist);
   renderTrendLine(d, hist, weightsInPeriod);
+  // 5-day trend strip — relocated from the Day tab. Uses the full history
+  // (not the period slice) so the "last 5 logged days" recap stays stable
+  // regardless of the 7/30/90 chip selection.
+  renderTrendStrip(d.history||[], d.weights||[], d.targets||{{}});
   var tick=dk?'#4a5568':'#94a3b8',grid=dk?'rgba(255,255,255,.05)':'#e2e8f0';
   var opts={{
     responsive:true,maintainAspectRatio:false,
