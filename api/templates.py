@@ -362,26 +362,11 @@ body.brain-active footer{{display:none}}
 .whoop-rec-mid  .whoop-stat-val{{color:var(--ye)}}
 .whoop-rec-low  .whoop-stat-val{{color:var(--re)}}
 .macro-cell{{background:var(--sf);border:1px solid var(--bd);border-radius:14px;padding:12px 14px;box-shadow:var(--sh);}}
-.mc-label{{font-size:9px;font-weight:500;text-transform:uppercase;letter-spacing:.06em;color:var(--mu);margin-bottom:4px;
-          display:flex;align-items:center;justify-content:space-between;gap:6px;}}
+.mc-label{{font-size:9px;font-weight:500;text-transform:uppercase;letter-spacing:.06em;color:var(--mu);margin-bottom:4px;}}
 .mc-num{{font-size:26px;font-weight:700;letter-spacing:-.02em;line-height:1.1;color:var(--tx);}}
 .mc-sub{{font-size:10px;color:var(--mu);margin-top:3px;line-height:1.3;}}
 .mc-bar{{background:var(--sf3);border-radius:999px;height:4px;margin-top:8px;overflow:hidden;}}
 .mc-fill{{height:100%;border-radius:999px;transition:width .8s cubic-bezier(.4,0,.2,1);}}
-/* Target-status DOT in the top-right of each macro cell — minimal indicator
-   that registers peripherally. Three colors keyed off consumed-vs-target
-   percentage: under (<90%) yellow, on track (90-110%) accent, over (>110%)
-   red. No text — hover tooltip carries the actual %. Hidden when there's
-   no target for the macro (carbs/fats often) or no consumption — see
-   renderDayTab. Replaces the text pill: same data, less visual weight. */
-.mc-status{{
-  width:7px;height:7px;border-radius:999px;
-  background:var(--mu);flex-shrink:0;
-  align-self:center;
-}}
-.mc-status.under{{background:var(--ye);box-shadow:0 0 5px rgba(234,179,8,.45);}}
-.mc-status.ontrack{{background:var(--ac);box-shadow:0 0 5px rgba(var(--ac-rgb),.45);}}
-.mc-status.over{{background:var(--re);box-shadow:0 0 5px rgba(239,68,68,.45);}}
 @media(max-width:560px){{.macro-strip{{grid-template-columns:repeat(2,1fr);}}}}
 
 /* ── MACRO CONSUMED / REMAINING TOGGLE ─────────────────────────────
@@ -2302,25 +2287,25 @@ footer{{
     <!-- MACRO STRIP -->
     <div class="macro-strip" style="margin-top:0">
       <div class="macro-cell">
-        <div class="mc-label">Calories<span class="mc-status" id="cal-status" style="display:none"></span></div>
+        <div class="mc-label">Calories</div>
         <div class="mc-num" id="cal-val">&mdash;</div>
         <div class="mc-sub" id="cal-sub"></div>
         <div class="mc-bar"><div class="mc-fill" id="cal-bar" style="background:var(--ac);width:0%"></div></div>
       </div>
       <div class="macro-cell">
-        <div class="mc-label">Protein<span class="mc-status" id="pro-status" style="display:none"></span></div>
+        <div class="mc-label">Protein</div>
         <div class="mc-num" id="pro-val">&mdash;</div>
         <div class="mc-sub" id="pro-sub"></div>
         <div class="mc-bar"><div class="mc-fill" id="pro-bar" style="background:var(--bl);width:0%"></div></div>
       </div>
       <div class="macro-cell">
-        <div class="mc-label">Carbs<span class="mc-status" id="carb-status" style="display:none"></span></div>
+        <div class="mc-label">Carbs</div>
         <div class="mc-num" id="carb-val">&mdash;</div>
         <div class="mc-sub" id="carb-sub"></div>
         <div class="mc-bar"><div class="mc-fill" id="carb-bar" style="background:var(--or);width:0%"></div></div>
       </div>
       <div class="macro-cell">
-        <div class="mc-label">Fats<span class="mc-status" id="fat-status" style="display:none"></span></div>
+        <div class="mc-label">Fats</div>
         <div class="mc-num" id="fat-val">&mdash;</div>
         <div class="mc-sub" id="fat-sub"></div>
         <div class="mc-bar"><div class="mc-fill" id="fat-bar" style="background:var(--ye);width:0%"></div></div>
@@ -3941,27 +3926,6 @@ function renderDayTab(d){{
   // track reads as unfinished UI. Only Calories/Protein carry targets.
   [['cal-bar',tgt.calories],['pro-bar',tgt.protein],['carb-bar',tgt.carbs],['fat-bar',tgt.fats]]
     .forEach(function(x){{var f=document.getElementById(x[0]);if(f)f.parentNode.style.display=x[1]?'':'none';}});
-
-  // Target-status DOT per macro cell. Under <90%, on track 90-110%, over >110%.
-  // Suppressed when there's no target or no consumption yet (an empty dot would
-  // float oddly; the strip stays clean until there's data). The dot is silent —
-  // no text — and the hover tooltip carries the actual % of target.
-  function _setMacroStatus(id, val, tgt){{
-    var el = document.getElementById(id); if(!el) return;
-    if(!tgt || val==null || val===0){{ el.style.display='none'; return; }}
-    var p = val / tgt * 100;
-    var cls;
-    if(p < 90){{ cls='under'; }}
-    else if(p > 110){{ cls='over'; }}
-    else{{ cls='ontrack'; }}
-    el.className = 'mc-status ' + cls;
-    el.title = Math.round(p) + '% of target';
-    el.style.display = '';
-  }}
-  _setMacroStatus('cal-status',  day.calories, tgt.calories);
-  _setMacroStatus('pro-status',  day.protein,  tgt.protein);
-  _setMacroStatus('carb-status', day.carbs,    tgt.carbs);
-  _setMacroStatus('fat-status',  day.fats,     tgt.fats);
 
   // Snapshot current macro values + targets so the Consumed/Remaining toggle
   // can flip the display client-side. Re-applied immediately so if the user
