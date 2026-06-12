@@ -1047,6 +1047,7 @@ async def _build_stats_for_user(db, user, target_date=None):
                  "calories": round(e.calories or 0), "protein": round(e.protein or 0),
                  "carbs": round(e.carbs or 0), "fats": round(e.fats or 0),
                  "estimated": bool(e.estimated_flag),
+                 "from_photo": bool(getattr(e, "from_photo", False)),
                  "timestamp": e.timestamp.isoformat() if e.timestamp else None}
                 for e in sorted(
                     (log.food_entries or []),

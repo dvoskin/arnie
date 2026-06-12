@@ -90,6 +90,24 @@ def _dashboard_html(token: str, name: str = "", bot_username: str = "Arnie_1026_
 /* Brain-tab feature gate — empty string when enabled, hard-hides
    sidebar nav button, bottom-nav button, and tab panel when off. */
 {_brain_off_css}
+/* Brain-icon "still learning" flair — tiny pulsing amber dot stuck to the
+   top-right of the brain glyph in both sidebar (#nav-brain) and bottom-nav
+   (#bn-brain). Hidden by default; renderLearningProgress() flips
+   `body.brain-pending` on/off so the dot only shows while the gate is
+   locked. Tap still routes to the gate page so users can read what's
+   missing — this is just signal, not a barrier. */
+#nav-brain .ni-ico,#bn-brain .bn-ico{{position:relative}}
+.brain-pending-dot{{
+  position:absolute;top:-1px;right:-3px;width:6px;height:6px;border-radius:50%;
+  background:#f59e0b;box-shadow:0 0 0 2px var(--bg),0 0 6px rgba(245,158,11,.65);
+  display:none;pointer-events:none;
+  animation:brainPendingPulse 2.4s ease-in-out infinite;
+}}
+body.brain-pending .brain-pending-dot{{display:block}}
+@keyframes brainPendingPulse{{
+  0%,100%{{opacity:.95;transform:scale(1)}}
+  50%   {{opacity:.55;transform:scale(.85)}}
+}}
 html{{background:var(--bg);transition:background .35s,color .3s}}
 body{{
   font-family:'Geist',ui-sans-serif,system-ui,-apple-system,sans-serif;
@@ -873,6 +891,41 @@ body.brain-active footer{{display:none}}
   font-family:'Geist Mono','SF Mono',monospace;font-size:9px;letter-spacing:.06em;font-weight:500;
 }}
 
+/* ── PERIOD NAV (Trends tab) — mirrors .dnav so the Trends
+   tab gets the same chip-selector rhythm as Daily's date nav.
+   3 fixed chips (7d / 30d / 90d) + right-aligned date-range
+   meta line. Hover/active states match .dchip exactly. */
+.period-nav{{display:flex;align-items:center;gap:6px;margin-bottom:14px;flex-wrap:wrap}}
+.pchip{{
+  background:var(--sf);border:1px solid var(--bd);color:var(--mu);
+  padding:8px 14px;border-radius:10px;font-family:inherit;
+  font-size:12px;font-weight:500;letter-spacing:-.01em;
+  cursor:pointer;transition:all .2s;flex-shrink:0;
+  backdrop-filter:blur(12px);box-shadow:var(--sh);
+  display:inline-flex;align-items:center;gap:5px;
+}}
+.pchip:hover{{border-color:var(--bd2);color:var(--tx2)}}
+.pchip.active{{background:var(--ac-dim);border-color:rgba(var(--ac-rgb),.4);color:var(--tx)}}
+.period-meta{{
+  margin-left:auto;font-family:'Geist Mono','SF Mono',monospace;
+  font-size:10px;color:var(--mu);letter-spacing:.06em;text-transform:uppercase;
+  white-space:nowrap;
+}}
+
+/* One-liner summary that sits below the period chips. Plain mono text,
+   no chrome. Three numbers separated by dots. Color tints carry the
+   goal-fit signal (--ac toward goal, --re drifting, --tx neutral). */
+.trend-line{{
+  font-family:'Geist Mono','SF Mono',monospace;
+  font-size:12px;color:var(--mu);letter-spacing:.02em;
+  margin:0 0 2px;padding:2px 2px;line-height:1.6;
+  display:flex;flex-wrap:wrap;gap:14px;align-items:center;
+}}
+.trend-line .tl-val{{color:var(--tx)}}
+.trend-line .tl-val.up{{color:var(--ac)}}
+.trend-line .tl-val.dn{{color:var(--re)}}
+.trend-line .tl-dot{{opacity:.35;color:var(--mu)}}
+
 /* ── DATE NAV ────────────────────────────────────────────── */
 .dnav{{display:flex;align-items:center;gap:6px;margin-bottom:16px}}
 .dscroll{{flex:1;display:flex;gap:6px;overflow-x:auto;scrollbar-width:none}}
@@ -1195,13 +1248,20 @@ body.brain-active footer{{display:none}}
   color:var(--ye);font-weight:500;flex-shrink:0;opacity:.8;
 }}
 .est-tag::before{{content:'●';font-size:6px;margin-right:2.5px;vertical-align:1px;}}
+/* Photo tag — subtle camera glyph next to foods Arnie logged from an
+   image. Sits beside the name like the est pill; muted by default so it
+   reads as provenance, not a badge. */
+.photo-tag{{
+  font-size:10px;line-height:1;color:var(--mu);opacity:.7;
+  margin-left:1px;vertical-align:1px;flex-shrink:0;
+}}
 /* Legend row BELOW the food log — footnote-style, surfaces only when an
    estimated item is present. Top-dashed-border separates it from the food
    rows above; subdued opacity so it reads as a footnote, not a header.
    Mirrors the est-tag styling so the connection is visual rather than
    verbal; the explanation text reads in muted body color. */
 .est-legend{{
-  display:flex;align-items:center;gap:6px;
+  display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;
   padding:8px 14px 4px;margin:6px 0 -2px;
   font-size:10px;color:var(--mu);line-height:1.3;
   border-top:1px dashed var(--bd);opacity:.75;
@@ -2169,7 +2229,7 @@ footer{{
             <animate attributeName="r" values="1.5;2.2;1.5" dur="2.6s" repeatCount="indefinite"/>
             <animate attributeName="opacity" values="1;.55;1" dur="2.6s" repeatCount="indefinite"/>
           </circle>
-        </svg></span>
+        </svg><span class="brain-pending-dot" aria-hidden="true"></span></span>
         <span class="ni-lbl">Brain</span><span class="ni-meta">Learning</span>
       </button>
     </nav>
@@ -2414,8 +2474,14 @@ footer{{
              referent. Top-dashed border + muted opacity reads as footnote
              rather than header. -->
         <div class="est-legend" id="est-legend" style="display:none">
-          <span class="est-tag est-tag-static">est</span>
-          <span class="est-legend-txt">= Arnie's best guess. Tap a row to edit.</span>
+          <span id="est-legend-est" style="display:none;align-items:center;gap:6px">
+            <span class="est-tag est-tag-static">est</span>
+            <span class="est-legend-txt">= Arnie's best guess. Tap a row to edit.</span>
+          </span>
+          <span id="est-legend-photo" style="display:none;align-items:center;gap:6px">
+            <span class="photo-tag" style="opacity:.85">&#128247;</span>
+            <span class="est-legend-txt">= logged from a photo.</span>
+          </span>
         </div>
       </div>
     </div>
@@ -2462,11 +2528,28 @@ footer{{
 
   </div><!-- /panel-day -->
 
-  <!-- WEEK TAB -->
+  <!-- WEEK TAB — refined (minimal).
+       Period chips → quiet one-liner → AI banner → charts → goal card.
+       The charts are the trends; the one-liner is the takeaway; the AI
+       banner is the qualitative read. No headline grid, no heatmap, no
+       stats tiles — the surface stays calm. -->
   <div class="tab-panel" id="panel-week">
 
+    <!-- PERIOD NAV — 7 / 30 / 90 day chips. setTrendsPeriod() reslices
+         every downstream renderer; the date-range meta updates with it. -->
+    <div class="period-nav">
+      <button class="pchip" data-period="7"  onclick="setTrendsPeriod(7)">7 days</button>
+      <button class="pchip active" data-period="30" onclick="setTrendsPeriod(30)">30 days</button>
+      <button class="pchip" data-period="90" onclick="setTrendsPeriod(90)">90 days</button>
+      <span class="period-meta" id="period-meta"></span>
+    </div>
+
+    <!-- Quiet one-liner — avg cal, weight Δ, workouts. Plain text,
+         no chrome. Tints carry the goal-fit signal. -->
+    <div class="trend-line" id="trend-line"></div>
+
     <!-- Weekly AI analysis — collapsed banner, expands on tap -->
-    <div class="insights" id="ins-week" style="margin-top:4px">
+    <div class="insights" id="ins-week" style="margin-top:14px">
       <div class="ins-banner" onclick="toggleInsights('week')" role="button" tabindex="0" aria-expanded="false">
         <span class="ins-spark"><svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M12 2.2l1.7 4.8 4.8 1.7-4.8 1.7L12 15.2l-1.7-4.8L5.5 8.7l4.8-1.7z"/><path d="M18.6 13.4l.82 2.18 2.18.82-2.18.82-.82 2.18-.82-2.18L15.6 16.4l2.18-.82z"/></svg></span>
         <span class="ins-title">Weekly Analysis</span>
@@ -2478,29 +2561,17 @@ footer{{
       <div class="ins-body"><div class="icrd fade-in" id="week-insights-card"><div class="iload"><span class="spin">&#9675;</span> Analyzing&hellip;</div></div></div>
     </div>
 
-    <div class="stitle" style="margin-top:20px">Trends</div>
-    <div class="c2col">
-      <div class="ccrd">
-        <div class="ctitle"><span>Calories &middot; 30 days</span><span id="cal-avg-lbl" class="ctitle-val" style="color:var(--ac)"></span></div>
-        <div class="cwrap"><canvas id="calChart"></canvas></div>
-      </div>
-      <div class="ccrd">
-        <div class="ctitle"><span>Protein &middot; 30 days</span><span id="pro-tgt-lbl" class="ctitle-val" style="color:var(--bl)"></span></div>
-        <div class="cwrap"><canvas id="proChart"></canvas></div>
-      </div>
-    </div>
+    <!-- ONE chart — weight. The trend that matters. Calorie + protein
+         adherence is summarized in the one-liner + AI banner above. -->
     <div class="ccrd" style="margin-top:14px">
-      <div class="ctitle"><span>Weight trend &middot; 30 days</span><span id="wt-now-lbl" class="ctitle-val" style="color:var(--pu)"></span></div>
+      <div class="ctitle"><span>Weight</span><span id="wt-now-lbl" class="ctitle-val" style="color:var(--pu)"></span></div>
       <div class="cwrap"><canvas id="weightChart"></canvas></div>
     </div>
-    <div class="stitle">Goal progress</div>
-    <div class="goal-card" id="goal-card"></div>
-    <div class="stitle">Stats</div>
-    <div class="stat-row">
-      <div class="stat-tile"><div class="stat-num" id="stat-streak">—</div><div class="stat-lbl">Day streak</div></div>
-      <div class="stat-tile"><div class="stat-num" id="stat-workouts">—</div><div class="stat-lbl">Workouts / 30d</div></div>
-      <div class="stat-tile"><div class="stat-num" id="stat-avg-cal">—</div><div class="stat-lbl">Avg cal / day</div></div>
-    </div>
+
+    <!-- Goal progress — renderGoalProgress() hides this when no
+         goal_weight is set, so maintain/performance users get a
+         calmer tab. -->
+    <div class="goal-card" id="goal-card" style="margin-top:14px"></div>
   </div>
 
   <!-- PROFILE TAB -->
@@ -2786,7 +2857,7 @@ footer{{
         <animate attributeName="r" values="1.5;2.2;1.5" dur="2.6s" repeatCount="indefinite"/>
         <animate attributeName="opacity" values="1;.55;1" dur="2.6s" repeatCount="indefinite"/>
       </circle>
-    </svg></span>Brain
+    </svg><span class="brain-pending-dot" aria-hidden="true"></span></span>Brain
   </button>
   <button class="bn-item" id="bn-profile" onclick="switchTab('profile')">
     <span class="bn-ico"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8.5" r="3.5"/><path d="M5.5 20.5c.7-3.5 3.4-5.5 6.5-5.5s5.8 2 6.5 5.5"/></svg></span>Client
@@ -2809,6 +2880,9 @@ const _BRAIN_ENABLED = {_brain_enabled_js};
 // ── State ─────────────────────────────────────────────────────────────────
 let _baseData=null, _dayCache={{}}, _viewingDate=null, _todayStr=null;
 let _availDates=[], _activeTab='day', calChart, proChart, weightChart;
+// Trends-tab period selector — 7 / 30 / 90 day window. renderWeekTab
+// re-slices off this. Default 30 matches the sidebar's nav meta label.
+let _trendsPeriod=30;
 
 // ── Local date helper (avoids UTC-offset issues with toISOString) ─────────
 function _localDate(d){{
@@ -3074,18 +3148,15 @@ async function loadDayData(d){{
 }}
 
 // ── Arnie's learning progress ─────────────────────────────────────────────
-// Single live fact bar. Tracks `attribute_count` from /api/profile — the same
-// authoritative tally the Brain tab's gate uses, so both surfaces tick in
-// lockstep as Arnie learns new facts. Hides at 50+ to match the brain gate
-// unlocking, keeping the day view clean for dialed-in users.
+// Tracks `attribute_count` from /api/profile — the same authoritative tally
+// the Brain tab's gate uses, so both surfaces tick in lockstep. The in-day
+// progress bar is hidden for now; instead we toggle `body.brain-pending` so
+// the brain nav icons get a tiny amber dot until the gate (25 facts) opens.
+// Tapping still routes to the brain page so users can read what's missing.
 function renderLearningProgress(d){{
   var wrap=document.getElementById('learn-wrap');
-  if(!wrap)return;
-  var TARGET=50;
-  // Source of truth: server-side active-attribute count. Falls back to a
-  // cheap 5-dim heuristic only if the count isn't on the payload yet (older
-  // API responses) so the bar never reads as completely empty for users
-  // already deep into their journey.
+  if(wrap)wrap.style.display='none';
+  var TARGET=25;
   var facts=(typeof d.attribute_count==='number')?d.attribute_count:0;
   if(!facts){{
     var p=d.profile||{{}}, tgt=d.targets||{{}};
@@ -3097,15 +3168,7 @@ function renderLearningProgress(d){{
         +(workoutDays>=1?5:0)
         +((p.whoop_connected||p.apple_health_connected)?6:0);
   }}
-  if(facts>=TARGET){{wrap.style.display='none';return;}}
-  var pctv=Math.min(100,Math.round(facts/TARGET*100));
-  var fill=document.getElementById('learn-fill');if(fill)fill.style.width=pctv+'%';
-  var lbl=document.getElementById('learn-pct');if(lbl)lbl.textContent=pctv+'%';
-  // Chip row repurposed as a quiet hint that the bar is live + what to do.
-  var list=document.getElementById('learn-list');
-  if(list)list.innerHTML='<span class="learn-chip done">facts learned</span>'
-    +'<span class="learn-chip">chat with Arnie to fill in more</span>';
-  wrap.style.display='block';
+  document.body.classList.toggle('brain-pending', facts<TARGET);
 }}
 
 // ── 5-day trend strip ─────────────────────────────────────────────────────
@@ -3455,12 +3518,15 @@ function renderStreakStats(history,targets){{
     var ds=_localDate(check);
     if(logDates.has(ds)){{streak++;check.setDate(check.getDate()-1);}}else break;
   }}
-  var monthAgo=new Date(today);monthAgo.setDate(monthAgo.getDate()-30);
-  var monthStr=_localDate(monthAgo);
-  var workouts=history.filter(function(h){{return h.date>=monthStr&&h.workout;}}).length;
+  // Period-aware: workouts + avg cal count over _trendsPeriod days so the
+  // tile reflects whatever the chip selector is showing above.
+  var windowDays=_trendsPeriod||30;
+  var winAgo=new Date(today);winAgo.setDate(winAgo.getDate()-windowDays);
+  var winStr=_localDate(winAgo);
+  var workouts=history.filter(function(h){{return h.date>=winStr&&h.workout;}}).length;
   // Past days only — today's totals are still moving. No open/closed state any more.
   var todayStr=_localDate(today);
-  var past=history.filter(function(h){{return h.date<todayStr;}});
+  var past=history.filter(function(h){{return h.date>=winStr&&h.date<todayStr;}});
   var avgCal=past.length?Math.round(past.reduce(function(s,h){{return s+h.calories;}},0)/past.length):null;
 
   var el=document.getElementById('stat-streak');if(el)el.textContent=streak;
@@ -3978,11 +4044,17 @@ function renderDayTab(d){{
   if(flc)flc.textContent=fe.length?fe.length+' item'+(fe.length!==1?'s':''):'';
   document.getElementById('food-log').innerHTML=fe.length?fe.map(renderFoodRow).join('')
     :'<div class="lempty">'+(isToday?'Nothing logged yet — tap + to add a meal.':'Nothing logged this day.')+'</div>';
-  // EST legend — visible only when at least one row carries the EST pill, so
-  // users learn the marker on the day they first encounter it instead of
-  // staring at unexplained chrome.
+  // EST + photo legend — each line surfaces only when at least one row
+  // carries that marker, so users learn the glyph on the day they first
+  // encounter it instead of staring at unexplained chrome.
   var _estLeg=document.getElementById('est-legend');
-  if(_estLeg) _estLeg.style.display = fe.some(function(f){{return f.estimated;}}) ? 'flex' : 'none';
+  var _hasEst=fe.some(function(f){{return f.estimated;}});
+  var _hasPhoto=fe.some(function(f){{return f.from_photo;}});
+  var _legEst=document.getElementById('est-legend-est');
+  if(_legEst) _legEst.style.display=_hasEst?'inline-flex':'none';
+  var _legPhoto=document.getElementById('est-legend-photo');
+  if(_legPhoto) _legPhoto.style.display=_hasPhoto?'inline-flex':'none';
+  if(_estLeg) _estLeg.style.display=(_hasEst||_hasPhoto)?'flex':'none';
   var ee=day.exercise_entries||[];
   document.getElementById('ex-log').innerHTML=ee.length?renderGroupedExercises(ee)
     :'<div class="lempty">'+(isToday?'No workouts logged yet — tap + to add one.':'No workouts logged this day.')+'</div>';
@@ -4225,19 +4297,21 @@ function renderHealthGrid(h){{
 }}
 
 // ── Week tab ──────────────────────────────────────────────────────────────
+// Minimal Trends tab — one chart (weight), one quiet text summary,
+// the AI banner, and the goal card. The cal/protein bar charts that
+// used to live here were retired during the refinement pass because
+// they made the surface visually loud; that info lives in the
+// one-liner + AI banner now, and per-day detail is on the Daily tab.
 function renderWeekTab(d){{
   var dk=document.documentElement.getAttribute('data-theme')!=='light';
-  var hist=(d.history||[]).slice(-30),tgt=d.targets||{{}};
-  var labels=hist.map(h=>h.date.slice(5));
-  var calD=hist.map(h=>h.calories??0),proD=hist.map(h=>h.protein??0);
-  // Dynamic chart header values
-  var loggedCal=hist.filter(h=>h.calories>0);
-  var avgCal=loggedCal.length?Math.round(loggedCal.reduce((s,h)=>s+h.calories,0)/loggedCal.length):null;
-  var wEl=document.getElementById('cal-avg-lbl');if(wEl)wEl.textContent=avgCal?'AVG '+avgCal.toLocaleString():'';
-  var pEl=document.getElementById('pro-tgt-lbl');if(pEl)pEl.textContent=tgt.protein?'TARGET '+tgt.protein+'G':'';
+  var hist=(d.history||[]).slice(-_trendsPeriod);
   var weights=d.weights||[];
-  var curW=weights.length?weights[weights.length-1].lbs:null;
+  var cutoff=hist.length?hist[0].date:null;
+  var weightsInPeriod=cutoff?weights.filter(w=>w.date>=cutoff):weights.slice();
+  var curW=weightsInPeriod.length?weightsInPeriod[weightsInPeriod.length-1].lbs:(weights.length?weights[weights.length-1].lbs:null);
   var wEl2=document.getElementById('wt-now-lbl');if(wEl2)wEl2.textContent=curW?curW+' LB NOW':'';
+  _renderTrendsMeta(hist);
+  renderTrendLine(d, hist, weightsInPeriod);
   var tick=dk?'#4a5568':'#94a3b8',grid=dk?'rgba(255,255,255,.05)':'#e2e8f0';
   var opts={{
     responsive:true,maintainAspectRatio:false,
@@ -4248,54 +4322,8 @@ function renderWeekTab(d){{
     }}
   }};
 
-  if(calChart) calChart.destroy();
-  calChart=new Chart(document.getElementById('calChart'),{{
-    type:'bar',
-    data:{{
-      labels,
-      datasets:[
-        {{
-          data:calD,
-          backgroundColor:calD.map(v=>tgt.calories&&v>tgt.calories
-            ?(dk?'rgba(239,68,68,.7)':'rgba(220,38,38,.7)')
-            :(dk?'rgba(0,230,118,.65)':'rgba(5,150,105,.65)')),
-          borderRadius:4,
-        }},
-        ...(tgt.calories?[{{
-          type:'line',data:Array(labels.length).fill(tgt.calories),
-          borderColor:dk?'rgba(255,255,255,.25)':'rgba(0,0,0,.2)',
-          borderDash:[4,4],borderWidth:1.5,pointRadius:0,fill:false,
-        }}]:[])
-      ]
-    }},
-    options:opts,
-  }});
-
-  if(proChart) proChart.destroy();
-  proChart=new Chart(document.getElementById('proChart'),{{
-    type:'bar',
-    data:{{
-      labels,
-      datasets:[
-        {{
-          data:proD,
-          backgroundColor:proD.map(v=>tgt.protein&&v>=tgt.protein
-            ?(dk?'rgba(59,130,246,.85)':'rgba(37,99,235,.85)')
-            :(dk?'rgba(59,130,246,.3)':'rgba(37,99,235,.3)')),
-          borderRadius:4,
-        }},
-        ...(tgt.protein?[{{
-          type:'line',data:Array(labels.length).fill(tgt.protein),
-          borderColor:dk?'rgba(255,255,255,.25)':'rgba(0,0,0,.2)',
-          borderDash:[4,4],borderWidth:1.5,pointRadius:0,fill:false,
-        }}]:[])
-      ]
-    }},
-    options:opts,
-  }});
-
   if(weightChart) weightChart.destroy();
-  var wD=(d.weights||[]).slice(-30);
+  var wD=weightsInPeriod;
   weightChart=new Chart(document.getElementById('weightChart'),{{
     type:'line',
     data:{{
@@ -4319,7 +4347,73 @@ function renderWeekTab(d){{
   }});
 
   renderGoalProgress(d.profile||{{}}, d.weights||[]);
-  renderStreakStats(d.history||[], d.targets||{{}});
+}}
+
+// ── Trends meta + summary helpers ────────────────────────────────────────
+// _renderTrendsMeta — updates the date-range label next to the chips and
+// the sidebar nav meta. That's it — the rest of the chrome is gone.
+function _renderTrendsMeta(hist){{
+  var rangeStr='';
+  if(hist.length){{
+    var fmt=function(s){{var dd=new Date(s+'T00:00:00');return dd.toLocaleDateString('en-US',{{month:'short',day:'numeric'}});}};
+    rangeStr=fmt(hist[0].date)+' — '+fmt(hist[hist.length-1].date);
+  }}
+  var elMeta=document.getElementById('period-meta');if(elMeta)elMeta.textContent=rangeStr;
+  var elNav=document.querySelector('#nav-week .ni-meta');if(elNav)elNav.textContent=_trendsPeriod+' days';
+}}
+
+// renderTrendLine — the quiet one-line summary that replaces the 4-up
+// macro-strip. Three numbers (avg cal / weight Δ / workouts) tinted
+// green if they move toward the user's primary goal, red if they don't,
+// muted if neutral. Plain mono text, no chrome.
+function renderTrendLine(d,hist,weightsInPeriod){{
+  var el=document.getElementById('trend-line');if(!el)return;
+  var tgt=d.targets||{{}};
+  var prof=d.profile||{{}};
+  var loggedCal=hist.filter(h=>h.calories>0);
+  var avgCal=loggedCal.length?Math.round(loggedCal.reduce((s,h)=>s+h.calories,0)/loggedCal.length):0;
+  var workouts=hist.filter(h=>h.workout).length;
+  var perWk=_trendsPeriod?(workouts/(_trendsPeriod/7)).toFixed(1):'0';
+
+  var parts=[];
+  // Avg cal — green if moving toward goal, red if drifting, neutral otherwise.
+  var calCls='tl-val';
+  if(tgt.calories){{
+    var diff=avgCal-tgt.calories;
+    var pct=Math.abs(diff)/tgt.calories;
+    var calOK=(prof.primary_goal==='cut'&&diff<0)||(prof.primary_goal==='bulk'&&diff>0)||(pct<0.05);
+    calCls='tl-val '+(calOK?'up':'dn');
+  }}
+  parts.push('<span><span class="'+calCls+'">'+avgCal.toLocaleString()+'</span> cal / day</span>');
+
+  // Weight delta — only when we have ≥2 weigh-ins in the window.
+  if(weightsInPeriod.length>=2){{
+    var startW=weightsInPeriod[0].lbs, curW=weightsInPeriod[weightsInPeriod.length-1].lbs;
+    var wd=curW-startW;
+    var wdStr=(wd>=0?'+':'')+wd.toFixed(1)+' lb';
+    var cutOK=prof.primary_goal==='cut'&&wd<0;
+    var bulkOK=prof.primary_goal==='bulk'&&wd>0;
+    var maintOK=prof.primary_goal!=='cut'&&prof.primary_goal!=='bulk'&&Math.abs(wd)<1.5;
+    var wCls='tl-val '+((cutOK||bulkOK||maintOK)?'up':'dn');
+    parts.push('<span><span class="'+wCls+'">'+wdStr+'</span> weight</span>');
+  }}
+
+  // Workouts — ≥3/wk reads as green, <1/wk red, otherwise neutral.
+  var woCls='tl-val '+(parseFloat(perWk)>=3?'up':parseFloat(perWk)<1?'dn':'');
+  parts.push('<span><span class="'+woCls+'">'+workouts+'</span> workouts · '+perWk+'/wk</span>');
+
+  el.innerHTML=parts.join('<span class="tl-dot">·</span>');
+}}
+
+// setTrendsPeriod — chip handler. Updates the chip active state and
+// re-runs renderWeekTab against the cached _baseData so the chip switch
+// feels instant (no network round-trip).
+function setTrendsPeriod(n){{
+  _trendsPeriod=n;
+  document.querySelectorAll('.pchip').forEach(function(c){{
+    c.classList.toggle('active', parseInt(c.dataset.period,10)===n);
+  }});
+  if(_baseData) renderWeekTab(_baseData);
 }}
 
 // ── Profile tab ───────────────────────────────────────────────────────────
@@ -5273,6 +5367,7 @@ function foodEmoji(name){{
 // surfaces appear when needed.
 function renderFoodRow(f){{
   var est=f.estimated?' <span class="est-tag" title="Estimated by Arnie — tap the row to edit if you have exact macros.">est</span>':'';
+  var cam=f.from_photo?' <span class="photo-tag" title="Logged from a photo you sent Arnie." aria-label="From photo">\\ud83d\\udcf7</span>':'';
   var cal=(f.calories??0);
   var qty=f.quantity||'';
   // Secondary meta line: qty (optional) followed by macros. Mono numbers
@@ -5287,7 +5382,7 @@ function renderFoodRow(f){{
   }}
   return '<div class="lrow" id="food-row-'+f.id+'" onclick="this.classList.toggle(&quot;open&quot;)">'+
     '<div class="lrow-main">'+
-      '<div class="lname">'+esc(f.name)+est+'</div>'+
+      '<div class="lname">'+esc(f.name)+est+cam+'</div>'+
       (meta?'<div class="lmeta">'+meta+'</div>':'')+
     '</div>'+
     '<div class="lcal">'+cal+'<span class="lcal-unit">cal</span></div>'+

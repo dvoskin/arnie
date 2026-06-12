@@ -2297,7 +2297,7 @@ function App() {
   // the gate doesn't show 0/50 on a brain that already has data.
   const confirmedTotal = allNodes.filter((n) => n.state === "confirmed").length;
   const confirmedPct = total > 0 ? Math.round((confirmedTotal / total) * 100) : 0;
-  const UNLOCK_NODES = 50;
+  const UNLOCK_NODES = 25;
   const liveFacts = factCount > 0 ? factCount : total;
   const learnedPct = Math.min(100, Math.round((liveFacts / UNLOCK_NODES) * 100));
   const stillLoading = liveFacts > 0 && liveFacts < UNLOCK_NODES;
@@ -2607,8 +2607,8 @@ function App() {
                 </div>
                 <div style={{ fontSize: 13, color: theme.subText, lineHeight: 1.5,
                   textWrap: "pretty", marginBottom: 16 }}>
-                  I unlock at <strong style={{ color: theme.cardVal, fontWeight: 600 }}>{UNLOCK_NODES} facts</strong>.
-                  Chat with me on Telegram — every thing you share fills a dot.
+                  I'm <strong style={{ color: theme.cardVal, fontWeight: 600 }}>{learnedPct}% there</strong>.
+                  Chat with me on Telegram — every thing you share fills me in.
                 </div>
 
                 {/* Progress bar — 2px slim, single fill, no tick. Matches
