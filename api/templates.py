@@ -518,22 +518,38 @@ body.brain-active footer{{display:none}}
    for maintain/performance/health users, weight isn't a primary KPI. */
 .weight-module{{
   background:var(--sf);border:1px solid var(--bd);border-radius:12px;
-  padding:9px 12px;margin-bottom:12px;box-shadow:var(--sh);
+  padding:6px 10px 7px;margin-bottom:9px;box-shadow:var(--sh);
+  cursor:pointer;transition:border-color .15s,background .15s;
 }}
-.wm-row{{display:flex;align-items:flex-end;justify-content:space-between;gap:12px}}
+.weight-module:hover{{border-color:var(--bd2,rgba(255,255,255,.12))}}
+.weight-module:focus-visible{{outline:1px solid rgba(var(--ac-rgb),.5);outline-offset:1px}}
+/* Inline pending dot — sits before the WEIGHT label. Pulses only when today
+   has no weigh-in (toggled via .has-pending on the module). */
+.wm-label-row{{display:inline-flex;align-items:center;gap:4px;line-height:1}}
+.wm-pending-dot{{
+  width:5px;height:5px;border-radius:50%;background:var(--ac);
+  box-shadow:0 0 0 0 rgba(var(--ac-rgb),.55);
+  animation:wmPendingPulse 2.4s ease-in-out infinite;display:none;
+}}
+.weight-module.has-pending .wm-pending-dot{{display:inline-block}}
+@keyframes wmPendingPulse{{
+  0%,100%{{box-shadow:0 0 0 0 rgba(var(--ac-rgb),.45)}}
+  50%{{box-shadow:0 0 0 4px rgba(var(--ac-rgb),0)}}
+}}
+.wm-row{{display:flex;align-items:flex-end;justify-content:space-between;gap:10px}}
 .wm-stack-l{{display:flex;flex-direction:column;min-width:0}}
 .wm-stack-r{{display:flex;flex-direction:column;align-items:flex-end;gap:1px;text-align:right;flex-shrink:0}}
 .wm-label{{
-  font-size:9px;font-weight:500;text-transform:uppercase;letter-spacing:.06em;
-  color:var(--mu);margin-bottom:2px;line-height:1;
+  font-size:8.5px;font-weight:500;text-transform:uppercase;letter-spacing:.06em;
+  color:var(--mu);margin-bottom:1px;line-height:1;
 }}
 .wm-num{{
-  font-size:22px;font-weight:600;letter-spacing:-.02em;line-height:1;color:var(--tx);
+  font-size:17px;font-weight:600;letter-spacing:-.02em;line-height:1;color:var(--tx);
 }}
-.wm-unit{{font-size:12px;font-weight:500;color:var(--mu);margin-left:1px}}
+.wm-unit{{font-size:10.5px;font-weight:500;color:var(--mu);margin-left:1px}}
 .wm-delta{{
   font-family:'Geist Mono','SF Mono',monospace;
-  font-size:10.5px;font-weight:500;letter-spacing:.02em;
+  font-size:10px;font-weight:500;letter-spacing:.02em;
   white-space:nowrap;line-height:1.2;color:var(--mu);
 }}
 .wm-delta-strong{{font-weight:600}}
@@ -542,34 +558,44 @@ body.brain-active footer{{display:none}}
 .wm-delta.flat .wm-delta-strong{{color:var(--mu)}}
 .wm-sub{{
   font-family:'Geist Mono','SF Mono',monospace;
-  font-size:9.5px;color:var(--mu);line-height:1.25;letter-spacing:.02em;
+  font-size:9px;color:var(--mu);line-height:1.3;letter-spacing:.02em;
 }}
-.wm-bar{{background:var(--sf3);border-radius:999px;height:3px;margin-top:6px;overflow:hidden}}
-.wm-fill{{height:100%;border-radius:999px;background:var(--ac);transition:width .8s cubic-bezier(.4,0,.2,1)}}
+.wm-bar{{background:var(--sf3);border-radius:999px;height:3px;margin-top:5px;overflow:hidden}}
+/* Gradient fill — strong contrast so it's actually visible at 3px height.
+   Anchored to background-size:100% relative to the BAR (the full track),
+   not the fill width, so the gradient reads consistently as a glow that
+   builds toward the leading edge regardless of progress. */
+.wm-fill{{
+  height:100%;border-radius:999px;
+  background:linear-gradient(90deg,
+    rgba(var(--ac-rgb),.25) 0%,
+    rgba(var(--ac-rgb),.65) 50%,
+    rgba(var(--ac-rgb),1) 100%);
+  background-size:200% 100%;
+  background-position:left center;
+  box-shadow:0 0 6px rgba(var(--ac-rgb),.35);
+  transition:width .8s cubic-bezier(.4,0,.2,1);
+}}
 
-/* Tiny "log" affordance in the top-right of the weight module. Mono micro-text
-   so it never competes with the number ladder. Pending dot pulses only when
-   today has no weigh-in. */
+/* ETA chip — small accent-tinted pill showing projected goal-met date based on
+   server-computed analytics.weeks_to_goal (current weight + configured deficit
+   vs goal weight). Sits inline with the wm-sub "X to go" line. Hidden when no
+   goal weight, no calorie target, or user is moving away from goal. */
+.wm-eta{{
+  display:inline-flex;align-items:center;
+  margin-left:5px;padding:1.5px 5px;border-radius:4px;
+  background:var(--ac-dim);color:var(--ac);
+  font-family:'Geist Mono','SF Mono',monospace;
+  font-size:8.5px;font-weight:600;letter-spacing:.04em;
+  white-space:nowrap;cursor:default;
+  border:1px solid rgba(var(--ac-rgb),.25);
+}}
+.wm-eta.off{{background:rgba(var(--or-rgb,255,150,80),.12);color:var(--or);border-color:rgba(var(--or-rgb,255,150,80),.25)}}
+
+/* No separate Log button — the whole module is the tap target (see
+   .weight-module:hover / cursor:pointer above). The pending dot lives
+   inline with the WEIGHT label via .wm-label-row. */
 .weight-module{{position:relative}}
-.wm-log{{
-  position:absolute;top:8px;right:10px;display:inline-flex;align-items:center;
-  gap:5px;background:transparent;border:none;cursor:pointer;padding:2px 4px;
-  border-radius:6px;font-family:'Geist Mono','SF Mono',monospace;
-  font-size:9px;font-weight:500;letter-spacing:.08em;text-transform:uppercase;
-  color:var(--mu);transition:color .15s,background .15s;
-}}
-.wm-log:hover{{color:var(--ac);background:var(--ac-dim)}}
-.wm-log.open{{color:var(--ac)}}
-.wm-pending-dot{{
-  width:5px;height:5px;border-radius:50%;background:var(--ac);
-  box-shadow:0 0 0 0 rgba(var(--ac-rgb),.55);
-  animation:wmPendingPulse 2.4s ease-in-out infinite;display:none;
-}}
-.wm-log.has-pending .wm-pending-dot{{display:inline-block}}
-@keyframes wmPendingPulse{{
-  0%,100%{{box-shadow:0 0 0 0 rgba(var(--ac-rgb),.45)}}
-  50%{{box-shadow:0 0 0 4px rgba(var(--ac-rgb),0)}}
-}}
 
 /* Slide-down log form sits beneath the progress bar. Single row: number input,
    kg/lbs segmented toggle, save. Mirrors the .add-card aesthetic but tighter. */
@@ -633,13 +659,12 @@ body.brain-active footer{{display:none}}
    the inline form so input + unit toggle + Save still sit on one row at
    ~360px viewports. */
 @media(max-width:760px){{
-  .weight-module{{padding:11px 13px 10px}}
+  .weight-module{{padding:9px 12px 9px}}
   .wm-row{{flex-direction:column;align-items:stretch;gap:6px}}
   .wm-stack-r{{align-items:flex-start;text-align:left;gap:2px}}
   .wm-delta,.wm-sub{{white-space:normal}}
-  .wm-num{{font-size:24px}}
-  .wm-log{{top:9px;right:10px;padding:3px 5px}}
-  .wm-check{{top:9px;right:10px}}
+  .wm-num{{font-size:21px}}
+  .wm-check{{top:7px;right:9px}}
   .wm-logform{{gap:6px;margin-top:8px;padding-top:8px}}
   .wm-logform-inp{{padding:7px 10px;font-size:14px}}
   .wm-unit-toggle button{{padding:5px 8px}}
@@ -2299,18 +2324,21 @@ footer{{
     </div>
 
     <!-- WEIGHT MODULE — cut/bulk only; hidden by JS otherwise.
-         Tiny "Log" affordance top-right; pending dot appears when today has
-         no weigh-in. Tap reveals the inline kg/lbs form beneath the bar. -->
-    <div class="weight-module" id="weight-module" style="display:none;margin-top:16px">
-      <button class="wm-log" id="wm-log-toggle" type="button"
-              onclick="toggleWeightLogForm()" title="Log today's weight">
-        <span class="wm-pending-dot" aria-hidden="true"></span>
-        <span id="wm-log-label">Log</span>
-      </button>
+         Whole module is one tap target — click anywhere to open the inline
+         log form. Pending dot pulses next to the WEIGHT label when today has
+         no weigh-in. Form interactions stopPropagation so they don't re-toggle. -->
+    <div class="weight-module" id="weight-module"
+         onclick="toggleWeightLogForm(event)"
+         role="button" tabindex="0"
+         style="display:none;margin-top:16px"
+         title="Tap to log today's weight">
       <span class="wm-check" id="wm-check" aria-hidden="true">&#10003; logged</span>
       <div class="wm-row">
         <div class="wm-stack-l">
-          <div class="wm-label">Weight</div>
+          <div class="wm-label-row">
+            <span class="wm-pending-dot" id="wm-pending-dot" aria-hidden="true"></span>
+            <span class="wm-label">Weight</span>
+          </div>
           <div><span class="wm-num" id="wm-val">&mdash;</span><span class="wm-unit" id="wm-unit">lbs</span></div>
         </div>
         <div class="wm-stack-r">
@@ -2321,17 +2349,18 @@ footer{{
         </div>
       </div>
       <div class="wm-bar" id="wm-bar-wrap"><div class="wm-fill" id="wm-fill" style="width:0%"></div></div>
-      <div class="wm-logform" id="wm-logform">
+      <div class="wm-logform" id="wm-logform" onclick="event.stopPropagation()">
         <input class="wm-logform-inp" id="wm-logform-val" type="number"
-               step="0.1" min="20" max="900" inputmode="decimal" placeholder="weight">
+               step="0.1" min="20" max="900" inputmode="decimal" placeholder="weight"
+               onclick="event.stopPropagation()">
         <div class="wm-unit-toggle" role="tablist" aria-label="Unit">
           <button type="button" id="wm-unit-lbs" class="active"
-                  onclick="setWeightLogUnit('lbs')">lbs</button>
+                  onclick="event.stopPropagation();setWeightLogUnit('lbs')">lbs</button>
           <button type="button" id="wm-unit-kg"
-                  onclick="setWeightLogUnit('kg')">kg</button>
+                  onclick="event.stopPropagation();setWeightLogUnit('kg')">kg</button>
         </div>
         <button class="wm-logform-save" id="wm-logform-save"
-                onclick="submitWeightLog()" type="button">Save</button>
+                onclick="event.stopPropagation();submitWeightLog()" type="button">Save</button>
       </div>
     </div>
 
@@ -3826,8 +3855,37 @@ function renderWeightModule(d){{
     var traveled = Math.abs(start - current);
     var remaining = Math.max(0, Math.abs(current - goalLbs));
     var pctv = totalDistance ? Math.max(0, Math.min(100, (traveled/totalDistance)*100)) : 0;
+
+    // ETA chip — server-computed weeks_to_goal turned into a projected date.
+    // Only surfaced when the user is moving the right direction at a non-zero
+    // pace; otherwise the date would be misleading (or infinite).
+    var an = p.analytics || {{}};
+    var paceLabel = an.pace_label || '';
+    var rightWay = (isCut && paceLabel === 'deficit') || (!isCut && paceLabel === 'surplus');
+    var etaChip = '';
+    if(an.weeks_to_goal && an.weeks_to_goal > 0 && rightWay){{
+      var eta = new Date();
+      eta.setDate(eta.getDate() + an.weeks_to_goal * 7);
+      var MOS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+      var label = MOS[eta.getMonth()] + ' ' + eta.getDate();
+      // Year suffix only when projection crosses into a later calendar year —
+      // keeps the chip terse for near-term goals, unambiguous for long ones.
+      var nowYr = new Date().getFullYear();
+      if(eta.getFullYear() !== nowYr) label += " '" + String(eta.getFullYear()).slice(2);
+      var paceTxt = an.pace_lbs_per_week ? an.pace_lbs_per_week + ' lb/wk' : '';
+      var tip = 'Projected goal date at ' + paceTxt + ' ' + paceLabel +
+                ' · updates with your weigh-ins and target';
+      etaChip = ' <span class="wm-eta" title="' + esc(tip) + '">~' + label + '</span>';
+    }}else if(an.weeks_to_goal === 0 || (goalLbs && remaining < 0.5)){{
+      etaChip = ' <span class="wm-eta" title="Goal hit">goal ✓</span>';
+    }}else if(an.daily_vs_tdee != null && !rightWay && Math.abs(an.daily_vs_tdee) > 50){{
+      // User is going the wrong way (cutting on a surplus, or bulking on a
+      // deficit). Don't pretend ETA is calculable — flag it so they know.
+      etaChip = ' <span class="wm-eta off" title="Current cal target is moving you away from goal">off-pace</span>';
+    }}
+
     if(subEl){{
-      subEl.innerHTML = remaining.toFixed(1) + ' lbs to go &nbsp;→&nbsp; ' + goalLbs.toFixed(1);
+      subEl.innerHTML = remaining.toFixed(1) + ' to go &nbsp;→&nbsp; ' + goalLbs.toFixed(1) + etaChip;
       subEl.style.cursor = '';
       subEl.onclick = null;
     }}
@@ -3846,18 +3904,19 @@ function renderWeightModule(d){{
   }}
 
   // Pending indicator: cut/bulk users who haven't weighed in today get a
-  // tiny pulsing dot next to the "Log" link. Only meaningful when viewing
-  // today — past days are immutable and the dot would just confuse.
-  var logBtn = document.getElementById('wm-log-toggle');
-  if(logBtn){{
+  // pulsing dot inline with the WEIGHT label. Toggled via .has-pending on
+  // the module (the whole module is the tap target now — no separate Log
+  // button). Only meaningful when viewing today; past days are immutable
+  // and the dot would just confuse.
+  if(module){{
     var loggedToday = false;
     for(var i=0;i<weights.length;i++){{
       if(weights[i] && weights[i].date === _todayStr){{ loggedToday = true; break; }}
     }}
     var showPending = (_viewingDate === _todayStr) && !loggedToday;
-    logBtn.classList.toggle('has-pending', showPending);
-    logBtn.title = showPending
-      ? 'Log today\\'s weight' : 'Update today\\'s weight';
+    module.classList.toggle('has-pending', showPending);
+    module.title = showPending
+      ? 'Tap to log today\\'s weight' : 'Tap to update today\\'s weight';
     // Keep the input pre-populated with the most recent reading so a quick
     // tap-and-save doesn't require typing the digits over again.
     var inp = document.getElementById('wm-logform-val');
@@ -3890,13 +3949,15 @@ function setWeightLogUnit(u){{
   if(lbsBtn) lbsBtn.classList.toggle('active', u === 'lbs');
   if(kgBtn)  kgBtn.classList.toggle('active', u === 'kg');
 }}
-function toggleWeightLogForm(){{
+function toggleWeightLogForm(ev){{
+  // Whole module is the tap target now. Form interactions stopPropagation
+  // upstream so clicks inside the input/toggle/save don't re-toggle the form.
   var form = document.getElementById('wm-logform');
-  var btn  = document.getElementById('wm-log-toggle');
-  if(!form || !btn) return;
+  var module = document.getElementById('weight-module');
+  if(!form || !module) return;
   var willOpen = !form.classList.contains('open');
   form.classList.toggle('open', willOpen);
-  btn.classList.toggle('open', willOpen);
+  module.classList.toggle('wm-open', willOpen);
   if(willOpen){{
     var inp = document.getElementById('wm-logform-val');
     if(inp){{ inp.focus(); inp.select && inp.select(); }}
@@ -3931,9 +3992,9 @@ async function submitWeightLog(){{
     inp.value = '';
     setTimeout(function(){{
       var form = document.getElementById('wm-logform');
-      var tBtn = document.getElementById('wm-log-toggle');
+      var module = document.getElementById('weight-module');
       if(form) form.classList.remove('open');
-      if(tBtn) tBtn.classList.remove('open');
+      if(module) module.classList.remove('wm-open');
     }}, 200);
     delete _dayCache[_viewingDate];
     await loadDayData(_viewingDate);
