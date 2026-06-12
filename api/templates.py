@@ -462,40 +462,49 @@ body.brain-active footer{{display:none}}
 .atile:has(.atile-dot.today) .atile-lbl{{opacity:.62}}
 .atile:has(.atile-dot.past)  .atile-lbl{{opacity:.5}}
 
-/* ── INSIGHTS TILE — minimal accent treatment ─────────────────────────
-   Reads as AI-powered without shouting: same flat card as the other
-   action tiles, plus a tiny accent corner-dot and an "AI" mono tag in
-   the label. No gradient, no sparkle animation — the dot + tag carry
-   all the signal we need. Hover lifts the border to accent for affordance. */
+/* ── INSIGHTS TILE — distinguished as the AI engine ─────────────────
+   Subtle accent gradient + lit-up sparkle icon so the tile reads as
+   AI-powered without shouting. The other action tiles (Share / Workout
+   / Cardio) keep their muted card look — the contrast is the point.
+   Gradient stays low-saturation so dark + light themes both stay tidy.
+   Note: no corner dot here on purpose — the macro cells already use
+   small dots for target status, and stacking a dot on this tile read
+   as visual noise. The gradient + AI pill carry the signal. */
 .atile.insights-tile{{
-  position:relative;
-}}
-.atile.insights-tile::before{{
-  /* Tiny accent dot, top-right corner: noticeable but understated. */
-  content:'';
-  position:absolute;top:7px;right:7px;
-  width:5px;height:5px;border-radius:999px;
-  background:var(--ac);
-  box-shadow:0 0 5px rgba(var(--ac-rgb),.55);
+  background:
+    linear-gradient(135deg,
+      var(--ac-dim) 0%,
+      rgba(var(--ac-rgb),.06) 60%,
+      rgba(99,102,241,.10) 100%);
+  border-color:rgba(var(--ac-rgb),.30);
+  color:var(--tx);
+  position:relative;overflow:hidden;
 }}
 .atile.insights-tile:hover{{
-  border-color:rgba(var(--ac-rgb),.40);
-  background:rgba(var(--ac-rgb),.05);
+  border-color:rgba(var(--ac-rgb),.50);
+  background:
+    linear-gradient(135deg,
+      rgba(var(--ac-rgb),.16) 0%,
+      rgba(var(--ac-rgb),.08) 60%,
+      rgba(99,102,241,.14) 100%);
 }}
 .atile.insights-tile .atile-ico{{
   color:var(--ac);
+  filter:drop-shadow(0 0 4px rgba(var(--ac-rgb),.45));
+  animation:insightsSparkle 3.4s ease-in-out infinite;
+}}
+@keyframes insightsSparkle{{
+  0%,100%{{opacity:1;transform:scale(1)}}
+  50%   {{opacity:.78;transform:scale(1.08)}}
 }}
 /* Tiny "AI" mono pill inline in the label — telegraphs that the tile
-   surfaces model-generated content, not a raw data view. Subtler than
-   before: transparent bg + thin border so it doesn't compete with the
-   tile content. */
+   surfaces model-generated content, not a raw data view. */
 .atile-ai-tag{{
   font-family:'Geist Mono','SF Mono',monospace;
-  font-size:7.5px;font-weight:600;letter-spacing:.10em;
-  padding:0 4px;margin-left:5px;border-radius:3px;vertical-align:1px;
-  background:transparent;color:var(--ac);
-  border:1px solid rgba(var(--ac-rgb),.35);
-  opacity:.85;
+  font-size:8px;font-weight:600;letter-spacing:.08em;
+  padding:1px 4px;margin-left:6px;border-radius:4px;vertical-align:1px;
+  background:rgba(var(--ac-rgb),.18);color:var(--ac);
+  border:1px solid rgba(var(--ac-rgb),.30);
 }}
 
 /* ── WEIGHT MODULE — cut/bulk users only ─────────────────────────
