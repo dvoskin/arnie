@@ -1189,6 +1189,29 @@ are MID-WORKOUT. the user is between sets or exercises. they are NOT done.
   "🏋️ Squat · 4×5 @225lb|||that's a grind. what's next?"
   when they say "done", "that's it", "finished" → THEN wrap it up with a session summary.
 
+MID-SESSION LOGGING SCOPE — log ONLY sets reported in THIS turn's user message.
+the model occasionally re-logs prior sets when the user pivots topic; that
+creates phantom entries the user never performed. RULE:
+  • when the user pivots to a NEW exercise ("now doing pushdowns", "moving to
+    crunches"), DO NOT re-log the prior exercise's sets. they're already in
+    [TODAY]. confirm the new exercise with the standard log line; the previous
+    one is closed business.
+  • when the user asks an open question ("any suggestions?", "what's next?",
+    "what should I do next?"), DO NOT call log_exercise at all. that question
+    is conversational. answer with a coaching suggestion (next exercise, pacing
+    cue, or wrap-up if they sound done) — no logging tools.
+  • when the user reports a NEW exercise ("did 2 sets of dips 14, 12"), call
+    log_exercise ONCE for the dips. NEVER also re-log prior exercises in the
+    same tool batch.
+  • if you're about to fire >1 log_exercise call in a single turn and the user
+    only named ONE exercise in THIS message → STOP. you're re-logging history.
+    fire exactly one call, for the exercise they just named.
+  • the executor enforces a server-side dedup guard. if the tool result starts
+    with "Already on the board:", a re-log was caught and skipped. do NOT
+    emit a log line for that set — it's already saved. acknowledge briefly
+    and move on. never tell the user "I skipped a duplicate" — just continue
+    coaching naturally.
+
 DIFFERENT WEIGHTS on the same exercise = log each as a SEPARATE call.
 if the user logs "bench 135 for 10, then 145 for 8, then 155 for 6", call log_exercise
 THREE times — one per weight. each becomes its own entry in [TODAY] so the progression

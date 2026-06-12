@@ -255,6 +255,16 @@ def deterministic_confirmation(tool_calls, log, prefs, tool_results=None) -> str
         return f"{head}|||{tail}|||Send the next meal."
 
     if "log_exercise" in names:
+        # Dedup-aware fallback: if the LAST log_exercise tool result starts with
+        # "Already on the board" (the prefix format_dedup_result emits), the
+        # guard fired and the model tried to re-log an already-saved set. Don't
+        # claim a fresh log in that case — the existing entries are already on
+        # the board. tool_results is name→last-result, so when MULTIPLE
+        # log_exercise calls fire in one turn we only see the last one; this
+        # check is conservative (we may under-claim) but never false-positive.
+        last_ex_result = str(tool_results.get("log_exercise", "") or "")
+        if last_ex_result.startswith("Already on the board"):
+            return "Got it — already on the board. 💪|||What's next?"
         # Mid-workout detection: if more than one exercise logged today (including this
         # turn) the user is still in session — don't imply "workout done."
         # We check the log totals: workout_completed is set after any exercise entry,
@@ -951,6 +961,29 @@ async def _dispatch(name, inp, user, today_log, db, source_type):  # noqa: C901
         weight = inp.get("weight")
         weight_unit = inp.get("weight_unit", "lbs")
         weight_kg = _lbs_to_kg(weight, weight_unit)
+
+        # Re-log-on-context-shift guard. The model occasionally re-fires
+        # log_exercise for already-logged sets when the user pivots exercises
+        # or asks an open mid-session question. Catch the exact-payload dup
+        # within a 120s window and surface it back to the model so it doesn't
+        # emit a fresh log line. Only applies to TODAY's log — past-date edits
+        # via date= are legitimate corrections, not dups.
+        if not past_date:
+            from datetime import datetime as _dt_now
+            from skills.fitness.exercise_dedup import (
+                is_duplicate_of_recent, format_dedup_result,
+            )
+            now_utc = _dt_now.utcnow()
+            dup = is_duplicate_of_recent(
+                exercise_name=inp.get("exercise_name"),
+                sets=inp.get("sets"),
+                reps=str(inp.get("reps", "")) if inp.get("reps") else None,
+                weight_kg=weight_kg,
+                existing_entries=(target_log.exercise_entries or []),
+                now_utc=now_utc,
+            )
+            if dup is not None:
+                return format_dedup_result(dup, now_utc=now_utc)
 
         is_cardio = inp.get("is_cardio", False) or bool(inp.get("cardio_type"))
         await add_exercise_entry(
