@@ -1512,20 +1512,21 @@ async def _post_init(app: Application):
     await init_db()
     start_scheduler()
 
-    # Register commands so Telegram shows the menu when user types "/"
+    # Register commands so Telegram shows the menu when user types "/".
+    # Slimmed 12 → 5 (2026-06-12): only the daily-driver actions get a slot
+    # in the "/"-popup. All other CommandHandlers below stay registered so
+    # power-users typing /upgrade, /billing, /reset, /remind, /week, /ai
+    # still get the response — we just stop advertising the long list. The
+    # bot itself is the AI, so /ai as a separate menu item read as
+    # redundant; /close was already dead (T1.1 removed the day-close state
+    # but left the menu entry); /reset is destructive and doesn't belong
+    # in the discovery menu.
     from telegram import BotCommand
     await app.bot.set_my_commands([
         BotCommand("today",   "Today's calories, macros & workout"),
-        BotCommand("ai",      "AI coaching insights on your day"),
-        BotCommand("week",    "Last 7 days — history & trends"),
-        BotCommand("me",      "Profile, targets & settings"),
-        BotCommand("close",   "Close today's log"),
         BotCommand("dash",    "Open your personal dashboard"),
-        BotCommand("remind",  "Turn daily check-ins on or off"),
-        BotCommand("upgrade", "Upgrade to Premium"),
-        BotCommand("billing", "Manage your subscription"),
+        BotCommand("me",      "Profile, targets & settings"),
         BotCommand("connect", "Link Whoop or Apple Health"),
-        BotCommand("reset",   "Clear today's log or full reset"),
         BotCommand("help",    "How to use Arnie"),
     ])
     logger.info("Arnie is ready.")
