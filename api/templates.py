@@ -653,26 +653,31 @@ body.brain-active footer{{display:none}}
   60%{{box-shadow:var(--sh),0 0 0 8px rgba(var(--ac-rgb),0)}}
   100%{{box-shadow:var(--sh),0 0 0 0 rgba(var(--ac-rgb),0)}}
 }}
-/* Mobile: the desktop two-column row gets cramped under the absolute LOG
-   button on a narrow card. Stack the delta + sub line UNDER the value
-   (left-aligned, full-width) so the top-right belongs to LOG alone. Tighten
-   the inline form so input + unit toggle + Save still sit on one row at
-   ~360px viewports. */
+/* Mobile: KEEP the two-column row so the module stays as compact as desktop
+   (column-stacked it nearly doubled in height). Allow delta + sub to wrap to
+   a second line when needed; the side-by-side layout fits even at ~360px
+   because the number column is narrow ("220.5 lbs" ≈ 80px). Tighten only
+   the inline form so input + unit toggle + Save still sit on one row. */
 @media(max-width:760px){{
-  .weight-module{{padding:9px 12px 9px}}
-  .wm-row{{flex-direction:column;align-items:stretch;gap:6px}}
-  .wm-stack-r{{align-items:flex-start;text-align:left;gap:2px}}
+  .weight-module{{padding:6px 10px 7px}}
+  .wm-row{{gap:8px}}
+  .wm-stack-r{{flex-shrink:1;min-width:0}}
   .wm-delta,.wm-sub{{white-space:normal}}
-  .wm-num{{font-size:21px}}
-  .wm-check{{top:7px;right:9px}}
+  .wm-num{{font-size:17px}}
+  .wm-unit{{font-size:10.5px}}
+  .wm-check{{top:6px;right:9px}}
   .wm-logform{{gap:6px;margin-top:8px;padding-top:8px}}
   .wm-logform-inp{{padding:7px 10px;font-size:14px}}
   .wm-unit-toggle button{{padding:5px 8px}}
   .wm-logform-save{{padding:7px 10px}}
 }}
-/* Extra-narrow viewports (< 360px): let the form wrap onto two rows so
-   the input gets a full row of breathing room instead of being squeezed. */
-@media(max-width:360px){{
+/* Extra-narrow viewports (< 380px): let the form wrap onto two rows so
+   the input gets a full row of breathing room instead of being squeezed.
+   Also drop the wm-num one more notch so the row never overflows. */
+@media(max-width:380px){{
+  .wm-num{{font-size:16px}}
+  .wm-delta{{font-size:9.5px}}
+  .wm-sub{{font-size:8.5px}}
   .wm-logform{{flex-wrap:wrap}}
   .wm-logform-inp{{flex-basis:100%}}
 }}
