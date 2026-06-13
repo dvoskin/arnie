@@ -419,6 +419,9 @@ body.brain-active footer{{display:none}}
    Tiles use the same accent / chip tokens as .ds-pill.on so the visual
    language stays unified with the rest of the dashboard. */
 .action-tiles{{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:0}}
+/* On phones, Workout/Cardio (shown only when logged) go full-width each so an
+   odd number of visible tiles never leaves a lonely half-row gap. */
+@media(max-width:560px){{#tile-workout,#tile-cardio{{grid-column:1/-1}}}}
 .atile{{
   display:flex;align-items:center;gap:8px;
   padding:8px 12px;border-radius:10px;
@@ -2187,111 +2190,73 @@ footer{{
 .learn-chip{{font-size:10px;color:var(--mu);transition:color .2s}}
 .learn-chip.done{{color:var(--tx2)}}
 
-/* ── "Arnie learned" neural reel ─────────────────────────────
-   A minimal glass card on the Day tab that auto-flips through real
-   things Arnie has picked up about the user (from /api/profile custom
-   attributes). One fact at a time, blur-to-focus reveal, an AI orb that
-   pulses while "thinking", and a hairline sweep that drives the cadence.
-   Whole card is a tap target → opens the deeper learned view. */
+/* ── "Arnie learned" live ticker ─────────────────────────────
+   No card, no chrome — a single line that continuously rolls through
+   real things Arnie has picked up (from /api/profile custom attributes).
+   The verb AND the fact change every turn, so it reads fresh each time.
+   A breathing orb is the only persistent ornament; the motion carries it.
+   Tap → the deeper learned view. */
 .kii-card{{
-  position:relative;overflow:hidden;cursor:pointer;
-  border-radius:14px;padding:13px 15px;margin-top:14px;
-  background:
-    radial-gradient(120% 140% at 0% 0%, rgba(var(--ac-rgb),.10), transparent 55%),
-    radial-gradient(120% 140% at 100% 100%, rgba(168,85,247,.10), transparent 55%),
-    var(--sf);
-  border:1px solid var(--bd);
-  -webkit-tap-highlight-color:transparent;
-  transition:border-color .25s, transform .15s ease;
+  display:flex;align-items:center;gap:10px;
+  margin-top:16px;cursor:pointer;-webkit-tap-highlight-color:transparent;
+  font-size:14px;line-height:1.4;min-width:0;
 }}
-.kii-card:hover{{border-color:var(--bd2)}}
-.kii-card:active{{transform:scale(.992)}}
-/* Slow drifting sheen — the "alive / thinking" texture, very subtle. */
-.kii-card::before{{
-  content:'';position:absolute;inset:0;pointer-events:none;opacity:.5;
-  background:linear-gradient(115deg,transparent 38%,rgba(var(--ac-rgb),.07) 50%,transparent 62%);
-  background-size:220% 100%;
-  animation:kiiSheen 7s linear infinite;
-}}
-@keyframes kiiSheen{{0%{{background-position:140% 0}}100%{{background-position:-40% 0}}}}
-
-.kii-top{{display:flex;align-items:center;gap:8px;position:relative;z-index:1}}
-/* AI orb — concentric pulse, the "learning" signal */
-.kii-orb{{position:relative;width:13px;height:13px;flex-shrink:0}}
+.kii-card:active{{opacity:.6}}
+/* breathing orb — the "thinking / learning" pulse */
+.kii-orb{{position:relative;width:7px;height:7px;flex-shrink:0}}
 .kii-orb i{{
-  position:absolute;inset:0;margin:auto;width:6px;height:6px;border-radius:50%;
-  background:var(--ac);box-shadow:0 0 8px rgba(var(--ac-rgb),.9);
+  position:absolute;inset:0;border-radius:50%;background:var(--ac);
+  box-shadow:0 0 8px rgba(var(--ac-rgb),.9);
+  animation:kiiBreath 2.4s ease-in-out infinite;
 }}
 .kii-orb::after{{
   content:'';position:absolute;inset:0;border-radius:50%;
-  border:1.5px solid rgba(var(--ac-rgb),.55);
+  border:1.5px solid rgba(var(--ac-rgb),.5);
   animation:kiiPing 2.4s ease-out infinite;
 }}
-@keyframes kiiPing{{
-  0%{{transform:scale(.45);opacity:.9}}
-  70%{{opacity:0}}
-  100%{{transform:scale(1.5);opacity:0}}
+@keyframes kiiBreath{{0%,100%{{transform:scale(.8);opacity:.85}}50%{{transform:scale(1.15);opacity:1}}}}
+@keyframes kiiPing{{0%{{transform:scale(.5);opacity:.8}}70%{{opacity:0}}100%{{transform:scale(2.5);opacity:0}}}}
+/* the rolling line — masked viewport. Lines are centered (translateY(-50%))
+   so a wrapped two-line fact stays balanced against the orb; the roll
+   keyframes animate around that centered rest position. */
+.kii-roll{{position:relative;flex:1;min-width:0;height:1.4em;overflow:hidden;
+  transition:height .45s cubic-bezier(.22,1,.36,1)}}
+.kii-line{{
+  position:absolute;left:0;top:50%;width:100%;transform:translateY(-50%);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  color:var(--mu);font-weight:500;
 }}
-.kii-eyebrow{{
-  font-size:9.5px;font-weight:700;letter-spacing:.13em;text-transform:uppercase;
-  color:var(--mu);white-space:nowrap;
-}}
-.kii-eyebrow b{{
-  color:var(--ac);font-weight:700;
+.kii-line .kii-v{{ /* rotating verb */
+  font-style:normal;font-weight:700;
   background:linear-gradient(90deg,var(--ac),var(--pu));
   -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;
 }}
-.kii-ai{{
-  font-size:8px;font-weight:700;letter-spacing:.1em;
-  color:var(--pu);border:1px solid rgba(168,85,247,.4);border-radius:5px;
-  padding:1px 5px;opacity:.85;
+.kii-line .kii-h{{color:var(--tx2);font-weight:600}}   /* the "what" (label) */
+.kii-line .kii-val{{color:var(--tx);font-weight:600}}  /* the specific value */
+.kii-line.enter{{animation:kiiRollIn .55s cubic-bezier(.22,1,.36,1) both}}
+.kii-line.exit{{animation:kiiRollOut .42s cubic-bezier(.55,0,.67,0) both}}
+@keyframes kiiRollIn{{
+  0%{{opacity:0;transform:translateY(calc(-50% + 1.05em));filter:blur(5px)}}
+  100%{{opacity:1;transform:translateY(-50%);filter:blur(0)}}
 }}
-/* The flipping body. Fixed-ish height so the card doesn't jump between
-   short and long facts; content vertically centered. */
-.kii-stage{{position:relative;z-index:1;margin-top:9px;min-height:42px;display:flex;align-items:center}}
-.kii-item{{width:100%}}
-.kii-what{{
-  font-size:11px;font-weight:500;letter-spacing:.02em;color:var(--mu);
-  text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px;
+@keyframes kiiRollOut{{
+  0%{{opacity:1;transform:translateY(-50%);filter:blur(0)}}
+  100%{{opacity:0;transform:translateY(calc(-50% - 1.05em));filter:blur(5px)}}
 }}
-.kii-fact{{
-  font-size:15px;font-weight:600;line-height:1.32;color:var(--tx);
-  letter-spacing:-.01em;
-  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
-}}
-/* enter / exit reveal — slide + blur→focus */
-.kii-item.enter{{animation:kiiIn .5s cubic-bezier(.22,1,.36,1) both}}
-.kii-item.exit{{animation:kiiOut .32s ease-in both}}
-@keyframes kiiIn{{
-  0%{{opacity:0;transform:translateY(8px);filter:blur(6px)}}
-  100%{{opacity:1;transform:translateY(0);filter:blur(0)}}
-}}
-@keyframes kiiOut{{
-  0%{{opacity:1;transform:translateY(0);filter:blur(0)}}
-  100%{{opacity:0;transform:translateY(-8px);filter:blur(6px)}}
-}}
-/* hairline cadence sweep along the bottom edge */
-.kii-rail{{position:absolute;left:0;right:0;bottom:0;height:2px;background:transparent;z-index:1}}
-.kii-rail i{{
-  display:block;height:100%;width:0;border-radius:2px;
-  background:linear-gradient(90deg,var(--ac),var(--pu));
-  box-shadow:0 0 6px rgba(var(--ac-rgb),.5);
-}}
-.kii-rail i.run{{animation:kiiRail var(--kii-dur,5s) linear forwards}}
-@keyframes kiiRail{{from{{width:0}}to{{width:100%}}}}
-/* position dots */
-.kii-dots{{position:absolute;top:13px;right:14px;display:flex;gap:4px;z-index:1}}
-.kii-dot{{width:4px;height:4px;border-radius:50%;background:var(--di);transition:.3s}}
-.kii-dot.on{{background:var(--ac);box-shadow:0 0 5px rgba(var(--ac-rgb),.8);transform:scale(1.15)}}
 @media(prefers-reduced-motion:reduce){{
-  .kii-card::before,.kii-orb::after{{animation:none}}
-  .kii-item.enter,.kii-item.exit{{animation-duration:.001s}}
-  .kii-rail i.run{{animation:none}}
+  .kii-orb i,.kii-orb::after{{animation:none}}
+  .kii-line.enter,.kii-line.exit{{animation-duration:.001s}}
 }}
+/* On phones a single ellipsised line hides the long facts — let it wrap to
+   three lines instead. _kiiFit() sizes the roll viewport to the actual line
+   height (snug for short facts, taller for long ones); the orb stays centered
+   against it. */
 @media(max-width:560px){{
-  .kii-card{{padding:12px 13px;margin-top:12px}}
-  .kii-fact{{font-size:14px}}
-  .kii-stage{{min-height:40px}}
+  .kii-card{{font-size:13px;margin-top:14px;gap:9px;align-items:center}}
+  .kii-line{{
+    white-space:normal;
+    display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;
+  }}
 }}
 
 /* ── Settings preference cards (profile tab) ─────────────── */
@@ -2423,6 +2388,19 @@ footer{{
       <button class="darr" id="date-next" onclick="navDate(1)"  aria-label="Next day">&#8250;</button>
     </div>
 
+    <!-- "ARNIE LEARNED" LIVE TICKER — placed at the very top of the Day tab
+         (first thing below the date nav) for maximum attention. One line that
+         continuously rolls through real learned facts (from /api/profile custom
+         attributes via initLearnReel). Hidden until there are ≥3 facts, so
+         brand-new users see the learning-progress card below instead. Taps
+         through to the deeper learned view. -->
+    <div class="kii-card" id="kii-card" style="display:none"
+         role="button" tabindex="0"
+         onclick="openLearnReel()" title="What Arnie's picked up about you">
+      <span class="kii-orb"><i></i></span>
+      <span class="kii-roll" id="kii-roll"><span class="kii-line" id="kii-line"></span></span>
+    </div>
+
     <!-- ARNIE'S LEARNING — shown only for new users, hides at 100% -->
     <div id="learn-wrap" style="display:none;margin-top:12px">
       <div class="lrn-card">
@@ -2513,9 +2491,10 @@ footer{{
       </div>
     </div>
 
-    <!-- ACTION TILES — Insights · Share · Workout · Cardio (+ Water if logged).
-         Replaces the legacy .day-status pill row. State (done / today
-         pending / past pending) is set by renderActionTiles in renderDayTab. -->
+    <!-- ACTION TILES — Insights · Share are always shown. Workout · Cardio ·
+         Water appear only when logged for the viewed day (renderDayTab toggles
+         them via _setActivityTile), acting as "✓ logged" confirmation chips
+         rather than permanent nudges. On mobile each spans full-width. -->
     <div class="action-tiles" id="action-tiles" style="margin-top:10px">
       <button class="atile insights-tile" id="tile-insights" onclick="handleInsightsTile()" type="button">
         <svg class="atile-ico" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
@@ -2531,14 +2510,14 @@ footer{{
         </svg>
         <span class="atile-lbl">Share day</span>
       </button>
-      <button class="atile" id="tile-workout" onclick="openLogActivity('strength')" type="button">
+      <button class="atile" id="tile-workout" onclick="openLogActivity('strength')" type="button" style="display:none">
         <svg class="atile-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M3 6v4M13 6v4M5 5v6M11 5v6M1 8h2M13 8h2"/>
         </svg>
         <span class="atile-lbl">Workout</span>
         <span class="atile-state" id="tile-workout-state">—</span>
       </button>
-      <button class="atile" id="tile-cardio" onclick="openLogActivity('cardio')" type="button">
+      <button class="atile" id="tile-cardio" onclick="openLogActivity('cardio')" type="button" style="display:none">
         <svg class="atile-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <circle cx="11" cy="3" r="1.5"/>
           <path d="M5 14l2-4 2 2 3-4M5 9l-3-2"/>
@@ -2553,23 +2532,6 @@ footer{{
         <span class="atile-lbl">Water</span>
         <span class="atile-state" id="tile-water-state"></span>
       </button>
-    </div>
-
-    <!-- "ARNIE LEARNED" NEURAL REEL — auto-flips through real learned facts
-         (pulled from /api/profile custom attributes by initLearnReel). Hidden
-         until there are ≥3 facts, so brand-new users see the learning-progress
-         card above instead. Whole card taps through to the deeper learned view. -->
-    <div class="kii-card" id="kii-card" style="display:none"
-         role="button" tabindex="0"
-         onclick="openLearnReel()" title="What Arnie's picked up about you">
-      <div class="kii-dots" id="kii-dots"></div>
-      <div class="kii-top">
-        <span class="kii-orb"><i></i></span>
-        <span class="kii-eyebrow"><b>Arnie</b> learned about you</span>
-        <span class="kii-ai">AI</span>
-      </div>
-      <div class="kii-stage" id="kii-stage"></div>
-      <div class="kii-rail"><i id="kii-rail"></i></div>
     </div>
 
     <!-- AI INSIGHTS — inline expanding panel triggered by the Insights
@@ -3235,12 +3197,15 @@ async function init(){{
   }}
 }}
 
-// ── "Arnie learned" neural reel ───────────────────────────────────────────
-// Auto-flips through real learned facts (from /api/profile custom attributes).
-// Minimal by design: one fact at a time, blur-to-focus reveal, a hairline
-// sweep that paces the cadence. Tap → the full learned view.
-let _kiiItems=[], _kiiIdx=0, _kiiTimer=null, _kiiPaused=false;
-const _KII_DUR=5000;  // ms per fact — also the rail sweep duration
+// ── "Arnie learned" live ticker ───────────────────────────────────────────
+// A single line that continuously rolls through real learned facts (from
+// /api/profile custom attributes). Both the verb and the fact change each
+// turn — "Arnie noticed your weakness…", "Arnie clocked your resting HR…" —
+// so it never reads the same twice. Tap → the full learned view.
+let _kiiItems=[], _kiiIdx=0, _kiiTimer=null, _kiiPaused=false, _kiiVerb='';
+const _KII_DUR=3400;  // ms per fact — quick, so the motion stays lively
+// Verbs that read naturally as "Arnie <verb> your <thing>".
+const _KII_VERBS=['learned','noticed','remembers','picked up on','clocked','is tracking','locked in'];
 
 // Strip "(2026-06-09, Whoop)"-style provenance tails, soften snake_case keys
 // that leak through from storage (rep_then_load → rep then load), and collapse
@@ -3279,6 +3244,21 @@ function _kiiShuffle(a){{
   return a;
 }}
 
+// Lowercase a label for "your <label>" — but keep all-caps acronyms (HRV, RIR).
+function _kiiLabel(s){{
+  return String(s||'').split(' ').map(function(w){{
+    return /^[A-Z0-9]{{2,4}}$/.test(w) ? w : w.toLowerCase();
+  }}).join(' ');
+}}
+
+// A different verb than last time, so consecutive turns never repeat it.
+function _kiiNextVerb(){{
+  var v;
+  do {{ v=_KII_VERBS[Math.floor(Math.random()*_KII_VERBS.length)]; }}
+  while(_KII_VERBS.length>1 && v===_kiiVerb);
+  _kiiVerb=v; return v;
+}}
+
 async function initLearnReel(){{
   var card=document.getElementById('kii-card');
   if(!card) return;
@@ -3296,53 +3276,52 @@ async function initLearnReel(){{
       items.push(it);
     }});
     if(items.length<3) return;            // brand-new users keep the learning-progress card instead
-    _kiiItems=_kiiShuffle(items).slice(0,8);
+    _kiiItems=_kiiShuffle(items);
     _kiiIdx=0;
 
-    // position dots
-    var dots=document.getElementById('kii-dots');
-    dots.innerHTML=_kiiItems.map(function(_,i){{
-      return '<span class="kii-dot'+(i===0?' on':'')+'"></span>';
-    }}).join('');
-
-    card.style.display='block';
-    card.style.setProperty('--kii-dur',(_KII_DUR/1000)+'s');
+    card.style.display='flex';
     card.addEventListener('mouseenter',function(){{_kiiPause(true);}});
     card.addEventListener('mouseleave',function(){{_kiiPause(false);}});
     _kiiRender(true);
   }}catch(e){{}}
 }}
 
+// Compose one rolling line: "Arnie <verb> your <label> — <value>".
+function _kiiLineHTML(it){{
+  return 'Arnie <em class="kii-v">'+esc(_kiiNextVerb())+'</em> your '+
+    '<span class="kii-h">'+esc(_kiiLabel(it.what))+'</span> — '+
+    '<span class="kii-val">'+esc(it.fact)+'</span>';
+}}
+
 function _kiiRender(initial){{
-  var stage=document.getElementById('kii-stage');
-  var rail=document.getElementById('kii-rail');
-  if(!stage) return;
+  var roll=document.getElementById('kii-roll');
+  if(!roll) return;
   var it=_kiiItems[_kiiIdx];
-  var html='<div class="kii-item enter">'+
-    '<div class="kii-what">'+esc(it.what)+'</div>'+
-    '<div class="kii-fact">'+esc(it.fact)+'</div>'+
-  '</div>';
 
   if(initial){{
-    stage.innerHTML=html;
+    roll.innerHTML='<span class="kii-line enter" id="kii-line">'+_kiiLineHTML(it)+'</span>';
+    _kiiFit(roll, roll.firstChild);
   }}else{{
-    // animate the outgoing item out, then swap
-    var old=stage.querySelector('.kii-item');
-    if(old){{ old.classList.remove('enter'); old.classList.add('exit'); }}
-    setTimeout(function(){{ stage.innerHTML=html; }}, old?300:0);
-  }}
-
-  // dots
-  var ds=document.querySelectorAll('#kii-dots .kii-dot');
-  ds.forEach(function(d,i){{ d.classList.toggle('on', i===_kiiIdx); }});
-
-  // restart the cadence rail
-  if(rail){{
-    rail.classList.remove('run');
-    void rail.offsetWidth;            // reflow so the animation re-fires
-    if(!_kiiPaused) rail.classList.add('run');
+    // roll the current line up & out, then drop the next one in from below
+    var old=roll.querySelector('.kii-line');
+    if(old){{ old.classList.remove('enter'); old.classList.add('exit'); old.removeAttribute('id'); }}
+    var next=document.createElement('span');
+    next.className='kii-line enter'; next.id='kii-line';
+    next.innerHTML=_kiiLineHTML(it);
+    roll.appendChild(next);
+    _kiiFit(roll, next);   // grow/shrink the viewport to the new line (wrapped) height
+    setTimeout(function(){{ if(old&&old.parentNode) old.parentNode.removeChild(old); }}, 460);
   }}
   _kiiSchedule();
+}}
+
+// Size the roll viewport to the line's rendered height so wrapped (multi-line)
+// facts show in full on narrow screens, while short ones stay snug. Desktop
+// keeps the line on one row, so this resolves to a single line height there.
+function _kiiFit(roll, line){{
+  if(!roll || !line) return;
+  var h=line.offsetHeight;
+  if(h) roll.style.height=h+'px';
 }}
 
 function _kiiSchedule(){{
@@ -3359,14 +3338,7 @@ function _kiiAdvance(){{
 
 function _kiiPause(on){{
   _kiiPaused=on;
-  var rail=document.getElementById('kii-rail');
-  if(on){{
-    clearTimeout(_kiiTimer);
-    if(rail) rail.style.animationPlayState='paused';
-  }}else{{
-    if(rail) rail.style.animationPlayState='running';
-    _kiiSchedule();
-  }}
+  if(on) clearTimeout(_kiiTimer); else _kiiSchedule();
 }}
 
 // Tap the card → the full learned view. Brain tab when enabled, else Profile
@@ -4335,22 +4307,21 @@ function renderDayTab(d){{
   }};
   applyMacroView();
 
-  // ── Action tiles: Workout / Cardio / Water state ─────────────────
-  // Today + not logged → soft yellow dot (gentle nudge).
-  // Past day + not logged → muted gray dot (info only, no nudge).
-  // Done → ✓ in accent green.
+  // ── Action tiles: Workout / Cardio state ─────────────────────────
+  // Only shown when logged for the viewed day — a "✓ logged" confirmation
+  // chip, not a permanent nudge. Hidden entirely otherwise.
   function _setActivityTile(tileId, stateId, done){{
     var tile = document.getElementById(tileId);
     var slot = document.getElementById(stateId);
     if(!tile || !slot) return;
     if(done){{
+      tile.style.display = '';
       tile.classList.add('done');
       slot.className = 'atile-state';
       slot.textContent = '✓';
     }}else{{
+      tile.style.display = 'none';
       tile.classList.remove('done');
-      slot.className = 'atile-dot ' + (isToday ? 'today' : 'past');
-      slot.textContent = '';
     }}
   }}
   _setActivityTile('tile-workout', 'tile-workout-state', !!day.workout_completed);
