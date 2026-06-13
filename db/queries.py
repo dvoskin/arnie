@@ -1470,21 +1470,42 @@ async def upsert_user_metric(
     """
     Store a user-reported health/performance metric in WearableMetric (time-series)
     and, for known fields, also mirror it into today's HealthSnapshot.
+
+    True upsert keyed on (user_id, metric_type, recorded_at, device_type='user_stated').
+    If a matching row already exists, update value/unit in place — prevents duplicate
+    rows when the model re-fires the same track_metric calls on follow-up turns. Only
+    user_stated rows participate in the dedup; wearable-sourced rows have their own
+    dedup paths and are untouched here.
     """
     from db.models import WearableMetric, HealthSnapshot
 
     ts = recorded_at or datetime.utcnow()
     snap_date = ts.date() if hasattr(ts, "date") else ts
 
-    entry = WearableMetric(
-        user_id=user_id,
-        device_type="user_stated",
-        metric_type=metric_type,
-        value=value,
-        unit=unit,
-        recorded_at=ts,
-    )
-    db.add(entry)
+    existing = (await db.execute(
+        select(WearableMetric).where(and_(
+            WearableMetric.user_id == user_id,
+            WearableMetric.metric_type == metric_type,
+            WearableMetric.recorded_at == ts,
+            WearableMetric.device_type == "user_stated",
+        ))
+    )).scalar_one_or_none()
+
+    if existing is not None:
+        existing.value = value
+        if unit:
+            existing.unit = unit
+        entry = existing
+    else:
+        entry = WearableMetric(
+            user_id=user_id,
+            device_type="user_stated",
+            metric_type=metric_type,
+            value=value,
+            unit=unit,
+            recorded_at=ts,
+        )
+        db.add(entry)
 
     # Mirror into HealthSnapshot for context_builder to pick up
     _snap_field_map = {
