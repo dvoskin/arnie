@@ -379,6 +379,39 @@ async def run_turn(
                     f"Image generated and sent. URL: {image_url}. Caption: {caption}"
                 )
 
+        # Render coach_on_photo results as text bubbles; replace dict with a
+        # follow-up confirmation string. The model writes the coaching content
+        # (decision + reasoning) DIRECTLY into the tool input — no chat_follow_up
+        # round-trip is needed to paraphrase what it already authored. Without
+        # this path, the tool_result dict is non-string content for Anthropic's
+        # tool_result API, the forced follow-up produces no usable text, and
+        # deterministic_confirmation emits its generic "Got that." stall —
+        # exactly what happened on Danny's fridge photo (turn 1737, 2026-06-13).
+        _coaching_bubbles: list[str] = []
+        for tname, tresult in list(tool_results.items()):
+            if isinstance(tresult, dict) and tresult.get("_type") == "photo_coaching":
+                decision = (tresult.get("decision") or "").strip()
+                reasoning = (tresult.get("reasoning") or "").strip()
+                if decision:
+                    _coaching_bubbles.append(decision)
+                if reasoning and reasoning != decision:
+                    _coaching_bubbles.append(reasoning)
+                tool_results[tname] = (
+                    f"Photo coaching delivered to user. "
+                    f"decision={decision[:200]} reasoning={reasoning[:200]}. "
+                    f"COACH INSTRUCTION: the decision and reasoning bubbles have "
+                    f"already been sent to the user. Do NOT re-voice them. If "
+                    f"natural, add ONE short closing bubble tying to the user's "
+                    f"day so far (cals/protein remaining), otherwise stop here."
+                )
+        if _coaching_bubbles:
+            _coaching_text = "|||".join(_coaching_bubbles)
+            if response_text and response_text.strip():
+                response_text = f"{response_text.strip()}|||{_coaching_text}"
+            else:
+                response_text = _coaching_text
+            _response_streamed = False  # built from tool dict, never streamed
+
         from db.queries import reload_user
         user = await reload_user(db, user.id)
         if today_log and hasattr(today_log, "id") and today_log.id:
