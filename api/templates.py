@@ -2187,6 +2187,113 @@ footer{{
 .learn-chip{{font-size:10px;color:var(--mu);transition:color .2s}}
 .learn-chip.done{{color:var(--tx2)}}
 
+/* ── "Arnie learned" neural reel ─────────────────────────────
+   A minimal glass card on the Day tab that auto-flips through real
+   things Arnie has picked up about the user (from /api/profile custom
+   attributes). One fact at a time, blur-to-focus reveal, an AI orb that
+   pulses while "thinking", and a hairline sweep that drives the cadence.
+   Whole card is a tap target → opens the deeper learned view. */
+.kii-card{{
+  position:relative;overflow:hidden;cursor:pointer;
+  border-radius:14px;padding:13px 15px;margin-top:14px;
+  background:
+    radial-gradient(120% 140% at 0% 0%, rgba(var(--ac-rgb),.10), transparent 55%),
+    radial-gradient(120% 140% at 100% 100%, rgba(168,85,247,.10), transparent 55%),
+    var(--sf);
+  border:1px solid var(--bd);
+  -webkit-tap-highlight-color:transparent;
+  transition:border-color .25s, transform .15s ease;
+}}
+.kii-card:hover{{border-color:var(--bd2)}}
+.kii-card:active{{transform:scale(.992)}}
+/* Slow drifting sheen — the "alive / thinking" texture, very subtle. */
+.kii-card::before{{
+  content:'';position:absolute;inset:0;pointer-events:none;opacity:.5;
+  background:linear-gradient(115deg,transparent 38%,rgba(var(--ac-rgb),.07) 50%,transparent 62%);
+  background-size:220% 100%;
+  animation:kiiSheen 7s linear infinite;
+}}
+@keyframes kiiSheen{{0%{{background-position:140% 0}}100%{{background-position:-40% 0}}}}
+
+.kii-top{{display:flex;align-items:center;gap:8px;position:relative;z-index:1}}
+/* AI orb — concentric pulse, the "learning" signal */
+.kii-orb{{position:relative;width:13px;height:13px;flex-shrink:0}}
+.kii-orb i{{
+  position:absolute;inset:0;margin:auto;width:6px;height:6px;border-radius:50%;
+  background:var(--ac);box-shadow:0 0 8px rgba(var(--ac-rgb),.9);
+}}
+.kii-orb::after{{
+  content:'';position:absolute;inset:0;border-radius:50%;
+  border:1.5px solid rgba(var(--ac-rgb),.55);
+  animation:kiiPing 2.4s ease-out infinite;
+}}
+@keyframes kiiPing{{
+  0%{{transform:scale(.45);opacity:.9}}
+  70%{{opacity:0}}
+  100%{{transform:scale(1.5);opacity:0}}
+}}
+.kii-eyebrow{{
+  font-size:9.5px;font-weight:700;letter-spacing:.13em;text-transform:uppercase;
+  color:var(--mu);white-space:nowrap;
+}}
+.kii-eyebrow b{{
+  color:var(--ac);font-weight:700;
+  background:linear-gradient(90deg,var(--ac),var(--pu));
+  -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;
+}}
+.kii-ai{{
+  font-size:8px;font-weight:700;letter-spacing:.1em;
+  color:var(--pu);border:1px solid rgba(168,85,247,.4);border-radius:5px;
+  padding:1px 5px;opacity:.85;
+}}
+/* The flipping body. Fixed-ish height so the card doesn't jump between
+   short and long facts; content vertically centered. */
+.kii-stage{{position:relative;z-index:1;margin-top:9px;min-height:42px;display:flex;align-items:center}}
+.kii-item{{width:100%}}
+.kii-what{{
+  font-size:11px;font-weight:500;letter-spacing:.02em;color:var(--mu);
+  text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px;
+}}
+.kii-fact{{
+  font-size:15px;font-weight:600;line-height:1.32;color:var(--tx);
+  letter-spacing:-.01em;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
+}}
+/* enter / exit reveal — slide + blur→focus */
+.kii-item.enter{{animation:kiiIn .5s cubic-bezier(.22,1,.36,1) both}}
+.kii-item.exit{{animation:kiiOut .32s ease-in both}}
+@keyframes kiiIn{{
+  0%{{opacity:0;transform:translateY(8px);filter:blur(6px)}}
+  100%{{opacity:1;transform:translateY(0);filter:blur(0)}}
+}}
+@keyframes kiiOut{{
+  0%{{opacity:1;transform:translateY(0);filter:blur(0)}}
+  100%{{opacity:0;transform:translateY(-8px);filter:blur(6px)}}
+}}
+/* hairline cadence sweep along the bottom edge */
+.kii-rail{{position:absolute;left:0;right:0;bottom:0;height:2px;background:transparent;z-index:1}}
+.kii-rail i{{
+  display:block;height:100%;width:0;border-radius:2px;
+  background:linear-gradient(90deg,var(--ac),var(--pu));
+  box-shadow:0 0 6px rgba(var(--ac-rgb),.5);
+}}
+.kii-rail i.run{{animation:kiiRail var(--kii-dur,5s) linear forwards}}
+@keyframes kiiRail{{from{{width:0}}to{{width:100%}}}}
+/* position dots */
+.kii-dots{{position:absolute;top:13px;right:14px;display:flex;gap:4px;z-index:1}}
+.kii-dot{{width:4px;height:4px;border-radius:50%;background:var(--di);transition:.3s}}
+.kii-dot.on{{background:var(--ac);box-shadow:0 0 5px rgba(var(--ac-rgb),.8);transform:scale(1.15)}}
+@media(prefers-reduced-motion:reduce){{
+  .kii-card::before,.kii-orb::after{{animation:none}}
+  .kii-item.enter,.kii-item.exit{{animation-duration:.001s}}
+  .kii-rail i.run{{animation:none}}
+}}
+@media(max-width:560px){{
+  .kii-card{{padding:12px 13px;margin-top:12px}}
+  .kii-fact{{font-size:14px}}
+  .kii-stage{{min-height:40px}}
+}}
+
 /* ── Settings preference cards (profile tab) ─────────────── */
 .pref-card{{background:var(--sf);border:1px solid var(--bd);border-radius:14px;padding:13px 16px;margin-bottom:8px;box-shadow:var(--sh)}}
 .pref-row{{display:flex;align-items:center;justify-content:space-between}}
@@ -2446,6 +2553,23 @@ footer{{
         <span class="atile-lbl">Water</span>
         <span class="atile-state" id="tile-water-state"></span>
       </button>
+    </div>
+
+    <!-- "ARNIE LEARNED" NEURAL REEL — auto-flips through real learned facts
+         (pulled from /api/profile custom attributes by initLearnReel). Hidden
+         until there are ≥3 facts, so brand-new users see the learning-progress
+         card above instead. Whole card taps through to the deeper learned view. -->
+    <div class="kii-card" id="kii-card" style="display:none"
+         role="button" tabindex="0"
+         onclick="openLearnReel()" title="What Arnie's picked up about you">
+      <div class="kii-dots" id="kii-dots"></div>
+      <div class="kii-top">
+        <span class="kii-orb"><i></i></span>
+        <span class="kii-eyebrow"><b>Arnie</b> learned about you</span>
+        <span class="kii-ai">AI</span>
+      </div>
+      <div class="kii-stage" id="kii-stage"></div>
+      <div class="kii-rail"><i id="kii-rail"></i></div>
     </div>
 
     <!-- AI INSIGHTS — inline expanding panel triggered by the Insights
@@ -3105,9 +3229,150 @@ async function init(){{
     renderDayTab(data);
     loadInsights();
     initLogSections();
+    initLearnReel();
   }}catch(e){{
     document.getElementById('app-load').textContent='Failed to load — tap ↻ to retry.';
   }}
+}}
+
+// ── "Arnie learned" neural reel ───────────────────────────────────────────
+// Auto-flips through real learned facts (from /api/profile custom attributes).
+// Minimal by design: one fact at a time, blur-to-focus reveal, a hairline
+// sweep that paces the cadence. Tap → the full learned view.
+let _kiiItems=[], _kiiIdx=0, _kiiTimer=null, _kiiPaused=false;
+const _KII_DUR=5000;  // ms per fact — also the rail sweep duration
+
+// Strip "(2026-06-09, Whoop)"-style provenance tails, soften snake_case keys
+// that leak through from storage (rep_then_load → rep then load), and collapse
+// whitespace.
+function _kiiClean(s){{
+  return (s||'')
+    .replace(/\s*\([^)]*\d{{4}}[^)]*\)\s*/g,' ')
+    .replace(/([a-z0-9])_([a-z0-9])/gi,'$1 $2')
+    .replace(/\s+/g,' ').trim();
+}}
+
+// One custom attribute → {{what, fact}}, or null if it isn't worth surfacing.
+function _kiiHuman(c){{
+  var label=(c.label||'').trim();
+  if(!label || label.toLowerCase()==='source') return null;
+  var fact;
+  if(c.chips && c.chips.length){{
+    var ch=c.chips.map(function(x){{return _kiiClean(String(x));}}).filter(Boolean);
+    if(!ch.length) return null;
+    fact=ch.slice(0,3).join('  ·  ');
+    if(ch.length>3) fact+='  ·  +'+(ch.length-3)+' more';
+  }}else{{
+    fact=_kiiClean(String(c.value!=null?c.value:''));
+  }}
+  if(!fact) return null;
+  var lf=fact.toLowerCase();
+  if(lf==='true'||lf==='false'||lf==='yes'||lf==='no') return null;  // bare flags read as noise
+  if(fact.length>96) return null;  // keep it snappy
+  return {{what:label, fact:fact}};
+}}
+
+function _kiiShuffle(a){{
+  for(var i=a.length-1;i>0;i--){{
+    var j=Math.floor(Math.random()*(i+1));var t=a[i];a[i]=a[j];a[j]=t;
+  }}
+  return a;
+}}
+
+async function initLearnReel(){{
+  var card=document.getElementById('kii-card');
+  if(!card) return;
+  try{{
+    var r=await fetch(PROFILE_API);
+    if(!r.ok) return;
+    var data=await r.json();
+    var custom=(data && data.custom)||[];
+    var seen={{}}, items=[];
+    custom.forEach(function(c){{
+      var it=_kiiHuman(c);
+      if(!it) return;
+      var k=it.what.toLowerCase();
+      if(seen[k]) return; seen[k]=1;
+      items.push(it);
+    }});
+    if(items.length<3) return;            // brand-new users keep the learning-progress card instead
+    _kiiItems=_kiiShuffle(items).slice(0,8);
+    _kiiIdx=0;
+
+    // position dots
+    var dots=document.getElementById('kii-dots');
+    dots.innerHTML=_kiiItems.map(function(_,i){{
+      return '<span class="kii-dot'+(i===0?' on':'')+'"></span>';
+    }}).join('');
+
+    card.style.display='block';
+    card.style.setProperty('--kii-dur',(_KII_DUR/1000)+'s');
+    card.addEventListener('mouseenter',function(){{_kiiPause(true);}});
+    card.addEventListener('mouseleave',function(){{_kiiPause(false);}});
+    _kiiRender(true);
+  }}catch(e){{}}
+}}
+
+function _kiiRender(initial){{
+  var stage=document.getElementById('kii-stage');
+  var rail=document.getElementById('kii-rail');
+  if(!stage) return;
+  var it=_kiiItems[_kiiIdx];
+  var html='<div class="kii-item enter">'+
+    '<div class="kii-what">'+esc(it.what)+'</div>'+
+    '<div class="kii-fact">'+esc(it.fact)+'</div>'+
+  '</div>';
+
+  if(initial){{
+    stage.innerHTML=html;
+  }}else{{
+    // animate the outgoing item out, then swap
+    var old=stage.querySelector('.kii-item');
+    if(old){{ old.classList.remove('enter'); old.classList.add('exit'); }}
+    setTimeout(function(){{ stage.innerHTML=html; }}, old?300:0);
+  }}
+
+  // dots
+  var ds=document.querySelectorAll('#kii-dots .kii-dot');
+  ds.forEach(function(d,i){{ d.classList.toggle('on', i===_kiiIdx); }});
+
+  // restart the cadence rail
+  if(rail){{
+    rail.classList.remove('run');
+    void rail.offsetWidth;            // reflow so the animation re-fires
+    if(!_kiiPaused) rail.classList.add('run');
+  }}
+  _kiiSchedule();
+}}
+
+function _kiiSchedule(){{
+  clearTimeout(_kiiTimer);
+  if(_kiiPaused) return;
+  _kiiTimer=setTimeout(_kiiAdvance, _KII_DUR);
+}}
+
+function _kiiAdvance(){{
+  if(!_kiiItems.length) return;
+  _kiiIdx=(_kiiIdx+1)%_kiiItems.length;
+  _kiiRender(false);
+}}
+
+function _kiiPause(on){{
+  _kiiPaused=on;
+  var rail=document.getElementById('kii-rail');
+  if(on){{
+    clearTimeout(_kiiTimer);
+    if(rail) rail.style.animationPlayState='paused';
+  }}else{{
+    if(rail) rail.style.animationPlayState='running';
+    _kiiSchedule();
+  }}
+}}
+
+// Tap the card → the full learned view. Brain tab when enabled, else Profile
+// (where every learned attribute lives). Either way: deeper engagement.
+function openLearnReel(){{
+  switchTab(_BRAIN_ENABLED ? 'brain' : 'profile');
 }}
 
 async function refreshCurrent(btn){{

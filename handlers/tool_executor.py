@@ -198,6 +198,27 @@ def deterministic_confirmation(tool_calls, log, prefs, tool_results=None) -> str
         # No parseable macros (USDA miss) — still don't dead-end.
         return (f"Couldn't pin exact macros on {food or 'that'}.|||"
                 "tell me roughly what it was and I'll log my best estimate.")
+
+    # Info-query tools (the user asked a QUESTION, not a log) where the model
+    # produced no text after the tool ran. The generic "Got that.|||X / Y cal."
+    # net below is wrong here — the calorie tail is irrelevant when the user
+    # asked "what can I order for dinner?" (Danny 2026-06-13 turns 1782 + 1784:
+    # web_search returned no usable local results, follow-up dropped, fallback
+    # surfaced the day's calories as if it answered them). Per-tool branches
+    # keep the read honest. Only fire when NO logging tool also ran in the same
+    # turn — a log+search combo falls through to the log confirmation below.
+    _NO_LOG = not (names & {
+        "log_food", "log_exercise", "log_water", "log_body_weight",
+        "update_food_entry", "update_exercise_entry", "track_metric",
+        "clear_day_log", "search_food_database",
+    })
+    if _NO_LOG and "web_search" in names:
+        return ("Couldn't pull a clean read on that.|||"
+                "want to try a different angle? cuisine, budget, or a different query.")
+    if _NO_LOG and "query_history" in names:
+        return ("Couldn't pull that history clean.|||"
+                "give me the metric or timeframe again and I'll dig back in.")
+
     cal = round(getattr(log, "total_calories", 0) or 0)
     pro = round(getattr(log, "total_protein", 0) or 0)
     cal_t = getattr(prefs, "calorie_target", None) if prefs else None
