@@ -450,6 +450,14 @@ _TOOL_HEADS_UP_BUBBLES = {
         "drawing it now.",
         "rendering now.",
     ),
+    "track_metric": (
+        "tracking the panel.",
+        "saving those values.",
+        "got the metrics.",
+        "logging the labs.",
+        "panel coming in.",
+        "tracking that now.",
+    ),
 }
 
 # The wider set: tools that get a heads-up. Imported by the conversation

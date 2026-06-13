@@ -927,9 +927,10 @@ def test_prompt_states_context_is_ground_truth():
 
 
 def test_all_slow_tools_have_heads_up_bubbles():
-    """The four known slow tools each map to >=2 deterministic heads-up
-    bubbles. A new slow tool added without an entry would surface here."""
-    REQUIRED = {"web_search", "search_food_database", "query_history", "generate_image"}
+    """Every slow tool maps to >=2 deterministic heads-up bubbles. A new slow
+    tool added without an entry would surface here."""
+    REQUIRED = {"web_search", "search_food_database", "query_history",
+                "generate_image", "track_metric"}
     assert set(_TOOL_HEADS_UP_BUBBLES.keys()) == REQUIRED
     for tool in REQUIRED:
         assert len(_TOOL_HEADS_UP_BUBBLES[tool]) >= 2, f"{tool}: need >=2 bubbles"

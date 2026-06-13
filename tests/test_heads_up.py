@@ -25,7 +25,7 @@ from handlers.tool_executor import (
 # ── The gate ────────────────────────────────────────────────────────────────
 
 
-def test_needs_heads_up_tools_covers_the_four_slow_tools():
+def test_needs_heads_up_tools_covers_the_slow_tools():
     """Pin the slow-tool set. Adding a new slow tool means updating this list
     AND _TOOL_HEADS_UP_BUBBLES — the test catches drift in either direction."""
     assert NEEDS_HEADS_UP_TOOLS == frozenset({
@@ -33,6 +33,7 @@ def test_needs_heads_up_tools_covers_the_four_slow_tools():
         "search_food_database",
         "query_history",
         "generate_image",
+        "track_metric",
     })
 
 
@@ -165,7 +166,7 @@ def test_fast_tools_excluded_from_gate():
         "log_food", "log_exercise", "log_water", "log_body_weight",
         "update_profile", "update_food_entry", "update_exercise_entry",
         "delete_food_entry", "delete_exercise_entry", "clear_day_log",
-        "update_memory", "store_attribute", "track_metric", "schedule_check_in",
+        "update_memory", "store_attribute", "schedule_check_in",
     ):
         assert fast not in NEEDS_HEADS_UP_TOOLS, (
             f"{fast} is fast — adding it would over-fire heads-ups"
