@@ -1806,8 +1806,9 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
         #   · NOT in NEEDS_HEADS_UP_TOOLS / _TOOL_HEADS_UP_BUBBLES — the
         #     write is microseconds, a heads-up bubble would feel jarring
         #     ("setting your targets..." → immediate confirmation). Heads-
-        #     ups are for slow I/O only (web_search, search_food_database,
-        #     query_history, generate_image).
+        #     ups are for slow I/O or follow-up-required tools only
+        #     (web_search, search_food_database, query_history,
+        #     generate_image, track_metric).
         #   · NOT in _LOGGING_TOOLS (core/conversation.py) — not a log
         #     entry. That set triggers the coach-unmute path with
         #     deterministic_confirmation as fallback, which reads totals

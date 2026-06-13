@@ -2,9 +2,10 @@
 T1.5 — Tests for the generalized interim heads-up.
 
 The narrow web_search-only mechanism (commit f5987f0) is now wider:
-search_food_database, query_history, and generate_image also get a one-line
-in-voice "let me check" bubble before the slow execute_tool_calls step, so the
-user isn't staring at a typing indicator for seconds.
+search_food_database, query_history, generate_image, and track_metric also
+get a one-line in-voice "let me check" bubble before the slow
+execute_tool_calls step, so the user isn't staring at a typing indicator
+for seconds.
 
 These tests pin the contract:
   - the deterministic fallback is short, in-voice, and stable per input
