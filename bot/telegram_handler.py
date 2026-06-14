@@ -727,9 +727,14 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
 
                 await update.message.reply_text(
-                    f"hey {first_name} — already got your profile. nothing to fill in."
+                    f"hey {first_name} — already read through your profile, so we skip all the setup. 💪"
                 )
                 await update.message.reply_text(profile_line + ".")
+                await update.message.reply_text(
+                    "here's how we work: text me your meals and training as you go — voice "
+                    "notes and food photos both land, rough is totally fine. i do the math "
+                    "and learn your patterns as we go. (type /howto anytime for the full rundown.)"
+                )
                 await update.message.reply_text(cta)
             else:
                 # Code expired, already used, or not found — start normal flow
@@ -1514,7 +1519,35 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "<i>bench 225x5 for 3 sets</i>\n"
         "<i>weight 191.4 this morning</i>\n"
         "<i>30 min incline walk</i>\n\n"
-        "voice notes and food photos work too.",
+        "voice notes and food photos work too.\n\n"
+        "new here? /howto walks you through getting the most out of me.",
+        parse_mode="HTML"
+    )
+
+
+async def cmd_howto(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """How to get the most out of Arnie — sent on /howto or /guide.
+
+    Deterministic, in-voice copy (not LLM): this is the one place a new user can
+    pull up the full 'how we work together' rundown on demand. The throughline is
+    that Arnie gets sharper the more, and the more specifically, they log."""
+    await update.message.reply_text(
+        "<b>how to get the most out of me</b>\n\n"
+        "i get sharper the more you feed me. that's the whole game. the basics:\n\n"
+        "<b>1. log as it happens.</b> meals, workouts, weight, water — just text me in the "
+        "moment. <i>had a chicken bowl</i>, <i>bench 185x5x3</i>, <i>191 this morning</i>. "
+        "rough is fine, i do the math.\n\n"
+        "<b>2. be specific when it counts.</b> portions, brands, how it was cooked — "
+        "<i>6oz grilled</i> beats <i>some chicken</i>. but never stress it, i fill the gaps "
+        "and ask only if it'll move the numbers.\n\n"
+        "<b>3. talk, don't fill out forms.</b> voice notes and food photos both work. snap "
+        "the plate or ramble the day and i'll sort it.\n\n"
+        "<b>4. correct me.</b> if i call a portion or a number wrong, just say so — "
+        "<i>no, that was a double</i>. i remember the fix and won't miss it next time.\n\n"
+        "<b>5. tell me how you like to be coached.</b> blunt, gentle, more detail, less chat — "
+        "say the word and i adjust.\n\n"
+        "the more you log, the better i read your patterns and the sharper the coaching gets.\n\n"
+        "check in anytime: /today  ·  /week  ·  /dash",
         parse_mode="HTML"
     )
 
@@ -1540,7 +1573,8 @@ async def _post_init(app: Application):
         BotCommand("dash",    "Open your personal dashboard"),
         BotCommand("me",      "Profile, targets & settings"),
         BotCommand("connect", "Link Whoop or Apple Health"),
-        BotCommand("help",    "How to use Arnie"),
+        BotCommand("howto",   "Get the most out of Arnie"),
+        BotCommand("help",    "Commands & quick reference"),
     ])
     logger.info("Arnie is ready.")
 
@@ -1566,6 +1600,8 @@ def build_app() -> Application:
 
     app.add_handler(CommandHandler("start",   cmd_start))
     app.add_handler(CommandHandler("help",    cmd_help))
+    app.add_handler(CommandHandler("howto",   cmd_howto))
+    app.add_handler(CommandHandler("guide",   cmd_howto))
     app.add_handler(CommandHandler("today",   cmd_today))
     app.add_handler(CommandHandler("ai",      cmd_ai))
     app.add_handler(CommandHandler("me",      cmd_me))

@@ -90,6 +90,7 @@ from core.prompts.nudges import (
     NUDGE_SLOT_INSTRUCTIONS as _SLOT_INSTRUCTIONS,
     NEW_USER_SYSTEM as _NEW_USER_SYSTEM,
     NEW_USER_SLOT_INSTRUCTIONS as _NEW_USER_SLOT_INSTRUCTIONS,
+    NEW_USER_HOWTO_DIRECTIVE as _NEW_USER_HOWTO_DIRECTIVE,
 )
 
 # Eligibility decisions live in the reminders package now — the scheduler is the
@@ -177,8 +178,12 @@ def _silence_streak(rows) -> int:
     return streak
 
 
-async def _llm_new_user_nudge(user, log, prefs, slot: str, name: str) -> str:
-    """Generate a new-user engagement message via Claude Haiku."""
+async def _llm_new_user_nudge(user, log, prefs, slot: str, name: str,
+                              surface_howto: bool = False) -> str:
+    """Generate a new-user engagement message via Claude Haiku.
+
+    surface_howto: the user still hasn't logged anything at all since signup —
+    append the /howto on-ramp directive so this nudge offers the rundown."""
     from core.llm import chat
 
     cal = round(log.total_calories) if log else 0
@@ -190,6 +195,8 @@ async def _llm_new_user_nudge(user, log, prefs, slot: str, name: str) -> str:
     cal_t = prefs.calorie_target if prefs else None
     pro_t = prefs.protein_target if prefs else None
     instr = _NEW_USER_SLOT_INSTRUCTIONS.get(slot, "Send a brief, personal coaching check-in.")
+    if surface_howto:
+        instr += _NEW_USER_HOWTO_DIRECTIVE
 
     # height/weight may be None now (height collected post-onboarding) — format safely
     h = f"{user.height_cm:.0f}cm" if user.height_cm else "?"
@@ -1114,7 +1121,21 @@ async def _run_reminders():
                                 break
 
                         if new_slot:
-                            msg = await _llm_new_user_nudge(user, log, prefs, new_slot, name)
+                            # A day-or-two in and still not a single log? Offer the
+                            # /howto on-ramp. Only the later warmup slots qualify, and
+                            # the "never logged" check (one small query) runs only when
+                            # one of them actually fires — at most a few times per user.
+                            surface_howto = False
+                            if new_slot in ("warmup_24h", "warmup_36h", "warmup_48h"):
+                                from db.queries import get_recent_logs
+                                _recent = await get_recent_logs(db, user.id, days=3)
+                                _ever_logged = any(
+                                    (dl.food_entries or dl.exercise_entries)
+                                    for dl in _recent
+                                )
+                                surface_howto = not _ever_logged
+                            msg = await _llm_new_user_nudge(user, log, prefs, new_slot, name,
+                                                            surface_howto=surface_howto)
                             if msg:
                                 await _send_logged(db, user.id, send_id, msg, new_slot)
                                 # Persist the fired slot so it never re-fires after a deploy

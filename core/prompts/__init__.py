@@ -17,6 +17,7 @@ from core.prompts.nudges import (
     NUDGE_SLOT_INSTRUCTIONS,
     NEW_USER_SYSTEM,
     NEW_USER_SLOT_INSTRUCTIONS,
+    NEW_USER_HOWTO_DIRECTIVE,
 )
 
 __all__ = [
@@ -26,4 +27,5 @@ __all__ = [
     "NUDGE_SLOT_INSTRUCTIONS",
     "NEW_USER_SYSTEM",
     "NEW_USER_SLOT_INSTRUCTIONS",
+    "NEW_USER_HOWTO_DIRECTIVE",
 ]

@@ -119,3 +119,13 @@ NEW_USER_SLOT_INSTRUCTIONS: dict[str, str] = {
         "if nothing logged: one honest question — 'what's getting in the way?' under 2 sentences."
     ),
 }
+
+# Appended to a new-user nudge instruction (warmup_24h/36h/48h) ONLY when the user
+# still hasn't logged a single thing since signing up. Surfaces /howto as the
+# low-friction on-ramp without nagging. Kept here so all nudge copy lives together.
+NEW_USER_HOWTO_DIRECTIVE = (
+    " IMPORTANT: they have not logged anything at all yet since signing up. keep it warm "
+    "and zero-pressure, make starting feel effortless, and in ONE of your bubbles let them "
+    "know they can text /howto anytime for a quick rundown on getting the most out of you. "
+    "never naggy, never guilt — just an open door."
+)

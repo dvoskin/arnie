@@ -56,7 +56,7 @@ async def freq_env(monkeypatch):
     async def _fake_morning_briefing(*a, **kw):
         return "morning briefing"
 
-    async def _fake_new_user_nudge(user, log, prefs, slot, name):
+    async def _fake_new_user_nudge(user, log, prefs, slot, name, surface_howto=False):
         return f"warmup {slot}"
 
     async def _fake_followup(user, pq, name):
