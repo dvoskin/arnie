@@ -534,18 +534,22 @@ async def get_attributes_for_context(db, user_id: int, message_text: str = "") -
     Attributes are grouped by category and annotated with confidence so the
     model can distinguish confirmed facts from working hypotheses.
 
-    The message_text arg is kept for backward-compat with callers but is no
-    longer used to filter — the gating logic was removed when the attribute
-    store became the source of truth.
+    `message_text` drives the salience layer (memory/salience.py): the full
+    active picture is always shown, but the facts most relevant to THIS message
+    are spotlighted up top, and archived facts the default block omits are
+    RECALLED when the topic matches — purely additive, nothing is dropped.
     """
+    from memory.salience import select_relevant
+
     rows = await get_all_attributes(db, user_id)
     if not rows:
         return ""
 
-    # Everything except archived rows. No keyword gating — coaching benefits
-    # from always knowing the full picture (e.g. injury matters for a meal
-    # question if it affects activity level).
+    # Active picture = everything except archive tier (coaching benefits from the
+    # full picture — e.g. an injury matters for a meal question). Archive tier is
+    # held back from the default block but stays recallable on a topic match.
     selected = [r for r in rows if (r.relevance_tier or "contextual") != "archive"]
+    archived = [r for r in rows if (r.relevance_tier or "contextual") == "archive"]
 
     if not selected:
         return ""
@@ -554,6 +558,15 @@ async def get_attributes_for_context(db, user_id: int, message_text: str = "") -
         "[AI PROFILE — central source of truth, what Arnie has learned about this user.",
         "Read on every turn. Confirmed facts are ground truth; inferred facts are working hypotheses.]"
     ]
+
+    # Spotlight: the active facts most pertinent to what the user just said, so
+    # the model attends to them first even as the profile grows.
+    spotlight = select_relevant(message_text, selected, k=4)
+    if spotlight:
+        lines.append("  [RELEVANT TO THIS MESSAGE — weight these first]")
+        for row in spotlight:
+            lines.append(f"    {row.display_name or row.attribute_key}: {row.value}")
+
     by_cat: dict[str, list] = {}
     for row in selected:
         by_cat.setdefault(row.category, []).append(row)
@@ -570,6 +583,14 @@ async def get_attributes_for_context(db, user_id: int, message_text: str = "") -
             conf_tag = f" [{row.confidence}]" if row.confidence != "confirmed" else ""
             unit_str = f" {row.unit}" if row.unit else ""
             lines.append(f"    {row.display_name or row.attribute_key}: {row.value}{unit_str}{conf_tag}")
+
+    # Recall: archived facts (aged out of the default block) that match the topic.
+    recalled = select_relevant(message_text, archived, k=3)
+    if recalled:
+        lines.append("  [RECALLED — older facts that fit this topic]")
+        for row in recalled:
+            unit_str = f" {row.unit}" if row.unit else ""
+            lines.append(f"    {row.display_name or row.attribute_key}: {row.value}{unit_str}")
 
     return "\n".join(lines)
 
