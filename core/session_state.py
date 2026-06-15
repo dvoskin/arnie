@@ -216,6 +216,23 @@ def build_session_state(
             f"{total_sets} sets across {distinct_movements} movements"
         )
 
+    # ── On-the-board reconciliation line (logging-accuracy guard) ──────────
+    # Explicit per-movement SET COUNT already logged today, so the model can
+    # diff a newly reported set/roll-up against what's saved BEFORE calling
+    # log_exercise — instead of logging a message behind (re-logging a closed
+    # movement, or dropping a set). Compact + scannable; the prompt's
+    # RECONCILE BEFORE LOGGING rule keys off this exact line.
+    _board_counts: dict[str, int] = {}
+    _board_order: list[str] = []
+    for e in entries:
+        nm = getattr(e, "exercise_name", None) or "exercise"
+        if nm not in _board_counts:
+            _board_order.append(nm)
+        _board_counts[nm] = _board_counts.get(nm, 0) + (getattr(e, "sets", None) or 1)
+    if _board_order:
+        board = ", ".join(f"{nm} {_board_counts[nm]}" for nm in _board_order)
+        lines.append(f"On the board (reconcile before adding — log only NEW sets): {board}")
+
     # Last-set timing + rest window from catalog. This is the single most
     # actionable piece for live coaching — tells the model whether the user
     # is mid-rest, ready to push, or stalling.

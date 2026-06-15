@@ -265,9 +265,13 @@ def test_off_program_exercises_listed_separately():
     )
     assert "Off-program done:" in out
     assert "Overhead Cable Extension" in out
-    # The on-program one shouldn't ALSO appear under off-program
-    assert out.count("Cable Pushdown") < 3, (
-        f"Cable Pushdown should appear in Done on program, not duplicated\n{out}"
+    # The on-program one shouldn't appear under off-program (it belongs in
+    # "Done on program"). Check the off-program section directly rather than a
+    # raw count — the "On the board" reconciliation line legitimately mentions
+    # every movement once.
+    off_section = out.split("Off-program done:", 1)[1]
+    assert "Cable Pushdown" not in off_section, (
+        f"Cable Pushdown should be in Done on program, not off-program\n{out}"
     )
 
 
@@ -293,6 +297,24 @@ def test_pick_program_day_finds_best_match():
     }
     picked = pick_program_day(program, entries)
     assert picked == "Arms + Core + Legs Maintenance"
+
+
+def test_on_the_board_line_shows_per_movement_set_counts():
+    """The reconciliation line surfaces each movement's already-logged set
+    count (sum of the sets column) so the model can diff before logging —
+    the fix for the 'logged a message behind' over/under-log drift."""
+    now = datetime(2026, 6, 11, 23, 30, 0)
+    entries = [
+        _e(id_=1, name="Face Pull", sets=3, reps="12,12,12", weight=31.75, seconds_ago=600),
+        _e(id_=2, name="Upright Row", sets=3, reps="12,12,12", weight=49.9, seconds_ago=400),
+        _e(id_=3, name="Cable Front Raise", sets=1, reps="12", weight=36.3, seconds_ago=60),
+    ]
+    log = SimpleNamespace(exercise_entries=entries)
+    out = build_session_state(log, None, now)
+    assert "On the board" in out, out
+    assert "Face Pull 3" in out
+    assert "Upright Row 3" in out
+    assert "Cable Front Raise 1" in out
 
 
 def test_pick_program_day_returns_none_when_no_overlap():

@@ -151,6 +151,41 @@ def recovery_message(kind: str, seed: str = "") -> str:
     return pool[idx]
 
 
+# Rotating session cues for the deterministic exercise-log fallback (fires when
+# the model returns no text after a pure log turn). Emitting the SAME cue every
+# time reads as a spammy Q&A machine (Danny: "next set kept repeating itself").
+# Rotated by a count seed (entries logged today) so consecutive tool-only turns
+# differ — still fully deterministic. The "{X} logged. 💪" head is unchanged so
+# the logged-confirmation tests still key off "logged".
+_EX_CUE_SINGLE = (
+    "What's the next set?",
+    "Next set?",
+    "Keep it rolling.",
+    "What's next?",
+    "Send the next one when it's done.",
+)
+_EX_CUE_MULTI = (
+    "What's next?",
+    "Keep going.",
+    "What's the next movement?",
+    "On to the next?",
+)
+
+
+def _ex_log_seed(log) -> int:
+    """Count of exercise entries on today's log — a seed that increments with
+    each log so consecutive fallbacks rotate. Defensive for test stubs that
+    omit the relationship."""
+    try:
+        return len(getattr(log, "exercise_entries", None) or [])
+    except TypeError:
+        return 0
+
+
+def _rotating_cue(pool: tuple, seed: int) -> str:
+    return pool[seed % len(pool)]
+
+
 def deterministic_confirmation(tool_calls, log, prefs, tool_results=None) -> str:
     """
     Build a meaningful confirmation from what was actually logged, used when the
@@ -308,12 +343,14 @@ def deterministic_confirmation(tool_calls, log, prefs, tool_results=None) -> str
             if tc.get("name") == "log_exercise"
         ]
         ex_names = [n for n in ex_names if n]
+        _seed = _ex_log_seed(log)
         if len(ex_names) > 1:
             # Multi-exercise turn — stay in session mode
-            return f"Logged {len(ex_names)} exercises. 💪|||What's next?"
+            return f"Logged {len(ex_names)} exercises. 💪|||{_rotating_cue(_EX_CUE_MULTI, _seed)}"
         ex_label = ex_names[0] if ex_names else "exercise"
-        # Single exercise logged — neutral, keeps workout open
-        return f"{ex_label.capitalize()} logged. 💪|||What's the next set?"
+        # Single exercise logged — neutral, keeps workout open; rotate the cue
+        # so back-to-back logs don't repeat the same line verbatim.
+        return f"{ex_label.capitalize()} logged. 💪|||{_rotating_cue(_EX_CUE_SINGLE, _seed)}"
     if "log_body_weight" in names:
         # Guard 1: if an exercise was also logged this turn, log_body_weight is
         # almost certainly a false positive (exercise weight mis-routed as body weight).
