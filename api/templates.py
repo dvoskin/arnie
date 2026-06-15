@@ -794,6 +794,32 @@ body.brain-active footer{{display:none}}
 .cw-tg:hover{{color:var(--ac);background:var(--ac-dim)}}
 .cw-tg svg{{flex-shrink:0;opacity:.85}}
 .cw-tg:hover svg{{opacity:1}}
+.cw-composer{{
+  flex-shrink:0;display:flex;align-items:flex-end;gap:8px;
+  padding:10px 12px;border-top:1px solid var(--bd);
+}}
+.cw-input{{
+  flex:1;min-width:0;resize:none;max-height:96px;
+  background:var(--sf2);border:1px solid var(--bd);border-radius:14px;
+  color:var(--tx);font-family:inherit;font-size:13.5px;line-height:1.4;
+  padding:9px 12px;outline:none;transition:border-color .15s;
+}}
+.cw-input:focus{{border-color:var(--ac)}}
+.cw-input::placeholder{{color:var(--di)}}
+.cw-send{{
+  flex-shrink:0;width:36px;height:36px;border-radius:50%;border:none;cursor:pointer;
+  background:var(--ac);color:#fff;display:grid;place-items:center;
+  transition:opacity .15s,transform .1s;
+}}
+.cw-send:hover{{opacity:.9}}
+.cw-send:active{{transform:scale(.94)}}
+.cw-send:disabled{{opacity:.45;cursor:default}}
+.cw-typing{{display:inline-flex;gap:3px;padding:4px 2px}}
+.cw-typing span{{width:6px;height:6px;border-radius:50%;background:var(--mu);
+  animation:cwBlink 1.2s infinite ease-in-out}}
+.cw-typing span:nth-child(2){{animation-delay:.18s}}
+.cw-typing span:nth-child(3){{animation-delay:.36s}}
+@keyframes cwBlink{{0%,80%,100%{{opacity:.25}}40%{{opacity:1}}}}
 @media(max-width:940px){{
   .cw-panel{{
     top:62px;right:12px;left:12px;
@@ -6463,6 +6489,47 @@ function renderChatThread(turns,initial){{
   thread.innerHTML=html;
   if(initial||wasNear) thread.scrollTop=thread.scrollHeight;
 }}
+
+// ── Web composer — send a message through the SAME brain as the bots ─────────
+// POSTs to /api/chat; the turn is logged as platform="web" so it shows up in
+// this thread (and on Telegram/iMessage). Optimistic append, then a reload
+// reconciles against the server copy.
+function cwAutogrow(el){{ el.style.height='auto'; el.style.height=Math.min(el.scrollHeight,96)+'px'; }}
+function cwKey(e){{ if(e.key==='Enter' && !e.shiftKey){{ e.preventDefault(); sendChatMessage(); }} }}
+function _cwAppend(html){{
+  var thread=document.getElementById('cw-thread');
+  var empty=thread.querySelector('.cw-state'); if(empty) thread.innerHTML='';
+  thread.insertAdjacentHTML('beforeend',html);
+  thread.scrollTop=thread.scrollHeight;
+}}
+async function sendChatMessage(){{
+  var inp=document.getElementById('cw-input'), btn=document.getElementById('cw-send');
+  var text=(inp.value||'').trim();
+  if(!text) return;
+  inp.value=''; cwAutogrow(inp); inp.focus();
+  btn.disabled=true;
+  var now=new Date().toLocaleTimeString('en-US',{{hour:'numeric',minute:'2-digit'}});
+  _cwAppend('<div class="cw-row me"><div class="cw-bubble">'+esc(text)+'</div>'
+    +'<div class="cw-meta"><span class="cw-cdot tg" style="background:var(--ac)"></span>'+esc('Web \\u00b7 '+now)+'</div></div>');
+  _cwAppend('<div class="cw-row ar" id="cw-pending"><div class="cw-bubble"><span class="cw-typing"><span></span><span></span><span></span></span></div></div>');
+  try{{
+    var r=await fetch('/api/chat/'+TOKEN,{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{message:text}})}});
+    var pend=document.getElementById('cw-pending'); if(pend) pend.remove();
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    var data=await r.json();
+    var reply=_cwClean((data.bubbles||[]).join('|||'));
+    if(reply) _cwAppend('<div class="cw-row ar"><div class="cw-bubble">'+esc(reply)+'</div></div>');
+    _cwSig='';                       // force the next poll to re-render from server truth
+    loadChatWidget(false);
+    delete _dayCache[_viewingDate];  // a web turn may have logged food/water/etc.
+    if(typeof _activeTab!=='undefined' && _activeTab==='day') loadDayData(_viewingDate);
+  }}catch(e){{
+    var pend2=document.getElementById('cw-pending'); if(pend2) pend2.remove();
+    _cwAppend('<div class="cw-row ar"><div class="cw-bubble" style="color:var(--mu)">Could not send that. Try again in a moment.</div></div>');
+  }}finally{{
+    btn.disabled=false;
+  }}
+}}
 </script>
 
 <!-- LOG MODAL — direct body child so position:fixed works across all containers -->
@@ -6542,10 +6609,13 @@ function renderChatThread(turns,initial){{
     <button class="cw-close" onclick="toggleChatWidget()" aria-label="Close">&#215;</button>
   </div>
   <div class="cw-thread" id="cw-thread"><div class="cw-state">Loading&hellip;</div></div>
-  <a class="cw-tg" href="tg://resolve?domain={bot_username}" target="_blank" rel="noopener">
-    <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M22 3 11 14"/><path d="M22 3 15 22l-4-8-8-4z"/></svg>
-    New message on Telegram
-  </a>
+  <div class="cw-composer">
+    <textarea class="cw-input" id="cw-input" rows="1" placeholder="Message Arnie&hellip;"
+      oninput="cwAutogrow(this)" onkeydown="cwKey(event)"></textarea>
+    <button class="cw-send" id="cw-send" onclick="sendChatMessage()" aria-label="Send">
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4z"/></svg>
+    </button>
+  </div>
 </div>
 </body>
 </html>"""
