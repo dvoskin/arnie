@@ -1065,6 +1065,19 @@ async def _build_stats_for_user(db, user, target_date=None):
                  "cardio_type": e.cardio_type}
                 for e in (log.exercise_entries or [])
             ],
+            # Per-entry hydration (canonical WaterEntry rows) so the dashboard
+            # can show the day total first and expand into the individual logs.
+            # total_water_ml above stays the cached aggregate. Sorted oldest →
+            # latest; key never raises on a null timestamp.
+            "water_entries": [
+                {"id": w.id, "amount_ml": round(w.amount_ml or 0),
+                 "context": w.context,
+                 "timestamp": w.timestamp.isoformat() if w.timestamp else None}
+                for w in sorted(
+                    (log.water_entries or []),
+                    key=lambda w: (w.timestamp or datetime.min, w.id or 0),
+                )
+            ],
         }
 
     hist_data = [
@@ -1073,6 +1086,7 @@ async def _build_stats_for_user(db, user, target_date=None):
          "protein": round(log.total_protein or 0),
          "carbs": round(log.total_carbs or 0),
          "fats": round(log.total_fats or 0),
+         "water_ml": round(log.total_water_ml or 0),
          "workout": log.workout_completed}
         for log in sorted(history, key=lambda l: l.date)
     ]
@@ -1622,6 +1636,38 @@ async def api_delete_food(entry_id: int, token: str = Query(...)):
                                 cal_target=prefs.calorie_target if prefs else None),
         )
     asyncio.create_task(_send_dashboard_notification(**notify))
+    return {"status": "ok"}
+
+
+class WaterPatch(BaseModel):
+    amount_ml: float
+
+
+@app.patch("/api/water/{entry_id}")
+async def api_edit_water(entry_id: int, patch: WaterPatch, token: str = Query(...)):
+    """Edit a single hydration entry from the dashboard, resyncing the day total."""
+    from db.queries import update_water_entry
+    async with AsyncSessionLocal() as db:
+        user = await get_user_by_webhook_token(db, token)
+        if not user:
+            raise HTTPException(status_code=401, detail="Invalid token")
+        entry = await update_water_entry(db, entry_id, user.id, max(0.0, patch.amount_ml))
+        if not entry:
+            raise HTTPException(status_code=404, detail="Entry not found")
+    return {"status": "ok", "id": entry_id}
+
+
+@app.delete("/api/water/{entry_id}")
+async def api_delete_water(entry_id: int, token: str = Query(...)):
+    """Delete a single hydration entry from the dashboard, resyncing the day total."""
+    from db.queries import delete_water_entry
+    async with AsyncSessionLocal() as db:
+        user = await get_user_by_webhook_token(db, token)
+        if not user:
+            raise HTTPException(status_code=401, detail="Invalid token")
+        ok = await delete_water_entry(db, entry_id, user.id)
+        if not ok:
+            raise HTTPException(status_code=404, detail="Entry not found")
     return {"status": "ok"}
 
 
@@ -2990,6 +3036,36 @@ async def api_log_food(body: FoodLogBody, token: str = Query(...)):
             fats=round(body.fats, 1),
             estimated_flag=body.estimated,
         )
+    return {"status": "ok", "id": entry.id}
+
+
+class WaterLogBody(BaseModel):
+    amount_ml: float
+    log_date: Optional[str] = None  # YYYY-MM-DD, defaults to today
+
+
+@app.post("/api/water/log")
+async def api_log_water(body: WaterLogBody, token: str = Query(...)):
+    """Manual hydration log from the dashboard. Adds a canonical WaterEntry row
+    and bumps the cached DailyLog.total_water_ml aggregate (the tile/context read
+    it)."""
+    from db.queries import add_water_entry
+    async with AsyncSessionLocal() as db:
+        user = await get_user_by_webhook_token(db, token)
+        if not user:
+            raise HTTPException(status_code=401, detail="Invalid token")
+        tz = getattr(user, "timezone", None) or "UTC"
+        if body.log_date:
+            log = await get_or_create_log_for_date(db, user.id, date.fromisoformat(body.log_date))
+        else:
+            log = await get_or_create_today_log(db, user.id, tz)
+        amount = max(0.0, body.amount_ml)
+        entry = await add_water_entry(
+            db, user.id, log.id, amount_ml=amount, source_type="dashboard",
+        )
+        # add_water_entry leaves the aggregate to the caller — bump it here.
+        log.total_water_ml = (log.total_water_ml or 0) + amount
+        await db.commit()
     return {"status": "ok", "id": entry.id}
 
 
