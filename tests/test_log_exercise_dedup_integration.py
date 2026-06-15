@@ -160,6 +160,67 @@ async def test_first_exercise_of_session_writes_through(monkeypatch):
     assert write_count["n"] == 1
 
 
+# ── Multi-set re-log window (Danny 2026-06-14 phantom Face Pull) ─────────────
+
+@pytest.mark.asyncio
+async def test_multiset_relog_within_10min_blocked(monkeypatch):
+    """A completed multi-set block (sets>=2) re-fired 8 minutes later — the
+    Danny 2026-06-14 Face Pull case (3×12 @ 70lb logged at 23:41, re-logged
+    identically at 23:49). Outside the 120s single-set window but inside the
+    widened 600s multi-set window → must be blocked."""
+    user = SimpleNamespace(id=1, timezone="UTC")
+    # 8 minutes ago — outside 120s, inside the 600s multi-set window
+    prior = _prior_entry(id_=194, name="Face Pull", sets=3, reps="12,12,12",
+                         weight=31.751, seconds_ago=480)
+    today_log = SimpleNamespace(id=1, exercise_entries=[prior])
+
+    write_count = {"n": 0}
+
+    async def _no_write(*a, **kw):
+        write_count["n"] += 1
+
+    monkeypatch.setattr(TE, "add_exercise_entry", _no_write)
+
+    result = await TE._dispatch(
+        "log_exercise",
+        {"exercise_name": "Face Pull", "sets": 3, "reps": "12,12,12",
+         "weight": 70, "weight_unit": "lbs"},
+        user, today_log, db=None, source_type="text",
+    )
+    assert result.startswith("Already on the board:"), result
+    assert write_count["n"] == 0, "8-min multi-set re-log must be blocked"
+
+
+@pytest.mark.asyncio
+async def test_single_set_relog_at_8min_still_writes(monkeypatch):
+    """A SINGLE-set entry re-reported 8 minutes later stays legitimate — the
+    widened window applies ONLY to multi-set blocks, so a real second single
+    at the same load must still write through (no false block)."""
+    user = SimpleNamespace(id=1, timezone="UTC")
+    prior = _prior_entry(id_=189, name="Cable Lateral Raise", sets=1,
+                         reps="16", weight=9.072, seconds_ago=480)
+    today_log = SimpleNamespace(id=1, exercise_entries=[prior])
+
+    write_count = {"n": 0}
+
+    async def _capture(*a, **kw):
+        write_count["n"] += 1
+
+    monkeypatch.setattr(TE, "add_exercise_entry", _capture)
+
+    async def _refresh(*a, **kw):
+        pass
+
+    result = await TE._dispatch(
+        "log_exercise",
+        {"exercise_name": "Cable Lateral Raise", "sets": 1, "reps": "16",
+         "weight": 20, "weight_unit": "lbs"},
+        user, today_log, db=SimpleNamespace(refresh=_refresh), source_type="text",
+    )
+    assert result.startswith("Logged "), result
+    assert write_count["n"] == 1, "single-set re-log at 8min must still write"
+
+
 # ── deterministic_confirmation: dedup-aware fallback ─────────────────────────
 
 def test_deterministic_confirmation_handles_already_on_board():

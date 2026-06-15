@@ -1153,6 +1153,20 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
                     e for e in candidate_entries
                     if getattr(e, "id", None) in pre_existing_exercise_ids
                 ]
+            # Re-log window: a completed MULTI-SET block (sets>=2, e.g. "3×12 @ 70")
+            # is extremely unlikely to be legitimately re-performed identically later
+            # in the same session, but the model DOES re-fire it minutes later when
+            # the user pivots to the next movement (Danny 2026-06-14: Face Pull 3×12
+            # logged at 23:41, re-logged identically at 23:49 — 8 min later, outside
+            # the 120s guard → 7 sets stored for 3 performed). Widen the guard to
+            # 10 min for multi-set blocks; single-set entries keep the tight 120s
+            # window so a legit repeated single at the same load still writes through.
+            _sets_in = inp.get("sets")
+            try:
+                _is_multiset = _sets_in is not None and int(_sets_in) >= 2
+            except (TypeError, ValueError):
+                _is_multiset = False
+            _dedup_window = 600 if _is_multiset else 120
             dup = is_duplicate_of_recent(
                 exercise_name=canonical_name,
                 sets=inp.get("sets"),
@@ -1160,6 +1174,7 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
                 weight_kg=weight_kg,
                 existing_entries=candidate_entries,
                 now_utc=now_utc,
+                window_sec=_dedup_window,
             )
             if dup is not None:
                 return format_dedup_result(dup, now_utc=now_utc)
