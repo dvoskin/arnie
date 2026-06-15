@@ -22,19 +22,19 @@ proactive profile_stats follow-up; city sets timezone whenever they mention it.
 # paragraph), then three two-line messages. Landing variant inserts a trial line.
 INTRO_BUBBLES = [
     # Message 1 — short; gets the iMessage screen effect (first bubble only)
-    "hey, i'm arnie ☺️",
+    "Hey, I'm Arnie ☺️",
     # Message 2
-    "your science-based coach for food, training, and progress."
+    "Your science-based coach for food, training, and progress."
     "\n\n"
-    "just text me. meals, workouts, weight, goals, whatever you want me to know.",
+    "Just text me. Meals, workouts, weight, goals, whatever you want me to know.",
     # Message 3
-    "i'll log it, learn from it, and coach you sharper every day."
+    "I'll log it, learn from it, and coach you sharper every day."
     "\n\n"
-    "no app, no forms, no starting over.",
+    "No app, no forms, no starting over.",
     # Message 4
-    "i remember your goals, your habits, your progress, what actually works for you."
+    "I remember your goals, your habits, your progress, what actually works for you."
     "\n\n"
-    "so, what should i call you?",
+    "So, what should I call you?",
 ]
 
 
