@@ -299,7 +299,7 @@ def deterministic_confirmation(tool_calls, log, prefs, tool_results=None) -> str
             tail = (f"You're at {cal} / {cal_t} calories today." if cal_t
                     else f"That's {cal} calories so far today." if cal
                     else "Send the next meal.")
-            return f"Got it — already on the board. 🍳|||{tail}"
+            return f"Got it, already on the board. 🍳|||{tail}"
         if len(foods) == 1:
             head = f"{foods[0][:1].upper() + foods[0][1:]} logged."
         elif foods:
@@ -308,7 +308,7 @@ def deterministic_confirmation(tool_calls, log, prefs, tool_results=None) -> str
             head = "Meal logged."
         if cal_t:
             if cal >= cal_t:
-                tail = f"You're at {cal} / {cal_t} calories today — keep the rest controlled."
+                tail = f"You're at {cal} / {cal_t} calories today, keep the rest controlled."
             elif cal >= cal_t * 0.85:
                 tail = f"You're at {cal} / {cal_t} calories today, tight finish."
             else:
@@ -316,7 +316,7 @@ def deterministic_confirmation(tool_calls, log, prefs, tool_results=None) -> str
         else:
             tail = f"That's {cal} calories so far today."
         if pro_t and pro < pro_t * 0.85:
-            return f"{head}|||{tail}|||Protein's at {pro} / {pro_t}g — go protein-first next."
+            return f"{head}|||{tail}|||Protein's at {pro} / {pro_t}g, go protein-first next."
         if pro_t:
             return f"{head}|||{tail}|||{pro} / {pro_t}g protein so far. What's next?"
         return f"{head}|||{tail}|||Send the next meal."
@@ -331,7 +331,7 @@ def deterministic_confirmation(tool_calls, log, prefs, tool_results=None) -> str
         # check is conservative (we may under-claim) but never false-positive.
         last_ex_result = str(tool_results.get("log_exercise", "") or "")
         if last_ex_result.startswith("Already on the board"):
-            return "Got it — already on the board. 💪|||What's next?"
+            return "Got it, already on the board. 💪|||What's next?"
         # Mid-workout detection: if more than one exercise logged today (including this
         # turn) the user is still in session — don't imply "workout done."
         # We check the log totals: workout_completed is set after any exercise entry,
@@ -375,7 +375,7 @@ def deterministic_confirmation(tool_calls, log, prefs, tool_results=None) -> str
         # Same dedup-aware shape as log_food / log_exercise above.
         last_water_result = str(tool_results.get("log_water", "") or "")
         if last_water_result.startswith("Already on the board"):
-            return "Got it — already on the board. 💧|||Keep sipping."
+            return "Got it, already on the board. 💧|||Keep sipping."
         return "Water logged. 💧|||Keep sipping."
     if names & {"delete_food_entry", "delete_exercise_entry"}:
         tail = (f"You're at {cal} / {cal_t} calories now." if cal_t
@@ -389,9 +389,9 @@ def deterministic_confirmation(tool_calls, log, prefs, tool_results=None) -> str
         if "food_logging_mode" in fields:
             mode = str(fields["food_logging_mode"]).lower()
             if mode == "quick":
-                return "Got it — logging on best estimate from now.|||Send me what you've eaten."
+                return "Got it, logging on best estimate from now.|||Send me what you've eaten."
             if mode == "strict":
-                return "Got it — confirming details before every log.|||Send me what you've eaten."
+                return "Got it, confirming details before every log.|||Send me what you've eaten."
             return "Logging mode updated.|||Send me what you've eaten."
         if "proactive_messaging_enabled" in fields:
             on = fields["proactive_messaging_enabled"]

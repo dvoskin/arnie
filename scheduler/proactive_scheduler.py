@@ -1246,12 +1246,12 @@ async def _run_reminders():
                                 parts = []
                                 if pro_behind:
                                     rem = prefs.protein_target - pro
-                                    parts.append(f"{pro:.0f}g protein so far — {rem:.0f}g left, hit it at lunch")
+                                    parts.append(f"{pro:.0f}g protein so far, {rem:.0f}g left, hit it at lunch")
                                 if cal_behind:
                                     rem_c = prefs.calorie_target - cal
-                                    parts.append(f"only {cal:.0f} cal in, need ~{rem_c:.0f} more")
+                                    parts.append(f"only {cal:.0f} calories in, need about {rem_c:.0f} more")
                                 if cal_ahead:
-                                    parts.append(f"already at {cal:.0f} cal — pace yourself through the afternoon")
+                                    parts.append(f"already at {cal:.0f} calories, pace yourself through the afternoon")
                                 msg = ", ".join(parts).capitalize() + "."
                             if await _send_slot_deduped(db, user, send_id, msg, "midday_pacing",
                                                         sent_slots, today_str):
@@ -1273,7 +1273,7 @@ async def _run_reminders():
                                     f"Still training? Might be worth going lighter."
                                 )
                             else:
-                                msg = f"3:30 — workout not logged yet, {name}. Still on for today?"
+                                msg = f"It's 3:30 and no workout logged yet, {name}. Still on for today?"
                         if await _send_slot_deduped(db, user, send_id, msg, "preworkout",
                                                     sent_slots, today_str):
                             skip_counts["sent"] += 1
@@ -1286,7 +1286,7 @@ async def _run_reminders():
                         msg = await _llm_nudge(user, log, prefs, health_snap, "workout_check", name,
                                                recent_proactive=recent_proactive)
                         if not msg:
-                            msg = f"4:30 — workout still hasn't happened, {name}. Happening today or are we calling it a rest day?"
+                            msg = f"It's 4:30 and the workout still hasn't happened, {name}. Happening today, or are we calling it a rest day?"
                         if await _send_slot_deduped(db, user, send_id, msg, "workout_check",
                                                     sent_slots, today_str):
                             skip_counts["sent"] += 1
@@ -1353,7 +1353,7 @@ def _fmt_whoop_notification(snap) -> str:
         return ""
     rec = snap.recovery_score
     emoji = "🟢" if rec >= 67 else ("🟡" if rec >= 34 else "🔴")
-    lines = [f"<b>⚡ Whoop — {snap.date}</b>", ""]
+    lines = [f"<b>⚡ Whoop · {snap.date}</b>", ""]
     lines.append(f"{emoji} Recovery: <b>{rec}%</b>")
     detail = []
     if snap.hrv:
