@@ -1002,9 +1002,17 @@ def parse_natural_period(period: str, today):
     no DB access, so it's cheap to unit-test.
     """
     from datetime import date as _date, timedelta as _td
+    import re as _re0
     if not period:
         return None
     p = period.strip().lower()
+
+    # Normalize time-of-day qualifiers — they don't change the DAY, but their
+    # presence ("last friday NIGHT", "yesterday evening") used to break parsing
+    # and force the model to compute the date itself (→ wrong-day narration).
+    p = _re0.sub(r"\blast night\b", "yesterday", p)
+    p = _re0.sub(r"\b(tonight|this (?:morning|afternoon|evening|night))\b", "today", p)
+    p = _re0.sub(r"\s+(?:in the\s+)?(?:morning|afternoon|evening|night)s?$", "", p).strip()
 
     # 'last_N' window aliases — accept any positive integer so the model can
     # pull arbitrarily long windows ("last_120", "last_365"). The DB stores
