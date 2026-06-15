@@ -174,6 +174,7 @@ async def get_today_log(db: AsyncSession, user_id: int,
     _opts = [
         selectinload(DailyLog.food_entries),
         selectinload(DailyLog.exercise_entries),
+        selectinload(DailyLog.water_entries),
     ]
 
     async def _fetch(d: date) -> Optional[DailyLog]:
@@ -198,13 +199,14 @@ async def get_today_log(db: AsyncSession, user_id: int,
 
 
 async def get_log_by_date(db: AsyncSession, user_id: int, target_date: date) -> Optional[DailyLog]:
-    """Fetch a specific day's log with food/exercise entries eagerly loaded."""
+    """Fetch a specific day's log with food/exercise/water entries eagerly loaded."""
     result = await db.execute(
         select(DailyLog)
         .where(and_(DailyLog.user_id == user_id, DailyLog.date == target_date))
         .options(
             selectinload(DailyLog.food_entries),
             selectinload(DailyLog.exercise_entries),
+            selectinload(DailyLog.water_entries),
         )
     )
     return result.scalar_one_or_none()
@@ -326,6 +328,58 @@ async def add_water_entry(db: AsyncSession, user_id: int, daily_log_id: int,
     await db.commit()
     await db.refresh(entry)
     return entry
+
+
+async def recompute_water_total(db: AsyncSession, daily_log_id: int) -> float:
+    """Re-sum a day's WaterEntry rows into DailyLog.total_water_ml.
+
+    Called after any manual water edit/delete from the dashboard so the cached
+    aggregate the tile/context read stays in sync with the canonical rows.
+    Returns the new total."""
+    from db.models import WaterEntry
+    rows = (await db.execute(
+        select(WaterEntry.amount_ml).where(WaterEntry.daily_log_id == daily_log_id)
+    )).scalars().all()
+    total = float(sum(a or 0 for a in rows))
+    log = await db.get(DailyLog, daily_log_id)
+    if log is not None:
+        log.total_water_ml = total
+        await db.commit()
+    return total
+
+
+async def update_water_entry(db: AsyncSession, entry_id: int, user_id: int,
+                             amount_ml: float):
+    """Update a single WaterEntry's amount, then resync the day total.
+
+    Scoped by user_id so a token can only touch its own rows. Returns the
+    refreshed entry, or None if not found / not owned."""
+    from db.models import WaterEntry
+    entry = await db.get(WaterEntry, entry_id)
+    if entry is None or entry.user_id != user_id:
+        return None
+    entry.amount_ml = amount_ml
+    await db.commit()
+    if entry.daily_log_id:
+        await recompute_water_total(db, entry.daily_log_id)
+    await db.refresh(entry)
+    return entry
+
+
+async def delete_water_entry(db: AsyncSession, entry_id: int, user_id: int) -> bool:
+    """Delete a single WaterEntry, then resync the day total.
+
+    Scoped by user_id. Returns True if a row was removed."""
+    from db.models import WaterEntry
+    entry = await db.get(WaterEntry, entry_id)
+    if entry is None or entry.user_id != user_id:
+        return False
+    daily_log_id = entry.daily_log_id
+    await db.delete(entry)
+    await db.commit()
+    if daily_log_id:
+        await recompute_water_total(db, daily_log_id)
+    return True
 
 
 async def get_recent_weights(db: AsyncSession, user_id: int,
