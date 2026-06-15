@@ -382,36 +382,72 @@ async def upsert_many(db, user_id: int, attrs: list[dict]) -> int:
     return count
 
 
-# Generous backstop against runaway growth. The real bound is key-reuse during
-# synthesis (the model is shown existing keys); this only fires for true runaway,
-# and never touches confirmed facts or the workout-program mirror.
-_ACTIVE_CAP = 40
+# Self-healing lifecycle (B):
+#   decay  — situational facts untouched for a while drop to ARCHIVE tier. They
+#            leave the default block but stay RECALLABLE via salience (D), so the
+#            profile stays lean over time without losing anything.
+#   prune  — runaway backstop. Counts only the NON-archive (default-injected) set,
+#            so decay relieves the pressure. Protects identity (core tier) and
+#            user-stated / program facts; otherwise evicts weakest-then-oldest.
+_DECAY_DAYS = 45
+# Generous backstop — engaged users legitimately hold many durable facts; this only
+# fires on true runaway, after decay has already swept the stale tail to archive.
+_ACTIVE_CAP = 60
+_PROTECTED_TIERS = {"core"}
+_PROTECTED_SOURCES = {"user_stated", "training_program"}
+_epoch = datetime(1970, 1, 1, tzinfo=timezone.utc)
+
+
+def _ts(r):
+    t = r.updated_at or _epoch
+    return t.replace(tzinfo=timezone.utc) if t.tzinfo is None else t
+
+
+async def decay_stale_attributes(db, user_id: int, days: int = _DECAY_DAYS) -> int:
+    """Move situational facts not re-observed in `days` to the archive tier.
+    Core/daily identity facts and protected sources are never decayed. Archived
+    rows stay active (recoverable + recallable on topic). Returns count decayed."""
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    rows = (await db.execute(
+        select(UserAttribute).where(and_(
+            UserAttribute.user_id == user_id,
+            UserAttribute.attribute_status == "active",
+            UserAttribute.relevance_tier == "contextual",
+        ))
+    )).scalars().all()
+    n = 0
+    for r in rows:
+        if r.source in _PROTECTED_SOURCES:
+            continue
+        if _ts(r) < cutoff:
+            r.relevance_tier = "archive"
+            n += 1
+    if n:
+        await db.commit()
+        logger.info(f"Decayed {n} stale attributes to archive for user {user_id}")
+    return n
 
 
 async def prune_attributes(db, user_id: int, cap: int = _ACTIVE_CAP) -> int:
-    """If a user has more than `cap` ACTIVE attributes, soft-discontinue the
-    weakest (lowest confidence, then oldest) down to the cap. Confirmed facts and
-    training-program mirrors are never evicted. Returns the count discontinued."""
+    """Runaway backstop. If the NON-archive active set exceeds `cap`, soft-
+    discontinue the weakest (lowest confidence, then oldest) down to the cap.
+    Core-tier and user-stated/program facts are never evicted. Returns count."""
     rows = (await db.execute(
         select(UserAttribute).where(and_(
             UserAttribute.user_id == user_id,
             UserAttribute.attribute_status == "active",
         ))
     )).scalars().all()
-    if len(rows) <= cap:
+    non_archive = [r for r in rows if (r.relevance_tier or "contextual") != "archive"]
+    if len(non_archive) <= cap:
         return 0
 
     _rank = {"needs_verification": 0, "inferred": 1, "confirmed": 2}
-    _epoch = datetime(1970, 1, 1, tzinfo=timezone.utc)
-
-    def _ts(r):
-        t = r.updated_at or _epoch
-        return t.replace(tzinfo=timezone.utc) if t.tzinfo is None else t
-
-    evictable = [r for r in rows
-                 if r.confidence != "confirmed" and r.source != "training_program"]
+    evictable = [r for r in non_archive
+                 if (r.relevance_tier or "contextual") not in _PROTECTED_TIERS
+                 and r.source not in _PROTECTED_SOURCES]
     evictable.sort(key=lambda r: (_rank.get(r.confidence, 1), _ts(r)))
-    n_evict = min(len(rows) - cap, len(evictable))
+    n_evict = min(len(non_archive) - cap, len(evictable))
     for r in evictable[:n_evict]:
         r.attribute_status = "discontinued"
     if n_evict:

@@ -104,11 +104,17 @@ async def consolidate_user_profile(user, db) -> dict:
     Returns {"discontinued": N, "shortened": N} for logging.
     """
     from core.llm import chat
-    from memory.attribute_store import get_all_attributes
+    from memory.attribute_store import get_all_attributes, decay_stale_attributes
 
     attrs = await get_all_attributes(db, user.id)
     if not attrs:
         return {"discontinued": 0, "shortened": 0}
+
+    # Phase 0 — decay: sweep stale situational facts to archive (lean default block,
+    # still recallable on topic via salience). Reload so they drop out of the pass.
+    n_decay = await decay_stale_attributes(db, user.id)
+    if n_decay:
+        attrs = await get_all_attributes(db, user.id)
 
     # Phase 1 — merge rows that are canonical aliases of each other
     n_alias = await _merge_canonical_aliases(db, user.id, attrs)
@@ -116,8 +122,10 @@ async def consolidate_user_profile(user, db) -> dict:
     if n_alias:
         attrs = await get_all_attributes(db, user.id)
 
+    # The LLM only reviews the default-injected (non-archive) set.
+    review = [a for a in attrs if (a.relevance_tier or "contextual") != "archive"]
     lines = []
-    for a in attrs:
+    for a in review:
         conf = f" [{a.confidence}]" if a.confidence != "confirmed" else ""
         lines.append(f"  {a.attribute_key}: {a.value}{conf}")
 
@@ -172,8 +180,8 @@ async def consolidate_user_profile(user, db) -> dict:
         await db.commit()
     total_disc = n_alias + n_disc
     logger.info(
-        f"Profile consolidation for user {user.id}: "
+        f"Profile consolidation for user {user.id}: decayed {n_decay}, "
         f"alias-merged {n_alias}, discontinued {n_disc}, shortened {n_short}"
     )
 
-    return {"discontinued": total_disc, "shortened": n_short}
+    return {"discontinued": total_disc, "shortened": n_short, "decayed": n_decay}
