@@ -434,7 +434,14 @@ async def get_recent_conversations(db: AsyncSession, user_id: int,
 async def log_conversation(db: AsyncSession, user_id: int, raw_message: str,
                            response: str, parsed_intent: str = None,
                            source_type: str = "text",
-                           skills_fired: str | None = None):
+                           skills_fired: str | None = None,
+                           platform: str | None = None):
+    """Persist one conversation turn.
+
+    `platform` tags which surface the turn happened on ("telegram" | "imessage"
+    | "web"). Optional + defaults to the model default ("telegram") so existing
+    callers are unchanged; the dashboard web-chat passes platform="web" so the
+    unified thread can label it correctly across all surfaces."""
     entry = ConversationLog(
         user_id=user_id,
         raw_message=raw_message,
@@ -443,6 +450,8 @@ async def log_conversation(db: AsyncSession, user_id: int, raw_message: str,
         source_type=source_type,
         skills_fired=skills_fired,
     )
+    if platform is not None:
+        entry.platform = platform
     db.add(entry)
     await db.commit()
 
