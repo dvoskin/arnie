@@ -287,8 +287,8 @@ def deterministic_confirmation(tool_calls, log, prefs, tool_results=None) -> str
         "clear_day_log", "search_food_database",
     })
     if _NO_LOG and "web_search" in names:
-        return ("Couldn't pull a clean read on that.|||"
-                "want to try a different angle? cuisine, budget, or a different query.")
+        return ("Couldn't pull a clean read on that just now.|||"
+                "want me to try again, or give me a bit more to go on?")
     if _NO_LOG and "query_history" in names:
         return ("Couldn't pull that history clean.|||"
                 "give me the metric or timeframe again and I'll dig back in.")
