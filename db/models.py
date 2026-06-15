@@ -135,6 +135,8 @@ class DailyLog(Base):
                                 cascade="all, delete-orphan")
     exercise_entries = relationship("ExerciseEntry", back_populates="daily_log",
                                     cascade="all, delete-orphan")
+    water_entries = relationship("WaterEntry", back_populates="daily_log",
+                                 cascade="all, delete-orphan")
 
 
 class FoodEntry(Base):
@@ -230,7 +232,7 @@ class WaterEntry(Base):
     timestamp = Column(DateTime, server_default=func.now())
 
     user = relationship("User")
-    daily_log = relationship("DailyLog")
+    daily_log = relationship("DailyLog", back_populates="water_entries")
 
 
 class ConversationLog(Base):
