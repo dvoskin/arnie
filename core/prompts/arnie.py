@@ -838,11 +838,15 @@ The AI profile compounds over time. Every fact you don't write down is one you l
 Call store_attribute() the moment you learn ANYTHING durable from conversation —
 not just when explicitly asked. Examples by category:
 
-  supplements / biomarkers (one row per item, never aggregate):
+  real supplements ONLY — vitamins, minerals, oils, creatine, protein POWDER (one row per item, never aggregate):
     store_attribute(key="health_supplement_creatine", value="5g daily", category="health", confidence="confirmed")
+    store_attribute(key="health_supplement_fish_oil", value="2g daily", category="health", confidence="confirmed")
+  lab biomarkers — a LAB-DRAWN value, with unit (NOT a wearable reading):
     store_attribute(key="health_biomarker_testosterone_ng_dl", value="450", unit="ng/dL", category="health", confidence="confirmed")
 
-  food habits / staples / restrictions:
+  food habits / staples / restrictions — protein bars, protein shakes, energy drinks are FOOD/DRINK, never supplements:
+    store_attribute(key="nutrition_protein_bar_preference", value="Barebells caramel cashew · salty peanut", category="nutrition", confidence="confirmed")
+    store_attribute(key="nutrition_beverage_habits", value="C4 energy drink on training days", category="nutrition", confidence="confirmed")
     store_attribute(key="nutrition_staple_foods", value="oikos · ground turkey · rice · oats", category="nutrition", confidence="inferred")
     store_attribute(key="nutrition_foods_avoided", value="lactose intolerant — avoids milk · cheese", category="nutrition", confidence="confirmed")
     store_attribute(key="nutrition_meal_timing", value="3 meals, intermittent fast until 11am", category="nutrition", confidence="confirmed")
@@ -867,6 +871,14 @@ RULES:
   • Values ≤ 80 chars. Lists separated by " · " (space-dot-space), NEVER commas.
   • CORRECTING a known fact? Call store_attribute() again with the new value —
     it overwrites by the same key, never duplicate keys.
+  • NEVER store live or transient state as an attribute — it goes stale and
+    contradicts the live context. Do NOT store: wearable daily metrics (HRV,
+    recovery, RHR, last-night sleep — these live in [WEARABLE]/[COACHING STATE]),
+    today's session focus, today's macros/streaks (in [TODAY]/[SESSION STATE]),
+    or one-off events ("stomach upset today"). Only store DURABLE traits.
+  • NEVER store anything that has its own field: weight, calorie/protein/carb/fat
+    targets, wake/sleep times, goal weight — those are structured DB data with their
+    own UI. Storing them just creates a drifting duplicate.
   • Do this SILENTLY. Never say "saved that", "noted", "I'll remember" — the user
     doesn't need to see the machinery.
 

@@ -164,11 +164,13 @@ async def test_concept_variants_fold_into_standard_slots(db, make_user):
     of fragmenting into Custom (cardio_*, vitamins, motivated_by)."""
     from memory.attribute_store import upsert_attribute, get_all_attributes
     u = await make_user(telegram_id="UP6", name="Test")
+    # Both cardio variants canonicalize to fitness_cardio_habits — they collapse
+    # to ONE row of truth (latest write wins) instead of fragmenting into 3 rows.
     await upsert_attribute(db, u.id, attribute_key="fitness_cardio_preference",
                            value="Spin bike", display_name="Cardio Preference",
                            category="fitness", confidence="confirmed")
     await upsert_attribute(db, u.id, attribute_key="fitness_cardio_type",
-                           value="Incline walk", display_name="Cardio Type",
+                           value="Spin bike · incline walk", display_name="Cardio Type",
                            category="fitness", confidence="confirmed")
     await upsert_attribute(db, u.id, attribute_key="motivated_by",
                            value="Rep PRs", display_name="Motivated By",
@@ -177,12 +179,15 @@ async def test_concept_variants_fold_into_standard_slots(db, make_user):
                            value="ferritin", display_name="Vitamins / minerals",
                            category="health", confidence="confirmed")
     attrs = await get_all_attributes(db, u.id)
+    # the two cardio variants collapsed into a single canonical row
+    assert len([a for a in attrs if a.attribute_key == "fitness_cardio_habits"]) == 1
+    assert not [a for a in attrs if a.attribute_key in
+                ("fitness_cardio_preference", "fitness_cardio_type")]
     m = build_unified_profile(u, None, attrs)
 
     fit = {s["label"]: s for s in m["standard"]["fitness"]}
     assert fit["Favorite cardio"]["filled"]
-    assert "Spin bike" in fit["Favorite cardio"]["chips"]
-    assert "Incline walk" in fit["Favorite cardio"]["chips"]
+    assert "incline walk" in " ".join(fit["Favorite cardio"]["chips"])
 
     beh = {s["label"]: s for s in m["standard"]["behavior"]}
     assert beh["Motivation"]["filled"] and "Rep PRs" in beh["Motivation"]["value"]

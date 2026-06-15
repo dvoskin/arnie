@@ -140,6 +140,12 @@ CANONICAL_KEYS: dict[str, str] = {
     "common_staples": "nutrition_staple_foods",
     "key_exercises": "fitness_preferred_exercises",
     "main_lifts": "fitness_preferred_exercises",
+    # cardio frequency phrasings → the one cardio slot
+    "cardio_frequency": "fitness_cardio_habits",
+    # protein amount restatements → the protein-habits slot
+    "typical_protein": "nutrition_protein_habits",
+    "protein_intake_daily": "nutrition_protein_habits",
+    "daily_protein": "nutrition_protein_habits",
 }
 
 # Category defaults for keys that start with a known prefix
@@ -182,9 +188,23 @@ ALWAYS_CORE = {
 
 
 def canonicalize_key(raw_key: str) -> str:
-    """Normalize a raw attribute key to its canonical form."""
+    """Normalize a raw attribute key to its canonical form.
+
+    The alias map is keyed on bare nouns ("cardio_preference"), but the model
+    usually emits already-prefixed keys ("fitness_cardio_preference"). Try the
+    raw key first, then retry with a known category prefix stripped so prefixed
+    synonyms still collapse to the canonical slot.
+    """
     k = raw_key.strip().lower().replace(" ", "_").replace("-", "_")
-    return CANONICAL_KEYS.get(k, k)
+    if k in CANONICAL_KEYS:
+        return CANONICAL_KEYS[k]
+    for prefix in CATEGORY_PREFIXES:
+        if k.startswith(prefix):
+            bare = k[len(prefix):]
+            if bare in CANONICAL_KEYS:
+                return CANONICAL_KEYS[bare]
+            break
+    return k
 
 
 def category_for_key(key: str) -> str:
@@ -199,6 +219,25 @@ def tier_for_key(key: str) -> str:
         return "core"
     cat = category_for_key(key)
     return DEFAULT_TIERS.get(cat, "contextual")
+
+
+# Lane-3 live/transient keys — these have a live source (HealthSnapshot, today_log)
+# or are recomputed every turn. Persisting them as attributes freezes a stale copy
+# that then contradicts the live context (e.g. HRV stuck at an old reading, "today's
+# session" showing yesterday). Writes to these keys are dropped at the source; the
+# live data surfaces through [WEARABLE]/[COACHING STATE]/[SESSION STATE]/[TODAY].
+_LIVE_METRIC_KEYS = {
+    "health_biometric_hrv", "health_biometric_rhr", "health_recovery_metric",
+    "health_recovery", "health_recovery_score", "health_sleep_quality",
+    "health_biometric_sleep", "health_strain", "health_biometric_weight",
+    "fitness_session_type_today", "fitness_session_today",
+    "behavior_adherence_streak", "behavior_logging_streak",
+}
+
+
+def is_live_metric_key(key: str) -> bool:
+    """True if `key` is a Lane-3 live/transient metric that must not be persisted."""
+    return key in _LIVE_METRIC_KEYS or key.endswith("_today")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -227,6 +266,14 @@ async def upsert_attribute(
     - Save old value to last_value before overwriting
     """
     key = canonicalize_key(attribute_key)
+
+    # Lane-3 guard: never persist live/transient metrics (see _LIVE_METRIC_KEYS).
+    if is_live_metric_key(key):
+        logger.info(
+            f"Skipped live/transient attribute {key!r} for user {user_id}"
+            " — Lane 3, surfaced live not stored"
+        )
+        return
 
     # Per-item always wins: if writing the health_supplements aggregate while
     # any health_supplement_* per-item rows exist, skip — the per-item rows are

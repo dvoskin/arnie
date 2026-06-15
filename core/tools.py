@@ -533,9 +533,12 @@ _ATTRIBUTE_TOOLS = [
     {
         "name": "store_attribute",
         "description": (
-            "Persist a structured fact you've learned about this user to their permanent profile. "
-            "Use for clear, discrete, queryable facts: supplement dosages, biomarkers (testosterone, HRV), "
+            "Persist a DURABLE fact you've learned about this user to their permanent profile. "
+            "Use for stable, discrete facts: supplement dosages, LAB biomarkers (testosterone, A1c, TSH — a drawn value), "
             "food intolerances, training habits, lifestyle details, behavioral patterns. "
+            "NEVER store live/transient state — wearable daily metrics (HRV, recovery, RHR, last-night sleep), "
+            "today's session, streaks, or anything with its own field (weight, macro targets, wake/sleep times). "
+            "Protein bars/shakes/energy drinks are FOOD (category=nutrition), not supplements. "
             "Each call stores ONE fact under one key. "
             "Prefer this over update_memory when the fact has a single value and a clear category. "
             "Use update_memory only for multi-part coaching observations or narrative notes."

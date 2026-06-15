@@ -123,10 +123,27 @@ preference (confidence=inferred) even with no explicit statement:
 WHAT TO OUTPUT:
 ═══════════════════════════════════════════════════════
 ONLY new or materially changed attributes. If nothing changed since the last
-synthesis, output `[]`. Do NOT output attributes for things in the structured
-DB (name, weight, goal, calorie target) — those have their own UI.
-DO output: supplements, biomarkers, training/eating/sleep habits, behavioral
-patterns, lifestyle details, food preferences, motivators, custom tracked metrics.
+synthesis, output `[]`.
+
+NEVER output (these live elsewhere and only drift if duplicated here):
+  • Structured DB fields — weight, goal weight, calorie/protein/carb/fat targets,
+    wake/sleep times, age, height. They have their own UI.
+  • Live wearable metrics — HRV, recovery, RHR, last-night sleep, strain. These
+    update daily from the device feed; a frozen copy here goes stale immediately.
+  • Transient state — today's session focus, today's macros, current streak,
+    one-off events ("stomach upset today"). Not durable traits.
+
+CLASSIFICATION (resolve at the source):
+  • Protein bars, protein shakes (RTD), energy drinks → FOOD/DRINK, category
+    "nutrition" (nutrition_protein_bar_preference / nutrition_staple_foods /
+    nutrition_beverage_habits). NEVER health_supplement_*.
+  • health_supplement_* is ONLY real supplements: vitamins, minerals, fish oil,
+    creatine, protein POWDER.
+  • Lab values (a1c, glucose, tsh, lh, testosterone, vitamin-D level, eGFR,
+    ferritin) → health_biomarker_<name> with unit, NOT health_supplement_*.
+
+DO output: durable training/eating/sleep habits, real supplements, lab biomarkers,
+behavioral patterns, lifestyle details, food preferences, motivators, custom metrics.
 """
 
 
