@@ -2025,8 +2025,22 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
         if "error" in data:
             return f"History query error: {data['error']}"
 
-        # Format a compact, coach-readable summary
-        lines = [f"HISTORY QUERY — metric={metric}, period={period}"]
+        # Format a compact, coach-readable summary.
+        # Friendly date labels + code-computed totals so the model RELAYS rather
+        # than re-deriving (re-typing ISO dates and hand-summing items is where
+        # messy "sunday, june 14:" formatting and mis-cited totals came from).
+        from datetime import date as _date
+
+        def _friendly_date(iso):
+            try:
+                y, m, d = (int(x) for x in str(iso).split("-"))
+                dt = _date(y, m, d)
+                return f"{dt.strftime('%A, %B')} {dt.day}"   # e.g. "Sunday, June 14"
+            except Exception:
+                return str(iso)
+
+        lines = [f"HISTORY QUERY — metric={metric}, period={period}",
+                 "(relay these dates and numbers EXACTLY as written — do not recompute)"]
         if metric in ("calories", "all") and "avg_calories" in data:
             lines.append(
                 f"Calories: avg {data['avg_calories']}/day "
@@ -2069,17 +2083,24 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
             rows = data["rows"]
             lines.append(f"FOOD ENTRIES ({data.get('entries', 0)} items across "
                          f"{data.get('days_with_data', 0)} days):")
-            current_date = None
+            # Group by day so each day gets a friendly header + a code-computed total.
+            by_day: dict = {}
             for r in rows:
-                if r["date"] != current_date:
-                    current_date = r["date"]
-                    lines.append(f"  {current_date}:")
-                est = "~" if r.get("estimated") else ""
-                qty = f" ({r['quantity']})" if r.get("quantity") else ""
-                lines.append(
-                    f"    • {r['food_name']}{qty} — {est}{r['calories']} calories, "
-                    f"{r['protein']}g protein"
-                )
+                by_day.setdefault(r["date"], []).append(r)
+            for d in sorted(by_day):
+                items = by_day[d]
+                lines.append(f"  {_friendly_date(d)}:")
+                for r in items:
+                    est = "~" if r.get("estimated") else ""
+                    qty = f" ({r['quantity']})" if r.get("quantity") else ""
+                    lines.append(
+                        f"    • {r['food_name']}{qty} — {est}{r['calories']} calories, "
+                        f"{r['protein']}g protein"
+                    )
+                tot_cal = round(sum(r.get("calories") or 0 for r in items))
+                tot_pro = round(sum(r.get("protein") or 0 for r in items))
+                lines.append(f"    DAY TOTAL: {tot_cal} calories, {tot_pro}g protein "
+                             f"({len(items)} items)")
         if metric == "exercise_entries" and "rows" in data:
             lines.append(f"EXERCISE ENTRIES ({data.get('entries', 0)} entries across "
                          f"{data.get('days_with_data', 0)} days):")
@@ -2087,7 +2108,7 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
             for r in data["rows"]:
                 if r["date"] != current_date:
                     current_date = r["date"]
-                    lines.append(f"  {current_date}:")
+                    lines.append(f"  {_friendly_date(current_date)}:")
                 if r.get("sets") and r.get("reps"):
                     w = f" @ {r['weight_lbs']}lb" if r.get("weight_lbs") else ""
                     lines.append(f"    • {r['exercise_name']}: {r['sets']}×{r['reps']}{w}")
@@ -2128,7 +2149,7 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
             lines.append(f"DAY DETAIL — {data.get('days_with_data', 0)} day(s) with data:")
             for d in data["days"]:
                 t = d["totals"]
-                lines.append(f"  {d['date']}: {t['calories']} cal, {t['protein']}g P, "
+                lines.append(f"  {_friendly_date(d['date'])}: {t['calories']} cal, {t['protein']}g P, "
                              f"{t['carbs']}g C, {t['fats']}g F | water {t['water_ml']}ml | "
                              f"workout={'✓' if d['workout_completed'] else '✗'} "
                              f"cardio={'✓' if d['cardio_completed'] else '✗'}")
