@@ -18,16 +18,21 @@ from typing import Optional
 _KG_TO_LB = 2.20462
 
 
-def _reps_val(reps_str) -> Optional[int]:
-    """Representative rep count from a reps string ('12' or '12,12,10')."""
+def _reps_list(reps_str) -> list[int]:
+    """All rep counts in a reps string ('15,11' → [15, 11]); each is one set."""
     if reps_str is None:
-        return None
-    nums = [int(p) for p in re.split(r"[^0-9]+", str(reps_str)) if p.isdigit()]
+        return []
+    return [int(p) for p in re.split(r"[^0-9]+", str(reps_str)) if p.isdigit()]
+
+
+def _reps_val(reps_str) -> Optional[int]:
+    """Representative (max) rep count from a reps string."""
+    nums = _reps_list(reps_str)
     return max(nums) if nums else None
 
 
 def _e1rm(weight_kg: float, reps: int) -> float:
-    """Epley estimated 1-rep max."""
+    """Epley estimated 1-rep max (used internally to pick the best set / direction)."""
     return weight_kg * (1 + reps / 30)
 
 
@@ -61,37 +66,45 @@ def adherence_summary(logs, prefs) -> str:
 
 
 def strength_progression(logs, *, max_lifts: int = 6) -> str:
-    """Per-lift estimated-1RM trend (first vs latest session) across the window."""
-    by_ex: dict[str, list] = {}
+    """Per-lift trend using the BEST set of each SESSION, first→latest.
+
+    Comparing the best set per day (not arbitrary first/last entries) avoids
+    fatigued back-off sets faking a decline. Reported as actual working weight×reps
+    (intuitive) — e1RM is used only to pick the best set and decide direction.
+    """
+    # name -> {date -> best (e1rm, weight_lb, reps, display_name)}
+    by_ex: dict[str, dict] = {}
     for lg in logs:
         for ee in (lg.exercise_entries or []):
-            if not ee.weight or ee.weight <= 0:
-                continue
-            reps = _reps_val(ee.reps)
-            if not reps:
+            if not ee.weight or ee.weight <= 0 or not ee.timestamp:
                 continue
             name = (ee.exercise_name or "").strip()
-            if not name or not ee.timestamp:
+            if not name:
                 continue
-            by_ex.setdefault(name.lower(), []).append(
-                (ee.timestamp, _e1rm(ee.weight, reps), name))
+            wt_lb = ee.weight * _KG_TO_LB
+            for r in _reps_list(ee.reps):
+                cand = (_e1rm(ee.weight, r), wt_lb, r, name)
+                day = ee.timestamp.date()
+                sessions = by_ex.setdefault(name.lower(), {})
+                if day not in sessions or cand[0] > sessions[day][0]:
+                    sessions[day] = cand
 
     rows = []
-    for _, entries in by_ex.items():
-        if len(entries) < 2:
+    for sessions in by_ex.values():
+        if len(sessions) < 2:  # need ≥2 distinct sessions for a trend
             continue
-        entries.sort(key=lambda x: x[0])
-        first_e1, last_e1 = entries[0][1], entries[-1][1]
-        disp = entries[-1][2]
-        delta_lb = (last_e1 - first_e1) * _KG_TO_LB
-        arrow = "↑" if delta_lb >= 5 else ("↓" if delta_lb <= -5 else "→")
-        rows.append((len(entries), f"{disp} {first_e1*_KG_TO_LB:.0f}→{last_e1*_KG_TO_LB:.0f}lb {arrow}"))
+        days = sorted(sessions)
+        f, l = sessions[days[0]], sessions[days[-1]]
+        delta = (l[0] - f[0]) / f[0] if f[0] else 0
+        arrow = "↑" if delta >= 0.04 else ("↓" if delta <= -0.04 else "→")
+        rows.append((len(sessions),
+                     f"{l[3]} {f[1]:.0f}lb×{f[2]}→{l[1]:.0f}lb×{l[2]} {arrow}"))
 
     if not rows:
         return ""
     rows.sort(key=lambda r: -r[0])
-    return "STRENGTH TREND (est. 1RM, first→latest session): " + " · ".join(
-        r[1] for r in rows[:max_lifts]) + "."
+    return ("STRENGTH TREND (best set/session, first→latest — weight×reps): "
+            + " · ".join(r[1] for r in rows[:max_lifts]) + ".")
 
 
 def meal_timing_summary(logs, *, days_window: int = 21) -> str:
