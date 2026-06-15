@@ -221,6 +221,40 @@ async def test_single_set_relog_at_8min_still_writes(monkeypatch):
     assert write_count["n"] == 1, "single-set re-log at 8min must still write"
 
 
+# ── Log-divergence monitoring (#4) ───────────────────────────────────────────
+
+def test_divergence_flags_phantom_dup_block():
+    """The Danny 7-for-3 signature: Face Pull 3×12 logged twice → dup_block."""
+    entries = [
+        _prior_entry(id_=192, name="Face Pull", sets=1, reps="12", weight=31.75),
+        _prior_entry(id_=194, name="Face Pull", sets=3, reps="12,12,12", weight=31.75),
+        _prior_entry(id_=196, name="Face Pull", sets=3, reps="12,12,12", weight=31.75),
+    ]
+    log = SimpleNamespace(exercise_entries=entries)
+    flags = TE._detect_log_divergence(log)
+    assert any("face pull" in f and "dup_block" in f for f in flags), flags
+
+
+def test_divergence_clean_session_no_flags():
+    """A normal session — distinct movements, no identical multi-set repeats."""
+    entries = [
+        _prior_entry(id_=1, name="Face Pull", sets=3, reps="12,12,12", weight=31.75),
+        _prior_entry(id_=2, name="Upright Row", sets=3, reps="12,12,12", weight=49.9),
+        _prior_entry(id_=3, name="Cable Front Raise", sets=1, reps="12", weight=36.3),
+    ]
+    log = SimpleNamespace(exercise_entries=entries)
+    assert TE._detect_log_divergence(log) == []
+
+
+def test_divergence_flags_high_volume():
+    """One movement with an implausible session set count gets flagged."""
+    entries = [_prior_entry(id_=i, name="Bicep Curl", sets=2, reps=f"{10+i},{9+i}",
+                            weight=20.0 + i) for i in range(6)]  # 12 sets, all distinct
+    log = SimpleNamespace(exercise_entries=entries)
+    flags = TE._detect_log_divergence(log)
+    assert any("high_volume" in f for f in flags), flags
+
+
 # ── deterministic_confirmation: dedup-aware fallback ─────────────────────────
 
 def test_deterministic_confirmation_handles_already_on_board():

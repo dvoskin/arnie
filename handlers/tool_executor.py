@@ -186,6 +186,45 @@ def _rotating_cue(pool: tuple, seed: int) -> str:
     return pool[seed % len(pool)]
 
 
+def _detect_log_divergence(today_log) -> list[str]:
+    """Cheap, read-only over-log detector for monitoring (NOT a guard — it never
+    blocks). Returns human-readable flag strings (empty = clean):
+
+      • dup_block — a movement has the SAME multi-set block (sets>=2, identical
+        reps + close weight) logged 2+ times. This is the phantom-re-log
+        signature the 600s dedup window aims to catch; if one slips through a
+        different turn structure, this surfaces it. (Face Pull 3×12 logged twice
+        = the Danny 7-for-3 case.)
+      • high_volume — a single movement exceeds 10 total sets in one session, an
+        implausible count that usually means accumulated re-logs.
+    """
+    entries = list(getattr(today_log, "exercise_entries", None) or [])
+    by_move: dict[str, list] = {}
+    for e in entries:
+        nm = (getattr(e, "exercise_name", None) or "?").lower()
+        by_move.setdefault(nm, []).append(e)
+
+    flags: list[str] = []
+    for nm, es in by_move.items():
+        total = sum((getattr(e, "sets", None) or 1) for e in es)
+        if total >= 10:
+            flags.append(f"{nm}=high_volume({total})")
+        seen: dict[tuple, int] = {}
+        for e in es:
+            s = getattr(e, "sets", None) or 1
+            if s >= 2:
+                key = (
+                    int(s),
+                    str(getattr(e, "reps", "") or "").strip(),
+                    round(float(getattr(e, "weight", 0) or 0), 1),
+                )
+                seen[key] = seen.get(key, 0) + 1
+        dup_blocks = sum(1 for c in seen.values() if c >= 2)
+        if dup_blocks:
+            flags.append(f"{nm}=dup_block(x{dup_blocks})")
+    return flags
+
+
 def deterministic_confirmation(tool_calls, log, prefs, tool_results=None) -> str:
     """
     Build a meaningful confirmation from what was actually logged, used when the
@@ -869,6 +908,23 @@ async def execute_tool_calls(
             )
         except Exception:
             pass  # never let telemetry break the turn
+
+    # ── Logging-integrity divergence alert (log-only monitoring) ──────────────
+    # After any exercise log, scan today's entries for the over-log signature so
+    # drift surfaces in Render logs without manual inspection. Greppable as
+    # `event=log_divergence`. Two signals: an identical MULTI-SET block logged
+    # 2+ times (the phantom re-log pattern — Face Pull 3×12 twice = the 7-for-3
+    # case), and an implausibly high per-movement set count. Pure logging.
+    if log_calls["exercise"]:
+        try:
+            _div = _detect_log_divergence(today_log)
+            if _div:
+                logger.warning(
+                    f"event=log_divergence user_id={getattr(user, 'id', None)} "
+                    f"flags={'; '.join(_div)}"
+                )
+        except Exception:
+            pass  # monitoring must never break the turn
 
     # Multi-item batch: when several log_food calls fire in one turn, the
     # single-item coaching ("name the food and its macros") is wrong — it makes

@@ -897,6 +897,29 @@ async def _run_reminders():
             recent_proactive = [r for r in recent_rows if not _is_user_row(r)]
             silence_streak = _silence_streak(recent_rows)
 
+            # ── Language self-heal (deterministic) ────────────────────────────
+            # A one-off foreign message can freeze preferred_language (Gi: one
+            # Russian text → every proactive Russian while she kept texting
+            # English). If the stored pref is a non-Latin-script language but
+            # recent USER messages show none of that script, the pref is stale —
+            # reset to default so THIS tick's nudge matches how they write now.
+            # Latin-script langs are never touched (script can't disambiguate).
+            if prefs and getattr(prefs, "preferred_language", None):
+                try:
+                    from core.language import needs_language_reset
+                    _utexts = [r.raw_message for r in recent_rows
+                               if _is_user_row(r) and getattr(r, "raw_message", None)]
+                    if needs_language_reset(prefs.preferred_language, _utexts):
+                        logger.info(
+                            f"Language self-heal: user {user.id} preferred_language "
+                            f"{prefs.preferred_language!r} stale (no matching script in "
+                            f"{len(_utexts)} recent msgs), resetting to default"
+                        )
+                        prefs.preferred_language = None
+                        await db.commit()
+                except Exception as e:
+                    logger.error(f"Language self-heal failed for user {user.id}: {e}")
+
             # ── Context awareness: never fire on top of a live conversation ───
             # If the user exchanged messages with Arnie in the last ~25 min, they're
             # already engaged — a scheduled nudge would be a jarring non-sequitur.
