@@ -134,6 +134,9 @@ them as confidence="inferred":
 CRITICAL: store the PATTERN, never the daily snapshot numbers. "protein slips on
 rest days" ✓  —  "117g protein on 06-13" ✗ (that's live data, has its own UI).
 Only assert a pattern the data actually supports; if a signal is one-off, skip it.
+For fitness_strength_trends: use ONLY the numbers in the current STRENGTH TREND
+line (actual weight×reps). Do NOT carry forward old per-lift figures from the
+existing attribute value — replace them with the current data.
 
 ═══════════════════════════════════════════════════════
 WHAT TO OUTPUT:

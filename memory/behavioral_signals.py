@@ -65,7 +65,7 @@ def adherence_summary(logs, prefs) -> str:
     return "MACRO ADHERENCE (recent): " + "; ".join(bits) + "."
 
 
-def strength_progression(logs, *, max_lifts: int = 6) -> str:
+def strength_progression(logs, *, max_lifts: int = 8) -> str:
     """Per-lift trend using the BEST set of each SESSION, first→latest.
 
     Comparing the best set per day (not arbitrary first/last entries) avoids
