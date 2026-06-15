@@ -909,6 +909,12 @@ body.brain-active footer{{display:none}}
   padding:11px 16px;cursor:pointer;text-align:left;transition:background .15s;
 }}
 .add-submit:hover{{background:var(--ac-dim)}}
+.water-quick{{
+  border:1px solid var(--bd);background:var(--sf2);color:var(--mu);
+  font-family:'Geist Mono','SF Mono',monospace;font-size:11px;font-weight:600;
+  letter-spacing:.04em;border-radius:8px;padding:6px 11px;cursor:pointer;transition:all .18s;
+}}
+.water-quick:hover{{border-color:var(--ac);color:var(--ac);background:var(--ac-dim)}}
 .add-submit:active{{opacity:.7}}
 .add-toggle{{
   width:26px;height:26px;border-radius:8px;border:1px solid var(--bd);
@@ -2525,13 +2531,6 @@ footer{{
         <span class="atile-lbl">Cardio</span>
         <span class="atile-state" id="tile-cardio-state">—</span>
       </button>
-      <button class="atile full" id="tile-water" style="display:none" type="button">
-        <svg class="atile-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="M8 2l3.5 5.5a4.2 4.2 0 1 1-7 0L8 2z"/>
-        </svg>
-        <span class="atile-lbl">Water</span>
-        <span class="atile-state" id="tile-water-state"></span>
-      </button>
     </div>
 
     <!-- AI INSIGHTS — inline expanding panel triggered by the Insights
@@ -2625,6 +2624,35 @@ footer{{
           <button class="add-submit" id="ex-submit" onclick="submitExerciseInline()">Save workout</button>
         </div>
         <div class="lcrd" id="ex-log"><div class="lempty">Loading&hellip;</div></div>
+      </div>
+    </div>
+
+    <!-- WATER — collapsible. Header carries the day total (sum shown first);
+         expanding reveals the individual timestamped logs. The + opens a small
+         manual-entry form (quick-add chips + free ml), so water can be edited
+         by hand on the dashboard, not just via chat. Mirrors the Food/Workouts
+         sections; renderDayTab fills #water-log + #water-log-total. -->
+    <div class="log-section" id="water-section">
+      <div class="stitle spaced log-section-hd" onclick="toggleLogSection('water')">
+        <span>Water <span id="water-log-total" style="font-weight:400;opacity:.7"></span></span>
+        <div style="display:flex;align-items:center;gap:6px">
+          <button class="log-chevron" id="water-chevron" title="Collapse">&#8249;</button>
+          <button class="add-toggle" id="water-toggle" onclick="event.stopPropagation();toggleAddForm('water')" title="Add water">+</button>
+        </div>
+      </div>
+      <div class="log-section-body" id="water-section-body">
+        <div class="add-card" id="water-form" style="display:none">
+          <div style="display:flex;gap:6px;padding:10px 14px 0;flex-wrap:wrap">
+            <button type="button" class="water-quick" onclick="quickWater(250)">+250 ml</button>
+            <button type="button" class="water-quick" onclick="quickWater(500)">+500 ml</button>
+            <button type="button" class="water-quick" onclick="quickWater(1000)">+1 L</button>
+          </div>
+          <div class="add-macros">
+            <div class="add-mac-field"><label>ml</label><input type="number" id="water-ml" min="0" inputmode="numeric" placeholder="0"></div>
+          </div>
+          <button class="add-submit" id="water-submit" onclick="submitWaterInline()">Save water</button>
+        </div>
+        <div class="lcrd" id="water-log"><div class="lempty">Loading&hellip;</div></div>
       </div>
     </div>
 
@@ -3915,6 +3943,32 @@ async function submitExerciseInline(){{
   finally{{btn.textContent='+ Add workout';btn.disabled=false;}}
 }}
 
+// ── Log water (inline) ────────────────────────────────────
+// Quick-add chips bump the ml field so a tap-tap-save flow works; the field
+// is also free-editable. Logs to the viewed day (past days supported via
+// log_date), same as food/exercise.
+function quickWater(ml){{
+  var inp=document.getElementById('water-ml');
+  if(!inp)return;
+  inp.value=(parseFloat(inp.value)||0)+ml;
+}}
+async function submitWaterInline(){{
+  var ml=parseFloat(document.getElementById('water-ml').value)||0;
+  if(ml<=0){{document.getElementById('water-ml').focus();return;}}
+  var btn=document.getElementById('water-submit');
+  btn.textContent='Saving…';btn.disabled=true;
+  try{{
+    var body={{amount_ml:ml,log_date:_viewingDate!==_todayStr?_viewingDate:undefined}};
+    var r=await fetch('/api/water/log?token='+TOKEN,{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify(body)}});
+    if(!r.ok)throw new Error('HTTP '+r.status);
+    document.getElementById('water-ml').value='';
+    toggleAddForm('water');
+    delete _dayCache[_viewingDate];
+    await loadDayData(_viewingDate);
+  }}catch(e){{alert('Failed to save: '+e.message);}}
+  finally{{btn.textContent='Save water';btn.disabled=false;}}
+}}
+
 // Insights tile — true toggle. Tap once opens the inline panel (and
 // scrolls it into view); tap again collapses it. Reuses production
 // toggleInsights('day') so all the fetch / refresh / streaming logic
@@ -4326,20 +4380,15 @@ function renderDayTab(d){{
   }}
   _setActivityTile('tile-workout', 'tile-workout-state', !!day.workout_completed);
   _setActivityTile('tile-cardio',  'tile-cardio-state',  !!day.cardio_completed);
-  var wb2=document.getElementById('tile-water');
-  var wbState=document.getElementById('tile-water-state');
-  if(wb2){{
-    // Water is opt-in — only show the tile when the user actually logs it,
-    // so it's never a permanent "No water" guilt-chip for people who don't
-    // track it. When shown, it's full-width below the Workout/Cardio row.
-    if(day.water_ml>0){{
-      var wAmt=day.water_ml>=1000?(day.water_ml/1000).toFixed(1)+' L':Math.round(day.water_ml)+' ml';
-      wb2.style.display='';
-      wb2.classList.add('done');
-      if(wbState) wbState.textContent = wAmt;
-    }}else{{
-      wb2.style.display='none';
-    }}
+
+  // ── Water section — day total in the header, individual logs in the body ──
+  var we=day.water_entries||[];
+  var wTotalEl=document.getElementById('water-log-total');
+  if(wTotalEl) wTotalEl.textContent = day.water_ml>0 ? fmtWater(day.water_ml) : '';
+  var wLog=document.getElementById('water-log');
+  if(wLog){{
+    wLog.innerHTML = we.length ? we.map(renderWaterRow).join('')
+      : '<div class="lempty">'+(isToday?'No water logged yet — tap + to add some.':'No water logged this day.')+'</div>';
   }}
 
   var fe=day.food_entries||[];
@@ -5904,6 +5953,65 @@ async function deleteFood(id){{
   var f=findFood(id);
   if(!confirm('Delete "'+(f?f.name:'this item')+'"?')) return;
   var r=await fetch('/api/food/'+id+'?token='+TOKEN,{{method:'DELETE'}});
+  if(!r.ok){{alert('Delete failed.');return}}
+  delete _dayCache[_viewingDate];await loadDayData(_viewingDate);
+}}
+
+// ── Water: format, row render, edit, delete ───────────────────────────────
+function fmtWater(ml){{
+  ml=Math.round(ml||0);
+  return ml>=1000?(ml/1000).toFixed(ml%1000===0?0:1)+' L':ml+' ml';
+}}
+function findWater(id){{
+  return(_dayCache[_viewingDate]?.day?.water_entries||[]).find(w=>w.id===id);
+}}
+function renderWaterRow(w){{
+  var t='';
+  if(w.timestamp){{
+    var dt=new Date(w.timestamp);
+    if(!isNaN(dt)) t=dt.toLocaleTimeString([],{{hour:'numeric',minute:'2-digit'}});
+  }}
+  return '<div class="lrow" id="water-row-'+w.id+'" onclick="this.classList.toggle(&quot;open&quot;)">'+
+    '<div class="lrow-main">'+
+      '<div class="lname">'+fmtWater(w.amount_ml)+'</div>'+
+      (t?'<div class="lmeta">'+esc(t)+'</div>':'')+
+    '</div>'+
+    '<div class="lrow-actions">'+
+      '<button class="ibtn" onclick="event.stopPropagation();editWater('+w.id+')" aria-label="Edit">&#9998;</button>'+
+      '<button class="ibtn del" onclick="event.stopPropagation();deleteWater('+w.id+')" aria-label="Delete">&#215;</button>'+
+    '</div>'+
+    '</div>';
+}}
+function editWater(id){{
+  var w=findWater(id);if(!w)return;
+  document.getElementById('water-row-'+id).innerHTML=
+    '<div class="eform">'+
+    '<div class="emac" style="grid-template-columns:1fr">'+
+    '<div class="emc"><label>ml</label><input type="number" id="ew-ml-'+id+'" value="'+(w.amount_ml??'')+'" min="0" inputmode="numeric"></div>'+
+    '</div>'+
+    '<div class="eact">'+
+    '<button class="sbtn" onclick="saveWater('+id+')">Save</button>'+
+    '<button class="cbtn" onclick="cancelEdit()">Cancel</button>'+
+    '</div></div>';
+}}
+async function saveWater(id){{
+  var body={{amount_ml:parseFloat(document.getElementById('ew-ml-'+id).value)||0}};
+  var btn=document.querySelector('#water-row-'+id+' .sbtn');
+  if(btn){{btn.disabled=true;btn.textContent='…'}}
+  var r=await fetch('/api/water/'+id+'?token='+TOKEN,{{
+    method:'PATCH',headers:{{'Content-Type':'application/json'}},body:JSON.stringify(body),
+  }});
+  if(!r.ok){{
+    alert('Save failed — please try again.');
+    if(btn){{btn.disabled=false;btn.textContent='Save'}}
+    return;
+  }}
+  delete _dayCache[_viewingDate];await loadDayData(_viewingDate);
+}}
+async function deleteWater(id){{
+  var w=findWater(id);
+  if(!confirm('Delete this water log'+(w?' ('+fmtWater(w.amount_ml)+')':'')+'?')) return;
+  var r=await fetch('/api/water/'+id+'?token='+TOKEN,{{method:'DELETE'}});
   if(!r.ok){{alert('Delete failed.');return}}
   delete _dayCache[_viewingDate];await loadDayData(_viewingDate);
 }}
