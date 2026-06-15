@@ -729,6 +729,19 @@ body.brain-active footer{{display:none}}
 }}
 
 /* ── CHAT PANEL (opened from the header Chat button · consolidated Telegram + iMessage) ─── */
+.chat-fab{{
+  position:fixed;z-index:90;bottom:24px;right:24px;
+  width:54px;height:54px;border-radius:50%;border:none;cursor:pointer;
+  background:var(--ac);color:#fff;display:grid;place-items:center;
+  box-shadow:0 12px 30px rgba(0,0,0,.38);
+  transition:transform .18s cubic-bezier(.2,.7,.2,1),opacity .18s,background .15s;
+}}
+.chat-fab:hover{{transform:translateY(-2px) scale(1.04)}}
+.chat-fab:active{{transform:scale(.96)}}
+.chat-fab .chat-fab-close{{display:none}}
+.chat-fab.open .chat-fab-open{{display:none}}
+.chat-fab.open .chat-fab-close{{display:block}}
+@media(max-width:940px){{ .chat-fab{{bottom:16px;right:16px;width:50px;height:50px}} }}
 .cw-panel{{
   position:fixed;z-index:89;top:80px;right:24px;
   width:360px;height:min(540px,72vh);
@@ -6596,7 +6609,18 @@ async function sendChatMessage(){{
   </div>
 </div>
 
-<!-- LIVE CHAT WIDGET — floating, consolidated Telegram + iMessage thread -->
+<!-- CHAT LAUNCHER — floating action button, bottom-right. Opens the live chat
+     panel. id="chat-btn" so toggleChatWidget()'s existing .open toggle works. -->
+<button class="chat-fab" id="chat-btn" onclick="toggleChatWidget()" aria-label="Chat with Arnie" title="Chat with Arnie">
+  <svg class="chat-fab-open" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M21 11.5a8.38 8.38 0 0 1-8.5 8.5 8.5 8.5 0 0 1-3.9-.9L3 21l1.9-5.6A8.5 8.5 0 0 1 12.5 3 8.38 8.38 0 0 1 21 11.5z"/>
+  </svg>
+  <svg class="chat-fab-close" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M18 6 6 18M6 6l12 12"/>
+  </svg>
+</button>
+
+<!-- LIVE CHAT WIDGET — floating, consolidated Telegram + iMessage + Web thread -->
 <div class="cw-panel" id="cw-panel" aria-hidden="true" aria-label="Your conversation with Arnie">
   <div class="cw-head">
     <div class="cw-head-l">
