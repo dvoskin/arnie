@@ -1243,6 +1243,163 @@ async def get_stats(token: str, date: Optional[str] = Query(None)):
         return await _build_stats_for_user(db, user, target_date=target_date)
 
 
+def _build_fitness_for_user(logs) -> dict:
+    """Aggregate strength-training progression from a user's DailyLogs.
+
+    Canonicalizes every exercise through the catalog so aliases collapse, then
+    groups into per-movement session histories (top set, est-1RM, volume, set
+    count). Also derives today's session, per-session volume, and muscle-set
+    distribution. Shape mirrors the Fitness tab's renderer. Weight is stored in
+    kg; surfaced as lbs. Read-only — pure transform over already-loaded rows.
+    """
+    from collections import defaultdict, OrderedDict
+    from skills.fitness.exercise_catalog import canonicalize
+
+    def parse_reps(reps):
+        if reps is None:
+            return []
+        out = []
+        for p in str(reps).replace(" ", "").replace("/", ",").split(","):
+            try:
+                out.append(int(float(p)))
+            except ValueError:
+                pass
+        return [r for r in out if 0 < r <= 40]
+
+    def epley(w, reps):
+        if not w or not reps:
+            return None
+        return round(w * (1 + min(reps, 15) / 30.0), 1)
+
+    def infer_muscle(name, primary):
+        if primary and primary != "other":
+            return {"abs": "core", "forearms": "arms", "biceps": "arms",
+                    "triceps": "arms"}.get(primary, primary)
+        n = name.lower()
+        if any(k in n for k in ["shrug", "upright", "lateral raise", "front raise",
+                                "face pull", "rear delt", "shoulder press", "overhead press"]):
+            return "shoulders"
+        if any(k in n for k in ["curl", "pushdown", "extension", "tricep", "bicep", "hammer", "forearm"]):
+            return "arms"
+        if any(k in n for k in ["row", "pulldown", "pull-up", "pullup", "lat "]):
+            return "back"
+        if any(k in n for k in ["bench", "fly", "press", "chest", "dip"]):
+            return "chest"
+        if any(k in n for k in ["crunch", "ab ", "abs", "plank", "leg raise"]):
+            return "core"
+        if any(k in n for k in ["squat", "leg", "lunge", "calf", "glute", "deadlift", "hip"]):
+            return "legs"
+        return "other"
+
+    KG = 2.20462
+    asc = sorted(logs, key=lambda l: l.date)
+    mov = OrderedDict()
+    cardio = []
+    for log in asc:
+        d = str(log.date)
+        for e in (log.exercise_entries or []):
+            if e.cardio_type:
+                cardio.append({"date": d, "name": e.exercise_name or "?",
+                               "type": e.cardio_type, "min": e.duration_minutes})
+                continue
+            canon, meta = canonicalize(e.exercise_name)
+            if canon not in mov:
+                mov[canon] = {"name": canon,
+                              "muscle": infer_muscle(canon, (meta or {}).get("primary")),
+                              "sessions": defaultdict(list)}
+            mov[canon]["sessions"][d].append({
+                "sets": e.sets,
+                "reps": parse_reps(e.reps),
+                "w": round(e.weight * KG, 1) if e.weight else None,
+            })
+
+    movements = []
+    for canon, m in mov.items():
+        sessions = []
+        for d in sorted(m["sessions"]):
+            entries = m["sessions"][d]
+            best_w = top_reps = best_e = None
+            vol = 0.0
+            nsets = 0
+            for e in entries:
+                w, reps = e["w"], e["reps"]
+                nsets += (e["sets"] or len(reps) or 1)
+                for rp in reps:
+                    if w:
+                        vol += w * rp
+                    est = epley(w, rp)
+                    if est and (best_e is None or est > best_e):
+                        best_e = est
+                    if w and (best_w is None or w > best_w or (w == best_w and rp > (top_reps or 0))):
+                        best_w, top_reps = w, rp
+                if not reps and w and (best_w is None or w > best_w):
+                    best_w = w
+            sessions.append({"date": d, "w": best_w, "reps": top_reps,
+                             "e1rm": best_e, "vol": round(vol) if vol else None,
+                             "sets": nsets})
+        movements.append({"name": canon, "muscle": m["muscle"], "sessions": sessions,
+                          "n": len(sessions), "last": sessions[-1]["date"] if sessions else None})
+
+    movements = [m for m in movements if m["sessions"]]
+    movements.sort(key=lambda x: (x["last"], x["n"]), reverse=True)
+
+    # today = latest training date, consolidated per movement from RAW entries
+    # (raw pass keeps every set's reps, e.g. [12,10,10], not just the top set)
+    today, today_date = [], (str(asc[-1].date) if asc else None)
+    if movements:
+        latest = max(m["last"] for m in movements)
+        today_date = latest
+        agg = OrderedDict()
+        for log in asc:
+            if str(log.date) != latest:
+                continue
+            for e in (log.exercise_entries or []):
+                if e.cardio_type:
+                    continue
+                canon, _ = canonicalize(e.exercise_name)
+                if canon not in agg:
+                    agg[canon] = {"name": canon, "sets": 0, "reps": [], "w": []}
+                agg[canon]["sets"] += (e.sets or len(parse_reps(e.reps)) or 1)
+                agg[canon]["reps"] += parse_reps(e.reps)
+                if e.weight:
+                    agg[canon]["w"].append(round(e.weight * KG, 1))
+        for a in agg.values():
+            ws = a["w"]
+            wlabel = None
+            if ws:
+                lo, hi = min(ws), max(ws)
+                wlabel = (f"{lo:g}" if lo == hi else f"{lo:g}–{hi:g}")
+            today.append({"name": a["name"], "sets": a["sets"],
+                          "reps": a["reps"], "w": wlabel})
+
+    vol_by_date = defaultdict(float)
+    sets_by_muscle = defaultdict(int)
+    for m in movements:
+        for s in m["sessions"]:
+            if s["vol"]:
+                vol_by_date[s["date"]] += s["vol"]
+            sets_by_muscle[m["muscle"]] += s.get("sets", 0)
+    sessions = [{"date": d, "vol": round(v)} for d, v in sorted(vol_by_date.items())]
+    muscle_sets = [{"muscle": k, "sets": v}
+                   for k, v in sorted(sets_by_muscle.items(), key=lambda x: -x[1])]
+
+    return {"movements": movements,
+            "today_date": str(today_date) if today_date else None,
+            "today": today, "sessions": sessions,
+            "muscle_sets": muscle_sets, "cardio": cardio}
+
+
+@app.get("/api/fitness/{token}")
+async def get_fitness(token: str):
+    """Strength-progression payload for the Fitness tab. Lazy-loaded on tab open."""
+    async with AsyncSessionLocal() as db:
+        user = await get_user_by_webhook_token(db, token)
+        if not user:
+            raise HTTPException(status_code=401, detail="Invalid token")
+        logs = await get_recent_logs(db, user.id, days=90)
+        return _build_fitness_for_user(logs)
+
+
 @app.get("/api/conversation/{token}")
 async def get_conversation(token: str, limit: int = Query(120, ge=1, le=400)):
     """
@@ -2342,7 +2499,9 @@ async def admin_dashboard(token: str = Query(...)):
 
     from sqlalchemy import select, func as sqlfunc
     from sqlalchemy.orm import selectinload
-    from db.models import User, DailyLog, ConversationLog, Feedback
+    from db.models import (User, DailyLog, ConversationLog, Feedback,
+                           FoodEntry, ExerciseEntry, BodyMetric)
+    from datetime import datetime, timezone
 
     base_url = os.getenv("RENDER_EXTERNAL_URL", "http://localhost:10000").rstrip("/")
     today = date.today()
@@ -2363,36 +2522,53 @@ async def admin_dashboard(token: str = Query(...)):
         )
         feedbacks = fb_result.all()
 
+        now = datetime.now(timezone.utc)
+
+        def _aware(dt):
+            if not dt:
+                return None
+            return dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt
+
         rows = []
         for u in users:
-            # Today's log
-            log_result = await db.execute(
+            today_log = (await db.execute(
                 select(DailyLog).where(DailyLog.user_id == u.id, DailyLog.date == today)
-            )
-            today_log = log_result.scalar_one_or_none()
+            )).scalar_one_or_none()
 
-            # Last message timestamp + snippet
-            conv_result = await db.execute(
-                select(ConversationLog)
-                .where(ConversationLog.user_id == u.id)
-                .order_by(ConversationLog.timestamp.desc())
-                .limit(1)
-            )
-            last_conv = conv_result.scalar_one_or_none()
+            last_conv = (await db.execute(
+                select(ConversationLog).where(ConversationLog.user_id == u.id)
+                .order_by(ConversationLog.timestamp.desc()).limit(1)
+            )).scalar_one_or_none()
 
-            # Total message count
-            count_result = await db.execute(
+            msg_count = (await db.execute(
                 select(sqlfunc.count()).where(ConversationLog.user_id == u.id)
-            )
-            msg_count = count_result.scalar() or 0
+            )).scalar() or 0
+
+            # Last ACTIVITY across every signal (not just chat) — a user logging food
+            # without messaging is still active.
+            dl_ids = select(DailyLog.id).where(DailyLog.user_id == u.id)
+            last_food = (await db.execute(
+                select(sqlfunc.max(FoodEntry.timestamp)).where(FoodEntry.daily_log_id.in_(dl_ids)))).scalar()
+            last_ex = (await db.execute(
+                select(sqlfunc.max(ExerciseEntry.timestamp)).where(ExerciseEntry.daily_log_id.in_(dl_ids)))).scalar()
+            last_wt = (await db.execute(
+                select(sqlfunc.max(BodyMetric.timestamp)).where(BodyMetric.user_id == u.id))).scalar()
+            cand = [_aware(t) for t in
+                    [last_conv.timestamp if last_conv else None, last_food, last_ex, last_wt] if t]
+            last_act = max(cand) if cand else None
 
             rows.append({
                 "user": u,
                 "today_log": today_log,
                 "last_conv": last_conv,
                 "msg_count": msg_count,
+                "last_act": last_act,
                 "dash_url": dashboard_url(u.webhook_token) if u.webhook_token else None,
             })
+
+        # Activity-first: most recently active users on top.
+        rows.sort(key=lambda r: r["last_act"] or datetime(1970, 1, 1, tzinfo=timezone.utc),
+                  reverse=True)
 
     def _ago(ts):
         if not ts:
@@ -2420,6 +2596,38 @@ async def admin_dashboard(token: str = Query(...)):
                 f'<div style="width:{pct}%;height:100%;background:{color};border-radius:3px"></div></div>'
                 f'<span style="font-size:11px">{int(log.total_calories or 0)}/{target}</span></div>')
 
+    STATUS_META = {
+        "active": ("Active", "#2ecc71"), "idle": ("Idle", "#f1c40f"),
+        "dormant": ("Dormant", "#e74c3c"), "deactivated": ("Deactivated", "#7f8c8d"),
+        "onboarding": ("Onboarding", "#e67e22"),
+    }
+
+    def _hours_since(dt):
+        return (now - dt).total_seconds() / 3600 if dt else None
+
+    def _status_key(u, last_act):
+        if (u.subscription_status or "") == "inactive":
+            return "deactivated"
+        if not u.onboarding_completed:
+            return "onboarding"
+        h = _hours_since(last_act)
+        if h is None:
+            return "dormant"
+        return "active" if h <= 24 else "idle" if h <= 96 else "dormant"
+
+    def _recency(last_act):
+        h = _hours_since(last_act)
+        if h is None:
+            return ("never", "#e74c3c")
+        if h < 1:
+            return ("just now", "#2ecc71")
+        if h < 24:
+            return (f"{int(h)}h ago", "#2ecc71")
+        d = h / 24
+        return (f"{int(d)}d ago", "#f1c40f" if d <= 4 else "#e74c3c")
+
+    from collections import Counter
+    status_counts = Counter()
     tbody = ""
     for r in rows:
         u = r["user"]
@@ -2428,23 +2636,29 @@ async def admin_dashboard(token: str = Query(...)):
         last = r["last_conv"]
         dash = r["dash_url"]
 
-        last_msg_time = _ago(last.timestamp) if last else "—"
-        last_msg_snippet = (_esc(last.raw_message or "")[:50] + "…") if last and last.raw_message and len(last.raw_message) > 50 else _esc(last.raw_message if last else "")
+        skey = _status_key(u, r["last_act"])
+        status_counts[skey] += 1
+        slabel, scolor = STATUS_META[skey]
+        rec_label, rec_color = _recency(r["last_act"])
+        status_badge = (f'<span style="background:{scolor};color:#fff;padding:2px 8px;'
+                        f'border-radius:10px;font-size:10px;font-weight:600">{slabel}</span>')
+
+        last_msg_snippet = (_esc(last.raw_message or "")[:48] + "…") if last and last.raw_message and len(last.raw_message) > 48 else _esc(last.raw_message if last else "")
         today_calories = _cal_bar(log, p.calorie_target if p else None)
         today_protein = f'{int(log.total_protein or 0)}g / {p.protein_target or "?"}g' if log else "—"
         workout_dot = '<span style="color:#2ecc71">✓</span>' if (log and log.workout_completed) else '<span style="color:#555">✗</span>'
-        onboard = '<span style="color:#2ecc71">✓</span>' if u.onboarding_completed else '<span style="color:#e74c3c">pending</span>'
         dash_link = f'<a href="{dash}" target="_blank" style="color:#3498db;text-decoration:none">↗ dash</a>' if dash else "—"
         whoop = '<span style="color:#2ecc71">●</span>' if (u.whoop_access_token or u.whoop_refresh_token) else '<span style="color:#555">○</span>'
         created = u.created_at.strftime("%b %d") if u.created_at else "—"
+        search_blob = _esc(((u.name or "") + " " + (u.telegram_id or "")).lower())
 
         convo_link = f'<a href="/admin/user/{u.id}?token={token}" style="color:#f39c12">💬 convo</a>'
-        tbody += f"""<tr>
+        tbody += f"""<tr data-status="{skey}" data-s="{search_blob}">
           <td><b>{_esc(u.name or "?")}</b><br><span style="color:#888;font-size:10px">{_esc(u.telegram_id)}</span></td>
-          <td>{onboard}</td>
+          <td>{status_badge}</td>
           <td>{_goal_badge(u.primary_goal)}<br><span style="color:#888;font-size:10px">{u.training_experience or "?"}</span></td>
           <td style="font-size:11px">{today_calories}<br><span style="color:#aaa">{today_protein} P &nbsp;{workout_dot}</span></td>
-          <td style="font-size:11px;max-width:180px;overflow:hidden">{last_msg_snippet}<br><span style="color:#888">{last_msg_time}</span></td>
+          <td style="font-size:11px;max-width:200px;overflow:hidden"><span style="color:{rec_color};font-weight:600">{rec_label}</span><br><span style="color:#888">{last_msg_snippet}</span></td>
           <td style="color:#aaa;font-size:11px">{r['msg_count']}</td>
           <td style="font-size:11px">{whoop}<br><span style="color:#555">whoop</span></td>
           <td style="font-size:11px">{created}</td>
@@ -2490,6 +2704,23 @@ async def admin_dashboard(token: str = Query(...)):
 <tbody>{_fb_rows(done_fb)}</tbody>
 </table>"""
 
+    open_fb_count = len(open_fb)
+    _card_defs = [
+        ("all", "All", len(rows), "#3498db"),
+        ("active", "Active", status_counts.get("active", 0), "#2ecc71"),
+        ("idle", "Idle", status_counts.get("idle", 0), "#f1c40f"),
+        ("dormant", "Dormant", status_counts.get("dormant", 0), "#e74c3c"),
+        ("deactivated", "Deactivated", status_counts.get("deactivated", 0), "#7f8c8d"),
+        ("onboarding", "Onboarding", status_counts.get("onboarding", 0), "#e67e22"),
+    ]
+    cards_html = "".join(
+        f'<div class="card{" active" if k == "all" else ""}" data-filter="{k}" '
+        f'onclick="filterStatus(\'{k}\',this)">'
+        f'<div class="card-n" style="color:{c}">{n}</div>'
+        f'<div class="card-l">{lbl}</div></div>'
+        for k, lbl, n, c in _card_defs
+    )
+
     html = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -2517,11 +2748,20 @@ async def admin_dashboard(token: str = Query(...)):
   .resolve-btn{{background:#1e3a1e;color:#2ecc71;border:1px solid #2ecc71;padding:3px 10px;border-radius:6px;font-size:11px;cursor:pointer}}
   .resolved-label{{color:#555;font-size:11px}}
   a{{color:#3498db;text-decoration:none}}a:hover{{text-decoration:underline}}
+  .cards{{display:flex;gap:10px;margin-bottom:18px;flex-wrap:wrap}}
+  .card{{background:#181818;border:1px solid #262626;border-radius:10px;padding:10px 16px;cursor:pointer;min-width:92px;transition:border-color .15s}}
+  .card:hover{{border-color:#444}}
+  .card.active{{border-color:#3498db;background:#1a2230}}
+  .card-n{{font-size:22px;font-weight:700;line-height:1}}
+  .card-l{{font-size:10px;color:#888;margin-top:3px;text-transform:uppercase;letter-spacing:.04em}}
+  .search{{width:100%;max-width:320px;background:#181818;border:1px solid #262626;color:#e0e0e0;padding:8px 12px;border-radius:8px;font-size:13px;margin-bottom:14px}}
+  .search:focus{{outline:none;border-color:#3498db}}
+  tr.hidden{{display:none}}
 </style>
 </head>
 <body>
 <h1>⚡ Arnie Admin</h1>
-<p class="sub">{len(rows)} users &nbsp;·&nbsp; {today} &nbsp;·&nbsp; <a href="/admin?token={token}">↻ refresh</a></p>
+<p class="sub">{len(rows)} users &nbsp;·&nbsp; <span style="color:#2ecc71">{status_counts.get('active',0)} active</span> &nbsp;·&nbsp; {status_counts.get('idle',0)} idle &nbsp;·&nbsp; {status_counts.get('dormant',0)} dormant &nbsp;·&nbsp; {status_counts.get('deactivated',0)} deactivated &nbsp;·&nbsp; {open_fb_count} open feedback &nbsp;·&nbsp; <a href="/admin?token={token}">↻ refresh</a></p>
 
 <div class="tabs">
   <div class="tab active" onclick="switchTab('users',this)">Users</div>
@@ -2529,14 +2769,17 @@ async def admin_dashboard(token: str = Query(...)):
 </div>
 
 <div id="panel-users" class="panel active">
+<div class="cards">{cards_html}</div>
+<input id="search" class="search" placeholder="🔍 search name or contact…" oninput="applyFilters()">
 <table>
 <thead><tr>
-  <th>User</th><th>Onboard</th><th>Goal</th>
-  <th>Today</th><th>Last message</th><th>Msgs</th>
+  <th>User</th><th>Status</th><th>Goal</th>
+  <th>Today</th><th>Last active</th><th>Msgs</th>
   <th>Devices</th><th>Joined</th><th>Links</th>
 </tr></thead>
-<tbody>{tbody}</tbody>
+<tbody id="user-rows">{tbody}</tbody>
 </table>
+<p id="empty-note" style="color:#555;padding:16px;display:none">No users match.</p>
 </div>
 
 <div id="panel-feedback" class="panel">
@@ -2550,6 +2793,25 @@ function switchTab(name,el){{
   document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
   el.classList.add('active');
   document.getElementById('panel-'+name).classList.add('active');
+}}
+var statusFilter='all';
+function filterStatus(key,el){{
+  statusFilter=key;
+  document.querySelectorAll('.card').forEach(c=>c.classList.remove('active'));
+  if(el) el.classList.add('active');
+  applyFilters();
+}}
+function applyFilters(){{
+  var q=(document.getElementById('search').value||'').trim().toLowerCase();
+  var shown=0;
+  document.querySelectorAll('#user-rows tr').forEach(function(tr){{
+    var okS=(statusFilter==='all')||(tr.dataset.status===statusFilter);
+    var okQ=!q||(tr.dataset.s||'').indexOf(q)>=0;
+    var vis=okS&&okQ;
+    tr.classList.toggle('hidden',!vis);
+    if(vis) shown++;
+  }});
+  document.getElementById('empty-note').style.display=shown?'none':'block';
 }}
 </script>
 </body>
