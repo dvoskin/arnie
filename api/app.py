@@ -1468,6 +1468,77 @@ async def get_conversation(token: str, limit: int = Query(120, ge=1, le=400)):
         return {"turns": turns, "platforms": sorted(platforms)}
 
 
+class ChatBody(BaseModel):
+    message: str
+
+
+@app.post("/api/chat/{token}")
+async def post_chat(token: str, body: ChatBody):
+    """Dashboard web chat — the SAME brain as Telegram/iMessage.
+
+    Runs the shared run_turn() pipeline with platform="web" (so tools, memory,
+    coaching voice are identical to the bots) and logs the turn to
+    ConversationLog(platform="web"). Because the read endpoint above consolidates
+    every linked identity, the message + Arnie's reply immediately appear in the
+    unified thread on every surface. Synchronous (no streaming) for v1.
+
+    Note: we deliberately DON'T wire on_image/on_interim callbacks, so a web turn
+    never gets pushed out to Telegram/iMessage — the reply comes back in this HTTP
+    response and is recorded once. Proactive nudges still route by channel pref.
+    """
+    text = (body.message or "").strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="Empty message")
+    if len(text) > 4000:
+        text = text[:4000]
+
+    from core.conversation import run_turn
+    from core.context_builder import build_context
+    from core.prompts import build_arnie_system
+    from core.history import conversations_to_messages
+    from db.queries import (
+        get_or_create_today_log, get_recent_conversations, log_conversation,
+    )
+
+    async with AsyncSessionLocal() as db:
+        # Canonical user (get_user_by_webhook_token follows the link), so the web
+        # turn reads/writes the same brain the bots do.
+        user = await get_user_by_webhook_token(db, token)
+        if not user:
+            raise HTTPException(status_code=401, detail="Invalid token")
+
+        tz = getattr(user, "timezone", None) or "UTC"
+        today_log = await get_or_create_today_log(db, user.id, tz)
+
+        # Same message assembly the bots use: recent history + this message.
+        recent = await get_recent_conversations(db, user.id, limit=8)
+        messages = conversations_to_messages(recent)
+        messages.append({"role": "user", "content": text})
+
+        context_str = await build_context(user, today_log, db, platform="web",
+                                          user_message=text)
+        system = f"{build_arnie_system(platform='web')}\n\n{context_str}"
+
+        try:
+            turn = await run_turn(
+                user, db, messages, system, platform="web",
+                in_onboarding=False, was_onboarding=False,
+                today_log=today_log, source_type="web",
+            )
+        except Exception as e:
+            logging.getLogger(__name__).error(f"web chat run_turn failed: {e}", exc_info=True)
+            raise HTTPException(status_code=500, detail="Coach hiccup, resend that")
+
+        bubbles = [b for b in (turn.response.bubbles or []) if b and b.strip()]
+        reply = "|||".join(bubbles)
+        await log_conversation(
+            db, user.id, text, reply, source_type="web", platform="web",
+            parsed_intent=(",".join(turn.health_flags) or None),
+        )
+
+    return {"bubbles": bubbles, "ts": datetime.utcnow().isoformat()}
+
+
 @app.get("/api/profile/{token}")
 async def get_profile(token: str, refresh: bool = False):
     """
