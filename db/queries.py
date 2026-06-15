@@ -665,13 +665,31 @@ async def consume_pre_registration(db: AsyncSession, code: str) -> Optional[dict
     return json.loads(entry.profile_json)
 
 
-async def get_user_by_webhook_token(db: AsyncSession, token: str) -> Optional[User]:
+async def get_user_by_webhook_token(
+    db: AsyncSession, token: str, *, follow_link: bool = True
+) -> Optional[User]:
+    """Resolve a dashboard webhook token to a user.
+
+    By default this follows `linked_to_user_id` to the CANONICAL account, so the
+    dashboard reads and writes the exact same brain the bot does (the bot uses
+    resolve_user, which also canonicalizes). Without this, an edit/delete made on
+    a linked identity's dashboard lands on a different DailyLog than the one the
+    bot reads — e.g. deleting water on the dashboard wouldn't show up in chat.
+
+    Pass follow_link=False to get the raw token-owner row unchanged — used by the
+    Whoop OAuth callback/sync so wearable tokens stay on the row they were stored
+    on. Unlinked users are unaffected either way (linked_to_user_id is null)."""
     result = await db.execute(
         select(User)
         .where(User.webhook_token == token)
         .options(selectinload(User.preferences))
     )
-    return result.scalar_one_or_none()
+    user = result.scalar_one_or_none()
+    if user and follow_link and linking_enabled() and user.linked_to_user_id:
+        canonical = await reload_user(db, user.linked_to_user_id)
+        if canonical:
+            return canonical
+    return user
 
 
 async def upsert_health_snapshot(db: AsyncSession, user_id: int,
