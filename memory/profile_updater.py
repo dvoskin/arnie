@@ -120,6 +120,22 @@ preference (confidence=inferred) even with no explicit statement:
   • a recurring meal/training time → the matching attribute
 
 ═══════════════════════════════════════════════════════
+BEHAVIORAL INFERENCE — learn from what they DID, not just said:
+═══════════════════════════════════════════════════════
+You now also receive a BEHAVIORAL DATA block (macro adherence, strength trend,
+meal timing, recovery, detected signals). Mine it for DURABLE PATTERNS and store
+them as confidence="inferred":
+  • strength e1RM rising/stalling on a lift → fitness_strength_trends
+    ("incline bench progressing · lat pulldown stalled 3 wks")
+  • protein/calorie adherence that splits by day type → nutrition_adherence_pattern
+    ("protein slips on rest days, ~40g under" / "weekends run 300 cal high")
+  • consistent eating window / late-night habit → nutrition_meal_timing
+  • recovery/sleep responding to training load → fitness_recovery_patterns
+CRITICAL: store the PATTERN, never the daily snapshot numbers. "protein slips on
+rest days" ✓  —  "117g protein on 06-13" ✗ (that's live data, has its own UI).
+Only assert a pattern the data actually supports; if a signal is one-off, skip it.
+
+═══════════════════════════════════════════════════════
 WHAT TO OUTPUT:
 ═══════════════════════════════════════════════════════
 ONLY new or materially changed attributes. If nothing changed since the last
@@ -270,6 +286,17 @@ async def _gather_context(user, db) -> str:
     if len(weights) >= 2:
         sw = sorted(weights, key=lambda w: w.timestamp)
         parts.append(f"Weight trend (30d): {sw[0].weight_kg:.1f}kg → {sw[-1].weight_kg:.1f}kg over {len(sw)} weigh-ins.")
+
+    # ── Behavioral signals (G) — what the user actually DID, for pattern inference
+    try:
+        from db.queries import get_recent_health_snapshots
+        from memory.behavioral_signals import build_behavioral_block
+        snaps = await get_recent_health_snapshots(db, user.id, days=21)
+        block = build_behavioral_block(logs, weights, snaps, prefs, user)
+        if block:
+            parts.append(block)
+    except Exception:
+        logger.warning("behavioral signal block failed", exc_info=True)
 
     return "\n\n".join(parts) if parts else "No context data available."
 
