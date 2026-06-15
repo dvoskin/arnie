@@ -319,7 +319,10 @@ async def whoop_callback(request: Request, code: str = "", state: str = "", erro
     # an error. This handles browser back/refresh after a working connection.
     if not result.get("ok") and "already been used" in (result.get("details") or "").lower():
         async with AsyncSessionLocal() as db:
-            existing_user = await get_user_by_webhook_token(db, state)
+            # Whoop tokens live on the raw token-owner row, not the canonical
+            # linked account — keep follow_link=False so the OAuth flow is
+            # unchanged by the dashboard canonicalization.
+            existing_user = await get_user_by_webhook_token(db, state, follow_link=False)
             if existing_user and existing_user.whoop_refresh_token:
                 return HTMLResponse("""<!DOCTYPE html>
 <html><head><meta charset="UTF-8"><title>Whoop already connected</title>
@@ -361,7 +364,9 @@ code{{background:#0f1117;padding:2px 6px;border-radius:4px;font-size:12px;color:
     tokens = result["tokens"]
     user_id_for_sync = None
     async with AsyncSessionLocal() as db:
-        user = await get_user_by_webhook_token(db, state)
+        # Store Whoop tokens on the raw token-owner row (follow_link=False),
+        # matching where the OAuth flow has always written them.
+        user = await get_user_by_webhook_token(db, state, follow_link=False)
         if not user:
             return HTMLResponse("<h2>Invalid state — user not found.</h2>", status_code=401)
 
