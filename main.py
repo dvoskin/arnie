@@ -35,14 +35,10 @@ TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 async def run():
     import uvicorn
     from api.app import app as fastapi_app
-    from bot.telegram_handler import build_app, _post_init, _post_shutdown
 
     port = int(os.getenv("PORT", 10000))
     base_url = os.getenv("RENDER_EXTERNAL_URL", "").rstrip("/")
     use_webhook = bool(base_url)
-
-    ptb_app = build_app()
-    fastapi_app.state.ptb_app = ptb_app
 
     config = uvicorn.Config(
         fastapi_app,
@@ -51,6 +47,23 @@ async def run():
         log_level="warning",
     )
     server = uvicorn.Server(config)
+
+    # API-only mode: when TELEGRAM_BOT_TOKEN is unset, skip the bot half entirely
+    # and just serve the FastAPI app. This is the right shape for a staging /
+    # preview environment that only exercises /api/v1/* (the iOS surface).
+    # Endpoints in api/app.py that touch `app.state.ptb_app` will fail in this
+    # mode, but iOS doesn't call any of them.
+    if not TELEGRAM_TOKEN:
+        from db.database import init_db
+        await init_db()
+        logger.info("API-only mode (TELEGRAM_BOT_TOKEN unset) — Telegram disabled")
+        await server.serve()
+        return
+
+    # Bot + API mode (normal prod path).
+    from bot.telegram_handler import build_app, _post_init, _post_shutdown
+    ptb_app = build_app()
+    fastapi_app.state.ptb_app = ptb_app
 
     # NOTE: `async with ptb_app` calls initialize() but does NOT call post_init.
     # post_init is only auto-invoked by run_polling() / run_webhook(). Since we
