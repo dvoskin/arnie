@@ -720,6 +720,37 @@ _SEARCH_TOOLS = [
 ]
 
 
+# ONE location tool — find_nearby_places. GATED by location_enabled() (default OFF),
+# same pattern as web_search. The name MUST be exactly "find_nearby_places" (the
+# prompt's LOCATION_RULES + the dispatch elif + the heads-up + the re-voice set all
+# key off this literal).
+_LOCATION_TOOLS = [
+    {
+        "name": "find_nearby_places",
+        "description": (
+            "Find real-world places near the user — restaurants, cafes, gyms, grocery "
+            "stores — when they ask 'what's around me', 'where can I eat', 'find a "
+            "high-protein spot nearby', etc. Put the place TYPE and any food/goal "
+            "intent in the query ('high protein restaurants', 'salad bowls', 'open "
+            "gym'). Include the area in the query when you know it ('ramen in "
+            "Shoreditch'); if the user shared a precise location, pass lat/lng too. "
+            "The result is a short list you re-voice in your own coaching voice with a "
+            "pick that fits their targets — never pasted raw. Do NOT use for general "
+            "nutrition facts (that's web_search) or anything already in context."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "What to find, with type + intent + area, e.g. 'high protein lunch near Soho'"},
+                "lat":   {"type": "number", "description": "Optional. User's latitude if a precise location was shared."},
+                "lng":   {"type": "number", "description": "Optional. User's longitude if a precise location was shared."},
+            },
+            "required": ["query"],
+        },
+    },
+]
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # PUBLIC API
 # ─────────────────────────────────────────────────────────────────────────────
@@ -741,8 +772,12 @@ ALL_TOOLS = (
 def _active_tools() -> list[dict]:
     """The single gating source of truth: the always-on tools plus web_search
     ONLY when search is enabled. ONE gate decision, consumed by both formats."""
-    from db.queries import search_enabled
-    return ALL_TOOLS + (_SEARCH_TOOLS if search_enabled() else [])
+    from db.queries import search_enabled, location_enabled
+    return (
+        ALL_TOOLS
+        + (_SEARCH_TOOLS if search_enabled() else [])
+        + (_LOCATION_TOOLS if location_enabled() else [])
+    )
 
 
 def build_tools() -> list[dict]:
