@@ -481,6 +481,32 @@ async def reload_user(db: AsyncSession, user_id: int) -> User:
     return result.scalar_one()
 
 
+async def save_user_location(db: AsyncSession, user_id: int,
+                             lat: float, lng: float,
+                             city: Optional[str] = None) -> None:
+    """Persist a freshly shared Telegram location. Sets lat/lng + timestamp, and
+    backfills city/timezone ONLY when we resolved them and they're not already set
+    (never clobbers a city the user told us themselves). Used by the location
+    handler; gated end-to-end by LOCATION_ENABLED."""
+    user = await db.get(User, user_id)
+    if not user:
+        return
+    user.lat = float(lat)
+    user.lng = float(lng)
+    user.location_updated_at = datetime.utcnow()
+    if city and not user.city:
+        user.city = city
+        # Best-effort timezone from the city, mirroring how onboarding resolves it.
+        try:
+            from core.timezones import resolve_timezone
+            tz = resolve_timezone(city)
+            if tz and (not user.timezone or user.timezone == "UTC"):
+                user.timezone = tz
+        except Exception:
+            pass
+    await db.commit()
+
+
 async def get_all_active_users(db: AsyncSession) -> List[User]:
     result = await db.execute(
         select(User)
