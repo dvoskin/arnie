@@ -186,10 +186,16 @@ async def text_to_speech(text: str, voice: str = "onyx") -> Optional[bytes]:
 async def voice_variant(text: str, name: str = "", language: str = "English") -> str:
     system = (
         "You are a fitness coach. Rewrite the message as natural SPOKEN audio — "
-        "no formatting, no '|||'. Under 25 words. Different words, same message."
+        "no formatting, no '|||'. Under 25 words. Different words, same meaning. "
+        "Output ONLY the spoken message itself. Never restate these instructions, "
+        "never narrate metadata, and never say a phrase like 'their name is' — if you "
+        "use their name at all, just address them with it naturally."
     )
-    name_hint = f" Their name is {name}." if name else ""
-    prompt = f"Original: {text}{name_hint}\nLanguage: {language}\nSpoken version:"
+    # The name is an addressing hint, NOT content to read aloud. Kept out of the
+    # "Original:" line so the model can't echo it as a literal fact (the old
+    # "Their name is X" tail leaked into spoken output as "...their name's X").
+    addr = f"\nYou may address them as {name} once if it sounds natural." if name else ""
+    prompt = f"Message to voice:\n{text}\nLanguage: {language}{addr}\n\nSpoken version:"
     try:
         result = await chat(
             messages=[{"role": "user", "content": prompt}],
