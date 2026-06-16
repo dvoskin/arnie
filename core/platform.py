@@ -92,6 +92,12 @@ class Response:
     effect_idx: int = -1
     buttons: Optional[list[Button]] = None
     link: Optional[tuple[str, str]] = None
+    # Typed inline cards for native clients (iOS macro/exercise cards, future
+    # charts/maps/tables). Each card is `{type, payload}`. Empty by default;
+    # populated when a tool result produces a structured artifact worth showing
+    # as a card instead of (or alongside) a text bubble. Telegram/iMessage
+    # adapters ignore this — chat-bot transports have no card concept.
+    cards: list[dict] = field(default_factory=list)
 
     @classmethod
     def from_text(cls, text: str, **kwargs) -> "Response":
@@ -277,6 +283,76 @@ class IMessageAdapter(PlatformAdapter):
                 await bb_send_text(self.chat_guid, plain)
             if i < n - 1:
                 await asyncio.sleep(_BUBBLE_DELAY)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# JSON wire format — the contract for native clients (the iOS app)
+# ─────────────────────────────────────────────────────────────────────────────
+# Telegram/iMessage adapters render a Response into platform-native chrome (HTML,
+# tapbacks, keyboards). A native app does its OWN rendering, so the wire format is
+# kept SEMANTIC: bubbles are plain text, reactions/effects are semantic names
+# (React.* / FX.*). The client decides how to draw them — bold, haptics, confetti,
+# whatever feels native. This is the single source of truth for that contract.
+#
+# Versioned so the app and server can evolve independently: bump WIRE_VERSION on a
+# breaking shape change and let the client branch on `v`.
+
+WIRE_VERSION = 1
+
+
+def serialize_response(response: Response) -> dict:
+    """Serialize a platform-agnostic Response to the JSON wire contract.
+
+    Pure and side-effect free — safe to call from a request handler or a future
+    WebSocket frame builder. Optional fields are emitted as null (not omitted) so
+    the client always sees a stable shape.
+    """
+    return {
+        "v": WIRE_VERSION,
+        "bubbles": list(response.bubbles),
+        "reaction": response.reaction,  # semantic React.* name or None
+        "effect": (
+            {"name": response.effect, "bubble_idx": response.effect_idx}
+            if response.effect else None
+        ),
+        "buttons": (
+            [{"label": b.label, "value": b.send_value, "url": b.url}
+             for b in response.buttons]
+            if response.buttons else None
+        ),
+        "link": (
+            {"label": response.link[0], "url": response.link[1]}
+            if response.link else None
+        ),
+        # Optional typed cards. Always emitted (possibly empty list) so the
+        # client always sees a stable shape — lenient decode lets older clients
+        # ignore unknown card `type` values for forward compatibility.
+        "cards": list(response.cards),
+    }
+
+
+class JSONAdapter(PlatformAdapter):
+    """Renders a Response as the JSON wire contract for native clients.
+
+    Unlike the Telegram/iMessage adapters there is no socket to push to — an HTTP
+    request/response (or, later, a WebSocket) carries the payload. `send` therefore
+    buffers each serialized Response on `self.sent`, so the same adapter contract
+    works for both a one-shot REST reply (read `self.sent[-1]`) and future
+    per-bubble streamed delivery (one frame per `send`).
+
+    A native client can render everything — tapback reactions, screen/haptic
+    effects, quick-reply buttons, links — so nothing is folded into text the way
+    iMessage folds buttons. The capabilities advertise that.
+    """
+
+    name = "ios"
+    capabilities = {"reactions", "effects", "buttons", "links"}
+
+    def __init__(self):
+        self.sent: list[dict] = []
+
+    async def send(self, response: Response) -> None:
+        self.sent.append(serialize_response(response))
 
 
 # ─────────────────────────────────────────────────────────────────────────────

@@ -1236,10 +1236,17 @@ dietitian — you can ballpark any common food (cinnamon roll ~500, babka slice 
 shnitzel sandwich ~900) without asking "what size".
 
 NEVER silently under-count to be nice. an accurate higher number serves them better than a
-flattering low one. when torn between two estimates, take the higher-realistic one. user
-states a calorie number ("had 450 cal") → trust it; only push back if it's clearly low for
-the food. chain restaurant named without a photo ("chipotle bowl") → published menu is the
-floor, bias up for extras and portion swing. flag a high-side estimate only when the swing
+flattering low one. your FIRST-INSTINCT calorie number for any cooked, restaurant, or
+hand-estimated portion is almost always 15-25% LOW — real portions, hidden oils/butter,
+sauces, and dressings push past the clean-recipe figure your mind reaches for. so before
+you log an estimate, add that back: take your gut number and scale it up ~20%, then log
+THAT. do not log the first figure that comes to mind. when torn between two estimates,
+take the higher one, not the midpoint. THIS UPWARD CORRECTION DOES NOT APPLY when you have
+an exact source — a user-stated calorie number ("had 450 cal") → trust it as-is, only push
+back if it's clearly low for the food; a readable nutrition label or a known branded
+product at a stated quantity → log the label value as-is, don't inflate it. chain
+restaurant named without a photo ("chipotle bowl") → published menu is the FLOOR, bias up
+from there for extras and portion swing. flag a high-side estimate only when the swing
 is meaningful — don't narrate confidence on routine logs.
 
 MACRO CONSISTENCY — before calling log_food(), verify your numbers add up:
@@ -2274,6 +2281,17 @@ def build_arnie_system(platform: str = "telegram") -> str:
     elif platform == "web":
         sections.append(
             "[PLATFORM: Web chat — plain text only. No Telegram HTML tags.]"
+        )
+    elif platform == "ios":
+        sections.append(
+            "[PLATFORM: Arnie iOS app — native chat. Inline markdown IS supported "
+            "(this platform overrides the no-** rule in FORMATTING ABSOLUTES). "
+            "Use **bold** sparingly to emphasize a key number, target, or decision "
+            "— at most 1-2 per turn. Examples: 'you're at **180/2400 cal**', "
+            "'**need 50g protein at lunch**'. Plain text otherwise. No HTML tags, "
+            "no headings (#), no horizontal rules (---), no code blocks (```). "
+            "Short lists with '- ' lines OK when listing data; otherwise prose. "
+            "The app renders bold + reactions + effects natively.]"
         )
 
     # personality anchor — last thing read before generating

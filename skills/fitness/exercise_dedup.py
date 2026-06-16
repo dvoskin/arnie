@@ -52,22 +52,36 @@ def is_duplicate_of_recent(
     existing_entries: Iterable,
     now_utc: datetime,
     window_sec: int = 120,
+    superseded_window_sec: Optional[int] = None,
 ):
     """
-    Return the most-recent matching existing entry within window_sec, or None.
+    Return the most-recent matching existing entry that should block a write,
+    or None.
 
     Match key: normalized exercise_name + sets + reps (string-compared) + close
-    weight (±0.5 kg). All four must agree.
+    weight (±0.5 kg). All four must agree. A match blocks the write in one of
+    two ways:
 
-    window_sec defaults to 120s — wide enough to catch the typical
-    "Logged 4 exercises" burst (multiple log_exercise calls in a single turn,
-    plus the re-log-on-pivot case a few turns later) without blocking a
-    legitimate second set of the same weight a few minutes apart.
+    1. Tight re-fire — the match is within ``window_sec`` (default 120s). Catches
+       the "Logged 4 exercises" burst (several log_exercise calls in one turn,
+       plus a re-log a few seconds/minutes later).
 
-    The caller is expected to pass today's daily_log.exercise_entries iterable.
-    Entries are sorted in-function by timestamp DESC; we break out as soon as
-    we cross the window boundary, so this is O(N) worst-case but typically
-    O(window/sample-rate) over the eagerly-loaded today's log.
+    2. Superseded backward re-log — only when ``superseded_window_sec`` is set.
+       An exact match OLDER than ``window_sec`` still blocks IF a LATER entry of
+       the SAME exercise at a DIFFERENT load/reps already exists: the session
+       has moved this movement on, so re-emitting an earlier identical set is a
+       phantom (Danny 2026-06-15 back session — 170×10 re-fired after 175×7 was
+       logged; a straight-arm set re-emitted 37 min later during a food turn).
+       Deliberately conservative so legit patterns keep writing:
+         • straight sets — the later same-exercise set is IDENTICAL, not
+           different, so it does not supersede;
+         • supersets/circuits — the set that intervened is a DIFFERENT movement,
+           so the matched set is still its exercise's frontier;
+         • a genuine next single at the same load — nothing logged after it.
+
+    The caller passes today's daily_log.exercise_entries iterable. Entries are
+    sorted in-function by timestamp DESC and scanning stops at the widest window
+    boundary, so this is O(entries-in-window).
     """
     if not exercise_name:
         return None
@@ -75,7 +89,6 @@ def is_duplicate_of_recent(
     key_reps = str(reps or "").strip()
     key_sets = int(sets) if sets is not None else None
 
-    cutoff = now_utc - timedelta(seconds=window_sec)
     candidates = []
     for e in existing_entries:
         ts = getattr(e, "timestamp", None)
@@ -85,9 +98,21 @@ def is_duplicate_of_recent(
     # Most recent first so the returned dup is the nearest neighbor.
     candidates.sort(key=lambda pair: pair[0], reverse=True)
 
+    # Same-exercise entries, used for the "superseded" check below.
+    same_exercise = [
+        (ts, e) for ts, e in candidates
+        if normalize_exercise_name(getattr(e, "exercise_name", "")) == key_name
+    ]
+
+    tight_cutoff = now_utc - timedelta(seconds=window_sec)
+    outer_cutoff = (
+        now_utc - timedelta(seconds=superseded_window_sec)
+        if superseded_window_sec is not None else tight_cutoff
+    )
+
     for ts, e in candidates:
-        if ts < cutoff:
-            break  # everything past here is older than the window
+        if ts < outer_cutoff:
+            break  # older than the widest window we consider
         if normalize_exercise_name(getattr(e, "exercise_name", "")) != key_name:
             continue
         e_sets = getattr(e, "sets", None)
@@ -99,7 +124,20 @@ def is_duplicate_of_recent(
             continue
         if not _close(getattr(e, "weight", None), weight_kg):
             continue
-        return e
+        # Exact payload match.
+        if ts >= tight_cutoff:
+            return e  # rapid re-fire within the tight window
+        if superseded_window_sec is None:
+            continue
+        # Older than the tight window: a phantom only if a LATER same-exercise
+        # set at a DIFFERENT payload exists (the movement progressed past this
+        # set). Identical later sets / different movements do not supersede.
+        for ts2, e2 in same_exercise:
+            if ts2 <= ts:
+                continue
+            e2_reps = str(getattr(e2, "reps", "") or "").strip()
+            if e2_reps != key_reps or not _close(getattr(e2, "weight", None), weight_kg):
+                return e
     return None
 
 

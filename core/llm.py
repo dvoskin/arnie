@@ -223,6 +223,37 @@ async def generate_image(prompt: str, size: str = "1024x1024") -> Optional[str]:
         return None
 
 
+# HEIC/HEIF (default iOS camera format) — recognizable but NOT accepted by the
+# vision API. We detect it only to log a clear reason instead of a raw 400.
+_HEIC_BRANDS = {b"heic", b"heix", b"heim", b"heis", b"hevc",
+                b"hevm", b"hevs", b"heif", b"mif1", b"msf1"}
+
+
+def _sniff_image_mime(data: bytes) -> Optional[str]:
+    """Best-effort image media-type from the leading magic bytes.
+
+    Returns an Anthropic-supported type (jpeg/png/gif/webp) or None when the
+    format is unrecognized or unsupported. The vision API hard-400s on any
+    mismatch between the declared media_type and the actual bytes (iOS
+    screenshots are PNG but clients routinely tag them image/jpeg), so we sniff
+    rather than trust the caller's hint.
+    """
+    if len(data) < 12:
+        return None
+    if data[:3] == b"\xff\xd8\xff":
+        return "image/jpeg"
+    if data[:8] == b"\x89PNG\r\n\x1a\n":
+        return "image/png"
+    if data[:6] in (b"GIF87a", b"GIF89a"):
+        return "image/gif"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "image/webp"
+    if data[4:8] == b"ftyp" and data[8:12] in _HEIC_BRANDS:
+        logger.warning("analyze_image: HEIC/HEIF is unsupported by the vision "
+                       "API — client must transcode to JPEG/PNG before upload")
+    return None
+
+
 async def analyze_image(image_data: bytes, prompt: str,
                         mime_type: str = "image/jpeg",
                         max_tokens: int = 512) -> str:
@@ -237,6 +268,13 @@ async def analyze_image(image_data: bytes, prompt: str,
         return ""
     import base64
     client = _get_anthropic()
+    # Never trust the caller's media_type hint — sniff the real format so a
+    # PNG-sent-as-JPEG (iOS screenshots) can't 400 the vision call.
+    detected = _sniff_image_mime(image_data)
+    if detected and detected != mime_type:
+        logger.info(f"analyze_image: overrode media_type hint {mime_type!r} "
+                    f"with sniffed {detected!r}")
+    media_type = detected or mime_type
     b64 = base64.standard_b64encode(image_data).decode()
     response = await client.messages.create(
         model=DEFAULT_MODEL(),
@@ -245,7 +283,7 @@ async def analyze_image(image_data: bytes, prompt: str,
             "role": "user",
             "content": [
                 {"type": "image", "source": {"type": "base64",
-                                              "media_type": mime_type, "data": b64}},
+                                              "media_type": media_type, "data": b64}},
                 {"type": "text", "text": prompt},
             ],
         }],

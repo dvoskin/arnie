@@ -1,0 +1,795 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Trends · refined preview · ArnieOS</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%2300e676' d='M3 16l5-5 4 4 8-9'/%3E%3C/svg%3E">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+
+/* THEMES — verbatim from api/templates.py */
+[data-theme="dark"]{
+  --bg:#0c1018;
+  --sf:rgba(255,255,255,.05); --sf2:rgba(255,255,255,.09); --sf3:rgba(255,255,255,.14);
+  --bd:rgba(255,255,255,.10); --bd2:rgba(255,255,255,.20);
+  --ac:#00e676; --ac-rgb:0,230,118; --ac-dim:rgba(0,230,118,.13);
+  --bl:#3b82f6; --or:#f97316; --pu:#a855f7; --re:#ef4444; --ye:#eab308;
+  --tx:#eef2ff; --tx2:#c8d0e8; --mu:#6b7a99; --di:#3d4a66;
+  --sh:none; --hbg:rgba(12,16,24,.92);
+  --cgrid:rgba(255,255,255,.05); --ctick:#4a5568; --inp:rgba(255,255,255,.06);
+}
+[data-theme="light"]{
+  --bg:#f5f7fa;
+  --sf:rgba(255,255,255,.88); --sf2:#eef2f7; --sf3:#e4eaf3;
+  --bd:#dde4ef; --bd2:#c4cfdf;
+  --ac:#059669; --ac-rgb:5,150,105; --ac-dim:rgba(5,150,105,.10);
+  --bl:#2563eb; --or:#ea580c; --pu:#9333ea; --re:#dc2626; --ye:#d97706;
+  --tx:#0f172a; --tx2:#334155; --mu:#64748b; --di:#94a3b8;
+  --sh:0 1px 3px rgba(0,0,0,.06),0 4px 18px rgba(0,0,0,.05);
+  --hbg:rgba(245,247,250,.94);
+  --cgrid:#e2e8f0; --ctick:#94a3b8; --inp:#f8fafc;
+}
+html{background:var(--bg);transition:background .35s,color .3s}
+body{
+  font-family:'Geist',ui-sans-serif,system-ui,-apple-system,sans-serif;
+  background:var(--bg);color:var(--tx);min-height:100vh;
+  -webkit-font-smoothing:antialiased;overflow-x:hidden;position:relative;
+  letter-spacing:-.005em;
+}
+[data-theme="dark"] body::before{
+  content:'';position:fixed;inset:0;z-index:0;pointer-events:none;
+  background:
+    radial-gradient(ellipse 70% 55% at 10% 12%,rgba(0,230,118,.10),transparent),
+    radial-gradient(ellipse 65% 50% at 90% 78%,rgba(59,130,246,.08),transparent),
+    radial-gradient(ellipse 80% 60% at 50% 52%,rgba(90,55,190,.06),transparent);
+  animation:mesh 18s ease-in-out infinite alternate;
+}
+[data-theme="light"] body::before{
+  content:'';position:fixed;inset:0;z-index:0;pointer-events:none;
+  background:
+    radial-gradient(ellipse 70% 55% at 10% 12%,rgba(5,150,105,.04),transparent),
+    radial-gradient(ellipse 65% 50% at 90% 78%,rgba(37,99,235,.03),transparent);
+}
+@keyframes mesh{0%{opacity:.7;transform:scale(1)}100%{opacity:1;transform:scale(1.06)}}
+
+/* SHELL / SIDEBAR */
+.shell{display:grid;grid-template-columns:252px minmax(0,1fr);min-height:100dvh;position:relative;z-index:1}
+.sidebar{
+  position:sticky;top:0;height:100dvh;display:flex;flex-direction:column;
+  padding:24px 14px 20px;border-right:1px solid var(--bd);
+  background:var(--hbg);backdrop-filter:blur(24px) saturate(140%);
+  -webkit-backdrop-filter:blur(24px) saturate(140%);overflow-y:auto;z-index:10;
+}
+[data-theme="light"] .sidebar{
+  background:rgba(255,255,255,.96);box-shadow:2px 0 20px rgba(0,0,0,.06);
+}
+.sb-logo{
+  font-family:'Instrument Serif',serif;
+  font-size:21px;letter-spacing:-.01em;color:var(--tx);
+  display:inline-flex;align-items:center;gap:9px;padding:2px 10px 0;
+}
+.logo-os{
+  font-family:'Geist Mono','SF Mono',monospace;
+  font-size:9px;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--mu);border:1px solid var(--bd);border-radius:5px;padding:2px 6px;
+}
+.sidenav{display:flex;flex-direction:column;gap:2px;margin-top:28px}
+.nav-section-lbl{
+  font-family:'Geist Mono','SF Mono',monospace;
+  font-size:9px;letter-spacing:.16em;text-transform:uppercase;
+  color:var(--mu);padding:0 12px;margin:2px 0 8px;font-weight:500;
+}
+.navitem{
+  display:flex;align-items:center;gap:13px;padding:11px 12px;
+  border-radius:12px;border:1px solid transparent;
+  color:var(--tx2);font-size:14px;font-weight:500;cursor:pointer;
+  transition:all .18s cubic-bezier(.2,.7,.2,1);
+  width:100%;text-align:left;background:transparent;font-family:inherit;position:relative;
+}
+.navitem:hover:not(.active){color:var(--tx);background:var(--sf2)}
+.navitem.active{
+  color:var(--tx);background:linear-gradient(180deg,var(--sf3),var(--sf2));
+  border-color:var(--bd);
+}
+.navitem.active::before{
+  content:'';position:absolute;left:-14px;top:50%;transform:translateY(-50%);
+  width:3px;height:22px;border-radius:3px;background:var(--ac);
+}
+[data-theme="dark"] .navitem.active::before{box-shadow:0 0 10px var(--ac)}
+.ni-ico{width:20px;height:20px;display:grid;place-items:center;flex-shrink:0;color:var(--tx2);opacity:.65}
+.navitem.active .ni-ico,.navitem:hover .ni-ico{color:var(--ac);opacity:1}
+.ni-lbl{flex:1}
+.ni-meta{font-family:'Geist Mono','SF Mono',monospace;font-size:9.5px;color:var(--mu);letter-spacing:.04em}
+.navitem.active .ni-meta{color:var(--tx2)}
+.sb-foot{margin-top:auto;display:flex;flex-direction:column;gap:8px;padding-top:12px;border-top:1px solid var(--bd)}
+
+/* MAIN */
+.main{min-width:0;overflow-x:clip}
+.main-inner{padding:0 48px 100px;width:100%;max-width:900px;margin:0 auto}
+
+/* PAGE HEAD */
+.pagehead{padding:24px 0 18px;display:flex;justify-content:space-between;align-items:flex-end;gap:12px;border-bottom:1px solid var(--bd);margin-bottom:22px}
+.ph-title{font-family:'Instrument Serif',serif;font-size:34px;line-height:1;letter-spacing:-.02em;color:var(--tx)}
+.logo-arnie{color:var(--tx)}
+.ph-sub{display:flex;align-items:center;gap:7px;margin-top:7px;font-family:'Geist Mono','SF Mono',monospace;font-size:11px;color:var(--mu);letter-spacing:.04em;text-transform:uppercase}
+.ph-dot{opacity:.5}
+.ph-actions{display:flex;gap:8px;align-items:center}
+.hbtn{
+  background:var(--sf);border:1px solid var(--bd);color:var(--mu);
+  width:34px;height:34px;border-radius:9px;cursor:pointer;font-size:14px;
+  display:flex;align-items:center;justify-content:center;font-family:inherit;
+  transition:all .18s;backdrop-filter:blur(12px);box-shadow:var(--sh);
+}
+.hbtn:hover{border-color:var(--bd2);color:var(--tx)}
+
+/* SECTION TITLES */
+.stitle{
+  font-family:'Geist Mono','SF Mono',monospace;
+  font-size:10.5px;font-weight:500;color:var(--mu);text-transform:uppercase;
+  letter-spacing:.10em;margin:22px 0 10px;display:flex;align-items:center;gap:10px;
+}
+.stitle:first-child{margin-top:6px}
+.stitle.spaced{justify-content:space-between}
+
+/* MACRO STRIP — reused for the trend summary */
+.macro-strip{display:grid;grid-template-columns:repeat(4,1fr);gap:9px;margin-bottom:10px}
+.macro-cell{background:var(--sf);border:1px solid var(--bd);border-radius:14px;padding:12px 14px;box-shadow:var(--sh)}
+.mc-label{font-size:9px;font-weight:500;text-transform:uppercase;letter-spacing:.06em;color:var(--mu);margin-bottom:4px}
+.mc-num{font-size:26px;font-weight:700;letter-spacing:-.02em;line-height:1.1;color:var(--tx)}
+.mc-sub{font-family:'Geist Mono','SF Mono',monospace;font-size:10px;color:var(--mu);margin-top:3px;letter-spacing:.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mc-sub.up{color:var(--ac)}
+.mc-sub.dn{color:var(--re)}
+.mc-bar{background:var(--sf3);border-radius:999px;height:4px;margin-top:8px;overflow:hidden}
+.mc-fill{height:100%;border-radius:999px;transition:width .8s cubic-bezier(.4,0,.2,1)}
+@media(max-width:560px){.macro-strip{grid-template-columns:repeat(2,1fr)}}
+
+.macro-header{display:flex;align-items:center;justify-content:space-between;margin:14px 0 8px}
+.macro-header-lbl{
+  font-family:'Geist Mono','SF Mono',monospace;
+  font-size:10.5px;font-weight:500;color:var(--mu);text-transform:uppercase;letter-spacing:.10em;
+}
+
+/* PERIOD NAV — mirrors .dnav from Daily */
+.period-nav{display:flex;align-items:center;gap:6px;margin-bottom:14px;flex-wrap:wrap}
+.pchip{
+  background:var(--sf);border:1px solid var(--bd);color:var(--mu);
+  padding:8px 14px;border-radius:10px;font-family:inherit;
+  font-size:12px;font-weight:500;letter-spacing:-.01em;
+  cursor:pointer;transition:all .2s;flex-shrink:0;
+  backdrop-filter:blur(12px);box-shadow:var(--sh);
+  display:inline-flex;align-items:center;gap:5px;
+}
+.pchip:hover{border-color:var(--bd2);color:var(--tx2)}
+.pchip.active{background:var(--ac-dim);border-color:rgba(var(--ac-rgb),.4);color:var(--tx)}
+.period-meta{
+  margin-left:auto;font-family:'Geist Mono','SF Mono',monospace;
+  font-size:10px;color:var(--mu);letter-spacing:.06em;text-transform:uppercase;
+  white-space:nowrap;
+}
+
+/* One-liner summary that sits below the chips. Plain text, no chrome.
+   Three numbers separated by dots. Color tints carry the goal-fit signal
+   (--ac when moving toward goal, --re when not, --mu neutral). */
+.trend-line{
+  font-family:'Geist Mono','SF Mono',monospace;
+  font-size:12px;color:var(--mu);letter-spacing:.02em;
+  margin:0 0 2px;padding:2px 2px;line-height:1.6;
+  display:flex;flex-wrap:wrap;gap:14px;align-items:center;
+}
+.trend-line .tl-val{color:var(--tx)}
+.trend-line .tl-val.up{color:var(--ac)}
+.trend-line .tl-val.dn{color:var(--re)}
+.trend-line .tl-dot{opacity:.35;color:var(--mu)}
+
+/* INSIGHTS */
+.insights{margin:0 0 2px}
+.ins-banner{
+  display:flex;align-items:center;gap:10px;width:100%;
+  padding:11px 14px;border-radius:12px;cursor:pointer;user-select:none;
+  border:1px solid var(--bd2);background:var(--sf2);box-shadow:var(--sh);
+  transition:background .15s,border-color .15s,transform .1s;
+}
+.ins-banner:hover{background:var(--sf3);border-color:var(--pu)}
+.ins-banner:active{transform:scale(.98)}
+.ins-spark{
+  flex-shrink:0;display:grid;place-items:center;color:var(--pu);
+  width:28px;height:28px;background:var(--sf3);border-radius:8px;
+}
+.ins-title{font-size:13px;font-weight:600;color:var(--tx);letter-spacing:-.01em;white-space:nowrap}
+.ins-actions{margin-left:auto;display:flex;align-items:center;gap:2px;flex-shrink:0}
+.ins-refresh{
+  color:var(--mu);font-size:14px;line-height:1;cursor:pointer;
+  width:24px;height:24px;display:grid;place-items:center;border-radius:7px;
+  transition:color .15s,background .15s;
+}
+.ins-refresh:hover{color:var(--tx2);background:var(--sf3)}
+.ins-chev{color:var(--tx2);font-size:14px;padding-right:2px;transition:transform .22s cubic-bezier(.2,.7,.2,1)}
+.insights.open .ins-chev{transform:rotate(180deg)}
+.ins-body{max-height:0;overflow:hidden;transition:max-height .3s cubic-bezier(.4,0,.2,1),margin-top .2s;background:transparent;border:none}
+.insights.open .ins-body{max-height:1600px;margin-top:10px}
+.icrd{
+  background:var(--sf);border:1px solid var(--bd);border-radius:14px;overflow:hidden;
+  backdrop-filter:blur(16px);box-shadow:var(--sh);
+}
+[data-theme="dark"] .icrd{background:var(--sf2)}
+.irow{display:flex;align-items:flex-start;gap:10px;padding:11px 14px;border-bottom:1px solid var(--bd)}
+.irow:last-child{border-bottom:none}
+.iico{font-size:10px;width:6px;height:6px;flex-shrink:0;margin-top:7px;background:var(--pu);border-radius:50%}
+.itxt{font-size:13.5px;line-height:1.5;color:var(--tx);font-weight:400}
+.itxt strong{font-weight:600;color:var(--tx)}
+.iload,.iempty{padding:18px 16px;color:var(--mu);font-size:13.5px;text-align:left;line-height:1.55}
+
+/* CHARTS */
+.ccrd{
+  background:var(--sf);border:1px solid var(--bd);border-radius:16px;padding:16px;
+  backdrop-filter:blur(16px);box-shadow:var(--sh);
+}
+.ctitle{
+  font-family:'Geist Mono','SF Mono',monospace;
+  font-size:10px;font-weight:500;margin-bottom:14px;color:var(--mu);
+  text-transform:uppercase;letter-spacing:.14em;
+  display:flex;justify-content:space-between;align-items:center;
+}
+.ctitle-val{font-weight:600}
+.cwrap{position:relative;height:160px}
+.c2col{display:grid;grid-template-columns:1fr;gap:12px}
+@media(min-width:600px){.c2col{grid-template-columns:1fr 1fr}}
+
+/* CONSISTENCY HEATMAP — reused, plus a small wrap title */
+.heat-wrap{background:var(--sf);border:1px solid var(--bd);border-radius:16px;padding:16px;backdrop-filter:blur(16px);box-shadow:var(--sh)}
+.heat-dow{display:grid;grid-template-columns:repeat(7,1fr);gap:3px;margin-bottom:4px}
+.heat-dow span{
+  font-family:'Geist Mono','SF Mono',monospace;
+  font-size:9px;color:var(--di);text-align:center;font-weight:500;
+  text-transform:uppercase;letter-spacing:.06em;
+}
+.heat-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
+.hcell{height:22px;border-radius:5px;background:var(--sf3);border:1px solid var(--bd);position:relative;transition:transform .15s;cursor:default}
+[data-theme="light"] .hcell{background:#e4e8f0;border-color:#d0d8e8}
+.hcell:hover{transform:scale(1.2);z-index:2}
+.hcell.h-on{background:#22c55e;border-color:#22c55e}
+.hcell.h-off{background:#f59e0b;border-color:#f59e0b}
+.hcell.h-today{box-shadow:0 0 0 2px var(--ac)}
+.hcell-wo{position:absolute;bottom:2px;right:2px;width:3px;height:3px;border-radius:50%;background:rgba(255,255,255,.8)}
+.heat-legend{
+  display:flex;gap:12px;margin-top:9px;font-size:10px;color:var(--di);align-items:center;
+  font-family:'Geist Mono','SF Mono',monospace;letter-spacing:.04em;flex-wrap:wrap;
+}
+.hleg-dot{width:8px;height:8px;border-radius:2px;display:inline-block;flex-shrink:0}
+
+/* GOAL PROGRESS */
+.goal-card{background:var(--sf);border:1px solid var(--bd);border-radius:16px;padding:16px;backdrop-filter:blur(16px);box-shadow:var(--sh)}
+.goal-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px}
+.goal-title{font-family:'Instrument Serif',serif;font-size:24px;font-weight:normal;letter-spacing:-.01em}
+.goal-sub{font-family:'Geist Mono','SF Mono',monospace;font-size:10px;color:var(--mu);margin-top:4px;letter-spacing:.04em}
+.goal-current{text-align:right}
+.goal-lbs{font-family:'Instrument Serif',serif;font-size:34px;font-weight:normal;line-height:1;letter-spacing:-.02em}
+.goal-lbs-lbl{font-family:'Geist Mono','SF Mono',monospace;font-size:9px;color:var(--mu);letter-spacing:.08em;text-transform:uppercase;margin-top:2px}
+.goal-track{position:relative;height:7px;background:var(--sf2);border-radius:999px;margin:12px 0 9px}
+.goal-fill{height:100%;border-radius:999px;background:linear-gradient(90deg,var(--bl),var(--ac));transition:width .9s cubic-bezier(.4,0,.2,1)}
+.goal-pin{position:absolute;top:50%;transform:translate(-50%,-50%);width:14px;height:14px;border-radius:50%;border:2px solid var(--bg)}
+.goal-labels{display:flex;justify-content:space-between;font-family:'Geist Mono','SF Mono',monospace;font-size:10px;color:var(--mu);font-weight:500}
+
+/* STREAK STATS */
+.stat-row{display:grid;grid-template-columns:repeat(3,1fr);gap:9px}
+.stat-tile{background:var(--sf);border:1px solid var(--bd);border-radius:16px;padding:16px 10px;text-align:center;backdrop-filter:blur(16px);box-shadow:var(--sh)}
+.stat-num{font-family:'Instrument Serif',serif;font-size:40px;font-weight:normal;line-height:1;letter-spacing:-.02em}
+.stat-lbl{font-family:'Geist Mono','SF Mono',monospace;font-size:10px;color:var(--mu);text-transform:uppercase;letter-spacing:.10em;margin-top:6px;font-weight:500}
+
+/* Banner for the preview itself — explains the mock context */
+.preview-banner{
+  background:linear-gradient(135deg,var(--ac-dim) 0%,rgba(99,102,241,.10) 100%);
+  border:1px solid rgba(var(--ac-rgb),.30);border-radius:12px;
+  padding:10px 14px;margin-bottom:16px;
+  font-size:12px;color:var(--tx2);line-height:1.5;
+  display:flex;align-items:center;gap:10px;
+}
+.preview-banner b{color:var(--tx);font-weight:600}
+.preview-banner .pv-spark{flex-shrink:0;color:var(--ac);display:grid;place-items:center;width:22px;height:22px;background:var(--sf2);border-radius:6px}
+.preview-banner .pv-actions{margin-left:auto;display:flex;gap:6px;flex-shrink:0}
+.pv-btn{
+  background:var(--sf);border:1px solid var(--bd);color:var(--mu);
+  padding:5px 10px;border-radius:7px;font-family:'Geist Mono','SF Mono',monospace;
+  font-size:10px;cursor:pointer;transition:all .15s;letter-spacing:.04em;text-transform:uppercase;
+}
+.pv-btn:hover{border-color:var(--bd2);color:var(--tx)}
+
+@media(max-width:760px){
+  .shell{grid-template-columns:1fr}
+  .sidebar{display:none}
+  .main-inner{padding:0 20px 90px}
+  .ph-title{font-size:26px}
+}
+</style>
+</head>
+<body>
+<div class="shell">
+
+<!-- SIDEBAR (Daily / Trends / Client / Brain) -->
+<aside class="sidebar">
+  <div>
+    <div class="sb-logo">Arnie<span class="logo-os">OS</span></div>
+    <nav class="sidenav">
+      <div class="nav-section-lbl">Dashboard</div>
+      <button class="navitem">
+        <span class="ni-ico"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="16.5" rx="3"/><path d="M3 9.5h18M8 2.5v4M16 2.5v4"/><circle cx="12" cy="15" r="1.8" fill="currentColor" stroke="none"/></svg></span>
+        <span class="ni-lbl">Daily</span><span class="ni-meta">Today</span>
+      </button>
+      <button class="navitem active">
+        <span class="ni-ico"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 16l5-5 4 4 8-9"/><path d="M16 6h5v5"/><path d="M3 21h18" opacity=".4"/></svg></span>
+        <span class="ni-lbl">Trends</span><span class="ni-meta" id="nav-period-meta">30 days</span>
+      </button>
+      <button class="navitem">
+        <span class="ni-ico"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.2 4-6.5 8-6.5s8 2.3 8 6.5"/></svg></span>
+        <span class="ni-lbl">Client</span><span class="ni-meta">Profile</span>
+      </button>
+      <button class="navitem">
+        <span class="ni-ico"><svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.55" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z"/>
+          <path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z"/>
+          <circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none"/>
+        </svg></span>
+        <span class="ni-lbl">Brain</span><span class="ni-meta">Learning</span>
+      </button>
+    </nav>
+  </div>
+  <div class="sb-foot">
+    <button class="navitem" onclick="toggleTheme()">
+      <span class="ni-ico" id="theme-ico"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4 12H2M22 12h-2M5 5l1.5 1.5M17.5 17.5 19 19M19 5l-1.5 1.5M6.5 17.5 5 19"/></svg></span>
+      <span class="ni-lbl" id="theme-lbl">Light mode</span>
+    </button>
+  </div>
+</aside>
+
+<!-- MAIN -->
+<div class="main">
+<div class="main-inner">
+
+<div class="pagehead">
+  <div>
+    <div class="ph-title"><span class="logo-arnie">Arnie</span><span class="logo-os" style="margin-left:9px">OS</span></div>
+    <div class="ph-sub"><span id="ph-day">Friday</span><span class="ph-dot">·</span><span id="ph-date">Jun 12</span></div>
+  </div>
+  <div class="ph-actions">
+    <button class="hbtn" onclick="toggleTheme()" title="Toggle theme">☾</button>
+    <button class="hbtn" onclick="rerender()" title="Re-roll mock data">↻</button>
+  </div>
+</div>
+
+<!-- PREVIEW BANNER — explains this is a mock preview -->
+<div class="preview-banner">
+  <span class="pv-spark"><svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M12 2.2l1.7 4.8 4.8 1.7-4.8 1.7L12 15.2l-1.7-4.8L5.5 8.7l4.8-1.7z"/></svg></span>
+  <span><b>Trends · refinement preview</b> — using mock 90-day history. Switch periods, toggle theme, or re-roll the data.</span>
+  <span class="pv-actions">
+    <button class="pv-btn" onclick="seedScenario('cut')">Cut</button>
+    <button class="pv-btn" onclick="seedScenario('bulk')">Bulk</button>
+    <button class="pv-btn" onclick="seedScenario('maintain')">Maintain</button>
+  </span>
+</div>
+
+<!-- ─── REFINED TRENDS PANEL (minimal) ───
+     Period chips → quiet one-liner summary → AI banner → charts →
+     goal card. No 4-up grid, no heatmap, no stats tiles. The charts
+     are the story; the one-liner is the takeaway. -->
+<div class="tab-panel" id="panel-week">
+
+  <!-- PERIOD NAV — chip selector for 7d / 30d / 90d -->
+  <div class="period-nav">
+    <button class="pchip" data-period="7"  onclick="setTrendsPeriod(7)">7 days</button>
+    <button class="pchip active" data-period="30" onclick="setTrendsPeriod(30)">30 days</button>
+    <button class="pchip" data-period="90" onclick="setTrendsPeriod(90)">90 days</button>
+    <span class="period-meta" id="period-meta">May 14 — Jun 12</span>
+  </div>
+
+  <!-- QUIET ONE-LINER SUMMARY — just text, no cards. Avg cals, weight Δ,
+       workouts. Period-aware. Sits as ambient context above the AI banner. -->
+  <div class="trend-line" id="trend-line"></div>
+
+  <!-- WEEKLY ANALYSIS BANNER — collapsed by default, like the production
+       pattern. Open this for the qualitative take. -->
+  <div class="insights" id="ins-week" style="margin-top:14px">
+    <div class="ins-banner" onclick="toggleInsights()">
+      <span class="ins-spark"><svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M12 2.2l1.7 4.8 4.8 1.7-4.8 1.7L12 15.2l-1.7-4.8L5.5 8.7l4.8-1.7z"/><path d="M18.6 13.4l.82 2.18 2.18.82-2.18.82-.82 2.18-.82-2.18L15.6 16.4l2.18-.82z"/></svg></span>
+      <span class="ins-title">Weekly Analysis</span>
+      <span class="ins-actions">
+        <span class="ins-refresh" onclick="event.stopPropagation();rerender()" title="Refresh">↻</span>
+        <span class="ins-chev">▾</span>
+      </span>
+    </div>
+    <div class="ins-body"><div class="icrd" id="week-insights-card"></div></div>
+  </div>
+
+  <!-- ONE chart — weight. The trend that matters. Calorie + protein
+       adherence is summarized in the one-liner + AI banner above. -->
+  <div class="ccrd" style="margin-top:14px">
+    <div class="ctitle"><span>Weight</span><span id="wt-now-lbl" class="ctitle-val" style="color:var(--pu)"></span></div>
+    <div class="cwrap"><canvas id="weightChart"></canvas></div>
+  </div>
+
+  <!-- GOAL PROGRESS — only renders for cut/bulk users (has goal_weight). -->
+  <div class="goal-card" id="goal-card" style="margin-top:14px"></div>
+
+</div>
+</div>
+</div>
+</div>
+
+<script>
+// ────────────────────────────────────────────────────────────
+// Mock data + rendering pipeline that mirrors the production
+// renderWeekTab logic (api/templates.py:4228). 90 days are
+// generated up-front so period switching reads from one source.
+// ────────────────────────────────────────────────────────────
+
+var _trendsPeriod = 30;
+var _scenario = 'cut';
+var calChart=null, proChart=null, weightChart=null;
+var TARGETS = { calories: 2200, protein: 175, carbs: 220, fat: 70 };
+
+function pad2(n){return n<10?'0'+n:''+n}
+function localDate(d){return d.getFullYear()+'-'+pad2(d.getMonth()+1)+'-'+pad2(d.getDate())}
+function dayNameShort(d){return d.toLocaleDateString('en-US',{weekday:'short'})}
+
+// Seeded RNG so re-rolls are deterministic per scenario
+function rngFor(seed){
+  var s=seed;
+  return function(){
+    s=(s*9301+49297)%233280;
+    return s/233280;
+  };
+}
+
+function buildMock(scenario){
+  var rand = rngFor(scenario==='cut'?7:scenario==='bulk'?17:31);
+  var today = new Date(); today.setHours(0,0,0,0);
+  var history=[], weights=[];
+
+  var calTarget = TARGETS.calories;
+  var proTarget = TARGETS.protein;
+  var startW = scenario==='bulk' ? 168 : scenario==='maintain' ? 175 : 192;
+  var goalW  = scenario==='bulk' ? 185 : scenario==='maintain' ? 175 : 175;
+  var trendPerDay = scenario==='bulk' ? +0.05 : scenario==='maintain' ? 0.0 : -0.06;
+
+  // Generate 90 days (oldest first)
+  for (var i = 89; i >= 0; i--){
+    var d = new Date(today); d.setDate(d.getDate() - i);
+    var ds = localDate(d);
+    var dow = d.getDay();
+
+    // Compliance trajectory: weak start, improving as we approach today
+    var phase = (89 - i) / 89; // 0 → 1
+    var dailyConsistency = 0.55 + phase * 0.35; // 0.55 → 0.90
+    var logged = i === 0 ? true : (rand() < dailyConsistency);
+
+    if (logged){
+      var calBias = scenario==='cut' ? -0.05 : scenario==='bulk' ? +0.08 : 0.0;
+      var noise = (rand()-0.5) * 0.35;
+      var cal = Math.round(calTarget * (1 + calBias + noise));
+      cal = Math.max(900, cal);
+
+      var pro = Math.round(proTarget * (0.78 + rand() * 0.45));
+      var carb = Math.round(cal*0.45/4 + (rand()-0.5)*20);
+      var fat  = Math.round(cal*0.28/9 + (rand()-0.5)*8);
+
+      // Workout: ~4-5 per week, weekend-biased
+      var workoutOdds = (dow===0||dow===6) ? 0.62 : 0.55;
+      var workout = rand() < workoutOdds * (0.7 + phase*0.4);
+
+      history.push({date:ds, calories:cal, protein:pro, carbs:carb, fat:fat, workout:workout});
+    } else {
+      // Still emit a row so the heatmap can render "no log" cells distinctly via missing data
+      // (we don't push — the heatmap uses .find for matches)
+    }
+
+    // Weight every 2-3 days, drifting from startW toward goalW
+    if (rand() < 0.45 || i === 0){
+      var dayN = 89 - i;
+      var trend = startW + trendPerDay * dayN;
+      var jitter = (rand()-0.5) * 1.4;
+      weights.push({date:ds, lbs: Math.round((trend + jitter) * 10) / 10});
+    }
+  }
+
+  return {
+    profile:{
+      name:'Daniel',
+      current_weight_lbs: weights[weights.length-1].lbs,
+      goal_weight_lbs: goalW,
+      primary_goal: scenario,
+      analytics: {
+        weeks_to_goal: scenario==='maintain' ? null : Math.max(4, Math.round(Math.abs(weights[weights.length-1].lbs - goalW) / 0.7)),
+        daily_vs_tdee: scenario==='cut' ? -420 : scenario==='bulk' ? +220 : -10,
+      }
+    },
+    targets: TARGETS,
+    history: history,
+    weights: weights,
+    insights: weeklyInsightsFor(scenario, history, weights),
+  };
+}
+
+function weeklyInsightsFor(scenario, history, weights){
+  var loggedCal = history.filter(h=>h.calories>0);
+  var avg = loggedCal.length ? Math.round(loggedCal.reduce((s,h)=>s+h.calories,0)/loggedCal.length) : 0;
+  var startW = weights[0].lbs, curW = weights[weights.length-1].lbs;
+  var delta = (curW - startW).toFixed(1);
+  var deltaWord = delta > 0 ? '+'+delta : delta;
+  var workouts = history.filter(h=>h.workout).length;
+
+  var lines = {
+    cut: [
+      'Calorie discipline — averaging '+avg+' cal/day, ~'+(TARGETS.calories-avg)+' under target. That deficit is doing the work.',
+      'Weight trend — down '+Math.abs(delta)+' lbs across the period. Right in the sustainable range.',
+      'Protein sticking — '+Math.round(history.filter(h=>h.protein>=TARGETS.protein).length/history.length*100)+'% of days hit target. Keep prioritizing it as calories drop.',
+      'Workout cadence — '+workouts+' sessions logged. Adherence climbing in the back half of the period.',
+    ],
+    bulk: [
+      'Calorie momentum — averaging '+avg+' cal/day, '+(avg-TARGETS.calories)+' above target. Lean surplus, good pace.',
+      'Weight trend — up '+delta+' lbs. ≈0.4 lb/week, exactly the lean-gain window.',
+      'Protein anchored — '+Math.round(history.filter(h=>h.protein>=TARGETS.protein).length/history.length*100)+'% of days hit target. Synthesis substrate solid.',
+      'Training volume — '+workouts+' sessions. Frequency is the leverage point; keep stacking weeks.',
+    ],
+    maintain: [
+      'Stable calories — '+avg+'/day, basically on target. Body composition holding.',
+      'Weight flat — '+deltaWord+' lbs net. No drift, exactly what maintain looks like.',
+      'Protein floor holding at '+Math.round(history.filter(h=>h.protein>=TARGETS.protein).length/history.length*100)+'% of days.',
+      'Training '+workouts+' sessions — consistent. Maintenance ≠ coasting; the work is what holds the line.',
+    ]
+  };
+  return lines[scenario] || lines.cut;
+}
+
+// ────────────────────────────────────────────────────────────
+// Renderers — same names/shapes as the production templates.py
+// ────────────────────────────────────────────────────────────
+
+function periodRangeStr(history, period){
+  var slice = history.slice(-period);
+  if (!slice.length) return '';
+  var fmt = function(s){
+    var d = new Date(s+'T00:00:00');
+    return d.toLocaleDateString('en-US',{month:'short',day:'numeric'});
+  };
+  return fmt(slice[0].date) + ' — ' + fmt(slice[slice.length-1].date);
+}
+
+function renderTrendLine(d){
+  var hist = d.history.slice(-_trendsPeriod);
+  var wts = d.weights.filter(w => w.date >= hist[0].date);
+  var loggedCal = hist.filter(h => h.calories > 0);
+  var avgCal = loggedCal.length ? Math.round(loggedCal.reduce((s,h)=>s+h.calories,0)/loggedCal.length) : 0;
+  var workouts = hist.filter(h => h.workout).length;
+  var wkPerWeek = _trendsPeriod ? (workouts / (_trendsPeriod/7)).toFixed(1) : '0';
+
+  // Weight delta (goal-aware tint)
+  var wParts = '';
+  if (wts.length >= 2){
+    var startW = wts[0].lbs, curW = wts[wts.length-1].lbs;
+    var wd = (curW - startW);
+    var wdStr = (wd>=0?'+':'') + wd.toFixed(1) + ' lb';
+    var cutOK = d.profile.primary_goal==='cut' && wd < 0;
+    var bulkOK = d.profile.primary_goal==='bulk' && wd > 0;
+    var maintOK = d.profile.primary_goal==='maintain' && Math.abs(wd) < 1.5;
+    var cls = (cutOK||bulkOK||maintOK) ? 'up' : 'dn';
+    wParts = '<span><span class="tl-val ' + cls + '">' + wdStr + '</span> weight</span>';
+  }
+
+  var calCls = 'tl-val';
+  if (d.targets.calories){
+    var diff = avgCal - d.targets.calories;
+    var pct = Math.abs(diff) / d.targets.calories;
+    var calOK = (d.profile.primary_goal==='cut' && diff < 0) || (d.profile.primary_goal==='bulk' && diff > 0) || (pct < 0.05);
+    calCls = 'tl-val ' + (calOK ? 'up' : 'dn');
+  }
+  var calPart = '<span><span class="' + calCls + '">' + avgCal.toLocaleString() + '</span> cal / day</span>';
+
+  var woCls = parseFloat(wkPerWeek) >= 3 ? 'up' : parseFloat(wkPerWeek) < 1 ? 'dn' : '';
+  var woPart = '<span><span class="tl-val ' + woCls + '">' + workouts + '</span> workouts · ' + wkPerWeek + '/wk</span>';
+
+  var parts = [calPart, wParts, woPart].filter(Boolean);
+  document.getElementById('trend-line').innerHTML = parts.join('<span class="tl-dot">·</span>');
+}
+
+function renderCharts(d){
+  var dk = document.documentElement.getAttribute('data-theme') !== 'light';
+  var hist = d.history.slice(-_trendsPeriod);
+  var weights = d.weights.filter(w=>w.date >= hist[0].date);
+  var curW = weights.length ? weights[weights.length-1].lbs : null;
+  document.getElementById('wt-now-lbl').textContent = curW ? curW + ' LB NOW' : '';
+
+  var tick = dk ? '#4a5568' : '#94a3b8';
+  var grid = dk ? 'rgba(255,255,255,.05)' : '#e2e8f0';
+  var opts = {
+    responsive:true, maintainAspectRatio:false,
+    plugins:{legend:{display:false},tooltip:{mode:'index',intersect:false}},
+    scales:{
+      x:{grid:{display:false}, ticks:{color:tick,font:{size:9},maxRotation:0,autoSkip:true,maxTicksLimit:8}},
+      y:{grid:{color:grid}, ticks:{color:tick,font:{size:10}}, beginAtZero:true}
+    }
+  };
+
+  if (weightChart) weightChart.destroy();
+  weightChart = new Chart(document.getElementById('weightChart'),{
+    type:'line',
+    data:{
+      labels: weights.map(w=>w.date.slice(5)),
+      datasets:[
+        {
+          data: weights.map(w=>w.lbs),
+          borderColor: dk?'#f97316':'#ea580c',
+          backgroundColor: dk?'rgba(249,115,22,.08)':'rgba(234,88,12,.06)',
+          borderWidth:2.5, pointRadius:3, pointBackgroundColor: dk?'#f97316':'#ea580c',
+          fill:true, tension:0.35
+        },
+        ...(d.profile?.goal_weight_lbs && weights.length?[{
+          type:'line', data: Array(weights.length).fill(d.profile.goal_weight_lbs),
+          borderColor: dk?'rgba(0,230,118,.35)':'rgba(5,150,105,.4)',
+          borderDash:[4,4], borderWidth:1.5, pointRadius:0, fill:false
+        }]:[])
+      ]
+    },
+    options:{...opts, scales:{...opts.scales, y:{...opts.scales.y, beginAtZero:false}}}
+  });
+}
+
+function renderHeatmap(history, targets){
+  var grid = document.getElementById('heat-grid'); if (!grid) return;
+  var today = new Date(); today.setHours(0,0,0,0);
+  var calT = targets.calories, html = '';
+  var cells = [];
+  for (var i = 27; i >= 0; i--){
+    var d = new Date(today); d.setDate(d.getDate() - i);
+    var ds = localDate(d);
+    var log = history.find(h => h.date === ds) || null;
+    cells.push({ds:ds, log:log, isToday:i===0});
+  }
+  var firstDay = new Date(today); firstDay.setDate(firstDay.getDate() - 27);
+  var startCol = (firstDay.getDay() + 6) % 7;
+  for (var p = 0; p < startCol; p++){
+    html += '<div class="hcell" style="visibility:hidden;pointer-events:none"></div>';
+  }
+  cells.forEach(function(cell){
+    var cls = 'hcell';
+    var tt = cell.ds;
+    if (cell.log){
+      var onT = calT && cell.log.calories >= calT*0.85 && cell.log.calories <= calT*1.12;
+      cls += (onT?' h-on':' h-off');
+      tt = cell.ds + ': ' + cell.log.calories + ' cal' + (cell.log.workout?' 💪':'');
+    }
+    if (cell.isToday) cls += ' h-today';
+    var woDot = (cell.log && cell.log.workout)?'<div class="hcell-wo"></div>':'';
+    html += '<div class="'+cls+'" title="'+tt+'">'+woDot+'</div>';
+  });
+  grid.innerHTML = html;
+}
+
+function renderGoalProgress(profile, weights){
+  var card = document.getElementById('goal-card'); if (!card) return;
+  var cur = profile.current_weight_lbs, goal = profile.goal_weight_lbs;
+  if (!cur || !goal){ card.style.display='none'; return; }
+  card.style.display = '';
+  var startW = weights.length ? weights[0].lbs : cur;
+  var totalChg = Math.abs(startW - goal);
+  var pct = totalChg > 0 ? Math.min(100, Math.abs(startW - cur)/totalChg * 100) : 0;
+  var lbsLeft = Math.abs(cur - goal).toFixed(1);
+  var an = profile.analytics || {};
+  var cutting = goal < cur;
+  var etaStr = an.weeks_to_goal ? '~'+Math.round(an.weeks_to_goal)+' weeks to goal' : '';
+  var paceStr = an.daily_vs_tdee != null ? (an.daily_vs_tdee>0?'+':'') + an.daily_vs_tdee + ' cal/day vs TDEE' : '';
+  var subStr = [etaStr, paceStr].filter(Boolean).join(' · ');
+
+  card.innerHTML =
+    '<div class="goal-header">'+
+      '<div><div class="goal-title">'+(cutting?'⬇':'⬆')+' '+lbsLeft+' lbs to goal</div>'+
+      '<div class="goal-sub">'+subStr+'</div></div>'+
+      '<div class="goal-current"><div class="goal-lbs">'+cur+'</div>'+
+      '<div class="goal-lbs-lbl">lbs now</div></div>'+
+    '</div>'+
+    '<div class="goal-track">'+
+      '<div class="goal-fill" style="width:'+pct.toFixed(1)+'%"></div>'+
+      '<div class="goal-pin" style="left:0;background:#555"></div>'+
+      '<div class="goal-pin" style="left:'+pct.toFixed(1)+'%;background:var(--ac)"></div>'+
+      '<div class="goal-pin" style="left:100%;background:var(--bl)"></div>'+
+    '</div>'+
+    '<div class="goal-labels">'+
+      '<span>'+startW.toFixed(1)+' lb</span>'+
+      '<span style="color:var(--ac)">'+cur+' ← now</span>'+
+      '<span>'+goal+' lb</span>'+
+    '</div>';
+}
+
+function renderStreakStats(history){
+  var today = new Date(); today.setHours(0,0,0,0);
+  var logDates = new Set(history.map(h=>h.date));
+  var streak = 0, check = new Date(today);
+  while(true){
+    var ds = localDate(check);
+    if (logDates.has(ds)){ streak++; check.setDate(check.getDate()-1); } else break;
+  }
+  var periodAgo = new Date(today); periodAgo.setDate(periodAgo.getDate() - _trendsPeriod);
+  var pStr = localDate(periodAgo);
+  var workouts = history.filter(h=>h.date>=pStr && h.workout).length;
+  var todayStr = localDate(today);
+  var past = history.filter(h=>h.date>=pStr && h.date<todayStr);
+  var avgCal = past.length ? Math.round(past.reduce((s,h)=>s+h.calories,0)/past.length) : null;
+
+  document.getElementById('stat-streak').textContent = streak;
+  document.getElementById('stat-workouts').textContent = workouts;
+  document.getElementById('stat-workouts-lbl').textContent = 'Workouts / ' + _trendsPeriod + 'd';
+  document.getElementById('stat-avg-cal').textContent = avgCal ? avgCal.toLocaleString() : '—';
+}
+
+function renderInsights(insights){
+  var el = document.getElementById('week-insights-card'); if (!el) return;
+  if (!insights || !insights.length){
+    el.innerHTML = '<div class="iempty">Not enough data yet — keep logging.</div>';
+    return;
+  }
+  el.innerHTML = insights.slice(0,4).map(function(txt){
+    var parts = txt.split(' — ');
+    var content = (parts.length>=2 && parts[0].length<52)
+      ? '<strong>'+parts[0]+'</strong> — '+parts.slice(1).join(' — ')
+      : txt;
+    return '<div class="irow"><div class="iico"></div><div class="itxt">'+content+'</div></div>';
+  }).join('');
+}
+
+function renderHeader(){
+  var now = new Date();
+  document.getElementById('ph-day').textContent = now.toLocaleDateString('en-US',{weekday:'long'});
+  document.getElementById('ph-date').textContent = now.toLocaleDateString('en-US',{month:'short',day:'numeric'});
+}
+
+// ────────────────────────────────────────────────────────────
+// Orchestrator — equivalent to renderWeekTab + helpers
+// ────────────────────────────────────────────────────────────
+
+var _mock = null;
+
+function rerender(){
+  _mock = buildMock(_scenario);
+  document.getElementById('period-meta').textContent = periodRangeStr(_mock.history, _trendsPeriod);
+  document.getElementById('nav-period-meta').textContent = _trendsPeriod + ' days';
+  renderHeader();
+  renderTrendLine(_mock);
+  renderCharts(_mock);
+  renderGoalProgress(_mock.profile, _mock.weights);
+  renderInsights(_mock.insights);
+}
+
+function setTrendsPeriod(n){
+  _trendsPeriod = n;
+  document.querySelectorAll('.pchip').forEach(function(c){
+    c.classList.toggle('active', parseInt(c.dataset.period, 10) === n);
+  });
+  rerender();
+}
+
+function seedScenario(s){
+  _scenario = s;
+  rerender();
+}
+
+function toggleInsights(){
+  var el = document.getElementById('ins-week');
+  el.classList.toggle('open');
+}
+
+function toggleTheme(){
+  var cur = document.documentElement.getAttribute('data-theme');
+  var next = cur === 'light' ? 'dark' : 'light';
+  document.documentElement.setAttribute('data-theme', next);
+  document.getElementById('theme-lbl').textContent = next === 'light' ? 'Dark mode' : 'Light mode';
+  rerender(); // re-paint charts with new theme palette
+}
+
+// Boot
+rerender();
+</script>
+</body>
+</html>

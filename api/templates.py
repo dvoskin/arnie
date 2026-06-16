@@ -17,6 +17,322 @@ def _dashboard_title(name: str) -> str:
     return f"ArnieOS ⏐ {owner} Dashboard"
 
 
+# ── Fitness tab assets ─────────────────────────────────────────────────────
+# Plain strings (NOT inside the f-string), so braces need no escaping. Spliced
+# into the dashboard page in _dashboard_html via str.replace. Only NEW classes
+# live here — base chrome (.stitle/.period-nav/.pchip/.add-card/.lcrd/.lrow/
+# .trend-line) is reused from the main stylesheet. Data: GET /api/fitness/{token}.
+_FITNESS_CSS = """
+/* ── FITNESS TAB ─────────────────────────────────────────── */
+/* Subtle, cohesive 3D lift for the dashboard's card primitives — a top
+   hairline highlight (inset) + faint vertical sheen (gradient). Theme-aware,
+   intentionally low-contrast so it reads as "polished," not "different." */
+.macro-cell,.weight-module,.lcrd,.ccrd,.goal-card,.stat-tile,.heat-wrap,.fit-stat{
+  background-image:linear-gradient(180deg,rgba(255,255,255,.04),rgba(255,255,255,0) 44%);
+  box-shadow:var(--sh),inset 0 1px 0 rgba(255,255,255,.05);
+}
+[data-theme="light"] .macro-cell,[data-theme="light"] .weight-module,[data-theme="light"] .lcrd,[data-theme="light"] .ccrd,[data-theme="light"] .goal-card,[data-theme="light"] .stat-tile,[data-theme="light"] .heat-wrap,[data-theme="light"] .fit-stat{
+  background-image:linear-gradient(180deg,rgba(255,255,255,.7),rgba(255,255,255,0) 44%);
+  box-shadow:var(--sh),inset 0 1px 0 rgba(255,255,255,.85);
+}
+/* Compact stat strip — the Daily macro strip's sibling, condensed. */
+.fit-stat-strip{display:grid;grid-template-columns:repeat(4,1fr);gap:7px;margin-bottom:2px}
+.fit-stat{background:var(--sf);border:1px solid var(--bd);border-radius:12px;padding:9px 11px}
+.fit-stat-lbl{font-size:8.5px;font-weight:500;text-transform:uppercase;letter-spacing:.06em;color:var(--mu);margin-bottom:3px}
+.fit-stat-num{font-size:19px;font-weight:700;letter-spacing:-.02em;line-height:1.05;color:var(--tx);font-variant-numeric:tabular-nums}
+.fit-stat-num.up{color:var(--ac)}
+.fit-stat-sub{font-family:'Geist Mono','SF Mono',monospace;font-size:8.5px;color:var(--mu);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pchip .cdot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+.pchip .cnt{font-family:'Geist Mono','SF Mono',monospace;font-size:9.5px;opacity:.6}
+.lname .ldot{width:7px;height:7px;border-radius:50%;flex-shrink:0;display:inline-block}
+.fit-hint{font-size:10.5px;color:var(--di);margin-top:10px;letter-spacing:.01em}
+.mv-list{display:flex;flex-direction:column;gap:6px;margin-top:6px}
+.mv{background:var(--sf);background-image:linear-gradient(180deg,rgba(255,255,255,.04),rgba(255,255,255,0) 46%);border:1px solid var(--bd);border-radius:12px;box-shadow:var(--sh),inset 0 1px 0 rgba(255,255,255,.05);overflow:hidden;animation:fadeUp .26s ease}
+[data-theme="light"] .mv{background-image:linear-gradient(180deg,rgba(255,255,255,.7),rgba(255,255,255,0) 46%);box-shadow:var(--sh),inset 0 1px 0 rgba(255,255,255,.8)}
+.mv-head{display:flex;align-items:center;gap:11px;padding:9px 13px;cursor:pointer;user-select:none;transition:background .15s}
+.mv-head:hover{background:var(--sf2)}
+.mv-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.mv-id{min-width:0;flex:1}
+.mv-name{font-size:13.5px;font-weight:600;color:var(--tx);letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mv-meta{font-family:'Geist Mono','SF Mono',monospace;font-size:9px;color:var(--mu);letter-spacing:.03em;margin-top:3px;text-transform:uppercase}
+.mv-spark{flex-shrink:0;width:66px;height:24px}
+.mv-fig{text-align:right;flex-shrink:0;min-width:58px}
+.mv-now{font-size:14px;font-weight:700;color:var(--tx);letter-spacing:-.02em;line-height:1.05;font-variant-numeric:tabular-nums}
+.mv-now .u{font-size:9px;font-weight:500;color:var(--mu);margin-left:2px}
+.mv-now .reps{font-size:10.5px;font-weight:500;color:var(--tx2);margin-left:1px}
+.mv-delta{display:inline-flex;align-items:center;gap:2px;margin-top:4px;font-family:'Geist Mono','SF Mono',monospace;font-size:9.5px;font-weight:500;padding:2px 6px;border-radius:6px;letter-spacing:.02em;box-shadow:inset 0 1px 0 rgba(255,255,255,.06)}
+.mv-delta.up{color:var(--ac);background:linear-gradient(180deg,rgba(var(--ac-rgb),.20),rgba(var(--ac-rgb),.10));border:1px solid rgba(var(--ac-rgb),.22)}
+.mv-delta.dn{color:var(--re);background:linear-gradient(180deg,rgba(239,68,68,.18),rgba(239,68,68,.09));border:1px solid rgba(239,68,68,.2)}
+.mv-delta.flat,.mv-delta.base{color:var(--mu);background:linear-gradient(180deg,var(--sf3),var(--sf2));border:1px solid var(--bd)}
+.mv-delta.base{opacity:.85}
+.mv-chev{flex-shrink:0;color:var(--di);font-size:10px;transition:transform .22s cubic-bezier(.2,.7,.2,1);width:11px;text-align:center}
+.mv.open .mv-chev{transform:rotate(90deg)}
+.mv-body{max-height:0;overflow:hidden;transition:max-height .3s cubic-bezier(.4,0,.2,1)}
+.mv.open .mv-body{max-height:560px}
+.mv-sessions{padding:2px 14px 12px;border-top:1px solid var(--bd)}
+.srow{display:grid;grid-template-columns:54px 1fr auto;gap:10px;align-items:center;padding:7px 0;border-bottom:1px dashed var(--bd)}
+.srow:last-child{border-bottom:none}
+.s-date{font-family:'Geist Mono','SF Mono',monospace;font-size:10px;color:var(--mu)}
+.s-detail{font-size:12.5px;color:var(--tx2)}
+.s-detail b{color:var(--tx);font-weight:600}
+.s-pr{display:inline-block;margin-left:6px;font-size:8.5px;font-weight:700;color:var(--ac);background:var(--ac-dim);padding:1px 5px;border-radius:5px;letter-spacing:.04em;vertical-align:middle}
+.s-e1rm{font-family:'Geist Mono','SF Mono',monospace;font-size:10px;color:var(--mu);text-align:right;white-space:nowrap}
+.mv-note{font-size:11.5px;color:var(--mu);line-height:1.5;padding:9px 0 2px;display:flex;gap:7px;align-items:flex-start}
+.mv-note svg{flex-shrink:0;margin-top:1px;color:var(--ac)}
+.subdiv{font-family:'Geist Mono','SF Mono',monospace;font-size:9px;color:var(--di);text-transform:uppercase;letter-spacing:.12em;margin:16px 0 8px;display:flex;align-items:center;gap:9px}
+.subdiv::after{content:'';flex:1;height:1px;background:var(--bd)}
+.tcard{background:var(--sf);background-image:linear-gradient(180deg,rgba(255,255,255,.04),rgba(255,255,255,0) 42%);border:1px solid var(--bd);border-radius:13px;padding:13px 14px;box-shadow:var(--sh),inset 0 1px 0 rgba(255,255,255,.05);margin-bottom:8px}
+[data-theme="light"] .tcard{background-image:linear-gradient(180deg,rgba(255,255,255,.7),rgba(255,255,255,0) 42%);box-shadow:var(--sh),inset 0 1px 0 rgba(255,255,255,.8)}
+.tcard-hd{font-family:'Geist Mono','SF Mono',monospace;font-size:9.5px;font-weight:500;color:var(--mu);text-transform:uppercase;letter-spacing:.10em;display:flex;justify-content:space-between;align-items:baseline}
+.tcard-hd .acc{color:var(--tx2)}
+.vbars{display:flex;align-items:flex-end;gap:7px;height:74px;margin-top:13px}
+.vbar{flex:1;border-radius:5px 5px 2px 2px;background:linear-gradient(180deg,var(--sf3),var(--sf2));min-height:6px;box-shadow:inset 0 1px 0 rgba(255,255,255,.06);transition:height .7s cubic-bezier(.4,0,.2,1)}
+.vbar.cur{background:linear-gradient(180deg,var(--ac),rgba(var(--ac-rgb),.4));box-shadow:inset 0 1px 0 rgba(255,255,255,.25),0 0 10px rgba(var(--ac-rgb),.25)}
+.vbar-x{display:flex;gap:7px;margin-top:7px}
+.vbar-x span{flex:1;text-align:center;font-family:'Geist Mono','SF Mono',monospace;font-size:8.5px;color:var(--di)}
+.mbar-row{display:grid;grid-template-columns:66px 1fr 28px;align-items:center;gap:11px;padding:4px 0}
+.mbar-lbl{font-size:11.5px;color:var(--tx2);text-transform:capitalize}
+.mbar-track{height:7px;border-radius:999px;background:var(--sf3);overflow:hidden;box-shadow:inset 0 1px 1px rgba(0,0,0,.18)}
+.mbar-fill{height:100%;border-radius:999px;box-shadow:inset 0 1px 0 rgba(255,255,255,.28);transition:width .8s cubic-bezier(.4,0,.2,1)}
+.mbar-val{font-family:'Geist Mono','SF Mono',monospace;font-size:11px;color:var(--mu);text-align:right}
+/* Collapsible sub-sections (Building history, Trends) — tap header to toggle */
+.fit-sec-hd{cursor:pointer;user-select:none}
+.fit-sec-body{overflow:hidden;transition:max-height .3s cubic-bezier(.4,0,.2,1);max-height:2400px}
+.fit-sec.collapsed .fit-sec-body{max-height:0}
+.fit-chev2{font-size:11px;color:var(--di);transition:transform .22s cubic-bezier(.2,.7,.2,1);margin-left:auto;flex-shrink:0}
+.fit-sec.collapsed .fit-chev2{transform:rotate(-90deg)}
+.fit-toggle-hd{display:flex;align-items:center;gap:9px;font-family:'Geist Mono','SF Mono',monospace;font-size:9px;color:var(--di);text-transform:uppercase;letter-spacing:.12em;margin:16px 0 8px;cursor:pointer;user-select:none}
+.fit-toggle-hd .ft-cnt{color:var(--mu);opacity:.8}
+.fit-toggle-hd:hover .fit-chev2{color:var(--mu)}
+/* "Show all" reveal button */
+.fit-more{display:block;width:100%;margin-top:8px;padding:10px;background:var(--sf);border:1px solid var(--bd);border-radius:11px;color:var(--tx2);font-family:'Geist Mono','SF Mono',monospace;font-size:11px;font-weight:500;letter-spacing:.04em;text-transform:uppercase;cursor:pointer;box-shadow:var(--sh);transition:all .15s}
+.fit-more:hover{border-color:var(--bd2);color:var(--tx)}
+/* ── Mobile comfort: scrollable filter row, tighter cards ── */
+@media(max-width:700px){
+  #fit-filters{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch;margin-right:-18px;padding-right:18px}
+  #fit-filters::-webkit-scrollbar{display:none}
+  .mv-spark{width:46px}
+  .mv-head{gap:9px;padding:10px 12px}
+  .mv-name{font-size:13px}
+  .mv-now{font-size:13.5px}
+}
+"""
+
+_FITNESS_NAV_SIDEBAR = """      <button class="navitem" id="nav-fitness" onclick="switchTab('fitness')">
+        <span class="ni-ico"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v10M7 5v14M17 5v14M21 7v10M7 12h10"/></svg></span>
+        <span class="ni-lbl">Fitness</span><span class="ni-meta">Lifts</span>
+      </button>
+"""
+
+_FITNESS_NAV_BOTTOM = """  <button class="bn-item" id="bn-fitness" onclick="switchTab('fitness')">
+    <span class="bn-ico"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v10M7 5v14M17 5v14M21 7v10M7 12h10"/></svg></span>Fitness
+  </button>
+"""
+
+_FITNESS_PANEL_HTML = """  <!-- FITNESS TAB -->
+  <div class="tab-panel" id="panel-fitness">
+    <div class="log-section">
+      <div class="stitle spaced" style="margin-top:4px">
+        <span>Today's workout <span style="font-weight:400;opacity:.5" id="fit-today-date"></span></span>
+        <button class="add-toggle" id="fit-add-toggle" onclick="fitToggleAdd()" title="Add exercise">+</button>
+      </div>
+      <div class="add-card" id="fit-ex-form" style="display:none">
+        <input class="add-inp" id="fit-ex-name" placeholder="Exercise (e.g. lat pulldown, incline press)" autocomplete="off">
+        <div class="add-macros">
+          <div class="add-mac-field"><label>Sets</label><input type="number" id="fit-ex-sets" min="1" inputmode="numeric" placeholder="&mdash;"></div>
+          <div class="add-mac-field"><label>Reps</label><input type="text" id="fit-ex-reps" placeholder="&mdash;"></div>
+          <div class="add-mac-field"><label>lbs</label><input type="number" id="fit-ex-wt" min="0" inputmode="decimal" placeholder="&mdash;"></div>
+          <div class="add-mac-field"><label>Min</label><input type="number" id="fit-ex-dur" min="0" inputmode="numeric" placeholder="&mdash;"></div>
+        </div>
+        <button class="add-submit" onclick="fitAddToday()">Save exercise</button>
+      </div>
+      <div class="lcrd" id="fit-today-log"></div>
+    </div>
+    <div class="stitle">Progression</div>
+    <div class="fit-stat-strip" id="fit-summary"></div>
+    <div class="period-nav" id="fit-filters"></div>
+    <div id="fit-body"></div>
+    <div class="fit-hint">Tap a movement for set-by-set history &middot; trend line = est. 1-rep max (weight &times; reps).</div>
+    <div class="fit-sec" id="fit-trends-sec">
+      <div class="stitle spaced fit-sec-hd" onclick="fitToggleSec('fit-trends-sec')"><span>Trends</span><span class="fit-chev2">&#9662;</span></div>
+      <div class="fit-sec-body">
+        <div class="trend-line" id="fit-trend-summary"></div>
+        <div class="tcard" id="fit-vol-card"></div>
+        <div class="tcard" id="fit-muscle-card"></div>
+      </div>
+    </div>
+  </div>
+"""
+
+_FITNESS_JS = """
+// ── Fitness tab — lazy-loaded progression view (GET /api/fitness/{token}) ──
+(function(){
+  var MC={shoulders:'var(--or)',back:'var(--bl)',chest:'var(--ac)',arms:'var(--pu)',core:'var(--ye)',legs:'var(--re)',other:'var(--mu)'};
+  var ML={shoulders:'Shoulders',back:'Back',chest:'Chest',arms:'Arms',core:'Core',legs:'Legs',other:'Other'};
+  var MO=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  var _d=null,_filter='all',_loaded=false,_n2m={},_showAll=false,_sid=0;
+  var MOBILE_CAP=6;
+  function isMob(){return window.matchMedia('(max-width:700px)').matches;}
+  function fd(s){var x=new Date(s+'T00:00:00');return MO[x.getMonth()]+' '+x.getDate();}
+  function dow(s){return new Date(s+'T00:00:00').toLocaleDateString('en-US',{weekday:'long'});}
+  function nf(n){return n>=1000?(n/1000).toFixed(n>=10000?0:1)+'k':String(Math.round(n));}
+
+  window.loadFitnessTab=function(){
+    var pt=document.getElementById('ph-title');if(pt)pt.textContent='Fitness';
+    var ps=document.getElementById('ph-sub');if(ps)ps.innerHTML='<span>Strength progression</span>';
+    if(_loaded)return;
+    fetch('/api/fitness/'+encodeURIComponent(TOKEN)).then(function(r){return r.json();}).then(function(d){
+      _d=d;_loaded=true;(d.movements||[]).forEach(function(m){_n2m[m.name]=m.muscle;});render();
+    }).catch(function(){var b=document.getElementById('fit-body');if(b)b.innerHTML='<div class="fit-hint">Could not load fitness data — tap refresh.</div>';});
+  };
+  function render(){renderToday();renderSummary();renderFilters();renderList();renderTrends();
+    if(isMob()){var ts=document.getElementById('fit-trends-sec');if(ts)ts.classList.add('collapsed');}}
+  window.fitToggleSec=function(id){var el=document.getElementById(id);if(el)el.classList.toggle('collapsed');};
+  window.fitShowAllMulti=function(){_showAll=true;renderList();};
+
+  function renderToday(){
+    if(!_d.today_date){document.getElementById('fit-today-log').innerHTML='<div class="lempty">No lifts logged yet — tap + to add.</div>';return;}
+    var tally={};_d.today.forEach(function(t){var m=_n2m[t.name];if(m)tally[m]=(tally[m]||0)+1;});
+    var top=Object.keys(tally).sort(function(a,b){return tally[b]-tally[a];})[0];
+    var ps=document.getElementById('ph-sub');
+    if(ps)ps.innerHTML='<span>'+dow(_d.today_date)+', '+fd(_d.today_date)+'</span><span class="ph-dot">&middot;</span><span>'+(top?ML[top]+' day':'Workout')+'</span>';
+    document.getElementById('fit-today-date').textContent='\\u00b7 '+dow(_d.today_date).slice(0,3)+' '+fd(_d.today_date);
+    var log=document.getElementById('fit-today-log');
+    if(!_d.today.length){log.innerHTML='<div class="lempty">No lifts logged yet — tap + to add.</div>';return;}
+    log.innerHTML=_d.today.map(function(t){
+      var m=_n2m[t.name]||'other';
+      var reps=Array.isArray(t.reps)?t.reps.join(','):(t.reps||'—');
+      var dur=t.min?(' &middot; '+t.min+' min'):'';
+      // Right-aligned mono value column mirrors the Daily food log's calorie column.
+      var val=t.w?('<div class="lcal">'+t.w+'<span class="lcal-unit">lb</span></div>')
+                 :(t.min?('<div class="lcal">'+t.min+'<span class="lcal-unit">min</span></div>'):'');
+      return '<div class="lrow"><div class="lrow-main"><div class="lname"><span class="ldot" style="background:'+MC[m]+'"></span>'+t.name+'</div><div class="lmeta">'+t.sets+' sets &middot; '+reps+dur+'</div></div>'+val+'</div>';
+    }).join('');
+  }
+  window.fitToggleAdd=function(){
+    var f=document.getElementById('fit-ex-form'),b=document.getElementById('fit-add-toggle');
+    var show=f.style.display==='none';f.style.display=show?'block':'none';b.classList.toggle('open',show);
+    if(show)document.getElementById('fit-ex-name').focus();
+  };
+  window.fitAddToday=function(){
+    var name=document.getElementById('fit-ex-name').value.trim();if(!name)return;
+    var sets=parseInt(document.getElementById('fit-ex-sets').value)||1;
+    var reps=document.getElementById('fit-ex-reps').value.trim();
+    var w=document.getElementById('fit-ex-wt').value.trim();
+    var min=document.getElementById('fit-ex-dur').value.trim();
+    _d.today.push({name:name,sets:sets,reps:reps?reps.split(/[ ,]+/).map(Number).filter(Boolean):[],w:w||null,min:min||null});
+    ['fit-ex-name','fit-ex-sets','fit-ex-reps','fit-ex-wt','fit-ex-dur'].forEach(function(id){document.getElementById(id).value='';});
+    fitToggleAdd();renderToday();
+  };
+
+  function spark(vals,color){
+    var W=66,H=24,pad=3,pts=vals.filter(function(v){return v!=null;});
+    if(pts.length<2)return '<svg class="mv-spark" viewBox="0 0 '+W+' '+H+'"><line x1="'+pad+'" y1="'+(H/2)+'" x2="'+(W-pad)+'" y2="'+(H/2)+'" stroke="var(--di)" stroke-width="1.4" stroke-dasharray="2 3" stroke-linecap="round"/></svg>';
+    var mn=Math.min.apply(null,pts),mx=Math.max.apply(null,pts),rng=(mx-mn)||1,n=pts.length;
+    var x=function(i){return pad+i*((W-2*pad)/(n-1));},y=function(v){return H-pad-((v-mn)/rng)*(H-2*pad);};
+    var dd='';pts.forEach(function(v,i){dd+=(i?'L':'M')+x(i).toFixed(1)+' '+y(v).toFixed(1)+' ';});
+    var lx=x(n-1).toFixed(1),ly=y(pts[n-1]).toFixed(1);
+    var area=dd+'L'+lx+' '+(H-pad)+' L'+pad.toFixed(1)+' '+(H-pad)+' Z';
+    var gid='fs'+(++_sid);
+    return '<svg class="mv-spark" viewBox="0 0 '+W+' '+H+'"><defs><linearGradient id="'+gid+'" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="'+color+'" stop-opacity=".20"/><stop offset="1" stop-color="'+color+'" stop-opacity="0"/></linearGradient></defs><path d="'+area+'" fill="url(#'+gid+')" stroke="none"/><path d="'+dd+'" fill="none" stroke="'+color+'" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round"/><circle cx="'+lx+'" cy="'+ly+'" r="2.1" fill="'+color+'"/></svg>';
+  }
+  function analyze(m){
+    var ws=m.sessions.filter(function(s){return s.w!=null;});
+    if(!ws.length)return{bw:true,now:m.sessions.length+' sessions',series:[],trend:'flat'};
+    var first=ws[0],last=ws[ws.length-1],series=ws.map(function(s){return s.e1rm;});
+    if(ws.length<2)return{bw:false,now:nf(last.w),unit:'lb',reps:last.reps,series:series,trend:'base',deltaTxt:'baseline'};
+    var trend='flat',deltaTxt='held',dw=Math.round((last.w-first.w)*10)/10;
+    if(dw>0.5){trend='up';deltaTxt='+'+nf(dw)+' lb';}
+    else if(dw<-0.5){trend='dn';deltaTxt=nf(dw)+' lb';}
+    else if(last.reps!=null&&first.reps!=null&&last.reps!==first.reps){var dr=last.reps-first.reps;trend=dr>0?'up':'dn';deltaTxt=(dr>0?'+':'')+dr+' rep'+(Math.abs(dr)>1?'s':'');}
+    else{var de=Math.round(last.e1rm-first.e1rm);if(de>1){trend='up';deltaTxt='+'+de+' est';}else if(de<-1){trend='dn';deltaTxt=de+' est';}}
+    return{bw:false,now:nf(last.w),unit:'lb',reps:last.reps,series:series,trend:trend,deltaTxt:deltaTxt};
+  }
+  function renderSummary(){
+    var movs=_d.movements,dates={},vol=0,prs=0;
+    movs.forEach(function(m){m.sessions.forEach(function(s){dates[s.date]=1;if(s.vol)vol+=s.vol;});});
+    movs.forEach(function(m){var ws=m.sessions.filter(function(s){return s.e1rm!=null;});if(ws.length>=2){var last=ws[ws.length-1].e1rm,pm=Math.max.apply(null,ws.slice(0,-1).map(function(s){return s.e1rm;}));if(last>pm)prs++;}});
+    var cells=[['Sessions',Object.keys(dates).length,'last '+(_d.today_date?fd(_d.today_date):'—'),''],
+               ['Volume',nf(vol),'lb lifted',''],
+               ['Moves',movs.length,'tracked',''],
+               ['PRs',prs,prs?'new peaks':'none yet',prs?' up':'']];
+    document.getElementById('fit-summary').innerHTML=cells.map(function(c){
+      return '<div class="fit-stat"><div class="fit-stat-lbl">'+c[0]+'</div><div class="fit-stat-num'+c[3]+'">'+c[1]+'</div><div class="fit-stat-sub">'+c[2]+'</div></div>';
+    }).join('');
+  }
+  function renderFilters(){
+    var counts={};_d.movements.forEach(function(m){counts[m.muscle]=(counts[m.muscle]||0)+1;});
+    var order=['shoulders','back','chest','arms','core','legs','other'].filter(function(k){return counts[k];});
+    var html='<button class="pchip'+(_filter==='all'?' active':'')+'" onclick="fitSetFilter(\\'all\\')">All <span class="cnt">'+_d.movements.length+'</span></button>';
+    order.forEach(function(k){html+='<button class="pchip'+(_filter===k?' active':'')+'" onclick="fitSetFilter(\\''+k+'\\')"><span class="cdot" style="background:'+MC[k]+'"></span>'+ML[k]+' <span class="cnt">'+counts[k]+'</span></button>';});
+    document.getElementById('fit-filters').innerHTML=html;
+  }
+  window.fitSetFilter=function(k){_filter=k;_showAll=false;renderFilters();renderList();};
+  function card(m){
+    var a=analyze(m),color=MC[m.muscle]||'var(--mu)';
+    var arrow=a.trend==='up'?'&#9650;':a.trend==='dn'?'&#9660;':a.trend==='base'?'&#9679;':'&rarr;';
+    var meta=ML[m.muscle]+' &middot; '+m.n+' session'+(m.n>1?'s':'')+' &middot; '+fd(m.last);
+    var fig;
+    if(a.bw)fig='<div class="mv-now" style="font-size:12.5px">'+a.now+'</div>';
+    else fig='<div class="mv-now">'+a.now+'<span class="u">'+a.unit+'</span>'+(a.reps!=null?'<span class="reps"> &times;'+a.reps+'</span>':'')+'</div><div class="mv-delta '+a.trend+'">'+arrow+' '+a.deltaTxt+'</div>';
+    var sp=a.bw?spark([],color):spark(a.series,a.trend==='dn'?'var(--re)':color);
+    var ws=m.sessions;
+    var rows=ws.map(function(s,i){
+      var detail,e='';
+      if(s.w==null)detail='<b>'+s.sets+' sets</b> &middot; bodyweight';
+      else{detail='<b>'+s.sets+'&times;'+(s.reps!=null?s.reps:'—')+'</b> @ '+nf(s.w)+' lb';e='<span class="s-e1rm">'+(s.e1rm!=null?'~'+nf(s.e1rm)+' 1RM':'')+'</span>';
+        var pm=Math.max.apply(null,[0].concat(ws.slice(0,i).filter(function(x){return x.w!=null;}).map(function(x){return x.w;})));if(i>0&&s.w>pm)detail+='<span class="s-pr">WT PR</span>';}
+      return '<div class="srow"><span class="s-date">'+fd(s.date)+'</span><span class="s-detail">'+detail+'</span>'+(e||'<span></span>')+'</div>';
+    }).join('');
+    var note='';
+    if(!a.bw){var w2=m.sessions.filter(function(s){return s.w!=null;});if(w2.length>=2){var f=w2[0],l=w2[w2.length-1],msg;
+      if(l.w>f.w)msg='Load up '+nf(l.w-f.w)+' lb since '+fd(f.date)+' — keep pushing.';
+      else if(l.reps>f.reps)msg='Same load, +'+(l.reps-f.reps)+' reps since '+fd(f.date)+'. A weight bump is earned.';
+      else if(l.w<f.w)msg='Trending down vs '+fd(f.date)+' — worth a recovery/form check.';
+      else msg='Holding at '+nf(l.w)+' lb — nudge reps or weight to progress.';
+      note='<div class="mv-note"><svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor"><path d="M8 1.4l1.1 3.2 3.2 1.1-3.2 1.1L8 10l-1.1-3.2L3.7 5.7l3.2-1.1z"/></svg>'+msg+'</div>';}}
+    return '<div class="mv" data-muscle="'+m.muscle+'"><div class="mv-head" onclick="this.parentNode.classList.toggle(\\'open\\')"><span class="mv-dot" style="background:'+color+'"></span><div class="mv-id"><div class="mv-name">'+m.name+'</div><div class="mv-meta">'+meta+'</div></div>'+sp+'<div class="mv-fig">'+fig+'</div><span class="mv-chev">&#9656;</span></div><div class="mv-body"><div class="mv-sessions">'+rows+note+'</div></div></div>';
+  }
+  function renderList(){
+    var movs=_d.movements.slice();if(_filter!=='all')movs=movs.filter(function(m){return m.muscle===_filter;});
+    var multi=movs.filter(function(m){return m.n>=2;}),single=movs.filter(function(m){return m.n<2;}),html='';
+    if(multi.length){
+      // Mobile: show the most-recent CAP movements, reveal the rest on tap.
+      var cap=(isMob()&&!_showAll&&multi.length>MOBILE_CAP)?MOBILE_CAP:multi.length;
+      html+='<div class="mv-list">'+multi.slice(0,cap).map(card).join('')+'</div>';
+      if(cap<multi.length)html+='<button class="fit-more" onclick="fitShowAllMulti()">Show all '+multi.length+' movements &#9662;</button>';
+    }
+    if(single.length){
+      // Low-priority single-session lifts — collapsed by default on mobile.
+      var col=isMob()?' collapsed':'';
+      html+='<div class="fit-sec'+col+'" id="fit-single-sec">'
+        +'<div class="fit-toggle-hd fit-sec-hd" onclick="fitToggleSec(\\'fit-single-sec\\')"><span>Building history</span><span class="ft-cnt">'+single.length+' logged once</span><span class="fit-chev2">&#9662;</span></div>'
+        +'<div class="fit-sec-body"><div class="mv-list">'+single.map(card).join('')+'</div></div></div>';
+    }
+    if(!movs.length)html='<div class="fit-hint" style="padding:16px 2px">No movements for this filter.</div>';
+    document.getElementById('fit-body').innerHTML=html;
+  }
+  function renderTrends(){
+    var ss=_d.sessions||[];if(!ss.length){document.getElementById('fit-trend-summary').innerHTML='';return;}
+    var vols=ss.map(function(s){return s.vol;}),total=vols.reduce(function(a,b){return a+b;},0),avg=total/ss.length;
+    var span=Math.round((new Date(ss[ss.length-1].date)-new Date(ss[0].date))/86400000)+1;
+    var topM=_d.muscle_sets[0];
+    document.getElementById('fit-trend-summary').innerHTML=
+      '<span>avg <span class="tl-val">'+nf(avg)+'</span> lb / session</span><span class="tl-dot">&middot;</span>'
+      +'<span><span class="tl-val">'+ss.length+'</span> sessions / '+span+' days</span><span class="tl-dot">&middot;</span>'
+      +'<span><span class="tl-val">'+ML[topM.muscle]+'</span> most-trained</span>';
+    var mx=Math.max.apply(null,vols),bars='';
+    ss.forEach(function(s,i){var h=25+(s.vol/mx)*75;bars+='<div class="vbar'+(i===ss.length-1?' cur':'')+'" style="height:'+h+'%" title="'+fd(s.date)+': '+nf(s.vol)+' lb"></div>';});
+    var xl='';ss.forEach(function(s,i){xl+='<span>'+(i===0||i===ss.length-1?fd(s.date):'&middot;')+'</span>';});
+    document.getElementById('fit-vol-card').innerHTML='<div class="tcard-hd"><span>Training volume / session</span><span class="acc">'+nf(total)+' lb total</span></div><div class="vbars">'+bars+'</div><div class="vbar-x">'+xl+'</div>';
+    var ms=_d.muscle_sets,mmax=Math.max.apply(null,ms.map(function(m){return m.sets;}));
+    var rows=ms.map(function(m){return '<div class="mbar-row"><div class="mbar-lbl">'+ML[m.muscle]+'</div><div class="mbar-track"><div class="mbar-fill" style="width:'+(m.sets/mmax*100)+'%;background:'+MC[m.muscle]+'"></div></div><div class="mbar-val">'+m.sets+'</div></div>';}).join('');
+    document.getElementById('fit-muscle-card').innerHTML='<div class="tcard-hd"><span>Muscle balance</span><span class="acc">sets logged</span></div>'+rows;
+  }
+})();
+"""
+
+
 def _dashboard_html(token: str, name: str = "", bot_username: str = "Arnie_1026_Bot",
                     brain_enabled: bool = False) -> str:
     # Brain tab gating — defaults to OFF so the production environment
@@ -31,7 +347,7 @@ def _dashboard_html(token: str, name: str = "", bot_username: str = "Arnie_1026_
         else "#nav-brain,#bn-brain,#panel-brain{display:none!important}"
     )
     _brain_enabled_js = "true" if brain_enabled else "false"
-    return f"""<!DOCTYPE html>
+    _page = f"""<!DOCTYPE html>
 <html lang="en" data-theme="dark">
 <head>
 <meta charset="UTF-8">
@@ -6441,7 +6757,26 @@ function renderChatThread(turns,initial){{
 </div>
 </body>
 </html>"""
-
+    # ── Fitness tab injection ──────────────────────────────────────────────
+    # Kept as plain (non-f) string constants so their CSS/JS braces don't need
+    # f-string escaping; spliced into the rendered page via str.replace so the
+    # main template stays untouched. Data is lazy-loaded from /api/fitness.
+    _page = _page.replace("</style>", _FITNESS_CSS + "\n</style>", 1)
+    _page = _page.replace(
+        '      <button class="navitem" id="nav-profile"',
+        _FITNESS_NAV_SIDEBAR + '      <button class="navitem" id="nav-profile"', 1)
+    _page = _page.replace(
+        '  <button class="bn-item" id="bn-brain"',
+        _FITNESS_NAV_BOTTOM + '  <button class="bn-item" id="bn-brain"', 1)
+    _page = _page.replace(
+        '  <!-- PROFILE TAB -->',
+        _FITNESS_PANEL_HTML + '\n  <!-- PROFILE TAB -->', 1)
+    _page = _page.replace(
+        "if(name==='brain') loadBrainTab();",
+        "if(name==='brain') loadBrainTab();\n  if(name==='fitness') loadFitnessTab();", 1)
+    _page = _page.replace(
+        "</body>", "<script>\n" + _FITNESS_JS + "\n</script>\n</body>", 1)
+    return _page
 
 
 def _apple_guide_html(endpoint: str, status_url: str = "", shortcut_url: str = "") -> str:  # noqa: C901

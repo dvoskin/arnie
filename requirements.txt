@@ -18,6 +18,10 @@ openai==2.38.0
 apscheduler==3.11.2
 python-dotenv==1.2.2
 httpx==0.28.1
+# JWT verification for Sign in with Apple identity tokens. [crypto] pulls in
+# `cryptography` for RS256 signature verification (Apple's algorithm).
+PyJWT[crypto]==2.10.1
+cryptography==49.0.0   # transitive pin from PyJWT[crypto] — kept explicit per the exact-pin policy above
 aiofiles==25.1.0
 pytz==2026.2
 stripe==15.2.0

@@ -457,3 +457,38 @@ async def test_bulk_paste_different_movements_all_log(monkeypatch):
     assert "Back Squat" in names
     assert "Leg Press" in names
     assert "Leg Extension" in names
+
+
+# ── Superseded backward re-log: single-set wiring (Danny 2026-06-15) ──────────
+
+@pytest.mark.asyncio
+async def test_superseded_single_relog_blocked_via_dispatch(monkeypatch):
+    """Wiring check: the handler enables the superseded guard for single sets.
+
+    Prior log: Cable Pushdown 1×10 @190 (3+ min ago), then 1×8 @190 (the
+    movement moved on). Re-firing 1×10 @190 must be blocked as a superseded
+    backward re-log — outside the 120s tight window, inside the 1h session
+    window — not written. This is the lat-pulldown 170×10-after-175×7 phantom."""
+    user = SimpleNamespace(id=1, timezone="UTC")
+    s1 = _prior_entry(id_=300, name="Cable Pushdown", sets=1, reps="10",
+                      weight=86.18, seconds_ago=200)   # outside 120s tight window
+    s2 = _prior_entry(id_=301, name="Cable Pushdown", sets=1, reps="8",
+                      weight=86.18, seconds_ago=90)     # later set, different reps
+    today_log = SimpleNamespace(id=1, exercise_entries=[s1, s2])
+
+    write_count = {"n": 0}
+
+    async def _no_write(*a, **kw):
+        write_count["n"] += 1
+
+    monkeypatch.setattr(TE, "add_exercise_entry", _no_write)
+
+    result = await TE._dispatch(
+        "log_exercise",
+        {"exercise_name": "Cable Pushdown", "sets": 1, "reps": "10",
+         "weight": 190, "weight_unit": "lbs"},
+        user, today_log, db=None, source_type="text",
+    )
+    assert result.startswith("Already on the board:"), result
+    assert "[#300]" in result
+    assert write_count["n"] == 0, "superseded single-set re-log must not write"

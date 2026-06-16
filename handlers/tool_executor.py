@@ -1260,6 +1260,16 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
             except (TypeError, ValueError):
                 _is_multiset = False
             _dedup_window = 600 if _is_multiset else 120
+            # Single-set re-logs are the live failure mode (Danny 2026-06-15 back
+            # session: lat pulldown / rows / straight-arm each re-logged an
+            # identical earlier single after the movement moved on — 170×10
+            # re-fired after 175×7, one set re-emitted 37 min later during a food
+            # turn). Catch these as "superseded backward re-logs" within a 1h
+            # session window. is_duplicate_of_recent keeps legit straight sets and
+            # superset rounds writing — only a later SAME-exercise set at a
+            # DIFFERENT load/reps supersedes. Multi-set blocks keep the tight
+            # window only (they're roll-ups, never legitimately re-performed).
+            _superseded_window = None if _is_multiset else 3600
             dup = is_duplicate_of_recent(
                 exercise_name=canonical_name,
                 sets=inp.get("sets"),
@@ -1268,6 +1278,7 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
                 existing_entries=candidate_entries,
                 now_utc=now_utc,
                 window_sec=_dedup_window,
+                superseded_window_sec=_superseded_window,
             )
             if dup is not None:
                 return format_dedup_result(dup, now_utc=now_utc)

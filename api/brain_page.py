@@ -862,34 +862,29 @@ function tableKey(s) {
     .replace(/^_+|_+$/g, "");
 }
 
-function ListRow({ node, nodes, index, theme, fresh, first }) {
-  // Panel-style row to mirror the lobe-insights panel exactly: sentence-
-  // case labels, sans-serif body, chip groups get a left accent rail +
-  // wash background, single-value rows are plain. Inline tap-to-edit
-  // still works on value rows that carry editField.
+function ListRow({ node, theme, fresh, last }) {
+  // ONE uniform row for every parameter, so the list reads like a clean
+  // spec sheet rather than five competing layouts. Left column: a mono
+  // snake_case key. Right column: the value, left-aligned and wrapping so
+  // the whole fact is legible for review (no truncation). Far edge: the
+  // state dot. Chip groups are pre-joined upstream into a single value
+  // string, so there are no rails, washes, indents, sub-headers or spec
+  // sublines — every row is structurally identical.
   const isPhone = (typeof window !== "undefined" && window.innerWidth < 480);
   const [editing, setEditing] = useStateL(false);
   const [draft, setDraft] = useStateL("");
   const [saving, setSaving] = useStateL(false);
   const [saveErr, setSaveErr] = useStateL(null);
   const [override, setOverride] = useStateL(null);
-  const baseValue = node.value || "";
+
+  const chipValue = (node.chips && node.chips.length) ? node.chips.join(" · ") : "";
+  const baseValue = node.value || chipValue || "";
   const displayValue = override != null ? override : baseValue;
-  // Group bookkeeping — when does this row start/end a parent group?
-  const prev = index > 0 ? nodes[index - 1] : null;
-  const next = index < nodes.length - 1 ? nodes[index + 1] : null;
-  const isNewGroup = node.parentLabel && (!prev || prev.parentLabel !== node.parentLabel);
-  const isGroupEnd = node.parentLabel && (!next || next.parentLabel !== node.parentLabel);
-  let groupSize = 0;
-  if (node.parentLabel) {
-    for (const m of nodes) if (m.parentLabel === node.parentLabel) groupSize++;
-  }
-  const hasValue = (node.chips && node.chips.length) || (node.value && node.value.length);
-  const railColor = `rgba(${theme.name === "dark" ? "0,230,118" : "5,150,105"},0.32)`;
-  const railBgAlpha = isPhone ? "0.055" : "0.018";
-  const railBg = `rgba(${theme.name === "dark" ? "255,255,255," + railBgAlpha : "0,0,0," + (isPhone ? "0.04" : "0.018")})`;
-  const canExpand = !!displayValue && (displayValue.length > 28 || /[.;,]/.test(displayValue));
-  const canEdit = !!node.editField && !node.chips;
+  const hasValue = !!displayValue;
+  // Tap-to-edit is a single-value affordance — chip groups (multi-item
+  // sets) are read-only in the list.
+  const canEdit = !!node.editField && !(node.chips && node.chips.length);
+
   const startEdit = (ev) => {
     if (!canEdit) return;
     ev.stopPropagation();
@@ -915,8 +910,7 @@ function ListRow({ node, nodes, index, theme, fresh, first }) {
         const body = await r.json().catch(() => ({}));
         throw new Error(body.detail || ("status " + r.status));
       }
-      // Optimistic — the next 20s poll will refresh real state with the
-      // canonical formatting (units, normalization, etc.).
+      // Optimistic — the next 20s poll refreshes with canonical formatting.
       setOverride(trimmed);
       setEditing(false);
     } catch (err) {
@@ -925,57 +919,30 @@ function ListRow({ node, nodes, index, theme, fresh, first }) {
       setSaving(false);
     }
   };
+
+  const valueFont = { fontFamily: "'Geist', system-ui, sans-serif",
+    fontSize: isPhone ? 12 : 13, lineHeight: isPhone ? 1.3 : 1.45 };
+
   return (
     <React.Fragment>
-      {/* Group header — fires only on the first chip in a parent run.
-          Same mono caps + count badge style as the lobe-insights panel. */}
-      {isNewGroup && (
-        <div style={{ padding: "14px 14px 6px",
-          display: "flex", alignItems: "center", gap: 10 }}>
-          <span style={{ fontFamily: "'Geist Mono','SF Mono', monospace", fontSize: 9.5, fontWeight: 500,
-            letterSpacing: "0.10em", textTransform: "uppercase", color: theme.subText, opacity: 0.85 }}>
-            {node.parentLabel}
-          </span>
-          <span style={{ fontFamily: "'Geist Mono','SF Mono', monospace", fontSize: 9, fontWeight: 500,
-            letterSpacing: "0.04em", color: theme.subText, opacity: 0.5 }}>
-            {groupSize}
-          </span>
-          <span style={{ flex: 1, height: 1, background: theme.cardBorder, opacity: 0.6 }} />
-        </div>
-      )}
-      <div style={{ position: "relative", display: "flex", alignItems: "baseline", gap: 12,
-        padding: node.parentLabel ? "8px 14px 8px 24px" : "8px 14px",
-        background: node.parentLabel ? railBg : (fresh ? theme.freshWash : (editing ? theme.freshWash : "transparent")),
-        borderBottom: (index === nodes.length - 1 || (isGroupEnd && next && !next.parentLabel)) ? "none"
-          : (node.parentLabel && next && next.parentLabel === node.parentLabel) ? "none"
-          : `1px solid ${theme.cardBorder}`,
+      <div style={{ display: "grid",
+        gridTemplateColumns: isPhone ? "minmax(82px, 40%) 1fr 7px" : "minmax(150px, 34%) 1fr 8px",
+        alignItems: "baseline", columnGap: isPhone ? 10 : 16,
+        padding: isPhone ? "5px 2px" : "8px 4px",
+        background: (fresh || editing) ? theme.freshWash : "transparent",
+        borderBottom: last ? "none" : `1px solid ${theme.listDivider}`,
         transition: "background .25s ease" }}>
-        {/* Left accent rail — visible only on rows inside a parent
-            group. Stops just before the next group/row. */}
-        {node.parentLabel && (
-          <span style={{ position: "absolute", left: 14, top: isNewGroup ? 0 : -1,
-            bottom: isGroupEnd ? 4 : -1, width: 1.5, borderRadius: 1,
-            background: railColor }} />
-        )}
-        <span style={{ fontFamily: "'Geist', system-ui, sans-serif",
-          fontSize: 12.5,
-          fontWeight: node.parentLabel ? 500 : 400,
-          color: node.parentLabel ? theme.cardVal : theme.subText,
-          flex: "0 0 auto", maxWidth: "45%",
-          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-          opacity: hasValue ? 1 : 0.55 }}>
-          {node.label}
+        {/* Key — mono snake_case, dimmed, the stable left column */}
+        <span style={{ fontFamily: "'Geist Mono','SF Mono', monospace",
+          fontSize: isPhone ? 10 : 11, fontWeight: 400, letterSpacing: "0.01em",
+          color: theme.subText, opacity: hasValue ? 0.9 : 0.5,
+          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+          title={node.label}>
+          {tableKey(node.label)}
         </span>
-        {/* Spec line for chip rows (e.g. "120mg · 4x per week") */}
-        {node.parentLabel && node.spec && (
-          <span style={{ fontFamily: "'Geist', system-ui, sans-serif",
-            fontSize: 11, fontWeight: 400, color: theme.subText,
-            opacity: 0.75, marginLeft: 4, flex: "0 1 auto",
-            overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            {node.spec}
-          </span>
-        )}
-        {/* Value column — inline editor when active, else value text */}
+        {/* Value — sans, primary, left-aligned, wraps. The full fact is
+            visible for review. Editable single-value rows get the dashed
+            underline + tap-to-edit. */}
         {editing ? (
           <input
             autoFocus value={draft} disabled={saving}
@@ -986,88 +953,71 @@ function ListRow({ node, nodes, index, theme, fresh, first }) {
               else if (ev.key === "Escape") { ev.preventDefault(); cancelEdit(); }
             }}
             onBlur={() => { if (!saving) commitEdit(); }}
-            style={{ flex: "1 1 auto", minWidth: 0, textAlign: "right",
-              fontFamily: "'Geist', system-ui, sans-serif",
-              fontSize: 12.5, fontWeight: 500, letterSpacing: "-.005em",
-              color: theme.rowVal,
+            style={{ ...valueFont, minWidth: 0, fontWeight: 500, color: theme.rowVal,
               background: "transparent", border: "none",
               borderBottom: `1px solid ${saveErr ? "rgba(255,90,80,0.7)" : theme.known}`,
-              outline: "none", padding: "1px 0",
-              opacity: saving ? 0.6 : 1 }} />
-        ) : displayValue ? (
+              outline: "none", padding: "1px 0", opacity: saving ? 0.6 : 1 }} />
+        ) : hasValue ? (
           <span onClick={canEdit ? startEdit : undefined}
-            style={{ flex: "1 1 auto", minWidth: 0, textAlign: "right",
-              fontFamily: "'Geist', system-ui, sans-serif", fontSize: 12.5, fontWeight: 500,
-              color: theme.rowVal, lineHeight: 1.42, textWrap: "pretty",
-              overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-              cursor: canEdit ? "text" : "inherit",
-              borderBottom: canEdit ? `1px dashed ${theme.cardBorder}` : "none",
-              padding: canEdit ? "0 0 1px" : 0 }}
-            title={canEdit ? "Tap to edit" : displayValue}>
+            style={{ ...valueFont, fontWeight: 450, color: theme.rowVal,
+              textWrap: "pretty", overflowWrap: "anywhere",
+              cursor: canEdit ? "text" : "default",
+              borderBottom: canEdit ? `1px dashed ${theme.cardBorder}` : "none" }}
+            title={canEdit ? "Tap to edit" : undefined}>
             {displayValue}
           </span>
         ) : canEdit ? (
           <span onClick={startEdit}
-            style={{ flex: "1 1 auto", textAlign: "right",
-              fontFamily: "'Geist', system-ui, sans-serif", fontSize: 12.5,
-              color: theme.subText, opacity: 0.45,
-              cursor: "text",
-              borderBottom: `1px dashed ${theme.cardBorder}`,
-              padding: "0 0 1px" }}
+            style={{ ...valueFont, color: theme.subText, opacity: 0.45, cursor: "text",
+              borderBottom: `1px dashed ${theme.cardBorder}`, padding: "0 0 1px" }}
             title="Tap to add">
             add
           </span>
-        ) : !node.parentLabel ? (
-          <span style={{ flex: "1 1 auto", textAlign: "right",
-            fontFamily: "'Geist', system-ui, sans-serif", fontSize: 12.5,
-            color: theme.subText, opacity: 0.35 }}>—</span>
         ) : (
-          <span style={{ flex: "1 1 auto" }} />
+          <span style={{ ...valueFont, color: theme.subText, opacity: 0.3 }}>—</span>
         )}
-        {/* Right-edge state dot OR saving spinner */}
+        {/* State dot OR saving spinner — far edge, vertically centered */}
         {editing && saving ? (
-          <span aria-hidden="true" style={{ width: 7, height: 7, borderRadius: "50%", flexShrink: 0,
-            background: theme.known, opacity: 0.65,
+          <span aria-hidden="true" style={{ width: 7, height: 7, borderRadius: "50%",
+            alignSelf: "center", background: theme.known, opacity: 0.65,
             animation: "lvThink 1.2s ease-in-out infinite" }} />
         ) : (
-          <span style={{ width: 5, height: 5, borderRadius: "50%", flexShrink: 0,
+          <span style={{ width: 6, height: 6, borderRadius: "50%", alignSelf: "center",
             background: node.state === "confirmed" ? theme.known : "transparent",
             border: node.state === "confirmed" ? "none" : `1.2px solid ${stateColor(node.state, theme)}` }} />
         )}
       </div>
       {editing && saveErr && (
-        <div style={{ padding: "2px 14px 4px",
+        <div style={{ padding: "2px 4px 4px",
           fontFamily: "'Geist Mono','SF Mono', monospace",
           fontSize: 9.5, color: "rgba(255,120,110,0.85)",
-          letterSpacing: "0.06em", textAlign: "right" }}>
+          letterSpacing: "0.06em" }}>
           {saveErr}
         </div>
       )}
     </React.Fragment>
   );
 }
-// Re-bundle exploded chip nodes back under their parent slot for the
-// LIST view, so users see one tidy row per parameter ("Training split:
-// Chest · Back · Shoulders+traps · …") instead of six rows that read as
-// orphans. Constellation and panel still show every chip as its own dot
-// — the brain map wants density, but the list wants consolidation.
+// Fold exploded chip nodes back under their parent slot so the LIST view
+// shows ONE tidy row per parameter ("protein_sources: Oikos shake ·
+// Barebells bar · …") instead of a headered cluster of indented sub-rows.
+// Per-chip dosage specs are preserved inline as "Name (spec)". The
+// constellation and panel still explode every chip into its own dot —
+// the map wants density, the review list wants consolidation.
 function consolidateChipNodes(nodes) {
   const out = [];
   const groups = {};
   for (const n of nodes) {
     if (n.parentLabel) {
       const key = n.parentLabel;
+      const chipText = n.spec ? (n.label + " (" + n.spec + ")") : n.label;
       if (groups[key]) {
-        groups[key].chips.push(n.label);
-        // Promote confirmed state if any sibling is confirmed; learning
-        // wins only if every sibling is learning. (Mostly N/A — chips
-        // share their parent's state by construction — but defensive.)
+        groups[key].chips.push(chipText);
+        // Promote confirmed if any sibling is confirmed (defensive — chips
+        // share their parent's state by construction).
         if (n.state === "confirmed") groups[key].state = "confirmed";
       } else {
-        const row = { id: "group." + key, label: key, chips: [n.label],
-          // Chip groups aren't directly editable from a list row — their
-          // value is a multi-item set. Mark as not-editable; tap-to-edit
-          // is a single-value affordance.
+        const row = { id: "group." + key, label: key, chips: [chipText],
           state: n.state, editField: null };
         groups[key] = row;
         out.push(row);
@@ -1080,16 +1030,12 @@ function consolidateChipNodes(nodes) {
 }
 
 function BrainListView({ lobes, theme, freshId }) {
-  // Softer list view — readable section headers, sentence-case keys
-  // instead of snake_case, sans-serif body type. Reads like a notebook
-  // of what Arnie knows, not a database dump. Still tabulated and tight
-  // but warmer.
+  // Review-oriented list: every section is a header + a stack of identical
+  // key/value rows. One row shape, one section-header shape, one legend —
+  // no competing layouts. Reads like a coach's briefing sheet top-down.
   //
-  // Section ordering is opinionated for the LIST view: surface the user
-  // anchors first (Demographics → Goals → Nutrition → Fitness →
-  // Lifestyle → Thoughts), then the rest. Mirrors the way a coach
-  // briefing reads top-down, not the spatial logic the constellation
-  // uses around the ring.
+  // Section ordering is opinionated: surface the user anchors first
+  // (Demographics → Goals → Nutrition → Fitness → Lifestyle), then the rest.
   const LIST_ORDER = ["demographics", "goals", "nutrition", "fitness", "lifestyle", "custom"];
   const ordered = (() => {
     const byId = {};
@@ -1102,35 +1048,28 @@ function BrainListView({ lobes, theme, freshId }) {
     lobes.forEach((l) => { if (!used.has(l.id)) out.push(l); });
     return out;
   })();
+  const isPhone = (typeof window !== "undefined" && window.innerWidth < 480);
   return (
-    <div style={{ maxWidth: 600, margin: "0 auto",
-      // Side gutters scale with viewport: 16px floor on mobile (so the
-      // list reads like a proper indented column instead of bleeding
-      // edge-to-edge), 32px ceiling on desktop.
-      // Bottom padding is generous on mobile so the sticky Telegram /
-      // browser nav bar at the bottom of the device doesn't overlap the
-      // last few rows. calc adds the iOS home-indicator safe area on top.
+    <div style={{ maxWidth: 620, margin: "0 auto",
+      // 16px side gutters on mobile so the column reads as indented, 32px
+      // ceiling on desktop. Generous bottom padding clears the Telegram /
+      // browser nav bar + the iOS home-indicator safe area.
       padding: "6px clamp(16px, 5vw, 32px) calc(160px + env(safe-area-inset-bottom, 0px))",
       fontFamily: "'Geist Mono','SF Mono', monospace" }}>
       {ordered.map((l) => {
-        // Use the raw nodes — no consolidation. The list view now renders
-        // each chip as its own row (with the group rail) so it visually
-        // mirrors the lobe-insights panel under "Arnie's brain".
-        const nodes = l.nodes;
+        // Consolidate chips → one row per parameter. This is the key move
+        // that removes the headered/railed chip clusters.
+        const nodes = consolidateChipNodes(l.nodes);
         const confirmed = nodes.filter((n) => n.state === "confirmed").length;
-        const isPhoneSection = (typeof window !== "undefined" && window.innerWidth < 480);
         return (
-          <div key={l.id} style={{ marginBottom: isPhoneSection ? 18 : 14 }}>
-            {/* Section header — mono caps. Each lobe section reads as a
-                distinct chapter. Divider is intentionally lighter than the
-                row dividers so the eye picks it up as a chapter break. */}
+          <div key={l.id} style={{ marginBottom: isPhone ? 8 : 14 }}>
+            {/* Section header — the one chapter-break style. Slightly
+                stronger divider than the row dividers for hierarchy. */}
             <div style={{ display: "flex", alignItems: "baseline", gap: 10,
-              padding: isPhoneSection ? "20px 0 9px" : "12px 0 5px",
-              borderBottom: `1px solid ${theme.listDivider}`,
-              opacity: 0.95 }}>
-              <span style={{ fontSize: isPhoneSection ? 10.5 : 10, fontWeight: 500,
-                letterSpacing: "0.2em",
-                textTransform: "uppercase", color: theme.secLabel }}>
+              padding: isPhone ? "12px 2px 5px" : "14px 4px 6px",
+              borderBottom: `1px solid ${theme.cardBorder}` }}>
+              <span style={{ fontSize: isPhone ? 9.5 : 10, fontWeight: 600,
+                letterSpacing: "0.18em", textTransform: "uppercase", color: theme.secLabel }}>
                 {tableKey(l.name)}
               </span>
               <span style={{ flex: 1, height: 1 }} />
@@ -1139,13 +1078,10 @@ function BrainListView({ lobes, theme, freshId }) {
                 {confirmed}/{nodes.length}
               </span>
             </div>
-            {/* Rows — panel-style: chip groups get a left accent rail +
-                wash background, single-value rows are plain. Mirrors the
-                lobe-insights panel exactly. */}
             <div>
               {nodes.map((n, i) => (
-                <ListRow key={n.id} node={n} nodes={nodes} index={i}
-                  theme={theme} fresh={freshId === n.id} first={i === 0} />
+                <ListRow key={n.id} node={n} theme={theme}
+                  fresh={freshId === n.id} last={i === nodes.length - 1} />
               ))}
             </div>
           </div>
@@ -1153,7 +1089,7 @@ function BrainListView({ lobes, theme, freshId }) {
       })}
       {/* Legend — flat mono row matching the table aesthetic */}
       <div style={{ display: "flex", gap: 18, flexWrap: "wrap", justifyContent: "flex-start",
-        marginTop: 28, paddingTop: 14, borderTop: `1px solid ${theme.listDivider}`,
+        marginTop: isPhone ? 16 : 28, paddingTop: isPhone ? 10 : 14, borderTop: `1px solid ${theme.cardBorder}`,
         fontSize: 9.5, fontWeight: 500, letterSpacing: "0.06em", color: theme.subText, opacity: 0.65 }}>
         {[["confirmed", "confirmed"], ["inferred", "inferred"], ["learning", "needs_verification"]].map(([st, txt]) => (
           <span key={st} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>

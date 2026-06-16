@@ -748,6 +748,30 @@ async def run_turn(
         resp.effect    = moment.effect
         resp.effect_idx = moment.effect_idx
 
+    # ── Typed inline cards for native clients ─────────────────────────────────
+    # Every successful log_food call this turn becomes a macro_card on the wire.
+    # The iOS client renders these as inline cards beneath Arnie's text reply;
+    # Telegram/iMessage adapters ignore the field (chat-bot transports have no
+    # card concept). Pulled from the tool_call INPUT — what the LLM said to log
+    # — which is what the user sees confirmed by Arnie's reply.
+    if tool_calls:
+        for tc in tool_calls:
+            if tc.get("name") != "log_food":
+                continue
+            inp = tc.get("input") or {}
+            resp.cards.append({
+                "type": "macro_card",
+                "payload": {
+                    "name":      inp.get("food_name") or "",
+                    "quantity":  inp.get("quantity") or "",
+                    "calories":  int(round(inp.get("calories") or 0)),
+                    "protein_g": int(round(inp.get("protein")  or 0)),
+                    "carbs_g":   int(round(inp.get("carbs")    or 0)),
+                    "fats_g":    int(round(inp.get("fats")     or 0)),
+                    "source":    "photo" if inp.get("from_photo") else "manual",
+                },
+            })
+
     # ── Dashboard link after FIRST food/workout log (once per account) ────────
     if not in_onboarding and tool_calls:
         logged = any(tc["name"] in ("log_food", "log_exercise") for tc in tool_calls)

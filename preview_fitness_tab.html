@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Fitness · progression preview · ArnieOS</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%2300e676' d='M3 6v4M13 6v4M5 5v6M11 5v6M1 8h2M13 8h2'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+
+/* THEMES — verbatim from api/templates.py */
+[data-theme="dark"]{
+  --bg:#0c1018;
+  --sf:rgba(255,255,255,.05); --sf2:rgba(255,255,255,.09); --sf3:rgba(255,255,255,.14);
+  --bd:rgba(255,255,255,.10); --bd2:rgba(255,255,255,.20);
+  --ac:#00e676; --ac-rgb:0,230,118; --ac-dim:rgba(0,230,118,.13);
+  --bl:#3b82f6; --or:#f97316; --pu:#a855f7; --re:#ef4444; --ye:#eab308;
+  --tx:#eef2ff; --tx2:#c8d0e8; --mu:#6b7a99; --di:#3d4a66;
+  --sh:none; --hbg:rgba(12,16,24,.92);
+}
+[data-theme="light"]{
+  --bg:#f5f7fa;
+  --sf:rgba(255,255,255,.88); --sf2:#eef2f7; --sf3:#e4eaf3;
+  --bd:#dde4ef; --bd2:#c4cfdf;
+  --ac:#059669; --ac-rgb:5,150,105; --ac-dim:rgba(5,150,105,.10);
+  --bl:#2563eb; --or:#ea580c; --pu:#9333ea; --re:#dc2626; --ye:#d97706;
+  --tx:#0f172a; --tx2:#334155; --mu:#64748b; --di:#94a3b8;
+  --sh:0 1px 3px rgba(0,0,0,.06),0 4px 18px rgba(0,0,0,.05);
+  --hbg:rgba(245,247,250,.94);
+}
+html{background:var(--bg);transition:background .35s,color .3s}
+body{font-family:'Geist',ui-sans-serif,system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--tx);min-height:100vh;-webkit-font-smoothing:antialiased;overflow-x:hidden;position:relative;letter-spacing:-.005em}
+[data-theme="dark"] body::before{content:'';position:fixed;inset:0;z-index:0;pointer-events:none;background:radial-gradient(ellipse 70% 55% at 10% 12%,rgba(0,230,118,.09),transparent),radial-gradient(ellipse 65% 50% at 90% 78%,rgba(59,130,246,.07),transparent);animation:mesh 18s ease-in-out infinite alternate}
+[data-theme="light"] body::before{content:'';position:fixed;inset:0;z-index:0;pointer-events:none;background:radial-gradient(ellipse 70% 55% at 10% 12%,rgba(5,150,105,.04),transparent),radial-gradient(ellipse 65% 50% at 90% 78%,rgba(37,99,235,.03),transparent)}
+@keyframes mesh{0%{opacity:.7;transform:scale(1)}100%{opacity:1;transform:scale(1.06)}}
+@keyframes fadeUp{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+
+/* SHELL / SIDEBAR */
+.shell{display:grid;grid-template-columns:252px minmax(0,1fr);min-height:100dvh;position:relative;z-index:1}
+.sidebar{position:sticky;top:0;height:100dvh;display:flex;flex-direction:column;padding:24px 14px 20px;border-right:1px solid var(--bd);background:var(--hbg);backdrop-filter:blur(24px) saturate(140%);-webkit-backdrop-filter:blur(24px) saturate(140%);overflow-y:auto;z-index:10}
+[data-theme="light"] .sidebar{background:rgba(255,255,255,.96);box-shadow:2px 0 20px rgba(0,0,0,.06)}
+.sb-logo{font-family:'Instrument Serif',serif;font-size:21px;letter-spacing:-.01em;color:var(--tx);display:inline-flex;align-items:center;gap:9px;padding:2px 10px 0}
+.logo-os{font-family:'Geist Mono','SF Mono',monospace;font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--mu);border:1px solid var(--bd);border-radius:5px;padding:2px 6px}
+.sidenav{display:flex;flex-direction:column;gap:2px;margin-top:28px}
+.nav-section-lbl{font-family:'Geist Mono','SF Mono',monospace;font-size:9px;letter-spacing:.16em;text-transform:uppercase;color:var(--mu);padding:0 12px;margin:2px 0 8px;font-weight:500}
+.navitem{display:flex;align-items:center;gap:13px;padding:11px 12px;border-radius:12px;border:1px solid transparent;color:var(--tx2);font-size:14px;font-weight:500;cursor:pointer;transition:all .18s cubic-bezier(.2,.7,.2,1);width:100%;text-align:left;background:transparent;font-family:inherit;position:relative}
+.navitem:hover:not(.active){color:var(--tx);background:var(--sf2)}
+.navitem.active{color:var(--tx);background:linear-gradient(180deg,var(--sf3),var(--sf2));border-color:var(--bd)}
+.navitem.active::before{content:'';position:absolute;left:-14px;top:50%;transform:translateY(-50%);width:3px;height:22px;border-radius:3px;background:var(--ac)}
+[data-theme="dark"] .navitem.active::before{box-shadow:0 0 10px var(--ac)}
+.ni-ico{width:20px;height:20px;display:grid;place-items:center;flex-shrink:0;color:var(--tx2);opacity:.65}
+.navitem.active .ni-ico,.navitem:hover .ni-ico{color:var(--ac);opacity:1}
+.ni-lbl{flex:1}
+.ni-meta{font-family:'Geist Mono','SF Mono',monospace;font-size:9.5px;color:var(--mu);letter-spacing:.04em}
+.navitem.active .ni-meta{color:var(--tx2)}
+.sb-foot{margin-top:auto;display:flex;flex-direction:column;gap:8px;padding-top:12px;border-top:1px solid var(--bd)}
+
+/* MAIN */
+.main{min-width:0;overflow-x:clip}
+.main-inner{padding:0 48px 100px;width:100%;max-width:900px;margin:0 auto}
+.pagehead{padding:24px 0 16px;display:flex;justify-content:space-between;align-items:flex-end;gap:12px;border-bottom:1px solid var(--bd);margin-bottom:18px}
+.ph-title{font-family:'Instrument Serif',serif;font-size:34px;line-height:1;letter-spacing:-.02em;color:var(--tx)}
+.ph-sub{display:flex;align-items:center;gap:7px;margin-top:7px;font-family:'Geist Mono','SF Mono',monospace;font-size:11px;color:var(--mu);letter-spacing:.04em;text-transform:uppercase}
+.ph-dot{opacity:.5}
+.ph-actions{display:flex;gap:8px;align-items:center}
+.hbtn{background:var(--sf);border:1px solid var(--bd);color:var(--mu);width:34px;height:34px;border-radius:9px;cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center;font-family:inherit;transition:all .18s;backdrop-filter:blur(12px);box-shadow:var(--sh)}
+.hbtn:hover{border-color:var(--bd2);color:var(--tx)}
+.pv-note{font-family:'Geist Mono','SF Mono',monospace;font-size:9.5px;color:var(--di);letter-spacing:.06em;text-transform:uppercase;margin:-6px 0 18px}
+
+/* SECTION TITLES */
+.stitle{font-family:'Geist Mono','SF Mono',monospace;font-size:10.5px;font-weight:500;color:var(--mu);text-transform:uppercase;letter-spacing:.10em;margin:26px 0 10px;display:flex;align-items:center;gap:10px}
+.stitle.spaced{justify-content:space-between}
+.stitle .sub-cnt{color:var(--di);font-weight:400;letter-spacing:.04em}
+
+/* DAILY LOGGING — log-section / add-card / lcrd, verbatim language from Day tab */
+.log-section-hd{cursor:pointer;user-select:none}
+.add-toggle{width:26px;height:26px;border-radius:8px;border:1px solid var(--bd);background:var(--sf2);color:var(--mu);font-size:18px;line-height:1;cursor:pointer;font-family:inherit;display:grid;place-items:center;transition:all .18s;flex-shrink:0}
+.add-toggle:hover{border-color:var(--ac);color:var(--ac);background:var(--ac-dim)}
+.add-toggle.open{background:var(--ac-dim);border-color:rgba(var(--ac-rgb),.4);color:var(--ac);transform:rotate(45deg)}
+.add-card{background:var(--sf);border:1px solid var(--bd);border-radius:16px;margin-bottom:10px;overflow:hidden;backdrop-filter:blur(16px);box-shadow:var(--sh)}
+.add-inp{display:block;width:100%;background:transparent;border:none;border-bottom:1px solid var(--bd);color:var(--tx);font-family:inherit;font-size:14px;padding:11px 16px;outline:none;transition:background .15s}
+.add-inp:focus{background:var(--sf2)}
+.add-inp::placeholder{color:var(--di)}
+.add-macros{display:grid;grid-template-columns:repeat(4,1fr);border-bottom:1px solid var(--bd)}
+.add-mac-field{border-right:1px solid var(--bd);padding:8px 12px}
+.add-mac-field:last-child{border-right:none}
+.add-mac-field label{display:block;font-family:'Geist Mono','SF Mono',monospace;font-size:9px;letter-spacing:.08em;text-transform:uppercase;color:var(--mu);margin-bottom:4px}
+.add-mac-field input{width:100%;background:transparent;border:none;color:var(--tx);font-family:inherit;font-size:14px;font-weight:500;outline:none}
+.add-mac-field input::placeholder{color:var(--di)}
+.add-submit{display:block;width:100%;border:none;background:transparent;color:var(--ac);font-family:'Geist Mono','SF Mono',monospace;font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;padding:11px 16px;cursor:pointer;text-align:left;transition:background .15s}
+.add-submit:hover{background:var(--ac-dim)}
+.lcrd{background:var(--sf);border:1px solid var(--bd);border-radius:12px;overflow:hidden;box-shadow:var(--sh)}
+.lrow{display:flex;align-items:flex-start;gap:10px;padding:9px 13px;border-bottom:1px solid var(--bd);transition:background .12s}
+.lrow:last-child{border-bottom:none}
+.lrow:hover{background:var(--sf2)}
+.lrow-main{flex:1;min-width:0}
+.lname{font-size:13.5px;font-weight:500;line-height:1.3;color:var(--tx);display:flex;align-items:center;gap:7px}
+.lname .ldot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+.lmeta{font-size:11px;color:var(--mu);margin-top:3px;line-height:1.3;font-variant-numeric:tabular-nums;font-family:'Geist Mono','SF Mono',monospace;letter-spacing:.01em}
+.lmeta b{color:var(--tx2);font-weight:500}
+.lempty{padding:16px;color:var(--mu);font-size:13px;text-align:center}
+
+/* QUIET ONE-LINER SUMMARY — replaces stat cards (more minimal) */
+.trend-line{font-family:'Geist Mono','SF Mono',monospace;font-size:12px;color:var(--mu);letter-spacing:.02em;margin:0 0 4px;padding:2px;line-height:1.7;display:flex;flex-wrap:wrap;gap:11px;align-items:center}
+.trend-line .tl-val{color:var(--tx)}
+.trend-line .tl-val.up{color:var(--ac)}
+.trend-line .tl-dot{opacity:.32}
+
+/* FILTER CHIPS */
+.period-nav{display:flex;align-items:center;gap:6px;margin:12px 0 6px;flex-wrap:wrap}
+.pchip{background:var(--sf);border:1px solid var(--bd);color:var(--mu);padding:6px 12px;border-radius:10px;font-family:inherit;font-size:12px;font-weight:500;letter-spacing:-.01em;cursor:pointer;transition:all .2s;flex-shrink:0;box-shadow:var(--sh);display:inline-flex;align-items:center;gap:6px}
+.pchip:hover{border-color:var(--bd2);color:var(--tx2)}
+.pchip.active{background:var(--ac-dim);border-color:rgba(var(--ac-rgb),.4);color:var(--tx)}
+.pchip .cdot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+.pchip .cnt{font-family:'Geist Mono','SF Mono',monospace;font-size:9.5px;opacity:.6}
+
+/* MOVEMENT PROGRESSION CARDS — compact, line-only sparkline */
+.mv-list{display:flex;flex-direction:column;gap:7px;margin-top:6px}
+.mv{background:var(--sf);border:1px solid var(--bd);border-radius:13px;box-shadow:var(--sh);overflow:hidden;animation:fadeUp .26s ease}
+.mv-head{display:flex;align-items:center;gap:12px;padding:10px 14px;cursor:pointer;user-select:none;transition:background .15s}
+.mv-head:hover{background:var(--sf2)}
+.mv-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.mv-id{min-width:0;flex:1}
+.mv-name{font-size:13.5px;font-weight:600;color:var(--tx);letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mv-meta{font-family:'Geist Mono','SF Mono',monospace;font-size:9px;color:var(--mu);letter-spacing:.03em;margin-top:3px;text-transform:uppercase}
+.mv-spark{flex-shrink:0;width:66px;height:24px}
+.mv-fig{text-align:right;flex-shrink:0;min-width:58px}
+.mv-now{font-size:14px;font-weight:700;color:var(--tx);letter-spacing:-.02em;line-height:1.05;font-variant-numeric:tabular-nums}
+.mv-now .u{font-size:9px;font-weight:500;color:var(--mu);margin-left:2px}
+.mv-now .reps{font-size:10.5px;font-weight:500;color:var(--tx2);margin-left:1px}
+.mv-delta{display:inline-flex;align-items:center;gap:2px;margin-top:4px;font-family:'Geist Mono','SF Mono',monospace;font-size:9.5px;font-weight:500;padding:2px 6px;border-radius:6px;letter-spacing:.02em}
+.mv-delta.up{color:var(--ac);background:var(--ac-dim)}
+.mv-delta.dn{color:var(--re);background:rgba(239,68,68,.12)}
+.mv-delta.flat{color:var(--mu);background:var(--sf2)}
+.mv-delta.base{color:var(--mu);background:var(--sf2);opacity:.85}
+.mv-chev{flex-shrink:0;color:var(--di);font-size:10px;transition:transform .22s cubic-bezier(.2,.7,.2,1);width:11px;text-align:center}
+.mv.open .mv-chev{transform:rotate(90deg)}
+.mv-body{max-height:0;overflow:hidden;transition:max-height .3s cubic-bezier(.4,0,.2,1)}
+.mv.open .mv-body{max-height:520px}
+.mv-sessions{padding:2px 14px 12px;border-top:1px solid var(--bd)}
+.srow{display:grid;grid-template-columns:54px 1fr auto;gap:10px;align-items:center;padding:7px 0;border-bottom:1px dashed var(--bd)}
+.srow:last-child{border-bottom:none}
+.s-date{font-family:'Geist Mono','SF Mono',monospace;font-size:10px;color:var(--mu)}
+.s-detail{font-size:12.5px;color:var(--tx2)}
+.s-detail b{color:var(--tx);font-weight:600}
+.s-pr{display:inline-block;margin-left:6px;font-size:8.5px;font-weight:700;color:var(--ac);background:var(--ac-dim);padding:1px 5px;border-radius:5px;letter-spacing:.04em;vertical-align:middle}
+.s-e1rm{font-family:'Geist Mono','SF Mono',monospace;font-size:10px;color:var(--mu);text-align:right;white-space:nowrap}
+.mv-note{font-size:11.5px;color:var(--mu);line-height:1.5;padding:9px 0 2px;display:flex;gap:7px;align-items:flex-start}
+.mv-note svg{flex-shrink:0;margin-top:1px;color:var(--ac)}
+.subdiv{font-family:'Geist Mono','SF Mono',monospace;font-size:9px;color:var(--di);text-transform:uppercase;letter-spacing:.12em;margin:16px 0 8px;display:flex;align-items:center;gap:9px}
+.subdiv::after{content:'';flex:1;height:1px;background:var(--bd)}
+.hint{font-size:10.5px;color:var(--di);margin-top:10px;letter-spacing:.01em}
+
+/* TRENDS (bottom) — compact CSS visuals, no chart lib */
+.tcard{background:var(--sf);border:1px solid var(--bd);border-radius:14px;padding:14px 15px;box-shadow:var(--sh);margin-bottom:9px}
+.tcard-hd{font-family:'Geist Mono','SF Mono',monospace;font-size:9.5px;font-weight:500;color:var(--mu);text-transform:uppercase;letter-spacing:.10em;display:flex;justify-content:space-between;align-items:baseline}
+.tcard-hd .acc{color:var(--tx2)}
+.vbars{display:flex;align-items:flex-end;gap:7px;height:78px;margin-top:14px}
+.vbar{flex:1;border-radius:5px 5px 2px 2px;background:var(--sf3);position:relative;min-height:6px;transition:height .7s cubic-bezier(.4,0,.2,1)}
+.vbar.cur{background:linear-gradient(180deg,var(--ac),rgba(var(--ac-rgb),.45))}
+.vbar-x{display:flex;gap:7px;margin-top:7px}
+.vbar-x span{flex:1;text-align:center;font-family:'Geist Mono','SF Mono',monospace;font-size:8.5px;color:var(--di)}
+.mbar-row{display:grid;grid-template-columns:70px 1fr 30px;align-items:center;gap:11px;padding:5px 0}
+.mbar-lbl{font-size:11.5px;color:var(--tx2);text-transform:capitalize}
+.mbar-track{height:7px;border-radius:999px;background:var(--sf3);overflow:hidden}
+.mbar-fill{height:100%;border-radius:999px;transition:width .8s cubic-bezier(.4,0,.2,1)}
+.mbar-val{font-family:'Geist Mono','SF Mono',monospace;font-size:11px;color:var(--mu);text-align:right}
+
+@media(max-width:760px){
+  .shell{grid-template-columns:1fr}
+  .sidebar{display:none}
+  .main-inner{padding:0 18px 90px}
+  .ph-title{font-size:26px}
+  .mv-spark{width:48px}
+}
+</style>
+</head>
+<body>
+<div class="shell">
+
+<!-- SIDEBAR — Daily · Fitness · Client · Brain (Trends folded into Daily + Fitness) -->
+<aside class="sidebar">
+  <div>
+    <div class="sb-logo">Arnie<span class="logo-os">OS</span></div>
+    <nav class="sidenav">
+      <div class="nav-section-lbl">Dashboard</div>
+      <button class="navitem">
+        <span class="ni-ico"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="16.5" rx="3"/><path d="M3 9.5h18M8 2.5v4M16 2.5v4"/><circle cx="12" cy="15" r="1.8" fill="currentColor" stroke="none"/></svg></span>
+        <span class="ni-lbl">Daily</span><span class="ni-meta">Nutrition</span>
+      </button>
+      <button class="navitem active">
+        <span class="ni-ico"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v10M7 5v14M17 5v14M21 7v10M7 12h10"/></svg></span>
+        <span class="ni-lbl">Fitness</span><span class="ni-meta">Lifts</span>
+      </button>
+      <button class="navitem">
+        <span class="ni-ico"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.2 4-6.5 8-6.5s8 2.3 8 6.5"/></svg></span>
+        <span class="ni-lbl">Client</span><span class="ni-meta">Profile</span>
+      </button>
+      <button class="navitem">
+        <span class="ni-ico"><svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.55" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z"/>
+          <path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z"/>
+          <circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none"/>
+        </svg></span>
+        <span class="ni-lbl">Brain</span><span class="ni-meta">Learning</span>
+      </button>
+    </nav>
+  </div>
+  <div class="sb-foot">
+    <button class="navitem" onclick="toggleTheme()">
+      <span class="ni-ico"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4 12H2M22 12h-2M5 5l1.5 1.5M17.5 17.5 19 19M19 5l-1.5 1.5M6.5 17.5 5 19"/></svg></span>
+      <span class="ni-lbl" id="theme-lbl">Light mode</span>
+    </button>
+  </div>
+</aside>
+
+<!-- MAIN -->
+<div class="main">
+<div class="main-inner">
+
+<div class="pagehead">
+  <div>
+    <div class="ph-title">Fitness</div>
+    <div class="ph-sub" id="ph-sub"><span>—</span></div>
+  </div>
+  <div class="ph-actions">
+    <button class="hbtn" onclick="toggleTheme()" title="Toggle theme">&#9790;</button>
+  </div>
+</div>
+<div class="pv-note">Preview · Danny's real lifts · local only</div>
+
+<!-- FITNESS TAB -->
+<div class="tab-panel" id="panel-fitness">
+
+  <!-- ① DAILY LOGGING — today's workout -->
+  <div class="log-section" id="today-section">
+    <div class="stitle spaced log-section-hd" style="margin-top:4px">
+      <span>Today's workout <span class="sub-cnt" id="today-date-lbl"></span></span>
+      <button class="add-toggle" id="add-toggle" onclick="toggleAdd()" title="Add exercise">+</button>
+    </div>
+    <div class="add-card" id="ex-form" style="display:none">
+      <input class="add-inp" id="ex-name" placeholder="Exercise (e.g. lat pulldown, incline press)" autocomplete="off">
+      <div class="add-macros">
+        <div class="add-mac-field"><label>Sets</label><input type="number" id="ex-sets" min="1" inputmode="numeric" placeholder="—"></div>
+        <div class="add-mac-field"><label>Reps</label><input type="text" id="ex-reps" placeholder="—"></div>
+        <div class="add-mac-field"><label>lbs</label><input type="number" id="ex-wt" min="0" inputmode="decimal" placeholder="—"></div>
+        <div class="add-mac-field"><label>Min</label><input type="number" id="ex-dur" min="0" inputmode="numeric" placeholder="—"></div>
+      </div>
+      <button class="add-submit" onclick="addToday()">Save exercise</button>
+    </div>
+    <div class="lcrd" id="today-log"></div>
+  </div>
+
+  <!-- ② PROGRESSION -->
+  <div class="stitle">Progression</div>
+  <div class="trend-line" id="fit-summary"></div>
+  <div class="period-nav" id="fit-filters"></div>
+  <div id="fit-body"></div>
+  <div class="hint">Tap a movement for set-by-set history · trend line = est. 1-rep max (weight × reps).</div>
+
+  <!-- ③ TRENDS (folded to the bottom of the tab) -->
+  <div class="stitle">Trends</div>
+  <div class="trend-line" id="trend-summary"></div>
+  <div class="tcard" id="vol-card"></div>
+  <div class="tcard" id="muscle-card"></div>
+
+</div>
+
+</div><!-- /main-inner -->
+</div><!-- /main -->
+</div><!-- /shell -->
+
+<script>
+// ── Danny's real lifting data (prod, user_id=2; canonicalized; est-1RM = Epley) ──
+const DATA = {"user":"Danny","movements":[{"name":"Shoulder Press Machine","muscle":"shoulders","sessions":[{"date":"2026-06-09","w":130.0,"reps":10,"e1rm":173.3,"vol":3510,"sets":3},{"date":"2026-06-14","w":130.0,"reps":12,"e1rm":182.0,"vol":4160,"sets":3}],"n":2,"last":"2026-06-14"},{"name":"Cable Lateral Raise","muscle":"shoulders","sessions":[{"date":"2026-06-09","w":20.0,"reps":15,"e1rm":30.0,"vol":880,"sets":3},{"date":"2026-06-14","w":20.0,"reps":16,"e1rm":30.0,"vol":860,"sets":3}],"n":2,"last":"2026-06-14"},{"name":"Cable Shrugs","muscle":"shoulders","sessions":[{"date":"2026-06-09","w":190.0,"reps":15,"e1rm":285.0,"vol":8170,"sets":3},{"date":"2026-06-14","w":200.0,"reps":12,"e1rm":280.0,"vol":7720,"sets":3}],"n":2,"last":"2026-06-14"},{"name":"Face Pull","muscle":"shoulders","sessions":[{"date":"2026-06-09","w":70.0,"reps":12,"e1rm":98.0,"vol":2520,"sets":3},{"date":"2026-06-14","w":70.0,"reps":12,"e1rm":98.0,"vol":2520,"sets":3}],"n":2,"last":"2026-06-14"},{"name":"Upright Row","muscle":"shoulders","sessions":[{"date":"2026-06-09","w":110.0,"reps":10,"e1rm":146.7,"vol":3100,"sets":3},{"date":"2026-06-14","w":110.0,"reps":12,"e1rm":154.0,"vol":3960,"sets":3}],"n":2,"last":"2026-06-14"},{"name":"Cable Front Raise","muscle":"shoulders","sessions":[{"date":"2026-06-09","w":70.0,"reps":13,"e1rm":100.3,"vol":2730,"sets":3},{"date":"2026-06-14","w":80.0,"reps":12,"e1rm":112.0,"vol":2560,"sets":3}],"n":2,"last":"2026-06-14"},{"name":"Dip","muscle":"arms","sessions":[{"date":"2026-06-03","w":null,"reps":null,"e1rm":null,"vol":null,"sets":2},{"date":"2026-06-07","w":null,"reps":null,"e1rm":null,"vol":null,"sets":2},{"date":"2026-06-11","w":null,"reps":null,"e1rm":null,"vol":null,"sets":2},{"date":"2026-06-13","w":null,"reps":null,"e1rm":null,"vol":null,"sets":2}],"n":4,"last":"2026-06-13"},{"name":"Incline Bench Machine Press","muscle":"chest","sessions":[{"date":"2026-06-03","w":205.0,"reps":11,"e1rm":286.7,"vol":6700,"sets":3},{"date":"2026-06-07","w":205.0,"reps":14,"e1rm":300.7,"vol":6925,"sets":3},{"date":"2026-06-13","w":205.0,"reps":15,"e1rm":307.5,"vol":7330,"sets":3}],"n":3,"last":"2026-06-13"},{"name":"High to Low Cable Fly","muscle":"chest","sessions":[{"date":"2026-06-03","w":120.0,"reps":13,"e1rm":172.0,"vol":4440,"sets":3},{"date":"2026-06-07","w":120.0,"reps":13,"e1rm":172.0,"vol":4560,"sets":3},{"date":"2026-06-13","w":120.0,"reps":23,"e1rm":180.0,"vol":5880,"sets":3}],"n":3,"last":"2026-06-13"},{"name":"Low to High Cable Fly","muscle":"chest","sessions":[{"date":"2026-06-03","w":60.0,"reps":14,"e1rm":88.0,"vol":2400,"sets":3},{"date":"2026-06-07","w":60.0,"reps":13,"e1rm":86.0,"vol":2340,"sets":3},{"date":"2026-06-13","w":80.0,"reps":10,"e1rm":106.7,"vol":2420,"sets":3}],"n":3,"last":"2026-06-13"},{"name":"Flat Dumbbell Press","muscle":"chest","sessions":[{"date":"2026-06-07","w":65.0,"reps":11,"e1rm":88.8,"vol":1900,"sets":3},{"date":"2026-06-13","w":65.0,"reps":10,"e1rm":86.7,"vol":1755,"sets":3}],"n":2,"last":"2026-06-13"},{"name":"Cable Crunch","muscle":"core","sessions":[{"date":"2026-06-02","w":160.0,"reps":12,"e1rm":224.0,"vol":6120,"sets":3},{"date":"2026-06-03","w":160.0,"reps":14,"e1rm":234.7,"vol":2240,"sets":1},{"date":"2026-06-11","w":150.0,"reps":14,"e1rm":220.0,"vol":6160,"sets":3}],"n":3,"last":"2026-06-11"},{"name":"Overhead Cable Extension","muscle":"arms","sessions":[{"date":"2026-06-11","w":110.0,"reps":13,"e1rm":157.7,"vol":3740,"sets":3}],"n":1,"last":"2026-06-11"},{"name":"Cable Pushdown","muscle":"arms","sessions":[{"date":"2026-06-11","w":190.0,"reps":11,"e1rm":259.7,"vol":5610,"sets":3}],"n":1,"last":"2026-06-11"},{"name":"Straight Bar Cable Curl","muscle":"arms","sessions":[{"date":"2026-06-11","w":140.0,"reps":13,"e1rm":200.7,"vol":3960,"sets":3}],"n":1,"last":"2026-06-11"},{"name":"Forearm Cable Curl","muscle":"arms","sessions":[{"date":"2026-06-11","w":100.0,"reps":12,"e1rm":140.0,"vol":2400,"sets":2}],"n":1,"last":"2026-06-11"},{"name":"Hammer Curl (Cable)","muscle":"arms","sessions":[{"date":"2026-06-11","w":130.0,"reps":10,"e1rm":173.3,"vol":2600,"sets":2}],"n":1,"last":"2026-06-11"},{"name":"Lat Pulldown","muscle":"back","sessions":[{"date":"2026-06-02","w":170.0,"reps":9,"e1rm":221.0,"vol":5710,"sets":4},{"date":"2026-06-08","w":170.0,"reps":10,"e1rm":226.7,"vol":4545,"sets":3}],"n":2,"last":"2026-06-08"},{"name":"Straight-Arm Pulldown","muscle":"back","sessions":[{"date":"2026-06-02","w":80.0,"reps":14,"e1rm":117.3,"vol":1120,"sets":1},{"date":"2026-06-08","w":80.0,"reps":15,"e1rm":120.0,"vol":3290,"sets":3}],"n":2,"last":"2026-06-08"},{"name":"Rear Delt Fly","muscle":"shoulders","sessions":[{"date":"2026-06-08","w":15.0,"reps":15,"e1rm":22.5,"vol":900,"sets":4}],"n":1,"last":"2026-06-08"},{"name":"Single Arm Cable Lat Pulldown","muscle":"back","sessions":[{"date":"2026-06-08","w":60.0,"reps":10,"e1rm":80.0,"vol":600,"sets":2}],"n":1,"last":"2026-06-08"},{"name":"Seated Close Grip Row","muscle":"back","sessions":[{"date":"2026-06-08","w":140.0,"reps":10,"e1rm":189.0,"vol":4235,"sets":3}],"n":1,"last":"2026-06-08"},{"name":"Close Grip Lat Pulldown","muscle":"back","sessions":[{"date":"2026-06-08","w":135.0,"reps":9,"e1rm":175.5,"vol":2655,"sets":3}],"n":1,"last":"2026-06-08"},{"name":"Neutral Grip Seated Cable Row","muscle":"back","sessions":[{"date":"2026-06-02","w":140.0,"reps":11,"e1rm":191.3,"vol":4055,"sets":3}],"n":1,"last":"2026-06-02"},{"name":"Rear Delt Fly (Isolated)","muscle":"shoulders","sessions":[{"date":"2026-06-02","w":20.0,"reps":12,"e1rm":28.0,"vol":240,"sets":3}],"n":1,"last":"2026-06-02"}]};
+const EXTRA = {"today_date":"2026-06-14","today":[{"name":"Shoulder Press Machine","sets":3,"reps":[12,10,10],"w":"130"},{"name":"Cable Lateral Raise","sets":3,"reps":[16,14,13],"w":"20"},{"name":"Face Pull","sets":3,"reps":[12,12,12],"w":"70"},{"name":"Upright Row","sets":3,"reps":[12,12,12],"w":"110"},{"name":"Cable Shrugs","sets":3,"reps":[14,14,12],"w":"190–200"},{"name":"Cable Front Raise","sets":3,"reps":[12,10,10],"w":"80"}],"sessions":[{"date":"2026-06-02","vol":17245},{"date":"2026-06-03","vol":15780},{"date":"2026-06-07","vol":15725},{"date":"2026-06-08","vol":16225},{"date":"2026-06-09","vol":20910},{"date":"2026-06-11","vol":24470},{"date":"2026-06-13","vol":17385},{"date":"2026-06-14","vol":21780}],"muscle_sets":[{"muscle":"shoulders","sets":43},{"muscle":"chest","sets":33},{"muscle":"back","sets":22},{"muscle":"arms","sets":21},{"muscle":"core","sets":7}]};
+
+const MUSCLE_COLOR={shoulders:'var(--or)',back:'var(--bl)',chest:'var(--ac)',arms:'var(--pu)',core:'var(--ye)',legs:'var(--re)',other:'var(--mu)'};
+const MUSCLE_LABEL={shoulders:'Shoulders',back:'Back',chest:'Chest',arms:'Arms',core:'Core',legs:'Legs',other:'Other'};
+const MONTHS=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const NAME2MUSCLE={};DATA.movements.forEach(m=>NAME2MUSCLE[m.name]=m.muscle);
+let _filter='all';
+
+function fmtDate(s){const d=new Date(s+'T00:00:00');return MONTHS[d.getMonth()]+' '+d.getDate();}
+function fmtDOW(s){return new Date(s+'T00:00:00').toLocaleDateString('en-US',{weekday:'long'});}
+function nf(n){return n>=1000?(n/1000).toFixed(n>=10000?0:1)+'k':String(Math.round(n));}
+
+// ── ① TODAY (daily logging) ───────────────────────────────────────────────
+function renderToday(){
+  const d=EXTRA.today_date;
+  // dominant muscle → "<Muscle> day"
+  const tally={};EXTRA.today.forEach(t=>{const m=NAME2MUSCLE[t.name];if(m)tally[m]=(tally[m]||0)+1;});
+  const top=Object.entries(tally).sort((a,b)=>b[1]-a[1])[0];
+  const dayLabel=top?MUSCLE_LABEL[top[0]]+' day':'Workout';
+  document.getElementById('ph-sub').innerHTML='<span>'+fmtDOW(d)+', '+fmtDate(d)+'</span><span class="ph-dot">·</span><span>'+dayLabel+'</span>';
+  document.getElementById('today-date-lbl').textContent='· '+fmtDOW(d).slice(0,3)+' '+fmtDate(d);
+  const log=document.getElementById('today-log');
+  if(!EXTRA.today.length){log.innerHTML='<div class="lempty">No lifts logged yet — tap + to add.</div>';return;}
+  log.innerHTML=EXTRA.today.map(t=>{
+    const m=NAME2MUSCLE[t.name]||'other';
+    const reps=Array.isArray(t.reps)?t.reps.join(','):(t.reps||'—');
+    const w=t.w?(' · <b>'+t.w+'</b> lb'):'';
+    const dur=t.min?(' · '+t.min+' min'):'';
+    return '<div class="lrow"><div class="lrow-main">'
+      +'<div class="lname"><span class="ldot" style="background:'+(MUSCLE_COLOR[m])+'"></span>'+t.name+'</div>'
+      +'<div class="lmeta">'+t.sets+' sets · '+reps+w+dur+'</div></div></div>';
+  }).join('');
+}
+function toggleAdd(){
+  const f=document.getElementById('ex-form');const b=document.getElementById('add-toggle');
+  const show=f.style.display==='none';f.style.display=show?'block':'none';b.classList.toggle('open',show);
+  if(show)document.getElementById('ex-name').focus();
+}
+function addToday(){
+  const name=document.getElementById('ex-name').value.trim();if(!name)return;
+  const sets=parseInt(document.getElementById('ex-sets').value)||1;
+  const reps=document.getElementById('ex-reps').value.trim();
+  const w=document.getElementById('ex-wt').value.trim();
+  const min=document.getElementById('ex-dur').value.trim();
+  EXTRA.today.push({name,sets,reps:reps?reps.split(/[ ,]+/).map(Number).filter(x=>x):[],w:w||null,min:min||null});
+  ['ex-name','ex-sets','ex-reps','ex-wt','ex-dur'].forEach(id=>document.getElementById(id).value='');
+  toggleAdd();renderToday();
+}
+
+// ── ② PROGRESSION ─────────────────────────────────────────────────────────
+function sparkline(vals,color,W,H){
+  W=W||66;H=H||24;const pad=3;
+  const pts=vals.filter(v=>v!=null);
+  if(pts.length<2)return '<svg class="mv-spark" viewBox="0 0 '+W+' '+H+'"><line x1="'+pad+'" y1="'+(H/2)+'" x2="'+(W-pad)+'" y2="'+(H/2)+'" stroke="var(--di)" stroke-width="1.4" stroke-dasharray="2 3" stroke-linecap="round"/></svg>';
+  const mn=Math.min(...pts),mx=Math.max(...pts),rng=(mx-mn)||1,n=pts.length;
+  const x=i=>pad+i*((W-2*pad)/(n-1)),y=v=>H-pad-((v-mn)/rng)*(H-2*pad);
+  let d='';pts.forEach((v,i)=>{d+=(i?'L':'M')+x(i).toFixed(1)+' '+y(v).toFixed(1)+' ';});
+  const lx=x(n-1).toFixed(1),ly=y(pts[n-1]).toFixed(1);
+  return '<svg class="mv-spark" viewBox="0 0 '+W+' '+H+'">'
+    +'<path d="'+d+'" fill="none" stroke="'+color+'" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round"/>'
+    +'<circle cx="'+lx+'" cy="'+ly+'" r="2.1" fill="'+color+'"/></svg>';
+}
+function analyze(m){
+  const ws=m.sessions.filter(s=>s.w!=null);
+  if(!ws.length)return{bw:true,now:m.sessions.length+' sessions',series:[],trend:'flat'};
+  const first=ws[0],last=ws[ws.length-1],series=ws.map(s=>s.e1rm);
+  if(ws.length<2)return{bw:false,now:nf(last.w),unit:'lb',reps:last.reps,series,trend:'base',deltaTxt:'baseline'};
+  let trend='flat',deltaTxt='held';
+  const dw=Math.round((last.w-first.w)*10)/10;
+  if(dw>0.5){trend='up';deltaTxt='+'+nf(dw)+' lb';}
+  else if(dw<-0.5){trend='dn';deltaTxt=nf(dw)+' lb';}
+  else if(last.reps!=null&&first.reps!=null&&last.reps!==first.reps){const dr=last.reps-first.reps;trend=dr>0?'up':'dn';deltaTxt=(dr>0?'+':'')+dr+' rep'+(Math.abs(dr)>1?'s':'');}
+  else{const de=Math.round(last.e1rm-first.e1rm);if(de>1){trend='up';deltaTxt='+'+de+' est';}else if(de<-1){trend='dn';deltaTxt=de+' est';}}
+  return{bw:false,now:nf(last.w),unit:'lb',reps:last.reps,series,trend,deltaTxt};
+}
+function renderSummary(){
+  const movs=DATA.movements;const dates=new Set();let vol=0,prs=0;
+  movs.forEach(m=>m.sessions.forEach(s=>{dates.add(s.date);if(s.vol)vol+=s.vol;}));
+  movs.forEach(m=>{const ws=m.sessions.filter(s=>s.e1rm!=null);if(ws.length>=2){const last=ws[ws.length-1].e1rm,pm=Math.max(...ws.slice(0,-1).map(s=>s.e1rm));if(last>pm)prs++;}});
+  document.getElementById('fit-summary').innerHTML=
+    '<span><span class="tl-val">'+dates.size+'</span> sessions</span><span class="tl-dot">·</span>'
+    +'<span><span class="tl-val">'+nf(vol)+'</span> lb lifted</span><span class="tl-dot">·</span>'
+    +'<span><span class="tl-val">'+movs.length+'</span> movements</span><span class="tl-dot">·</span>'
+    +'<span><span class="tl-val up">'+prs+'</span> PRs</span>';
+}
+function renderFilters(){
+  const counts={};DATA.movements.forEach(m=>counts[m.muscle]=(counts[m.muscle]||0)+1);
+  const order=['shoulders','back','chest','arms','core','legs','other'].filter(k=>counts[k]);
+  let html='<button class="pchip'+(_filter==='all'?' active':'')+'" onclick="setFilter(\'all\')">All <span class="cnt">'+DATA.movements.length+'</span></button>';
+  order.forEach(k=>html+='<button class="pchip'+(_filter===k?' active':'')+'" onclick="setFilter(\''+k+'\')"><span class="cdot" style="background:'+MUSCLE_COLOR[k]+'"></span>'+MUSCLE_LABEL[k]+' <span class="cnt">'+counts[k]+'</span></button>');
+  document.getElementById('fit-filters').innerHTML=html;
+}
+function setFilter(k){_filter=k;renderFilters();renderList();}
+function movementCard(m){
+  const a=analyze(m),color=MUSCLE_COLOR[m.muscle]||'var(--mu)';
+  const arrow=a.trend==='up'?'&#9650;':a.trend==='dn'?'&#9660;':a.trend==='base'?'&#9679;':'&rarr;';
+  const meta=MUSCLE_LABEL[m.muscle]+' · '+m.n+' session'+(m.n>1?'s':'')+' · '+fmtDate(m.last);
+  let fig;
+  if(a.bw)fig='<div class="mv-now" style="font-size:12.5px">'+a.now+'</div>';
+  else fig='<div class="mv-now">'+a.now+'<span class="u">'+a.unit+'</span>'+(a.reps!=null?'<span class="reps"> ×'+a.reps+'</span>':'')+'</div>'
+    +'<div class="mv-delta '+a.trend+'">'+arrow+' '+a.deltaTxt+'</div>';
+  const spark=a.bw?sparkline([],color):sparkline(a.series,a.trend==='dn'?'var(--re)':color);
+  const ws=m.sessions;
+  const rows=ws.map((s,i)=>{
+    let detail,e='';
+    if(s.w==null)detail='<b>'+s.sets+' sets</b> · bodyweight';
+    else{detail='<b>'+s.sets+'×'+(s.reps!=null?s.reps:'—')+'</b> @ '+nf(s.w)+' lb';e='<span class="s-e1rm">'+(s.e1rm!=null?'~'+nf(s.e1rm)+' 1RM':'')+'</span>';
+      const pm=Math.max(0,...ws.slice(0,i).filter(x=>x.w!=null).map(x=>x.w));if(i>0&&s.w>pm)detail+='<span class="s-pr">WT PR</span>';}
+    return '<div class="srow"><span class="s-date">'+fmtDate(s.date)+'</span><span class="s-detail">'+detail+'</span>'+(e||'<span></span>')+'</div>';
+  }).join('');
+  let note='';
+  if(!a.bw){const w2=m.sessions.filter(s=>s.w!=null);if(w2.length>=2){const f=w2[0],l=w2[w2.length-1];let msg;
+    if(l.w>f.w)msg='Load up '+nf(l.w-f.w)+' lb since '+fmtDate(f.date)+' — keep pushing.';
+    else if(l.reps>f.reps)msg='Same load, +'+(l.reps-f.reps)+' reps since '+fmtDate(f.date)+'. A weight bump is earned.';
+    else if(l.w<f.w)msg='Trending down vs '+fmtDate(f.date)+' — worth a recovery/form check.';
+    else msg='Holding at '+nf(l.w)+' lb — nudge reps or weight to progress.';
+    note='<div class="mv-note"><svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor"><path d="M8 1.4l1.1 3.2 3.2 1.1-3.2 1.1L8 10l-1.1-3.2L3.7 5.7l3.2-1.1z"/></svg>'+msg+'</div>';}}
+  return '<div class="mv" data-muscle="'+m.muscle+'"><div class="mv-head" onclick="this.parentNode.classList.toggle(\'open\')">'
+    +'<span class="mv-dot" style="background:'+color+'"></span>'
+    +'<div class="mv-id"><div class="mv-name">'+m.name+'</div><div class="mv-meta">'+meta+'</div></div>'
+    +spark+'<div class="mv-fig">'+fig+'</div><span class="mv-chev">&#9656;</span></div>'
+    +'<div class="mv-body"><div class="mv-sessions">'+rows+note+'</div></div></div>';
+}
+function renderList(){
+  let movs=DATA.movements.slice();if(_filter!=='all')movs=movs.filter(m=>m.muscle===_filter);
+  const multi=movs.filter(m=>m.n>=2),single=movs.filter(m=>m.n<2);let html='';
+  if(multi.length)html+='<div class="mv-list">'+multi.map(movementCard).join('')+'</div>';
+  if(single.length)html+='<div class="subdiv">Building history · logged once</div><div class="mv-list">'+single.map(movementCard).join('')+'</div>';
+  if(!movs.length)html='<div class="hint" style="padding:16px 2px">No movements for this filter.</div>';
+  document.getElementById('fit-body').innerHTML=html;
+}
+
+// ── ③ TRENDS (bottom) ─────────────────────────────────────────────────────
+function renderTrends(){
+  const ss=EXTRA.sessions;const vols=ss.map(s=>s.vol);
+  const total=vols.reduce((a,b)=>a+b,0),avg=total/ss.length;
+  const span=Math.round((new Date(ss[ss.length-1].date)-new Date(ss[0].date))/86400000)+1;
+  const topM=EXTRA.muscle_sets[0];
+  document.getElementById('trend-summary').innerHTML=
+    '<span>avg <span class="tl-val">'+nf(avg)+'</span> lb / session</span><span class="tl-dot">·</span>'
+    +'<span><span class="tl-val">'+ss.length+'</span> sessions / '+span+' days</span><span class="tl-dot">·</span>'
+    +'<span><span class="tl-val">'+MUSCLE_LABEL[topM.muscle]+'</span> most-trained</span>';
+  // volume bars
+  const mx=Math.max(...vols);
+  let bars='';ss.forEach((s,i)=>{const h=25+(s.vol/mx)*75;bars+='<div class="vbar'+(i===ss.length-1?' cur':'')+'" style="height:'+h+'%" title="'+fmtDate(s.date)+': '+nf(s.vol)+' lb"></div>';});
+  let xl='';ss.forEach((s,i)=>{xl+='<span>'+(i===0||i===ss.length-1?fmtDate(s.date).replace(' ',' '):'·')+'</span>';});
+  document.getElementById('vol-card').innerHTML='<div class="tcard-hd"><span>Training volume / session</span><span class="acc">'+nf(total)+' lb total</span></div>'
+    +'<div class="vbars">'+bars+'</div><div class="vbar-x">'+xl+'</div>';
+  // muscle balance
+  const ms=EXTRA.muscle_sets,mmax=Math.max(...ms.map(m=>m.sets));
+  const rows=ms.map(m=>'<div class="mbar-row"><div class="mbar-lbl">'+MUSCLE_LABEL[m.muscle]+'</div>'
+    +'<div class="mbar-track"><div class="mbar-fill" style="width:'+(m.sets/mmax*100)+'%;background:'+MUSCLE_COLOR[m.muscle]+'"></div></div>'
+    +'<div class="mbar-val">'+m.sets+'</div></div>').join('');
+  document.getElementById('muscle-card').innerHTML='<div class="tcard-hd"><span>Muscle balance</span><span class="acc">sets logged</span></div>'+rows;
+}
+
+function toggleTheme(){
+  const cur=document.documentElement.getAttribute('data-theme'),next=cur==='light'?'dark':'light';
+  document.documentElement.setAttribute('data-theme',next);
+  document.getElementById('theme-lbl').textContent=next==='light'?'Dark mode':'Light mode';
+}
+
+renderToday();renderSummary();renderFilters();renderList();renderTrends();
+</script>
+</body>
+</html>

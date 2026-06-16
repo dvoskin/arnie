@@ -757,8 +757,8 @@ async def build_context(user: User, today_log: Optional[DailyLog], db,
                 select(func.count()).select_from(User).where(User.linked_to_user_id == user.id)
             )
             linked = (res.scalar() or 0) > 0
-    plat_name = "iMessage" if platform == "imessage" else "Telegram"
-    other = "Telegram" if platform == "imessage" else "iMessage"
+    plat_name = {"imessage": "iMessage", "ios": "the Arnie app"}.get(platform, "Telegram")
+    other = "Telegram" if platform in ("imessage", "ios") else "iMessage"
     if linked:
         link_status = (f"[LINK STATUS] you're on {plat_name}. this person is ALREADY linked "
                        f"across both platforms — do NOT bring up linking.")
