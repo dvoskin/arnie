@@ -66,7 +66,7 @@ _LOGGING_TOOLS = frozenset({
 # / web facts live only in the tool result, the follow-up is text-only
 # (chat_follow_up runs tools=False), so without a forced re-voice the result
 # is dropped on the floor and the turn dead-ends.
-_VOICED_RESULT_TOOLS = frozenset({"web_search", "search_food_database", "query_history", "track_metric"})
+_VOICED_RESULT_TOOLS = frozenset({"web_search", "search_food_database", "query_history", "track_metric", "find_nearby_places"})
 
 
 @dataclasses.dataclass
