@@ -16,6 +16,11 @@ alembic==1.18.4
 anthropic==0.104.1
 openai==2.38.0
 apscheduler==3.11.2
+# APScheduler imports `tzlocal` at startup (from tzlocal import get_localzone).
+# It's a transitive dep that the clean Python 3.14 rebuild did NOT pull in, which
+# crashed the deploy with ModuleNotFoundError: No module named 'tzlocal'. Pin it
+# explicitly so it's always present. Pure-Python, so no wheel/cp314 concerns.
+tzlocal==5.2
 python-dotenv==1.2.2
 httpx==0.28.1
 aiofiles==25.1.0
