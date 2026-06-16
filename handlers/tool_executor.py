@@ -1742,6 +1742,13 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
 
         _lat = inp.get("lat")
         _lng = inp.get("lng")
+        # Prefer coords the model passed (a freshly shared pin); otherwise fall back
+        # to the user's last stored location so "what's near me" works without
+        # re-sharing every time.
+        if not isinstance(_lat, (int, float)):
+            _lat = getattr(user, "lat", None)
+        if not isinstance(_lng, (int, float)):
+            _lng = getattr(user, "lng", None)
         pr = await find_places(
             inp.get("query", ""),
             lat=_lat if isinstance(_lat, (int, float)) else None,
