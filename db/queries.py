@@ -900,7 +900,7 @@ async def update_exercise_entry(
     new_log_id = changes.pop("new_daily_log_id", None)  # day move (same primitive as edit)
 
     for field in ("exercise_name", "sets", "reps", "weight",
-                  "duration_minutes", "cardio_type", "rir"):
+                  "duration_minutes", "cardio_type", "rir", "weights", "notes"):
         if field in changes and changes[field] is not None:
             setattr(entry, field, changes[field])
 

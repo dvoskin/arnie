@@ -176,6 +176,8 @@ async def _migrate(conn):
         # ── 2026-06-04: dynamic user-profile system ────────────────────────────
         ("users", "user_bio", "TEXT"),
         ("users", "user_bio_updated_at", "DATETIME"),
+        # ── 2026-06-16: per-set variable load ──────────────────────────────────
+        ("exercise_entries", "weights", "VARCHAR"),
     ]
 
     for table, column, ddl in additions:

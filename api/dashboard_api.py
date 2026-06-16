@@ -87,6 +87,7 @@ async def get_day(
         "food_entries": day.get("food_entries", []),
         "exercise_entries": [_normalize_exercise(e) for e in day.get("exercise_entries", [])],
         "weight": stats.get("weight"),
+        "health": stats.get("health"),
     }
 
 

@@ -80,11 +80,15 @@ app.add_middleware(
 from api.auth_routes import router as auth_router
 from api.chat import router as chat_router
 from api.health_sync import router as health_sync_router
+from api.food_edit import router as food_edit_router
+from api.exercise_edit import router as exercise_edit_router
 from api.dashboard_api import router as dashboard_api_router
 app.include_router(auth_router)
 app.include_router(chat_router)
 app.include_router(dashboard_api_router)
 app.include_router(health_sync_router)
+app.include_router(food_edit_router)
+app.include_router(exercise_edit_router)
 
 
 # ── Health ─────────────────────────────────────────────────────────────────────

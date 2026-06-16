@@ -178,6 +178,10 @@ class ExerciseEntry(Base):
     sets = Column(Integer)
     reps = Column(String)        # e.g. "5" or "5,5,5,4"
     weight = Column(Float)
+    # Per-set load (kg). Parallel CSV to `reps` — e.g. "102,107,107" for a
+    # pyramid set. Optional: when null the single `weight` value applies to
+    # every set (the common case).
+    weights = Column(String)
     rir = Column(Integer)        # reps in reserve
     duration_minutes = Column(Float)
     cardio_type = Column(String)

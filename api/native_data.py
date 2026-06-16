@@ -34,6 +34,25 @@ def _targets(user) -> dict:
     }
 
 
+def _weights_csv_to_lbs(csv: str | None) -> str | None:
+    """Convert per-set weight CSV from kg (DB) → lbs (client) so the iOS row
+    can render '5×225 · 5×235' without doing the conversion itself. Drops
+    blank tokens; returns None when the input is empty / unparseable."""
+    if not csv:
+        return None
+    parts: list[str] = []
+    for piece in csv.split(","):
+        piece = piece.strip()
+        if not piece:
+            continue
+        try:
+            kg = float(piece)
+        except ValueError:
+            continue
+        parts.append(str(round(kg * 2.20462, 1)))
+    return ",".join(parts) if parts else None
+
+
 def _log_to_day(log) -> dict | None:
     """Shape a DailyLog into the `day` dict. Mirrors _build_stats_for_user._log_to_day."""
     if not log:
@@ -56,6 +75,7 @@ def _log_to_day(log) -> dict | None:
                 "estimated": bool(e.estimated_flag),
                 "from_photo": bool(getattr(e, "from_photo", False)),
                 "timestamp": e.timestamp.isoformat() if e.timestamp else None,
+                "meal_type": e.meal_type,
             }
             for e in sorted(
                 (log.food_entries or []),
@@ -67,9 +87,17 @@ def _log_to_day(log) -> dict | None:
                 "id": e.id, "name": e.exercise_name or "?",
                 "sets": e.sets, "reps": e.reps,
                 "weight": round(e.weight * 2.20462, 1) if e.weight else None,
+                # Per-set load — CSV in lbs for the client. Null when uniform.
+                "weights": _weights_csv_to_lbs(e.weights),
                 "duration_minutes": e.duration_minutes,
                 "is_cardio": bool(e.cardio_type),
                 "cardio_type": e.cardio_type,
+                # T-EX1: surface the rest of the ExerciseEntry shape so the iOS
+                # row can show the same parameters the web app does (RIR for
+                # strength, calories for cardio, free-text notes for either).
+                "rir": e.rir,
+                "calories_burned": round(e.calories_burned_estimate) if e.calories_burned_estimate else None,
+                "notes": e.notes,
             }
             for e in (log.exercise_entries or [])
         ],
@@ -77,22 +105,50 @@ def _log_to_day(log) -> dict | None:
 
 
 async def day_data(db, user, target_date=None) -> dict:
-    """Log + targets + weight record for `target_date` (defaults to today).
-    Past dates are fetched read-only — if no log exists for that date the
-    `day` dict is None and the client renders an empty state. Today is
-    auto-created so live coaching always has a log to write into. The
-    `weight` block is the same across dates (user-scoped, not day-scoped) —
-    we send it on every Today fetch so the screen has the recent trend at
-    hand without a second round-trip."""
-    from db.queries import get_log_by_date, get_recent_weights
-    if target_date is None or target_date == _user_today_date(user):
+    """Log + targets + weight record + (today only) wearable snapshot for
+    `target_date` (defaults to today). Past dates are fetched read-only — if
+    no log exists for that date the `day` dict is None and the client
+    renders an empty state. Today is auto-created so live coaching always
+    has a log to write into. The `weight` block is the same across dates
+    (user-scoped, not day-scoped) — we send it on every Today fetch so the
+    screen has the recent trend at hand without a second round-trip. The
+    `health` block is today's snapshot only; iOS hides the strip when nil."""
+    from db.queries import get_log_by_date, get_recent_weights, get_recent_health_snapshots
+    is_today = target_date is None or target_date == _user_today_date(user)
+    if is_today:
         log = await get_or_create_today_log(db, user.id, user.timezone or "UTC")
     else:
         log = await get_log_by_date(db, user.id, target_date)
 
     weights = await get_recent_weights(db, user.id, days=30)
     weight_block = _weight_block(weights, user)
-    return {"targets": _targets(user), "day": _log_to_day(log), "weight": weight_block}
+
+    health_block = None
+    if is_today:
+        snaps = await get_recent_health_snapshots(db, user.id, days=1)
+        if snaps:
+            health_block = _health_block(snaps[0])
+
+    return {
+        "targets": _targets(user),
+        "day": _log_to_day(log),
+        "weight": weight_block,
+        "health": health_block,
+    }
+
+
+def _health_block(snap) -> dict:
+    """Shape today's wearable snapshot for the Today strip — just the fields
+    iOS renders inline, all optional so the strip degrades gracefully."""
+    return {
+        "source":      snap.source,
+        "recovery":    snap.recovery_score,
+        "strain":      round(snap.strain, 1) if snap.strain is not None else None,
+        "sleep_hours": round(snap.sleep_hours, 1) if snap.sleep_hours is not None else None,
+        "hrv":         round(snap.hrv) if snap.hrv is not None else None,
+        "resting_hr":  round(snap.resting_hr) if snap.resting_hr is not None else None,
+        "steps":       snap.steps,
+    }
 
 
 def _weight_block(weights, user) -> dict | None:
