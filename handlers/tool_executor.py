@@ -555,6 +555,14 @@ _TOOL_HEADS_UP_BUBBLES = {
         "panel coming in.",
         "tracking that now.",
     ),
+    "find_nearby_places": (
+        "scanning the area.",
+        "finding spots.",
+        "checking what's nearby.",
+        "looking around you.",
+        "pulling up places.",
+        "scoping it out.",
+    ),
 }
 
 # The wider set: tools that get a heads-up. Imported by the conversation
@@ -1721,6 +1729,59 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
             f"no links, no quoted blobs; the user should never see the seams of a lookup."
             f"{injury_note} If results are uncertain or conflicting, say so plainly and "
             f"give your best honest read rather than faking precision."
+        )
+
+    elif name == "find_nearby_places":
+        # GATED upstream (find_nearby_places is only in the tool list when
+        # LOCATION_ENABLED=true). Like web_search, this path NEVER sends and NEVER
+        # returns user-facing prose — it returns an instruction-wrapped result
+        # string for the follow-up to re-voice in Arnie's voice. The per-tool
+        # try/except envelope means a Places outage degrades to a normal tool
+        # failure ("Error: ...") instead of breaking the turn.
+        from core.places import find as find_places
+
+        _lat = inp.get("lat")
+        _lng = inp.get("lng")
+        pr = await find_places(
+            inp.get("query", ""),
+            lat=_lat if isinstance(_lat, (int, float)) else None,
+            lng=_lng if isinstance(_lng, (int, float)) else None,
+        )
+        if pr.error or not pr.results:
+            return (
+                f"PLACES lookup for '{pr.query}' returned nothing usable "
+                f"({pr.error or 'no results'}). Don't invent restaurants or "
+                f"addresses. Tell the user plainly you couldn't pull places right "
+                f"now, and if no location was set, ask what area they're in (or to "
+                f"share their location) so you can try again."
+            )
+
+        lines = []
+        for i, p in enumerate(pr.results, 1):
+            bits = [p.name]
+            if p.rating:
+                bits.append(f"{p.rating}★"
+                            + (f" ({p.user_ratings})" if p.user_ratings else ""))
+            if p.open_now is True:
+                bits.append("open now")
+            elif p.open_now is False:
+                bits.append("closed")
+            if p.address:
+                bits.append(p.address)
+            line = " · ".join(b for b in bits if b)
+            if p.maps_url:
+                line += f"  [map: {p.maps_url}]"
+            lines.append(f"[{i}] {line}")
+        facts = "\n".join(lines)
+
+        return (
+            f"NEARBY PLACES for '{pr.query}':\n{facts}\n\n"
+            f"COACH INSTRUCTION: re-voice this in YOUR coaching voice. Don't dump the "
+            f"whole list — give 1-2 picks that fit their goals/macros and say WHY "
+            f"(e.g. 'grilled bowl spot, easy 40g protein'). You may include ONE map "
+            f"link for the top pick so they can tap Directions. End with a next move "
+            f"(what to order, or want more options). Never fabricate a place not in "
+            f"this list."
         )
 
     elif name == "update_memory":
