@@ -459,6 +459,18 @@ async def _llm_nudge(user, log, prefs, health_snap, slot: str, name: str,
     foods_logged = len(log.food_entries) if log and log.food_entries else 0
     exercises_logged = len(log.exercise_entries) if log and log.exercise_entries else 0
 
+    # Itemized food list for slots that recap the day (e.g. evening food report).
+    # Capped to keep the prompt lean; names come straight from the log, never invented.
+    if log and log.food_entries:
+        _items = [
+            f"{(f.parsed_food_name or '?')} ({round(f.calories or 0)} cal)"
+            for f in log.food_entries[:8]
+        ]
+        _more = len(log.food_entries) - len(_items)
+        foods_str = "Logged today: " + "; ".join(_items) + (f" (+{_more} more)" if _more > 0 else "")
+    else:
+        foods_str = "Logged today: nothing yet"
+
     instr = _SLOT_INSTRUCTIONS.get(slot, "Send a brief coaching check-in about their day.")
 
     # For morning_checkin: override instruction to open with a goal-specific weight ask
@@ -494,6 +506,7 @@ async def _llm_nudge(user, log, prefs, health_snap, slot: str, name: str,
         f"water {water}ml | "
         f"workout {'✓' if workout_done else '✗'} | cardio {'✓' if cardio_done else '✗'} | "
         f"{foods_logged} food entries | {exercises_logged} exercises\n"
+        f"{foods_str}\n"
         f"{health_str}\n"
         f"{checkins_block + chr(10) if checkins_block else ''}"
         f"Task: {instr}"
@@ -614,8 +627,20 @@ async def _llm_morning_briefing(user, log, prefs, health_snap, db, name: str,
                     f"only reference it if it flows naturally (e.g. continuing yesterday's thread).")
     data.append(f"Language: {getattr(prefs,'preferred_language',None) or 'English'}")
 
-    prompt = ("\n".join(data) + "\n\nWrite the morning briefing. Pick the most useful 2-3 of these "
-              "signals, state the trend with a number, and end with today's mission as the single action.")
+    # Personal touch — a hobby / life detail from their bio so the morning message
+    # feels like a coach who knows them, not a stats dump. Grounded in stored bio
+    # (never invented); woven in only if it lands.
+    _bio = (getattr(user, "user_bio", None) or "").strip()
+    if _bio:
+        data.append(
+            "Personal note (weave in ONE real detail — a hobby, their life, what drives "
+            f"them — only if it flows; never force it): {_bio[:240]}"
+        )
+
+    prompt = ("\n".join(data) + "\n\nWrite the morning briefing. Anchor it to their goal, "
+              "pick the most useful 2-3 signals, state the trend with a number, and end with "
+              "today's mission as the single action. If a Personal note is given, you may add "
+              "one warm, human touch (open or close) so it feels personal — keep it natural.")
     try:
         r = await chat([{"role": "user", "content": prompt}], system=_BRIEFING_SYSTEM,
                        tools=False, max_tokens=200, model="claude-haiku-4-5-20251001")
