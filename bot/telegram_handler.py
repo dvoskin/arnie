@@ -50,6 +50,21 @@ TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 _LOCATION_PENDING: dict[str, tuple[str, float]] = {}
 _LOCATION_PENDING_TTL = 600  # seconds
 
+# Deterministic "near me" intent — a safety net so the share button shows even when
+# the model talks about location WITHOUT actually calling find_nearby_places (models
+# don't always emit the tool call). Multilingual: EN / RU / UA near-me phrasings.
+import re as _re
+_LOCATION_INTENT_RE = _re.compile(
+    r"near\s*me|nearby|near\s*by|around\s*me|close\s*to\s*me|closest"
+    r"|возле\s*меня|рядом|поблизост|вокруг\s*меня|недалеко|ближайш"
+    r"|біля\s*мене|поряд|поблизу|навколо\s*мене|найближч",
+    _re.IGNORECASE | _re.UNICODE,
+)
+
+
+def _looks_like_location_request(text: str) -> bool:
+    return bool(text and _LOCATION_INTENT_RE.search(text))
+
 # Semantic reaction → Telegram emoji (Bot API 7.0+; best-effort)
 _TG_REACTION_EMOJI = {
     React.LOVE: "❤️", React.LIKE: "👍", React.LAUGH: "😂", React.EMPHASIZE: "🔥",
@@ -428,13 +443,22 @@ async def _run_pipeline(update: Update, context: ContextTypes.DEFAULT_TYPE,
             await asyncio.sleep(0.25)
 
     # ── Nearby request with no location on file → one-tap share button ────────
-    # The model asked find_nearby_places but there were no coords, so run_turn set
-    # needs_location_share. Surface the share button right here (works even when
-    # the reply streamed, since it's a fresh message) and remember the original
-    # request so the tap finishes it automatically (see handle_location).
+    # Two triggers (either is enough):
+    #   1. run_turn set needs_location_share (the model DID call find_nearby_places
+    #      and it came back without a usable location), OR
+    #   2. deterministic fallback — the user's message is a "near me" request and we
+    #      have no coords on file, even if the model only TALKED about location
+    #      without emitting the tool call (models skip it sometimes). This is what
+    #      makes the button reliable instead of dependent on the model's tool use.
+    # Sent as a fresh message so it works even when the reply streamed. The original
+    # request is stashed so the tap finishes it automatically (see handle_location).
     try:
         from db.queries import location_enabled
-        if getattr(turn, "needs_location_share", False) and location_enabled():
+        _no_coords = getattr(turn.user, "lat", None) is None
+        _wants_share = getattr(turn, "needs_location_share", False) or (
+            _no_coords and _looks_like_location_request(raw_text)
+        )
+        if _wants_share and location_enabled():
             _LOCATION_PENDING[str(tg_user.id)] = (raw_text, time.time())
             await update.message.reply_text(
                 "📍 Tap to share your location and I'll find spots right around you.",
