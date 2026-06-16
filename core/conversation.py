@@ -81,6 +81,7 @@ class TurnResult:
     user: Any                       # refreshed after tool execution
     health_flags: list = dataclasses.field(default_factory=list)  # turn-health telemetry
     streamed_bubble_count: int = 0  # bubbles already sent via on_text_delta (handler sends the rest)
+    needs_location_share: bool = False  # find_nearby_places ran but had no location → prompt a share
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -817,6 +818,20 @@ async def run_turn(
     except Exception as e:
         logger.debug(f"turn-health detection failed for {_tag}: {e}")
 
+    # Did a nearby-places lookup run WITHOUT a usable location? The executor's
+    # no-location / empty branch returns a string starting "PLACES lookup ..."
+    # (the success branch starts "NEARBY PLACES ..."). When so, the handler can
+    # surface a one-tap share-location button instead of making the user type an
+    # address. Fully wrapped — never affects the reply itself.
+    _needs_location_share = False
+    try:
+        if any(tc["name"] == "find_nearby_places" for tc in tool_calls):
+            _r = tool_results.get("find_nearby_places")
+            if isinstance(_r, str) and _r.startswith("PLACES lookup"):
+                _needs_location_share = True
+    except Exception:
+        pass
+
     return TurnResult(
         response=resp,
         tool_calls=tool_calls,
@@ -827,4 +842,5 @@ async def run_turn(
         user=user,
         health_flags=health_flags,
         streamed_bubble_count=_streamed_total,
+        needs_location_share=_needs_location_share,
     )
