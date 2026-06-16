@@ -47,6 +47,15 @@ def search_enabled() -> bool:
     return os.getenv("SEARCH_ENABLED", "false").lower() in ("true", "1", "yes")
 
 
+def location_enabled() -> bool:
+    """Gate for the find_nearby_places tool (Google Places). Default OFF — mirrors
+    search_enabled so the location capability is inert until LOCATION_ENABLED=true
+    AND a GOOGLE_PLACES_API_KEY is set. Same pattern as web_search: zero impact on
+    existing behavior while disabled."""
+    import os
+    return os.getenv("LOCATION_ENABLED", "false").lower() in ("true", "1", "yes")
+
+
 async def enable_check_ins(db: AsyncSession, user_id: int) -> None:
     """
     Turn proactive check-ins ON for a user — called natively when onboarding completes,
