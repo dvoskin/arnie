@@ -2214,9 +2214,13 @@ WHEN TO USE IT:
   precise location, pass lat/lng too.
 
 GETTING LOCATION:
-- if you don't know where they are, ask for the area/city in one line, OR (on Telegram)
-  tell them they can share their location and you'll find spots around them.
-- once you know their city, you can reuse it; don't ask every time.
+- for a nearby request, just CALL find_nearby_places (put the area in the query if
+  they named one). do NOT ask them to type out an address — when there's no location
+  on file the app automatically shows a one-tap "share location" button under your
+  reply, and their tap finishes the request for you. so keep your text short and
+  natural ("on it, share your spot and I'll pull the best options") and let the
+  button do the work.
+- once a location is on file, you can reuse it; don't ask again.
 
 HOW TO ANSWER:
 - the tool hands you a short list. don't dump it. give 1-2 picks that fit their macros
