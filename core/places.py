@@ -1,28 +1,22 @@
 """
-Places client (Google Places) — the lookup behind Arnie's find_nearby_places tool.
+Places client (Google Places API — NEW) — the lookup behind find_nearby_places.
 
-Deliberately mirrors core/search.py so the two "external lookup" tools share one
-shape: a lazy module-level httpx.AsyncClient singleton, a _key() reading the env,
-a small TTL cache, and ONE public async function `find()` that NEVER raises to the
-caller. On a missing key, a non-200, or any exception, it returns a graceful EMPTY
-PlacesResult (error set, results=[]) so a Places outage degrades to a normal tool
-failure instead of breaking the turn.
+Uses the NEW Places API Text Search (places.googleapis.com/v1/places:searchText)
+rather than the legacy /maps/api/place/textsearch endpoint, because Google only
+lets newly-created Cloud projects enable "Places API (New)" — the legacy Places
+API can't be turned on for fresh projects. The new endpoint is a POST with the
+key in a header and the returned fields chosen via a FieldMask header.
 
-Gated upstream by db.queries.location_enabled() (default OFF). This module is inert
-until LOCATION_ENABLED=true — nothing imports it on the default path.
+Deliberately mirrors core/search.py in shape: a lazy module-level httpx client, a
+_key() reading the env, a small TTL cache, and ONE public async function `find()`
+that NEVER raises. On a missing key / non-200 / exception it returns a graceful
+EMPTY PlacesResult so a Places outage degrades to a normal tool failure.
 
-Key: GOOGLE_PLACES_API_KEY env var.
-API: Places Text Search (legacy) — https://developers.google.com/maps/documentation/places/web-service/search-text
+Gated upstream by db.queries.location_enabled() (default OFF). Inert until
+LOCATION_ENABLED=true.
 
-Why Text Search and not Nearby Search: Text Search accepts a free-text query
-("high protein restaurants in Brooklyn") and works WITHOUT exact GPS coordinates,
-so v1 is usable from a city/area the user mentions in chat. When real lat/lng IS
-available (e.g. a Telegram shared-location stored on the user), we pass it as a
-location bias so results are genuinely "around them".
-
-The `_client` param on find() is the TEST SEAM — inject a fake client so tests
-never hit the network. reset_cache() clears the in-process TTL cache for test
-isolation.
+Key: GOOGLE_PLACES_API_KEY env var (the "Places API (New)" must be enabled on it).
+API: https://developers.google.com/maps/documentation/places/web-service/text-search
 """
 import os
 import re
@@ -36,8 +30,16 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
-_BASE = "https://maps.googleapis.com/maps/api/place/textsearch/json"
-_PROVIDER = "google_places"
+_BASE = "https://places.googleapis.com/v1/places:searchText"
+_PROVIDER = "google_places_new"
+
+# Only ask Google for the fields we actually use — a tight FieldMask keeps the
+# request on the cheapest SKU tier and the payload small.
+_FIELD_MASK = (
+    "places.displayName,places.formattedAddress,places.rating,"
+    "places.userRatingCount,places.currentOpeningHours.openNow,"
+    "places.priceLevel,places.id,places.googleMapsUri"
+)
 
 # In-process TTL cache (KISS — no Redis). Keyed on normalized query + coords.
 _CACHE_TTL_SECONDS = 300.0
@@ -53,7 +55,7 @@ class Place:
     rating: Optional[float] = None
     user_ratings: Optional[int] = None
     open_now: Optional[bool] = None
-    price_level: Optional[int] = None
+    price_level: Optional[str] = None
     maps_url: str = ""
 
 
@@ -94,10 +96,8 @@ def _empty(query: str, error: str) -> PlacesResult:
                         provider=_PROVIDER, error=error)
 
 
-def _maps_url(name: str, address: str, place_id: str) -> str:
-    """Deep link to the place on Google Maps. Using the documented /maps/search
-    api=1 form with query_place_id is the most reliable — opens the exact place
-    and lets the user tap Directions natively (no Directions API needed)."""
+def _fallback_maps_url(name: str, address: str, place_id: str) -> str:
+    """Used only if the API didn't return googleMapsUri (it almost always does)."""
     q = quote_plus(f"{name} {address}".strip())
     if place_id:
         return f"https://www.google.com/maps/search/?api=1&query={q}&query_place_id={place_id}"
@@ -110,7 +110,7 @@ async def find(query: str, *, lat: Optional[float] = None, lng: Optional[float] 
     """
     Find real-world places matching `query`. Returns a PlacesResult; NEVER raises.
 
-    lat/lng — optional. When both are present they bias results toward that point
+    lat/lng — optional. When both present they bias results toward that point
     (genuine "near me"). When absent, the free-text query carries the location
     intent ("ramen in Shoreditch"), which still works.
     `_client` is the injectable test seam (defaults to the module singleton).
@@ -129,39 +129,46 @@ async def find(query: str, *, lat: Optional[float] = None, lng: Optional[float] 
     if not _key():
         return _empty(q, "no api key")
 
-    params: dict[str, Any] = {"query": q, "key": _key()}
+    body: dict[str, Any] = {"textQuery": q, "maxResultCount": max(1, min(limit, 20))}
     if has_coords:
-        params["location"] = f"{lat},{lng}"
-        params["radius"] = max(100, min(int(radius_m), 50000))
+        body["locationBias"] = {
+            "circle": {
+                "center": {"latitude": float(lat), "longitude": float(lng)},
+                "radius": float(max(1, min(int(radius_m), 50000))),
+            }
+        }
+    headers = {
+        "Content-Type": "application/json",
+        "X-Goog-Api-Key": _key(),
+        "X-Goog-FieldMask": _FIELD_MASK,
+    }
 
     client = _client if _client is not None else _client_singleton()
     try:
-        resp = await client.get(_BASE, params=params)
+        resp = await client.post(_BASE, json=body, headers=headers)
         if resp.status_code != 200:
-            logger.warning(f"Places search {resp.status_code}: {resp.text[:120]}")
+            logger.warning(f"Places(new) {resp.status_code}: {resp.text[:160]}")
             return _empty(q, f"http {resp.status_code}")
         data = resp.json()
     except Exception as e:
-        logger.warning(f"Places search failed: {e}")
+        logger.warning(f"Places(new) search failed: {e}")
         return _empty(q, str(e))
 
-    status = data.get("status", "")
-    # ZERO_RESULTS is a valid "nothing nearby" answer, not an error.
-    if status not in ("OK", "ZERO_RESULTS"):
-        return _empty(q, data.get("error_message") or status or "unknown error")
-
     places: list[Place] = []
-    for r in (data.get("results") or [])[:limit]:
-        oh = r.get("opening_hours") or {}
+    for r in (data.get("places") or [])[:limit]:
+        oh = r.get("currentOpeningHours") or {}
+        dn = r.get("displayName") or {}
+        name = dn.get("text", "") if isinstance(dn, dict) else (dn or "")
+        maps_url = r.get("googleMapsUri") or _fallback_maps_url(
+            name, r.get("formattedAddress", ""), r.get("id", ""))
         places.append(Place(
-            name=r.get("name", ""),
-            address=r.get("formatted_address", "") or r.get("vicinity", ""),
+            name=name,
+            address=r.get("formattedAddress", ""),
             rating=r.get("rating"),
-            user_ratings=r.get("user_ratings_total"),
-            open_now=oh.get("open_now") if isinstance(oh, dict) else None,
-            price_level=r.get("price_level"),
-            maps_url=_maps_url(r.get("name", ""), r.get("formatted_address", ""),
-                               r.get("place_id", "")),
+            user_ratings=r.get("userRatingCount"),
+            open_now=oh.get("openNow") if isinstance(oh, dict) else None,
+            price_level=r.get("priceLevel"),
+            maps_url=maps_url,
         ))
 
     result = PlacesResult(results=places, query=q, cache_hit=False,
