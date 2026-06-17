@@ -35,6 +35,7 @@ def test_needs_heads_up_tools_covers_the_slow_tools():
         "query_history",
         "generate_image",
         "track_metric",
+        "find_nearby_places",
     })
 
 

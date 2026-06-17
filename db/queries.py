@@ -47,6 +47,15 @@ def search_enabled() -> bool:
     return os.getenv("SEARCH_ENABLED", "false").lower() in ("true", "1", "yes")
 
 
+def location_enabled() -> bool:
+    """Gate for the find_nearby_places tool (Google Places). Default OFF — mirrors
+    search_enabled so the location capability is inert until LOCATION_ENABLED=true
+    AND a GOOGLE_PLACES_API_KEY is set. Same pattern as web_search: zero impact on
+    existing behavior while disabled."""
+    import os
+    return os.getenv("LOCATION_ENABLED", "false").lower() in ("true", "1", "yes")
+
+
 async def enable_check_ins(db: AsyncSession, user_id: int) -> None:
     """
     Turn proactive check-ins ON for a user — called natively when onboarding completes,
@@ -174,6 +183,7 @@ async def get_today_log(db: AsyncSession, user_id: int,
     _opts = [
         selectinload(DailyLog.food_entries),
         selectinload(DailyLog.exercise_entries),
+        selectinload(DailyLog.water_entries),
     ]
 
     async def _fetch(d: date) -> Optional[DailyLog]:
@@ -198,13 +208,14 @@ async def get_today_log(db: AsyncSession, user_id: int,
 
 
 async def get_log_by_date(db: AsyncSession, user_id: int, target_date: date) -> Optional[DailyLog]:
-    """Fetch a specific day's log with food/exercise entries eagerly loaded."""
+    """Fetch a specific day's log with food/exercise/water entries eagerly loaded."""
     result = await db.execute(
         select(DailyLog)
         .where(and_(DailyLog.user_id == user_id, DailyLog.date == target_date))
         .options(
             selectinload(DailyLog.food_entries),
             selectinload(DailyLog.exercise_entries),
+            selectinload(DailyLog.water_entries),
         )
     )
     return result.scalar_one_or_none()
@@ -328,6 +339,58 @@ async def add_water_entry(db: AsyncSession, user_id: int, daily_log_id: int,
     return entry
 
 
+async def recompute_water_total(db: AsyncSession, daily_log_id: int) -> float:
+    """Re-sum a day's WaterEntry rows into DailyLog.total_water_ml.
+
+    Called after any manual water edit/delete from the dashboard so the cached
+    aggregate the tile/context read stays in sync with the canonical rows.
+    Returns the new total."""
+    from db.models import WaterEntry
+    rows = (await db.execute(
+        select(WaterEntry.amount_ml).where(WaterEntry.daily_log_id == daily_log_id)
+    )).scalars().all()
+    total = float(sum(a or 0 for a in rows))
+    log = await db.get(DailyLog, daily_log_id)
+    if log is not None:
+        log.total_water_ml = total
+        await db.commit()
+    return total
+
+
+async def update_water_entry(db: AsyncSession, entry_id: int, user_id: int,
+                             amount_ml: float):
+    """Update a single WaterEntry's amount, then resync the day total.
+
+    Scoped by user_id so a token can only touch its own rows. Returns the
+    refreshed entry, or None if not found / not owned."""
+    from db.models import WaterEntry
+    entry = await db.get(WaterEntry, entry_id)
+    if entry is None or entry.user_id != user_id:
+        return None
+    entry.amount_ml = amount_ml
+    await db.commit()
+    if entry.daily_log_id:
+        await recompute_water_total(db, entry.daily_log_id)
+    await db.refresh(entry)
+    return entry
+
+
+async def delete_water_entry(db: AsyncSession, entry_id: int, user_id: int) -> bool:
+    """Delete a single WaterEntry, then resync the day total.
+
+    Scoped by user_id. Returns True if a row was removed."""
+    from db.models import WaterEntry
+    entry = await db.get(WaterEntry, entry_id)
+    if entry is None or entry.user_id != user_id:
+        return False
+    daily_log_id = entry.daily_log_id
+    await db.delete(entry)
+    await db.commit()
+    if daily_log_id:
+        await recompute_water_total(db, daily_log_id)
+    return True
+
+
 async def get_recent_weights(db: AsyncSession, user_id: int,
                              days: int = 14) -> List[BodyMetric]:
     since = datetime.utcnow() - timedelta(days=days)
@@ -380,7 +443,14 @@ async def get_recent_conversations(db: AsyncSession, user_id: int,
 async def log_conversation(db: AsyncSession, user_id: int, raw_message: str,
                            response: str, parsed_intent: str = None,
                            source_type: str = "text",
-                           skills_fired: str | None = None):
+                           skills_fired: str | None = None,
+                           platform: str | None = None):
+    """Persist one conversation turn.
+
+    `platform` tags which surface the turn happened on ("telegram" | "imessage"
+    | "web"). Optional + defaults to the model default ("telegram") so existing
+    callers are unchanged; the dashboard web-chat passes platform="web" so the
+    unified thread can label it correctly across all surfaces."""
     entry = ConversationLog(
         user_id=user_id,
         raw_message=raw_message,
@@ -389,6 +459,8 @@ async def log_conversation(db: AsyncSession, user_id: int, raw_message: str,
         source_type=source_type,
         skills_fired=skills_fired,
     )
+    if platform is not None:
+        entry.platform = platform
     db.add(entry)
     await db.commit()
 
@@ -407,6 +479,32 @@ async def reload_user(db: AsyncSession, user_id: int) -> User:
         .options(selectinload(User.preferences))
     )
     return result.scalar_one()
+
+
+async def save_user_location(db: AsyncSession, user_id: int,
+                             lat: float, lng: float,
+                             city: Optional[str] = None) -> None:
+    """Persist a freshly shared Telegram location. Sets lat/lng + timestamp, and
+    backfills city/timezone ONLY when we resolved them and they're not already set
+    (never clobbers a city the user told us themselves). Used by the location
+    handler; gated end-to-end by LOCATION_ENABLED."""
+    user = await db.get(User, user_id)
+    if not user:
+        return
+    user.lat = float(lat)
+    user.lng = float(lng)
+    user.location_updated_at = datetime.utcnow()
+    if city and not user.city:
+        user.city = city
+        # Best-effort timezone from the city, mirroring how onboarding resolves it.
+        try:
+            from core.timezones import resolve_timezone
+            tz = resolve_timezone(city)
+            if tz and (not user.timezone or user.timezone == "UTC"):
+                user.timezone = tz
+        except Exception:
+            pass
+    await db.commit()
 
 
 async def get_all_active_users(db: AsyncSession) -> List[User]:
@@ -611,13 +709,31 @@ async def consume_pre_registration(db: AsyncSession, code: str) -> Optional[dict
     return json.loads(entry.profile_json)
 
 
-async def get_user_by_webhook_token(db: AsyncSession, token: str) -> Optional[User]:
+async def get_user_by_webhook_token(
+    db: AsyncSession, token: str, *, follow_link: bool = True
+) -> Optional[User]:
+    """Resolve a dashboard webhook token to a user.
+
+    By default this follows `linked_to_user_id` to the CANONICAL account, so the
+    dashboard reads and writes the exact same brain the bot does (the bot uses
+    resolve_user, which also canonicalizes). Without this, an edit/delete made on
+    a linked identity's dashboard lands on a different DailyLog than the one the
+    bot reads — e.g. deleting water on the dashboard wouldn't show up in chat.
+
+    Pass follow_link=False to get the raw token-owner row unchanged — used by the
+    Whoop OAuth callback/sync so wearable tokens stay on the row they were stored
+    on. Unlinked users are unaffected either way (linked_to_user_id is null)."""
     result = await db.execute(
         select(User)
         .where(User.webhook_token == token)
         .options(selectinload(User.preferences))
     )
-    return result.scalar_one_or_none()
+    user = result.scalar_one_or_none()
+    if user and follow_link and linking_enabled() and user.linked_to_user_id:
+        canonical = await reload_user(db, user.linked_to_user_id)
+        if canonical:
+            return canonical
+    return user
 
 
 async def upsert_health_snapshot(db: AsyncSession, user_id: int,

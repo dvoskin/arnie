@@ -26,10 +26,11 @@ Rules:
 
 NUDGE_SLOT_INSTRUCTIONS: dict[str, str] = {
     "morning_checkin": (
-        "It's morning — greet them and prompt them to log weight (if they haven't) "
-        "and tell you about breakfast. If recovery data is present, reference it naturally "
-        "(e.g. if recovery is red, note they should fuel well; if green, match their energy). "
-        "If coaching state shows reduced readiness, suggest a lighter training day."
+        "It's morning — greet them and tie the day to their goal or one personal detail you "
+        "know about them, so it feels personal, not automated. Prompt them to log weight (if "
+        "they haven't) and tell you about breakfast. If recovery data is present, reference it "
+        "naturally (red = fuel well; green = match their energy). If coaching state shows "
+        "reduced readiness, suggest a lighter training day."
     ),
     "late_morning_nolog": (
         "It's 10am and nothing has been logged today. Check in — "
@@ -50,9 +51,12 @@ NUDGE_SLOT_INSTRUCTIONS: dict[str, str] = {
         "Factor in coaching state if available. If it's a rest day, acknowledge that's fine."
     ),
     "evening_pacing": (
-        "It's 7pm. Full evening audit: calories remaining, protein remaining, water, workout done. "
-        "Tell them exactly what dinner needs to look like to close the day well. "
-        "Reference wearable data if available (e.g. high strain = need more fuel)."
+        "It's evening — leave a warm spoken-style RECAP of today's food logging. "
+        "Using the 'Logged today' food list provided, briefly run through what they ate "
+        "(group it naturally, don't read every gram) and give the day's calorie + protein "
+        "totals vs target. Then ONE line on what dinner should look like to close the day. "
+        "If the food list is empty, don't invent anything — ask what they ate today so you "
+        "can get it logged. Reference wearable data only if it adds something."
     ),
     "night_closeout": (
         "It's 9pm. Day is still open. Prompt them to log anything missed and close out the day. "

@@ -1045,6 +1045,19 @@ body.brain-active footer{{display:none}}
 }}
 
 /* ── CHAT PANEL (opened from the header Chat button · consolidated Telegram + iMessage) ─── */
+.chat-fab{{
+  position:fixed;z-index:90;bottom:24px;right:24px;
+  width:54px;height:54px;border-radius:50%;border:none;cursor:pointer;
+  background:var(--ac);color:#fff;display:grid;place-items:center;
+  box-shadow:0 12px 30px rgba(0,0,0,.38);
+  transition:transform .18s cubic-bezier(.2,.7,.2,1),opacity .18s,background .15s;
+}}
+.chat-fab:hover{{transform:translateY(-2px) scale(1.04)}}
+.chat-fab:active{{transform:scale(.96)}}
+.chat-fab .chat-fab-close{{display:none}}
+.chat-fab.open .chat-fab-open{{display:none}}
+.chat-fab.open .chat-fab-close{{display:block}}
+@media(max-width:940px){{ .chat-fab{{bottom:16px;right:16px;width:50px;height:50px}} }}
 .cw-panel{{
   position:fixed;z-index:89;top:80px;right:24px;
   width:360px;height:min(540px,72vh);
@@ -1110,6 +1123,32 @@ body.brain-active footer{{display:none}}
 .cw-tg:hover{{color:var(--ac);background:var(--ac-dim)}}
 .cw-tg svg{{flex-shrink:0;opacity:.85}}
 .cw-tg:hover svg{{opacity:1}}
+.cw-composer{{
+  flex-shrink:0;display:flex;align-items:flex-end;gap:8px;
+  padding:10px 12px;border-top:1px solid var(--bd);
+}}
+.cw-input{{
+  flex:1;min-width:0;resize:none;max-height:96px;
+  background:var(--sf2);border:1px solid var(--bd);border-radius:14px;
+  color:var(--tx);font-family:inherit;font-size:13.5px;line-height:1.4;
+  padding:9px 12px;outline:none;transition:border-color .15s;
+}}
+.cw-input:focus{{border-color:var(--ac)}}
+.cw-input::placeholder{{color:var(--di)}}
+.cw-send{{
+  flex-shrink:0;width:36px;height:36px;border-radius:50%;border:none;cursor:pointer;
+  background:var(--ac);color:#fff;display:grid;place-items:center;
+  transition:opacity .15s,transform .1s;
+}}
+.cw-send:hover{{opacity:.9}}
+.cw-send:active{{transform:scale(.94)}}
+.cw-send:disabled{{opacity:.45;cursor:default}}
+.cw-typing{{display:inline-flex;gap:3px;padding:4px 2px}}
+.cw-typing span{{width:6px;height:6px;border-radius:50%;background:var(--mu);
+  animation:cwBlink 1.2s infinite ease-in-out}}
+.cw-typing span:nth-child(2){{animation-delay:.18s}}
+.cw-typing span:nth-child(3){{animation-delay:.36s}}
+@keyframes cwBlink{{0%,80%,100%{{opacity:.25}}40%{{opacity:1}}}}
 @media(max-width:940px){{
   .cw-panel{{
     top:62px;right:12px;left:12px;
@@ -1225,6 +1264,12 @@ body.brain-active footer{{display:none}}
   padding:11px 16px;cursor:pointer;text-align:left;transition:background .15s;
 }}
 .add-submit:hover{{background:var(--ac-dim)}}
+.water-quick{{
+  border:1px solid var(--bd);background:var(--sf2);color:var(--mu);
+  font-family:'Geist Mono','SF Mono',monospace;font-size:11px;font-weight:600;
+  letter-spacing:.04em;border-radius:8px;padding:6px 11px;cursor:pointer;transition:all .18s;
+}}
+.water-quick:hover{{border-color:var(--ac);color:var(--ac);background:var(--ac-dim)}}
 .add-submit:active{{opacity:.7}}
 .add-toggle{{
   width:26px;height:26px;border-radius:8px;border:1px solid var(--bd);
@@ -2841,13 +2886,6 @@ footer{{
         <span class="atile-lbl">Cardio</span>
         <span class="atile-state" id="tile-cardio-state">—</span>
       </button>
-      <button class="atile full" id="tile-water" style="display:none" type="button">
-        <svg class="atile-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="M8 2l3.5 5.5a4.2 4.2 0 1 1-7 0L8 2z"/>
-        </svg>
-        <span class="atile-lbl">Water</span>
-        <span class="atile-state" id="tile-water-state"></span>
-      </button>
     </div>
 
     <!-- AI INSIGHTS — inline expanding panel triggered by the Insights
@@ -2941,6 +2979,35 @@ footer{{
           <button class="add-submit" id="ex-submit" onclick="submitExerciseInline()">Save workout</button>
         </div>
         <div class="lcrd" id="ex-log"><div class="lempty">Loading&hellip;</div></div>
+      </div>
+    </div>
+
+    <!-- WATER — collapsible. Header carries the day total (sum shown first);
+         expanding reveals the individual timestamped logs. The + opens a small
+         manual-entry form (quick-add chips + free ml), so water can be edited
+         by hand on the dashboard, not just via chat. Mirrors the Food/Workouts
+         sections; renderDayTab fills #water-log + #water-log-total. -->
+    <div class="log-section" id="water-section">
+      <div class="stitle spaced log-section-hd" onclick="toggleLogSection('water')">
+        <span>Water <span id="water-log-total" style="font-weight:400;opacity:.7"></span></span>
+        <div style="display:flex;align-items:center;gap:6px">
+          <button class="log-chevron" id="water-chevron" title="Collapse">&#8249;</button>
+          <button class="add-toggle" id="water-toggle" onclick="event.stopPropagation();toggleAddForm('water')" title="Add water">+</button>
+        </div>
+      </div>
+      <div class="log-section-body" id="water-section-body">
+        <div class="add-card" id="water-form" style="display:none">
+          <div style="display:flex;gap:6px;padding:10px 14px 0;flex-wrap:wrap">
+            <button type="button" class="water-quick" onclick="quickWater(250)">+250 ml</button>
+            <button type="button" class="water-quick" onclick="quickWater(500)">+500 ml</button>
+            <button type="button" class="water-quick" onclick="quickWater(1000)">+1 L</button>
+          </div>
+          <div class="add-macros">
+            <div class="add-mac-field"><label>ml</label><input type="number" id="water-ml" min="0" inputmode="numeric" placeholder="0"></div>
+          </div>
+          <button class="add-submit" id="water-submit" onclick="submitWaterInline()">Save water</button>
+        </div>
+        <div class="lcrd" id="water-log"><div class="lempty">Loading&hellip;</div></div>
       </div>
     </div>
 
@@ -4231,6 +4298,32 @@ async function submitExerciseInline(){{
   finally{{btn.textContent='+ Add workout';btn.disabled=false;}}
 }}
 
+// ── Log water (inline) ────────────────────────────────────
+// Quick-add chips bump the ml field so a tap-tap-save flow works; the field
+// is also free-editable. Logs to the viewed day (past days supported via
+// log_date), same as food/exercise.
+function quickWater(ml){{
+  var inp=document.getElementById('water-ml');
+  if(!inp)return;
+  inp.value=(parseFloat(inp.value)||0)+ml;
+}}
+async function submitWaterInline(){{
+  var ml=parseFloat(document.getElementById('water-ml').value)||0;
+  if(ml<=0){{document.getElementById('water-ml').focus();return;}}
+  var btn=document.getElementById('water-submit');
+  btn.textContent='Saving…';btn.disabled=true;
+  try{{
+    var body={{amount_ml:ml,log_date:_viewingDate!==_todayStr?_viewingDate:undefined}};
+    var r=await fetch('/api/water/log?token='+TOKEN,{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify(body)}});
+    if(!r.ok)throw new Error('HTTP '+r.status);
+    document.getElementById('water-ml').value='';
+    toggleAddForm('water');
+    delete _dayCache[_viewingDate];
+    await loadDayData(_viewingDate);
+  }}catch(e){{alert('Failed to save: '+e.message);}}
+  finally{{btn.textContent='Save water';btn.disabled=false;}}
+}}
+
 // Insights tile — true toggle. Tap once opens the inline panel (and
 // scrolls it into view); tap again collapses it. Reuses production
 // toggleInsights('day') so all the fetch / refresh / streaming logic
@@ -4642,20 +4735,15 @@ function renderDayTab(d){{
   }}
   _setActivityTile('tile-workout', 'tile-workout-state', !!day.workout_completed);
   _setActivityTile('tile-cardio',  'tile-cardio-state',  !!day.cardio_completed);
-  var wb2=document.getElementById('tile-water');
-  var wbState=document.getElementById('tile-water-state');
-  if(wb2){{
-    // Water is opt-in — only show the tile when the user actually logs it,
-    // so it's never a permanent "No water" guilt-chip for people who don't
-    // track it. When shown, it's full-width below the Workout/Cardio row.
-    if(day.water_ml>0){{
-      var wAmt=day.water_ml>=1000?(day.water_ml/1000).toFixed(1)+' L':Math.round(day.water_ml)+' ml';
-      wb2.style.display='';
-      wb2.classList.add('done');
-      if(wbState) wbState.textContent = wAmt;
-    }}else{{
-      wb2.style.display='none';
-    }}
+
+  // ── Water section — day total in the header, individual logs in the body ──
+  var we=day.water_entries||[];
+  var wTotalEl=document.getElementById('water-log-total');
+  if(wTotalEl) wTotalEl.textContent = day.water_ml>0 ? fmtWater(day.water_ml) : '';
+  var wLog=document.getElementById('water-log');
+  if(wLog){{
+    wLog.innerHTML = we.length ? we.map(renderWaterRow).join('')
+      : '<div class="lempty">'+(isToday?'No water logged yet — tap + to add some.':'No water logged this day.')+'</div>';
   }}
 
   var fe=day.food_entries||[];
@@ -6224,6 +6312,65 @@ async function deleteFood(id){{
   delete _dayCache[_viewingDate];await loadDayData(_viewingDate);
 }}
 
+// ── Water: format, row render, edit, delete ───────────────────────────────
+function fmtWater(ml){{
+  ml=Math.round(ml||0);
+  return ml>=1000?(ml/1000).toFixed(ml%1000===0?0:1)+' L':ml+' ml';
+}}
+function findWater(id){{
+  return(_dayCache[_viewingDate]?.day?.water_entries||[]).find(w=>w.id===id);
+}}
+function renderWaterRow(w){{
+  var t='';
+  if(w.timestamp){{
+    var dt=new Date(w.timestamp);
+    if(!isNaN(dt)) t=dt.toLocaleTimeString([],{{hour:'numeric',minute:'2-digit'}});
+  }}
+  return '<div class="lrow" id="water-row-'+w.id+'" onclick="this.classList.toggle(&quot;open&quot;)">'+
+    '<div class="lrow-main">'+
+      '<div class="lname">'+fmtWater(w.amount_ml)+'</div>'+
+      (t?'<div class="lmeta">'+esc(t)+'</div>':'')+
+    '</div>'+
+    '<div class="lrow-actions">'+
+      '<button class="ibtn" onclick="event.stopPropagation();editWater('+w.id+')" aria-label="Edit">&#9998;</button>'+
+      '<button class="ibtn del" onclick="event.stopPropagation();deleteWater('+w.id+')" aria-label="Delete">&#215;</button>'+
+    '</div>'+
+    '</div>';
+}}
+function editWater(id){{
+  var w=findWater(id);if(!w)return;
+  document.getElementById('water-row-'+id).innerHTML=
+    '<div class="eform">'+
+    '<div class="emac" style="grid-template-columns:1fr">'+
+    '<div class="emc"><label>ml</label><input type="number" id="ew-ml-'+id+'" value="'+(w.amount_ml??'')+'" min="0" inputmode="numeric"></div>'+
+    '</div>'+
+    '<div class="eact">'+
+    '<button class="sbtn" onclick="saveWater('+id+')">Save</button>'+
+    '<button class="cbtn" onclick="cancelEdit()">Cancel</button>'+
+    '</div></div>';
+}}
+async function saveWater(id){{
+  var body={{amount_ml:parseFloat(document.getElementById('ew-ml-'+id).value)||0}};
+  var btn=document.querySelector('#water-row-'+id+' .sbtn');
+  if(btn){{btn.disabled=true;btn.textContent='…'}}
+  var r=await fetch('/api/water/'+id+'?token='+TOKEN,{{
+    method:'PATCH',headers:{{'Content-Type':'application/json'}},body:JSON.stringify(body),
+  }});
+  if(!r.ok){{
+    alert('Save failed — please try again.');
+    if(btn){{btn.disabled=false;btn.textContent='Save'}}
+    return;
+  }}
+  delete _dayCache[_viewingDate];await loadDayData(_viewingDate);
+}}
+async function deleteWater(id){{
+  var w=findWater(id);
+  if(!confirm('Delete this water log'+(w?' ('+fmtWater(w.amount_ml)+')':'')+'?')) return;
+  var r=await fetch('/api/water/'+id+'?token='+TOKEN,{{method:'DELETE'}});
+  if(!r.ok){{alert('Delete failed.');return}}
+  delete _dayCache[_viewingDate];await loadDayData(_viewingDate);
+}}
+
 // ── Inline edit: exercise ─────────────────────────────────────────────────
 function editExercise(id){{
   var e=findEx(id);if(!e)return;
@@ -6671,6 +6818,47 @@ function renderChatThread(turns,initial){{
   thread.innerHTML=html;
   if(initial||wasNear) thread.scrollTop=thread.scrollHeight;
 }}
+
+// ── Web composer — send a message through the SAME brain as the bots ─────────
+// POSTs to /api/chat; the turn is logged as platform="web" so it shows up in
+// this thread (and on Telegram/iMessage). Optimistic append, then a reload
+// reconciles against the server copy.
+function cwAutogrow(el){{ el.style.height='auto'; el.style.height=Math.min(el.scrollHeight,96)+'px'; }}
+function cwKey(e){{ if(e.key==='Enter' && !e.shiftKey){{ e.preventDefault(); sendChatMessage(); }} }}
+function _cwAppend(html){{
+  var thread=document.getElementById('cw-thread');
+  var empty=thread.querySelector('.cw-state'); if(empty) thread.innerHTML='';
+  thread.insertAdjacentHTML('beforeend',html);
+  thread.scrollTop=thread.scrollHeight;
+}}
+async function sendChatMessage(){{
+  var inp=document.getElementById('cw-input'), btn=document.getElementById('cw-send');
+  var text=(inp.value||'').trim();
+  if(!text) return;
+  inp.value=''; cwAutogrow(inp); inp.focus();
+  btn.disabled=true;
+  var now=new Date().toLocaleTimeString('en-US',{{hour:'numeric',minute:'2-digit'}});
+  _cwAppend('<div class="cw-row me"><div class="cw-bubble">'+esc(text)+'</div>'
+    +'<div class="cw-meta"><span class="cw-cdot tg" style="background:var(--ac)"></span>'+esc('Web \\u00b7 '+now)+'</div></div>');
+  _cwAppend('<div class="cw-row ar" id="cw-pending"><div class="cw-bubble"><span class="cw-typing"><span></span><span></span><span></span></span></div></div>');
+  try{{
+    var r=await fetch('/api/chat/'+TOKEN,{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{message:text}})}});
+    var pend=document.getElementById('cw-pending'); if(pend) pend.remove();
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    var data=await r.json();
+    var reply=_cwClean((data.bubbles||[]).join('|||'));
+    if(reply) _cwAppend('<div class="cw-row ar"><div class="cw-bubble">'+esc(reply)+'</div></div>');
+    _cwSig='';                       // force the next poll to re-render from server truth
+    loadChatWidget(false);
+    delete _dayCache[_viewingDate];  // a web turn may have logged food/water/etc.
+    if(typeof _activeTab!=='undefined' && _activeTab==='day') loadDayData(_viewingDate);
+  }}catch(e){{
+    var pend2=document.getElementById('cw-pending'); if(pend2) pend2.remove();
+    _cwAppend('<div class="cw-row ar"><div class="cw-bubble" style="color:var(--mu)">Could not send that. Try again in a moment.</div></div>');
+  }}finally{{
+    btn.disabled=false;
+  }}
+}}
 </script>
 
 <!-- LOG MODAL — direct body child so position:fixed works across all containers -->
@@ -6737,7 +6925,18 @@ function renderChatThread(turns,initial){{
   </div>
 </div>
 
-<!-- LIVE CHAT WIDGET — floating, consolidated Telegram + iMessage thread -->
+<!-- CHAT LAUNCHER — floating action button, bottom-right. Opens the live chat
+     panel. id="chat-btn" so toggleChatWidget()'s existing .open toggle works. -->
+<button class="chat-fab" id="chat-btn" onclick="toggleChatWidget()" aria-label="Chat with Arnie" title="Chat with Arnie">
+  <svg class="chat-fab-open" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M21 11.5a8.38 8.38 0 0 1-8.5 8.5 8.5 8.5 0 0 1-3.9-.9L3 21l1.9-5.6A8.5 8.5 0 0 1 12.5 3 8.38 8.38 0 0 1 21 11.5z"/>
+  </svg>
+  <svg class="chat-fab-close" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M18 6 6 18M6 6l12 12"/>
+  </svg>
+</button>
+
+<!-- LIVE CHAT WIDGET — floating, consolidated Telegram + iMessage + Web thread -->
 <div class="cw-panel" id="cw-panel" aria-hidden="true" aria-label="Your conversation with Arnie">
   <div class="cw-head">
     <div class="cw-head-l">
@@ -6750,10 +6949,13 @@ function renderChatThread(turns,initial){{
     <button class="cw-close" onclick="toggleChatWidget()" aria-label="Close">&#215;</button>
   </div>
   <div class="cw-thread" id="cw-thread"><div class="cw-state">Loading&hellip;</div></div>
-  <a class="cw-tg" href="tg://resolve?domain={bot_username}" target="_blank" rel="noopener">
-    <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M22 3 11 14"/><path d="M22 3 15 22l-4-8-8-4z"/></svg>
-    New message on Telegram
-  </a>
+  <div class="cw-composer">
+    <textarea class="cw-input" id="cw-input" rows="1" placeholder="Message Arnie&hellip;"
+      oninput="cwAutogrow(this)" onkeydown="cwKey(event)"></textarea>
+    <button class="cw-send" id="cw-send" onclick="sendChatMessage()" aria-label="Send">
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4z"/></svg>
+    </button>
+  </div>
 </div>
 </body>
 </html>"""

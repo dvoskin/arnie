@@ -5,6 +5,7 @@ Telegram bot — receives all updates, orchestrates the full pipeline:
 import asyncio
 import logging
 import os
+import time
 import random
 
 from telegram import (
@@ -12,6 +13,8 @@ from telegram import (
     InlineKeyboardMarkup,
     InlineKeyboardButton,
     ReplyKeyboardRemove,
+    ReplyKeyboardMarkup,
+    KeyboardButton,
 )
 from telegram.constants import ChatAction, ParseMode
 from telegram.ext import (
@@ -37,6 +40,30 @@ from scheduler.proactive_scheduler import start_scheduler, stop_scheduler
 
 logger = logging.getLogger(__name__)
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+
+# Pending location-gated requests. When a "what's near me" turn fires
+# find_nearby_places with no location on file, we stash the user's original text
+# here keyed by tg user id. The moment they tap "share location", handle_location
+# pops it and finishes the original request automatically — so the share itself
+# completes the flow, no re-typing. TTL-bounded so a stale tap doesn't replay an
+# hour-old request.
+_LOCATION_PENDING: dict[str, tuple[str, float]] = {}
+_LOCATION_PENDING_TTL = 600  # seconds
+
+# Deterministic "near me" intent — a safety net so the share button shows even when
+# the model talks about location WITHOUT actually calling find_nearby_places (models
+# don't always emit the tool call). Multilingual: EN / RU / UA near-me phrasings.
+import re as _re
+_LOCATION_INTENT_RE = _re.compile(
+    r"near\s*me|nearby|near\s*by|around\s*me|close\s*to\s*me|closest"
+    r"|возле\s*меня|рядом|поблизост|вокруг\s*меня|недалеко|ближайш"
+    r"|біля\s*мене|поряд|поблизу|навколо\s*мене|найближч",
+    _re.IGNORECASE | _re.UNICODE,
+)
+
+
+def _looks_like_location_request(text: str) -> bool:
+    return bool(text and _LOCATION_INTENT_RE.search(text))
 
 # Semantic reaction → Telegram emoji (Bot API 7.0+; best-effort)
 _TG_REACTION_EMOJI = {
@@ -415,6 +442,31 @@ async def _run_pipeline(update: Update, context: ContextTypes.DEFAULT_TYPE,
         if not is_last:
             await asyncio.sleep(0.25)
 
+    # ── Nearby request with no location on file → one-tap share button ────────
+    # Two triggers (either is enough):
+    #   1. run_turn set needs_location_share (the model DID call find_nearby_places
+    #      and it came back without a usable location), OR
+    #   2. deterministic fallback — the user's message is a "near me" request and we
+    #      have no coords on file, even if the model only TALKED about location
+    #      without emitting the tool call (models skip it sometimes). This is what
+    #      makes the button reliable instead of dependent on the model's tool use.
+    # Sent as a fresh message so it works even when the reply streamed. The original
+    # request is stashed so the tap finishes it automatically (see handle_location).
+    try:
+        from db.queries import location_enabled
+        _no_coords = getattr(turn.user, "lat", None) is None
+        _wants_share = getattr(turn, "needs_location_share", False) or (
+            _no_coords and _looks_like_location_request(raw_text)
+        )
+        if _wants_share and location_enabled():
+            _LOCATION_PENDING[str(tg_user.id)] = (raw_text, time.time())
+            await update.message.reply_text(
+                "📍 Tap to share your location and I'll find spots right around you.",
+                reply_markup=_share_location_keyboard(),
+            )
+    except Exception as e:
+        logger.debug(f"location-share prompt failed (non-fatal): {e}")
+
     # ── Post-onboarding: dashboard as an inline button (Telegram-specific) ────
     if turn.just_completed:
         try:
@@ -518,6 +570,92 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # parsing, filler-word tolerance). Mirrors [Food photo]: for photos.
         # Arnie still coaches naturally — the prefix is invisible plumbing, never echoed.
         await _run_pipeline(update, context, f"[Voice note]: {transcript}", "voice", db)
+
+
+def _share_location_keyboard() -> ReplyKeyboardMarkup:
+    """One-tap 'share my location' button. request_location asks Telegram to send
+    the user's current coordinates ONCE when tapped — Telegram never streams
+    location to a bot without this explicit tap (privacy model). resize + one-time
+    so it doesn't linger in the keyboard after use."""
+    return ReplyKeyboardMarkup(
+        [[KeyboardButton("📍 Share my location", request_location=True)]],
+        resize_keyboard=True, one_time_keyboard=True,
+    )
+
+
+async def cmd_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/location — surface the share-location button so the user can set where they
+    are. Inert unless LOCATION_ENABLED (otherwise we'd offer a dead feature)."""
+    from db.queries import location_enabled
+    if not location_enabled():
+        await update.message.reply_text(
+            "Location features aren't switched on yet. Tell me your city and I'll "
+            "work with that."
+        )
+        return
+    await update.message.reply_text(
+        "Tap below and I'll find spots around you. One tap, that's it.",
+        reply_markup=_share_location_keyboard(),
+    )
+
+
+async def handle_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Receive a shared location — both a one-time share and live-location updates
+    (live arrives as edited_message, so we read effective_message). Saves coords,
+    best-effort reverse-geocodes a city, and routes a normal turn so Arnie reacts
+    in voice instead of going silent."""
+    from db.queries import location_enabled
+    msg = update.effective_message
+    loc = getattr(msg, "location", None) if msg else None
+    if loc is None:
+        return
+    if not location_enabled():
+        # Feature off — acknowledge gracefully, don't store, don't go silent.
+        await msg.reply_text(
+            "Got your location, but the nearby-places feature isn't on yet. "
+            "I'll just use your city for now.",
+            reply_markup=ReplyKeyboardRemove(),
+        )
+        return
+
+    lat, lng = loc.latitude, loc.longitude
+    is_live = bool(getattr(loc, "live_period", None))
+
+    async with AsyncSessionLocal() as db:
+        from db.queries import resolve_user
+        user = await resolve_user(db, str(update.effective_user.id))
+        # Reverse-geocode is best-effort; coords are saved either way.
+        city = None
+        try:
+            from core.geocode import reverse as _reverse
+            city = await _reverse(lat, lng)
+        except Exception as e:
+            logger.warning(f"reverse geocode failed: {e}")
+        from db.queries import save_user_location
+        await save_user_location(db, user.id, lat, lng, city=city)
+
+        # Was a request waiting on this location? Finish it now, with coords on file.
+        pend = _LOCATION_PENDING.pop(str(update.effective_user.id), None)
+        if pend:
+            _text, _ts = pend
+            if (time.time() - _ts) <= _LOCATION_PENDING_TTL and _text and _text.strip():
+                await msg.reply_text(
+                    f"Got it{(' near ' + city) if city else ''} 📍 finding it now.",
+                    reply_markup=ReplyKeyboardRemove(),
+                )
+                await _run_pipeline(update, context, _text, "text", db)
+                return
+
+        # Live-location edits stream in silently — store and stop (no reply per tick,
+        # that'd be spam). Only the FIRST share / a one-time share gets a reply.
+        if is_live and update.edited_message is not None:
+            return
+
+        where = f" near {city}" if city else ""
+        await msg.reply_text(
+            f"Locked in your spot{where} 📍 ask me what's around you anytime.",
+            reply_markup=ReplyKeyboardRemove(),
+        )
 
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1619,12 +1757,19 @@ def build_app() -> Application:
     app.add_handler(CommandHandler("memory",  cmd_memory))
     app.add_handler(CommandHandler("remind",  cmd_remind))
     app.add_handler(CommandHandler("whoop",   cmd_whoop))
+    app.add_handler(CommandHandler("location", cmd_location))
     app.add_handler(CommandHandler("feedback",cmd_feedback))
     # Aliases
     app.add_handler(CommandHandler("log",      cmd_today))
     app.add_handler(CommandHandler("summary",  cmd_today))
     app.add_handler(MessageHandler(filters.VOICE, handle_voice))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
+    # Shared location — one-time share AND live-location updates (the latter arrive
+    # as edited_message, so register that update type too). Both route to
+    # handle_location, which reads update.effective_message.
+    app.add_handler(MessageHandler(filters.LOCATION, handle_location))
+    app.add_handler(MessageHandler(
+        filters.UpdateType.EDITED_MESSAGE & filters.LOCATION, handle_location))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
 
     return app

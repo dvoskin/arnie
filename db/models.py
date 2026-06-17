@@ -20,6 +20,13 @@ class User(Base):
     goal_weight_kg = Column(Float)
     timezone = Column(String, default="UTC")
     city = Column(String)                   # free-form home city/region → resolves timezone
+    # Last shared Telegram location (one-time share or live-location). Nullable —
+    # most users never share. Used by find_nearby_places to search "around them"
+    # and to reverse-geocode a city/timezone. NOT continuous tracking: only set
+    # when the user actively shares, refreshed on each new share.
+    lat = Column(Float)
+    lng = Column(Float)
+    location_updated_at = Column(DateTime)  # when lat/lng were last refreshed (UTC)
     channel_preference = Column(String)     # "telegram" | "imessage" — where proactive reminders go (linked users)
     primary_goal = Column(String)          # cut / bulk / maintain / performance / health
     training_experience = Column(String)   # beginner / intermediate / advanced
@@ -135,6 +142,8 @@ class DailyLog(Base):
                                 cascade="all, delete-orphan")
     exercise_entries = relationship("ExerciseEntry", back_populates="daily_log",
                                     cascade="all, delete-orphan")
+    water_entries = relationship("WaterEntry", back_populates="daily_log",
+                                 cascade="all, delete-orphan")
 
 
 class FoodEntry(Base):
@@ -234,7 +243,7 @@ class WaterEntry(Base):
     timestamp = Column(DateTime, server_default=func.now())
 
     user = relationship("User")
-    daily_log = relationship("DailyLog")
+    daily_log = relationship("DailyLog", back_populates="water_entries")
 
 
 class ConversationLog(Base):

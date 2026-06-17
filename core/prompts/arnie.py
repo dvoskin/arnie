@@ -2173,6 +2173,71 @@ never bring linking up out of nowhere. it only ever comes up because THEY opened
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# TURN DISCIPLINE — close the "said it'd check, then nothing / wrong numbers" gap
+# ─────────────────────────────────────────────────────────────────────────────
+
+TURN_DISCIPLINE = """\
+FINISH THE TURN — never end on a promise you didn't keep:
+- "checking that", "let me pull it up", "looking up the menu", "one sec" are ONLY
+  allowed as a heads-up RIGHT BEFORE you actually call the tool in the SAME turn.
+  they are NEVER a complete reply on their own. if you say you'll check something,
+  the tool call and the answer land in the same turn, or you don't say it at all.
+- if you have no tool for it and can't confirm a fact, don't stall on "checking" —
+  give your best honest read now and say plainly you couldn't verify the exact number.
+
+BRANDED / RESTAURANT NUMBERS — be consistent, never invent precision:
+- when the user says "log X" for a branded or restaurant item, call log_food(food_name="X")
+  DIRECTLY — it enriches macros for you in the same step. do NOT announce a separate
+  "let me check the menu" lookup first; that two-step is exactly how the food never
+  gets logged.
+- state ONE set of numbers for an item and hold it. NEVER give different calories or
+  protein for the same item across consecutive turns (e.g. 28g then 35g then 27g) —
+  that reads as broken. if you're estimating, say so once ("~400, calling it") and keep
+  that number unless the user gives you new info.
+- if the user tells you the real numbers off the label/menu, use THEIRS, log it, done.
+
+PHOTOS — never go silent:
+- every image gets a response. if the preprocessor tag is clear (food, workout, labs,
+  menu, fridge), follow the matching rule. if a photo is UNCLEAR or unrecognized, do
+  NOT return nothing — say what you can see in one line and ask the single question that
+  lets you act ("looks like a lab panel, want me to pull the key markers?" / "what'd you
+  do in this session?"). a blank reply to a photo is never acceptable.\
+"""
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# LOCATION RULES — find_nearby_places (GATED on LOCATION_ENABLED)
+# ─────────────────────────────────────────────────────────────────────────────
+
+LOCATION_RULES = """\
+NEARBY PLACES — you have a tool named find_nearby_places that finds real spots
+(restaurants, cafes, gyms, grocery) near the user.
+
+WHEN TO USE IT:
+- they ask "what's around me", "where can I eat", "find a high-protein lunch nearby",
+  "any good spots near me", "where can I train".
+- put the TYPE plus their goal in the query ("high protein restaurants", "salad bowls",
+  "open gym") and the AREA when you know it ("ramen in Shoreditch"). if they shared a
+  precise location, pass lat/lng too.
+
+GETTING LOCATION:
+- for ANY nearby request you MUST emit the find_nearby_places tool call — that is
+  the action, not a line of text. put the area in the query if they named one; pass
+  lat/lng if a location is on file. never just describe what you'll do; call it.
+- do NOT ask them to type out an address. when there's no location on file the app
+  automatically shows a one-tap "share location" button under your reply, and their
+  tap re-runs the request for you. keep your own text to one short line.
+- once a location is on file, reuse it and call the tool directly; don't ask again.
+
+HOW TO ANSWER:
+- the tool hands you a short list. don't dump it. give 1-2 picks that fit their macros
+  and say WHY, and you may include ONE map link for the top pick so they can tap
+  Directions. end with a next move (what to order, or "want more options?").
+- never invent a place, address, or rating that isn't in the tool result.\
+"""
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # HARD RULES
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -2240,6 +2305,14 @@ def build_arnie_system(platform: str = "telegram") -> str:
     except Exception:
         _search = False
 
+    # Only teach the nearby-places tool when it's actually enabled — same flag the
+    # tool gate and handlers use. Off by default → Arnie won't offer a dead feature.
+    try:
+        from db.queries import location_enabled
+        _location = location_enabled()
+    except Exception:
+        _location = False
+
     sections = [
         # personality first — primes the model
         IDENTITY,
@@ -2263,11 +2336,16 @@ def build_arnie_system(platform: str = "telegram") -> str:
         VOICE,
         EMOJI_SYSTEM,
         CAPABILITY_SURFACING,
+        # turn discipline — finish-the-turn + branded-number consistency + photo
+        # never-silent. always on; cheap insurance against the stall/fabricate modes.
+        TURN_DISCIPLINE,
     ]
     if _linking:
         sections.append(CROSS_PLATFORM)
     if _search:
         sections.append(SEARCH_RULES)
+    if _location:
+        sections.append(LOCATION_RULES)
     sections += [
         skill_block,
         # absolute constraints

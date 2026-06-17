@@ -333,7 +333,10 @@ async def whoop_callback(request: Request, code: str = "", state: str = "", erro
     # an error. This handles browser back/refresh after a working connection.
     if not result.get("ok") and "already been used" in (result.get("details") or "").lower():
         async with AsyncSessionLocal() as db:
-            existing_user = await get_user_by_webhook_token(db, state)
+            # Whoop tokens live on the raw token-owner row, not the canonical
+            # linked account — keep follow_link=False so the OAuth flow is
+            # unchanged by the dashboard canonicalization.
+            existing_user = await get_user_by_webhook_token(db, state, follow_link=False)
             if existing_user and existing_user.whoop_refresh_token:
                 return HTMLResponse("""<!DOCTYPE html>
 <html><head><meta charset="UTF-8"><title>Whoop already connected</title>
@@ -375,7 +378,9 @@ code{{background:#0f1117;padding:2px 6px;border-radius:4px;font-size:12px;color:
     tokens = result["tokens"]
     user_id_for_sync = None
     async with AsyncSessionLocal() as db:
-        user = await get_user_by_webhook_token(db, state)
+        # Store Whoop tokens on the raw token-owner row (follow_link=False),
+        # matching where the OAuth flow has always written them.
+        user = await get_user_by_webhook_token(db, state, follow_link=False)
         if not user:
             return HTMLResponse("<h2>Invalid state — user not found.</h2>", status_code=401)
 
@@ -1079,6 +1084,19 @@ async def _build_stats_for_user(db, user, target_date=None):
                  "cardio_type": e.cardio_type}
                 for e in (log.exercise_entries or [])
             ],
+            # Per-entry hydration (canonical WaterEntry rows) so the dashboard
+            # can show the day total first and expand into the individual logs.
+            # total_water_ml above stays the cached aggregate. Sorted oldest →
+            # latest; key never raises on a null timestamp.
+            "water_entries": [
+                {"id": w.id, "amount_ml": round(w.amount_ml or 0),
+                 "context": w.context,
+                 "timestamp": w.timestamp.isoformat() if w.timestamp else None}
+                for w in sorted(
+                    (log.water_entries or []),
+                    key=lambda w: (w.timestamp or datetime.min, w.id or 0),
+                )
+            ],
         }
 
     hist_data = [
@@ -1087,6 +1105,7 @@ async def _build_stats_for_user(db, user, target_date=None):
          "protein": round(log.total_protein or 0),
          "carbs": round(log.total_carbs or 0),
          "fats": round(log.total_fats or 0),
+         "water_ml": round(log.total_water_ml or 0),
          "workout": log.workout_completed}
         for log in sorted(history, key=lambda l: l.date)
     ]
@@ -1463,6 +1482,77 @@ async def get_conversation(token: str, limit: int = Query(120, ge=1, le=400)):
         return {"turns": turns, "platforms": sorted(platforms)}
 
 
+class ChatBody(BaseModel):
+    message: str
+
+
+@app.post("/api/chat/{token}")
+async def post_chat(token: str, body: ChatBody):
+    """Dashboard web chat — the SAME brain as Telegram/iMessage.
+
+    Runs the shared run_turn() pipeline with platform="web" (so tools, memory,
+    coaching voice are identical to the bots) and logs the turn to
+    ConversationLog(platform="web"). Because the read endpoint above consolidates
+    every linked identity, the message + Arnie's reply immediately appear in the
+    unified thread on every surface. Synchronous (no streaming) for v1.
+
+    Note: we deliberately DON'T wire on_image/on_interim callbacks, so a web turn
+    never gets pushed out to Telegram/iMessage — the reply comes back in this HTTP
+    response and is recorded once. Proactive nudges still route by channel pref.
+    """
+    text = (body.message or "").strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="Empty message")
+    if len(text) > 4000:
+        text = text[:4000]
+
+    from core.conversation import run_turn
+    from core.context_builder import build_context
+    from core.prompts import build_arnie_system
+    from core.history import conversations_to_messages
+    from db.queries import (
+        get_or_create_today_log, get_recent_conversations, log_conversation,
+    )
+
+    async with AsyncSessionLocal() as db:
+        # Canonical user (get_user_by_webhook_token follows the link), so the web
+        # turn reads/writes the same brain the bots do.
+        user = await get_user_by_webhook_token(db, token)
+        if not user:
+            raise HTTPException(status_code=401, detail="Invalid token")
+
+        tz = getattr(user, "timezone", None) or "UTC"
+        today_log = await get_or_create_today_log(db, user.id, tz)
+
+        # Same message assembly the bots use: recent history + this message.
+        recent = await get_recent_conversations(db, user.id, limit=8)
+        messages = conversations_to_messages(recent)
+        messages.append({"role": "user", "content": text})
+
+        context_str = await build_context(user, today_log, db, platform="web",
+                                          user_message=text)
+        system = f"{build_arnie_system(platform='web')}\n\n{context_str}"
+
+        try:
+            turn = await run_turn(
+                user, db, messages, system, platform="web",
+                in_onboarding=False, was_onboarding=False,
+                today_log=today_log, source_type="web",
+            )
+        except Exception as e:
+            logging.getLogger(__name__).error(f"web chat run_turn failed: {e}", exc_info=True)
+            raise HTTPException(status_code=500, detail="Coach hiccup, resend that")
+
+        bubbles = [b for b in (turn.response.bubbles or []) if b and b.strip()]
+        reply = "|||".join(bubbles)
+        await log_conversation(
+            db, user.id, text, reply, source_type="web", platform="web",
+            parsed_intent=(",".join(turn.health_flags) or None),
+        )
+
+    return {"bubbles": bubbles, "ts": datetime.utcnow().isoformat()}
+
+
 @app.get("/api/profile/{token}")
 async def get_profile(token: str, refresh: bool = False):
     """
@@ -1636,6 +1726,38 @@ async def api_delete_food(entry_id: int, token: str = Query(...)):
                                 cal_target=prefs.calorie_target if prefs else None),
         )
     asyncio.create_task(_send_dashboard_notification(**notify))
+    return {"status": "ok"}
+
+
+class WaterPatch(BaseModel):
+    amount_ml: float
+
+
+@app.patch("/api/water/{entry_id}")
+async def api_edit_water(entry_id: int, patch: WaterPatch, token: str = Query(...)):
+    """Edit a single hydration entry from the dashboard, resyncing the day total."""
+    from db.queries import update_water_entry
+    async with AsyncSessionLocal() as db:
+        user = await get_user_by_webhook_token(db, token)
+        if not user:
+            raise HTTPException(status_code=401, detail="Invalid token")
+        entry = await update_water_entry(db, entry_id, user.id, max(0.0, patch.amount_ml))
+        if not entry:
+            raise HTTPException(status_code=404, detail="Entry not found")
+    return {"status": "ok", "id": entry_id}
+
+
+@app.delete("/api/water/{entry_id}")
+async def api_delete_water(entry_id: int, token: str = Query(...)):
+    """Delete a single hydration entry from the dashboard, resyncing the day total."""
+    from db.queries import delete_water_entry
+    async with AsyncSessionLocal() as db:
+        user = await get_user_by_webhook_token(db, token)
+        if not user:
+            raise HTTPException(status_code=401, detail="Invalid token")
+        ok = await delete_water_entry(db, entry_id, user.id)
+        if not ok:
+            raise HTTPException(status_code=404, detail="Entry not found")
     return {"status": "ok"}
 
 
@@ -3004,6 +3126,36 @@ async def api_log_food(body: FoodLogBody, token: str = Query(...)):
             fats=round(body.fats, 1),
             estimated_flag=body.estimated,
         )
+    return {"status": "ok", "id": entry.id}
+
+
+class WaterLogBody(BaseModel):
+    amount_ml: float
+    log_date: Optional[str] = None  # YYYY-MM-DD, defaults to today
+
+
+@app.post("/api/water/log")
+async def api_log_water(body: WaterLogBody, token: str = Query(...)):
+    """Manual hydration log from the dashboard. Adds a canonical WaterEntry row
+    and bumps the cached DailyLog.total_water_ml aggregate (the tile/context read
+    it)."""
+    from db.queries import add_water_entry
+    async with AsyncSessionLocal() as db:
+        user = await get_user_by_webhook_token(db, token)
+        if not user:
+            raise HTTPException(status_code=401, detail="Invalid token")
+        tz = getattr(user, "timezone", None) or "UTC"
+        if body.log_date:
+            log = await get_or_create_log_for_date(db, user.id, date.fromisoformat(body.log_date))
+        else:
+            log = await get_or_create_today_log(db, user.id, tz)
+        amount = max(0.0, body.amount_ml)
+        entry = await add_water_entry(
+            db, user.id, log.id, amount_ml=amount, source_type="dashboard",
+        )
+        # add_water_entry leaves the aggregate to the caller — bump it here.
+        log.total_water_ml = (log.total_water_ml or 0) + amount
+        await db.commit()
     return {"status": "ok", "id": entry.id}
 
 
