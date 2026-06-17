@@ -543,18 +543,15 @@ async def _send_first_contact_intro(chat_guid: str) -> None:
 _OUTREACH_INTRO = [
     # Message 1 — short; gets the iMessage screen effect (first bubble only)
     "Hey, I'm Arnie ☺️",
-    # Message 2
-    "You signed up on the site, so let's get you going."
+    # Message 2 — what I do, in one line; ditched the redundant "signed up on the
+    # site" preamble and the second "no app, no forms" filler.
+    "Your science-based coach for food, training, and progress."
     "\n\n"
-    "I'm your science-based coach for food, training, and progress.",
-    # Message 3
-    "Text me meals, workouts, weight, goals, or anything you want me to know."
+    "Just text me meals, workouts, weight, whatever's on your mind. I'll log it and coach you sharper every day.",
+    # Message 3 — the ask, with the memory promise folded in.
+    "I'll remember your goals, habits, and what works for you."
     "\n\n"
-    "I'll help you log it, learn from it, and coach you better every day. No apps, no forms, no starting over.",
-    # Message 4
-    "I remember your goals, habits, progress, and what works for you."
-    "\n\n"
-    "Takes 2 min to get going. What should I call you?",
+    "So, what should I call you?",
 ]
 
 

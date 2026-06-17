@@ -160,10 +160,18 @@ async def chat_voice(req: VoiceChatRequest, identity: str = Depends(current_iden
     if not audio:
         raise HTTPException(status_code=400, detail="Empty audio")
 
+    # Whisper occasionally returns "" for ultra-short or silent clips. Log the
+    # payload size so a 422 from here is debuggable (matches what client sent).
+    logger.info(f"chat/voice: identity={identity} bytes={len(audio)} filename={req.filename!r}")
+
     from multimodal.voice_handler import process_voice
     transcript = await process_voice(audio, req.filename or "voice.m4a")
     if not transcript:
-        raise HTTPException(status_code=422, detail="Could not transcribe the audio")
+        # 422 = the audio was decoded fine but Whisper couldn't make sense of it
+        # (silence, noise, missing API key, etc). Give the client a structured
+        # detail so the chat UI can show "didn't catch that" instead of "Server
+        # returned 422".
+        raise HTTPException(status_code=422, detail="empty_transcript")
 
     return await _coached_reply(identity, f"[Voice note]: {transcript}", source_type="voice")
 
@@ -186,20 +194,28 @@ def _display_user_text(row) -> Optional[str]:
 async def chat_history(identity: str = Depends(current_identity), limit: int = 40):
     """Recent conversation as a flat, chronological message list so the app can
     restore the thread on launch. Each stored turn → one user message (cleaned) +
-    its Arnie bubbles (split on the ||| separator)."""
+    its Arnie bubbles (split on the ||| separator). Each message carries the
+    turn's `timestamp` (ISO-8601) so the client can render date dividers and
+    "minutes ago" labels."""
     async with AsyncSessionLocal() as db:
         user = await resolve_user(db, identity)
         rows = await get_recent_conversations(db, user.id, limit=limit)
 
     messages: list[dict] = []
     for row in reversed(rows):  # get_recent_conversations is newest-first → chronological
+        # `timestamp` is the SQLAlchemy column on ConversationLog. Send it as
+        # ISO-8601 so the iOS contract (Date) parses it via ISO8601DateFormatter.
+        # All bubbles in a single turn share the row timestamp — fine because
+        # they arrive together; the client only needs gap detection between turns.
+        ts_iso = row.timestamp.isoformat() if row.timestamp else None
+
         user_text = _display_user_text(row)
         if user_text:
-            messages.append({"author": "user", "text": user_text})
+            messages.append({"author": "user", "text": user_text, "created_at": ts_iso})
         for bubble in (row.response or "").split("|||"):
             bubble = bubble.strip()
             if bubble:
-                messages.append({"author": "arnie", "text": bubble})
+                messages.append({"author": "arnie", "text": bubble, "created_at": ts_iso})
 
     return {"v": WIRE_VERSION, "messages": messages}
 

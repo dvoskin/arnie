@@ -774,7 +774,11 @@ async def run_turn(
             })
 
     # ── Dashboard link after FIRST food/workout log (once per account) ────────
-    if not in_onboarding and tool_calls:
+    # Telegram only. iMessage and iOS skip this nudge:
+    #   • iOS renders the dashboard natively (Today/Week/Fitness/Brain tabs).
+    #   • iMessage users tend to land on the iOS app shortly after, so a URL
+    #     hand-off in the chat thread is redundant noise.
+    if not in_onboarding and tool_calls and platform == "telegram":
         logged = any(tc["name"] in ("log_food", "log_exercise") for tc in tool_calls)
         sent = set(s for s in (user.nudges_sent or "").split(",") if s)
         if logged and "dashboard" not in sent:
