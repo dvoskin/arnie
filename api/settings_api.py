@@ -25,7 +25,7 @@ Settings tab UX:
 """
 from typing import Literal, Optional
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from api.auth import current_identity
@@ -56,6 +56,37 @@ class PreferencesEditBody(BaseModel):
     food_logging_mode: Optional[Literal["quick", "moderate", "strict"]] = None
 
 
+@prefs_router.get("/preferences")
+async def get_preferences(
+    identity: str = Depends(current_identity),
+) -> dict:
+    """Return the authenticated user's current UserPreferences row.
+
+    Bookends the POST /preferences round-trip: iOS reads to seed pickers /
+    toggles with the user's actual stored values, then POSTs partial
+    updates as controls change. Without this, settings screens have to
+    show defaults for fields not surfaced via /profile's small `coaching`
+    block, which would lie to the user about what's actually persisted.
+    """
+    async with AsyncSessionLocal() as db:
+        user = await resolve_user(db, identity)
+        prefs = user.preferences
+        if prefs is None:
+            raise HTTPException(status_code=404, detail="user has no preferences row")
+        return {
+            "coaching_style": prefs.coaching_style,
+            "accountability_level": prefs.accountability_level,
+            "pacing_enabled": prefs.pacing_enabled,
+            "reminder_frequency": prefs.reminder_frequency,
+            "preferred_response_length": prefs.preferred_response_length,
+            "profanity_tolerance": prefs.profanity_tolerance,
+            "proactive_messaging_enabled": prefs.proactive_messaging_enabled,
+            "wake_time": prefs.wake_time,
+            "sleep_time": prefs.sleep_time,
+            "food_logging_mode": prefs.food_logging_mode,
+        }
+
+
 @prefs_router.post("/preferences")
 async def patch_preferences(
     payload: PreferencesEditBody,
@@ -70,7 +101,6 @@ async def patch_preferences(
     async with AsyncSessionLocal() as db:
         user = await resolve_user(db, identity)
         if user.preferences is None:
-            from fastapi import HTTPException
             raise HTTPException(status_code=404, detail="user has no preferences row")
         applied: list[str] = []
         for field, value in updates.items():

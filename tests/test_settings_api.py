@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncSession
 from api.settings_api import (
     FeedbackBody,
     PreferencesEditBody,
+    get_preferences,
     patch_preferences,
     post_feedback,
     signout,
@@ -26,6 +27,40 @@ async def patched_session_local(monkeypatch, engine):
 
 
 # ── Preferences ─────────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_get_preferences_returns_current_values(
+    patched_session_local, db, make_user,
+):
+    """The GET endpoint returns every field the iOS Settings screen needs
+    to seed its pickers / toggles. Round-trips through `patch_preferences`
+    so a write is immediately readable."""
+    await make_user(telegram_id="ios:get-prefs")
+    await patch_preferences(
+        PreferencesEditBody(
+            coaching_style="strict",
+            reminder_frequency="light",
+            accountability_level="high",
+            pacing_enabled=False,
+            wake_time="07:15",
+        ),
+        identity="ios:get-prefs",
+    )
+
+    resp = await get_preferences(identity="ios:get-prefs")
+    assert resp["coaching_style"] == "strict"
+    assert resp["reminder_frequency"] == "light"
+    assert resp["accountability_level"] == "high"
+    assert resp["pacing_enabled"] is False
+    assert resp["wake_time"] == "07:15"
+    # All 10 prefs keys present even if a value wasn't touched.
+    assert set(resp.keys()) >= {
+        "coaching_style", "accountability_level", "pacing_enabled",
+        "reminder_frequency", "preferred_response_length",
+        "profanity_tolerance", "proactive_messaging_enabled",
+        "wake_time", "sleep_time", "food_logging_mode",
+    }
 
 
 @pytest.mark.asyncio
