@@ -87,6 +87,7 @@ from api.devices import router as devices_router
 from api.water import router as water_router
 from api.profile_edit import router as profile_edit_router
 from api.settings_api import prefs_router, feedback_router, signout_router
+from api.insights_api import router as insights_api_router
 app.include_router(auth_router)
 app.include_router(chat_router)
 app.include_router(dashboard_api_router)
@@ -99,6 +100,7 @@ app.include_router(profile_edit_router)
 app.include_router(prefs_router)
 app.include_router(feedback_router)
 app.include_router(signout_router)
+app.include_router(insights_api_router)
 
 
 # ── Health ─────────────────────────────────────────────────────────────────────
