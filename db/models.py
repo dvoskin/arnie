@@ -93,6 +93,8 @@ class User(Base):
                                     cascade="all, delete-orphan")
     wearable_metrics = relationship("WearableMetric", back_populates="user",
                                     cascade="all, delete-orphan")
+    device_tokens = relationship("DeviceToken", back_populates="user",
+                                 cascade="all, delete-orphan")
     pending_questions = relationship("PendingQuestion", back_populates="user",
                                      cascade="all, delete-orphan")
     workout_program = relationship("WorkoutProgram", back_populates="user",
@@ -543,3 +545,44 @@ class PreRegistration(Base):
     consumed_at = Column(DateTime, nullable=True)  # null until redeemed
     telegram_id = Column(String, nullable=True)    # set when consumed
     created_at = Column(DateTime, server_default=func.now())
+
+
+class DeviceToken(Base):
+    """
+    A push-notification device token registered by a client (today: APNs from
+    the iOS app; later potentially FCM from Android). Many-to-one with users:
+    one user can have several devices (iPhone + iPad). The token itself is
+    UNIQUE because a physical device generates exactly one token per
+    APNs/FCM install — if the same token shows up under a different user
+    (someone signed in to a new account on the same device), upsert
+    REASSIGNS user_id rather than creating a duplicate.
+
+    Lives in its own table (not on users) because of the 1:N + lifecycle:
+    tokens rotate (APNs can rotate a device's token at any time), tokens get
+    revoked (sign-out, app uninstall reported by APNs feedback), and the
+    sender wants a clean "give me all live tokens for user X" query path.
+    """
+    __tablename__ = "device_tokens"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    # The opaque push token from APNs (hex, 64 chars) or FCM (longer). Indexed
+    # + unique so upsert can do a single-row lookup and reassign cleanly.
+    token = Column(String, nullable=False, unique=True, index=True)
+    # "apns" today. Lets the sender pick the right transport when Android lands.
+    platform = Column(String, nullable=False, default="apns")
+    # "production" (App Store / TestFlight) or "sandbox" (Debug builds). APNs
+    # uses different host names for each; the sender routes by this column.
+    environment = Column(String, nullable=False, default="production")
+    created_at = Column(DateTime, server_default=func.now())
+    # Refreshed on every re-register (every app launch in the typical flow) so
+    # the sender can age out tokens that haven't reported in for a long time.
+    last_seen_at = Column(DateTime, server_default=func.now())
+    # Set when the client explicitly revokes (sign-out) or APNs tells us the
+    # token is dead (HTTP 410 from api.push.apple.com). The sender filters
+    # revoked tokens out of the recipient list. Keeping the row instead of
+    # deleting it preserves history + lets us reactivate if the same token
+    # re-registers (the upsert path clears revoked_at).
+    revoked_at = Column(DateTime, nullable=True)
+
+    user = relationship("User", back_populates="device_tokens")

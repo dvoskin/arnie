@@ -5,6 +5,7 @@ from db.models import (
     User, UserPreferences, DailyLog, FoodEntry,
     ExerciseEntry, BodyMetric, ConversationLog, MemoryUpdate, HealthSnapshot,
     Feedback, UserFoodMatch, PendingQuestion, WearableDevice, WearableMetric,
+    DeviceToken,
 )
 from datetime import date, datetime, timedelta
 from typing import Optional, List
@@ -122,6 +123,83 @@ async def set_apple_sub_for_user(db: AsyncSession, user_id: int, apple_sub: str)
         )
     user.apple_sub = apple_sub
     await db.commit()
+
+
+# ── Device tokens (APNs push registration) ────────────────────────────────────
+
+
+async def upsert_device_token(
+    db: AsyncSession,
+    user_id: int,
+    token: str,
+    *,
+    platform: str = "apns",
+    environment: str = "production",
+) -> DeviceToken:
+    """Register or re-register a push token for a user. Idempotent on every
+    app launch — safe to call repeatedly.
+
+    Three cases:
+      1. Token is new → INSERT.
+      2. Token exists under this user → bump `last_seen_at`, clear
+         `revoked_at` (re-activate if previously revoked), refresh
+         platform/environment in case the build channel changed
+         (TestFlight → App Store flips environment).
+      3. Token exists under a DIFFERENT user (device handoff: someone signed
+         in to a new account on the same physical device) → REASSIGN
+         user_id rather than insert a duplicate.
+    """
+    result = await db.execute(select(DeviceToken).where(DeviceToken.token == token))
+    existing = result.scalar_one_or_none()
+    if existing:
+        existing.user_id = user_id
+        existing.platform = platform
+        existing.environment = environment
+        existing.last_seen_at = datetime.utcnow()
+        existing.revoked_at = None
+        await db.commit()
+        return existing
+    new = DeviceToken(
+        user_id=user_id,
+        token=token,
+        platform=platform,
+        environment=environment,
+    )
+    db.add(new)
+    await db.commit()
+    await db.refresh(new)
+    return new
+
+
+async def revoke_device_token(db: AsyncSession, user_id: int, token: str) -> bool:
+    """Mark a token revoked. Only the owning user can revoke their token — an
+    attempt to revoke another user's token is treated as "not found" and
+    returns False (defensive: a leaked session token shouldn't be able to
+    silently revoke arbitrary devices). Returns True iff a row was updated.
+    """
+    result = await db.execute(
+        select(DeviceToken).where(
+            and_(DeviceToken.token == token, DeviceToken.user_id == user_id)
+        )
+    )
+    row = result.scalar_one_or_none()
+    if not row:
+        return False
+    row.revoked_at = datetime.utcnow()
+    await db.commit()
+    return True
+
+
+async def active_device_tokens_for_user(db: AsyncSession, user_id: int) -> List[DeviceToken]:
+    """All non-revoked push tokens for a user. Used by the APNs sender (slice
+    2b) to fan a single nudge out to every live device the user has
+    registered."""
+    result = await db.execute(
+        select(DeviceToken).where(
+            and_(DeviceToken.user_id == user_id, DeviceToken.revoked_at.is_(None))
+        )
+    )
+    return list(result.scalars().all())
 
 
 def _gen_link_code() -> str:
