@@ -72,12 +72,52 @@ def is_configured() -> bool:
     )
 
 
+def _normalize_pem(value: str) -> str:
+    """Defensive normalization for the .p8 PEM as it comes out of an env var.
+
+    Different env-var stores preserve newlines differently — Render's textarea
+    is the prime offender. Three common mangle paths and what we do about
+    each:
+
+      1. **Raw PEM with real newlines** — pass through unchanged.
+      2. **Single line with literal `\\n` escapes** — typically happens when
+         a `.p8` is exported through a shell that escapes newlines, or when
+         a JSON-serialized config gets pasted into a textarea. Replace
+         escaped sequences with real newlines.
+      3. **Single line with no line breaks at all** — `-----BEGIN PRIVATE
+         KEY-----` directly followed by base64 directly followed by
+         `-----END PRIVATE KEY-----`. Re-flow the base64 body at 64-char
+         chunks so cryptography's PEM framing parser accepts it.
+
+    Without this, `cryptography` raises `ValueError: MalformedFraming` and
+    the JWT sign blows up at request time.
+    """
+    s = (value or "").strip()
+
+    # Case 2: literal `\n` escapes only — unescape.
+    if "\\n" in s and "\n" not in s:
+        s = s.replace("\\n", "\n")
+
+    # Case 3: single-line PEM with BEGIN/END markers but no real newlines.
+    if "\n" not in s and "-----BEGIN" in s and "-----END" in s:
+        header_end = s.find("-----", s.find("-----") + 5) + 5
+        header = s[:header_end]
+        footer_start = s.find("-----END")
+        footer = s[footer_start:]
+        body = s[header_end:footer_start].strip()
+        wrapped = "\n".join(body[i:i + 64] for i in range(0, len(body), 64))
+        s = f"{header}\n{wrapped}\n{footer}"
+
+    return s
+
+
 def _build_jwt(now: float) -> str:
     """Sign a fresh APNs JWT. `iss` = team id, `iat` = now; `kid` = key id in
-    the header (Apple looks it up against the public half of the .p8)."""
+    the header (Apple looks it up against the public half of the .p8). The
+    PEM is normalized first to survive env-var newline mangling."""
     return jwt.encode(
         {"iss": os.environ["APNS_TEAM_ID"], "iat": int(now)},
-        os.environ["APNS_AUTH_KEY_P8"],
+        _normalize_pem(os.environ["APNS_AUTH_KEY_P8"]),
         algorithm="ES256",
         headers={"kid": os.environ["APNS_KEY_ID"], "alg": "ES256"},
     )

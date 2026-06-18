@@ -2306,7 +2306,17 @@ async def admin_debug_send_push(
             {"ok": False, "reason": "APNS env vars not set on this deploy"},
             status_code=503,
         )
-    result = await send_push(device_token, title, body, environment=environment)
+    # Catch credential/key parsing errors and surface them as structured JSON.
+    # The normal failure mode (Apple-rejected token) returns ok=False inside
+    # `send_push` — but a malformed .p8 raises during JWT signing, which would
+    # otherwise bubble as an opaque 500 and obscure the diagnosis.
+    try:
+        result = await send_push(device_token, title, body, environment=environment)
+    except Exception as e:
+        return JSONResponse(
+            {"ok": False, "error": "send_push raised", "exception_type": type(e).__name__, "detail": str(e)[:400]},
+            status_code=500,
+        )
     return {"send_push": result}
 
 

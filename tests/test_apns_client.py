@@ -70,6 +70,37 @@ def _mock_client(handler) -> httpx.AsyncClient:
 # ── Tests ────────────────────────────────────────────────────────────────────
 
 
+def test_normalize_pem_passes_through_real_newlines(p8_keypair):
+    """A well-formed PEM with real newlines must round-trip unchanged."""
+    pem, _ = p8_keypair
+    assert apns_client._normalize_pem(pem) == pem.strip()
+
+
+def test_normalize_pem_unescapes_literal_backslash_n(p8_keypair):
+    """Env-var stores that JSON-serialize the PEM produce literal `\\n` between
+    the BEGIN/base64/END lines. We unescape so cryptography sees real
+    newlines and the resulting PEM loads."""
+    pem, public_key = p8_keypair
+    mangled = pem.replace("\n", "\\n").strip()
+    normalized = apns_client._normalize_pem(mangled)
+    # The fix must produce a PEM cryptography can actually load.
+    from cryptography.hazmat.primitives.serialization import load_pem_private_key
+    private = load_pem_private_key(normalized.encode(), password=None)
+    assert private is not None
+
+
+def test_normalize_pem_reflows_single_line_pem(p8_keypair):
+    """Render's textarea sometimes strips every newline, leaving one giant
+    line with BEGIN/base64/END concatenated. Re-flow the base64 so the
+    framing parser accepts it."""
+    pem, _ = p8_keypair
+    flattened = pem.replace("\n", "").strip()
+    normalized = apns_client._normalize_pem(flattened)
+    from cryptography.hazmat.primitives.serialization import load_pem_private_key
+    private = load_pem_private_key(normalized.encode(), password=None)
+    assert private is not None
+
+
 def test_is_configured_requires_all_four_env_vars(monkeypatch):
     """Missing any single required var → not configured."""
     for k in ("APNS_KEY_ID", "APNS_TEAM_ID", "APNS_BUNDLE_ID", "APNS_AUTH_KEY_P8"):
