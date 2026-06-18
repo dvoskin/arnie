@@ -46,15 +46,31 @@ async def post_location(
     identity: str = Depends(current_identity),
 ):
     """Persist the user's current location. Coordinates are validated by
-    pydantic's bounds above — invalid payloads 422 before we touch the DB."""
+    pydantic's bounds above — invalid payloads 422 before we touch the DB.
+
+    When the caller didn't supply a city (iOS CoreLocation only sends
+    lat/lng), we reverse-geocode it via core.geocode so Arnie's context
+    line "[LOCATION] ON FILE (City)" actually carries a city name —
+    that's what lets him answer "where am I?" plainly without needing a
+    separate tool call. Geocode failure is non-fatal (returns None);
+    coords still save."""
     async with AsyncSessionLocal() as db:
         user = await resolve_user(db, identity)
+
+        # Reverse-geocode coords → city (only when client didn't pass one
+        # AND user hasn't manually set one). Uses GOOGLE_PLACES_API_KEY +
+        # day-long cache; never raises.
+        city = payload.city
+        if not city and not user.city:
+            from core.geocode import reverse as _reverse_geocode
+            city = await _reverse_geocode(payload.lat, payload.lng)
+
         await save_user_location(
             db,
             user_id=user.id,
             lat=payload.lat,
             lng=payload.lng,
-            city=payload.city,
+            city=city,
         )
         # Re-read to confirm what landed (save_user_location won't clobber a
         # user-set city with a missing one, so the returned city may differ
