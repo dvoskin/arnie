@@ -145,9 +145,13 @@ async def get_profile(identity: str = Depends(current_identity)):
         },
         # Location/locale grouping — surfaced as its own Profile section so
         # the user can correct the timezone Arnie uses for day boundaries.
+        # `coords_set` is the source of truth for "has the user actually
+        # shared their location" — iOS uses it to display the correct
+        # Settings row state (Shared ✓ vs Share ›).
         "location": {
             "timezone": clean(p.get("timezone")),
             "city": clean(p.get("city")),
+            "coords_set": bool(p.get("coords_set")),
         },
     }
 

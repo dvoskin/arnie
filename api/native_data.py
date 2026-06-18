@@ -330,9 +330,14 @@ async def profile_data(db, user) -> dict:
             # Location + locale fields. iOS surfaces these in a Location
             # section so users can adjust the timezone Arnie uses for day
             # boundaries / reminder windows and the city used for nearby
-            # places lookups.
+            # places lookups. `coords_set` lets the client confirm a prior
+            # share-location actually landed on the user row — Settings'
+            # Location row was previously showing "Shared ✓" purely from
+            # CoreLocation's permission state, not from whether the POST
+            # to /api/v1/location had succeeded.
             "timezone": user.timezone,
             "city": user.city,
+            "coords_set": user.lat is not None and user.lng is not None,
             "coaching_style": prefs.coaching_style if prefs else None,
             "calorie_target": prefs.calorie_target if prefs else None,
             "protein_target": prefs.protein_target if prefs else None,

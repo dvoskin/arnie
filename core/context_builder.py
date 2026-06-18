@@ -841,6 +841,36 @@ async def build_context(user: User, today_log: Optional[DailyLog], db,
         else "Apple Health: NOT connected."
     )
 
+    # Location-on-file signal. Without this, the model has no way to know
+    # whether the user has shared coords, so it would either always ask
+    # ("share your location?") or always blindly call find_nearby_places
+    # and let the handler fall back to None. The status line plus the
+    # LOCATION_RULES prompt block ("once a location is on file, reuse it")
+    # closes that loop. Gated by LOCATION_ENABLED — when the tool isn't
+    # exposed at all, the status line is irrelevant.
+    from db.queries import location_enabled as _location_enabled
+    _has_location = bool(
+        _location_enabled()
+        and user.lat is not None
+        and user.lng is not None
+    )
+    if _location_enabled():
+        if _has_location:
+            _city_part = f" ({user.city})" if user.city else ""
+            location_status = (
+                f"Location: ON FILE{_city_part} — call find_nearby_places "
+                f"directly when the user asks anything nearby; do NOT ask "
+                f"them to share again."
+            )
+        else:
+            location_status = (
+                "Location: NOT on file. If the user asks about nearby places, "
+                "call find_nearby_places anyway — the app will surface a one-tap "
+                "'share location' button under your reply."
+            )
+    else:
+        location_status = ""
+
     # Food logging mode — quick/strict inject an override; moderate is the static default.
     food_mode_inj = food_mode_directive(getattr(prefs, "food_logging_mode", None))
 
@@ -919,6 +949,7 @@ async def build_context(user: User, today_log: Optional[DailyLog], db,
         # contextual only when this message's topic matches.
         (attr_block if attr_block else ""),
         f"[CONNECTED DEVICES] {whoop_status} | {apple_status}",
+        (f"[LOCATION] {location_status}" if location_status else ""),
         "",
         # Coaching state goes at top so every skill sees it first
         (coaching_state_str if coaching_state_str else ""),
