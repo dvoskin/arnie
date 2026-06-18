@@ -23,8 +23,14 @@ apscheduler==3.11.2
 tzlocal==5.2
 python-dotenv==1.2.2
 httpx==0.28.1
-# JWT verification for Sign in with Apple identity tokens. [crypto] pulls in
-# `cryptography` for RS256 signature verification (Apple's algorithm).
+# HTTP/2 driver for httpx — REQUIRED by the APNs sender
+# (notifications/apns_client.py). Apple's APNs API only speaks HTTP/2; httpx
+# auto-detects h2 at import and unlocks `http2=True` AsyncClient. Pure-Python,
+# no cp314 wheel concerns, small dep surface.
+h2==4.3.0
+# JWT verification for Sign in with Apple identity tokens (RS256, against
+# Apple's JWKS) AND JWT signing for the APNs sender (ES256, against your .p8
+# key). [crypto] pulls in `cryptography` for both algorithms.
 PyJWT[crypto]==2.10.1
 cryptography==49.0.0   # transitive pin from PyJWT[crypto] — kept explicit per the exact-pin policy above
 aiofiles==25.1.0
