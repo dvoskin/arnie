@@ -253,11 +253,74 @@ async def _send_hook(telegram_id: str, text: str) -> None:
         logger.error(f"Hook send failed → {telegram_id}: {e}")
 
 
+async def _send_ios(telegram_id: str, text: str) -> None:
+    """Fan a proactive nudge out to every active APNs device for the user.
+
+    `telegram_id` is the namespaced platform identity ("ios:<uuid>" or
+    "apple:<sub>"). `resolve_user` maps that to the canonical user row; we
+    then look up every non-revoked device_token and send a push to each via
+    `notifications.apns_client.send_push`. On a `BadDeviceToken` /
+    `Unregistered` / 400 / 410 response, the token is REVOKED so future
+    sends skip it (the iOS client will re-register a fresh token on next
+    app launch anyway).
+
+    APNs is a single-bubble channel — the proactive message arrives in a
+    user's notification center as one banner. We collapse multi-bubble
+    text (||| -split) into one body joined with newlines; the title is a
+    constant "Arnie".
+    """
+    from db.database import AsyncSessionLocal
+    from db.queries import (
+        active_device_tokens_for_user,
+        resolve_user,
+        revoke_device_token,
+    )
+    from notifications.apns_client import is_configured, send_push
+
+    if not is_configured():
+        logger.info(f"APNs not configured — proactive iOS send to {telegram_id} skipped")
+        return
+
+    body = text.replace("|||", "\n").strip()
+    title = "Arnie"
+
+    async with AsyncSessionLocal() as db:
+        user = await resolve_user(db, telegram_id)
+        tokens = await active_device_tokens_for_user(db, user.id)
+        if not tokens:
+            logger.info(f"No active APNs tokens for user {user.id} — proactive send skipped")
+            return
+        for row in tokens:
+            result = await send_push(
+                row.token, title, body, environment=row.environment,
+            )
+            if result.get("ok"):
+                continue
+            reason = result.get("reason")
+            status = result.get("status")
+            # Apple's "token is dead, stop sending to it" signals. 400 +
+            # BadDeviceToken means the token was never valid; 410 +
+            # Unregistered means the app was uninstalled. Either way: revoke
+            # so the next sweep doesn't waste a round-trip.
+            if reason in ("BadDeviceToken", "Unregistered") or status == 410:
+                await revoke_device_token(db, user.id, row.token)
+                logger.info(
+                    f"APNs revoked dead token for user {user.id}: status={status} reason={reason}"
+                )
+            else:
+                logger.warning(
+                    f"APNs send failed for user {user.id}: status={status} reason={reason}"
+                )
+
+
 async def _send(telegram_id: str, text: str, effect: str = None):
     """
     Send a proactive message to the user, rendered natively per platform.
-    Splits on ||| for multi-bubble. telegram_id prefixed "im:" → iMessage, else Telegram.
-    effect — optional FX.* applied on iMessage (ignored on Telegram).
+    Splits on ||| for multi-bubble. Dispatch by identity prefix:
+      "ios:" / "apple:" → APNs push (fan-out to all registered devices)
+      "im:"             → iMessage
+      else (numeric)    → Telegram
+    effect — optional FX.* applied on iMessage (ignored on others).
     """
     # Master kill switch — no proactive message goes out while disabled, on any channel.
     if not proactive_enabled():
@@ -266,6 +329,13 @@ async def _send(telegram_id: str, text: str, effect: str = None):
     if not _allowlist_allows(telegram_id):
         logger.info(f"Proactive send to {telegram_id} skipped — not on PROACTIVE_ALLOWLIST")
         return
+
+    # iOS / Apple Sign-in identities → APNs. Happens BEFORE the Telegram int
+    # parse, otherwise `int("ios:abc")` would raise.
+    if telegram_id.startswith(("ios:", "apple:")):
+        await _send_ios(telegram_id, text)
+        return
+
     from core.platform import Response, IMessageAdapter, TelegramAdapter
     resp = Response.from_text(text)
     if effect:
