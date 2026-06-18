@@ -2280,6 +2280,36 @@ async def admin_flagged(token: str = Query(...), hours: int = Query(48),
     })
 
 
+@app.post("/admin/debug/send-push")
+async def admin_debug_send_push(
+    token: str = Query(..., description="ADMIN_TOKEN gate"),
+    device_token: str = Query(..., description="hex device token; use any fake hex to test credentials"),
+    title: str = Query("Arnie test push"),
+    body: str = Query("Hello from /admin/debug/send-push"),
+    environment: str = Query("production", description="production | sandbox"),
+):
+    """Fire one APNs push to a specific device token. Validates the .p8 / key
+    id / team id / bundle id pipeline end-to-end without depending on a real
+    iOS client having registered yet.
+
+    Even with a FAKE device token, Apple's response distinguishes credential
+    vs. token problems — a 410 BadDeviceToken means the JWT + topic auth
+    pipeline is wired correctly and Apple just doesn't know the token; a 403
+    InvalidProviderToken means the .p8 / key id / team id are mismatched.
+    Use this to validate Render env vars BEFORE the scheduler hookup
+    (slice 2c) starts depending on them.
+    """
+    _require_admin(token)
+    from notifications.apns_client import is_configured, send_push
+    if not is_configured():
+        return JSONResponse(
+            {"ok": False, "reason": "APNS env vars not set on this deploy"},
+            status_code=503,
+        )
+    result = await send_push(device_token, title, body, environment=environment)
+    return {"send_push": result}
+
+
 @app.post("/admin/run-reminders")
 async def admin_run_reminders(token: str = Query(...), test: int = Query(0)):
     """
