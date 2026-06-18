@@ -327,6 +327,12 @@ async def profile_data(db, user) -> dict:
             "non_training_activity": user.non_training_activity,
             "dietary_preferences": user.dietary_preferences,
             "injuries": user.injuries,
+            # Location + locale fields. iOS surfaces these in a Location
+            # section so users can adjust the timezone Arnie uses for day
+            # boundaries / reminder windows and the city used for nearby
+            # places lookups.
+            "timezone": user.timezone,
+            "city": user.city,
             "coaching_style": prefs.coaching_style if prefs else None,
             "calorie_target": prefs.calorie_target if prefs else None,
             "protein_target": prefs.protein_target if prefs else None,

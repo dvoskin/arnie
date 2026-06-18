@@ -143,6 +143,12 @@ async def get_profile(identity: str = Depends(current_identity)):
             "whoop": bool(p.get("whoop_connected")),
             "apple_health": bool(p.get("apple_health_connected")),
         },
+        # Location/locale grouping — surfaced as its own Profile section so
+        # the user can correct the timezone Arnie uses for day boundaries.
+        "location": {
+            "timezone": clean(p.get("timezone")),
+            "city": clean(p.get("city")),
+        },
     }
 
 
