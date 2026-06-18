@@ -3006,6 +3006,13 @@ async def admin_user_detail(user_id: int, token: str = Query(...)):
         c = colors.get(src or "text", "#555")
         return f'<span style="background:{c};color:#fff;padding:1px 6px;border-radius:8px;font-size:10px">{src or "text"}</span>'
 
+    def _platform_badge(p):
+        if not p:
+            return ""
+        colors = {"telegram": "#229ED9", "imessage": "#34C759", "ios": "#000000"}
+        c = colors.get(p, "#555")
+        return f'<span style="background:{c};color:#fff;padding:1px 6px;border-radius:8px;font-size:10px">{p}</span>'
+
     rows = ""
     prev_date = None
     for c in convos:
@@ -3024,6 +3031,7 @@ async def admin_user_detail(user_id: int, token: str = Query(...)):
             <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
               <span style="font-size:11px;color:#888">{time_str}</span>
               {_src_badge(c.source_type)}
+              {_platform_badge(c.platform)}
             </div>
             <div style="background:#1e2a3a;border-radius:12px 12px 12px 2px;padding:10px 14px;font-size:13px;line-height:1.5;white-space:pre-wrap">{user_msg}</div>
           </td>
