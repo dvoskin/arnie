@@ -65,6 +65,13 @@ class User(Base):
     linked_to_user_id = Column(Integer)             # if set, this identity points at another user
     link_code = Column(String)                      # active one-time code this user generated
     link_code_expires = Column(DateTime)            # when that code expires
+    # Apple Sign-in subject. Set when the iOS app exchanges an Apple identity
+    # token via POST /api/v1/auth/session. Distinct from telegram_id (the
+    # platform-identity string) — a user's telegram_id may stay "ios:<uuid>"
+    # even after Apple binding, so resolve_user keeps working. apple_sub
+    # exists so a future cross-device sign-in (same Apple ID, different
+    # device) can find the right user row via find_user_by_apple_sub.
+    apple_sub = Column(String, unique=True, index=True)
     # Open coaching loop — one active daily mission, auto-evaluated against the log
     active_mission = Column(String)                 # human-readable mission text
     mission_metric = Column(String)                 # protein|calories|workouts|steps

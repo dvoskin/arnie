@@ -96,6 +96,34 @@ async def resolve_user(db: AsyncSession, platform_id: str) -> User:
     return user
 
 
+async def find_user_by_apple_sub(db: AsyncSession, apple_sub: str) -> Optional[User]:
+    """Look up a user by their bound Apple Sign-in subject. Returns None if no
+    user has this sub bound. Used by the session-create flow to recognize a
+    returning Apple user (potentially from a different device) and route them
+    back to their existing row."""
+    result = await db.execute(select(User).where(User.apple_sub == apple_sub))
+    return result.scalar_one_or_none()
+
+
+async def set_apple_sub_for_user(db: AsyncSession, user_id: int, apple_sub: str) -> None:
+    """Bind an Apple Sign-in subject to a user row. Idempotent: no-op if the
+    user already has this exact sub. Raises ValueError if the user already has
+    a DIFFERENT sub bound (defensive — should not happen given the unique
+    index, but surfaces the bug rather than silently overwriting)."""
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise ValueError(f"user {user_id} not found")
+    if user.apple_sub == apple_sub:
+        return
+    if user.apple_sub:
+        raise ValueError(
+            f"user {user_id} already bound to a different apple_sub"
+        )
+    user.apple_sub = apple_sub
+    await db.commit()
+
+
 def _gen_link_code() -> str:
     import secrets
     return "LINK-" + "".join(secrets.choice("ABCDEFGHJKLMNPQRSTUVWXYZ23456789") for _ in range(4))
