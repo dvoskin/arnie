@@ -94,6 +94,43 @@ class TargetsEditBody(BaseModel):
     fat_target: Optional[int] = Field(None, ge=0, le=400)
 
 
+@router.post("/auto-targets")
+async def auto_compute_targets(
+    identity: str = Depends(current_identity),
+) -> dict:
+    """Recompute calorie + macro targets from the user's current stats
+    (weight, height, age, sex, primary_goal) and persist them on
+    user_preferences. Mirrors the legacy `/api/profile/{token}/auto-targets`
+    web route but bearer-authed.
+
+    Returns the newly computed targets so the iOS Targets sheet can
+    update its display without a re-fetch. 422 if essentials are missing
+    (e.g. weight or height not set yet)."""
+    from core.targets import compute_macro_targets
+    async with AsyncSessionLocal() as db:
+        user = await resolve_user(db, identity)
+        if user.preferences is None:
+            raise HTTPException(status_code=404, detail="user has no preferences row")
+        computed = compute_macro_targets(user)
+        if computed is None:
+            raise HTTPException(
+                status_code=422,
+                detail="missing stats — need current weight, height, age, and sex",
+            )
+        user.preferences.calorie_target = computed["calorie_target"]
+        user.preferences.protein_target = computed["protein_target"]
+        user.preferences.carb_target = computed["carb_target"]
+        user.preferences.fat_target = computed["fat_target"]
+        await db.commit()
+        return {
+            "ok": True,
+            "calorie_target": computed["calorie_target"],
+            "protein_target": computed["protein_target"],
+            "carb_target": computed["carb_target"],
+            "fat_target": computed["fat_target"],
+        }
+
+
 @router.patch("/targets")
 async def patch_targets(
     payload: TargetsEditBody,
