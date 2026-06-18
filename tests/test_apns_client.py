@@ -101,6 +101,51 @@ def test_normalize_pem_reflows_single_line_pem(p8_keypair):
     assert private is not None
 
 
+def test_normalize_pem_handles_newlines_converted_to_spaces(p8_keypair):
+    """The actual Render failure mode — env-var textarea converted every
+    real newline into a space, leaving the PEM as one line with spaces
+    inside the base64. The aggressive base64-only filter must strip the
+    spaces and re-flow."""
+    pem, _ = p8_keypair
+    spaced = pem.replace("\n", " ").strip()
+    normalized = apns_client._normalize_pem(spaced)
+    from cryptography.hazmat.primitives.serialization import load_pem_private_key
+    private = load_pem_private_key(normalized.encode(), password=None)
+    assert private is not None
+
+
+def test_normalize_pem_handles_crlf_line_endings(p8_keypair):
+    """A PEM pasted from a Windows text editor or copied through clipboard
+    that flips CRLF — the filter must strip carriage returns alongside
+    everything else."""
+    pem, _ = p8_keypair
+    crlf = pem.replace("\n", "\r\n").strip()
+    normalized = apns_client._normalize_pem(crlf)
+    from cryptography.hazmat.primitives.serialization import load_pem_private_key
+    private = load_pem_private_key(normalized.encode(), password=None)
+    assert private is not None
+
+
+def test_diagnose_pem_returns_non_secret_shape_signals(p8_keypair):
+    """The diagnostic surfaces shape signals (length, marker presence,
+    newline / space counts) but NEVER any byte of the key body itself."""
+    pem, _ = p8_keypair
+    diag = apns_client.diagnose_pem(pem)
+    assert diag["has_begin_marker"] is True
+    assert diag["has_end_marker"] is True
+    assert diag["length"] == len(pem)
+    assert diag["newlines"] > 0
+    assert diag["base64_chars_in_body"] > 0
+
+
+def test_diagnose_pem_handles_empty_input():
+    """An unset env var yields a zeroed diagnostic instead of raising."""
+    diag = apns_client.diagnose_pem("")
+    assert diag["length"] == 0
+    assert diag["has_begin_marker"] is False
+    assert diag["has_end_marker"] is False
+
+
 def test_is_configured_requires_all_four_env_vars(monkeypatch):
     """Missing any single required var → not configured."""
     for k in ("APNS_KEY_ID", "APNS_TEAM_ID", "APNS_BUNDLE_ID", "APNS_AUTH_KEY_P8"):

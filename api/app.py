@@ -2300,21 +2300,29 @@ async def admin_debug_send_push(
     (slice 2c) starts depending on them.
     """
     _require_admin(token)
-    from notifications.apns_client import is_configured, send_push
+    from notifications.apns_client import diagnose_pem, is_configured, send_push
     if not is_configured():
         return JSONResponse(
             {"ok": False, "reason": "APNS env vars not set on this deploy"},
             status_code=503,
         )
-    # Catch credential/key parsing errors and surface them as structured JSON.
-    # The normal failure mode (Apple-rejected token) returns ok=False inside
-    # `send_push` — but a malformed .p8 raises during JWT signing, which would
-    # otherwise bubble as an opaque 500 and obscure the diagnosis.
+    # Catch credential/key parsing errors and surface them as structured JSON
+    # plus a non-secret shape diagnostic for the .p8 env var. The normal
+    # failure mode (Apple-rejected token) returns ok=False inside `send_push`
+    # — a malformed .p8 raises during JWT signing, which would otherwise
+    # bubble as an opaque 500. The pem_diagnostic NEVER returns any byte of
+    # the key body; only character-class counts and marker presence.
     try:
         result = await send_push(device_token, title, body, environment=environment)
     except Exception as e:
         return JSONResponse(
-            {"ok": False, "error": "send_push raised", "exception_type": type(e).__name__, "detail": str(e)[:400]},
+            {
+                "ok": False,
+                "error": "send_push raised",
+                "exception_type": type(e).__name__,
+                "detail": str(e)[:400],
+                "pem_diagnostic": diagnose_pem(os.environ.get("APNS_AUTH_KEY_P8", "")),
+            },
             status_code=500,
         )
     return {"send_push": result}

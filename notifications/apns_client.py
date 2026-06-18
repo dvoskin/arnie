@@ -75,40 +75,73 @@ def is_configured() -> bool:
 def _normalize_pem(value: str) -> str:
     """Defensive normalization for the .p8 PEM as it comes out of an env var.
 
-    Different env-var stores preserve newlines differently — Render's textarea
-    is the prime offender. Three common mangle paths and what we do about
-    each:
+    Strategy: if the value contains `-----BEGIN` and `-----END` markers,
+    extract the base64 body BY STRIPPING EVERY NON-BASE64 CHARACTER, then
+    re-flow at 64-char lines with proper header/footer. This handles every
+    common env-var mangle path uniformly:
 
-      1. **Raw PEM with real newlines** — pass through unchanged.
-      2. **Single line with literal `\\n` escapes** — typically happens when
-         a `.p8` is exported through a shell that escapes newlines, or when
-         a JSON-serialized config gets pasted into a textarea. Replace
-         escaped sequences with real newlines.
-      3. **Single line with no line breaks at all** — `-----BEGIN PRIVATE
-         KEY-----` directly followed by base64 directly followed by
-         `-----END PRIVATE KEY-----`. Re-flow the base64 body at 64-char
-         chunks so cryptography's PEM framing parser accepts it.
+      - Real newlines (untouched PEM) — strip+reflow round-trips it.
+      - Literal `\\n` escapes (JSON-serialized envs, shell-escaped exports).
+      - Whitespace conversion (newlines turned into spaces or tabs by a
+        textarea) — the common Render failure mode.
+      - CRLF / CR line endings.
+      - Random control chars or extra whitespace introduced by paste.
 
-    Without this, `cryptography` raises `ValueError: MalformedFraming` and
-    the JWT sign blows up at request time.
+    Without this, `cryptography` raises `ValueError: MalformedFraming` at
+    JWT-sign time, which surfaces as an opaque 500.
     """
     s = (value or "").strip()
+    if "-----BEGIN" not in s or "-----END" not in s:
+        # Not a PEM — pass through. Either the env var is something else, or
+        # the caller has bigger problems we can't recover from here.
+        return s
 
-    # Case 2: literal `\n` escapes only — unescape.
-    if "\\n" in s and "\n" not in s:
+    # Unescape literal `\n` BEFORE the base64-filter pass — otherwise the `n`
+    # in `\n` survives the filter (it's alphanumeric) and gets jammed into
+    # the body where a newline used to be.
+    if "\\n" in s:
         s = s.replace("\\n", "\n")
 
-    # Case 3: single-line PEM with BEGIN/END markers but no real newlines.
-    if "\n" not in s and "-----BEGIN" in s and "-----END" in s:
-        header_end = s.find("-----", s.find("-----") + 5) + 5
-        header = s[:header_end]
-        footer_start = s.find("-----END")
-        footer = s[footer_start:]
-        body = s[header_end:footer_start].strip()
-        wrapped = "\n".join(body[i:i + 64] for i in range(0, len(body), 64))
-        s = f"{header}\n{wrapped}\n{footer}"
+    # Reconstruct the header/footer cleanly. We KNOW it's a private key
+    # because that's what APNs uses; the header type is well-defined.
+    header = "-----BEGIN PRIVATE KEY-----"
+    footer = "-----END PRIVATE KEY-----"
 
-    return s
+    # Find the body between the markers and aggressively strip everything
+    # that isn't a valid base64 character. Base64 alphabet = A-Z a-z 0-9 + /
+    # plus `=` for padding. This collapses newlines, spaces, tabs, CRs, and
+    # any stray control chars.
+    header_end = s.find("-----", s.find("-----") + 5) + 5
+    footer_start = s.find("-----END")
+    raw_body = s[header_end:footer_start]
+    body = "".join(c for c in raw_body if c.isalnum() or c in "+/=")
+
+    wrapped = "\n".join(body[i:i + 64] for i in range(0, len(body), 64))
+    return f"{header}\n{wrapped}\n{footer}"
+
+
+def diagnose_pem(value: str) -> dict:
+    """Non-secret diagnostic about an APNs PEM env-var value. Returns counts
+    and shape signals so /admin/debug/send-push can surface them on failure
+    without leaking the key. Never returns any byte of the key body itself."""
+    s = value or ""
+    body_chars = s
+    if "-----BEGIN" in s and "-----END" in s:
+        header_end = s.find("-----", s.find("-----") + 5) + 5
+        footer_start = s.find("-----END")
+        body_chars = s[header_end:footer_start]
+    base64_chars = sum(1 for c in body_chars if c.isalnum() or c in "+/=")
+    return {
+        "length": len(s),
+        "newlines": s.count("\n"),
+        "literal_backslash_n": s.count("\\n"),
+        "spaces": s.count(" "),
+        "carriage_returns": s.count("\r"),
+        "has_begin_marker": "-----BEGIN" in s,
+        "has_end_marker": "-----END" in s,
+        "base64_chars_in_body": base64_chars,
+        "non_base64_chars_in_body": len(body_chars) - base64_chars,
+    }
 
 
 def _build_jwt(now: float) -> str:
