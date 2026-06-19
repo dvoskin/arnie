@@ -25,9 +25,10 @@ from db.database import AsyncSessionLocal, init_db
 from db.queries import (
     get_or_create_user, resolve_user, get_or_create_today_log, get_today_log,
     get_recent_conversations, log_conversation,
-    reload_user, reset_today_log, reset_all_user_data, get_or_create_webhook_token,
-    add_feedback, clear_today_conversations, get_recent_logs,
+    reload_user, get_or_create_webhook_token,
+    add_feedback, get_recent_logs,
 )
+from core.reset import reset_today as _reset_today, reset_all as _reset_all
 from core.context_builder import build_context, fmt_log
 from core.platform import React
 from handlers.onboarding import (
@@ -1204,8 +1205,7 @@ async def cmd_reset(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user = await resolve_user(db, str(update.effective_user.id))
 
         if args[0].lower() == "today":
-            cleared = await reset_today_log(db, user.id, user.timezone or "UTC")
-            await clear_today_conversations(db, user.id)
+            cleared = await _reset_today(db, user)
             if cleared:
                 await update.message.reply_text(
                     "Today's log cleared — food, exercise, and totals all wiped.\n"
@@ -1216,7 +1216,6 @@ async def cmd_reset(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await update.message.reply_text("Nothing logged today yet — nothing to reset.")
 
         elif args[0].lower() == "all":
-            # Require a second confirmation argument: /reset all confirm
             confirm = args[1].lower() if len(args) > 1 else ""
             if confirm != "confirm":
                 await update.message.reply_text(
@@ -1226,18 +1225,7 @@ async def cmd_reset(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
                 return
 
-            telegram_id = user.telegram_id
-            await reset_all_user_data(db, user.id)
-
-            # Wipe memory file + Profile Matrix too
-            from memory.memory_manager import clear_memory
-            await clear_memory(telegram_id)
-            try:
-                from memory.profile_manager import clear_profile
-                await clear_profile(telegram_id)
-            except Exception as e:
-                logger.warning(f"clear_profile failed for {telegram_id}: {e}")
-
+            await _reset_all(db, user)
             await update.message.reply_text(
                 "All data wiped. Fresh start.\n\nSend any message to begin setup again."
             )

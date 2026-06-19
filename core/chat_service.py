@@ -40,7 +40,9 @@ from core.background_jobs import schedule_post_turn_jobs
 from core.context_builder import build_context
 from core.conversation import TurnResult, run_turn
 from core.history import conversations_to_messages
+from core.platform import Response
 from core.prompts.arnie import build_arnie_system
+from core.reset import parse_reset_command, reset_today, reset_all
 from handlers.onboarding import build_onboarding_system
 
 logger = logging.getLogger(__name__)
@@ -79,6 +81,49 @@ async def run_chat_turn(
                           the turn synchronous and free of detached-session tasks.
     """
     _source = source_type or platform
+
+    # ── Slash-command interception (pre-LLM) ──────────────────────────────────
+    # /reset today and /reset all confirm bypass the coaching brain entirely.
+    # Lives here so iOS / iMessage / web get the same behavior Telegram has —
+    # the LLM has no way to wipe data and would refuse the user otherwise.
+    _reset_action, _reset_confirmed = parse_reset_command(text)
+    if _reset_action is not None:
+        if _reset_action == "help":
+            bubbles = [
+                "Reset options:",
+                "/reset today — clear today's food, exercise, totals + chat",
+                "/reset all confirm — wipe everything. cannot be undone.",
+            ]
+        elif _reset_action == "today":
+            cleared = await reset_today(db, user)
+            bubbles = (
+                ["Today's log cleared — food, exercise, totals, chat all wiped.",
+                 "Start logging fresh."]
+                if cleared
+                else ["Nothing logged today yet — nothing to reset."]
+            )
+        else:  # "all"
+            if not _reset_confirmed:
+                bubbles = [
+                    "⚠️ This wipes ALL your data — logs, weight history, memory, profile.",
+                    "To confirm: /reset all confirm",
+                ]
+            else:
+                await reset_all(db, user)
+                bubbles = [
+                    "All data wiped. Fresh start.",
+                    "Send any message to begin setup again.",
+                ]
+        await log_conversation(
+            db, user.id, text, "|||".join(bubbles),
+            source_type=_source, platform=platform,
+        )
+        return TurnResult(
+            response=Response(bubbles=bubbles),
+            tool_calls=[], just_completed=False,
+            in_onboarding=not bool(getattr(user, "onboarding_completed", False)),
+            onboarding_field_saved=None, today_log=None, user=user,
+        )
 
     # ── Onboarding state ──────────────────────────────────────────────────────
     # `was_onboarding` is the state BEFORE the turn; run_turn may complete
@@ -119,6 +164,7 @@ async def run_chat_turn(
     await log_conversation(
         db, user.id, text, log_text, source_type=_source,
         parsed_intent=(",".join(turn.health_flags) or None),
+        platform=platform,
     )
 
     # ── Background profile synthesis + reflection ─────────────────────────────

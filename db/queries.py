@@ -571,9 +571,25 @@ async def log_conversation(db: AsyncSession, user_id: int, raw_message: str,
     await db.commit()
 
 
-async def clear_today_conversations(db: AsyncSession, user_id: int) -> None:
-    """Delete all conversation history for a user — called after /reset today."""
-    await db.execute(delete(ConversationLog).where(ConversationLog.user_id == user_id))
+async def clear_today_conversations(db: AsyncSession, user_id: int, tz: str = "UTC") -> None:
+    """Delete TODAY's conversation history for a user in their local timezone —
+    called after /reset today. Was previously wiping the entire conversation
+    history (bug); now scoped to the user's local calendar day."""
+    try:
+        zone = pytz.timezone(tz)
+    except Exception:
+        zone = pytz.utc
+    now_local = datetime.now(zone)
+    start_local = zone.localize(datetime(now_local.year, now_local.month, now_local.day))
+    start_utc = start_local.astimezone(pytz.utc).replace(tzinfo=None)
+    await db.execute(
+        delete(ConversationLog).where(
+            and_(
+                ConversationLog.user_id == user_id,
+                ConversationLog.timestamp >= start_utc,
+            )
+        )
+    )
     await db.commit()
 
 
