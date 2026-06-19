@@ -856,12 +856,34 @@ async def build_context(user: User, today_log: Optional[DailyLog], db,
     )
     if _location_enabled():
         if _has_location:
-            _city_part = f" ({user.city})" if user.city else ""
-            location_status = (
-                f"Location: ON FILE{_city_part} — call find_nearby_places "
-                f"directly when the user asks anything nearby; do NOT ask "
-                f"them to share again."
-            )
+            # Street-precision readback: reverse-geocode the stored lat/lng to
+            # an actual formatted address ("116 Central Park S, New York, NY")
+            # so the model can answer "where am I right now?" precisely instead
+            # of just naming the city. 6h cache in core/geocode; on a miss/
+            # missing key it returns None and we fall back to city-only — never
+            # raises, never blocks the turn.
+            from core.geocode import reverse_address as _reverse_address
+            try:
+                _street = await _reverse_address(user.lat, user.lng)
+            except Exception:
+                _street = None
+            if _street:
+                location_status = (
+                    f"Location: ON FILE ({_street}) — that's the user's exact "
+                    f"shared spot, to ~1m precision. When the user asks 'where "
+                    f"am I?' relay this address directly. When they ask about "
+                    f"places nearby, call find_nearby_places — it auto-uses "
+                    f"the precise lat/lng on file, so 'closest to me' searches "
+                    f"from this exact point, NOT the city center. Do NOT ask "
+                    f"them to share again."
+                )
+            else:
+                _city_part = f" ({user.city})" if user.city else ""
+                location_status = (
+                    f"Location: ON FILE{_city_part} — exact lat/lng on file, "
+                    f"call find_nearby_places directly when the user asks "
+                    f"anything nearby; do NOT ask them to share again."
+                )
         else:
             location_status = (
                 "Location: NOT on file. If the user asks about nearby places, "

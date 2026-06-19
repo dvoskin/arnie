@@ -271,6 +271,40 @@ async def main():
           detail=f"reply: {turn.response.bubbles}")
     sentence_case_failures.append(("S6", turn.response.bubbles))
 
+    # ── S6b: street-precision readback — model must give street, not city ──
+    # Requires GOOGLE_PLACES_API_KEY to be set so reverse_address can resolve.
+    # Skipped locally if the key isn't present (it normally lives only on
+    # Render); the context-builder path is verified deterministically in
+    # tests/test_location_context.py.
+    if os.getenv("GOOGLE_PLACES_API_KEY"):
+        print(f"\n{B}S6b 'what's my exact address?' — must read street, not just city{X}")
+        turn = await run("What's my exact address right now?")
+        blob = " ".join(turn.response.bubbles).lower()
+        just_city_replies = [
+            "you're in new york",
+            "i've got new york",
+            "got new york on file",
+            "you're in ny",
+        ]
+        is_just_city = any(p in blob for p in just_city_replies) and not any(
+            c.isdigit() for c in blob
+        )
+        has_street_signal = any(
+            s in blob
+            for s in ("st,", "street", "ave", "avenue", "blvd", "road",
+                      " s,", "park s", "central park", "broadway",
+                      "manhattan", "midtown")
+        ) or any(c.isdigit() for c in blob)
+        check("S6b did NOT respond with city-only",
+              not is_just_city, detail=f"reply: {turn.response.bubbles}")
+        check("S6b mentions a street / number signal",
+              has_street_signal, detail=f"reply: {turn.response.bubbles}")
+        sentence_case_failures.append(("S6b", turn.response.bubbles))
+    else:
+        print(f"\n{Y}S6b skipped — GOOGLE_PLACES_API_KEY not set locally "
+              f"(prod-only key). Context-builder wiring is asserted "
+              f"deterministically in tests/test_location_context.py.{X}")
+
     # ── S1: /reset all confirm — DESTRUCTIVE, runs last so it doesn't
     #         wipe onboarding state ahead of S3-S6 ────────────────────────────
     print(f"\n{B}S1  /reset all confirm — must intercept BEFORE the LLM{X}")
