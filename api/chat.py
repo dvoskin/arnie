@@ -16,10 +16,10 @@ import base64
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 from db.database import AsyncSessionLocal
-from db.queries import resolve_user, get_recent_conversations
+from db.queries import resolve_user, get_recent_conversations, save_user_location
 from core.chat_service import run_chat_turn
 from core.platform import serialize_response, WIRE_VERSION
 from api.auth import current_identity, verify_session_token
@@ -47,6 +47,15 @@ _locks: dict[str, asyncio.Lock] = {}
 # ── Wire models ──────────────────────────────────────────────────────────────
 class ChatRequest(BaseModel):
     message: str
+    # Optional live coordinates. iOS attaches these with every message so the
+    # backend always has fresh lat/lng before the turn runs. Replaces the
+    # previous separate POST /api/v1/location flow, which raced the chat turn
+    # (location posted ~14s AFTER the user asked "what's near me?") and left
+    # Arnie answering "I don't have your location." `None` = client didn't send.
+    # When present, persisted via save_user_location BEFORE the LLM sees the
+    # message, so the LOCATION line in context is current to this turn.
+    lat: Optional[float] = Field(default=None, ge=-90, le=90)
+    lng: Optional[float] = Field(default=None, ge=-180, le=180)
 
     @field_validator("message")
     @classmethod
@@ -89,13 +98,38 @@ class TurnMeta(BaseModel):
 
 
 # ── Shared core ──────────────────────────────────────────────────────────────
-async def _coached_reply(identity: str, text: str, source_type: str) -> dict:
+async def _coached_reply(identity: str, text: str, source_type: str,
+                         lat: Optional[float] = None,
+                         lng: Optional[float] = None) -> dict:
     """Resolve the user, run one coaching turn under the per-identity lock, and
-    return the serialized wire payload + turn metadata. Shared by every chat entry."""
+    return the serialized wire payload + turn metadata. Shared by every chat entry.
+
+    When the client attached fresh lat/lng (iOS CoreLocation, web browser
+    Geolocation), persist them BEFORE run_chat_turn so the turn's context
+    builder sees the up-to-date Location: ON FILE line. Replaces the prior
+    racey two-call flow ("post location, then send message") that lost the
+    first ask whenever iOS posted location AFTER the chat send."""
     lock = _locks.setdefault(identity, asyncio.Lock())
     async with lock:
         async with AsyncSessionLocal() as db:
             user = await resolve_user(db, identity)
+            if isinstance(lat, (int, float)) and isinstance(lng, (int, float)):
+                # Reverse-geocode the city if the row doesn't have one yet.
+                # The street-precision readback uses a separate cached call
+                # inside context_builder — no need to fetch it here.
+                city = user.city
+                if not city:
+                    try:
+                        from core.geocode import reverse as _reverse_geocode
+                        city = await _reverse_geocode(lat, lng)
+                    except Exception:
+                        city = None
+                await save_user_location(db, user_id=user.id, lat=lat, lng=lng,
+                                          city=city)
+                # Re-read so the turn sees the just-saved coords without a
+                # stale-cache surprise (save_user_location may keep an existing
+                # user-set city over the freshly geocoded one).
+                user = await resolve_user(db, identity)
             try:
                 turn = await run_chat_turn(
                     db, user, text, platform=PLATFORM, source_type=source_type
@@ -117,10 +151,17 @@ async def _coached_reply(identity: str, text: str, source_type: str) -> dict:
 async def chat(req: ChatRequest, identity: str = Depends(current_identity)):
     """Run one coaching turn and return the semantic wire payload + turn metadata.
 
+    Optional lat/lng on the request body — when present, persisted to the user
+    row before the turn runs so "what's near me?" sees current coordinates in
+    the same call (no separate POST /api/v1/location → race window).
+
     Response shape (see core.platform.serialize_response for the bubble contract):
       { v, bubbles, reaction, effect, buttons, link, meta: { in_onboarding, just_completed } }
     """
-    return await _coached_reply(identity, req.message, source_type=PLATFORM)
+    return await _coached_reply(
+        identity, req.message, source_type=PLATFORM,
+        lat=req.lat, lng=req.lng,
+    )
 
 
 @router.post("/chat/photo")

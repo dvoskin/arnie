@@ -305,6 +305,59 @@ async def main():
               f"(prod-only key). Context-builder wiring is asserted "
               f"deterministically in tests/test_location_context.py.{X}")
 
+    # ── S8: onboarding-mode location query — must call find_nearby_places ───
+    # Replay the exact failure mode from prod conv id 2216: user runs
+    # /reset all confirm, partially re-onboards (name only), then asks "what
+    # can I order near me?" expecting Arnie to help even mid-setup.
+    print(f"\n{B}S8  mid-onboarding 'near me' — must use find_nearby_places, NOT ask city{X}")
+    async with Maker() as db:
+        u8 = User(
+            telegram_id="ios:test_onboard_loc",
+            timezone="America/New_York",
+            onboarding_completed=False,
+            name="Sam",  # name only — still mid-onboarding
+        )
+        db.add(u8)
+        db.add(UserPreferences(user=u8))
+        await db.flush()
+        uid8 = u8.id
+        await save_user_location(
+            db, user_id=uid8,
+            lat=40.7747, lng=-73.9906,
+            city="New York",
+        )
+        await db.commit()
+
+    async def run8(msg):
+        async with Maker() as db:
+            from db.queries import reload_user
+            user = await reload_user(db, uid8)
+            return await run_chat_turn(
+                db, user, msg,
+                platform="ios", source_type="ios",
+                schedule_background=False,
+            )
+    turn = await run8("What can I order near me?")
+    names = [tc["name"] for tc in turn.tool_calls]
+    blob = " ".join(turn.response.bubbles).lower()
+    check("S8 called find_nearby_places",
+          "find_nearby_places" in names, detail=f"tools: {names}")
+    bad_asks = [
+        "what city",
+        "what neighborhood",
+        "drop the neighborhood",
+        "what area are you in",
+        "i need a location to work with",
+        "i don't have your location",
+    ]
+    hit = next((p for p in bad_asks if p in blob), None)
+    check("S8 did NOT ask for city/neighborhood",
+          hit is None, detail=f"said: {hit!r}" if hit else "")
+    # NOT added to sentence_case_failures: when GOOGLE_PLACES_API_KEY isn't
+    # set locally, find_nearby_places returns an error and the model renders
+    # an error-recovery message that's outside the normal voice path. The
+    # production environment has the key, so this fallback never fires.
+
     # ── S1: /reset all confirm — DESTRUCTIVE, runs last so it doesn't
     #         wipe onboarding state ahead of S3-S6 ────────────────────────────
     print(f"\n{B}S1  /reset all confirm — must intercept BEFORE the LLM{X}")
