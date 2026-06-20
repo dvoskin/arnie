@@ -344,9 +344,10 @@ async def maybe_update_profile(user, db, force: bool = False) -> bool:
 
     # Throttle check — keep the existing profile.md file as the timestamp source
     # so we don't re-derive throttling. ensure_profile() returns the file content
-    # (and creates it on first call) — we only read the sync stamp.
+    # (and creates it on first call) — we only read the sync stamp. The window
+    # is tiered by user age (30m → 60m → 2h) so new users seed fast.
     current = await ensure_profile(user)
-    if not force and not is_update_due(current):
+    if not force and not is_update_due(current, user):
         return False
 
     try:

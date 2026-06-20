@@ -11,6 +11,15 @@ Only three fields gate completion: name, primary_goal, current_weight_kg. Height
 age, sex, training, city, diet, injuries, deadline, coaching style are all bonuses,
 grabbed from the dump if given, never blocking. age/sex/height come later via the
 proactive profile_stats follow-up; city sets timezone whenever they mention it.
+
+LANDING VARIANT: when a user signs up via the web form (landing/join.html), the
+form payload is stored as a pre_registration row keyed by a SETUP-XXXXXX code.
+When the code is consumed (bot/telegram_handler.py for Telegram, api/auth_routes
+for iOS), the profile is applied directly to the user row and onboarding_completed
+is set True — the LLM onboarding prompt NEVER fires for landing-form signups.
+The first render is a hand-coded greeting (INTRO_BUBBLES_LANDING below for chat
+transports; a welcome_card JSON payload for iOS, per the native-first contract).
+GOAL_PHRASE_MAP protects the "never label the goal back" rule when interpolating.
 """
 
 # Canonical first-contact intro — the scripted STEP 1 (ending on the name question),
@@ -19,7 +28,7 @@ proactive profile_stats follow-up; city sets timezone whenever they mention it.
 # reply_text call per element). Newlines INSIDE an element stay within that single
 # message — they are NOT split into separate bubbles. 4 messages: a short punchy
 # greeting (which gets the iMessage screen effect — keeping the effect off the full
-# paragraph), then three two-line messages. Landing variant inserts a trial line.
+# paragraph), then three two-line messages.
 INTRO_BUBBLES = [
     # Message 1 — short; gets the iMessage screen effect (first bubble only)
     "Hey, I'm Arnie ☺️",
@@ -35,6 +44,38 @@ INTRO_BUBBLES = [
     "I remember your goals, your habits, your progress, what actually works for you."
     "\n\n"
     "So, what should I call you?",
+]
+
+
+# Goal label → coach-language phrase. The form stores raw labels (cut / bulk /
+# maintain / performance / health); Arnie's voice rule is to NEVER label the goal
+# back ("goal: cut") — so the landing intro and any in-conversation reflection
+# substitutes the phrase from this map.
+GOAL_PHRASE_MAP = {
+    "cut": "leaning out",
+    "bulk": "putting on size",
+    "maintain": "holding the line",
+    "performance": "getting stronger",
+    "health": "getting your health right",
+}
+
+
+# Landing-form intro — replaces INTRO_BUBBLES when the user came in via join.html
+# and a kickoff_context is attached. Same single-message-per-element rule as above.
+# Skips name/goal/brain-dump (already collected) and pushes straight to first log.
+# {name} and {goal_phrase} are interpolated by the handler from kickoff_context.
+# CHAT TRANSPORTS ONLY (Telegram, iMessage) — iOS uses a welcome_card payload.
+INTRO_BUBBLES_LANDING = [
+    # Message 1 — short, named; gets the iMessage screen effect
+    "Hey {name} 👊",
+    # Message 2 — ack the form, reflect goal in coach language, never the form label
+    "Got everything from your signup. We're {goal_phrase}, locked in."
+    "\n\n"
+    "Stats, training background, starting target all dialed in.",
+    # Message 3 — push to first log, no questions
+    "Easiest first move, send me what you ate today so far."
+    "\n\n"
+    "Rough is fine, I'll sort it.",
 ]
 
 

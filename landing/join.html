@@ -380,17 +380,63 @@
     }
     .ob-code-row {
       display: flex; align-items: center; gap: 10px; margin-top: 18px;
-      padding: 10px 14px; border-radius: 10px;
+      padding: 12px 14px; border-radius: 10px;
       background: color-mix(in oklch, var(--ink) 5%, transparent);
       border: 1px solid var(--line);
+      cursor: pointer; user-select: all;
+      transition: background 140ms, border-color 140ms;
     }
+    .ob-code-row:hover { background: color-mix(in oklch, var(--ink) 8%, transparent); }
+    .ob-code-row.copied { border-color: var(--accent); }
     .ob-code-label {
       font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.08em;
       text-transform: uppercase; color: var(--ink-3); white-space: nowrap;
     }
     .ob-code {
-      font-family: var(--mono); font-size: 13px; color: var(--accent);
-      letter-spacing: 0.06em; font-weight: 500;
+      font-family: var(--mono); font-size: 15px; color: var(--accent);
+      letter-spacing: 0.08em; font-weight: 600;
+      flex: 1;
+    }
+    .ob-code-copy {
+      font-family: var(--mono); font-size: 10px; letter-spacing: 0.06em;
+      text-transform: uppercase; color: var(--ink-3);
+      white-space: nowrap; transition: color 140ms;
+    }
+    .ob-code-row.copied .ob-code-copy { color: var(--accent); }
+    .ob-code-hint {
+      font-size: 11px; color: var(--ink-3); margin-top: 8px;
+      line-height: 1.5; text-wrap: pretty;
+    }
+    /* Secondary install button — TestFlight / iOS beta */
+    .ob-secondary-btn {
+      display: flex; align-items: center; justify-content: center; gap: 8px;
+      width: 100%; margin-top: 10px;
+      padding: 13px 18px; border-radius: 12px;
+      font-family: var(--mono); font-size: 12.5px; letter-spacing: 0.04em;
+      text-transform: uppercase; font-weight: 500;
+      color: var(--ink-2); background: transparent;
+      border: 1px solid var(--line);
+      text-decoration: none;
+      transition: border-color 140ms, color 140ms, background 140ms;
+    }
+    .ob-secondary-btn:hover {
+      border-color: color-mix(in oklch, var(--ink) 25%, transparent);
+      color: var(--ink); background: color-mix(in oklch, var(--ink) 3%, transparent);
+    }
+    .ob-secondary-btn .ob-beta-tag {
+      font-size: 9px; letter-spacing: 0.10em;
+      padding: 2px 6px; border-radius: 4px;
+      background: color-mix(in oklch, var(--ink) 10%, transparent);
+      color: var(--ink-3);
+    }
+    .ob-or-divider {
+      display: flex; align-items: center; gap: 10px;
+      margin: 14px 0 4px;
+      font-family: var(--mono); font-size: 9px; letter-spacing: 0.12em;
+      text-transform: uppercase; color: var(--ink-4);
+    }
+    .ob-or-divider::before, .ob-or-divider::after {
+      content: ""; flex: 1; height: 1px; background: var(--line);
     }
     .ob-error {
       font-size: 12px; color: oklch(0.72 0.18 27); margin-top: 10px;
@@ -647,18 +693,28 @@
         You're all set, <span id="ob-success-name">there</span>.
       </h3>
       <p class="ob-success-sub" id="ob-success-sub">
-        Arnie already has your goals, stats, and training background.
-        Open Telegram — no onboarding needed.
+        Arnie already has your details — pick your home and start logging.
       </p>
       <a href="#" id="ob-tg-link" class="cta-btn" target="_blank" rel="noopener"
          style="margin-top:20px;text-decoration:none;display:flex;justify-content:center">
         Open Arnie on Telegram →
       </a>
-      <div class="ob-code-row" style="margin-top:16px">
+      <div class="ob-or-divider">or</div>
+      <a href="https://testflight.apple.com/join/XAZQ5sSF" id="ob-ios-link"
+         class="ob-secondary-btn" target="_blank" rel="noopener">
+        <span>Install the iOS app</span>
+        <span class="ob-beta-tag">BETA</span>
+      </a>
+      <div class="ob-code-row" id="ob-code-row" role="button" tabindex="0"
+           aria-label="Copy your pairing code">
         <span class="ob-code-label">Your code</span>
         <code class="ob-code" id="ob-code"></code>
-        <span style="font-size:10px;color:var(--ink-4);margin-left:auto">expires in 48 hrs</span>
+        <span class="ob-code-copy" id="ob-code-copy">Tap to copy</span>
       </div>
+      <p class="ob-code-hint">
+        Paste this code into the iOS app on first launch to load your profile.
+        Expires in 48 hours.
+      </p>
     </div>
 
   </div><!-- /.ob-card -->
@@ -959,6 +1015,7 @@
         document.getElementById('ob-success-name').textContent = firstName;
         document.getElementById('ob-tg-link').href = data.bot_link;
         document.getElementById('ob-code').textContent = data.code;
+        obWireCodeCopy(data.code);
         obGoStep(6);  // success
       } else {
         errEl.textContent = data.detail || 'Something went wrong — try again.';
@@ -972,6 +1029,49 @@
       submitBtn.textContent = 'Try again';
       submitBtn.disabled = false;
     }
+  }
+
+  // Tap-to-copy for the SETUP-XXX pairing code. iOS users paste this into the
+  // app's first-launch screen — the TestFlight URL itself can't carry it.
+  function obWireCodeCopy(code) {
+    const row     = document.getElementById('ob-code-row');
+    const copyLbl = document.getElementById('ob-code-copy');
+    if (!row || !copyLbl) return;
+
+    let resetTimer = null;
+    const flash = () => {
+      row.classList.add('copied');
+      copyLbl.textContent = 'Copied!';
+      clearTimeout(resetTimer);
+      resetTimer = setTimeout(() => {
+        row.classList.remove('copied');
+        copyLbl.textContent = 'Tap to copy';
+      }, 1800);
+    };
+
+    const doCopy = async () => {
+      try {
+        if (navigator.clipboard && window.isSecureContext) {
+          await navigator.clipboard.writeText(code);
+        } else {
+          // Fallback for non-secure contexts (e.g. older mobile browsers on http).
+          const ta = document.createElement('textarea');
+          ta.value = code; ta.style.position = 'fixed'; ta.style.opacity = '0';
+          document.body.appendChild(ta); ta.select();
+          document.execCommand('copy');
+          document.body.removeChild(ta);
+        }
+        flash();
+      } catch (_) {
+        // Clipboard refused (permissions, etc.) — text is still selectable.
+        copyLbl.textContent = 'Select & copy';
+      }
+    };
+
+    row.addEventListener('click', doCopy);
+    row.addEventListener('keydown', e => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); doCopy(); }
+    });
   }
 
   // Enter key support

@@ -14,9 +14,13 @@ existing column alone (so iOS can update one field without re-sending the
 rest of the profile).
 
 Endpoints:
-  PATCH  /api/v1/profile   — User columns (name, age, sex, height, weights,
-                              goal, training experience, diet, injuries).
-  PATCH  /api/v1/targets   — UserPreferences calorie / macro targets.
+  PATCH  /api/v1/profile               — User columns (name, age, sex, height,
+                                          weights, goal, training experience,
+                                          diet, injuries).
+  PATCH  /api/v1/targets               — UserPreferences calorie / macro targets.
+  POST   /api/v1/onboarding/complete   — Mark the user fully onboarded; the
+                                          proactive scheduler ignores rows where
+                                          this is False.
 """
 from typing import Optional
 
@@ -157,3 +161,53 @@ async def patch_targets(
             applied.append(field)
         await db.commit()
         return {"ok": True, "updated_fields": applied}
+
+
+# ── Onboarding completion ───────────────────────────────────────────────────
+
+# Mirrors the iOS `ProfileCompletionBanner` criteria. The banner stays up
+# until the same five fields are filled in the user's row, so the client
+# and server agree on what "complete" means.
+REQUIRED_ONBOARDING_FIELDS = (
+    "age", "sex", "height_cm", "current_weight_kg", "primary_goal",
+)
+
+
+@router.post("/onboarding/complete")
+async def complete_onboarding(
+    identity: str = Depends(current_identity),
+) -> dict:
+    """Flip `users.onboarding_completed` to True for the authed iOS user.
+
+    The chat-led Telegram path flips this inline once the bot finishes its
+    onboarding walk; the SETUP-XXX pairing path flips it inside
+    `apply_landing_profile_to_user`. The native iOS app has neither —
+    profile data lands via PATCH /profile and PATCH /targets, neither of
+    which can tell when the user has "finished" because PATCH semantics
+    let them edit one field at a time. This endpoint is the explicit
+    signal: iOS calls it after a profile save, the bit flips when the
+    required fields are present, and the proactive scheduler starts
+    treating the user as a real account (otherwise
+    `get_all_active_users` filters them out and no nudge ever fires).
+
+    Required fields mirror the iOS banner's criteria. If any are missing
+    we return ok=False + missing_fields rather than an error code so
+    iOS can fire-and-forget after every save — only the save that
+    completes the set will flip the bit.
+
+    Idempotent: an already-onboarded user just returns ok=True.
+    """
+    async with AsyncSessionLocal() as db:
+        user = await resolve_user(db, identity)
+        if user.onboarding_completed:
+            return {"ok": True, "onboarding_completed": True, "missing_fields": []}
+        missing = [f for f in REQUIRED_ONBOARDING_FIELDS if getattr(user, f) is None]
+        if missing:
+            return {
+                "ok": False,
+                "onboarding_completed": False,
+                "missing_fields": missing,
+            }
+        user.onboarding_completed = True
+        await db.commit()
+        return {"ok": True, "onboarding_completed": True, "missing_fields": []}

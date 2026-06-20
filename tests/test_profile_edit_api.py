@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncSession
 from api.profile_edit import (
     ProfileEditBody,
     TargetsEditBody,
+    complete_onboarding,
     patch_profile,
     patch_targets,
 )
@@ -217,3 +218,75 @@ async def test_patch_targets_empty_body_is_quiet_noop(
     user = await make_user(telegram_id="ios:empty-targets")
     resp = await patch_targets(TargetsEditBody(), identity="ios:empty-targets")
     assert resp == {"ok": True, "updated_fields": []}
+
+
+# ── Onboarding complete POST ────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_complete_onboarding_flips_bit_when_required_fields_present(
+    patched_session_local, db, make_user,
+):
+    """Happy path: all five iOS-banner required fields are set, the bit
+    flips, scheduler will pick the user up on the next tick."""
+    user = await make_user(
+        telegram_id="ios:complete-ok",
+        onboarded=False,
+        age=31, sex="male", height_cm=187.0,
+        current_weight_kg=85.5, primary_goal="cut",
+    )
+
+    resp = await complete_onboarding(identity="ios:complete-ok")
+
+    assert resp == {
+        "ok": True, "onboarding_completed": True, "missing_fields": [],
+    }
+    await db.refresh(user)
+    assert user.onboarding_completed is True
+
+
+@pytest.mark.asyncio
+async def test_complete_onboarding_quiet_noop_when_fields_missing(
+    patched_session_local, db, make_user,
+):
+    """Missing fields → ok=False + missing_fields list, bit stays False.
+    No HTTPException — iOS fires this after every save and we don't want
+    a spurious banner mid-onboarding."""
+    user = await make_user(
+        telegram_id="ios:complete-incomplete",
+        onboarded=False,
+        age=31, sex="male",  # height_cm, current_weight_kg, primary_goal missing
+    )
+
+    resp = await complete_onboarding(identity="ios:complete-incomplete")
+
+    assert resp["ok"] is False
+    assert resp["onboarding_completed"] is False
+    assert set(resp["missing_fields"]) == {
+        "height_cm", "current_weight_kg", "primary_goal",
+    }
+    await db.refresh(user)
+    assert user.onboarding_completed is False
+
+
+@pytest.mark.asyncio
+async def test_complete_onboarding_idempotent_when_already_complete(
+    patched_session_local, db, make_user,
+):
+    """An already-onboarded user gets ok=True without re-checking fields.
+    Safe to call repeatedly from iOS."""
+    user = await make_user(
+        telegram_id="ios:complete-already",
+        onboarded=True,
+        # Deliberately omit the required fields — once onboarded=True, the
+        # endpoint short-circuits before the field check, mirroring the
+        # Telegram path which doesn't re-validate either.
+    )
+
+    resp = await complete_onboarding(identity="ios:complete-already")
+
+    assert resp == {
+        "ok": True, "onboarding_completed": True, "missing_fields": [],
+    }
+    await db.refresh(user)
+    assert user.onboarding_completed is True

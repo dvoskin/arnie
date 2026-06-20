@@ -348,3 +348,43 @@ async def _migrate(conn):
             )
     except Exception as e:
         logger.warning(f"Reconcile totals_reconcile_2026_05_30 failed: {e}")
+
+    # ── Unique (user_id, date) on daily_logs + health_snapshots (2026-06-20) ─────
+    # Postgres gets this via Alembic (c1d2e3f4a5b6); this is the SQLite parity for
+    # existing local/test DBs (fresh ones already have it from create_all's
+    # __table_args__). Dedup first — CREATE UNIQUE INDEX fails if duplicates exist.
+    # The constraint stops the get_or_create_today_log / upsert_health_snapshot
+    # check-then-insert race from ever producing two rows for the same day again
+    # (incident 2026-06-20). Guarded by IF NOT EXISTS, so it's a no-op once present.
+    try:
+        # daily_logs: keep the lowest id per (user_id, date), reparent children.
+        dup_groups = (await conn.execute(text(
+            "SELECT user_id, date, MIN(id) AS survivor FROM daily_logs "
+            "GROUP BY user_id, date HAVING COUNT(*) > 1"
+        ))).fetchall()
+        for user_id, day, survivor in dup_groups:
+            dup_ids = (await conn.execute(text(
+                "SELECT id FROM daily_logs WHERE user_id = :u AND date = :d AND id <> :s"
+            ), {"u": user_id, "d": day, "s": survivor})).scalars().all()
+            for dup in dup_ids:
+                for tbl in ("food_entries", "exercise_entries", "water_entries"):
+                    await conn.execute(text(
+                        f"UPDATE {tbl} SET daily_log_id = :s WHERE daily_log_id = :d"
+                    ), {"s": survivor, "d": dup})
+                await conn.execute(text("DELETE FROM daily_logs WHERE id = :d"), {"d": dup})
+        # health_snapshots: no children — drop all but the lowest id per group.
+        await conn.execute(text(
+            "DELETE FROM health_snapshots WHERE id NOT IN "
+            "(SELECT MIN(id) FROM health_snapshots GROUP BY user_id, date)"
+        ))
+        await conn.execute(text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_daily_log_user_date "
+            "ON daily_logs (user_id, date)"
+        ))
+        await conn.execute(text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_health_snapshot_user_date "
+            "ON health_snapshots (user_id, date)"
+        ))
+        logger.info("Migration: ensured unique (user_id, date) on daily_logs + health_snapshots")
+    except Exception as e:
+        logger.warning(f"Migration: unique (user_id, date) constraint pass failed: {e}")

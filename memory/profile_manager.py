@@ -32,8 +32,29 @@ logger = logging.getLogger(__name__)
 # Persistent per-user dir (survives deploys) — shared resolver with memory_manager.
 from memory.memory_manager import USERS_DIR  # noqa: E402
 
-# Don't rewrite the profile more often than this (cost control).
-_MIN_UPDATE_INTERVAL = timedelta(hours=3)
+# Tiered throttle — new users reveal durable attributes fastest, so extract
+# aggressively early then back off. Tier boundaries are days since user.created_at:
+#   first 3 days   →  30 min   (rapid seeding from onboarding-adjacent chat)
+#   days 4–7       →  60 min   (engagement window, still adding facts)
+#   day 8+         →  2 hours  (steady-state cost control)
+_THROTTLE_DAY3 = timedelta(minutes=30)
+_THROTTLE_DAY7 = timedelta(minutes=60)
+_THROTTLE_STEADY = timedelta(hours=2)
+
+
+def throttle_for_user(user: User) -> timedelta:
+    """Pick the right minimum interval based on how long the user has existed."""
+    created = getattr(user, "created_at", None)
+    if created is None:
+        return _THROTTLE_STEADY
+    if created.tzinfo is None:
+        created = created.replace(tzinfo=timezone.utc)
+    age = datetime.now(timezone.utc) - created
+    if age < timedelta(days=3):
+        return _THROTTLE_DAY3
+    if age < timedelta(days=7):
+        return _THROTTLE_DAY7
+    return _THROTTLE_STEADY
 
 
 def profile_path(telegram_id: str) -> Path:
@@ -219,14 +240,15 @@ def _last_synced(content: str):
         return None
 
 
-def is_update_due(content: str) -> bool:
-    """True if the profile hasn't been synced within the throttle window."""
+def is_update_due(content: str, user: User) -> bool:
+    """True if the profile hasn't been synced within this user's throttle window.
+    The window shortens for new users (see `throttle_for_user`)."""
     ts = _last_synced(content)
     if ts is None:
         return True
     if ts.tzinfo is None:
         ts = ts.replace(tzinfo=timezone.utc)
-    return datetime.now(timezone.utc) - ts >= _MIN_UPDATE_INTERVAL
+    return datetime.now(timezone.utc) - ts >= throttle_for_user(user)
 
 
 async def _touch_sync_stamp(telegram_id: str) -> None:

@@ -129,6 +129,14 @@ class UserPreferences(Base):
 
 class DailyLog(Base):
     __tablename__ = "daily_logs"
+    # One log per user per day. Without this, a concurrent check-then-insert in
+    # get_or_create_today_log (chat + native_data + quick_log + water all create
+    # "today's log" on launch) can race in two rows for the same date — and
+    # get_today_log's scalar_one_or_none() then raises MultipleResultsFound,
+    # 500ing every coaching turn for that user (incident 2026-06-20, user 26).
+    __table_args__ = (
+        UniqueConstraint("user_id", "date", name="uq_daily_log_user_date"),
+    )
 
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey("users.id"))
@@ -291,6 +299,11 @@ class MemoryUpdate(Base):
 class HealthSnapshot(Base):
     """One row per user per day — upserted when Apple Health webhook fires."""
     __tablename__ = "health_snapshots"
+    # Enforce the "one row per user per day" the docstring promises — upsert_health_snapshot
+    # is the same check-then-insert race class as daily_logs (see uq_daily_log_user_date).
+    __table_args__ = (
+        UniqueConstraint("user_id", "date", name="uq_health_snapshot_user_date"),
+    )
 
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)

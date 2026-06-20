@@ -1,5 +1,6 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, desc, delete, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 from db.models import (
     User, UserPreferences, DailyLog, FoodEntry,
@@ -294,12 +295,17 @@ async def get_today_log(db: AsyncSession, user_id: int,
     ]
 
     async def _fetch(d: date) -> Optional[DailyLog]:
+        # Duplicate-tolerant: uq_daily_log_user_date now guarantees ≤1 row, but a
+        # legacy duplicate (created by a race before the constraint shipped) must
+        # not hard-crash the coaching turn with MultipleResultsFound. Take the
+        # oldest row deterministically instead of raising.
         r = await db.execute(
             select(DailyLog)
             .where(and_(DailyLog.user_id == user_id, DailyLog.date == d))
+            .order_by(DailyLog.id)
             .options(*_opts)
         )
-        return r.scalar_one_or_none()
+        return r.scalars().first()
 
     today = _user_today(user_timezone)
     log = await _fetch(today)
@@ -319,13 +325,15 @@ async def get_log_by_date(db: AsyncSession, user_id: int, target_date: date) -> 
     result = await db.execute(
         select(DailyLog)
         .where(and_(DailyLog.user_id == user_id, DailyLog.date == target_date))
+        .order_by(DailyLog.id)
         .options(
             selectinload(DailyLog.food_entries),
             selectinload(DailyLog.exercise_entries),
             selectinload(DailyLog.water_entries),
         )
     )
-    return result.scalar_one_or_none()
+    # Duplicate-tolerant (see get_today_log._fetch) — never raise on a legacy dup.
+    return result.scalars().first()
 
 
 async def get_or_create_log_for_date(
@@ -336,7 +344,11 @@ async def get_or_create_log_for_date(
     if not log:
         log = DailyLog(user_id=user_id, date=target_date)
         db.add(log)
-        await db.commit()
+        try:
+            await db.commit()
+        except IntegrityError:
+            # Lost the create race (uq_daily_log_user_date) — read the winner back.
+            await db.rollback()
         log = await get_log_by_date(db, user_id, target_date)
     return log
 
@@ -348,7 +360,13 @@ async def get_or_create_today_log(db: AsyncSession, user_id: int,
         today = _user_today(user_timezone)
         log = DailyLog(user_id=user_id, date=today)
         db.add(log)
-        await db.commit()
+        try:
+            await db.commit()
+        except IntegrityError:
+            # Lost the create race to a concurrent request (uq_daily_log_user_date).
+            # The winner's row exists — roll back ours and read it back instead of
+            # creating a duplicate (the bug this constraint exists to prevent).
+            await db.rollback()
         log = await get_today_log(db, user_id, user_timezone)
     return log
 
@@ -839,6 +857,53 @@ async def consume_pre_registration(db: AsyncSession, code: str) -> Optional[dict
     return json.loads(entry.profile_json)
 
 
+async def apply_landing_profile_to_user(
+    db: AsyncSession, user: "User", profile: dict
+) -> None:
+    """
+    Apply a consumed pre_registration profile dict to a user row.
+    Mirrors the inline logic in bot/telegram_handler.py SETUP-XXX consumption;
+    extracted so iOS (api/auth_routes.py) and Telegram stay in sync as new form
+    fields are added. Telegram's call site is still inline today — swap in a
+    follow-up slice once the iOS path is verified in production.
+
+    Sets onboarding_completed=True and persists macro targets via UserPreferences.
+    Caller is responsible for db.commit() and any platform-specific follow-ups
+    (Telegram webhook tokens, iOS session issuance).
+    """
+    from db.models import UserPreferences
+
+    user.name                = profile.get("name") or user.name
+    user.age                 = profile.get("age") or user.age
+    user.sex                 = profile.get("sex") or user.sex
+    user.height_cm           = profile.get("height_cm") or user.height_cm
+    user.current_weight_kg   = profile.get("weight_kg") or user.current_weight_kg
+    user.primary_goal        = profile.get("primary_goal") or user.primary_goal
+    user.training_experience = profile.get("training_experience") or user.training_experience
+    if profile.get("dietary_preferences"):
+        user.dietary_preferences = profile["dietary_preferences"]
+    if profile.get("timezone"):
+        user.timezone = profile["timezone"]
+    if profile.get("goal_weight_lbs"):
+        user.goal_weight_kg = round(profile["goal_weight_lbs"] / 2.20462, 2)
+    user.onboarding_completed = True
+
+    if any(profile.get(k) is not None for k in
+           ("calorie_target", "protein_target", "carb_target", "fat_target")):
+        prefs = user.preferences
+        if not prefs:
+            prefs = UserPreferences(user_id=user.id)
+            db.add(prefs)
+        if profile.get("calorie_target") is not None:
+            prefs.calorie_target = int(profile["calorie_target"])
+        if profile.get("protein_target") is not None:
+            prefs.protein_target = int(profile["protein_target"])
+        if profile.get("carb_target") is not None:
+            prefs.carb_target = int(profile["carb_target"])
+        if profile.get("fat_target") is not None:
+            prefs.fat_target = int(profile["fat_target"])
+
+
 async def get_user_by_webhook_token(
     db: AsyncSession, token: str, *, follow_link: bool = True
 ) -> Optional[User]:
@@ -869,21 +934,37 @@ async def get_user_by_webhook_token(
 async def upsert_health_snapshot(db: AsyncSession, user_id: int,
                                   snapshot_date: date, **kwargs) -> HealthSnapshot:
     """Insert or update a HealthSnapshot for (user_id, date)."""
-    result = await db.execute(
-        select(HealthSnapshot).where(
-            and_(HealthSnapshot.user_id == user_id,
-                 HealthSnapshot.date == snapshot_date)
+    async def _fetch() -> Optional[HealthSnapshot]:
+        result = await db.execute(
+            select(HealthSnapshot).where(
+                and_(HealthSnapshot.user_id == user_id,
+                     HealthSnapshot.date == snapshot_date)
+            ).order_by(HealthSnapshot.id)
         )
-    )
-    snap = result.scalar_one_or_none()
+        # Duplicate-tolerant (uq_health_snapshot_user_date) — never raise on a legacy dup.
+        return result.scalars().first()
+
+    snap = await _fetch()
     if snap:
         for k, v in kwargs.items():
             if v is not None:
                 setattr(snap, k, v)
-    else:
-        snap = HealthSnapshot(user_id=user_id, date=snapshot_date, **kwargs)
-        db.add(snap)
-    await db.commit()
+        await db.commit()
+        return snap
+
+    snap = HealthSnapshot(user_id=user_id, date=snapshot_date, **kwargs)
+    db.add(snap)
+    try:
+        await db.commit()
+    except IntegrityError:
+        # Lost the create race to a concurrent webhook — update the winner's row.
+        await db.rollback()
+        snap = await _fetch()
+        if snap is not None:
+            for k, v in kwargs.items():
+                if v is not None:
+                    setattr(snap, k, v)
+            await db.commit()
     return snap
 
 

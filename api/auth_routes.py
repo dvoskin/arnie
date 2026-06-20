@@ -17,20 +17,30 @@ identity string.
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel, field_validator
+from sqlalchemy import func, select
 
 from api.auth import (
+    current_identity,
     issue_session_token,
     verify_provider_credential,
     verify_session_token,
 )
+from core.prompts.onboarding import GOAL_PHRASE_MAP
 from db.database import AsyncSessionLocal
+from db.models import DailyLog, User
 from db.queries import (
+    apply_landing_profile_to_user,
+    consume_link_code,
+    consume_pre_registration,
+    enable_check_ins,
     find_user_by_apple_sub,
     get_or_create_user,
+    linking_enabled,
     set_apple_sub_for_user,
 )
 
@@ -137,4 +147,216 @@ async def create_session(
         return SessionResponse(
             token=issue_session_token(verified_identity),
             identity=verified_identity,
+        )
+
+
+# ── Pairing-code exchange (iOS-side landing-form handoff) ────────────────────
+
+class PairingCodeRequest(BaseModel):
+    code: str           # SETUP-XXXXXX from join.html success page
+    provider: str       # "device" (dev) | "apple"
+    credential: str     # device id, or Apple identity token
+
+    @field_validator("code", "provider", "credential")
+    @classmethod
+    def _non_empty(cls, v: str) -> str:
+        v = (v or "").strip()
+        if not v:
+            raise ValueError("must not be empty")
+        return v
+
+
+class WelcomePayload(BaseModel):
+    name: Optional[str] = None
+    primary_goal: Optional[str] = None
+    goal_phrase: Optional[str] = None
+    calorie_target: Optional[int] = None
+    protein_target: Optional[int] = None
+    carb_target: Optional[int] = None
+    fat_target: Optional[int] = None
+
+
+class PairingCodeResponse(BaseModel):
+    token: str
+    identity: str
+    welcome: WelcomePayload
+
+
+@router.post("/exchange-pairing-code", response_model=PairingCodeResponse)
+async def exchange_pairing_code(req: PairingCodeRequest) -> PairingCodeResponse:
+    """iOS-side mirror of bot/telegram_handler.py SETUP-XXX consumption.
+
+    Verifies the provider credential, consumes the pre_registration code, applies
+    the form's profile to the user row, sets onboarding_completed=True, and issues
+    a session token. The returned welcome payload feeds the iOS welcome card.
+
+    Error codes (distinct from the Telegram path's text replies — iOS clients need
+    structured failure signals):
+      404 — code never existed (typo / bad input)
+      410 — code expired or already consumed (one-time use enforced by
+            consume_pre_registration; mirrors the Telegram pattern of consuming
+            BEFORE the onboarded-user check, so a code can't be replayed)
+      409 — code is valid but the verified identity is already onboarded; the
+            code IS consumed (replay protection) and the existing account is left
+            untouched, exactly like the Telegram path's "already set up" branch
+      401 — provider credential is invalid (propagated from verify_provider_credential)
+    """
+    verified_identity = verify_provider_credential(req.provider, req.credential)
+    code = req.code.upper()
+
+    async with AsyncSessionLocal() as db:
+        user = await get_or_create_user(db, verified_identity)
+
+        # Consume FIRST (replay protection) — mirrors bot/telegram_handler.py:757.
+        profile = await consume_pre_registration(db, code)
+
+        if user.onboarding_completed:
+            # Code is consumed (if it was valid); account untouched.
+            raise HTTPException(
+                status_code=409,
+                detail="Identity is already onboarded; this code has been consumed but no profile was applied.",
+            )
+
+        if profile is None:
+            # Either the code never existed OR it was expired/already-used.
+            # consume_pre_registration can't distinguish — surface 410 since the
+            # most common cause from the iOS app is a re-entry attempt.
+            raise HTTPException(
+                status_code=410,
+                detail="Pairing code is invalid, expired, or already used.",
+            )
+
+        await apply_landing_profile_to_user(db, user, profile)
+        await db.commit()
+        await enable_check_ins(db, user.id)
+
+        welcome = WelcomePayload(
+            name=user.name,
+            primary_goal=user.primary_goal,
+            goal_phrase=GOAL_PHRASE_MAP.get(user.primary_goal or ""),
+            calorie_target=(user.preferences.calorie_target if user.preferences else None),
+            protein_target=(user.preferences.protein_target if user.preferences else None),
+            carb_target=(user.preferences.carb_target if user.preferences else None),
+            fat_target=(user.preferences.fat_target if user.preferences else None),
+        )
+
+        logger.info(
+            f"Pairing code {code} consumed for identity={verified_identity} user_id={user.id}"
+        )
+
+        return PairingCodeResponse(
+            token=issue_session_token(verified_identity),
+            identity=verified_identity,
+            welcome=welcome,
+        )
+
+
+# ── Cross-platform account link (iOS ↔ Telegram) ─────────────────────────────
+
+class LinkAccountRequest(BaseModel):
+    code: str  # LINK-XXXX minted by Telegram /link
+
+    @field_validator("code")
+    @classmethod
+    def _non_empty(cls, v: str) -> str:
+        v = (v or "").strip()
+        if not v:
+            raise ValueError("must not be empty")
+        return v
+
+
+class LinkAccountResponse(BaseModel):
+    canonical_identity: str
+    canonical_name: Optional[str] = None
+
+
+@router.post("/link", response_model=LinkAccountResponse)
+async def link_account(
+    req: LinkAccountRequest,
+    identity: str = Depends(current_identity),
+) -> LinkAccountResponse:
+    """Weld the calling iOS user onto the canonical Telegram row identified by
+    `code`. After success, every API call from this device still uses the same
+    session token — but `resolve_user` follows `linked_to_user_id` to the
+    canonical row, so the iOS app immediately sees the user's Telegram food /
+    exercise / preferences / memory.
+
+    The iOS user keeps its `apple_sub` binding. `find_user_by_apple_sub`
+    returns the iOS row on future Apple sign-ins, and `resolve_user` follows
+    the link to the canonical row — so cross-device Apple sign-in still lands
+    on the right brain.
+
+    Error codes (distinct from the Telegram /link reply text — iOS needs
+    structured signals):
+      403 — LINKING_ENABLED is off
+      404 — code never existed
+      410 — code is expired
+      409 — code is the caller's own (self-link)
+      422 — iOS row already has logs (data-migration territory; defer to #2)
+    """
+    if not linking_enabled():
+        raise HTTPException(
+            status_code=403, detail="Account linking is disabled on this server."
+        )
+
+    code = req.code.upper()
+
+    async with AsyncSessionLocal() as db:
+        # Find the canonical owner so we can give precise errors. This is the
+        # pre-check; consume_link_code will re-load it under the same session.
+        owner = (
+            await db.execute(select(User).where(User.link_code == code))
+        ).scalar_one_or_none()
+        if owner is None:
+            raise HTTPException(
+                status_code=404,
+                detail="That code is invalid or has already been used.",
+            )
+        if owner.link_code_expires and datetime.utcnow() > owner.link_code_expires:
+            raise HTTPException(
+                status_code=410,
+                detail="That code has expired. Run /link in Telegram again for a fresh one.",
+            )
+
+        consumer = await get_or_create_user(db, identity)
+        if consumer.id == owner.id:
+            raise HTTPException(
+                status_code=409,
+                detail="That code was generated by this account — nothing to link.",
+            )
+
+        # Defer data migration to roadmap #2 — if the iOS row already has
+        # logs, refuse rather than orphan them. consume_link_code repoints
+        # the row but leaves the consumer's daily_logs/food_entries pointing
+        # at consumer.id, so they'd vanish from the canonical view.
+        log_count = (
+            await db.execute(
+                select(func.count(DailyLog.id)).where(DailyLog.user_id == consumer.id)
+            )
+        ).scalar_one()
+        if log_count and consumer.id != owner.id:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "This device already has logged data. Merging accounts "
+                    "with existing data isn't supported yet."
+                ),
+            )
+
+        canonical = await consume_link_code(db, code, consumer)
+        if canonical is None:
+            # Race: someone else consumed the code between the pre-check and
+            # the call (or the owner row was edited concurrently).
+            raise HTTPException(
+                status_code=409,
+                detail="That code was just used. Generate a fresh one in Telegram.",
+            )
+
+        logger.info(
+            f"Link code {code} consumed: consumer identity={identity} "
+            f"user_id={consumer.id} → canonical user_id={canonical.id}"
+        )
+        return LinkAccountResponse(
+            canonical_identity=canonical.telegram_id,
+            canonical_name=canonical.name,
         )

@@ -263,6 +263,33 @@ async def get_brain(identity: str = Depends(current_identity)):
     }
 
 
+@router.post("/brain/resync")
+async def force_brain_resync(identity: str = Depends(current_identity)):
+    """Force an immediate brain re-synthesis for the caller, bypassing the
+    throttle. Debug aid for verifying extraction end-to-end from the iOS app
+    (the normal path is throttled to 30m–2h depending on user age). Returns the
+    fresh attribute count and lobe summary so the client can compare before/after.
+    """
+    from memory.profile_updater import maybe_update_profile
+    from memory.attribute_store import get_all_attributes
+
+    async with AsyncSessionLocal() as db:
+        user = await resolve_user(db, identity)
+        try:
+            updated = await maybe_update_profile(user, db, force=True)
+        except Exception as e:
+            logger.error(f"force resync failed for {user.id}: {e}", exc_info=True)
+            raise HTTPException(status_code=500, detail="resync failed")
+        attrs = await get_all_attributes(db, user.id)
+
+    active = [a for a in attrs if a.attribute_status == "active"]
+    return {
+        "v": WIRE_VERSION,
+        "updated": bool(updated),
+        "attribute_count": len(active),
+    }
+
+
 @router.get("/fitness")
 async def get_fitness(identity: str = Depends(current_identity)):
     """Recovery/readiness (from wearables) + training summary for the Fitness tab.

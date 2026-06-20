@@ -115,11 +115,13 @@ async def day_data(db, user, target_date=None) -> dict:
     `health` block is today's snapshot only; iOS hides the strip when nil."""
     from db.queries import get_log_by_date, get_recent_weights, get_recent_health_snapshots
     is_today = target_date is None or target_date == _user_today_date(user)
-    if is_today:
-        log = await get_or_create_today_log(db, user.id, user.timezone or "UTC")
-    else:
-        log = await get_log_by_date(db, user.id, target_date)
 
+    # Read everything derived from `user` BEFORE creating/fetching today's log.
+    # On a lost create race, get_or_create_today_log does a `db.rollback()` that
+    # expires every loaded object including `user`; touching `user` afterward then
+    # triggers an async lazy-load with no greenlet → 500 (MissingGreenlet). By
+    # gathering targets/weights/health here, nothing reads `user` after the create.
+    targets = _targets(user)
     weights = await get_recent_weights(db, user.id, days=30)
     weight_block = _weight_block(weights, user)
 
@@ -129,8 +131,13 @@ async def day_data(db, user, target_date=None) -> dict:
         if snaps:
             health_block = _health_block(snaps[0])
 
+    if is_today:
+        log = await get_or_create_today_log(db, user.id, user.timezone or "UTC")
+    else:
+        log = await get_log_by_date(db, user.id, target_date)
+
     return {
-        "targets": _targets(user),
+        "targets": targets,
         "day": _log_to_day(log),
         "weight": weight_block,
         "health": health_block,
@@ -138,16 +145,34 @@ async def day_data(db, user, target_date=None) -> dict:
 
 
 def _health_block(snap) -> dict:
-    """Shape today's wearable snapshot for the Today strip — just the fields
-    iOS renders inline, all optional so the strip degrades gracefully."""
+    """Shape today's wearable snapshot for the Today strip — every wearable
+    field the web dashboard surfaces, all optional so the strip degrades
+    row-by-row. iOS groups these into Recovery / Activity / Sleep on render."""
     return {
         "source":      snap.source,
+        # Recovery / heart
         "recovery":    snap.recovery_score,
         "strain":      round(snap.strain, 1) if snap.strain is not None else None,
-        "sleep_hours": round(snap.sleep_hours, 1) if snap.sleep_hours is not None else None,
         "hrv":         round(snap.hrv) if snap.hrv is not None else None,
         "resting_hr":  round(snap.resting_hr) if snap.resting_hr is not None else None,
-        "steps":       snap.steps,
+        "avg_hr":      round(snap.avg_hr) if snap.avg_hr is not None else None,
+        # Activity
+        "steps":           snap.steps,
+        "active_calories": round(snap.active_calories) if snap.active_calories is not None else None,
+        "resting_calories": round(snap.resting_calories) if snap.resting_calories is not None else None,
+        "exercise_minutes": snap.exercise_minutes,
+        "stand_hours":     snap.stand_hours,
+        # Sleep
+        "sleep_hours":           round(snap.sleep_hours, 1) if snap.sleep_hours is not None else None,
+        "sleep_deep_hours":      round(snap.sleep_deep_hours, 1) if snap.sleep_deep_hours is not None else None,
+        "sleep_rem_hours":       round(snap.sleep_rem_hours, 1) if snap.sleep_rem_hours is not None else None,
+        "sleep_need_hours":      round(snap.sleep_need_hours, 1) if snap.sleep_need_hours is not None else None,
+        "sleep_performance_pct": round(snap.sleep_performance_pct) if snap.sleep_performance_pct is not None else None,
+        "sleep_efficiency_pct":  round(snap.sleep_efficiency_pct) if snap.sleep_efficiency_pct is not None else None,
+        # Body / sleep physiology (Whoop)
+        "respiratory_rate":  round(snap.respiratory_rate, 1) if snap.respiratory_rate is not None else None,
+        "spo2_percentage":   round(snap.spo2_percentage, 1) if snap.spo2_percentage is not None else None,
+        "skin_temp_celsius": round(snap.skin_temp_celsius, 1) if snap.skin_temp_celsius is not None else None,
     }
 
 
