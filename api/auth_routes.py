@@ -30,7 +30,7 @@ from api.auth import (
     verify_provider_credential,
     verify_session_token,
 )
-from core.prompts.onboarding import GOAL_PHRASE_MAP
+from core.prompts.onboarding import GOAL_PHRASE_MAP, build_ios_landing_intro
 from db.database import AsyncSessionLocal
 from db.models import DailyLog, User
 from db.queries import (
@@ -41,6 +41,7 @@ from db.queries import (
     find_user_by_apple_sub,
     get_or_create_user,
     linking_enabled,
+    log_conversation,
     set_apple_sub_for_user,
 )
 
@@ -182,40 +183,83 @@ class PairingCodeResponse(BaseModel):
     welcome: WelcomePayload
 
 
+def _welcome_from_user(user) -> WelcomePayload:
+    """Snapshot a user's current profile into the iOS welcome payload. Shared by
+    the new-user (post-apply) and returning-user (welcome-back) branches."""
+    prefs = user.preferences
+    return WelcomePayload(
+        name=user.name,
+        primary_goal=user.primary_goal,
+        goal_phrase=GOAL_PHRASE_MAP.get(user.primary_goal or ""),
+        calorie_target=(prefs.calorie_target if prefs else None),
+        protein_target=(prefs.protein_target if prefs else None),
+        carb_target=(prefs.carb_target if prefs else None),
+        fat_target=(prefs.fat_target if prefs else None),
+    )
+
+
+async def _resolve_setup_user(db, provider: str, verified_identity: str):
+    """Resolve the user a SETUP code should land on — apple_sub-aware, mirroring
+    `create_session`. For Apple this recognizes a returning user whose history
+    lives on a *different* identity (e.g. a device row that later bound Apple), so
+    the code never mints a duplicate `apple:<sub>` account. Falls back to the
+    identity string (and records `apple_sub` on a freshly created Apple row so
+    future cross-device lookups resolve via branch 1)."""
+    if provider == "apple":
+        _, _, sub = verified_identity.partition(":")
+        if sub:
+            existing = await find_user_by_apple_sub(db, sub)
+            if existing:
+                return existing
+        user = await get_or_create_user(db, verified_identity)
+        if sub:
+            await set_apple_sub_for_user(db, user.id, sub)
+        return user
+    return await get_or_create_user(db, verified_identity)
+
+
 @router.post("/exchange-pairing-code", response_model=PairingCodeResponse)
 async def exchange_pairing_code(req: PairingCodeRequest) -> PairingCodeResponse:
     """iOS-side mirror of bot/telegram_handler.py SETUP-XXX consumption.
 
-    Verifies the provider credential, consumes the pre_registration code, applies
-    the form's profile to the user row, sets onboarding_completed=True, and issues
-    a session token. The returned welcome payload feeds the iOS welcome card.
+    Resolves the user (apple_sub-aware — see `_resolve_setup_user`), consumes the
+    pre_registration code, applies the form's profile to the user row, sets
+    onboarding_completed=True, and issues a session token. The returned welcome
+    payload feeds the iOS welcome card.
+
+    RETURNING USER ("I already have an account with Apple"): if the resolved user
+    is already onboarded, we DON'T error or burn the code — we just hand back a
+    session for their existing account (200, "welcome back"). This rescues the
+    common trap of a returning Apple user tapping "Get started" instead of "Sign
+    in", and — because resolution is apple_sub-aware — it lands on their real row
+    even when their history lives on a device identity that later bound Apple,
+    instead of minting an empty duplicate.
 
     Error codes (distinct from the Telegram path's text replies — iOS clients need
     structured failure signals):
       404 — code never existed (typo / bad input)
       410 — code expired or already consumed (one-time use enforced by
-            consume_pre_registration; mirrors the Telegram pattern of consuming
-            BEFORE the onboarded-user check, so a code can't be replayed)
-      409 — code is valid but the verified identity is already onboarded; the
-            code IS consumed (replay protection) and the existing account is left
-            untouched, exactly like the Telegram path's "already set up" branch
+            consume_pre_registration)
       401 — provider credential is invalid (propagated from verify_provider_credential)
     """
     verified_identity = verify_provider_credential(req.provider, req.credential)
     code = req.code.upper()
 
     async with AsyncSessionLocal() as db:
-        user = await get_or_create_user(db, verified_identity)
-
-        # Consume FIRST (replay protection) — mirrors bot/telegram_handler.py:757.
-        profile = await consume_pre_registration(db, code)
+        user = await _resolve_setup_user(db, req.provider, verified_identity)
 
         if user.onboarding_completed:
-            # Code is consumed (if it was valid); account untouched.
-            raise HTTPException(
-                status_code=409,
-                detail="Identity is already onboarded; this code has been consumed but no profile was applied.",
+            # Returning user — leave the account untouched, don't burn the code,
+            # and sign them straight back into their existing row.
+            return PairingCodeResponse(
+                token=issue_session_token(user.telegram_id),
+                identity=user.telegram_id,
+                welcome=_welcome_from_user(user),
             )
+
+        # New user: consume FIRST (replay protection) — mirrors
+        # bot/telegram_handler.py:757 — then apply the form profile.
+        profile = await consume_pre_registration(db, code)
 
         if profile is None:
             # Either the code never existed OR it was expired/already-used.
@@ -230,14 +274,25 @@ async def exchange_pairing_code(req: PairingCodeRequest) -> PairingCodeResponse:
         await db.commit()
         await enable_check_ins(db, user.id)
 
-        welcome = WelcomePayload(
+        welcome = _welcome_from_user(user)
+
+        # Seed Arnie's iOS opening into the conversation log so the app renders a
+        # warm, profile-aware welcome on first history load (chat/history splits the
+        # turn on |||) and drives the first food/workout log — instead of the generic
+        # empty state. iOS-only: the Telegram SETUP path seeds INTRO_BUBBLES_LANDING
+        # in bot/telegram_handler.py. raw_message="[start]" so chat/history omits the
+        # phantom user bubble (see api/chat.py _display_user_text).
+        intro_bubbles = build_ios_landing_intro(
             name=user.name,
             primary_goal=user.primary_goal,
-            goal_phrase=GOAL_PHRASE_MAP.get(user.primary_goal or ""),
+            current_weight_kg=user.current_weight_kg,
+            goal_weight_kg=user.goal_weight_kg,
             calorie_target=(user.preferences.calorie_target if user.preferences else None),
             protein_target=(user.preferences.protein_target if user.preferences else None),
-            carb_target=(user.preferences.carb_target if user.preferences else None),
-            fat_target=(user.preferences.fat_target if user.preferences else None),
+        )
+        await log_conversation(
+            db, user.id, "[start]", "|||".join(intro_bubbles),
+            source_type="text", platform="ios",
         )
 
         logger.info(
@@ -245,8 +300,8 @@ async def exchange_pairing_code(req: PairingCodeRequest) -> PairingCodeResponse:
         )
 
         return PairingCodeResponse(
-            token=issue_session_token(verified_identity),
-            identity=verified_identity,
+            token=issue_session_token(user.telegram_id),
+            identity=user.telegram_id,
             welcome=welcome,
         )
 

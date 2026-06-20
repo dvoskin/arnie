@@ -103,8 +103,16 @@ async def find_user_by_apple_sub(db: AsyncSession, apple_sub: str) -> Optional[U
     """Look up a user by their bound Apple Sign-in subject. Returns None if no
     user has this sub bound. Used by the session-create flow to recognize a
     returning Apple user (potentially from a different device) and route them
-    back to their existing row."""
-    result = await db.execute(select(User).where(User.apple_sub == apple_sub))
+    back to their existing row.
+
+    Eager-loads preferences so callers that snapshot the profile (e.g. the SETUP
+    exchange's welcome-back payload) can read `user.preferences` without tripping
+    async lazy-load."""
+    result = await db.execute(
+        select(User)
+        .where(User.apple_sub == apple_sub)
+        .options(selectinload(User.preferences))
+    )
     return result.scalar_one_or_none()
 
 

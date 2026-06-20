@@ -79,6 +79,71 @@ INTRO_BUBBLES_LANDING = [
 ]
 
 
+def build_ios_landing_intro(
+    name: str | None,
+    primary_goal: str | None,
+    current_weight_kg: float | None,
+    goal_weight_kg: float | None,
+    calorie_target: int | None,
+    protein_target: int | None,
+) -> list[str]:
+    """iOS-gated opening bubbles after a web-form SETUP code is redeemed in the app.
+
+    Hand-authored + interpolated (deterministic, like INTRO_BUBBLES_LANDING) — NOT
+    LLM-generated. This is the iOS-only counterpart: the web form is the richest-
+    context entry, so the open reflects the plan back (goal in coach language, the
+    weight journey, the daily targets) to make the most-invested user feel known,
+    then drives the FIRST food-or-workout log with an iOS-native cue (snap a photo /
+    just tell me) and a passive "I get sharper as you go" line — never a question,
+    never an intake. Telegram / iMessage keep INTRO_BUBBLES_LANDING; this variant is
+    iOS-only and is seeded into the conversation log by api/auth_routes.py, so the
+    app renders it on first history load (chat/history splits each turn on |||).
+
+    Voice rules honored: sentence case, NO em dashes, one emoji on the strongest
+    beat, inline-markdown **bold** on the numbers (the iOS renderer supports bold;
+    Telegram does not, which is why this is gated). GOAL_PHRASE_MAP protects the
+    "never label the goal back" rule.
+    """
+    def _lbs(kg: float | None) -> int | None:
+        return round(kg * 2.20462) if kg else None
+
+    first = (name or "").strip().split(" ")[0]
+    greeting = f"Hey {first} 👊" if first else "Hey 👊"
+
+    goal_phrase = GOAL_PHRASE_MAP.get((primary_goal or "").lower())
+    cur, goal = _lbs(current_weight_kg), _lbs(goal_weight_kg)
+
+    # Goal/weight clause — coach language, never the raw label; bold the shape.
+    if primary_goal in ("cut", "bulk") and cur and goal:
+        body = f"We're **{goal_phrase}**, {cur} to **{goal} lbs**"
+    elif primary_goal == "maintain" and cur:
+        body = f"We're **holding steady at {cur} lbs**"
+    elif goal_phrase:
+        body = f"We're **{goal_phrase}**"
+    else:
+        body = "Your plan's set"
+
+    # Targets clause — only when present (the form collects them, but stay safe).
+    if calorie_target and protein_target:
+        body += f", at **{calorie_target:,} cal** and **{protein_target}g protein** a day."
+    elif calorie_target:
+        body += f", at **{calorie_target:,} cal** a day."
+    else:
+        body += "."
+    body += " Locked in."
+
+    reflection = f"Got everything from your signup. {body}"
+
+    # First move — food OR workout, iOS-native input cues, passive enrichment
+    # (no question), ends on the action.
+    first_move = (
+        "The more you log, the sharper I get. "
+        "Snap a photo of what you're eating, tell me what you ate, or log a workout instead."
+    )
+
+    return [greeting, reflection, first_move]
+
+
 ONBOARDING_BASE = """\
 You are Arnie. A new client just texted you for the first time. Your job: get them
 set up FAST and into their first log. This is a conversation, not a form, not an

@@ -15,7 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncSession
 
 from api.auth_routes import PairingCodeRequest, exchange_pairing_code
-from db.models import PreRegistration, User
+from db.models import ConversationLog, PreRegistration, User
 
 
 # ── Fixtures ─────────────────────────────────────────────────────────────────
@@ -117,6 +117,47 @@ async def test_happy_path_applies_profile_marks_onboarded_returns_welcome(
 
 
 @pytest.mark.asyncio
+async def test_happy_path_seeds_ios_intro_into_conversation_log(
+    patched_session_local, db, make_pre_reg,
+):
+    """The redeem seeds Arnie's iOS opening into the conversation log so the app
+    renders a warm, profile-aware welcome on first history load (instead of the
+    generic empty state). iOS-only — Telegram seeds INTRO_BUBBLES_LANDING in the
+    bot handler. raw_message='[start]' so chat/history omits the phantom user
+    bubble; the response is |||-joined so chat/history splits it into bubbles."""
+    await make_pre_reg(code="SETUP-SEED01", profile=_full_form_profile())
+
+    await exchange_pairing_code(
+        PairingCodeRequest(
+            code="SETUP-SEED01", provider="device", credential="ios:dev-seed",
+        )
+    )
+
+    user = (await db.execute(
+        select(User).where(User.telegram_id == "ios:dev-seed")
+    )).scalar_one()
+    rows = (await db.execute(
+        select(ConversationLog).where(ConversationLog.user_id == user.id)
+    )).scalars().all()
+
+    assert len(rows) == 1
+    row = rows[0]
+    assert row.platform == "ios"          # gated to the native app
+    assert row.raw_message == "[start]"   # → _display_user_text returns None (no user bubble)
+
+    bubbles = [b.strip() for b in row.response.split("|||") if b.strip()]
+    assert len(bubbles) == 3
+    assert bubbles[0] == "Hey Danny 👊"
+    # Reflection: goal in coach language + weight journey + targets, bolded for iOS.
+    assert "leaning out" in bubbles[1]
+    assert "175 lbs" in bubbles[1]        # goal_weight_lbs (175) round-trips back to 175 lbs
+    assert "**2,180 cal**" in bubbles[1]
+    assert "**175g protein**" in bubbles[1]
+    # First move: food OR workout, passive enrichment, ends on action.
+    assert "log a workout" in bubbles[2]
+
+
+@pytest.mark.asyncio
 async def test_happy_path_consumes_code_so_second_call_410s(
     patched_session_local, db, make_pre_reg,
 ):
@@ -182,24 +223,28 @@ async def test_already_consumed_code_returns_410(patched_session_local, make_pre
 
 
 @pytest.mark.asyncio
-async def test_already_onboarded_user_returns_409_and_consumes_code(
+async def test_already_onboarded_user_signs_back_in_without_consuming_code(
     patched_session_local, db, make_pre_reg, make_user,
 ):
-    """Replay protection — the code is consumed BEFORE the onboarded check,
-    mirroring the Telegram bot's SETUP-XXX flow. Existing account is untouched."""
+    """Returning user ("I already have an account"). Instead of erroring, the
+    endpoint hands back a session for the existing account and leaves BOTH the
+    account and the code untouched — so a mistaken "Get started" tap by someone
+    who's already set up can neither strand their data nor burn a code."""
     existing = await make_user(telegram_id="ios:already-set", name="Original")
     existing.onboarding_completed = True
     await db.commit()
 
     await make_pre_reg(code="SETUP-DUPE01")
 
-    with pytest.raises(HTTPException) as exc:
-        await exchange_pairing_code(
-            PairingCodeRequest(
-                code="SETUP-DUPE01", provider="device", credential="ios:already-set",
-            )
+    resp = await exchange_pairing_code(
+        PairingCodeRequest(
+            code="SETUP-DUPE01", provider="device", credential="ios:already-set",
         )
-    assert exc.value.status_code == 409
+    )
+    # Signed straight back into the existing account (no exception, real token).
+    assert resp.identity == "ios:already-set"
+    assert resp.token
+    assert resp.welcome.name == "Original"
 
     # Existing account left as-is (name not overwritten by the form's "Danny").
     user = (await db.execute(
@@ -207,11 +252,11 @@ async def test_already_onboarded_user_returns_409_and_consumes_code(
     )).scalar_one()
     assert user.name == "Original"
 
-    # Code WAS consumed → a fresh attempt with the same code now hits the 410 path.
+    # Code NOT consumed — the returning user didn't spend it; it stays valid.
     entry = (await db.execute(
         select(PreRegistration).where(PreRegistration.code == "SETUP-DUPE01")
     )).scalar_one()
-    assert entry.consumed_at is not None
+    assert entry.consumed_at is None
 
 
 @pytest.mark.asyncio
