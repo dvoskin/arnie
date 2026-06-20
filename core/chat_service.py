@@ -165,6 +165,10 @@ async def run_chat_turn(
         db, user.id, text, log_text, source_type=_source,
         parsed_intent=(",".join(turn.health_flags) or None),
         platform=platform,
+        # Persist the turn's typed cards so native clients can rehydrate them on
+        # history restore (otherwise the transcript reloads text-only and cards
+        # vanish). Empty for chat-bot / text-only turns → stored as null.
+        cards=(turn.response.cards or None),
     )
 
     # ── Background profile synthesis + reflection ─────────────────────────────

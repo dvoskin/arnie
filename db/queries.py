@@ -9,6 +9,7 @@ from db.models import (
 )
 from datetime import date, datetime, timedelta
 from typing import Optional, List
+import json
 import pytz
 
 
@@ -550,13 +551,18 @@ async def log_conversation(db: AsyncSession, user_id: int, raw_message: str,
                            response: str, parsed_intent: str = None,
                            source_type: str = "text",
                            skills_fired: str | None = None,
-                           platform: str | None = None):
+                           platform: str | None = None,
+                           cards: Optional[list] = None):
     """Persist one conversation turn.
 
     `platform` tags which surface the turn happened on ("telegram" | "imessage"
     | "web"). Optional + defaults to the model default ("telegram") so existing
     callers are unchanged; the dashboard web-chat passes platform="web" so the
-    unified thread can label it correctly across all surfaces."""
+    unified thread can label it correctly across all surfaces.
+
+    `cards` is the turn's typed inline-card list (Response.cards). Stored as JSON
+    so native clients can rehydrate the rich cards on history restore. Only
+    written when non-empty — text-only / chat-bot turns leave it null."""
     entry = ConversationLog(
         user_id=user_id,
         raw_message=raw_message,
@@ -567,6 +573,8 @@ async def log_conversation(db: AsyncSession, user_id: int, raw_message: str,
     )
     if platform is not None:
         entry.platform = platform
+    if cards:
+        entry.cards_json = json.dumps(cards)
     db.add(entry)
     await db.commit()
 

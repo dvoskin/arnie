@@ -178,6 +178,8 @@ async def _migrate(conn):
         ("users", "user_bio_updated_at", "DATETIME"),
         # ── 2026-06-16: per-set variable load ──────────────────────────────────
         ("exercise_entries", "weights", "VARCHAR"),
+        # ── 2026-06-20: persist typed inline cards for native history restore ───
+        ("conversation_logs", "cards_json", "TEXT"),
     ]
 
     for table, column, ddl in additions:

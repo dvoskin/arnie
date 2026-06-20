@@ -267,6 +267,11 @@ class ConversationLog(Base):
     source_type = Column(String, default="text")
     platform = Column(String, default="telegram")   # "telegram" | "imessage" | "web"
     skills_fired = Column(String)                    # comma-separated skill names that triggered
+    # JSON-encoded list of typed inline cards emitted this turn (macro/recap/log/
+    # suggestion cards). Persisted so native clients can rehydrate the rich cards
+    # when restoring history — without this the transcript reloads text-only and
+    # the cards vanish. Null/empty for turns with no cards and for chat-bot turns.
+    cards_json = Column(Text)
 
     user = relationship("User", back_populates="conversation_logs")
 

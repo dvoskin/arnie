@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import json
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
@@ -252,11 +253,34 @@ async def chat_history(identity: str = Depends(current_identity), limit: int = 4
 
         user_text = _display_user_text(row)
         if user_text:
-            messages.append({"author": "user", "text": user_text, "created_at": ts_iso})
-        for bubble in (row.response or "").split("|||"):
-            bubble = bubble.strip()
-            if bubble:
-                messages.append({"author": "arnie", "text": bubble, "created_at": ts_iso})
+            msg = {"author": "user", "text": user_text, "created_at": ts_iso}
+            # Flag voice turns so the client can restore a voice-style bubble
+            # (transcript shown, no playback — the audio isn't persisted) instead
+            # of a plain text bubble.
+            raw = (row.raw_message or "").strip()
+            if row.source_type == "voice" or raw.startswith("[Voice note]:"):
+                msg["voice"] = True
+            messages.append(msg)
+
+        # Typed inline cards for this turn (stored as JSON on the row). Attach
+        # them to the turn's LAST Arnie bubble so they render beneath the reply,
+        # mirroring the live order (text bubbles, then cards).
+        cards = []
+        if getattr(row, "cards_json", None):
+            try:
+                cards = json.loads(row.cards_json) or []
+            except Exception:
+                cards = []
+
+        bubbles = [b.strip() for b in (row.response or "").split("|||") if b.strip()]
+        for i, bubble in enumerate(bubbles):
+            m = {"author": "arnie", "text": bubble, "created_at": ts_iso}
+            if cards and i == len(bubbles) - 1:
+                m["cards"] = cards
+            messages.append(m)
+        # Card-only turn (no text bubbles) — still surface the cards.
+        if cards and not bubbles:
+            messages.append({"author": "arnie", "text": "", "created_at": ts_iso, "cards": cards})
 
     return {"v": WIRE_VERSION, "messages": messages}
 
