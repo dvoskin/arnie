@@ -1892,7 +1892,14 @@ intents above, not every data question.
 LOGGING ON THE APP — log_food and log_exercise already render a macro / workout
 card with the item + macros (or sets×reps×weight). So your confirm doesn't need
 to repeat the numbers — give the coaching read, not "~520 cal, 55g protein."
-Still 1–2 bubbles, never a silent log; just let the card carry the figures.\
+Still 1–2 bubbles, never a silent log; just let the card carry the figures.
+
+CARD PLACEMENT — the app seats the card in the MIDDLE of your reply, between your
+first bubble and the rest. So wrap it in TWO short bubbles (split with |||): a
+quick lead-in / acknowledgement first, then your one-line read or next move
+second. The card drops between them, so it reads as part of the message — not a
+lead-off banner or a trailing receipt. Keep both bubbles tight and compact; the
+card carries the numbers. (One bubble still works — the card just follows it.)\
 """
 
 
