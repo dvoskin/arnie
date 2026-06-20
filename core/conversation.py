@@ -757,21 +757,89 @@ async def run_turn(
     # — which is what the user sees confirmed by Arnie's reply.
     if tool_calls:
         for tc in tool_calls:
-            if tc.get("name") != "log_food":
-                continue
+            name = tc.get("name")
             inp = tc.get("input") or {}
-            resp.cards.append({
-                "type": "macro_card",
-                "payload": {
-                    "name":      inp.get("food_name") or "",
-                    "quantity":  inp.get("quantity") or "",
-                    "calories":  int(round(inp.get("calories") or 0)),
-                    "protein_g": int(round(inp.get("protein")  or 0)),
-                    "carbs_g":   int(round(inp.get("carbs")    or 0)),
-                    "fats_g":    int(round(inp.get("fats")     or 0)),
-                    "source":    "photo" if inp.get("from_photo") else "manual",
-                },
-            })
+            if name == "log_food":
+                resp.cards.append({
+                    "type": "macro_card",
+                    "payload": {
+                        "name":      inp.get("food_name") or "",
+                        "quantity":  inp.get("quantity") or "",
+                        "calories":  int(round(inp.get("calories") or 0)),
+                        "protein_g": int(round(inp.get("protein")  or 0)),
+                        "carbs_g":   int(round(inp.get("carbs")    or 0)),
+                        "fats_g":    int(round(inp.get("fats")     or 0)),
+                        "source":    "photo" if inp.get("from_photo") else "manual",
+                        # DB row id stashed by the log_food dispatcher. Native
+                        # clients use it to inline-edit the entry via the
+                        # foodEdit API. nil for tests or any path that didn't
+                        # create a real DB row.
+                        "entry_id":  inp.get("_entry_id"),
+                    },
+                })
+            elif name == "log_exercise":
+                is_cardio = bool(inp.get("is_cardio") or inp.get("cardio_type"))
+                resp.cards.append({
+                    "type": "workout_card",
+                    "payload": {
+                        "name":             inp.get("exercise_name") or "",
+                        "sets":             inp.get("sets"),
+                        "reps":             str(inp.get("reps") or "") or None,
+                        "weight":           inp.get("weight"),
+                        "weight_unit":      inp.get("weight_unit") or "lbs",
+                        "rir":              inp.get("rir"),
+                        "duration_minutes": inp.get("duration_minutes"),
+                        "cardio_type":      inp.get("cardio_type"),
+                        "is_cardio":        is_cardio,
+                        # DB row id from the log_exercise dispatcher — iOS
+                        # uses it to inline-edit/delete via exerciseEdit.
+                        "entry_id":         inp.get("_entry_id"),
+                    },
+                })
+            elif name == "show_day_recap":
+                # The dispatcher stashed the full structured snapshot on
+                # `inp["_recap_payload"]`; pass it straight through.
+                recap = inp.get("_recap_payload")
+                if recap:
+                    resp.cards.append({
+                        "type":    "recap_card",
+                        "payload": recap,
+                    })
+            elif name == "show_food_log":
+                log_payload = inp.get("_log_payload")
+                if log_payload:
+                    resp.cards.append({
+                        "type":    "food_log_card",
+                        "payload": log_payload,
+                    })
+            elif name == "show_workout_log":
+                log_payload = inp.get("_log_payload")
+                if log_payload:
+                    resp.cards.append({
+                        "type":    "workout_log_card",
+                        "payload": log_payload,
+                    })
+            elif name == "suggest_meals":
+                meals = inp.get("meals") or []
+                if meals:
+                    resp.cards.append({
+                        "type": "meal_suggestions_card",
+                        "payload": {
+                            "title": inp.get("title"),
+                            "meals": meals,
+                        },
+                    })
+            elif name == "suggest_workout":
+                exercises = inp.get("exercises") or []
+                if exercises:
+                    resp.cards.append({
+                        "type": "workout_plan_card",
+                        "payload": {
+                            "title":     inp.get("title"),
+                            "split_day": inp.get("split_day"),
+                            "exercises": exercises,
+                        },
+                    })
 
     # ── Dashboard link after FIRST food/workout log (once per account) ────────
     # Telegram only. iMessage and iOS skip this nudge:

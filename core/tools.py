@@ -487,6 +487,155 @@ _HISTORY_TOOLS = [
             "required": ["metric", "period"],
         },
     },
+    {
+        "name": "show_day_recap",
+        "description": (
+            "Surface a visual snapshot of TODAY'S totals — calories vs target, "
+            "macros, water, training done. Call this when the user asks for a "
+            "summary, recap, or current standing: 'how am I doing today?', "
+            "'recap', 'where am I at', 'show my totals', 'today so far', "
+            "'how's the day looking?'. Native clients render it as an inline "
+            "card; the card itself is the answer, so keep your text reply "
+            "short — one short sentence with a quick take, no number dump. "
+            "Do NOT call for past dates (use query_history) or as an opener "
+            "the user didn't ask for."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {},
+        },
+    },
+    {
+        "name": "show_food_log",
+        "description": (
+            "Surface every food entry the user logged on a specific day as an "
+            "inline expandable card — compact by default (date + total cal + "
+            "entry count), expand to see each item. Call when the user asks "
+            "'what have I eaten today?', 'show me my food', 'food log for "
+            "yesterday', 'what did I eat on monday?'. For multi-day windows "
+            "or trend questions, use query_history instead. Keep your text "
+            "reply short — the card is the answer."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "date": {
+                    "type": "string",
+                    "description": "Optional. 'today', 'yesterday', 'N days ago', weekday name ('monday'), or YYYY-MM-DD. Default = today."
+                },
+            },
+        },
+    },
+    {
+        "name": "show_workout_log",
+        "description": (
+            "Surface every exercise the user logged on a specific day as an "
+            "inline expandable card — compact by default (date + total sets / "
+            "minutes + exercise count), expand to see each lift / cardio "
+            "block. Call when the user asks 'what did I train today?', "
+            "'show me yesterday's workout', 'monday's lifts'. For multi-day "
+            "trends or a specific lift's history, use query_history. Keep "
+            "your text reply short — the card is the answer."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "date": {
+                    "type": "string",
+                    "description": "Optional. 'today', 'yesterday', 'N days ago', weekday name, or YYYY-MM-DD. Default = today."
+                },
+            },
+        },
+    },
+    {
+        "name": "suggest_meals",
+        "description": (
+            "Offer 2–4 meal IDEAS as an inline carousel. Call when the user "
+            "asks 'what should I eat?', 'meal ideas', 'something quick for "
+            "lunch', etc. Fit the user's remaining macros + time of day + "
+            "stated preferences. Each meal includes its macros so the "
+            "carousel doubles as a one-tap log. Native clients render the "
+            "carousel; keep your text reply short — one line of context, "
+            "not a numbered list. DO NOT call to log a meal the user "
+            "already named (use log_food); this is for *ideas*."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "title": {
+                    "type": "string",
+                    "description": "Short heading for the carousel — 'Fits 1,100 left', 'Quick lunch ideas', 'High protein options'."
+                },
+                "meals": {
+                    "type": "array",
+                    "minItems": 2,
+                    "maxItems": 4,
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "name":      {"type": "string"},
+                            "calories":  {"type": "integer"},
+                            "protein_g": {"type": "integer"},
+                            "carbs_g":   {"type": "integer"},
+                            "fats_g":    {"type": "integer"},
+                            "note":      {"type": "string", "description": "Optional one-liner — why this fits, prep hint."},
+                        },
+                        "required": ["name", "calories", "protein_g", "carbs_g", "fats_g"],
+                    },
+                },
+            },
+            "required": ["meals"],
+        },
+    },
+    {
+        "name": "suggest_workout",
+        "description": (
+            "Show today's training plan as an inline carousel of exercises "
+            "with target sets×reps and load. Call when the user asks 'what "
+            "should I train today?', 'push day?', 'give me a workout', or "
+            "when starting a session and they want guidance. Tap a tile = "
+            "logs that exercise, so the carousel doubles as the workout "
+            "guide. Anchor target loads on the user's recent baseline + "
+            "trend (visible in [WORKOUT HISTORY] context); progress 2.5–5 "
+            "lb when last week hit all reps clean. Native clients render "
+            "the carousel; keep your text reply short — one line on focus "
+            "+ flow, no full list. DO NOT call to log a workout already "
+            "named (use log_exercise)."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "title": {
+                    "type": "string",
+                    "description": "Short heading — 'Push day', 'Pull · heavy', 'Legs · hypertrophy'."
+                },
+                "split_day": {
+                    "type": "string",
+                    "description": "The split this maps to: 'push', 'pull', 'legs', 'upper', 'lower', 'full body', 'cardio', 'rest', or a custom label.",
+                },
+                "exercises": {
+                    "type": "array",
+                    "minItems": 2,
+                    "maxItems": 6,
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "name":             {"type": "string"},
+                            "sets":             {"type": "integer"},
+                            "reps":             {"type": "string", "description": "'8' or '8,8,8' for per-set targets."},
+                            "target_weight":    {"type": "number"},
+                            "weight_unit":      {"type": "string", "enum": ["lbs", "kg"], "default": "lbs"},
+                            "duration_minutes": {"type": "number", "description": "For cardio entries."},
+                            "is_cardio":        {"type": "boolean"},
+                            "note":             {"type": "string", "description": "Optional — '+5 lb vs last week', 'drop set on final', 'finisher'."},
+                        },
+                        "required": ["name"],
+                    },
+                },
+            },
+            "required": ["exercises"],
+        },
+    },
 ]
 
 

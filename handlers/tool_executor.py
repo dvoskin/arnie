@@ -1108,7 +1108,7 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
         from datetime import datetime as _dt
         _meal_time = _dt.utcnow()
 
-        await add_food_entry(
+        _new_food = await add_food_entry(
             db,
             target_log.id,
             raw_input=str(inp),
@@ -1129,6 +1129,12 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
             alcohol_units=inp.get("alcohol_units"),
             from_photo=from_photo,
         )
+        # Stash the entry id on the tool_call's input so conversation.py can
+        # surface it in the macro_card payload. Native clients (iOS) use it
+        # to edit/delete the entry directly via the foodEdit API instead of
+        # round-tripping a "please update X" message through Arnie.
+        if isinstance(inp, dict) and getattr(_new_food, "id", None) is not None:
+            inp["_entry_id"] = _new_food.id
         await db.refresh(target_log)
 
         # Item-scoped auto-resolve: close only the food_clarification rows whose
@@ -1292,7 +1298,7 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
                 return format_dedup_result(dup, now_utc=now_utc)
 
         is_cardio = inp.get("is_cardio", False) or bool(inp.get("cardio_type"))
-        await add_exercise_entry(
+        _new_ex = await add_exercise_entry(
             db,
             target_log.id,
             exercise_name=canonical_name,
@@ -1305,6 +1311,11 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
             source_type=source_type,
             is_cardio=is_cardio,
         )
+        # Same id stash as log_food: native clients use this for inline
+        # edit/delete via the exerciseEdit API without round-tripping a
+        # "please update X" message through Arnie.
+        if isinstance(inp, dict) and getattr(_new_ex, "id", None) is not None:
+            inp["_entry_id"] = _new_ex.id
         await db.refresh(target_log)
         date_label = f" (for {past_date})" if past_date else ""
 
@@ -2352,6 +2363,142 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
         except Exception as e:
             logger.error(f"store_attribute failed: {e}")
             return f"Failed to store attribute: {e}"
+
+    elif name == "show_day_recap":
+        # Pull today's totals once, stash the structured payload on the
+        # tool_call's input so conversation.py can emit a recap_card from
+        # the exact same snapshot. Tool result is intentionally short — the
+        # card carries the answer; the LLM's follow-up text adds the take.
+        from api.native_data import day_data
+        snapshot = await day_data(db, user, target_date=None)
+        targets = snapshot.get("targets") or {}
+        day = snapshot.get("day") or {}
+        food_entries = day.get("food_entries") or []
+        payload = {
+            "date": day.get("date"),
+            "totals": {
+                "calories": day.get("calories", 0),
+                "protein":  day.get("protein", 0),
+                "carbs":    day.get("carbs", 0),
+                "fats":     day.get("fats", 0),
+                "water_ml": day.get("water_ml", 0),
+            },
+            "targets": {
+                "calories": targets.get("calories"),
+                "protein":  targets.get("protein"),
+                "carbs":    targets.get("carbs"),
+                "fats":     targets.get("fats"),
+            },
+            "workout_completed": bool(day.get("workout_completed")),
+            "cardio_completed":  bool(day.get("cardio_completed")),
+            "entries_logged":    len(food_entries),
+        }
+        if isinstance(inp, dict):
+            inp["_recap_payload"] = payload
+        return (
+            f"Day so far — {payload['totals']['calories']} cal "
+            f"(target {targets.get('calories') or 'unset'}), "
+            f"P{payload['totals']['protein']} C{payload['totals']['carbs']} "
+            f"F{payload['totals']['fats']}. "
+            f"Workout={'yes' if payload['workout_completed'] else 'no'}, "
+            f"cardio={'yes' if payload['cardio_completed'] else 'no'}. "
+            "Card rendered to the user — keep your reply short."
+        )
+
+    elif name == "show_food_log" or name == "show_workout_log":
+        # Pull the day's logged entries and stash a structured payload for
+        # conversation.py to wrap in a card. `date` accepts the same loose
+        # forms log_food does ('yesterday', 'monday', YYYY-MM-DD).
+        from api.native_data import day_data
+        target_date = _parse_log_date(inp.get("date"), getattr(user, "timezone", "UTC"))
+        snapshot = await day_data(db, user, target_date=target_date)
+        day = snapshot.get("day") or {}
+        date_iso = day.get("date") or (str(target_date) if target_date else None)
+
+        if name == "show_food_log":
+            entries_raw = day.get("food_entries") or []
+            entries = [
+                {
+                    "id":         e.get("id"),
+                    "name":       e.get("name") or "",
+                    "quantity":   e.get("quantity") or "",
+                    "calories":   int(e.get("calories") or 0),
+                    "protein_g":  int(e.get("protein") or 0),
+                    "carbs_g":    int(e.get("carbs") or 0),
+                    "fats_g":     int(e.get("fats") or 0),
+                    "timestamp":  e.get("timestamp"),
+                    "from_photo": bool(e.get("from_photo")),
+                }
+                for e in entries_raw
+            ]
+            payload = {
+                "date":   date_iso,
+                "totals": {
+                    "calories": int(day.get("calories", 0)),
+                    "protein":  int(day.get("protein", 0)),
+                    "carbs":    int(day.get("carbs", 0)),
+                    "fats":     int(day.get("fats", 0)),
+                },
+                "entries": entries,
+            }
+            if isinstance(inp, dict):
+                inp["_log_payload"] = payload
+            return f"Showed food log for {date_iso or 'today'} — {len(entries)} entries, {payload['totals']['calories']} cal."
+
+        # show_workout_log
+        entries_raw = day.get("exercise_entries") or []
+        entries = []
+        total_sets = 0
+        total_cardio_min = 0.0
+        for e in entries_raw:
+            is_cardio = bool(e.get("is_cardio") or e.get("cardio_type"))
+            sets = e.get("sets")
+            reps = e.get("reps")
+            weight = e.get("weight")
+            dur = e.get("duration_minutes")
+            if is_cardio and dur is not None:
+                total_cardio_min += float(dur)
+            elif sets is not None:
+                total_sets += int(sets)
+            entries.append({
+                "id":               e.get("id"),
+                "name":             e.get("name") or "",
+                "sets":             sets,
+                "reps":             reps,
+                "weight":           weight,
+                "weight_unit":      e.get("weight_unit") or "lbs",
+                "duration_minutes": dur,
+                "cardio_type":      e.get("cardio_type"),
+                "is_cardio":        is_cardio,
+                "rir":              e.get("rir"),
+            })
+        payload = {
+            "date":   date_iso,
+            "totals": {
+                "sets":           total_sets,
+                "cardio_minutes": int(total_cardio_min),
+                "lifts":          sum(1 for x in entries if not x["is_cardio"]),
+                "cardio":         sum(1 for x in entries if x["is_cardio"]),
+            },
+            "entries": entries,
+        }
+        if isinstance(inp, dict):
+            inp["_log_payload"] = payload
+        return f"Showed workout log for {date_iso or 'today'} — {len(entries)} entries."
+
+    elif name == "suggest_meals":
+        # Pure UI tool — the LLM authored the meal ideas in `inp`;
+        # conversation.py emits the carousel card from that same input.
+        meals = inp.get("meals") or []
+        return f"Showed {len(meals)} meal idea{'' if len(meals) == 1 else 's'} as a carousel — keep your reply short."
+
+    elif name == "suggest_workout":
+        exercises = inp.get("exercises") or []
+        day = inp.get("split_day") or ""
+        return (
+            f"Showed {len(exercises)} exercise{'' if len(exercises) == 1 else 's'} "
+            f"({day or 'today'}) as a plan carousel — keep your reply short."
+        )
 
     elif name == "track_metric":
         from db.queries import upsert_user_metric
