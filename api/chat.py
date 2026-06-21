@@ -98,6 +98,19 @@ class TurnMeta(BaseModel):
     just_completed: bool
 
 
+def _turn_tools(turn) -> list[str]:
+    """Unique tool names fired this turn, in call order — drives the iOS tool
+    chips ("Logged", "Reviewed your week", …). The client owns the name→label
+    mapping and filtering; the wire just reports raw names. Additive: clients
+    that ignore `tools` are unaffected."""
+    seen: list[str] = []
+    for tc in (getattr(turn, "tool_calls", None) or []):
+        name = tc.get("name") if isinstance(tc, dict) else None
+        if name and name not in seen:
+            seen.append(name)
+    return seen
+
+
 # ── Shared core ──────────────────────────────────────────────────────────────
 async def _coached_reply(identity: str, text: str, source_type: str,
                          lat: Optional[float] = None,
@@ -140,6 +153,7 @@ async def _coached_reply(identity: str, text: str, source_type: str,
                 raise HTTPException(status_code=500, detail="coaching turn failed")
 
     payload = serialize_response(turn.response)
+    payload["tools"] = _turn_tools(turn)
     payload["meta"] = TurnMeta(
         in_onboarding=turn.in_onboarding,
         just_completed=turn.just_completed,
@@ -342,6 +356,7 @@ async def _stream_turn(ws: WebSocket, identity: str, message: str) -> None:
     # after the stream), plus reaction/effect/buttons/link/meta.
     done = serialize_response(turn.response)
     done["bubbles"] = turn.response.bubbles[turn.streamed_bubble_count:]
+    done["tools"] = _turn_tools(turn)
     done["type"] = "done"
     done["meta"] = TurnMeta(
         in_onboarding=turn.in_onboarding,
