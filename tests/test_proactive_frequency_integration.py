@@ -12,6 +12,8 @@ import pytest
 import pytest_asyncio
 from types import SimpleNamespace
 
+from freezegun import freeze_time
+
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from sqlalchemy.pool import StaticPool
 
@@ -134,7 +136,13 @@ async def test_minimal_user_warmup_burst_does_not_fire(freq_env):
     )
 
 
+# 16:00 UTC = 12:00 in America/New_York (EDT, the seeded tz) — squarely inside
+# the 9am-9pm local proactive window the warmup nudge requires. Without freezing,
+# the nudge only fires when the suite happens to run during NY daytime, so this
+# test was non-hermetic on wall clock alone (it never even reached the slot gate
+# at night). hours_in_age is relative to the same frozen now(), so it stays 0.5h.
 @pytest.mark.asyncio
+@freeze_time("2026-06-15 16:00:00")
 async def test_heavy_user_warmup_burst_fires(freq_env):
     """Same fresh user on 'heavy' frequency DOES get the warmup burst —
     confirms the gate is selective, not blanket-off."""

@@ -12,19 +12,26 @@ Each section is labelled with the scenario class it covers.
 """
 import pytest
 from datetime import date, timedelta
-from datetime import datetime as _dt
 from types import SimpleNamespace
 
-import pytz
+from freezegun import freeze_time
 
 from tests.conftest import _prefs, _log
 from core.food_intelligence import reconcile_macros
 from handlers.tool_executor import deterministic_confirmation, _parse_log_date
 from core.turn_health import looks_like_stall, looks_like_dead_end, detect_turn_flags
 
-# _parse_log_date uses pytz UTC to compute "today", so tests must match.
-# Using date.today() diverges across the local-midnight boundary.
-_UTC_TODAY = _dt.now(pytz.UTC).date()
+# Hermetic clock for the relative-date tests. _parse_log_date computes "today"
+# fresh from datetime.now() on every call, so the date math is only stable if the
+# test's reference and the function's clock agree. Capturing now() at import time
+# raced the real wall clock: a run that straddled UTC midnight (or shuffled test
+# order under pytest-randomly so these ran on a different calendar day than the
+# import) shifted the function's "today" by one day, breaking the boundary cases
+# ("exactly 730 days ago", "future date rejected"). Freezing both to a fixed
+# instant (noon, mid-month — far from any midnight/month/year edge) removes the
+# race entirely. The date chosen is arbitrary; only the day arithmetic matters.
+_FROZEN_NOW = "2026-06-15 12:00:00"
+_UTC_TODAY = date(2026, 6, 15)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -170,10 +177,15 @@ class TestReconcileMacros:
 # _parse_log_date — natural date parsing
 # ═══════════════════════════════════════════════════════════════════════════════
 
+@freeze_time(_FROZEN_NOW)
 class TestParseLogDate:
     """
     The LLM passes date strings from user speech. These must be parsed robustly.
     Critically: future dates and implausibly old dates must be rejected (return None).
+
+    The clock is frozen (see _FROZEN_NOW) so _parse_log_date's internal "today"
+    matches _UTC_TODAY below — the boundary cases ("exactly 730 days ago",
+    "future date rejected") are otherwise non-hermetic across the midnight edge.
     """
 
     def test_none_input_returns_none(self):

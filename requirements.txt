@@ -44,3 +44,11 @@ imageio-ffmpeg==0.6.0
 # ── Dev / test only (not imported by the app at runtime) ──────────────────────
 pytest==8.4.1
 pytest-asyncio==1.1.0
+# freezegun: freeze the wall clock in time-sensitive tests so relative-date math
+# (e.g. "exactly 730 days ago", "120 days back", warmup-window time-of-day) is
+# deterministic regardless of when/what order the suite runs.
+freezegun==1.5.5
+# pytest-randomly: shuffle test order each run to surface order-dependent /
+# non-hermetic tests. Auto-activates once installed; pin a seed with
+# --randomly-seed=<n> to reproduce a given ordering.
+pytest-randomly==4.1.0
