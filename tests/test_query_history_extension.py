@@ -453,19 +453,21 @@ async def test_last_365_window_covers_full_year(make_user, db):
 #    now." dead-air regression. ──────────────────────────────────────────────
 
 
-def test_query_history_is_in_voiced_result_tools():
+def test_query_history_voices_its_result():
     """query_history's answer lives ONLY in the tool result (the first LLM
     pass runs BEFORE the tool fires, so the model can never write the data
-    in pass 1 — only a heads-up bubble). It MUST be in _VOICED_RESULT_TOOLS
-    so the follow-up is forced even when the first pass already wrote
-    heads-up text. Without this, response_text stays as 'pulling that up'
-    and the user gets dead air after — the screenshot regression."""
+    in pass 1 — only a heads-up bubble). Under voice-by-default it MUST voice
+    its result (not be SILENT), so the follow-up is forced even when the first
+    pass already wrote heads-up text. Without this, response_text stays as
+    'pulling that up' and the user gets dead air after — the screenshot
+    regression."""
     import core.conversation as C
-    assert "query_history" in C._VOICED_RESULT_TOOLS, (
-        "query_history must be a voiced-result tool — otherwise a first-pass "
-        "heads-up ('pulling that up') becomes the whole reply and the actual "
-        "history data is silently dropped."
+    assert C._voices_result("query_history"), (
+        "query_history must voice its result — otherwise a first-pass heads-up "
+        "('pulling that up') becomes the whole reply and the actual history data "
+        "is silently dropped."
     )
+    assert "query_history" not in C._SILENT_TOOLS
 
 
 @pytest.mark.asyncio

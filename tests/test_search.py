@@ -116,9 +116,11 @@ def test_search_tool_name_is_exactly_web_search(search_on):
     # The registered tool is named exactly "web_search".
     names = _names(T.build_tools())
     assert _SEARCH_TOOL_NAME in names
-    # And the conversation re-voice set keys off the SAME literal.
+    # And the conversation layer voices its result (voice-by-default — web_search
+    # is not a SILENT side-effect tool).
     import core.conversation as C
-    assert _SEARCH_TOOL_NAME in C._VOICED_RESULT_TOOLS
+    assert C._voices_result(_SEARCH_TOOL_NAME)
+    assert _SEARCH_TOOL_NAME not in C._SILENT_TOOLS
 
 
 def test_search_rules_section_names_exactly_web_search():
@@ -348,11 +350,14 @@ async def test_web_search_forces_followup_over_first_pass_text(
     assert "let me check that for you" not in joined, "pre-search text leaked to user"
 
 
-async def test_non_voiced_non_logging_tool_keeps_first_pass_text_no_followup(
+async def test_voice_by_default_voices_a_setter_that_recomputes(
         monkeypatch, make_user, db, search_on):
-    """Control: a NON-voiced, NON-logging tool (update_profile) with first-pass text
-    present must NOT force a follow-up — only voiced-result tools do. The first-pass
-    text is kept. Proves C5 added a term, not a blanket force."""
+    """Voice-by-default: update_profile is NOT a SILENT tool, so its result is
+    voiced even when the first pass wrote a lead-in. This matters because the real
+    update_profile RECOMPUTES targets and returns 'TARGETS JUST CALCULATED: …' —
+    info the model could not have in pass 1. Under the old opt-in allowlists
+    update_profile was 'non-voiced' and those computed targets were dropped (the
+    same dead-air class voice-by-default eliminates)."""
     import core.conversation as C
 
     user = await make_user(telegram_id="951")
@@ -360,9 +365,52 @@ async def test_non_voiced_non_logging_tool_keeps_first_pass_text_no_followup(
 
     async def _fake_chat(messages, system, tools=True, max_tokens=4096, model=None):
         return {
-            "text": "locked in your new target.",
+            "text": "got it, crunching your new numbers.",  # lead-in, no targets yet
             "tool_calls": [{"name": "update_profile", "id": "p1",
-                            "input": {"fields": {"calorie_target": 2200}}}],
+                            "input": {"fields": {"current_weight_kg": 84}}}],
+            "raw_content": [{"x": 1}],
+            "stop_reason": "tool_use",
+        }
+
+    async def _fake_follow_up(messages, raw, tcs, results, system, max_tokens=512):
+        calls["follow_up"] += 1
+        return "you're set at 2,200 cal, 180g protein a day."
+
+    async def _fake_execute(tool_calls, user, log, db, source_type):
+        return {"update_profile": ("Profile updated. | TARGETS JUST CALCULATED: "
+                                   "2200 cal, 180g protein, 200g carbs, 70g fat.")}
+
+    monkeypatch.setattr(C, "chat", _fake_chat)
+    monkeypatch.setattr(C, "chat_follow_up", _fake_follow_up)
+    monkeypatch.setattr(C, "execute_tool_calls", _fake_execute)
+
+    result = await C.run_turn(
+        user, db,
+        messages=[{"role": "user", "content": "I'm 185 now"}],
+        system="SYS", platform="imessage",
+        in_onboarding=False, was_onboarding=False,
+    )
+    # Voice-by-default forces the follow-up so the recomputed targets reach the user.
+    assert calls["follow_up"] == 1, "voice-by-default must voice the recomputed result"
+    joined = " ".join(result.response.bubbles).lower()
+    assert "2,200 cal" in joined
+
+
+async def test_silent_tool_keeps_first_pass_text_no_followup(
+        monkeypatch, make_user, db, search_on):
+    """Control for the denylist: a SILENT side-effect tool (store_attribute) with
+    first-pass text present must NOT force a follow-up — voice-by-default is not a
+    blanket force. The first-pass text is kept."""
+    import core.conversation as C
+
+    user = await make_user(telegram_id="952")
+    calls = {"follow_up": 0}
+
+    async def _fake_chat(messages, system, tools=True, max_tokens=4096, model=None):
+        return {
+            "text": "noted, you train fasted in the mornings.",
+            "tool_calls": [{"name": "store_attribute", "id": "a1",
+                            "input": {"attribute_key": "trains_fasted", "value": "true"}}],
             "raw_content": [{"x": 1}],
             "stop_reason": "tool_use",
         }
@@ -372,7 +420,7 @@ async def test_non_voiced_non_logging_tool_keeps_first_pass_text_no_followup(
         return "SHOULD NOT BE USED"
 
     async def _fake_execute(tool_calls, user, log, db, source_type):
-        return {"update_profile": "Profile updated: ['calorie_target']"}
+        return {"store_attribute": "Stored attribute trains_fasted=true"}
 
     monkeypatch.setattr(C, "chat", _fake_chat)
     monkeypatch.setattr(C, "chat_follow_up", _fake_follow_up)
@@ -380,14 +428,13 @@ async def test_non_voiced_non_logging_tool_keeps_first_pass_text_no_followup(
 
     result = await C.run_turn(
         user, db,
-        messages=[{"role": "user", "content": "set my target to 2200"}],
+        messages=[{"role": "user", "content": "I always train fasted"}],
         system="SYS", platform="imessage",
         in_onboarding=False, was_onboarding=False,
     )
-    # No follow-up forced (not a voiced-result tool); first-pass text is kept.
-    assert calls["follow_up"] == 0, "non-voiced tool must not force a follow-up"
+    assert calls["follow_up"] == 0, "SILENT tool must not force a follow-up"
     joined = " ".join(result.response.bubbles).lower()
-    assert "locked in your new target" in joined
+    assert "noted, you train fasted" in joined
     assert "should not be used" not in joined
 
 

@@ -42,51 +42,47 @@ _LOGGING_TOOLS = frozenset({
     "log_body_weight", "log_water", "clear_day_log",
 })
 
-# Tools whose raw result MUST be re-voiced — the facts live ONLY in the tool
-# result, so a follow-up is forced even when the first pass already wrote text
-# (otherwise the search facts would never reach the user). Sibling of
-# _LOGGING_TOOLS, NOT an overload: these tools must take the generic re-voice
-# path, never the coach-unmute/deterministic_confirmation fallback (which is
-# for logging totals and is wrong for data-fetch tools).
+# Voice-by-default for tool results. After ANY tool that yields a user-facing
+# result, a follow-up runs to voice/close it — even when the first pass already
+# wrote a lead-in. Only SILENT tools (pure side-effects whose pass-1 text, if any,
+# is already the complete reply) skip the follow-up.
 #
-# RELATIONSHIP TO NEEDS_HEADS_UP_TOOLS (from tool_executor): every voiced-
-# result tool also gets a heads-up before execution. The remaining heads-up
-# tool (generate_image) does NOT need re-voice — its url + caption is what
-# gets delivered, not coached prose.
+# This INVERTS the old opt-in allowlists (_VOICED_RESULT_TOOLS / _CARD_CLOSE_TOOLS):
+# enrolling a tool was mandatory or its result was silently dropped whenever the
+# first pass wrote text — the recurring dead-air / teaser class (query_history,
+# then the native-card teaser, each fixed by remembering to add the tool). Default-
+# on fails SAFE: a newly added tool gets an extra voicing at worst, never a dropped
+# answer. The two failure modes it subsumes:
+#   • data-fetch tools (web_search, search_food_database, query_history, track_metric,
+#     find_nearby_places) — facts live ONLY in the tool result; the first pass ran
+#     before the tool, so it could only write a heads-up.
+#   • native-card tools (suggest_meals, suggest_workout, show_day_recap, show_food_log,
+#     show_workout_log) — the card carries the substance; the actionable close is a
+#     second bubble that must land after the card, in the follow-up pass.
 #
-# WHY query_history IS HERE: the first LLM pass runs BEFORE the tool fires,
-# so the model cannot see the history data in its first reply — only a
-# heads-up ("pulling that up") or pre-narration. If the heads-up was the
-# only first-pass text and we did NOT force the follow-up, response_text
-# stayed as "pulling that up" and the user got dead air after — exactly the
-# screenshot bug. The original "history figures it coaches on" assumption
-# was wrong: the model can only coach on history data in the follow-up turn.
+# The follow-up is text-only (chat_follow_up runs tools=False), so the result must
+# be voiceable from the tool_result + conversation. Logging tools take their own
+# branch below (deterministic_confirmation fallback); this governs everything else.
 #
-# WHY web_search / search_food_database ARE HERE: same shape. The USDA macros
-# / web facts live only in the tool result, the follow-up is text-only
-# (chat_follow_up runs tools=False), so without a forced re-voice the result
-# is dropped on the floor and the turn dead-ends.
-_VOICED_RESULT_TOOLS = frozenset({"web_search", "search_food_database", "query_history", "track_metric", "find_nearby_places"})
-
-# Native-card tools (iOS). These render their substance as an inline card; the
-# text reply is split lead-in ||| close with the card seated between (see
-# NATIVE_CARDS in prompts/arnie.py). The model writes the lead-in in the first
-# pass and then calls the card tool — generation STOPS at the tool_use, so the
-# actionable CLOSE bubble is meant to land AFTER the card, in a follow-up pass.
-# Without forcing that follow-up, need_followup stays False whenever a lead-in
-# exists (response_text is non-empty) and the close is never generated — leaving
-# a bare lead-in teaser ("here's what fits your last 900:") with no answer.
-#
-# Mechanically this is the same forced-follow-up as _VOICED_RESULT_TOOLS, but it
-# is kept a SEPARATE set because the rationale differs: there the facts live only
-# in the tool result and must be re-voiced; here the facts ARE on the wire (the
-# card), and we're recovering the dropped close, not re-voicing hidden output.
-# The card tool-results say "keep your reply short", so the follow-up writes a
-# tight close rather than restating the card.
-_CARD_CLOSE_TOOLS = frozenset({
-    "suggest_meals", "suggest_workout",
-    "show_day_recap", "show_food_log", "show_workout_log",
+# _SILENT_TOOLS — deliver their own artifact or are background side-effects, so a
+# re-voice would be redundant or wrong:
+#   generate_image          — url + caption delivered via the platform callback
+#   store_attribute         — records a fact in the background, no user-facing result
+#   note_food_clarification — records a clarification note, not a reply
+#   schedule_check_in       — the pass-1 confirmation ("I'll check in at X") suffices
+#   set_macro_targets       — the recommended values are pre-injected into the prompt
+#                             (the [COACH NOTE — targets_unset] block), so the model
+#                             voices them in pass 1; the result has nothing new.
+_SILENT_TOOLS = frozenset({
+    "generate_image", "store_attribute", "note_food_clarification",
+    "schedule_check_in", "set_macro_targets",
 })
+
+
+def _voices_result(tool_name: str) -> bool:
+    """Voice-by-default: a tool's result is voiced via a follow-up unless the tool
+    is SILENT. Replaces membership checks against the old opt-in allowlists."""
+    return tool_name not in _SILENT_TOOLS
 
 
 @dataclasses.dataclass
@@ -565,26 +561,19 @@ async def run_turn(
                     )
                 _response_streamed = False  # deterministic fallback wasn't streamed
         else:
-            # A voiced-result tool (web_search) forces a follow-up EVEN when the
-            # first pass already wrote text — its facts live only in the tool result
-            # and must be re-voiced. The generic _try_follow_up() re-voices via
-            # chat_follow_up using the full system (which includes SEARCH_RULES when
-            # enabled). This is NOT a third branch — just a data-driven term added to
-            # the existing need_followup predicate.
-            has_voiced_result = any(
-                tc["name"] in _VOICED_RESULT_TOOLS for tc in tool_calls
-            )
-            # A native-card tool defers its actionable close to a follow-up pass
-            # (lead-in ||| [card] ||| close). Force the follow-up even when the
-            # first pass already wrote the lead-in — otherwise the close is
-            # dropped and the user gets a bare teaser. See _CARD_CLOSE_TOOLS.
-            has_card_close = any(
-                tc["name"] in _CARD_CLOSE_TOOLS for tc in tool_calls
+            # Voice-by-default: any non-SILENT tool forces a follow-up EVEN when the
+            # first pass already wrote text. Data-fetch results (web_search, etc.)
+            # and native-card closes both live outside pass-1 prose — the first pass
+            # ran before the tool, so it could only write a heads-up/lead-in. The
+            # generic _try_follow_up() re-voices via chat_follow_up (tools=False)
+            # using the full system. Only _SILENT_TOOLS (side-effects) opt out, so a
+            # newly added tool can never silently drop its result. See _SILENT_TOOLS.
+            has_voiceable_result = any(
+                _voices_result(tc["name"]) for tc in tool_calls
             )
             need_followup = (
                 tool_calls and raw_content
-                and (in_onboarding or not response_text
-                     or has_voiced_result or has_card_close)
+                and (in_onboarding or not response_text or has_voiceable_result)
             )
             if need_followup:
                 _followup_tried = True

@@ -2033,10 +2033,11 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
         #     deterministic_confirmation as fallback, which reads totals
         #     from today_log + user.preferences and is the wrong shape
         #     for a 4-macro prefs write.
-        #   · NOT in _VOICED_RESULT_TOOLS — the recommended values live
-        #     in the [COACH NOTE — targets_unset] block already injected
-        #     into the system prompt, so the model can voice them in its
-        #     first pass before calling the tool. Nothing to re-voice.
+        #   · listed in _SILENT_TOOLS (core/conversation.py) under
+        #     voice-by-default — the recommended values live in the
+        #     [COACH NOTE — targets_unset] block already injected into the
+        #     system prompt, so the model voices them in its first pass
+        #     before calling the tool. Nothing to re-voice.
         #
         # Streaming behavior falls through to the standard inline path:
         # Arnie writes his confirmation in the first pass, the tool fires
