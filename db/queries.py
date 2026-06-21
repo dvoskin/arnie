@@ -439,11 +439,38 @@ async def add_exercise_entry(db: AsyncSession, daily_log_id: int,
 
 async def add_body_metric(db: AsyncSession, user_id: int,
                           weight_kg: float, **kwargs) -> BodyMetric:
-    metric = BodyMetric(user_id=user_id, weight_kg=weight_kg, **kwargs)
-    db.add(metric)
+    # Idempotency guard against duplicate weigh-ins. Weight gets re-logged two
+    # ways: the model double-calls log_body_weight in one turn, or it re-confirms
+    # a weight that's still sitting in chat context on a later, unrelated turn
+    # ("Didn't end up eating yet" → "86.1kg locked in" again). Both stack
+    # identical BodyMetric rows and skew the trend. So if a near-identical
+    # reading was logged in the last half hour, fold this into that row instead
+    # of creating a new one — a real re-weigh is never the same value to 0.05kg.
+    cutoff = datetime.utcnow() - timedelta(minutes=30)
+    recent = (await db.execute(
+        select(BodyMetric)
+        .where(BodyMetric.user_id == user_id, BodyMetric.timestamp >= cutoff)
+        .order_by(desc(BodyMetric.timestamp))
+        .limit(1)
+    )).scalar_one_or_none()
 
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one()
+
+    if recent is not None and abs((recent.weight_kg or 0.0) - weight_kg) < 0.06:
+        # Same reading, just logged — refresh context/bodyfat if newly provided,
+        # keep the user's current weight in sync, and return the existing row.
+        if kwargs.get("context") and recent.context in (None, "unknown"):
+            recent.context = kwargs["context"]
+        if kwargs.get("bodyfat_estimate") is not None:
+            recent.bodyfat_estimate = kwargs["bodyfat_estimate"]
+        user.current_weight_kg = weight_kg
+        await db.commit()
+        await db.refresh(recent)
+        return recent
+
+    metric = BodyMetric(user_id=user_id, weight_kg=weight_kg, **kwargs)
+    db.add(metric)
     user.current_weight_kg = weight_kg
 
     await db.commit()
