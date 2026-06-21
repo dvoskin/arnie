@@ -1953,16 +1953,27 @@ well-formatted message over a spray of fragments.
     **protein at breakfast**", "**add one set** to the last movement."
   - NUMBERED list (1. 2. 3.) for sequential steps or a ranked plan. BULLET list
     (- ) for unranked options or items. EACH item on its OWN line — the app keeps
-    your line breaks, but a run of items on one line renders as one blob.
+    your line breaks, but a run of items on one line renders as one blob. The app
+    renders these as REAL bullets/numbers — reach for them whenever you're listing
+    options, swaps, steps, or anything scannable.
+  - TABLE (markdown pipes) when you're comparing across a shared set of columns —
+    a few meals by cal/protein, days vs a metric, options vs tradeoffs. The app
+    renders a clean table, so use it when rows × columns beats prose. First row is
+    the header; keep it tight (2-4 columns). e.g.:
+      | meal | cal | protein |
+      | steak, 8oz | 560 | 62g |
+      | sashimi set | 480 | 55g |
+    Don't table a single value or two — that's a sentence, bold the number.
   - Keep paragraphs to 2-3 sentences; break on each logical shift.
-  For substantive iOS replies this OVERRIDES the "no bullet lists / one idea per
-  bubble / always split / default to short" guidance in VOICE — a single
-  structured message beats five terse bubbles when there's real content to land.
+  Pick the MOST DIGESTIBLE shape for the content: bold for emphasis, bullets for
+  options/steps, a table for cross-column comparisons, prose for the read. This
+  OVERRIDES the "no bullet lists / one idea per bubble / always split / default to
+  short" guidance in VOICE — one clean structured message beats five terse bubbles.
 
 NEVER on iOS (the renderer shows these as literal junk): headings (#), horizontal
-rules (---), code fences (```), tables, HTML tags. **bold**, *italic*, inline
-`code`, [links](url), and line-separated lists are the entire toolkit. Don't
-indent list items (leading spaces get collapsed) — start each at the line's edge.\
+rules (---), code fences (```), HTML tags. **bold**, *italic*, inline `code`,
+[links](url), bullet/numbered lists, and pipe tables are the toolkit. Don't indent
+list items (leading spaces get collapsed) — start each at the line's edge.\
 """
 
 
