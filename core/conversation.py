@@ -85,6 +85,31 @@ def _voices_result(tool_name: str) -> bool:
     return tool_name not in _SILENT_TOOLS
 
 
+def _normalize_plan_exercises(exercises) -> list:
+    """Coerce the model's raw suggest_workout exercises to the workout_plan_card
+    wire contract before they go on the wire.
+
+    The card payload was the LLM's raw tool input, which OMITS is_cardio on normal
+    lifts (the model only sets it on cardio). A native client whose decoder treats
+    the contract's is_cardio as required reads the missing key as a hard failure
+    and drops the WHOLE card (the iOS workout_plan_card rendered 0% — "you didn't
+    send anything"). Always emit is_cardio (default False) and keep name/reps as
+    strings so the contract holds for every client, including ones without a
+    lenient decoder. Unknown extra keys are preserved (clients ignore them)."""
+    out = []
+    for e in (exercises or []):
+        if not isinstance(e, dict):
+            continue
+        ex = dict(e)
+        ex["is_cardio"] = bool(e.get("is_cardio") or e.get("cardio_type"))
+        if ex.get("name") is not None:
+            ex["name"] = str(ex["name"])
+        if ex.get("reps") is not None:
+            ex["reps"] = str(ex["reps"])
+        out.append(ex)
+    return out
+
+
 @dataclasses.dataclass
 class TurnResult:
     """Everything a handler needs after run_turn completes."""
@@ -865,7 +890,9 @@ async def run_turn(
                         },
                     })
             elif name == "suggest_workout":
-                exercises = inp.get("exercises") or []
+                # Normalize to the wire contract (is_cardio present, stable types)
+                # so native clients can decode the card — see _normalize_plan_exercises.
+                exercises = _normalize_plan_exercises(inp.get("exercises"))
                 if exercises:
                     resp.cards.append({
                         "type": "workout_plan_card",

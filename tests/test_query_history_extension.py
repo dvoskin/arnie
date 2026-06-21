@@ -741,3 +741,40 @@ async def test_suggest_workout_card_is_in_card_close_tools(make_user, db, monkey
     final = " ".join(result.response.bubbles).lower()
     assert "log each set" in final
     assert any(c.get("type") == "workout_plan_card" for c in result.response.cards)
+    # The card payload must honor the wire contract — the model emitted exercises
+    # WITHOUT is_cardio (the prod case), so normalization must add it. A native
+    # decoder that treats is_cardio as required drops the WHOLE card on a missing
+    # key (iOS workout_plan_card rendered 0% — "you didn't send anything").
+    plan = next(c for c in result.response.cards if c.get("type") == "workout_plan_card")
+    exs = plan["payload"]["exercises"]
+    assert len(exs) == 2
+    assert all("is_cardio" in e for e in exs), "every plan exercise must carry is_cardio"
+    assert all(e["is_cardio"] is False for e in exs)
+    assert all(isinstance(e["name"], str) for e in exs)
+
+
+def test_normalize_plan_exercises_contract():
+    """_normalize_plan_exercises pins the workout_plan_card wire contract: every
+    exercise carries is_cardio, name/reps are strings, extra keys pass through,
+    and cardio signals map to is_cardio=True."""
+    import core.conversation as C
+    out = C._normalize_plan_exercises([
+        {"name": "bench", "sets": 4, "reps": "10,10,8"},          # no is_cardio → False
+        {"name": "row", "reps": 12},                               # reps int → str
+        {"name": "bike", "cardio_type": "stationary", "duration_minutes": 15},  # cardio → True
+        {"name": "treadmill", "is_cardio": True},                  # explicit True
+        "not a dict",                                              # skipped
+    ])
+    assert len(out) == 4
+    assert all("is_cardio" in e for e in out)
+    assert out[0]["is_cardio"] is False
+    assert out[1]["reps"] == "12" and isinstance(out[1]["reps"], str)
+    assert out[2]["is_cardio"] is True
+    assert out[2]["duration_minutes"] == 15            # extra keys preserved
+    assert out[3]["is_cardio"] is True
+
+
+def test_normalize_plan_exercises_empty_and_none():
+    import core.conversation as C
+    assert C._normalize_plan_exercises(None) == []
+    assert C._normalize_plan_exercises([]) == []
