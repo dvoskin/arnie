@@ -583,6 +583,8 @@ _HISTORY_TOOLS = [
                             "carbs_g":   {"type": "integer"},
                             "fats_g":    {"type": "integer"},
                             "note":      {"type": "string", "description": "REQUIRED context, one line: why it fits (the macro it nails / how it slots into what's left) PLUS a prep, portion, or where-to-get cue. 'hits the protein gap clean, ~15 min in a pan.' / 'lean + filling, grab it from the salad spot downstairs.'"},
+                            "ingredients": {"type": "array", "items": {"type": "string"}, "description": "3–6 components with rough quantities so the user can actually build or order it — '8oz ribeye', '1 cup asparagus', '½ sweet potato'. Shown when the user taps to expand the card. Include whenever you can."},
+                            "prep":      {"type": "string", "description": "One or two short lines: how to make it or where to grab it. Shown on expand. Optional — include when it adds real clarity ('sear 3 min/side, rest 5' / 'sweetgreen, sub double chicken')."},
                         },
                         "required": ["name", "calories", "protein_g", "carbs_g", "fats_g", "note"],
                     },
