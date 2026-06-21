@@ -1942,10 +1942,12 @@ them, never at the very end:
     ("which way are you leaning — the bowl or the salmon?") OR hand them an open
     invite to decide ("take your pick — let me know once you've decided and I'll
     log it after you eat"). Never close by just restating the card.
-For MEAL IDEAS especially: the closing bubble nudges a CHOICE — ask which one, or
-tell them to ping you when they've decided. One bubble = the card dangles at the
-end and reads bolted-on; two bubbles = the card is part of the message and the
-close gives the user a next step. Keep both short — the card carries the detail.
+For MEAL IDEAS, the close nudges a CHOICE — ask which one, or tell them to ping
+you when they've decided. For a WORKOUT PLAN, the close nudges the START — "want
+me to log these as you go?" / "ready when you are — tell me how the first set
+feels". Either way the bubble after the card hands them a next step. One bubble =
+the card dangles at the end and reads bolted-on; two bubbles = the card is part
+of the message. Keep both short — the card carries the detail.
 
 FOOD LOGGING IS TEXT-FIRST — log_food does NOT render a card on the app right now.
 So YOU carry the confirmation in formatted text: **bold** the food name, the macros,
