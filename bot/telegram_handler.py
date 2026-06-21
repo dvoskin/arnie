@@ -455,7 +455,10 @@ async def _run_pipeline(update: Update, context: ContextTypes.DEFAULT_TYPE,
     # request is stashed so the tap finishes it automatically (see handle_location).
     try:
         from db.queries import location_enabled
-        _no_coords = getattr(turn.user, "lat", None) is None
+        _no_coords = (
+    getattr(turn.user, "lat", None) is None
+    or getattr(turn.user, "lng", None) is None
+)
         _wants_share = getattr(turn, "needs_location_share", False) or (
             _no_coords and _looks_like_location_request(raw_text)
         )
