@@ -68,6 +68,26 @@ _LOGGING_TOOLS = frozenset({
 # is dropped on the floor and the turn dead-ends.
 _VOICED_RESULT_TOOLS = frozenset({"web_search", "search_food_database", "query_history", "track_metric", "find_nearby_places"})
 
+# Native-card tools (iOS). These render their substance as an inline card; the
+# text reply is split lead-in ||| close with the card seated between (see
+# NATIVE_CARDS in prompts/arnie.py). The model writes the lead-in in the first
+# pass and then calls the card tool — generation STOPS at the tool_use, so the
+# actionable CLOSE bubble is meant to land AFTER the card, in a follow-up pass.
+# Without forcing that follow-up, need_followup stays False whenever a lead-in
+# exists (response_text is non-empty) and the close is never generated — leaving
+# a bare lead-in teaser ("here's what fits your last 900:") with no answer.
+#
+# Mechanically this is the same forced-follow-up as _VOICED_RESULT_TOOLS, but it
+# is kept a SEPARATE set because the rationale differs: there the facts live only
+# in the tool result and must be re-voiced; here the facts ARE on the wire (the
+# card), and we're recovering the dropped close, not re-voicing hidden output.
+# The card tool-results say "keep your reply short", so the follow-up writes a
+# tight close rather than restating the card.
+_CARD_CLOSE_TOOLS = frozenset({
+    "suggest_meals", "suggest_workout",
+    "show_day_recap", "show_food_log", "show_workout_log",
+})
+
 
 @dataclasses.dataclass
 class TurnResult:
@@ -554,9 +574,17 @@ async def run_turn(
             has_voiced_result = any(
                 tc["name"] in _VOICED_RESULT_TOOLS for tc in tool_calls
             )
+            # A native-card tool defers its actionable close to a follow-up pass
+            # (lead-in ||| [card] ||| close). Force the follow-up even when the
+            # first pass already wrote the lead-in — otherwise the close is
+            # dropped and the user gets a bare teaser. See _CARD_CLOSE_TOOLS.
+            has_card_close = any(
+                tc["name"] in _CARD_CLOSE_TOOLS for tc in tool_calls
+            )
             need_followup = (
                 tool_calls and raw_content
-                and (in_onboarding or not response_text or has_voiced_result)
+                and (in_onboarding or not response_text
+                     or has_voiced_result or has_card_close)
             )
             if need_followup:
                 _followup_tried = True

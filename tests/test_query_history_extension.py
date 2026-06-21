@@ -7,6 +7,8 @@ verified so old callers can't silently break.
 import pytest
 from datetime import date, datetime, timedelta
 
+from freezegun import freeze_time
+
 from db.queries import parse_natural_period, query_history_stats
 
 
@@ -14,6 +16,14 @@ from db.queries import parse_natural_period, query_history_stats
 
 
 _TODAY = date(2026, 6, 9)  # a Tuesday
+# Frozen wall clock for the tests below that derive a target date from the real
+# clock (date.today()) and then re-derive it inside query_history_stats, which
+# computes its own "today" from datetime.now(). Without a frozen clock those two
+# reads can land on different calendar days (UTC-midnight straddle, or a
+# pytest-randomly shuffle that runs them on a later day than module import),
+# pushing the relative-date math off by one and dropping the just-logged row.
+# Noon, mid-month — equals _TODAY at midday, far from any date boundary.
+_FROZEN_NOW = "2026-06-09 12:00:00"
 
 
 @pytest.mark.parametrize("period_str,expected", [
@@ -216,7 +226,10 @@ async def test_water_returns_daily_totals_at_minimum(make_user, db):
 
 
 @pytest.mark.asyncio
+@freeze_time(_FROZEN_NOW)
 async def test_body_metrics_returns_snapshots(make_user, db):
+    # Frozen clock: the snapshot's date.today() must equal the "today" that
+    # query_history_stats computes internally, or period="today" misses the row.
     from db.models import HealthSnapshot
     user = await make_user(telegram_id="t-bm")
     snap = HealthSnapshot(
@@ -337,9 +350,13 @@ def test_query_history_tool_description_mentions_unlimited_lookback():
 
 
 @pytest.mark.asyncio
+@freeze_time(_FROZEN_NOW)
 async def test_food_entry_120_days_back_is_retrievable(make_user, db):
     """Log a food on a DailyLog 120 days in the past, then query for it.
-    Must return the exact entry — no upper-bound cap on lookback."""
+    Must return the exact entry — no upper-bound cap on lookback.
+
+    Frozen clock: target_date (date.today() - 120) must equal the date that
+    query_history_stats resolves "120 days ago" to from its own now()."""
     from db.models import DailyLog, FoodEntry
     from db.queries import recompute_log_totals
 
@@ -374,8 +391,12 @@ async def test_food_entry_120_days_back_is_retrievable(make_user, db):
 
 
 @pytest.mark.asyncio
+@freeze_time(_FROZEN_NOW)
 async def test_day_detail_4_months_back_is_retrievable(make_user, db):
-    """Same check, via 'day_detail' metric and '4 months ago' phrasing."""
+    """Same check, via 'day_detail' metric and '4 months ago' phrasing.
+
+    Frozen clock: target_date (date.today() - 120) must equal the date that
+    query_history_stats resolves "4 months ago" to from its own now()."""
     from db.models import DailyLog, FoodEntry
     from db.queries import recompute_log_totals
 
@@ -600,3 +621,121 @@ async def test_log_food_turn_unaffected_by_query_history_voiced_addition(
 
     # Logging branch already forces the follow-up — same as before the fix.
     assert calls["follow_up"] == 1
+
+
+# ── native-card tools: the actionable close must survive (iOS teaser bug) ─────
+#    Regression for the iOS "teaser with no answer" report: the model writes a
+#    lead-in bubble and calls a card tool (suggest_meals / suggest_workout /
+#    show_*). Generation stops at the tool_use, so the actionable CLOSE is meant
+#    to land in a follow-up pass. Before the fix, need_followup was False whenever
+#    a lead-in existed (card tools weren't in any forced-follow-up set), so the
+#    close was dropped and the user saw only the dangling lead-in. Same dead-air
+#    shape as the query_history bug above — different tool family.
+
+
+@pytest.mark.asyncio
+async def test_card_tool_with_lead_in_still_runs_follow_up_for_close(
+        make_user, db, monkeypatch):
+    """suggest_meals turn: first pass writes a lead-in + the card tool call. The
+    follow-up MUST still fire so the actionable close reaches the user, and the
+    meal card must be attached to the response. Before the fix the follow-up
+    never ran (need_followup=False with a non-empty lead-in) and the reply was a
+    bare teaser ('here's what fits your last 900:')."""
+    import core.conversation as C
+
+    user = await make_user(telegram_id="t-card-meals")
+    calls = {"follow_up": 0, "execute": 0}
+
+    async def _fake_chat(messages, system, tools=True, max_tokens=4096, model=None,
+                         stream_handler=None):
+        return {
+            "text": "here's what fits your last 900:",  # lead-in only — close deferred
+            "tool_calls": [{"name": "suggest_meals", "id": "sm1",
+                            "input": {"title": "dinner ideas",
+                                      "meals": [
+                                          {"name": "chicken + rice", "calories": 600},
+                                          {"name": "salmon bowl", "calories": 550},
+                                      ]}}],
+            "raw_content": [{"x": 1}],
+            "stop_reason": "tool_use",
+        }
+
+    async def _fake_follow_up(messages, raw, tcs, results, system,
+                              max_tokens=512, stream_handler=None):
+        calls["follow_up"] += 1
+        # The actionable close — the part the teaser was missing.
+        return "either works for your macros. want me to log it after you eat?"
+
+    async def _fake_execute(tool_calls, user, log, db, source_type):
+        calls["execute"] += 1
+        return {"suggest_meals": "Showed 2 meal ideas as a carousel — keep your reply short."}
+
+    monkeypatch.setattr(C, "chat", _fake_chat)
+    monkeypatch.setattr(C, "chat_follow_up", _fake_follow_up)
+    monkeypatch.setattr(C, "execute_tool_calls", _fake_execute)
+
+    result = await C.run_turn(
+        user, db,
+        messages=[{"role": "user", "content": "what should I eat tonight?"}],
+        system="SYS", platform="ios",
+        in_onboarding=False, was_onboarding=False,
+    )
+
+    # The follow-up MUST have fired despite the first pass writing a lead-in.
+    assert calls["follow_up"] == 1, (
+        "follow-up did not fire — the card-tool close was dropped, leaving a teaser"
+    )
+    assert calls["execute"] == 1, "tool execution must run before the follow-up"
+    # The actionable close reached the user.
+    final = " ".join(result.response.bubbles).lower()
+    assert "want me to log it" in final, "actionable close missing from response"
+    # The meal card is attached so the substance still renders on iOS.
+    assert any(c.get("type") == "meal_suggestions_card" for c in result.response.cards), (
+        "meal_suggestions_card not attached to the response"
+    )
+
+
+@pytest.mark.asyncio
+async def test_suggest_workout_card_is_in_card_close_tools(make_user, db, monkeypatch):
+    """Sibling coverage: suggest_workout follows the same lead-in + card + close
+    contract and must also force the follow-up."""
+    import core.conversation as C
+
+    user = await make_user(telegram_id="t-card-workout")
+    calls = {"follow_up": 0}
+
+    async def _fake_chat(messages, system, tools=True, max_tokens=4096, model=None,
+                         stream_handler=None):
+        return {
+            "text": "here's a push day that fits your week:",
+            "tool_calls": [{"name": "suggest_workout", "id": "sw1",
+                            "input": {"title": "push day", "split_day": "push",
+                                      "exercises": [{"name": "bench", "sets": 4},
+                                                    {"name": "ohp", "sets": 3}]}}],
+            "raw_content": [{"x": 1}],
+            "stop_reason": "tool_use",
+        }
+
+    async def _fake_follow_up(messages, raw, tcs, results, system,
+                              max_tokens=512, stream_handler=None):
+        calls["follow_up"] += 1
+        return "start with bench while you're fresh. log each set as you go?"
+
+    async def _fake_execute(tool_calls, user, log, db, source_type):
+        return {"suggest_workout": "Showed 2 exercises (push) as a plan carousel — keep your reply short."}
+
+    monkeypatch.setattr(C, "chat", _fake_chat)
+    monkeypatch.setattr(C, "chat_follow_up", _fake_follow_up)
+    monkeypatch.setattr(C, "execute_tool_calls", _fake_execute)
+
+    result = await C.run_turn(
+        user, db,
+        messages=[{"role": "user", "content": "give me a push workout"}],
+        system="SYS", platform="ios",
+        in_onboarding=False, was_onboarding=False,
+    )
+
+    assert calls["follow_up"] == 1, "suggest_workout must force the follow-up close"
+    final = " ".join(result.response.bubbles).lower()
+    assert "log each set" in final
+    assert any(c.get("type") == "workout_plan_card" for c in result.response.cards)
