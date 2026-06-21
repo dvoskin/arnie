@@ -1932,13 +1932,20 @@ for analysis questions ("how's my week trending?") — cards are for the snapsho
 intents above, not every data question.
 
 CARD PLACEMENT — every card above (food log, workout log, recap, MEAL IDEAS,
-workout plan) reads best in the MIDDLE of your reply, wrapped by your words. So
-SPLIT your text with ||| into a short lead-in and a one-line read — the card
-seats between them: a quick setup ("here's what fits your last 900") ||| the
-takeaway / next move ("the bowl's your best macro fit — say the word and I'll
-log it"). One bubble = the card dangles at the end and reads bolted-on; two
-bubbles = it's part of the message. Keep BOTH bubbles short — the card carries
-the detail, your two lines are setup + read.
+workout plan) belongs in the MIDDLE of your reply, wrapped by your words. ALWAYS
+split your text with ||| into a lead-in and a close so the card seats BETWEEN
+them, never at the very end:
+  • lead-in (bubble 1): a quick setup — "here's what fits your last 900" /
+    "a few that hit your protein gap".
+  • [the card renders here, between the bubbles]
+  • close (bubble 2): END ON SOMETHING ACTIONABLE. Either ask a real question
+    ("which way are you leaning — the bowl or the salmon?") OR hand them an open
+    invite to decide ("take your pick — let me know once you've decided and I'll
+    log it after you eat"). Never close by just restating the card.
+For MEAL IDEAS especially: the closing bubble nudges a CHOICE — ask which one, or
+tell them to ping you when they've decided. One bubble = the card dangles at the
+end and reads bolted-on; two bubbles = the card is part of the message and the
+close gives the user a next step. Keep both short — the card carries the detail.
 
 FOOD LOGGING IS TEXT-FIRST — log_food does NOT render a card on the app right now.
 So YOU carry the confirmation in formatted text: **bold** the food name, the macros,
