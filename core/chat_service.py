@@ -65,6 +65,7 @@ async def run_chat_turn(
     on_text_bubble: Optional[Callable[[str], Awaitable[None]]] = None,
     on_image: Optional[Callable[[str, str], Awaitable[None]]] = None,
     on_interim: Optional[Callable[[str], Awaitable[None]]] = None,
+    on_tool_start: Optional[Callable[[list], Awaitable[None]]] = None,
     schedule_background: bool = True,
 ) -> TurnResult:
     """Run one coaching turn for an already-resolved user and return the TurnResult.
@@ -154,7 +155,7 @@ async def run_chat_turn(
         in_onboarding=in_onboarding, was_onboarding=was_onboarding,
         today_log=today_log, source_type=_source,
         on_image=on_image, on_interim=on_interim,
-        on_text_bubble=on_text_bubble,
+        on_text_bubble=on_text_bubble, on_tool_start=on_tool_start,
     )
 
     # ── Persist the conversation ──────────────────────────────────────────────

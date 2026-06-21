@@ -342,10 +342,16 @@ async def _stream_turn(ws: WebSocket, identity: str, message: str) -> None:
             async def on_bubble(text: str) -> None:
                 await ws.send_json({"type": "bubble", "text": text})
 
+            async def on_tool_start(tools: list) -> None:
+                # Mid-action heads-up so the iOS thinking indicator can morph
+                # ("Thinking…" → "Logging…"). Additive; clients that ignore
+                # "tool" frames are unaffected.
+                await ws.send_json({"type": "tool", "tools": tools})
+
             try:
                 turn = await run_chat_turn(
                     db, user, message, platform=PLATFORM, source_type=PLATFORM,
-                    on_text_bubble=on_bubble,
+                    on_text_bubble=on_bubble, on_tool_start=on_tool_start,
                 )
             except Exception as e:
                 logger.error(f"stream turn failed (identity={identity}): {e}", exc_info=True)

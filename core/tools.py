@@ -553,11 +553,16 @@ _HISTORY_TOOLS = [
             "Offer 2–4 meal IDEAS as an inline carousel. Call when the user "
             "asks 'what should I eat?', 'meal ideas', 'something quick for "
             "lunch', etc. Fit the user's remaining macros + time of day + "
-            "stated preferences. Each meal includes its macros so the "
-            "carousel doubles as a one-tap log. Native clients render the "
-            "carousel; keep your text reply short — one line of context, "
-            "not a numbered list. DO NOT call to log a meal the user "
-            "already named (use log_food); this is for *ideas*. "
+            "stated preferences. Each meal carries its macros. Native clients "
+            "render the carousel one card at a time with a 'Plan it' button: "
+            "tapping it does NOT log the meal — it SELECTS it as the user's "
+            "plan for an upcoming meal (they may still need to cook or order "
+            "it), and sends a future-tense message like 'Planning to have the "
+            "<dish>…'. When that arrives, acknowledge the plan, do NOT log it "
+            "yet, and offer to log it once they've eaten. "
+            "Keep your text reply short — one line of context, not a numbered "
+            "list. DO NOT call to log a meal the user already ate or named "
+            "(use log_food); this is for *ideas* to plan. "
             "BE SPECIFIC — every meal is a real, orderable/cookable dish named "
             "with its key components, and every meal carries a `note` with real "
             "context. Bare categories ('steak', 'chicken bowl', 'sashimi') are "
@@ -583,8 +588,8 @@ _HISTORY_TOOLS = [
                             "carbs_g":   {"type": "integer"},
                             "fats_g":    {"type": "integer"},
                             "note":      {"type": "string", "description": "REQUIRED context, one line: why it fits (the macro it nails / how it slots into what's left) PLUS a prep, portion, or where-to-get cue. 'hits the protein gap clean, ~15 min in a pan.' / 'lean + filling, grab it from the salad spot downstairs.'"},
-                            "ingredients": {"type": "array", "items": {"type": "string"}, "description": "3–6 components with rough quantities so the user can actually build or order it — '8oz ribeye', '1 cup asparagus', '½ sweet potato'. Shown when the user taps to expand the card. Include whenever you can."},
-                            "prep":      {"type": "string", "description": "One or two short lines: how to make it or where to grab it. Shown on expand. Optional — include when it adds real clarity ('sear 3 min/side, rest 5' / 'sweetgreen, sub double chicken')."},
+                            "ingredients": {"type": "array", "items": {"type": "string"}, "description": "3–6 components with rough quantities so the user can actually build or order it — '8oz ribeye', '1 cup asparagus', '½ sweet potato'. Shown inline on the card, so ALWAYS include them — they're what make the idea actionable."},
+                            "prep":      {"type": "string", "description": "One or two short lines: how to make it or where to grab it. Shown inline on the card. Include whenever it adds real clarity ('sear 3 min/side, rest 5' / 'sweetgreen, sub double chicken')."},
                         },
                         "required": ["name", "calories", "protein_g", "carbs_g", "fats_g", "note"],
                     },

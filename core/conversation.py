@@ -155,6 +155,7 @@ async def run_turn(
     on_completion: Optional[Callable] = None,  # fn(user) → str; defaults to plain welcome
     completion_facts: Optional[dict] = None,  # ephemeral TDEE/goal for the just-completed reflection
     on_text_bubble: Optional[Callable] = None,  # async fn(bubble) → None — stream bubbles as they land
+    on_tool_start: Optional[Callable] = None,   # async fn(tool_names: list[str]) → None — fired once, just before tools run
 ) -> TurnResult:
     """
     Core pipeline: LLM call → tool execution → coach-unmute / follow-up /
@@ -361,6 +362,23 @@ async def run_turn(
                     await on_interim(_interim)
                 except Exception as e:
                     logger.error(f"interim heads-up failed for {_tag}: {e}")
+
+        # Heads-up to streaming surfaces (iOS): the live thinking indicator
+        # morphs from "Thinking…" to the action being taken ("Logging…",
+        # "Reviewing your week…") the moment tools dispatch. Fired once, in
+        # call order; the client maps names→labels and ignores internal tools.
+        # Purely additive — failure here never blocks the turn.
+        if on_tool_start:
+            _started: list = []
+            for _tc in tool_calls:
+                _n = _tc.get("name")
+                if _n and _n not in _started:
+                    _started.append(_n)
+            if _started:
+                try:
+                    await on_tool_start(_started)
+                except Exception as e:
+                    logger.error(f"on_tool_start failed for {_tag}: {e}")
 
         tool_results = await execute_tool_calls(
             tool_calls, user, _log_for_tools, db, _source
