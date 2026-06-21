@@ -162,3 +162,100 @@ def format_dedup_result(dup, now_utc: datetime) -> str:
         f"exercise from [TRAINING PROGRAM]). Never tell the user a log was skipped — "
         f"just continue coaching naturally."
     )
+
+
+def _reps_tokens(reps) -> list:
+    """Split a reps CSV into normalized tokens. '12, 12 ,10' -> ['12','12','10'].
+    None/'' -> []."""
+    if not reps:
+        return []
+    return [t.strip() for t in str(reps).split(",") if t.strip()]
+
+
+def find_rollup_supersede(
+    *,
+    exercise_name: Optional[str],
+    sets: Optional[int],
+    reps: Optional[str],
+    weight_kg: Optional[float],
+    existing_entries: Iterable,
+    now_utc: datetime,
+    window_sec: int = 3600,
+):
+    """Detect a CUMULATIVE ROLL-UP and return the existing session entry the
+    caller should UPDATE in place (instead of inserting a new overlapping row).
+
+    The live failure mode (Danny 2026-06-21 Lat Pulldown): the model re-fires
+    log_exercise with the full running set list on every set report, so one
+    exercise becomes several overlapping rows —
+        set 1 -> sets=1 reps='12'
+        set 2 -> sets=2 reps='12,12'      (re-states set 1)
+        set 3 -> sets=3 reps='12,12,10'   (re-states sets 1-2)
+    = 6 sets stored for 3 performed. is_duplicate_of_recent can't catch it (each
+    payload is genuinely different), so dedup-by-equality is the wrong tool; the
+    right one is upsert-by-(session, exercise) — the same idea add_body_metric
+    already uses to fold repeat weigh-ins into one row.
+
+    Returns the entry to update (the most-complete prior partial — the longest
+    matching prefix), or None. Conservative: only fires when the incoming log
+    SUBSUMES an existing same-exercise + same-weight entry within window_sec, so
+    straight sets at different loads/reps keep writing as separate rows:
+      • Case A (per-set CSV): existing reps is a strict prefix of incoming reps
+        (existing '12,12' -> incoming '12,12,10').
+      • Case B (constant reps): same single rep value, incoming has strictly more
+        sets (existing 2x'12' -> incoming 3x'12').
+    """
+    if not exercise_name:
+        return None
+    key_name = normalize_exercise_name(exercise_name)
+    in_tokens = _reps_tokens(reps)
+    in_sets = int(sets) if sets is not None else None
+    cutoff = now_utc - timedelta(seconds=window_sec)
+
+    best = None  # (completeness, ts, entry) — prefer longest prefix, then newest
+    for e in existing_entries:
+        ts = getattr(e, "timestamp", None)
+        if ts is None or ts < cutoff:
+            continue
+        if normalize_exercise_name(getattr(e, "exercise_name", "")) != key_name:
+            continue
+        if not _close(getattr(e, "weight", None), weight_kg):
+            continue
+        e_tokens = _reps_tokens(getattr(e, "reps", ""))
+        e_sets = getattr(e, "sets", None)
+        e_sets = int(e_sets) if e_sets is not None else None
+
+        subsumed = False
+        completeness = 0
+        # Case A — per-set CSV roll-up: existing reps a strict prefix of incoming.
+        if (len(in_tokens) >= 2 and 0 < len(e_tokens) < len(in_tokens)
+                and in_tokens[:len(e_tokens)] == e_tokens):
+            subsumed, completeness = True, len(e_tokens)
+        # Case B — constant single-rep roll-up: same rep value, more sets.
+        elif (len(in_tokens) <= 1 and len(e_tokens) <= 1 and e_tokens
+              and e_tokens == in_tokens and in_sets is not None
+              and e_sets is not None and in_sets > e_sets):
+            subsumed, completeness = True, e_sets
+
+        if subsumed:
+            cand = (completeness, ts, e)
+            if best is None or (cand[0], cand[1]) > (best[0], best[1]):
+                best = cand
+    return best[2] if best else None
+
+
+def format_rollup_result(entry, now_utc: datetime) -> str:
+    """Tool-result string when a roll-up updated an existing row in place.
+
+    Like format_dedup_result, starts with a non-error prefix so the
+    deterministic_confirmation path doesn't read it as a failure, and tells the
+    model it was an UPDATE (one row), not a new log line."""
+    weight_part = ""
+    if getattr(entry, "weight", None):
+        weight_part = f" @ {entry.weight * 2.20462:.0f}lb"
+    return (
+        f"Updated the running set on [#{entry.id}]: {entry.exercise_name} "
+        f"now {entry.sets}x{entry.reps}{weight_part} — one entry grew, no new row. "
+        f"YOUR REPLY: confirm the latest set naturally and give the running count "
+        f"(e.g. '3 sets in'); do NOT imply a separate or duplicate log was created."
+    )

@@ -492,3 +492,82 @@ async def test_superseded_single_relog_blocked_via_dispatch(monkeypatch):
     assert result.startswith("Already on the board:"), result
     assert "[#300]" in result
     assert write_count["n"] == 0, "superseded single-set re-log must not write"
+
+
+# ── Cumulative roll-up: upsert the session row, don't insert (Danny 2026-06-21) ─
+
+@pytest.mark.asyncio
+async def test_rollup_set_report_updates_existing_row_not_insert(monkeypatch):
+    """Danny 2026-06-21 Lat Pulldown: set 2 reported as the cumulative '12,12'
+    must UPDATE the set-1 row (#466), not insert a second Lat Pulldown row.
+    Asserts: zero inserts, exactly one update on #466, the card points at #466,
+    and the result signals an in-place update."""
+    user = SimpleNamespace(id=1, timezone="UTC")
+    prior = _prior_entry(id_=466, name="Lat Pulldown", sets=1, reps="12",
+                         weight=74.84, seconds_ago=540)  # ~9 min ago, same session
+    today_log = SimpleNamespace(id=1, exercise_entries=[prior])
+
+    inserts = {"n": 0}
+    updates = {"n": 0, "args": None}
+
+    async def _no_insert(*a, **kw):
+        inserts["n"] += 1
+
+    async def _capture_update(db, entry_id, user_id, **changes):
+        updates["n"] += 1
+        updates["args"] = (entry_id, user_id, changes)
+        return SimpleNamespace(id=entry_id, exercise_name="Lat Pulldown",
+                               sets=changes.get("sets"), reps=changes.get("reps"),
+                               weight=changes.get("weight"))
+
+    monkeypatch.setattr(TE, "add_exercise_entry", _no_insert)
+    monkeypatch.setattr(TE, "q_update_exercise_entry", _capture_update)
+
+    async def _refresh(*a, **kw):
+        pass
+
+    inp = {"exercise_name": "Lat Pulldown", "sets": 2, "reps": "12,12",
+           "weight": 165, "weight_unit": "lbs"}
+    result = await TE._dispatch(
+        "log_exercise", inp, user, today_log,
+        db=SimpleNamespace(refresh=_refresh), source_type="ios",
+    )
+    assert inserts["n"] == 0, "roll-up must NOT insert a new row"
+    assert updates["n"] == 1, "roll-up must update the existing row exactly once"
+    assert updates["args"][0] == 466, "must update the set-1 entry (#466)"
+    assert updates["args"][2].get("reps") == "12,12"
+    assert result.startswith("Updated the running set"), result
+    assert inp.get("_entry_id") == 466, "native card must point at the same row"
+
+
+@pytest.mark.asyncio
+async def test_distinct_second_movement_still_inserts(monkeypatch):
+    """A genuinely different next movement is NOT a roll-up of the prior one —
+    it must still insert. Guards against the upsert over-merging."""
+    user = SimpleNamespace(id=1, timezone="UTC")
+    prior = _prior_entry(id_=466, name="Lat Pulldown", sets=2, reps="12,12",
+                         weight=74.84, seconds_ago=120)
+    today_log = SimpleNamespace(id=1, exercise_entries=[prior])
+
+    inserts = {"n": 0}
+
+    async def _capture(*a, **kw):
+        inserts["n"] += 1
+
+    async def _no_update(*a, **kw):
+        raise AssertionError("a distinct movement must not trigger an update")
+
+    monkeypatch.setattr(TE, "add_exercise_entry", _capture)
+    monkeypatch.setattr(TE, "q_update_exercise_entry", _no_update)
+
+    async def _refresh(*a, **kw):
+        pass
+
+    result = await TE._dispatch(
+        "log_exercise",
+        {"exercise_name": "Chest Supported Row", "sets": 1, "reps": "10",
+         "weight": 145, "weight_unit": "lbs"},
+        user, today_log, db=SimpleNamespace(refresh=_refresh), source_type="ios",
+    )
+    assert result.startswith("Logged "), result
+    assert inserts["n"] == 1
