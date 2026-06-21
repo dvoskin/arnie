@@ -1982,12 +1982,16 @@ warmth, and light slang all still apply.
 
 FORMATTING QUALITY BAR (every iOS reply):
   - LEAD WITH THE POINT. First line = the takeaway or the answer, then the detail.
-  - BREATHE. Put a blank line between distinct thoughts — the app renders the gap
-    as real spacing, so paragraphs don't crowd. 2-3 sentences per paragraph, max.
+  - BREATHE. Between paragraphs leave a FULLY BLANK line (an empty line, i.e. hit
+    return twice) — the app turns that blank line into real spacing. A SINGLE line
+    break does NOT create a gap, it just stacks the lines tight, so a blank line is
+    what separates two thoughts. 2-3 sentences per paragraph, max.
   - SCANNABLE > dense. If you're listing options, steps, swaps, or comparing
     numbers, reach for a bullet list or a small table instead of a run-on sentence.
-  - **Bold** the things the eye should catch — the number, the target, the move —
-    not whole sentences.
+  - **Bold** SELECTIVELY — a few hits per reply, the things that carry the meaning:
+    the ONE number that's the actual takeaway (the gap to close, the headline total)
+    AND the key detail (the move, the food that matters, the term). NOT every number,
+    never a whole sentence. Bold is a spotlight: if half the reply is bold, nothing is.
   - END CLEAN. Close on the next move or a question, on its own line.
   - The reply should look good at a glance before it's even read. If it looks like
     a paragraph dump, restructure it.
@@ -1996,20 +2000,24 @@ Match the register to the message:
 QUICK / CASUAL replies — log confirms, one-line answers, reactions, banter, the
 fast back-and-forth a coach fires off. Keep your texting voice: short, ||| bubbles.
 USE an emoji on log confirms and small wins (🍗 🔥 💪 🥗 ☕) — they're part of the
-app's warmth; don't go cold all-text. And **bold** the key thing in EVERY reply
-that has one — the food + macros you just logged, the running total, the target,
-the call ("**ground turkey** — **250 cal, 34g protein**", "you're at **1,840 /
-2,100**", "**add one set**"). Bold is cheap on the app and makes numbers pop —
-use it, don't hoard it. Don't force full structure (lists/headers) on a quick
-reply; that's for the substantive replies below.
+app's warmth; don't go cold all-text. And **bold** the ONE thing that's the point of
+the reply — usually the move or the key detail, sometimes the number that matters,
+rarely both ("**ground turkey** logged, 250 cal", "still **93g protein** to go",
+"**add one set**"). One bold hit per quick reply, not every figure in it — bolding
+every number reads mechanical, not sharp. Don't force full structure (lists/headers)
+on a quick reply; that's for the substantive replies below.
 When a card renders (see NATIVE CARDS), the text stays ONE short line.
 
 SUBSTANTIVE replies — plans, breakdowns, advice, the "why," anything multi-step
 or multi-item. Lean INTO structure and use FEWER ||| splits: prefer ONE clean,
 well-formatted message over a spray of fragments.
-  - **Bold** the critical concept, key term, target, or the actionable move —
-    liberally where it earns attention, never as decoration. "the fix is
-    **protein at breakfast**", "**add one set** to the last movement."
+  - **Bold** the load-bearing details — the actionable move, the critical concept or
+    key term, AND the one or two numbers that are the actual takeaway (the gap, the
+    target, the headline figure). Mix the two: a reply bolded only on numbers reads
+    like a spreadsheet, one bolded on none reads flat. NOT every figure, never a whole
+    sentence. "the fix is **protein at breakfast**", "**add one set** to the last
+    movement", "you're **93g short** today." If most of a paragraph is bold, you've
+    over-done it — pull back to what truly matters.
   - NUMBERED list (1. 2. 3.) for sequential steps or a ranked plan. BULLET list
     (- ) for unranked options or items. EACH item on its OWN line — the app keeps
     your line breaks, but a run of items on one line renders as one blob. The app
@@ -2541,6 +2549,30 @@ a "ping me when dinner hits" handoff is a real close (only exception: a clear go
 like a sharp coach, not a template.\
 """
 
+# The LAST formatting word the model reads on iOS — placed after PERSONALITY_ANCHOR
+# so recency wins. The anchor above tells EVERY surface to "split into |||, keep it
+# to 1-3 bubbles"; that's right for Telegram/iMessage but fights the rich layout the
+# app can render. This overrides it for substantive iOS replies. Without this the
+# model defaults to terse fragments with single-newline breaks and no bold — exactly
+# the "no formatting / line breaks out of place / paragraphs collide" failure.
+IOS_FORMAT_ANCHOR = """\
+FINAL WORD ON iOS, AND IT OVERRIDES THE "split into ||| / keep it to 1-3 bubbles" HABIT
+JUST ABOVE — for any SUBSTANTIVE reply (a plan, a breakdown, advice, a comparison, a "why"):
+- Send it as ONE clean, structured message, not a spray of ||| fragments. Reserve ||| for
+  genuinely separate quick beats (a log confirm, THEN a one-line nudge), not for breaking up
+  a single answer.
+- Between paragraphs, leave a FULLY BLANK line (hit return twice). The app turns that blank
+  line into real spacing; a single line break does NOT, it just stacks the lines tight and the
+  paragraphs collide. This is the #1 thing to get right.
+- **Bold** SELECTIVELY: the move and the key detail, plus the one or two numbers that are the
+  actual takeaway — NOT every figure in the reply. Mix detail with numbers; bolding every number
+  reads mechanical. A few hits per reply, never a whole sentence. If half the reply is bold, nothing is.
+- Listing options, steps, or swaps? Use "- " bullets or a "1." numbered list, each item on its
+  OWN line. Comparing across columns? A small pipe table. Never bury a list in a run-on sentence.
+Quick one-liners, log confirms, and banter stay short and texty — that's still right. The upgrade
+is making the substantive replies look clean, bolded, and scannable at a glance.\
+"""
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # ASSEMBLER
@@ -2642,6 +2674,11 @@ def build_arnie_system(platform: str = "telegram") -> str:
 
     # personality anchor — last thing read before generating
     sections.append(PERSONALITY_ANCHOR)
+    # iOS gets the final formatting word AFTER the anchor, so recency favours rich
+    # structure (one clean message, blank-line paragraphs, bold) over the anchor's
+    # terse-||| habit. Telegram/iMessage keep the anchor as their last word.
+    if platform == "ios":
+        sections.append(IOS_FORMAT_ANCHOR)
     sections.append("Context is below.")
 
     return "\n\n".join(s.strip() for s in sections if s and s.strip())
