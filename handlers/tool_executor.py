@@ -1297,6 +1297,39 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
             if dup is not None:
                 return format_dedup_result(dup, now_utc=now_utc)
 
+            # Cumulative roll-up → UPSERT, don't insert. The model re-states the
+            # full running set list on each report ('12' → '12,12' → '12,12,10'),
+            # which dedup-by-equality can't catch (each payload differs). Update
+            # the existing session row in place so N set-reports stay ONE row
+            # instead of N overlapping rows (Danny 2026-06-21 Lat Pulldown). Same
+            # upsert principle add_body_metric uses for repeat weigh-ins.
+            from skills.fitness.exercise_dedup import (
+                find_rollup_supersede, format_rollup_result,
+            )
+            _roll = find_rollup_supersede(
+                exercise_name=canonical_name,
+                sets=inp.get("sets"),
+                reps=str(inp.get("reps", "")) if inp.get("reps") else None,
+                weight_kg=weight_kg,
+                existing_entries=candidate_entries,
+                now_utc=now_utc,
+            )
+            if _roll is not None:
+                _updated = await q_update_exercise_entry(
+                    db, _roll.id, user.id,
+                    sets=inp.get("sets"),
+                    reps=str(inp.get("reps", "")) if inp.get("reps") else None,
+                    weight=weight_kg,
+                    rir=inp.get("rir"),
+                    duration_minutes=inp.get("duration_minutes"),
+                )
+                _target = _updated or _roll
+                # Native clients edit the SAME row they've been watching grow.
+                if isinstance(inp, dict) and getattr(_target, "id", None) is not None:
+                    inp["_entry_id"] = _target.id
+                await db.refresh(target_log)
+                return format_rollup_result(_target, now_utc=now_utc)
+
         is_cardio = inp.get("is_cardio", False) or bool(inp.get("cardio_type"))
         _new_ex = await add_exercise_entry(
             db,

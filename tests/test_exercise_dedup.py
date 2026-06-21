@@ -11,6 +11,8 @@ from skills.fitness.exercise_dedup import (
     is_duplicate_of_recent,
     normalize_exercise_name,
     format_dedup_result,
+    find_rollup_supersede,
+    format_rollup_result,
 )
 
 
@@ -221,3 +223,102 @@ def test_format_dedup_result_no_weight_for_bodyweight():
     assert "Dips" in msg
     assert "2×14,12" in msg
     assert "@" not in msg  # no weight clause for bodyweight
+
+
+# ── find_rollup_supersede: the cumulative roll-up double-log (Danny 06-21) ─────
+#    Lat Pulldown reported set-by-set as a growing list: '12' / '12,12' /
+#    '12,12,10'. Each call must UPDATE the one session row, not insert a new one.
+
+_LAT_W = 74.84  # 165 lb in kg
+
+
+def test_rollup_csv_extends_prefix_supersedes():
+    """Incoming '12,12' must supersede the existing '12' set-1 row."""
+    now = datetime(2026, 6, 21, 18, 6, 15)
+    set1 = _entry(id_=466, name="Lat Pulldown", sets=1, reps="12", weight=_LAT_W,
+                  ts=datetime(2026, 6, 21, 17, 57, 17))
+    target = find_rollup_supersede(
+        exercise_name="Lat Pulldown", sets=2, reps="12,12", weight_kg=_LAT_W,
+        existing_entries=[set1], now_utc=now,
+    )
+    assert target is set1
+
+
+def test_rollup_picks_longest_matching_prefix():
+    """With both the set-1 ('12') and set-1-2 ('12,12') partials present, the
+    set-3 report ('12,12,10') supersedes the MOST-complete one (set-1-2)."""
+    now = datetime(2026, 6, 21, 18, 8, 21)
+    set1 = _entry(id_=466, name="Lat Pulldown", sets=1, reps="12", weight=_LAT_W,
+                  ts=datetime(2026, 6, 21, 17, 57, 17))
+    set12 = _entry(id_=467, name="Lat Pulldown", sets=2, reps="12,12", weight=_LAT_W,
+                   ts=datetime(2026, 6, 21, 18, 6, 15))
+    target = find_rollup_supersede(
+        exercise_name="Lat Pulldown", sets=3, reps="12,12,10", weight_kg=_LAT_W,
+        existing_entries=[set1, set12], now_utc=now,
+    )
+    assert target is set12
+
+
+def test_rollup_constant_reps_more_sets_supersedes():
+    """Case B: existing 2×'12' superseded by incoming 3×'12' (reps single-valued)."""
+    now = datetime(2026, 6, 21, 18, 8, 21)
+    prior = _entry(id_=500, name="Rear Delt Fly", sets=2, reps="12", weight=9.07,
+                   ts=datetime(2026, 6, 21, 18, 6, 0))
+    target = find_rollup_supersede(
+        exercise_name="Rear Delt Fly", sets=3, reps="12", weight_kg=9.07,
+        existing_entries=[prior], now_utc=now,
+    )
+    assert target is prior
+
+
+def test_rollup_different_reps_not_a_prefix_does_not_supersede():
+    """Genuinely different sets ('10,12' is not an extension of '12') keep
+    writing as separate rows — no false merge."""
+    now = datetime(2026, 6, 21, 18, 6, 15)
+    set1 = _entry(id_=466, name="Lat Pulldown", sets=1, reps="12", weight=_LAT_W,
+                  ts=datetime(2026, 6, 21, 17, 57, 17))
+    assert find_rollup_supersede(
+        exercise_name="Lat Pulldown", sets=2, reps="10,12", weight_kg=_LAT_W,
+        existing_entries=[set1], now_utc=now,
+    ) is None
+
+
+def test_rollup_different_weight_does_not_supersede():
+    """A drop set at a different load is a real new entry, not a roll-up."""
+    now = datetime(2026, 6, 21, 18, 6, 15)
+    set1 = _entry(id_=466, name="Lat Pulldown", sets=1, reps="12", weight=_LAT_W,
+                  ts=datetime(2026, 6, 21, 17, 57, 17))
+    assert find_rollup_supersede(
+        exercise_name="Lat Pulldown", sets=2, reps="12,12", weight_kg=_LAT_W - 10,
+        existing_entries=[set1], now_utc=now,
+    ) is None
+
+
+def test_rollup_single_incoming_set_never_supersedes():
+    """A lone single-set report can't be an extension of anything → insert."""
+    now = datetime(2026, 6, 21, 17, 57, 17)
+    assert find_rollup_supersede(
+        exercise_name="Lat Pulldown", sets=1, reps="12", weight_kg=_LAT_W,
+        existing_entries=[], now_utc=now,
+    ) is None
+
+
+def test_rollup_outside_session_window_does_not_supersede():
+    """Yesterday's identical-prefix set is a different session — not a roll-up."""
+    now = datetime(2026, 6, 21, 18, 6, 15)
+    yesterday = _entry(id_=400, name="Lat Pulldown", sets=1, reps="12", weight=_LAT_W,
+                       ts=datetime(2026, 6, 20, 18, 0, 0))
+    assert find_rollup_supersede(
+        exercise_name="Lat Pulldown", sets=2, reps="12,12", weight_kg=_LAT_W,
+        existing_entries=[yesterday], now_utc=now,
+    ) is None
+
+
+def test_format_rollup_result_shape():
+    entry = _entry(id_=466, name="Lat Pulldown", sets=3, reps="12,12,10", weight=_LAT_W)
+    msg = format_rollup_result(entry, now_utc=datetime(2026, 6, 21, 18, 8, 25))
+    assert msg.startswith("Updated the running set")
+    assert "[#466]" in msg
+    assert "3x12,12,10" in msg
+    assert "165lb" in msg
+    assert "no new row" in msg.lower() or "one entry" in msg.lower()
