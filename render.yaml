@@ -79,6 +79,12 @@ services:
         sync: false
       - key: LINKING_ENABLED
         value: "true"
+      # Master switch for the Brain tab (live mindmap of learned facts). When unset,
+      # the dashboard hides the Brain nav/panel and /brain/{token} + /api/brain/insights
+      # return 404 by design. Set to "true"/"1" in the Render dashboard to expose it
+      # (this file is reference-only, so the dashboard value is what actually applies).
+      - key: BRAIN_TAB_ENABLED
+        value: "true"
       - key: ARNIE_IMESSAGE_ADDRESS
         sync: false
       - key: TELEGRAM_BOT_USERNAME
