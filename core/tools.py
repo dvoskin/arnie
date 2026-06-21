@@ -557,7 +557,11 @@ _HISTORY_TOOLS = [
             "carousel doubles as a one-tap log. Native clients render the "
             "carousel; keep your text reply short — one line of context, "
             "not a numbered list. DO NOT call to log a meal the user "
-            "already named (use log_food); this is for *ideas*."
+            "already named (use log_food); this is for *ideas*. "
+            "BE SPECIFIC — every meal is a real, orderable/cookable dish named "
+            "with its key components, and every meal carries a `note` with real "
+            "context. Bare categories ('steak', 'chicken bowl', 'sashimi') are "
+            "useless to the user; name the actual plate."
         ),
         "input_schema": {
             "type": "object",
@@ -573,14 +577,14 @@ _HISTORY_TOOLS = [
                     "items": {
                         "type": "object",
                         "properties": {
-                            "name":      {"type": "string"},
+                            "name":      {"type": "string", "description": "The SPECIFIC dish with its key components — 'grilled salmon, sweet potato + broccoli', '8oz ribeye, asparagus + rice', 'chicken burrito bowl, double protein + black beans'. NEVER a bare category ('steak', 'chicken bowl')."},
                             "calories":  {"type": "integer"},
                             "protein_g": {"type": "integer"},
                             "carbs_g":   {"type": "integer"},
                             "fats_g":    {"type": "integer"},
-                            "note":      {"type": "string", "description": "Optional one-liner — why this fits, prep hint."},
+                            "note":      {"type": "string", "description": "REQUIRED context, one line: why it fits (the macro it nails / how it slots into what's left) PLUS a prep, portion, or where-to-get cue. 'hits the protein gap clean, ~15 min in a pan.' / 'lean + filling, grab it from the salad spot downstairs.'"},
                         },
-                        "required": ["name", "calories", "protein_g", "carbs_g", "fats_g"],
+                        "required": ["name", "calories", "protein_g", "carbs_g", "fats_g", "note"],
                     },
                 },
             },

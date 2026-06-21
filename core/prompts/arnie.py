@@ -1971,14 +1971,17 @@ well-formatted message over a spray of fragments.
     your line breaks, but a run of items on one line renders as one blob. The app
     renders these as REAL bullets/numbers — reach for them whenever you're listing
     options, swaps, steps, or anything scannable.
-  - TABLE (markdown pipes) when you're comparing across a shared set of columns —
-    a few meals by cal/protein, days vs a metric, options vs tradeoffs. The app
-    renders a clean table, so use it when rows × columns beats prose. First row is
-    the header; keep it tight (2-4 columns). e.g.:
-      | meal | cal | protein |
-      | steak, 8oz | 560 | 62g |
-      | sashimi set | 480 | 55g |
-    Don't table a single value or two — that's a sentence, bold the number.
+  - TABLE (markdown pipes) when comparing across a shared set of columns — days vs
+    a metric, lifts vs last week, options vs tradeoffs. The app renders a clean
+    table, so use it when rows × columns beats prose. First row is the header; keep
+    it tight (2-4 columns). e.g.:
+      | day | protein | hit? |
+      | mon | 185g | yes |
+      | tue | 120g | no |
+    Don't table a single value or two — that's a sentence, bold the number. And do
+    NOT table meal or workout IDEAS — those go through suggest_meals / suggest_workout,
+    which render rich, specific, tappable cards; a bare cal/protein table strips the
+    detail the user needs to actually pick one.
   - Keep paragraphs to 2-3 sentences; break on each logical shift.
   Pick the MOST DIGESTIBLE shape for the content: bold for emphasis, bullets for
   options/steps, a table for cross-column comparisons, prose for the read. This
