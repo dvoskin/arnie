@@ -326,6 +326,187 @@ DATA:
     return []
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Daily BRIEFING — the structured, prioritized home-screen briefing. Unlike the
+# flat insight bullets, this is the full "coach already reviewed everything"
+# package: a hero status, ONE focus, narrative feed cards (prioritized), and a
+# conversation starter. The coach does the thinking; the user does the doing.
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _build_briefing_summary(stats: dict) -> str:
+    """Organized raw material for the briefing LLM — recent daily history with
+    weekday labels (so it can see weekend patterns + streaks), the weight series
+    (milestones + pace), and recent wearable data. We give it the data; it finds
+    the meaning."""
+    from datetime import date as _date, datetime as _dt
+    user = stats.get("user", {})
+    targets = stats.get("targets") or {}
+    today = stats.get("today") or {}
+    history = stats.get("history") or []
+    weights = stats.get("weights") or []
+    health = stats.get("health") or []
+    tgt_cal = targets.get("calories") or 0
+    tgt_pro = targets.get("protein") or 0
+    today_iso = _date.today().isoformat()
+
+    L = [f"CLIENT: {user.get('name','')} — goal: {user.get('goal','')}"]
+    cw, gw = user.get("current_weight_lbs"), user.get("goal_weight_lbs")
+    if cw:
+        L.append(f"Current weight: {cw}lb"
+                 + (f", goal {gw}lb ({round(abs(cw - gw), 1)}lb to go)" if gw else ""))
+    L.append(f"Daily targets: {tgt_cal} cal / {tgt_pro}g protein")
+    L.append("")
+    workout_done = today.get("workout_completed") or bool(today.get("exercise_entries"))
+    L.append(f"TODAY ({today_iso}, STILL IN PROGRESS): "
+             f"{today.get('calories', 0)} cal, {today.get('protein', 0)}g protein so far; "
+             f"workout {'done' if workout_done else 'not yet'}")
+    L.append("")
+
+    past = [h for h in history if h.get("date") and h["date"] < today_iso][-21:]
+    if past:
+        L.append("LOGGED DAYS (oldest→newest) — date (weekday): cal, protein, workout:")
+        for h in past:
+            try:
+                wd = _dt.strptime(h["date"], "%Y-%m-%d").strftime("%a")
+            except Exception:
+                wd = "?"
+            L.append(f"  {h['date']} ({wd}): {h.get('calories', 0)} cal, "
+                     f"{h.get('protein', 0)}g P, workout={'Y' if h.get('workout') else 'N'}")
+        L.append("")
+
+    if weights:
+        L.append("WEIGHT (lb), oldest→newest — find milestones (lowest in N weeks) + pace:")
+        L.append("  " + ", ".join(f"{w['date']}:{w['lbs']}" for w in weights[-30:]))
+        L.append("")
+
+    wsnaps = [h for h in health if h.get("source") == "whoop"][-5:]
+    if wsnaps:
+        L.append("WEARABLE (Whoop), recent:")
+        for h in wsnaps:
+            parts = []
+            if h.get("recovery_score") is not None:
+                parts.append(f"recovery {h['recovery_score']}%")
+            if h.get("sleep_hours") is not None:
+                parts.append(f"sleep {h['sleep_hours']:.1f}h")
+            if h.get("strain") is not None:
+                parts.append(f"strain {h['strain']:.1f}")
+            L.append(f"  {h.get('date', '')}: " + ", ".join(parts))
+
+    return "\n".join(L)
+
+
+def _sanitize_briefing(obj: dict) -> dict:
+    """Coerce the LLM object into the wire shape: hero/focus/cards/starter, cards
+    capped + sorted by priority desc. Missing pieces degrade gracefully."""
+    def _s(v) -> str:
+        return str(v).strip() if v is not None else ""
+
+    hero_in = obj.get("hero") or {}
+    hero = {
+        "headline": (_s(hero_in.get("headline")) or None),
+        "milestone": (_s(hero_in.get("milestone")) or None),
+        "body": _s(hero_in.get("body")),
+    }
+    focus_in = obj.get("focus") or {}
+    focus = {"title": _s(focus_in.get("title")), "body": _s(focus_in.get("body"))}
+
+    cards = []
+    for c in (obj.get("cards") or []):
+        if not isinstance(c, dict):
+            continue
+        story = _s(c.get("story"))
+        if not story:
+            continue
+        try:
+            prio = int(c.get("priority", 50))
+        except Exception:
+            prio = 50
+        cards.append({
+            "emoji": _s(c.get("emoji")) or "✨",
+            "title": _s(c.get("title")),
+            "story": story,
+            "priority": prio,
+        })
+    cards.sort(key=lambda c: c["priority"], reverse=True)
+    cards = cards[:5]
+
+    return {"hero": hero, "focus": focus, "cards": cards, "starter": _s(obj.get("starter"))}
+
+
+async def generate_briefing(stats: dict) -> dict:
+    """Call Claude for the structured home briefing — interpreted, prioritized."""
+    from core.llm import _get_anthropic, DEFAULT_MODEL, ANTHROPIC_API_KEY
+
+    if not ANTHROPIC_API_KEY():
+        return {}
+
+    name = (stats.get("user", {}) or {}).get("name", "") or "your client"
+    summary = _build_briefing_summary(stats)
+    prompt = f"""You are Arnie, a sharp personal fitness coach writing today's BRIEFING for {name}. You have ALREADY reviewed all of their data. Hand back a briefing that answers, within seconds: "Am I winning? What matters today? What should I do?" INTERPRET the data into meaning — NEVER list raw metrics.
+
+Return ONLY a valid JSON object with EXACTLY this shape:
+{{
+  "hero": {{
+    "headline": "<the single most striking status, e.g. '209.2 lbs' — or null if nothing striking>",
+    "milestone": "<positive reinforcement IF genuinely earned by the data, e.g. 'Lowest weight in 6 weeks 🎉' — else null>",
+    "body": "<1-2 short sentences: where they are + today's direction. e.g. 'Protein was 193g yesterday. Let's close the final 7 lbs.'>"
+  }},
+  "focus": {{
+    "title": "<2-4 words>",
+    "body": "<the SINGLE highest-leverage action for today, 1-2 sentences, grounded in a REAL pattern/number, ending actionable. e.g. 'You average 38g less protein on weekends. Let's get 50g in before noon.'>"
+  }},
+  "cards": [
+    {{"emoji": "<one emoji>", "title": "<1-2 words>", "story": "<1-2 sentence STORY answering 'why should I care' — a trend, streak, achievement, risk, or opportunity, e.g. 'You hit protein 8 of the last 10 days. Best streak this month.'>", "priority": <0-100>}}
+  ],
+  "starter": "<ONE personalized conversation question about today, e.g. 'What's dinner looking like?'>"
+}}
+
+RULES:
+- INTERPRET, never display. NEVER a bare metric ("Protein 184g"). Always the meaning ("You hit protein 8 of the last 10 days — best streak this month").
+- The hero is the LARGEST element — make it land. Use a milestone only if the data truly earns it (a real low, a real streak); otherwise milestone = null.
+- Exactly ONE focus: the single most important lever today, tied to a real behavior/pattern in the data (a weekend protein dip, a stalled lift, a recovery dip, a strong streak to protect).
+- 2-4 cards, each a STORY with an emoji + short title (🍗 protein, ⚖️ weight, 💪 training, 😴 recovery/sleep, 🍽 nutrition). ORDER by priority (most important first, highest priority). Pick what MATTERS today — the order should shift with the data.
+- starter invites conversation about TODAY.
+- Use REAL numbers and REAL patterns from the DATA below. No greetings (the app adds "Good morning"). No filler, no meta-commentary about how much they've logged.
+
+DATA:
+{summary}
+"""
+    try:
+        client = _get_anthropic()
+        response = await client.messages.create(
+            model=DEFAULT_MODEL(),
+            max_tokens=900,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        text = response.content[0].text.strip()
+        if text.startswith("```"):
+            text = text.split("\n", 1)[1].rsplit("```", 1)[0].strip()
+        if text.startswith("json"):
+            text = text[4:].strip()
+        obj = json.loads(text)
+        if isinstance(obj, dict):
+            return _sanitize_briefing(obj)
+    except Exception as e:
+        logger.error(f"Briefing generation failed: {e}")
+
+    return {}
+
+
+async def get_briefing(user_id: int, stats: dict, force: bool = False) -> dict:
+    """Cached daily briefing per user — regenerates if older than the TTL."""
+    now = time.time()
+    cache_key = (user_id, "__briefing__")
+    cached = _CACHE.get(cache_key)
+    if not force and cached and (now - cached[0]) < _TTL:
+        return cached[1]
+
+    briefing = await generate_briefing(stats)
+    if briefing and (briefing.get("hero", {}).get("body") or briefing.get("cards")):
+        _CACHE[cache_key] = (now, briefing)
+    return briefing
+
+
 async def get_insights(user_id: int, stats: dict, force: bool = False,
                        date_key: str = "") -> List[str]:
     """Cached insights per (user_id, date) — regenerates if older than 1 hour."""

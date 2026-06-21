@@ -50,6 +50,24 @@ async def get_insights_for_ios(
     return {"insights": insights, "period": period}
 
 
+@router.get("/briefing")
+async def get_briefing_for_ios(
+    force: bool = False,
+    identity: str = Depends(current_identity),
+) -> dict:
+    """The structured daily home briefing — hero status, one focus, prioritized
+    narrative cards, and a conversation starter. The coach reviews everything and
+    hands back what matters, already interpreted. `force=true` bypasses the cache."""
+    from api.app import _build_stats_for_user
+    from api.insights import get_briefing
+
+    async with AsyncSessionLocal() as db:
+        user = await resolve_user(db, identity)
+        stats = await _build_stats_for_user(db, user)
+        briefing = await get_briefing(user.id, stats, force=force)
+    return {"v": 1, **briefing}
+
+
 @router.get("/memory")
 async def get_memory_for_ios(
     identity: str = Depends(current_identity),
