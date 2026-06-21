@@ -57,7 +57,7 @@ _LOCATION_PENDING_TTL = 600  # seconds
 import re as _re
 _LOCATION_INTENT_RE = _re.compile(
     r"near\s*me|nearby|near\s*by|around\s*me|close\s*to\s*me|closest"
-    r"|возле\s*меня|рядом|поблизост|вокруг\s*меня|недалеко|ближайш"
+    r"|возле\s*меня|около\s*меня|рядом|рядом\s*со\s*мной|поблизост|вокруг\s*меня|недалеко|ближайш|поделиться\s*локац"
     r"|біля\s*мене|поряд|поблизу|навколо\s*мене|найближч",
     _re.IGNORECASE | _re.UNICODE,
 )
