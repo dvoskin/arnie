@@ -412,10 +412,29 @@ def deterministic_confirmation(tool_calls, log, prefs, tool_results=None) -> str
             # fall through to the generic net rather than claim a weigh-in happened
     if "log_water" in names:
         # Same dedup-aware shape as log_food / log_exercise above.
+        # Voice the actual total from the tool result instead of a canned
+        # "Keep sipping." line — that phrase is banned empty filler. Parse the
+        # ml/oz the tool already computed and give a real read + forward beat.
+        import re as _re
         last_water_result = str(tool_results.get("log_water", "") or "")
-        if last_water_result.startswith("Already on the board"):
-            return "Got it, already on the board. 💧|||Keep sipping."
-        return "Water logged. 💧|||Keep sipping."
+        already = last_water_result.startswith("Already on the board")
+        _wm = _re.search(r"(\d{2,5})\s*ml", last_water_result)
+        _wo = _re.search(r"~\s*(\d{1,4})\s*oz", last_water_result)
+        total_bit = ""
+        if _wm:
+            total_bit = f"{int(_wm.group(1))}ml"
+            if _wo:
+                total_bit += f" (~{int(_wo.group(1))}oz)"
+        low = "still building" in last_water_result or "keep drinking" in last_water_result
+        if already:
+            head = "already counted that one. 💧"
+        else:
+            head = "water's in. 💧"
+        if total_bit and low:
+            return f"{head}|||{total_bit} so far, still light. grab another glass with your next meal."
+        if total_bit:
+            return f"{head}|||{total_bit} on the day, right on pace. what's next?"
+        return f"{head}|||what's next?"
     if names & {"delete_food_entry", "delete_exercise_entry"}:
         tail = (f"You're at {cal} / {cal_t} calories now." if cal_t
                 else f"That's {cal} calories now.")
