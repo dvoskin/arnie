@@ -1576,15 +1576,16 @@ async def cmd_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     im_addr = os.getenv("ARNIE_IMESSAGE_ADDRESS", "")
     if im_addr:
-        # Pre-filled iMessage deep link — user just taps and hits send
-        sms = f"sms:{im_addr}&body={code}"
-        kb = InlineKeyboardMarkup([[InlineKeyboardButton("📱 Connect iMessage →", url=sms)]])
+        # NOTE: do NOT put an sms:/tel: link in an InlineKeyboardButton — the
+        # Telegram Bot API only accepts http/https/tg URLs in inline buttons and
+        # rejects anything else with BUTTON_URL_INVALID, which made the whole
+        # /link reply throw and the user saw NOTHING. Send the address + code as
+        # plain, copyable text instead (always works, on every client).
         await update.message.reply_text(
-            "tap below on your iPhone and it opens Messages with the code ready to send. "
-            "hit send and your iMessage links to this account automatically.\n\n"
-            "no iPhone in hand? copy the code below and text it to Arnie on iMessage. "
-            "expires in 10 min.",
-            reply_markup=kb,
+            "to connect iMessage, open Messages on your iPhone and text the code "
+            f"below to Arnie at <code>{im_addr}</code>.\n\n"
+            "it links automatically. expires in 10 min.",
+            parse_mode="HTML",
         )
     else:
         await update.message.reply_text(
@@ -1708,6 +1709,7 @@ async def _post_init(app: Application):
         BotCommand("dash",    "Open your personal dashboard"),
         BotCommand("me",      "Profile, targets & settings"),
         BotCommand("connect", "Link Whoop or Apple Health"),
+        BotCommand("link",    "Connect iMessage / iOS to this account"),
         BotCommand("howto",   "Get the most out of Arnie"),
         BotCommand("help",    "Commands & quick reference"),
     ])
