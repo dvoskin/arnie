@@ -742,7 +742,14 @@ async def run_imessage_pipeline(address: str, chat_guid: str, raw_text: str,
                 return
             # Requesting a link from iMessage → hand them a tap link to Telegram
             if _match_intent(raw_text, _LINK_PATTERNS):
-                code = await generate_link_code(db, channel_user)
+                # Mint the code on the CANONICAL account, not the raw iMessage
+                # row. If this identity is already linked, channel_user is a
+                # secondary; minting there would scatter link state across rows
+                # and break a third device joining the same brain.
+                link_owner = channel_user
+                if channel_user.linked_to_user_id:
+                    link_owner = await reload_user(db, channel_user.linked_to_user_id) or channel_user
+                code = await generate_link_code(db, link_owner)
                 bot = os.getenv("TELEGRAM_BOT_USERNAME", "Arnie_1026_Bot")
                 await bb_send_text(chat_guid, "to connect your telegram, tap this on your phone:")
                 await asyncio.sleep(0.3)
