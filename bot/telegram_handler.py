@@ -1562,7 +1562,13 @@ async def cmd_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Device linking isn't available right now.")
         return
     async with AsyncSessionLocal() as db:
-        user = await get_or_create_user(db, str(update.effective_user.id))
+        # Resolve to the canonical account. If this Telegram identity is already
+        # linked into another platform's account, the raw channel row has no
+        # name / onboarding_completed=False — checking it would wrongly block
+        # /link ("Finish setup first") and would mint the code on a SECONDARY
+        # row. Minting on the canonical keeps a third device (iMessage + iOS +
+        # Telegram) linking onto the same brain.
+        user = await resolve_user(db, str(update.effective_user.id))
         if not user.onboarding_completed and not user.name:
             await update.message.reply_text("Finish setup first, then you can link your other device.")
             return
