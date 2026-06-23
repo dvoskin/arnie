@@ -2049,6 +2049,14 @@ function LobeInsightsPanel({ lobe, theme, onClose, stateMeta, stateCol }) {
 function App() {
   const THEMES = window.BRAIN_THEMES;
 
+  // Safe localStorage access. In-app browsers (Telegram/iOS webview),
+  // private mode, sandboxed iframes and "block all cookies" all throw a
+  // SecurityError on localStorage. Reads happen inside useState
+  // initializers, so an unguarded throw crashes App on first render and
+  // the whole page goes blank. These helpers swallow the error.
+  const lsGet = (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } };
+  const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
+
   // Theme resolution order:
   //   1. ?theme=dark|light URL param (set by the dashboard on iframe mount)
   //   2. parent dashboard's localStorage (when embedded same-origin)
@@ -2060,19 +2068,19 @@ function App() {
       const q = u.searchParams.get("theme");
       if (q === "dark" || q === "light") return q;
     } catch (e) {}
-    const dash = localStorage.getItem("arnie-theme");
+    const dash = lsGet("arnie-theme");
     if (dash === "dark" || dash === "light") return dash;
-    return localStorage.getItem("arnie.mode") || "dark";
+    return lsGet("arnie.mode") || "dark";
   })();
   const [mode, setMode] = useState(initialMode);
-  const [view, setView] = useState(() => localStorage.getItem("arnie.view") || "brain");
+  const [view, setView] = useState(() => lsGet("arnie.view") || "brain");
   // First-visit welcome tooltip — gone once dismissed, never returns. The
   // localStorage flag is set on dismiss, not just on first-render, so a
   // refresh mid-session keeps the card visible until the user actually
   // closes it.
-  const [welcomed, setWelcomed] = useState(() => localStorage.getItem("arnie.brain.welcomed") === "1");
+  const [welcomed, setWelcomed] = useState(() => lsGet("arnie.brain.welcomed") === "1");
   function dismissWelcome() {
-    try { localStorage.setItem("arnie.brain.welcomed", "1"); } catch (e) {}
+    lsSet("arnie.brain.welcomed", "1");
     setWelcomed(true);
   }
 
@@ -2113,7 +2121,7 @@ function App() {
   const toastTimer = useRef(null);
   const theme = THEMES[mode];
 
-  useEffect(() => { localStorage.setItem("arnie.mode", mode); }, [mode]);
+  useEffect(() => { lsSet("arnie.mode", mode); }, [mode]);
   // Expose the theme accent + shimmer tints as CSS variables so the
   // keyframe animations defined in <style> can reference them.
   useEffect(() => {
@@ -2121,7 +2129,7 @@ function App() {
     root.style.setProperty("--lv-known", THEMES[mode].known);
     root.style.setProperty("--lv-shimmer", mode === "dark" ? "rgba(255,255,255,0.16)" : "rgba(40,55,70,0.22)");
   }, [mode]);
-  useEffect(() => { localStorage.setItem("arnie.view", view); }, [view]);
+  useEffect(() => { lsSet("arnie.view", view); }, [view]);
 
   // measure the stage so the constellation knows its canvas
   useEffect(() => {
