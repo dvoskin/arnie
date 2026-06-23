@@ -3,6 +3,7 @@ AI-generated dashboard insights.
 Calls Claude with a compact data summary, returns 3-5 short coaching observations.
 Cached per-user for 1 hour to keep cost down.
 """
+import asyncio
 import json
 import logging
 import time
@@ -14,6 +15,10 @@ logger = logging.getLogger(__name__)
 # In-memory cache: {user_id: (timestamp, insights_list)}
 _CACHE: dict = {}
 _TTL = 10800  # 3 hours — analysis stays stable until it auto-refreshes (or a manual refresh forces it)
+
+# Per-key guard so a burst of requests on a stale briefing kicks off only ONE
+# background regeneration, not one per request.
+_briefing_refreshing: set = set()
 
 
 def _build_summary(stats: dict) -> str:
@@ -421,11 +426,15 @@ def _sanitize_briefing(obj: dict) -> dict:
             prio = int(c.get("priority", 50))
         except Exception:
             prio = 50
+        kind = _s(c.get("kind")).lower()
+        if kind not in {"win", "risk", "opportunity", "trend", "noticed", "prediction"}:
+            kind = "noticed"
         cards.append({
             "emoji": _s(c.get("emoji")) or "✨",
             "title": _s(c.get("title")),
             "story": story,
             "priority": prio,
+            "kind": kind,
         })
     cards.sort(key=lambda c: c["priority"], reverse=True)
     cards = cards[:5]
@@ -433,8 +442,97 @@ def _sanitize_briefing(obj: dict) -> dict:
     return {"hero": hero, "focus": focus, "cards": cards, "starter": _s(obj.get("starter"))}
 
 
+def _engagement_signal(stats: dict) -> dict:
+    """How much the user has given Arnie so far, so the briefing can match its
+    substance + confidence to the evidence. Counts logged days, weigh-ins, and
+    workouts (plus whether today's been touched). Returns a tier 0-3:
+
+      0 NEW      — profile only, no logs            → plan / projection / teach
+      1 EARLY    — a little data (today / 1-3 days)  → real-time + first reflections
+      2 BUILDING — several days logged               → emerging patterns
+      3 RICH     — weeks of data                     → patterns + foresight
+
+    The brief is the SAME shape at every tier; only the mix of content shifts, so
+    it's always full and useful — never an empty dashboard waiting for data."""
+    today = stats.get("today") or {}
+    history = stats.get("history") or []
+    weights = stats.get("weights") or []
+
+    logged_days = sum(1 for h in history
+                      if (h.get("calories") or 0) > 0 or h.get("workout"))
+    weigh_ins = len(weights)
+    workouts = sum(1 for h in history if h.get("workout"))
+    today_logged = ((today.get("calories") or 0) > 0
+                    or bool(today.get("food_entries"))
+                    or bool(today.get("exercise_entries")))
+
+    if logged_days >= 10 and weigh_ins >= 5:
+        tier = 3
+    elif logged_days >= 4:
+        tier = 2
+    elif logged_days >= 1 or today_logged:
+        tier = 1
+    else:
+        tier = 0
+
+    return {
+        "tier": tier,
+        "logged_days": logged_days,
+        "weigh_ins": weigh_ins,
+        "workouts": workouts,
+        "today_logged": today_logged,
+    }
+
+
+def _briefing_tier_guidance(sig: dict) -> str:
+    """Composition rules handed to the briefing LLM for the user's current tier.
+    Always demands a COMPLETE brief; shifts WHAT fills it as data grows."""
+    base = (
+        "Always return a COMPLETE, useful briefing: a hero, one focus, 3-4 cards, and "
+        "a starter. NEVER leave a section empty or padded with filler — when data is "
+        "light, fill with the client's goal, plan, projection, and concrete coaching "
+        "from their profile (a sharp plan is as useful as a trend). Match your "
+        "CONFIDENCE to the evidence: hedge when thin ('first signs…'), sharpen as it "
+        "grows. Do NOT apologize for or dwell on how little they've logged."
+    )
+    tier = sig.get("tier", 0)
+    if tier == 0:
+        return base + (
+            "\nSTAGE — NEW (profile only, no logs). This briefing is a PLAN, not an "
+            "analysis. hero = their goal + a forward projection toward goal weight at "
+            "their targets (directional, e.g. 'on track for ~mid-August' — never a past "
+            "trend they don't have). focus = the ONE first move: log today's first meal "
+            "(a photo, a voice note, or just telling you). cards = goal-specific coaching "
+            "+ what a good day looks like for them + ONE forward 'next unlock' card naming "
+            "the reward for logging (e.g. 'Log 3 days and I'll start mapping your trend'). "
+            "starter = an inviting, goal-aware opener. Make day one feel like a sharp plan."
+        )
+    if tier == 1:
+        return base + (
+            "\nSTAGE — EARLY (a little data). hero = today vs target (real-time). focus = "
+            "today's next move. cards = your FIRST real reflections on what they logged "
+            "(hedged) + goal/plan coaching to round it out + ONE forward 'next unlock' "
+            "card. Blend fresh observation with the plan."
+        )
+    if tier == 2:
+        return base + (
+            "\nSTAGE — BUILDING (several days logged). hero = a short trend or today. "
+            "focus = a real emerging pattern. cards = patterns + adherence + a rate-based "
+            "projection. Mostly observed; add a little plan only if needed to stay full. "
+            "Drop the 'next unlock' card now."
+        )
+    return base + (
+        "\nSTAGE — RICH (weeks of data). The full 'I know you' read: trajectory, what's "
+        "working, predictions, comparisons, risks. No getting-started or progress card — "
+        "this is pure interpreted coaching."
+    )
+
+
 async def generate_briefing(stats: dict) -> dict:
-    """Call Claude for the structured home briefing — interpreted, prioritized."""
+    """Call Claude for the structured home briefing — interpreted, prioritized.
+    The composition adapts to the user's engagement tier (see `_engagement_signal`)
+    so a brand-new user gets a full, useful PLAN and it enriches into pattern-based
+    coaching as they log + chat — same shape throughout, never an empty dashboard."""
     from core.llm import _get_anthropic, DEFAULT_MODEL, ANTHROPIC_API_KEY
 
     if not ANTHROPIC_API_KEY():
@@ -442,13 +540,14 @@ async def generate_briefing(stats: dict) -> dict:
 
     name = (stats.get("user", {}) or {}).get("name", "") or "your client"
     summary = _build_briefing_summary(stats)
+    tier_guidance = _briefing_tier_guidance(_engagement_signal(stats))
     prompt = f"""You are Arnie, a sharp personal fitness coach writing today's BRIEFING for {name}. You have ALREADY reviewed all of their data. Hand back a briefing that answers, within seconds: "Am I winning? What matters today? What should I do?" INTERPRET the data into meaning — NEVER list raw metrics.
 
 Return ONLY a valid JSON object with EXACTLY this shape:
 {{
   "hero": {{
     "headline": "<the single most striking status, e.g. '209.2 lbs' — or null if nothing striking>",
-    "milestone": "<positive reinforcement IF genuinely earned by the data, e.g. 'Lowest weight in 6 weeks 🎉' — else null>",
+    "milestone": "<positive reinforcement IF genuinely earned by the data, e.g. 'Lowest weight in 6 weeks' — else null. No emoji.>",
     "body": "<1-2 short sentences: where they are + today's direction. e.g. 'Protein was 193g yesterday. Let's close the final 7 lbs.'>"
   }},
   "focus": {{
@@ -456,18 +555,30 @@ Return ONLY a valid JSON object with EXACTLY this shape:
     "body": "<the SINGLE highest-leverage action for today, 1-2 sentences, grounded in a REAL pattern/number, ending actionable. e.g. 'You average 38g less protein on weekends. Let's get 50g in before noon.'>"
   }},
   "cards": [
-    {{"emoji": "<one emoji>", "title": "<1-2 words>", "story": "<1-2 sentence STORY answering 'why should I care' — a trend, streak, achievement, risk, or opportunity, e.g. 'You hit protein 8 of the last 10 days. Best streak this month.'>", "priority": <0-100>}}
+    {{"kind": "<win|risk|opportunity|trend|noticed|prediction>", "title": "<a short, OPINIONATED coaching headline stating your judgment, in natural sentence case (NOT all-caps, no emoji) — e.g. 'On track for 205', 'The weekend leak', \\"Volume's slipping\\", \\"Protein's holding\\", \\"Scale's creeping back\\". NEVER a generic category (Protein, Weight) or a tone word (Win, Opportunity).>", "story": "<DIAGNOSIS + EVIDENCE + RECOMMENDATION in 2-3 tight sentences, scannable in ~2s — what's happening, why it matters, what to do. e.g. \\"Five straight days under 115g protein. That's the pattern driving the scale up. Break it today.\\">", "priority": <0-100>}}
   ],
   "starter": "<ONE personalized conversation question about today, e.g. 'What's dinner looking like?'>"
 }}
 
+COMPOSITION — match the substance to how much you actually know about {name}:
+{tier_guidance}
+
 RULES:
-- INTERPRET, never display. NEVER a bare metric ("Protein 184g"). Always the meaning ("You hit protein 8 of the last 10 days — best streak this month").
-- The hero is the LARGEST element — make it land. Use a milestone only if the data truly earns it (a real low, a real streak); otherwise milestone = null.
-- Exactly ONE focus: the single most important lever today, tied to a real behavior/pattern in the data (a weekend protein dip, a stalled lift, a recovery dip, a strong streak to protect).
-- 2-4 cards, each a STORY with an emoji + short title (🍗 protein, ⚖️ weight, 💪 training, 😴 recovery/sleep, 🍽 nutrition). ORDER by priority (most important first, highest priority). Pick what MATTERS today — the order should shift with the data.
-- starter invites conversation about TODAY.
-- Use REAL numbers and REAL patterns from the DATA below. No greetings (the app adds "Good morning"). No filler, no meta-commentary about how much they've logged.
+- SPEAK as Arnie — first person, present, warm. A coach talking TO them, not software reporting. "I've noticed your protein's staying remarkably consistent" — NOT "Protein remains high." "You're ahead of the pace I expected two weeks ago" — NOT "Weight trend improving." INTERPRET; never a bare metric.
+- The hero is the LARGEST element. Lead with where they ARE and where they're HEADED. Milestone only if the data earns it (a real low, a real streak); else null.
+- Exactly ONE focus: the single highest-leverage move today, tied to a real pattern, ending actionable.
+- 2-4 cards. The TITLE is a short, OPINIONATED coaching headline stating your judgment, in natural sentence case (e.g. 'On track for 205', 'The weekend leak', "Volume's slipping", "Scale's creeping back"). NEVER a generic category (Protein, Weight) or a tone word (Win, Opportunity); never all-caps, no emoji. Each STORY is DIAGNOSIS + EVIDENCE + RECOMMENDATION in 2-3 tight sentences, scannable in ~2s — what happened, why it matters, what to do. Coaching with conviction, not reporting. "kind" sets the card's quiet tone-color. Set "kind" per card:
+    win        — a genuine streak / PR / milestone (ALWAYS include at least one, for momentum)
+    prediction — forward-looking ("at this pace you'll break 205 within 10 days"); FAVOR these, they're the highest value
+    opportunity— an unlock if they change one thing
+    risk       — a real warning (use sparingly)
+    trend      — a neutral pattern
+    noticed    — a personal observation ("I've noticed…")
+  ROTATE the kinds for emotional contrast — don't make every card the same tone. ORDER by priority; the lead card is usually a prediction or a win.
+- LOOK FORWARD more than back — users care where they're GOING. Lead with trajectory and what's next.
+- MOMENTUM: every briefing must contain at least one piece of progress evidence (best streak, lowest weight, fastest pace, days logged).
+- starter: ONE personal question about today.
+- CURATED, not assembled — you reviewed everything and chose THESE for today. Real numbers when you have them; no greetings (the app adds "Good morning"); no filler. When data's thin, lean on goal/plan/projection; one forward-looking "next unlock" card is welcome.
 
 DATA:
 {summary}
@@ -493,12 +604,47 @@ DATA:
     return {}
 
 
+def _schedule_briefing_refresh(user_id: int, stats: dict, cache_key: tuple) -> None:
+    """Fire-and-forget background regen of a stale briefing (stale-while-
+    revalidate). No-op if a refresh for this key is already in flight, or if
+    there's no running event loop to host the task (e.g. a sync caller / tests)."""
+    if cache_key in _briefing_refreshing:
+        return
+    _briefing_refreshing.add(cache_key)
+
+    async def _run() -> None:
+        try:
+            briefing = await generate_briefing(stats)
+            if briefing and (briefing.get("hero", {}).get("body") or briefing.get("cards")):
+                _CACHE[cache_key] = (time.time(), briefing)
+        except Exception:
+            logger.exception("background briefing refresh failed")
+        finally:
+            _briefing_refreshing.discard(cache_key)
+
+    try:
+        asyncio.create_task(_run())
+    except RuntimeError:
+        _briefing_refreshing.discard(cache_key)  # no loop; let a later call retry
+
+
 async def get_briefing(user_id: int, stats: dict, force: bool = False) -> dict:
-    """Cached daily briefing per user — regenerates if older than the TTL."""
+    """Cached daily briefing per user, with stale-while-revalidate.
+
+    Fresh cache → served instantly. Stale cache (older than the TTL) → the stale
+    copy is served instantly AND a background refresh is kicked off, so a user
+    returning after a few hours never waits on the ~15s LLM regen: they see the
+    last brief and the next open is fresh. Only a cold cache (first ever, or after
+    a restart wipes the in-memory store) blocks on generation. `force` always
+    regenerates synchronously (manual pull-to-refresh)."""
     now = time.time()
     cache_key = (user_id, "__briefing__")
     cached = _CACHE.get(cache_key)
-    if not force and cached and (now - cached[0]) < _TTL:
+
+    if not force and cached:
+        if (now - cached[0]) < _TTL:
+            return cached[1]                       # fresh — serve as-is
+        _schedule_briefing_refresh(user_id, stats, cache_key)  # stale — refresh behind
         return cached[1]
 
     briefing = await generate_briefing(stats)
