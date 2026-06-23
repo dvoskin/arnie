@@ -490,7 +490,8 @@ async def _run_pipeline(update: Update, context: ContextTypes.DEFAULT_TYPE,
     # ── Persist conversation (+ turn-health flags on parsed_intent) ────────────
     log_text = "|||".join(turn.response.bubbles)
     await log_conversation(db, user.id, raw_text, log_text, source_type=source_type,
-                           parsed_intent=(",".join(turn.health_flags) or None))
+                           parsed_intent=(",".join(turn.health_flags) or None),
+                           skills_fired=turn.skills_fired)
 
     # ── Adaptive profile refresh + reflection (both fire in background) ─────
     # CRITICAL: the request-scoped `db` session closes when this function returns
@@ -1556,7 +1557,7 @@ async def cmd_dash(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def cmd_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Generate a one-time code + tap-to-send iMessage link to connect devices."""
+    """Generate a one-time code to link another device — the Arnie iOS app or iMessage — to this account."""
     from db.queries import linking_enabled, generate_link_code
     if not linking_enabled():
         await update.message.reply_text("Device linking isn't available right now.")
@@ -1580,17 +1581,21 @@ async def cmd_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Telegram Bot API only accepts http/https/tg URLs in inline buttons and
         # rejects anything else with BUTTON_URL_INVALID, which made the whole
         # /link reply throw and the user saw NOTHING. Send the address + code as
-        # plain, copyable text instead (always works, on every client).
+        # plain, copyable text instead (always works, on every client). The same
+        # code also links the iOS app, so spell out both paths.
         await update.message.reply_text(
-            "to connect iMessage, open Messages on your iPhone and text the code "
-            f"below to Arnie at <code>{im_addr}</code>.\n\n"
-            "it links automatically. expires in 10 min.",
+            "Use the code below to link another device to this account — it works two ways:\n\n"
+            "• Arnie iOS app: open Settings → Link Telegram account and paste the code.\n"
+            f"• iMessage: open Messages on your iPhone and text the code to Arnie at <code>{im_addr}</code>.\n\n"
+            "It links automatically. Expires in 10 min.",
             parse_mode="HTML",
         )
     else:
         await update.message.reply_text(
-            "to connect your iMessage, copy the code below and text it to Arnie "
-            "on iMessage. expires in 10 min."
+            "Use the code below to link another device to this account:\n\n"
+            "• Arnie iOS app: open Settings → Link Telegram account and paste the code.\n"
+            "• iMessage: text the code to Arnie.\n\n"
+            "Expires in 10 min."
         )
     # code as its own bubble — easy to long-press and copy/paste
     await update.message.reply_text(f"<code>{code}</code>", parse_mode="HTML")
