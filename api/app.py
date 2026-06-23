@@ -1568,6 +1568,7 @@ async def post_chat(token: str, body: ChatBody):
         await log_conversation(
             db, user.id, text, reply, source_type="web", platform="web",
             parsed_intent=(",".join(turn.health_flags) or None),
+            skills_fired=turn.skills_fired,
         )
 
     return {"bubbles": bubbles, "ts": datetime.utcnow().isoformat()}

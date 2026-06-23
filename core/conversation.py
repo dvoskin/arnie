@@ -121,6 +121,7 @@ class TurnResult:
     today_log: Any                  # may have been created/refreshed during the turn
     user: Any                       # refreshed after tool execution
     health_flags: list = dataclasses.field(default_factory=list)  # turn-health telemetry
+    skills_fired: Optional[str] = None  # comma-sep tool names this turn (+":error"); null on no-tool turns
     streamed_bubble_count: int = 0  # bubbles already sent via on_text_delta (handler sends the rest)
     needs_location_share: bool = False  # find_nearby_places ran but had no location → prompt a share
 
@@ -990,6 +991,22 @@ async def run_turn(
     except Exception:
         pass
 
+    # Tool telemetry for the conversation log: which tools fired this turn and
+    # which errored (":error" suffix). Stored in ConversationLog.skills_fired —
+    # previously blank on EVERY native (iOS) turn, leaving tool firing and
+    # tool-level errors completely un-observable in the logs. Null on no-tool turns.
+    _skills_fired = None
+    if tool_calls:
+        _parts = []
+        for tc in tool_calls:
+            nm = tc.get("name") or ""
+            if not nm:
+                continue
+            _res = tool_results.get(nm)
+            _errored = isinstance(_res, str) and _res.startswith("Error:")
+            _parts.append(f"{nm}:error" if _errored else nm)
+        _skills_fired = ",".join(_parts) or None
+
     return TurnResult(
         response=resp,
         tool_calls=tool_calls,
@@ -999,6 +1016,7 @@ async def run_turn(
         today_log=today_log,
         user=user,
         health_flags=health_flags,
+        skills_fired=_skills_fired,
         streamed_bubble_count=_streamed_total,
         needs_location_share=_needs_location_share,
     )

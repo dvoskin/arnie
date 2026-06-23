@@ -289,9 +289,23 @@ async def resolve_send_target(db: AsyncSession, canonical: User) -> str:
     return canonical.telegram_id
 
 
+# Logging-day rollover: entries made in the small hours (before this local hour)
+# count toward the PREVIOUS calendar day, not the new one. A user finishing dinner
+# at 12:02am has not started a new food day — without this, late-night logging
+# splits across two days and the dedup guard (which scopes to "today's" log) can't
+# see the meal it should match against. 4am is the MacroFactor-style default.
+LOGGING_DAY_ROLLOVER_HOUR = 4
+
+
 def _user_today(user_timezone: str) -> date:
+    """The user's current LOGGING day (see LOGGING_DAY_ROLLOVER_HOUR) — the day new
+    entries belong to. Before the rollover hour, that's still yesterday."""
     tz = pytz.timezone(user_timezone or "UTC")
-    return datetime.now(tz).date()
+    now = datetime.now(tz)
+    d = now.date()
+    if now.hour < LOGGING_DAY_ROLLOVER_HOUR:
+        d = d - timedelta(days=1)
+    return d
 
 
 async def get_today_log(db: AsyncSession, user_id: int,

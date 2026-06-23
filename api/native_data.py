@@ -202,15 +202,10 @@ def _weight_block(weights, user) -> dict | None:
 
 
 def _user_today_date(user):
-    """The user's local 'today' as a date. Mirrors `_user_today` in db.queries."""
-    from datetime import datetime
-    try:
-        from zoneinfo import ZoneInfo
-        tz = ZoneInfo(user.timezone or "UTC")
-    except Exception:
-        from datetime import timezone
-        tz = timezone.utc
-    return datetime.now(tz).date()
+    """The user's current LOGGING day as a date. Delegates to db.queries._user_today
+    so the rollover-hour grace window (late-night → previous day) is identical here
+    and in the write path — otherwise the day view and the log it writes to disagree."""
+    return _user_today(getattr(user, "timezone", None) or "UTC")
 
 
 async def week_data(db, user) -> dict:

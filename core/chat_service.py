@@ -28,7 +28,9 @@ WHAT DOES NOT LIVE HERE (stays in the handler / adapter)
 """
 from __future__ import annotations
 
+import json
 import logging
+from datetime import datetime
 from typing import Awaitable, Callable, Optional
 
 from db.queries import (
@@ -53,6 +55,11 @@ logger = logging.getLogger(__name__)
 # lifted here later if the app shows the same "what did I say earlier" misses).
 _HISTORY_NORMAL = 6
 _HISTORY_ONBOARDING = 25
+
+# Idempotency window for collapsing a double-fired identical message (double-tap /
+# client retry). The iOS per-identity lock serializes same-user requests, so the
+# repeat lands just after the first turn committed — a short window catches it.
+_DEDUP_WINDOW_SEC = 20
 
 
 async def run_chat_turn(
@@ -132,6 +139,44 @@ async def run_chat_turn(
     in_onboarding = not bool(getattr(user, "onboarding_completed", False))
     was_onboarding = in_onboarding
 
+    # ── Idempotency: collapse a double-fired identical message ────────────────
+    # A double-tap / client retry of the SAME text arrives just after the first
+    # turn committed (the caller's per-identity lock serializes them). If the
+    # prior turn fired NO tools — a pure informational reply, e.g. a coach-feed
+    # "Tell me more" drill-down (the observed double-fire that produced two
+    # near-duplicate essays) — return that reply instead of regenerating. We
+    # never coalesce a turn that fired tools, so a repeated "yes" / "log it"
+    # still logs again. Fully wrapped: any failure falls through to a normal turn.
+    try:
+        _prev = await get_recent_conversations(db, user.id, limit=1)
+        if _prev:
+            _p = _prev[0]
+            _age = ((datetime.utcnow() - _p.timestamp).total_seconds()
+                    if _p.timestamp else 1e9)
+            if ((_p.raw_message or "") == text
+                    and 0 <= _age <= _DEDUP_WINDOW_SEC
+                    and not (_p.skills_fired or "").strip()):
+                _bubbles = [b for b in (_p.response or "").split("|||") if b.strip()]
+                _cards = []
+                if getattr(_p, "cards_json", None):
+                    try:
+                        _cards = json.loads(_p.cards_json) or []
+                    except Exception:
+                        _cards = []
+                if _bubbles:
+                    logger.info(
+                        f"dedup: collapsed repeat message for user {user.id} "
+                        f"(age={_age:.1f}s) — returning prior reply, no re-run"
+                    )
+                    return TurnResult(
+                        response=Response(bubbles=_bubbles, cards=_cards),
+                        tool_calls=[], just_completed=False,
+                        in_onboarding=in_onboarding, onboarding_field_saved=None,
+                        today_log=None, user=user,
+                    )
+    except Exception as _e:
+        logger.debug(f"dedup check skipped for user {getattr(user, 'id', '?')}: {_e}")
+
     # ── System prompt (+ live context for active coaching) ────────────────────
     if not in_onboarding:
         today_log = await get_or_create_today_log(db, user.id, user.timezone or "UTC")
@@ -165,6 +210,7 @@ async def run_chat_turn(
     await log_conversation(
         db, user.id, text, log_text, source_type=_source,
         parsed_intent=(",".join(turn.health_flags) or None),
+        skills_fired=turn.skills_fired,
         platform=platform,
         # Persist the turn's typed cards so native clients can rehydrate them on
         # history restore (otherwise the transcript reloads text-only and cards

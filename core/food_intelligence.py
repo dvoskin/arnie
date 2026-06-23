@@ -321,6 +321,20 @@ def analyze(name, quantity, llm_cal, llm_protein, llm_carbs, llm_fat,
             source = "usda"
             confidence = src.get("_match", "likely")
 
+    # Plausibility clamp: a single logged item should never carry >5000mg sodium.
+    # When it does (corn at 20,378mg — Danny 2026-06-23), the USDA lookup matched a
+    # salt-like/seasoning record or mis-scaled the per-100g basis. Drop the bogus
+    # value rather than store it AND surface a false "high sodium" flag in the
+    # coaching note. 5000mg is ~2x the daily limit, so real foods (even salty
+    # restaurant meals at 2-4g) clear it; only bad matches don't.
+    _SODIUM_IMPLAUSIBLE_MG = 5000
+    if sodium is not None and sodium > _SODIUM_IMPLAUSIBLE_MG:
+        logger.warning(
+            f"implausible sodium {sodium:.0f}mg for {(name or '')!r} "
+            f"(cal={cal}, source={source}, fdc_id={fdc_id}) — dropping enrichment"
+        )
+        sodium = None
+
     pd, satiety, quality = _derive(cal, protein, carbs, fat, fiber, sugar)
 
     # Build the coaching note the LLM uses to actually coach (not just acknowledge)

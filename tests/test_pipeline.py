@@ -298,14 +298,16 @@ async def test_move_day_via_update_date_resyncs_both_days(pipeline_env):
         addr, chat, "put this log for yesterday instead of today", message_guid="m2",
     )
 
-    from datetime import datetime as _dt, timedelta
-    import pytz
+    from datetime import timedelta
+    from db.queries import _user_today
     async with env["Maker"]() as db:
         u = (await db.execute(
             select(User).where(User.telegram_id == f"im:{addr}")
         )).scalar_one()
-        tz = pytz.timezone(u.timezone or "UTC")
-        today = _dt.now(tz).date()
+        # Anchor on the user's LOGGING day (grace-window aware), the same notion
+        # food logging and "yesterday" parsing use — otherwise this flakes around
+        # the 4am rollover.
+        today = _user_today(u.timezone or "UTC")
         yest = today - timedelta(days=1)
         today_log = (await db.execute(
             select(DailyLog).where(DailyLog.user_id == u.id, DailyLog.date == today)
@@ -340,12 +342,13 @@ async def test_workout_logged_for_yesterday_lands_on_yesterday(pipeline_env):
 
     from sqlalchemy import select, func
     from db.models import User, DailyLog, ExerciseEntry
-    from datetime import datetime as _dt, timedelta
-    import pytz
+    from datetime import timedelta
+    from db.queries import _user_today
     async with env["Maker"]() as db:
         u = (await db.execute(select(User).where(User.telegram_id == f"im:{addr}"))).scalar_one()
-        tz = pytz.timezone(u.timezone or "UTC")
-        today = _dt.now(tz).date()
+        # Anchor on the LOGGING day (grace-window aware), matching where "yesterday"
+        # parsing and food/exercise logging land — otherwise flaky around 4am.
+        today = _user_today(u.timezone or "UTC")
         yest = today - timedelta(days=1)
         yest_log = (await db.execute(
             select(DailyLog).where(DailyLog.user_id == u.id, DailyLog.date == yest)

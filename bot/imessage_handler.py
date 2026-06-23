@@ -917,7 +917,8 @@ async def run_imessage_pipeline(address: str, chat_guid: str, raw_text: str,
         # ── Persist conversation ──────────────────────────────────────────────
         log_text = "|||".join(turn.response.bubbles)
         await log_conversation(db, user.id, raw_text, log_text, source_type="imessage",
-                               parsed_intent=(",".join(turn.health_flags) or None))
+                               parsed_intent=(",".join(turn.health_flags) or None),
+                               skills_fired=turn.skills_fired)
 
         # ── Adaptive profile refresh + reflection (background tasks) ────────
         # Background tasks open their OWN session + re-fetch the user by id — the

@@ -34,20 +34,34 @@ def _parse_log_date(date_str: str | None, user_timezone: str = "UTC"):
         return None
     import pytz
     from datetime import date, timedelta, datetime as dt
+    # Relative offsets ("yesterday") anchor on the user's LOGGING day, which rolls
+    # over at 4am (see _user_today) — so a 1am "move this to yesterday" means the
+    # day before the day the user is currently logging into, matching what food
+    # logging itself uses. Without this, before 4am food logs to the grace-day
+    # while "yesterday" resolves off the raw calendar day, and the two disagree.
     try:
-        tz = pytz.timezone(user_timezone or "UTC")
-        today = dt.now(tz).date()
+        from db.queries import _user_today
+        logging_today = _user_today(user_timezone or "UTC")
     except Exception:
-        from datetime import date
-        today = date.today()
+        try:
+            logging_today = dt.now(pytz.timezone(user_timezone or "UTC")).date()
+        except Exception:
+            logging_today = date.today()
+    # The future-date guard uses the real CALENDAR day, so that an explicit ISO
+    # date equal to the actual current calendar day is never falsely rejected as
+    # "future" during the pre-4am grace window.
+    try:
+        calendar_today = dt.now(pytz.timezone(user_timezone or "UTC")).date()
+    except Exception:
+        calendar_today = logging_today
 
     s = date_str.strip().lower()
     if s == "yesterday":
-        return today - timedelta(days=1)
+        return logging_today - timedelta(days=1)
     if s in ("2 days ago", "two days ago"):
-        return today - timedelta(days=2)
+        return logging_today - timedelta(days=2)
     if s in ("3 days ago", "three days ago"):
-        return today - timedelta(days=3)
+        return logging_today - timedelta(days=3)
     # Try YYYY-MM-DD
     try:
         from datetime import date as dclass
@@ -55,11 +69,11 @@ def _parse_log_date(date_str: str | None, user_timezone: str = "UTC"):
         # Reject future dates — the LLM should never log forward in time.
         # Also reject implausibly old dates (>2 years back) to catch year-confusion
         # bugs (e.g. "January 1" → 2099-01-01 instead of the past Jan 1).
-        if parsed > today:
-            logger.warning(f"_parse_log_date: rejected future date {parsed} (today={today})")
+        if parsed > calendar_today:
+            logger.warning(f"_parse_log_date: rejected future date {parsed} (today={calendar_today})")
             return None
-        if (today - parsed).days > 730:
-            logger.warning(f"_parse_log_date: rejected implausibly old date {parsed} (today={today})")
+        if (calendar_today - parsed).days > 730:
+            logger.warning(f"_parse_log_date: rejected implausibly old date {parsed} (today={calendar_today})")
             return None
         return parsed
     except ValueError:
