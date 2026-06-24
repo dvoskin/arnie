@@ -214,6 +214,13 @@ class ExerciseEntry(Base):
     calories_burned_estimate = Column(Float)
     notes = Column(Text)
     source_type = Column(String, default="text")
+    # When the workout actually HAPPENED (user-specified time-of-day, or a wearable
+    # workout's start time). `timestamp` is when it was logged; this is when it
+    # occurred. Nullable — display/sort falls back to `timestamp` when absent.
+    occurred_at = Column(DateTime)
+    # External dedup key for entries auto-created from a wearable (e.g.
+    # "whoop:<workout_id>"). Lets repeated syncs upsert instead of duplicating.
+    source_ref = Column(String, index=True)
 
     daily_log = relationship("DailyLog", back_populates="exercise_entries")
 

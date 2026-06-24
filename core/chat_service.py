@@ -49,11 +49,12 @@ from handlers.onboarding import build_onboarding_system
 
 logger = logging.getLogger(__name__)
 
-# History depth. A few turns is enough for normal coaching; onboarding loads more
-# so stats given across rapid messages stay visible and aren't re-asked. Mirrors
-# the bot's _build_messages (without its reference-pattern heuristic, which can be
-# lifted here later if the app shows the same "what did I say earlier" misses).
-_HISTORY_NORMAL = 6
+# History depth. Normal coaching loads enough recent turns that the reply feels
+# aware of the actual conversation (continuity is a trust signal — too few turns and
+# Arnie loses the thread or re-asks). Onboarding loads more so stats given across
+# rapid messages stay visible and aren't re-asked. Mirrors the bot's _build_messages
+# (without its reference-pattern heuristic, which can be lifted here later).
+_HISTORY_NORMAL = 10
 _HISTORY_ONBOARDING = 25
 
 # Idempotency window for collapsing a double-fired identical message (double-tap /

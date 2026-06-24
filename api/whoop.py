@@ -232,6 +232,84 @@ def _scored(record: dict) -> Optional[dict]:
     return score
 
 
+async def _persist_whoop_workouts(db, user: User, workout_by_date: dict) -> tuple[int, int]:
+    """Auto-create ExerciseEntry rows from synced WHOOP workouts.
+
+    Deduped by `source_ref` ("whoop:<workout_id>") so repeated syncs upsert the
+    same row in place instead of duplicating. Each entry carries the workout's
+    real start time as `occurred_at` so it lands at the right spot on the day's
+    timeline. Best-effort and idempotent; recomputes the day's totals after.
+
+    Note: dedups whoop-vs-whoop only. If the user ALSO manually logged the same
+    session, both can coexist (rare; auto-populate is the explicit ask here).
+    """
+    from sqlalchemy import select
+    from db.models import ExerciseEntry
+    from db.queries import get_or_create_log_for_date, recompute_log_totals
+
+    created = updated = 0
+    for d, workouts in (workout_by_date or {}).items():
+        try:
+            log = await get_or_create_log_for_date(db, user.id, d)
+        except Exception:
+            continue
+        touched = False
+        for w in workouts:
+            wid = w.get("id")
+            if not wid:
+                continue  # no stable key → skip, never risk a dup storm
+            source_ref = f"whoop:{wid}"
+            occurred = None
+            if w.get("start"):
+                try:
+                    occurred = (datetime.fromisoformat(w["start"].replace("Z", "+00:00"))
+                                .astimezone(timezone.utc).replace(tzinfo=None))
+                except Exception:
+                    occurred = None
+            sport = w.get("sport") or "Workout"
+            dur = w.get("duration_min")
+            cals = w.get("calories")
+            bits = []
+            if w.get("strain") is not None:
+                bits.append(f"strain {w['strain']}")
+            if w.get("avg_hr"):
+                bits.append(f"avg HR {w['avg_hr']}")
+            notes = "WHOOP: " + ", ".join(bits) if bits else "WHOOP"
+
+            existing = (await db.execute(
+                select(ExerciseEntry).where(ExerciseEntry.source_ref == source_ref)
+            )).scalars().first()
+            if existing:
+                existing.daily_log_id = log.id
+                existing.exercise_name = sport
+                existing.cardio_type = sport       # whoop sessions are duration/HR based
+                existing.duration_minutes = dur
+                existing.calories_burned_estimate = cals
+                existing.occurred_at = occurred
+                existing.notes = notes
+                updated += 1
+            else:
+                db.add(ExerciseEntry(
+                    daily_log_id=log.id,
+                    exercise_name=sport,
+                    cardio_type=sport,
+                    duration_minutes=dur,
+                    calories_burned_estimate=cals,
+                    source_type="whoop",
+                    source_ref=source_ref,
+                    occurred_at=occurred,
+                    notes=notes,
+                ))
+                created += 1
+            touched = True
+        if touched:
+            await db.flush()
+            await recompute_log_totals(db, log.id)
+    if created or updated:
+        logger.info(f"whoop auto-log user {user.id}: {created} created, {updated} updated")
+    return created, updated
+
+
 async def sync_user_whoop(db, user: User, days: int = 2,
                           snapshot_user_id: int = None) -> int:
     """
@@ -394,6 +472,10 @@ async def sync_user_whoop(db, user: User, days: int = 2,
                 except Exception:
                     pass
             entry = {
+                # id + start power the auto-log path: a stable dedup key
+                # ("whoop:<id>") and the workout's actual start time (occurred_at).
+                "id": wo.get("id"),
+                "start": wo.get("start"),
                 "sport": sport_name,
                 "strain": round(score.get("strain", 0), 1),
                 "duration_min": round(duration_ms / 60000, 0) if duration_ms else None,
@@ -406,6 +488,13 @@ async def sync_user_whoop(db, user: User, days: int = 2,
         for d, workouts in workout_by_date.items():
             _ensure(d)
             by_date[d]["whoop_workouts"] = _json.dumps(workouts)
+
+        # Auto-populate the day's log with these workouts (deduped by source_ref),
+        # so a pushed wearable session shows up on the timeline like a manual log.
+        try:
+            await _persist_whoop_workouts(db, user, workout_by_date)
+        except Exception as _e:  # best-effort: never break the snapshot sync
+            logger.warning(f"whoop workout auto-log failed for user {user.id}: {_e}")
 
     # Regression visibility: a connected user whose sync yields strain (from the
     # cycle endpoint) but no recovery AND no sleep almost always means a

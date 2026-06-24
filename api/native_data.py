@@ -74,21 +74,24 @@ def _log_to_day(log) -> dict | None:
                 "carbs": round(e.carbs or 0), "fats": round(e.fats or 0),
                 "estimated": bool(e.estimated_flag),
                 "from_photo": bool(getattr(e, "from_photo", False)),
-                "timestamp": e.timestamp.isoformat() if e.timestamp else None,
+                # Prefer EATEN-at (meal_time) over logged-at so a back-dated or
+                # time-stamped meal lands at the right spot on the timeline. Old
+                # entries set meal_time≈timestamp, so this is backward compatible.
+                "timestamp": (e.meal_time or e.timestamp).isoformat() if (e.meal_time or e.timestamp) else None,
                 "meal_type": e.meal_type,
             }
             for e in sorted(
                 (log.food_entries or []),
-                key=lambda e: (e.timestamp or datetime.min, e.id or 0),
+                key=lambda e: ((e.meal_time or e.timestamp) or datetime.min, e.id or 0),
             )
         ],
         "exercise_entries": [
             {
                 "id": e.id, "name": e.exercise_name or "?",
-                # T-WK1: surface the logged-at timestamp (already on the model) so
-                # workouts sort + show their time on the iOS timeline alongside meals,
-                # instead of falling to the end as "untimed".
-                "timestamp": e.timestamp.isoformat() if e.timestamp else None,
+                # T-WK1: surface the time so workouts sort + show on the iOS timeline
+                # alongside meals. Prefer occurred-at (user-stated time or a wearable
+                # workout's start) over logged-at; null occurred_at falls back to it.
+                "timestamp": (e.occurred_at or e.timestamp).isoformat() if (e.occurred_at or e.timestamp) else None,
                 "sets": e.sets, "reps": e.reps,
                 "weight": round(e.weight * 2.20462, 1) if e.weight else None,
                 # Per-set load — CSV in lbs for the client. Null when uniform.
@@ -106,7 +109,7 @@ def _log_to_day(log) -> dict | None:
             # Time-ordered like the food entries, so the timeline reads chronologically.
             for e in sorted(
                 (log.exercise_entries or []),
-                key=lambda e: (e.timestamp or datetime.min, e.id or 0),
+                key=lambda e: ((e.occurred_at or e.timestamp) or datetime.min, e.id or 0),
             )
         ],
     }

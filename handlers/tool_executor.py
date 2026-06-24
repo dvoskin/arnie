@@ -89,6 +89,49 @@ def _lbs_to_kg(weight, unit: str = "lbs"):
     return weight * 0.453592 if (unit or "lbs").lower().strip() == "lbs" else weight
 
 
+def _combine_local_time(target_date, time_str, user_timezone: str = "UTC"):
+    """Combine a local calendar date + a free-form clock time into a NAIVE UTC
+    datetime, matching the utcnow() storage convention (the iOS timeline parses
+    naive timestamps as UTC, then renders them in the user's zone).
+
+    Accepts "8:30am", "13:45", "7 am", "noon", "midnight", "around 7". Returns
+    None when there's no usable time — caller falls back to utcnow(). Never raises.
+    """
+    if not time_str or target_date is None:
+        return None
+    import re
+    import pytz
+    s = str(time_str).strip().lower()
+    if s in ("noon", "midday"):
+        hh, mm = 12, 0
+    elif s == "midnight":
+        hh, mm = 0, 0
+    else:
+        m = re.search(r"(\d{1,2})(?::(\d{2}))?\s*(am|pm)?", s)
+        if not m:
+            return None
+        hh = int(m.group(1))
+        mm = int(m.group(2) or 0)
+        ap = m.group(3)
+        if ap == "pm" and hh < 12:
+            hh += 12
+        elif ap == "am" and hh == 12:
+            hh = 0
+        if hh > 23 or mm > 59:
+            return None
+    try:
+        tz = pytz.timezone(user_timezone or "UTC")
+    except Exception:
+        tz = pytz.UTC
+    from datetime import datetime as _dtc
+    naive_local = _dtc(target_date.year, target_date.month, target_date.day, hh, mm)
+    try:
+        local_dt = tz.localize(naive_local)
+    except Exception:
+        return None
+    return local_dt.astimezone(pytz.UTC).replace(tzinfo=None)
+
+
 async def _resolve_log(inp: dict, user, today_log, db):
     """
     Determine which DailyLog to write to and return (target_log, past_date).
@@ -1137,9 +1180,14 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
                 _conf = max(_conf, 0.90)
             else:
                 _conf = min(_conf, 0.75)
-        # meal_time defaults to "now" so we capture WHEN, not just WHAT
+        # meal_time captures WHEN it was eaten. If the user stated a time ("had it
+        # at 8:30"), place it on that day at that local clock time (stored UTC);
+        # otherwise default to now.
         from datetime import datetime as _dt
-        _meal_time = _dt.utcnow()
+        _meal_time = _combine_local_time(
+            getattr(target_log, "date", None), inp.get("time"),
+            getattr(user, "timezone", "UTC"),
+        ) or _dt.utcnow()
 
         _new_food = await add_food_entry(
             db,
@@ -1364,6 +1412,13 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
                 return format_rollup_result(_target, now_utc=now_utc)
 
         is_cardio = inp.get("is_cardio", False) or bool(inp.get("cardio_type"))
+        # occurred_at: when the workout actually happened, if the user stated a time
+        # ("did it at 7am"). Placed on the target day at that local clock (stored
+        # UTC); null when no time given, so the timeline falls back to logged-at.
+        _occurred_at = _combine_local_time(
+            getattr(target_log, "date", None), inp.get("time"),
+            getattr(user, "timezone", "UTC"),
+        )
         _new_ex = await add_exercise_entry(
             db,
             target_log.id,
@@ -1376,6 +1431,7 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
             cardio_type=inp.get("cardio_type"),
             source_type=source_type,
             is_cardio=is_cardio,
+            occurred_at=_occurred_at,
         )
         # Same id stash as log_food: native clients use this for inline
         # edit/delete via the exerciseEdit API without round-tripping a

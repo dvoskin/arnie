@@ -180,6 +180,9 @@ async def _migrate(conn):
         ("exercise_entries", "weights", "VARCHAR"),
         # ── 2026-06-20: persist typed inline cards for native history restore ───
         ("conversation_logs", "cards_json", "TEXT"),
+        # ── 2026-06-24: workout time-of-day + wearable auto-log dedup ───────────
+        ("exercise_entries", "occurred_at", "DATETIME"),
+        ("exercise_entries", "source_ref", "VARCHAR"),
     ]
 
     for table, column, ddl in additions:
