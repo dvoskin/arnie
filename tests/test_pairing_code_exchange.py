@@ -183,17 +183,18 @@ async def test_happy_path_consumes_code_so_second_call_410s(
 
 
 @pytest.mark.asyncio
-async def test_unknown_code_returns_410(patched_session_local):
-    """consume_pre_registration returns None for unknown OR expired OR consumed —
-    endpoint can't distinguish and surfaces 410 for all three. 410 chosen over
-    404 because the most common iOS-side cause is a re-entry attempt."""
+async def test_unknown_code_returns_404(patched_session_local):
+    """A code that NEVER existed → 404 (typo: re-prompt for the code), distinct
+    from expired/already-used codes → 410 (re-issue from the landing page). The
+    endpoint settles which case applies with a non-consuming existence check, so
+    iOS can show the right remediation."""
     with pytest.raises(HTTPException) as exc:
         await exchange_pairing_code(
             PairingCodeRequest(
                 code="SETUP-NOPE00", provider="device", credential="ios:dev-3",
             )
         )
-    assert exc.value.status_code == 410
+    assert exc.value.status_code == 404
 
 
 @pytest.mark.asyncio

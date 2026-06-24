@@ -91,6 +91,9 @@ async def test_log_exercise_strength_entry_lands_with_per_set_load(
     patched_session_local, db, make_user,
 ):
     user = await make_user(telegram_id="ios:strength-log")
+    # iOS sends load in lbs by default; the DB canonically stores kg (matches the
+    # chat path + exerciseEdit endpoint + native_data read-back, which multiplies
+    # by 2.20462). So 225 lb must land as ~102.06 kg, NOT verbatim 225.
     resp = await log_exercise_entry(
         ExerciseLogBody(
             exercise_name="Back Squat",
@@ -112,7 +115,10 @@ async def test_log_exercise_strength_entry_lands_with_per_set_load(
     assert entries[0].exercise_name == "Back Squat"
     assert entries[0].sets == 3
     assert entries[0].reps == "5,5,5"
-    assert entries[0].weights == "225,225,235"
+    assert entries[0].weights == "102.06,102.06,106.59"  # lbs → kg
+    # Round-trips back to the entered lbs (within rounding) on read-back.
+    lbs = [round(float(p) * 2.20462) for p in entries[0].weights.split(",")]
+    assert lbs == [225, 225, 235]
     assert entries[0].rir == 2
     assert entries[0].source_type == "ios"
 

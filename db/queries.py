@@ -1546,8 +1546,12 @@ async def query_history_stats(
 
     Returns a dict the executor formats into a result string.
     """
-    tz = pytz.timezone(user_timezone or "UTC")
-    today = datetime.now(tz).date()
+    # Anchor "today" (and every relative period — yesterday/this week/N days ago)
+    # on the user's LOGGING day, NOT the raw calendar day. Logs are filed under
+    # _user_today (4am rollover), so using datetime.now().date() here made a
+    # "today" query miss the current log between midnight and 4am local — the
+    # same rollover the rest of the app already honors.
+    today = _user_today(user_timezone)
 
     # Resolve period to a date range — supports legacy + natural-language.
     parsed = parse_natural_period(period, today)
