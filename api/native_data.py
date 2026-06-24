@@ -85,6 +85,10 @@ def _log_to_day(log) -> dict | None:
         "exercise_entries": [
             {
                 "id": e.id, "name": e.exercise_name or "?",
+                # T-WK1: surface the logged-at timestamp (already on the model) so
+                # workouts sort + show their time on the iOS timeline alongside meals,
+                # instead of falling to the end as "untimed".
+                "timestamp": e.timestamp.isoformat() if e.timestamp else None,
                 "sets": e.sets, "reps": e.reps,
                 "weight": round(e.weight * 2.20462, 1) if e.weight else None,
                 # Per-set load — CSV in lbs for the client. Null when uniform.
@@ -99,7 +103,11 @@ def _log_to_day(log) -> dict | None:
                 "calories_burned": round(e.calories_burned_estimate) if e.calories_burned_estimate else None,
                 "notes": e.notes,
             }
-            for e in (log.exercise_entries or [])
+            # Time-ordered like the food entries, so the timeline reads chronologically.
+            for e in sorted(
+                (log.exercise_entries or []),
+                key=lambda e: (e.timestamp or datetime.min, e.id or 0),
+            )
         ],
     }
 

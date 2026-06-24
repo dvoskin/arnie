@@ -360,6 +360,11 @@ def _build_briefing_summary(stats: dict) -> str:
         L.append(f"Current weight: {cw}lb"
                  + (f", goal {gw}lb ({round(abs(cw - gw), 1)}lb to go)" if gw else ""))
     L.append(f"Daily targets: {tgt_cal} cal / {tgt_pro}g protein")
+    brain = (stats.get("brain") or "").strip()
+    if brain:
+        L.append("")
+        L.append("WHAT I KNOW (durable traits + preferences I've learned about this client, grouped by category):")
+        L.append(brain)
     L.append("")
     workout_done = today.get("workout_completed") or bool(today.get("exercise_entries"))
     L.append(f"TODAY ({today_iso}, STILL IN PROGRESS): "
@@ -404,7 +409,12 @@ def _sanitize_briefing(obj: dict) -> dict:
     """Coerce the LLM object into the wire shape: hero/focus/cards/starter, cards
     capped + sorted by priority desc. Missing pieces degrade gracefully."""
     def _s(v) -> str:
-        return str(v).strip() if v is not None else ""
+        s = str(v).strip() if v is not None else ""
+        # Arnie's voice avoids em/en dashes; swap any to a comma (a dash reads as a
+        # pause) so the iOS copy never shows one even if the model slips.
+        s = (s.replace(" — ", ", ").replace(" – ", ", ")
+              .replace("—", ", ").replace("–", ", "))
+        return s
 
     hero_in = obj.get("hero") or {}
     hero = {
@@ -577,6 +587,8 @@ RULES:
   ROTATE the kinds for emotional contrast — don't make every card the same tone. ORDER by priority; the lead card is usually a prediction or a win.
 - LOOK FORWARD more than back — users care where they're GOING. Lead with trajectory and what's next.
 - MOMENTUM: every briefing must contain at least one piece of progress evidence (best streak, lowest weight, fastest pace, days logged).
+- PERSONAL: ground every insight in THIS client's real numbers AND the durable traits you've learned about them (their habits, what works for them, their lifestyle + constraints) under WHAT I KNOW below. Specific to them, never generic advice.
+- VOICE: never use em dashes or en dashes. Use commas, periods, or colons. Write in complete sentences. The app shows only the FIRST 2 sentences of each card story, the focus body, and the hero body, so make your point in exactly 2 tight sentences and never trail into a third.
 - starter: ONE personal question about today.
 - CURATED, not assembled — you reviewed everything and chose THESE for today. Real numbers when you have them; no greetings (the app adds "Good morning"); no filler. When data's thin, lean on goal/plan/projection; one forward-looking "next unlock" card is welcome.
 

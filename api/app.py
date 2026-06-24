@@ -1253,7 +1253,21 @@ async def _build_stats_for_user(db, user, target_date=None):
     # /api/stats, so this stays cheap and synchronous with everything else).
     from memory.attribute_store import get_all_attributes as _get_attrs
     _attrs = await _get_attrs(db, user.id)
-    _attribute_count = len([a for a in _attrs if a.attribute_status == "active"])
+    _active_attrs = [a for a in _attrs if a.attribute_status == "active"]
+    _attribute_count = len(_active_attrs)
+    # A compact "what Arnie has learned" block (the brain, Lane 2 durable traits),
+    # grouped by category, so the briefing can ground insights in everything known
+    # about this client. Archive-tier facts are held back (same as the chat coach).
+    _brain_by_cat: dict[str, list[str]] = {}
+    for _a in _active_attrs:
+        if (getattr(_a, "relevance_tier", None) or "contextual") == "archive":
+            continue
+        _brain_by_cat.setdefault(_a.category or "custom", []).append(str(_a.value))
+    _brain_str = "\n".join(
+        f"{_cat}: " + "; ".join(_vals[:14])
+        for _cat in ["nutrition", "fitness", "health", "lifestyle", "behavior", "mental", "custom"]
+        if (_vals := _brain_by_cat.get(_cat))
+    )
 
     return {
         "profile": profile,
@@ -1270,9 +1284,10 @@ async def _build_stats_for_user(db, user, target_date=None):
         "available_dates": available_dates,
         "viewing_date": str(target_date or _user_today(user.timezone or "UTC")),
         "attribute_count": _attribute_count,
+        "brain": _brain_str,
         # keep legacy 'today' + 'user' keys so existing insights endpoint works unchanged
         "today": _log_to_day(day_log),
-        "user": {"name": user.name or "User", "goal": user.primary_goal or "—",
+        "user": {"name": user.name or "User", "goal": user.primary_goal or "general fitness",
                  "current_weight_lbs": profile["current_weight_lbs"],
                  "goal_weight_lbs": profile["goal_weight_lbs"]},
         # AI-generated bio — null until profile has been synthesized at least once
