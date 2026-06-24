@@ -191,8 +191,13 @@ def _build_week_summary(stats: dict) -> str:
     # Past days only — today's totals are still moving until bedtime. The
     # history list is already sorted by date ascending; the last entry is today
     # (or empty if the user hasn't logged today). Drop today via date comparison.
+    # Anchor on the user's LOGGING day (matches stats["today"]/viewing_date), NOT
+    # the server UTC day — otherwise an evening non-UTC user's in-progress row
+    # slips into the "last 7 logged days" and skews the weekly averages.
     from datetime import date as _date
-    today_iso = _date.today().isoformat()
+    today_iso = ((stats.get("today") or {}).get("date")
+                 or stats.get("viewing_date")
+                 or _date.today().isoformat())
     past = [h for h in history if h.get("date") and h["date"] < today_iso]
     last7 = past[-7:]
     lines = ["ANALYSIS PERIOD: last 7 logged days (analyse WEEKLY trends, not one day)",
@@ -352,7 +357,16 @@ def _build_briefing_summary(stats: dict) -> str:
     health = stats.get("health") or []
     tgt_cal = targets.get("calories") or 0
     tgt_pro = targets.get("protein") or 0
-    today_iso = _date.today().isoformat()
+    # The user's LOGGING day, NOT the server's UTC day. `stats["today"]` is built
+    # from the user-local day log (get_today_log), and `viewing_date` is computed
+    # via _user_today. Using _date.today() (UTC) here would, for any evening
+    # non-UTC user, (a) mislabel the TODAY block's date and (b) let today's
+    # in-progress row ALSO pass the `< today_iso` past-day filter below — so the
+    # briefing LLM sees today's numbers twice and the cards state wrong facts
+    # (today's data attributed to "yesterday", inflated streaks).
+    today_iso = (today.get("date")
+                 or stats.get("viewing_date")
+                 or _date.today().isoformat())
 
     L = [f"CLIENT: {user.get('name','')} — goal: {user.get('goal','')}"]
     cw, gw = user.get("current_weight_lbs"), user.get("goal_weight_lbs")
@@ -400,6 +414,18 @@ def _build_briefing_summary(stats: dict) -> str:
     return "\n".join(L)
 
 
+# Glyph per card `kind` — the prompt forbids emoji in titles, so the card's
+# visual tone-color is derived server-side from its kind, not the model output.
+_KIND_EMOJI = {
+    "win": "🏆",
+    "risk": "⚠️",
+    "opportunity": "🎯",
+    "trend": "📈",
+    "noticed": "👀",
+    "prediction": "🔮",
+}
+
+
 def _sanitize_briefing(obj: dict) -> dict:
     """Coerce the LLM object into the wire shape: hero/focus/cards/starter, cards
     capped + sorted by priority desc. Missing pieces degrade gracefully."""
@@ -430,7 +456,12 @@ def _sanitize_briefing(obj: dict) -> dict:
         if kind not in {"win", "risk", "opportunity", "trend", "noticed", "prediction"}:
             kind = "noticed"
         cards.append({
-            "emoji": _s(c.get("emoji")) or "✨",
+            # The briefing prompt forbids emoji and never emits one, so the old
+            # `_s(c.get("emoji")) or "✨"` shipped a hardcoded sparkle on every
+            # card — identical glyph regardless of kind, defeating the
+            # kind-as-tone-color design. Derive the glyph from `kind` instead so
+            # win/risk/etc. read distinctly (and the client can still override).
+            "emoji": _KIND_EMOJI.get(kind, "✨"),
             "title": _s(c.get("title")),
             "story": story,
             "priority": prio,

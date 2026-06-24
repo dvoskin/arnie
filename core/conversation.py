@@ -820,7 +820,15 @@ async def run_turn(
         for tc in tool_calls:
             name = tc.get("name")
             inp = tc.get("input") or {}
-            if name == "log_food":
+            # CONTRACT: a macro/workout card means "a row was written this turn."
+            # The dispatcher stashes `_entry_id` back onto the call input ONLY on
+            # a real insert or an in-place roll-up update — NOT when the dedup
+            # guard skips the write, nor on an Error. Gating card emission on
+            # `_entry_id` is therefore the precise signal: it suppresses phantom
+            # "logged ✅" cards for deduped/errored calls (which would otherwise
+            # show a null entry_id the user can't even tap to edit), and it reads
+            # per-call input so it's immune to the name-collapse in tool_results.
+            if name == "log_food" and inp.get("_entry_id") is not None:
                 resp.cards.append({
                     "type": "macro_card",
                     "payload": {
@@ -833,12 +841,11 @@ async def run_turn(
                         "source":    "photo" if inp.get("from_photo") else "manual",
                         # DB row id stashed by the log_food dispatcher. Native
                         # clients use it to inline-edit the entry via the
-                        # foodEdit API. nil for tests or any path that didn't
-                        # create a real DB row.
+                        # foodEdit API.
                         "entry_id":  inp.get("_entry_id"),
                     },
                 })
-            elif name == "log_exercise":
+            elif name == "log_exercise" and inp.get("_entry_id") is not None:
                 is_cardio = bool(inp.get("is_cardio") or inp.get("cardio_type"))
                 resp.cards.append({
                     "type": "workout_card",
@@ -950,7 +957,10 @@ async def run_turn(
     # must NEVER affect the reply the user already got.
     health_flags: list = []
     try:
-        _tool_error = any(
+        # Prefer the per-call flag the executor stashed on each tool_call
+        # (immune to the name-collapse in tool_results); fall back to scanning
+        # the collapsed results for older paths that don't set it.
+        _tool_error = any(tc.get("_tool_errored") for tc in tool_calls) or any(
             isinstance(v, str) and v.startswith("Error:") for v in tool_results.values()
         )
         health_flags = detect_turn_flags(
@@ -1002,8 +1012,13 @@ async def run_turn(
             nm = tc.get("name") or ""
             if not nm:
                 continue
-            _res = tool_results.get(nm)
-            _errored = isinstance(_res, str) and _res.startswith("Error:")
+            # Per-call flag first (multi-call batches collapse in tool_results);
+            # fall back to the collapsed result for paths that don't set it.
+            if "_tool_errored" in tc:
+                _errored = bool(tc.get("_tool_errored"))
+            else:
+                _res = tool_results.get(nm)
+                _errored = isinstance(_res, str) and _res.startswith("Error:")
             _parts.append(f"{nm}:error" if _errored else nm)
         _skills_fired = ",".join(_parts) or None
 

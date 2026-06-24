@@ -54,7 +54,12 @@ async def post_snapshot(
         if not user:
             raise HTTPException(status_code=404, detail="user not found")
 
-        snap_date = _date.today()
+        # Default to the user's LOGGING day (4am-rollover, user-local), NOT the
+        # server's UTC day — the read path (native_data.day_data) keys "today"
+        # off _user_today, so a UTC default would land an evening sync on the
+        # wrong calendar day and blank the Today health strip.
+        from db.queries import _user_today
+        snap_date = _user_today(user.timezone or "UTC")
         if payload.date:
             try:
                 snap_date = _date.fromisoformat(payload.date)

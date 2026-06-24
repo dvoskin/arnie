@@ -925,10 +925,19 @@ async def execute_tool_calls(
                 or r.startswith("Failed to")
             ))
             per_call.append((name, food_name, ok))
+            # Stash the per-call outcome on the tool_call dict (like `_entry_id`
+            # on inp). `results` is keyed by tool NAME, so two same-name calls
+            # collapse to the last result — a partial error in a multi-item batch
+            # would vanish from skills_fired/turn-health. The per-tc flag keeps
+            # each call's outcome observable.
+            if isinstance(tc, dict):
+                tc["_tool_errored"] = not ok
         except Exception as e:
             logger.error(f"Tool {name} failed: {e}", exc_info=True)
             results[name] = f"Error: {e}"
             per_call.append((name, food_name, False))
+            if isinstance(tc, dict):
+                tc["_tool_errored"] = True
 
     # Emit one structured telemetry line per turn that had any log_* call.
     # Greppable as `event=tool_log_turn` in Render logs. Measures the

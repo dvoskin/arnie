@@ -1164,7 +1164,6 @@ body.brain-active footer{{display:none}}
   .bottomnav{{display:flex}}
   .pagehead{{padding:14px 0 10px}}
   .profile-grid{{grid-template-columns:1fr}}
-  #date-next{{display:none}}   /* today is the latest day — no forward arrow on mobile */
 }}
 /* Landscape mobile (phones rotated) */
 @media(max-width:940px) and (orientation:landscape){{
@@ -1285,10 +1284,10 @@ body.brain-active footer{{display:none}}
   font-family:'Geist Mono','SF Mono',monospace;font-size:9px;letter-spacing:.06em;font-weight:500;
 }}
 
-/* ── PERIOD NAV (Trends tab) — mirrors .dnav so the Trends
-   tab gets the same chip-selector rhythm as Daily's date nav.
-   3 fixed chips (7d / 30d / 90d) + right-aligned date-range
-   meta line. Hover/active states match .dchip exactly. */
+/* ── PERIOD NAV (Trends tab) — self-contained chip selector for the
+   Trends tab: 3 fixed chips (7d / 30d / 90d) + right-aligned date-range
+   meta line. Uses its own .pchip class (independent of the Day tab's
+   header date picker). */
 .period-nav{{display:flex;align-items:center;gap:6px;margin-bottom:14px;flex-wrap:wrap}}
 .pchip{{
   background:var(--sf);border:1px solid var(--bd);color:var(--mu);
@@ -1320,26 +1319,55 @@ body.brain-active footer{{display:none}}
 .trend-line .tl-val.dn{{color:var(--re)}}
 .trend-line .tl-dot{{opacity:.35;color:var(--mu)}}
 
-/* ── DATE NAV ────────────────────────────────────────────── */
-.dnav{{display:flex;align-items:center;gap:6px;margin-bottom:16px}}
-.dscroll{{flex:1;display:flex;gap:6px;overflow-x:auto;scrollbar-width:none}}
-.dscroll::-webkit-scrollbar{{display:none}}
-.darr{{
-  background:var(--sf);border:1px solid var(--bd);color:var(--mu);
-  width:34px;height:34px;min-width:34px;border-radius:10px;cursor:pointer;
-  font-size:15px;display:flex;align-items:center;justify-content:center;
-  font-family:inherit;flex-shrink:0;transition:all .2s;
-  backdrop-filter:blur(12px);box-shadow:var(--sh);
+/* ── DATE PICKER (header-anchored, Day tab) ─────────────────
+   Compact segmented pill that lives in .ph-actions (top-right of the sticky
+   pagehead) beside the theme/refresh buttons. Intentionally subtle: it reuses
+   the same surface/border tokens + 34px height as .hbtn and .streak-chip so it
+   reads as one of the header controls, not a separate widget. Replaces the old
+   full-width .dnav chip-strip. */
+.dpick{{
+  position:relative;display:inline-flex;align-items:center;height:34px;
+  background:var(--sf2);border:1px solid var(--bd);border-radius:10px;
+  flex-shrink:0;
 }}
-.darr:hover{{border-color:var(--bd2);color:var(--tx)}}
-.darr:disabled{{opacity:.3;cursor:default}}
-.dchip{{
-  background:var(--sf);border:1px solid var(--bd);color:var(--mu);
-  padding:8px 14px;border-radius:10px;
+.dpick-arr{{
+  background:none;border:0;color:var(--mu);cursor:pointer;
+  width:26px;height:34px;display:flex;align-items:center;justify-content:center;
+  font-size:14px;font-family:inherit;transition:color .15s;
+}}
+.dpick-arr:hover{{color:var(--tx)}}
+.dpick-arr:disabled{{opacity:.26;cursor:default}}
+.dpick-cur{{
+  background:none;border:0;border-left:1px solid var(--bd);border-right:1px solid var(--bd);
+  color:var(--tx2);cursor:pointer;height:34px;padding:0 11px;min-width:92px;
   font-family:'Geist Mono','SF Mono',monospace;font-size:11px;font-weight:500;
-  white-space:nowrap;cursor:pointer;transition:all .2s;flex-shrink:0;
-  display:inline-flex;align-items:center;gap:5px;
-  backdrop-filter:blur(12px);box-shadow:var(--sh);
+  letter-spacing:.01em;white-space:nowrap;font-variant-numeric:tabular-nums;
+  display:inline-flex;align-items:center;justify-content:center;gap:6px;
+  transition:color .15s;
+}}
+.dpick-cur:hover{{color:var(--tx)}}
+/* Accent dot marks "viewing today" — quieter than a full Today badge in the pill. */
+.dpick-dot{{
+  width:5px;height:5px;border-radius:50%;background:var(--ac);flex-shrink:0;
+  box-shadow:0 0 0 3px var(--ac-dim);
+}}
+/* Popover — anchored under the pill, right-aligned. Quiet elevated card. */
+.date-pop{{
+  position:absolute;top:calc(100% + 7px);right:0;z-index:40;
+  display:none;flex-direction:column;gap:3px;
+  background:var(--sf);border:1px solid var(--bd);border-radius:12px;padding:6px;
+  min-width:150px;max-height:268px;overflow-y:auto;scrollbar-width:thin;
+  box-shadow:0 14px 36px rgba(0,0,0,.30);
+  backdrop-filter:blur(20px) saturate(160%);-webkit-backdrop-filter:blur(20px) saturate(160%);
+}}
+.dpick.open .date-pop{{display:flex}}
+.dchip{{
+  background:var(--sf2);border:1px solid var(--bd);color:var(--mu);
+  padding:7px 11px;border-radius:8px;
+  font-family:'Geist Mono','SF Mono',monospace;font-size:11px;font-weight:500;
+  white-space:nowrap;cursor:pointer;transition:all .15s;
+  display:inline-flex;align-items:center;justify-content:space-between;gap:8px;
+  width:100%;text-align:left;
 }}
 .dchip:hover{{border-color:var(--bd2);color:var(--tx2)}}
 .dchip.active{{background:var(--ac-dim);border-color:rgba(var(--ac-rgb),.4);color:var(--tx)}}
@@ -2418,10 +2446,10 @@ footer{{
   .heat-wrap{{padding:14px}}
   .macro-ring-wrap{{padding:14px;gap:14px}}
   .csub{{font-size:12px}}
-  /* Date nav */
-  .dchip{{padding:6px 11px;font-size:11px}}
-  .darr{{width:34px;height:34px;border-radius:9px}}
-  .dnav{{gap:5px;margin-bottom:12px}}
+  /* Date picker — keep the center label readable but trim its min-width so the
+     pill fits the header alongside the streak chip + theme/refresh buttons. */
+  .dpick-cur{{min-width:78px;padding:0 9px;font-size:10.5px}}
+  .dpick-arr{{width:24px}}
   /* Still learning */
   #learn-wrap{{margin-top:10px!important}}
   .lrn-card{{padding:9px 12px}}
@@ -2728,6 +2756,15 @@ footer{{
       <span class="streak-num" id="streak-num">0</span>
       <span class="streak-unit">d</span>
     </div>
+    <!-- Compact date picker — header-anchored, top-right, Day tab only.
+         Prev/next step through logged days; the center label opens a quiet
+         popover to jump to any day. Reads as one of the header controls. -->
+    <div class="dpick" id="date-pick" style="display:none">
+      <button class="dpick-arr" id="date-prev" onclick="navDate(-1)" aria-label="Previous day">&#8249;</button>
+      <button class="dpick-cur" id="date-cur" onclick="toggleDatePop(event)" aria-haspopup="true" aria-expanded="false"></button>
+      <button class="dpick-arr" id="date-next" onclick="navDate(1)" aria-label="Next day">&#8250;</button>
+      <div class="date-pop" id="date-pop"></div>
+    </div>
     <!-- Chat button removed from header — Arnie chat lives in Telegram /
          iMessage; the dashboard surface is read-only + edit-in-place. The
          existing toggleChatWidget() + .cw-panel remain in the file but
@@ -2742,12 +2779,8 @@ footer{{
   <!-- DAY TAB -->
   <div class="tab-panel active" id="panel-day">
 
-    <!-- DATE NAV -->
-    <div class="dnav">
-      <button class="darr" id="date-prev" onclick="navDate(-1)" aria-label="Previous day">&#8249;</button>
-      <div class="dscroll" id="date-chips"></div>
-      <button class="darr" id="date-next" onclick="navDate(1)"  aria-label="Next day">&#8250;</button>
-    </div>
+    <!-- DATE NAV moved into the page header (.ph-actions) as the compact
+         .dpick control — header-anchored top-right, Day tab only. -->
 
     <!-- "ARNIE LEARNED" LIVE TICKER — placed at the very top of the Day tab
          (first thing below the date nav) for maximum attention. One line that
@@ -3498,6 +3531,9 @@ function switchTab(name){{
   var ni=document.getElementById('nav-'+name);if(ni)ni.classList.add('active');
   document.querySelectorAll('.bn-item').forEach(b=>b.classList.remove('active'));
   var bi=document.getElementById('bn-'+name);if(bi)bi.classList.add('active');
+  // Date picker is Day-tab only — reveal on day, hide + collapse elsewhere.
+  var _dp=document.getElementById('date-pick');
+  if(_dp){{_dp.style.display=(name==='day')?'inline-flex':'none';_dp.classList.remove('open');}}
   if(name!=='day'){{
     var h=PAGE_HEADS[name]||{{}};
     var pt=document.getElementById('ph-title');var ps=document.getElementById('ph-sub');
@@ -3570,6 +3606,8 @@ async function init(){{
     if(sg)sg.textContent=(gl?goalLabel(gl).toUpperCase():'')+(wt?' · '+wt+' LB':'');
     if(su&&nm)su.style.display='flex';
     document.getElementById('app-load').style.display='none';
+    // Day is the default active tab on load — reveal the header date picker.
+    var _dp=document.getElementById('date-pick');if(_dp)_dp.style.display='inline-flex';
     renderDateNav();
     renderDayTab(data);
     loadInsights();
@@ -3752,13 +3790,22 @@ async function refreshCurrent(btn){{
 
 // ── Date nav ──────────────────────────────────────────────────────────────
 function renderDateNav(){{
-  var el=document.getElementById('date-chips');
-  el.innerHTML='';
+  var cur=document.getElementById('date-cur');
+  var pop=document.getElementById('date-pop');
+  if(!cur||!pop) return;
   var ci=_availDates.indexOf(_viewingDate);
-  var s=Math.max(0,ci-2),e=Math.min(_availDates.length-1,ci+2);
-  while(e-s<4&&s>0) s--;
-  while(e-s<4&&e<_availDates.length-1) e++;
-  for(var i=s;i<=e;i++){{
+
+  // Compact pill label: the viewing date, prefixed by an accent dot when it's
+  // today (quieter than a full badge inside the pill).
+  cur.innerHTML='';
+  if(_viewingDate===_todayStr){{
+    var dot=document.createElement('span');dot.className='dpick-dot';cur.appendChild(dot);
+  }}
+  cur.appendChild(document.createTextNode(_viewingDate?fmtDate(_viewingDate):'\\u2014'));
+
+  // Popover: every logged day, newest first, so the user can jump directly.
+  pop.innerHTML='';
+  for(var i=_availDates.length-1;i>=0;i--){{
     var d=_availDates[i],chip=document.createElement('button');
     chip.className='dchip'+(d===_viewingDate?' active':'');
     chip.appendChild(document.createTextNode(fmtDate(d)));
@@ -3766,12 +3813,33 @@ function renderDateNav(){{
       var tag=document.createElement('span');
       tag.className='today-tag';tag.textContent='Today';chip.appendChild(tag);
     }}
-    (function(dd){{chip.onclick=()=>selectDate(dd)}})(d);
-    el.appendChild(chip);
+    (function(dd){{chip.onclick=function(){{selectDate(dd);closeDatePop();}}}})(d);
+    pop.appendChild(chip);
   }}
-  document.getElementById('date-prev').disabled=ci<=0;
-  document.getElementById('date-next').disabled=ci>=_availDates.length-1;
+
+  var pv=document.getElementById('date-prev'),nx=document.getElementById('date-next');
+  if(pv)pv.disabled=ci<=0;
+  if(nx)nx.disabled=ci>=_availDates.length-1;
 }}
+
+// Date-picker popover open/close. Toggled by the center label; closes on a
+// jump or an outside click (listener registered once, below).
+function toggleDatePop(ev){{
+  if(ev)ev.stopPropagation();
+  var p=document.getElementById('date-pick');if(!p)return;
+  var open=p.classList.toggle('open');
+  var cur=document.getElementById('date-cur');
+  if(cur)cur.setAttribute('aria-expanded',open?'true':'false');
+}}
+function closeDatePop(){{
+  var p=document.getElementById('date-pick');if(p)p.classList.remove('open');
+  var cur=document.getElementById('date-cur');
+  if(cur)cur.setAttribute('aria-expanded','false');
+}}
+document.addEventListener('click',function(e){{
+  var p=document.getElementById('date-pick');
+  if(p&&p.classList.contains('open')&&!p.contains(e.target)) closeDatePop();
+}});
 
 async function navDate(dir){{
   var ci=_availDates.indexOf(_viewingDate),ni=ci+dir;

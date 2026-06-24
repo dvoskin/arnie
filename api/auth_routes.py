@@ -42,6 +42,7 @@ from db.queries import (
     get_or_create_user,
     linking_enabled,
     log_conversation,
+    pre_registration_exists,
     set_apple_sub_for_user,
 )
 
@@ -262,12 +263,18 @@ async def exchange_pairing_code(req: PairingCodeRequest) -> PairingCodeResponse:
         profile = await consume_pre_registration(db, code)
 
         if profile is None:
-            # Either the code never existed OR it was expired/already-used.
-            # consume_pre_registration can't distinguish — surface 410 since the
-            # most common cause from the iOS app is a re-entry attempt.
+            # Distinguish "code never existed" (typo → 404, re-prompt for the
+            # code) from "expired/already-used" (410, re-issue from the landing
+            # page) so the iOS client can show the right remediation. A
+            # non-consuming existence check settles which case this is.
+            if not await pre_registration_exists(db, code):
+                raise HTTPException(
+                    status_code=404,
+                    detail="Pairing code not found — check the code and try again.",
+                )
             raise HTTPException(
                 status_code=410,
-                detail="Pairing code is invalid, expired, or already used.",
+                detail="Pairing code is expired or already used.",
             )
 
         await apply_landing_profile_to_user(db, user, profile)

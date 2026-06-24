@@ -906,6 +906,19 @@ async def consume_pre_registration(db: AsyncSession, code: str) -> Optional[dict
     return json.loads(entry.profile_json)
 
 
+async def pre_registration_exists(db: AsyncSession, code: str) -> bool:
+    """Whether a pre-registration row exists for `code` at all, regardless of
+    consumed/expired state. Lets callers distinguish 'code never existed' (typo)
+    from 'expired/already used' after a failed consume — `consume_pre_registration`
+    collapses all three to None. Non-consuming: never mutates the row."""
+    from db.models import PreRegistration
+
+    result = await db.execute(
+        select(PreRegistration.id).where(PreRegistration.code == code.upper())
+    )
+    return result.scalar_one_or_none() is not None
+
+
 async def apply_landing_profile_to_user(
     db: AsyncSession, user: "User", profile: dict
 ) -> None:

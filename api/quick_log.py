@@ -56,6 +56,8 @@ async def log_food_entry(
     """Add one food entry to today's log + recompute the day totals."""
     async with AsyncSessionLocal() as db:
         user = await resolve_user(db, identity)
+        if not user:
+            raise HTTPException(status_code=404, detail="user not found")
         log = await get_or_create_today_log(db, user.id, user.timezone or "UTC")
         entry = await add_food_entry(
             db,
@@ -89,6 +91,10 @@ class ExerciseLogBody(BaseModel):
     reps: Optional[str] = None         # CSV "5,5,5" — supports per-set variation
     weight: Optional[float] = Field(None, ge=0, le=1_000)
     weights: Optional[str] = None      # CSV per-set load
+    # iOS sends load in lbs by default; the DB canonically stores kg (the chat
+    # path and exerciseEdit endpoint both convert). Without this, a 225 lb entry
+    # is stored as 225 kg and read back as ~496 lb.
+    weight_unit: Literal["lbs", "kg"] = "lbs"
     duration_minutes: Optional[int] = Field(None, ge=0, le=480)
     cardio_type: Optional[str] = None
     rir: Optional[int] = Field(None, ge=0, le=20)
@@ -104,10 +110,35 @@ async def log_exercise_entry(
     """Add one exercise entry to today's log + recompute the day totals."""
     async with AsyncSessionLocal() as db:
         user = await resolve_user(db, identity)
+        if not user:
+            raise HTTPException(status_code=404, detail="user not found")
         log = await get_or_create_today_log(db, user.id, user.timezone or "UTC")
-        kwargs = payload.model_dump(exclude={"is_cardio", "exercise_name"}, exclude_none=True)
+        kwargs = payload.model_dump(
+            exclude={"is_cardio", "exercise_name", "weight", "weights", "weight_unit"},
+            exclude_none=True,
+        )
         kwargs["exercise_name"] = payload.exercise_name
         kwargs["source_type"] = "ios"
+        # Convert load to kg (DB canonical) unless the client already sent kg.
+        if payload.weight is not None:
+            kwargs["weight"] = (
+                payload.weight if payload.weight_unit == "kg"
+                else payload.weight / 2.20462
+            )
+        if payload.weights:
+            kg_parts = []
+            for p in payload.weights.split(","):
+                p = p.strip()
+                if not p:
+                    continue
+                try:
+                    val = float(p)
+                except ValueError:
+                    continue
+                kg_parts.append(str(round(val if payload.weight_unit == "kg"
+                                          else val / 2.20462, 2)))
+            if kg_parts:
+                kwargs["weights"] = ",".join(kg_parts)
         entry = await add_exercise_entry(
             db,
             daily_log_id=log.id,
@@ -139,6 +170,8 @@ async def log_weight(
     coaching engine sees the latest value immediately."""
     async with AsyncSessionLocal() as db:
         user = await resolve_user(db, identity)
+        if not user:
+            raise HTTPException(status_code=404, detail="user not found")
         metric = await add_body_metric(
             db,
             user_id=user.id,
