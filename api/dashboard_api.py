@@ -366,6 +366,7 @@ def _normalize_exercise(e: dict) -> dict:
         "cardio_type": e.get("cardio_type"),
         "rir": e.get("rir"),
         "calories_burned": e.get("calories_burned"),
+        "avg_hr": e.get("avg_hr"),
         "notes": e.get("notes"),
         "source": e.get("source"),
         # THE FIX: surface the timestamp so the timeline can place + time workouts.

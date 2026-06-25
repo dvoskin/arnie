@@ -221,6 +221,9 @@ class ExerciseEntry(Base):
     # External dedup key for entries auto-created from a wearable (e.g.
     # "whoop:<workout_id>"). Lets repeated syncs upsert instead of duplicating.
     source_ref = Column(String, index=True)
+    # Average heart rate (bpm) for the session — populated from a wearable workout
+    # (WHOOP / Apple Health); null for manual logs.
+    avg_hr = Column(Integer)
 
     daily_log = relationship("DailyLog", back_populates="exercise_entries")
 

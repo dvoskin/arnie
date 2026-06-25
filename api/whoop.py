@@ -269,11 +269,12 @@ async def _persist_whoop_workouts(db, user: User, workout_by_date: dict) -> tupl
             sport = w.get("sport") or "Workout"
             dur = w.get("duration_min")
             cals = w.get("calories")
+            avg_hr = w.get("avg_hr")
             bits = []
             if w.get("strain") is not None:
                 bits.append(f"strain {w['strain']}")
-            if w.get("avg_hr"):
-                bits.append(f"avg HR {w['avg_hr']}")
+            if w.get("max_hr"):
+                bits.append(f"max HR {w['max_hr']}")
             notes = "WHOOP: " + ", ".join(bits) if bits else "WHOOP"
 
             existing = (await db.execute(
@@ -285,6 +286,7 @@ async def _persist_whoop_workouts(db, user: User, workout_by_date: dict) -> tupl
                 existing.cardio_type = sport       # whoop sessions are duration/HR based
                 existing.duration_minutes = dur
                 existing.calories_burned_estimate = cals
+                existing.avg_hr = avg_hr
                 existing.occurred_at = occurred
                 existing.notes = notes
                 updated += 1
@@ -295,6 +297,7 @@ async def _persist_whoop_workouts(db, user: User, workout_by_date: dict) -> tupl
                     cardio_type=sport,
                     duration_minutes=dur,
                     calories_burned_estimate=cals,
+                    avg_hr=avg_hr,
                     source_type="whoop",
                     source_ref=source_ref,
                     occurred_at=occurred,

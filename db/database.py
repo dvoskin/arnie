@@ -183,6 +183,8 @@ async def _migrate(conn):
         # ── 2026-06-24: workout time-of-day + wearable auto-log dedup ───────────
         ("exercise_entries", "occurred_at", "DATETIME"),
         ("exercise_entries", "source_ref", "VARCHAR"),
+        # ── 2026-06-25: wearable session avg heart rate ────────────────────────
+        ("exercise_entries", "avg_hr", "INTEGER"),
     ]
 
     for table, column, ddl in additions:

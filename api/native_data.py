@@ -104,7 +104,11 @@ def _log_to_day(log) -> dict | None:
                 # strength, calories for cardio, free-text notes for either).
                 "rir": e.rir,
                 "calories_burned": round(e.calories_burned_estimate) if e.calories_burned_estimate else None,
+                "avg_hr": e.avg_hr,
                 "notes": e.notes,
+                # Origin tag (whoop / apple_health / text) so the iOS row can show a
+                # "Whoop" / "Apple Watch" badge on auto-synced workouts.
+                "source": e.source_type,
             }
             # Time-ordered like the food entries, so the timeline reads chronologically.
             for e in sorted(
