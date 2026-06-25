@@ -133,6 +133,7 @@ async def day_data(db, user, target_date=None) -> dict:
     # triggers an async lazy-load with no greenlet → 500 (MissingGreenlet). By
     # gathering targets/weights/health here, nothing reads `user` after the create.
     targets = _targets(user)
+    user_tz = user.timezone or "UTC"
     weights = await get_recent_weights(db, user.id, days=30)
     weight_block = _weight_block(weights, user)
 
@@ -143,13 +144,20 @@ async def day_data(db, user, target_date=None) -> dict:
             health_block = _health_block(snaps[0])
 
     if is_today:
-        log = await get_or_create_today_log(db, user.id, user.timezone or "UTC")
+        log = await get_or_create_today_log(db, user.id, user_tz)
     else:
         log = await get_log_by_date(db, user.id, target_date)
 
+    # Stamp the user's zone on the day so the iOS timeline renders clock labels in
+    # THEIR timezone (naive timestamps are stored UTC). Without this iOS falls back
+    # to the device zone, which is wrong for any cross-zone view.
+    day = _log_to_day(log)
+    if day is not None:
+        day["timezone"] = user_tz
+
     return {
         "targets": targets,
-        "day": _log_to_day(log),
+        "day": day,
         "weight": weight_block,
         "health": health_block,
     }
