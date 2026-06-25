@@ -78,6 +78,7 @@ async def update_exercise(
                 response=arnie_message,
                 parsed_intent="dashboard_edit",
                 source_type="dashboard_edit",
+                platform="ios",   # iOS inline editor — without this it defaults to telegram
             )
 
         # Convert stored kg-CSV back to lbs-CSV for the client.
@@ -137,6 +138,7 @@ async def delete_exercise(
             response=arnie_message,
             parsed_intent="dashboard_delete",
             source_type="dashboard_edit",
+            platform="ios",   # iOS inline editor — without this it defaults to telegram
         )
         return {"status": "ok", "arnie_message": arnie_message}
 

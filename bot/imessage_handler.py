@@ -629,7 +629,8 @@ async def start_imessage_outreach(raw_phone: str) -> dict:
 
         # Log actual outreach text so the LLM has full context when the user replies
         await log_conversation(db, user.id, "[landing signup]",
-                               "|||".join(_OUTREACH_INTRO), source_type="imessage")
+                               "|||".join(_OUTREACH_INTRO), source_type="imessage",
+                               platform="imessage")
         logger.info(f"iMessage outreach sent to {phone}")
         return {"ok": True, "reason": "sent"}
 
@@ -806,7 +807,8 @@ async def run_imessage_pipeline(address: str, chat_guid: str, raw_text: str,
                 # the user replies (knows Arnie asked "First, what should I call you?")
                 await log_conversation(
                     db, user.id, raw_text,
-                    "|||".join(_INTRO_BUBBLES), source_type="imessage"
+                    "|||".join(_INTRO_BUBBLES), source_type="imessage",
+                    platform="imessage"
                 )
                 return  # Wait for user to reply with their name
 
@@ -917,6 +919,7 @@ async def run_imessage_pipeline(address: str, chat_guid: str, raw_text: str,
         # ── Persist conversation ──────────────────────────────────────────────
         log_text = "|||".join(turn.response.bubbles)
         await log_conversation(db, user.id, raw_text, log_text, source_type="imessage",
+                               platform="imessage",   # else defaults to telegram → mislabeled tags
                                parsed_intent=(",".join(turn.health_flags) or None),
                                skills_fired=turn.skills_fired)
 

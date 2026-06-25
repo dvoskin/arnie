@@ -70,6 +70,7 @@ async def update_food(
                 response=arnie_message,
                 parsed_intent="dashboard_edit",
                 source_type="dashboard_edit",
+                platform="ios",   # iOS inline editor — without this it defaults to telegram
             )
 
         return {
@@ -113,6 +114,7 @@ async def delete_food(
             response=arnie_message,
             parsed_intent="dashboard_delete",
             source_type="dashboard_edit",
+            platform="ios",   # iOS inline editor — without this it defaults to telegram
         )
 
         return {"status": "ok", "arnie_message": arnie_message}
