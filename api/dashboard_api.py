@@ -357,7 +357,19 @@ def _normalize_exercise(e: dict) -> dict:
         "sets": e.get("sets"),
         "reps": (str(reps) if reps is not None else None),
         "weight": e.get("weight"),
+        # Per-set load CSV + the rest of the entry shape the iOS row renders. These
+        # were being DROPPED here (only the fields above survived), so per-set
+        # breakdowns, RIR, cardio calories, and notes never reached the app.
+        "weights": e.get("weights"),
         "duration_minutes": (int(round(dm)) if dm is not None else None),
         "is_cardio": bool(e.get("is_cardio")),
         "cardio_type": e.get("cardio_type"),
+        "rir": e.get("rir"),
+        "calories_burned": e.get("calories_burned"),
+        "notes": e.get("notes"),
+        "source": e.get("source"),
+        # THE FIX: surface the timestamp so the timeline can place + time workouts.
+        # Food entries already pass theirs through; exercises were stripped here,
+        # which is why workouts showed untimed and clustered at the end.
+        "timestamp": e.get("timestamp"),
     }
