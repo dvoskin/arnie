@@ -449,7 +449,15 @@ def _sanitize_briefing(obj: dict) -> dict:
     cards.sort(key=lambda c: c["priority"], reverse=True)
     cards = cards[:5]
 
-    return {"hero": hero, "focus": focus, "cards": cards, "starter": _s(obj.get("starter"))}
+    # Hard-cap the starter at 125 chars (the prompt asks for it, but enforce it so a
+    # runaway never reaches the UI) — trim to the last word boundary, add an ellipsis.
+    starter = _s(obj.get("starter"))
+    if len(starter) > 125:
+        cut = starter[:124]
+        sp = cut.rfind(" ")
+        starter = (cut[:sp] if sp > 60 else cut).rstrip(" ,.;:") + "…"
+
+    return {"hero": hero, "focus": focus, "cards": cards, "starter": starter}
 
 
 def _engagement_signal(stats: dict) -> dict:
@@ -589,7 +597,7 @@ RULES:
 - MOMENTUM: every briefing must contain at least one piece of progress evidence (best streak, lowest weight, fastest pace, days logged).
 - PERSONAL: ground every insight in THIS client's real numbers AND the durable traits you've learned about them (their habits, what works for them, their lifestyle + constraints) under WHAT I KNOW below. Specific to them, never generic advice.
 - VOICE: never use em dashes or en dashes. Use commas, periods, or colons. Write in complete sentences. The app shows only the FIRST 2 sentences of each card story, the focus body, and the hero body, so make your point in exactly 2 tight sentences and never trail into a third.
-- starter: ONE personal question about today.
+- starter: ONE short, personal question about today — UNDER 125 characters, a single clean sentence. Never a paragraph.
 - CURATED, not assembled — you reviewed everything and chose THESE for today. Real numbers when you have them; no greetings (the app adds "Good morning"); no filler. When data's thin, lean on goal/plan/projection; one forward-looking "next unlock" card is welcome.
 
 DATA:

@@ -236,7 +236,14 @@ def fmt_exercise_history(logs: List[DailyLog]) -> str:
             else:
                 entries.append(f"    {e.exercise_name}")
         if entries:
-            sessions.append(f"  {l.date}:\n" + "\n".join(entries))
+            # Include the WEEKDAY explicitly — never make the model convert a date
+            # to a day of week (LLMs get this wrong, e.g. calling a Wed session
+            # "Tuesday"). The listed exercises ARE the session's focus; read them.
+            try:
+                day = f" ({l.date.strftime('%A')})"
+            except Exception:
+                day = ""
+            sessions.append(f"  {l.date}{day}:\n" + "\n".join(entries))
     if not sessions:
         return "No exercise history yet."
     return "\n".join(sessions[:6])
