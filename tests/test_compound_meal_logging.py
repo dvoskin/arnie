@@ -23,7 +23,20 @@ import pytest
 import api.app as app_mod
 from core.prompts import build_arnie_system
 
-SYSTEM_PROMPT = build_arnie_system(platform="telegram")
+
+def _system_prompt() -> str:
+    """Build the system prompt at TEST-EXECUTION time, not module-import time.
+
+    Computing this as a module-level constant (`SYSTEM_PROMPT = build_arnie_system(...)`)
+    ran it during pytest *collection*, which made it sensitive to collection-order
+    side effects from sibling test modules. Under pytest-randomly's shuffle that
+    intermittently produced a prompt with whole sections (TOOL_RULES / FOOD_LOGGING)
+    missing — flaky failures unrelated to the prompt content itself (the section
+    constants are immutable literals, always present in a clean build). Building it
+    fresh inside each test, after collection has settled and per-test monkeypatches
+    are restored, makes these assertions deterministic.
+    """
+    return build_arnie_system(platform="telegram")
 
 
 # ── Fix A: compound dish vs multi-dish plate ─────────────────────────────────
@@ -33,7 +46,7 @@ def test_prompt_has_compound_vs_multi_dish_rule():
     """The COMPOUND DISH vs MULTI-DISH PLATE rule must be present and name
     the canonical compound dishes (salad, sandwich, bowl, wrap, etc.) so
     the model doesn't fall back to the old per-component default."""
-    s = SYSTEM_PROMPT
+    s = _system_prompt()
     assert "COMPOUND DISH vs MULTI-DISH PLATE" in s
     # Pin the explicit examples.
     for dish in ("salad bowl", "sandwich", "burrito bowl", "wrap", "pasta",
@@ -47,7 +60,7 @@ def test_prompt_has_compound_vs_multi_dish_rule():
 def test_prompt_directs_one_log_food_for_compound_dish():
     """Compound dish = ONE log_food call. Multi-DISH plate = N calls.
     Distinguish them in the rule text."""
-    s = SYSTEM_PROMPT
+    s = _system_prompt()
     assert "Log it as ONE log_food call" in s
     assert "MULTI-DISH PLATE" in s
     assert "N log_food calls, one per dish" in s
@@ -57,7 +70,7 @@ def test_prompt_directs_breakdown_into_quantity_field():
     """The decomposition data is preserved IN the entry by storing the
     component breakdown in `quantity`. This is what makes the partial-
     revision math possible later."""
-    s = SYSTEM_PROMPT
+    s = _system_prompt()
     # The literal aligned-assignment line in the prompt.
     assert "quantity   = the component breakdown" in s
     # The canonical example from the salad screenshot.
@@ -71,7 +84,7 @@ def test_prompt_has_partial_revision_rule():
     """PARTIAL REVISION rule is what handles 'ate 80% of the salad, all
     the chicken' as a single-update math problem instead of N updates."""
     # Normalize whitespace so wrapped lines don't break substring matching.
-    s = " ".join(SYSTEM_PROMPT.split())
+    s = " ".join(_system_prompt().split())
     assert "PARTIAL REVISION" in s
     # Pin the canonical user phrasing.
     assert "ate 80% of the salad" in s
@@ -87,7 +100,7 @@ def test_prompt_directs_quantity_update_on_partial_revision():
     """The entry's quantity field gets updated to reflect the revision so a
     later recap shows the truth ('80% of salad: chicken (kept), 0.8 cup
     rice, ...'). Otherwise the next ask sees stale breakdown text."""
-    s = SYSTEM_PROMPT
+    s = _system_prompt()
     # Specifically calls out updating the quantity field on revision.
     assert "update the entry's quantity to reflect the revision" in s
 
@@ -100,7 +113,7 @@ def test_prompt_has_update_targeting_self_check():
     dressing entry' failure mode by name. When N update_food_entry calls
     fire, N entry_ids MUST be distinct."""
     # Normalize whitespace so wrapped lines don't break substring matching.
-    s = " ".join(SYSTEM_PROMPT.split())
+    s = " ".join(_system_prompt().split())
     assert "UPDATE TARGETING SELF-CHECK" in s
     assert "entry_id values MUST be DISTINCT" in s
     assert "NEVER pass the same [#id] twice in one turn" in s

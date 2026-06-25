@@ -933,6 +933,19 @@ async def consume_pre_registration(db: AsyncSession, code: str) -> Optional[dict
     return json.loads(entry.profile_json)
 
 
+async def pre_registration_exists(db: AsyncSession, code: str) -> bool:
+    """Whether a pre-registration row exists for `code` at all, regardless of
+    consumed/expired state. Lets callers distinguish 'code never existed' (typo)
+    from 'expired/already used' after a failed consume — `consume_pre_registration`
+    collapses all three to None. Non-consuming: never mutates the row."""
+    from db.models import PreRegistration
+
+    result = await db.execute(
+        select(PreRegistration.id).where(PreRegistration.code == code.upper())
+    )
+    return result.scalar_one_or_none() is not None
+
+
 async def apply_landing_profile_to_user(
     db: AsyncSession, user: "User", profile: dict
 ) -> None:
@@ -1560,8 +1573,12 @@ async def query_history_stats(
 
     Returns a dict the executor formats into a result string.
     """
-    tz = pytz.timezone(user_timezone or "UTC")
-    today = datetime.now(tz).date()
+    # Anchor "today" (and every relative period — yesterday/this week/N days ago)
+    # on the user's LOGGING day, NOT the raw calendar day. Logs are filed under
+    # _user_today (4am rollover), so using datetime.now().date() here made a
+    # "today" query miss the current log between midnight and 4am local — the
+    # same rollover the rest of the app already honors.
+    today = _user_today(user_timezone)
 
     # Resolve period to a date range — supports legacy + natural-language.
     parsed = parse_natural_period(period, today)

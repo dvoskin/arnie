@@ -68,7 +68,9 @@ async def update_exercise(
 
         updated = await update_exercise_entry(db, entry_id, user.id, **changes)
         if updated is None:
-            raise HTTPException(status_code=403, detail="not your entry")
+            # Uniform 404 (not 403) so the response can't be used to tell
+            # "doesn't exist" from "not yours" — closes a cross-user oracle.
+            raise HTTPException(status_code=404, detail="exercise entry not found")
 
         arnie_message = _build_update_message(before, updated, changes)
         if arnie_message:
@@ -128,7 +130,8 @@ async def delete_exercise(
 
         ok = await delete_exercise_entry(db, entry_id, user.id)
         if not ok:
-            raise HTTPException(status_code=403, detail="not your entry")
+            # Uniform 404 (see update_exercise) — don't leak entry existence.
+            raise HTTPException(status_code=404, detail="exercise entry not found")
 
         name = before.get("name") or "that exercise"
         arnie_message = f"Removed {name} from today's training log."

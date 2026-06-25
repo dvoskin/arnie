@@ -168,9 +168,14 @@ def _get_jwt(*, now: Optional[float] = None) -> str:
     return token
 
 
+# 403 reasons that mean "the provider JWT is bad" (vs. a dead device token).
+# These are recoverable by re-signing the JWT, so send_push refreshes + retries.
+_AUTH_REJECT_REASONS = {"ExpiredProviderToken", "InvalidProviderToken"}
+
+
 def reset_jwt_cache() -> None:
-    """Force the next `_get_jwt` call to re-sign. Used by tests; never
-    called from production."""
+    """Force the next `_get_jwt` call to re-sign. Called on a 403 auth-reject
+    in send_push (and by tests) so the next sign produces a fresh token."""
     global _jwt_cache
     _jwt_cache = None
 
@@ -236,36 +241,53 @@ async def send_push(
             if k != "aps":
                 aps_payload[k] = v
 
-    headers = {
-        "authorization": f"bearer {_get_jwt()}",
-        "apns-topic": bundle_id,
-        "apns-push-type": "alert",
-    }
-
     own_client = client is None
     if own_client:
         client = httpx.AsyncClient(http2=True, timeout=10.0)
 
+    # Apple rejects a stale provider token with 403 before our local TTL lapses
+    # (clock skew / early staleness). Without dropping the cached JWT, every
+    # subsequent push reuses the dead token until the ~50-min TTL rolls over —
+    # all pushes silently fail in the meantime. On an auth-class 403, re-sign
+    # once and retry. `_AUTH_REJECT_REASONS` is the set worth a refresh.
+    def _headers() -> dict:
+        return {
+            "authorization": f"bearer {_get_jwt()}",
+            "apns-topic": bundle_id,
+            "apns-push-type": "alert",
+        }
+
     try:
-        resp = await client.post(
-            f"{host}/3/device/{device_token}",
-            json=aps_payload,
-            headers=headers,
-        )
-        if resp.status_code == 200:
-            return {"ok": True}
-        reason = "unknown"
-        try:
-            payload = resp.json()
-            if isinstance(payload, dict):
-                reason = payload.get("reason", "unknown")
-        except Exception:
-            pass
-        logger.warning(
-            "apns rejected: status=%d reason=%s token=%s…",
-            resp.status_code, reason, device_token[:8],
-        )
-        return {"ok": False, "status": resp.status_code, "reason": reason}
+        retried = False
+        while True:
+            resp = await client.post(
+                f"{host}/3/device/{device_token}",
+                json=aps_payload,
+                headers=_headers(),
+            )
+            if resp.status_code == 200:
+                return {"ok": True}
+            reason = "unknown"
+            try:
+                payload = resp.json()
+                if isinstance(payload, dict):
+                    reason = payload.get("reason", "unknown")
+            except Exception:
+                pass
+            if (resp.status_code == 403 and reason in _AUTH_REJECT_REASONS
+                    and not retried):
+                logger.warning(
+                    "apns auth-reject (%s); re-signing JWT and retrying once",
+                    reason,
+                )
+                reset_jwt_cache()
+                retried = True
+                continue
+            logger.warning(
+                "apns rejected: status=%d reason=%s token=%s…",
+                resp.status_code, reason, device_token[:8],
+            )
+            return {"ok": False, "status": resp.status_code, "reason": reason}
     finally:
         if own_client:
             await client.aclose()

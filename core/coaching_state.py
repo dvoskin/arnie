@@ -70,7 +70,11 @@ def compute_coaching_state(
         return state
 
     latest = health_snapshots[0]
-    today = date.today()
+    # User's LOGGING day (4am-rollover, user-local) — health snapshots and logs
+    # are dated this way, so freshness/streak checks must use it too. Otherwise
+    # an evening non-UTC user reads today's wearable data as "yesterday/stale".
+    from db.queries import _user_today
+    today = _user_today(getattr(user, "timezone", None) or "UTC")
 
     # ── Data freshness ────────────────────────────────────────────────────────
     if latest.date == today:

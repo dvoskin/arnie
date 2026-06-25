@@ -275,6 +275,52 @@ async def test_send_push_returns_status_and_reason_on_apple_rejection(configured
 
 
 @pytest.mark.asyncio
+async def test_send_push_refreshes_jwt_and_retries_on_expired_provider_token(configured_env):
+    """A 403 ExpiredProviderToken means the cached provider JWT is stale (clock
+    skew / early staleness). send_push must drop the cache, re-sign, and retry
+    ONCE — recovering instead of failing every push until the local TTL lapses."""
+    calls = {"n": 0, "auths": []}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        calls["auths"].append(request.headers.get("authorization"))
+        if calls["n"] == 1:
+            return httpx.Response(
+                403, json={"reason": "ExpiredProviderToken"},
+                headers={"content-type": "application/json"},
+            )
+        return httpx.Response(200)
+
+    result = await apns_client.send_push(
+        "tok", "T", "B", client=_mock_client(handler),
+    )
+    assert result == {"ok": True}
+    assert calls["n"] == 2, "should retry exactly once after the auth-reject"
+    # The retry must re-sign (cache was reset) — both attempts carry a bearer JWT.
+    assert all(a and a.startswith("bearer ") for a in calls["auths"])
+
+
+@pytest.mark.asyncio
+async def test_send_push_retries_expired_provider_token_at_most_once(configured_env):
+    """If the re-signed JWT is ALSO rejected, send_push returns the failure
+    instead of looping forever — exactly two attempts, then give up."""
+    calls = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        return httpx.Response(
+            403, json={"reason": "ExpiredProviderToken"},
+            headers={"content-type": "application/json"},
+        )
+
+    result = await apns_client.send_push(
+        "tok", "T", "B", client=_mock_client(handler),
+    )
+    assert result == {"ok": False, "status": 403, "reason": "ExpiredProviderToken"}
+    assert calls["n"] == 2, "must not retry more than once"
+
+
+@pytest.mark.asyncio
 async def test_send_push_handles_apple_response_without_json_body(configured_env):
     """Some Apple errors (e.g. 5xx infrastructure blips) return non-JSON
     bodies. The sender must still return a structured failure dict, not

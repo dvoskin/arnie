@@ -57,7 +57,10 @@ async def update_food(
         changes = body.model_dump(exclude_none=True)
         updated = await update_food_entry(db, entry_id, user.id, **changes)
         if updated is None:
-            raise HTTPException(status_code=403, detail="not your entry")
+            # Uniform 404 (not 403) so a caller can't distinguish "entry doesn't
+            # exist" from "entry exists but isn't yours" — closes a cross-user
+            # entry-enumeration oracle (water.py does the same).
+            raise HTTPException(status_code=404, detail="food entry not found")
 
         # Arnie-voice confirmation. Keep it short and factual — this is a
         # passive notification, not coaching. The "before" snapshot lets us
@@ -104,7 +107,8 @@ async def delete_food(
 
         ok = await delete_food_entry(db, entry_id, user.id)
         if not ok:
-            raise HTTPException(status_code=403, detail="not your entry")
+            # Uniform 404 (see update_food) — don't leak entry existence.
+            raise HTTPException(status_code=404, detail="food entry not found")
 
         name = before.get("name") or "that entry"
         arnie_message = f"Removed {name} from today's log."

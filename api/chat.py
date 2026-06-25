@@ -295,6 +295,13 @@ async def chat_history(identity: str = Depends(current_identity), limit: int = 4
             try:
                 cards = json.loads(row.cards_json) or []
             except Exception:
+                # A corrupt/truncated cards_json row silently drops that turn's
+                # macro/workout/recap cards on history restore. Log it so the
+                # loss is observable instead of invisible.
+                logger.warning(
+                    "chat_history: bad cards_json on conversation row %s; "
+                    "dropping cards for that turn", getattr(row, "id", "?"),
+                )
                 cards = []
 
         bubbles = [b.strip() for b in (row.response or "").split("|||") if b.strip()]

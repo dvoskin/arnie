@@ -6,7 +6,9 @@ from typing import Optional, List
 from datetime import datetime, date, timedelta
 
 from db.models import User, DailyLog, UserPreferences, BodyMetric, HealthSnapshot
-from db.queries import get_recent_logs, get_recent_weights, get_recent_health_snapshots
+from db.queries import (
+    get_recent_logs, get_recent_weights, get_recent_health_snapshots, _user_today,
+)
 from memory.memory_manager import read_memory
 
 
@@ -161,9 +163,11 @@ def fmt_profile(user: User, prefs: Optional[UserPreferences]) -> str:
     return "\n".join(lines)
 
 
-def fmt_history(logs: List[DailyLog]) -> str:
-    # Past days only — today's totals are still moving until bedtime.
-    today_d = date.today()
+def fmt_history(logs: List[DailyLog], today: Optional[date] = None) -> str:
+    # Past days only — today's totals are still moving until bedtime. `today`
+    # is the user's LOGGING day (4am-rollover, user-local); fall back to the
+    # server day only when no timezone context is threaded in.
+    today_d = today or date.today()
     past = [l for l in logs if l.date < today_d]
     if not past:
         return "No prior days logged yet."
@@ -177,7 +181,8 @@ def fmt_history(logs: List[DailyLog]) -> str:
     return "\n".join(lines)
 
 
-def fmt_recent_day_detail(logs: List[DailyLog], days: int = 3) -> str:
+def fmt_recent_day_detail(logs: List[DailyLog], days: int = 3,
+                          today: Optional[date] = None) -> str:
     """
     Lists every food entry from the last `days` PAST days (excluding today,
     which has its own [TODAY] block). Lets the model answer "what did I eat
@@ -187,7 +192,7 @@ def fmt_recent_day_detail(logs: List[DailyLog], days: int = 3) -> str:
     Each entry: name + quantity + macros. Same shape the user sees on the
     dashboard. Capped at `days` days to keep the prompt lean.
     """
-    today_d = date.today()
+    today_d = today or date.today()
     past = sorted(
         [l for l in (logs or []) if l.date < today_d],
         key=lambda l: l.date,
@@ -374,13 +379,14 @@ def fmt_food_history(logs: List[DailyLog]) -> str:
     return "\n".join(lines)
 
 
-def fmt_weekly_breakdown(logs: List[DailyLog], prefs: Optional[UserPreferences]) -> str:
+def fmt_weekly_breakdown(logs: List[DailyLog], prefs: Optional[UserPreferences],
+                         today: Optional[date] = None) -> str:
     """Per-week nutrition and workout averages for the last 4 weeks.
     Used by weekly_summary and progress_timeline skills."""
     if not logs:
         return ""
 
-    today_date = date.today()
+    today_date = today or date.today()
     cal_t = prefs.calorie_target if prefs else None
     pro_t = prefs.protein_target if prefs else None
     lines = []
@@ -457,14 +463,15 @@ def pacing_note(log: Optional[DailyLog], prefs: Optional[UserPreferences],
     return "\n".join(parts) if parts else ""
 
 
-def adherence_insights(logs: List[DailyLog], prefs: Optional[UserPreferences]) -> str:
+def adherence_insights(logs: List[DailyLog], prefs: Optional[UserPreferences],
+                       today: Optional[date] = None) -> str:
     """Streak, weekly adherence, and trend callouts."""
     if not logs:
         return ""
     lines = []
 
     # Logging streak
-    today_date = date.today()
+    today_date = today or date.today()
     streak = 0
     check = today_date
     log_dates = {l.date for l in logs}
@@ -691,12 +698,17 @@ async def build_context(user: User, today_log: Optional[DailyLog], db,
         _l.getLogger(__name__).warning(f"pending clarification fetch failed: {e}")
 
     prefs = user.preferences
+    # User's LOGGING day (4am-rollover, user-local). Log rows are dated with
+    # this same helper, so all "past vs today" filtering must use it too —
+    # otherwise an evening non-UTC user sees today's in-flight log leak into
+    # [HISTORY] and get double-counted.
+    user_today = _user_today(user.timezone or "UTC")
     pace = pacing_note(today_log, prefs, user.timezone or "UTC")
-    adherence = adherence_insights(recent_logs, prefs)
+    adherence = adherence_insights(recent_logs, prefs, today=user_today)
     progress = goal_progress(user)
     health_str = fmt_health(recent_health)
     weight_progress = fmt_weight_progress(recent_weights, user)
-    weekly_breakdown = fmt_weekly_breakdown(recent_logs, prefs)
+    weekly_breakdown = fmt_weekly_breakdown(recent_logs, prefs, today=user_today)
     strength_prs = fmt_strength_prs(recent_logs)
     food_history = fmt_food_history(recent_logs)
 
@@ -1004,11 +1016,11 @@ async def build_context(user: User, today_log: Optional[DailyLog], db,
         (adherence if adherence else "No adherence data yet."),
         "",
         "=== RECENT HISTORY ===",
-        fmt_history(recent_logs),
+        fmt_history(recent_logs, today=user_today),
         (weight_progress if weight_progress else fmt_weight_trend(recent_weights)),
         (weekly_breakdown if weekly_breakdown else ""),
         "",
-        fmt_recent_day_detail(recent_logs, days=3),
+        fmt_recent_day_detail(recent_logs, days=3, today=user_today),
         "",
         "=== FOOD HISTORY ===",
         (food_history if food_history else "No food history yet."),

@@ -29,6 +29,16 @@ logger = logging.getLogger(__name__)
 
 _scheduler = AsyncIOScheduler()
 
+# APNs rejection reasons that mean "this token will never work" — revoke on
+# sight instead of retrying every tick. BadDeviceToken/Unregistered = dead
+# token; DeviceTokenNotForTopic/TopicDisallowed = permanent env/topic mismatch.
+_PERMANENT_TOKEN_FAILURES = (
+    "BadDeviceToken",
+    "Unregistered",
+    "DeviceTokenNotForTopic",
+    "TopicDisallowed",
+)
+
 
 def proactive_enabled() -> bool:
     """
@@ -300,9 +310,11 @@ async def _send_ios(telegram_id: str, text: str) -> None:
             status = result.get("status")
             # Apple's "token is dead, stop sending to it" signals. 400 +
             # BadDeviceToken means the token was never valid; 410 +
-            # Unregistered means the app was uninstalled. Either way: revoke
-            # so the next sweep doesn't waste a round-trip.
-            if reason in ("BadDeviceToken", "Unregistered") or status == 410:
+            # Unregistered means the app was uninstalled. DeviceTokenNotForTopic
+            # / TopicDisallowed are permanent environment/topic mismatches (e.g. a
+            # sandbox token sent to prod) — also non-self-healing, so revoke them
+            # too instead of retrying the same dead token every tick forever.
+            if reason in _PERMANENT_TOKEN_FAILURES or status == 410:
                 await revoke_device_token(db, user.id, row.token)
                 logger.info(
                     f"APNs revoked dead token for user {user.id}: status={status} reason={reason}"

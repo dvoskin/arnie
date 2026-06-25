@@ -58,6 +58,8 @@ async def log_water(
     without a re-fetch."""
     async with AsyncSessionLocal() as db:
         user = await resolve_user(db, identity)
+        if not user:
+            raise HTTPException(status_code=404, detail="user not found")
         log = await get_or_create_today_log(db, user.id, user.timezone or "UTC")
         entry = await add_water_entry(
             db,
@@ -88,6 +90,8 @@ async def update_water(
     expose entry existence)."""
     async with AsyncSessionLocal() as db:
         user = await resolve_user(db, identity)
+        if not user:
+            raise HTTPException(status_code=404, detail="water entry not found")
         updated = await update_water_entry(
             db, entry_id=entry_id, user_id=user.id, amount_ml=payload.amount_ml,
         )
@@ -112,6 +116,8 @@ async def delete_water(
     """Delete a water entry. Same ownership scoping as PATCH."""
     async with AsyncSessionLocal() as db:
         user = await resolve_user(db, identity)
+        if not user:
+            raise HTTPException(status_code=404, detail="water entry not found")
         removed = await delete_water_entry(db, entry_id=entry_id, user_id=user.id)
         if not removed:
             raise HTTPException(status_code=404, detail="water entry not found")
