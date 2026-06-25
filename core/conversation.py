@@ -78,6 +78,18 @@ _SILENT_TOOLS = frozenset({
     "schedule_check_in", "set_macro_targets",
 })
 
+# TEMPORARY (2026-06): suppress the inline workout_card that log_exercise emits
+# in chat. Live workout logging through the conversational path is unreliable —
+# the chat tool carries only a single `weight` (not per-set loads), and the LLM's
+# accompanying text can mis-echo or fabricate history comparisons. Showing a
+# "logged ✅" card next to a wrong reply reads worse than no card. Food macro_cards,
+# workout *suggestion* cards, and explicit show_workout_log/recap cards are
+# unaffected. Flip back to True once live workout logging is reworked (see the
+# structured-logging plan). This gates ONLY the native (iOS) inline card; the
+# DB write + text reply are unchanged.
+_EMIT_WORKOUT_LOG_CARDS = False
+
+
 
 def _voices_result(tool_name: str) -> bool:
     """Voice-by-default: a tool's result is voiced via a follow-up unless the tool
@@ -845,7 +857,8 @@ async def run_turn(
                         "entry_id":  inp.get("_entry_id"),
                     },
                 })
-            elif name == "log_exercise" and inp.get("_entry_id") is not None:
+            elif (name == "log_exercise" and inp.get("_entry_id") is not None
+                  and _EMIT_WORKOUT_LOG_CARDS):
                 is_cardio = bool(inp.get("is_cardio") or inp.get("cardio_type"))
                 resp.cards.append({
                     "type": "workout_card",
