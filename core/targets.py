@@ -11,6 +11,75 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+def compute_adaptive_tdee(history: list, weights: list, window_days: int = 14) -> dict | None:
+    """Adaptive TDEE from logged intake + the weight trend (energy-balance method,
+    MacroFactor-style): over a window, TDEE ≈ avg daily intake − (Δweight in kcal/day),
+    where 1 kg ≈ 7700 kcal. Losing weight on a given intake means real burn is HIGHER
+    than that intake by the deficit; gaining means it's lower.
+
+      history: [{"date": "YYYY-MM-DD", "calories": int, ...}]  — daily intake
+      weights: [{"date": "YYYY-MM-DD", "kg": float, ...}]      — body-weight readings
+
+    Returns None when data is too thin for an honest estimate (the card just won't
+    render): needs >=5 logged days AND >=2 weigh-ins spanning >=7 days. The weight
+    slope is a least-squares fit (robust to day-to-day water noise); the result is
+    clamped to a sane physiological range.
+    """
+    from datetime import date as _date
+
+    def _parse(s):
+        try:
+            return _date.fromisoformat(str(s))
+        except (ValueError, TypeError):
+            return None
+
+    dates = [d for h in history if (d := _parse(h.get("date")))]
+    if not dates:
+        return None
+    cutoff = max(dates).toordinal() - window_days
+
+    logged = [h for h in history
+              if (d := _parse(h.get("date"))) and d.toordinal() >= cutoff
+              and (h.get("calories") or 0) >= 100]
+    if len(logged) < 5:
+        return None
+    avg_intake = sum(h["calories"] for h in logged) / len(logged)
+
+    win = sorted(
+        [(d, w["kg"]) for w in weights
+         if (d := _parse(w.get("date"))) and d.toordinal() >= cutoff and w.get("kg")],
+        key=lambda t: t[0],
+    )
+    if len(win) < 2:
+        return None
+    span_days = (win[-1][0] - win[0][0]).days
+    if span_days < 7:
+        return None
+
+    # Least-squares slope (kg/day) over the window's weigh-ins.
+    xs = [(d - win[0][0]).days for d, _ in win]
+    ys = [w for _, w in win]
+    n = len(xs)
+    mx, my = sum(xs) / n, sum(ys) / n
+    denom = sum((x - mx) ** 2 for x in xs)
+    if denom == 0:
+        return None
+    slope = sum((x - mx) * (y - my) for x, y in zip(xs, ys)) / denom   # kg/day
+    tdee = max(1200.0, min(5500.0, avg_intake - slope * 7700.0))       # sane clamp
+
+    days_logged = len(logged)
+    confidence = "high" if days_logged >= 21 else ("medium" if days_logged >= 10 else "low")
+    return {
+        "tdee": int(round(tdee)),
+        "avg_intake": int(round(avg_intake)),
+        "weight_change_kg": round(slope * span_days, 2),
+        "weight_change_lbs": round(slope * span_days * 2.20462, 1),
+        "span_days": span_days,
+        "days_logged": days_logged,
+        "confidence": confidence,
+    }
+
+
 def compute_macro_targets(user) -> dict | None:
     """Canonical calorie + 4-macro calculator. Used by:
       · dashboard POST /api/profile/{token}/auto-targets

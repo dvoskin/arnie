@@ -195,6 +195,8 @@ async def get_week(identity: str = Depends(current_identity)):
         return round(sum(x[key] for x in logged) / len(logged)) if logged else 0
 
     weights = stats.get("weights") or []
+    from core.targets import compute_adaptive_tdee
+    expenditure = compute_adaptive_tdee(stats.get("history") or [], weights)
     return {
         "v": WIRE_VERSION,
         "targets": {
@@ -211,6 +213,9 @@ async def get_week(identity: str = Depends(current_identity)):
         "days_logged": len(logged),
         "days_trained": sum(1 for x in days if x["workout"]),
         "weights": [{"date": w["date"], "lbs": w["lbs"]} for w in weights[-30:]],
+        # Adaptive TDEE (energy-balance from intake + weight trend); null when data
+        # is too thin — the Coach expenditure card hides itself in that case.
+        "expenditure": expenditure,
     }
 
 

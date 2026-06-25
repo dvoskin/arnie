@@ -269,7 +269,7 @@ def _user_today_date(user):
 async def week_data(db, user) -> dict:
     """Targets + recent daily history + recent weights — enough for the 7-day window
     and weight trend, without health/Whoop/attributes."""
-    history = await get_recent_logs(db, user.id, days=10)
+    history = await get_recent_logs(db, user.id, days=14)   # 14d → enough for adaptive TDEE
     weights = await get_recent_weights(db, user.id, days=30)
     hist_data = [
         {
