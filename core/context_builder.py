@@ -736,9 +736,11 @@ async def build_context(user: User, today_log: Optional[DailyLog], db,
             _now = datetime.now(_pytz.timezone(user.timezone))
             _t = _now.strftime("%-I:%M %p").lstrip("0")
             current_time_line = (
-                f"[CURRENT TIME] It's {_now.strftime('%A')} {_t} "
-                f"for the user (timezone {user.timezone}). "
-                f"Use this for any time or date question. Never guess the time."
+                f"[CURRENT TIME] Today is {_now.strftime('%A, %B %-d, %Y')}, {_t} "
+                f"for the user (timezone {user.timezone}). Use this EXACT date and "
+                f"weekday TOGETHER for any date question (today is "
+                f"{_now.strftime('%A')}) — never convert a date to a weekday yourself, "
+                f"and never guess the time."
             )
         except Exception:
             current_time_line = ""
@@ -746,7 +748,8 @@ async def build_context(user: User, today_log: Optional[DailyLog], db,
         _now = datetime.now(_pytz.utc)
         current_time_line = (
             f"[CURRENT TIME] User's timezone is unknown, so local time is uncertain. "
-            f"Server time is {_now.strftime('%A %-I:%M %p')} UTC. "
+            f"Server time is {_now.strftime('%A, %B %-d, %Y %-I:%M %p')} UTC — use this "
+            f"exact date and weekday together; never convert a date to a weekday yourself. "
             f"If asked the time, say you're not sure of their timezone and ask what city they're in. "
             f"Do NOT state a specific local time as fact."
         )

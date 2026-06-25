@@ -13,6 +13,7 @@ the wire output is byte-identical (verified by golden diff). The prod-shared
 """
 from __future__ import annotations
 
+import json
 from datetime import datetime, date as _date, timedelta
 
 from db.queries import (
@@ -53,6 +54,21 @@ def _weights_csv_to_lbs(csv: str | None) -> str | None:
     return ",".join(parts) if parts else None
 
 
+def _parse_micros(raw) -> dict | None:
+    """Parse a FoodEntry.micronutrients_json blob into a clean {name: number} dict
+    for the iOS nutrient card. None when absent / empty / malformed."""
+    if not raw:
+        return None
+    try:
+        data = json.loads(raw)
+    except (ValueError, TypeError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    clean = {str(k): v for k, v in data.items() if isinstance(v, (int, float))}
+    return clean or None
+
+
 def _log_to_day(log) -> dict | None:
     """Shape a DailyLog into the `day` dict. Mirrors _build_stats_for_user._log_to_day."""
     if not log:
@@ -72,6 +88,11 @@ def _log_to_day(log) -> dict | None:
                 "quantity": e.quantity or "",
                 "calories": round(e.calories or 0), "protein": round(e.protein or 0),
                 "carbs": round(e.carbs or 0), "fats": round(e.fats or 0),
+                # Micronutrient profile for the Log's tap-to-expand nutrient card.
+                "fiber":  round(e.fiber, 1) if e.fiber  is not None else None,
+                "sugar":  round(e.sugar, 1) if e.sugar  is not None else None,
+                "sodium": round(e.sodium)   if e.sodium is not None else None,
+                "micros": _parse_micros(getattr(e, "micronutrients_json", None)),
                 "estimated": bool(e.estimated_flag),
                 "from_photo": bool(getattr(e, "from_photo", False)),
                 # Prefer EATEN-at (meal_time) over logged-at so a back-dated or
@@ -114,6 +135,20 @@ def _log_to_day(log) -> dict | None:
             for e in sorted(
                 (log.exercise_entries or []),
                 key=lambda e: ((e.occurred_at or e.timestamp) or datetime.min, e.id or 0),
+            )
+        ],
+        # Timestamped hydration logs — water nodes on the iOS timeline (filterable
+        # under Nutrition). DailyLog.total_water_ml stays the day's cached aggregate.
+        "water_entries": [
+            {
+                "id": w.id,
+                "ml": round(w.amount_ml or 0),
+                "timestamp": w.timestamp.isoformat() if w.timestamp else None,
+                "context": w.context,
+            }
+            for w in sorted(
+                (log.water_entries or []),
+                key=lambda w: (w.timestamp or datetime.min, w.id or 0),
             )
         ],
     }

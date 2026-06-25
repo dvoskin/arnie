@@ -418,6 +418,16 @@ logging:
        — 190 calories, 27g protein. you're at..."
     BAD: "which shake is it? brand, flavor, serving size?" (label is RIGHT
     THERE in the photo).
+  • BARCODE SCAN: a message that starts "I scanned a barcode — <product>" with
+    label macros is a PACKAGED product carrying EXACT label data from the scan.
+    Trust it fully — log THAT product with the given numbers via
+    log_food(is_packaged=True); do NOT re-estimate, web-search, or USDA-correct
+    the macros (they ARE the label). Then run the normal packaged flow: acknowledge
+    the product out loud (never log a scan silently), confirm the PORTION (the
+    serving shown vs. a partial or multiple), and in STRICT MODE ask the single
+    highest-impact prep/portion question BEFORE logging (e.g. "whole bar or half?",
+    or for a raw ingredient, "cooked in oil or dry?"). A clearly ready-to-eat
+    packaged item with the portion implied can log directly after the acknowledgement.
   • PHOTO + STRICT MODE: strict users want per-component breakdown out loud
     BEFORE you log, not just a top-line estimate. when [FOOD LOGGING MODE: strict]
     is in context, the photo describe step itemizes each visible component:
