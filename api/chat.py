@@ -285,8 +285,11 @@ async def chat_history(identity: str = Depends(current_identity), limit: int = 4
             messages.append(msg)
 
         # Typed inline cards for this turn (stored as JSON on the row). Attach
-        # them to the turn's LAST Arnie bubble so they render beneath the reply,
-        # mirroring the live order (text bubbles, then cards).
+        # them to the turn's FIRST Arnie bubble so they render AFTER the lead-in
+        # and BEFORE the close — mirroring the live path (which splits the merged
+        # reply at the first paragraph break and drops the card between the halves).
+        # Attaching to the last bubble instead made reloaded turns show the card
+        # detached at the very end, even when it was woven mid-reply live.
         cards = []
         if getattr(row, "cards_json", None):
             try:
@@ -297,7 +300,7 @@ async def chat_history(identity: str = Depends(current_identity), limit: int = 4
         bubbles = [b.strip() for b in (row.response or "").split("|||") if b.strip()]
         for i, bubble in enumerate(bubbles):
             m = {"author": "arnie", "text": bubble, "created_at": ts_iso, "platform": plat}
-            if cards and i == len(bubbles) - 1:
+            if cards and i == 0:
                 m["cards"] = cards
             messages.append(m)
         # Card-only turn (no text bubbles) — still surface the cards.
