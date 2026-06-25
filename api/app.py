@@ -1101,8 +1101,15 @@ async def _build_stats_for_user(db, user, target_date=None):
                  "weight": round(e.weight * 2.20462, 1) if e.weight else None,
                  "duration_minutes": e.duration_minutes,
                  "is_cardio": bool(e.cardio_type),
-                 "cardio_type": e.cardio_type}
-                for e in (log.exercise_entries or [])
+                 "cardio_type": e.cardio_type,
+                 # Parity with native_data: surface the time so any surface using
+                 # this serializer can place workouts on a timeline (occurred-at,
+                 # else logged-at).
+                 "timestamp": (e.occurred_at or e.timestamp).isoformat() if (e.occurred_at or e.timestamp) else None}
+                for e in sorted(
+                    (log.exercise_entries or []),
+                    key=lambda e: ((e.occurred_at or e.timestamp) or datetime.min, e.id or 0),
+                )
             ],
             # Per-entry hydration (canonical WaterEntry rows) so the dashboard
             # can show the day total first and expand into the individual logs.
