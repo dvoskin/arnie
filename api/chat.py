@@ -20,7 +20,7 @@ from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisco
 from pydantic import BaseModel, Field, field_validator
 
 from db.database import AsyncSessionLocal
-from db.queries import resolve_user, get_recent_conversations, save_user_location
+from db.queries import resolve_user, get_recent_conversations, get_recent_conversations_linked, save_user_location
 from core.chat_service import run_chat_turn
 from core.platform import serialize_response, WIRE_VERSION
 from api.auth import current_identity, verify_session_token
@@ -255,19 +255,27 @@ async def chat_history(identity: str = Depends(current_identity), limit: int = 4
     "minutes ago" labels."""
     async with AsyncSessionLocal() as db:
         user = await resolve_user(db, identity)
-        rows = await get_recent_conversations(db, user.id, limit=limit)
+        # Merge the turns from EVERY identity linked to this account (Telegram +
+        # iMessage + iOS) so the app shows one unified thread — a user can chat on
+        # Telegram and review the same conversation here.
+        rows = await get_recent_conversations_linked(db, user, limit=limit)
 
     messages: list[dict] = []
-    for row in reversed(rows):  # get_recent_conversations is newest-first → chronological
+    for row in reversed(rows):  # newest-first → chronological
         # `timestamp` is the SQLAlchemy column on ConversationLog. Send it as
         # ISO-8601 so the iOS contract (Date) parses it via ISO8601DateFormatter.
         # All bubbles in a single turn share the row timestamp — fine because
         # they arrive together; the client only needs gap detection between turns.
         ts_iso = row.timestamp.isoformat() if row.timestamp else None
+        # The surface this turn happened on, so the app can tag each bubble with a
+        # small platform marker (telegram / imessage / ios). Normalize web→ios.
+        plat = row.platform or "telegram"
+        if plat == "web":
+            plat = "ios"
 
         user_text = _display_user_text(row)
         if user_text:
-            msg = {"author": "user", "text": user_text, "created_at": ts_iso}
+            msg = {"author": "user", "text": user_text, "created_at": ts_iso, "platform": plat}
             # Flag voice turns so the client can restore a voice-style bubble
             # (transcript shown, no playback — the audio isn't persisted) instead
             # of a plain text bubble.
@@ -288,13 +296,13 @@ async def chat_history(identity: str = Depends(current_identity), limit: int = 4
 
         bubbles = [b.strip() for b in (row.response or "").split("|||") if b.strip()]
         for i, bubble in enumerate(bubbles):
-            m = {"author": "arnie", "text": bubble, "created_at": ts_iso}
+            m = {"author": "arnie", "text": bubble, "created_at": ts_iso, "platform": plat}
             if cards and i == len(bubbles) - 1:
                 m["cards"] = cards
             messages.append(m)
         # Card-only turn (no text bubbles) — still surface the cards.
         if cards and not bubbles:
-            messages.append({"author": "arnie", "text": "", "created_at": ts_iso, "cards": cards})
+            messages.append({"author": "arnie", "text": "", "created_at": ts_iso, "cards": cards, "platform": plat})
 
     return {"v": WIRE_VERSION, "messages": messages}
 

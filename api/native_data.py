@@ -143,9 +143,9 @@ async def day_data(db, user, target_date=None) -> dict:
 
     health_block = None
     if is_today:
-        snaps = await get_recent_health_snapshots(db, user.id, days=1)
-        if snaps:
-            health_block = _health_block(snaps[0])
+        snap = await _today_health_snapshot_linked(db, user)
+        if snap:
+            health_block = _health_block(snap)
 
     if is_today:
         log = await get_or_create_today_log(db, user.id, user_tz)
@@ -259,6 +259,33 @@ async def week_data(db, user) -> dict:
 
 
 # ── Fitness + Profile (shared health/whoop/streak helpers) ───────────────────
+
+async def _today_health_snapshot_linked(db, user):
+    """Today's wearable snapshot across the user's WHOLE linked account — the
+    canonical row (`linked_to_user_id or id`) plus every identity pointing at it.
+    A recovery synced under the user's Telegram identity then still shows in the
+    app, which queries by the iOS identity. Prefers a snapshot that actually
+    carries a recovery score; falls back to whatever today's snapshot is.
+    """
+    from sqlalchemy import select
+    from db.models import User as _U
+
+    canonical_id = user.linked_to_user_id or user.id
+    id_rows = await db.execute(
+        select(_U.id).where((_U.id == canonical_id) | (_U.linked_to_user_id == canonical_id))
+    )
+    ids = list(id_rows.scalars().all()) or [user.id]
+
+    candidates = []
+    for uid in ids:
+        snaps = await get_recent_health_snapshots(db, uid, days=1)
+        if snaps:
+            candidates.append(snaps[0])
+    if not candidates:
+        return None
+    with_recovery = [c for c in candidates if c.recovery_score is not None]
+    return with_recovery[0] if with_recovery else candidates[0]
+
 
 async def _merged_health_snaps(db, user):
     """Health snapshots for the user, merged with any linked identities — mirrors

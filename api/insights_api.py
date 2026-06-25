@@ -29,12 +29,15 @@ router = APIRouter(prefix="/api/v1", tags=["insights"])
 @router.get("/insights")
 async def get_insights_for_ios(
     period: Literal["day", "week"] = "day",
+    force: bool = False,
     identity: str = Depends(current_identity),
 ) -> dict:
     """Return the AI-generated coaching insights for the authenticated user.
     `period=day` (default) analyses today; `period=week` consolidates the
-    last 7 days into trend bullets. Wraps the same generators the legacy
-    `/api/insights/{token}` route uses; result shape unchanged."""
+    last 7 days into trend bullets. `force=true` bypasses the cache so the
+    insight regenerates against the latest logs (the app passes it right after
+    a new entry). Wraps the same generators the legacy `/api/insights/{token}`
+    route uses; result shape unchanged."""
     # Late import so api.insights_api can be loaded without pulling all of
     # api.app at module import time (circular: app includes this router).
     from api.app import _build_stats_for_user
@@ -44,9 +47,9 @@ async def get_insights_for_ios(
         user = await resolve_user(db, identity)
         stats = await _build_stats_for_user(db, user)
         if period == "week":
-            insights = await get_week_insights(user.id, stats)
+            insights = await get_week_insights(user.id, stats, force=force)
         else:
-            insights = await get_insights(user.id, stats, date_key="")
+            insights = await get_insights(user.id, stats, force=force, date_key="")
     return {"insights": insights, "period": period}
 
 

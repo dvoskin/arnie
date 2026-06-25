@@ -614,6 +614,33 @@ async def get_recent_conversations(db: AsyncSession, user_id: int,
     return result.scalars().all()
 
 
+async def get_recent_conversations_linked(db: AsyncSession, user: User,
+                                          limit: int = 8,
+                                          source_types: Optional[List[str]] = None
+                                          ) -> List[ConversationLog]:
+    """Recent turns across EVERY identity linked to the same canonical account
+    (Telegram + iMessage + iOS), newest-first — so a user who chats on Telegram
+    and opens the app sees ONE unified thread instead of just the app's turns.
+
+    The canonical account is `user.linked_to_user_id or user.id`; we gather that
+    row plus every identity that points at it. Falls back to a solo `user.id`
+    when nothing is linked, so single-surface users are unaffected.
+    """
+    canonical_id = user.linked_to_user_id or user.id
+    id_rows = await db.execute(
+        select(User.id).where(
+            (User.id == canonical_id) | (User.linked_to_user_id == canonical_id)
+        )
+    )
+    ids = list(id_rows.scalars().all()) or [user.id]
+    stmt = select(ConversationLog).where(ConversationLog.user_id.in_(ids))
+    if source_types is not None:
+        stmt = stmt.where(ConversationLog.source_type.in_(source_types))
+    stmt = stmt.order_by(desc(ConversationLog.timestamp)).limit(limit)
+    result = await db.execute(stmt)
+    return result.scalars().all()
+
+
 async def log_conversation(db: AsyncSession, user_id: int, raw_message: str,
                            response: str, parsed_intent: str = None,
                            source_type: str = "text",
