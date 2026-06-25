@@ -211,3 +211,45 @@ async def complete_onboarding(
         user.onboarding_completed = True
         await db.commit()
         return {"ok": True, "onboarding_completed": True, "missing_fields": []}
+
+
+# ── Linked accounts ─────────────────────────────────────────────────────────
+
+
+@router.get("/linked-accounts")
+async def linked_accounts(identity: str = Depends(current_identity)) -> dict:
+    """Which platform surfaces (iOS / Telegram / iMessage) resolve to this same
+    account. Drives the Settings "Linked accounts" panel.
+
+    Without this the iOS app only knew about a link it performed IN-SESSION
+    (`SettingsView.linkedTo` is local @State), so an account linked elsewhere —
+    a prior session, the Telegram bot, or an ops backfill — still showed the
+    "Link Telegram account" prompt. This reads the live `linked_to_user_id`
+    group so the panel reflects reality on every open.
+
+    Platform is derived from each identity's `telegram_id` prefix: `im:` →
+    iMessage, `ios:` → iOS app, otherwise a numeric Telegram id.
+    """
+    from sqlalchemy import select, or_
+    from db.models import User
+    async with AsyncSessionLocal() as db:
+        user = await resolve_user(db, identity)              # canonical (follows the link)
+        canonical_id = user.linked_to_user_id or user.id
+        members = (await db.execute(select(User).where(
+            or_(User.id == canonical_id, User.linked_to_user_id == canonical_id)
+        ))).scalars().all()
+
+        def platform_of(tid) -> str:
+            t = str(tid or "")
+            if t.startswith("im:"):  return "imessage"
+            if t.startswith("ios:"): return "ios"
+            return "telegram"
+
+        platforms = sorted({platform_of(m.telegram_id) for m in members})
+        canonical_user = next((m for m in members if m.id == canonical_id), user)
+        return {
+            "platforms":        platforms,                   # e.g. ["imessage","ios","telegram"]
+            "telegram_linked":  "telegram" in platforms,
+            "imessage_linked":  "imessage" in platforms,
+            "canonical_name":   canonical_user.name,
+        }
