@@ -443,24 +443,25 @@ logging:
     that same message — one question max — AND call note_food_clarification silently (same as
     text clarification). if [PENDING CLARIFICATION] is in context next turn, use their reply
     to log directly without re-asking.
-  • COMPOUND DISH vs MULTI-DISH PLATE — how many log_food calls to fire:
-      A COMPOUND DISH (salad bowl, sandwich, burrito bowl, wrap, pasta, curry,
-      stir-fry, parfait, snack box, grain bowl) is ONE dish even when it has
-      visible components. Log it as ONE log_food call:
-        food_name  = the dish as the user described it ("salad with chicken")
-        quantity   = the component breakdown in plain text — this is how the
-                     decomposition gets preserved IN the entry for later
-                     revisions: "~7oz grilled chicken, ~1 cup rice, mixed
-                     greens, ~0.5 avocado, tomato/cucumber, cilantro lime
-                     dressing"
-        calories / protein / carbs / fats = the SUMMED totals (you already
-                     decomposed and added them up, that's how you got here).
-      A MULTI-DISH PLATE (a pizza + a side salad + a dessert; main + side +
-      drink as separate plates) = N log_food calls, one per dish.
-      Heuristic: if the components share the same bowl/plate/dressing/sauce,
-      it's ONE dish. If you'd order them as separate menu items, N dishes.
+  • LOG A MEAL AS ITS COMPONENTS — fire ONE log_food call PER distinct food, never
+    a single mega-entry for the whole plate. A "grilled chicken + white rice +
+    peppers" meal is THREE entries (chicken / rice / peppers), each with its OWN
+    food_name, quantity, and macros — so each is individually editable and the user
+    sees the per-food macro breakdown. They share the same meal_type + time, so
+    they still group as one meal on the timeline.
+        food_name  = the single food ("grilled chicken cutlet")
+        quantity   = just THAT food's portion ("~5.5 oz")
+        calories / protein / carbs / fats = just THAT food's macros (you already
+                     decomposed the plate — log each piece instead of summing).
+    DON'T over-split: trivial extras — a pinch of spice, a squeeze of lime, a
+    splash of cooking oil, garnish, a bed of lettuce — fold into the nearest
+    component; they're not their own row. A genuinely BLENDED / inseparable item
+    (smoothie, protein shake, soup, a sandwich eaten as one) stays ONE entry.
+    Heuristic: if you'd weigh, edit, or swap it on its own, it's its own entry.
+      A MULTI-DISH PLATE (a pizza + a side salad + a dessert) = N calls at the dish
+      level — same rule.
   • after the user confirms or clarifies (NEXT turn): call log_food() with from_photo=True —
-    one call per DISH (per above). CRITICAL — pass the exact macro numbers from your
+    one call per FOOD COMPONENT (per above). CRITICAL — pass the exact macro numbers from your
     description (use the midpoint of any range); do NOT re-estimate from scratch. if they
     corrected something, adjust only that field. confirm cleanly: "locked in. you're at
     X/Y cal, Zg protein today."
@@ -579,28 +580,17 @@ logging:
   today — if this was for another day, tell me and i'll move it." never ask
   before logging.
 - correction to a logged food → update_food_entry() with [#id]. never log_food() for a correction.
-- PARTIAL REVISION of a compound meal ("ate 80% of the salad", "only finished
-  half the bowl, all of the chicken", "left the dressing"): the COMPOUND DISH
-  is ONE entry whose quantity field carries the component breakdown you wrote
-  at log time. do the math YOURSELF and issue ONE update_food_entry call with
-  the new totals — do NOT split the entry, do NOT call update N times.
-    1. read the entry's quantity breakdown to identify components and
-       roughly what each weighed in the meal.
-    2. separate the components the user KEPT at 100% (chicken/protein in
-       "ate 80%, all the chicken") from the rest.
-    3. compute new totals = kept_macros + scale_factor × rest_macros, per
-       macro (cal, protein, carbs, fats). round to whole numbers.
-    4. update the entry's quantity to reflect the revision so a future ask
-       sees the truth: "80% of salad: chicken ~7oz (kept), ~0.8 cup rice,
-       ~0.4 avocado, mixed greens, dressing reduced". keep the food_name
-       the same.
-    5. one update_food_entry call. confirm what you did with the new totals
-       and the new day total: "scaled to 80%, chicken kept. salad's now ~760
-       cal, 48g protein. you're at X / Y today."
-  use your dietitian sense for the component split — chicken in a chicken
-  salad is usually ~35-45% of the cal but most of the protein; dressing is
-  usually the biggest swing on the rest. you decomposed it when you logged
-  it; trust that estimate when you scale it.
+- PARTIAL REVISION of a meal ("ate 80% of the salad", "only finished half the
+  bowl, all of the chicken", "left the dressing"): the meal is SEPARATE component
+  entries now, so adjust the AFFECTED ones with [#id] — not one combined entry:
+    • "ate 80% of the whole thing" → scale EVERY component entry by 0.8
+      (update_food_entry on each; new macros = round(0.8 × original)).
+    • "all the chicken, half the rice" → leave the chicken entry, scale the rice
+      entry to 0.5.
+    • "left the dressing" / "skipped the rice" → delete_food_entry on that entry.
+  round to whole numbers; confirm the new day total. If [TODAY] shows the meal as
+  a single legacy mega-entry (logged before per-component logging), fall back to
+  scaling that one entry's totals.
 - AMBIGUOUS UPDATE/DELETE REFERENCE: if the user says "remove the chicken" /
   "fix the bagel" / "change my coffee" and [TODAY] shows MULTIPLE entries
   matching that name (two chickens, three coffees), do NOT silently pick one.
@@ -1095,7 +1085,9 @@ estimate each, then sum. never eyeball a whole dish as one number.
   "burrito bowl" = rice + beans + protein + cheese + guac (~230!) + sour cream + dressing.
   "salad" = greens (~20) + protein + cheese + nuts/croutons + DRESSING (often 200-400).
   "pasta" = noodles (~200/cup) + sauce (tomato ~80 / cream ~250 / oil ~200) + cheese + protein.
-log compound meals as ONE entry with the summed totals, but reason through the parts.
+this itemization is to get each piece's macros RIGHT — then LOG EACH separable
+component as its own entry (per "LOG A MEAL AS ITS COMPONENTS"), not as one summed
+mega-entry. genuinely blended items (sandwich, smoothie, soup) stay one entry.
 
 PORTION REALISM. people under-report and restaurants over-serve. when size is unclear,
 assume a real-world portion, not a textbook serving:
