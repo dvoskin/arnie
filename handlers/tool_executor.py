@@ -243,6 +243,33 @@ def _rotating_cue(pool: tuple, seed: int) -> str:
     return pool[seed % len(pool)]
 
 
+def _movement_set_summary(today_log, exercise_name: str) -> str:
+    """Authoritative running tally for ONE movement in today's log, summed across
+    all its rows straight from the DB — the Layer 4 source of truth so the model
+    never manages the set counter from its own memory. Returns e.g.
+    "Upright Row: 3 sets (15,15,15) @ 100lb". Rows are ordered by id (insertion
+    order) so the reps read chronologically without needing a timestamp."""
+    name = (exercise_name or "")
+    entries = [
+        e for e in (getattr(today_log, "exercise_entries", None) or [])
+        if (getattr(e, "exercise_name", "") or "") == name
+    ]
+    if not entries:
+        return f"{name or 'exercise'}: 0 sets"
+    entries.sort(key=lambda x: getattr(x, "id", 0) or 0)
+    total_sets = sum(int(getattr(e, "sets", None) or 1) for e in entries)
+    reps_tokens: list[str] = []
+    for e in entries:
+        r = str(getattr(e, "reps", "") or "").strip()
+        if r:
+            reps_tokens.extend(t.strip() for t in r.split(",") if t.strip())
+    reps_part = f" ({','.join(reps_tokens)})" if reps_tokens else ""
+    w = next((e.weight for e in reversed(entries) if getattr(e, "weight", None)), None)
+    weight_part = f" @ {w * 2.20462:.0f}lb" if w else ""
+    plural = "s" if total_sets != 1 else ""
+    return f"{name or 'exercise'}: {total_sets} set{plural}{reps_part}{weight_part}"
+
+
 def _detect_log_divergence(today_log) -> list[str]:
     """Cheap, read-only over-log detector for monitoring (NOT a guard — it never
     blocks). Returns human-readable flag strings (empty = clean):
@@ -1474,10 +1501,21 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
             "last time and give one specific target for the next set."
         )
 
+        # Layer 4 — authoritative per-movement set count from the DB, not the
+        # model's tally. The set counter is sourced from truth and echoed on every
+        # log, so an accumulation miscount ("3 sets" reported but 2 stored, the
+        # 2026-06-25 upright-row drop) is visible immediately instead of silently
+        # accepted. The model must reconcile the log line against THIS count.
+        _board = _movement_set_summary(target_log, canonical_name)
+
         return (
             f"Logged {desc}{date_label}. "
+            f"ON THE BOARD NOW (authoritative, from the DB): {_board}. "
             f"Exercises in session so far: {ex_count}. "
-            f"YOUR REPLY: (1) log line in format '🏋️ Bench · 3×8 @135lb' (plain text on iMessage), "
+            f"YOUR REPLY: (1) log line in format '🏋️ Bench · 3×8 @135lb' (plain text on iMessage) "
+            f"— the set count MUST match ON THE BOARD NOW above; if the user reported MORE sets "
+            f"than are on the board, the log didn't fully land, so say so and ask them to re-send "
+            f"the missing set rather than claiming the higher count. "
             f"(2) coaching note from history if relevant — compare weight/reps to last time. "
             f"{mid_note} "
             f"Keep it to 2 bubbles max. Never fabricate history numbers."

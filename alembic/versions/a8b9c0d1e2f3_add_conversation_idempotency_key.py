@@ -1,7 +1,7 @@
 """add conversation_logs.idempotency_key — deterministic retry dedup
 
 Revision ID: a8b9c0d1e2f3
-Revises: f4a5b6c7d8e9
+Revises: e3f4a5b6c7d8
 Create Date: 2026-06-26 00:00:00.000000
 
 A stable per-send id for the inbound request a turn answered (iOS client UUID,
@@ -22,7 +22,12 @@ from alembic import op
 import sqlalchemy as sa
 
 revision: str = 'a8b9c0d1e2f3'
-down_revision: Union[str, Sequence[str], None] = 'f4a5b6c7d8e9'
+# Chains off the avg_hr migration (the last revision on main), NOT the social-circle
+# migration f4a5b6c7d8e9 — that one is uncommitted/undeployed, so depending on it
+# would dangle the chain on deploy. When social-circle does land it also revises
+# e3f4a5b6c7d8, giving two heads; `alembic upgrade heads` (render preDeploy) applies
+# both, and a later merge migration can unify them.
+down_revision: Union[str, Sequence[str], None] = 'e3f4a5b6c7d8'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
