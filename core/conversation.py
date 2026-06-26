@@ -111,6 +111,56 @@ def _normalize_plan_exercises(exercises) -> list:
     return out
 
 
+def _logged_entry_card(name: str, inp: dict) -> Optional[dict]:
+    """The macro_card / workout_card for a log_food / log_exercise call — but ONLY
+    when it actually created or rolled up into a real DB row.
+
+    The dispatcher stashes that row id on inp["_entry_id"]. A deduped / no-op call
+    (the model re-fired something already on the board, e.g. a SPURIOUS log_food on
+    a non-food message) never sets it → returns None, so no stale card leaks onto a
+    reply that logged nothing (Danny 2026-06-26: "what is 84.9kg in lbs" surfaced
+    the earlier coffee's macro_card with entry_id=null). The card must mirror a row
+    the user can actually tap/edit. Returns None for any non-logging tool.
+
+    Payload is pulled from the tool_call INPUT — what the LLM said to log, which is
+    what Arnie's reply confirms. Pure + side-effect free for unit testing."""
+    inp = inp or {}
+    entry_id = inp.get("_entry_id")
+    if not entry_id:
+        return None
+    if name == "log_food":
+        return {
+            "type": "macro_card",
+            "payload": {
+                "name":      inp.get("food_name") or "",
+                "quantity":  inp.get("quantity") or "",
+                "calories":  int(round(inp.get("calories") or 0)),
+                "protein_g": int(round(inp.get("protein")  or 0)),
+                "carbs_g":   int(round(inp.get("carbs")    or 0)),
+                "fats_g":    int(round(inp.get("fats")     or 0)),
+                "source":    "photo" if inp.get("from_photo") else "manual",
+                "entry_id":  entry_id,
+            },
+        }
+    if name == "log_exercise":
+        return {
+            "type": "workout_card",
+            "payload": {
+                "name":             inp.get("exercise_name") or "",
+                "sets":             inp.get("sets"),
+                "reps":             str(inp.get("reps") or "") or None,
+                "weight":           inp.get("weight"),
+                "weight_unit":      inp.get("weight_unit") or "lbs",
+                "rir":              inp.get("rir"),
+                "duration_minutes": inp.get("duration_minutes"),
+                "cardio_type":      inp.get("cardio_type"),
+                "is_cardio":        bool(inp.get("is_cardio") or inp.get("cardio_type")),
+                "entry_id":         entry_id,
+            },
+        }
+    return None
+
+
 @dataclasses.dataclass
 class TurnResult:
     """Everything a handler needs after run_turn completes."""
@@ -832,53 +882,24 @@ async def run_turn(
         resp.effect_idx = moment.effect_idx
 
     # ── Typed inline cards for native clients ─────────────────────────────────
-    # Every successful log_food call this turn becomes a macro_card on the wire.
-    # The iOS client renders these as inline cards beneath Arnie's text reply;
-    # Telegram/iMessage adapters ignore the field (chat-bot transports have no
-    # card concept). Pulled from the tool_call INPUT — what the LLM said to log
-    # — which is what the user sees confirmed by Arnie's reply.
+    # A log_food / log_exercise call becomes a macro_card / workout_card — but ONLY
+    # when it created a real DB row (see _logged_entry_card; a deduped no-op emits
+    # no card, so a stale card never leaks onto a reply that logged nothing). The
+    # iOS client renders these inline beneath the text; Telegram/iMessage adapters
+    # ignore the field.
     if tool_calls:
         for tc in tool_calls:
             name = tc.get("name")
             inp = tc.get("input") or {}
-            if name == "log_food":
-                resp.cards.append({
-                    "type": "macro_card",
-                    "payload": {
-                        "name":      inp.get("food_name") or "",
-                        "quantity":  inp.get("quantity") or "",
-                        "calories":  int(round(inp.get("calories") or 0)),
-                        "protein_g": int(round(inp.get("protein")  or 0)),
-                        "carbs_g":   int(round(inp.get("carbs")    or 0)),
-                        "fats_g":    int(round(inp.get("fats")     or 0)),
-                        "source":    "photo" if inp.get("from_photo") else "manual",
-                        # DB row id stashed by the log_food dispatcher. Native
-                        # clients use it to inline-edit the entry via the
-                        # foodEdit API. nil for tests or any path that didn't
-                        # create a real DB row.
-                        "entry_id":  inp.get("_entry_id"),
-                    },
-                })
-            elif name == "log_exercise":
-                is_cardio = bool(inp.get("is_cardio") or inp.get("cardio_type"))
-                resp.cards.append({
-                    "type": "workout_card",
-                    "payload": {
-                        "name":             inp.get("exercise_name") or "",
-                        "sets":             inp.get("sets"),
-                        "reps":             str(inp.get("reps") or "") or None,
-                        "weight":           inp.get("weight"),
-                        "weight_unit":      inp.get("weight_unit") or "lbs",
-                        "rir":              inp.get("rir"),
-                        "duration_minutes": inp.get("duration_minutes"),
-                        "cardio_type":      inp.get("cardio_type"),
-                        "is_cardio":        is_cardio,
-                        # DB row id from the log_exercise dispatcher — iOS
-                        # uses it to inline-edit/delete via exerciseEdit.
-                        "entry_id":         inp.get("_entry_id"),
-                    },
-                })
-            elif name == "show_day_recap":
+            _logged = _logged_entry_card(name, inp)
+            if _logged is not None:
+                resp.cards.append(_logged)
+                continue
+            if name in ("log_food", "log_exercise"):
+                # A logging tool that produced no card = deduped / no-op (no real
+                # row). Don't fall through to the card branches below; just skip.
+                continue
+            if name == "show_day_recap":
                 # The dispatcher stashed the full structured snapshot on
                 # `inp["_recap_payload"]`; pass it straight through.
                 recap = inp.get("_recap_payload")
