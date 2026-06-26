@@ -641,12 +641,34 @@ async def get_recent_conversations_linked(db: AsyncSession, user: User,
     return result.scalars().all()
 
 
+async def get_conversation_by_idempotency_key(
+    db: AsyncSession, user_id: int, key: str
+) -> Optional[ConversationLog]:
+    """Return this user's already-persisted turn for `key`, or None.
+
+    The lookup behind deterministic retry dedup: an inbound request carries a
+    stable per-send id (iOS UUID / Telegram update_id / iMessage GUID). If a row
+    with that key already exists, the inbound is a retry / webhook redelivery —
+    the caller replays (iOS) or skips (webhook) instead of re-running the turn.
+    Scoped to user_id so keys only need to be unique per user."""
+    if not key:
+        return None
+    return (await db.execute(
+        select(ConversationLog)
+        .where(ConversationLog.user_id == user_id,
+               ConversationLog.idempotency_key == key)
+        .order_by(ConversationLog.id.desc())
+        .limit(1)
+    )).scalars().first()
+
+
 async def log_conversation(db: AsyncSession, user_id: int, raw_message: str,
                            response: str, parsed_intent: str = None,
                            source_type: str = "text",
                            skills_fired: str | None = None,
                            platform: str | None = None,
-                           cards: Optional[list] = None):
+                           cards: Optional[list] = None,
+                           idempotency_key: str | None = None):
     """Persist one conversation turn.
 
     `platform` tags which surface the turn happened on ("telegram" | "imessage"
@@ -656,7 +678,12 @@ async def log_conversation(db: AsyncSession, user_id: int, raw_message: str,
 
     `cards` is the turn's typed inline-card list (Response.cards). Stored as JSON
     so native clients can rehydrate the rich cards on history restore. Only
-    written when non-empty — text-only / chat-bot turns leave it null."""
+    written when non-empty — text-only / chat-bot turns leave it null.
+
+    `idempotency_key` stamps the inbound request's stable id so a later retry of
+    the SAME send is recognized via get_conversation_by_idempotency_key and
+    replayed/skipped instead of re-running. Nullable for callers that don't supply
+    one (they keep the text-window fallback)."""
     entry = ConversationLog(
         user_id=user_id,
         raw_message=raw_message,
@@ -669,6 +696,8 @@ async def log_conversation(db: AsyncSession, user_id: int, raw_message: str,
         entry.platform = platform
     if cards:
         entry.cards_json = json.dumps(cards)
+    if idempotency_key:
+        entry.idempotency_key = idempotency_key
     db.add(entry)
     await db.commit()
 

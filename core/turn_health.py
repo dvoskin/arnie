@@ -259,6 +259,52 @@ def detect_sarcastic_ack(user_text: str, prior_assistant_text: str = "") -> bool
 _CALORIE_ESTIMATE_RE = re.compile(r'\d+\s*(?:cal(?:ories)?|kcal)\b', re.I)
 
 
+# Past-tense "it's recorded" claims — the sibling of _STALL_MARKERS (which are
+# future-tense promises). When one of these appears with NO tool call on a turn
+# where the user clearly reported a loggable set, the model confirmed a write that
+# never happened — and the set silently vanishes (Danny 2026-06-25: "11 on left
+# side 13 rig" → "Unilateral, noted" with no log_exercise → set lost; the resend
+# then got a false "already on the board"). High-precision ONLY in conjunction
+# with a set-report user message + zero tool calls.
+_RECORDED_CLAIM = (
+    "on the board", "noted", "logged", "got it logged", "locked in",
+    "in the books", "on the books", "recorded", "added that", "that's in",
+    "got that down",
+)
+
+# Exercise set-report shapes in the USER's message: "190x14", "11 x40", "3x12",
+# "13 reps", "11 on left", "12 on the right". Numbers paired with rep/side context
+# — deliberately narrow so a bare number or a food amount doesn't match.
+_SET_REPORT_RE = re.compile(
+    r"\b\d+\s*[x×]\s*\d+\b"                       # 190x14, 3x12
+    r"|\b\d+\s*reps?\b"                           # 13 reps
+    r"|\b\d+\s*on\s*(?:the\s*)?(?:left|right)\b"  # 11 on left / 13 on the right
+    r"|\b(?:left|right)\s*side\b[^\d]*\b\d+\b",   # left side ... 11
+    re.IGNORECASE,
+)
+
+
+def looks_like_phantom_log_claim(user_text: str, response_text: str,
+                                 has_tool_calls: bool) -> bool:
+    """True when the user reported a loggable SET but the model claimed it was
+    recorded ("noted", "on the board", "logged") WITHOUT firing any tool — a
+    confirmation with no write behind it, which silently drops the set.
+
+    Narrow by construction: requires a set-report user message AND a recorded-claim
+    reply AND zero tool calls. So it never fires on a normal clarifying question
+    ("was that a weight PR?"), an actually-logged turn (a tool fired), or generic
+    chat. Drives quality repair with tools=True so the model logs it on the retry."""
+    if has_tool_calls:
+        return False
+    u = (user_text or "").strip()
+    r = (response_text or "").strip().lower()
+    if not u or not r:
+        return False
+    if not _SET_REPORT_RE.search(u):
+        return False
+    return any(p in r for p in _RECORDED_CLAIM)
+
+
 def looks_like_partial_narration(text: str, has_food_calls: bool) -> bool:
     """
     True when the first-pass text alongside log_food tool calls contains calorie
@@ -308,6 +354,8 @@ def detect_turn_flags(
         flags.append("mechanics_narration")
     if looks_like_empty_praise(response_text):
         flags.append("empty_praise")
+    if looks_like_phantom_log_claim(user_text, response_text, has_tool_calls):
+        flags.append("phantom_log_claim")
     # Image turn where log_body_weight fired without log_food — almost always a
     # nutrition-analysis false positive (macro gram numbers mistaken for body weight).
     if (source_type == "image"

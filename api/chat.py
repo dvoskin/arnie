@@ -57,6 +57,11 @@ class ChatRequest(BaseModel):
     # message, so the LOCATION line in context is current to this turn.
     lat: Optional[float] = Field(default=None, ge=-90, le=90)
     lng: Optional[float] = Field(default=None, ge=-180, le=180)
+    # Stable per-send id the client generates once and reuses on auto-retry. When
+    # present, the backend dedupes a retried send deterministically (replays the
+    # first reply instead of re-running + double-logging). Optional + backward-
+    # compatible: older clients omit it and fall back to the text-window heuristic.
+    client_msg_id: Optional[str] = Field(default=None, max_length=128)
 
     @field_validator("message")
     @classmethod
@@ -114,7 +119,8 @@ def _turn_tools(turn) -> list[str]:
 # ── Shared core ──────────────────────────────────────────────────────────────
 async def _coached_reply(identity: str, text: str, source_type: str,
                          lat: Optional[float] = None,
-                         lng: Optional[float] = None) -> dict:
+                         lng: Optional[float] = None,
+                         client_msg_id: Optional[str] = None) -> dict:
     """Resolve the user, run one coaching turn under the per-identity lock, and
     return the serialized wire payload + turn metadata. Shared by every chat entry.
 
@@ -146,7 +152,8 @@ async def _coached_reply(identity: str, text: str, source_type: str,
                 user = await resolve_user(db, identity)
             try:
                 turn = await run_chat_turn(
-                    db, user, text, platform=PLATFORM, source_type=source_type
+                    db, user, text, platform=PLATFORM, source_type=source_type,
+                    idempotency_key=(f"ios:{client_msg_id}" if client_msg_id else None),
                 )
             except Exception as e:
                 logger.error(f"chat turn failed (identity={identity}): {e}", exc_info=True)
@@ -175,7 +182,7 @@ async def chat(req: ChatRequest, identity: str = Depends(current_identity)):
     """
     return await _coached_reply(
         identity, req.message, source_type=PLATFORM,
-        lat=req.lat, lng=req.lng,
+        lat=req.lat, lng=req.lng, client_msg_id=req.client_msg_id,
     )
 
 

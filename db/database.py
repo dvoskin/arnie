@@ -185,6 +185,8 @@ async def _migrate(conn):
         ("exercise_entries", "source_ref", "VARCHAR"),
         # ── 2026-06-25: wearable session avg heart rate ────────────────────────
         ("exercise_entries", "avg_hr", "INTEGER"),
+        # ── 2026-06-26: per-send idempotency key (deterministic retry dedup) ────
+        ("conversation_logs", "idempotency_key", "VARCHAR"),
     ]
 
     for table, column, ddl in additions:

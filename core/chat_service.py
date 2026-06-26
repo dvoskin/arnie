@@ -34,6 +34,7 @@ from datetime import datetime
 from typing import Awaitable, Callable, Optional
 
 from db.queries import (
+    get_conversation_by_idempotency_key,
     get_or_create_today_log,
     get_recent_conversations,
     log_conversation,
@@ -78,6 +79,31 @@ _RECOVERY_SIGS = (
 )
 
 
+def _is_error_reply(response_text: str) -> bool:
+    """True when a stored reply is a recovery/error bubble — never replay onto it,
+    so a resend after an errored turn actually retries."""
+    return any(s in (response_text or "").lower() for s in _RECOVERY_SIGS)
+
+
+def _replay_from_row(row) -> Optional[Response]:
+    """Reconstruct the Response to replay for an idempotent retry, or None when the
+    stored turn shouldn't be replayed (it errored). Shared by the keyed-idempotency
+    path and the text-window fallback."""
+    resp_text = getattr(row, "response", "") or ""
+    if _is_error_reply(resp_text):
+        return None
+    bubbles = [b for b in resp_text.split("|||") if b.strip()]
+    if not bubbles:
+        return None
+    cards = []
+    if getattr(row, "cards_json", None):
+        try:
+            cards = json.loads(row.cards_json) or []
+        except Exception:
+            cards = []
+    return Response(bubbles=bubbles, cards=cards)
+
+
 async def run_chat_turn(
     db,
     user,
@@ -90,6 +116,7 @@ async def run_chat_turn(
     on_interim: Optional[Callable[[str], Awaitable[None]]] = None,
     on_tool_start: Optional[Callable[[list], Awaitable[None]]] = None,
     schedule_background: bool = True,
+    idempotency_key: Optional[str] = None,
 ) -> TurnResult:
     """Run one coaching turn for an already-resolved user and return the TurnResult.
 
@@ -103,8 +130,35 @@ async def run_chat_turn(
                           omit for one-shot REST.
     schedule_background — kick off profile/reflection jobs. Tests pass False to keep
                           the turn synchronous and free of detached-session tasks.
+    idempotency_key    — stable per-send id (client UUID / native message id). When
+                          supplied, a retry of the SAME send replays the prior reply
+                          deterministically instead of re-running (and double-logging).
+                          Falls back to the text-window heuristic when omitted.
     """
     _source = source_type or platform
+
+    # ── Deterministic idempotency (preferred over the text-window heuristic) ──
+    # A keyed retry replays the already-persisted reply verbatim — no re-run, no
+    # double-write — UNLESS the stored reply was an error (then the resend must
+    # actually retry). The caller serializes same-user turns (per-identity lock),
+    # so the first turn has committed before any retry reaches here.
+    if idempotency_key:
+        try:
+            _hit = await get_conversation_by_idempotency_key(db, user.id, idempotency_key)
+            if _hit is not None:
+                _replay = _replay_from_row(_hit)
+                if _replay is not None:
+                    logger.info(
+                        f"idempotency: replayed turn for user {user.id} "
+                        f"key={idempotency_key[:24]} — no re-run"
+                    )
+                    return TurnResult(
+                        response=_replay, tool_calls=[], just_completed=False,
+                        in_onboarding=not bool(getattr(user, "onboarding_completed", False)),
+                        onboarding_field_saved=None, today_log=None, user=user,
+                    )
+        except Exception as _e:
+            logger.debug(f"idempotency check skipped for user {getattr(user,'id','?')}: {_e}")
 
     # ── Slash-command interception (pre-LLM) ──────────────────────────────────
     # /reset today and /reset all confirm bypass the coaching brain entirely.
@@ -250,6 +304,9 @@ async def run_chat_turn(
         # history restore (otherwise the transcript reloads text-only and cards
         # vanish). Empty for chat-bot / text-only turns → stored as null.
         cards=(turn.response.cards or None),
+        # Stamp the per-send id so a later retry of this exact send replays this
+        # row instead of re-running (deterministic dedup).
+        idempotency_key=idempotency_key,
     )
 
     # ── Background profile synthesis + reflection ─────────────────────────────
