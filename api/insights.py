@@ -405,7 +405,119 @@ def _build_briefing_summary(stats: dict) -> str:
     return "\n".join(L)
 
 
-def _sanitize_briefing(obj: dict) -> dict:
+def _weight_eta(rows, goal_lbs) -> Optional[str]:
+    """A short goal-date label ('Aug 3') projected from the windowed weigh-ins —
+    a real reference point for the spark. Returns None when the trend is flat,
+    moving AWAY from goal, or so slow the date is past a year out (better to show
+    nothing than a fantasy date)."""
+    from datetime import datetime, timedelta
+    if not rows or len(rows) < 2:
+        return None
+    try:
+        d0 = datetime.strptime(rows[0]["date"], "%Y-%m-%d")
+        d1 = datetime.strptime(rows[-1]["date"], "%Y-%m-%d")
+    except Exception:
+        return None
+    days = (d1 - d0).days
+    if days < 5:
+        return None
+    v0, v1 = float(rows[0]["lbs"]), float(rows[-1]["lbs"])
+    rate = (v1 - v0) / days                    # lbs/day
+    remaining = goal_lbs - v1
+    if rate == 0 or remaining == 0:
+        return None
+    days_to = remaining / rate                 # >0 only when trend heads toward goal
+    if days_to <= 0 or days_to > 365:
+        return None
+    eta = d1 + timedelta(days=round(days_to))
+    return f"{eta:%b} {eta.day}"
+
+
+def _resolve_viz(stats: dict, req) -> Optional[dict]:
+    """Turn the LLM's viz REQUEST ({type, metric, window}) into a concrete wire
+    viz filled from the user's REAL data — never the model's numbers, so the
+    strip can never disagree with the card's own prose. Returns None when the
+    requested metric has no usable series/target (the card degrades to text).
+
+    Wire shape consumed by iOS (BriefingResponse.Card.Viz):
+      spark / bars → {"type", "metric", "series": [...], "baseline"?: float}
+      bar          → {"type", "metric", "value": float, "target": float}
+    """
+    if not isinstance(req, dict):
+        return None
+    vtype = str(req.get("type", "")).lower().strip()
+    metric = str(req.get("metric", "")).lower().strip()
+    if vtype not in {"spark", "bar", "bars"}:
+        return None
+    try:
+        window = int(req.get("window", 7))
+    except Exception:
+        window = 7
+    window = max(3, min(window, 8))
+
+    history = stats.get("history") or []
+    weights = stats.get("weights") or []
+    health = stats.get("health") or []
+    targets = stats.get("targets") or {}
+    today = stats.get("today") or {}
+    user = stats.get("user") or {}
+
+    def _num(v):
+        return isinstance(v, (int, float)) and not isinstance(v, bool)
+
+    def _last(rows, key, n):
+        return [float(r[key]) for r in rows if _num(r.get(key))][-n:]
+
+    # ── bar: a single today-vs-target progress fill (macros only) ────────────
+    if vtype == "bar":
+        if metric in {"protein", "calories", "carbs", "fats"}:
+            val, tgt = today.get(metric), targets.get(metric)
+            if _num(val) and _num(tgt) and tgt > 0:
+                return {"type": "bar", "metric": metric,
+                        "value": round(float(val), 1), "target": round(float(tgt), 1)}
+        return None
+
+    # ── spark / bars: a short series, optionally a dashed baseline ────────────
+    series: list = []
+    baseline: Optional[float] = None
+    caption: Optional[str] = None
+    if metric == "weight":
+        rows = [w for w in weights if _num(w.get("lbs"))][-window:]
+        series = [float(w["lbs"]) for w in rows]
+        gw = user.get("goal_weight_lbs")
+        baseline = float(gw) if _num(gw) else None
+        if baseline is not None:
+            caption = _weight_eta(rows, baseline)   # e.g. "Aug 3" — the goal date
+    elif metric in {"protein", "calories", "carbs", "fats"}:
+        series = _last(history, metric, window)
+        tgt = targets.get(metric)
+        baseline = float(tgt) if _num(tgt) and tgt > 0 else None
+    elif metric == "steps":
+        series = _last(health, "steps", window)
+        baseline = 10000.0
+    elif metric == "sleep":
+        series = _last(health, "sleep_hours", window)
+        baseline = 8.0
+    elif metric == "adherence":
+        tgt = targets.get("protein")
+        if _num(tgt) and tgt > 0:
+            series = [round(min((h.get("protein") or 0) / tgt, 1.5), 2)
+                      for h in history[-window:] if _num(h.get("protein"))]
+        baseline = 1.0
+    else:
+        return None
+
+    if len(series) < 2:
+        return None
+    out = {"type": vtype, "metric": metric, "series": [round(float(x), 2) for x in series]}
+    if baseline is not None:
+        out["baseline"] = round(baseline, 2)
+    if caption:
+        out["caption"] = caption
+    return out
+
+
+def _sanitize_briefing(obj: dict, stats: Optional[dict] = None) -> dict:
     """Coerce the LLM object into the wire shape: hero/focus/cards/starter, cards
     capped + sorted by priority desc. Missing pieces degrade gracefully."""
     def _s(v) -> str:
@@ -439,13 +551,20 @@ def _sanitize_briefing(obj: dict) -> dict:
         kind = _s(c.get("kind")).lower()
         if kind not in {"win", "risk", "opportunity", "trend", "noticed", "prediction"}:
             kind = "noticed"
-        cards.append({
+        card = {
             "emoji": _s(c.get("emoji")) or "✨",
             "title": _s(c.get("title")),
             "story": story,
             "priority": prio,
             "kind": kind,
-        })
+        }
+        # Optional micro-viz: the model names the shape + metric; we fill the real
+        # series from `stats` (never the model's numbers). Dropped silently when the
+        # metric has no usable data, so the card just renders text-only.
+        viz = _resolve_viz(stats, c.get("viz")) if stats else None
+        if viz:
+            card["viz"] = viz
+        cards.append(card)
     cards.sort(key=lambda c: c["priority"], reverse=True)
     cards = cards[:5]
 
@@ -573,7 +692,7 @@ Return ONLY a valid JSON object with EXACTLY this shape:
     "body": "<the SINGLE highest-leverage action for today, 1-2 sentences, grounded in a REAL pattern/number, ending actionable. e.g. 'You average 38g less protein on weekends. Let's get 50g in before noon.'>"
   }},
   "cards": [
-    {{"kind": "<win|risk|opportunity|trend|noticed|prediction>", "title": "<a short, OPINIONATED coaching headline stating your judgment, in natural sentence case (NOT all-caps, no emoji) — e.g. 'On track for 205', 'The weekend leak', \\"Volume's slipping\\", \\"Protein's holding\\", \\"Scale's creeping back\\". NEVER a generic category (Protein, Weight) or a tone word (Win, Opportunity).>", "story": "<DIAGNOSIS + EVIDENCE + RECOMMENDATION in 2-3 tight sentences, scannable in ~2s — what's happening, why it matters, what to do. e.g. \\"Five straight days under 115g protein. That's the pattern driving the scale up. Break it today.\\">", "priority": <0-100>}}
+    {{"kind": "<win|risk|opportunity|trend|noticed|prediction>", "title": "<a short, OPINIONATED coaching headline stating your judgment, in natural sentence case (NOT all-caps, no emoji) — e.g. 'On track for 205', 'The weekend leak', \\"Volume's slipping\\", \\"Protein's holding\\", \\"Scale's creeping back\\". NEVER a generic category (Protein, Weight) or a tone word (Win, Opportunity).>", "story": "<DIAGNOSIS + EVIDENCE + RECOMMENDATION in 2-3 tight sentences, scannable in ~2s — what's happening, why it matters, what to do. e.g. \\"Five straight days under 115g protein. That's the pattern driving the scale up. Break it today.\\">", "priority": <0-100>, "viz": {{"type": "<spark|bar|bars>", "metric": "<weight|protein|calories|carbs|fats|steps|sleep|adherence>", "window": <3-8>}}}}
   ],
   "starter": "<ONE personalized conversation question about today, e.g. 'What's dinner looking like?'>"
 }}
@@ -593,6 +712,7 @@ RULES:
     trend      — a neutral pattern
     noticed    — a personal observation ("I've noticed…")
   ROTATE the kinds for emotional contrast — don't make every card the same tone. ORDER by priority; the lead card is usually a prediction or a win.
+- viz (OPTIONAL per card — a tiny monochrome strip under the story): add "viz" ONLY when a real series in DATA backs the card's point, and pick the shape that fits: "spark" = a trend over time (bodyweight drifting, a metric climbing); "bars" = day-by-day comparison (protein per day, where weekends spike); "bar" = today-so-far vs target (protein/calories progress). "metric" must be one you can actually see in DATA below (weight, protein, calories, carbs, fats, steps, sleep, adherence). You give ONLY type + metric + window — the app fills the real numbers, so NEVER put numbers in viz and keep stating them in the story. Put viz on the 1-3 cards where a shape sharpens the point; OMIT it entirely (drop the key) on pure observations or predictions with no underlying series. A wrong or unavailable metric is dropped silently, so when unsure, omit.
 - LOOK FORWARD more than back — users care where they're GOING. Lead with trajectory and what's next.
 - MOMENTUM: every briefing must contain at least one piece of progress evidence (best streak, lowest weight, fastest pace, days logged).
 - PERSONAL: ground every insight in THIS client's real numbers AND the durable traits you've learned about them (their habits, what works for them, their lifestyle + constraints) under WHAT I KNOW below. Specific to them, never generic advice.
@@ -617,7 +737,7 @@ DATA:
             text = text[4:].strip()
         obj = json.loads(text)
         if isinstance(obj, dict):
-            return _sanitize_briefing(obj)
+            return _sanitize_briefing(obj, stats)
     except Exception as e:
         logger.error(f"Briefing generation failed: {e}")
 
