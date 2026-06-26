@@ -313,6 +313,23 @@ async def _send_ios(telegram_id: str, text: str) -> None:
                 )
 
 
+def _channel_for(telegram_id: str | None) -> str:
+    """Map an identity string to the conversation_logs.platform tag, mirroring the
+    delivery routing in `_send`. WITHOUT this, every proactive row falls back to
+    the column default ("telegram") — so a morning check-in delivered to an iOS
+    device via APNs (or to iMessage) was logged as platform="telegram" and showed a
+    misleading "Telegram" chip in the cross-platform chat history. Same mislabel
+    class fixed for the iOS-edit / iMessage log paths in 53ae161; the proactive
+    path was the one still leaking the default."""
+    if not telegram_id:
+        return "telegram"
+    if telegram_id.startswith(("ios:", "apple:")):
+        return "ios"
+    if telegram_id.startswith("im:"):
+        return "imessage"
+    return "telegram"
+
+
 async def _send(telegram_id: str, text: str, effect: str = None):
     """
     Send a proactive message to the user, rendered natively per platform.
@@ -358,17 +375,21 @@ async def _send(telegram_id: str, text: str, effect: str = None):
         await bot.close()
     except Exception as e:
         logger.error(f"Proactive send failed → {telegram_id}: {e}")
-async def _log_proactive(db, user_id, text: str, slot_key: str) -> None:
+async def _log_proactive(db, user_id, text: str, slot_key: str,
+                         platform: str = "telegram") -> None:
     """
     Record a user-facing proactive send to the conversation history (source_type=
     'proactive', skills_fired=slot_key, parsed_intent left None so these never reach
-    /admin/flagged). Best-effort: a logging failure must never break the send path.
+    /admin/flagged). `platform` is the channel the message was actually delivered on
+    (see _channel_for) — passed explicitly so iOS/iMessage sends aren't logged under
+    the "telegram" column default. Best-effort: a logging failure must never break
+    the send path.
     """
     try:
         from db.queries import log_conversation
         await log_conversation(
             db, user_id, raw_message="", response=text,
-            source_type="proactive", skills_fired=slot_key,
+            source_type="proactive", skills_fired=slot_key, platform=platform,
         )
     except Exception as e:
         logger.error(f"Proactive log failed (user {user_id}, slot {slot_key}): {e}")
@@ -382,7 +403,7 @@ async def _send_logged(db, user_id, telegram_id: str, text: str, slot_key: str) 
     silence streak (D3). slot_key is the structured nudge identity.
     """
     await _send(telegram_id, text)
-    await _log_proactive(db, user_id, text, slot_key)
+    await _log_proactive(db, user_id, text, slot_key, platform=_channel_for(telegram_id))
 
 
 async def _send_logged_with_voice(db, user_id, telegram_id: str, text: str,
@@ -391,7 +412,7 @@ async def _send_logged_with_voice(db, user_id, telegram_id: str, text: str,
     """Voice-enabled `_send_logged` — the voice-bubble proactive paths (morning
     briefing, evening pacing, conversation-hook re-ask)."""
     await _send_with_voice(telegram_id, text, name=name, language=language)
-    await _log_proactive(db, user_id, text, slot_key)
+    await _log_proactive(db, user_id, text, slot_key, platform=_channel_for(telegram_id))
 
 
 async def _send_slot_deduped(
@@ -1788,7 +1809,8 @@ async def _run_conversation_hooks() -> None:
                 # Use _send_hook (bypasses PROACTIVE gate) + log it so the silence
                 # streak and continuity blocks see the send.
                 await _send_hook(send_id, msg)
-                await _log_proactive(db, user.id, msg, "followup_conversation_hook")
+                await _log_proactive(db, user.id, msg, "followup_conversation_hook",
+                                     platform=_channel_for(send_id))
                 await mark_pending_question_followed_up(db, pq.id)
                 sent += 1
                 logger.info(
