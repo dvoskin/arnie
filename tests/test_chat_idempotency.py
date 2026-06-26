@@ -82,13 +82,54 @@ def _no_llm(monkeypatch):
     monkeypatch.setattr(cs, "build_arnie_system", lambda *a, **k: "")
 
 
-async def _seed_prior(db, user, *, text, response, skills, age_sec):
+async def _seed_prior(db, user, *, text, response, skills, age_sec, key=None):
     db.add(ConversationLog(
         user_id=user.id, raw_message=text, response=response,
         skills_fired=skills, platform="ios", source_type="ios",
+        idempotency_key=key,
         timestamp=datetime.utcnow() - timedelta(seconds=age_sec),
     ))
     await db.commit()
+
+
+# ── Deterministic keyed idempotency (preferred over the text-window heuristic) ──
+
+@pytest.mark.asyncio
+async def test_keyed_retry_replays_even_tool_firing(db, user):
+    """A retry carrying the same idempotency_key replays the stored reply without
+    re-running — even a tool-firing turn, even far outside the text window."""
+    await _seed_prior(db, user, text="logged my whole lunch",
+                      response="Lunch logged, 620 cal.|||Nice work.",
+                      skills="log_food", age_sec=600, key="ios:abc-123")
+    turn = await run_chat_turn(db, user, "logged my whole lunch",
+                               platform="ios", source_type="ios",
+                               schedule_background=False, idempotency_key="ios:abc-123")
+    assert turn.tool_calls == []
+    assert "620 cal" in " ".join(turn.response.bubbles)
+
+
+@pytest.mark.asyncio
+async def test_keyed_retry_does_not_replay_error(db, user):
+    """If the stored turn for this key errored, the retry must actually re-run,
+    not echo the recovery line."""
+    await _seed_prior(db, user, text="190x14 first set",
+                      response="Wires crossed for a sec.|||resend it.",
+                      skills="", age_sec=5, key="ios:err-1")
+    with pytest.raises(_ReachedRunTurn):
+        await run_chat_turn(db, user, "190x14 first set",
+                            platform="ios", source_type="ios",
+                            schedule_background=False, idempotency_key="ios:err-1")
+
+
+@pytest.mark.asyncio
+async def test_different_key_runs_normally(db, user):
+    """A genuinely new send (different key) is not deduped even if the text matches."""
+    await _seed_prior(db, user, text="130x12", response="Logged.",
+                      skills="log_exercise", age_sec=2, key="ios:set-1")
+    with pytest.raises(_ReachedRunTurn):
+        await run_chat_turn(db, user, "130x12",
+                            platform="ios", source_type="ios",
+                            schedule_background=False, idempotency_key="ios:set-2")
 
 
 @pytest.mark.asyncio

@@ -764,6 +764,18 @@ async def run_imessage_pipeline(address: str, chat_guid: str, raw_text: str,
         if linking_enabled() and channel_user.linked_to_user_id:
             user = await reload_user(db, channel_user.linked_to_user_id) or channel_user
 
+        # ── Deterministic idempotency (BlueBubbles redelivery) ────────────────
+        # A repeated webhook for the same message GUID would re-run the turn and
+        # double-log. If we've already answered this GUID, skip — the reply went
+        # out on the first delivery. Persisted on the turn's row below.
+        _idem_key = f"im:{message_guid}" if message_guid else None
+        if _idem_key:
+            from db.queries import get_conversation_by_idempotency_key
+            if await get_conversation_by_idempotency_key(db, user.id, _idem_key):
+                logger.info(f"idempotency: skip iMessage redelivery "
+                            f"guid={message_guid[:12]} user={user.id}")
+                return
+
         # ── Natural language command handling (iMessage has no slash commands) ──
 
         # Confirmed reset (case-insensitive — see _is_reset_confirmation).
@@ -921,7 +933,8 @@ async def run_imessage_pipeline(address: str, chat_guid: str, raw_text: str,
         await log_conversation(db, user.id, raw_text, log_text, source_type="imessage",
                                platform="imessage",   # else defaults to telegram → mislabeled tags
                                parsed_intent=(",".join(turn.health_flags) or None),
-                               skills_fired=turn.skills_fired)
+                               skills_fired=turn.skills_fired,
+                               idempotency_key=_idem_key)
 
         # ── Adaptive profile refresh + reflection (background tasks) ────────
         # Background tasks open their OWN session + re-fetch the user by id — the

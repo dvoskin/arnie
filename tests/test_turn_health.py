@@ -1,7 +1,51 @@
 """Turn-health detectors — the deterministic signals that flag a bad turn."""
 from core.turn_health import (
     looks_like_stall, looks_like_dead_end, detect_frustration, detect_turn_flags,
+    looks_like_phantom_log_claim,
 )
+
+
+# ── phantom log-claim detection (dropped-set bug) ───────────────────────────────
+
+def test_phantom_log_claim_catches_noted_without_tool():
+    # The rear-delt case: user reported a set, model said "noted", fired no tool.
+    assert looks_like_phantom_log_claim(
+        "11 on left side 13 rig HT",
+        "Unilateral, noted. Right side stronger 13 vs 11.|||One more set?",
+        has_tool_calls=False,
+    )
+    assert looks_like_phantom_log_claim(
+        "190x14 first set", "Got it, on the board.", has_tool_calls=False)
+    assert looks_like_phantom_log_claim(
+        "3x12 @ 70", "Logged. Nice work.", has_tool_calls=False)
+
+
+def test_phantom_log_claim_no_false_positives():
+    # A tool actually fired → not a phantom.
+    assert not looks_like_phantom_log_claim("190x14", "Logged.", has_tool_calls=True)
+    # A clarifying question (no recorded-claim) → correct behavior, not a phantom.
+    assert not looks_like_phantom_log_claim(
+        "30x10 and 20x10", "Was the 30 a different variation, or stepping up?",
+        has_tool_calls=False)
+    # Not a set report → "noted" is fine.
+    assert not looks_like_phantom_log_claim(
+        "what should I eat", "Noted - go for the turkey bowl.", has_tool_calls=False)
+    # A bare food amount isn't a set report.
+    assert not looks_like_phantom_log_claim("I had 200", "Noted.", has_tool_calls=False)
+
+
+def test_phantom_log_claim_in_detect_turn_flags():
+    flags = detect_turn_flags(
+        user_text="11 on left side 13 rig HT",
+        response_text="Unilateral, noted.|||One more?",
+        has_tool_calls=False, stop_reason="end_turn", retried=False, tool_error=False,
+    )
+    assert "phantom_log_claim" in flags
+    flags2 = detect_turn_flags(
+        user_text="11 on left side 13 rig HT", response_text="Logged that set.",
+        has_tool_calls=True, stop_reason="end_turn", retried=False, tool_error=False,
+    )
+    assert "phantom_log_claim" not in flags2
 
 
 # ── dead-end detection ──────────────────────────────────────────────────────────

@@ -25,6 +25,7 @@ from core.turn_health import (
     looks_like_bare_log_ack as _looks_like_bare_log_ack,
     looks_like_mechanics as _looks_like_mechanics,
     looks_like_empty_praise as _looks_like_empty_praise,
+    looks_like_phantom_log_claim as _looks_like_phantom_log_claim,
     detect_turn_flags,
     user_is_signing_off as _user_is_signing_off,
     detect_sarcastic_ack as _detect_sarcastic_ack,
@@ -728,6 +729,12 @@ async def run_turn(
     # mid-log "let me get the chicken logged first" with a real log_food call
     # is fine.
     _stall = (not _logging_turn) and not tool_calls and _looks_like_stall(response_text)
+    # Phantom log-claim: the user reported a set but the model claimed it was
+    # recorded ("noted" / "on the board") without firing a tool — the dropped-set
+    # bug. Repair with tools=True so the model actually logs it on the retry.
+    _phantom = (not tool_calls) and _looks_like_phantom_log_claim(
+        _user_text if isinstance(_user_text, str) else "", response_text, bool(tool_calls)
+    )
 
     # Sign-off: a clear goodnight/closing → 'Sleep well 🌙' is correct. Repair
     # is disabled in this case so we don't generate a full coaching reply after
@@ -735,17 +742,31 @@ async def run_turn(
     _signing_off = _user_is_signing_off(_user_text if isinstance(_user_text, str) else "")
 
     if (_streaming_dead_end or _logging_dead_end or _mechanics
-            or _empty_praise or _stall) and not _signing_off:
+            or _empty_praise or _stall or _phantom) and not _signing_off:
         try:
             # Stall repair runs with tools=True — the failure mode is the model
             # promising a tool ("Let me log…") without firing one, so we need to
             # let it actually call the tool on the retry. Other repair classes
             # already produced text (we just want better text), so they stay
             # tools=False to avoid spurious extra logs.
+            #
+            # Phantom-log is text-only (tools=False) ON PURPOSE: repair-fired tool
+            # calls are NOT executed here (this path captures text only), so a
+            # tools=True retry would risk an even worse phantom ("logged ✅" with
+            # still no write). Instead we make the model OWN the miss honestly and
+            # re-ask, so the user re-sends the set and it logs cleanly next turn.
             _repair_tools = _stall and not (_logging_dead_end or _mechanics)
+            _repair_extra = (
+                "\n\nIMPORTANT: your last reply claimed a set was recorded ('noted' / "
+                "'on the board' / 'logged') but you fired NO tool, so NOTHING was saved. "
+                "Do NOT claim it's logged. Briefly own the miss in one line and ask the "
+                "user to re-send that exact set (weight, reps, and left/right if they "
+                "split sides) so you can log it now — e.g. 'my bad, that one didn't save "
+                "— what was the rear delt set again?'"
+            ) if _phantom else ""
             _repair = await chat(
                 messages + [{"role": "assistant", "content": response_text}],
-                system + f"\n\nQUALITY REPAIR: {_REPAIR_PROMPT}",
+                system + f"\n\nQUALITY REPAIR: {_REPAIR_PROMPT}{_repair_extra}",
                 tools=_repair_tools, max_tokens=600 if _repair_tools else 400,
             )
             _repair_text = (_repair.get("text") or "").strip()

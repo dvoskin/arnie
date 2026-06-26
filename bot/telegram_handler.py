@@ -227,8 +227,20 @@ async def _run_pipeline(update: Update, context: ContextTypes.DEFAULT_TYPE,
     """Core pipeline shared by all message types."""
     chat_id = update.effective_chat.id
     tg_user = update.effective_user
-    from db.queries import resolve_user
+    from db.queries import resolve_user, get_conversation_by_idempotency_key
     user = await resolve_user(db, str(tg_user.id))
+
+    # ── Deterministic idempotency (Telegram redelivery) ───────────────────────
+    # Telegram redelivers an update when it doesn't get a timely 200 — reprocessing
+    # would re-run the turn and double-log. update_id is unique per update, so if
+    # we've already answered this one, skip: the user got the reply on first
+    # delivery. Persisted on the turn's conversation row below.
+    _idem_key = (f"tg:{update.update_id}"
+                 if getattr(update, "update_id", None) is not None else None)
+    if _idem_key and await get_conversation_by_idempotency_key(db, user.id, _idem_key):
+        logger.info(f"idempotency: skip Telegram redelivery "
+                    f"update_id={update.update_id} user={user.id}")
+        return
 
     # ── Onboarding ────────────────────────────────────────────────────────────
     in_onboarding = not user.onboarding_completed
@@ -491,7 +503,8 @@ async def _run_pipeline(update: Update, context: ContextTypes.DEFAULT_TYPE,
     log_text = "|||".join(turn.response.bubbles)
     await log_conversation(db, user.id, raw_text, log_text, source_type=source_type,
                            parsed_intent=(",".join(turn.health_flags) or None),
-                           skills_fired=turn.skills_fired)
+                           skills_fired=turn.skills_fired,
+                           idempotency_key=_idem_key)
 
     # ── Adaptive profile refresh + reflection (both fire in background) ─────
     # CRITICAL: the request-scoped `db` session closes when this function returns

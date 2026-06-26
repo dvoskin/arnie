@@ -290,6 +290,14 @@ class ConversationLog(Base):
     # when restoring history — without this the transcript reloads text-only and
     # the cards vanish. Null/empty for turns with no cards and for chat-bot turns.
     cards_json = Column(Text)
+    # Per-send idempotency key — a stable unique id for the inbound request this
+    # turn answered: the iOS client's UUID, Telegram's update_id, or iMessage's
+    # message GUID (channel-prefixed). A client retry / webhook redelivery reuses
+    # the SAME key, so the entry path can recognize it deterministically and replay
+    # (or skip) instead of re-running the turn and double-writing logs. Nullable:
+    # legacy rows and any caller that doesn't supply one fall back to the text-window
+    # heuristic in chat_service. Indexed for the per-turn lookup.
+    idempotency_key = Column(String, index=True)
 
     user = relationship("User", back_populates="conversation_logs")
 
