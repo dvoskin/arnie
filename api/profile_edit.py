@@ -22,14 +22,18 @@ Endpoints:
                                           proactive scheduler ignores rows where
                                           this is False.
 """
+import logging
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from api.auth import current_identity
+from core.prompts.onboarding import build_ios_landing_intro
 from db.database import AsyncSessionLocal
-from db.queries import resolve_user
+from db.queries import resolve_user, log_conversation
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1", tags=["profile"])
 
@@ -208,8 +212,31 @@ async def complete_onboarding(
                 "onboarding_completed": False,
                 "missing_fields": missing,
             }
+        # Build Arnie's opening turn from the in-memory user columns BEFORE the
+        # commit (commit expires the instance; reading it after would async
+        # lazy-load and trip MissingGreenlet). Targets live on user_preferences,
+        # left None here to avoid a post-commit lazy-load — the greeting still
+        # reflects name/goal/weight; the targets line is a later refinement.
+        intro_bubbles = build_ios_landing_intro(
+            name=user.name,
+            primary_goal=user.primary_goal,
+            current_weight_kg=user.current_weight_kg,
+            goal_weight_kg=user.goal_weight_kg,
+            calorie_target=None,
+            protein_target=None,
+        )
         user.onboarding_completed = True
         await db.commit()
+        # Seed it so a native-onboarded user lands in a warm, profile-aware chat
+        # (matching the web SETUP path) instead of an empty thread. First flip only
+        # (the early returns above guard against double-seeding). Non-fatal.
+        try:
+            await log_conversation(
+                db, user.id, "[start]", "|||".join(intro_bubbles),
+                source_type="text", platform="ios",
+            )
+        except Exception:
+            logger.exception("native onboarding intro seed failed (non-fatal)")
         return {"ok": True, "onboarding_completed": True, "missing_fields": []}
 
 
