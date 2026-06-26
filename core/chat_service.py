@@ -61,6 +61,21 @@ _HISTORY_ONBOARDING = 25
 # client retry). The iOS per-identity lock serializes same-user requests, so the
 # repeat lands just after the first turn committed — a short window catches it.
 _DEDUP_WINDOW_SEC = 20
+# Tighter window + min length for collapsing a repeat that FIRED TOOLS (a re-run
+# would double-write a log). Only a substantial phrase within this window is taken
+# as a client retry; a deliberately repeated short set-entry ("130x12", "again")
+# falls through to the per-tool dedup guard. Closes the gap that let an identical
+# resend double-log a multi-set block (shrugs 3×14,14,15 written twice, 2026-06-25).
+_DEDUP_TOOL_WINDOW_SEC = 10
+_DEDUP_MIN_PHRASE_LEN = 22
+# A prior reply matching one of these recovery signatures means the turn ERRORED —
+# never collapse onto it, or a resend-after-error loops on the canned apology
+# instead of actually retrying.
+_RECOVERY_SIGS = (
+    "wires crossed", "hit a snag", "went sideways", "didn't go through",
+    "hiccupped saving", "didn't save right", "got a bit confused",
+    "didn't quite land", "lost the thread", "still here. what's the move",
+)
 
 
 async def run_chat_turn(
@@ -142,22 +157,39 @@ async def run_chat_turn(
 
     # ── Idempotency: collapse a double-fired identical message ────────────────
     # A double-tap / client retry of the SAME text arrives just after the first
-    # turn committed (the caller's per-identity lock serializes them). If the
-    # prior turn fired NO tools — a pure informational reply, e.g. a coach-feed
-    # "Tell me more" drill-down (the observed double-fire that produced two
-    # near-duplicate essays) — return that reply instead of regenerating. We
-    # never coalesce a turn that fired tools, so a repeated "yes" / "log it"
-    # still logs again. Fully wrapped: any failure falls through to a normal turn.
+    # turn committed (the caller's per-identity lock serializes them). Return the
+    # prior reply instead of regenerating, in two cases:
+    #   (1) prior turn fired NO tools — a pure informational reply, e.g. a coach-feed
+    #       "Tell me more" drill-down (the double-fire that produced two near-
+    #       duplicate essays). Collapse within the full window.
+    #   (2) prior turn DID fire tools — a log. A re-run would DOUBLE-WRITE the entry,
+    #       and the per-tool dedup guard misses some shapes (a resent multi-set block
+    #       lands on a different reps signature and slips through). Collapse only a
+    #       *substantial phrase* ("Got 15, doing upright rows now") within a TIGHT
+    #       window — a clear client retry. A deliberately repeated short set-entry
+    #       ("130x12", "again") stays below the length bar and logs normally.
+    # Never collapse onto a recovery/error reply — a resend-after-error must retry.
+    # Fully wrapped: any failure falls through to a normal turn.
     try:
         _prev = await get_recent_conversations(db, user.id, limit=1)
         if _prev:
             _p = _prev[0]
             _age = ((datetime.utcnow() - _p.timestamp).total_seconds()
                     if _p.timestamp else 1e9)
-            if ((_p.raw_message or "") == text
-                    and 0 <= _age <= _DEDUP_WINDOW_SEC
-                    and not (_p.skills_fired or "").strip()):
-                _bubbles = [b for b in (_p.response or "").split("|||") if b.strip()]
+            _same = (_p.raw_message or "") == text
+            _fired_tools = bool((_p.skills_fired or "").strip())
+            _prev_resp = _p.response or ""
+            _was_error = any(s in _prev_resp.lower() for s in _RECOVERY_SIGS)
+            _t = text.strip()
+            _coalesce = False
+            if _same and not _was_error and 0 <= _age <= _DEDUP_WINDOW_SEC:
+                if not _fired_tools:
+                    _coalesce = True
+                elif (_age <= _DEDUP_TOOL_WINDOW_SEC
+                      and len(_t) >= _DEDUP_MIN_PHRASE_LEN and " " in _t):
+                    _coalesce = True
+            if _coalesce:
+                _bubbles = [b for b in _prev_resp.split("|||") if b.strip()]
                 _cards = []
                 if getattr(_p, "cards_json", None):
                     try:
@@ -167,7 +199,8 @@ async def run_chat_turn(
                 if _bubbles:
                     logger.info(
                         f"dedup: collapsed repeat message for user {user.id} "
-                        f"(age={_age:.1f}s) — returning prior reply, no re-run"
+                        f"(age={_age:.1f}s, fired_tools={_fired_tools}) — "
+                        f"returning prior reply, no re-run"
                     )
                     return TurnResult(
                         response=Response(bubbles=_bubbles, cards=_cards),
