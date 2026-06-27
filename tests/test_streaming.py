@@ -194,7 +194,7 @@ async def _stream_env(monkeypatch):
             await stream_handler(state["follow_up_text"])
         return state["follow_up_text"]
 
-    async def _fake_execute(tool_calls, user, log, db, source_type):
+    async def _fake_execute(tool_calls, user, log, db, source_type, **_kw):
         return {tc["name"]: "Logged ✅" for tc in (tool_calls or [])}
 
     monkeypatch.setattr(C, "chat", _fake_chat)

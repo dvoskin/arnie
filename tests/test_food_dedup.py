@@ -242,6 +242,14 @@ def test_format_dedup_result_starts_with_already_on_the_board():
     assert "Grilled shredded chicken breast" in msg
     assert "150g" in msg
     assert "205 cal" in msg
-    assert "[#593]" in msg
+    # Entry id is carried as a bare "#id" (NOT the bracketed "[#id]" marker that
+    # leaked to users) — so the model can reference the row without echoing an
+    # internal-looking token.
+    assert "#593" in msg
+    assert "[#593]" not in msg
     assert "58 min ago" in msg
-    assert "do NOT" in msg
+    # DATA ONLY — the string must carry NO model-facing directives (those moved
+    # into the system prompt). None of the leak tokens Danny saw may appear.
+    for leak in ("YOUR REPLY", "do NOT", "do not", "never tell", "dedup guard",
+                 "force it through", "[TODAY]", "[#"):
+        assert leak not in msg, f"leak token in dedup result: {leak!r}"

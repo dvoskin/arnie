@@ -241,6 +241,13 @@ class BodyMetric(Base):
     # a "morning_fasted" reading is the gold standard; "post_meal" / "evening"
     # carry noise that should temper the coaching response.
     context = Column(String)  # morning_fasted | post_meal | evening | post_workout | unknown
+    # Where the reading came from. A user's deliberate weigh-in ("manual" — chat
+    # tool, web /weight, iOS quick-log) is the headline; a passive wearable sync
+    # ("apple_health") is a separate parallel row that must never clobber it.
+    # Source-aware so a HealthKit reading taken minutes after a manual one stops
+    # stacking a near-but-not-identical duplicate (Danny 84.73 manual vs 85.28
+    # apple_health, 2026-06-27). server_default backfills existing rows to manual.
+    source = Column(String, default="manual", server_default="manual")  # manual | apple_health
     timestamp = Column(DateTime, server_default=func.now())
 
     user = relationship("User", back_populates="body_metrics")

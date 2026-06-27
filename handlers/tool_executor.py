@@ -270,6 +270,61 @@ def _movement_set_summary(today_log, exercise_name: str) -> str:
     return f"{name or 'exercise'}: {total_sets} set{plural}{reps_part}{weight_part}"
 
 
+def _food_item_summary(today_log, food_name: str) -> str:
+    """Authoritative count of ONE food item in today's log, straight from the DB
+    food_entries — the same source-of-truth idea as _movement_set_summary for
+    exercise. After a log (or a dedup-gate-override), the model gets the real
+    count so it reconciles 'I only see 1 cottage cheese' against DB truth instead
+    of guessing from memory. Returns e.g. "2 × Cottage cheese today (#1322, #1327)".
+    Match is case/whitespace-insensitive on parsed_food_name."""
+    from skills.nutrition.food_dedup import normalize_food_name as _nfn
+    key = _nfn(food_name)
+    if not key:
+        return ""
+    # Defensive: today_log.food_entries can raise MissingGreenlet if the
+    # relationship wasn't selectinloaded (some past-date logs / test fixtures).
+    # Degrade to no-readback rather than crashing the log.
+    try:
+        all_entries = getattr(today_log, "food_entries", None) or []
+        _ = len(all_entries)
+    except Exception:
+        return ""
+    entries = [
+        e for e in all_entries
+        if _nfn(getattr(e, "parsed_food_name", "") or "") == key
+    ]
+    if not entries:
+        return ""
+    entries.sort(key=lambda x: getattr(x, "id", 0) or 0)
+    ids = ", ".join(f"#{getattr(e, 'id', '?')}" for e in entries)
+    name = next((getattr(e, "parsed_food_name", None) for e in entries
+                 if getattr(e, "parsed_food_name", None)), food_name) or food_name
+    n = len(entries)
+    return f"{n} × {name} today ({ids})"
+
+
+def _water_total_summary(today_log) -> str:
+    """Authoritative water tally for today, straight from the DB — total ml plus
+    the number of distinct water rows. Same reconcile-against-truth purpose as
+    the food/exercise readbacks. Returns e.g. "560ml across 3 entries today".
+    Falls back to the DailyLog aggregate when timestamped rows aren't loaded."""
+    # Defensive: water_entries may not be loaded (lazy-load → MissingGreenlet).
+    # The aggregate total_water_ml is always available, so fall back to it.
+    try:
+        rows = list(getattr(today_log, "water_entries", None) or [])
+    except Exception:
+        rows = []
+    total = getattr(today_log, "total_water_ml", None)
+    if total is None and rows:
+        total = sum(float(getattr(e, "amount_ml", 0) or 0) for e in rows)
+    total = round(total or 0)
+    if rows:
+        n = len(rows)
+        plural = "entries" if n != 1 else "entry"
+        return f"{total}ml across {n} {plural} today"
+    return f"{total}ml today"
+
+
 def _detect_log_divergence(today_log) -> list[str]:
     """Cheap, read-only over-log detector for monitoring (NOT a guard — it never
     blocks). Returns human-readable flag strings (empty = clean):
@@ -915,6 +970,7 @@ async def execute_tool_calls(
     today_log: DailyLog,
     db: AsyncSession,
     source_type: str = "text",
+    user_message: str = "",
 ) -> Dict[str, Any]:
     """
     Execute each tool call and return {tool_name: result}.
@@ -977,6 +1033,7 @@ async def execute_tool_calls(
                 pre_existing_exercise_ids=pre_existing_exercise_ids,
                 pre_existing_food_ids=pre_existing_food_ids,
                 pre_existing_water_ids=pre_existing_water_ids,
+                user_message=user_message,
             )
             # Increment telemetry counters for log_* tools. "Already on the
             # board:" prefix indicates the dedup guard fired and a write
@@ -1123,7 +1180,8 @@ def _apply_multi_item_batch_coaching(
 async def _dispatch(name, inp, user, today_log, db, source_type,
                     pre_existing_exercise_ids=None,
                     pre_existing_food_ids=None,
-                    pre_existing_water_ids=None):  # noqa: C901
+                    pre_existing_water_ids=None,
+                    user_message=""):  # noqa: C901
     # Guard: log_food/log_exercise/log_water require a real daily log
     if name in ("log_food", "log_exercise", "log_water"):
         if not getattr(today_log, "id", None):
@@ -1149,6 +1207,22 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
         # multiple log_food calls in one batch is never self-blocked.
         # When pre_existing_food_ids is None (tests calling _dispatch
         # directly), the filter is bypassed.
+        #
+        # TURN-INTENT GATE (shared by food/water/exercise — see
+        # skills/logging_intent.py). The dedup guard defends against the model
+        # re-firing log_food on a topic pivot, where the user said nothing about
+        # food. But payload+window alone can't tell that phantom from a genuine
+        # repeat ("one more same coffee" 33 min later — Anya 2026-06-26, silently
+        # dropped; a 2nd cottage cheese / 2nd Barebells — Danny 2026-06-27). The
+        # discriminator is the user's CURRENT turn: an explicit add/repeat cue
+        # ("another", "one more", "a second X", "ещё") means the log is
+        # intentional → honor it. Bare item mention is deliberately NOT a cue —
+        # a retry names the item too ("log the coffee again"). Only when the turn
+        # does NOT support the log does the payload+window block apply (the
+        # phantom-on-pivot and retry cases the guard was built for). The signal
+        # defaults closed (empty user_message → unchanged behavior).
+        from skills.logging_intent import turn_supports_log
+        _supports_food = turn_supports_log(user_message, food_name)
         if not past_date:
             from datetime import datetime as _dt_now
             from skills.nutrition.food_dedup import (
@@ -1185,7 +1259,17 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
                 now_utc=now_utc,
             )
             if _dup_food is not None:
-                return _format_food_dedup(_dup_food, now_utc=now_utc)
+                if _supports_food:
+                    # The user's turn signals a deliberate repeat ("another",
+                    # "a second cottage cheese") — honor the log instead of
+                    # blocking. Telemetry so we can watch the gate-open rate
+                    # (event=dedup_gate_override).
+                    logger.info(
+                        f"event=dedup_gate_override kind=food user={getattr(user,'id',None)} "
+                        f"item={food_name!r} matched=#{getattr(_dup_food,'id',None)}"
+                    )
+                else:
+                    return _format_food_dedup(_dup_food, now_utc=now_utc)
 
         # Capture raw LLM-submitted macros before _analyze_food runs
         # reconcile_macros, so we can flag corrections in the tool result.
@@ -1307,9 +1391,18 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
         except Exception as _e:
             logger.warning(f"reconciliation diff failed: {_e}")
 
+        # Layer 4 — authoritative per-item count from the DB, not the model's
+        # memory. After a normal log AND after a dedup-gate-override (2nd serving),
+        # echo how many of THIS item are on the board so the model reconciles
+        # "I only see 1 cottage cheese" against DB truth instead of guessing.
+        _food_board = _food_item_summary(target_log, food_name)
+        _board_line = (
+            f" ON THE BOARD NOW (from the DB): {_food_board}." if _food_board else ""
+        )
+
         return (
             f"Logged {food_name}: {analysis.calories} cal, {analysis.protein:.0f}g protein"
-            f"{date_label}. ANALYSIS: {analysis.coach_note}.{reconciled_note} "
+            f"{date_label}. ANALYSIS: {analysis.coach_note}.{reconciled_note}{_board_line} "
             f"DAY TOTAL: {target_log.total_calories:.0f} cal, {target_log.total_protein:.0f}g protein"
             f"{(' (' + remaining.strip() + ')') if remaining else ''}. "
             f"Scale the reply to the log. Meaningful meal: name the food and its macros "
@@ -1403,7 +1496,21 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
                 superseded_window_sec=_superseded_window,
             )
             if dup is not None:
-                return format_dedup_result(dup, now_utc=now_utc)
+                # TURN-INTENT GATE — if the user's turn signals another set
+                # ("another set", "one more", "second set", "ещё"), honor the
+                # log; the equality-block is for the model re-firing a set on a
+                # topic pivot. The roll-up upsert (below) still applies either
+                # way — it grows one row, it doesn't drop data. Gate defaults
+                # closed (empty user_message → unchanged behavior).
+                from skills.logging_intent import turn_supports_log
+                _supports_ex = turn_supports_log(user_message, canonical_name)
+                if _supports_ex:
+                    logger.info(
+                        f"event=dedup_gate_override kind=exercise user={getattr(user,'id',None)} "
+                        f"item={canonical_name!r} matched=#{getattr(dup,'id',None)}"
+                    )
+                else:
+                    return format_dedup_result(dup, now_utc=now_utc)
 
             # Cumulative roll-up → UPSERT, don't insert. The model re-states the
             # full running set list on each report ('12' → '12,12' → '12,12,10'),
@@ -1742,6 +1849,11 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
         # 60-min window — water is sipped more often than food is eaten,
         # so the legit-second-drink false-positive risk is higher than for
         # food. Bulk-paste safety via the same snapshot pattern.
+        # TURN-INTENT GATE — same rule as log_food: "another glass", "one more",
+        # "ещё", or an explicit add cue means a deliberate additional drink, not
+        # a re-send. Gate defaults closed (empty user_message → unchanged).
+        from skills.logging_intent import turn_supports_log
+        _supports_water = turn_supports_log(user_message, "water")
         if not past_date and ml:
             from datetime import datetime as _dt_now
             from skills.nutrition.water_dedup import (
@@ -1768,7 +1880,13 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
                 now_utc=now_utc,
             )
             if _dup_water is not None:
-                return _format_water_dedup(_dup_water, now_utc=now_utc)
+                if _supports_water:
+                    logger.info(
+                        f"event=dedup_gate_override kind=water user={getattr(user,'id',None)} "
+                        f"matched=#{getattr(_dup_water,'id',None)}"
+                    )
+                else:
+                    return _format_water_dedup(_dup_water, now_utc=now_utc)
 
         if ml:
             target_log.total_water_ml = (target_log.total_water_ml or 0) + ml
@@ -1794,9 +1912,14 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
             hydration = "on track"
         else:
             hydration = "still building — nudge them to keep drinking"
+        # Layer 4 — authoritative water tally from the DB (total + entry count),
+        # so the model reconciles against truth after a log or a gate-override
+        # 2nd drink instead of guessing the running total from memory.
+        _water_board = _water_total_summary(target_log)
         return (
             f"Logged {round(ml or 0)}ml water (~{oz_this}oz). "
             f"Water total today: {round(total_ml)}ml (~{total_oz}oz). "
+            f"ON THE BOARD NOW (from the DB): {_water_board}. "
             f"Hydration status: {hydration}. "
             f"YOUR REPLY: 1-2 short bubbles max. Quick read on their hydration and keep moving. "
             f"Water is a low-friction log — don't over-coach it. "

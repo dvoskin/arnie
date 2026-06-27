@@ -308,6 +308,22 @@ def _user_today(user_timezone: str) -> date:
     return d
 
 
+def _logging_day_of(dt_utc: datetime, user_timezone: str) -> date:
+    """The LOGGING day a stored (UTC) timestamp belongs to, in the user's tz —
+    the same rollover-hour grace window as _user_today. BodyMetric.timestamp is
+    written via server_default func.now() (naive UTC), so localize to UTC first,
+    then convert to the user's zone before applying the rollover. Used by the
+    weight UPSERT to decide whether an existing row is the SAME calendar day."""
+    tz = pytz.timezone(user_timezone or "UTC")
+    if dt_utc.tzinfo is None:
+        dt_utc = pytz.utc.localize(dt_utc)
+    local = dt_utc.astimezone(tz)
+    d = local.date()
+    if local.hour < LOGGING_DAY_ROLLOVER_HOUR:
+        d = d - timedelta(days=1)
+    return d
+
+
 async def get_today_log(db: AsyncSession, user_id: int,
                         user_timezone: str = "UTC") -> Optional[DailyLog]:
     _opts = [
@@ -452,40 +468,89 @@ async def add_exercise_entry(db: AsyncSession, daily_log_id: int,
 
 
 async def add_body_metric(db: AsyncSession, user_id: int,
-                          weight_kg: float, **kwargs) -> BodyMetric:
-    # Idempotency guard against duplicate weigh-ins. Weight gets re-logged two
-    # ways: the model double-calls log_body_weight in one turn, or it re-confirms
-    # a weight that's still sitting in chat context on a later, unrelated turn
-    # ("Didn't end up eating yet" → "86.1kg locked in" again). Both stack
-    # identical BodyMetric rows and skew the trend. So if a near-identical
-    # reading was logged in the last half hour, fold this into that row instead
-    # of creating a new one — a real re-weigh is never the same value to 0.05kg.
-    cutoff = datetime.utcnow() - timedelta(minutes=30)
-    recent = (await db.execute(
-        select(BodyMetric)
-        .where(BodyMetric.user_id == user_id, BodyMetric.timestamp >= cutoff)
-        .order_by(desc(BodyMetric.timestamp))
-        .limit(1)
-    )).scalar_one_or_none()
-
+                          weight_kg: float, source: str = "manual",
+                          **kwargs) -> BodyMetric:
+    # Source-aware, ONE-row-per-(user, calendar-day, source) UPSERT.
+    #
+    # Weight arrives from two independent worlds that must not collide:
+    #   • "manual"        — the user's DELIBERATE weigh-in (chat log_body_weight,
+    #                       web /api/weight/log, iOS quick-log). This is the
+    #                       headline number.
+    #   • "apple_health"  — a PASSIVE wearable/HealthKit sync. Useful for trend
+    #                       fill-in, but must never overwrite the user's own
+    #                       reading.
+    #
+    # The old guard folded only NEAR-IDENTICAL (<0.06 kg / 30 min) readings, so a
+    # manual 84.73 and a HealthKit 85.28 nine minutes later (~0.55 kg apart, a
+    # normal scale/HealthKit discrepancy) escaped the fold and STACKED — four rows
+    # oscillating across one morning, the dashboard headlining the latest (passive)
+    # value, and the user's deliberate number buried (Danny 2026-06-27).
+    #
+    # Fix: collapse by (user, local logging day, source). A repeat write from the
+    # SAME source on the SAME day — a HealthKit re-deliver, or a manual correction
+    # ("188 actually") — UPDATES the existing row in place instead of inserting a
+    # new one, so each source contributes at most ONE row per day. manual and
+    # apple_health are kept as SEPARATE rows; one is never folded into the other.
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one()
+    tz = getattr(user, "timezone", None) or "UTC"
+    today = _user_today(tz)
 
-    if recent is not None and abs((recent.weight_kg or 0.0) - weight_kg) < 0.06:
-        # Same reading, just logged — refresh context/bodyfat if newly provided,
-        # keep the user's current weight in sync, and return the existing row.
-        if kwargs.get("context") and recent.context in (None, "unknown"):
-            recent.context = kwargs["context"]
+    # Pull this user's recent rows (wide enough to cover the rollover grace window
+    # in any timezone) and match the SAME source + SAME logging day in Python —
+    # timestamps are stored as naive UTC, so the day boundary must be computed in
+    # the user's zone rather than via a SQL date() on the raw column.
+    lookback = datetime.utcnow() - timedelta(hours=48)
+    rows = (await db.execute(
+        select(BodyMetric)
+        .where(BodyMetric.user_id == user_id, BodyMetric.timestamp >= lookback)
+        .order_by(desc(BodyMetric.timestamp))
+    )).scalars().all()
+
+    existing = next(
+        (r for r in rows
+         if (r.source or "manual") == source
+         and r.timestamp is not None
+         and _logging_day_of(r.timestamp, tz) == today),
+        None,
+    )
+
+    # Does a MANUAL reading already exist for today? (Across either branch.) An
+    # apple_health write must not touch current_weight_kg when one does — the
+    # user's deliberate weigh-in stays the headline.
+    manual_today_exists = any(
+        (r.source or "manual") == "manual"
+        and r.timestamp is not None
+        and _logging_day_of(r.timestamp, tz) == today
+        for r in rows
+    )
+
+    def _sync_current_weight():
+        # manual always wins. apple_health updates current_weight_kg only when
+        # there's no manual reading for today to defer to.
+        if source == "manual" or not manual_today_exists:
+            user.current_weight_kg = weight_kg
+
+    if existing is not None:
+        # Same source, same day → update in place (correction or re-deliver).
+        existing.weight_kg = weight_kg
+        existing.timestamp = datetime.utcnow()
+        if kwargs.get("context") is not None:
+            existing.context = kwargs["context"]
         if kwargs.get("bodyfat_estimate") is not None:
-            recent.bodyfat_estimate = kwargs["bodyfat_estimate"]
-        user.current_weight_kg = weight_kg
+            existing.bodyfat_estimate = kwargs["bodyfat_estimate"]
+        if kwargs.get("waist_cm") is not None:
+            existing.waist_cm = kwargs["waist_cm"]
+        if kwargs.get("photo_reference") is not None:
+            existing.photo_reference = kwargs["photo_reference"]
+        _sync_current_weight()
         await db.commit()
-        await db.refresh(recent)
-        return recent
+        await db.refresh(existing)
+        return existing
 
-    metric = BodyMetric(user_id=user_id, weight_kg=weight_kg, **kwargs)
+    metric = BodyMetric(user_id=user_id, weight_kg=weight_kg, source=source, **kwargs)
     db.add(metric)
-    user.current_weight_kg = weight_kg
+    _sync_current_weight()
 
     await db.commit()
     await db.refresh(metric)

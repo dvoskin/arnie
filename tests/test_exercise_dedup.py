@@ -208,10 +208,15 @@ def test_format_dedup_result_starts_with_already_on_the_board():
     assert msg.startswith("Already on the board:")
     assert "Cable Pushdown" in msg
     assert "1×10" in msg
-    assert "[#147]" in msg
+    # Bare "#id", not the bracketed "[#id]" marker that leaked.
+    assert "#147" in msg
+    assert "[#147]" not in msg
     assert "10s ago" in msg
-    # Must instruct the model NOT to emit a log line
-    assert "do NOT" in msg or "do not" in msg.lower()
+    # DATA ONLY — directives moved to the system prompt; no leak tokens or
+    # internal markers (e.g. [TRAINING PROGRAM]) may appear in the result.
+    for leak in ("YOUR REPLY", "do NOT", "do not", "never tell", "dedup guard",
+                 "force it through", "[TODAY]", "[TRAINING PROGRAM]", "[#"):
+        assert leak not in msg, f"leak token in dedup result: {leak!r}"
 
 
 def test_format_dedup_result_no_weight_for_bodyweight():
@@ -318,7 +323,10 @@ def test_format_rollup_result_shape():
     entry = _entry(id_=466, name="Lat Pulldown", sets=3, reps="12,12,10", weight=_LAT_W)
     msg = format_rollup_result(entry, now_utc=datetime(2026, 6, 21, 18, 8, 25))
     assert msg.startswith("Updated the running set")
-    assert "[#466]" in msg
+    # Sanitized: bare #id (no leak-prone "[#id]" bracket) + no model-facing directive.
+    assert "#466" in msg
+    assert "[#" not in msg
+    assert "YOUR REPLY" not in msg
     assert "3x12,12,10" in msg
     assert "165lb" in msg
     assert "no new row" in msg.lower() or "one entry" in msg.lower()

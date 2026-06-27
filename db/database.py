@@ -187,6 +187,10 @@ async def _migrate(conn):
         ("exercise_entries", "avg_hr", "INTEGER"),
         # ── 2026-06-26: per-send idempotency key (deterministic retry dedup) ────
         ("conversation_logs", "idempotency_key", "VARCHAR"),
+        # ── 2026-06-27: weight source (manual vs apple_health) for source-aware
+        #    per-(user, day, source) dedup. SQLite-only net — Postgres is handled
+        #    by the paired alembic migration b3c4d5e6f7a8 (per migrate_postgres_gap).
+        ("body_metrics", "source", "VARCHAR DEFAULT 'manual'"),
     ]
 
     for table, column, ddl in additions:

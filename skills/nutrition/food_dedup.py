@@ -127,25 +127,33 @@ def is_duplicate_food(
 
 
 def format_dedup_result(dup, now_utc: datetime) -> str:
-    """Tool-result string the executor returns on a dup hit. Prefix
-    'Already on the board:' is the discriminator the deterministic
-    confirmation uses to distinguish this from real Error/Skipped tool
-    results. Includes the existing entry's id so the model can reference
-    it if the user asks. Tells the model to acknowledge without emitting
-    a fresh log line."""
+    """Tool-result string the executor returns on a dup hit.
+
+    DATA ONLY — no model-facing directives. The behavioral guidance ("when
+    something's already logged, acknowledge briefly and keep it natural, never
+    announce a skip") lives in the SYSTEM PROMPT (core/prompts/arnie.py), NOT
+    here: this string can be echoed verbatim to a user (Danny 2026-06-27 saw
+    "YOUR REPLY: ..." and raw "[#1314]" tokens leak), so it carries facts and
+    nothing that reads as instructions or internal machinery.
+
+    Prefix 'Already on the board:' is the discriminator the deterministic
+    confirmation uses to distinguish this from real Error/Skipped results and
+    must stay stable. The entry id is carried as a bare '#id' (NOT the bracketed
+    '[#id]' marker that leaked) so the model can still reference the row for an
+    edit without echoing the internal-looking token.
+    """
     qty = getattr(dup, "quantity", "") or ""
     cals = getattr(dup, "calories", None)
-    cal_part = f" {round(cals)} cal" if cals is not None else ""
+    cal_part = f", {round(cals)} cal" if cals is not None else ""
     age_sec = max(0, int((now_utc - dup.timestamp).total_seconds()))
+    clock = dup.timestamp.strftime("%H:%M")
     age_part = (
         f"{age_sec}s ago" if age_sec < 90
         else f"{age_sec // 60} min ago"
     )
+    qty_part = f"{qty}{cal_part}".strip().lstrip(",").strip()
+    detail = f" ({qty_part})" if qty_part else ""
     return (
-        f"Already on the board: {dup.parsed_food_name} "
-        f"({qty}{cal_part}). Logged as [#{dup.id}] {age_part}. "
-        f"YOUR REPLY: do NOT emit a fresh log line for this food — it's "
-        f"already saved. acknowledge briefly if relevant and continue the "
-        f"conversation. never tell the user a log was skipped — just keep "
-        f"the flow natural."
+        f"Already on the board: {dup.parsed_food_name}{detail}, "
+        f"logged {clock} ({age_part}) #{dup.id}."
     )

@@ -144,23 +144,26 @@ def is_duplicate_of_recent(
 def format_dedup_result(dup, now_utc: datetime) -> str:
     """Build the tool-result string the executor returns when a dup is caught.
 
+    DATA ONLY — no model-facing directives and no internal markers like
+    [TRAINING PROGRAM]. This string can be echoed verbatim to a user (Danny
+    2026-06-27 saw raw "YOUR REPLY: ..." / "[#1314]" leak), so it carries facts
+    only; the "acknowledge briefly, never announce a skip" behavior lives in the
+    SYSTEM PROMPT (core/prompts/arnie.py).
+
     Starts with 'Already on the board:' (NOT 'Skipped' or 'Error') so the
-    deterministic_confirmation recovery-message path doesn't false-positive
-    it as a tool failure. The body tells the model what was found and what
-    NOT to do (no log line, no "I skipped it" disclosure).
+    deterministic_confirmation recovery-message path doesn't false-positive it
+    as a tool failure — the prefix MUST stay stable. The entry id is carried as
+    a bare '#id' (NOT the bracketed '[#id]' marker that leaked) so the model can
+    reference the row without echoing the internal-looking token.
     """
     weight_part = ""
     if getattr(dup, "weight", None):
         weight_part = f" @ {dup.weight * 2.20462:.0f}lb"
     age_sec = max(0, int((now_utc - dup.timestamp).total_seconds()))
+    age_part = f"{age_sec}s ago" if age_sec < 90 else f"{age_sec // 60} min ago"
     return (
         f"Already on the board: {dup.exercise_name} "
-        f"({dup.sets}×{dup.reps}{weight_part}). "
-        f"Logged as [#{dup.id}] {age_sec}s ago. "
-        f"YOUR REPLY: do NOT emit a fresh log line for this set — it's already saved. "
-        f"Acknowledge briefly and move to the next cue (e.g. 'next set?' or the next "
-        f"exercise from [TRAINING PROGRAM]). Never tell the user a log was skipped — "
-        f"just continue coaching naturally."
+        f"({dup.sets}×{dup.reps}{weight_part}), logged {age_part} #{dup.id}."
     )
 
 
@@ -254,8 +257,6 @@ def format_rollup_result(entry, now_utc: datetime) -> str:
     if getattr(entry, "weight", None):
         weight_part = f" @ {entry.weight * 2.20462:.0f}lb"
     return (
-        f"Updated the running set on [#{entry.id}]: {entry.exercise_name} "
-        f"now {entry.sets}x{entry.reps}{weight_part} — one entry grew, no new row. "
-        f"YOUR REPLY: confirm the latest set naturally and give the running count "
-        f"(e.g. '3 sets in'); do NOT imply a separate or duplicate log was created."
+        f"Updated the running set on #{entry.id}: {entry.exercise_name} "
+        f"now {entry.sets}x{entry.reps}{weight_part} — one entry grew, no new row."
     )

@@ -234,13 +234,54 @@ def _health_block(snap) -> dict:
     }
 
 
+def _one_per_day_prefer_manual(weights):
+    """Collapse raw BodyMetric rows to ONE reading per calendar day, preferring
+    the MANUAL (deliberate) reading over an apple_health (passive) one for that
+    day, and return them chronologically (oldest → newest).
+
+    Why: a single morning can now legitimately carry two rows — the user's manual
+    weigh-in AND a HealthKit sync. The trend must plot one point per day, and the
+    headline ("latest") must be the user's own number, not whichever timestamp is
+    newest. With manual winning each day, the last element is the manual reading
+    of the most recent day whenever one exists — so callers get manual-wins for
+    free by taking `[-1]`.
+
+    Grouping key is the UTC calendar date (matching the %Y-%m-%d the dashboard
+    already emits for trend points). Within a day, manual wins; if a day has only
+    apple_health (or only manual), that single reading is used. Ties within the
+    same source fall to the latest timestamp.
+    """
+    by_day: dict = {}
+    for w in sorted(weights, key=lambda w: w.timestamp):
+        if getattr(w, "weight_kg", None) is None:
+            continue
+        day = w.timestamp.strftime("%Y-%m-%d")
+        cur = by_day.get(day)
+        if cur is None:
+            by_day[day] = w
+            continue
+        cur_manual = (getattr(cur, "source", None) or "manual") == "manual"
+        w_manual = (getattr(w, "source", None) or "manual") == "manual"
+        # Prefer manual; among equal source-rank, the later timestamp wins
+        # (iteration is already chronological, so w is the later one).
+        if w_manual or not cur_manual:
+            by_day[day] = w
+    return [by_day[d] for d in sorted(by_day.keys())]
+
+
 def _weight_block(weights, user) -> dict | None:
     """Shape the weight record for the Today screen: latest reading, the
     user's goal, and recent readings (most-recent-first, capped at 14) for a
-    sparkline. Returns None when nothing's ever been logged."""
+    sparkline. Returns None when nothing's ever been logged.
+
+    One reading per day (manual preferred) — so a manual weigh-in plus a passive
+    HealthKit sync the same morning render as a single point headlined by the
+    user's own number, not a stacked/oscillating pair."""
     if not weights:
         return None
-    sorted_weights = sorted(weights, key=lambda w: w.timestamp)
+    sorted_weights = _one_per_day_prefer_manual(weights)
+    if not sorted_weights:
+        return None
     recent = [
         {
             "date": w.timestamp.strftime("%Y-%m-%d"),
@@ -282,13 +323,15 @@ async def week_data(db, user) -> dict:
         }
         for log in sorted(history, key=lambda l: l.date)
     ]
+    # One reading per day, manual preferred — the trend mustn't double-count a
+    # day that has both a manual weigh-in and a passive HealthKit sync.
     weight_data = [
         {
             "date": w.timestamp.strftime("%Y-%m-%d"),
             "kg": round(w.weight_kg, 1),
             "lbs": round(w.weight_kg * 2.20462, 1),
         }
-        for w in sorted(weights, key=lambda w: w.timestamp)
+        for w in _one_per_day_prefer_manual(weights)
     ]
     return {"targets": _targets(user), "history": hist_data, "weights": weight_data}
 

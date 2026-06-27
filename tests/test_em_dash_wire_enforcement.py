@@ -204,7 +204,7 @@ async def test_on_interim_path_sanitizes_em_dashes(monkeypatch, make_user, db):
                               max_tokens=512, stream_handler=None):
         return "saturday recap. 1,500 cal."
 
-    async def _fake_execute(tool_calls, user, log, db, source_type):
+    async def _fake_execute(tool_calls, user, log, db, source_type, **_kw):
         return {"query_history": "HISTORY data"}
 
     monkeypatch.setattr(C, "chat", _fake_chat)

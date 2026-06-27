@@ -503,7 +503,7 @@ async def test_query_history_with_heads_up_text_still_runs_follow_up(
                 "• banana, 105 calories, 1g protein|||"
                 "105 calories total for the day.")
 
-    async def _fake_execute(tool_calls, user, log, db, source_type):
+    async def _fake_execute(tool_calls, user, log, db, source_type, **_kw):
         calls["execute"] += 1
         return {"query_history": "HISTORY QUERY — period=last saturday\n• banana 105 cal"}
 
@@ -560,7 +560,7 @@ async def test_query_history_with_NO_heads_up_text_still_runs_follow_up(
         calls["follow_up"] += 1
         return "averaged 1,800 cal/day last week. solid pacing."
 
-    async def _fake_execute(tool_calls, user, log, db, source_type):
+    async def _fake_execute(tool_calls, user, log, db, source_type, **_kw):
         return {"query_history": "Calories: avg 1800/day over 7 days"}
 
     monkeypatch.setattr(C, "chat", _fake_chat)
@@ -607,7 +607,7 @@ async def test_log_food_turn_unaffected_by_query_history_voiced_addition(
         calls["follow_up"] += 1
         return "banana, 105 cal.|||1,205 / 2,000 for the day."
 
-    async def _fake_execute(tool_calls, user, log, db, source_type):
+    async def _fake_execute(tool_calls, user, log, db, source_type, **_kw):
         return {"log_food": "Logged banana: 105 cal. DAY TOTAL: 1205 cal."}
 
     monkeypatch.setattr(C, "chat", _fake_chat)
@@ -668,7 +668,7 @@ async def test_card_tool_with_lead_in_still_runs_follow_up_for_close(
         # The actionable close — the part the teaser was missing.
         return "either works for your macros. want me to log it after you eat?"
 
-    async def _fake_execute(tool_calls, user, log, db, source_type):
+    async def _fake_execute(tool_calls, user, log, db, source_type, **_kw):
         calls["execute"] += 1
         return {"suggest_meals": "Showed 2 meal ideas as a carousel — keep your reply short."}
 
@@ -723,7 +723,7 @@ async def test_suggest_workout_card_is_in_card_close_tools(make_user, db, monkey
         calls["follow_up"] += 1
         return "start with bench while you're fresh. log each set as you go?"
 
-    async def _fake_execute(tool_calls, user, log, db, source_type):
+    async def _fake_execute(tool_calls, user, log, db, source_type, **_kw):
         return {"suggest_workout": "Showed 2 exercises (push) as a plan carousel — keep your reply short."}
 
     monkeypatch.setattr(C, "chat", _fake_chat)

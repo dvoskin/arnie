@@ -78,17 +78,19 @@ def is_duplicate_water(
 
 
 def format_dedup_result(dup, now_utc: datetime) -> str:
-    """'Already on the board: ...' tool-result string for the executor."""
+    """'Already on the board: ...' tool-result string for the executor.
+
+    DATA ONLY — no model-facing directives (see food_dedup.format_dedup_result
+    for the rationale; behavioral guidance lives in the SYSTEM PROMPT). This
+    string can be echoed to a user, so it must not read as instructions."""
     amt = getattr(dup, "amount_ml", None) or 0
     age_sec = max(0, int((now_utc - dup.timestamp).total_seconds()))
+    clock = dup.timestamp.strftime("%H:%M")
     age_part = (
         f"{age_sec}s ago" if age_sec < 90
         else f"{age_sec // 60} min ago"
     )
     return (
-        f"Already on the board: water ({round(amt)}ml). "
-        f"Logged as [#{dup.id}] {age_part}. "
-        f"YOUR REPLY: do NOT emit a fresh log line — already saved. "
-        f"acknowledge briefly if relevant and continue. never tell the "
-        f"user a log was skipped."
+        f"Already on the board: water ({round(amt)}ml), "
+        f"logged {clock} ({age_part}) #{dup.id}."
     )

@@ -474,7 +474,12 @@ async def run_turn(
                     logger.error(f"on_tool_start failed for {_tag}: {e}")
 
         tool_results = await execute_tool_calls(
-            tool_calls, user, _log_for_tools, db, _source
+            tool_calls, user, _log_for_tools, db, _source,
+            # Current turn text → the dedup turn-intent gate (skills/logging_intent.py).
+            # An explicit add cue ("another", "a second X", "ещё") lets a legit repeat
+            # log through instead of being eaten by the payload+window dedup. Defaults
+            # to "" everywhere else, so non-conversation call paths are unchanged.
+            user_message=_user_text if isinstance(_user_text, str) else "",
         )
 
         # Deliver image results via the platform callback; replace dict with string

@@ -1055,11 +1055,17 @@ async def _build_stats_for_user(db, user, target_date=None):
     else:
         day_log = await get_today_log(db, user.id, user.timezone or "UTC")
 
+    # One reading per day, manual preferred — a day with both a manual weigh-in
+    # and a passive HealthKit sync collapses to the user's own number, so the
+    # trend (and the pace math in _compute_analytics, which reads weight_data[0]
+    # and [-1]) isn't skewed by the duplicate. The headline number itself comes
+    # from user.current_weight_kg, which add_body_metric keeps manual-wins.
+    from api.native_data import _one_per_day_prefer_manual
     weight_data = [
         {"date": w.timestamp.strftime("%Y-%m-%d"),
          "kg": round(w.weight_kg, 1),
          "lbs": round(w.weight_kg * 2.20462, 1)}
-        for w in sorted(weights, key=lambda w: w.timestamp)
+        for w in _one_per_day_prefer_manual(weights)
     ]
 
     def _log_to_day(log):
@@ -3299,7 +3305,8 @@ async def api_log_weight(body: WeightLogBody, token: str = Query(...)):
         if prior:
             prev_lbs = round(prior[0].weight_kg * 2.20462, 1)
 
-        metric = await add_body_metric(db, user.id, weight_kg=weight_kg)
+        # Web/webhook weigh-in is a deliberate user-entered number → "manual".
+        metric = await add_body_metric(db, user.id, weight_kg=weight_kg, source="manual")
 
         current_lbs = round(weight_kg * 2.20462, 1)
         delta_lbs = round(current_lbs - prev_lbs, 1) if prev_lbs is not None else None

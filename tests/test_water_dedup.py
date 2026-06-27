@@ -116,6 +116,11 @@ def test_format_dedup_result_prefix_and_age():
     msg = format_dedup_result(dup, now_utc=now)
     assert msg.startswith("Already on the board:")
     assert "500ml" in msg
-    assert "[#42]" in msg
+    # Bare "#id", not the bracketed "[#id]" marker that leaked.
+    assert "#42" in msg
+    assert "[#42]" not in msg
     assert "30 min ago" in msg
-    assert "do NOT" in msg
+    # DATA ONLY — no model-facing directives, no leak tokens.
+    for leak in ("YOUR REPLY", "do NOT", "do not", "never tell", "dedup guard",
+                 "force it through", "[TODAY]", "[#"):
+        assert leak not in msg, f"leak token in dedup result: {leak!r}"

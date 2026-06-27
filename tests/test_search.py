@@ -326,7 +326,7 @@ async def test_web_search_forces_followup_over_first_pass_text(
         return "a chipotle chicken bowl runs ~700 cal.|||40g protein, solid for the cut."
 
     # The search tool result string — what the follow-up re-voices.
-    async def _fake_execute(tool_calls, user, log, db, source_type):
+    async def _fake_execute(tool_calls, user, log, db, source_type, **_kw):
         return {"web_search": "WEB SEARCH RESULTS ... COACH INSTRUCTION: re-voice this ..."}
 
     monkeypatch.setattr(C, "chat", _fake_chat)
@@ -376,7 +376,7 @@ async def test_voice_by_default_voices_a_setter_that_recomputes(
         calls["follow_up"] += 1
         return "you're set at 2,200 cal, 180g protein a day."
 
-    async def _fake_execute(tool_calls, user, log, db, source_type):
+    async def _fake_execute(tool_calls, user, log, db, source_type, **_kw):
         return {"update_profile": ("Profile updated. | TARGETS JUST CALCULATED: "
                                    "2200 cal, 180g protein, 200g carbs, 70g fat.")}
 
@@ -419,7 +419,7 @@ async def test_silent_tool_keeps_first_pass_text_no_followup(
         calls["follow_up"] += 1
         return "SHOULD NOT BE USED"
 
-    async def _fake_execute(tool_calls, user, log, db, source_type):
+    async def _fake_execute(tool_calls, user, log, db, source_type, **_kw):
         return {"store_attribute": "Stored attribute trains_fasted=true"}
 
     monkeypatch.setattr(C, "chat", _fake_chat)
@@ -485,7 +485,7 @@ async def _run_interim_turn(monkeypatch, make_user, db, *, first_pass_text,
         # The FINAL voiced answer — deliberately distinct from any interim text.
         return "a chipotle chicken bowl runs ~700 cal.|||40g protein, solid for the cut."
 
-    async def _fake_execute(tool_calls, user, log, db, source_type):
+    async def _fake_execute(tool_calls, user, log, db, source_type, **_kw):
         return {tool_name: "WEB SEARCH RESULTS ... COACH INSTRUCTION: re-voice this ..."}
 
     monkeypatch.setattr(C, "chat", _fake_chat)
@@ -549,7 +549,7 @@ async def test_interim_fires_before_execute_tool_calls(
     async def _fake_follow_up(messages, raw, tcs, results, system, max_tokens=512):
         return "the answer.|||done."
 
-    async def _fake_execute(tool_calls, user, log, db, source_type):
+    async def _fake_execute(tool_calls, user, log, db, source_type, **_kw):
         order.append("execute")
         return {"web_search": "RESULTS ... re-voice this ..."}
 
@@ -620,7 +620,7 @@ async def test_interim_never_fires_on_non_search_turn(
     async def _fake_follow_up(messages, raw, tcs, results, system, max_tokens=512):
         return "banana, ~100 cal.|||you're at 1,100 for the day."
 
-    async def _fake_execute(tool_calls, user, log, db, source_type):
+    async def _fake_execute(tool_calls, user, log, db, source_type, **_kw):
         return {"log_food": "Logged banana: 100 cal, 1g protein. DAY TOTAL: 1100 cal."}
 
     monkeypatch.setattr(C, "chat", _fake_chat)

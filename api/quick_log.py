@@ -128,6 +128,11 @@ class WeightLogBody(BaseModel):
     """Body weight (kg). iOS converts lbs → kg client-side."""
     weight_kg: float = Field(gt=20, lt=400)
     context: Optional[str] = None   # "morning", "post-workout", etc.
+    # "manual" = the user typed/confirmed it in the app (the headline number);
+    # "apple_health" = a passive HealthKit observer sync. Defaults to manual so
+    # the existing app weigh-in flow is unchanged; the future HealthKit observer
+    # sends "apple_health" so its readings never clobber a deliberate weigh-in.
+    source: Optional[str] = None
 
 
 @router.post("/weight")
@@ -144,6 +149,7 @@ async def log_weight(
             user_id=user.id,
             weight_kg=payload.weight_kg,
             context=payload.context,
+            source=(payload.source or "manual"),
         )
         return {
             "ok": True,

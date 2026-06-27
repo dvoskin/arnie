@@ -56,7 +56,8 @@ async def test_exact_replay_within_window_skips_write(monkeypatch):
     )
     assert result.startswith("Already on the board:"), result
     assert "Cable Pushdown" in result
-    assert "[#147]" in result
+    assert "#147" in result
+    assert "[#147]" not in result  # bracketed marker must not leak
     assert write_count["n"] == 0, "dup must NOT reach add_exercise_entry"
 
 
@@ -264,11 +265,13 @@ def test_deterministic_confirmation_handles_already_on_board():
     tc = [{"name": "log_exercise",
            "input": {"exercise_name": "Cable Pushdown", "sets": 1,
                      "reps": "10", "weight": 190}}]
+    # Use the REAL formatter so the fixture tracks the sanitized (data-only)
+    # tool-result format instead of drifting from it.
+    from skills.fitness.exercise_dedup import format_dedup_result
+    _dup = _prior_entry(id_=147, name="Cable Pushdown", sets=1, reps="10",
+                        weight=86.18, seconds_ago=12)
     tool_results = {
-        "log_exercise": (
-            "Already on the board: Cable Pushdown (1×10 @ 190lb). "
-            "Logged as [#147] 12s ago. YOUR REPLY: do NOT emit a fresh log line."
-        )
+        "log_exercise": format_dedup_result(_dup, now_utc=datetime.utcnow()),
     }
     log = SimpleNamespace(total_calories=0, total_protein=0)
     prefs = SimpleNamespace(calorie_target=None, protein_target=None)
@@ -490,7 +493,8 @@ async def test_superseded_single_relog_blocked_via_dispatch(monkeypatch):
         user, today_log, db=None, source_type="text",
     )
     assert result.startswith("Already on the board:"), result
-    assert "[#300]" in result
+    assert "#300" in result
+    assert "[#300]" not in result  # bracketed marker must not leak
     assert write_count["n"] == 0, "superseded single-set re-log must not write"
 
 
