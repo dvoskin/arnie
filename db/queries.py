@@ -11,6 +11,7 @@ from db.models import (
 from datetime import date, datetime, timedelta
 from typing import Optional, List
 import json
+import os
 import pytz
 
 
@@ -289,12 +290,19 @@ async def resolve_send_target(db: AsyncSession, canonical: User) -> str:
     return canonical.telegram_id
 
 
-# Logging-day rollover: entries made in the small hours (before this local hour)
-# count toward the PREVIOUS calendar day, not the new one. A user finishing dinner
-# at 12:02am has not started a new food day — without this, late-night logging
-# splits across two days and the dedup guard (which scopes to "today's" log) can't
-# see the meal it should match against. 4am is the MacroFactor-style default.
-LOGGING_DAY_ROLLOVER_HOUR = 4
+# Logging-day rollover: the local hour at which "today" advances to the new
+# calendar day. DEFAULT 0 (midnight) — the new day's log is available at 12am,
+# matching what the iOS app shows (it uses the device calendar date everywhere).
+# A non-zero value adds a small-hours GRACE so a late-night log (e.g. dinner at
+# 12:02am) counts toward the PREVIOUS day; that was the old 4am MacroFactor-style
+# behavior, but it left the app showing yesterday's totals after midnight. The
+# rare late-night case is now covered by retroactive logging ("log it to
+# yesterday"). Tunable via env without a code change (set to 4 to restore grace).
+# Dedup/recall stay consistent at any value (they all anchor on _user_today).
+try:
+    LOGGING_DAY_ROLLOVER_HOUR = max(0, min(23, int(os.getenv("LOGGING_DAY_ROLLOVER_HOUR", "0"))))
+except (TypeError, ValueError):
+    LOGGING_DAY_ROLLOVER_HOUR = 0
 
 
 def _user_today(user_timezone: str) -> date:
