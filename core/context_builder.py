@@ -150,9 +150,32 @@ def fmt_profile(user: User, prefs: Optional[UserPreferences]) -> str:
         f"Injuries: {user.injuries or 'none'}",
     ]
     if prefs:
+        # The user PICKED these in Settings — so they must actually shape every
+        # reply, not sit as inert labels the model has to interpret. Render each as
+        # an explicit behavioral directive keyed off the stored value.
+        _style = {
+            "strict": "Coaching style STRICT — direct and demanding; hold them to the plan, call out misses plainly, minimal cushioning.",
+            "balanced": "Coaching style BALANCED — firm but warm; push when they slack, encourage when earned.",
+            "supportive": "Coaching style SUPPORTIVE — encouraging and gentle; lead with what they did well, nudge softly, never harsh.",
+        }.get((prefs.coaching_style or "balanced").strip().lower(),
+              "Coaching style BALANCED — firm but warm.")
+        _acct = {
+            "low": "Accountability LOW — let them lead; don't chase missed logs or workouts.",
+            "medium": "Accountability MEDIUM — note gaps and nudge once, but don't nag.",
+            "high": "Accountability HIGH — actively hold them to it; surface skipped logs/workouts and ask about them.",
+        }.get((prefs.accountability_level or "medium").strip().lower(),
+              "Accountability MEDIUM — note gaps, don't nag.")
+        _len = {
+            "short": "Response length SHORT — 1-2 tight sentences, no preamble. Hard ceiling: never wall-of-text them.",
+            "medium": "Response length MEDIUM — 2-4 sentences; one idea delivered well.",
+            "long": "Response length LONG — fuller explanations welcome when they genuinely help.",
+        }.get((prefs.preferred_response_length or "medium").strip().lower(),
+              "Response length MEDIUM — 2-4 sentences.")
         lines += [
-            f"Coaching: {prefs.coaching_style}  |  Accountability: {prefs.accountability_level}",
-            f"Response length: {prefs.preferred_response_length}",
+            "[COACHING PREFERENCES — the user set these; honor them every reply]",
+            f"  {_style}",
+            f"  {_acct}",
+            f"  {_len}",
             f"Targets — calories: {prefs.calorie_target or 'not set'}  "
             f"protein: {prefs.protein_target or 'not set'}g  "
             f"carbs: {prefs.carb_target or 'not set'}g  "
@@ -424,6 +447,10 @@ def pacing_note(log: Optional[DailyLog], prefs: Optional[UserPreferences],
                 user_timezone: str = "UTC") -> str:
     """Calorie/protein remaining with time-of-day awareness."""
     if not log or not prefs:
+        return ""
+    # Honor the user's pacing toggle — when they've turned pacing OFF in Settings,
+    # don't inject the remaining-calories/protein nudge into context at all.
+    if not getattr(prefs, "pacing_enabled", True):
         return ""
     import pytz
     parts = []
