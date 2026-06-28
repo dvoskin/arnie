@@ -1468,7 +1468,7 @@ function profileToLobes(data) {
     slots.forEach((s, i) => {
       const nid = lobe.id + ".s." + (s.key || s.label || ("slot" + i));
       if (s.filled) {
-        if (s.chips && s.chips.length) {
+        if (Array.isArray(s.chips) && s.chips.length) {
           nodes.push(...explodeChips(nid, s.label, s.chips, confState(s.confidence)));
         } else {
           const parts = asBulletList(s.value);
