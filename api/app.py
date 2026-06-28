@@ -1574,7 +1574,7 @@ async def post_chat(token: str, body: ChatBody):
 
         # Same message assembly the bots use: recent history + this message.
         recent = await get_recent_conversations(db, user.id, limit=8)
-        messages = conversations_to_messages(recent)
+        messages = conversations_to_messages(recent, user_timezone=tz)
         messages.append({"role": "user", "content": text})
 
         context_str = await build_context(user, today_log, db, platform="web",
