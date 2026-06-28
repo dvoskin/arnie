@@ -969,7 +969,20 @@ async def build_context(user: User, today_log: Optional[DailyLog], db,
                 "ask for the missing field(s) and call update_profile()."
             )
 
+    # Deterministic reply-language anchor — overrides conversational momentum so a
+    # user who switches back to English (Latin script) after a non-Latin stretch
+    # gets an English reply instead of staying frozen in their stored language.
+    # Placed FIRST so it outranks every other block. None for the common case.
+    try:
+        from core.language import reply_language_directive
+        _lang_directive = reply_language_directive(
+            getattr(prefs, "preferred_language", None), user_message
+        )
+    except Exception:
+        _lang_directive = None
+
     sections = [
+        (_lang_directive if _lang_directive else ""),
         current_time_line,
         "=== PROFILE ===",
         fmt_profile(user, prefs),

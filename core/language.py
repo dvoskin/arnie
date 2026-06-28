@@ -50,6 +50,40 @@ def script_for_language(language: Optional[str]) -> Optional[re.Pattern]:
     return _LANG_SCRIPT.get(language.strip().lower())
 
 
+def reply_language_directive(
+    preferred_language: Optional[str],
+    user_message: Optional[str],
+) -> Optional[str]:
+    """A deterministic, top-priority reply-language anchor for INTERACTIVE turns.
+
+    Targets the 'frozen in a non-Latin language' bug: once `preferred_language`
+    locked to e.g. Russian, a heavily-Russian conversation history could keep
+    Arnie replying in Russian even after the user switched BACK to English — the
+    per-message LANGUAGE prompt rule loses to conversational momentum.
+
+    Fires ONLY when the stored language is a non-Latin script AND the user's
+    latest message is NOT in that script (i.e. they switched to a Latin-script
+    language). Returns None otherwise — zero noise for English/Latin users (whose
+    Latin↔Latin switches the prompt already handles, since script can't tell
+    English from Spanish). The injected directive makes the latest message's
+    language authoritative over the history."""
+    script = script_for_language(preferred_language)
+    if script is None:                       # Latin / unknown / null pref → nothing to override
+        return None
+    if not user_message or not user_message.strip():
+        return None
+    if script.search(user_message):          # latest IS in the stored non-Latin script → fine
+        return None
+    return (
+        f"[REPLY LANGUAGE — AUTHORITATIVE] The user's CURRENT message is NOT written in "
+        f"{preferred_language} (their stored language); they have switched to the "
+        f"Latin-script language they just typed (English unless the words are clearly "
+        f"Spanish/French/etc.). Reply in THAT language. Do NOT reply in {preferred_language} "
+        f"or any non-Latin language just because earlier messages in this conversation used "
+        f"it — the latest message's language wins, every single turn."
+    )
+
+
 def needs_language_reset(
     preferred_language: Optional[str],
     recent_user_texts: Iterable[Optional[str]],

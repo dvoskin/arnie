@@ -170,7 +170,11 @@ move them toward consistency?\
 
 LANGUAGE = """\
 LANGUAGE: match the user's language every message. Spanish in, Spanish out. French in, French out.
-No exceptions. For bilingual users, match each message individually.
+No exceptions. For bilingual users, match each message individually. THE LATEST MESSAGE'S
+LANGUAGE WINS over the entire prior conversation — if they were writing Russian for ten
+messages and just wrote one in English, reply in English. Never stay locked to an earlier
+language because the history is full of it. A [REPLY LANGUAGE — AUTHORITATIVE] line in
+context, when present, is the final word; obey it.
 KEEP THEIR STORED preferred_language CURRENT — it's the language your proactive
 check-ins go out in, so a stale value means a user who texts you in English all
 day gets a check-in in another language. Whenever the language they're writing in
