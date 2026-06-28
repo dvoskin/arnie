@@ -121,7 +121,6 @@ def _fmt(text: str) -> dict:
 # ── Arnie's core system prompt — assembled from core/prompts/ ─────────────────
 
 from core.prompts import build_arnie_system as _build_arnie_system
-from core.llm import CACHE_BREAK
 
 _ARNIE_SYSTEM = _build_arnie_system(platform="telegram")
 
@@ -159,7 +158,8 @@ _REFERENCE_PATTERNS = {
     "look up", "read up", "i literally just", "told you already",
 }
 
-async def _build_messages(db, user_id: int, current_text: str, extended: bool = False):
+async def _build_messages(db, user_id: int, current_text: str, extended: bool = False,
+                          user_timezone: str = "UTC"):
     """Build the messages list: recent history + current message.
     Loads 25 messages when extended, or when user references something they sent."""
     t = current_text.lower()
@@ -168,7 +168,9 @@ async def _build_messages(db, user_id: int, current_text: str, extended: bool = 
     limit = 25 if extended else 6
     recent = await get_recent_conversations(db, user_id, limit=limit)
     from core.history import conversations_to_messages
-    msgs = conversations_to_messages(recent)  # history.py reverses internally
+    # Pass tz so past turns get day markers (Today/Yesterday/N days ago) — without
+    # them the model reads a 2-day-old turn as current ("water you logged today").
+    msgs = conversations_to_messages(recent, user_timezone=user_timezone)  # reverses internally
     msgs.append({"role": "user", "content": current_text})
     return msgs
 
@@ -316,7 +318,7 @@ async def _run_pipeline(update: Update, context: ContextTypes.DEFAULT_TYPE,
         today_log = await get_or_create_today_log(db, user.id, user.timezone or "UTC")
         context_str = await build_context(user, today_log, db, platform="telegram",
                                           user_message=raw_text)
-        system = f"{_ARNIE_SYSTEM}{CACHE_BREAK}{context_str}"
+        system = f"{_ARNIE_SYSTEM}\n\n{context_str}"
     else:
         today_log = None
         system = build_onboarding_system(user)  # dynamic — reflects current saved state
@@ -324,7 +326,8 @@ async def _run_pipeline(update: Update, context: ContextTypes.DEFAULT_TYPE,
     # ── Conversation history + current message ────────────────────────────────
     # During onboarding, load full history so stats given across rapid texts
     # are always visible to the LLM (prevents re-asking for info already given).
-    messages = await _build_messages(db, user.id, raw_text, extended=in_onboarding)
+    messages = await _build_messages(db, user.id, raw_text, extended=in_onboarding,
+                                     user_timezone=getattr(user, "timezone", None) or "UTC")
 
     # ── Telegram image callback: reply_photo (with text fallback) ────────────
     async def _on_image(url: str, caption: str) -> None:
