@@ -94,6 +94,26 @@ def food_mode_directive(mode: Optional[str]) -> str:
     return ""  # moderate / unknown = static system prompt default
 
 
+def _exercise_load_str(e) -> str:
+    """The weight portion of a logged-exercise context line: a single '@ Xlb' for
+    a uniform load, or per-set '@ a/b/clb' when the row carries a per-set `weights`
+    CSV (a pyramid / drop set). Without this, mixed-load sets showed NO weight in
+    [TODAY]/[EXERCISE HISTORY] and a recap couldn't recall them."""
+    wcsv = str(getattr(e, "weights", "") or "").strip()
+    if wcsv:
+        lbs = []
+        for t in wcsv.split(","):
+            try:
+                lbs.append(str(round(float(t.strip()) * 2.20462)))
+            except (ValueError, TypeError):
+                continue
+        if lbs:
+            return f" @ {lbs[0]}lb" if len(set(lbs)) == 1 else " @ " + "/".join(lbs) + "lb"
+    if getattr(e, "weight", None):
+        return f" @ {round(e.weight * 2.20462, 1)}lb"
+    return ""
+
+
 def fmt_log(log: Optional[DailyLog]) -> str:
     if not log:
         return "No log started today."
@@ -120,7 +140,7 @@ def fmt_log(log: Optional[DailyLog]) -> str:
         for e in log.exercise_entries:
             # [#id] lets the LLM reference entries for update_exercise_entry / delete_exercise_entry
             if e.sets and e.reps:
-                w = f" @ {round(e.weight * 2.20462, 1)}lb" if e.weight else ""
+                w = _exercise_load_str(e)
                 lines.append(f"  • [#{e.id}] {e.exercise_name}: {e.sets}×{e.reps}{w}")
             elif e.duration_minutes:
                 lines.append(f"  • [#{e.id}] {e.exercise_name}: {e.duration_minutes:.0f} min")
@@ -251,7 +271,7 @@ def fmt_exercise_history(logs: List[DailyLog]) -> str:
         entries = []
         for e in l.exercise_entries:
             if e.sets and e.reps:
-                w = f" @ {e.weight * 2.20462:.0f}lb" if e.weight else ""
+                w = _exercise_load_str(e)
                 entries.append(f"    {e.exercise_name}: {e.sets}×{e.reps}{w}")
             elif e.duration_minutes:
                 ct = f" ({e.cardio_type})" if e.cardio_type else ""
