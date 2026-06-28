@@ -351,13 +351,15 @@ def _needs_extended_history(text: str) -> bool:
     return any(p in t for p in _REFERENCE_PATTERNS)
 
 async def _build_messages(db, user_id: int, current_text: str,
-                          extended: bool = False) -> list:
+                          extended: bool = False, user_timezone: str = "UTC") -> list:
     """Build conversation history + current message for the LLM.
     If extended=True, loads 25 messages so Arnie can find what was referenced."""
     limit = 25 if extended else 6
     recent = await get_recent_conversations(db, user_id, limit=limit)
     from core.history import conversations_to_messages
-    msgs = conversations_to_messages(recent)  # history.py reverses internally
+    # Pass tz so past turns get day markers (Today/Yesterday/N days ago) — without
+    # them the model reads a 2-day-old turn as current ("water you logged today").
+    msgs = conversations_to_messages(recent, user_timezone=user_timezone)  # reverses internally
     msgs.append({"role": "user", "content": current_text})
     return msgs
 
@@ -370,7 +372,6 @@ def _im_user_id(address: str) -> str:
 # ── Core pipeline ──────────────────────────────────────────────────────────────
 
 from core.prompts import build_arnie_system as _build_arnie_system
-from core.llm import CACHE_BREAK
 from bot.telegram_handler import _calc_targets
 
 
@@ -877,7 +878,7 @@ async def run_imessage_pipeline(address: str, chat_guid: str, raw_text: str,
             context_str = await build_context(user, today_log, db, platform="imessage",
                                               user_message=raw_text)
             # Platform hint is already baked into the iMessage system prompt
-            system = f"{_build_arnie_system(platform='imessage')}{CACHE_BREAK}{context_str}"
+            system = f"{_build_arnie_system(platform='imessage')}\n\n{context_str}"
         else:
             today_log = None
             system = build_onboarding_system(user)
@@ -887,7 +888,8 @@ async def run_imessage_pipeline(address: str, chat_guid: str, raw_text: str,
         # across several rapid texts, and the LLM must see all of them to extract.
         messages = await _build_messages(
             db, user.id, raw_text,
-            extended=(in_onboarding or _needs_extended_history(raw_text))
+            extended=(in_onboarding or _needs_extended_history(raw_text)),
+            user_timezone=getattr(user, "timezone", None) or "UTC",
         )
 
         # ── Show "Arnie is typing…" while we think ────────────────────────────
