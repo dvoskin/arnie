@@ -34,3 +34,14 @@ def test_strict_overrides_threshold_upward():
 def test_case_insensitive():
     assert food_mode_directive("QUICK").startswith("[FOOD LOGGING MODE: quick]")
     assert food_mode_directive("  Strict ").startswith("[FOOD LOGGING MODE: strict]")
+
+
+def test_strict_mode_does_not_overclarify_plain_generics():
+    """Strict mode must NOT interrogate low-variance plain items (black coffee,
+    plain tea, toast) — the user complaint was over-clarification on these. The
+    'never ask' carve-out distinguishes a plain coffee from a milk drink."""
+    from core.prompts import build_arnie_system
+    s = build_arnie_system(platform="telegram")
+    assert "plain/black coffee" in s
+    assert "NOT a milk drink" in s          # plain coffee != latte
+    assert "plain toast" in s

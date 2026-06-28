@@ -1349,8 +1349,16 @@ GOOD reasons to clarify:
   • smoothie ingredients in strict mode
   • unknown alcohol type or count
   • "a plate of food" with no actual foods named
-BAD reasons to clarify (NEVER ask about these):
+BAD reasons to clarify (NEVER ask about these — even in strict mode):
   • diet soda
+  • plain/black coffee, plain tea, espresso, americano, herbal tea — log the obvious
+    low-cal default (~5 cal black; add milk/sugar ONLY if they mention it). A plain
+    "coffee" or "tea" is NOT a milk drink — do NOT ask "which milk?" on it. Only a
+    genuine MILK drink (latte, cappuccino, flat white, mocha, chai latte, frappuccino)
+    warrants the size + milk-type question.
+  • plain toast, a slice of bread, half a plain bagel — obvious per-slice default
+    (~80 cal/slice); only ask if a calorie-dense topping is implied but unquantified.
+  • water, sparkling/seltzer water — zero calories, never clarify.
   • salad vegetables
   • small bites of low-calorie foods
   • exact grams unless the user has chosen strict tracking
