@@ -47,6 +47,48 @@ async def test_dedup_on_write_allows_short_shared_values(db, make_user):
     assert "health_supplement_vitamin_d" in keys
 
 
+async def test_category_enforced_by_key_prefix_not_llm_category(db, make_user):
+    """The key prefix is the source of truth for the lane — an LLM-supplied
+    category that contradicts the prefix must NOT mislabel the fact."""
+    from memory.attribute_store import upsert_attribute, get_all_attributes
+    u = await make_user(telegram_id="AS-tax", name="Test")
+    # LLM mislabels a health_* supplement as 'nutrition' → prefix wins (health).
+    await upsert_attribute(db, u.id, attribute_key="health_supplement_creatine",
+                           value="5g every morning", category="nutrition", confidence="confirmed")
+    row = next(a for a in await get_all_attributes(db, u.id)
+               if a.attribute_key == "health_supplement_creatine")
+    assert row.category == "health"
+    # a key with NO recognized lane prefix still honors the caller's category.
+    await upsert_attribute(db, u.id, attribute_key="freeform_note",
+                           value="likes training fasted", category="lifestyle", confidence="confirmed")
+    row2 = next(a for a in await get_all_attributes(db, u.id)
+                if a.attribute_key == "freeform_note")
+    assert row2.category == "lifestyle"
+
+
+async def test_dedup_revives_retired_twin_instead_of_duplicating(db, make_user):
+    """A fact re-asserted by synthesis whose only copy was retired (discontinued/
+    decayed) revives that row rather than spawning a duplicate — kills the
+    insert → consolidator-retires → insert oscillation."""
+    from memory.attribute_store import upsert_attribute, get_all_attributes
+    u = await make_user(telegram_id="AS-rev", name="Test")
+    val = "Creatine, fish oil, and vitamin D every single morning"
+    await upsert_attribute(db, u.id, attribute_key="health_stack_x", value=val,
+                           category="health", confidence="confirmed")
+    twin = next(a for a in await get_all_attributes(db, u.id)
+                if a.attribute_key == "health_stack_x")
+    twin.attribute_status = "discontinued"   # the nightly consolidator retires it
+    await db.commit()
+    # synthesis re-asserts the SAME value under a fresh key
+    await upsert_attribute(db, u.id, attribute_key="health_stack_y", value=val,
+                           category="health", confidence="confirmed")
+    rows = await get_all_attributes(db, u.id)
+    keys = [a.attribute_key for a in rows]
+    assert "health_stack_y" not in keys                    # no duplicate inserted
+    assert "health_stack_x" in keys                        # retired twin revived
+    assert next(a for a in rows if a.attribute_key == "health_stack_x").attribute_status == "active"
+
+
 async def test_prune_evicts_weakest_protects_confirmed(db, make_user):
     from memory.attribute_store import (upsert_attribute, get_all_attributes,
                                         prune_attributes)

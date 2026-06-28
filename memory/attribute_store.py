@@ -293,7 +293,17 @@ async def upsert_attribute(
             )
             return
 
-    cat = category or category_for_key(key)
+    # Taxonomy is enforced by the KEY PREFIX, not the model's free-text category.
+    # The category arg comes straight from the LLM (store_attribute / synthesis),
+    # and an arg like category='nutrition' on a 'health_supplement_*' key would
+    # land the fact in the wrong lane — corrupting every grouped view that trusts
+    # `category` ([AI PROFILE], the bio, the briefing brain block). When the key
+    # carries a known lane prefix, the prefix wins; the caller's category is only
+    # honored for keys with no recognized prefix (bare / custom keys).
+    if any(key.startswith(p) for p in CATEGORY_PREFIXES):
+        cat = category_for_key(key)
+    else:
+        cat = category or "custom"
     tier = relevance_tier or tier_for_key(key)
 
     _conf_rank = {"confirmed": 3, "inferred": 2, "needs_verification": 1}
@@ -331,15 +341,26 @@ async def upsert_attribute(
         # Guarded by length so short shared values ('daily', '1-2 RIR') aren't merged.
         norm = (value or "").strip().lower()
         if len(norm) >= 20:
+            # Scan ALL statuses, not just active. Scanning only active rows let a
+            # fact the nightly consolidator had just discontinued (or that decayed)
+            # be re-inserted verbatim under a fresh key — so the duplicate
+            # oscillated back every synthesis run. Now a retired twin blocks the
+            # re-insert too; if the ONLY copies are retired, the fact is being
+            # re-asserted, so revive one row instead of spawning a duplicate.
             siblings = (await db.execute(
                 select(UserAttribute).where(and_(
                     UserAttribute.user_id == user_id,
                     UserAttribute.category == cat,
-                    UserAttribute.attribute_status == "active",
                 ))
             )).scalars().all()
-            if any((s.value or "").strip().lower() == norm for s in siblings):
-                logger.info(f"Skipped duplicate-value attribute {key} (already in {cat})")
+            twins = [s for s in siblings if (s.value or "").strip().lower() == norm]
+            if twins:
+                if not any(s.attribute_status == "active" for s in twins):
+                    twins[0].attribute_status = "active"
+                    twins[0].updated_at = datetime.now(timezone.utc)
+                    logger.info(f"Revived retired duplicate-value twin for {key} (in {cat})")
+                else:
+                    logger.info(f"Skipped duplicate-value attribute {key} (already in {cat})")
                 return
         db.add(UserAttribute(
             user_id=user_id,
