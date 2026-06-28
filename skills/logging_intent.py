@@ -115,14 +115,81 @@ def has_add_intent(user_text: Optional[str]) -> bool:
     return bool(_ADD_INTENT_RX.search(t))
 
 
+# Words that, right after an add cue, do NOT name a distinct food — a generic
+# repeat ("another one", "a second helping", "one more glass", "another cold one")
+# we can't pin to a specific item. When the cue is followed only by one of these,
+# the gate stays open (the historical, no-item behavior). A serving noun or a
+# modifier here is still "another of the same thing", not a different food.
+_GENERIC_AFTER_CUE = frozenset({
+    "one", "ones", "serving", "servings", "helping", "helpings", "portion",
+    "portions", "round", "rounds", "glass", "glasses", "cup", "cups", "scoop",
+    "scoops", "slice", "slices", "piece", "pieces", "bar", "bars", "shake",
+    "shakes", "set", "sets", "of", "them", "those", "these", "it", "that",
+    "more", "time", "times", "go", "bite", "bites", "bowl", "bowls", "plate",
+    # common modifiers that describe a serving, not a new food
+    "cold", "hot", "big", "large", "small", "quick", "light", "full", "same",
+})
+
+# Cue → following-noun: the noun the user is adding "another of". If it's a
+# concrete food (not in _GENERIC_AFTER_CUE) and is NOT the item being logged,
+# the add cue is about a DIFFERENT item.
+_CUE_NOUN_RX = re.compile(
+    r"\b(?:another|one\s+more|\d+\s*more|a\s+couple(?:\s+more)?\s+(?:of\s+)?|"
+    r"(?:second|third|fourth|2nd|3rd)|two\s+of)\s+([a-z][a-z'-]{2,})",
+    re.IGNORECASE,
+)
+
+
+def _name_tokens(name: str) -> set[str]:
+    return {w for w in re.split(r"[^a-z0-9]+", (name or "").lower()) if len(w) >= 3}
+
+
+def _tokens_overlap(a: str, b: str) -> bool:
+    """Prefix-tolerant token match so 'coffee' matches 'coffees', 'bar' matches
+    'barebells'. Both inputs are already lowercased word tokens (len ≥ 3)."""
+    return a == b or a.startswith(b) or b.startswith(a)
+
+
 def turn_supports_log(user_text: Optional[str], item_name: Optional[str] = None) -> bool:
     """The dedup gate: True when the current user turn justifies honoring this
     log despite a payload+window match — i.e. the user explicitly signalled
-    another portion/set. When True the guards must NOT block; when False they
-    apply unchanged (phantom-re-fire and retry cases).
+    another portion/set OF THIS ITEM. When True the guards must NOT block; when
+    False they apply unchanged (phantom-re-fire and retry cases).
 
-    `item_name` is accepted for call-site symmetry and as a forward hook (a
-    future verb-aware "consumption report" signal could use it), but is
-    intentionally unused today: naming the item cannot distinguish a genuine
-    repeat from a retry that also names it ('log the elmhurst again')."""
-    return has_add_intent(user_text)
+    Item-scoped: an add cue that names a DIFFERENT food ("another coffee") must
+    not rescue a phantom re-fire of some OTHER item logged in the same turn (a
+    `log_food(chicken)` carried from chat context). So:
+      • no add cue at all                         → False (closed; unchanged)
+      • cue + this item named ("another coffee",
+        logging coffee — plural-tolerant)         → True  (honor the repeat)
+      • cue + a DIFFERENT concrete food named
+        ("another coffee", logging chicken)        → False (cue isn't about this)
+      • generic cue, no distinct food named
+        ("one more", "a second helping", "twice")  → True  (can't disambiguate;
+                                                     preserve historical behavior)
+    With no `item_name` it collapses to `has_add_intent` (back-compat for the
+    no-item call sites and the water 'water' sentinel)."""
+    if not has_add_intent(user_text):
+        return False
+    if not item_name:
+        return True
+    t = _ADD_NEGATION_RX.sub(" ", " ".join(str(user_text).lower().split()))
+    item_tokens = _name_tokens(item_name)
+    text_tokens = [w for w in re.split(r"[^a-z0-9]+", t) if w]
+
+    # (a) The turn names THIS item alongside the cue → it's a genuine repeat.
+    if any(_tokens_overlap(it, tt) for it in item_tokens for tt in text_tokens):
+        return True
+
+    # (b) The cue is followed by a DIFFERENT concrete food → it's about that
+    #     item, not this one. Don't let "another coffee" rescue a phantom chicken.
+    for m in _CUE_NOUN_RX.finditer(t):
+        noun = m.group(1)
+        if noun in _GENERIC_AFTER_CUE:
+            continue                       # "another one / glass / cold one" — generic
+        if any(_tokens_overlap(it, noun) for it in item_tokens):
+            return True                    # cue noun IS this item (redundant w/ (a))
+        return False                       # cue names a different food → not this item
+
+    # Generic cue, no distinct food named → preserve the historical open behavior.
+    return True

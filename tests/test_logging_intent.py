@@ -113,8 +113,27 @@ def test_second_with_serving_noun_is_add_intent():
         assert turn_supports_log(phrase), phrase
 
 
-def test_item_name_arg_is_accepted_but_does_not_change_result():
-    """item_name is a forward hook — present for call-site symmetry, unused today.
-    Passing it must not change the gate decision."""
+def test_turn_supports_log_is_item_scoped():
+    """The override is scoped to the item being logged: an add cue that names a
+    DIFFERENT food must not rescue a phantom re-fire of some other item, while a
+    cue that names THIS item (or a generic cue) still opens the gate."""
+    # cue names THIS item → open (plural-tolerant)
+    assert turn_supports_log("another coffee", "coffee") is True
+    assert turn_supports_log("2 more coffees", "coffee") is True
+    assert turn_supports_log("a second cottage cheese", "cottage cheese") is True
+    assert turn_supports_log("another bar", "barebells protein bar") is True
+    # cue names a DIFFERENT food → closed for the phantom item (the bug fix)
+    assert turn_supports_log("another coffee", "chicken") is False
+    assert turn_supports_log("a second cottage cheese", "eggs") is False
+    assert turn_supports_log("one more protein shake", "white rice") is False
+    # generic cue, no distinct food named → preserve historical open behavior
     assert turn_supports_log("another", "coffee") is True
+    assert turn_supports_log("one more", "coffee") is True
+    assert turn_supports_log("a second helping", "coffee") is True
+    assert turn_supports_log("another cold one", "beer") is True
+    assert turn_supports_log("twice", "coffee") is True
+    # no add cue at all → closed regardless of item
     assert turn_supports_log("connect apple health", "coffee") is False
+    # no item_name → collapses to has_add_intent (back-compat)
+    assert turn_supports_log("another") is True
+    assert turn_supports_log("connect apple health") is False

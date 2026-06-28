@@ -3258,9 +3258,11 @@ async def api_log_water(body: WaterLogBody, token: str = Query(...)):
         entry = await add_water_entry(
             db, user.id, log.id, amount_ml=amount, source_type="dashboard",
         )
-        # add_water_entry leaves the aggregate to the caller — bump it here.
-        log.total_water_ml = (log.total_water_ml or 0) + amount
-        await db.commit()
+        # Derive the aggregate authoritatively by re-summing the rows, never an
+        # in-place += that can drift from the canonical WaterEntry rows (mirrors
+        # the chat log_water path). recompute_water_total commits.
+        from db.queries import recompute_water_total
+        await recompute_water_total(db, log.id)
     return {"status": "ok", "id": entry.id}
 
 

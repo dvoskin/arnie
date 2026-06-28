@@ -202,6 +202,14 @@ async def test_water_second_drink_with_add_intent_logs(monkeypatch):
             context=kw.get("context"), timestamp=datetime.utcnow()))
 
     monkeypatch.setattr(TE, "add_water_entry", _fake_add_water)
+
+    # The dispatch now derives total_water_ml authoritatively by re-summing the
+    # rows (recompute_water_total) instead of an in-place += — stub it to sum the
+    # fake rows so the asserted total reflects both entries.
+    async def _fake_recompute(db, daily_log_id):
+        today_log.total_water_ml = sum(e.amount_ml for e in today_log.water_entries)
+        return today_log.total_water_ml
+    monkeypatch.setattr("db.queries.recompute_water_total", _fake_recompute)
     commits = {"n": 0}
 
     result = await TE._dispatch(

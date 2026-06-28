@@ -1889,19 +1889,20 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
                     return _format_water_dedup(_dup_water, now_utc=now_utc)
 
         if ml:
-            target_log.total_water_ml = (target_log.total_water_ml or 0) + ml
-            await db.commit()
-            # Canonical timestamped row alongside the aggregate. Failure here
-            # is logged but doesn't bubble up — the aggregate is still updated
-            # so the user sees their hydration progress.
-            try:
-                await add_water_entry(
-                    db, user.id, target_log.id,
-                    amount_ml=ml, context=inp.get("context"),
-                    source_type=source_type,
-                )
-            except Exception as e:
-                logger.warning(f"WaterEntry write failed (aggregate already updated): {e}")
+            # Authoritative, drift-proof: write the canonical timestamped row FIRST,
+            # then derive total_water_ml by re-summing the rows (recompute_water_total)
+            # — exactly how food uses recompute_log_totals. The old order bumped the
+            # cached aggregate in place (`+= ml`) and THEN best-effort wrote the row,
+            # swallowing failures — so a failed insert left the aggregate inflated with
+            # no backing row (the inverse of the drift the food path was rewritten to
+            # kill). Now the aggregate can never diverge from the rows.
+            from db.queries import recompute_water_total
+            await add_water_entry(
+                db, user.id, target_log.id,
+                amount_ml=ml, context=inp.get("context"),
+                source_type=source_type,
+            )
+            target_log.total_water_ml = await recompute_water_total(db, target_log.id)
         total_ml = target_log.total_water_ml or 0
         oz_this = round((ml or 0) / 29.5735)
         total_oz = round(total_ml / 29.5735)
