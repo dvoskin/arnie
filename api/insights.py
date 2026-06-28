@@ -630,15 +630,21 @@ def _briefing_tier_guidance(sig: dict) -> str:
         "light, fill with the client's goal, plan, projection, and concrete coaching "
         "from their profile (a sharp plan is as useful as a trend). Match your "
         "CONFIDENCE to the evidence: hedge when thin ('first signs…'), sharpen as it "
-        "grows. Do NOT apologize for or dwell on how little they've logged."
+        "grows. Do NOT apologize for or dwell on how little they've logged. "
+        "GROUNDING RULE: any RATE or DATE/ETA projection ('~X lb/week', 'by August', "
+        "'within 10 days', 'on track for <month>') MUST be backed by real measured data "
+        "below — at least 2 weigh-ins forming an actual trend. With fewer, or a flat / "
+        "moving-away trend, give the PLAN (what their targets imply) or a concrete next "
+        "step instead — NEVER invent a calendar date or pace you can't see in the data."
     )
     tier = sig.get("tier", 0)
     if tier == 0:
         return base + (
             "\nSTAGE — NEW (profile only, no logs). This briefing is a PLAN, not an "
-            "analysis. hero = their goal + a forward projection toward goal weight at "
-            "their targets (directional, e.g. 'on track for ~mid-August' — never a past "
-            "trend they don't have). focus = the ONE first move: log today's first meal "
+            "analysis. hero = their goal + what their TARGETS imply per week as a PLAN "
+            "framing (e.g. 'these numbers set up a ~0.7 lb/week cut') — NOT a confident "
+            "calendar date or ETA ('on track for ~mid-August' is banned here: zero "
+            "weigh-ins can't back a date). focus = the ONE first move: log today's first meal "
             "(a photo, a voice note, or just telling you). cards = goal-specific coaching "
             "+ what a good day looks like for them + ONE forward 'next unlock' card naming "
             "the reward for logging (e.g. 'Log 3 days and I'll start mapping your trend'). "
@@ -705,8 +711,8 @@ RULES:
 - The hero is the LARGEST element. Lead with where they ARE and where they're HEADED. Milestone only if the data earns it (a real low, a real streak); else null.
 - Exactly ONE focus: the single highest-leverage move today, tied to a real pattern, ending actionable.
 - 2-4 cards. The TITLE is a short, OPINIONATED coaching headline stating your judgment, in natural sentence case (e.g. 'On track for 205', 'The weekend leak', "Volume's slipping", "Scale's creeping back"). NEVER a generic category (Protein, Weight) or a tone word (Win, Opportunity); never all-caps, no emoji. Each STORY is DIAGNOSIS + EVIDENCE + RECOMMENDATION in 2-3 tight sentences, scannable in ~2s — what happened, why it matters, what to do. Coaching with conviction, not reporting. "kind" sets the card's quiet tone-color. Set "kind" per card:
-    win        — a genuine streak / PR / milestone (ALWAYS include at least one, for momentum)
-    prediction — forward-looking ("at this pace you'll break 205 within 10 days"); FAVOR these, they're the highest value
+    win        — a genuine streak / PR / milestone (include one when it's REAL; if there's no honest win yet, use a concrete next-step card instead of manufacturing one)
+    prediction — forward-looking, but ONLY when a real measured trend backs the pace/date ("at this pace you'll break 205 within 10 days" needs ≥2 weigh-ins showing that pace). High value when earned; never invent a rate or date from profile/thin data — fall back to the plan or an opportunity card
     opportunity— an unlock if they change one thing
     risk       — a real warning (use sparingly)
     trend      — a neutral pattern
