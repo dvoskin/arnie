@@ -48,6 +48,23 @@ _FROZEN_NOW = "2026-06-09 12:00:00"
     # 120 days ago — the user's canonical "go back far" case
     ("120 days ago", (_TODAY - timedelta(days=120), _TODAY - timedelta(days=120))),
     ("365 days ago", (_TODAY - timedelta(days=365), _TODAY - timedelta(days=365))),
+    # NEW: open-ended "whole history" phrasings — the natural way users ask for
+    # the last time / full history of a lift or food. Previously returned None
+    # (a hard error) → movement/food recall across months silently failed.
+    ("last time", (_TODAY - timedelta(days=365), _TODAY)),
+    ("ever", (_TODAY - timedelta(days=365), _TODAY)),
+    ("all time", (_TODAY - timedelta(days=365), _TODAY)),
+    ("all-time", (_TODAY - timedelta(days=365), _TODAY)),
+    ("history", (_TODAY - timedelta(days=365), _TODAY)),
+    ("my bench history", (_TODAY - timedelta(days=365), _TODAY)),   # endswith " history"
+    ("squat history", (_TODAY - timedelta(days=365), _TODAY)),
+    # NEW: calendar-year + "last/past N <unit>" RANGES (distinct from "N ago")
+    ("this year", (date(2026, 1, 1), _TODAY)),
+    ("last year", (date(2025, 1, 1), date(2025, 12, 31))),
+    ("last 3 months", (_TODAY - timedelta(days=90), _TODAY)),
+    ("past 2 weeks", (_TODAY - timedelta(days=14), _TODAY)),
+    ("last 10 days", (_TODAY - timedelta(days=10), _TODAY)),
+    ("last six months", (_TODAY - timedelta(days=180), _TODAY)),
     # ISO dates work for any date in the past
     ("2026-06-07", (date(2026, 6, 7), date(2026, 6, 7))),
     ("2024-03-15", (date(2024, 3, 15), date(2024, 3, 15))),

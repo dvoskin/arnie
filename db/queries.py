@@ -1581,6 +1581,42 @@ def parse_natural_period(period: str, today):
     if m:
         d = today - _td(days=_word_n[m.group(1)] * 30)
         return (d, d)
+
+    # Open-ended "whole history" phrasings — the natural way a user asks for the
+    # LAST time / full history of something ("when did I last bench?", "my squat
+    # history", "have I ever hit 315?", "all-time"). Before this these returned
+    # None → a hard "Unrecognised period" error, so movement/food recall across
+    # months silently failed and the model would either deflect or confabulate.
+    # Map them to a wide trailing window (the DB keeps everything; nothing caps
+    # the upper range — widen here if a user ever needs >1y).
+    if (
+        p in (
+            "last time", "ever", "all time", "all-time", "alltime", "all the time",
+            "history", "so far", "since the start", "since the beginning",
+            "all of it", "any time", "anytime", "all",
+        )
+        or p.endswith(" history")     # "bench history", "my squat history"
+    ):
+        return (today - _td(days=365), today)
+    # "this year" / "last year" → calendar-year windows.
+    if p == "this year":
+        return (_date(today.year, 1, 1), today)
+    if p == "last year":
+        return (_date(today.year - 1, 1, 1), _date(today.year - 1, 12, 31))
+    # "last/past N <unit>" → a RANGE ending today (distinct from "N <unit> ago",
+    # which is a single day). Covers "last 3 months", "past 2 weeks", "last 10 days".
+    _unit_days = {"day": 1, "week": 7, "month": 30, "year": 365}
+    m = re.match(r"^(?:last|past)\s+(\d+)\s*(day|week|month|year)s?$", p)
+    if m:
+        n = int(m.group(1))
+        if n > 0:
+            return (today - _td(days=n * _unit_days[m.group(2)]), today)
+    m = re.match(
+        r"^(?:last|past)\s+(one|two|three|four|five|six|seven|eight|nine|ten)\s+"
+        r"(day|week|month|year)s?$", p)
+    if m:
+        return (today - _td(days=_word_n[m.group(1)] * _unit_days[m.group(2)]), today)
+
     # "last week" / "this week" → 7-day windows
     if p == "this week":
         # ISO week: Monday is start
@@ -1654,8 +1690,12 @@ async def query_history_stats(
 
     Returns a dict the executor formats into a result string.
     """
-    tz = pytz.timezone(user_timezone or "UTC")
-    today = datetime.now(tz).date()
+    # Anchor to the user's LOGGING day (honors LOGGING_DAY_ROLLOVER_HOUR) — the same
+    # day new entries are filed under, NOT the raw clock date. Using datetime.now()
+    # made every relative period ('today', 'yesterday', weekday names) resolve to the
+    # wrong calendar day between midnight and the rollover hour, so query_history
+    # returned an empty result for a day that actually had data.
+    today = _user_today(user_timezone)
 
     # Resolve period to a date range — supports legacy + natural-language.
     parsed = parse_natural_period(period, today)
