@@ -75,6 +75,25 @@ def _oai_tools():
     return build_tools_openai()
 
 
+# Split marker the callers place between the STATIC system prompt and the DYNAMIC
+# per-turn context. The Anthropic path turns it into two system blocks so ONLY the
+# static prefix carries cache_control — the static ~38k-token prompt then actually
+# caches across turns instead of being invalidated by the ever-changing context
+# glued onto it. A control char that can never appear in prompt text; stripped
+# before anything reaches the API (split out on Anthropic, replaced on OpenAI).
+CACHE_BREAK = "ARNIE_CACHE_BREAK"
+
+
+def _split_system_for_cache(system: str):
+    """→ (static_prefix_with_separator, dynamic_suffix) when the cache marker is
+    present, else (None, system). The separator the marker replaced ("\\n\\n") is
+    restored onto the static block so the concatenated content is byte-identical."""
+    if CACHE_BREAK in system:
+        static_part, _, dynamic_part = system.partition(CACHE_BREAK)
+        return static_part + "\n\n", dynamic_part
+    return None, system
+
+
 # ── Public API ────────────────────────────────────────────────────────────────
 
 async def chat(
@@ -303,16 +322,23 @@ async def _anthropic_chat(messages, system, use_tools, max_tokens, model=None,
                           stream_handler=None):
     client = _get_anthropic()
 
-    # Prompt caching: mark the system prompt block as cacheable.
-    # Anthropic caches the first 1024+ token prefix for 5 minutes.
-    # With a ~400-line system prompt this saves ~80% on system prompt tokens.
-    system_block = [
-        {
-            "type": "text",
-            "text": system,
-            "cache_control": {"type": "ephemeral"},
-        }
-    ]
+    # Prompt caching: cache ONLY the static system prompt, not the per-turn context.
+    # The callers build `system = STATIC + CACHE_BREAK + dynamic_context`. We split
+    # there so cache_control sits on the static prefix alone — which is identical
+    # every turn and so actually hits Anthropic's 5-min prefix cache (~38k tokens,
+    # ~80-90% off after the first turn). Putting the breakpoint after the dynamic
+    # context (the old single-block form) invalidated the cache every turn.
+    static_prefix, dynamic_suffix = _split_system_for_cache(system)
+    if static_prefix is not None:
+        system_block = [
+            {"type": "text", "text": static_prefix, "cache_control": {"type": "ephemeral"}},
+            {"type": "text", "text": dynamic_suffix},
+        ]
+    else:
+        # No marker (e.g. onboarding / reflect / repair systems) → cache the whole block.
+        system_block = [
+            {"type": "text", "text": system, "cache_control": {"type": "ephemeral"}},
+        ]
 
     kwargs: Dict[str, Any] = dict(
         model=model or DEFAULT_MODEL(),
@@ -410,6 +436,9 @@ async def _anthropic_follow_up(messages, raw_assistant_content, tool_calls,
 
 async def _openai_chat(messages, system, use_tools, max_tokens):
     client = _get_openai()
+    # OpenAI has no prefix-cache breakpoint here — drop the marker back to the
+    # original separator so the system content is byte-identical to before.
+    system = system.replace(CACHE_BREAK, "\n\n")
     oai_messages = [{"role": "system", "content": system}] + messages
 
     kwargs: Dict[str, Any] = dict(

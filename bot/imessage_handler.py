@@ -370,6 +370,7 @@ def _im_user_id(address: str) -> str:
 # ── Core pipeline ──────────────────────────────────────────────────────────────
 
 from core.prompts import build_arnie_system as _build_arnie_system
+from core.llm import CACHE_BREAK
 from bot.telegram_handler import _calc_targets
 
 
@@ -876,7 +877,7 @@ async def run_imessage_pipeline(address: str, chat_guid: str, raw_text: str,
             context_str = await build_context(user, today_log, db, platform="imessage",
                                               user_message=raw_text)
             # Platform hint is already baked into the iMessage system prompt
-            system = f"{_build_arnie_system(platform='imessage')}\n\n{context_str}"
+            system = f"{_build_arnie_system(platform='imessage')}{CACHE_BREAK}{context_str}"
         else:
             today_log = None
             system = build_onboarding_system(user)

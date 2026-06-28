@@ -42,6 +42,7 @@ from db.queries import (
 from core.background_jobs import schedule_post_turn_jobs
 from core.context_builder import build_context
 from core.conversation import TurnResult, run_turn
+from core.llm import CACHE_BREAK
 from core.history import conversations_to_messages
 from core.platform import Response
 from core.prompts.arnie import build_arnie_system
@@ -271,7 +272,9 @@ async def run_chat_turn(
         context_str = await build_context(
             user, today_log, db, platform=platform, user_message=text
         )
-        system = f"{build_arnie_system(platform=platform)}\n\n{context_str}"
+        # CACHE_BREAK marks the static-prompt | dynamic-context boundary so only the
+        # static prefix is cache_control'd (it actually hits Anthropic's prefix cache).
+        system = f"{build_arnie_system(platform=platform)}{CACHE_BREAK}{context_str}"
     else:
         today_log = None
         system = build_onboarding_system(user)  # dynamic — reflects saved state

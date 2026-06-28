@@ -121,6 +121,7 @@ def _fmt(text: str) -> dict:
 # ── Arnie's core system prompt — assembled from core/prompts/ ─────────────────
 
 from core.prompts import build_arnie_system as _build_arnie_system
+from core.llm import CACHE_BREAK
 
 _ARNIE_SYSTEM = _build_arnie_system(platform="telegram")
 
@@ -315,7 +316,7 @@ async def _run_pipeline(update: Update, context: ContextTypes.DEFAULT_TYPE,
         today_log = await get_or_create_today_log(db, user.id, user.timezone or "UTC")
         context_str = await build_context(user, today_log, db, platform="telegram",
                                           user_message=raw_text)
-        system = f"{_ARNIE_SYSTEM}\n\n{context_str}"
+        system = f"{_ARNIE_SYSTEM}{CACHE_BREAK}{context_str}"
     else:
         today_log = None
         system = build_onboarding_system(user)  # dynamic — reflects current saved state
