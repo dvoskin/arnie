@@ -102,7 +102,7 @@ async def test_body_weight_normal_passes_guard(monkeypatch):
 
     written = []
 
-    async def _capture(db, uid, kg, context=None):
+    async def _capture(db, uid, kg, context=None, when=None):
         written.append((uid, kg, context))
         return SimpleNamespace(id=42, weight_kg=kg)
 

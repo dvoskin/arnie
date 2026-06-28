@@ -303,6 +303,8 @@ _FITNESS_TOOLS = [
                     "enum": ["morning_fasted", "post_meal", "evening", "post_workout", "unknown"],
                     "description": "When/how the weight was taken. morning_fasted is gold standard; others carry noise.",
                 },
+                "date": {"type": "string", "description": "Optional. Log to a specific PAST date — 'yesterday', '2 days ago', or YYYY-MM-DD. Only set when the user explicitly says they forgot to record a weigh-in for a past day. A backfilled past weigh-in feeds the trend but does NOT change their current weight."},
+                "time": {"type": "string", "description": "Optional. Clock time of the weigh-in, ONLY when the user states one (e.g. '7am', 'this morning'). Combined with `date` + the user's timezone to place it on the right day. Leave unset if no time is given."},
             },
             "required": ["weight", "unit"],
         },

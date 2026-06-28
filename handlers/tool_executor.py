@@ -1633,6 +1633,17 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
         unit = inp.get("unit", "lbs")
         weight_kg = _lbs_to_kg(weight, unit)
 
+        # Retroactive weigh-in: an explicit past date backfills that day's trend
+        # point. Default (no date) is a live weigh-in. A backfilled past reading
+        # feeds the trend but does NOT become the user's CURRENT weight (handled in
+        # add_body_metric). Noon-local default places it on the right logging day.
+        _wtz = getattr(user, "timezone", "UTC") or "UTC"
+        past_weight_date = _parse_log_date(inp.get("date"), _wtz)
+        weigh_when = (
+            _combine_local_time(past_weight_date, inp.get("time") or "noon", _wtz)
+            if past_weight_date else None
+        )
+
         # Unit-mix-up sanity check — classic bug: user enters 14 (meant 140 lbs
         # or 14 stone), no unit, gets logged as 14 kg = ~31 lbs. That corrupts
         # weight trends for days. If the resulting kg reading is >20% off the
@@ -1657,7 +1668,7 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
         # the gold standard; anything else carries noise the coach should
         # weight accordingly.
         context_val = inp.get("context")
-        metric = await add_body_metric(db, user.id, weight_kg, context=context_val)
+        metric = await add_body_metric(db, user.id, weight_kg, context=context_val, when=weigh_when)
         recent = await get_recent_weights(db, user.id, days=14)
         ordered = sorted(
             [w for w in recent if getattr(w, "weight_kg", None) is not None],
@@ -1708,8 +1719,9 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
         }
         context_note = context_notes.get(context_val or "unknown", context_notes["unknown"])
 
+        date_label = f" (backfilled for {past_weight_date})" if past_weight_date else ""
         return (
-            f"Logged body weight: {float(weight):.1f} {unit} "
+            f"Logged body weight{date_label}: {float(weight):.1f} {unit} "
             f"({weight_kg:.1f}kg / {logged_lbs:.1f}lb). "
             f"{delta_note} {trend_note} {goal_note} {context_note} "
             f"YOUR REPLY: 1-2 short bubbles max. Confirm the weigh-in, then give one "

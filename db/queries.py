@@ -469,6 +469,7 @@ async def add_exercise_entry(db: AsyncSession, daily_log_id: int,
 
 async def add_body_metric(db: AsyncSession, user_id: int,
                           weight_kg: float, source: str = "manual",
+                          when: Optional[datetime] = None,
                           **kwargs) -> BodyMetric:
     # Source-aware, ONE-row-per-(user, calendar-day, source) UPSERT.
     #
@@ -494,16 +495,21 @@ async def add_body_metric(db: AsyncSession, user_id: int,
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one()
     tz = getattr(user, "timezone", None) or "UTC"
-    today = _user_today(tz)
+    # `when` (a naive-UTC datetime) BACKFILLS a past weigh-in; default is now. All
+    # day-matching is by the user's LOGGING day so it honors the rollover hour for
+    # both a live weigh-in and a retroactive one.
+    ts = when if when is not None else datetime.utcnow()
+    target_day = _logging_day_of(ts, tz)
 
-    # Pull this user's recent rows (wide enough to cover the rollover grace window
-    # in any timezone) and match the SAME source + SAME logging day in Python —
-    # timestamps are stored as naive UTC, so the day boundary must be computed in
-    # the user's zone rather than via a SQL date() on the raw column.
-    lookback = datetime.utcnow() - timedelta(hours=48)
+    # Pull rows in a ±48h window AROUND the target timestamp (covers both today and
+    # a backfilled past date) and match the SAME source + SAME logging day in
+    # Python — timestamps are stored as naive UTC, so the day boundary must be
+    # computed in the user's zone rather than via a SQL date() on the raw column.
     rows = (await db.execute(
         select(BodyMetric)
-        .where(BodyMetric.user_id == user_id, BodyMetric.timestamp >= lookback)
+        .where(BodyMetric.user_id == user_id,
+               BodyMetric.timestamp >= ts - timedelta(hours=48),
+               BodyMetric.timestamp <= ts + timedelta(hours=48))
         .order_by(desc(BodyMetric.timestamp))
     )).scalars().all()
 
@@ -511,30 +517,37 @@ async def add_body_metric(db: AsyncSession, user_id: int,
         (r for r in rows
          if (r.source or "manual") == source
          and r.timestamp is not None
-         and _logging_day_of(r.timestamp, tz) == today),
+         and _logging_day_of(r.timestamp, tz) == target_day),
         None,
     )
 
-    # Does a MANUAL reading already exist for today? (Across either branch.) An
-    # apple_health write must not touch current_weight_kg when one does — the
-    # user's deliberate weigh-in stays the headline.
-    manual_today_exists = any(
+    # Does a MANUAL reading already exist for the target day? (Across either
+    # branch.) An apple_health write must not touch current_weight_kg when one
+    # does — the user's deliberate weigh-in stays the headline.
+    manual_day_exists = any(
         (r.source or "manual") == "manual"
         and r.timestamp is not None
-        and _logging_day_of(r.timestamp, tz) == today
+        and _logging_day_of(r.timestamp, tz) == target_day
         for r in rows
     )
 
+    # A backfilled PAST weigh-in writes that day's row + feeds the trend, but is
+    # NOT the user's CURRENT weight — only a today/live reading moves the headline.
+    is_current_day = target_day >= _user_today(tz)
+
     def _sync_current_weight():
         # manual always wins. apple_health updates current_weight_kg only when
-        # there's no manual reading for today to defer to.
-        if source == "manual" or not manual_today_exists:
+        # there's no manual reading for the day to defer to. Past backfills never
+        # move the headline.
+        if not is_current_day:
+            return
+        if source == "manual" or not manual_day_exists:
             user.current_weight_kg = weight_kg
 
     if existing is not None:
         # Same source, same day → update in place (correction or re-deliver).
         existing.weight_kg = weight_kg
-        existing.timestamp = datetime.utcnow()
+        existing.timestamp = ts
         if kwargs.get("context") is not None:
             existing.context = kwargs["context"]
         if kwargs.get("bodyfat_estimate") is not None:
@@ -548,7 +561,8 @@ async def add_body_metric(db: AsyncSession, user_id: int,
         await db.refresh(existing)
         return existing
 
-    metric = BodyMetric(user_id=user_id, weight_kg=weight_kg, source=source, **kwargs)
+    metric = BodyMetric(user_id=user_id, weight_kg=weight_kg, source=source,
+                        timestamp=ts, **kwargs)
     db.add(metric)
     _sync_current_weight()
 

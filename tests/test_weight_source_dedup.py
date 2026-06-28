@@ -185,3 +185,29 @@ async def test_weight_block_headlines_manual(db, make_user):
     assert len(block["recent"]) == 1
     assert block["latest"]["kg"] == 84.7
     assert block["recent"][-1]["kg"] == 84.7
+
+
+async def test_backfill_past_weigh_in_separate_day_does_not_move_current(db, make_user):
+    """A retroactive weigh-in (when=<past>) writes a SEPARATE row on that day and
+    feeds the trend, but must NOT overwrite the user's CURRENT weight — and a
+    re-backfill of the same past day updates in place (no duplicate)."""
+    from db.queries import _logging_day_of
+
+    user = await make_user(timezone="America/New_York")
+    # live weigh-in today → owns current_weight_kg
+    await add_body_metric(db, user.id, 84.5, source="manual", context="morning_fasted")
+    await db.refresh(user)
+    assert round(user.current_weight_kg, 1) == 84.5
+
+    # backfill 3 days ago — a different logging day
+    past = datetime.utcnow() - timedelta(days=3)
+    await add_body_metric(db, user.id, 86.2, source="manual", when=past)
+    await db.refresh(user)
+    assert await _count(db, user.id) == 2                       # separate row
+    assert round(user.current_weight_kg, 1) == 84.5            # current UNCHANGED
+    rows = await _rows(db, user.id)
+    assert len({_logging_day_of(r.timestamp, "America/New_York") for r in rows}) == 2
+
+    # re-backfill the SAME past day → update in place, no new row
+    await add_body_metric(db, user.id, 86.0, source="manual", when=past)
+    assert await _count(db, user.id) == 2
