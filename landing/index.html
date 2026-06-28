@@ -10,7 +10,7 @@
   <meta property="og:type"        content="website">
   <meta property="og:url"         content="https://tryarnie.com/">
   <meta property="og:title"       content="Arnie — Made For Humans Who Train.">
-  <meta property="og:description" content="A performance partner that logs naturally, learns your patterns, and follows up every day. On Telegram and iMessage.">
+  <meta property="og:description" content="A performance partner that logs naturally, learns your patterns, and follows up every day. On iOS, Telegram, and iMessage.">
   <meta property="og:image"       content="https://tryarnie.com/og-image.png">
   <meta property="og:image:width"  content="1200">
   <meta property="og:image:height" content="630">
@@ -18,7 +18,7 @@
   <!-- Twitter / X card -->
   <meta name="twitter:card"        content="summary_large_image">
   <meta name="twitter:title"       content="Arnie — Made For Humans Who Train.">
-  <meta name="twitter:description" content="A performance partner that logs naturally, learns your patterns, and follows up every day. On Telegram and iMessage.">
+  <meta name="twitter:description" content="A performance partner that logs naturally, learns your patterns, and follows up every day. On iOS, Telegram, and iMessage.">
   <meta name="twitter:image"       content="https://tryarnie.com/og-image.png">
 
   <link rel="icon" type="image/png" href="favicon.png">
@@ -942,6 +942,74 @@
       .int-icon { width: 15px; height: 15px; }
     }
 
+    /* ── Devices & wearables section ─────────────────────────── */
+    .dev-hub {
+      display: flex; align-items: center; justify-content: center;
+      gap: 14px; flex-wrap: wrap; margin: 48px auto 0;
+    }
+    .dev-hub-pill {
+      display: inline-flex; align-items: center; gap: 10px;
+      padding: 12px 22px; border-radius: 13px;
+      border: 1px solid color-mix(in oklch, var(--accent) 30%, transparent);
+      background: color-mix(in oklch, var(--accent) 8%, transparent);
+      font-size: 14px; font-weight: 600; color: var(--ink);
+    }
+    .dev-hub-pill .int-icon { width: 18px; height: 18px; }
+    .dev-hub-note { font-size: 13px; color: var(--ink-3); }
+    .dev-grid {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(215px, 1fr));
+      gap: 1px; background: var(--line);
+      border: 1px solid var(--line); border-radius: 22px;
+      overflow: hidden; margin-top: 28px;
+    }
+    .dev-card { padding: 22px 24px; background: var(--bg); transition: background 280ms; }
+    .dev-card:hover { background: color-mix(in oklch, var(--bg) 70%, var(--ink) 30%); }
+    .dev-name { font-size: 15px; font-weight: 600; letter-spacing: -0.01em; margin-bottom: 4px; }
+    .dev-kind {
+      font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.12em;
+      text-transform: uppercase; color: var(--accent); margin-bottom: 11px;
+    }
+    .dev-metric { font-size: 13px; line-height: 1.5; color: var(--ink-3); }
+    .dev-foot { margin-top: 22px; font-size: 13.5px; color: var(--ink-3); }
+
+    /* ── Food logging modes ──────────────────────────────────── */
+    .mode-grid {
+      display: grid; grid-template-columns: repeat(3, 1fr);
+      gap: 14px; margin-top: 52px;
+    }
+    @media (max-width: 720px) { .mode-grid { grid-template-columns: 1fr; } }
+    .mode-card {
+      border-radius: 20px; border: 1px solid var(--line);
+      padding: 26px; background: var(--glass);
+    }
+    .mode-card.featured {
+      border-color: color-mix(in oklch, var(--accent) 28%, transparent);
+      box-shadow: 0 0 0 1px color-mix(in oklch, var(--accent) 10%, transparent),
+                  inset 0 1px 0 color-mix(in oklch, var(--accent) 12%, transparent);
+    }
+    .mode-name {
+      font-family: var(--mono); font-size: 10px; letter-spacing: 0.13em;
+      text-transform: uppercase; color: var(--ink-3); margin-bottom: 14px;
+      display: flex; align-items: center; gap: 9px;
+    }
+    .mode-card.featured .mode-name { color: var(--accent); }
+    .mode-tag {
+      font-size: 8.5px; padding: 3px 8px; border-radius: 999px;
+      background: color-mix(in oklch, var(--accent) 14%, transparent);
+      color: var(--accent); letter-spacing: 0.08em;
+    }
+    .mode-head {
+      font-family: var(--serif); font-size: 22px; font-weight: 400;
+      letter-spacing: -0.02em; margin-bottom: 10px;
+    }
+    .mode-desc { font-size: 13.5px; line-height: 1.56; color: var(--ink-2); }
+    .mode-hint { margin-top: 15px; font-size: 12px; color: var(--ink-3); }
+    .mode-hint code {
+      font-family: var(--mono); font-size: 11px; color: var(--accent);
+      background: color-mix(in oklch, var(--accent) 9%, transparent);
+      padding: 2px 7px; border-radius: 6px;
+    }
+
     /* ── Mobile performance — strip expensive GPU compositing ── */
     @media (max-width: 768px) {
       /* SVG turbulence grain is the single biggest paint cost — remove it */
@@ -1383,7 +1451,7 @@
     </a>
     <div class="nav-meta">
       <div class="status-dot"></div>
-      Telegram + iMessage &nbsp;·&nbsp; V0.9 &nbsp;·&nbsp; Beta
+      iOS &nbsp;·&nbsp; Telegram &nbsp;·&nbsp; iMessage &nbsp;·&nbsp; Beta
     </div>
     <div class="nav-badge">
       <div class="status-dot"></div>
@@ -1398,7 +1466,7 @@
       <div class="chip chip-1">
         <div class="chip-dot"></div>
         <span>Arnie</span>
-        <span class="chip-label">online · Telegram + iMessage</span>
+        <span class="chip-label">online · iOS · Telegram · iMessage</span>
       </div>
 
       <div class="chip chip-2">
@@ -1526,7 +1594,17 @@
   <!-- ── INTEGRATIONS STRIP ── -->
   <div class="int-strip">
     <div class="int-row">
-      <span class="int-eyebrow">Works with your gear</span>
+      <span class="int-eyebrow">Syncs with your gear</span>
+
+      <!-- Apple Health — live, the hub -->
+      <div class="int-pill">
+        <div class="int-icon">
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+            <path d="M8 13C8 13 2.5 9.2 2.5 5.8 2.5 4 3.8 2.5 5.5 2.5c1 0 1.9.55 2.5 1.3.6-.75 1.5-1.3 2.5-1.3C12.2 2.5 13.5 4 13.5 5.8 13.5 9.2 8 13 8 13Z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/>
+          </svg>
+        </div>
+        Apple Health
+      </div>
 
       <!-- Whoop — live -->
       <div class="int-pill">
@@ -1539,20 +1617,10 @@
         Whoop
       </div>
 
-      <!-- Apple Health — live -->
-      <div class="int-pill">
-        <div class="int-icon">
-          <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
-            <path d="M8 13C8 13 2.5 9.2 2.5 5.8 2.5 4 3.8 2.5 5.5 2.5c1 0 1.9.55 2.5 1.3.6-.75 1.5-1.3 2.5-1.3C12.2 2.5 13.5 4 13.5 5.8 13.5 9.2 8 13 8 13Z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/>
-          </svg>
-        </div>
-        Apple Health
-      </div>
-
       <div class="int-sep"></div>
 
-      <!-- Oura — coming -->
-      <div class="int-pill dim">
+      <!-- Through Apple Health -->
+      <div class="int-pill">
         <div class="int-icon">
           <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
             <circle cx="8" cy="8" r="5.2" stroke="currentColor" stroke-width="2"/>
@@ -1561,41 +1629,34 @@
         Oura
       </div>
 
-      <!-- Fitbit — coming -->
-      <div class="int-pill dim">
-        <div class="int-icon">
-          <svg width="15" height="15" viewBox="0 0 16 16">
-            <circle cx="8"   cy="2.8" r="1.35" fill="currentColor"/>
-            <circle cx="8"   cy="8"   r="1.35" fill="currentColor"/>
-            <circle cx="8"   cy="13.2"r="1.35" fill="currentColor"/>
-            <circle cx="3.2" cy="5.4" r="1.35" fill="currentColor"/>
-            <circle cx="12.8"cy="5.4" r="1.35" fill="currentColor"/>
-            <circle cx="3.2" cy="10.6"r="1.35" fill="currentColor"/>
-            <circle cx="12.8"cy="10.6"r="1.35" fill="currentColor"/>
-          </svg>
-        </div>
-        Fitbit
-      </div>
-
-      <!-- Hume — coming -->
-      <div class="int-pill dim">
+      <div class="int-pill">
         <div class="int-icon">
           <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
-            <path d="M1.5 8s1-3 2-3 2 3 3 3 1-3 2-3 2 3 3 3 1-3 2-3 2 3 3 3" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round"/>
+            <rect x="4.5" y="2" width="7" height="12" rx="3.5" stroke="currentColor" stroke-width="1.4"/>
           </svg>
         </div>
-        Hume
+        Garmin
       </div>
 
-      <!-- + more — coming -->
-      <div class="int-pill dim" style="color:var(--ink-3)">
-        <div class="int-icon" style="color:var(--ink-3)">
+      <div class="int-pill">
+        <div class="int-icon">
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+            <rect x="2" y="4" width="12" height="8" rx="2" stroke="currentColor" stroke-width="1.4"/>
+            <path d="M2 8h3l1.3-2 1.4 4L9 8h5" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/>
+          </svg>
+        </div>
+        Withings
+      </div>
+
+      <!-- + more through Apple Health -->
+      <div class="int-pill" style="color:var(--ink-2)">
+        <div class="int-icon">
           <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
             <circle cx="8" cy="8" r="5.5" stroke="currentColor" stroke-width="1.3" stroke-dasharray="2.2 2.2"/>
             <path d="M8 5.5v5M5.5 8h5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
           </svg>
         </div>
-        more soon
+        &amp; more
       </div>
 
     </div>
@@ -1732,8 +1793,8 @@
               <path d="M12 10v2l1.5 1.5"/>
             </svg>
           </div>
-          <h4>Whoop integration</h4>
-          <p>Recovery score, HRV, sleep hours — pulled automatically and factored into every recommendation.</p>
+          <h4>Wearables &amp; health data</h4>
+          <p>Apple Health and Whoop sync automatically — recovery, sleep, heart rate, glucose, steps — all factored into every recommendation.</p>
         </div>
 
         <div class="feat-cell reveal reveal-d1">
@@ -1750,7 +1811,100 @@
           <p>See your nutrition pacing, workout status, and exactly what you need to close the day strong.</p>
         </div>
 
+        <div class="feat-cell reveal reveal-d2">
+          <div class="feat-icon">
+            <!-- Phone/app -->
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="6" y="2" width="12" height="20" rx="3"/>
+              <line x1="11" y1="18" x2="13" y2="18"/>
+            </svg>
+          </div>
+          <h4>Native iOS app</h4>
+          <p>A full iOS app with your Coach feed, daily rings, weight trends, and chat — synced with Telegram and iMessage so you pick up anywhere.</p>
+        </div>
+
+        <div class="feat-cell reveal reveal-d3">
+          <div class="feat-icon">
+            <!-- Camera/photo -->
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+              <circle cx="12" cy="13" r="4"/>
+            </svg>
+          </div>
+          <h4>Photo &amp; voice logging</h4>
+          <p>Snap your plate or send a voice note. Arnie reads the photo, estimates the meal, and logs it — no typing required.</p>
+        </div>
+
       </div>
+    </div>
+  </section>
+
+  <!-- ── FOOD LOGGING MODES ── -->
+  <section id="modes">
+    <div class="section-inner">
+      <div class="section-tag reveal">Logging, your way</div>
+      <h2 class="section-title reveal reveal-d1">Log fast — or<br><em>log precise.</em></h2>
+      <p class="section-sub reveal reveal-d2">Some people just want a number and move on. Others want every portion nailed. Arnie has three logging modes — switch any time by just telling it.</p>
+      <div class="mode-grid reveal reveal-d2">
+
+        <div class="mode-card">
+          <div class="mode-name">Quick</div>
+          <div class="mode-head">Just log it.</div>
+          <div class="mode-desc">Arnie estimates freely and logs instantly, only stopping to ask when something's wildly ambiguous. The fastest path from "had a burrito" to done.</div>
+          <div class="mode-hint">say <code>"stop asking, just log it"</code></div>
+        </div>
+
+        <div class="mode-card featured">
+          <div class="mode-name">Balanced <span class="mode-tag">DEFAULT</span></div>
+          <div class="mode-head">Smart check-ins.</div>
+          <div class="mode-desc">Logs immediately when it's confident, and asks one quick question only when a guess would swing your day by more than ~120 calories.</div>
+          <div class="mode-hint">on out of the box</div>
+        </div>
+
+        <div class="mode-card">
+          <div class="mode-name">Strict</div>
+          <div class="mode-head">Get it exact.</div>
+          <div class="mode-desc">Confirms cook method and portion before logging anything ambiguous — for cuts, meal prep, or anyone who wants the macros precise.</div>
+          <div class="mode-hint">say <code>"double-check my food"</code></div>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- ── DEVICES & WEARABLES ── -->
+  <section id="devices">
+    <div class="section-inner">
+      <div class="section-tag reveal">Devices &amp; wearables</div>
+      <h2 class="section-title reveal reveal-d1">Bring your<br><em>whole picture.</em></h2>
+      <p class="section-sub reveal reveal-d2">Arnie reads from Apple Health, so the gear you already wear and use flows in automatically — sleep, recovery, heart rate, glucose, body weight, even hydration. Whoop connects directly too.</p>
+
+      <div class="dev-hub reveal reveal-d2">
+        <div class="dev-hub-pill">
+          <div class="int-icon">
+            <svg width="18" height="18" viewBox="0 0 16 16" fill="none">
+              <path d="M8 13C8 13 2.5 9.2 2.5 5.8 2.5 4 3.8 2.5 5.5 2.5c1 0 1.9.55 2.5 1.3.6-.75 1.5-1.3 2.5-1.3C12.2 2.5 13.5 4 13.5 5.8 13.5 9.2 8 13 8 13Z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/>
+            </svg>
+          </div>
+          Apple Health — connected
+        </div>
+        <span class="dev-hub-note">+ Whoop direct sync</span>
+      </div>
+
+      <div class="dev-grid reveal reveal-d2">
+        <div class="dev-card"><div class="dev-name">Apple Watch</div><div class="dev-kind">Smartwatch</div><div class="dev-metric">Activity rings, workouts, heart rate and calories burned.</div></div>
+        <div class="dev-card"><div class="dev-name">Whoop</div><div class="dev-kind">Recovery band</div><div class="dev-metric">Recovery score, HRV and sleep — weighed into every rec.</div></div>
+        <div class="dev-card"><div class="dev-name">Oura</div><div class="dev-kind">Smart ring</div><div class="dev-metric">Sleep stages, readiness and resting heart rate.</div></div>
+        <div class="dev-card"><div class="dev-name">Withings</div><div class="dev-kind">Scale &amp; sleep pad</div><div class="dev-metric">Body-weight trend plus under-mattress sleep tracking.</div></div>
+        <div class="dev-card"><div class="dev-name">Garmin</div><div class="dev-kind">Fitness watch</div><div class="dev-metric">Workouts, steps and training load from every session.</div></div>
+        <div class="dev-card"><div class="dev-name">Wahoo</div><div class="dev-kind">Heart-rate monitor</div><div class="dev-metric">Accurate heart-rate data from rides and runs.</div></div>
+        <div class="dev-card"><div class="dev-name">Abbott</div><div class="dev-kind">Glucose monitor</div><div class="dev-metric">Continuous glucose, so Arnie sees how your food lands.</div></div>
+        <div class="dev-card"><div class="dev-name">Omron</div><div class="dev-kind">Blood pressure</div><div class="dev-metric">Blood-pressure readings tracked alongside your progress.</div></div>
+        <div class="dev-card"><div class="dev-name">HidrateSpark</div><div class="dev-kind">Smart water bottle</div><div class="dev-metric">Hydration logged automatically through the day.</div></div>
+        <div class="dev-card"><div class="dev-name">Kinsa</div><div class="dev-kind">Smart thermometer</div><div class="dev-metric">Body temperature, so Arnie eases off when you're sick.</div></div>
+      </div>
+
+      <p class="dev-foot reveal reveal-d2">If it writes to Apple Health, Arnie can read it — hundreds of devices and apps beyond this list.</p>
     </div>
   </section>
 
@@ -1851,7 +2005,7 @@
           <ul class="price-features">
             <li>Everything in free trial</li>
             <li>Persistent memory &amp; history</li>
-            <li>Whoop &amp; wearable sync</li>
+            <li>Apple Health &amp; Whoop sync</li>
             <li>Proactive daily check-ins</li>
           </ul>
           <a href="#imsgForm" class="price-cta" onclick="document.getElementById('imsgForm').querySelector('input').focus();return true;">Get Access →</a>
@@ -1870,7 +2024,7 @@
 
         <div class="faq-item">
           <button class="faq-q">What is Arnie?<span class="faq-icon">+</span></button>
-          <div class="faq-a">Arnie is a personal performance partner for fitness and nutrition. You log food, workouts, and weight in plain English and it learns your patterns, projects your trajectory, tracks your momentum, and coaches you off your actual history — getting more valuable the longer you use it. Available on Telegram and iMessage, with a native iOS app in development.</div>
+          <div class="faq-a">Arnie is a personal performance partner for fitness and nutrition. You log food, workouts, and weight in plain English and it learns your patterns, projects your trajectory, tracks your momentum, and coaches you off your actual history — getting more valuable the longer you use it. Available as a native iOS app, on Telegram, and on iMessage.</div>
         </div>
 
         <div class="faq-item">
@@ -1880,7 +2034,7 @@
 
         <div class="faq-item">
           <button class="faq-q">Which platforms can I use?<span class="faq-icon">+</span></button>
-          <div class="faq-a">Both Telegram and iMessage work today — whichever messenger you already use. They give the fastest, most natural experience with zero friction and no app install. A native iOS app is in active development.</div>
+          <div class="faq-a">There's a native iOS app with a Coach feed, daily rings, weight trends, and chat — plus Telegram and iMessage if you'd rather just text. Everything syncs across all three, so you can pick up wherever you are.</div>
         </div>
 
         <div class="faq-item">
@@ -1889,8 +2043,8 @@
         </div>
 
         <div class="faq-item">
-          <button class="faq-q">Is a native iOS app coming?<span class="faq-icon">+</span></button>
-          <div class="faq-a">Yes — it's on the roadmap. Join the beta waitlist and you'll be among the first to know when it launches, with priority access included.</div>
+          <button class="faq-q">Is there an iOS app?<span class="faq-icon">+</span></button>
+          <div class="faq-a">Yes — a native iOS app is live in beta, with your Coach feed, daily rings, weight trends, Apple Health sync, and chat. Join the beta to get access. Prefer to just text? Telegram and iMessage work too, and everything stays in sync.</div>
         </div>
 
       </div>
