@@ -2109,20 +2109,6 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
             f"this list."
         )
 
-    elif name == "update_memory":
-        await append_memory_update(
-            user.telegram_id,
-            inp.get("updates", ""),
-            inp.get("reasoning", ""),
-        )
-        db.add(MemoryUpdate(
-            user_id=user.id,
-            update_summary=inp.get("updates", "")[:500],
-            reasoning=inp.get("reasoning", ""),
-        ))
-        await db.commit()
-        return "Memory updated"
-
     elif name == "update_profile":
         fields = inp.get("fields", {})
 

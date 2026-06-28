@@ -331,30 +331,6 @@ def serialize_response(response: Response) -> dict:
     }
 
 
-class JSONAdapter(PlatformAdapter):
-    """Renders a Response as the JSON wire contract for native clients.
-
-    Unlike the Telegram/iMessage adapters there is no socket to push to — an HTTP
-    request/response (or, later, a WebSocket) carries the payload. `send` therefore
-    buffers each serialized Response on `self.sent`, so the same adapter contract
-    works for both a one-shot REST reply (read `self.sent[-1]`) and future
-    per-bubble streamed delivery (one frame per `send`).
-
-    A native client can render everything — tapback reactions, screen/haptic
-    effects, quick-reply buttons, links — so nothing is folded into text the way
-    iMessage folds buttons. The capabilities advertise that.
-    """
-
-    name = "ios"
-    capabilities = {"reactions", "effects", "buttons", "links"}
-
-    def __init__(self):
-        self.sent: list[dict] = []
-
-    async def send(self, response: Response) -> None:
-        self.sent.append(serialize_response(response))
-
-
 # ─────────────────────────────────────────────────────────────────────────────
 # Onboarding reaction map — defined ONCE, used by both platforms
 # ─────────────────────────────────────────────────────────────────────────────
