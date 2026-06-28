@@ -89,6 +89,27 @@ def _lbs_to_kg(weight, unit: str = "lbs"):
     return weight * 0.453592 if (unit or "lbs").lower().strip() == "lbs" else weight
 
 
+def _weights_csv_to_kg(weights_csv, unit: str = "lbs"):
+    """Convert a PER-SET load CSV ('135,145,155', in the user's unit) into a kg
+    CSV stored on ExerciseEntry.weights — the parallel of `reps`. Lets one mixed-
+    load movement (a pyramid / drop set) live in ONE row instead of fragmenting
+    into N rows the rollup can't merge. Returns None for empty/garbage input."""
+    if not weights_csv:
+        return None
+    out = []
+    for tok in str(weights_csv).split(","):
+        tok = tok.strip()
+        if not tok:
+            continue
+        try:
+            kg = _lbs_to_kg(float(tok), unit)
+        except (ValueError, TypeError):
+            continue
+        if kg is not None:
+            out.append(f"{kg:.4g}")
+    return ",".join(out) if out else None
+
+
 def _combine_local_time(target_date, time_str, user_timezone: str = "UTC"):
     """Combine a local calendar date + a free-form clock time into a NAIVE UTC
     datetime, matching the utcnow() storage convention (the iOS timeline parses
@@ -258,16 +279,46 @@ def _movement_set_summary(today_log, exercise_name: str) -> str:
         return f"{name or 'exercise'}: 0 sets"
     entries.sort(key=lambda x: getattr(x, "id", 0) or 0)
     total_sets = sum(int(getattr(e, "sets", None) or 1) for e in entries)
-    reps_tokens: list[str] = []
+    # Build a per-set (reps, weight_kg) view across all rows of this movement, so a
+    # mixed-load (pyramid / drop set) movement reads accurately instead of showing
+    # only the single most-recent weight.
+    per_set: list = []
     for e in entries:
-        r = str(getattr(e, "reps", "") or "").strip()
-        if r:
-            reps_tokens.extend(t.strip() for t in r.split(",") if t.strip())
+        reps_list = [t.strip() for t in str(getattr(e, "reps", "") or "").split(",") if t.strip()]
+        wcsv = str(getattr(e, "weights", "") or "").strip()
+        if wcsv:
+            w_list = []
+            for t in wcsv.split(","):
+                try:
+                    w_list.append(float(t.strip()))
+                except (ValueError, TypeError):
+                    w_list.append(None)
+        else:
+            ew = getattr(e, "weight", None)
+            w_list = [ew] * (len(reps_list) or int(getattr(e, "sets", None) or 1)) if ew is not None else []
+        n = max(len(reps_list), len(w_list)) or int(getattr(e, "sets", None) or 1)
+        for i in range(n):
+            rep = reps_list[i] if i < len(reps_list) else ""
+            wk = w_list[i] if i < len(w_list) else (w_list[-1] if w_list else None)
+            per_set.append((rep, wk))
+
+    reps_tokens = [r for r, _ in per_set if r]
     reps_part = f" ({','.join(reps_tokens)})" if reps_tokens else ""
-    w = next((e.weight for e in reversed(entries) if getattr(e, "weight", None)), None)
-    weight_part = f" @ {w * 2.20462:.0f}lb" if w else ""
     plural = "s" if total_sets != 1 else ""
-    return f"{name or 'exercise'}: {total_sets} set{plural}{reps_part}{weight_part}"
+
+    def _lb(wk):
+        return round(wk * 2.20462) if wk else None
+    distinct = {_lb(wk) for _, wk in per_set if wk}
+    if len(distinct) <= 1:
+        # Uniform load (or none) — the original compact format, unchanged.
+        w = next((wk for _, wk in reversed(per_set) if wk), None)
+        weight_part = f" @ {w * 2.20462:.0f}lb" if w else ""
+        return f"{name or 'exercise'}: {total_sets} set{plural}{reps_part}{weight_part}"
+    # Mixed loads — show each set's reps×load so the authoritative readback is correct.
+    breakdown = ", ".join(
+        (f"{r or '?'}×{_lb(wk)}lb" if wk else (r or "?")) for r, wk in per_set
+    )
+    return f"{name or 'exercise'}: {total_sets} set{plural} — {breakdown}"
 
 
 def _food_item_summary(today_log, food_name: str) -> str:
@@ -1424,6 +1475,9 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
         weight = inp.get("weight")
         weight_unit = inp.get("weight_unit", "lbs")
         weight_kg = _lbs_to_kg(weight, weight_unit)
+        # Per-set loads (pyramid / drop set) → kg CSV stored alongside reps so one
+        # mixed-load movement stays ONE row. Falls back to the single weight above.
+        weights_kg = _weights_csv_to_kg(inp.get("weights"), weight_unit)
 
         # Canonicalize the exercise name BEFORE dedup so two distinct user
         # phrasings of the same movement ("Crunches (Cable/Machine)" vs
@@ -1535,6 +1589,7 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
                     sets=inp.get("sets"),
                     reps=str(inp.get("reps", "")) if inp.get("reps") else None,
                     weight=weight_kg,
+                    weights=weights_kg,
                     rir=inp.get("rir"),
                     duration_minutes=inp.get("duration_minutes"),
                 )
@@ -1560,6 +1615,7 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
             sets=inp.get("sets"),
             reps=str(inp.get("reps", "")) if inp.get("reps") else None,
             weight=weight_kg,
+            weights=weights_kg,
             rir=inp.get("rir"),
             duration_minutes=inp.get("duration_minutes"),
             cardio_type=inp.get("cardio_type"),

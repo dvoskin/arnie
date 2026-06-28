@@ -46,3 +46,23 @@ def test_singular_when_one_set():
     log = _log(NS(id=1, exercise_name="Deadlift", sets=1, reps="5", weight=140.0))
     assert "1 set " in _movement_set_summary(log, "Deadlift") + " "
     assert "1 sets" not in _movement_set_summary(log, "Deadlift")
+
+
+def test_per_set_weights_render_mixed_loads():
+    """A pyramid/drop set logged with per-set `weights` reads each set's load,
+    not just the single most-recent weight (the old bug showed only the top set)."""
+    from handlers.tool_executor import _weights_csv_to_kg
+    wkg = _weights_csv_to_kg("135,145,155", "lbs")
+    log = _log(NS(id=1, exercise_name="Bench Press", sets=3, reps="10,8,6",
+                  weight=None, weights=wkg))
+    assert _movement_set_summary(log, "Bench Press") == \
+        "Bench Press: 3 sets — 10×135lb, 8×145lb, 6×155lb"
+
+
+def test_uniform_weight_keeps_compact_format():
+    """When the load is uniform, the compact '@ Xlb' form is preserved (the
+    per-set breakdown only kicks in for genuinely mixed loads)."""
+    from handlers.tool_executor import _lbs_to_kg
+    log = _log(NS(id=1, exercise_name="Squat", sets=3, reps="5,5,5",
+                  weight=_lbs_to_kg(225, "lbs"), weights=None))
+    assert _movement_set_summary(log, "Squat") == "Squat: 3 sets (5,5,5) @ 225lb"

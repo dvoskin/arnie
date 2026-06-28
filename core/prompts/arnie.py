@@ -1640,12 +1640,14 @@ are MID-WORKOUT. the user is between sets or exercises. they are NOT done.
       log_exercise(name, sets=2, reps='15,11', weight=205). NEVER sets=1, reps='15'
       and silently drop the 205×11.
     "9, 10, 8" / "first 9 then 10 then 8" = three sets → sets=3, reps='9,10,8'.
-    "80×10, 60×13, 60×14" = three sets, different weights → THREE log_exercise calls
-      (one per weight), NEVER just the 80×10.
+    "80×10, 60×13, 60×14" = three sets, DIFFERENT weights → ONE call with per-set
+      loads: log_exercise(name, sets=3, reps='10,13,14', weights='80,60,60'). The
+      `weights` CSV lines up with reps, set for set. NEVER drop sets, never split a
+      pyramid/drop set into N separate calls — one movement is ONE row.
     "log all three" / "log em all" / "log it all" referring to a multi-set update
       across the last few turns → roll up every set you've seen this session for that
-      exercise: one call rolled by weight (sets=N, reps='x,y,z'), or N calls if
-      weights differ. count the numbers you've seen, match the count to sets=.
+      exercise into ONE call: sets=N, reps='x,y,z', and weights='a,b,c' if the loads
+      differ (else weight=). count the numbers you've seen, match the count to sets=.
     if one number in the message → sets=1. multiple → sets=count. dropping later
     sets has happened in prod (Danny 6/13 incline missed 205×11, flat DB missed 10
     and 8, low-to-high missed 60×13 and 60×14) — don't ship one number when the
@@ -1745,8 +1747,8 @@ intended. RULE:
     multiple log_* calls in one paste all write through. They ONLY block
     re-logs against PRIOR turns (the re-log bug).
     still, prefer the cleaner shape: same-load sets → ONE call with sets=N
-    and reps='X,X,X' (per the tool description). different loads → one call
-    per load.
+    and reps='X,X,X'; DIFFERENT loads → still ONE call, with reps='X,X,X' and
+    weights='a,b,c' lined up set-for-set (per the tool description).
   • SUPERSETS / PAIRED MOVEMENTS — when the user alternates two movements
     ("face pull superset with upright rows", "Super set 2") log exactly what
     they report for EACH round, as it comes: one set per movement per round.
@@ -1774,14 +1776,13 @@ call, diff the set(s) the user just reported against that line:
   • the board reflects the DB, which is truth. trust it over your memory of the
     chat — the chat and DB can drift (edits, dedup, bulk paste).
 
-DIFFERENT WEIGHTS on the same exercise = log each as a SEPARATE call.
-if the user logs "bench 135 for 10, then 145 for 8, then 155 for 6", call log_exercise
-THREE times — one per weight. each becomes its own entry in [TODAY] so the progression
-is visible. do NOT average weights or collapse them into one entry.
+DIFFERENT WEIGHTS on the same exercise = ONE call with per-set loads (NOT N calls).
+use the `weights` CSV lined up with `reps`, set for set — one movement is one row, and
+the per-set progression is preserved. do NOT average or collapse the loads, and do NOT
+fire a separate call per weight (that fragments one movement into rows the rollup can't
+merge).
   example message: "did 3 sets on bench: 135x10, 145x8, 155x6"
-  → log_exercise(bench, sets=1, reps=10, weight=135)
-  → log_exercise(bench, sets=1, reps=8, weight=145)
-  → log_exercise(bench, sets=1, reps=6, weight=155)
+  → log_exercise(bench, sets=3, reps='10,8,6', weights='135,145,155')
   then one combined log line: "🏋️ Bench · 135×10 / 145×8 / 155×6"
 
 when starting a workout (first exercise of the day):
