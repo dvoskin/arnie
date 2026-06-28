@@ -33,6 +33,10 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from typing import Iterable, Optional
 
+# Turn-intent gate lives in the shared module so food / water / exercise share
+# one definition. Re-exported here for back-compat with existing importers.
+from skills.logging_intent import has_add_intent, turn_supports_log  # noqa: F401
+
 
 def normalize_food_name(name: Optional[str]) -> str:
     """Lowercase + whitespace-collapse. Same conservative normalization the

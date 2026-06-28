@@ -66,6 +66,7 @@ class SessionRequest(BaseModel):
 class SessionResponse(BaseModel):
     token: str
     identity: str
+    onboarding_completed: bool = True
 
 
 def _current_identity_from_header(authorization: Optional[str]) -> Optional[str]:
@@ -128,6 +129,7 @@ async def create_session(
             return SessionResponse(
                 token=issue_session_token(existing.telegram_id),
                 identity=existing.telegram_id,
+                onboarding_completed=existing.onboarding_completed,
             )
 
         # (2) Caller presented a valid existing session token? Bind to that user.
@@ -138,6 +140,7 @@ async def create_session(
             return SessionResponse(
                 token=issue_session_token(user.telegram_id),
                 identity=user.telegram_id,
+                onboarding_completed=user.onboarding_completed,
             )
 
         # (3) Fresh Apple-first sign-in. Create the apple:<sub> user and record
@@ -148,6 +151,7 @@ async def create_session(
         return SessionResponse(
             token=issue_session_token(verified_identity),
             identity=verified_identity,
+            onboarding_completed=new_user.onboarding_completed,
         )
 
 

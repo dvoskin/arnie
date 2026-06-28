@@ -65,6 +65,13 @@ class User(Base):
     linked_to_user_id = Column(Integer)             # if set, this identity points at another user
     link_code = Column(String)                      # active one-time code this user generated
     link_code_expires = Column(DateTime)            # when that code expires
+    # Social "circle" — a stable, shareable friend code. Lazily minted the first
+    # time a user opens the leaderboard / runs /invite. Minting it IS the opt-in:
+    # a user has no code (and is therefore unaddable + invisible) until they
+    # actively ask for one. Distinct from link_code above, which is a 10-min
+    # one-time DEVICE-linking code for the SAME person across platforms; this is
+    # a permanent code that connects DIFFERENT people as friends.
+    friend_code = Column(String, unique=True, index=True)
     # Apple Sign-in subject. Set when the iOS app exchanges an Apple identity
     # token via POST /api/v1/auth/session. Distinct from telegram_id (the
     # platform-identity string) — a user's telegram_id may stay "ios:<uuid>"
@@ -622,3 +629,33 @@ class DeviceToken(Base):
     revoked_at = Column(DateTime, nullable=True)
 
     user = relationship("User", back_populates="device_tokens")
+
+
+class Friendship(Base):
+    """
+    An accepted social connection between two canonical users — the backing
+    edge for the "circle" leaderboard (friends see each other's calories,
+    workouts, and streak).
+
+    Stored BIDIRECTIONALLY: friending A↔B writes two rows, (A,B) and (B,A).
+    The redundancy buys a single indexed "all my friends" query
+    (WHERE user_id = me) with no OR/UNION, and keeps deletion symmetric.
+
+    Both ids are CANONICAL user ids (post resolve_user). A user on Telegram +
+    iOS is one node in the graph, not two — friendships must never pin to a
+    linked secondary row or a friend would see a half-empty throwaway account
+    (same canonical discipline as Whoop tokens / link codes).
+
+    The (user_id, friend_id) pair is unique so a double-add is a no-op rather
+    than a duplicate edge. No status column in v1: an edge exists == friends.
+    A request/accept handshake can layer on later by adding a `state` column.
+    """
+    __tablename__ = "friendships"
+    __table_args__ = (
+        UniqueConstraint("user_id", "friend_id", name="uq_friendship_pair"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    friend_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    created_at = Column(DateTime, server_default=func.now())

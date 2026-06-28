@@ -915,6 +915,7 @@ async def execute_tool_calls(
     today_log: DailyLog,
     db: AsyncSession,
     source_type: str = "text",
+    user_message: str = "",
 ) -> Dict[str, Any]:
     """
     Execute each tool call and return {tool_name: result}.
@@ -977,6 +978,7 @@ async def execute_tool_calls(
                 pre_existing_exercise_ids=pre_existing_exercise_ids,
                 pre_existing_food_ids=pre_existing_food_ids,
                 pre_existing_water_ids=pre_existing_water_ids,
+                user_message=user_message,
             )
             # Increment telemetry counters for log_* tools. "Already on the
             # board:" prefix indicates the dedup guard fired and a write
@@ -1123,7 +1125,8 @@ def _apply_multi_item_batch_coaching(
 async def _dispatch(name, inp, user, today_log, db, source_type,
                     pre_existing_exercise_ids=None,
                     pre_existing_food_ids=None,
-                    pre_existing_water_ids=None):  # noqa: C901
+                    pre_existing_water_ids=None,
+                    user_message=""):  # noqa: C901
     # Guard: log_food/log_exercise/log_water require a real daily log
     if name in ("log_food", "log_exercise", "log_water"):
         if not getattr(today_log, "id", None):
@@ -1149,6 +1152,20 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
         # multiple log_food calls in one batch is never self-blocked.
         # When pre_existing_food_ids is None (tests calling _dispatch
         # directly), the filter is bypassed.
+        # TURN-INTENT GATE (shared by food/water/exercise — see
+        # skills/logging_intent.py). The dedup guard defends against the model
+        # re-firing log_food on a topic pivot, where the user said nothing about
+        # food. But payload+window alone can't tell that phantom from a genuine
+        # repeat ("one more same coffee" 33 min later — Anya 2026-06-26, silently
+        # dropped). The discriminator is the user's CURRENT turn: an explicit
+        # add/repeat cue ("another", "one more", "ещё") means the log is
+        # intentional → honor it. Bare item mention is deliberately NOT a cue —
+        # a retry names the item too ("log the coffee again"). Only when the turn
+        # does NOT support the log does the payload+window block apply (the
+        # phantom-on-pivot and retry cases the guard was built for). The signal
+        # defaults closed (empty user_message → unchanged behavior).
+        from skills.logging_intent import turn_supports_log
+        _supports_food = turn_supports_log(user_message, food_name)
         if not past_date:
             from datetime import datetime as _dt_now
             from skills.nutrition.food_dedup import (
@@ -1185,7 +1202,16 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
                 now_utc=now_utc,
             )
             if _dup_food is not None:
-                return _format_food_dedup(_dup_food, now_utc=now_utc)
+                if _supports_food:
+                    # The user's turn names this food or signals a repeat —
+                    # honor the log instead of blocking. Telemetry so we can
+                    # watch the gate-open rate (event=dedup_gate_override).
+                    logger.info(
+                        f"event=dedup_gate_override kind=food user={getattr(user,'id',None)} "
+                        f"item={food_name!r} matched=#{getattr(_dup_food,'id',None)}"
+                    )
+                else:
+                    return _format_food_dedup(_dup_food, now_utc=now_utc)
 
         # Capture raw LLM-submitted macros before _analyze_food runs
         # reconcile_macros, so we can flag corrections in the tool result.
@@ -1403,7 +1429,20 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
                 superseded_window_sec=_superseded_window,
             )
             if dup is not None:
-                return format_dedup_result(dup, now_utc=now_utc)
+                # TURN-INTENT GATE — if the user's turn names this movement or
+                # signals another set ("another set", "one more", "ещё"), honor
+                # the log; the equality-block is for the model re-firing a set on
+                # a topic pivot. Roll-up upsert (below) still applies either way —
+                # it grows one row, it doesn't drop data. Gate defaults closed.
+                from skills.logging_intent import turn_supports_log
+                _supports_ex = turn_supports_log(user_message, canonical_name)
+                if _supports_ex:
+                    logger.info(
+                        f"event=dedup_gate_override kind=exercise user={getattr(user,'id',None)} "
+                        f"item={canonical_name!r} matched=#{getattr(dup,'id',None)}"
+                    )
+                else:
+                    return format_dedup_result(dup, now_utc=now_utc)
 
             # Cumulative roll-up → UPSERT, don't insert. The model re-states the
             # full running set list on each report ('12' → '12,12' → '12,12,10'),
@@ -1742,6 +1781,11 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
         # 60-min window — water is sipped more often than food is eaten,
         # so the legit-second-drink false-positive risk is higher than for
         # food. Bulk-paste safety via the same snapshot pattern.
+        # TURN-INTENT GATE — same rule as log_food: "another glass", "one more",
+        # "ещё", or naming water means a deliberate additional drink, not a
+        # re-send. Gate defaults closed (empty user_message → unchanged).
+        from skills.logging_intent import turn_supports_log
+        _supports_water = turn_supports_log(user_message, "water")
         if not past_date and ml:
             from datetime import datetime as _dt_now
             from skills.nutrition.water_dedup import (
@@ -1768,7 +1812,13 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
                 now_utc=now_utc,
             )
             if _dup_water is not None:
-                return _format_water_dedup(_dup_water, now_utc=now_utc)
+                if _supports_water:
+                    logger.info(
+                        f"event=dedup_gate_override kind=water user={getattr(user,'id',None)} "
+                        f"matched=#{getattr(_dup_water,'id',None)}"
+                    )
+                else:
+                    return _format_water_dedup(_dup_water, now_utc=now_utc)
 
         if ml:
             target_log.total_water_ml = (target_log.total_water_ml or 0) + ml

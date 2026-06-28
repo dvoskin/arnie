@@ -6,7 +6,7 @@ from db.models import (
     User, UserPreferences, DailyLog, FoodEntry,
     ExerciseEntry, BodyMetric, ConversationLog, MemoryUpdate, HealthSnapshot,
     Feedback, UserFoodMatch, PendingQuestion, WearableDevice, WearableMetric,
-    DeviceToken,
+    DeviceToken, Friendship,
 )
 from datetime import date, datetime, timedelta
 from typing import Optional, List
@@ -254,6 +254,118 @@ async def consume_link_code(db: AsyncSession, code: str, consumer: User) -> Opti
         owner.link_code_expires = None
     await db.commit()
     return canonical
+
+
+# ── Social circle (friend graph) ─────────────────────────────────────────────
+# Friendships back the "circle" leaderboard. Three rules hold everywhere:
+#   1. Codes & edges live on the CANONICAL user (pass resolve_user output in).
+#   2. Minting a friend_code is the opt-in — no code means unaddable/invisible.
+#   3. Edges are bidirectional (two rows) so "my friends" is one indexed read.
+
+def _gen_friend_code() -> str:
+    """A short, unambiguous, permanent friend code (no I/O/0/1 to avoid typos)."""
+    import secrets
+    return "".join(secrets.choice("ABCDEFGHJKLMNPQRSTUVWXYZ23456789") for _ in range(6))
+
+
+async def get_or_create_friend_code(db: AsyncSession, user: User) -> str:
+    """
+    Return the canonical user's stable friend code, minting one on first call.
+    Idempotent: a user keeps the same code for life (it's their shareable
+    handle). Retries on the rare unique-collision. Minting == opting in to the
+    social feature.
+    """
+    canonical = await resolve_user(db, user.telegram_id) if user.linked_to_user_id else user
+    if canonical.friend_code:
+        return canonical.friend_code
+    for _ in range(5):
+        canonical.friend_code = _gen_friend_code()
+        try:
+            await db.commit()
+            return canonical.friend_code
+        except IntegrityError:
+            await db.rollback()
+            canonical = await reload_user(db, canonical.id) or canonical
+            if canonical.friend_code:        # someone/another request won the race
+                return canonical.friend_code
+    raise RuntimeError("could not allocate a unique friend code")
+
+
+async def add_friend_by_code(db: AsyncSession, user: User, code: str) -> tuple[Optional[User], str]:
+    """
+    Friend the canonical owner of `code` to `user` (both directions).
+
+    Returns (friend_user, status) where status is one of:
+      "ok"        — newly friended
+      "already"   — they were already friends (no-op)
+      "self"      — the code is the user's own
+      "not_found" — no user owns that code
+
+    `user` must already be canonical (resolve_user). The code owner is followed
+    to ITS canonical row too, so linking either party's secondary identity still
+    lands the edge on the right brains.
+    """
+    norm = (code or "").strip().upper()
+    if not norm:
+        return None, "not_found"
+    result = await db.execute(select(User).where(User.friend_code == norm))
+    owner = result.scalar_one_or_none()
+    if not owner:
+        return None, "not_found"
+    if owner.linked_to_user_id:
+        owner = await reload_user(db, owner.linked_to_user_id) or owner
+    if owner.id == user.id:
+        return None, "self"
+
+    existing = await db.execute(
+        select(Friendship).where(
+            and_(Friendship.user_id == user.id, Friendship.friend_id == owner.id)
+        )
+    )
+    if existing.scalar_one_or_none():
+        return owner, "already"
+
+    db.add(Friendship(user_id=user.id, friend_id=owner.id))
+    db.add(Friendship(user_id=owner.id, friend_id=user.id))
+    try:
+        await db.commit()
+    except IntegrityError:
+        # A concurrent add raced us to one of the two edges. Treat as success —
+        # the friendship exists; the unique constraint did its job.
+        await db.rollback()
+        return owner, "already"
+    return owner, "ok"
+
+
+async def get_friend_ids(db: AsyncSession, user: User) -> List[int]:
+    """Canonical ids of everyone in the user's circle (excludes self)."""
+    result = await db.execute(
+        select(Friendship.friend_id).where(Friendship.user_id == user.id)
+    )
+    return [row[0] for row in result.all()]
+
+
+async def get_friends(db: AsyncSession, user: User) -> List[User]:
+    """Hydrated friend User rows, ordered by when the friendship was made."""
+    result = await db.execute(
+        select(User)
+        .join(Friendship, Friendship.friend_id == User.id)
+        .where(Friendship.user_id == user.id)
+        .order_by(Friendship.created_at)
+    )
+    return list(result.scalars().all())
+
+
+async def remove_friend(db: AsyncSession, user: User, friend_id: int) -> bool:
+    """Drop both edges of a friendship. Returns True if anything was removed."""
+    result = await db.execute(
+        delete(Friendship).where(
+            ((Friendship.user_id == user.id) & (Friendship.friend_id == friend_id))
+            | ((Friendship.user_id == friend_id) & (Friendship.friend_id == user.id))
+        )
+    )
+    await db.commit()
+    return bool(result.rowcount)
 
 
 def _platform_of(telegram_id: str) -> str:
