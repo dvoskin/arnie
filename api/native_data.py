@@ -287,6 +287,8 @@ def _weight_block(weights, user) -> dict | None:
             "date": w.timestamp.strftime("%Y-%m-%d"),
             "kg":   round(w.weight_kg, 1),
             "lbs":  round(w.weight_kg * 2.20462, 1),
+            # so iOS can tag an auto-synced reading ("Apple Health") vs a manual one
+            "source": getattr(w, "source", None) or "manual",
         }
         for w in sorted_weights[-14:]
     ]

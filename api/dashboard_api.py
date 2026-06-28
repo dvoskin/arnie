@@ -86,6 +86,9 @@ async def get_day(
         "cardio_completed": bool(day.get("cardio_completed")),
         "food_entries": day.get("food_entries", []),
         "exercise_entries": [_normalize_exercise(e) for e in day.get("exercise_entries", [])],
+        # Timestamped hydration logs so water surfaces on the iOS Daily Log
+        # timeline (day_data builds these; this endpoint previously dropped them).
+        "water_entries": day.get("water_entries", []),
         "weight": stats.get("weight"),
         "health": stats.get("health"),
     }
