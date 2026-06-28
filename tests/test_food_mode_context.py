@@ -45,3 +45,7 @@ def test_strict_mode_does_not_overclarify_plain_generics():
     assert "plain/black coffee" in s
     assert "NOT a milk drink" in s          # plain coffee != latte
     assert "plain toast" in s
+    # raw whole fruit is a known low-variance food → never interrogate
+    assert "raw whole fruit" in s and "banana" in s
+    # the lists are anchored to a single principle, not ad-hoc
+    assert "50%+" in s
