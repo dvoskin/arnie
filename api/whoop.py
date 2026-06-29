@@ -531,7 +531,55 @@ async def sync_user_whoop(db, user: User, days: int = 2,
         await upsert_health_snapshot(db, save_id, d, **fields)
         count += 1
 
+    # Body weight — Whoop relays the user's connected-scale (e.g. Withings)
+    # reading via /v2/user/measurement/body. Pull it so a scale weigh-in reaches
+    # Arnie through Whoop, not only through Apple Health. Best-effort: never let
+    # a weight hiccup break the recovery/sleep sync above.
+    try:
+        await _sync_whoop_body_weight(db, save_id, token)
+    except Exception as _e:
+        logger.warning(f"whoop body-weight sync failed for user {user.id}: {_e}")
+
     return count
+
+
+async def _sync_whoop_body_weight(db, save_id: int, token: str) -> bool:
+    """Pull the user's current Whoop body measurement and persist the weight as
+    a PASSIVE (source='whoop') body metric — same tier as Apple Health, so a
+    manual weigh-in always outranks it for the day's headline.
+
+    Whoop's body endpoint returns a single CURRENT value with no measurement
+    timestamp, so we can't treat it as historical. To avoid re-writing a stale
+    value as a fresh daily reading every 30 min, we only write when the Whoop
+    weight differs from the most-recent stored weight by >0.1 kg (a genuinely
+    new reading). Returns True if a weight was written."""
+    from db.queries import get_recent_weights, add_body_metric
+
+    body = await _whoop_get(token, "/v2/user/measurement/body")
+    if not body:
+        return False
+    # The endpoint returns a bare object (not a {records:[]} envelope).
+    kg = body.get("weight_kilogram")
+    try:
+        kg = float(kg) if kg is not None else None
+    except (TypeError, ValueError):
+        kg = None
+    if not kg or kg <= 0:
+        return False
+
+    # Skip if it matches what we already have — no new information, and writing
+    # it would stamp a stale value as today's reading on every sync.
+    recent = await get_recent_weights(db, save_id, days=30)
+    latest = max(
+        (w for w in recent if w.weight_kg is not None and w.timestamp is not None),
+        key=lambda w: w.timestamp, default=None,
+    )
+    if latest is not None and abs(latest.weight_kg - kg) <= 0.1:
+        return False
+
+    await add_body_metric(db, save_id, kg, source="whoop")
+    logger.info(f"whoop body-weight: user {save_id} → {kg:.1f} kg written")
+    return True
 
 
 async def sync_all_whoop_users() -> int:
