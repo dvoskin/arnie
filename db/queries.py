@@ -1158,6 +1158,34 @@ async def get_user_by_webhook_token(
     return user
 
 
+# Source priority for the ONE merged snapshot per (user, day). Apple Health
+# supplies steps/sleep/HR; Whoop supplies recovery/strain/HRV. Both write the
+# same daily row — so the `source` LABEL must reflect the richest contributor,
+# not whoever wrote last. Without this, Apple Health's frequent steps pushes kept
+# relabeling a Whoop recovery row to "apple_health" (Danny saw Apple Health on
+# the wearable card while his recovery score was clearly Whoop's).
+_SNAPSHOT_SOURCE_RANK = {"whoop": 2, "apple_health": 1}
+
+
+def _source_rank(s: Optional[str]) -> int:
+    return _SNAPSHOT_SOURCE_RANK.get(s or "", 0)
+
+
+def _merge_snapshot_fields(snap: HealthSnapshot, kwargs: dict) -> None:
+    """Apply non-None updates to an existing snapshot WITHOUT downgrading its
+    source, then promote the label to 'whoop' if the row carries whoop-only
+    metrics (recovery/strain) — those can't come from Apple Health."""
+    for k, v in kwargs.items():
+        if v is None:
+            continue
+        if k == "source" and _source_rank(v) < _source_rank(snap.source):
+            continue  # never relabel a richer source down
+        setattr(snap, k, v)
+    if (snap.recovery_score is not None or snap.strain is not None) \
+            and _source_rank(snap.source) < _source_rank("whoop"):
+        snap.source = "whoop"
+
+
 async def upsert_health_snapshot(db: AsyncSession, user_id: int,
                                   snapshot_date: date, **kwargs) -> HealthSnapshot:
     """Insert or update a HealthSnapshot for (user_id, date)."""
@@ -1173,9 +1201,7 @@ async def upsert_health_snapshot(db: AsyncSession, user_id: int,
 
     snap = await _fetch()
     if snap:
-        for k, v in kwargs.items():
-            if v is not None:
-                setattr(snap, k, v)
+        _merge_snapshot_fields(snap, kwargs)
         await db.commit()
         return snap
 
@@ -1188,9 +1214,7 @@ async def upsert_health_snapshot(db: AsyncSession, user_id: int,
         await db.rollback()
         snap = await _fetch()
         if snap is not None:
-            for k, v in kwargs.items():
-                if v is not None:
-                    setattr(snap, k, v)
+            _merge_snapshot_fields(snap, kwargs)
             await db.commit()
     return snap
 
