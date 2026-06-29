@@ -1341,7 +1341,14 @@ async def _run_reminders():
                                         break
                             except Exception:
                                 pass
-                        _needs_weight = _goal in ("cut", "bulk") and not _today_has_weight
+                        # Suppress the weight opener if a weight ask already went
+                        # out today (e.g. a conversation-hook re-ask beat the
+                        # morning brief, or yesterday's question rolled over) —
+                        # one weight ask per day across all proactive paths.
+                        _weight_already = _weight_asked_today(recent_rows, tz, now)
+                        _needs_weight = (_goal in ("cut", "bulk")
+                                         and not _today_has_weight
+                                         and not _weight_already)
 
                         # Data-rich performance briefing (momentum + trend + leverage action)
                         msg = await _llm_morning_briefing(user, log, prefs, health_snap, db, name,
@@ -1759,6 +1766,75 @@ def schedule_one_shot_checkin(
         return False
 
 
+_WEIGHT_ASK_MARKERS = (
+    "scale", "weigh", "weight this morning", "what's your weight",
+    "what'd the scale", "what number", "what was that number",
+    "still curious what that number", "hop on the scale",
+)
+
+
+def _is_weight_ask(text: str | None) -> bool:
+    """True if a message is asking the user for their bodyweight / scale reading.
+    Used to enforce a once-per-day ceiling on weight prompts across BOTH the
+    morning check-in and the conversation-hook re-ask paths."""
+    if not text:
+        return False
+    low = text.lower()
+    return any(m in low for m in _WEIGHT_ASK_MARKERS)
+
+
+def _weight_asked_today(recent_rows, tz, now) -> bool:
+    """Has a proactive weight/scale ask already gone out today (user-local)?
+    Scans recent proactive rows. The morning check-in and the conversation
+    hook are SEPARATE jobs — without this, both fire a weight ask the same day
+    (Danny got asked at 10am by the morning brief, then re-asked at noon by the
+    hook, after he'd already told Arnie there was no new reading). One weight
+    ask per day, full stop, regardless of reminder frequency."""
+    try:
+        today = now.date()
+        for r in recent_rows:
+            if getattr(r, "source_type", "") != "proactive":
+                continue
+            ts = getattr(r, "timestamp", None)
+            if ts is None:
+                continue
+            local_date = ts.replace(tzinfo=timezone.utc).astimezone(tz).date()
+            if local_date == today and _is_weight_ask(getattr(r, "response", "")):
+                return True
+    except Exception:
+        pass
+    return False
+
+
+async def _proactive_text_sent_recently(db, user_id: int, text: str,
+                                        minutes: int = 20) -> bool:
+    """Idempotency guard: has THIS exact proactive text already been logged for
+    the user in the last `minutes`? Defends against overlapping scheduler sweeps
+    / double workers that produced identical back-to-back sends (the 16:03
+    'Still curious what that number was.' pair logged at the same second).
+    Best-effort — returns False on any error so it never blocks a real send."""
+    try:
+        from db.queries import get_recent_conversations
+        from datetime import datetime as _dt, timedelta as _td
+        cutoff = _dt.utcnow() - _td(minutes=minutes)
+        norm = " ".join((text or "").split()).strip().lower()
+        if not norm:
+            return False
+        rows = await get_recent_conversations(db, user_id, limit=10)
+        for r in rows:
+            if getattr(r, "source_type", "") != "proactive":
+                continue
+            ts = getattr(r, "timestamp", None)
+            if ts is None or ts < cutoff:
+                continue
+            other = " ".join((getattr(r, "response", "") or "").split()).strip().lower()
+            if other == norm:
+                return True
+    except Exception:
+        pass
+    return False
+
+
 async def _run_conversation_hooks() -> None:
     """
     Re-ask open conversation_hook questions for users who haven't responded.
@@ -1840,9 +1916,32 @@ async def _run_conversation_hooks() -> None:
                 if pq is None:
                     continue
 
+                # Once-per-day weight ceiling. If the pending question is a
+                # weight/scale ask AND a weight ask already went out today, retire
+                # it instead of re-asking — the morning brief already covered it,
+                # and re-asking after the user engaged the topic ("pull my weight
+                # from Apple Health" → "only old readings") is exactly the nag the
+                # user flagged. Mark it followed-up so it stops cycling.
+                import pytz as _pytz
+                from datetime import datetime as _dtm
+                _tz = _pytz.timezone(getattr(user, "timezone", None) or "UTC")
+                _now_local = _dtm.now(_pytz.utc).astimezone(_tz)
+                if _is_weight_ask(getattr(pq, "question", "")) and \
+                        _weight_asked_today(recent_rows, _tz, _now_local):
+                    await mark_pending_question_followed_up(db, pq.id)
+                    handled_canonical.add(canonical)
+                    continue
+
                 name = user.name or "hey"
                 msg = await _llm_followup(user, pq, name)
                 if not msg:
+                    continue
+
+                # Belt-and-suspenders idempotency: if this exact text already went
+                # out in the last 20 min (overlapping sweep / double worker), skip
+                # the duplicate send entirely.
+                if await _proactive_text_sent_recently(db, canonical, msg):
+                    handled_canonical.add(canonical)
                     continue
 
                 lang = (getattr(getattr(user, "preferences", None),
