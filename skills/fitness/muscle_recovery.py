@@ -68,23 +68,43 @@ from skills.fitness.exercise_catalog import canonicalize
 # `obliques` and `cardio` are NOT board muscles: obliques fold into abs, and a
 # cardio entry is decomposed into systemic + leg load (it has no muscle of its
 # own). Order here is the canonical board order.
+# Sub-muscle taxonomy. Chest/back were split previously; this expands the
+# remaining compound groups into their anatomical heads/regions so the board can
+# show, e.g., that side delts are fried while rear delts are fresh:
+#   shoulders → front / side / rear delts
+#   triceps   → long / lateral / medial heads
+#   calves    → gastrocnemius / soleus
+#   traps     → upper / mid / lower
+#   glutes    → maximus / medius
+# Quads + hamstrings are intentionally NOT split (their heads almost always
+# train together; the extra rows would be noise). Legacy single ids route to a
+# sensible default head via _PRIMARY_ALIAS, so any unedited involvement entry or
+# catalog primary still attributes somewhere.
 MUSCLES: dict[str, dict] = {
-    "chest_upper": {"name": "Upper Chest", "group": "major", "tau_hours": 32.0},
-    "chest_mid":   {"name": "Mid Chest",   "group": "major", "tau_hours": 34.0},
-    "chest_lower": {"name": "Lower Chest", "group": "major", "tau_hours": 32.0},
-    "lats":        {"name": "Lats",        "group": "major", "tau_hours": 34.0},
-    "mid_back":    {"name": "Mid Back",    "group": "major", "tau_hours": 36.0},
-    "lower_back":  {"name": "Lower Back",  "group": "major", "tau_hours": 48.0},
-    "shoulders":   {"name": "Shoulders",   "group": "major", "tau_hours": 26.0},
-    "quads":       {"name": "Quads",       "group": "major", "tau_hours": 40.0},
-    "hamstrings":  {"name": "Hamstrings",  "group": "major", "tau_hours": 40.0},
-    "glutes":      {"name": "Glutes",      "group": "major", "tau_hours": 34.0},
-    "biceps":      {"name": "Biceps",      "group": "minor", "tau_hours": 24.0},
-    "triceps":     {"name": "Triceps",     "group": "minor", "tau_hours": 26.0},
-    "forearms":    {"name": "Forearms",    "group": "minor", "tau_hours": 22.0},
-    "traps":       {"name": "Traps",       "group": "minor", "tau_hours": 26.0},
-    "abs":         {"name": "Core",        "group": "minor", "tau_hours": 22.0},
-    "calves":      {"name": "Calves",      "group": "minor", "tau_hours": 26.0},
+    "chest_upper":   {"name": "Upper Chest",      "group": "major", "tau_hours": 32.0},
+    "chest_mid":     {"name": "Mid Chest",        "group": "major", "tau_hours": 34.0},
+    "chest_lower":   {"name": "Lower Chest",      "group": "major", "tau_hours": 32.0},
+    "lats":          {"name": "Lats",             "group": "major", "tau_hours": 34.0},
+    "mid_back":      {"name": "Mid Back",         "group": "major", "tau_hours": 36.0},
+    "lower_back":    {"name": "Lower Back",       "group": "major", "tau_hours": 48.0},
+    "delts_front":   {"name": "Front Delt",       "group": "major", "tau_hours": 28.0},
+    "delts_side":    {"name": "Side Delt",        "group": "major", "tau_hours": 26.0},
+    "delts_rear":    {"name": "Rear Delt",        "group": "major", "tau_hours": 24.0},
+    "quads":         {"name": "Quads",            "group": "major", "tau_hours": 40.0},
+    "hamstrings":    {"name": "Hamstrings",       "group": "major", "tau_hours": 40.0},
+    "glutes_max":    {"name": "Glute Max",        "group": "major", "tau_hours": 34.0},
+    "glutes_med":    {"name": "Glute Med",        "group": "major", "tau_hours": 30.0},
+    "biceps":        {"name": "Biceps",           "group": "minor", "tau_hours": 24.0},
+    "triceps_long":  {"name": "Triceps (Long)",   "group": "minor", "tau_hours": 26.0},
+    "triceps_lateral": {"name": "Triceps (Lateral)", "group": "minor", "tau_hours": 26.0},
+    "triceps_medial": {"name": "Triceps (Medial)", "group": "minor", "tau_hours": 24.0},
+    "forearms":      {"name": "Forearms",         "group": "minor", "tau_hours": 22.0},
+    "traps_upper":   {"name": "Upper Traps",      "group": "minor", "tau_hours": 26.0},
+    "traps_mid":     {"name": "Mid Traps",        "group": "minor", "tau_hours": 28.0},
+    "traps_lower":   {"name": "Lower Traps",      "group": "minor", "tau_hours": 28.0},
+    "abs":           {"name": "Core",             "group": "minor", "tau_hours": 22.0},
+    "calves_gastroc": {"name": "Calf (Gastroc)",  "group": "minor", "tau_hours": 26.0},
+    "calves_soleus": {"name": "Calf (Soleus)",    "group": "minor", "tau_hours": 30.0},
 }
 
 # Catalog primaries that aren't their own board muscle map here.
@@ -95,9 +115,18 @@ _PRIMARY_ALIAS = {
     "obliques": "abs",
     "chest": "chest_mid",
     "back": "lats",
+    # Legacy single-muscle ids → default head. The default is chosen for where
+    # the bulk of *secondary* involvement lands: pressing hits the FRONT delt
+    # and LATERAL/medial triceps; squats/hinges hit glute MAX; rows/shrugs and
+    # deadlift traps read as MID/upper traps; cardio + incidental calf work is
+    # gastroc. Head-specific isolations (lateral raise → side delt, seated calf
+    # → soleus, etc.) are mapped explicitly in INVOLVEMENT below and override this.
+    "shoulders": "delts_front",
+    "triceps":   "triceps_lateral",
+    "glutes":    "glutes_max",
+    "traps":     "traps_mid",
+    "calves":    "calves_gastroc",
 }
-
-LEG_MUSCLES = ("quads", "hamstrings", "glutes", "calves")
 
 
 # ── Involvement map ───────────────────────────────────────────────────────────
@@ -116,21 +145,27 @@ INVOLVEMENT: dict[str, dict[str, float]] = {
     "High-to-Low Fly":        {"chest_lower": 1.0, "chest_mid": 0.4},
     "Low-to-High Fly":        {"chest_upper": 1.0, "chest_mid": 0.4},
     "Push-Up":                {"chest_mid": 1.0, "chest_upper": 0.2, "chest_lower": 0.3, "triceps": 0.4, "shoulders": 0.3, "abs": 0.2},
-    "Close-Grip Bench Press": {"triceps": 1.0, "chest_mid": 0.5, "shoulders": 0.25},
-    "Dip":                    {"triceps": 1.0, "chest_lower": 0.6, "shoulders": 0.3},
+    "Close-Grip Bench Press": {"triceps_lateral": 1.0, "triceps_medial": 0.6, "triceps_long": 0.4, "chest_mid": 0.5, "shoulders": 0.25},
+    "Dip":                    {"triceps_lateral": 1.0, "triceps_medial": 0.5, "chest_lower": 0.6, "shoulders": 0.3},
     "Machine Chest Press":    {"chest_mid": 1.0, "chest_upper": 0.3, "chest_lower": 0.3, "triceps": 0.35, "shoulders": 0.25},
     "Floor Press":            {"chest_mid": 1.0, "chest_lower": 0.3, "triceps": 0.5, "shoulders": 0.2},
     "Landmine Press":         {"chest_upper": 1.0, "shoulders": 0.6, "triceps": 0.3, "abs": 0.2},
-    "Diamond Push-Up":        {"triceps": 1.0, "chest_mid": 0.6, "shoulders": 0.3, "abs": 0.2},
+    "Diamond Push-Up":        {"triceps_lateral": 1.0, "triceps_medial": 0.5, "chest_mid": 0.6, "shoulders": 0.3, "abs": 0.2},
     # ── shoulder presses / raises ───────────────────────────────────────────
-    "Overhead Press":           {"shoulders": 1.0, "triceps": 0.45, "traps": 0.3, "abs": 0.2},
-    "Dumbbell Shoulder Press":  {"shoulders": 1.0, "triceps": 0.4, "traps": 0.25},
-    "Upright Row":              {"shoulders": 1.0, "traps": 0.5, "biceps": 0.2},
-    "Face Pull":                {"shoulders": 1.0, "traps": 0.4},
-    "Arnold Press":             {"shoulders": 1.0, "triceps": 0.4, "traps": 0.25},
-    "Push Press":               {"shoulders": 1.0, "triceps": 0.5, "traps": 0.3, "quads": 0.3, "abs": 0.2},
-    "Front Raise":              {"shoulders": 1.0},
-    "Machine Rear Delt Fly":    {"shoulders": 1.0, "traps": 0.35},
+    # presses are front-delt dominant, with real side-delt involvement
+    "Overhead Press":           {"delts_front": 1.0, "delts_side": 0.5, "triceps": 0.45, "traps_upper": 0.3, "abs": 0.2},
+    "Dumbbell Shoulder Press":  {"delts_front": 1.0, "delts_side": 0.5, "triceps": 0.4, "traps_upper": 0.25},
+    "Arnold Press":             {"delts_front": 1.0, "delts_side": 0.6, "triceps": 0.4, "traps_upper": 0.25},
+    "Push Press":               {"delts_front": 1.0, "delts_side": 0.4, "triceps": 0.5, "traps_upper": 0.3, "quads": 0.3, "abs": 0.2},
+    "Front Raise":              {"delts_front": 1.0},
+    # side-delt isolations
+    "Dumbbell Lateral Raise":   {"delts_side": 1.0},
+    "Cable Lateral Raise":      {"delts_side": 1.0},
+    "Upright Row":              {"delts_side": 1.0, "traps_upper": 0.5, "biceps": 0.2},
+    # rear-delt isolations
+    "Rear Delt Fly":            {"delts_rear": 1.0, "traps_mid": 0.3},
+    "Machine Rear Delt Fly":    {"delts_rear": 1.0, "traps_mid": 0.35},
+    "Face Pull":                {"delts_rear": 1.0, "traps_mid": 0.4},
     # ── back pulls (sub-muscle split: lats / mid_back / lower_back) ─────────
     "Deadlift":              {"lower_back": 1.0, "mid_back": 0.6, "lats": 0.4, "glutes": 0.6, "hamstrings": 0.6, "traps": 0.4, "forearms": 0.3, "quads": 0.3},
     "Pull-Up":               {"lats": 1.0, "mid_back": 0.4, "biceps": 0.5, "forearms": 0.3},
@@ -152,36 +187,43 @@ INVOLVEMENT: dict[str, dict[str, float]] = {
     "Hammer Curl":   {"biceps": 1.0, "forearms": 0.5},
     "Preacher Curl": {"biceps": 1.0, "forearms": 0.3},
     "Reverse Curl":  {"forearms": 1.0, "biceps": 0.5},
-    "Shrug":         {"traps": 1.0, "forearms": 0.3},
+    "Shrug":         {"traps_upper": 1.0, "forearms": 0.3},
     "Incline Curl":         {"biceps": 1.0, "forearms": 0.3},
     "Concentration Curl":   {"biceps": 1.0, "forearms": 0.3},
     "EZ-Bar Curl":          {"biceps": 1.0, "forearms": 0.4},
     "Zottman Curl":         {"biceps": 1.0, "forearms": 0.6},
-    "Skull Crusher":             {"triceps": 1.0, "forearms": 0.2},
-    "Overhead Tricep Extension": {"triceps": 1.0, "shoulders": 0.2},
-    "Bench Dip":                 {"triceps": 1.0, "chest_lower": 0.3, "shoulders": 0.25},
+    # lying/overhead extensions bias the LONG head; pushdowns the lateral/medial
+    "Skull Crusher":             {"triceps_long": 1.0, "triceps_lateral": 0.5, "triceps_medial": 0.4, "forearms": 0.2},
+    "Overhead Tricep Extension": {"triceps_long": 1.0, "triceps_medial": 0.4, "shoulders": 0.2},
+    "Overhead Cable Extension":  {"triceps_long": 1.0, "triceps_medial": 0.4},
+    "Cable Pushdown":            {"triceps_lateral": 1.0, "triceps_medial": 0.5, "triceps_long": 0.3},
+    "Bench Dip":                 {"triceps_lateral": 1.0, "triceps_medial": 0.5, "chest_lower": 0.3, "shoulders": 0.25},
     "Wrist Curl":         {"forearms": 1.0},
     "Reverse Wrist Curl": {"forearms": 1.0},
     # ── traps / carries ─────────────────────────────────────────────────────
-    "Farmer's Carry": {"traps": 1.0, "forearms": 0.8, "abs": 0.4, "glutes": 0.3, "quads": 0.2},
+    "Farmer's Carry": {"traps_upper": 1.0, "forearms": 0.8, "abs": 0.4, "glutes_max": 0.3, "quads": 0.2},
     # ── legs (quads / hamstrings / glutes / calves) ─────────────────────────
     "Back Squat":            {"quads": 1.0, "glutes": 0.6, "hamstrings": 0.4, "abs": 0.3, "lower_back": 0.3},
     "Front Squat":           {"quads": 1.0, "glutes": 0.5, "abs": 0.4, "lower_back": 0.3},
     "Leg Press":             {"quads": 1.0, "glutes": 0.5, "hamstrings": 0.3},
-    "Bulgarian Split Squat": {"quads": 1.0, "glutes": 0.7, "hamstrings": 0.3},
-    "Lunge":                 {"quads": 1.0, "glutes": 0.6, "hamstrings": 0.3},
-    "Hack Squat":            {"quads": 1.0, "glutes": 0.5, "hamstrings": 0.3},
-    "Step-Up":               {"quads": 1.0, "glutes": 0.6, "hamstrings": 0.3, "calves": 0.2},
+    # single-leg work recruits glute MED (frontal-plane stability) on top of max
+    "Bulgarian Split Squat": {"quads": 1.0, "glutes_max": 0.7, "glutes_med": 0.35, "hamstrings": 0.3},
+    "Lunge":                 {"quads": 1.0, "glutes_max": 0.6, "glutes_med": 0.3, "hamstrings": 0.3},
+    "Hack Squat":            {"quads": 1.0, "glutes_max": 0.5, "hamstrings": 0.3},
+    "Step-Up":               {"quads": 1.0, "glutes_max": 0.6, "glutes_med": 0.3, "hamstrings": 0.3, "calves_gastroc": 0.2},
     "Box Squat":             {"quads": 1.0, "glutes": 0.7, "hamstrings": 0.4, "lower_back": 0.3},
     "Romanian Deadlift":     {"hamstrings": 1.0, "glutes": 0.6, "lower_back": 0.4, "forearms": 0.25},
     "Good Morning":          {"hamstrings": 1.0, "glutes": 0.5, "lower_back": 0.4},
     "Nordic Curl":           {"hamstrings": 1.0, "glutes": 0.3, "calves": 0.2},
     "Seated Leg Curl":       {"hamstrings": 1.0},
-    "Hip Thrust":            {"glutes": 1.0, "hamstrings": 0.4},
-    "Glute Bridge":          {"glutes": 1.0, "hamstrings": 0.4, "lower_back": 0.2},
-    "Seated Calf Raise":     {"calves": 1.0},
-    "Standing Calf Raise":   {"calves": 1.0},
-    "Donkey Calf Raise":     {"calves": 1.0},
+    "Hip Thrust":            {"glutes_max": 1.0, "glutes_med": 0.3, "hamstrings": 0.4},
+    "Glute Bridge":          {"glutes_max": 1.0, "glutes_med": 0.25, "hamstrings": 0.4, "lower_back": 0.2},
+    "Glute Kickback":        {"glutes_max": 1.0, "glutes_med": 0.3, "hamstrings": 0.2},
+    # seated calf (bent knee) hits the SOLEUS; standing (straight knee) the GASTROC
+    "Seated Calf Raise":     {"calves_soleus": 1.0, "calves_gastroc": 0.3},
+    "Standing Calf Raise":   {"calves_gastroc": 1.0, "calves_soleus": 0.4},
+    "Donkey Calf Raise":     {"calves_gastroc": 1.0, "calves_soleus": 0.3},
+    "Calf Raise":            {"calves_gastroc": 1.0, "calves_soleus": 0.4},
     # ── core ────────────────────────────────────────────────────────────────
     "Hanging Leg Raise": {"abs": 1.0, "forearms": 0.2},
     "Plank":             {"abs": 1.0, "shoulders": 0.2},
@@ -197,15 +239,18 @@ INVOLVEMENT: dict[str, dict[str, float]] = {
 # ── Cardio leg-involvement by modality ────────────────────────────────────────
 # Each cardio canonical maps to the muscles its leg/limb load lands on. Systemic
 # load (every muscle) is added separately. Default = running profile.
-_CARDIO_DEFAULT = {"calves": 0.6, "quads": 0.5, "hamstrings": 0.4, "glutes": 0.35}
+# NOTE: cardio loads bypass _PRIMARY_ALIAS (they're applied directly against the
+# MUSCLES set), so these MUST use the new head ids. Running-type cardio loads the
+# gastroc; glute work is glute-max dominant.
+_CARDIO_DEFAULT = {"calves_gastroc": 0.6, "quads": 0.5, "hamstrings": 0.4, "glutes_max": 0.35}
 CARDIO_INVOLVEMENT: dict[str, dict[str, float]] = {
     "Running":        _CARDIO_DEFAULT,
     "Treadmill":      _CARDIO_DEFAULT,
-    "Stair Climber":  {"quads": 0.7, "glutes": 0.6, "calves": 0.5, "hamstrings": 0.35},
-    "Walking":        {"calves": 0.4, "quads": 0.25, "glutes": 0.2, "hamstrings": 0.15},
-    "Stationary Bike": {"quads": 0.6, "hamstrings": 0.3, "glutes": 0.3, "calves": 0.2},
-    "Elliptical":     {"quads": 0.4, "glutes": 0.35, "hamstrings": 0.3, "calves": 0.3},
-    "Rowing":         {"quads": 0.4, "hamstrings": 0.3, "mid_back": 0.5, "glutes": 0.3, "biceps": 0.2},
+    "Stair Climber":  {"quads": 0.7, "glutes_max": 0.6, "calves_gastroc": 0.5, "hamstrings": 0.35},
+    "Walking":        {"calves_gastroc": 0.4, "quads": 0.25, "glutes_max": 0.2, "hamstrings": 0.15},
+    "Stationary Bike": {"quads": 0.6, "hamstrings": 0.3, "glutes_max": 0.3, "calves_gastroc": 0.2},
+    "Elliptical":     {"quads": 0.4, "glutes_max": 0.35, "hamstrings": 0.3, "calves_gastroc": 0.3},
+    "Rowing":         {"quads": 0.4, "hamstrings": 0.3, "mid_back": 0.5, "glutes_max": 0.3, "biceps": 0.2},
 }
 
 

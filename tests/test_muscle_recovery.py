@@ -37,7 +37,7 @@ def test_fresh_heavy_squat_just_hit():
     assert quads["status"] == "just_hit"
     assert quads["recovery_pct"] < 40
     # secondary movers picked up too
-    assert _by_id(res)["glutes"]["fatigue"] > 0
+    assert _by_id(res)["glutes_max"]["fatigue"] > 0
     # the movement is attributed back to the muscle
     assert any(m["name"] == "Back Squat" for m in quads["movements"])
 
@@ -79,7 +79,7 @@ def test_small_muscle_hit_3d_ago_reads_more_recovered_than_arms_1d_ago():
     arms (trained yesterday) — backwards. A small muscle 72 h out must read more
     recovered than one 24 h out. Regression on the tau recalibration."""
     res = compute_recovery([_overhead_press(72), _curl(24)], None, {"age": 33}, NOW)
-    shoulders = _by_id(res)["shoulders"]
+    shoulders = _by_id(res)["delts_front"]   # OHP primary mover
     biceps = _by_id(res)["biceps"]
     assert shoulders["recovery_pct"] > biceps["recovery_pct"]
     # a small muscle 3 days out is essentially recovered
@@ -91,7 +91,7 @@ def test_shoulders_recover_inside_the_small_muscle_window():
     """Shoulders are a small muscle (~24-48 h window), not a 54 h slow-recoverer —
     ready by ~48 h after a hard session."""
     res = compute_recovery([_overhead_press(48)], None, {"age": 33}, NOW)
-    assert _by_id(res)["shoulders"]["status"] == "ready"
+    assert _by_id(res)["delts_front"]["status"] == "ready"
 
 
 def test_one_light_set_does_not_lock_out_a_muscle():
@@ -130,7 +130,7 @@ def test_zone4_run_loads_legs_and_systemic():
     res = compute_recovery([run], None, {"age": 33}, NOW)
     by = _by_id(res)
     # legs take the brunt
-    assert by["calves"]["fatigue"] > by["chest_mid"]["fatigue"]
+    assert by["calves_gastroc"]["fatigue"] > by["chest_mid"]["fatigue"]
     assert by["quads"]["fatigue"] > 0
     # systemic full-body effect: even chest registers something
     assert by["chest_mid"]["fatigue"] > 0
@@ -148,7 +148,7 @@ def test_easy_walk_is_minimal():
     by = _by_id(res)
     # a walk never fries anything
     assert all(m["status"] in ("ready", "recovering") for m in res["muscles"])
-    assert by["calves"]["fatigue"] < 0.5
+    assert by["calves_gastroc"]["fatigue"] < 0.5
 
 
 def test_zone_intensity_scales_load():
@@ -202,7 +202,7 @@ def test_per_set_weights_csv_parsed():
     # Bench Press dominates mid-chest with upper/lower as secondaries
     assert by["chest_mid"]["status"] in ("just_hit", "strained")
     # triceps get partial credit as a synergist (less than the prime mover)
-    assert 0 < by["triceps"]["fatigue"] < by["chest_mid"]["fatigue"]
+    assert 0 < by["triceps_lateral"]["fatigue"] < by["chest_mid"]["fatigue"]
 
 
 def test_bodyweight_movement_registers():
@@ -303,7 +303,7 @@ def test_deadlift_dominates_lower_back():
     assert by["lower_back"]["fatigue"] > by["mid_back"]["fatigue"]
     assert by["lower_back"]["fatigue"] > by["lats"]["fatigue"]
     # legs come along (glutes, hams) — verify the cross-muscle attribution
-    assert by["glutes"]["fatigue"] > 0
+    assert by["glutes_max"]["fatigue"] > 0
     assert by["hamstrings"]["fatigue"] > 0
 
 
@@ -345,29 +345,29 @@ def test_back_legacy_alias_routes_to_lats():
     ("Machine Chest Press", "chest_mid"),
     ("Floor Press", "chest_mid"),
     ("Landmine Press", "chest_upper"),
-    ("Diamond Push-Up", "triceps"),
+    ("Diamond Push-Up", "triceps_lateral"),
     # Back additions
     ("Pendlay Row", "mid_back"),
     ("T-Bar Row", "mid_back"),
     ("Rack Pull", "lower_back"),
     ("Hyperextension", "lower_back"),
     ("Reverse Hyperextension", "lower_back"),
-    # Shoulder additions
-    ("Arnold Press", "shoulders"),
-    ("Push Press", "shoulders"),
-    ("Front Raise", "shoulders"),
-    ("Machine Rear Delt Fly", "shoulders"),
+    # Shoulder additions (sub-muscle heads)
+    ("Arnold Press", "delts_front"),
+    ("Push Press", "delts_front"),
+    ("Front Raise", "delts_front"),
+    ("Machine Rear Delt Fly", "delts_rear"),
     # Traps
-    ("Farmer's Carry", "traps"),
+    ("Farmer's Carry", "traps_upper"),
     # Biceps additions
     ("Incline Curl", "biceps"),
     ("Concentration Curl", "biceps"),
     ("EZ-Bar Curl", "biceps"),
     ("Zottman Curl", "biceps"),
-    # Triceps additions
-    ("Skull Crusher", "triceps"),
-    ("Overhead Tricep Extension", "triceps"),
-    ("Bench Dip", "triceps"),
+    # Triceps additions (sub-muscle heads)
+    ("Skull Crusher", "triceps_long"),
+    ("Overhead Tricep Extension", "triceps_long"),
+    ("Bench Dip", "triceps_lateral"),
     # Forearms additions
     ("Wrist Curl", "forearms"),
     ("Reverse Wrist Curl", "forearms"),
@@ -375,22 +375,22 @@ def test_back_legacy_alias_routes_to_lats():
     ("Hack Squat", "quads"),
     ("Step-Up", "quads"),
     ("Box Squat", "quads"),
-    # Hamstring/glute additions
+    # Hamstring/glute additions (sub-muscle heads)
     ("Nordic Curl", "hamstrings"),
     ("Seated Leg Curl", "hamstrings"),
-    ("Hip Thrust", "glutes"),
-    ("Glute Bridge", "glutes"),
-    # Calves
-    ("Seated Calf Raise", "calves"),
-    ("Standing Calf Raise", "calves"),
-    ("Donkey Calf Raise", "calves"),
+    ("Hip Thrust", "glutes_max"),
+    ("Glute Bridge", "glutes_max"),
+    # Calves (sub-muscle heads: seated=soleus, standing=gastroc)
+    ("Seated Calf Raise", "calves_soleus"),
+    ("Standing Calf Raise", "calves_gastroc"),
+    ("Donkey Calf Raise", "calves_gastroc"),
     # Core additions
     ("Plank", "abs"),
     ("Dead Bug", "abs"),
     ("Pallof Press", "abs"),
     ("Side Plank", "obliques"),
     # Conditioning finishers
-    ("Battle Ropes", "shoulders"),
+    ("Battle Ropes", "delts_front"),
     ("Burpees", "abs"),
     ("Box Jumps", "quads"),
 ])
