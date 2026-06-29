@@ -291,21 +291,38 @@ async def _send_ios(telegram_id: str, text: str) -> None:
             logger.info(f"No active APNs tokens for user {user.id} — proactive send skipped")
             return
         for row in tokens:
-            result = await send_push(
-                row.token, title, body, environment=row.environment,
-            )
+            env = row.environment or "production"
+            result = await send_push(row.token, title, body, environment=env)
+
+            # Cross-environment retry: a token registered under one APNs environment
+            # but actually minted for the other still BadDeviceToken's on the wrong
+            # host. The common case is a RELEASE-built dev sideload — its `apsEnvironment`
+            # reports "production" (it's not a DEBUG build) but the dev provisioning
+            # profile makes the token sandbox-only, so production sends bounce. Before
+            # writing the token off, try the OTHER host; only a failure on BOTH means
+            # the token is genuinely dead (app uninstalled).
+            if not result.get("ok"):
+                reason = result.get("reason")
+                status = result.get("status")
+                if reason in ("BadDeviceToken", "Unregistered") or status in (400, 410):
+                    other = "sandbox" if env == "production" else "production"
+                    alt = await send_push(row.token, title, body, environment=other)
+                    if alt.get("ok"):
+                        logger.info(
+                            f"APNs delivered to user {user.id} on {other} (token registered "
+                            f"{env}) — env mismatch bridged"
+                        )
+                        result = alt
+
             if result.get("ok"):
                 continue
             reason = result.get("reason")
             status = result.get("status")
-            # Apple's "token is dead, stop sending to it" signals. 400 +
-            # BadDeviceToken means the token was never valid; 410 +
-            # Unregistered means the app was uninstalled. Either way: revoke
-            # so the next sweep doesn't waste a round-trip.
-            if reason in ("BadDeviceToken", "Unregistered") or status == 410:
+            # Dead on BOTH hosts → revoke so the next sweep doesn't waste round-trips.
+            if reason in ("BadDeviceToken", "Unregistered") or status in (400, 410):
                 await revoke_device_token(db, user.id, row.token)
                 logger.info(
-                    f"APNs revoked dead token for user {user.id}: status={status} reason={reason}"
+                    f"APNs revoked dead token for user {user.id}: status={status} reason={reason} (both envs failed)"
                 )
             else:
                 logger.warning(

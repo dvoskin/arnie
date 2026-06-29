@@ -136,12 +136,15 @@ async def test_bubble_separator_collapsed_to_newlines(
 async def test_bad_device_token_response_revokes_token(
     patched_session_local, configured_apns, db, make_user, monkeypatch,
 ):
-    """Apple's BadDeviceToken response means the token was never valid —
-    revoke so the next sweep doesn't waste a round-trip."""
+    """Apple's BadDeviceToken on BOTH the registered host AND the cross-env retry
+    means the token is genuinely dead — revoke so the next sweep doesn't waste a
+    round-trip. (A single-host BadDeviceToken now triggers a retry, not a revoke.)"""
     user = await make_user(telegram_id="ios:dead-token-user")
     await upsert_device_token(db, user.id, "dead", environment="production")
 
     recorder = _SendPushRecorder()
+    # Fails on production, then on the sandbox retry too → truly dead.
+    recorder.responses.append({"ok": False, "status": 400, "reason": "BadDeviceToken"})
     recorder.responses.append({"ok": False, "status": 400, "reason": "BadDeviceToken"})
     monkeypatch.setattr("notifications.apns_client.send_push", recorder)
 
@@ -162,12 +165,38 @@ async def test_unregistered_410_response_revokes_token(
 
     recorder = _SendPushRecorder()
     recorder.responses.append({"ok": False, "status": 410, "reason": "Unregistered"})
+    recorder.responses.append({"ok": False, "status": 410, "reason": "Unregistered"})
     monkeypatch.setattr("notifications.apns_client.send_push", recorder)
 
     await proactive_scheduler._send("ios:uninstalled-user", "nudge")
 
     active = await active_device_tokens_for_user(db, user.id)
     assert active == []
+
+
+@pytest.mark.asyncio
+async def test_env_mismatch_retries_other_host_and_delivers(
+    patched_session_local, configured_apns, db, make_user, monkeypatch,
+):
+    """A token registered "production" but actually sandbox-minted (a Release-built
+    dev sideload) BadDeviceToken's on the production host. The sender must retry the
+    sandbox host, DELIVER, and NOT revoke a token that's actually fine — this is what
+    makes proactive reminders reach a sideloaded build."""
+    user = await make_user(telegram_id="ios:mismatched-env")
+    await upsert_device_token(db, user.id, "sandbox-token", environment="production")
+
+    recorder = _SendPushRecorder()
+    recorder.responses.append({"ok": False, "status": 400, "reason": "BadDeviceToken"})  # production miss
+    # second call (sandbox) falls through to the recorder's default {"ok": True}
+    monkeypatch.setattr("notifications.apns_client.send_push", recorder)
+
+    await proactive_scheduler._send("ios:mismatched-env", "nudge")
+
+    # tried both hosts, in order
+    assert [c[3] for c in recorder.calls] == ["production", "sandbox"]
+    # delivered → token survives
+    active = await active_device_tokens_for_user(db, user.id)
+    assert len(active) == 1 and active[0].token == "sandbox-token"
 
 
 @pytest.mark.asyncio
