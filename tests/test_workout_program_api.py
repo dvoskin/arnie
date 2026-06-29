@@ -59,10 +59,12 @@ async def test_post_builds_program_and_get_returns_it(
     assert post_resp["program"]["days_per_week"] == 6
     assert len(post_resp["program"]["sessions"]) == 6
 
-    # GET sees the same active program
+    # GET now returns the UNIFIED rich shape (built-program converted) — no
+    # personal parsed program for this user, so source is the builder.
     get_resp = await get_workout_program(identity="ios:builder")
     assert get_resp["program"] is not None
-    assert get_resp["program"]["id"] == post_resp["program"]["id"]
+    assert get_resp["program"]["source"] == "builder"
+    assert len(get_resp["program"]["days"]) == 6   # 6 sessions → 6 day-sections
 
 
 @pytest.mark.asyncio
@@ -80,8 +82,10 @@ async def test_post_marks_previous_program_inactive(
         identity="ios:flip",
     )
     active = await get_workout_program(identity="ios:flip")
-    assert active["program"]["id"] == second["program"]["id"]
-    assert active["program"]["split"] == "upper_lower"
+    # Unified rich shape — the active program is the SECOND build (upper/lower,
+    # 4 days → 4 day-sections), distinct from the first (ppl, 6).
+    assert active["program"]["source"] == "builder"
+    assert len(active["program"]["days"]) == 4
 
     # History shows both, newest first, only the newer one active.
     history = await get_workout_program_history(identity="ios:flip", limit=10)
