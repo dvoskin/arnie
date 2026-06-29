@@ -201,12 +201,12 @@ async def get_week(identity: str = Depends(current_identity)):
     from core.targets import compute_adaptive_tdee
     expenditure = compute_adaptive_tdee(stats.get("history") or [], weights)
 
-    # 10-day adherence (Coach strip card): per-day calories/protein + whether a
+    # 14-day adherence (Coach strip card): per-day calories/protein + whether a
     # weigh-in landed that day. Built from the 14-day history (by_date) + weigh-in
     # dates, so it's independent of the 7-day `days`/`averages` window above.
     weigh_dates = {w["date"] for w in weights}
     adherence_days = []
-    for i in range(9, -1, -1):
+    for i in range(13, -1, -1):
         d = today - timedelta(days=i)
         h = by_date.get(d.isoformat()) or {}
         adherence_days.append({

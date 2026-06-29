@@ -94,6 +94,16 @@ def test_shoulders_recover_inside_the_small_muscle_window():
     assert _by_id(res)["shoulders"]["status"] == "ready"
 
 
+def test_one_light_set_does_not_lock_out_a_muscle():
+    """Danny: one set of lat pulldown shouldn't rule out back for days. Low volume
+    (sets x reps x load) already decays fast under the recalibrated back tau."""
+    one_set = {"name": "Lat Pulldown", "sets": 1, "reps": "10", "weight": 60.0,
+               "rir": 2, "occurred_at": NOW - timedelta(hours=20)}
+    back = _by_id(compute_recovery([one_set], None, {"age": 33}, NOW))["back"]
+    assert back["status"] == "ready"
+    assert back["recovery_pct"] >= 75
+
+
 def test_untrained_muscle_is_ready():
     res = compute_recovery([_squat(2)], None, {"age": 33}, NOW)
     biceps = _by_id(res)["biceps"]

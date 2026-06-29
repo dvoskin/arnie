@@ -1284,6 +1284,23 @@ async def _build_stats_for_user(db, user, target_date=None):
         if (_vals := _brain_by_cat.get(_cat))
     )
 
+    # Recent conversation across ALL linked surfaces — so the briefing knows what
+    # the user actually TOLD Arnie (e.g. "today's a rest day"), not just the logs.
+    # Without it the brief and the chat diverge and Arnie prescribes a workout the
+    # user already said they're skipping. Newest-first from the query; rendered
+    # oldest→newest by the summary builder.
+    try:
+        from db.queries import get_recent_conversations_linked as _grcl
+        _recent_chat = [
+            {"user": (c.raw_message or "").strip()[:240],
+             "arnie": (c.response or "").replace("|||", " ").strip()[:200],
+             "when": str(c.timestamp)[:16]}
+            for c in await _grcl(db, user, limit=12)
+            if (c.raw_message or c.response)
+        ]
+    except Exception:
+        _recent_chat = []
+
     return {
         "profile": profile,
         "targets": {
@@ -1300,6 +1317,7 @@ async def _build_stats_for_user(db, user, target_date=None):
         "viewing_date": str(target_date or _user_today(user.timezone or "UTC")),
         "attribute_count": _attribute_count,
         "brain": _brain_str,
+        "recent_chat": _recent_chat,
         # keep legacy 'today' + 'user' keys so existing insights endpoint works unchanged
         "today": _log_to_day(day_log),
         "user": {"name": user.name or "User", "goal": user.primary_goal or "general fitness",
