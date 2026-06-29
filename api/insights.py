@@ -721,7 +721,7 @@ async def generate_briefing(stats: dict) -> dict:
 Return ONLY a valid JSON object with EXACTLY this shape:
 {{
   "hero": {{
-    "headline": "<3 to 4 words MAX, a single punchy REAL-TIME directive — the move to make right now, in imperative voice, grounded in TODAY's live numbers. e.g. 'Hit 32g protein', 'Train upper today', 'Cut 150 today', 'Protect the streak', 'Fuel the cut'. NEVER a bare number ('209 lbs') — translate the number into the action. NO second clause (NOT 'Train upper, hit 180g'). null only if nothing actionable.>",
+    "headline": "<3 to 7 words, a single REAL-TIME directive — the move to make right now, in imperative voice, grounded in TODAY's live numbers. Slightly longer is fine when the extra 2-3 words add genuine PERSONALIZATION ('Front-load protein before the gym', 'Cut 150 to break the plateau') vs a generic 'Front-load protein'. e.g. 'Hit 32g protein', 'Train upper today', 'Cut 150 today', 'Protect the 5-day streak', 'Fuel the cut with breakfast'. NEVER a bare number ('209 lbs') — translate the number into the action. NO second clause (NOT 'Train upper, hit 180g protein'). null only if nothing actionable.>",
     "milestone": "<positive reinforcement IF genuinely earned by the data, e.g. 'Lowest weight in 6 weeks' — else null. No emoji.>",
     "body": "<1-2 short sentences (~25-35 words total) — the WHY behind today's directive, anchored in live numbers or a real pattern. The action's reason, not its restatement. e.g. 'You're at 158g protein with the day still open and a session tonight. 30g now closes it clean.'>"
   }},
