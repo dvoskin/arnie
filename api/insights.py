@@ -689,9 +689,9 @@ async def generate_briefing(stats: dict) -> dict:
 Return ONLY a valid JSON object with EXACTLY this shape:
 {{
   "hero": {{
-    "headline": "<the single most striking status, e.g. '209.2 lbs' — or null if nothing striking>",
+    "headline": "<the ONE highest-leverage, hyper-personalized DIRECTIVE for {name} right now, ~3-7 words — the single most useful thing to DO or realize today, pulled from their most pressing signal: an open protein/calorie gap with the day still live, a stalled scale that needs a target change, which muscle groups are fresh to train, a streak worth protecting, a drifting habit to correct. An imperative or a sharp judgment that implies the move. NEVER a bare weight or number ('209 lbs') — the weight, macros and trend are ALREADY shown in the cards below, so restating them is repetitive and wasted; translate the number into the ACTION it demands. e.g. 'Front-load protein today', 'Two weeks flat, cut 150', 'Train upper, legs need a day', 'Protect the 5-day streak', 'You're under-eating, fuel the cut'. null only if truly nothing actionable.>",
     "milestone": "<positive reinforcement IF genuinely earned by the data, e.g. 'Lowest weight in 6 weeks' — else null. No emoji.>",
-    "body": "<1-2 short sentences: where they are + today's direction. e.g. 'Protein was 193g yesterday. Let's close the final 7 lbs.'>"
+    "body": "<1-2 short sentences: the WHY behind the headline — the exact number or pattern that makes it today's top move. e.g. 'You're at 158g protein with the day still open and a session tonight. 30g now closes it clean.'>"
   }},
   "focus": {{
     "title": "<2-4 words>",

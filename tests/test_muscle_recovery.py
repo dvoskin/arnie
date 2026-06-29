@@ -56,6 +56,44 @@ def test_squat_ready_after_four_days():
     assert quads["recovery_pct"] >= 78
 
 
+def _overhead_press(hours_ago: float):
+    """A hard overhead press session (shoulders — a SMALL muscle group)."""
+    return {
+        "name": "Overhead Press",
+        "sets": 5, "reps": "8,8,8,8,8", "weight": 55.0, "rir": 1,
+        "occurred_at": NOW - timedelta(hours=hours_ago),
+    }
+
+
+def _curl(hours_ago: float):
+    """A hard biceps curl session (arms — a SMALL muscle group)."""
+    return {
+        "name": "Barbell Curl",
+        "sets": 5, "reps": "10,10,10,10,10", "weight": 40.0, "rir": 0,
+        "occurred_at": NOW - timedelta(hours=hours_ago),
+    }
+
+
+def test_small_muscle_hit_3d_ago_reads_more_recovered_than_arms_1d_ago():
+    """Danny's report: shoulders (trained 3 days ago) showed LESS recovered than
+    arms (trained yesterday) — backwards. A small muscle 72 h out must read more
+    recovered than one 24 h out. Regression on the tau recalibration."""
+    res = compute_recovery([_overhead_press(72), _curl(24)], None, {"age": 33}, NOW)
+    shoulders = _by_id(res)["shoulders"]
+    biceps = _by_id(res)["biceps"]
+    assert shoulders["recovery_pct"] > biceps["recovery_pct"]
+    # a small muscle 3 days out is essentially recovered
+    assert shoulders["recovery_pct"] >= 80
+    assert shoulders["status"] == "ready"
+
+
+def test_shoulders_recover_inside_the_small_muscle_window():
+    """Shoulders are a small muscle (~24-48 h window), not a 54 h slow-recoverer —
+    ready by ~48 h after a hard session."""
+    res = compute_recovery([_overhead_press(48)], None, {"age": 33}, NOW)
+    assert _by_id(res)["shoulders"]["status"] == "ready"
+
+
 def test_untrained_muscle_is_ready():
     res = compute_recovery([_squat(2)], None, {"age": 33}, NOW)
     biceps = _by_id(res)["biceps"]

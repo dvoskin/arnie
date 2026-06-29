@@ -44,24 +44,39 @@ from skills.fitness.exercise_catalog import canonicalize
 
 # ── Muscle metadata ───────────────────────────────────────────────────────────
 # group: "major"|"minor" controls iOS chip emphasis (major = larger).
-# tau_hours: recovery time constant — residual fatigue ~= e^-1 (37%) after `tau`,
-#            and is effectively gone (<5%) after ~3x tau.
+# tau_hours: time constant of the exponential recovery model — a reference hard
+#   session's residual fatigue falls to ~37% after `tau`, ~13% after 2*tau, <5%
+#   after 3*tau. Calibrated so a hard session crosses back to "ready" inside the
+#   muscle's EVIDENCE-BASED recovery window (not an arbitrary curve):
+#     • small muscles  (delts, arms, calves, core, traps): ~24-48 h
+#     • large muscles  (chest, back, glutes):              ~48-72 h
+#     • eccentric legs (quads, hamstrings):                ~72-96 h (severe DOMS
+#       from heavy eccentric work can run longer, 4-7 days)
+#   This is why a muscle hit 3 days ago must read MORE recovered than one hit
+#   yesterday — the previous taus (e.g. shoulders 54 h) stretched small muscles
+#   ~2-3x too long and inverted that. Sources:
+#     - MacDougall et al. 1995, Can J Appl Physiol — MPS peaks ~24 h, ~baseline by
+#       36 h, elevated 24-48 h after heavy resistance exercise.
+#     - Schoenfeld et al. 2016, Sports Med (meta-analysis) — train each muscle
+#       >=2x/week, i.e. ~48-72 h spacing per muscle.
+#     - Eccentric-damage / DOMS literature — force/soreness from heavy eccentric
+#       (large-muscle) work peaks 24-72 h and can take 4+ days to fully resolve.
 # `obliques` and `cardio` are NOT board muscles: obliques fold into abs, and a
 # cardio entry is decomposed into systemic + leg load (it has no muscle of its
 # own). Order here is the canonical board order.
 MUSCLES: dict[str, dict] = {
-    "chest":      {"name": "Chest",      "group": "major", "tau_hours": 66.0},
-    "back":       {"name": "Back",       "group": "major", "tau_hours": 72.0},
-    "shoulders":  {"name": "Shoulders",  "group": "major", "tau_hours": 54.0},
-    "quads":      {"name": "Quads",      "group": "major", "tau_hours": 72.0},
-    "hamstrings": {"name": "Hamstrings", "group": "major", "tau_hours": 72.0},
-    "glutes":     {"name": "Glutes",     "group": "major", "tau_hours": 66.0},
-    "biceps":     {"name": "Biceps",     "group": "minor", "tau_hours": 44.0},
-    "triceps":    {"name": "Triceps",    "group": "minor", "tau_hours": 50.0},
-    "forearms":   {"name": "Forearms",   "group": "minor", "tau_hours": 40.0},
-    "traps":      {"name": "Traps",      "group": "minor", "tau_hours": 48.0},
-    "abs":        {"name": "Core",       "group": "minor", "tau_hours": 40.0},
-    "calves":     {"name": "Calves",     "group": "minor", "tau_hours": 44.0},
+    "chest":      {"name": "Chest",      "group": "major", "tau_hours": 34.0},
+    "back":       {"name": "Back",       "group": "major", "tau_hours": 36.0},
+    "shoulders":  {"name": "Shoulders",  "group": "major", "tau_hours": 26.0},
+    "quads":      {"name": "Quads",      "group": "major", "tau_hours": 40.0},
+    "hamstrings": {"name": "Hamstrings", "group": "major", "tau_hours": 40.0},
+    "glutes":     {"name": "Glutes",     "group": "major", "tau_hours": 34.0},
+    "biceps":     {"name": "Biceps",     "group": "minor", "tau_hours": 24.0},
+    "triceps":    {"name": "Triceps",    "group": "minor", "tau_hours": 26.0},
+    "forearms":   {"name": "Forearms",   "group": "minor", "tau_hours": 22.0},
+    "traps":      {"name": "Traps",      "group": "minor", "tau_hours": 26.0},
+    "abs":        {"name": "Core",       "group": "minor", "tau_hours": 22.0},
+    "calves":     {"name": "Calves",     "group": "minor", "tau_hours": 26.0},
 }
 
 # Catalog primaries that aren't their own board muscle map here.
