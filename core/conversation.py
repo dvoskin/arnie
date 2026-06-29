@@ -185,6 +185,15 @@ class TurnResult:
 # ─────────────────────────────────────────────────────────────────────────────
 
 
+def _canon_bubble(s: str) -> str:
+    """Whitespace-collapse a bubble text for streamed-bubble deduplication.
+    Two bubbles whose only difference is leading/trailing/internal whitespace
+    should be treated as the same bubble — the post-build catch-up loop uses
+    this so it can't re-emit a bubble that already streamed (the doubled-
+    message bug on tool-fired turns)."""
+    return " ".join(s.split()).strip()
+
+
 class _BubbleStreamer:
     """Per-stream accumulator. on_bubble is async fn(text) → None called per
     completed bubble; finalize() flushes the trailing buffer. Single-use:
@@ -198,6 +207,10 @@ class _BubbleStreamer:
         self._buffer = ""
         self._full_text = ""
         self.flushed_count = 0
+        # Canonical text of every bubble we've sent — the post-build catch-up
+        # loop checks against this so it never re-emits a bubble that was
+        # already streamed live (which was producing the doubled-message bug).
+        self.flushed_canon: set[str] = set()
 
     async def on_delta(self, delta: str):
         if not delta:
@@ -228,6 +241,7 @@ class _BubbleStreamer:
         try:
             await self.on_bubble(text)
             self.flushed_count += 1
+            self.flushed_canon.add(_canon_bubble(text))
         except Exception as e:
             logger.warning(f"bubble flush failed (continuing stream): {e}")
 
@@ -866,9 +880,18 @@ async def run_turn(
     if _streamer and on_text_bubble:
         if not _response_streamed:
             for bubble in resp.bubbles:
+                # Skip any bubble that already streamed live — the streamer
+                # tracks canonical text of every bubble it flushed. Without this
+                # guard, a tool-fired turn that streamed a heads-up bubble first
+                # ("checking your logs") then rebuilt response_text would
+                # re-emit ALL final bubbles, doubling content the user already
+                # saw. This is the recurring "Morning! ... Morning! ..." bug.
+                if _canon_bubble(bubble) in _streamer.flushed_canon:
+                    continue
                 try:
                     await on_text_bubble(bubble)
                     _streamer.flushed_count += 1
+                    _streamer.flushed_canon.add(_canon_bubble(bubble))
                 except Exception as e:
                     logger.warning(f"post-build bubble send failed for {_tag}: {e}")
                     break
