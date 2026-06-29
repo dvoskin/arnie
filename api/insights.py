@@ -568,13 +568,17 @@ def _sanitize_briefing(obj: dict, stats: Optional[dict] = None) -> dict:
     cards.sort(key=lambda c: c["priority"], reverse=True)
     cards = cards[:5]
 
-    # Hard-cap the starter at 125 chars (the prompt asks for it, but enforce it so a
-    # runaway never reaches the UI) — trim to the last word boundary, add an ellipsis.
+    # Hard-cap the starter at 48 chars (the prompt asks for ~3-7 words; enforce
+    # a short ceiling so a wordy LLM run never ships a long sentence as a quick
+    # opener). Trim to the last word boundary, no ellipsis on something this
+    # short — it would itself become visual noise.
     starter = _s(obj.get("starter"))
-    if len(starter) > 125:
-        cut = starter[:124]
+    if len(starter) > 48:
+        cut = starter[:48]
         sp = cut.rfind(" ")
-        starter = (cut[:sp] if sp > 60 else cut).rstrip(" ,.;:") + "…"
+        starter = (cut[:sp] if sp > 20 else cut).rstrip(" ,.;:")
+        if not starter.endswith("?"):
+            starter += "?"
 
     return {"hero": hero, "focus": focus, "cards": cards, "starter": starter}
 
@@ -691,7 +695,7 @@ Return ONLY a valid JSON object with EXACTLY this shape:
   "hero": {{
     "headline": "<3 to 4 words MAX, a single punchy REAL-TIME directive — the move to make right now, in imperative voice, grounded in TODAY's live numbers. e.g. 'Hit 32g protein', 'Train upper today', 'Cut 150 today', 'Protect the streak', 'Fuel the cut'. NEVER a bare number ('209 lbs') — translate the number into the action. NO second clause (NOT 'Train upper, hit 180g'). null only if nothing actionable.>",
     "milestone": "<positive reinforcement IF genuinely earned by the data, e.g. 'Lowest weight in 6 weeks' — else null. No emoji.>",
-    "body": "<ONE short sentence (max ~20 words) — the live number or pattern that makes today's directive the move. Not two sentences, not editorial. e.g. 'You're at 158g protein with the day still open.' or 'Two weeks flat — a small cut tips the trend.'>"
+    "body": "<1-2 short sentences (~25-35 words total) — the WHY behind today's directive, anchored in live numbers or a real pattern. The action's reason, not its restatement. e.g. 'You're at 158g protein with the day still open and a session tonight. 30g now closes it clean.'>"
   }},
   "focus": {{
     "title": "",
@@ -700,7 +704,7 @@ Return ONLY a valid JSON object with EXACTLY this shape:
   "cards": [
     {{"kind": "<win|risk|opportunity|trend|noticed|prediction>", "title": "<a short, OPINIONATED coaching headline stating your judgment, in natural sentence case (NOT all-caps, no emoji) — e.g. 'On track for 205', 'The weekend leak', \\"Volume's slipping\\", \\"Protein's holding\\", \\"Scale's creeping back\\". NEVER a generic category (Protein, Weight) or a tone word (Win, Opportunity).>", "story": "<DIAGNOSIS + EVIDENCE + RECOMMENDATION in 2-3 tight sentences, scannable in ~2s — what's happening, why it matters, what to do. e.g. \\"Five straight days under 115g protein. That's the pattern driving the scale up. Break it today.\\">", "priority": <0-100>, "viz": {{"type": "<spark|bar|bars>", "metric": "<weight|protein|calories|carbs|fats|steps|sleep|adherence>", "window": <3-8>}}}}
   ],
-  "starter": "<ONE personalized conversation question about today, e.g. 'What's dinner looking like?'>"
+  "starter": "<ONE punchy question, ~3 to 7 words MAX — a quick conversational opener, NOT a sentence. e.g. 'Dinner plan?', 'How's the day?', 'Lunch in?', 'Hit the gym yet?', 'How'd training go?'>"
 }}
 
 COMPOSITION — match the substance to how much you actually know about {name}:
