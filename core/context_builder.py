@@ -299,6 +299,60 @@ def fmt_weight_trend(weights: List[BodyMetric]) -> str:
     return "Weight trend: " + " → ".join(reversed(pts))
 
 
+def fmt_today_weight(weights: List[BodyMetric], today_log: Optional[DailyLog],
+                     user: User) -> str:
+    """One authoritative line for the [TODAY] block: did the user weigh in today,
+    and at what.
+
+    Body weight lives in BodyMetric (user-scoped), so fmt_log — which only sees
+    the DailyLog — never surfaces it. Without this line Arnie has no "weight
+    logged today" signal in his working context and acts like he doesn't know
+    when the user says they already weighed in (the dashboard reads BodyMetric
+    directly, so it knew and Arnie didn't). This closes that gap so Arnie knows
+    before the dashboard does.
+
+    "Today" is the user's LOCAL day — BodyMetric.timestamp is naive UTC.
+    Anchored to today_log.date when present (the canonical local day the log
+    belongs to), else derived from the user's timezone. `weights` arrives
+    timestamp-DESC, so the first local-today match is the latest weigh-in.
+    Returns an explicit "not logged today" so Arnie can prompt for it rather
+    than guess.
+    """
+    import pytz
+    tz_name = getattr(user, "timezone", None) or "UTC"
+    try:
+        tz = pytz.timezone(tz_name)
+    except Exception:
+        tz = pytz.UTC
+
+    if today_log is not None and getattr(today_log, "date", None):
+        local_today = today_log.date
+    else:
+        local_today = datetime.now(tz).date()
+
+    def _to_local(ts):
+        if ts is None:
+            return None
+        ts_utc = ts if ts.tzinfo else pytz.UTC.localize(ts)
+        return ts_utc.astimezone(tz)
+
+    todays = None
+    for w in (weights or []):
+        local_dt = _to_local(getattr(w, "timestamp", None))
+        if local_dt is not None and local_dt.date() == local_today:
+            todays = (w, local_dt)
+            break
+
+    if todays is None:
+        return "Weight: not logged today."
+
+    w, local_dt = todays
+    kg = w.weight_kg or 0.0
+    lbs = kg * 2.20462
+    clock = local_dt.strftime("%-I:%M %p").lstrip("0")
+    return f"Weight: ✓ logged today — {lbs:.1f} lb / {kg:.1f} kg (at {clock})"
+
+
 def fmt_weight_progress(weights: List[BodyMetric], user: User) -> str:
     """Extended weight trend for progress_timeline skill — up to 8 weeks."""
     if not weights:
@@ -1107,6 +1161,7 @@ async def build_context(user: User, today_log: Optional[DailyLog], db,
         "",
         "=== TODAY ===",
         fmt_log(today_log),
+        fmt_today_weight(recent_weights, today_log, user),
         (f"[PACING]\n{pace}" if pace else ""),
         (f"[WEARABLE]\n{health_str}" if health_str else ""),
         ("" if not in_workout else "[WORKOUT MODE: ACTIVE]"),
