@@ -689,13 +689,13 @@ async def generate_briefing(stats: dict) -> dict:
 Return ONLY a valid JSON object with EXACTLY this shape:
 {{
   "hero": {{
-    "headline": "<the single highest-leverage REAL-TIME action for right now, ~3-7 words — a punchy directive grounded in TODAY's live numbers (open protein/cal gap, a workout still ahead, a streak to protect, a habit drifting). Imperative voice. e.g. 'Hit 32g more protein', 'Train upper today', 'Two weeks flat, cut 150', 'Protect the 5-day streak'. NEVER a bare number ('209 lbs') — the weight/macros are already in the cards below; translate the number into the action. null only if truly nothing actionable.>",
+    "headline": "<3 to 4 words MAX, a single punchy REAL-TIME directive — the move to make right now, in imperative voice, grounded in TODAY's live numbers. e.g. 'Hit 32g protein', 'Train upper today', 'Cut 150 today', 'Protect the streak', 'Fuel the cut'. NEVER a bare number ('209 lbs') — translate the number into the action. NO second clause (NOT 'Train upper, hit 180g'). null only if nothing actionable.>",
     "milestone": "<positive reinforcement IF genuinely earned by the data, e.g. 'Lowest weight in 6 weeks' — else null. No emoji.>",
     "body": "<1-2 short sentences: the WHY behind the headline, anchored in TODAY's live numbers or a real pattern. The action's reason, not its restatement. e.g. 'You're at 158g protein with the day still open and a session tonight. 30g now closes it clean.'>"
   }},
   "focus": {{
-    "title": "<2-4 words for a DIFFERENT lever than the hero — if the hero is nutrition, focus is recovery/training/behavior, or vice versa. Never restate the hero.>",
-    "body": "<the SINGLE highest-leverage action on that other lever, 1-2 sentences, grounded in a real pattern/number, ending actionable. e.g. 'You average 38g less protein on weekends. Let's get 50g in before noon.'>"
+    "title": "",
+    "body": ""
   }},
   "cards": [
     {{"kind": "<win|risk|opportunity|trend|noticed|prediction>", "title": "<a short, OPINIONATED coaching headline stating your judgment, in natural sentence case (NOT all-caps, no emoji) — e.g. 'On track for 205', 'The weekend leak', \\"Volume's slipping\\", \\"Protein's holding\\", \\"Scale's creeping back\\". NEVER a generic category (Protein, Weight) or a tone word (Win, Opportunity).>", "story": "<DIAGNOSIS + EVIDENCE + RECOMMENDATION in 2-3 tight sentences, scannable in ~2s — what's happening, why it matters, what to do. e.g. \\"Five straight days under 115g protein. That's the pattern driving the scale up. Break it today.\\">", "priority": <0-100>, "viz": {{"type": "<spark|bar|bars>", "metric": "<weight|protein|calories|carbs|fats|steps|sleep|adherence>", "window": <3-8>}}}}
@@ -708,8 +708,8 @@ COMPOSITION — match the substance to how much you actually know about {name}:
 
 RULES:
 - SPEAK as Arnie — first person, present, warm. A coach talking TO them, not software reporting. "I've noticed your protein's staying remarkably consistent" — NOT "Protein remains high." "You're ahead of the pace I expected two weeks ago" — NOT "Weight trend improving." INTERPRET; never a bare metric.
-- The hero is the LARGEST element and the SINGLE most important thing on the screen: its headline is a REAL-TIME ACTION (what to do right now), the body is the WHY in one tight sentence. Never a bare number — the dashboards already show those; the hero translates them into the move. Milestone only if the data earns it (a real low, a real streak); else null.
-- Exactly ONE focus, on a DIFFERENT lever than the hero (nutrition vs training vs recovery vs behavior). The hero + focus together cover two complementary angles for today; if the hero is about closing protein, the focus is recovery or training, never another protein restatement.
+- The hero is THE element on the screen: headline = the real-time directive (3-4 words MAX, no second clause), body = the WHY in 1-2 sentences anchored in live numbers. Never a bare number; never an editorial header. Milestone only if the data earns it (a real low, a real streak); else null.
+- focus.title and focus.body must be empty strings — the iOS app no longer renders a separate Focus pane; the hero now carries the single most important action. Anything you'd put in focus goes into the cards below, not focus.
 - 2-4 cards. The TITLE is a short, OPINIONATED coaching headline stating your judgment, in natural sentence case (e.g. 'On track for 205', 'The weekend leak', "Volume's slipping", "Scale's creeping back"). NEVER a generic category (Protein, Weight) or a tone word (Win, Opportunity); never all-caps, no emoji. Each STORY is DIAGNOSIS + EVIDENCE + RECOMMENDATION in 2-3 tight sentences, scannable in ~2s — what happened, why it matters, what to do. Coaching with conviction, not reporting. "kind" sets the card's quiet tone-color. Set "kind" per card:
     win        — a genuine streak / PR / milestone (include one when it's REAL; if there's no honest win yet, use a concrete next-step card instead of manufacturing one)
     prediction — forward-looking, but ONLY when a real measured trend backs the pace/date ("at this pace you'll break 205 within 10 days" needs ≥2 weigh-ins showing that pace). High value when earned; never invent a rate or date from profile/thin data — fall back to the plan or an opportunity card
