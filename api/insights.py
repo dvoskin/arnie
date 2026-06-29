@@ -365,17 +365,6 @@ def _build_briefing_summary(stats: dict) -> str:
         L.append("")
         L.append("WHAT I KNOW (durable traits + preferences I've learned about this client, grouped by category):")
         L.append(brain)
-    chat = stats.get("recent_chat") or []
-    if chat:
-        L.append("")
-        L.append("RECENT CONVERSATION (oldest→newest — what they ACTUALLY told you across all surfaces). HONOR it: if they said today is a rest day, a planned skip, an injury, a craving, or a specific plan, the briefing must NOT contradict it:")
-        for c in chat[-10:]:
-            u = (c.get("user") or "").strip()
-            a = (c.get("arnie") or "").strip()
-            if u:
-                L.append(f"  them: {u}")
-            if a:
-                L.append(f"  you:  {a}")
     L.append("")
     workout_done = today.get("workout_completed") or bool(today.get("exercise_entries"))
     L.append(f"TODAY ({today_iso}, STILL IN PROGRESS): "
@@ -700,9 +689,9 @@ async def generate_briefing(stats: dict) -> dict:
 Return ONLY a valid JSON object with EXACTLY this shape:
 {{
   "hero": {{
-    "headline": "<ONE short, punchy directive — 2 to 5 words, a single clean imperative, NO second clause (NOT 'Train tonight, hit 180g protein' — pick the ONE highest-leverage move and stop). The single most useful thing to do today, from their most pressing signal: a protein/calorie gap, a stalled scale, a streak to protect, a habit to fix. NEVER a bare weight or number ('209 lbs') — the weight, macros and trend already live in the cards below; turn the number into the action. e.g. 'Front-load protein', 'Cut 150 today', 'Protect the streak', 'Fuel the cut', 'Lock in protein'. null only if nothing is actionable.>",
+    "headline": "<the single most striking status, e.g. '209.2 lbs' — or null if nothing striking>",
     "milestone": "<positive reinforcement IF genuinely earned by the data, e.g. 'Lowest weight in 6 weeks' — else null. No emoji.>",
-    "body": "<1-2 short sentences: the WHY behind the headline — the exact number or pattern that makes it today's top move. e.g. 'You're at 158g protein with the day still open and a session tonight. 30g now closes it clean.'>"
+    "body": "<1-2 short sentences: where they are + today's direction. e.g. 'Protein was 193g yesterday. Let's close the final 7 lbs.'>"
   }},
   "focus": {{
     "title": "<2-4 words>",
@@ -719,9 +708,8 @@ COMPOSITION — match the substance to how much you actually know about {name}:
 
 RULES:
 - SPEAK as Arnie — first person, present, warm. A coach talking TO them, not software reporting. "I've noticed your protein's staying remarkably consistent" — NOT "Protein remains high." "You're ahead of the pace I expected two weeks ago" — NOT "Weight trend improving." INTERPRET; never a bare metric.
-- The hero is the LARGEST element and the single most important thing on the screen: its headline is an ACTIONABLE DIRECTIVE (the move to make today), NEVER a bare weight or number — the weight, macros, and trend already live in the cards below, so restating them is repetitive. The body is the one-line WHY. Milestone only if the data earns it (a real low, a real streak); else null.
-- COHERENCE WITH THE CHAT: the briefing is the SAME Arnie as the chat, so it must never CONTRADICT what they told you in RECENT CONVERSATION (if they called a rest day, an injury, or a plan, do not command a workout). But the chat is a GUARDRAIL, not the subject — do NOT make the headline echo what they said ('Rest day today') or react to a one-off mention. Still lead with the highest-leverage ACTION that FITS their day: on a stated rest day that's usually a nutrition or recovery move ('Lock in protein'), never a restatement of their plan.
-- Exactly ONE focus: the single highest-leverage move today, tied to a real pattern, ending actionable. It must address a DIFFERENT lever than the hero headline (if the hero is about training, the focus is nutrition or behavior, or vice versa) — never restate the hero.
+- The hero is the LARGEST element. Lead with where they ARE and where they're HEADED. Milestone only if the data earns it (a real low, a real streak); else null.
+- Exactly ONE focus: the single highest-leverage move today, tied to a real pattern, ending actionable.
 - 2-4 cards. The TITLE is a short, OPINIONATED coaching headline stating your judgment, in natural sentence case (e.g. 'On track for 205', 'The weekend leak', "Volume's slipping", "Scale's creeping back"). NEVER a generic category (Protein, Weight) or a tone word (Win, Opportunity); never all-caps, no emoji. Each STORY is DIAGNOSIS + EVIDENCE + RECOMMENDATION in 2-3 tight sentences, scannable in ~2s — what happened, why it matters, what to do. Coaching with conviction, not reporting. "kind" sets the card's quiet tone-color. Set "kind" per card:
     win        — a genuine streak / PR / milestone (include one when it's REAL; if there's no honest win yet, use a concrete next-step card instead of manufacturing one)
     prediction — forward-looking, but ONLY when a real measured trend backs the pace/date ("at this pace you'll break 205 within 10 days" needs ≥2 weigh-ins showing that pace). High value when earned; never invent a rate or date from profile/thin data — fall back to the plan or an opportunity card
