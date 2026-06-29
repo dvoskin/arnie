@@ -376,15 +376,26 @@ def _build_briefing_summary(stats: dict) -> str:
         _today_weekday = _today_dt.strftime("%A")
     except Exception:
         _today_weekday = "today"
+    # USER-LOCAL clock — `datetime.now()` is the SERVER's local time (UTC on
+    # Render), not the user's. That made the briefing claim "local 13:30" when
+    # the user was actually at 09:30 NY time and broke the real-time read.
+    # Use the user's saved tz; fall back to UTC if missing.
     from datetime import datetime as _datetime
-    _now_local = _datetime.now()
+    try:
+        import pytz as _pytz
+        _tz_name = ((stats.get("profile") or {}).get("timezone")
+                    or stats.get("timezone") or "UTC")
+        _user_tz = _pytz.timezone(_tz_name)
+        _now_local = _datetime.now(_pytz.utc).astimezone(_user_tz)
+    except Exception:
+        _now_local = _datetime.utcnow()
     _phase = (
         "still early — pre-training window" if _now_local.hour < 10 else
         "mid-day" if _now_local.hour < 17 else
         "late afternoon / evening — typical training window" if _now_local.hour < 21 else
         "late evening — day is mostly over"
     )
-    L.append(f"TODAY ({today_iso}, {_today_weekday}, STILL IN PROGRESS, local {_now_local.hour:02d}:{_now_local.minute:02d} — {_phase}): "
+    L.append(f"TODAY ({today_iso}, {_today_weekday}, STILL IN PROGRESS, user-local {_now_local.hour:02d}:{_now_local.minute:02d} — {_phase}): "
              f"{today.get('calories', 0)} cal, {today.get('protein', 0)}g protein so far; "
              f"workout {'done' if workout_done else 'not yet'}")
     L.append("")
