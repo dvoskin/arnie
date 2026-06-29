@@ -377,7 +377,16 @@ async def _today_health_snapshot_linked(db, user):
         candidates.extend(await get_recent_health_snapshots(db, uid, days=2))
     if not candidates:
         return None
-    candidates.sort(key=lambda c: c.date, reverse=True)
+    # Sort newest-date FIRST, then prefer WHOOP over Apple Health when both
+    # exist for the same date (Whoop carries richer signal — strain, sleep
+    # performance, recovery from HRV, and pulls weight via Withings/scale
+    # integrations directly, so its row is canonical for users with both).
+    def _source_rank(c):
+        src = (getattr(c, "source", "") or "").lower()
+        if src == "whoop": return 0
+        if src in ("apple_health", "apple", "healthkit"): return 1
+        return 2   # everything else
+    candidates.sort(key=lambda c: (-(c.date.toordinal() if c.date else 0), _source_rank(c)))
     with_recovery = [c for c in candidates if c.recovery_score is not None]
     return with_recovery[0] if with_recovery else candidates[0]
 
