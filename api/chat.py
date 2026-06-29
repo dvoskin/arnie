@@ -331,6 +331,7 @@ async def chat_stream(ws: WebSocket):
         while True:
             data = await ws.receive_json()
             message = ((data or {}).get("message") or "").strip()
+            client_msg_id = ((data or {}).get("client_msg_id") or "").strip() or None
             try:
                 identity = verify_session_token((data or {}).get("token") or "")
             except HTTPException:
@@ -340,7 +341,7 @@ async def chat_stream(ws: WebSocket):
             if not message:
                 await ws.send_json({"type": "error", "detail": "empty message"})
                 continue
-            await _stream_turn(ws, identity, message)
+            await _stream_turn(ws, identity, message, client_msg_id=client_msg_id)
     except WebSocketDisconnect:
         return
     except Exception as e:
@@ -351,7 +352,8 @@ async def chat_stream(ws: WebSocket):
             pass
 
 
-async def _stream_turn(ws: WebSocket, identity: str, message: str) -> None:
+async def _stream_turn(ws: WebSocket, identity: str, message: str,
+                       client_msg_id: Optional[str] = None) -> None:
     lock = _locks.setdefault(identity, asyncio.Lock())
     async with lock:
         async with AsyncSessionLocal() as db:
@@ -370,6 +372,7 @@ async def _stream_turn(ws: WebSocket, identity: str, message: str) -> None:
                 turn = await run_chat_turn(
                     db, user, message, platform=PLATFORM, source_type=PLATFORM,
                     on_text_bubble=on_bubble, on_tool_start=on_tool_start,
+                    idempotency_key=(f"ios:{client_msg_id}" if client_msg_id else None),
                 )
             except Exception as e:
                 logger.error(f"stream turn failed (identity={identity}): {e}", exc_info=True)
