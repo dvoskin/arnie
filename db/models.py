@@ -280,6 +280,35 @@ class WaterEntry(Base):
     daily_log = relationship("DailyLog", back_populates="water_entries")
 
 
+class SupplementIntake(Base):
+    """One row = the user took a given supplement on a given LOCAL day.
+
+    The supplement *regimen* (what they take) lives in the brain as
+    `health_supplement_*` UserAttributes — Arnie learns those from chat. This
+    table is the daily ADHERENCE log layered on top: the Coach "Stack" card lists
+    each active supplement and toggles a row here for "taken today". Keyed by the
+    supplement's attribute_key so it stays stable across display-name edits.
+
+    UNIQUE (user_id, supplement_key, intake_date) makes the toggle idempotent —
+    marking taken twice is a no-op; un-taking deletes the row.
+    """
+    __tablename__ = "supplement_intakes"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    supplement_key = Column(String, nullable=False)   # e.g. "health_supplement_fish_oil"
+    supplement_name = Column(String)                  # snapshot of the display name
+    intake_date = Column(Date, nullable=False)        # user-local calendar day
+    created_at = Column(DateTime, server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "supplement_key", "intake_date",
+                         name="uq_supplement_intake_user_key_date"),
+    )
+
+    user = relationship("User")
+
+
 class ConversationLog(Base):
     __tablename__ = "conversation_logs"
 
