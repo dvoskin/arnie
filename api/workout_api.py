@@ -22,6 +22,8 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+import json
+
 from db.database import AsyncSessionLocal
 from db.queries import resolve_user
 from db.workout_program_queries import (
@@ -30,14 +32,75 @@ from db.workout_program_queries import (
     save_generated_program,
     program_to_dict,
 )
-from sqlalchemy import update
-from db.models import GeneratedWorkoutProgram
+from sqlalchemy import update, select
+from db.models import GeneratedWorkoutProgram, WorkoutProgram
 from api.auth import current_identity
 from skills.fitness.program_builder import build_program
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1", tags=["workout_program"])
+
+
+# ── Unified program shape ─────────────────────────────────────────────────────
+# iOS and the web Client page used to read DIFFERENT tables (generated_workout_
+# programs vs workout_programs), so they showed different programs. Now both read
+# the SAME rich shape via this serializer:
+#   { split_name, focus, rotation[], days[{name, priority, goals[], exercises[
+#       {name, category, recent_performance, notes, sets, reps}]}], source }
+# Preference order: the user's PERSONAL parsed program (workout_programs — the
+# rich split they set up themselves) wins; the science-builder output is the
+# fallback, converted into the same shape so the iOS card renders it identically.
+
+def _builder_to_rich(d: dict | None) -> Optional[dict]:
+    """Convert a generated (builder) program dict into the rich unified shape."""
+    if not d:
+        return None
+    days = []
+    for s in d.get("sessions", []):
+        exs = []
+        for e in s.get("exercises", []):
+            note = e.get("notes") or ""
+            cat = "main" if "main" in note else ("isolation" if "isolation" in note else "accessory")
+            exs.append({
+                "name": e.get("canonical"),
+                "category": cat,
+                "recent_performance": None,
+                "notes": note or None,
+                "sets": e.get("sets"),
+                "reps": e.get("reps"),
+            })
+        days.append({
+            "name": s.get("name"),
+            "priority": "primary",
+            "goals": [],
+            "exercises": exs,
+        })
+    return {
+        "split_name": d.get("name") or "Your program",
+        "focus": d.get("rationale") or "",
+        "rotation": [s.get("name") for s in d.get("sessions", [])],
+        "days": days,
+        "source": "builder",
+    }
+
+
+async def unified_active_program(db, user_id: int) -> Optional[dict]:
+    """The single source of truth for a user's program. Personal parsed split
+    first (rich), else the builder output converted to the same shape."""
+    row = (await db.execute(
+        select(WorkoutProgram).where(WorkoutProgram.user_id == user_id)
+    )).scalars().first()
+    if row and row.program_json:
+        try:
+            p = json.loads(row.program_json)
+            if isinstance(p, dict) and p.get("days"):
+                p.setdefault("source", "personal")
+                return p
+        except Exception as e:
+            logger.warning(f"workout_programs.program_json parse failed (user {user_id}): {e}")
+    gen = await get_active_generated_program(db, user_id)
+    return _builder_to_rich(program_to_dict(gen)) if gen else None
 
 
 class BuildProgramBody(BaseModel):
@@ -53,15 +116,17 @@ class BuildProgramBody(BaseModel):
 
 @router.get("/workout_program")
 async def get_workout_program(identity: str = Depends(current_identity)):
-    """Return the user's currently-active builder program, or null.
+    """Return the user's active program in the unified rich shape, or null —
+    PERSONAL parsed split first, builder output (converted) as fallback. Same
+    source the web Client page reads, so iOS + web finally match.
 
     Response shape:
-        {"program": {iOS-contract dict} | null}
+        {"program": {split_name, focus, rotation[], days[...], source} | null}
     """
     async with AsyncSessionLocal() as db:
         user = await resolve_user(db, identity)
-        program = await get_active_generated_program(db, user.id)
-    return {"program": program_to_dict(program) if program else None}
+        program = await unified_active_program(db, user.id)
+    return {"program": program}
 
 
 @router.get("/workout_program/history")
