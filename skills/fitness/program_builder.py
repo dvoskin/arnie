@@ -289,6 +289,23 @@ def _build_session(
                 "equipment":    pick["equipment"],
             })
 
+    # Hard cap session size at 6 movements — a focused session beats a sprawling
+    # one (better adherence, ~60-75 min). When over, trim the lowest-value tiers
+    # first (isolations, then surplus accessories) while ALWAYS keeping the main
+    # lifts and any weak-point bias, and preserve the original order among the
+    # kept movements (mains stay placed first).
+    MAX_EXERCISES = 6
+    if len(exercises) > MAX_EXERCISES:
+        def _tier(e: dict) -> int:
+            n = e.get("notes", "")
+            if "main" in n:        return 0   # always keep
+            if "weak-point" in n:  return 1   # keep — it's why the program exists
+            if "accessory" in n:   return 2
+            return 3                          # isolation — trims first
+        keep = set(sorted(range(len(exercises)),
+                          key=lambda i: (_tier(exercises[i]), i))[:MAX_EXERCISES])
+        exercises = [e for i, e in enumerate(exercises) if i in keep]
+
     return {
         "name":      name,
         "focus":     focus_muscles,
