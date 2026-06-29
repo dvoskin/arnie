@@ -80,7 +80,7 @@ def test_small_muscle_hit_3d_ago_reads_more_recovered_than_arms_1d_ago():
     recovered than one 24 h out. Regression on the tau recalibration."""
     res = compute_recovery([_overhead_press(72), _curl(24)], None, {"age": 33}, NOW)
     shoulders = _by_id(res)["delts_front"]   # OHP primary mover
-    biceps = _by_id(res)["biceps"]
+    biceps = _by_id(res)["biceps_long"]
     assert shoulders["recovery_pct"] > biceps["recovery_pct"]
     # a small muscle 3 days out is essentially recovered
     assert shoulders["recovery_pct"] >= 80
@@ -106,7 +106,7 @@ def test_one_light_set_does_not_lock_out_a_muscle():
 
 def test_untrained_muscle_is_ready():
     res = compute_recovery([_squat(2)], None, {"age": 33}, NOW)
-    biceps = _by_id(res)["biceps"]
+    biceps = _by_id(res)["biceps_long"]
     assert biceps["status"] == "ready"
     assert biceps["recovery_pct"] == 100
     assert biceps["last_trained_label"] == "—"
@@ -360,10 +360,10 @@ def test_back_legacy_alias_routes_to_lats():
     # Traps
     ("Farmer's Carry", "traps_upper"),
     # Biceps additions
-    ("Incline Curl", "biceps"),
-    ("Concentration Curl", "biceps"),
-    ("EZ-Bar Curl", "biceps"),
-    ("Zottman Curl", "biceps"),
+    ("Incline Curl", "biceps_long"),
+    ("Concentration Curl", "biceps_short"),
+    ("EZ-Bar Curl", "biceps_short"),
+    ("Zottman Curl", "biceps_long"),
     # Triceps additions (sub-muscle heads)
     ("Skull Crusher", "triceps_long"),
     ("Overhead Tricep Extension", "triceps_long"),
@@ -385,13 +385,13 @@ def test_back_legacy_alias_routes_to_lats():
     ("Standing Calf Raise", "calves_gastroc"),
     ("Donkey Calf Raise", "calves_gastroc"),
     # Core additions
-    ("Plank", "abs"),
-    ("Dead Bug", "abs"),
-    ("Pallof Press", "abs"),
+    ("Plank", "abs_upper"),
+    ("Dead Bug", "abs_lower"),
+    ("Pallof Press", "obliques"),
     ("Side Plank", "obliques"),
     # Conditioning finishers
     ("Battle Ropes", "delts_front"),
-    ("Burpees", "abs"),
+    ("Burpees", "abs_upper"),
     ("Box Jumps", "quads"),
 ])
 def test_new_movement_primary_mover_dominates(name, expected_primary):
@@ -408,23 +408,13 @@ def test_new_movement_primary_mover_dominates(name, expected_primary):
         "weight": 50.0, "rir": 1, "occurred_at": NOW - timedelta(hours=2),
     }], None, {"age": 33}, NOW)
     by = _by_id(res)
-    # _PRIMARY_ALIAS folds 'obliques' into the 'abs' bucket; honor that.
-    target = "abs" if expected_primary == "obliques" else expected_primary
-    # Find the muscle with the maximum fatigue
+    # obliques is now its own muscle (no longer folded into abs), so the prime
+    # mover is the literal expected id.
     top_muscle = max(by.values(), key=lambda m: m["fatigue"])["id"]
-    if expected_primary == "obliques":
-        # Side Plank's "obliques 1.0, abs 0.5" sums into the abs bucket via
-        # _PRIMARY_ALIAS, so the bucket-level prime is "abs" — and abs WILL
-        # be the highest. Honor both forms here.
-        assert top_muscle == "abs", (
-            f"{name} expected obliques→abs as prime, got {top_muscle}; "
-            f"fatigues: {[(k, round(v['fatigue'], 3)) for k, v in by.items() if v['fatigue'] > 0]}"
-        )
-    else:
-        assert top_muscle == target, (
-            f"{name} expected {target} as prime, got {top_muscle}; "
-            f"fatigues: {[(k, round(v['fatigue'], 3)) for k, v in by.items() if v['fatigue'] > 0]}"
-        )
+    assert top_muscle == expected_primary, (
+        f"{name} expected {expected_primary} as prime, got {top_muscle}; "
+        f"fatigues: {[(k, round(v['fatigue'], 3)) for k, v in by.items() if v['fatigue'] > 0]}"
+    )
 
 
 def test_rowing_cardio_loads_mid_back_not_legacy_back():

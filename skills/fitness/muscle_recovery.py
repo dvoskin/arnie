@@ -94,7 +94,9 @@ MUSCLES: dict[str, dict] = {
     "hamstrings":    {"name": "Hamstrings",       "group": "major", "tau_hours": 40.0},
     "glutes_max":    {"name": "Glute Max",        "group": "major", "tau_hours": 34.0},
     "glutes_med":    {"name": "Glute Med",        "group": "major", "tau_hours": 30.0},
-    "biceps":        {"name": "Biceps",           "group": "minor", "tau_hours": 24.0},
+    "biceps_long":   {"name": "Biceps (Long)",    "group": "minor", "tau_hours": 24.0},
+    "biceps_short":  {"name": "Biceps (Short)",   "group": "minor", "tau_hours": 24.0},
+    "brachialis":    {"name": "Brachialis",       "group": "minor", "tau_hours": 26.0},
     "triceps_long":  {"name": "Triceps (Long)",   "group": "minor", "tau_hours": 26.0},
     "triceps_lateral": {"name": "Triceps (Lateral)", "group": "minor", "tau_hours": 26.0},
     "triceps_medial": {"name": "Triceps (Medial)", "group": "minor", "tau_hours": 24.0},
@@ -102,7 +104,9 @@ MUSCLES: dict[str, dict] = {
     "traps_upper":   {"name": "Upper Traps",      "group": "minor", "tau_hours": 26.0},
     "traps_mid":     {"name": "Mid Traps",        "group": "minor", "tau_hours": 28.0},
     "traps_lower":   {"name": "Lower Traps",      "group": "minor", "tau_hours": 28.0},
-    "abs":           {"name": "Core",             "group": "minor", "tau_hours": 22.0},
+    "abs_upper":     {"name": "Upper Abs",        "group": "minor", "tau_hours": 22.0},
+    "abs_lower":     {"name": "Lower Abs",        "group": "minor", "tau_hours": 22.0},
+    "obliques":      {"name": "Obliques",         "group": "minor", "tau_hours": 24.0},
     "calves_gastroc": {"name": "Calf (Gastroc)",  "group": "minor", "tau_hours": 26.0},
     "calves_soleus": {"name": "Calf (Soleus)",    "group": "minor", "tau_hours": 30.0},
 }
@@ -112,9 +116,12 @@ MUSCLES: dict[str, dict] = {
 # rows still attribute somewhere; specific sub-muscle ids in INVOLVEMENT below
 # override this for known compounds.
 _PRIMARY_ALIAS = {
-    "obliques": "abs",
     "chest": "chest_mid",
     "back": "lats",
+    # generic core → upper abs; generic curls → short head (both heads work,
+    # short is the safe default and long/short isolations override below).
+    "abs":    "abs_upper",
+    "biceps": "biceps_short",
     # Legacy single-muscle ids → default head. The default is chosen for where
     # the bulk of *secondary* involvement lands: pressing hits the FRONT delt
     # and LATERAL/medial triceps; squats/hinges hit glute MAX; rows/shrugs and
@@ -182,16 +189,18 @@ INVOLVEMENT: dict[str, dict[str, float]] = {
     "Hyperextension":        {"lower_back": 1.0, "glutes": 0.5, "hamstrings": 0.4},
     "Reverse Hyperextension": {"lower_back": 1.0, "glutes": 0.6, "hamstrings": 0.4},
     # ── arms (biceps/triceps/forearms) ──────────────────────────────────────
-    "Barbell Curl":  {"biceps": 1.0, "forearms": 0.4},
-    "Dumbbell Curl": {"biceps": 1.0, "forearms": 0.35},
-    "Hammer Curl":   {"biceps": 1.0, "forearms": 0.5},
-    "Preacher Curl": {"biceps": 1.0, "forearms": 0.3},
-    "Reverse Curl":  {"forearms": 1.0, "biceps": 0.5},
+    # curls hit both heads; grip/angle biases one. preacher/concentration → short
+    # head; incline (shoulder extended) → long head; hammer/reverse → brachialis.
+    "Barbell Curl":  {"biceps_long": 1.0, "biceps_short": 0.85, "forearms": 0.4},
+    "Dumbbell Curl": {"biceps_long": 0.95, "biceps_short": 0.95, "forearms": 0.35},
+    "Hammer Curl":   {"brachialis": 1.0, "biceps_long": 0.6, "forearms": 0.5},
+    "Preacher Curl": {"biceps_short": 1.0, "biceps_long": 0.5, "forearms": 0.3},
+    "Reverse Curl":  {"forearms": 1.0, "brachialis": 0.6, "biceps_short": 0.3},
     "Shrug":         {"traps_upper": 1.0, "forearms": 0.3},
-    "Incline Curl":         {"biceps": 1.0, "forearms": 0.3},
-    "Concentration Curl":   {"biceps": 1.0, "forearms": 0.3},
-    "EZ-Bar Curl":          {"biceps": 1.0, "forearms": 0.4},
-    "Zottman Curl":         {"biceps": 1.0, "forearms": 0.6},
+    "Incline Dumbbell Curl": {"biceps_long": 1.0, "biceps_short": 0.5, "forearms": 0.3},
+    "Concentration Curl":   {"biceps_short": 1.0, "biceps_long": 0.4, "forearms": 0.3},
+    "EZ-Bar Curl":          {"biceps_short": 1.0, "biceps_long": 0.7, "forearms": 0.4},
+    "Zottman Curl":         {"biceps_long": 0.8, "biceps_short": 0.7, "brachialis": 0.6, "forearms": 0.6},
     # lying/overhead extensions bias the LONG head; pushdowns the lateral/medial
     "Skull Crusher":             {"triceps_long": 1.0, "triceps_lateral": 0.5, "triceps_medial": 0.4, "forearms": 0.2},
     "Overhead Tricep Extension": {"triceps_long": 1.0, "triceps_medial": 0.4, "shoulders": 0.2},
@@ -225,11 +234,13 @@ INVOLVEMENT: dict[str, dict[str, float]] = {
     "Donkey Calf Raise":     {"calves_gastroc": 1.0, "calves_soleus": 0.3},
     "Calf Raise":            {"calves_gastroc": 1.0, "calves_soleus": 0.4},
     # ── core ────────────────────────────────────────────────────────────────
-    "Hanging Leg Raise": {"abs": 1.0, "forearms": 0.2},
-    "Plank":             {"abs": 1.0, "shoulders": 0.2},
-    "Dead Bug":          {"abs": 1.0},
-    "Pallof Press":      {"abs": 1.0, "obliques": 0.5},
-    "Side Plank":        {"obliques": 1.0, "abs": 0.5, "shoulders": 0.2},
+    # leg raises bias LOWER abs; anti-rotation/lateral work is OBLIQUES; planks
+    # are whole-core isometric.
+    "Hanging Leg Raise": {"abs_lower": 1.0, "abs_upper": 0.4, "forearms": 0.2},
+    "Plank":             {"abs_upper": 0.7, "abs_lower": 0.5, "obliques": 0.4, "shoulders": 0.2},
+    "Dead Bug":          {"abs_lower": 1.0, "abs_upper": 0.5},
+    "Pallof Press":      {"obliques": 1.0, "abs_upper": 0.4},
+    "Side Plank":        {"obliques": 1.0, "abs_upper": 0.3, "shoulders": 0.2},
     # ── cardio finishers / conditioning ─────────────────────────────────────
     "Battle Ropes": {"shoulders": 1.0, "abs": 0.4, "forearms": 0.5, "biceps": 0.2, "traps": 0.3},
     "Burpees":      {"abs": 1.0, "shoulders": 0.4, "quads": 0.5, "chest_mid": 0.3, "triceps": 0.3, "glutes": 0.3},
@@ -250,7 +261,7 @@ CARDIO_INVOLVEMENT: dict[str, dict[str, float]] = {
     "Walking":        {"calves_gastroc": 0.4, "quads": 0.25, "glutes_max": 0.2, "hamstrings": 0.15},
     "Stationary Bike": {"quads": 0.6, "hamstrings": 0.3, "glutes_max": 0.3, "calves_gastroc": 0.2},
     "Elliptical":     {"quads": 0.4, "glutes_max": 0.35, "hamstrings": 0.3, "calves_gastroc": 0.3},
-    "Rowing":         {"quads": 0.4, "hamstrings": 0.3, "mid_back": 0.5, "glutes_max": 0.3, "biceps": 0.2},
+    "Rowing":         {"quads": 0.4, "hamstrings": 0.3, "mid_back": 0.5, "glutes_max": 0.3, "biceps_short": 0.2},
 }
 
 
