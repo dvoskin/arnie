@@ -2839,6 +2839,90 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
             f"({day or 'today'}) as a plan carousel — keep your reply short."
         )
 
+    elif name == "propose_workout_program":
+        # Build a science-based multi-day program, persist it, and stash the
+        # card payload on the tool_call's input so conversation.py can emit a
+        # workout_program_card for the native client.
+        from skills.fitness.program_builder import build_program
+        from db.workout_program_queries import (
+            save_generated_program, program_to_dict,
+        )
+        try:
+            spec = build_program(
+                goal=inp.get("goal"),
+                days_per_week=inp.get("days_per_week") or 4,
+                split=inp.get("split"),
+                equipment=inp.get("equipment"),
+                experience=inp.get("experience"),
+                weak_points=inp.get("weak_points"),
+            )
+            program = await save_generated_program(
+                db, user.id, spec, notes=str(inp.get("notes") or ""),
+            )
+            payload = program_to_dict(program)
+            if isinstance(inp, dict):
+                inp["_program_payload"] = payload
+
+            # Mirror durable training-preference attributes so Arnie remembers
+            # the user's split / equipment / weak points next session. The
+            # full program lives in generated_workout_programs; we only
+            # surface a compact summary in the Brain.
+            try:
+                from memory.attribute_store import sync_builder_program_to_attributes
+                await sync_builder_program_to_attributes(db, user.id, spec)
+            except Exception as e:
+                logger.warning(f"sync_builder_program_to_attributes failed: {e}")
+
+            # Telemetry — greppable as `event=workout_program_built`.
+            logger.info(
+                f"event=workout_program_built user_id={user.id} "
+                f"program_id={program.id} split={program.split} "
+                f"days={program.days_per_week} goal={program.goal} "
+                f"sessions={len(program.sessions)}"
+            )
+            session_count = len(payload["sessions"])
+            # Tool result text feeds the follow-up LLM. Lead with the rationale
+            # so the in-chat reply grounds the explanation in real evidence
+            # (Schoenfeld refs) rather than fabricating.
+            return (
+                f"Built program: {program.name} — {program.days_per_week} days/week, "
+                f"goal={program.goal}, experience={program.experience_level}. "
+                f"{session_count} sessions saved. "
+                f"RATIONALE for the user (paraphrase, don't paste): {spec.get('rationale')}. "
+                f"Card rendered on the app — your reply should set up the program in 1-2 "
+                f"short bubbles + name the volume + frequency logic in your own words, "
+                f"then invite them to tell you when they want to start day 1."
+            )
+        except Exception as e:
+            logger.error(f"propose_workout_program failed: {e}", exc_info=True)
+            return f"Failed to build program: {e}"
+
+    elif name == "show_workout_program":
+        # Pull the user's active builder program. If none exists, the tool
+        # returns a hint the LLM can use to nudge a build_program call.
+        from db.workout_program_queries import (
+            get_active_generated_program, program_to_dict,
+        )
+        program = await get_active_generated_program(db, user.id)
+        if not program:
+            if isinstance(inp, dict):
+                inp["_program_payload"] = None
+            return (
+                "No active workout program yet for this user. "
+                "Suggest they build one — offer a quick set of clarifying "
+                "questions (goal, days/week, experience, equipment) and then "
+                "call propose_workout_program once they answer."
+            )
+        payload = program_to_dict(program)
+        if isinstance(inp, dict):
+            inp["_program_payload"] = payload
+        return (
+            f"Showed active program: {program.name} "
+            f"({program.days_per_week} d/wk, goal={program.goal}, "
+            f"{len(program.sessions)} sessions). Card rendered — keep your "
+            f"reply short, one line on what's coming up next."
+        )
+
     elif name == "track_metric":
         from db.queries import upsert_user_metric
         metric_name = inp.get("metric_name", "")

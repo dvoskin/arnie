@@ -310,6 +310,81 @@ _FITNESS_TOOLS = [
             "required": ["weight", "unit"],
         },
     },
+    {
+        "name": "propose_workout_program",
+        "description": (
+            "Build a structured, science-based, multi-day workout PROGRAM for the user — "
+            "a recurring weekly plan with sessions, exercises, sets, reps, RIR, and rest. "
+            "Call when the user asks to design a training program ('build me a plan', "
+            "'I want a 5-day split', 'design a workout program', 'make me a PPL', "
+            "'put together a routine'). DO NOT call for a SINGLE today's workout — that's "
+            "suggest_workout. DO NOT call to log a workout — that's log_exercise. "
+            "This persists the program (multiple sessions per week) and marks any prior "
+            "active program inactive. The user's iOS app will render the new program. "
+            "Volume + frequency are evidence-grounded (Schoenfeld 2017 sets-per-muscle, "
+            "Schoenfeld 2016 frequency) — the rationale field returned in the tool result "
+            "names the references so you can ground the in-chat explanation. "
+            "BEFORE calling, ask up to 2 short clarifying questions if MISSING: goal "
+            "(hypertrophy / strength / general), training days/week (3-6), split "
+            "preference, gym equipment, experience level, weak points. Skip questions "
+            "you can infer from the user's profile or stated context. Then call ONCE."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "goal": {
+                    "type": "string",
+                    "enum": ["hypertrophy", "strength", "general"],
+                    "description": "Primary training goal. Default hypertrophy if user hasn't specified.",
+                },
+                "days_per_week": {
+                    "type": "integer",
+                    "minimum": 2, "maximum": 7,
+                    "description": "How many training days per week the user wants. Most common: 3-6.",
+                },
+                "split": {
+                    "type": "string",
+                    "enum": ["ppl", "upper_lower", "full_body", "bro", "custom"],
+                    "description": "Training split. ppl = push/pull/legs, upper_lower = U/L, full_body = full body, bro = bro split (one muscle per day), custom = auto-pick a sensible default by cadence.",
+                },
+                "equipment": {
+                    "type": "array",
+                    "items": {"type": "string", "enum": ["barbell", "dumbbell", "cable", "machine", "bodyweight", "kettlebell", "bands"]},
+                    "description": "Equipment the user has access to. Bodyweight is always included. Default = full gym (barbell + dumbbell + cable + machine + bodyweight).",
+                },
+                "experience": {
+                    "type": "string",
+                    "enum": ["beginner", "intermediate", "advanced"],
+                    "description": "Training experience. Drives volume target + RIR. Default intermediate if user hasn't specified.",
+                },
+                "weak_points": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Optional. Muscle ids the user wants extra emphasis on (e.g. 'chest_upper', 'lats', 'glutes'). Adds 1 extra accessory on each session that targets them.",
+                },
+                "notes": {
+                    "type": "string",
+                    "description": "Optional. User-stated constraints / injuries / preferences. Stored on the program for reference.",
+                },
+            },
+        },
+    },
+    {
+        "name": "show_workout_program",
+        "description": (
+            "Show the user their CURRENT active workout program — the multi-day "
+            "recurring plan stored from a prior propose_workout_program call. Call "
+            "when the user asks 'what's my program?', 'show me my plan', 'remind me "
+            "of my split', 'pull up my routine'. DO NOT use for a single day's "
+            "session (use suggest_workout) or for today's history (use show_workout_log). "
+            "Native clients render this as an inline program card. Keep your text reply "
+            "short — the card carries the detail."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {},
+        },
+    },
 ]
 
 

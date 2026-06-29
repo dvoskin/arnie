@@ -855,6 +855,63 @@ async def build_context(user: User, today_log: Optional[DailyLog], db,
     except Exception:
         pass
 
+    # Builder-generated program — fall back to this when the legacy parsed
+    # split isn't set. The science-based propose_workout_program tool writes
+    # to generated_workout_programs (multi-session relational), and Arnie
+    # needs to SEE it in context so he can reference the user's split, name
+    # the upcoming session, and avoid prescribing a one-off plan that
+    # conflicts with the user's stored program.
+    if not training_program_str:
+        try:
+            from db.workout_program_queries import get_active_generated_program
+            _gen = await get_active_generated_program(db, user.id)
+            if _gen and _gen.sessions:
+                import json as _json
+                _sess_txt = []
+                for s in _gen.sessions:
+                    try:
+                        _exs = _json.loads(s.exercises_json or "[]")
+                    except Exception:
+                        _exs = []
+                    _names = ", ".join(
+                        e.get("canonical", "") for e in _exs if e.get("canonical")
+                    )
+                    _sess_txt.append(
+                        f"  Day {s.position} {s.name}: {_names}" if _names
+                        else f"  Day {s.position} {s.name}"
+                    )
+                training_program_str = (
+                    f"=== TRAINING PROGRAM (science-based, Arnie-built) ===\n"
+                    f"Name: {_gen.name}\n"
+                    f"Goal: {_gen.goal} | Days/week: {_gen.days_per_week} | "
+                    f"Experience: {_gen.experience_level}\n"
+                    + "\n".join(_sess_txt)
+                )
+                # Build the _prog_parsed shape the session-state builder
+                # expects (days[] with name + exercises[].name). That keeps
+                # live workout awareness working off the builder program too.
+                _prog_parsed = {
+                    "split_name": _gen.name,
+                    "focus":      f"{_gen.goal} program",
+                    "rotation":   [s.name for s in _gen.sessions],
+                    "days": [
+                        {
+                            "name": s.name,
+                            "priority": "primary",
+                            "goals": [],
+                            "exercises": [
+                                {"name": e.get("canonical", ""),
+                                 "category": ("main" if (e.get("notes") or "").startswith("main")
+                                              else "accessory")}
+                                for e in _json.loads(s.exercises_json or "[]")
+                            ],
+                        }
+                        for s in _gen.sessions
+                    ],
+                }
+        except Exception:
+            pass
+
     # [SESSION STATE] — live workout awareness. Built whenever the user has
     # exercise entries today (in_workout=True). Works WITH or WITHOUT a
     # training program — the freeform path still surfaces muscle coverage,

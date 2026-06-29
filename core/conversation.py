@@ -950,6 +950,17 @@ async def run_turn(
                             "exercises": exercises,
                         },
                     })
+            elif name in ("propose_workout_program", "show_workout_program"):
+                # The dispatcher stashed the full structured program on
+                # `inp["_program_payload"]` (or None if show_workout_program
+                # found no active program — surface nothing in that case so
+                # the LLM's coaching reply carries the empty-state).
+                program_payload = inp.get("_program_payload")
+                if program_payload:
+                    resp.cards.append({
+                        "type":    "workout_program_card",
+                        "payload": program_payload,
+                    })
 
     # ── Dashboard link after FIRST food/workout log (once per account) ────────
     # Telegram only. iMessage and iOS skip this nudge:

@@ -536,6 +536,80 @@ async def clear_program_attributes(db, user_id: int) -> None:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Builder-program bridge (science-based program builder)
+# ─────────────────────────────────────────────────────────────────────────────
+# Sister to sync_program_to_attributes above — keeps a compact summary of the
+# builder's output in the fitness lane so Arnie remembers a user's stated split
+# preference, training cadence, equipment access, weak points, and goal across
+# sessions. The full structured program lives in generated_workout_programs.
+
+async def sync_builder_program_to_attributes(db, user_id: int, spec: dict) -> None:
+    """Mirror a builder-generated program's compact summary into fitness
+    attributes. Called from the propose_workout_program tool handler.
+
+    Stores:
+      • fitness_training_split    — "Push / Pull / Legs (6 d/wk)" (REPLACES any
+                                    legacy parsed-program split via the shared
+                                    attribute_key + upsert behavior)
+      • fitness_program_focus     — short goal line ("hypertrophy program")
+      • fitness_training_days     — days_per_week (numeric)
+      • fitness_training_experience — beginner | intermediate | advanced
+      • fitness_equipment_access  — CSV of equipment tags
+      • fitness_weak_points       — CSV of muscle ids (only if specified)
+    """
+    if not spec or not isinstance(spec, dict):
+        return
+    name = (spec.get("name") or "").strip()
+    goal = (spec.get("goal") or "").strip()
+    days = spec.get("days_per_week")
+    experience = (spec.get("experience") or "").strip()
+    equipment = spec.get("equipment") or []
+    weak = spec.get("weak_points") or []
+
+    if name:
+        await upsert_attribute(
+            db, user_id, attribute_key="fitness_training_split", value=name,
+            display_name="Training split", category="fitness",
+            relevance_tier="core", source="training_program", confidence="confirmed",
+        )
+    if goal:
+        await upsert_attribute(
+            db, user_id, attribute_key="fitness_program_focus",
+            value=f"{goal} program",
+            display_name="Program focus", category="fitness",
+            relevance_tier="core", source="training_program", confidence="confirmed",
+        )
+    if days:
+        await upsert_attribute(
+            db, user_id, attribute_key="fitness_training_days",
+            value=str(int(days)), value_type="int", unit="days/wk",
+            display_name="Training days/week", category="fitness",
+            relevance_tier="core", source="training_program", confidence="confirmed",
+        )
+    if experience:
+        await upsert_attribute(
+            db, user_id, attribute_key="fitness_training_experience",
+            value=experience,
+            display_name="Training experience", category="fitness",
+            relevance_tier="core", source="training_program", confidence="confirmed",
+        )
+    if equipment:
+        await upsert_attribute(
+            db, user_id, attribute_key="fitness_equipment_access",
+            value=",".join(sorted(equipment)),
+            display_name="Equipment access", category="fitness",
+            relevance_tier="contextual", source="training_program", confidence="confirmed",
+        )
+    if weak:
+        await upsert_attribute(
+            db, user_id, attribute_key="fitness_weak_points",
+            value=",".join(weak),
+            display_name="Weak points", category="fitness",
+            relevance_tier="contextual", source="training_program", confidence="confirmed",
+        )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # User-initiated status change (dashboard "remove")
 # ─────────────────────────────────────────────────────────────────────────────
 

@@ -510,6 +510,15 @@ class WorkoutProgram(Base):
     Structured workout split for a user — parsed from free-text via AI.
     Stores both the original raw paste and the structured JSON representation.
     One active program per user (upserted on update).
+
+    LEGACY-ish: this table backs the iOS web "AI Profile → Workout program"
+    parser flow + the conversation-history auto-fill (api/app.py). It stores
+    one program per user, raw_text + program_json (nested days).
+
+    The science-based program builder writes to a DIFFERENT table
+    (`generated_workout_programs`) so multiple builder-generated programs and
+    parsed splits can coexist without overwriting each other. The two tables
+    share intent (a user's training plan) but live separate lifecycles.
     """
     __tablename__ = "workout_programs"
 
@@ -521,6 +530,68 @@ class WorkoutProgram(Base):
     created_at = Column(DateTime, server_default=func.now())
 
     user = relationship("User", back_populates="workout_program")
+
+
+class GeneratedWorkoutProgram(Base):
+    """
+    Science-based workout program built by skills/fitness/program_builder.
+
+    Multiple rows per user — every time Arnie builds a new program, a new row
+    is inserted and any prior `active=True` row is flipped to `active=False`.
+    History is preserved (you can see what the user was running 2 months ago).
+
+    Columns reflect the inputs the builder honors (goal/days/split/equipment/
+    experience/weak_points) so the program can be regenerated or diffed.
+
+    Sessions hang off `sessions` relationship — one row per training day,
+    each carrying the prescribed exercises as JSON (`exercises_json`).
+    """
+    __tablename__ = "generated_workout_programs"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"),
+                     index=True, nullable=False)
+    name = Column(String, nullable=False)            # "Push / Pull / Legs", "Upper / Lower (4 d/wk)"
+    goal = Column(String, nullable=False)            # hypertrophy | strength | general
+    days_per_week = Column(Integer, nullable=False)  # 2..7
+    split = Column(String, nullable=False)           # ppl | upper_lower | full_body | bro | custom
+    equipment_csv = Column(String, default="")       # CSV: barbell,dumbbell,cable,machine,bodyweight
+    experience_level = Column(String, default="intermediate")  # beginner | intermediate | advanced
+    weak_points_csv = Column(String, default="")     # CSV of muscle ids the user wants biased
+    rationale = Column(Text, default="")             # evidence-grounded paragraph
+    weekly_volume_json = Column(Text, default="{}")  # JSON: {muscle: weekly_sets}
+    notes = Column(Text, default="")                 # user-stated constraints
+    active = Column(Boolean, default=True, index=True)
+    created_at = Column(DateTime, server_default=func.now(), index=True)
+
+    sessions = relationship(
+        "GeneratedWorkoutSession",
+        back_populates="program",
+        cascade="all, delete-orphan",
+        order_by="GeneratedWorkoutSession.position",
+    )
+
+
+class GeneratedWorkoutSession(Base):
+    """One training day within a GeneratedWorkoutProgram.
+
+    `position` is 1-indexed within the week (1..days_per_week).
+    `exercises_json` is a list of:
+        {canonical, sets, reps, rir, rest_seconds, notes}
+    See skills/fitness/program_builder.serialize_sessions_for_db().
+    """
+    __tablename__ = "generated_workout_sessions"
+
+    id = Column(Integer, primary_key=True)
+    program_id = Column(Integer,
+                        ForeignKey("generated_workout_programs.id", ondelete="CASCADE"),
+                        index=True, nullable=False)
+    position = Column(Integer, nullable=False)
+    name = Column(String, nullable=False)            # "Push A", "Lower B"
+    focus_csv = Column(String, default="")           # CSV of muscle ids
+    exercises_json = Column(Text, nullable=False)    # JSON list
+
+    program = relationship("GeneratedWorkoutProgram", back_populates="sessions")
 
 
 class UserAttribute(Base):
