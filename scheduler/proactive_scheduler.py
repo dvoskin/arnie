@@ -1780,11 +1780,20 @@ async def _run_conversation_hooks() -> None:
         users = await get_all_active_users(db)
         sent = 0
         from reminders.eligibility import frequency_allows as _freq_allows
+        # Per-sweep canonical-user dedupe — Danny's 3 linked identities (iOS +
+        # Telegram + iMessage) used to each pick up the same pending question
+        # and fire SEPARATE re-asks in the same tick, so the user saw two
+        # follow-ups 463µs apart. Track which canonical accounts have already
+        # been handled this sweep and skip the rest.
+        handled_canonical: set[int] = set()
         for user in users:
             try:
                 if not getattr(user, "onboarding_completed", False):
                     continue
                 if _should_skip_linked(user, linking_enabled()):
+                    continue
+                canonical = user.linked_to_user_id or user.id
+                if canonical in handled_canonical:
                     continue
 
                 # Respect the user's reminder_frequency. "none" (Morning only)
@@ -1804,6 +1813,21 @@ async def _run_conversation_hooks() -> None:
 
                 # Never fire mid-conversation.
                 if _is_live_convo(mins_since):
+                    continue
+
+                # Cool-off: if ANY proactive went out in the last 90 minutes,
+                # don't pile on another. Max reminders still shouldn't mean a
+                # 30-min nag cycle on the same topic — once per ~90 min is the
+                # ceiling regardless of pref. Checks recent rows for any
+                # source_type='proactive' and bails if one's within the window.
+                from datetime import datetime as _dt, timedelta as _td
+                _cooloff_cutoff = _dt.utcnow() - _td(minutes=90)
+                _recently_proactive = any(
+                    getattr(r, "source_type", "") == "proactive"
+                    and getattr(r, "timestamp", _dt.min) >= _cooloff_cutoff
+                    for r in recent_rows
+                )
+                if _recently_proactive:
                     continue
 
                 open_qs = await get_open_pending_questions(db, user.id)
@@ -1829,6 +1853,7 @@ async def _run_conversation_hooks() -> None:
                 await _log_proactive(db, user.id, msg, "followup_conversation_hook",
                                      platform=_channel_for(send_id))
                 await mark_pending_question_followed_up(db, pq.id)
+                handled_canonical.add(canonical)
                 sent += 1
                 logger.info(
                     f"Conversation hook re-ask (tier={pq.tier}, "
