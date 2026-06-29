@@ -367,7 +367,24 @@ def _build_briefing_summary(stats: dict) -> str:
         L.append(brain)
     L.append("")
     workout_done = today.get("workout_completed") or bool(today.get("exercise_entries"))
-    L.append(f"TODAY ({today_iso}, STILL IN PROGRESS): "
+    # Local weekday + a clock-position hint, so the model knows whether "no
+    # workout yet" means "it's 6am and the day's barely started" or "it's 10pm
+    # and they skipped." Without this, the LLM has been inventing "today's a
+    # rest day" from inference whenever workout_done is false.
+    try:
+        _today_dt = _dt.strptime(today_iso, "%Y-%m-%d")
+        _today_weekday = _today_dt.strftime("%A")
+    except Exception:
+        _today_weekday = "today"
+    from datetime import datetime as _datetime
+    _now_local = _datetime.now()
+    _phase = (
+        "still early — pre-training window" if _now_local.hour < 10 else
+        "mid-day" if _now_local.hour < 17 else
+        "late afternoon / evening — typical training window" if _now_local.hour < 21 else
+        "late evening — day is mostly over"
+    )
+    L.append(f"TODAY ({today_iso}, {_today_weekday}, STILL IN PROGRESS, local {_now_local.hour:02d}:{_now_local.minute:02d} — {_phase}): "
              f"{today.get('calories', 0)} cal, {today.get('protein', 0)}g protein so far; "
              f"workout {'done' if workout_done else 'not yet'}")
     L.append("")
@@ -713,6 +730,7 @@ COMPOSITION — match the substance to how much you actually know about {name}:
 RULES:
 - SPEAK as Arnie — first person, present, warm. A coach talking TO them, not software reporting. "I've noticed your protein's staying remarkably consistent" — NOT "Protein remains high." "You're ahead of the pace I expected two weeks ago" — NOT "Weight trend improving." INTERPRET; never a bare metric.
 - The hero is THE element on the screen: headline = the real-time directive (3-4 words MAX, no second clause), body = the WHY in 1-2 sentences anchored in live numbers. Never a bare number; never an editorial header. Milestone only if the data earns it (a real low, a real streak); else null.
+- NEVER claim "today is a rest day" unless: (a) the user explicitly stated it in chat (you don't see chat here, so DON'T), or (b) the day is mostly over (late evening) AND the user has a long-running weekly pattern of skipping THIS weekday (4+ weeks of N on this exact weekday in the LOGGED DAYS section). "Workout not yet" early in the day means it's early — not a rest day. When uncertain, treat today as a normal TRAINING day and frame nutrition + recovery accordingly.
 - focus.title and focus.body must be empty strings — the iOS app no longer renders a separate Focus pane; the hero now carries the single most important action. Anything you'd put in focus goes into the cards below, not focus.
 - 2-4 cards. The TITLE is a short, OPINIONATED coaching headline stating your judgment, in natural sentence case (e.g. 'On track for 205', 'The weekend leak', "Volume's slipping", "Scale's creeping back"). NEVER a generic category (Protein, Weight) or a tone word (Win, Opportunity); never all-caps, no emoji. Each STORY is DIAGNOSIS + EVIDENCE + RECOMMENDATION in 2-3 tight sentences, scannable in ~2s — what happened, why it matters, what to do. Coaching with conviction, not reporting. "kind" sets the card's quiet tone-color. Set "kind" per card:
     win        — a genuine streak / PR / milestone (include one when it's REAL; if there's no honest win yet, use a concrete next-step card instead of manufacturing one)
