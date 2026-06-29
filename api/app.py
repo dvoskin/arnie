@@ -48,6 +48,25 @@ def _esc(s: object) -> str:
 app = FastAPI(title="Arnie API", docs_url=None, redoc_url=None)
 
 
+@app.on_event("startup")
+async def _kick_proactive_scheduler():
+    """Belt-and-suspenders: start the proactive scheduler from the API process
+    too, not only from the Telegram bot's _post_init. If a Telegram deploy ever
+    fails (token error, registration race, anything in _post_init that raises),
+    the scheduler used to silently never start and every clock-slot proactive
+    nudge stopped firing until the next bot restart — the exact silence
+    incident on 2026-06-28. start_scheduler() is idempotent: it short-circuits
+    when already running, so calling it from both paths is safe."""
+    try:
+        from scheduler.proactive_scheduler import start_scheduler
+        start_scheduler()
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning(
+            f"Proactive scheduler kick from API startup failed (not fatal): {e}"
+        )
+
+
 def _require_admin(token: str) -> None:
     """
     Gate an admin endpoint. FAILS CLOSED: if ADMIN_TOKEN is unset, admin is disabled
