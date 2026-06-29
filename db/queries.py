@@ -450,6 +450,26 @@ async def recompute_log_totals(db: AsyncSession, daily_log_id: int) -> None:
     log.workout_completed = any(not _is_cardio(e) for e in exercises)
 
 
+def _invalidate_briefing_for_log(daily_log_id_or_user: int, by_user: bool = False) -> None:
+    """Drop the cached coach briefing for the user behind `daily_log_id` (or
+    the user directly when `by_user=True`). Called from add_* writes so a log
+    immediately invalidates the cached hero/insights — the next /briefing fetch
+    regenerates against the fresh day. Best-effort: a failed import / closed
+    session must never break the write path."""
+    try:
+        from api.insights import invalidate_briefing
+        if by_user:
+            invalidate_briefing(daily_log_id_or_user)
+        else:
+            # daily_log → user_id via the loaded DailyLog row in the SAME unit
+            # of work; we look it up cheaply on the same db session via a
+            # SELECT below in the call sites that have a db handy. Here we just
+            # accept a user_id when the caller can provide it (less plumbing).
+            pass
+    except Exception:
+        pass
+
+
 async def add_food_entry(db: AsyncSession, daily_log_id: int, **kwargs) -> FoodEntry:
     entry = FoodEntry(daily_log_id=daily_log_id, **kwargs)
     db.add(entry)
@@ -457,6 +477,13 @@ async def add_food_entry(db: AsyncSession, daily_log_id: int, **kwargs) -> FoodE
     await recompute_log_totals(db, daily_log_id)
     await db.commit()
     await db.refresh(entry)
+    # Drop cached briefing so the next Coach open regenerates against the new
+    # totals — without this the user logs and still sees the stale hero copy.
+    try:
+        log = await db.get(DailyLog, daily_log_id)
+        if log: _invalidate_briefing_for_log(log.user_id, by_user=True)
+    except Exception:
+        pass
     return entry
 
 
@@ -472,6 +499,11 @@ async def add_exercise_entry(db: AsyncSession, daily_log_id: int,
     await recompute_log_totals(db, daily_log_id)
     await db.commit()
     await db.refresh(entry)
+    try:
+        log = await db.get(DailyLog, daily_log_id)
+        if log: _invalidate_briefing_for_log(log.user_id, by_user=True)
+    except Exception:
+        pass
     return entry
 
 
@@ -567,6 +599,7 @@ async def add_body_metric(db: AsyncSession, user_id: int,
         _sync_current_weight()
         await db.commit()
         await db.refresh(existing)
+        _invalidate_briefing_for_log(user_id, by_user=True)
         return existing
 
     metric = BodyMetric(user_id=user_id, weight_kg=weight_kg, source=source,
@@ -576,6 +609,7 @@ async def add_body_metric(db: AsyncSession, user_id: int,
 
     await db.commit()
     await db.refresh(metric)
+    _invalidate_briefing_for_log(user_id, by_user=True)
     return metric
 
 
@@ -597,6 +631,7 @@ async def add_water_entry(db: AsyncSession, user_id: int, daily_log_id: int,
     db.add(entry)
     await db.commit()
     await db.refresh(entry)
+    _invalidate_briefing_for_log(user_id, by_user=True)
     return entry
 
 

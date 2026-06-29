@@ -807,6 +807,24 @@ def _schedule_briefing_refresh(user_id: int, stats: dict, cache_key: tuple) -> N
         _briefing_refreshing.discard(cache_key)  # no loop; let a later call retry
 
 
+def invalidate_briefing(user_id: int) -> None:
+    """Drop EVERY cached read for `user_id` — briefing AND the daily/insight
+    caches. Call this on any mutation that changes the day's read (food log,
+    weight log, workout log, water) so the next Coach fetch regenerates against
+    the fresh state instead of serving pre-log copy. Cheap dict scan; safe
+    from any thread/coro."""
+    # Pop the briefing entry and discard its refresh marker.
+    _CACHE.pop((user_id, "__briefing__"), None)
+    _briefing_refreshing.discard((user_id, "__briefing__"))
+    # ANY other cache key whose first element matches this user — covers the
+    # per-date insight caches `(user_id, "YYYY-MM-DD")` so the day's insights
+    # also regenerate after a log. Walks the dict once; fine for the scale.
+    stale_keys = [k for k in _CACHE.keys()
+                  if isinstance(k, tuple) and len(k) == 2 and k[0] == user_id]
+    for k in stale_keys:
+        _CACHE.pop(k, None)
+
+
 async def get_briefing(user_id: int, stats: dict, force: bool = False) -> dict:
     """Cached daily briefing per user, with stale-while-revalidate.
 
