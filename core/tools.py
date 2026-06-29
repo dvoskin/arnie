@@ -216,14 +216,21 @@ _FITNESS_TOOLS = [
     {
         "name": "log_exercise",
         "description": (
-            "Log a strength/cardio entry to the workout. "
-            "SETS WITH THE SAME LOAD: one call — set sets=N and reps='8,8,7' (comma list "
-            "captures per-set reps). e.g. '3x8 @ 135' -> sets=3, reps='8,8,8', weight=135. "
-            "SETS WITH DIFFERENT LOADS: one call PER load — each weight is its own entry. "
-            "e.g. 'bench 135x10, 145x8, 155x6' -> THREE calls: (sets=1,reps=10,weight=135), "
-            "(sets=1,reps=8,weight=145), (sets=1,reps=6,weight=155). The dashboard groups "
-            "same-named entries back into one exercise with each set shown separately. "
-            "Different exercises: one call each."
+            "Log a strength/cardio movement to the workout. ONE call per movement — "
+            "all of its sets go in that single call (the backend keeps one row per "
+            "movement per session, so it stays clean and editable). Pick by load:\n"
+            "• SAME load across sets → sets=N, reps='8,8,8' (per-set reps CSV), weight=135. "
+            "e.g. '3x8 @ 135' → sets=3, reps='8,8,8', weight=135.\n"
+            "• VARYING load (pyramid / drop / ramp) → sets=N, reps='10,8,6' AND "
+            "weights='135,145,155' (parallel CSVs, same length/order). e.g. "
+            "'bench 135x10, 145x8, 155x6' → ONE call: sets=3, reps='10,8,6', "
+            "weights='135,145,155'. Do NOT split a movement into one call per set or per load.\n"
+            "LIVE set-by-set logging: when the user reports ONE set at a time as they go "
+            "('just did 10 at 165'), log that single set (sets=1, reps='10', weight=165). "
+            "Repeat per set as they happen — the backend rolls successive sets of the SAME "
+            "movement into the one row automatically. Never re-log a set already logged. "
+            "Different movements: one call each. To fix/move an existing entry use "
+            "update_exercise_entry, never a second log_exercise."
         ),
         "input_schema": {
             "type": "object",
