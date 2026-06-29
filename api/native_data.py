@@ -160,10 +160,10 @@ async def day_data(db, user, target_date=None) -> dict:
     dropping the strip). Past dates are fetched read-only — if
     no log exists for that date the `day` dict is None and the client
     renders an empty state. Today is auto-created so live coaching always
-    has a log to write into. The `weight` block is the same across dates
-    (user-scoped, not day-scoped) — we send it on every Today fetch so the
-    screen has the recent trend at hand without a second round-trip. The
-    `health` block is today's snapshot only; iOS hides the strip when nil."""
+    has a log to write into. The `weight` block carries the recent trend on every
+    fetch (so the screen has the sparkline without a second round-trip); on a PAST
+    day it's headlined by that day's own weigh-in. The `health` block is the
+    snapshot for `target_date`; iOS hides the strip when nil."""
     from db.queries import get_log_by_date, get_recent_weights, get_recent_health_snapshots
     is_today = target_date is None or target_date == _user_today_date(user)
 
@@ -175,7 +175,7 @@ async def day_data(db, user, target_date=None) -> dict:
     targets = _targets(user)
     user_tz = user.timezone or "UTC"
     weights = await get_recent_weights(db, user.id, days=30)
-    weight_block = _weight_block(weights, user)
+    weight_block = _weight_block(weights, user, as_of_date=(None if is_today else target_date))
 
     health_block = None
     snap = (
@@ -272,19 +272,26 @@ def _one_per_day_prefer_manual(weights):
     return [by_day[d] for d in sorted(by_day.keys())]
 
 
-def _weight_block(weights, user) -> dict | None:
+def _weight_block(weights, user, as_of_date=None) -> dict | None:
     """Shape the weight record for the Today screen: latest reading, the
     user's goal, and recent readings (most-recent-first, capped at 14) for a
     sparkline. Returns None when nothing's ever been logged.
 
     One reading per day (manual preferred) — so a manual weigh-in plus a passive
     HealthKit sync the same morning render as a single point headlined by the
-    user's own number, not a stacked/oscillating pair."""
+    user's own number, not a stacked/oscillating pair.
+
+    When `as_of_date` is given (viewing a PAST day), the headline `latest` is that
+    day's weigh-in — or the most recent one on/before it — instead of the global
+    latest, so a past Daily Log shows the weight that belonged to it."""
     if not weights:
         return None
-    sorted_weights = _one_per_day_prefer_manual(weights)
+    sorted_weights = _one_per_day_prefer_manual(weights)  # ascending by day
     if not sorted_weights:
         return None
+    if as_of_date is not None:
+        upto = [w for w in sorted_weights if w.timestamp.date() <= as_of_date]
+        sorted_weights = upto or sorted_weights[:1]
     recent = [
         {
             "date": w.timestamp.strftime("%Y-%m-%d"),
@@ -359,13 +366,18 @@ async def _today_health_snapshot_linked(db, user):
     )
     ids = list(id_rows.scalars().all()) or [user.id]
 
+    # Gather EVERY recent snapshot across the linked account — NOT just the latest
+    # one per identity. A passive Apple Health sync writes a recovery-less row that
+    # can be newer than the Whoop row carrying recovery (and HealthKit can even
+    # stamp it a day ahead in UTC). Taking snaps[0] per id would surface that empty
+    # Apple row and bury the Whoop recovery sitting right behind it. So collect all,
+    # then prefer the most-recent snapshot that actually has a recovery score.
     candidates = []
     for uid in ids:
-        snaps = await get_recent_health_snapshots(db, uid, days=1)
-        if snaps:
-            candidates.append(snaps[0])
+        candidates.extend(await get_recent_health_snapshots(db, uid, days=2))
     if not candidates:
         return None
+    candidates.sort(key=lambda c: c.date, reverse=True)
     with_recovery = [c for c in candidates if c.recovery_score is not None]
     return with_recovery[0] if with_recovery else candidates[0]
 
