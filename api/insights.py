@@ -568,17 +568,17 @@ def _sanitize_briefing(obj: dict, stats: Optional[dict] = None) -> dict:
     cards.sort(key=lambda c: c["priority"], reverse=True)
     cards = cards[:5]
 
-    # Hard-cap the starter at 48 chars (the prompt asks for ~3-7 words; enforce
-    # a short ceiling so a wordy LLM run never ships a long sentence as a quick
-    # opener). Trim to the last word boundary, no ellipsis on something this
-    # short — it would itself become visual noise.
+    # Cap the starter at 90 chars — long enough for a natural short question
+    # ("What's lunch looking like today?"), short enough that it never wraps to
+    # a third line on the card. Trim at the last word boundary, then ensure it
+    # closes with a "?" since it should always read as a question.
     starter = _s(obj.get("starter"))
-    if len(starter) > 48:
-        cut = starter[:48]
+    if len(starter) > 90:
+        cut = starter[:90]
         sp = cut.rfind(" ")
-        starter = (cut[:sp] if sp > 20 else cut).rstrip(" ,.;:")
-        if not starter.endswith("?"):
-            starter += "?"
+        starter = (cut[:sp] if sp > 40 else cut).rstrip(" ,.;:")
+    if starter and not starter.endswith("?"):
+        starter = starter.rstrip(".!,;:") + "?"
 
     return {"hero": hero, "focus": focus, "cards": cards, "starter": starter}
 
@@ -704,7 +704,7 @@ Return ONLY a valid JSON object with EXACTLY this shape:
   "cards": [
     {{"kind": "<win|risk|opportunity|trend|noticed|prediction>", "title": "<a short, OPINIONATED coaching headline stating your judgment, in natural sentence case (NOT all-caps, no emoji) — e.g. 'On track for 205', 'The weekend leak', \\"Volume's slipping\\", \\"Protein's holding\\", \\"Scale's creeping back\\". NEVER a generic category (Protein, Weight) or a tone word (Win, Opportunity).>", "story": "<DIAGNOSIS + EVIDENCE + RECOMMENDATION in 2-3 tight sentences, scannable in ~2s — what's happening, why it matters, what to do. e.g. \\"Five straight days under 115g protein. That's the pattern driving the scale up. Break it today.\\">", "priority": <0-100>, "viz": {{"type": "<spark|bar|bars>", "metric": "<weight|protein|calories|carbs|fats|steps|sleep|adherence>", "window": <3-8>}}}}
   ],
-  "starter": "<ONE punchy question, ~3 to 7 words MAX — a quick conversational opener, NOT a sentence. e.g. 'Dinner plan?', 'How's the day?', 'Lunch in?', 'Hit the gym yet?', 'How'd training go?'>"
+  "starter": "<ONE natural conversational question — a normal short sentence, roughly 8 to 14 words, fills almost a full line on the card. NOT a one-word fragment. e.g. \"What's lunch looking like today?\", \"Did you get a workout in this morning?\", \"How's training feeling this week?\", \"What's standing between you and dinner?\">"
 }}
 
 COMPOSITION — match the substance to how much you actually know about {name}:
