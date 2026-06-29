@@ -691,7 +691,7 @@ Return ONLY a valid JSON object with EXACTLY this shape:
   "hero": {{
     "headline": "<3 to 4 words MAX, a single punchy REAL-TIME directive — the move to make right now, in imperative voice, grounded in TODAY's live numbers. e.g. 'Hit 32g protein', 'Train upper today', 'Cut 150 today', 'Protect the streak', 'Fuel the cut'. NEVER a bare number ('209 lbs') — translate the number into the action. NO second clause (NOT 'Train upper, hit 180g'). null only if nothing actionable.>",
     "milestone": "<positive reinforcement IF genuinely earned by the data, e.g. 'Lowest weight in 6 weeks' — else null. No emoji.>",
-    "body": "<1-2 short sentences: the WHY behind the headline, anchored in TODAY's live numbers or a real pattern. The action's reason, not its restatement. e.g. 'You're at 158g protein with the day still open and a session tonight. 30g now closes it clean.'>"
+    "body": "<ONE short sentence (max ~20 words) — the live number or pattern that makes today's directive the move. Not two sentences, not editorial. e.g. 'You're at 158g protein with the day still open.' or 'Two weeks flat — a small cut tips the trend.'>"
   }},
   "focus": {{
     "title": "",
