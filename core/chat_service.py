@@ -79,6 +79,38 @@ _RECOVERY_SIGS = (
 )
 
 
+def _coach_home_block(briefing: dict) -> str:
+    """Render the cached Coach-home briefing into a compact context block so the
+    chat turn sees exactly what's on the user's home screen right now. Kept short
+    (headline + body + focus + card titles) — enough to keep chat coherent with
+    the dashboard without dumping every story verbatim into every prompt."""
+    hero = briefing.get("hero") or {}
+    focus = briefing.get("focus") or {}
+    cards = briefing.get("cards") or []
+    lines: list[str] = []
+    headline = (hero.get("headline") or "").strip()
+    body = (hero.get("body") or "").strip()
+    if headline:
+        lines.append(f"  hero: {headline}")
+    if body:
+        lines.append(f"  hero body: {body}")
+    foc_title = (focus.get("title") or "").strip()
+    foc_body = (focus.get("body") or "").strip()
+    if foc_title or foc_body:
+        lines.append(f"  focus: {foc_title}{' — ' if foc_title and foc_body else ''}{foc_body}")
+    card_titles = [str(c.get("title") or "").strip() for c in cards if c.get("title")]
+    if card_titles:
+        lines.append(f"  insight cards: {'; '.join(card_titles[:4])}")
+    if not lines:
+        return ""
+    header = (
+        "[COACH HOME — what they're looking at right now on the Coach feed. "
+        "Stay coherent with this read: don't contradict the hero or the focus, "
+        "and pick up the same thread if they ask 'why' or 'what should I do']"
+    )
+    return header + "\n" + "\n".join(lines)
+
+
 def _is_error_reply(response_text: str) -> bool:
     """True when a stored reply is a recovery/error bubble — never replay onto it,
     so a resend after an errored turn actually retries."""
@@ -271,6 +303,18 @@ async def run_chat_turn(
         context_str = await build_context(
             user, today_log, db, platform=platform, user_message=text
         )
+        # Coach-home sync: if there's a CACHED briefing for this user (the same
+        # one their iOS Coach feed is rendering right now), append it so chat
+        # speaks coherently with what's on their screen — Arnie won't tell them
+        # to "train upper" in chat while the Coach hero says "Lock in protein."
+        # Cache-only read (no LLM regen), best-effort, silent on miss.
+        try:
+            from api.insights import _CACHE as _briefing_cache
+            cached = _briefing_cache.get((user.id, "__briefing__"))
+            if cached and cached[1]:
+                context_str = f"{context_str}\n\n{_coach_home_block(cached[1])}"
+        except Exception as _e:
+            logger.debug(f"coach-home sync block skipped: {_e}")
         system = f"{build_arnie_system(platform=platform)}\n\n{context_str}"
     else:
         today_log = None
