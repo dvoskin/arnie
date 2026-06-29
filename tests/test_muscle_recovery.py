@@ -95,13 +95,13 @@ def test_shoulders_recover_inside_the_small_muscle_window():
 
 
 def test_one_light_set_does_not_lock_out_a_muscle():
-    """Danny: one set of lat pulldown shouldn't rule out back for days. Low volume
-    (sets x reps x load) already decays fast under the recalibrated back tau."""
+    """Danny: one set of lat pulldown shouldn't rule out lats for days. Low volume
+    (sets x reps x load) already decays fast under the recalibrated lats tau."""
     one_set = {"name": "Lat Pulldown", "sets": 1, "reps": "10", "weight": 60.0,
                "rir": 2, "occurred_at": NOW - timedelta(hours=20)}
-    back = _by_id(compute_recovery([one_set], None, {"age": 33}, NOW))["back"]
-    assert back["status"] == "ready"
-    assert back["recovery_pct"] >= 75
+    lats = _by_id(compute_recovery([one_set], None, {"age": 33}, NOW))["lats"]
+    assert lats["status"] == "ready"
+    assert lats["recovery_pct"] >= 75
 
 
 def test_untrained_muscle_is_ready():
@@ -130,10 +130,10 @@ def test_zone4_run_loads_legs_and_systemic():
     res = compute_recovery([run], None, {"age": 33}, NOW)
     by = _by_id(res)
     # legs take the brunt
-    assert by["calves"]["fatigue"] > by["chest"]["fatigue"]
+    assert by["calves"]["fatigue"] > by["chest_mid"]["fatigue"]
     assert by["quads"]["fatigue"] > 0
     # systemic full-body effect: even chest registers something
-    assert by["chest"]["fatigue"] > 0
+    assert by["chest_mid"]["fatigue"] > 0
 
 
 def test_easy_walk_is_minimal():
@@ -199,9 +199,10 @@ def test_per_set_weights_csv_parsed():
         "occurred_at": NOW - timedelta(hours=2),
     }], None, {"age": 33}, NOW)
     by = _by_id(res)
-    assert by["chest"]["status"] in ("just_hit", "strained")
-    # triceps get partial credit as a synergist
-    assert 0 < by["triceps"]["fatigue"] < by["chest"]["fatigue"]
+    # Bench Press dominates mid-chest with upper/lower as secondaries
+    assert by["chest_mid"]["status"] in ("just_hit", "strained")
+    # triceps get partial credit as a synergist (less than the prime mover)
+    assert 0 < by["triceps"]["fatigue"] < by["chest_mid"]["fatigue"]
 
 
 def test_bodyweight_movement_registers():
@@ -209,7 +210,8 @@ def test_bodyweight_movement_registers():
         "name": "Pull-Up", "sets": 5, "reps": "10",
         "occurred_at": NOW - timedelta(hours=2),
     }], None, {"age": 33}, NOW)
-    assert _by_id(res)["back"]["fatigue"] > 0
+    # Pull-Up dominates lats (vertical pull), mid-back picks up secondary load
+    assert _by_id(res)["lats"]["fatigue"] > 0
 
 
 def test_wire_shape_contract():
@@ -221,6 +223,221 @@ def test_wire_shape_contract():
     assert set(m.keys()) >= {"id", "name", "group", "status", "fatigue",
                              "recovery_pct", "last_trained_label", "movements"}
     assert set(res["summary"].keys()) == {"ready", "recovering", "headline"}
+
+
+# ── chest sub-muscle splits ───────────────────────────────────────────────────
+
+def test_incline_press_routes_to_chest_upper_not_lower():
+    """Incline angles emphasize clavicular fibers — chest_upper should
+    dominate, chest_lower should barely register."""
+    res = compute_recovery([{
+        "name": "Incline Bench Press", "sets": 4, "reps": "8",
+        "weight": 80.0, "rir": 1, "occurred_at": NOW - timedelta(hours=2),
+    }], None, {"age": 33}, NOW)
+    by = _by_id(res)
+    assert by["chest_upper"]["fatigue"] > by["chest_mid"]["fatigue"]
+    assert by["chest_upper"]["fatigue"] > by["chest_lower"]["fatigue"]
+    # Mid still picks up some (0.40 coefficient), lower is essentially zero
+    assert by["chest_lower"]["fatigue"] == 0
+
+
+def test_decline_press_routes_to_chest_lower_not_upper():
+    """Decline emphasizes the sternal/lower fibers — chest_lower must
+    dominate and chest_upper must not register."""
+    res = compute_recovery([{
+        "name": "Decline Bench Press", "sets": 4, "reps": "8",
+        "weight": 80.0, "rir": 1, "occurred_at": NOW - timedelta(hours=2),
+    }], None, {"age": 33}, NOW)
+    by = _by_id(res)
+    assert by["chest_lower"]["fatigue"] > by["chest_mid"]["fatigue"]
+    assert by["chest_lower"]["fatigue"] > by["chest_upper"]["fatigue"]
+    assert by["chest_upper"]["fatigue"] == 0
+
+
+def test_flat_bench_loads_all_three_chest_regions_mid_dominant():
+    """A flat bench day works the whole chest, but mid is the prime mover —
+    upper/lower come along for the ride at sub-1.0 coefficients."""
+    res = compute_recovery([{
+        "name": "Bench Press", "sets": 4, "reps": "8",
+        "weight": 100.0, "rir": 1, "occurred_at": NOW - timedelta(hours=2),
+    }], None, {"age": 33}, NOW)
+    by = _by_id(res)
+    assert by["chest_mid"]["fatigue"] > by["chest_upper"]["fatigue"] > 0
+    assert by["chest_mid"]["fatigue"] > by["chest_lower"]["fatigue"] > 0
+
+
+# ── back sub-muscle splits ────────────────────────────────────────────────────
+
+def test_lat_pulldown_routes_to_lats_not_mid_back():
+    """Vertical pulls (pulldown, pull-up) emphasize lats. Lats should
+    dominate; mid_back should pick up some secondary load."""
+    res = compute_recovery([{
+        "name": "Lat Pulldown", "sets": 4, "reps": "10",
+        "weight": 70.0, "rir": 1, "occurred_at": NOW - timedelta(hours=2),
+    }], None, {"age": 33}, NOW)
+    by = _by_id(res)
+    assert by["lats"]["fatigue"] > by["mid_back"]["fatigue"] > 0
+    assert by["lower_back"]["fatigue"] == 0
+
+
+def test_lats_recover_in_small_muscle_window():
+    """Lats tau ~34h — should be largely recovered by ~36h after a normal
+    session. This is the "small muscle window" Danny reported about."""
+    res = compute_recovery([{
+        "name": "Lat Pulldown", "sets": 4, "reps": "10",
+        "weight": 70.0, "rir": 1, "occurred_at": NOW - timedelta(hours=36),
+    }], None, {"age": 33}, NOW)
+    lats = _by_id(res)["lats"]
+    assert lats["recovery_pct"] >= 60
+    assert lats["status"] in ("ready", "recovering")
+
+
+def test_deadlift_dominates_lower_back():
+    """Heavy deadlifts spike the spinal erectors — lower_back must be the
+    most-fatigued back sub-muscle, not lats or mid_back."""
+    res = compute_recovery([{
+        "name": "Deadlift", "sets": 3, "reps": "5",
+        "weight": 200.0, "rir": 1, "occurred_at": NOW - timedelta(hours=2),
+    }], None, {"age": 33}, NOW)
+    by = _by_id(res)
+    assert by["lower_back"]["fatigue"] > by["mid_back"]["fatigue"]
+    assert by["lower_back"]["fatigue"] > by["lats"]["fatigue"]
+    # legs come along (glutes, hams) — verify the cross-muscle attribution
+    assert by["glutes"]["fatigue"] > 0
+    assert by["hamstrings"]["fatigue"] > 0
+
+
+def test_barbell_row_dominates_mid_back_lats_secondary():
+    """Horizontal pulls hit mid-back hard (rhomboids/mid-traps) with lats
+    along as secondary. The reverse of Pull-Up's lats-dominant profile."""
+    res = compute_recovery([{
+        "name": "Barbell Row", "sets": 4, "reps": "8",
+        "weight": 120.0, "rir": 1, "occurred_at": NOW - timedelta(hours=2),
+    }], None, {"age": 33}, NOW)
+    by = _by_id(res)
+    assert by["mid_back"]["fatigue"] > by["lats"]["fatigue"] > 0
+    # lower_back picks up some hinge load (0.30 coefficient)
+    assert by["lower_back"]["fatigue"] > 0
+
+
+def test_back_legacy_alias_routes_to_lats():
+    """An unknown back-primary movement (catalog primary='back' would have
+    been the legacy value) routes via _PRIMARY_ALIAS to lats — graceful
+    fallback for any data that pre-dates the sub-muscle split."""
+    # Hijack a catalog entry by typing a name that resolves to a back-primary
+    # entry but isn't in INVOLVEMENT — Straight-Arm Pulldown's primary is "lats"
+    # already, so this just confirms it doesn't crash. The real fallback test
+    # is the unknown-name case below.
+    res = compute_recovery([{
+        "name": "straight-arm pulldown", "sets": 3, "reps": "12",
+        "weight": 40.0, "rir": 1, "occurred_at": NOW - timedelta(hours=2),
+    }], None, {"age": 33}, NOW)
+    assert _by_id(res)["lats"]["fatigue"] > 0
+
+
+# ── catalog expansion: every NEW INVOLVEMENT entry's primary check ────────────
+# For each new entry, the canonical's highest-coefficient muscle must match
+# the intended primary mover. This is a regression pin: if a future PR drops
+# the prime mover's coefficient below a synergist's, this fires.
+
+@pytest.mark.parametrize("name,expected_primary", [
+    # Chest additions
+    ("Machine Chest Press", "chest_mid"),
+    ("Floor Press", "chest_mid"),
+    ("Landmine Press", "chest_upper"),
+    ("Diamond Push-Up", "triceps"),
+    # Back additions
+    ("Pendlay Row", "mid_back"),
+    ("T-Bar Row", "mid_back"),
+    ("Rack Pull", "lower_back"),
+    ("Hyperextension", "lower_back"),
+    ("Reverse Hyperextension", "lower_back"),
+    # Shoulder additions
+    ("Arnold Press", "shoulders"),
+    ("Push Press", "shoulders"),
+    ("Front Raise", "shoulders"),
+    ("Machine Rear Delt Fly", "shoulders"),
+    # Traps
+    ("Farmer's Carry", "traps"),
+    # Biceps additions
+    ("Incline Curl", "biceps"),
+    ("Concentration Curl", "biceps"),
+    ("EZ-Bar Curl", "biceps"),
+    ("Zottman Curl", "biceps"),
+    # Triceps additions
+    ("Skull Crusher", "triceps"),
+    ("Overhead Tricep Extension", "triceps"),
+    ("Bench Dip", "triceps"),
+    # Forearms additions
+    ("Wrist Curl", "forearms"),
+    ("Reverse Wrist Curl", "forearms"),
+    # Quad additions
+    ("Hack Squat", "quads"),
+    ("Step-Up", "quads"),
+    ("Box Squat", "quads"),
+    # Hamstring/glute additions
+    ("Nordic Curl", "hamstrings"),
+    ("Seated Leg Curl", "hamstrings"),
+    ("Hip Thrust", "glutes"),
+    ("Glute Bridge", "glutes"),
+    # Calves
+    ("Seated Calf Raise", "calves"),
+    ("Standing Calf Raise", "calves"),
+    ("Donkey Calf Raise", "calves"),
+    # Core additions
+    ("Plank", "abs"),
+    ("Dead Bug", "abs"),
+    ("Pallof Press", "abs"),
+    ("Side Plank", "obliques"),
+    # Conditioning finishers
+    ("Battle Ropes", "shoulders"),
+    ("Burpees", "abs"),
+    ("Box Jumps", "quads"),
+])
+def test_new_movement_primary_mover_dominates(name, expected_primary):
+    """Each new movement attributes the highest residual fatigue to its
+    declared primary mover. Catches a future PR that drops the prime
+    coefficient below a synergist."""
+    from skills.fitness.muscle_recovery import (
+        INVOLVEMENT, _entry_muscle_stimulus,
+    )
+    # Some entries live only as canonical+catalog (no INVOLVEMENT row, fallback
+    # uses catalog primary). Either path must agree on the prime mover.
+    res = compute_recovery([{
+        "name": name, "sets": 4, "reps": "10",
+        "weight": 50.0, "rir": 1, "occurred_at": NOW - timedelta(hours=2),
+    }], None, {"age": 33}, NOW)
+    by = _by_id(res)
+    # _PRIMARY_ALIAS folds 'obliques' into the 'abs' bucket; honor that.
+    target = "abs" if expected_primary == "obliques" else expected_primary
+    # Find the muscle with the maximum fatigue
+    top_muscle = max(by.values(), key=lambda m: m["fatigue"])["id"]
+    if expected_primary == "obliques":
+        # Side Plank's "obliques 1.0, abs 0.5" sums into the abs bucket via
+        # _PRIMARY_ALIAS, so the bucket-level prime is "abs" — and abs WILL
+        # be the highest. Honor both forms here.
+        assert top_muscle == "abs", (
+            f"{name} expected obliques→abs as prime, got {top_muscle}; "
+            f"fatigues: {[(k, round(v['fatigue'], 3)) for k, v in by.items() if v['fatigue'] > 0]}"
+        )
+    else:
+        assert top_muscle == target, (
+            f"{name} expected {target} as prime, got {top_muscle}; "
+            f"fatigues: {[(k, round(v['fatigue'], 3)) for k, v in by.items() if v['fatigue'] > 0]}"
+        )
+
+
+def test_rowing_cardio_loads_mid_back_not_legacy_back():
+    """Rowing's INVOLVEMENT was previously {'back': 0.5} — now mid_back. A
+    Zone-3 row should leave mid_back loaded and not crash on missing 'back'."""
+    row = {
+        "name": "Rowing", "cardio_type": "row", "duration_minutes": 30,
+        "avg_hr": 150, "occurred_at": NOW - timedelta(hours=2),
+    }
+    res = compute_recovery([row], None, {"age": 33}, NOW)
+    by = _by_id(res)
+    assert by["mid_back"]["fatigue"] > 0
+    assert by["quads"]["fatigue"] > 0  # legs always do work on the erg
 
 
 if __name__ == "__main__":

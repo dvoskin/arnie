@@ -61,26 +61,41 @@ from skills.fitness.exercise_catalog import canonicalize
 #       >=2x/week, i.e. ~48-72 h spacing per muscle.
 #     - Eccentric-damage / DOMS literature — force/soreness from heavy eccentric
 #       (large-muscle) work peaks 24-72 h and can take 4+ days to fully resolve.
+# Chest and back split into sub-muscles so the board can advise around regional
+# fatigue (upper-chest after incline vs lower-chest after decline; lats after
+# vertical pulls vs mid-back after rows vs lower-back after deadlifts). Lower
+# back has the slowest tau in the body — heavy spinal-erector load lingers.
 # `obliques` and `cardio` are NOT board muscles: obliques fold into abs, and a
 # cardio entry is decomposed into systemic + leg load (it has no muscle of its
 # own). Order here is the canonical board order.
 MUSCLES: dict[str, dict] = {
-    "chest":      {"name": "Chest",      "group": "major", "tau_hours": 34.0},
-    "back":       {"name": "Back",       "group": "major", "tau_hours": 36.0},
-    "shoulders":  {"name": "Shoulders",  "group": "major", "tau_hours": 26.0},
-    "quads":      {"name": "Quads",      "group": "major", "tau_hours": 40.0},
-    "hamstrings": {"name": "Hamstrings", "group": "major", "tau_hours": 40.0},
-    "glutes":     {"name": "Glutes",     "group": "major", "tau_hours": 34.0},
-    "biceps":     {"name": "Biceps",     "group": "minor", "tau_hours": 24.0},
-    "triceps":    {"name": "Triceps",    "group": "minor", "tau_hours": 26.0},
-    "forearms":   {"name": "Forearms",   "group": "minor", "tau_hours": 22.0},
-    "traps":      {"name": "Traps",      "group": "minor", "tau_hours": 26.0},
-    "abs":        {"name": "Core",       "group": "minor", "tau_hours": 22.0},
-    "calves":     {"name": "Calves",     "group": "minor", "tau_hours": 26.0},
+    "chest_upper": {"name": "Upper Chest", "group": "major", "tau_hours": 32.0},
+    "chest_mid":   {"name": "Mid Chest",   "group": "major", "tau_hours": 34.0},
+    "chest_lower": {"name": "Lower Chest", "group": "major", "tau_hours": 32.0},
+    "lats":        {"name": "Lats",        "group": "major", "tau_hours": 34.0},
+    "mid_back":    {"name": "Mid Back",    "group": "major", "tau_hours": 36.0},
+    "lower_back":  {"name": "Lower Back",  "group": "major", "tau_hours": 48.0},
+    "shoulders":   {"name": "Shoulders",   "group": "major", "tau_hours": 26.0},
+    "quads":       {"name": "Quads",       "group": "major", "tau_hours": 40.0},
+    "hamstrings":  {"name": "Hamstrings",  "group": "major", "tau_hours": 40.0},
+    "glutes":      {"name": "Glutes",      "group": "major", "tau_hours": 34.0},
+    "biceps":      {"name": "Biceps",      "group": "minor", "tau_hours": 24.0},
+    "triceps":     {"name": "Triceps",     "group": "minor", "tau_hours": 26.0},
+    "forearms":    {"name": "Forearms",    "group": "minor", "tau_hours": 22.0},
+    "traps":       {"name": "Traps",       "group": "minor", "tau_hours": 26.0},
+    "abs":         {"name": "Core",        "group": "minor", "tau_hours": 22.0},
+    "calves":      {"name": "Calves",      "group": "minor", "tau_hours": 26.0},
 }
 
 # Catalog primaries that aren't their own board muscle map here.
-_PRIMARY_ALIAS = {"obliques": "abs"}
+# Legacy plain "chest"/"back" route to a sensible default sub-muscle so unmapped
+# rows still attribute somewhere; specific sub-muscle ids in INVOLVEMENT below
+# override this for known compounds.
+_PRIMARY_ALIAS = {
+    "obliques": "abs",
+    "chest": "chest_mid",
+    "back": "lats",
+}
 
 LEG_MUSCLES = ("quads", "hamstrings", "glutes", "calves")
 
@@ -90,47 +105,93 @@ LEG_MUSCLES = ("quads", "hamstrings", "glutes", "calves")
 # 0.3-0.6, stabilizers ~0.2. Only the compounds where secondary involvement
 # matters are listed; everything else falls back to its catalog `primary` at 1.0.
 INVOLVEMENT: dict[str, dict[str, float]] = {
-    # chest presses
-    "Bench Press":            {"chest": 1.0, "triceps": 0.4, "shoulders": 0.3},
-    "Incline Bench Press":    {"chest": 1.0, "shoulders": 0.4, "triceps": 0.35},
-    "Decline Bench Press":    {"chest": 1.0, "triceps": 0.4},
-    "Flat Dumbbell Press":    {"chest": 1.0, "triceps": 0.35, "shoulders": 0.3},
-    "Incline Dumbbell Press": {"chest": 1.0, "shoulders": 0.4, "triceps": 0.3},
-    "Push-Up":                {"chest": 1.0, "triceps": 0.4, "shoulders": 0.3, "abs": 0.2},
-    "Close-Grip Bench Press": {"triceps": 1.0, "chest": 0.5, "shoulders": 0.25},
-    "Dip":                    {"triceps": 1.0, "chest": 0.6, "shoulders": 0.3},
-    # shoulder presses / raises
+    # ── chest presses (sub-muscle split: upper / mid / lower) ────────────────
+    "Bench Press":            {"chest_mid": 1.0, "chest_upper": 0.3, "chest_lower": 0.4, "triceps": 0.4, "shoulders": 0.3},
+    "Incline Bench Press":    {"chest_upper": 1.0, "chest_mid": 0.4, "shoulders": 0.4, "triceps": 0.35},
+    "Decline Bench Press":    {"chest_lower": 1.0, "chest_mid": 0.3, "triceps": 0.4},
+    "Flat Dumbbell Press":    {"chest_mid": 1.0, "chest_upper": 0.3, "chest_lower": 0.4, "triceps": 0.35, "shoulders": 0.3},
+    "Incline Dumbbell Press": {"chest_upper": 1.0, "chest_mid": 0.4, "shoulders": 0.4, "triceps": 0.3},
+    "Chest Fly":              {"chest_mid": 1.0, "chest_upper": 0.3, "chest_lower": 0.3},
+    "Cable Fly":              {"chest_mid": 1.0, "chest_upper": 0.3, "chest_lower": 0.3},
+    "High-to-Low Fly":        {"chest_lower": 1.0, "chest_mid": 0.4},
+    "Low-to-High Fly":        {"chest_upper": 1.0, "chest_mid": 0.4},
+    "Push-Up":                {"chest_mid": 1.0, "chest_upper": 0.2, "chest_lower": 0.3, "triceps": 0.4, "shoulders": 0.3, "abs": 0.2},
+    "Close-Grip Bench Press": {"triceps": 1.0, "chest_mid": 0.5, "shoulders": 0.25},
+    "Dip":                    {"triceps": 1.0, "chest_lower": 0.6, "shoulders": 0.3},
+    "Machine Chest Press":    {"chest_mid": 1.0, "chest_upper": 0.3, "chest_lower": 0.3, "triceps": 0.35, "shoulders": 0.25},
+    "Floor Press":            {"chest_mid": 1.0, "chest_lower": 0.3, "triceps": 0.5, "shoulders": 0.2},
+    "Landmine Press":         {"chest_upper": 1.0, "shoulders": 0.6, "triceps": 0.3, "abs": 0.2},
+    "Diamond Push-Up":        {"triceps": 1.0, "chest_mid": 0.6, "shoulders": 0.3, "abs": 0.2},
+    # ── shoulder presses / raises ───────────────────────────────────────────
     "Overhead Press":           {"shoulders": 1.0, "triceps": 0.45, "traps": 0.3, "abs": 0.2},
     "Dumbbell Shoulder Press":  {"shoulders": 1.0, "triceps": 0.4, "traps": 0.25},
     "Upright Row":              {"shoulders": 1.0, "traps": 0.5, "biceps": 0.2},
     "Face Pull":                {"shoulders": 1.0, "traps": 0.4},
-    # back pulls
-    "Deadlift":              {"back": 1.0, "glutes": 0.6, "hamstrings": 0.6, "traps": 0.4, "forearms": 0.3, "quads": 0.3},
-    "Barbell Row":           {"back": 1.0, "biceps": 0.4, "forearms": 0.3, "traps": 0.3},
-    "Dumbbell Row":          {"back": 1.0, "biceps": 0.4, "forearms": 0.25},
-    "Chest-Supported Row":   {"back": 1.0, "biceps": 0.35, "traps": 0.3},
-    "Seated Cable Row":      {"back": 1.0, "biceps": 0.35, "forearms": 0.2},
-    "Pull-Up":               {"back": 1.0, "biceps": 0.5, "forearms": 0.3},
-    "Lat Pulldown":          {"back": 1.0, "biceps": 0.45, "forearms": 0.25},
-    "Single-Arm Pulldown":   {"back": 1.0, "biceps": 0.4, "forearms": 0.25},
-    # arms
+    "Arnold Press":             {"shoulders": 1.0, "triceps": 0.4, "traps": 0.25},
+    "Push Press":               {"shoulders": 1.0, "triceps": 0.5, "traps": 0.3, "quads": 0.3, "abs": 0.2},
+    "Front Raise":              {"shoulders": 1.0},
+    "Machine Rear Delt Fly":    {"shoulders": 1.0, "traps": 0.35},
+    # ── back pulls (sub-muscle split: lats / mid_back / lower_back) ─────────
+    "Deadlift":              {"lower_back": 1.0, "mid_back": 0.6, "lats": 0.4, "glutes": 0.6, "hamstrings": 0.6, "traps": 0.4, "forearms": 0.3, "quads": 0.3},
+    "Pull-Up":               {"lats": 1.0, "mid_back": 0.4, "biceps": 0.5, "forearms": 0.3},
+    "Lat Pulldown":          {"lats": 1.0, "mid_back": 0.3, "biceps": 0.45, "forearms": 0.25},
+    "Single-Arm Pulldown":   {"lats": 1.0, "mid_back": 0.3, "biceps": 0.4, "forearms": 0.25},
+    "Straight-Arm Pulldown": {"lats": 1.0, "triceps": 0.2},
+    "Barbell Row":           {"mid_back": 1.0, "lats": 0.5, "lower_back": 0.3, "biceps": 0.4, "forearms": 0.3},
+    "Chest-Supported Row":   {"mid_back": 1.0, "lats": 0.4, "biceps": 0.35, "traps": 0.3},
+    "Seated Cable Row":      {"mid_back": 1.0, "lats": 0.5, "biceps": 0.35, "forearms": 0.2},
+    "Dumbbell Row":          {"mid_back": 1.0, "lats": 0.6, "biceps": 0.4, "forearms": 0.25},
+    "Pendlay Row":           {"mid_back": 1.0, "lats": 0.5, "lower_back": 0.4, "biceps": 0.4, "forearms": 0.3},
+    "T-Bar Row":             {"mid_back": 1.0, "lats": 0.55, "lower_back": 0.3, "biceps": 0.4, "forearms": 0.3},
+    "Rack Pull":             {"lower_back": 1.0, "mid_back": 0.6, "traps": 0.5, "lats": 0.3, "glutes": 0.4, "forearms": 0.4},
+    "Hyperextension":        {"lower_back": 1.0, "glutes": 0.5, "hamstrings": 0.4},
+    "Reverse Hyperextension": {"lower_back": 1.0, "glutes": 0.6, "hamstrings": 0.4},
+    # ── arms (biceps/triceps/forearms) ──────────────────────────────────────
     "Barbell Curl":  {"biceps": 1.0, "forearms": 0.4},
     "Dumbbell Curl": {"biceps": 1.0, "forearms": 0.35},
     "Hammer Curl":   {"biceps": 1.0, "forearms": 0.5},
     "Preacher Curl": {"biceps": 1.0, "forearms": 0.3},
     "Reverse Curl":  {"forearms": 1.0, "biceps": 0.5},
     "Shrug":         {"traps": 1.0, "forearms": 0.3},
-    # legs
-    "Back Squat":            {"quads": 1.0, "glutes": 0.6, "hamstrings": 0.4, "abs": 0.3, "back": 0.3},
-    "Front Squat":          {"quads": 1.0, "glutes": 0.5, "abs": 0.4, "back": 0.3},
-    "Leg Press":            {"quads": 1.0, "glutes": 0.5, "hamstrings": 0.3},
+    "Incline Curl":         {"biceps": 1.0, "forearms": 0.3},
+    "Concentration Curl":   {"biceps": 1.0, "forearms": 0.3},
+    "EZ-Bar Curl":          {"biceps": 1.0, "forearms": 0.4},
+    "Zottman Curl":         {"biceps": 1.0, "forearms": 0.6},
+    "Skull Crusher":             {"triceps": 1.0, "forearms": 0.2},
+    "Overhead Tricep Extension": {"triceps": 1.0, "shoulders": 0.2},
+    "Bench Dip":                 {"triceps": 1.0, "chest_lower": 0.3, "shoulders": 0.25},
+    "Wrist Curl":         {"forearms": 1.0},
+    "Reverse Wrist Curl": {"forearms": 1.0},
+    # ── traps / carries ─────────────────────────────────────────────────────
+    "Farmer's Carry": {"traps": 1.0, "forearms": 0.8, "abs": 0.4, "glutes": 0.3, "quads": 0.2},
+    # ── legs (quads / hamstrings / glutes / calves) ─────────────────────────
+    "Back Squat":            {"quads": 1.0, "glutes": 0.6, "hamstrings": 0.4, "abs": 0.3, "lower_back": 0.3},
+    "Front Squat":           {"quads": 1.0, "glutes": 0.5, "abs": 0.4, "lower_back": 0.3},
+    "Leg Press":             {"quads": 1.0, "glutes": 0.5, "hamstrings": 0.3},
     "Bulgarian Split Squat": {"quads": 1.0, "glutes": 0.7, "hamstrings": 0.3},
-    "Lunge":                {"quads": 1.0, "glutes": 0.6, "hamstrings": 0.3},
-    "Romanian Deadlift":    {"hamstrings": 1.0, "glutes": 0.6, "back": 0.4, "forearms": 0.25},
-    "Good Morning":         {"hamstrings": 1.0, "glutes": 0.5, "back": 0.4},
-    "Hip Thrust":           {"glutes": 1.0, "hamstrings": 0.4},
-    # core
+    "Lunge":                 {"quads": 1.0, "glutes": 0.6, "hamstrings": 0.3},
+    "Hack Squat":            {"quads": 1.0, "glutes": 0.5, "hamstrings": 0.3},
+    "Step-Up":               {"quads": 1.0, "glutes": 0.6, "hamstrings": 0.3, "calves": 0.2},
+    "Box Squat":             {"quads": 1.0, "glutes": 0.7, "hamstrings": 0.4, "lower_back": 0.3},
+    "Romanian Deadlift":     {"hamstrings": 1.0, "glutes": 0.6, "lower_back": 0.4, "forearms": 0.25},
+    "Good Morning":          {"hamstrings": 1.0, "glutes": 0.5, "lower_back": 0.4},
+    "Nordic Curl":           {"hamstrings": 1.0, "glutes": 0.3, "calves": 0.2},
+    "Seated Leg Curl":       {"hamstrings": 1.0},
+    "Hip Thrust":            {"glutes": 1.0, "hamstrings": 0.4},
+    "Glute Bridge":          {"glutes": 1.0, "hamstrings": 0.4, "lower_back": 0.2},
+    "Seated Calf Raise":     {"calves": 1.0},
+    "Standing Calf Raise":   {"calves": 1.0},
+    "Donkey Calf Raise":     {"calves": 1.0},
+    # ── core ────────────────────────────────────────────────────────────────
     "Hanging Leg Raise": {"abs": 1.0, "forearms": 0.2},
+    "Plank":             {"abs": 1.0, "shoulders": 0.2},
+    "Dead Bug":          {"abs": 1.0},
+    "Pallof Press":      {"abs": 1.0, "obliques": 0.5},
+    "Side Plank":        {"obliques": 1.0, "abs": 0.5, "shoulders": 0.2},
+    # ── cardio finishers / conditioning ─────────────────────────────────────
+    "Battle Ropes": {"shoulders": 1.0, "abs": 0.4, "forearms": 0.5, "biceps": 0.2, "traps": 0.3},
+    "Burpees":      {"abs": 1.0, "shoulders": 0.4, "quads": 0.5, "chest_mid": 0.3, "triceps": 0.3, "glutes": 0.3},
+    "Box Jumps":    {"quads": 1.0, "glutes": 0.7, "calves": 0.5, "hamstrings": 0.3},
 }
 
 # ── Cardio leg-involvement by modality ────────────────────────────────────────
@@ -144,7 +205,7 @@ CARDIO_INVOLVEMENT: dict[str, dict[str, float]] = {
     "Walking":        {"calves": 0.4, "quads": 0.25, "glutes": 0.2, "hamstrings": 0.15},
     "Stationary Bike": {"quads": 0.6, "hamstrings": 0.3, "glutes": 0.3, "calves": 0.2},
     "Elliptical":     {"quads": 0.4, "glutes": 0.35, "hamstrings": 0.3, "calves": 0.3},
-    "Rowing":         {"quads": 0.4, "hamstrings": 0.3, "back": 0.5, "glutes": 0.3, "biceps": 0.2},
+    "Rowing":         {"quads": 0.4, "hamstrings": 0.3, "mid_back": 0.5, "glutes": 0.3, "biceps": 0.2},
 }
 
 
