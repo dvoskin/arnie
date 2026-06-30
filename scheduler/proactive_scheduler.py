@@ -253,7 +253,49 @@ async def _send_hook(telegram_id: str, text: str) -> None:
         logger.error(f"Hook send failed → {telegram_id}: {e}")
 
 
-async def _send_ios(telegram_id: str, text: str) -> None:
+# Contextual push titles by nudge slot — a banner that says WHAT it is at a glance
+# ("Pre-workout", "Morning check-in") beats a constant "Arnie". Substring-matched
+# against slot_key so related slots share a title.
+# Order matters — more specific fragments first, so "late_morning_nolog" resolves
+# to "Quick check-in" rather than the generic "Morning check-in".
+_PUSH_TITLES = (
+    ("recap", "Your week in review"),
+    ("weekly", "Your week in review"),
+    ("preworkout", "Pre-workout"),
+    ("pre_workout", "Pre-workout"),
+    ("postworkout", "Post-workout"),
+    ("nolog", "Quick check-in"),
+    ("recovery", "Recovery update"),
+    ("whoop", "Recovery update"),
+    ("lunch", "Lunch check-in"),
+    ("dinner", "Evening check-in"),
+    ("evening", "Evening check-in"),
+    ("breakfast", "Morning check-in"),
+    ("morning", "Morning check-in"),
+    ("wake", "Morning check-in"),
+    ("hook", "Picking up where we left off"),
+)
+
+
+def _push_title(slot_key) -> str:
+    sk = (slot_key or "").lower()
+    for frag, title in _PUSH_TITLES:
+        if frag in sk:
+            return title
+    return "Arnie"
+
+
+def _push_body(text: str) -> str:
+    """Concise banner body — the LEAD bubble (the hook) only, so the notification
+    teases instead of dumping the whole multi-bubble reply. The full message opens
+    in-app on tap."""
+    first = (text or "").split("|||")[0].strip()
+    if len(first) > 220:
+        first = first[:217].rstrip() + "…"
+    return first or "Tap to open Arnie"
+
+
+async def _send_ios(telegram_id: str, text: str, slot_key: str = None) -> None:
     """Fan a proactive nudge out to every active APNs device for the user.
 
     `telegram_id` is the namespaced platform identity ("ios:<uuid>" or
@@ -281,8 +323,10 @@ async def _send_ios(telegram_id: str, text: str) -> None:
         logger.info(f"APNs not configured — proactive iOS send to {telegram_id} skipped")
         return
 
-    body = text.replace("|||", "\n").strip()
-    title = "Arnie"
+    # Structured banner: a contextual title (by slot) + the lead bubble as a
+    # concise body, grouped under one thread so Arnie's pushes stack neatly.
+    title = _push_title(slot_key)
+    body = _push_body(text)
 
     async with AsyncSessionLocal() as db:
         user = await resolve_user(db, telegram_id)
@@ -292,7 +336,8 @@ async def _send_ios(telegram_id: str, text: str) -> None:
             return
         for row in tokens:
             env = row.environment or "production"
-            result = await send_push(row.token, title, body, environment=env)
+            result = await send_push(row.token, title, body, environment=env,
+                                     thread_id="arnie-coach")
 
             # Cross-environment retry: a token registered under one APNs environment
             # but actually minted for the other still BadDeviceToken's on the wrong
@@ -306,7 +351,8 @@ async def _send_ios(telegram_id: str, text: str) -> None:
                 status = result.get("status")
                 if reason in ("BadDeviceToken", "Unregistered") or status in (400, 410):
                     other = "sandbox" if env == "production" else "production"
-                    alt = await send_push(row.token, title, body, environment=other)
+                    alt = await send_push(row.token, title, body, environment=other,
+                                          thread_id="arnie-coach")
                     if alt.get("ok"):
                         logger.info(
                             f"APNs delivered to user {user.id} on {other} (token registered "
@@ -347,7 +393,7 @@ def _channel_for(telegram_id: str | None) -> str:
     return "telegram"
 
 
-async def _send(telegram_id: str, text: str, effect: str = None):
+async def _send(telegram_id: str, text: str, effect: str = None, slot_key: str = None):
     """
     Send a proactive message to the user, rendered natively per platform.
     Splits on ||| for multi-bubble. Dispatch by identity prefix:
@@ -367,7 +413,7 @@ async def _send(telegram_id: str, text: str, effect: str = None):
     # iOS / Apple Sign-in identities → APNs. Happens BEFORE the Telegram int
     # parse, otherwise `int("ios:abc")` would raise.
     if telegram_id.startswith(("ios:", "apple:")):
-        await _send_ios(telegram_id, text)
+        await _send_ios(telegram_id, text, slot_key)
         return
 
     from core.platform import Response, IMessageAdapter, TelegramAdapter
@@ -419,7 +465,7 @@ async def _send_logged(db, user_id, telegram_id: str, text: str, slot_key: str) 
     write every user-facing proactive path needs for continuity (D2) and the
     silence streak (D3). slot_key is the structured nudge identity.
     """
-    await _send(telegram_id, text)
+    await _send(telegram_id, text, slot_key=slot_key)
     await _log_proactive(db, user_id, text, slot_key, platform=_channel_for(telegram_id))
 
 
@@ -428,7 +474,7 @@ async def _send_logged_with_voice(db, user_id, telegram_id: str, text: str,
                                   language: str = "English") -> None:
     """Voice-enabled `_send_logged` — the voice-bubble proactive paths (morning
     briefing, evening pacing, conversation-hook re-ask)."""
-    await _send_with_voice(telegram_id, text, name=name, language=language)
+    await _send_with_voice(telegram_id, text, name=name, language=language, slot_key=slot_key)
     await _log_proactive(db, user_id, text, slot_key, platform=_channel_for(telegram_id))
 
 
@@ -468,8 +514,9 @@ _TTS_CACHE: dict[tuple, tuple[bytes, float]] = {}
 _TTS_CACHE_TTL = 1800.0
 
 
-async def _send_with_voice(telegram_id: str, text: str, name: str = "", language: str = "English") -> None:
-    await _send(telegram_id, text)
+async def _send_with_voice(telegram_id: str, text: str, name: str = "", language: str = "English",
+                           slot_key: str = None) -> None:
+    await _send(telegram_id, text, slot_key=slot_key)
     if telegram_id.startswith("im:"):
         return
     if not proactive_enabled() or not _allowlist_allows(telegram_id):

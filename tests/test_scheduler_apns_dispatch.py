@@ -113,12 +113,12 @@ async def test_apple_identity_also_routes_to_apns(
 
 
 @pytest.mark.asyncio
-async def test_bubble_separator_collapsed_to_newlines(
+async def test_multibubble_teases_with_lead_bubble_and_contextual_title(
     patched_session_local, configured_apns, db, make_user, monkeypatch,
 ):
-    """Multi-bubble proactive messages use ||| as a separator. APNs is a
-    single-bubble channel — collapse to a one-blob body with newlines so
-    the system banner renders the whole thing."""
+    """A multi-bubble proactive (||| -split) teases the banner with the LEAD bubble
+    only (the full reply opens in-app on tap) and carries a contextual title from
+    the slot instead of a constant "Arnie"."""
     user = await make_user(telegram_id="ios:bubble-test")
     await upsert_device_token(db, user.id, "tok", environment="production")
 
@@ -127,9 +127,11 @@ async def test_bubble_separator_collapsed_to_newlines(
 
     await proactive_scheduler._send(
         "ios:bubble-test", "Hey Danny|||Time to log lunch|||Aiming for 50g protein",
+        slot_key="late_morning_nolog",
     )
 
-    assert recorder.calls[0][2] == "Hey Danny\nTime to log lunch\nAiming for 50g protein"
+    assert recorder.calls[0][1] == "Quick check-in"   # contextual title, not "Arnie"
+    assert recorder.calls[0][2] == "Hey Danny"         # lead bubble only
 
 
 @pytest.mark.asyncio

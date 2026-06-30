@@ -186,6 +186,8 @@ async def send_push(
     *,
     environment: Optional[str] = None,
     payload_extra: Optional[dict] = None,
+    thread_id: Optional[str] = None,
+    subtitle: Optional[str] = None,
     client: Optional[httpx.AsyncClient] = None,
 ) -> dict:
     """Send one push to one device.
@@ -224,12 +226,14 @@ async def send_push(
     host = _host_for(env_label)
     bundle_id = os.environ["APNS_BUNDLE_ID"]
 
-    aps_payload: dict = {
-        "aps": {
-            "alert": {"title": title, "body": body},
-            "sound": "default",
-        }
-    }
+    alert: dict = {"title": title, "body": body}
+    if subtitle:
+        alert["subtitle"] = subtitle
+    aps: dict = {"alert": alert, "sound": "default"}
+    if thread_id:
+        # Groups Arnie's notifications into one stack on the lock screen / banner.
+        aps["thread-id"] = thread_id
+    aps_payload: dict = {"aps": aps}
     if payload_extra:
         # Merge OVER the top level, but never trample `aps` (Apple-reserved).
         for k, v in payload_extra.items():

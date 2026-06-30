@@ -18,7 +18,7 @@ from db.queries import get_open_pending_question
 def capture_send(monkeypatch):
     sent = []
 
-    async def _fake_send(send_id, text, effect=None):
+    async def _fake_send(send_id, text, effect=None, slot_key=None):
         sent.append((send_id, text))
 
     async def _fake_llm_followup(user, pq, name):
