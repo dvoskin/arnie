@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 from datetime import datetime, date as _date, timedelta
 
+from core.nutrition import build_micro_panel
 from db.queries import (
     get_or_create_today_log,
     get_recent_logs,
@@ -93,6 +94,10 @@ def _log_to_day(log) -> dict | None:
                 "sugar":  round(e.sugar, 1) if e.sugar  is not None else None,
                 "sodium": round(e.sodium)   if e.sodium is not None else None,
                 "micros": _parse_micros(getattr(e, "micronutrients_json", None)),
+                # Ranked, labelled, %-DV vitamins+minerals for the reveal's
+                # tap-to-expand panel (top few shown, rest behind "see all").
+                "micro_panel": build_micro_panel(
+                    _parse_micros(getattr(e, "micronutrients_json", None))),
                 "estimated": bool(e.estimated_flag),
                 "from_photo": bool(getattr(e, "from_photo", False)),
                 # Prefer EATEN-at (meal_time) over logged-at so a back-dated or
