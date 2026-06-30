@@ -3,6 +3,7 @@ session shipped to stop silent memory reuse."""
 import pytest
 from core.food_intelligence import (
     normalize_name, is_generic_food_name, score_match, normalize_food_logging_mode,
+    analyze,
 )
 
 
@@ -69,3 +70,34 @@ def test_score_match():
 ])
 def test_normalize_food_logging_mode(value, current, expected):
     assert normalize_food_logging_mode(value, current) == expected
+
+
+# ── micronutrient capture ────────────────────────────────────────────────────
+
+def test_analyze_scales_micros_to_portion():
+    """USDA per-100g micros are scaled to the logged portion and returned on
+    .micros (→ micronutrients_json). 200 kcal against a 100-kcal/100g basis is a
+    2× portion, so every micro doubles."""
+    cand = {
+        "fdc_id": "X", "_match": "likely",
+        "per100g": {
+            "calories": 100, "protein": 5, "carbs": 10, "fat": 3,
+            "fiber": 2, "sugar": 1, "sodium": 50,
+            "calcium": 120, "iron": 2.0, "potassium": 300, "magnesium": 40,
+            "vitamin_c": 9, "vitamin_d": 1.5, "vitamin_b12": 0.8, "saturated_fat": 1.2,
+        },
+    }
+    a = analyze("test food", "1 cup", 200, 10, 20, 6, usda_candidate=cand)
+    assert a.micros["calcium"] == 240.0       # 120 × 2
+    assert a.micros["iron"] == 4.0            # 2.0 × 2
+    assert a.micros["potassium"] == 600.0
+    assert a.micros["vitamin_b12"] == 1.6
+    # macros stay in their own columns, not duplicated into micros
+    assert "calories" not in a.micros and "protein" not in a.micros
+
+
+def test_analyze_no_micros_without_enrichment():
+    """LLM-only estimate (no USDA/web/memory match) → empty micros, so the
+    handler writes micronutrients_json=NULL rather than '{}'."""
+    a = analyze("mystery dish", "1 plate", 500, 20, 50, 25)
+    assert a.micros == {}

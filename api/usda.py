@@ -19,7 +19,9 @@ logger = logging.getLogger(__name__)
 
 _BASE = "https://api.nal.usda.gov/fdc/v1"
 
-# FDC nutrient numbers → our keys
+# FDC nutrient numbers → our keys. Macros (the first seven) land in dedicated
+# food_entries columns; everything below is a MICRONUTRIENT and is stored in
+# micronutrients_json (see _MICRO_KEYS / _MICRO_UNITS).
 _NUTRIENT_MAP = {
     "208": "calories",   # Energy (kcal)
     "203": "protein",
@@ -28,10 +30,48 @@ _NUTRIENT_MAP = {
     "291": "fiber",
     "269": "sugar",
     "307": "sodium",     # mg
+    # ── minerals ──
     "301": "calcium",    # mg
     "303": "iron",       # mg
     "306": "potassium",  # mg
+    "304": "magnesium",  # mg
+    "305": "phosphorus", # mg
+    "309": "zinc",       # mg
+    # ── vitamins ──
+    "401": "vitamin_c",  # mg
+    "320": "vitamin_a",  # µg RAE
+    "328": "vitamin_d",  # µg
+    "323": "vitamin_e",  # mg
+    "430": "vitamin_k",  # µg
+    "404": "thiamin",    # mg (B1)
+    "405": "riboflavin", # mg (B2)
+    "406": "niacin",     # mg (B3)
+    "415": "vitamin_b6", # mg
+    "417": "folate",     # µg
+    "418": "vitamin_b12",# µg
+    # ── lipids + sterols (fat breakdown) ──
+    "601": "cholesterol",          # mg
+    "606": "saturated_fat",        # g
+    "605": "trans_fat",            # g
+    "645": "monounsaturated_fat",  # g
+    "646": "polyunsaturated_fat",  # g
 }
+
+# The micronutrient subset (everything that isn't a column macro) + display units
+# and a friendly label, consumed by the Daily Log nutrition reveal.
+_MICRO_UNITS = {
+    "calcium": "mg", "iron": "mg", "potassium": "mg", "magnesium": "mg",
+    "phosphorus": "mg", "zinc": "mg", "vitamin_c": "mg", "vitamin_a": "µg",
+    "vitamin_d": "µg", "vitamin_e": "mg", "vitamin_k": "µg", "thiamin": "mg",
+    "riboflavin": "mg", "niacin": "mg", "vitamin_b6": "mg", "folate": "µg",
+    "vitamin_b12": "µg", "cholesterol": "mg", "saturated_fat": "g",
+    "trans_fat": "g", "monounsaturated_fat": "g", "polyunsaturated_fat": "g",
+}
+MICRO_KEYS = tuple(_MICRO_UNITS.keys())
+
+
+def micro_units(key: str) -> str:
+    return _MICRO_UNITS.get(key, "")
 
 _http: Optional[httpx.AsyncClient] = None
 

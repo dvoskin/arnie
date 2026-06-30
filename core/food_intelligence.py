@@ -195,6 +195,7 @@ class FoodAnalysis:
     satiety: Optional[str] = None          # low|moderate|high
     quality: Optional[str] = None          # low|solid|excellent
     per100: dict = field(default_factory=dict)
+    micros: dict = field(default_factory=dict)  # per-PORTION micronutrients → micronutrients_json
     coach_note: str = ""                   # the analysis line surfaced to the LLM
     enrichment_source: Optional[str] = None  # "memory" | "usda" | "web_label" | None
 
@@ -288,6 +289,7 @@ def analyze(name, quantity, llm_cal, llm_protein, llm_carbs, llm_fat,
     confidence = "estimated"
     source = "estimate"
     per100 = {}
+    micros: dict = {}
 
     src = memory_match or web_candidate or usda_candidate
     if src:
@@ -305,6 +307,13 @@ def analyze(name, quantity, llm_cal, llm_protein, llm_carbs, llm_fat,
             if per100.get("fiber") is not None:  fiber = round(per100["fiber"] * ratio, 1)
             if per100.get("sugar") is not None:  sugar = round(per100["sugar"] * ratio, 1)
             if per100.get("sodium") is not None: sodium = round(per100["sodium"] * ratio, 0)
+            # Scale the micronutrient panel to the portion (same ratio). Stored in
+            # micronutrients_json so the Daily Log reveal can break it down.
+            from api.usda import MICRO_KEYS as _MICRO_KEYS
+            for _mk in _MICRO_KEYS:
+                _v = per100.get(_mk)
+                if _v is not None:
+                    micros[_mk] = round(_v * ratio, 2)
             # refine protein if enrichment disagrees notably and LLM gave none
             if not protein and per100.get("protein"):
                 protein = round(per100["protein"] * ratio, 1)
@@ -361,6 +370,7 @@ def analyze(name, quantity, llm_cal, llm_protein, llm_carbs, llm_fat,
         fat=round(fat, 1), fiber=fiber, sugar=sugar, sodium=sodium,
         fdc_id=fdc_id, confidence=confidence, source=source,
         protein_density=pd, satiety=satiety, quality=quality, per100=per100,
+        micros=micros,
         coach_note=f"{note} [{conf_note}]",
         enrichment_source=(source if source != "estimate" else None),
     )

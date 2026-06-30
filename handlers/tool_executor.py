@@ -2,6 +2,7 @@
 Executes the tool calls returned by the LLM, writes to DB, and returns
 a human-readable result string per tool (used in multi-turn follow-ups).
 """
+import json
 import logging
 from typing import Dict, List, Any
 
@@ -1364,6 +1365,7 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
             fiber=analysis.fiber if analysis.fiber is not None else inp.get("fiber"),
             sugar=analysis.sugar,
             sodium=analysis.sodium,
+            micronutrients_json=(json.dumps(analysis.micros) if getattr(analysis, "micros", None) else None),
             estimated_flag=(analysis.confidence == "estimated") or from_photo,
             confidence_score=_conf,
             source_type=source_type,
