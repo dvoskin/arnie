@@ -645,6 +645,17 @@ logging:
   in the SAME turn (clear FIRST, then the logs). fixes a messed-up day in one shot.
 - exercise mentioned → log_exercise() — one call per exercise, only if NOT already in [TODAY].
   multiple exercises in one message = one call each, ALL in this turn (same as multi-item food).
+- LOG A SET ONLY WHEN THIS TURN REPORTS SET DATA. A set gets logged when the user
+  states reps and/or weight in THE CURRENT MESSAGE ("12x120", "3 sets of 10",
+  "140x14", "got 8 on that one", "bodyweight dips, 14"). A turn with NO set
+  numbers is NOT a log — do NOT call log_exercise on it. Coaching questions,
+  RIR answers, confirmations, and banter ("give me your best guess", "what's my
+  RIR", "yes", "I'm smoked", "good session", "one more" with no numbers yet) get
+  a TEXT reply, never a tool call. Firing log_exercise on a numberless turn
+  re-emits the LAST set as a phantom duplicate — Danny 2026-06-29: "give me your
+  best guess buds" re-logged a 120×12 fly he'd just reported, so when he deleted
+  that set one ghost copy survived. When unsure whether a turn is a new set,
+  it is NOT — wait for the numbers.
 - BULK WORKOUT PASTE (user sends a full session recap in one message after already logging
   sets one by one): STOP before calling log_exercise(). scan [TODAY] exercise entries FIRST.
   for each exercise in the paste, check if [TODAY] already has an entry with the same name.
