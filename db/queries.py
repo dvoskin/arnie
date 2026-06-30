@@ -2201,14 +2201,29 @@ async def get_user_food_match(db: AsyncSession, user_id: int, name_norm: str):
     return result.scalar_one_or_none()
 
 
+def _extract_micros_100(per100: dict) -> dict:
+    """The per-100g micronutrient subset of a nutrient profile (vitamins/minerals/
+    fat breakdown) — what we cache so repeat-logged foods keep their micros."""
+    if not per100:
+        return {}
+    from api.usda import MICRO_KEYS
+    return {k: per100[k] for k in MICRO_KEYS if per100.get(k) is not None}
+
+
 async def upsert_user_food_match(db: AsyncSession, user_id: int, name_norm: str,
                                  display_name: str, fdc_id: str, per100: dict,
                                  confidence: str, user_confirmed: bool = False):
     """Store/refresh a user's recurring food match. Bumps usage on repeat."""
+    micros = _extract_micros_100(per100)
     existing = await get_user_food_match(db, user_id, name_norm)
     if existing:
         existing.times_used = (existing.times_used or 1) + 1
         existing.last_used = datetime.utcnow()
+        # Self-heal the cache: rows created before the micro panel existed have
+        # micros_100_json=NULL. Backfill it the first time a richer profile flows
+        # through (e.g. a USDA re-lookup), so the food keeps its micros thereafter.
+        if micros and not existing.micros_100_json:
+            existing.micros_100_json = json.dumps(micros)
         # Upgrade to user-confirmed if the user corrected it; never downgrade.
         if user_confirmed:
             existing.user_confirmed = True
@@ -2222,6 +2237,7 @@ async def upsert_user_food_match(db: AsyncSession, user_id: int, name_norm: str,
         carbs_100=per100.get("carbs"), fat_100=per100.get("fat"),
         fiber_100=per100.get("fiber"), sugar_100=per100.get("sugar"),
         sodium_100=per100.get("sodium"),
+        micros_100_json=(json.dumps(micros) if micros else None),
         confidence="user-confirmed" if user_confirmed else confidence,
         user_confirmed=user_confirmed,
     )

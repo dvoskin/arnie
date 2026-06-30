@@ -944,13 +944,34 @@ async def _analyze_food(db, user, food_name, inp):
         m = (await get_user_food_match(db, user.id, name_norm)
              if (name_norm and not generic) else None)
         if m:
+            per100g = {"calories": m.cal_100, "protein": m.protein_100,
+                       "carbs": m.carbs_100, "fat": m.fat_100,
+                       "fiber": m.fiber_100, "sugar": m.sugar_100,
+                       "sodium": m.sodium_100}
+            # Carry the cached micro panel so repeat logs keep their micros.
+            if m.micros_100_json:
+                try:
+                    per100g.update(json.loads(m.micros_100_json))
+                except Exception:
+                    pass
+            else:
+                # Self-heal: this cache row predates micros. Do a one-time USDA
+                # lookup to recover the panel; the re-cache below persists it so
+                # future logs of this food are instant + complete.
+                try:
+                    from api.usda import search_food
+                    cands = await search_food(food_name, page_size=8)
+                    best, _conf = best_candidate(food_name, cands)
+                    if best:
+                        for k, v in (best.get("per100g") or {}).items():
+                            if k not in per100g or per100g[k] is None:
+                                per100g[k] = v
+                except Exception as e:
+                    logger.warning(f"micro self-heal lookup failed: {e}")
             memory = {
                 "fdc_id": m.fdc_id, "user_confirmed": m.user_confirmed,
                 "confidence": m.confidence,
-                "per100g": {"calories": m.cal_100, "protein": m.protein_100,
-                            "carbs": m.carbs_100, "fat": m.fat_100,
-                            "fiber": m.fiber_100, "sugar": m.sugar_100,
-                            "sodium": m.sodium_100},
+                "per100g": per100g,
             }
             await upsert_user_food_match(db, user.id, name_norm, food_name,
                                          m.fdc_id, memory["per100g"], m.confidence)

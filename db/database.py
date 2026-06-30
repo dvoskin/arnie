@@ -191,6 +191,10 @@ async def _migrate(conn):
         #    per-(user, day, source) dedup. SQLite-only net — Postgres is handled
         #    by the paired alembic migration b3c4d5e6f7a8 (per migrate_postgres_gap).
         ("body_metrics", "source", "VARCHAR DEFAULT 'manual'"),
+        # ── 2026-06-30: cache the per-100g micronutrient panel so repeat-logged
+        #    foods keep their micros (memory hits used to drop them). SQLite-only
+        #    net — Postgres handled by paired alembic migration f7a8b9c0d1e2.
+        ("user_food_matches", "micros_100_json", "TEXT"),
     ]
 
     for table, column, ddl in additions:

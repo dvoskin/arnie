@@ -525,6 +525,7 @@ class UserFoodMatch(Base):
     fiber_100 = Column(Float)
     sugar_100 = Column(Float)
     sodium_100 = Column(Float)
+    micros_100_json = Column(Text)  # per-100g micronutrient panel (vitamins/minerals/fats)
     confidence = Column(String, default="estimated")  # exact|likely|estimated|user-confirmed
     user_confirmed = Column(Boolean, default=False)
     times_used = Column(Integer, default=1)
