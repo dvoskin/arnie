@@ -14,7 +14,7 @@ HTTP layer (`_whoop_get`) to return synthetic v2 payloads, then assert what
 actually landed in HealthSnapshot.
 """
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, date
 
 import pytest
 
@@ -230,3 +230,44 @@ async def test_strain_without_recovery_logs_warning(make_user, db, monkeypatch, 
     msg = next(m for m in warnings if "NO recovery and NO sleep" in m)
     assert "recovery=[1 record(s), 0 scored]" in msg
     assert "sleep=[0 record(s), 0 scored]" in msg
+
+
+def test_workout_logging_day_uses_local_zone():
+    """A WHOOP UTC start converts to the user's LOCAL logging day before bucketing.
+    Regression: Danny's 8:10pm EDT walk (00:10 UTC next day) showed up tomorrow."""
+    from api.whoop import _workout_logging_day
+    # 00:10 UTC == 8:10pm EDT the prior day → local day is the prior day
+    assert _workout_logging_day("2026-06-30T00:10:00.790Z", "America/New_York") == date(2026, 6, 29)
+    # afternoon, same UTC day either way
+    assert _workout_logging_day("2026-06-29T21:48:00Z", "America/New_York") == date(2026, 6, 29)
+    # UTC user is unaffected; missing/garbage start → None
+    assert _workout_logging_day("2026-06-30T00:10:00Z", "UTC") == date(2026, 6, 30)
+    assert _workout_logging_day("", "America/New_York") is None
+    assert _workout_logging_day("not-a-date", "America/New_York") is None
+
+
+@pytest.mark.asyncio
+async def test_evening_workout_buckets_to_local_day(make_user, db, monkeypatch):
+    """End-to-end: an evening WHOOP workout lands on the user's local logging day,
+    not the next UTC day. The exercise entry's daily_log carries the LOCAL date."""
+    from sqlalchemy import select
+    from db.models import DailyLog, ExerciseEntry
+    user = await make_user(
+        telegram_id="whoop-tz", timezone="America/New_York",
+        whoop_access_token="t", whoop_refresh_token="r",
+        whoop_token_expires_at=datetime.utcnow() + timedelta(hours=2),
+    )
+    # 02:30 UTC Jan 15 == 9:30pm EST Jan 14 → must bucket to Jan 14, not Jan 15.
+    wo = _v2_workout("2026-01-15")
+    wo["records"][0]["start"] = "2026-01-15T02:30:00.000Z"
+    wo["records"][0]["end"] = "2026-01-15T03:00:00.000Z"
+    _patch_endpoints(monkeypatch, {"/v2/activity/workout": wo})
+    await whoop.sync_user_whoop(db, user, days=2)
+
+    log_dates = (await db.execute(
+        select(DailyLog.date)
+        .join(ExerciseEntry, ExerciseEntry.daily_log_id == DailyLog.id)
+        .where(DailyLog.user_id == user.id)
+    )).scalars().all()
+    assert date(2026, 1, 14) in log_dates
+    assert date(2026, 1, 15) not in log_dates

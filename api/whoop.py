@@ -232,6 +232,22 @@ def _scored(record: dict) -> Optional[dict]:
     return score
 
 
+def _workout_logging_day(start_raw: str, user_tz: str):
+    """The user's LOCAL logging day (a `date`) for a WHOOP workout's UTC start
+    string. WHOOP reports start in UTC, so an evening session (8pm EDT = 00:xx UTC
+    the next day) must be converted to the user's zone before bucketing — else it
+    lands on tomorrow. Returns None when start is missing/unparseable."""
+    if not start_raw:
+        return None
+    try:
+        from db.queries import _logging_day_of
+        start_utc = (datetime.fromisoformat(start_raw.replace("Z", "+00:00"))
+                     .astimezone(timezone.utc).replace(tzinfo=None))
+        return _logging_day_of(start_utc, user_tz)
+    except Exception:
+        return None
+
+
 async def _persist_whoop_workouts(db, user: User, workout_by_date: dict) -> tuple[int, int]:
     """Auto-create ExerciseEntry rows from synced WHOOP workouts.
 
@@ -438,6 +454,7 @@ async def sync_user_whoop(db, user: User, days: int = 2,
     # Workout details — aggregate per day
     if workout_data and "records" in workout_data:
         import json as _json
+        user_tz = getattr(user, "timezone", None) or "UTC"
         workout_by_date: dict = {}
         SPORT_MAP = {
             -1: "Activity", 0: "Running", 1: "Cycling", 16: "Baseball", 17: "Basketball",
@@ -453,10 +470,9 @@ async def sync_user_whoop(db, user: User, days: int = 2,
             62: "Walking", 63: "Surfing", 64: "Elliptical", 65: "Stairmaster",
         }
         for wo in workout_data["records"]:
-            start_str = wo.get("start", "")[:10]
-            if not start_str:
+            d = _workout_logging_day(wo.get("start", ""), user_tz)
+            if d is None:
                 continue
-            d = date.fromisoformat(start_str)
             score = _scored(wo) or {}  # keep the entry even if scoring is pending
             # v2 adds a human-readable sport_name; fall back to the v1 sport_id map.
             sport_name = wo.get("sport_name")
