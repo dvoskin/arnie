@@ -196,6 +196,7 @@ class FoodAnalysis:
     quality: Optional[str] = None          # low|solid|excellent
     per100: dict = field(default_factory=dict)
     micros: dict = field(default_factory=dict)  # per-PORTION micronutrients → micronutrients_json
+    micros_estimated: bool = False  # micros came from the LLM fallback, not a DB match
     coach_note: str = ""                   # the analysis line surfaced to the LLM
     enrichment_source: Optional[str] = None  # "memory" | "usda" | "web_label" | None
 

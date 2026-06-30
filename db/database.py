@@ -195,6 +195,9 @@ async def _migrate(conn):
         #    foods keep their micros (memory hits used to drop them). SQLite-only
         #    net — Postgres handled by paired alembic migration f7a8b9c0d1e2.
         ("user_food_matches", "micros_100_json", "TEXT"),
+        # ── 2026-06-30: flag LLM-estimated micros (gap foods) vs measured (USDA).
+        #    Paired alembic migration a9b0c1d2e3f4.
+        ("food_entries", "micros_estimated", "BOOLEAN DEFAULT 0"),
     ]
 
     for table, column, ddl in additions:

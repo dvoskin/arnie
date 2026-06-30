@@ -1032,9 +1032,27 @@ async def _analyze_food(db, user, food_name, inp):
                     except Exception:
                         pass
 
-    return analyze(food_name, inp.get("quantity"), *llm,
-                   usda_candidate=usda, memory_match=memory,
-                   web_candidate=web)
+    result = analyze(food_name, inp.get("quantity"), *llm,
+                     usda_candidate=usda, memory_match=memory,
+                     web_candidate=web)
+
+    # Micro fallback: no database (USDA/web/memory) micro panel — common for
+    # restaurant/branded/composite foods USDA has no entry for. Estimate the
+    # panel from the model's knowledge, flagged so the UI renders it softer.
+    if not result.micros and result.calories and not generic:
+        try:
+            from core.micro_estimator import estimate_micros
+            est = await estimate_micros(
+                food_name, inp.get("quantity"),
+                result.calories, result.protein, result.carbs, result.fat,
+            )
+            if est:
+                result.micros = est
+                result.micros_estimated = True
+        except Exception as e:
+            logger.warning(f"micro estimation fallback failed: {e}")
+
+    return result
 
 
 async def execute_tool_calls(
@@ -1387,6 +1405,7 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
             sugar=analysis.sugar,
             sodium=analysis.sodium,
             micronutrients_json=(json.dumps(analysis.micros) if getattr(analysis, "micros", None) else None),
+            micros_estimated=bool(getattr(analysis, "micros_estimated", False)),
             estimated_flag=(analysis.confidence == "estimated") or from_photo,
             confidence_score=_conf,
             source_type=source_type,

@@ -98,6 +98,11 @@ def _log_to_day(log) -> dict | None:
                 # tap-to-expand panel (top few shown, rest behind "see all").
                 "micro_panel": build_micro_panel(
                     _parse_micros(getattr(e, "micronutrients_json", None))),
+                # Confidence surface for the reveal: 0..1 score (USDA exact ≈ high,
+                # LLM estimate ≈ low) + whether the MICRO panel was LLM-estimated
+                # (vs measured) so the client renders those values softer.
+                "confidence": round(e.confidence_score, 2) if e.confidence_score is not None else None,
+                "micros_estimated": bool(getattr(e, "micros_estimated", False)),
                 "estimated": bool(e.estimated_flag),
                 "from_photo": bool(getattr(e, "from_photo", False)),
                 # Prefer EATEN-at (meal_time) over logged-at so a back-dated or

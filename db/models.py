@@ -189,6 +189,7 @@ class FoodEntry(Base):
     meal_time = Column(DateTime)             # when consumed (not when logged)
     alcohol_units = Column(Float)            # for alcohol-aware coaching
     micronutrients_json = Column(Text)       # {"iron": 2.1, "vitamin_d": 400, ...}
+    micros_estimated = Column(Boolean, default=False)  # micros came from LLM fallback, not a DB match
     from_photo = Column(Boolean, default=False)
 
     daily_log = relationship("DailyLog", back_populates="food_entries")
