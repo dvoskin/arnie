@@ -38,6 +38,11 @@ class User(Base):
     non_training_activity = Column(String)
     dietary_preferences = Column(String)
     injuries = Column(Text)
+    # Free-form "brain dump" the user types/dictates during native onboarding —
+    # everything they want Arnie to know in their own words (nutrition, lifestyle,
+    # history, motivation). Feeds the personalized opening intro and Arnie's
+    # ongoing context. Distinct from the AI-generated `user_bio`.
+    brain_dump = Column(Text)
     onboarding_completed = Column(Boolean, default=False)
     webhook_token = Column(String, unique=True, index=True)
     # Whoop OAuth tokens (per-user)

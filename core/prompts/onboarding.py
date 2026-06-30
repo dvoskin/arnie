@@ -86,6 +86,10 @@ def build_ios_landing_intro(
     goal_weight_kg: float | None,
     calorie_target: int | None,
     protein_target: int | None,
+    dietary_preferences: str | None = None,
+    injuries: str | None = None,
+    training_experience: str | None = None,
+    brain_dump: str | None = None,
 ) -> list[str]:
     """iOS-gated opening bubbles after a web-form SETUP code is redeemed in the app.
 
@@ -132,16 +136,42 @@ def build_ios_landing_intro(
         body += "."
     body += " Locked in."
 
-    reflection = f"Got everything from your signup. {body}"
+    lead = "Got everything you shared with me." if (brain_dump or "").strip() else "Got everything from your signup."
+    reflection = f"{lead} {body}"
+
+    bubbles = [greeting, reflection]
+
+    # "What I've got on you" — a warm acknowledgment of the brain dump and ONE
+    # concrete, specific reflection (an injury to train around, training level, or
+    # diet), so the open feels like a coach who listened, not a form that stored
+    # fields. Never a list; pick the single most salient constraint.
+    if (brain_dump or "").strip():
+        bubbles.append("I read through everything you sent me, I've got the full picture.")
+
+    inj = (injuries or "").strip()
+    exp = (training_experience or "").strip().lower()
+    diet = (dietary_preferences or "").strip()
+    reflect: str | None = None
+    if inj and inj.lower() not in ("none", "no", "n/a"):
+        reflect = f"I'll train around your {inj.lower()}."
+    elif exp in ("advanced", "intermediate"):
+        reflect = "You've already got training in, so I won't coach you like a beginner."
+    elif exp == "beginner":
+        reflect = "We'll build your foundation the right way."
+    if diet and diet.lower() not in ("no restrictions", "none", "omnivore"):
+        clause = f"I'll keep meals {diet.lower()}."
+        reflect = f"{reflect} {clause}" if reflect else clause
+    if reflect:
+        bubbles.append(reflect)
 
     # First move — food OR workout, iOS-native input cues, passive enrichment
     # (no question), ends on the action.
-    first_move = (
+    bubbles.append(
         "The more you log, the sharper I get. "
         "Snap a photo of what you're eating, tell me what you ate, or log a workout instead."
     )
 
-    return [greeting, reflection, first_move]
+    return bubbles
 
 
 ONBOARDING_BASE = """\

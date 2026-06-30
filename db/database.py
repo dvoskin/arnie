@@ -198,6 +198,9 @@ async def _migrate(conn):
         # ── 2026-06-30: flag LLM-estimated micros (gap foods) vs measured (USDA).
         #    Paired alembic migration a9b0c1d2e3f4.
         ("food_entries", "micros_estimated", "BOOLEAN DEFAULT 0"),
+        # ── 2026-06-30: free-form onboarding "brain dump" (user's own words).
+        #    SQLite-only net — Postgres handled by paired alembic migration c0d1e2f3a4b5.
+        ("users", "brain_dump", "TEXT"),
     ]
 
     for table, column, ddl in additions:

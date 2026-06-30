@@ -169,6 +169,14 @@ def fmt_profile(user: User, prefs: Optional[UserPreferences]) -> str:
         f"Diet: {user.dietary_preferences or 'none'}  |  "
         f"Injuries: {user.injuries or 'none'}",
     ]
+    # The free-form onboarding brain dump — the user's own words about themselves.
+    # High-signal early context; excerpt it so it informs coaching without bloating
+    # every prompt (the full text lives on the row + gets distilled into attributes).
+    if (user.brain_dump or "").strip():
+        _dump = user.brain_dump.strip()
+        if len(_dump) > 700:
+            _dump = _dump[:700].rstrip() + "…"
+        lines.append(f"In their own words (signup): {_dump}")
     if prefs:
         # The user PICKED these in Settings — so they must actually shape every
         # reply, not sit as inert labels the model has to interpret. Render each as

@@ -58,6 +58,7 @@ class ProfileEditBody(BaseModel):
     non_training_activity: Optional[str] = None
     dietary_preferences: Optional[str] = None
     injuries: Optional[str] = None
+    brain_dump: Optional[str] = Field(None, max_length=8000)  # free-form onboarding dump
     timezone: Optional[str] = None
     city: Optional[str] = None
     channel_preference: Optional[str] = None   # "telegram" | "imessage" — for linked users
@@ -214,16 +215,23 @@ async def complete_onboarding(
             }
         # Build Arnie's opening turn from the in-memory user columns BEFORE the
         # commit (commit expires the instance; reading it after would async
-        # lazy-load and trip MissingGreenlet). Targets live on user_preferences,
-        # left None here to avoid a post-commit lazy-load — the greeting still
-        # reflects name/goal/weight; the targets line is a later refinement.
+        # lazy-load and trip MissingGreenlet). `resolve_user` eager-loads
+        # preferences via selectinload, so reading the daily targets here
+        # (pre-commit) is safe. The open now reflects EVERYTHING the user shared:
+        # goal, weight journey, daily targets, diet, injuries, training level, and
+        # their free-form brain dump.
+        prefs = user.preferences
         intro_bubbles = build_ios_landing_intro(
             name=user.name,
             primary_goal=user.primary_goal,
             current_weight_kg=user.current_weight_kg,
             goal_weight_kg=user.goal_weight_kg,
-            calorie_target=None,
-            protein_target=None,
+            calorie_target=prefs.calorie_target if prefs else None,
+            protein_target=prefs.protein_target if prefs else None,
+            dietary_preferences=user.dietary_preferences,
+            injuries=user.injuries,
+            training_experience=user.training_experience,
+            brain_dump=user.brain_dump,
         )
         user.onboarding_completed = True
         await db.commit()
