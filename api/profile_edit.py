@@ -27,6 +27,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
+from sqlalchemy import select
 
 from api.auth import current_identity
 from core.prompts.onboarding import build_ios_landing_intro
@@ -221,6 +222,7 @@ async def complete_onboarding(
         # goal, weight journey, daily targets, diet, injuries, training level, and
         # their free-form brain dump.
         prefs = user.preferences
+        cur_kg = user.current_weight_kg   # captured pre-commit for the weigh-in seed
         intro_bubbles = build_ios_landing_intro(
             name=user.name,
             primary_goal=user.primary_goal,
@@ -245,6 +247,24 @@ async def complete_onboarding(
             )
         except Exception:
             logger.exception("native onboarding intro seed failed (non-fatal)")
+
+        # Seed the entered weight as a real weigh-in so it shows in the log + weight
+        # trend from day one — the no-Apple-Health fallback. Only when the user has
+        # NO weigh-in yet, so a real HealthKit sync that already landed takes
+        # precedence (cascade: real Health → onboarding seed). Non-fatal.
+        try:
+            if cur_kg:
+                from sqlalchemy import func as _func
+                from db.models import BodyMetric as _BodyMetric
+                from db.queries import add_body_metric
+                existing_ct = (await db.execute(
+                    select(_func.count(_BodyMetric.id)).where(_BodyMetric.user_id == user.id)
+                )).scalar() or 0
+                if existing_ct == 0:
+                    await add_body_metric(db, user.id, cur_kg, source="manual")
+        except Exception:
+            logger.exception("onboarding weigh-in seed failed (non-fatal)")
+
         return {"ok": True, "onboarding_completed": True, "missing_fields": []}
 
 
