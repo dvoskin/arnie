@@ -387,8 +387,55 @@ async def _today_health_snapshot_linked(db, user):
         if src in ("apple_health", "apple", "healthkit"): return 1
         return 2   # everything else
     candidates.sort(key=lambda c: (-(c.date.toordinal() if c.date else 0), _source_rank(c)))
+    # Self-heal: if the freshest Whoop row is stale, refresh in the background so
+    # the wearable card (calories/strain/recovery) reflects the live day instead
+    # of waiting on the 30-min scheduler (which under-fires on prod — Danny saw a
+    # midnight-stale 37 kcal while Whoop had 1812 for the day).
+    _kick_whoop_refresh_if_stale(user, candidates)
     with_recovery = [c for c in candidates if c.recovery_score is not None]
     return with_recovery[0] if with_recovery else candidates[0]
+
+
+_whoop_refresh_inflight: set = set()
+
+
+def _kick_whoop_refresh_if_stale(user, candidates) -> None:
+    """Fire-and-forget Whoop refresh when the freshest synced Whoop snapshot is
+    older than 90 min and the user has a Whoop token. Deduped per user;
+    best-effort — never raises into the request. Lands snapshots on the canonical
+    user so linked identities all see the update."""
+    import asyncio
+    from datetime import datetime as _dt, timedelta as _td
+    uid = getattr(user, "id", None)
+    if uid is None or uid in _whoop_refresh_inflight:
+        return
+    if not (getattr(user, "whoop_access_token", None) or getattr(user, "whoop_refresh_token", None)):
+        return
+    snaps = [c for c in candidates if (getattr(c, "source", "") or "").lower() == "whoop"]
+    freshest = max((c.received_at for c in snaps if getattr(c, "received_at", None)), default=None)
+    if freshest is not None and (_dt.utcnow() - freshest) < _td(minutes=90):
+        return
+    _whoop_refresh_inflight.add(uid)
+    snap_uid = getattr(user, "linked_to_user_id", None) or uid
+
+    async def _run():
+        try:
+            from db.database import AsyncSessionLocal
+            from db.models import User as _U
+            from api.whoop import sync_user_whoop
+            async with AsyncSessionLocal() as db2:
+                u2 = await db2.get(_U, uid)
+                if u2:
+                    await sync_user_whoop(db2, u2, days=2, snapshot_user_id=snap_uid)
+        except Exception:
+            pass
+        finally:
+            _whoop_refresh_inflight.discard(uid)
+
+    try:
+        asyncio.create_task(_run())
+    except RuntimeError:
+        _whoop_refresh_inflight.discard(uid)
 
 
 async def _health_snapshot_for_date_linked(db, user, target_date):
