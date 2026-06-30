@@ -222,7 +222,10 @@ async def generate_link_code(db: AsyncSession, user: User) -> str:
     """Mint a one-time link code (10 min) on the canonical user that generated it."""
     code = _gen_link_code()
     user.link_code = code
-    user.link_code_expires = datetime.utcnow() + timedelta(minutes=10)
+    # 30 min, not 10 — a cross-app hop (read the code in Telegram, switch to the
+    # iOS app, find the link screen, type it) routinely blew past a 10-min window,
+    # surfacing as a confusing "code expired" error for beta testers.
+    user.link_code_expires = datetime.utcnow() + timedelta(minutes=30)
     await db.commit()
     return code
 
@@ -255,6 +258,90 @@ async def consume_link_code(db: AsyncSession, code: str, consumer: User) -> Opti
         owner.link_code_expires = None
     await db.commit()
     return canonical
+
+
+async def migrate_user_data(db: AsyncSession, consumer: User, canonical: User) -> dict:
+    """Move `consumer`'s logged data onto `canonical` so linking an iOS account that
+    already has data MERGES it instead of orphaning it (the old 422). Same-date
+    daily_logs + health snapshots merge (canonical's snapshot wins a conflict);
+    body_metrics + brain attributes de-dup. Returns a small stats dict. Run once,
+    at link time, before the link is welded."""
+    from sqlalchemy import update as _update
+    from db.models import WaterEntry, UserAttribute
+
+    if consumer.id == canonical.id:
+        return {}
+    stats = {"days_moved": 0, "days_merged": 0, "weights": 0, "snapshots": 0, "attrs": 0}
+
+    # 1) daily_logs (+ the food / exercise / water entries hanging off them)
+    c_logs = (await db.execute(
+        select(DailyLog).where(DailyLog.user_id == consumer.id))).scalars().all()
+    touched: set = set()
+    for log in c_logs:
+        target = (await db.execute(select(DailyLog).where(and_(
+            DailyLog.user_id == canonical.id, DailyLog.date == log.date)))).scalar_one_or_none()
+        if target:   # canonical already has this day — fold the entries in, drop the dup log
+            for Model in (FoodEntry, ExerciseEntry):
+                await db.execute(_update(Model).where(Model.daily_log_id == log.id)
+                                 .values(daily_log_id=target.id))
+            await db.execute(_update(WaterEntry).where(WaterEntry.daily_log_id == log.id)
+                             .values(daily_log_id=target.id, user_id=canonical.id))
+            await db.delete(log)
+            touched.add(target.id)
+            stats["days_merged"] += 1
+        else:        # canonical doesn't have this day — just repoint it
+            log.user_id = canonical.id
+            await db.execute(_update(WaterEntry).where(WaterEntry.daily_log_id == log.id)
+                             .values(user_id=canonical.id))
+            touched.add(log.id)
+            stats["days_moved"] += 1
+    # water logged before a daily_log existed (daily_log_id NULL)
+    await db.execute(_update(WaterEntry).where(and_(
+        WaterEntry.user_id == consumer.id, WaterEntry.daily_log_id.is_(None)))
+        .values(user_id=canonical.id))
+    await db.flush()
+    for lid in touched:
+        await recompute_log_totals(db, lid)
+
+    # 2) body_metrics — repoint, dropping a same-(day, source) duplicate
+    def _bm_key(b):
+        ts = getattr(b, "timestamp", None)
+        return (ts.date() if ts else None, getattr(b, "source", None))
+    seen = {_bm_key(b) for b in (await db.execute(
+        select(BodyMetric).where(BodyMetric.user_id == canonical.id))).scalars().all()}
+    for b in (await db.execute(
+            select(BodyMetric).where(BodyMetric.user_id == consumer.id))).scalars().all():
+        if _bm_key(b) in seen:
+            await db.delete(b)
+        else:
+            b.user_id = canonical.id
+            seen.add(_bm_key(b))
+            stats["weights"] += 1
+
+    # 3) health_snapshots (unique user_id, date) — canonical's wins a date clash
+    can_dates = {s.date for s in (await db.execute(
+        select(HealthSnapshot).where(HealthSnapshot.user_id == canonical.id))).scalars().all()}
+    for s in (await db.execute(
+            select(HealthSnapshot).where(HealthSnapshot.user_id == consumer.id))).scalars().all():
+        if s.date in can_dates:
+            await db.delete(s)
+        else:
+            s.user_id = canonical.id
+            can_dates.add(s.date)
+            stats["snapshots"] += 1
+
+    # 4) user_attributes (unique user_id, key) — bring over only keys canonical lacks
+    can_keys = {a.attribute_key for a in (await db.execute(
+        select(UserAttribute).where(UserAttribute.user_id == canonical.id))).scalars().all()}
+    for a in (await db.execute(
+            select(UserAttribute).where(UserAttribute.user_id == consumer.id))).scalars().all():
+        if a.attribute_key not in can_keys:
+            a.user_id = canonical.id
+            can_keys.add(a.attribute_key)
+            stats["attrs"] += 1
+
+    await db.commit()
+    return stats
 
 
 def _platform_of(telegram_id: str) -> str:
