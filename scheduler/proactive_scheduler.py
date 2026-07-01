@@ -337,7 +337,7 @@ async def _send_ios(telegram_id: str, text: str, slot_key: str = None) -> None:
         for row in tokens:
             env = row.environment or "production"
             result = await send_push(row.token, title, body, environment=env,
-                                     thread_id="arnie-coach")
+                                     thread_id="arnie-coach", badge=1)
 
             # Cross-environment retry: a token registered under one APNs environment
             # but actually minted for the other still BadDeviceToken's on the wrong
@@ -352,7 +352,7 @@ async def _send_ios(telegram_id: str, text: str, slot_key: str = None) -> None:
                 if reason in ("BadDeviceToken", "Unregistered") or status in (400, 410):
                     other = "sandbox" if env == "production" else "production"
                     alt = await send_push(row.token, title, body, environment=other,
-                                          thread_id="arnie-coach")
+                                          thread_id="arnie-coach", badge=1)
                     if alt.get("ok"):
                         logger.info(
                             f"APNs delivered to user {user.id} on {other} (token registered "

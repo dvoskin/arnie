@@ -188,6 +188,7 @@ async def send_push(
     payload_extra: Optional[dict] = None,
     thread_id: Optional[str] = None,
     subtitle: Optional[str] = None,
+    badge: Optional[int] = None,
     client: Optional[httpx.AsyncClient] = None,
 ) -> dict:
     """Send one push to one device.
@@ -233,6 +234,10 @@ async def send_push(
     if thread_id:
         # Groups Arnie's notifications into one stack on the lock screen / banner.
         aps["thread-id"] = thread_id
+    if badge is not None:
+        # Home-screen app-icon badge — "you have a message waiting from Arnie".
+        # The client clears it (setBadgeCount(0)) once the app is foregrounded.
+        aps["badge"] = badge
     aps_payload: dict = {"aps": aps}
     if payload_extra:
         # Merge OVER the top level, but never trample `aps` (Apple-reserved).
@@ -244,6 +249,9 @@ async def send_push(
         "authorization": f"bearer {_get_jwt()}",
         "apns-topic": bundle_id,
         "apns-push-type": "alert",
+        # Deliver immediately (alert pushes already default to 10, but make the
+        # "feels like a message" immediacy explicit + robust to future defaults).
+        "apns-priority": "10",
     }
 
     own_client = client is None
