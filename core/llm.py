@@ -202,6 +202,22 @@ async def text_to_speech(text: str, voice: str = "onyx") -> Optional[bytes]:
         return None
 
 
+def strip_for_speech(text: str) -> str:
+    """Clean a multi-bubble reply for TTS.
+
+    Drops ||| separators (spoken as sentence breaks), HTML tags, and markdown
+    emphasis so the audio reads naturally. Unlike voice_variant, this does NOT
+    shorten or rewrite — used for direct voice replies where the user should hear
+    the FULL answer, not a <25-word nudge paraphrase.
+    """
+    import re
+    t = (text or "").replace("|||", ". ")
+    t = re.sub(r"<[^>]+>", "", t)      # strip HTML tags (Telegram <b> etc.)
+    t = re.sub(r"[*_#`]+", "", t)      # strip markdown emphasis
+    t = re.sub(r"\s+", " ", t).strip()
+    return t
+
+
 async def voice_variant(text: str, name: str = "", language: str = "English") -> str:
     system = (
         "You are a fitness coach. Rewrite the message as natural SPOKEN audio — "
