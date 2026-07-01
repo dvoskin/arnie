@@ -225,6 +225,39 @@ async def _send_intro_and_log(update: Update, db, user_id: int, raw_text: str,
                            "|||".join(bubbles), source_type=source_type)
 
 
+def _voice_replies_enabled() -> bool:
+    """Reply to inbound voice notes with a spoken (TTS) voice note, Telegram only.
+    Defaults OFF — set VOICE_REPLIES_ENABLED=true to turn it on. Text is always
+    sent regardless; the voice note is additive."""
+    return os.getenv("VOICE_REPLIES_ENABLED", "false").lower() in ("true", "1", "yes")
+
+
+async def _maybe_send_voice_reply(context, chat_id, source_type: str, turn) -> None:
+    """If the user sent a voice note, answer with one too (Telegram only).
+
+    Additive to the text reply already sent — a TTS failure must never swallow the
+    text. Speaks the FULL answer via strip_for_speech (not the shortened
+    voice_variant used for proactive nudges). Best-effort and fully wrapped."""
+    if source_type != "voice" or not _voice_replies_enabled():
+        return
+    if turn is None or not getattr(turn, "response", None):
+        return
+    try:
+        from core.llm import strip_for_speech, text_to_speech
+        spoken = strip_for_speech("|||".join(turn.response.bubbles))
+        if not spoken:
+            return
+        audio = await text_to_speech(spoken, voice="onyx")
+        if not audio:
+            return
+        import io as _io
+        buf = _io.BytesIO(audio)
+        buf.name = "arnie.mp3"
+        await context.bot.send_voice(chat_id=chat_id, voice=buf)
+    except Exception as e:
+        logger.warning(f"Voice reply failed (text already sent): {e}")
+
+
 async def _run_pipeline(update: Update, context: ContextTypes.DEFAULT_TYPE,
                         raw_text: str, source_type: str, db):
     """Core pipeline shared by all message types."""
@@ -458,6 +491,11 @@ async def _run_pipeline(update: Update, context: ContextTypes.DEFAULT_TYPE,
 
         if not is_last:
             await asyncio.sleep(0.25)
+
+    # ── Voice-in → voice-out ──────────────────────────────────────────────────
+    # If this turn came from a voice note, send the reply as a voice note too
+    # (in addition to the text above). Telegram only; gated by VOICE_REPLIES_ENABLED.
+    await _maybe_send_voice_reply(context, chat_id, source_type, turn)
 
     # ── Nearby request with no location on file → one-tap share button ────────
     # Two triggers (either is enough):
