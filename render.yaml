@@ -53,6 +53,11 @@ services:
         sync: false
       - key: ANTHROPIC_API_KEY
         sync: false
+      # Required for ALL voice features: Whisper transcription of inbound voice
+      # notes AND tts-1 for spoken replies. Secret — set the value in the Render
+      # dashboard. Without it, voice notes fail to transcribe and no audio is sent.
+      - key: OPENAI_API_KEY
+        sync: false
       - key: DEFAULT_MODEL
         value: claude-sonnet-4-6
       - key: WHOOP_CLIENT_ID
@@ -94,6 +99,11 @@ services:
       # Set it to "true" in the Render dashboard to go live (this file is reference-only).
       - key: PROACTIVE_MESSAGING_ENABLED
         value: "true"
+      # Reply to an inbound voice note with a spoken (TTS) voice note, in addition
+      # to the text reply. Telegram only; requires OPENAI_API_KEY. Flip to "true"
+      # in the Render dashboard to go live (this file is reference-only).
+      - key: VOICE_REPLIES_ENABLED
+        value: "false"
       # Branded base for user-facing dashboard links (separate from RENDER_EXTERNAL_URL,
       # which webhooks/OAuth keep using). SET THIS ONLY AFTER app.tryarnie.com is added
       # as a custom domain on this service and DNS resolves — until then leave it unset
