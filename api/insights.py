@@ -560,7 +560,9 @@ def _sanitize_briefing(obj: dict, stats: Optional[dict] = None) -> dict:
     hero = {
         "headline": (_s(hero_in.get("headline")) or None),
         "milestone": (_s(hero_in.get("milestone")) or None),
+        "stats": (_s(hero_in.get("stats")) or None),
         "body": _s(hero_in.get("body")),
+        "next": (_s(hero_in.get("next")) or None),
     }
     focus_in = obj.get("focus") or {}
     focus = {"title": _s(focus_in.get("title")), "body": _s(focus_in.get("body"))}
@@ -721,9 +723,11 @@ async def generate_briefing(stats: dict) -> dict:
 Return ONLY a valid JSON object with EXACTLY this shape:
 {{
   "hero": {{
-    "headline": "<3 to 7 words, a single REAL-TIME directive — the move to make right now, in imperative voice, grounded in TODAY's live numbers. Slightly longer is fine when the extra 2-3 words add genuine PERSONALIZATION ('Front-load protein before the gym', 'Cut 150 to break the plateau') vs a generic 'Front-load protein'. e.g. 'Hit 32g protein', 'Train upper today', 'Cut 150 today', 'Protect the 5-day streak', 'Fuel the cut with breakfast'. NEVER a bare number ('209 lbs') — translate the number into the action. NO second clause (NOT 'Train upper, hit 180g protein'). null only if nothing actionable.>",
+    "headline": "<3 to 7 words, a single REAL-TIME directive — the move to make right now, in imperative/confident voice, grounded in TODAY's live numbers. Slightly longer is fine when the extra words add genuine PERSONALIZATION ('Lock in the strong finish', 'Cut 150 to break the plateau') vs a generic one. e.g. 'Hit 32g protein', 'Lock in the strong finish', 'Protect the 5-day streak', 'Fuel the cut with breakfast'. NEVER a bare number ('209 lbs') — translate the number into the action. NO second clause. null only if nothing actionable.>",
     "milestone": "<positive reinforcement IF genuinely earned by the data, e.g. 'Lowest weight in 6 weeks' — else null. No emoji.>",
-    "body": "<1-2 short sentences (~25-35 words total) — the WHY behind today's directive, anchored in live numbers or a real pattern. The action's reason, not its restatement. e.g. 'You're at 158g protein with the day still open and a session tonight. 30g now closes it clean.'>"
+    "stats": "<the 1-2 live numbers that GROUND today's directive, as a compact scannable line joined by ' · ' — pick what matters MOST right now. e.g. '198g protein · 1,939 cal', '2 workouts · 8,400 steps', '184 lbs · down 1.2 this week'. Real logged numbers only; null if there's nothing meaningful to show yet.>",
+    "body": "<ONE short, confident status sentence (~5-12 words) — a read on where they stand, NOT a paragraph and NOT a restatement of the numbers. e.g. 'You're right where I want you.', 'Ahead of pace, keep it steady.', 'Protein's the only gap today.'>",
+    "next": "<ONE clear, specific instruction for what to do NEXT — imperative, often time-anchored, scannable. e.g. 'Tonight: water, walk, sleep.', '30g protein before the gym.', 'Log lunch when you eat.', 'Weigh in first thing tomorrow.' null only if the headline already fully IS the instruction.>"
   }},
   "focus": {{
     "title": "",
@@ -740,7 +744,7 @@ COMPOSITION — match the substance to how much you actually know about {name}:
 
 RULES:
 - SPEAK as Arnie — first person, present, warm. A coach talking TO them, not software reporting. "I've noticed your protein's staying remarkably consistent" — NOT "Protein remains high." "You're ahead of the pace I expected two weeks ago" — NOT "Weight trend improving." INTERPRET; never a bare metric.
-- The hero is THE element on the screen: headline = the real-time directive (3-4 words MAX, no second clause), body = the WHY in 1-2 sentences anchored in live numbers. Never a bare number; never an editorial header. Milestone only if the data earns it (a real low, a real streak); else null.
+- The hero is THE element on the screen and reads top-to-bottom as a scannable directive, NOT a paragraph: headline = the real-time directive (a confident imperative, no second clause) → stats = the 1-2 grounding numbers ('198g protein · 1,939 cal') → body = ONE short confident status line ('You're right where I want you.') → next = ONE clear instruction for what to do next ('Tonight: water, walk, sleep.'). Each is short and skimmable; never merge them into prose. Never a bare number as the headline; never an editorial header. Milestone only if the data earns it (a real low, a real streak); else null. stats/next are null only when there's genuinely nothing to put there.
 - NEVER claim "today is a rest day" unless: (a) the user explicitly stated it in chat (you don't see chat here, so DON'T), or (b) the day is mostly over (late evening) AND the user has a long-running weekly pattern of skipping THIS weekday (4+ weeks of N on this exact weekday in the LOGGED DAYS section). "Workout not yet" early in the day means it's early — not a rest day. When uncertain, treat today as a normal TRAINING day and frame nutrition + recovery accordingly.
 - focus.title and focus.body must be empty strings — the iOS app no longer renders a separate Focus pane; the hero now carries the single most important action. Anything you'd put in focus goes into the cards below, not focus.
 - 2-4 cards. The TITLE is a short, OPINIONATED coaching headline stating your judgment, in natural sentence case (e.g. 'On track for 205', 'The weekend leak', "Volume's slipping", "Scale's creeping back"). NEVER a generic category (Protein, Weight) or a tone word (Win, Opportunity); never all-caps, no emoji. Each STORY is DIAGNOSIS + EVIDENCE + RECOMMENDATION in 2-3 tight sentences, scannable in ~2s — what happened, why it matters, what to do. Coaching with conviction, not reporting. "kind" sets the card's quiet tone-color. Set "kind" per card:
