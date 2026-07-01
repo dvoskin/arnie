@@ -128,6 +128,10 @@ class UserPreferences(Base):
     fat_target = Column(Integer)
     preferred_language = Column(String)  # e.g. "Spanish", "French" — null means English/auto
     food_logging_mode = Column(String, default="moderate")  # quick / moderate / strict
+    # Coach home dashboard layout — JSON {"order":[...],"hidden":[...]} synced from
+    # the iOS Customize screen so a user's reordered / hidden metric sections follow
+    # them across devices. Null = client uses its default order with everything shown.
+    coach_layout = Column(Text)
 
     user = relationship("User", back_populates="preferences")
 

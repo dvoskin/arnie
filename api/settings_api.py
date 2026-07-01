@@ -54,6 +54,10 @@ class PreferencesEditBody(BaseModel):
     wake_time: Optional[str] = Field(None, pattern=r"^\d{2}:\d{2}$")
     sleep_time: Optional[str] = Field(None, pattern=r"^\d{2}:\d{2}$")
     food_logging_mode: Optional[Literal["quick", "moderate", "strict"]] = None
+    # Coach home dashboard layout — a JSON string {"order":[...],"hidden":[...]}
+    # the iOS Customize screen owns. Capped so a malformed / oversized client
+    # payload can't bloat the row; the server treats it as opaque.
+    coach_layout: Optional[str] = Field(None, max_length=2000)
 
 
 @prefs_router.get("/preferences")
@@ -84,6 +88,7 @@ async def get_preferences(
             "wake_time": prefs.wake_time,
             "sleep_time": prefs.sleep_time,
             "food_logging_mode": prefs.food_logging_mode,
+            "coach_layout": prefs.coach_layout,
         }
 
 
