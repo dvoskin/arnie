@@ -189,6 +189,7 @@ async def send_push(
     thread_id: Optional[str] = None,
     subtitle: Optional[str] = None,
     badge: Optional[int] = None,
+    sound: str = "default",
     client: Optional[httpx.AsyncClient] = None,
 ) -> dict:
     """Send one push to one device.
@@ -230,7 +231,10 @@ async def send_push(
     alert: dict = {"title": title, "body": body}
     if subtitle:
         alert["subtitle"] = subtitle
-    aps: dict = {"alert": alert, "sound": "default"}
+    # `sound` is either "default" (system push tone) or the filename of a sound
+    # bundled in the iOS app (e.g. "text_tone.caf" — Arnie's iMessage-style ding).
+    # A missing bundled file makes iOS silently fall back to the default tone.
+    aps: dict = {"alert": alert, "sound": sound}
     if thread_id:
         # Groups Arnie's notifications into one stack on the lock screen / banner.
         aps["thread-id"] = thread_id

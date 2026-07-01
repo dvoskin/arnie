@@ -295,6 +295,13 @@ def _push_body(text: str) -> str:
     return first or "Tap to open Arnie"
 
 
+# Filename of the sound bundled in the iOS app (Arnie/Resources/text_tone.caf →
+# flattened to the app-bundle root). Sent in the APNs payload so proactive pushes
+# ring with Arnie's iMessage-style ding instead of the generic default push tone.
+# Must match the bundled filename EXACTLY, or iOS silently falls back to "default".
+_IOS_PUSH_SOUND = "text_tone.caf"
+
+
 async def _send_ios(telegram_id: str, text: str, slot_key: str = None) -> None:
     """Fan a proactive nudge out to every active APNs device for the user.
 
@@ -337,7 +344,8 @@ async def _send_ios(telegram_id: str, text: str, slot_key: str = None) -> None:
         for row in tokens:
             env = row.environment or "production"
             result = await send_push(row.token, title, body, environment=env,
-                                     thread_id="arnie-coach", badge=1)
+                                     thread_id="arnie-coach", badge=1,
+                                     sound=_IOS_PUSH_SOUND)
 
             # Cross-environment retry: a token registered under one APNs environment
             # but actually minted for the other still BadDeviceToken's on the wrong
@@ -352,7 +360,8 @@ async def _send_ios(telegram_id: str, text: str, slot_key: str = None) -> None:
                 if reason in ("BadDeviceToken", "Unregistered") or status in (400, 410):
                     other = "sandbox" if env == "production" else "production"
                     alt = await send_push(row.token, title, body, environment=other,
-                                          thread_id="arnie-coach", badge=1)
+                                          thread_id="arnie-coach", badge=1,
+                                          sound=_IOS_PUSH_SOUND)
                     if alt.get("ok"):
                         logger.info(
                             f"APNs delivered to user {user.id} on {other} (token registered "
