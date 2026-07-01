@@ -23,6 +23,7 @@ from datetime import datetime, date, timezone
 
 import pytz
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
 logger = logging.getLogger(__name__)
@@ -295,13 +296,6 @@ def _push_body(text: str) -> str:
     return first or "Tap to open Arnie"
 
 
-# Filename of the sound bundled in the iOS app (Arnie/Resources/text_tone.caf →
-# flattened to the app-bundle root). Sent in the APNs payload so proactive pushes
-# ring with Arnie's iMessage-style ding instead of the generic default push tone.
-# Must match the bundled filename EXACTLY, or iOS silently falls back to "default".
-_IOS_PUSH_SOUND = "text_tone.caf"
-
-
 async def _send_ios(telegram_id: str, text: str, slot_key: str = None) -> None:
     """Fan a proactive nudge out to every active APNs device for the user.
 
@@ -344,8 +338,7 @@ async def _send_ios(telegram_id: str, text: str, slot_key: str = None) -> None:
         for row in tokens:
             env = row.environment or "production"
             result = await send_push(row.token, title, body, environment=env,
-                                     thread_id="arnie-coach", badge=1,
-                                     sound=_IOS_PUSH_SOUND)
+                                     thread_id="arnie-coach", badge=1)
 
             # Cross-environment retry: a token registered under one APNs environment
             # but actually minted for the other still BadDeviceToken's on the wrong
@@ -360,8 +353,7 @@ async def _send_ios(telegram_id: str, text: str, slot_key: str = None) -> None:
                 if reason in ("BadDeviceToken", "Unregistered") or status in (400, 410):
                     other = "sandbox" if env == "production" else "production"
                     alt = await send_push(row.token, title, body, environment=other,
-                                          thread_id="arnie-coach", badge=1,
-                                          sound=_IOS_PUSH_SOUND)
+                                          thread_id="arnie-coach", badge=1)
                     if alt.get("ok"):
                         logger.info(
                             f"APNs delivered to user {user.id} on {other} (token registered "
@@ -526,7 +518,12 @@ _TTS_CACHE_TTL = 1800.0
 async def _send_with_voice(telegram_id: str, text: str, name: str = "", language: str = "English",
                            slot_key: str = None) -> None:
     await _send(telegram_id, text, slot_key=slot_key)
-    if telegram_id.startswith("im:"):
+    # Voice notes are a Telegram-only channel. iMessage has no audio-send path, and
+    # iOS/Apple identities route to APNs (a text push) inside _send above — calling
+    # bot.send_voice(chat_id=int("ios:<uuid>")) would raise ValueError and, worse,
+    # only AFTER paying for voice_variant + TTS. Bail for every non-Telegram id so
+    # those channels don't burn an LLM + TTS call on audio that can never deliver.
+    if telegram_id.startswith(("im:", "ios:", "apple:")):
         return
     if not proactive_enabled() or not _allowlist_allows(telegram_id):
         return
@@ -2027,12 +2024,21 @@ def start_scheduler():
     # Reminder job only runs when proactive messaging is enabled. _send() also
     # gates every outbound message, so this is belt-and-suspenders.
     if proactive_enabled():
+        # Clock-ALIGNED to :00 and :30 (CronTrigger), not IntervalTrigger's
+        # "30 min from process start" — the latter drifts on restart and, if a
+        # tick runs long (the loop generates per-user Haiku nudges sequentially),
+        # pushes the next fire past a slot's 30-min window so that day's check-in
+        # is silently skipped. misfire_grace_time lets a delayed tick still run
+        # (up to 5 min late) instead of being dropped; coalesce collapses a
+        # backlog into a single run so we never fire twice in a burst.
         _scheduler.add_job(
             _run_reminders,
-            IntervalTrigger(minutes=30),
+            CronTrigger(minute="0,30"),
             id="proactive_reminders",
             replace_existing=True,
             max_instances=1,
+            misfire_grace_time=300,
+            coalesce=True,
         )
         _allow = _proactive_allowlist()
         reminders_status = (
@@ -2043,12 +2049,16 @@ def start_scheduler():
         reminders_status = "reminders DISABLED (PROACTIVE_MESSAGING_ENABLED not set)"
     # Conversation-hook re-asks always run — they're conversation continuity,
     # not proactive nudges, and don't require PROACTIVE_MESSAGING_ENABLED.
+    # Offset to :15 and :45 so a hook re-ask and a slot nudge can't fire in the
+    # same minute (the two jobs are independent — this staggers them on the clock).
     _scheduler.add_job(
         _run_conversation_hooks,
-        IntervalTrigger(minutes=30),
+        CronTrigger(minute="15,45"),
         id="conversation_hooks",
         replace_existing=True,
         max_instances=1,
+        misfire_grace_time=300,
+        coalesce=True,
     )
     _scheduler.add_job(
         _run_whoop_sync,
@@ -2056,6 +2066,8 @@ def start_scheduler():
         id="whoop_sync",
         replace_existing=True,
         max_instances=1,
+        misfire_grace_time=600,
+        coalesce=True,
     )
     _scheduler.start()
     logger.info(f"Proactive scheduler started ({reminders_status}, Whoop sync every 30 min)")
