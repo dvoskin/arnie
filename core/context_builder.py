@@ -81,15 +81,18 @@ def food_mode_directive(mode: Optional[str]) -> str:
     m = (mode or "moderate").strip().lower()
     if m == "quick":
         return (
-            "[FOOD LOGGING MODE: quick] Log food immediately on your best estimate. "
-            "Do NOT ask the usual >120 cal clarifying question — only ask when the prep gap "
-            "is extreme (>300 cal, e.g. grilled vs deep-fried). Favor flow over confirmation."
+            "[FOOD LOGGING MODE: quick] Log food immediately on your best estimate — but "
+            "because you're not asking, PAD FOR THE UNKNOWN: assume the generous end (fuller "
+            "portion, cooking fat included, normal-to-heavy sauce). Fast never means low. Do "
+            "NOT ask the usual >120 cal clarifying question — only ask when the prep gap is "
+            "extreme (>300 cal, e.g. grilled vs deep-fried). Favor flow over confirmation."
         )
     if m == "strict":
         return (
             "[FOOD LOGGING MODE: strict] Confirm cook method AND quantity before logging any "
             "ambiguous item, even when the swing is under 120 cal. Surface the uncertainty out "
-            "loud rather than silently estimating. (Still skip the question if they said 'just log it'.)"
+            "loud rather than silently estimating, and on anything still uncertain after they "
+            "answer, estimate the higher end. (Still skip the question if they said 'just log it'.)"
         )
     return ""  # moderate / unknown = static system prompt default
 
