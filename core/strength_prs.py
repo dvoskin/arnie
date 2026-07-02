@@ -93,11 +93,40 @@ def _sets_for_entry(entry) -> List[tuple[float, int]]:
     return pairs
 
 
+# Big compound-lift targets — a movement on any of these always earns a board row.
+_LARGE_GROUP_IDS = {"lats", "mid_back", "lower_back", "back", "legs",
+                    "quads", "hamstrings", "glutes"}
+# Small-muscle isolation — never a board row (curls, pushdowns, raises, crunches).
+_SMALL_ISOLATION_IDS = {"biceps", "triceps", "forearms", "calves", "abs",
+                        "obliques", "traps", "neck"}
+
+
+def _board_includes(rec: dict) -> bool:
+    """Board = movements on large muscle groups (chest / back / legs), shoulder
+    PRESSES, and weighted calisthenics (added load > 5 lb). Small-muscle isolation
+    and shoulder raises are left off so the board reads as real lifts.
+
+    Gate on muscle group, NOT the catalog's `category`: some isolation is mislabeled
+    `main` there (e.g. cable curls), so trusting category alone leaks curls and
+    pushdowns onto the board. Category is only consulted to split shoulder presses
+    (main) from lateral / rear-delt raises (accessory), where it is reliable."""
+    primary = (rec.get("primary") or "").lower()
+    if primary in _SMALL_ISOLATION_IDS:
+        return False
+    if primary.startswith("chest") or primary in _LARGE_GROUP_IDS:
+        return True
+    if primary == "shoulders":            # presses in, lateral / rear raises out
+        return (rec.get("category") or "").lower() == "main"
+    if (rec.get("equipment") or "").lower() == "bodyweight" and rec.get("weight_kg", 0.0) * _KG_TO_LB > 5.0:
+        return True
+    return False
+
+
 def compute_strength_prs(
     logs: List[DailyLog],
     bodyweight_kg: Optional[float] = None,
     sex: Optional[str] = None,
-    limit: int = 6,
+    limit: int = 50,
     recent_days: int = 14,
 ) -> List[dict]:
     """Best set per movement, ranked by estimated 1RM (strongest first).
@@ -116,6 +145,8 @@ def compute_strength_prs(
 
     # canonical -> best record dict (kept in kg internally, converted at the end)
     best: dict[str, dict] = {}
+    # canonical -> total working sets logged (weight > 0) across all logs = volume
+    sets_count: dict[str, int] = {}
 
     for log in logs:
         log_date = getattr(log, "date", None)
@@ -129,6 +160,7 @@ def compute_strength_prs(
             for weight_kg, reps in _sets_for_entry(e):
                 if weight_kg <= 0:
                     continue
+                sets_count[canonical] = sets_count.get(canonical, 0) + 1   # volume
                 if reps < _EPLEY_MIN_REPS or reps > _EPLEY_MAX_REPS:
                     continue
                 e1rm = _epley_1rm(weight_kg, reps)
@@ -141,9 +173,12 @@ def compute_strength_prs(
                         "date": log_date,
                         "primary": (entry_meta or {}).get("primary"),
                         "equipment": (entry_meta or {}).get("equipment"),
+                        "category": (entry_meta or {}).get("category"),
                     }
 
-    ranked = sorted(best.items(), key=lambda kv: kv[1]["e1rm_kg"], reverse=True)[:limit]
+    # Board = compounds + large-muscle-group movements + weighted calisthenics.
+    meaningful = {n: r for n, r in best.items() if _board_includes(r)}
+    ranked = sorted(meaningful.items(), key=lambda kv: kv[1]["e1rm_kg"], reverse=True)[:limit]
 
     today = date.today()
     recent_cutoff = today - timedelta(days=recent_days)
@@ -156,6 +191,7 @@ def compute_strength_prs(
             "name": name,
             "primary": rec["primary"],
             "equipment": rec["equipment"],
+            "sets": sets_count.get(name, 0),
             "top_weight_lbs": round(rec["weight_kg"] * _KG_TO_LB, 1),
             "top_reps": rec["reps"],
             "e1rm_lbs": round(rec["e1rm_kg"] * _KG_TO_LB, 1),

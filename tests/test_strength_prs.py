@@ -81,9 +81,19 @@ def test_standard_classification_scales_with_bodyweight():
     assert heavy["standard"]["level"] in {"beginner", "novice", "intermediate"}
 
 
-def test_no_standard_for_accessory_lift():
+def test_isolation_excluded_from_board():
+    # Small-muscle isolation (a curl) is left off the board entirely — it's neither a
+    # large-muscle movement nor weighted calisthenics, so it never earns a row.
     today = date.today()
     logs = [_log(today, [_entry("dumbbell curl", weight=20, reps="10")])]
+    assert compute_strength_prs(logs, bodyweight_kg=95.0, sex="male") == []
+
+
+def test_no_standard_for_unbenchmarked_board_lift():
+    # A large-muscle movement without a bodyweight benchmark (a cable pulldown) still
+    # appears on the board, just with no strength tier.
+    today = date.today()
+    logs = [_log(today, [_entry("lat pulldown", weight=60, reps="10")])]
     prs = compute_strength_prs(logs, bodyweight_kg=95.0, sex="male")
     assert prs and prs[0]["standard"] is None
 
