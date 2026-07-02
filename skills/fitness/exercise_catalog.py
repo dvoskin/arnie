@@ -198,7 +198,7 @@ EXERCISES: list[dict] = [
      "rest_seconds": (60, 90), "category": "accessory"},
     {"canonical": "Shrug",
      "aliases": ["shrugs", "barbell shrug", "dumbbell shrug", "db shrug",
-                 "trap shrug"],
+                 "cable shrug", "machine shrug", "smith machine shrug", "trap shrug"],
      "primary": "traps", "equipment": "barbell",
      "rest_seconds": (60, 90), "category": "accessory"},
     {"canonical": "Face Pull",
