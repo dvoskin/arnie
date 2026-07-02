@@ -174,6 +174,23 @@ async def get_week(identity: str = Depends(current_identity)):
         user = await resolve_user(db, identity)
         stats = await week_data(db, user)
         today = _user_today(user.timezone or "UTC")
+        # 30-day per-day macro history for the Coach macro-trends card. Fetched
+        # here (db in scope) and kept INDEPENDENT of the 7-day `days` window and
+        # the adaptive-TDEE input, so adding it can't shift either.
+        from db.queries import get_recent_logs as _get_recent_logs
+        _macro_logs = await _get_recent_logs(db, user.id, days=30)
+        _macro_by_date = {str(l.date): l for l in _macro_logs}
+        macro_history = []
+        for _i in range(29, -1, -1):
+            _d = (today - timedelta(days=_i)).isoformat()
+            _l = _macro_by_date.get(_d)
+            macro_history.append({
+                "date": _d,
+                "calories": round(_l.total_calories or 0) if _l else 0,
+                "protein": round(_l.total_protein or 0) if _l else 0,
+                "carbs": round(_l.total_carbs or 0) if _l else 0,
+                "fats": round(_l.total_fats or 0) if _l else 0,
+            })
 
     targets = stats.get("targets") or {}
     by_date = {h["date"]: h for h in (stats.get("history") or [])}
@@ -233,6 +250,7 @@ async def get_week(identity: str = Depends(current_identity)):
         "days_trained": sum(1 for x in days if x["workout"]),
         "weights": [{"date": w["date"], "lbs": w["lbs"]} for w in weights[-30:]],
         "adherence_days": adherence_days,
+        "macro_history": macro_history,
         # Adaptive TDEE (energy-balance from intake + weight trend); null when data
         # is too thin — the Coach expenditure card hides itself in that case.
         "expenditure": expenditure,
