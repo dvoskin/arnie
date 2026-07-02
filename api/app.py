@@ -1296,11 +1296,18 @@ async def _build_stats_for_user(db, user, target_date=None):
     # A compact "what Arnie has learned" block (the brain, Lane 2 durable traits),
     # grouped by category, so the briefing can ground insights in everything known
     # about this client. Archive-tier facts are held back (same as the chat coach).
+    # Emit "Label: value" (not the bare value) so the briefing LLM can tell WHAT a
+    # fact is — e.g. "Work schedule / occupation: 10am–4pm" instead of a naked
+    # "10am–4pm" it could misread as a training window. Mirrors how the chat coach
+    # injects attributes (memory/attribute_store.get_attributes_for_context).
     _brain_by_cat: dict[str, list[str]] = {}
     for _a in _active_attrs:
         if (getattr(_a, "relevance_tier", None) or "contextual") == "archive":
             continue
-        _brain_by_cat.setdefault(_a.category or "custom", []).append(str(_a.value))
+        _label = (_a.display_name or _a.attribute_key or "").strip()
+        _val = str(_a.value)
+        _brain_by_cat.setdefault(_a.category or "custom", []).append(
+            f"{_label}: {_val}" if _label else _val)
     _brain_str = "\n".join(
         f"{_cat}: " + "; ".join(_vals[:14])
         for _cat in ["nutrition", "fitness", "health", "lifestyle", "behavior", "mental", "custom"]
