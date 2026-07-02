@@ -93,15 +93,39 @@ async def _refresh(*a, **kw):
 
 # ── FOOD ─────────────────────────────────────────────────────────────────────
 
+def test_merge_quantity_helper():
+    m = TE._merge_quantity
+    assert m("150g", "150g") == "300 g"
+    assert m("1 bag", "1 bag") == "2 bag"
+    assert m("2 bag", "1 bag") == "3 bag"        # keeps accumulating
+    assert m("2 bags", "1 bag") == "3 bags"      # plural/singular fold, keeps unit spelling
+    assert m("1 cup", "200g").startswith("2×")   # different units → readable fallback
+
+
 @pytest.mark.asyncio
-async def test_food_second_serving_with_add_intent_logs(monkeypatch):
-    """Danny 2026-06-27: a 2nd cottage cheese inside the dedup window WITH an
-    explicit add cue must log through (gate override), not be blocked."""
+async def test_food_second_serving_with_add_intent_merges(monkeypatch):
+    """RECONCILE-BEFORE-LOG (Danny 2026-07-02, the quest-chip): a 2nd cottage cheese
+    inside the window WITH an add cue must BUMP the existing row's quantity + macros,
+    not spawn a second entry (and not block). One row that reads '300 g', 324 cal."""
     user = _user()
     prior = _food_row(1322, "Cottage cheese", "150g", 162.0, ago_s=120)
     today_log = _food_log([prior])
     wc = {"n": 0}
     _patch_food_writers(monkeypatch, today_log, wc)
+
+    merged = {"calls": 0, "entry_id": None, "changes": None}
+
+    async def _fake_update(db, entry_id, user_id, **changes):
+        merged["calls"] += 1
+        merged["entry_id"] = entry_id
+        merged["changes"] = changes
+        delta_cal = (changes.get("calories") or 0) - (prior.calories or 0)
+        prior.quantity = changes.get("quantity")
+        prior.calories = changes.get("calories")
+        today_log.total_calories = (today_log.total_calories or 0) + delta_cal
+        return prior
+
+    monkeypatch.setattr(TE, "q_update_food_entry", _fake_update)
 
     result = await TE._dispatch(
         "log_food",
@@ -109,11 +133,13 @@ async def test_food_second_serving_with_add_intent_logs(monkeypatch):
         user, today_log, db=SimpleNamespace(refresh=_refresh), source_type="ios",
         user_message="another cottage cheese",
     )
-    assert wc["n"] == 1, "add-intent 2nd serving must write through"
-    assert result.startswith("Logged "), result
-    # Authoritative DB readback shows BOTH entries on the board.
-    assert "ON THE BOARD NOW (from the DB)" in result
-    assert "2 × Cottage cheese" in result
+    assert wc["n"] == 0, "merge must NOT create a new row"
+    assert merged["calls"] == 1, "add-intent 2nd serving must UPDATE the existing row"
+    assert merged["entry_id"] == 1322
+    assert merged["changes"]["quantity"] == "300 g"
+    assert merged["changes"]["calories"] == 324.0
+    assert result.startswith("Updated "), result
+    assert "300 g" in result
 
 
 @pytest.mark.asyncio

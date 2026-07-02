@@ -1055,6 +1055,31 @@ async def _analyze_food(db, user, food_name, inp):
     return result
 
 
+def _merge_quantity(old, new):
+    """Combine two portion quantities for the SAME food into one running amount.
+    Same unit → sum the counts ("1 bag" + "1 bag" → "2 bag", "125g" + "125g" →
+    "250 g"); different / unparseable units → a readable "N×" so a repeat portion
+    still reads as more, never a silent duplicate. Prose does the pluralizing."""
+    import re as _re
+
+    def _parse(q):
+        q = (q or "").strip()
+        m = _re.match(r"^(\d+(?:\.\d+)?)\s*(.*)$", q)
+        if m:
+            return float(m.group(1)), m.group(2).strip()
+        return (1.0, q) if q else (1.0, "")
+
+    on, ou = _parse(old)
+    nn, nu = _parse(new)
+    if ou.lower().rstrip("s") == nu.lower().rstrip("s"):
+        total = on + nn
+        num = int(total) if float(total).is_integer() else round(total, 2)
+        unit = ou or nu
+        return f"{num} {unit}".strip()
+    base = (old or "").strip() or (new or "").strip()
+    return f"2× {base}" if base else (new or old or "")
+
+
 async def execute_tool_calls(
     tool_calls: List[Dict[str, Any]],
     user: User,
@@ -1314,6 +1339,9 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
         # defaults closed (empty user_message → unchanged behavior).
         from skills.logging_intent import turn_supports_log
         _supports_food = turn_supports_log(user_message, food_name)
+        # Reconcile target: set when the turn is a genuine repeat of a portion
+        # already on the board — we then bump THAT row instead of adding a new one.
+        _food_merge_target = None
         if not past_date:
             from datetime import datetime as _dt_now
             from skills.nutrition.food_dedup import (
@@ -1352,13 +1380,15 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
             if _dup_food is not None:
                 if _supports_food:
                     # The user's turn signals a deliberate repeat ("another",
-                    # "a second cottage cheese") — honor the log instead of
-                    # blocking. Telemetry so we can watch the gate-open rate
-                    # (event=dedup_gate_override).
+                    # "a second cottage cheese"). RECONCILE: bump the existing
+                    # row's quantity + macros instead of spawning a duplicate (or
+                    # the old confusing "already logged" stall). Telemetry so we can
+                    # watch the gate-open rate (event=dedup_gate_override).
                     logger.info(
                         f"event=dedup_gate_override kind=food user={getattr(user,'id',None)} "
                         f"item={food_name!r} matched=#{getattr(_dup_food,'id',None)}"
                     )
+                    _food_merge_target = _dup_food
                 else:
                     return _format_food_dedup(_dup_food, now_utc=now_utc)
 
@@ -1390,6 +1420,56 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
             getattr(target_log, "date", None), inp.get("time"),
             getattr(user, "timezone", "UTC"),
         ) or _dt.utcnow()
+
+        # RECONCILE-BEFORE-LOG (food): the user reported ANOTHER of a portion already
+        # on today's board. Bump the EXISTING row's quantity + macros instead of a
+        # confusing second entry or a stuck "already logged" loop (Danny 2026-07-02:
+        # a second protein bag should make the first read "2 bags", not a new row).
+        if _food_merge_target is not None:
+            _old_cal  = float(getattr(_food_merge_target, "calories", 0) or 0)
+            _old_pro  = float(getattr(_food_merge_target, "protein", 0) or 0)
+            _old_carb = float(getattr(_food_merge_target, "carbs", 0) or 0)
+            _old_fat  = float(getattr(_food_merge_target, "fats", 0) or 0)
+            _merged_qty = _merge_quantity(
+                getattr(_food_merge_target, "quantity", None), inp.get("quantity"))
+            _tot_cal = _old_cal + (analysis.calories or 0)
+            _tot_pro = _old_pro + (analysis.protein or 0)
+            _merged = await q_update_food_entry(
+                db, _food_merge_target.id, user.id,
+                quantity=_merged_qty,
+                calories=_tot_cal,
+                protein=_tot_pro,
+                carbs=_old_carb + (analysis.carbs or 0),
+                fats=_old_fat + (analysis.fat or 0),
+            )
+            _target = _merged or _food_merge_target
+            if isinstance(inp, dict) and getattr(_target, "id", None) is not None:
+                inp["_entry_id"] = _target.id
+            await db.refresh(target_log)
+            try:
+                from db.queries import resolve_pending_questions_for_logged_items
+                await resolve_pending_questions_for_logged_items(db, user.id, [food_name])
+            except Exception:
+                pass
+            prefs = user.preferences
+            cal_t = prefs.calorie_target if prefs else None
+            pro_t = prefs.protein_target if prefs else None
+            remaining = ""
+            if cal_t:
+                remaining += f" {cal_t - target_log.total_calories:.0f} cal left"
+            if pro_t:
+                remaining += f", {pro_t - target_log.total_protein:.0f}g protein to go"
+            return (
+                f"Updated {food_name} — you've now had {_merged_qty} (added one more to the "
+                f"SAME entry, NOT a new one). That item now totals {_tot_cal:.0f} cal, "
+                f"{_tot_pro:.0f}g protein. DAY TOTAL: {target_log.total_calories:.0f} cal, "
+                f"{target_log.total_protein:.0f}g protein"
+                f"{(' (' + remaining.strip() + ')') if remaining else ''}. "
+                f"Confirm the higher count cleanly (e.g. 'that's 2 now 💪') — do NOT say you "
+                f"logged a separate item, and never imply it was already there so you couldn't "
+                f"add it. Day total verbatim from DAY TOTAL, never recompute. Sentence case, "
+                f"one emoji if it fits. Never invent numbers."
+            )
 
         _new_food = await add_food_entry(
             db,
