@@ -7,6 +7,7 @@ macro_card was emitted anyway, leaking the stale coffee card (entry_id=null) ont
 reply that logged nothing. The fix: emit the card only when the dispatcher stashed
 an _entry_id (a real created/rolled-up row).
 """
+from core import conversation
 from core.conversation import _logged_entry_card
 
 
@@ -28,7 +29,19 @@ def test_deduped_food_log_emits_no_card():
     assert _logged_entry_card("log_food", {"food_name": "Coffee", "_entry_id": 0}) is None
 
 
-def test_real_exercise_log_emits_workout_card():
+def test_exercise_log_emits_no_card_while_deactivated():
+    # Workout card is OFF (_WORKOUT_CARD_ENABLED = False) — a real log_exercise
+    # returns no card now; workouts are confirmed in text instead.
+    assert _logged_entry_card("log_exercise", {
+        "exercise_name": "Bench", "sets": 3, "reps": "8,8,7",
+        "weight": 135, "_entry_id": 500,
+    }) is None
+
+
+def test_workout_card_payload_when_enabled(monkeypatch):
+    # The payload builder is retained behind the flag — verify its shape for the
+    # day it's re-enabled.
+    monkeypatch.setattr(conversation, "_WORKOUT_CARD_ENABLED", True)
     card = _logged_entry_card("log_exercise", {
         "exercise_name": "Bench", "sets": 3, "reps": "8,8,7",
         "weight": 135, "_entry_id": 500,
@@ -51,7 +64,8 @@ def test_non_logging_tools_return_none():
     assert _logged_entry_card("update_food_entry", {"_entry_id": 5}) is None
 
 
-def test_cardio_flag_inferred_from_cardio_type():
+def test_cardio_flag_inferred_from_cardio_type(monkeypatch):
+    monkeypatch.setattr(conversation, "_WORKOUT_CARD_ENABLED", True)
     card = _logged_entry_card("log_exercise", {
         "exercise_name": "Run", "cardio_type": "treadmill", "_entry_id": 7,
     })

@@ -2158,21 +2158,23 @@ Never a silent log and never a bare "logged ✅": the running total + a concrete
 move belong in your text every time. The item's own name and macros stay on the card,
 not in your prose.
 
-WORKOUT LOGGING RENDERS A WORKOUT CARD — log_exercise emits a workout_card that shows
-the exercise name, sets × reps × weight (and per-set loads). So do NOT write the
-exercise name, the sets/reps/weight, OR an "emoji + exercise + count" line in prose —
-the card IS the receipt, and repeating it reads as a clumsy duplicate of the card
-sitting right above it. This is the SAME rule as food: the card carries the WHAT, your
-words carry what it does NOT — the coaching read (how it stacks up vs last session or
+WORKOUT LOGGING IS TEXT-ONLY — there is NO workout card. So your reply MUST confirm, in
+words, EXACTLY what you just logged: the movement and that set's weight × reps (or the
+type + duration for cardio). That one line IS the receipt the user reads and corrects,
+so it has to be precise — never a bare "logged ✅", never a silent log.
+LOG ONLY WHAT THE USER ACTUALLY SAID. Never invent, round, or "fix" a weight or rep
+count they didn't give — if they say 130, log 130, not 125. If a set's weight or reps is
+missing, ASK for it; do NOT guess or carry a number over from another set or a past
+session. If a message has no set data at all (encouragement, a question, "let's go"),
+do NOT fire log_exercise — reply without logging.
+After the confirmation, add the coaching read (how it stacks up vs last session or
 baseline, a PR call-out, a fatigue or form note) and the next move. Split with ||| so
-the card seats between a short lead-in and the read:
-  GOOD: "Strong top set 💪|||That's up from 185×8 last week, you're clearly
-   progressing. If the bar's still moving fast, push the next set for 10."
-  BAD, never do this: "💪 Bench press 3×10 @ 135" followed by the card — that just
-   restates the card. No emoji-exercise-count transcript line, ever, on iOS.
-Never a silent log and never a bare "logged ✅": a real read plus a next move belong in
-your text every time. The exercise name, sets, reps, and weight live on the card, not
-in your prose.\
+the confirmation leads and the read follows:
+  GOOD: "Logged incline press, set 2 — 205×10 💪|||Fatigue drop from the 15-rep opener,
+   totally normal. Rest full and chase 12+ on set 3."
+  GOOD (missing data): "What weight on those shrugs? I'll log the set as soon as I have it."
+Keep the confirmation to ONE tight line naming the movement + this set's load and reps —
+not a multi-line transcript of the whole session.\
 """
 
 

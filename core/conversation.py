@@ -111,6 +111,14 @@ def _normalize_plan_exercises(exercises) -> list:
     return out
 
 
+# Workout logging renders NO card for now (2026-07-02). The live set-by-set flow
+# made the card an error-prone extra step: a receipt for a still-mutating entry
+# whose running set count lagged and often contradicted the prose ("3 sets done"
+# sitting over a sets:1 card). Workouts are confirmed in TEXT instead — see the
+# WORKOUT LOGGING prompt rule. Flip this to re-enable the card.
+_WORKOUT_CARD_ENABLED = False
+
+
 def _logged_entry_card(name: str, inp: dict) -> Optional[dict]:
     """The macro_card / workout_card for a log_food / log_exercise call — but ONLY
     when it actually created or rolled up into a real DB row.
@@ -143,6 +151,8 @@ def _logged_entry_card(name: str, inp: dict) -> Optional[dict]:
             },
         }
     if name == "log_exercise":
+        if not _WORKOUT_CARD_ENABLED:
+            return None            # workouts are confirmed in text, not a card
         return {
             "type": "workout_card",
             "payload": {
