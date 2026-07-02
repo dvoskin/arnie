@@ -1629,7 +1629,9 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
             from datetime import datetime as _dt_now
             from skills.fitness.exercise_dedup import (
                 is_duplicate_of_recent, format_dedup_result,
+                find_incremental_append, format_append_result,
             )
+            from skills.logging_intent import turn_supports_log
             now_utc = _dt_now.utcnow()
             candidate_entries = target_log.exercise_entries or []
             if pre_existing_exercise_ids is not None:
@@ -1637,6 +1639,46 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
                     e for e in candidate_entries
                     if getattr(e, "id", None) in pre_existing_exercise_ids
                 ]
+
+            # RECONCILE-BEFORE-LOG (exercise): a pure single-set report of a
+            # movement already in this session APPENDS to that session row —
+            # reps CSV grows a token, weights CSV when the load differs (drop
+            # sets / pyramids are one movement) — instead of inserting a
+            # parallel one-set row (the 83%-fragmentation failure mode). The
+            # turn gate ("another set", "one more") authorizes appending an
+            # identical (weight, reps) pair; without it, an identical pair is
+            # refire-shaped: blocked inside the 120s guard, legacy-handled
+            # beyond it. Cardio never appends — each bout is its own entry.
+            _supports_ex = turn_supports_log(user_message, canonical_name)
+            _app = None
+            if not (inp.get("is_cardio") or inp.get("cardio_type")):
+                _app = find_incremental_append(
+                    exercise_name=canonical_name,
+                    sets=inp.get("sets"),
+                    reps=str(inp.get("reps", "")) if inp.get("reps") else None,
+                    weight_kg=weight_kg,
+                    existing_entries=candidate_entries,
+                    now_utc=now_utc,
+                    allow_identical=_supports_ex,
+                )
+            if _app is not None and _app[0] == "refire":
+                return format_dedup_result(_app[1], now_utc=now_utc)
+            if _app is not None:
+                _kind, _row, _new_sets, _new_reps, _new_weights = _app
+                _updated = await q_update_exercise_entry(
+                    db, _row.id, user.id,
+                    sets=_new_sets,
+                    reps=_new_reps,
+                    weights=_new_weights,
+                    rir=inp.get("rir"),
+                    timestamp=now_utc,   # last-logged-at → refire guard + timeline
+                )
+                _target = _updated or _row
+                if isinstance(inp, dict) and getattr(_target, "id", None) is not None:
+                    inp["_entry_id"] = _target.id
+                await db.refresh(target_log)
+                return format_append_result(_target, now_utc=now_utc)
+
             # Re-log window: a completed MULTI-SET block (sets>=2, e.g. "3×12 @ 70")
             # is extremely unlikely to be legitimately re-performed identically later
             # in the same session, but the model DOES re-fire it minutes later when
@@ -1678,8 +1720,7 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
                 # topic pivot. The roll-up upsert (below) still applies either
                 # way — it grows one row, it doesn't drop data. Gate defaults
                 # closed (empty user_message → unchanged behavior).
-                from skills.logging_intent import turn_supports_log
-                _supports_ex = turn_supports_log(user_message, canonical_name)
+                # (_supports_ex hoisted above for the append path.)
                 if _supports_ex:
                     logger.info(
                         f"event=dedup_gate_override kind=exercise user={getattr(user,'id',None)} "

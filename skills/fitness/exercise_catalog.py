@@ -136,7 +136,9 @@ EXERCISES: list[dict] = [
      "rest_seconds": (60, 120), "category": "accessory"},
     {"canonical": "Straight-Arm Pulldown",
      "aliases": ["straight arm pulldown", "stiff arm pulldown",
-                 "straight-arm cable pulldown"],
+                 "straight-arm cable pulldown",
+                 "straight arm pull down", "stiff arm pull down",
+                 "straight arm pulldowns"],
      "primary": "lats", "equipment": "cable",
      "rest_seconds": (60, 90), "category": "accessory"},
     {"canonical": "Dumbbell Row",
@@ -222,6 +224,16 @@ EXERCISES: list[dict] = [
      "aliases": ["rear delt machine", "reverse pec deck", "rear delt pec deck"],
      "primary": "shoulders", "equipment": "machine",
      "rest_seconds": (45, 75), "category": "accessory"},
+    # Distinct from barbell Overhead Press (guided path, different load curve) —
+    # mirrors the Machine Chest Press precedent. Do NOT alias bare "shoulder
+    # press" here; that phrase belongs to Overhead Press.
+    {"canonical": "Machine Shoulder Press",
+     "aliases": ["shoulder press machine", "machine overhead press",
+                 "seated shoulder press machine", "seated machine shoulder press",
+                 "plate loaded shoulder press", "hammer shoulder press",
+                 "smith machine shoulder press", "smith shoulder press"],
+     "primary": "shoulders", "equipment": "machine",
+     "rest_seconds": (90, 120), "category": "main"},
     {"canonical": "Farmer's Carry",
      "aliases": ["farmers carry", "farmer carry", "farmers walk", "farmer's walk",
                  "dumbbell farmer's carry"],

@@ -185,6 +185,10 @@ class TurnResult:
     skills_fired: Optional[str] = None  # comma-sep tool names this turn (+":error"); null on no-tool turns
     streamed_bubble_count: int = 0  # bubbles already sent via on_text_delta (handler sends the rest)
     needs_location_share: bool = False  # find_nearby_places ran but had no location → prompt a share
+    # ConversationLog row id for this turn (set post-persist in chat_service).
+    # Surfaced on the wire so native clients can dedup history reloads by a
+    # STABLE identity instead of text/timestamp heuristics.
+    log_id: Optional[int] = None
 
 
 # ─────────────────────────────────────────────────────────────────────────────

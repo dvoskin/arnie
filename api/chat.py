@@ -161,6 +161,9 @@ async def _coached_reply(identity: str, text: str, source_type: str,
 
     payload = serialize_response(turn.response)
     payload["tools"] = _turn_tools(turn)
+    # Stable identity of this turn's ConversationLog row — the client stamps it
+    # on the live bubbles so history reloads dedup by id, not text/timestamp.
+    payload["log_id"] = getattr(turn, "log_id", None)
     payload["meta"] = TurnMeta(
         in_onboarding=turn.in_onboarding,
         just_completed=turn.just_completed,
@@ -282,7 +285,13 @@ async def chat_history(identity: str = Depends(current_identity), limit: int = 4
 
         user_text = _display_user_text(row)
         if user_text:
-            msg = {"author": "user", "text": user_text, "created_at": ts_iso, "platform": plat}
+            # `log_id` = the ConversationLog row id — the STABLE identity the
+            # client dedups against on history reloads (text/timestamp matching
+            # kept missing edge cases → foreground duplicate bubbles). Same id
+            # is shared by every message of the turn; pair with the segment
+            # position for a per-bubble key.
+            msg = {"author": "user", "text": user_text, "created_at": ts_iso,
+                   "platform": plat, "log_id": row.id}
             # Flag voice turns so the client can restore a voice-style bubble
             # (transcript shown, no playback — the audio isn't persisted) instead
             # of a plain text bubble.
@@ -306,13 +315,15 @@ async def chat_history(identity: str = Depends(current_identity), limit: int = 4
 
         bubbles = [b.strip() for b in (row.response or "").split("|||") if b.strip()]
         for i, bubble in enumerate(bubbles):
-            m = {"author": "arnie", "text": bubble, "created_at": ts_iso, "platform": plat}
+            m = {"author": "arnie", "text": bubble, "created_at": ts_iso,
+                 "platform": plat, "log_id": row.id}
             if cards and i == 0:
                 m["cards"] = cards
             messages.append(m)
         # Card-only turn (no text bubbles) — still surface the cards.
         if cards and not bubbles:
-            messages.append({"author": "arnie", "text": "", "created_at": ts_iso, "cards": cards, "platform": plat})
+            messages.append({"author": "arnie", "text": "", "created_at": ts_iso,
+                             "cards": cards, "platform": plat, "log_id": row.id})
 
     return {"v": WIRE_VERSION, "messages": messages}
 
@@ -385,6 +396,8 @@ async def _stream_turn(ws: WebSocket, identity: str, message: str,
     done["bubbles"] = turn.response.bubbles[turn.streamed_bubble_count:]
     done["tools"] = _turn_tools(turn)
     done["type"] = "done"
+    # Same stable turn identity as the REST path — see payload["log_id"] there.
+    done["log_id"] = getattr(turn, "log_id", None)
     done["meta"] = TurnMeta(
         in_onboarding=turn.in_onboarding,
         just_completed=turn.just_completed,

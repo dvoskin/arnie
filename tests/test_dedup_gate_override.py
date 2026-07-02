@@ -285,22 +285,30 @@ def _ex_row(id_, name="Barbell Curl", sets=1, reps="10", weight=27.0, ago_s=20):
 
 
 @pytest.mark.asyncio
-async def test_exercise_another_set_with_add_intent_logs(monkeypatch):
-    """An identical set inside the 120s window WITH 'another set' logs through
-    (gate override) instead of being treated as a rapid re-fire."""
+async def test_exercise_another_set_with_add_intent_appends(monkeypatch):
+    """An identical set inside the 120s window WITH 'another set' is honored —
+    since 2026-07-02 by APPENDING to the movement's session row (one entry that
+    reads 2×'10,10'), not by inserting a parallel one-set row."""
     user = _user()
     prior = _ex_row(151, "Barbell Curl", 1, "10", 27.0, ago_s=20)
+    prior.weights = None
+    prior.cardio_type = None
     today_log = SimpleNamespace(id=1, exercise_entries=[prior])
     wc = {"n": 0}
+    upd = {"n": 0, "changes": None}
 
     async def _capture(db, daily_log_id, **kw):
         wc["n"] += 1
-        today_log.exercise_entries.append(SimpleNamespace(
-            id=500 + wc["n"], exercise_name=kw.get("exercise_name"),
-            sets=kw.get("sets"), reps=kw.get("reps"), weight=kw.get("weight"),
-            timestamp=datetime.utcnow()))
+
+    async def _capture_update(db, entry_id, user_id, **changes):
+        upd["n"] += 1
+        upd["changes"] = changes
+        return SimpleNamespace(id=entry_id, exercise_name="Barbell Curl",
+                               sets=changes.get("sets"), reps=changes.get("reps"),
+                               weight=27.0, weights=changes.get("weights"))
 
     monkeypatch.setattr(TE, "add_exercise_entry", _capture)
+    monkeypatch.setattr(TE, "q_update_exercise_entry", _capture_update)
 
     result = await TE._dispatch(
         "log_exercise",
@@ -309,8 +317,11 @@ async def test_exercise_another_set_with_add_intent_logs(monkeypatch):
         user, today_log, db=SimpleNamespace(refresh=_refresh), source_type="ios",
         user_message="another set",
     )
-    assert wc["n"] == 1, "add-intent identical set must write through"
-    assert result.startswith("Logged "), result
+    assert wc["n"] == 0, "add-intent identical set must grow the row, not insert"
+    assert upd["n"] == 1
+    assert upd["changes"]["reps"] == "10,10"
+    assert upd["changes"]["sets"] == 2
+    assert result.startswith("Appended the set"), result
 
 
 @pytest.mark.asyncio

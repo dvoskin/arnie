@@ -175,7 +175,8 @@ def fmt_profile(user: User, prefs: Optional[UserPreferences]) -> str:
     # The free-form onboarding brain dump — the user's own words about themselves.
     # High-signal early context; excerpt it so it informs coaching without bloating
     # every prompt (the full text lives on the row + gets distilled into attributes).
-    if (user.brain_dump or "").strip():
+    # getattr: test fixtures (and any pre-migration row object) may lack the column.
+    if (getattr(user, "brain_dump", None) or "").strip():
         _dump = user.brain_dump.strip()
         if len(_dump) > 700:
             _dump = _dump[:700].rstrip() + "…"

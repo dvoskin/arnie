@@ -260,3 +260,157 @@ def format_rollup_result(entry, now_utc: datetime) -> str:
         f"Updated the running set on #{entry.id}: {entry.exercise_name} "
         f"now {entry.sets}x{entry.reps}{weight_part} — one entry grew, no new row."
     )
+
+
+def _weights_tokens(weights) -> list:
+    """Split a per-set weights CSV into float tokens. '93,102.1' -> [93.0, 102.1].
+    None/'' or any unparseable token -> []."""
+    if not weights:
+        return []
+    out = []
+    for t in str(weights).split(","):
+        t = t.strip()
+        if not t:
+            continue
+        try:
+            out.append(float(t))
+        except ValueError:
+            return []
+    return out
+
+
+def _fmt_kg(w: float) -> str:
+    """Compact kg for the weights CSV — 2dp with trailing zeros trimmed."""
+    s = f"{w:.2f}".rstrip("0").rstrip(".")
+    return s or "0"
+
+
+def find_incremental_append(
+    *,
+    exercise_name: Optional[str],
+    sets: Optional[int],
+    reps: Optional[str],
+    weight_kg: Optional[float],
+    existing_entries: Iterable,
+    now_utc: datetime,
+    window_sec: int = 5400,
+    refire_guard_sec: int = 120,
+    allow_identical: bool = False,
+):
+    """INCREMENTAL set report → grow the movement's session row, don't insert a
+    parallel one-set row.
+
+    The live failure mode behind Danny's fragmentation (83% of strength entries
+    one-row-per-set): reporting sets one message at a time ("205x15 first set" →
+    "fell to 10" → "another set of 15") writes N overlapping rows because the
+    rollup upsert only catches a FULL-list re-state. This is its strict
+    complement: a pure single-set report of a movement already in this session
+    APPENDS to that row (reps CSV +1 token, weights CSV when loads differ —
+    pyramids/drop sets are one movement, that's what the column is for).
+
+    Phantom protection: a single set whose (weight, reps) pair was ALREADY
+    performed this session is refire-shaped (the model re-emitting an earlier
+    set on a topic pivot / double-fire). Without `allow_identical` (the turn
+    gate — "another set", "one more"):
+      • movement touched within `refire_guard_sec` → ("refire", row): report
+        already-on-the-board (kills the double-fire double-append);
+      • older → None: fall through to the legacy dedup/superseded/insert paths.
+
+    Returns one of:
+      ("append", entry, new_sets, new_reps, new_weights_csv_or_None)
+      ("refire", entry)
+      None — nothing appendable; caller runs the legacy paths unchanged.
+    """
+    if not exercise_name:
+        return None
+    in_tokens = _reps_tokens(reps)
+    eff_sets = int(sets) if sets is not None else (len(in_tokens) or None)
+    if eff_sets != 1 or len(in_tokens) != 1:
+        return None                       # only pure single-set reports append
+    if weight_kg is None or weight_kg <= 0:
+        return None                       # unloaded/bodyweight: legacy paths
+    key_name = normalize_exercise_name(exercise_name)
+    cutoff = now_utc - timedelta(seconds=window_sec)
+
+    session_rows = []
+    for e in existing_entries:
+        ts = getattr(e, "timestamp", None)
+        if ts is None or ts < cutoff:
+            continue
+        if getattr(e, "cardio_type", None):
+            continue
+        if normalize_exercise_name(getattr(e, "exercise_name", "")) != key_name:
+            continue
+        session_rows.append((ts, e))
+    if not session_rows:
+        return None
+    session_rows.sort(key=lambda p: p[0], reverse=True)
+    newest_ts, newest = session_rows[0]
+    in_rep = in_tokens[0]
+
+    if not allow_identical:
+        for _ts, e in session_rows:
+            e_tokens = _reps_tokens(getattr(e, "reps", ""))
+            e_wtokens = _weights_tokens(getattr(e, "weights", None))
+            e_weight = getattr(e, "weight", None)
+            for i, tok in enumerate(e_tokens):
+                w_i = e_wtokens[i] if i < len(e_wtokens) else e_weight
+                if tok == in_rep and _close(w_i, weight_kg):
+                    if (now_utc - newest_ts).total_seconds() <= refire_guard_sec:
+                        # Cite the row that actually holds the re-fired pair —
+                        # the truthful "already on the board" reference.
+                        return ("refire", e)
+                    return None           # ambiguous beyond the guard → legacy
+
+    e_tokens = _reps_tokens(getattr(newest, "reps", ""))
+    if not e_tokens:
+        return None                       # opaque row — can't align a CSV
+    e_sets = getattr(newest, "sets", None)
+    try:
+        e_sets = int(e_sets) if e_sets is not None else len(e_tokens)
+    except (TypeError, ValueError):
+        e_sets = len(e_tokens)
+    if e_sets != len(e_tokens):
+        # Constant-rep block stored compact (sets=3, reps='12') — expand so the
+        # appended CSV stays aligned per set.
+        if len(e_tokens) == 1 and e_sets and e_sets > 1:
+            e_tokens = e_tokens * e_sets
+        else:
+            return None
+    e_weight = getattr(newest, "weight", None)
+    e_wtokens = _weights_tokens(getattr(newest, "weights", None))
+
+    new_sets = len(e_tokens) + 1
+    new_reps = ",".join(e_tokens + [in_rep])
+    new_weights = None
+    if e_wtokens:
+        if len(e_wtokens) < len(e_tokens):
+            base = e_weight if e_weight is not None else e_wtokens[-1]
+            e_wtokens = e_wtokens + [base] * (len(e_tokens) - len(e_wtokens))
+        new_weights = ",".join(_fmt_kg(w) for w in (e_wtokens + [weight_kg]))
+    elif e_weight is not None and not _close(e_weight, weight_kg):
+        new_weights = ",".join(
+            _fmt_kg(w) for w in ([e_weight] * len(e_tokens) + [weight_kg]))
+    # else: same load throughout → scalar weight stands, no CSV needed.
+    return ("append", newest, new_sets, new_reps, new_weights)
+
+
+def format_append_result(entry, now_utc: datetime) -> str:
+    """Tool-result string when an incremental set grew the session row.
+
+    Non-error prefix (same contract as format_rollup_result) + the row's full
+    running state so the model confirms from DB truth, not its own memory."""
+    wtokens = _weights_tokens(getattr(entry, "weights", None))
+    if wtokens:
+        load = "/".join(f"{w * 2.20462:.0f}" for w in wtokens) + "lb"
+    elif getattr(entry, "weight", None):
+        load = f"{entry.weight * 2.20462:.0f}lb"
+    else:
+        load = ""
+    load_part = f" @ {load}" if load else ""
+    return (
+        f"Appended the set to #{entry.id}: {entry.exercise_name} "
+        f"now {entry.sets}x{entry.reps}{load_part} — one entry grew by a set, no "
+        f"new row. Confirm JUST the set you logged (this set's weight × reps), "
+        f"not the whole list."
+    )

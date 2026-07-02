@@ -62,23 +62,36 @@ async def test_exact_replay_within_window_skips_write(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_different_weight_writes_through(monkeypatch):
+async def test_different_weight_appends_to_session_row(monkeypatch):
     """Second set of the same exercise at a different weight is a real drop
-    set, not a dup. Must write through."""
+    set, not a dup. It must be RECORDED — since 2026-07-02 that means growing
+    the movement's session row (reps + per-set weights CSV), not a parallel
+    one-set row."""
     user = SimpleNamespace(id=1, timezone="UTC")
     prior = _prior_entry(id_=157, name="Straight Bar Cable Curl", sets=1,
                          reps="13", weight=63.50, seconds_ago=10)
+    prior.weights = None
+    prior.cardio_type = None
     today_log = SimpleNamespace(
         id=1,
         exercise_entries=[prior],
     )
 
     write_count = {"n": 0}
+    updates = {"n": 0, "changes": None}
 
     async def _capture(*a, **kw):
         write_count["n"] += 1
 
+    async def _capture_update(db, entry_id, user_id, **changes):
+        updates["n"] += 1
+        updates["changes"] = changes
+        return SimpleNamespace(id=entry_id, exercise_name="Straight Bar Cable Curl",
+                               sets=changes.get("sets"), reps=changes.get("reps"),
+                               weight=63.50, weights=changes.get("weights"))
+
     monkeypatch.setattr(TE, "add_exercise_entry", _capture)
+    monkeypatch.setattr(TE, "q_update_exercise_entry", _capture_update)
 
     async def _refresh(*a, **kw):
         pass
@@ -91,8 +104,11 @@ async def test_different_weight_writes_through(monkeypatch):
          "weight": 130, "weight_unit": "lbs"},
         user, today_log, db=db, source_type="text",
     )
-    assert result.startswith("Logged "), result
-    assert write_count["n"] == 1
+    assert result.startswith("Appended the set"), result
+    assert write_count["n"] == 0, "drop set must grow the row, not insert"
+    assert updates["n"] == 1
+    assert updates["changes"]["reps"] == "13,10"
+    assert updates["changes"]["weights"] is not None  # per-set loads recorded
 
 
 @pytest.mark.asyncio

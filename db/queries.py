@@ -918,6 +918,9 @@ async def log_conversation(db: AsyncSession, user_id: int, raw_message: str,
         invalidate_briefing(user_id)
     except Exception:
         pass
+    # The row is the turn's stable identity — native clients dedup history by
+    # its id, so callers surface it on the wire (turn.log_id → payload/history).
+    return entry
 
 
 async def clear_today_conversations(db: AsyncSession, user_id: int, tz: str = "UTC") -> None:
@@ -1573,8 +1576,11 @@ async def update_exercise_entry(
     old_log_id = entry.daily_log_id
     new_log_id = changes.pop("new_daily_log_id", None)  # day move (same primitive as edit)
 
+    # `timestamp` marks last-logged-at — the incremental-append path bumps it so
+    # a growing session row reflects its latest set (and the refire guard works).
     for field in ("exercise_name", "sets", "reps", "weight",
-                  "duration_minutes", "cardio_type", "rir", "weights", "notes"):
+                  "duration_minutes", "cardio_type", "rir", "weights", "notes",
+                  "timestamp"):
         if field in changes and changes[field] is not None:
             setattr(entry, field, changes[field])
 

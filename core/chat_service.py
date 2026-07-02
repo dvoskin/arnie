@@ -188,6 +188,7 @@ async def run_chat_turn(
                         response=_replay, tool_calls=[], just_completed=False,
                         in_onboarding=not bool(getattr(user, "onboarding_completed", False)),
                         onboarding_field_saved=None, today_log=None, user=user,
+                        log_id=getattr(_hit, "id", None),
                     )
         except Exception as _e:
             logger.debug(f"idempotency check skipped for user {getattr(user,'id','?')}: {_e}")
@@ -224,7 +225,7 @@ async def run_chat_turn(
                     "All data wiped. Fresh start.",
                     "Send any message to begin setup again.",
                 ]
-        await log_conversation(
+        _reset_row = await log_conversation(
             db, user.id, text, "|||".join(bubbles),
             source_type=_source, platform=platform,
         )
@@ -233,6 +234,7 @@ async def run_chat_turn(
             tool_calls=[], just_completed=False,
             in_onboarding=not bool(getattr(user, "onboarding_completed", False)),
             onboarding_field_saved=None, today_log=None, user=user,
+            log_id=getattr(_reset_row, "id", None),
         )
 
     # ── Onboarding state ──────────────────────────────────────────────────────
@@ -340,7 +342,7 @@ async def run_chat_turn(
     # Store the reply as the |||-joined bubbles (same on-disk shape every surface
     # uses) and stash turn-health flags on parsed_intent for the admin audit view.
     log_text = "|||".join(turn.response.bubbles)
-    await log_conversation(
+    _conv_row = await log_conversation(
         db, user.id, text, log_text, source_type=_source,
         parsed_intent=(",".join(turn.health_flags) or None),
         skills_fired=turn.skills_fired,
@@ -353,6 +355,9 @@ async def run_chat_turn(
         # row instead of re-running (deterministic dedup).
         idempotency_key=idempotency_key,
     )
+    # The row id is this turn's stable identity — clients stamp it on the live
+    # bubbles so a later history reload recognizes them by id, not by text.
+    turn.log_id = getattr(_conv_row, "id", None)
 
     # ── Background profile synthesis + reflection ─────────────────────────────
     if schedule_background and not turn.in_onboarding:

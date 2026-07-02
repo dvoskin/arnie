@@ -174,3 +174,39 @@ def test_norm_key_handles_edge_cases():
     assert _norm_key("  ") == ""
     assert _norm_key("Bench-Press") == "bench press"
     assert _norm_key("BENCH  PRESS") == "bench press"
+
+
+# ── prod history/PR split regression pins (Danny 2026-07-02) ─────────────────
+
+def test_split_variants_collapse_to_one_canonical():
+    """Regression pins for the prod splits that fragmented history/PRs."""
+    assert canonicalize("Dip")[0] == canonicalize("Dips")[0] == "Dip"
+    assert canonicalize("Face Pull")[0] == canonicalize("Face Pulls")[0] == "Face Pull"
+    assert canonicalize("Upright Row")[0] == canonicalize("Upright Rows")[0] == "Upright Row"
+    assert canonicalize("Cable Shrug")[0] == canonicalize("Cable Shrugs")[0] == "Shrug"
+
+
+def test_straight_arm_pulldown_spaced_variants_resolve():
+    for v in ["Straight-Arm Pulldown", "Straight Arm Pulldown",
+              "straight arm pull down", "stiff arm pull down",
+              "straight arm pulldowns"]:
+        assert canonicalize(v)[0] == "Straight-Arm Pulldown", v
+
+
+def test_machine_shoulder_press_is_distinct_entry_not_overhead_press():
+    """All machine phrasings collapse to ONE machine canonical — and it is NOT
+    merged into barbell Overhead Press (different movement, different load
+    curve; merging would corrupt PRs)."""
+    for v in ["Shoulder Press Machine", "shoulder press machine",
+              "Machine Shoulder Press", "seated shoulder press machine",
+              "plate loaded shoulder press", "smith machine shoulder press"]:
+        canon, e = canonicalize(v)
+        assert canon == "Machine Shoulder Press", v
+        assert e is not None and e["equipment"] == "machine"
+    assert canonicalize("Machine Shoulder Press")[0] != canonicalize("Overhead Press")[0]
+
+
+def test_barbell_shoulder_press_still_maps_to_overhead_press():
+    """Guard: the bare 'shoulder press' alias must stay on Overhead Press."""
+    assert canonicalize("shoulder press")[0] == "Overhead Press"
+    assert canonicalize("Shoulder Press")[0] == "Overhead Press"
