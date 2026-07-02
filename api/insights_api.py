@@ -71,6 +71,54 @@ async def get_briefing_for_ios(
     return {"v": 1, **briefing}
 
 
+@router.get("/exercise_prs")
+async def get_exercise_prs_for_ios(
+    identity: str = Depends(current_identity),
+) -> dict:
+    """Per-movement strength PRs for the Coach page PR tracker.
+
+    Derived (not stored) from the user's logged sets: the strongest set per lift
+    all-time, ranked by estimated 1RM (Epley), each placed against bodyweight-
+    scaled strength standards (novice / intermediate / advanced) where one exists.
+    Aggregates across linked identities so a user's Telegram + iOS history counts
+    as one training log. Cardio and unloaded movements are excluded."""
+    from sqlalchemy import select as _sel
+
+    from core.strength_prs import compute_strength_prs
+    from db.models import User as _U
+    from db.queries import get_recent_logs
+
+    async with AsyncSessionLocal() as db:
+        user = await resolve_user(db, identity)
+        prefs = user.preferences
+
+        # One training log across all linked identities (canonical + children).
+        user_ids = [user.id]
+        linked = (await db.execute(
+            _sel(_U).where(_U.linked_to_user_id == user.id)
+        )).scalars().all()
+        user_ids.extend(u.id for u in linked)
+
+        logs = []
+        for uid in user_ids:
+            logs.extend(await get_recent_logs(db, uid, days=3650))  # ~all history
+
+        bodyweight_kg = getattr(prefs, "current_weight_kg", None) if prefs else None
+        sex = getattr(prefs, "sex", None) if prefs else None
+        level = getattr(prefs, "training_experience", None) if prefs else None
+
+        prs = compute_strength_prs(logs, bodyweight_kg=bodyweight_kg, sex=sex)
+
+    return {
+        "v": 1,
+        "window": "all",
+        "bodyweight_lbs": round(bodyweight_kg * 2.20462, 1) if bodyweight_kg else None,
+        "sex": sex,
+        "level": level,
+        "prs": prs,
+    }
+
+
 @router.get("/memory")
 async def get_memory_for_ios(
     identity: str = Depends(current_identity),
