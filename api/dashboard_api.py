@@ -91,7 +91,18 @@ async def get_day(
         "water_entries": day.get("water_entries", []),
         "weight": stats.get("weight"),
         "health": stats.get("health"),
+        # Day nutrition-quality score (0-100) + signed drivers — the Coach
+        # Health Score card. Null under ~300 kcal logged (too little signal).
+        "health_score": _health_score(day.get("food_entries", [])),
     }
+
+
+def _health_score(food_entries: list):
+    from core.health_score import compute_health_score
+    try:
+        return compute_health_score(food_entries)
+    except Exception:
+        return None
 
 
 @router.get("/profile")
@@ -174,6 +185,17 @@ async def get_week(identity: str = Depends(current_identity)):
         user = await resolve_user(db, identity)
         stats = await week_data(db, user)
         today = _user_today(user.timezone or "UTC")
+        # 14-day wearable burn (active + resting) for the Burned-vs-Consumed
+        # card. Keyed by date; days without a snapshot simply have no burn bar.
+        from db.queries import get_recent_health_snapshots
+        _snaps = await get_recent_health_snapshots(db, user.id, days=14)
+        _burn_by_date = {}
+        for _s in _snaps:
+            _active = getattr(_s, "active_calories", None)
+            _resting = getattr(_s, "resting_calories", None)
+            if _active is None and _resting is None:
+                continue
+            _burn_by_date[str(_s.date)] = round((_active or 0) + (_resting or 0))
         # 30-day per-day macro history for the Coach macro-trends card. Fetched
         # here (db in scope) and kept INDEPENDENT of the 7-day `days` window and
         # the adaptive-TDEE input, so adding it can't shift either.
@@ -233,6 +255,20 @@ async def get_week(identity: str = Depends(current_identity)):
             "weighed": d.isoformat() in weigh_dates,
         })
 
+    # Burned vs consumed, last 14 days — consumed from the food log, burned from
+    # the wearable (active + resting). A day missing either simply carries a 0 /
+    # null; the client renders what's real, never an invented bar.
+    energy_days = []
+    for i in range(13, -1, -1):
+        d = today - timedelta(days=i)
+        h = by_date.get(d.isoformat()) or {}
+        energy_days.append({
+            "date": d.isoformat(),
+            "weekday": d.strftime("%a"),
+            "consumed": h.get("calories", 0),
+            "burned": _burn_by_date.get(d.isoformat()),
+        })
+
     return {
         "v": WIRE_VERSION,
         "targets": {
@@ -242,6 +278,7 @@ async def get_week(identity: str = Depends(current_identity)):
             "fats": targets.get("fats"),
         },
         "days": days,
+        "energy_days": energy_days,
         "averages": {
             "calories": avg("calories"), "protein": avg("protein"),
             "carbs": avg("carbs"), "fats": avg("fats"),

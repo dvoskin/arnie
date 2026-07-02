@@ -115,3 +115,19 @@ def test_standards_classify_boundaries():
 
 def test_empty_logs():
     assert compute_strength_prs([], bodyweight_kg=95.0, sex="male") == []
+
+
+def test_history_series_per_lift():
+    # Two sessions of the same lift → a chronological per-day best-e1RM series
+    # (the iOS trendline). Same-day sets collapse to that day's best.
+    d1, d2 = date.today() - timedelta(days=7), date.today()
+    logs = [
+        _log(d1, [_entry("bench", weight=100, reps="5"),
+                  _entry("bench", weight=100, reps="3")]),
+        _log(d2, [_entry("bench", weight=105, reps="5")]),
+    ]
+    prs = compute_strength_prs(logs, bodyweight_kg=90.0, sex="male")
+    assert prs, "bench must make the board"
+    h = prs[0]["history"]
+    assert [p["date"] for p in h] == [str(d1), str(d2)]
+    assert h[1]["e1rm_lbs"] > h[0]["e1rm_lbs"]   # progressed

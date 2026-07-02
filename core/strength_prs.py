@@ -147,6 +147,8 @@ def compute_strength_prs(
     best: dict[str, dict] = {}
     # canonical -> total working sets logged (weight > 0) across all logs = volume
     sets_count: dict[str, int] = {}
+    # canonical -> {date -> best e1RM (kg) that day} = per-session trend series
+    day_best: dict[str, dict] = {}
 
     for log in logs:
         log_date = getattr(log, "date", None)
@@ -164,6 +166,10 @@ def compute_strength_prs(
                 if reps < _EPLEY_MIN_REPS or reps > _EPLEY_MAX_REPS:
                     continue
                 e1rm = _epley_1rm(weight_kg, reps)
+                if log_date:
+                    h = day_best.setdefault(canonical, {})
+                    if e1rm > h.get(log_date, 0.0):
+                        h[log_date] = e1rm
                 cur = best.get(canonical)
                 if cur is None or e1rm > cur["e1rm_kg"]:
                     best[canonical] = {
@@ -187,6 +193,9 @@ def compute_strength_prs(
     for name, rec in ranked:
         d = rec["date"]
         is_recent = bool(d and d >= recent_cutoff)
+        # Strength trend: best e1RM per training day, chronological — powers the
+        # per-lift trendline on the iOS PR card. Capped to the last 30 sessions.
+        series = sorted(day_best.get(name, {}).items())[-30:]
         out.append({
             "name": name,
             "primary": rec["primary"],
@@ -200,5 +209,9 @@ def compute_strength_prs(
             "standard": strength_standards.classify(
                 name, rec["e1rm_kg"], bodyweight_kg, sex
             ),
+            "history": [
+                {"date": str(hd), "e1rm_lbs": round(hk * _KG_TO_LB, 1)}
+                for hd, hk in series
+            ],
         })
     return out
