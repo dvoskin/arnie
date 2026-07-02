@@ -78,6 +78,7 @@ async def get_recovery(identity: str = Depends(current_identity)):
         logs = await get_recent_logs(db, user.id, days=10)
         snaps = await get_recent_health_snapshots(db, user.id, days=4)
         profile = {"age": user.age}
+        tz = user.timezone or "UTC"
 
     entries: list[dict] = []
     for log in logs:
@@ -85,5 +86,6 @@ async def get_recovery(identity: str = Depends(current_identity)):
             entries.append(_entry_to_dict(e))
 
     snapshot = _latest_snapshot(snaps)
-    # Entry timestamps are naive UTC; decay against UTC now.
-    return compute_recovery(entries, snapshot, profile, datetime.utcnow())
+    # Entry timestamps are naive UTC; decay against UTC now. `tz` is used only for
+    # the calendar-day labels (today / yesterday / Nd ago).
+    return compute_recovery(entries, snapshot, profile, datetime.utcnow(), tz=tz)

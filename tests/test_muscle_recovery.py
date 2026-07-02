@@ -31,22 +31,38 @@ def _squat(hours_ago: float):
     }
 
 
-def test_fresh_heavy_squat_just_hit():
+def test_normal_squat_is_not_hammered():
+    # Volume-aware: a SINGLE normal squat session (4 sets) must NOT zero the quads.
+    # 0% is reserved for a high-volume beating — this reads as recovering.
     res = compute_recovery([_squat(2)], None, {"age": 33}, NOW)
     quads = _by_id(res)["quads"]
-    assert quads["status"] == "just_hit"
-    assert quads["recovery_pct"] < 40
+    assert quads["status"] in ("recovering", "strained")
+    assert quads["recovery_pct"] >= 45
     # secondary movers picked up too
     assert _by_id(res)["glutes_max"]["fatigue"] > 0
     # the movement is attributed back to the muscle
     assert any(m["name"] == "Back Squat" for m in quads["movements"])
 
 
-def test_squat_recovering_after_two_days():
+def test_high_volume_leg_day_drives_quads_low():
+    # A brutal, high-volume leg day (many hard sets) is what earns ~0% ("very hard").
+    heavy = [{"name": "Back Squat", "sets": 6, "reps": "8", "weight": 140, "rir": 0,
+              "occurred_at": NOW - timedelta(hours=2)},
+             {"name": "Leg Press", "sets": 5, "reps": "12", "weight": 200, "rir": 0,
+              "occurred_at": NOW - timedelta(hours=2)},
+             {"name": "Hack Squat", "sets": 5, "reps": "10", "weight": 120, "rir": 0,
+              "occurred_at": NOW - timedelta(hours=2)}]
+    res = compute_recovery(heavy, None, {"age": 33}, NOW)
+    quads = _by_id(res)["quads"]
+    assert quads["status"] == "just_hit"
+    assert quads["recovery_pct"] <= 20
+
+
+def test_squat_mostly_recovered_after_two_days():
     res = compute_recovery([_squat(48)], None, {"age": 33}, NOW)
     quads = _by_id(res)["quads"]
-    assert quads["status"] in ("recovering", "strained")
-    assert "ago" in quads["last_trained_label"]
+    assert quads["recovery_pct"] >= 70
+    assert quads["last_trained_label"] == "2d ago"
 
 
 def test_squat_ready_after_four_days():
@@ -102,6 +118,24 @@ def test_one_light_set_does_not_lock_out_a_muscle():
     lats = _by_id(compute_recovery([one_set], None, {"age": 33}, NOW))["lats"]
     assert lats["status"] == "ready"
     assert lats["recovery_pct"] >= 75
+
+
+def test_calendar_label_yesterday_not_today():
+    # A lift logged YESTERDAY EVENING (local) must read 'yesterday', never 'today',
+    # even though it's < 16h ago — the old hours-based label crossed midnight and
+    # mislabeled it. Same-day lift still reads 'today'.
+    now = datetime(2026, 6, 28, 9, 0, 0)                    # 09:00 "today"
+    y = {"name": "Barbell Row", "sets": 4, "reps": "8", "weight": 90, "rir": 1,
+         "occurred_at": datetime(2026, 6, 27, 19, 0, 0)}    # 14h ago but YESTERDAY
+    res = compute_recovery([y], None, {"age": 33}, now, tz="UTC")
+    back = max((m for m in res["muscles"] if m["fatigue"] > 0), key=lambda m: m["fatigue"])
+    assert back["last_trained_label"] == "yesterday"
+
+    t = {"name": "Barbell Row", "sets": 4, "reps": "8", "weight": 90, "rir": 1,
+         "occurred_at": datetime(2026, 6, 28, 7, 0, 0)}     # same local day
+    res2 = compute_recovery([t], None, {"age": 33}, now, tz="UTC")
+    back2 = max((m for m in res2["muscles"] if m["fatigue"] > 0), key=lambda m: m["fatigue"])
+    assert back2["last_trained_label"] == "today"
 
 
 def test_untrained_muscle_is_ready():
@@ -199,8 +233,10 @@ def test_per_set_weights_csv_parsed():
         "occurred_at": NOW - timedelta(hours=2),
     }], None, {"age": 33}, NOW)
     by = _by_id(res)
-    # Bench Press dominates mid-chest with upper/lower as secondaries
-    assert by["chest_mid"]["status"] in ("just_hit", "strained")
+    # Bench Press dominates mid-chest with upper/lower as secondaries. (A single
+    # light 3-set bench is a small stimulus — this test is about CSV parsing +
+    # synergist ordering, not the absolute status.)
+    assert by["chest_mid"]["fatigue"] > 0
     # triceps get partial credit as a synergist (less than the prime mover)
     assert 0 < by["triceps_lateral"]["fatigue"] < by["chest_mid"]["fatigue"]
 
