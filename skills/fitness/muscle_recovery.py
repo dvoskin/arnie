@@ -80,35 +80,43 @@ from skills.fitness.exercise_catalog import canonicalize
 # train together; the extra rows would be noise). Legacy single ids route to a
 # sensible default head via _PRIMARY_ALIAS, so any unedited involvement entry or
 # catalog primary still attributes somewhere.
+# tau_hours = the decay constant that sets the RECOVERY WINDOW. Tuned so a deep
+# hammering (muscle driven <10%) climbs back to ~100% over the target window,
+# while a lighter session recovers proportionally faster (volume-dependent):
+#   LARGE groups (chest, back, quads, hams, glutes) → ~72h (3 days)   → tau ~16-20
+#   SMALL groups (delts, arms, calves, traps)       → ~24-48h (1-2 d) → tau ~10-12
+#   CORE (abs, obliques)                            → ~daily          → tau ~8
+# `size_weight` = the muscle's size / role-in-performance, used by the iOS group
+# rollup to weight the recovery average (bigger movers count more).
 MUSCLES: dict[str, dict] = {
-    "chest_upper":   {"name": "Upper Chest",      "group": "major", "tau_hours": 32.0},
-    "chest_mid":     {"name": "Mid Chest",        "group": "major", "tau_hours": 34.0},
-    "chest_lower":   {"name": "Lower Chest",      "group": "major", "tau_hours": 32.0},
-    "lats":          {"name": "Lats",             "group": "major", "tau_hours": 34.0},
-    "mid_back":      {"name": "Mid Back",         "group": "major", "tau_hours": 36.0},
-    "lower_back":    {"name": "Lower Back",       "group": "major", "tau_hours": 48.0},
-    "delts_front":   {"name": "Front Delt",       "group": "major", "tau_hours": 28.0},
-    "delts_side":    {"name": "Side Delt",        "group": "major", "tau_hours": 26.0},
-    "delts_rear":    {"name": "Rear Delt",        "group": "major", "tau_hours": 24.0},
-    "quads":         {"name": "Quads",            "group": "major", "tau_hours": 40.0},
-    "hamstrings":    {"name": "Hamstrings",       "group": "major", "tau_hours": 40.0},
-    "glutes_max":    {"name": "Glute Max",        "group": "major", "tau_hours": 34.0},
-    "glutes_med":    {"name": "Glute Med",        "group": "major", "tau_hours": 30.0},
-    "biceps_long":   {"name": "Biceps (Long)",    "group": "minor", "tau_hours": 24.0},
-    "biceps_short":  {"name": "Biceps (Short)",   "group": "minor", "tau_hours": 24.0},
-    "brachialis":    {"name": "Brachialis",       "group": "minor", "tau_hours": 26.0},
-    "triceps_long":  {"name": "Triceps (Long)",   "group": "minor", "tau_hours": 26.0},
-    "triceps_lateral": {"name": "Triceps (Lateral)", "group": "minor", "tau_hours": 26.0},
-    "triceps_medial": {"name": "Triceps (Medial)", "group": "minor", "tau_hours": 24.0},
-    "forearms":      {"name": "Forearms",         "group": "minor", "tau_hours": 22.0},
-    "traps_upper":   {"name": "Upper Traps",      "group": "minor", "tau_hours": 26.0},
-    "traps_mid":     {"name": "Mid Traps",        "group": "minor", "tau_hours": 28.0},
-    "traps_lower":   {"name": "Lower Traps",      "group": "minor", "tau_hours": 28.0},
-    "abs_upper":     {"name": "Upper Abs",        "group": "minor", "tau_hours": 22.0},
-    "abs_lower":     {"name": "Lower Abs",        "group": "minor", "tau_hours": 22.0},
-    "obliques":      {"name": "Obliques",         "group": "minor", "tau_hours": 24.0},
-    "calves_gastroc": {"name": "Calf (Gastroc)",  "group": "minor", "tau_hours": 26.0},
-    "calves_soleus": {"name": "Calf (Soleus)",    "group": "minor", "tau_hours": 30.0},
+    "chest_upper":   {"name": "Upper Chest",      "group": "major", "tau_hours": 16.0, "size_weight": 0.85},
+    "chest_mid":     {"name": "Mid Chest",        "group": "major", "tau_hours": 16.0, "size_weight": 1.0},
+    "chest_lower":   {"name": "Lower Chest",      "group": "major", "tau_hours": 16.0, "size_weight": 0.8},
+    "lats":          {"name": "Lats",             "group": "major", "tau_hours": 18.0, "size_weight": 1.0},
+    "mid_back":      {"name": "Mid Back",         "group": "major", "tau_hours": 18.0, "size_weight": 0.9},
+    "lower_back":    {"name": "Lower Back",       "group": "major", "tau_hours": 20.0, "size_weight": 0.8},
+    "delts_front":   {"name": "Front Delt",       "group": "minor", "tau_hours": 12.0, "size_weight": 0.55},
+    "delts_side":    {"name": "Side Delt",        "group": "minor", "tau_hours": 12.0, "size_weight": 0.55},
+    "delts_rear":    {"name": "Rear Delt",        "group": "minor", "tau_hours": 11.0, "size_weight": 0.45},
+    "quads":         {"name": "Quads",            "group": "major", "tau_hours": 18.0, "size_weight": 1.0},
+    "hamstrings":    {"name": "Hamstrings",       "group": "major", "tau_hours": 18.0, "size_weight": 0.95},
+    "glutes_max":    {"name": "Glute Max",        "group": "major", "tau_hours": 18.0, "size_weight": 0.95},
+    "glutes_med":    {"name": "Glute Med",        "group": "major", "tau_hours": 16.0, "size_weight": 0.6},
+    "biceps_long":   {"name": "Biceps (Long)",    "group": "minor", "tau_hours": 11.0, "size_weight": 0.5},
+    "biceps_short":  {"name": "Biceps (Short)",   "group": "minor", "tau_hours": 11.0, "size_weight": 0.5},
+    "brachialis":    {"name": "Brachialis",       "group": "minor", "tau_hours": 11.0, "size_weight": 0.35},
+    "triceps_long":  {"name": "Triceps (Long)",   "group": "minor", "tau_hours": 12.0, "size_weight": 0.6},
+    "triceps_lateral": {"name": "Triceps (Lateral)", "group": "minor", "tau_hours": 12.0, "size_weight": 0.55},
+    "triceps_medial": {"name": "Triceps (Medial)", "group": "minor", "tau_hours": 11.0, "size_weight": 0.45},
+    "forearms":      {"name": "Forearms",         "group": "minor", "tau_hours": 10.0, "size_weight": 0.35},
+    "traps_upper":   {"name": "Upper Traps",      "group": "minor", "tau_hours": 12.0, "size_weight": 0.55},
+    "traps_mid":     {"name": "Mid Traps",        "group": "minor", "tau_hours": 12.0, "size_weight": 0.45},
+    "traps_lower":   {"name": "Lower Traps",      "group": "minor", "tau_hours": 12.0, "size_weight": 0.4},
+    "abs_upper":     {"name": "Upper Abs",        "group": "minor", "tau_hours": 8.0,  "size_weight": 0.45},
+    "abs_lower":     {"name": "Lower Abs",        "group": "minor", "tau_hours": 8.0,  "size_weight": 0.45},
+    "obliques":      {"name": "Obliques",         "group": "minor", "tau_hours": 9.0,  "size_weight": 0.4},
+    "calves_gastroc": {"name": "Calf (Gastroc)",  "group": "minor", "tau_hours": 11.0, "size_weight": 0.5},
+    "calves_soleus": {"name": "Calf (Soleus)",    "group": "minor", "tau_hours": 12.0, "size_weight": 0.4},
 }
 
 # Catalog primaries that aren't their own board muscle map here.
@@ -623,6 +631,7 @@ def compute_recovery(entries: list[dict],
             "id": mid,
             "name": meta["name"],
             "group": meta["group"],
+            "weight": meta.get("size_weight", 0.5),   # size/role — iOS group rollup weight
             "status": status,
             "fatigue": round(f, 3),
             "recovery_pct": int(round(100 * max(0.0, min(1.0, 1.0 - f)))),
