@@ -103,8 +103,11 @@ async def get_exercise_prs_for_ios(
         for uid in user_ids:
             logs.extend(await get_recent_logs(db, uid, days=3650))  # ~all history
 
-        bodyweight_kg = getattr(prefs, "current_weight_kg", None) if prefs else None
-        sex = getattr(prefs, "sex", None) if prefs else None
+        # bodyweight + sex live on the USER row, not `preferences` — reading them off
+        # `prefs` silently returned None, so the bodyweight-scaled tier never computed
+        # (no novice/intermediate/advanced surfaced on the card).
+        bodyweight_kg = user.current_weight_kg
+        sex = user.sex
         level = getattr(prefs, "training_experience", None) if prefs else None
 
         prs = compute_strength_prs(logs, bodyweight_kg=bodyweight_kg, sex=sex)
