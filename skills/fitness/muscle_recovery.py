@@ -266,23 +266,36 @@ CARDIO_INVOLVEMENT: dict[str, dict[str, float]] = {
 
 
 # ── Tunable constants ─────────────────────────────────────────────────────────
-VOLUME_REF = 3000.0      # kg*reps for a "solid" working session (~4x8 @ ~94kg) -> stimulus 1.0
-SESSION_CAP = 1.4        # cap a single entry's base stimulus before effort
-NOMINAL_BW_LOAD = 50.0   # kg stand-in load for bodyweight moves (push-ups, dips, pull-ups)
+# VOLUME-AWARE, SET-COUNT model. A muscle's fatigue saturates with the number of
+# hard "effective sets" it has absorbed (recency-decayed), NOT linearly with a
+# single session's volume. So one normal session leaves plenty in the tank and
+# only a genuinely high-volume beating drives a muscle toward 0% ("worked VERY
+# hard"). recovery% ≈ exp(-eff_sets / SETS_TAU):
+#     3 sets → ~68%,  6 → ~47% (normal),  10 → ~28%,  14 → ~17%,  18+ → ~10-0%.
+# One logged set counts as `effort` effective sets (RIR-weighted); a synergist
+# gets its involvement fraction of that. Accumulates across every exercise that
+# hits the muscle in the recent window.
+SETS_TAU = 8.0           # effective-sets constant — see the mapping above
+NOMINAL_BW_LOAD = 50.0   # kg stand-in load for bodyweight moves (unused by the set model; kept for API)
 LOOKBACK_HOURS = 10 * 24
 
-CARDIO_REF_STIM = 0.55   # leg/limb stimulus for a reference (40 min, Zone 3-4) cardio bout
+# Cardio contributes effective-sets too: a reference bout (40 min, Zone 3-4) lands
+# ~CARDIO_REF_SETS on its primary leg muscles, scaled by duration × HR-zone, plus
+# a small systemic share to every muscle.
+CARDIO_REF_SETS = 3.0
 CARDIO_DURATION_REF = 40.0
-SYSTEMIC_COEF = 0.13     # share of cardio load applied to EVERY muscle (full-body effect)
+SYSTEMIC_COEF = 0.10     # share of a cardio bout's sets applied to EVERY muscle (full-body effect)
 DEFAULT_MAX_HR_AGE = 30  # used when the user's age is unknown
 
-FATIGUE_CLAMP = 1.2
-# status thresholds on final fatigue F
-T_JUST_HIT = 0.78
-T_STRAINED = 0.50
-T_RECOVERING = 0.22
-RECENT_HIT_HOURS = 16    # trained this recently + non-trivial fatigue -> just_hit
-MIN_ATTRIBUTION = 0.03   # min direct residual to count as "trained this muscle"
+FATIGUE_CLAMP = 1.0
+# Status thresholds on final fatigue F (F = 1 - recovery). Aligned to the
+# volume-aware recovery% so the color reflects READINESS, not recency:
+#   just_hit  ≤ ~20% recovered (hammered),  strained ~20-45%,
+#   recovering ~45-72%,        ready ≥ ~72%.
+T_JUST_HIT = 0.80
+T_STRAINED = 0.55
+T_RECOVERING = 0.28
+MIN_ATTRIBUTION = 0.35   # min direct effective-sets to count as "trained this muscle"
 
 
 def _effort_from_rir(rir: Optional[int]) -> float:
@@ -294,6 +307,22 @@ def _effort_from_rir(rir: Optional[int]) -> float:
     if rir <= 2:
         return 0.85
     return 0.7
+
+
+def _set_count(entry) -> int:
+    """Number of sets logged for a strength entry — from `sets`, else the length
+    of the per-set `reps` CSV, else a sane default so a bare entry still counts."""
+    s = entry.get("sets")
+    try:
+        s = int(s)
+        if s > 0:
+            return s
+    except (TypeError, ValueError):
+        pass
+    reps = _parse_csv_floats(entry.get("reps"))
+    if reps:
+        return len(reps)
+    return 3
 
 
 def _parse_csv_floats(s) -> list[float]:
@@ -384,7 +413,7 @@ def _cardio_loads(entry: dict, canonical: str,
 
     zmult = _hr_zone_multiplier(entry.get("avg_hr"), age, canonical)
     dur_factor = min(duration / CARDIO_DURATION_REF, 1.5)
-    load = CARDIO_REF_STIM * dur_factor * zmult
+    load = CARDIO_REF_SETS * dur_factor * zmult   # effective-sets equivalent
 
     profile = CARDIO_INVOLVEMENT.get(canonical, _CARDIO_DEFAULT)
     targeted: dict[str, float] = {m: 0.0 for m in MUSCLES}
@@ -421,8 +450,10 @@ def _entry_muscle_stimulus(entry: dict,
         targeted, systemic = _cardio_loads(entry, canonical, age)
         return targeted, systemic, True, canonical
 
-    base = min(_strength_volume(entry) / VOLUME_REF, SESSION_CAP)
-    stim = base * _effort_from_rir(entry.get("rir"))
+    # Effective hard sets = logged sets × effort (RIR-weighted). One near-failure
+    # set ≈ 1 effective set; an easy set counts less. Distributed to each muscle
+    # by its involvement fraction (primary 1.0, synergists < 1).
+    eff = _set_count(entry) * _effort_from_rir(entry.get("rir"))
 
     involvement = INVOLVEMENT.get(canonical)
     if not involvement:
@@ -437,7 +468,7 @@ def _entry_muscle_stimulus(entry: dict,
     for muscle, coeff in involvement.items():
         muscle = _PRIMARY_ALIAS.get(muscle, muscle)
         if muscle in out:
-            out[muscle] += stim * coeff
+            out[muscle] += eff * coeff
     return out, 0.0, False, canonical
 
 
@@ -463,9 +494,10 @@ def _whole_body_factor(snapshot: Optional[dict]) -> float:
     return max(1.0, min(factor, 1.35))
 
 
-def _status_for(fatigue: float, hours_since: Optional[float]) -> str:
-    if hours_since is not None and hours_since < RECENT_HIT_HOURS and fatigue >= 0.5:
-        return "just_hit"
+def _status_for(fatigue: float, hours_since: Optional[float] = None) -> str:
+    # Color reflects readiness (recovery%), not recency — "when" is carried by the
+    # calendar label. A normal session lands in 'strained'/'recovering', never the
+    # alarmed 'just_hit' red unless the muscle was genuinely hammered.
     if fatigue >= T_JUST_HIT:
         return "just_hit"
     if fatigue >= T_STRAINED:
@@ -482,23 +514,25 @@ def _entry_time(entry: dict) -> Optional[datetime]:
     return None
 
 
-def _label_for(hours: Optional[float]) -> str:
-    if hours is None:
+def _label_from_days(days_ago: Optional[int]) -> str:
+    """When a muscle was last trained, by LOCAL CALENDAR DAY — so a session logged
+    yesterday evening reads 'yesterday', never 'today' (the old hours-based label
+    called anything <16h 'just hit', which crossed midnight and mislabeled a
+    yesterday-evening lift as today's)."""
+    if days_ago is None:
         return "—"
-    if hours < RECENT_HIT_HOURS:
-        return "just hit"
-    days = round(hours / 24.0)
-    if days <= 0:
+    if days_ago <= 0:
         return "today"
-    if days == 1:
-        return "1d ago"
-    return f"{days}d ago"
+    if days_ago == 1:
+        return "yesterday"
+    return f"{days_ago}d ago"
 
 
 def compute_recovery(entries: list[dict],
                      snapshot: Optional[dict],
                      profile: Optional[dict],
-                     now: datetime) -> dict:
+                     now: datetime,
+                     tz: str = "UTC") -> dict:
     """Build the recovery-board payload.
 
     entries:  list of dicts with keys name/exercise_name, sets, reps, weight,
@@ -507,57 +541,80 @@ def compute_recovery(entries: list[dict],
     snapshot: most recent wearable dict (recovery_score, sleep_hours, strain) or None.
     profile:  {age, ...} or None.
     now:      naive UTC datetime to decay against.
+    tz:        user's IANA timezone — used ONLY for the calendar-day labels
+               (today / yesterday / Nd ago), so a yesterday-evening lift never
+               reads "today".
+
+    Fatigue is VOLUME-AWARE: per muscle we sum the recency-decayed EFFECTIVE SETS
+    it has absorbed, then saturate once — recovery% ≈ exp(-eff_sets / SETS_TAU).
+    One normal session leaves a muscle well above 0; only a high-volume beating
+    drives it toward 0 ("worked very hard").
     """
+    import pytz
     age = (profile or {}).get("age")
     wb_factor = _whole_body_factor(snapshot)
 
-    # accumulator: residual fatigue per muscle + contributing movements
-    fatigue: dict[str, float] = {m: 0.0 for m in MUSCLES}
+    try:
+        zone = pytz.timezone(tz or "UTC")
+    except Exception:
+        zone = pytz.utc
+    now_utc = now if now.tzinfo else pytz.utc.localize(now)
+    today_local = now_utc.astimezone(zone).date()
+
+    def _days_ago(t: datetime) -> int:
+        t_utc = t if t.tzinfo else pytz.utc.localize(t)
+        return (today_local - t_utc.astimezone(zone).date()).days
+
+    # accumulator: recency-decayed EFFECTIVE SETS per muscle (the fatigue driver)
+    eff_sets: dict[str, float] = {m: 0.0 for m in MUSCLES}
     last_hit_hours: dict[str, Optional[float]] = {m: None for m in MUSCLES}
-    # movements: muscle -> {key: {name, hours, sets, is_cardio, contribution}}
+    last_hit_days: dict[str, Optional[int]] = {m: None for m in MUSCLES}
+    # movements: muscle -> {key: {name, hours, days, sets, is_cardio, contribution}}
     movements: dict[str, dict[str, dict]] = {m: {} for m in MUSCLES}
 
     for entry in entries:
         t = _entry_time(entry)
         if t is None:
             continue
-        dt_hours = (now - t).total_seconds() / 3600.0
+        dt_hours = (now_utc - (t if t.tzinfo else pytz.utc.localize(t))).total_seconds() / 3600.0
         if dt_hours < 0:
             dt_hours = 0.0
         if dt_hours > LOOKBACK_HOURS:
             continue
+        days_ago = max(0, _days_ago(t))
 
         targeted, systemic, is_cardio, disp = _entry_muscle_stimulus(entry, age)
-        sets = entry.get("sets") or (1 if is_cardio else 0)
+        set_ct = _set_count(entry) if not is_cardio else int(entry.get("sets") or 0)
 
         for muscle in MUSCLES:
+            t_es = targeted.get(muscle, 0.0)
+            if t_es <= 0 and systemic <= 0:
+                continue
             decay = math.exp(-dt_hours / MUSCLES[muscle]["tau_hours"])
-            t_stim = targeted.get(muscle, 0.0)
-            # both targeted and systemic load count toward fatigue...
-            total_residual = (t_stim + systemic) * decay * wb_factor
-            if total_residual > 0.001:
-                fatigue[muscle] += total_residual
+            # targeted (direct) + systemic (cardio full-body) both fatigue the muscle
+            eff_sets[muscle] += (t_es + systemic) * decay
 
-            # ...but only DIRECT work registers as having trained the muscle
-            # (last-hit + movement attribution). Systemic cardio load does not.
-            t_residual = t_stim * decay * wb_factor
-            if t_residual <= MIN_ATTRIBUTION:
+            # ...but only DIRECT work above a floor registers as having TRAINED the
+            # muscle (last-hit + movement attribution). Systemic cardio load doesn't.
+            if t_es <= MIN_ATTRIBUTION:
                 continue
             if last_hit_hours[muscle] is None or dt_hours < last_hit_hours[muscle]:
                 last_hit_hours[muscle] = dt_hours
+                last_hit_days[muscle] = days_ago
             agg = movements[muscle].setdefault(
-                disp, {"name": disp, "hours": dt_hours, "sets": 0,
+                disp, {"name": disp, "hours": dt_hours, "days": days_ago, "sets": 0,
                        "is_cardio": is_cardio, "contribution": 0.0})
-            agg["contribution"] += t_residual
-            agg["hours"] = min(agg["hours"], dt_hours)
-            try:
-                agg["sets"] += int(sets or 0)
-            except (TypeError, ValueError):
-                pass
+            agg["contribution"] += t_es * decay
+            if dt_hours < agg["hours"]:
+                agg["hours"] = dt_hours
+                agg["days"] = days_ago
+            agg["sets"] += int(set_ct or 0)
 
     muscles_out = []
     for mid, meta in MUSCLES.items():
-        f = min(fatigue[mid], FATIGUE_CLAMP)
+        # Saturating fatigue from accumulated effective sets (under-recovery amplifies).
+        es = eff_sets[mid] * wb_factor
+        f = min(1.0 - math.exp(-es / SETS_TAU), FATIGUE_CLAMP)
         hours = last_hit_hours[mid]
         status = _status_for(f, hours)
         movs = sorted(movements[mid].values(),
@@ -570,12 +627,12 @@ def compute_recovery(entries: list[dict],
             "fatigue": round(f, 3),
             "recovery_pct": int(round(100 * max(0.0, min(1.0, 1.0 - f)))),
             "last_trained_hours": round(hours, 1) if hours is not None else None,
-            "last_trained_label": _label_for(hours),
+            "last_trained_label": _label_from_days(last_hit_days[mid]),
             "movements": [{
                 "name": m["name"],
                 "sets": m["sets"],
                 "is_cardio": m["is_cardio"],
-                "label": _label_for(m["hours"]),
+                "label": _label_from_days(m["days"]),
                 "contribution": round(m["contribution"], 3),
             } for m in movs],
         })
