@@ -63,10 +63,24 @@ async def get_briefing_for_ios(
     hands back what matters, already interpreted. `force=true` bypasses the cache."""
     from api.app import _build_stats_for_user
     from api.insights import get_briefing
+    from db.queries import get_recent_conversations_linked
 
     async with AsyncSessionLocal() as db:
         user = await resolve_user(db, identity)
         stats = await _build_stats_for_user(db, user)
+        # The brief is otherwise blind to chat — feed it the last few turns so it
+        # respects what the client JUST told Arnie (a stated plan, a rest day, a
+        # competing commitment) instead of contradicting the live conversation.
+        convos = await get_recent_conversations_linked(db, user, limit=8)
+        stats["recent_conversation"] = [
+            {
+                "when": (c.timestamp.isoformat(timespec="minutes") if c.timestamp else ""),
+                "platform": c.platform or "",
+                "user": (c.raw_message or "")[:240],
+                "arnie": (c.response or "")[:240],
+            }
+            for c in reversed(convos)  # oldest → newest
+        ]
         briefing = await get_briefing(user.id, stats, force=force)
     return {"v": 1, **briefing}
 

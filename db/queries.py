@@ -910,6 +910,15 @@ async def log_conversation(db: AsyncSession, user_id: int, raw_message: str,
     db.add(entry)
     await db.commit()
 
+    # A new turn may carry a near-term plan the Coach brief must respect ("with
+    # family tonight"), so drop the cached brief — the next open regenerates with
+    # this turn in context. Lazy import avoids a db→api import cycle; best-effort.
+    try:
+        from api.insights import invalidate_briefing
+        invalidate_briefing(user_id)
+    except Exception:
+        pass
+
 
 async def clear_today_conversations(db: AsyncSession, user_id: int, tz: str = "UTC") -> None:
     """Delete TODAY's conversation history for a user in their local timezone —
