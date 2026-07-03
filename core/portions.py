@@ -20,13 +20,17 @@ from __future__ import annotations
 import re
 from typing import Optional
 
-# Mass/volume units → grams (volume assumes water-ish density; close enough
-# for a 2x-tolerance sanity check).
-_MASS_UNITS = {
+# True mass units → grams. These are GROUND TRUTH for a food's weight.
+_TRUE_MASS_UNITS = {
     "g": 1.0, "gram": 1.0, "grams": 1.0, "gr": 1.0,
     "kg": 1000.0, "kilo": 1000.0, "kilos": 1000.0,
     "oz": 28.35, "ounce": 28.35, "ounces": 28.35,
     "lb": 453.6, "lbs": 453.6, "pound": 453.6, "pounds": 453.6,
+}
+# Mass + volume → grams (volume assumes water-ish density; only close enough for
+# the 2x-tolerance sanity check, NOT for ground-truth calorie computation).
+_MASS_UNITS = {
+    **_TRUE_MASS_UNITS,
     "ml": 1.0, "milliliter": 1.0, "milliliters": 1.0,
     "l": 1000.0, "liter": 1000.0, "liters": 1000.0,
 }
@@ -87,6 +91,32 @@ def _lookup(table: dict, food_name: str) -> Optional[float]:
     if best:
         return best[1]
     return float(table["default"]) if "default" in table else None
+
+
+def mass_grams(quantity: str) -> Optional[float]:
+    """Grams ONLY when the quantity is an explicit mass/weight ("200g", "6 oz",
+    "1.5 lb", "150 ml") — the ground-truth case where the portion is KNOWN, not
+    estimated. Returns None for counts, cups, pieces, or vague amounts, where the
+    gram weight is itself a guess and shouldn't override the LLM's estimate.
+
+    Used to decide when to compute a food's calories FORWARD from grams × the
+    database per-100g density (killing the LLM's ~19% calorie undercount) instead
+    of backing grams out of the LLM's calories.
+    """
+    q = (quantity or "").strip().lower().replace("×", "x")
+    if not q:
+        return None
+    # A bare mass: optional count/fraction then a mass unit, nothing trailing.
+    m = re.match(r"^(\d+(?:\.\d+)?)\s*/\s*(\d+)\s*([a-z]+)$", q)      # "1/2 lb"
+    if m:
+        count, unit = float(m.group(1)) / float(m.group(2)), m.group(3)
+    else:
+        m = re.match(r"^(\d+(?:\.\d+)?)\s*([a-z]+)$", q)              # "200g", "6 oz"
+        if not m:
+            return None
+        count, unit = float(m.group(1)), m.group(2)
+    grams = _TRUE_MASS_UNITS.get(unit)
+    return count * grams if grams else None
 
 
 def expected_grams(food_name: str, quantity: str) -> Optional[float]:

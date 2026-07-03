@@ -294,6 +294,7 @@ def analyze(name, quantity, llm_cal, llm_protein, llm_carbs, llm_fat,
     _implied_grams = None
 
     src = memory_match or web_candidate or usda_candidate
+    computed_forward = False
     if src:
         per100 = src.get("per100g") or {
             "calories": src.get("cal_100"), "protein": src.get("protein_100"),
@@ -302,24 +303,6 @@ def analyze(name, quantity, llm_cal, llm_protein, llm_carbs, llm_fat,
             "sodium": src.get("sodium_100"),
         }
         cal100 = per100.get("calories")
-        if cal100 and cal100 > 0 and cal > 0:
-            # back out grams from the LLM's calories + density
-            grams = cal / cal100 * 100
-            _implied_grams = grams
-            ratio = grams / 100.0
-            if per100.get("fiber") is not None:  fiber = round(per100["fiber"] * ratio, 1)
-            if per100.get("sugar") is not None:  sugar = round(per100["sugar"] * ratio, 1)
-            if per100.get("sodium") is not None: sodium = round(per100["sodium"] * ratio, 0)
-            # Scale the micronutrient panel to the portion (same ratio). Stored in
-            # micronutrients_json so the Daily Log reveal can break it down.
-            from api.usda import MICRO_KEYS as _MICRO_KEYS
-            for _mk in _MICRO_KEYS:
-                _v = per100.get(_mk)
-                if _v is not None:
-                    micros[_mk] = round(_v * ratio, 2)
-            # refine protein if enrichment disagrees notably and LLM gave none
-            if not protein and per100.get("protein"):
-                protein = round(per100["protein"] * ratio, 1)
         fdc_id = src.get("fdc_id")
         if memory_match:
             source = "memory"
@@ -332,6 +315,56 @@ def analyze(name, quantity, llm_cal, llm_protein, llm_carbs, llm_fat,
         else:
             source = "usda"
             confidence = src.get("_match", "likely")
+
+        from api.usda import MICRO_KEYS as _MICRO_KEYS
+
+        # GROUND-TRUTH PATH — when the quantity is an explicit mass ("200g",
+        # "6 oz") AND we have a trustworthy per-100g density, the whole nutrient
+        # profile is DETERMINED (grams × density); there's nothing to estimate.
+        # Compute it forward and IGNORE the LLM's calories/macros — calibration
+        # (2026-07-03) showed the model undercounts calories ~19% even when
+        # confident, and backing grams out of that low number propagated the
+        # miss into every derived nutrient. This only fires when we actually
+        # have the grams + a solid match, so pure-estimate foods (already
+        # accurate) are untouched — no blanket multiplier, no overcorrection.
+        from core.portions import mass_grams
+        _mg = mass_grams(quantity)
+        _trustworthy = confidence in ("exact", "likely", "user-confirmed")
+        if _mg and cal100 and cal100 > 0 and _trustworthy:
+            grams = _mg
+            ratio = grams / 100.0
+            _implied_grams = grams
+            cal = round(cal100 * ratio)
+            if per100.get("protein") is not None: protein = round(per100["protein"] * ratio, 1)
+            if per100.get("carbs") is not None:   carbs = round(per100["carbs"] * ratio, 1)
+            if per100.get("fat") is not None:      fat = round(per100["fat"] * ratio, 1)
+            if per100.get("fiber") is not None:   fiber = round(per100["fiber"] * ratio, 1)
+            if per100.get("sugar") is not None:   sugar = round(per100["sugar"] * ratio, 1)
+            if per100.get("sodium") is not None:  sodium = round(per100["sodium"] * ratio, 0)
+            for _mk in _MICRO_KEYS:
+                _v = per100.get(_mk)
+                if _v is not None:
+                    micros[_mk] = round(_v * ratio, 2)
+            computed_forward = True
+        elif cal100 and cal100 > 0 and cal > 0:
+            # ESTIMATE PATH — no reliable grams (a count/cup/vague amount), so
+            # trust the LLM's calories and back the portion out of them, then
+            # derive the nutrients the model usually omits.
+            grams = cal / cal100 * 100
+            _implied_grams = grams
+            ratio = grams / 100.0
+            if per100.get("fiber") is not None:  fiber = round(per100["fiber"] * ratio, 1)
+            if per100.get("sugar") is not None:  sugar = round(per100["sugar"] * ratio, 1)
+            if per100.get("sodium") is not None: sodium = round(per100["sodium"] * ratio, 0)
+            # Scale the micronutrient panel to the portion (same ratio). Stored in
+            # micronutrients_json so the Daily Log reveal can break it down.
+            for _mk in _MICRO_KEYS:
+                _v = per100.get(_mk)
+                if _v is not None:
+                    micros[_mk] = round(_v * ratio, 2)
+            # refine protein if enrichment disagrees notably and LLM gave none
+            if not protein and per100.get("protein"):
+                protein = round(per100["protein"] * ratio, 1)
 
     # Plausibility clamp: a single logged item should never carry >5000mg sodium.
     # When it does (corn at 20,378mg — Danny 2026-06-23), the USDA lookup matched a
@@ -362,15 +395,18 @@ def analyze(name, quantity, llm_cal, llm_protein, llm_carbs, llm_fat,
     bits.append(f"satiety {satiety}, quality {quality}")
     # Portion sanity net: when the grams implied by calories/density disagree
     # wildly with the stated quantity's canonical weight, tell the model — it
-    # can re-estimate or ask. Never silently mutate the logged values.
-    try:
-        from core.portions import portion_check
-        _pc = portion_check(name, quantity, _implied_grams)
-        if _pc:
-            logger.info(f"{_pc} ({name!r})")
-            bits.append(_pc)
-    except Exception:
-        pass
+    # can re-estimate or ask. Never silently mutate the logged values. Skipped
+    # when we computed forward from a mass-stated quantity — the grams are known,
+    # not implied, so there's nothing to sanity-check.
+    if not computed_forward:
+        try:
+            from core.portions import portion_check
+            _pc = portion_check(name, quantity, _implied_grams)
+            if _pc:
+                logger.info(f"{_pc} ({name!r})")
+                bits.append(_pc)
+        except Exception:
+            pass
     note = "; ".join(bits)
     conf_note = {
         "exact": "label exact match" if source == "web_label" else "USDA exact match",
