@@ -200,6 +200,10 @@ class FoodEntry(Base):
     micronutrients_json = Column(Text)       # {"iron": 2.1, "vitamin_d": 400, ...}
     micros_estimated = Column(Boolean, default=False)  # micros came from LLM fallback, not a DB match
     from_photo = Column(Boolean, default=False)
+    # NOVA-style processing class set by the model at log time (whole |
+    # processed | ultra_processed). The health score prefers this over its
+    # food-name keyword proxy. Nullable — older rows fall back to keywords.
+    processing_level = Column(String)
 
     daily_log = relationship("DailyLog", back_populates="food_entries")
 

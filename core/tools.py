@@ -42,6 +42,7 @@ _NUTRITION_TOOLS = [
                 "alcohol_units": {"type": "number", "description": "Optional. Standard alcohol units (1 unit ≈ 1 beer / 1 glass wine / 1 shot)."},
                 "from_photo": {"type": "boolean", "description": "True when logging from a food photo — sets confidence ≤0.75 and estimated=true automatically."},
                 "is_packaged": {"type": "boolean", "description": "True when this is a branded packaged product (PACKAGED: line from a photo, OR a clearly branded text mention like 'Quest bar', 'Liquid IV', 'Elmhurst shake', 'Oikos yogurt'). Routes enrichment through web search for label-accurate macros. Leave false for generic foods (chicken breast, white rice, eggs)."},
+                "processing_level": {"type": "string", "enum": ["whole", "processed", "ultra_processed"], "description": "NOVA-style processing class. 'whole' = unprocessed/minimally processed (meat, eggs, fruit, veg, rice, plain dairy, scratch-cooked meals). 'processed' = processed staples (bread, cheese, deli meat, protein bars/powder, canned goods). 'ultra_processed' = formulated industrial products (soda, candy, chips, fast food, packaged desserts, instant noodles). Classify by how the food is made, not how healthy it sounds. Always set it."},
             },
             "required": ["food_name", "quantity", "calories", "protein", "carbs", "fats", "confidence"],
         },

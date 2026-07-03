@@ -105,6 +105,9 @@ def _log_to_day(log) -> dict | None:
                 "micros_estimated": bool(getattr(e, "micros_estimated", False)),
                 "estimated": bool(e.estimated_flag),
                 "from_photo": bool(getattr(e, "from_photo", False)),
+                # NOVA class from the model at log time — the health score
+                # prefers this over its food-name keyword fallback.
+                "processing_level": getattr(e, "processing_level", None),
                 # Prefer EATEN-at (meal_time) over logged-at so a back-dated or
                 # time-stamped meal lands at the right spot on the timeline. Old
                 # entries set meal_time≈timestamp, so this is backward compatible.

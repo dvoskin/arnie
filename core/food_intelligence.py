@@ -291,6 +291,7 @@ def analyze(name, quantity, llm_cal, llm_protein, llm_carbs, llm_fat,
     source = "estimate"
     per100 = {}
     micros: dict = {}
+    _implied_grams = None
 
     src = memory_match or web_candidate or usda_candidate
     if src:
@@ -304,6 +305,7 @@ def analyze(name, quantity, llm_cal, llm_protein, llm_carbs, llm_fat,
         if cal100 and cal100 > 0 and cal > 0:
             # back out grams from the LLM's calories + density
             grams = cal / cal100 * 100
+            _implied_grams = grams
             ratio = grams / 100.0
             if per100.get("fiber") is not None:  fiber = round(per100["fiber"] * ratio, 1)
             if per100.get("sugar") is not None:  sugar = round(per100["sugar"] * ratio, 1)
@@ -358,6 +360,17 @@ def analyze(name, quantity, llm_cal, llm_protein, llm_carbs, llm_fat,
     if sodium is not None and sodium >= 600:
         bits.append(f"~{sodium:.0f}mg sodium (high)")
     bits.append(f"satiety {satiety}, quality {quality}")
+    # Portion sanity net: when the grams implied by calories/density disagree
+    # wildly with the stated quantity's canonical weight, tell the model — it
+    # can re-estimate or ask. Never silently mutate the logged values.
+    try:
+        from core.portions import portion_check
+        _pc = portion_check(name, quantity, _implied_grams)
+        if _pc:
+            logger.info(f"{_pc} ({name!r})")
+            bits.append(_pc)
+    except Exception:
+        pass
     note = "; ".join(bits)
     conf_note = {
         "exact": "label exact match" if source == "web_label" else "USDA exact match",

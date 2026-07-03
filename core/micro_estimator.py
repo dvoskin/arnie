@@ -20,6 +20,13 @@ logger = logging.getLogger(__name__)
 _MODEL = "claude-haiku-4-5-20251001"
 _KEYS = list(_DAILY_VALUES.keys())   # the vitamins + minerals we estimate
 
+# Macro-adjacent nutrients the health score needs but gap foods never get from
+# a database match (they live in dedicated food_entries columns, not the micro
+# panel). Estimated in the SAME Haiku call; caller pops them out of the result.
+# Caps are per-single-food plausibility guards, mirroring the sodium clamp in
+# food_intelligence (5000 mg) — implausible values are dropped, not stored.
+_EXTRA_KEYS = {"fiber": ("g", 60.0), "sugar": ("g", 250.0), "sodium": ("mg", 5000.0)}
+
 _SYSTEM = (
     "You are a precise nutrition database. From your knowledge of a food's typical "
     "composition (ingredients, fortification), estimate its vitamin and mineral "
@@ -28,7 +35,9 @@ _SYSTEM = (
 
 
 def _key_list() -> str:
-    return ", ".join(f"{k} ({micro_units(k)})" for k in _KEYS)
+    micros = ", ".join(f"{k} ({micro_units(k)})" for k in _KEYS)
+    extras = ", ".join(f"{k} ({unit})" for k, (unit, _cap) in _EXTRA_KEYS.items())
+    return f"{extras}, {micros}"
 
 
 def _parse_estimate(text: str) -> dict | None:
@@ -52,14 +61,23 @@ def _parse_estimate(text: str) -> dict | None:
         if v > 3 * _DAILY_VALUES[k]:                # implausible for a single food
             continue
         out[k] = round(float(v), 2)
+    for k, (_unit, cap) in _EXTRA_KEYS.items():
+        v = data.get(k)
+        if not isinstance(v, (int, float)) or isinstance(v, bool) or v <= 0:
+            continue
+        if v > cap:                                 # implausible for a single food
+            continue
+        out[k] = round(float(v), 2)
     return out or None
 
 
 async def estimate_micros(food_name: str, quantity: str | None,
                           calories: float, protein: float,
                           carbs: float, fat: float) -> dict | None:
-    """Best-effort per-PORTION micro panel ({key: amount} in our units) for a food
-    with no database match. None on any failure (caller just shows no panel)."""
+    """Best-effort per-PORTION nutrient estimates ({key: amount} in our units)
+    for a food with no database match. Includes the vitamin/mineral panel PLUS
+    fiber/sugar/sodium (callers pop those into the dedicated entry columns).
+    None on any failure (caller just shows no panel)."""
     from core.llm import _get_anthropic
 
     portion = (quantity or "").strip() or f"a ~{calories:.0f} kcal serving"

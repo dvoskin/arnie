@@ -943,6 +943,17 @@ async def _analyze_food(db, user, food_name, inp):
     try:
         m = (await get_user_food_match(db, user.id, name_norm)
              if (name_norm and not generic) else None)
+        # Staleness horizon: a cached match the user hasn't logged in ~90 days
+        # may describe a reformulated product or a different brand behind the
+        # same name. Skip it (user-confirmed rows never expire) and fall
+        # through to USDA/web — a confident fresh hit re-caches below, so the
+        # row self-heals instead of serving stale nutrition forever.
+        if m is not None and not m.user_confirmed:
+            from datetime import datetime as _dt, timedelta as _td
+            _lu = m.last_used or m.created_at
+            if _lu is not None and _lu < _dt.utcnow() - _td(days=90):
+                logger.info(f"food memory stale (>90d) for {name_norm!r} — re-resolving")
+                m = None
         if m:
             per100g = {"calories": m.cal_100, "protein": m.protein_100,
                        "carbs": m.carbs_100, "fat": m.fat_100,
@@ -1036,10 +1047,17 @@ async def _analyze_food(db, user, food_name, inp):
                      usda_candidate=usda, memory_match=memory,
                      web_candidate=web)
 
-    # Micro fallback: no database (USDA/web/memory) micro panel — common for
+    # Nutrient fallback: no database (USDA/web/memory) data — common for
     # restaurant/branded/composite foods USDA has no entry for. Estimate the
-    # panel from the model's knowledge, flagged so the UI renders it softer.
-    if not result.micros and result.calories and not generic:
+    # micro panel PLUS fiber/sugar/sodium from the model's knowledge, flagged
+    # so the UI renders it softer. Generic foods ("a sandwich") are included:
+    # they're exactly the sodium-heavy composite meals that otherwise store
+    # NULL and read as pristine to the health score — the estimate is grounded
+    # on the portion's own macros, so genericness doesn't invalidate it.
+    needs_micros = not result.micros
+    needs_fss = (result.fiber is None and result.sugar is None
+                 and result.sodium is None)
+    if (needs_micros or needs_fss) and result.calories:
         try:
             from core.micro_estimator import estimate_micros
             est = await estimate_micros(
@@ -1047,10 +1065,25 @@ async def _analyze_food(db, user, food_name, inp):
                 result.calories, result.protein, result.carbs, result.fat,
             )
             if est:
-                result.micros = est
-                result.micros_estimated = True
+                # fiber/sugar/sodium live in dedicated columns, not the panel.
+                fss = {k: est.pop(k) for k in ("fiber", "sugar", "sodium")
+                       if k in est}
+                if needs_fss and fss:
+                    # Sanity vs the entry's own macros: fiber and sugar are
+                    # carbs, so they can't exceed the carb count.
+                    carbs = result.carbs or 0
+                    fib, sug = fss.get("fiber"), fss.get("sugar")
+                    if result.fiber is None and fib is not None:
+                        result.fiber = round(min(fib, carbs) if carbs else fib, 1)
+                    if result.sugar is None and sug is not None:
+                        result.sugar = round(min(sug, carbs) if carbs else sug, 1)
+                    if result.sodium is None and fss.get("sodium") is not None:
+                        result.sodium = round(fss["sodium"], 0)
+                if needs_micros and est:
+                    result.micros = est
+                    result.micros_estimated = True
         except Exception as e:
-            logger.warning(f"micro estimation fallback failed: {e}")
+            logger.warning(f"nutrient estimation fallback failed: {e}")
 
     return result
 
@@ -1493,6 +1526,11 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
             meal_time=_meal_time,
             alcohol_units=inp.get("alcohol_units"),
             from_photo=from_photo,
+            processing_level=(
+                inp.get("processing_level")
+                if inp.get("processing_level") in ("whole", "processed", "ultra_processed")
+                else None
+            ),
         )
         # Stash the entry id on the tool_call's input so conversation.py can
         # surface it in the macro_card payload. Native clients (iOS) use it
@@ -2001,6 +2039,16 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
                         db, user.id, name_norm, fn,
                         None, per100, "user-confirmed",
                     )
+                elif any(k in changes for k in ("calories", "protein", "carbs", "fats")):
+                    # Can't derive per-100g from this portion, but the user just
+                    # told us the cached profile primed wrong numbers. Bust the
+                    # cache (unless THEY confirmed it before) so the next log
+                    # re-resolves fresh instead of repeating the same mistake.
+                    from db.queries import get_user_food_match, delete_user_food_match
+                    _m = await get_user_food_match(db, user.id, name_norm)
+                    if _m is not None and not _m.user_confirmed:
+                        await delete_user_food_match(db, user.id, name_norm)
+                        logger.info(f"busted stale food memory for {name_norm!r} after correction")
         except Exception as _e:
             logger.warning(f"recurring-memory backfill on update failed: {_e}")
 
