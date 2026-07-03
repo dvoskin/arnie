@@ -796,6 +796,63 @@
     }
     .demo-replay:hover { color: var(--ink); border-color: var(--line-s); }
 
+    /* ── App showcase (real screenshots, story beats) ─────────── */
+    .showcase { margin-top: 64px; display: flex; flex-direction: column; gap: 84px; }
+    .show-row {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 64px; align-items: center;
+    }
+    .show-row.flip .show-copy { order: 2; }
+    .show-row.flip .show-phone-wrap { order: 1; }
+    .show-eyebrow {
+      font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em;
+      text-transform: uppercase; color: var(--accent); margin-bottom: 14px;
+    }
+    .show-copy h3 {
+      font-family: var(--serif); font-weight: 500; font-size: clamp(26px, 3.2vw, 34px);
+      line-height: 1.14; letter-spacing: -0.01em; color: var(--ink); margin-bottom: 14px;
+    }
+    .show-copy h3 em { font-style: italic; color: var(--accent); }
+    .show-copy p { font-size: 15px; line-height: 1.65; color: var(--ink-2); max-width: 44ch; }
+    .show-points { margin-top: 18px; display: flex; flex-direction: column; gap: 9px; }
+    .show-point { display: flex; gap: 10px; align-items: baseline; font-size: 13.5px; color: var(--ink-2); }
+    .show-point::before {
+      content: ""; width: 5px; height: 5px; border-radius: 50%; background: var(--accent);
+      flex-shrink: 0; transform: translateY(-2px); box-shadow: 0 0 8px var(--accent);
+    }
+    .show-point b { color: var(--ink); font-weight: 600; }
+    .show-phone-wrap { display: flex; justify-content: center; position: relative; }
+    .show-phone-wrap::before {
+      content: ""; position: absolute; inset: 10% 18%;
+      background: radial-gradient(closest-side, color-mix(in oklch, var(--accent) 16%, transparent), transparent 70%);
+      filter: blur(30px); z-index: 0;
+    }
+    .show-phone {
+      position: relative; z-index: 1; width: min(300px, 78vw);
+      border-radius: 44px; padding: 10px;
+      background: oklch(0.10 0.006 240);
+      border: 1px solid color-mix(in oklch, var(--ink) 14%, transparent);
+      box-shadow:
+        0 50px 110px -30px oklch(0 0 0 / 0.75),
+        inset 0 1px 0 color-mix(in oklch, var(--ink) 10%, transparent);
+    }
+    .show-phone img { display: block; width: 100%; border-radius: 34px; }
+    .show-moat {
+      margin-top: 20px; text-align: center;
+      font-family: var(--serif); font-style: italic;
+      font-size: clamp(19px, 2.6vw, 26px); line-height: 1.4; color: var(--ink);
+    }
+    .show-moat em { color: var(--accent); font-style: italic; }
+    .show-moat-sub {
+      margin-top: 10px; text-align: center; font-size: 13.5px; color: var(--ink-3);
+    }
+    @media (max-width: 860px) {
+      .showcase { gap: 56px; margin-top: 44px; }
+      .show-row { grid-template-columns: 1fr; gap: 26px; }
+      .show-row.flip .show-copy { order: 1; }
+      .show-row.flip .show-phone-wrap { order: 2; }
+      .show-copy p { max-width: none; }
+    }
+
     /* ── Dashboard preview ───────────────────────────────────── */
     .dash-wrap {
       margin-top: 52px; position: relative;
@@ -1471,10 +1528,10 @@
 
       <div class="chip chip-2">
         <div>
-          <div class="chip-label">Protein</div>
+          <div class="chip-label">Health Score</div>
           <div style="display:flex;align-items:center;gap:8px;margin-top:3px">
-            <span class="chip-num">128g</span>
-            <div class="chip-bar"><i></i></div>
+            <span class="chip-num">74</span>
+            <span style="font-size:11px;color:var(--accent);font-family:var(--mono)">good day</span>
           </div>
         </div>
       </div>
@@ -1492,11 +1549,14 @@
 
       <div class="chip chip-4">
         <div style="width:28px;height:28px;border-radius:8px;background:color-mix(in oklch,var(--accent) 14%,transparent);border:1px solid color-mix(in oklch,var(--accent) 22%,transparent);display:flex;align-items:center;justify-content:center;flex-shrink:0">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" stroke="var(--accent)" stroke-width="1.5" stroke-linejoin="round"/></svg>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 21V10M12 21V3M16 21v-7"/></svg>
         </div>
         <div>
-          <div class="chip-label">Walk 20 min</div>
-          <div style="font-size:11px;color:var(--accent);margin-top:2px;font-family:var(--mono)">recovery</div>
+          <div class="chip-label">Bench · est. 1RM</div>
+          <div style="display:flex;align-items:baseline;gap:6px;margin-top:2px">
+            <span class="chip-num" style="font-size:16px">262<span style="font-size:11px;color:var(--ink-2)"> lb</span></span>
+            <span style="font-size:10px;color:var(--accent);font-family:var(--mono)">INTERMEDIATE</span>
+          </div>
         </div>
       </div>
 
@@ -1747,10 +1807,72 @@
             </svg>
           </div>
           <h4>Log naturally</h4>
-          <p>Say "had a burger and fries for lunch" — Arnie handles the macros. No dropdowns, no searching, no friction.</p>
+          <p>"205 for 12 on incline press" — logged, confirmed back word-for-word, and coached on the next set. No dropdowns, no searching.</p>
         </div>
 
         <div class="feat-cell reveal reveal-d1">
+          <div class="feat-icon">
+            <!-- Heart/score -->
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M20.4 4.6a5.5 5.5 0 0 0-7.8 0L12 5.2l-.6-.6a5.5 5.5 0 0 0-7.8 7.8l.6.6L12 21l7.8-8 .6-.6a5.5 5.5 0 0 0 0-7.8z"/>
+              <path d="M3.5 12h4l2-3 3 6 2-3h6"/>
+            </svg>
+          </div>
+          <h4>Health Score</h4>
+          <p>Every day scored 0–100 on food <em>quality</em> — protein and fiber density against sugar, sodium, and ultra-processed load — with the why one tap away.</p>
+        </div>
+
+        <div class="feat-cell reveal reveal-d2">
+          <div class="feat-icon">
+            <!-- Gauge/recovery -->
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/>
+              <path d="M3.34 17A10 10 0 1 1 20.66 17"/>
+              <path d="M12 12l3.5-3.5"/>
+            </svg>
+          </div>
+          <h4>Muscle recovery board</h4>
+          <p>A per-muscle readiness board built from your actual sets, adjusted by sleep and strain — know what's fresh before you train.</p>
+        </div>
+
+        <div class="feat-cell reveal reveal-d3">
+          <div class="feat-icon">
+            <!-- Trophy/PRs -->
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/>
+              <path d="M6 2h12v7a6 6 0 0 1-12 0V2z"/>
+              <path d="M12 15v4M8 21h8"/>
+            </svg>
+          </div>
+          <h4>PRs &amp; strength tiers</h4>
+          <p>Every lift's estimated 1RM, ranked and tiered to your bodyweight — Novice to Advanced — with your last sets a tap away.</p>
+        </div>
+
+        <div class="feat-cell reveal">
+          <div class="feat-icon">
+            <!-- Bars/energy balance -->
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M7 20V10M12 20V4M17 20v-7"/>
+              <line x1="3" y1="20" x2="21" y2="20"/>
+            </svg>
+          </div>
+          <h4>Burned vs consumed</h4>
+          <p>Your wearable's real burn against your logged intake, day by day — the actual deficit or surplus driving your weight, in plain words.</p>
+        </div>
+
+        <div class="feat-cell reveal reveal-d1">
+          <div class="feat-icon">
+            <!-- Sparkles/forecast -->
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3z"/>
+              <path d="M19 15l.9 2.1L22 18l-2.1.9L19 21l-.9-2.1L16 18l2.1-.9L19 15z"/>
+            </svg>
+          </div>
+          <h4>Future You</h4>
+          <p>A living forecast of where your current path lands — weight and body composition weeks out, grounded in your real trend, not a template.</p>
+        </div>
+
+        <div class="feat-cell reveal reveal-d2">
           <div class="feat-icon">
             <!-- Brain/memory -->
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
@@ -1761,69 +1883,19 @@
           <p>Your injuries, preferences, goals, and full history are always in context. It never asks you to repeat yourself.</p>
         </div>
 
-        <div class="feat-cell reveal reveal-d2">
-          <div class="feat-icon">
-            <!-- Chart/accountability -->
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-              <line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/>
-              <line x1="2" y1="20" x2="22" y2="20"/>
-            </svg>
-          </div>
-          <h4>Real accountability</h4>
-          <p>Morning check-ins, midday pacing, evening recaps. It knows when to nudge you and when to back off.</p>
-        </div>
-
         <div class="feat-cell reveal reveal-d3">
           <div class="feat-icon">
-            <!-- Dumbbell -->
+            <!-- Bell/proactive -->
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M6 5v14M18 5v14M2 9h4M18 9h4M2 15h4M18 15h4M6 9h12M6 15h12"/>
+              <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+              <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
             </svg>
           </div>
-          <h4>Workout tracking</h4>
-          <p>Log sets, reps, and weight in plain text. Arnie spots your progress trends and tells you what's next.</p>
+          <h4>It texts first</h4>
+          <p>Morning brief, midday pacing, evening close — real push notifications timed to your day. It knows when to nudge and when to back off.</p>
         </div>
 
-        <div class="feat-cell reveal">
-          <div class="feat-icon">
-            <!-- Watch/wearable -->
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-              <rect x="5" y="2" width="14" height="20" rx="7"/>
-              <path d="M16.8 12a4.8 4.8 0 1 1-9.6 0 4.8 4.8 0 0 1 9.6 0Z"/>
-              <path d="M12 10v2l1.5 1.5"/>
-            </svg>
-          </div>
-          <h4>Wearables &amp; health data</h4>
-          <p>Apple Health and Whoop sync automatically — recovery, sleep, heart rate, glucose, steps — all factored into every recommendation.</p>
-        </div>
-
-        <div class="feat-cell reveal reveal-d1">
-          <div class="feat-icon">
-            <!-- Calendar/guidance -->
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-              <rect x="3" y="4" width="18" height="18" rx="2"/>
-              <line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/>
-              <line x1="3" y1="10" x2="21" y2="10"/>
-              <path d="M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01"/>
-            </svg>
-          </div>
-          <h4>Daily guidance</h4>
-          <p>See your nutrition pacing, workout status, and exactly what you need to close the day strong.</p>
-        </div>
-
-        <div class="feat-cell reveal reveal-d2">
-          <div class="feat-icon">
-            <!-- Phone/app -->
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-              <rect x="6" y="2" width="12" height="20" rx="3"/>
-              <line x1="11" y1="18" x2="13" y2="18"/>
-            </svg>
-          </div>
-          <h4>Native iOS app</h4>
-          <p>A full iOS app with your Coach feed, daily rings, weight trends, and chat — synced with Telegram and iMessage so you pick up anywhere.</p>
-        </div>
-
-        <div class="feat-cell reveal reveal-d3">
+        <div class="feat-cell reveal reveal-d4">
           <div class="feat-icon">
             <!-- Camera/photo -->
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
@@ -1831,8 +1903,8 @@
               <circle cx="12" cy="13" r="4"/>
             </svg>
           </div>
-          <h4>Photo &amp; voice logging</h4>
-          <p>Snap your plate or send a voice note. Arnie reads the photo, estimates the meal, and logs it — no typing required.</p>
+          <h4>Photo, voice &amp; barcode</h4>
+          <p>Snap your plate, scan a label, or send a voice note mid-set. Arnie reads it, estimates it, and logs it — micronutrients included.</p>
         </div>
 
       </div>
@@ -1911,69 +1983,68 @@
   <!-- ── DASHBOARD PREVIEW ── -->
   <section id="dashboard-preview">
     <div class="section-inner">
-      <div class="section-tag reveal">Your data</div>
-      <h2 class="section-title reveal reveal-d1">Your numbers,<br><em>always in view.</em></h2>
-      <p class="section-sub reveal reveal-d2">Every meal, workout, and weight you log lives in your personal dashboard — open it from any browser, no app download needed.</p>
+      <div class="section-tag reveal">The app</div>
+      <h2 class="section-title reveal reveal-d1">Not a mockup.<br><em>The actual app.</em></h2>
+      <p class="section-sub reveal reveal-d2">These are real screens from Arnie's Coach home — built from the same conversations you'd have with a trainer, turned into numbers that compound.</p>
 
-      <div class="dash-wrap reveal reveal-d3">
-        <div class="dash-browser">
-          <div class="dash-browser-bar">
-            <div class="dash-dots">
-              <div class="dash-dot dash-dot-r"></div>
-              <div class="dash-dot dash-dot-y"></div>
-              <div class="dash-dot dash-dot-g"></div>
+      <div class="showcase">
+
+        <!-- Beat 1 — the day, read like a coach -->
+        <div class="show-row reveal">
+          <div class="show-copy">
+            <div class="show-eyebrow">It reads your day</div>
+            <h3>Every day gets a <em>quality score</em> — and an honest energy balance.</h3>
+            <p>Not just calories in. Arnie scores each day 0–100 on what the food actually was — protein and fiber density against sugar, sodium, and ultra-processed load — then lines your logged intake up against your wearable's real burn.</p>
+            <div class="show-points">
+              <div class="show-point"><span><b>Health Score</b> with the why behind it, one tap away</span></div>
+              <div class="show-point"><span><b>Burned vs consumed</b> — the actual deficit driving your weight</span></div>
+              <div class="show-point"><span>Written in plain words: <b>"steady fat-loss territory"</b></span></div>
             </div>
-            <div class="dash-url">tryarnie.com/dashboard/••••••</div>
           </div>
-          <div class="dash-content">
-            <div class="dash-header">
-              <div>
-                <div class="dash-date">Today <em>·</em> May 27</div>
-                <div class="dash-target">New York &nbsp;·&nbsp; 2,150 cal target &nbsp;·&nbsp; 178g protein</div>
-              </div>
-            </div>
-            <div class="dash-macros">
-              <div class="dash-macro">
-                <div class="dash-macro-lbl">Calories</div>
-                <div class="dash-macro-val">1,640</div>
-                <div class="dash-macro-sub">of 2,150</div>
-                <div class="dash-macro-bar"><div class="dash-macro-fill" style="width:76%"></div></div>
-              </div>
-              <div class="dash-macro">
-                <div class="dash-macro-lbl">Protein</div>
-                <div class="dash-macro-val">134g</div>
-                <div class="dash-macro-sub">of 178g</div>
-                <div class="dash-macro-bar"><div class="dash-macro-fill" style="width:75%"></div></div>
-              </div>
-              <div class="dash-macro warn">
-                <div class="dash-macro-lbl">Water</div>
-                <div class="dash-macro-val">0.8L</div>
-                <div class="dash-macro-sub">of 2.5L</div>
-                <div class="dash-macro-bar"><div class="dash-macro-fill" style="width:32%"></div></div>
-              </div>
-            </div>
-            <div class="dash-log">
-              <div class="dash-log-hdr">Today's log</div>
-              <div class="dash-log-row">
-                <div class="dash-log-name">3 eggs, 2 toast, coffee</div>
-                <div class="dash-log-meta">7:45 am &nbsp;·&nbsp; 480 cal &nbsp;·&nbsp; 32g</div>
-              </div>
-              <div class="dash-log-row">
-                <div class="dash-log-name">Chicken caesar salad</div>
-                <div class="dash-log-meta">12:34 pm &nbsp;·&nbsp; 520 cal &nbsp;·&nbsp; 41g</div>
-              </div>
-              <div class="dash-log-row">
-                <div class="dash-log-name">Greek yogurt + blueberries</div>
-                <div class="dash-log-meta">3:20 pm &nbsp;·&nbsp; 220 cal &nbsp;·&nbsp; 18g</div>
-              </div>
-              <div class="dash-log-row">
-                <div class="dash-log-name">Bench 185 4×5 &nbsp;·&nbsp; OHP 115 3×8</div>
-                <div class="dash-log-meta">6:02 pm &nbsp;·&nbsp; workout</div>
-              </div>
-            </div>
+          <div class="show-phone-wrap">
+            <div class="show-phone"><img src="/shots/shot-score.jpg" alt="Arnie's Coach home — Health Score and Burned vs Consumed chart" loading="lazy"></div>
           </div>
         </div>
+
+        <!-- Beat 2 — the body, modeled from your sets -->
+        <div class="show-row flip reveal">
+          <div class="show-copy">
+            <div class="show-eyebrow">It knows your body</div>
+            <h3>A recovery board and strength tiers, <em>built from your sets.</em></h3>
+            <p>Every set you mention in chat feeds a per-muscle readiness board — what's fresh, what needs a day — and a personal-records ledger where every lift's estimated 1RM is tiered to <em>your</em> bodyweight, Novice to Advanced.</p>
+            <div class="show-points">
+              <div class="show-point"><span><b>Muscle recovery</b> gauges, adjusted by your sleep and strain</span></div>
+              <div class="show-point"><span><b>Est. 1RM per lift</b> with bodyweight-scaled strength tiers</span></div>
+              <div class="show-point"><span>Tap any lift for its <b>last three sets</b> — instant reference</span></div>
+            </div>
+          </div>
+          <div class="show-phone-wrap">
+            <div class="show-phone"><img src="/shots/shot-prs.jpg" alt="Arnie's muscle recovery board and personal records with strength tiers" loading="lazy"></div>
+          </div>
+        </div>
+
+        <!-- Beat 3 — the receipts -->
+        <div class="show-row reveal">
+          <div class="show-copy">
+            <div class="show-eyebrow">It keeps the receipts</div>
+            <h3>Everything you say becomes <em>structured data.</em></h3>
+            <p>"Two eggs and toast" in chat lands on a timestamped timeline with macros attached — meals, water, training, weigh-ins, all in one thread you can audit and correct in one tap.</p>
+            <div class="show-points">
+              <div class="show-point"><span>Full-day <b>timeline</b> — food, water, and training interleaved</span></div>
+              <div class="show-point"><span><b>Micronutrients captured</b> on every logged meal</span></div>
+              <div class="show-point"><span>Streaks that reward <b>showing up</b>, not perfection</span></div>
+            </div>
+          </div>
+          <div class="show-phone-wrap">
+            <div class="show-phone"><img src="/shots/shot-log.jpg" alt="Arnie's daily log — timestamped timeline of meals, water, and training" loading="lazy"></div>
+          </div>
+        </div>
+
       </div>
+
+      <!-- The moat, said out loud -->
+      <p class="show-moat reveal">Six months in, Arnie knows your body better than<br class="m-hide-br"> any app you could switch to. <em>That's the point.</em></p>
+      <p class="show-moat-sub reveal reveal-d1">Every conversation compounds — history, injuries, preferences, PRs, patterns. Generic apps start from zero. Arnie never does.</p>
     </div>
   </section>
 
