@@ -202,6 +202,10 @@ async def _migrate(conn):
         # ── 2026-06-30: free-form onboarding "brain dump" (user's own words).
         #    SQLite-only net — Postgres handled by paired alembic migration c0d1e2f3a4b5.
         ("users", "brain_dump", "TEXT"),
+        # ── 2026-07-03: NOVA-style processing class from the model at log time,
+        #    preferred over the health score's keyword proxy. SQLite-only net —
+        #    Postgres handled by paired alembic migration e2f3a4b5c6d7.
+        ("food_entries", "processing_level", "VARCHAR"),
     ]
 
     for table, column, ddl in additions:

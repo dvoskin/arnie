@@ -2303,6 +2303,18 @@ async def get_user_food_match(db: AsyncSession, user_id: int, name_norm: str):
     return result.scalar_one_or_none()
 
 
+async def delete_user_food_match(db: AsyncSession, user_id: int, name_norm: str) -> bool:
+    """Drop a user's cached match for a normalized food name. Used when a
+    correction proves the cached profile wrong (material macro change on a
+    portion we can't derive per-100g from) — next log re-resolves fresh."""
+    m = await get_user_food_match(db, user_id, name_norm)
+    if m is None:
+        return False
+    await db.delete(m)
+    await db.commit()
+    return True
+
+
 def _extract_micros_100(per100: dict) -> dict:
     """The per-100g micronutrient subset of a nutrient profile (vitamins/minerals/
     fat breakdown) — what we cache so repeat-logged foods keep their micros."""
