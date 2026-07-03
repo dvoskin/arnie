@@ -188,7 +188,8 @@ async def get_week(identity: str = Depends(current_identity)):
         # 14-day wearable burn (active + resting) for the Burned-vs-Consumed
         # card. Keyed by date; days without a snapshot simply have no burn bar.
         from db.queries import get_recent_health_snapshots
-        _snaps = await get_recent_health_snapshots(db, user.id, days=14)
+        # 30 days so the Energy Balance card's 14D/30D toggle has data for both.
+        _snaps = await get_recent_health_snapshots(db, user.id, days=30)
         _burn_by_date = {}
         for _s in _snaps:
             _active = getattr(_s, "active_calories", None)
@@ -255,17 +256,18 @@ async def get_week(identity: str = Depends(current_identity)):
             "weighed": d.isoformat() in weigh_dates,
         })
 
-    # Burned vs consumed, last 14 days — consumed from the food log, burned from
+    # Burned vs consumed, last 30 days — consumed from the food log, burned from
     # the wearable (active + resting). A day missing either simply carries a 0 /
-    # null; the client renders what's real, never an invented bar.
+    # null; the client renders what's real, never an invented bar, and windows to
+    # 14 or 30 via the card's toggle.
     energy_days = []
-    for i in range(13, -1, -1):
+    for i in range(29, -1, -1):
         d = today - timedelta(days=i)
-        h = by_date.get(d.isoformat()) or {}
+        _ml = _macro_by_date.get(d.isoformat())
         energy_days.append({
             "date": d.isoformat(),
             "weekday": d.strftime("%a"),
-            "consumed": h.get("calories", 0),
+            "consumed": round(_ml.total_calories or 0) if _ml else 0,
             "burned": _burn_by_date.get(d.isoformat()),
         })
 
