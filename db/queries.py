@@ -1270,15 +1270,36 @@ def _source_rank(s: Optional[str]) -> int:
     return _SNAPSHOT_SOURCE_RANK.get(s or "", 0)
 
 
+# Metrics BOTH wearables report for the same day. Once a higher-ranked source
+# (Whoop) owns the row, a lower-ranked write (Apple Health) may only FILL a
+# still-empty field — never replace one. Without this, the day's energy kept
+# BOUNCING between Whoop's active+resting and Apple's active-only read on every
+# alternate sync (Danny 2026-07-03: 1,440 ↔ 230 kcal). Apple-only fields
+# (steps, stand_hours, exercise_minutes) aren't listed, so they always merge.
+_CONTESTED_FIELDS = {
+    "active_calories", "resting_calories", "hrv", "resting_hr", "avg_hr",
+    "sleep_hours", "sleep_deep_hours", "sleep_rem_hours",
+    "sleep_performance_pct", "sleep_need_hours", "sleep_efficiency_pct",
+    "respiratory_rate", "spo2_percentage", "skin_temp_celsius",
+}
+
+
 def _merge_snapshot_fields(snap: HealthSnapshot, kwargs: dict) -> None:
     """Apply non-None updates to an existing snapshot WITHOUT downgrading its
-    source, then promote the label to 'whoop' if the row carries whoop-only
+    source: the label never ranks down, and contested metrics from a
+    lower-ranked source fill gaps but never overwrite the richer source's
+    values. Then promote the label to 'whoop' if the row carries whoop-only
     metrics (recovery/strain) — those can't come from Apple Health."""
+    incoming_rank = _source_rank(kwargs.get("source"))
+    row_rank = _source_rank(snap.source)
     for k, v in kwargs.items():
         if v is None:
             continue
-        if k == "source" and _source_rank(v) < _source_rank(snap.source):
+        if k == "source" and incoming_rank < row_rank:
             continue  # never relabel a richer source down
+        if (k in _CONTESTED_FIELDS and incoming_rank < row_rank
+                and getattr(snap, k, None) is not None):
+            continue  # lower-ranked source fills gaps only, never replaces
         setattr(snap, k, v)
     if (snap.recovery_score is not None or snap.strain is not None) \
             and _source_rank(snap.source) < _source_rank("whoop"):
