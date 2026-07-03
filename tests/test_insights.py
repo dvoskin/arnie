@@ -1,5 +1,34 @@
 """Tests for the weekly insights data summary (pure logic, no LLM)."""
-from api.insights import _build_week_summary, _engagement_signal, _briefing_tier_guidance
+from api.insights import (_build_week_summary, _engagement_signal,
+                          _briefing_tier_guidance, _training_state)
+
+
+def test_training_state_distinguishes_lifting_from_cardio():
+    # A Whoop walk is cardio, not a lift — the coach must NOT read it as
+    # "workout done" (the "your lift is done" bug).
+    whoop_walk = {"cardio_completed": True, "exercise_entries": [
+        {"name": "Walking", "cardio_type": "Walking", "is_cardio": True,
+         "duration_minutes": 32, "source": "whoop"}]}
+    s = _training_state(whoop_walk)
+    assert "NOT a strength session" in s
+    assert "no lifting logged yet" in s
+    assert "wearable" in s  # flags the auto-synced origin
+
+    # A real lift → strength done.
+    lift = {"workout_completed": True, "exercise_entries": [
+        {"name": "Bench Press", "sets": 4, "reps": "8", "is_cardio": False}]}
+    assert _training_state(lift) == "strength workout done"
+
+    # Both → strength credited (cardio noted).
+    both = {"workout_completed": True, "cardio_completed": True,
+            "exercise_entries": [
+                {"name": "Squat", "sets": 5, "is_cardio": False},
+                {"name": "Run", "cardio_type": "Running", "is_cardio": True}]}
+    assert _training_state(both) == "strength workout done (plus cardio)"
+
+    # Nothing logged → not yet.
+    assert _training_state({}) == "not yet"
+    assert _training_state({"exercise_entries": []}) == "not yet"
 
 
 def test_engagement_signal_tiers_scale_with_data():

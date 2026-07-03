@@ -76,7 +76,12 @@ def _build_summary(stats: dict) -> str:
             sets_str = f"{ex.get('sets','?')}×{ex.get('reps','?')}" if ex.get('sets') else ""
             wt_str = f"@ {ex.get('weight','')}lb" if ex.get('weight') else ""
             dur_str = f"{ex.get('duration_minutes','')}min" if ex.get('duration_minutes') else ""
-            day_lines.append(f"  - {ex.get('name','')} {sets_str} {wt_str} {dur_str}".strip())
+            # Tag strength vs cardio (and wearable origin) so the coach never reads
+            # a walk auto-synced from Whoop as a lift / "your session's done".
+            kind = "cardio" if ex.get("is_cardio") else "strength"
+            src = ex.get("source")
+            src_str = " [auto-synced from wearable]" if src in ("whoop", "apple_health") else ""
+            day_lines.append(f"  - [{kind}] {ex.get('name','')} {sets_str} {wt_str} {dur_str}{src_str}".strip())
     elif has_workout:
         day_lines.append("  Workout completed (no exercise details)")
     else:
@@ -347,6 +352,43 @@ DATA:
 # conversation starter. The coach does the thinking; the user does the doing.
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _training_state(today: dict) -> str:
+    """A STRENGTH-AWARE read on today's training for the briefing LLM.
+
+    The old signal was `workout_completed or any(exercise_entries)` — which
+    counted a walk auto-synced from a wearable as "workout done", so the coach
+    would tell a user "your lift is done / you already trained" when all they'd
+    done was a Whoop walk. This separates lifting from cardio and flags the
+    wearable origin, so the brief never mistakes a walk for a strength session.
+    """
+    ex = today.get("exercise_entries") or []
+    strength = [e for e in ex if not e.get("is_cardio")]
+    cardio = [e for e in ex if e.get("is_cardio")]
+    did_lift = bool(today.get("workout_completed")) or bool(strength)
+    did_cardio = bool(today.get("cardio_completed")) or bool(cardio)
+
+    def _cardio_labels() -> str:
+        bits = []
+        for e in cardio[:3]:
+            name = e.get("cardio_type") or e.get("name") or "cardio"
+            dur = f" {e.get('duration_minutes')}min" if e.get("duration_minutes") else ""
+            src = e.get("source")
+            tag = " auto-synced from a wearable" if src in ("whoop", "apple_health") else ""
+            bits.append(f"{name}{dur}{tag}")
+        return "; ".join(bits)
+
+    if did_lift and did_cardio:
+        return "strength workout done (plus cardio)"
+    if did_lift:
+        return "strength workout done"
+    if did_cardio:
+        # The critical case: cardio/steps only. NOT a lift. Say so explicitly so
+        # the coach never claims they "trained"/"lifted"/"got the session in".
+        return (f"only cardio so far ({_cardio_labels()}) — this is NOT a "
+                f"strength session; no lifting logged yet")
+    return "not yet"
+
+
 def _build_briefing_summary(stats: dict) -> str:
     """Organized raw material for the briefing LLM — recent daily history with
     weekday labels (so it can see weekend patterns + streaks), the weight series
@@ -392,11 +434,10 @@ def _build_briefing_summary(stats: dict) -> str:
             if a:
                 L.append(f"  [{when}] me: {a[:160]}")
         L.append("")
-    workout_done = today.get("workout_completed") or bool(today.get("exercise_entries"))
     # Local weekday + a clock-position hint, so the model knows whether "no
     # workout yet" means "it's 6am and the day's barely started" or "it's 10pm
     # and they skipped." Without this, the LLM has been inventing "today's a
-    # rest day" from inference whenever workout_done is false.
+    # rest day" from inference whenever training is "not yet".
     try:
         _today_dt = _dt.strptime(today_iso, "%Y-%m-%d")
         _today_weekday = _today_dt.strftime("%A")
@@ -425,7 +466,7 @@ def _build_briefing_summary(stats: dict) -> str:
     )
     L.append(f"TODAY ({today_iso}, {_today_weekday}, STILL IN PROGRESS, user-local {_now_local.hour:02d}:{_now_local.minute:02d} — {_phase}): "
              f"{today.get('calories', 0)} cal, {today.get('protein', 0)}g protein so far; "
-             f"workout {'done' if workout_done else 'not yet'}")
+             f"training: {_training_state(today)}")
     L.append("")
 
     past = [h for h in history if h.get("date") and h["date"] < today_iso][-21:]
@@ -777,6 +818,7 @@ RULES:
 - VARY THE LEVER — do NOT default to a protein-pacing reminder. Across days the single directive must rotate to whatever ACTUALLY matters most right now: a morning weigh-in, getting the training session in, recovery / sleep, hydration, protecting a streak or consistency, a step toward goal weight, or nutrition ONLY when the clock makes it realistic. Read the data + clock and pick the one real lever, not protein by reflex.
 - RESPECT THE LIVE CONVERSATION: the RECENT CONVERSATION section (when present) is what the client JUST told you, and it OVERRIDES any default assumption from the data. If they stated a near-term commitment or plan (family time, travel, an event, dinner out, an intentional rest day, an injury, being slammed at work), do NOT push a directive that fights it. NEVER tell them to train, "get the session in", or do anything they just said they can't or won't. Instead, either (a) suggest something that FITS the moment (a walk while out, light movement, a bit of mobility, "a family walk still counts") or (b) pivot the single directive to a lever that doesn't conflict (protein/hydration/sleep/recovery/tomorrow's first move). Complement the moment; never contradict it.
 - NEVER claim "today is a rest day" unless: (a) the user said so in the RECENT CONVERSATION above, or (b) the day is mostly over (late evening) AND the user has a long-running weekly pattern of skipping THIS weekday (4+ weeks of N on this exact weekday in the LOGGED DAYS section). "Workout not yet" early in the day means it's early — not a rest day. When uncertain, treat today as a normal TRAINING day and frame nutrition + recovery accordingly.
+- STRENGTH vs CARDIO — read the TODAY `training:` line and the [strength]/[cardio] tags literally. Cardio or steps (a walk, a run — ESPECIALLY one "auto-synced from a wearable") is NOT a lift. If training shows "only cardio so far", do NOT tell them their session/lift is done, that they "already trained", or that they "crushed the workout" — they have NOT lifted yet. Treat a lift as still to-do (or credit the cardio as cardio: "nice walk in — still got the lift ahead"). Only call the strength session done when the line actually says a strength workout is done.
 - focus.title and focus.body must be empty strings — the iOS app no longer renders a separate Focus pane; the hero now carries the single most important action. Anything you'd put in focus goes into the cards below, not focus.
 - 2-4 cards. The TITLE is a short, OPINIONATED coaching headline stating your judgment, in natural sentence case (e.g. 'On track for 205', 'The weekend leak', "Volume's slipping", "Scale's creeping back"). NEVER a generic category (Protein, Weight) or a tone word (Win, Opportunity); never all-caps, no emoji. Each STORY is DIAGNOSIS + EVIDENCE + RECOMMENDATION in 2-3 tight sentences, scannable in ~2s — what happened, why it matters, what to do. Coaching with conviction, not reporting. "kind" sets the card's quiet tone-color. Set "kind" per card:
     win        — a genuine streak / PR / milestone (include one when it's REAL; if there's no honest win yet, use a concrete next-step card instead of manufacturing one)
