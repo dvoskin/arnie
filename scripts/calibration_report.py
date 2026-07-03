@@ -23,9 +23,14 @@ the other scripts — run on Render for the real fleet numbers):
 """
 import argparse
 import asyncio
+import os
 import re
 import statistics
 import sys
+
+# Runnable as `python scripts/calibration_report.py` from the repo root —
+# put the root on the import path (python puts scripts/ there, not cwd).
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from dotenv import load_dotenv
 load_dotenv(".env", override=True)
