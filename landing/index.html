@@ -86,6 +86,27 @@
       background: radial-gradient(closest-side, oklch(0.44 0.17 268 / 0.14), transparent 70%);
       filter: blur(85px);
     }
+    /* Warm gold note — behind the hero CTA, the "achievement" hue */
+    .orb-d {
+      width: 420px; height: 400px;
+      right: 14%; top: 34%;
+      background: radial-gradient(closest-side, oklch(0.72 0.13 85 / 0.10), transparent 70%);
+      filter: blur(90px);
+    }
+    /* Living aurora — each orb drifts on its own slow period so the backdrop
+       breathes like a real gradient field, never a static wallpaper. */
+    @keyframes orbDrift {
+      0%   { transform: translate(0, 0) scale(1); }
+      50%  { transform: translate(var(--dx, 40px), var(--dy, -30px)) scale(1.06); }
+      100% { transform: translate(0, 0) scale(1); }
+    }
+    .orb-a { --dx: -50px; --dy: 36px;  animation: orbDrift 26s ease-in-out infinite; }
+    .orb-b { --dx: 44px;  --dy: -28px; animation: orbDrift 34s ease-in-out infinite; }
+    .orb-c { --dx: 30px;  --dy: -40px; animation: orbDrift 30s ease-in-out infinite; }
+    .orb-d { --dx: -36px; --dy: 26px;  animation: orbDrift 22s ease-in-out infinite; }
+    @media (prefers-reduced-motion: reduce) {
+      .orb-a, .orb-b, .orb-c, .orb-d { animation: none; }
+    }
 
     .grain {
       position: fixed; inset: 0; z-index: 1; pointer-events: none;
@@ -337,6 +358,22 @@
         0 6px 16px -4px oklch(0.86 0.155 168 / 0.38);
     }
     .cta-btn:active { transform: scale(0.98) translateY(0); }
+
+    /* ── iOS pane: CTA + desktop scan-to-install QR ─────────────── */
+    .ios-cta-row { display: flex; align-items: center; gap: 14px; }
+    .ios-qr {
+      display: flex; flex-direction: column; align-items: center; gap: 5px;
+      padding: 8px 10px; border-radius: 12px; flex-shrink: 0;
+      background: color-mix(in oklch, var(--ink) 3%, transparent);
+      border: 1px solid color-mix(in oklch, var(--ink) 7%, transparent);
+    }
+    .ios-qr img { border-radius: 6px; display: block; }
+    .ios-qr span {
+      font-family: var(--mono); font-size: 8.5px; line-height: 1.35;
+      letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3);
+      text-align: center;
+    }
+    @media (max-width: 640px) { .ios-qr { display: none; } }
 
     /* ── Beta signup form ───────────────────────────────────────── */
     .beta-form {
@@ -1564,6 +1601,7 @@
   <div class="orb orb-a" id="orbA"></div>
   <div class="orb orb-b" id="orbB"></div>
   <div class="orb orb-c"></div>
+  <div class="orb orb-d"></div>
 </div>
 <div class="grain"></div>
 <div class="vignette"></div>
@@ -1650,9 +1688,19 @@
     <div class="cta-wrap">
       <div class="cta-glow"></div>
       <div class="cta-card">
-        <!-- Platform selector — Telegram active, iMessage coming soon -->
-        <div class="platform-row" style="grid-template-columns:repeat(2,1fr);">
-          <button type="button" class="platform-pill active" id="tab-telegram"
+        <!-- Platform selector — iOS app leads (TestFlight is live), Telegram
+             second, iMessage coming back. -->
+        <div class="platform-row" style="grid-template-columns:repeat(3,1fr);">
+          <button type="button" class="platform-pill active" id="tab-ios"
+                  style="cursor:pointer;" onclick="selectPlatform('ios')">
+            <div class="pico" style="background:#111">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="white">
+                <path d="M17.05 20.28c-.98.95-2.05.8-3.08.35-1.09-.46-2.09-.48-3.24 0-1.44.62-2.2.44-3.06-.35C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.08.8 1.18-.24 2.31-.93 3.57-.84 1.51.12 2.65.72 3.4 1.8-3.12 1.87-2.38 5.98.48 7.13-.57 1.5-1.31 2.99-2.53 4.08zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25z"/>
+              </svg>
+            </div>
+            iOS App
+          </button>
+          <button type="button" class="platform-pill" id="tab-telegram"
                   style="cursor:pointer;" onclick="selectPlatform('telegram')">
             <div class="pico tg-icon">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="white">
@@ -1672,6 +1720,28 @@
           </div>
         </div>
 
+        <!-- iOS pane — the primary conversion: one tap to TestFlight, plus a
+             desktop QR (Opal-style store-first: scan with your phone, done). -->
+        <div id="pane-ios">
+          <div style="padding:8px">
+            <div class="ios-cta-row">
+              <div style="flex:1;min-width:0">
+                <a href="https://testflight.apple.com/join/XAZQ5sSF" target="_blank" rel="noopener"
+                   class="cta-btn" style="display:block;width:100%;text-align:center;border:none">
+                  Download the iOS beta →
+                </a>
+                <p class="cta-fineprint" style="margin-top:9px">
+                  Free via TestFlight — on your phone in under a minute.
+                </p>
+              </div>
+              <div class="ios-qr d-only">
+                <img src="qr-testflight.png" alt="Scan to install Arnie on iOS" width="86" height="86">
+                <span>Scan to<br>install</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <!-- iMessage pane — hidden while iMessage is paused -->
         <div id="pane-imessage" style="display:none">
           <form class="beta-form" id="imsgForm" onsubmit="handleIMessageSignup(event)">
@@ -1688,7 +1758,7 @@
         </div>
 
         <!-- Telegram pane — opens onboarding modal -->
-        <div id="pane-telegram">
+        <div id="pane-telegram" style="display:none">
           <div style="padding:8px">
             <button type="button"
                class="cta-btn"
@@ -1710,9 +1780,9 @@
       </div>
 
       <div class="cta-meta">
-        <span>Limited beta</span>
-        <span>Telegram</span>
-        <span>iMessage back this week</span>
+        <span>Free beta</span>
+        <span>iOS · Telegram</span>
+        <span>No card required</span>
       </div>
     </div>
 
@@ -1915,7 +1985,7 @@
             <li>Daily coaching &amp; check-ins</li>
             <li>Dashboard access</li>
           </ul>
-          <a href="#imsgForm" class="price-cta" onclick="document.getElementById('imsgForm').querySelector('input').focus();return true;">Request Access →</a>
+          <a href="https://testflight.apple.com/join/XAZQ5sSF" target="_blank" rel="noopener" class="price-cta">Start Free on iOS →</a>
         </div>
 
         <div class="price-card featured reveal reveal-d2">
@@ -1928,7 +1998,7 @@
             <li>Apple Health &amp; Whoop sync</li>
             <li>Proactive daily check-ins</li>
           </ul>
-          <a href="#imsgForm" class="price-cta" onclick="document.getElementById('imsgForm').querySelector('input').focus();return true;">Get Access →</a>
+          <a href="https://testflight.apple.com/join/XAZQ5sSF" target="_blank" rel="noopener" class="price-cta">Start Free on iOS →</a>
         </div>
 
       </div>
@@ -2191,20 +2261,18 @@
   <section class="final-cta">
     <div class="section-tag reveal">Ready</div>
     <h2 class="reveal reveal-d1">Ready when<br><em>you are.</em></h2>
-    <p class="reveal reveal-d2">Limited beta spots. Be first in.</p>
+    <p class="reveal reveal-d2">Free on iOS. On your phone in under a minute.</p>
     <div class="cta-wrap reveal reveal-d3" style="max-width:500px">
       <div class="cta-glow"></div>
-      <form class="beta-form" id="footerBetaForm" onsubmit="handleBetaSubmit(event,'footerBetaForm')">
-        <input type="email" name="email" placeholder="your@email.com" required autocomplete="email">
-        <button type="submit" class="cta-btn beta-submit-btn">Get Access →</button>
-      </form>
-      <div class="beta-success" id="footerBetaSuccess" style="display:none">
-        <div class="beta-success-inner">
-          <span class="beta-check">✓</span>
-          <span>You're on the list — we'll reach out with access details.</span>
-        </div>
-        <a href="https://t.me/Arnie_1026_Bot?start=freetrial" target="_blank" rel="noopener" class="beta-tg-link">Or try Telegram beta now →</a>
-      </div>
+      <a href="https://testflight.apple.com/join/XAZQ5sSF" target="_blank" rel="noopener"
+         class="cta-btn" style="display:block;width:100%;text-align:center;border:none">
+        Download the iOS beta →
+      </a>
+      <p class="cta-fineprint" style="margin-top:10px;text-align:center">
+        Via TestFlight · no card required ·
+        <a href="https://t.me/Arnie_1026_Bot?start=freetrial" target="_blank" rel="noopener"
+           style="color:var(--ink-2)">or start on Telegram →</a>
+      </p>
     </div>
   </section>
 
@@ -2214,14 +2282,14 @@
     <div class="foot-note">© 2026 &nbsp;·&nbsp; Built for athletes</div>
   </footer>
 
-  <!-- Sticky mobile CTA -->
+  <!-- Sticky mobile CTA — straight to TestFlight, no form -->
   <div class="sticky-bar" id="stickyBar">
     <div class="sticky-left">
-      <div class="sticky-title">Request Beta Access</div>
-      <div class="sticky-sub">Limited spots · Telegram · iMessage back this week</div>
+      <div class="sticky-title">Get the iOS beta</div>
+      <div class="sticky-sub">Free on TestFlight · under a minute</div>
     </div>
-    <a href="#imsgForm" class="sticky-btn" onclick="setTimeout(()=>document.getElementById('imsgForm').querySelector('input').focus(),300)">
-      Apply Now →
+    <a href="https://testflight.apple.com/join/XAZQ5sSF" target="_blank" rel="noopener" class="sticky-btn">
+      Download →
     </a>
   </div>
 
@@ -2236,11 +2304,14 @@
   const ARNIE_API = 'https://arnie.onrender.com';
 
   // ── Platform tab switcher ────────────────────────────────────────
-  // iMessage is temporarily hidden — Telegram is the only active platform.
+  // iOS (TestFlight) is the primary; Telegram second; iMessage back soon.
   function selectPlatform(p) {
     if (p === 'imessage') return; // iMessage back this week — not interactive yet
-    document.getElementById('tab-telegram').classList.add('active');
-    document.getElementById('pane-telegram').style.display = 'block';
+    const ios = p === 'ios';
+    document.getElementById('tab-ios').classList.toggle('active', ios);
+    document.getElementById('tab-telegram').classList.toggle('active', !ios);
+    document.getElementById('pane-ios').style.display = ios ? 'block' : 'none';
+    document.getElementById('pane-telegram').style.display = ios ? 'none' : 'block';
     document.getElementById('pane-imessage').style.display = 'none';
   }
 
