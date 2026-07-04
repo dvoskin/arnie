@@ -204,12 +204,12 @@
       text-align: center; position: relative;
     }
 
-    /* Depth halo — adds cinematic separation behind headline */
+    /* Depth halo — a soft pastel-mint pool behind the headline */
     .hero::before {
       content: "";
       position: absolute; inset: 0; pointer-events: none;
       background: radial-gradient(55% 55% at 50% 46%,
-        oklch(0.38 0.08 168 / 0.13), transparent 72%);
+        oklch(0.88 0.07 168 / 0.35), transparent 72%);
     }
 
     /* Bottom section fade */
@@ -237,23 +237,23 @@
 
     h1 {
       font-family: var(--serif); font-weight: 400;
-      font-size: clamp(54px, 10.5vw, 130px);
-      line-height: 0.90; letter-spacing: -0.03em;
-      margin: 0 0 26px; max-width: 16ch; text-wrap: balance;
+      font-size: clamp(54px, 10.5vw, 132px);
+      line-height: 0.93; letter-spacing: -0.028em;
+      margin: 0 0 28px; max-width: 16ch; text-wrap: balance;
       position: relative; z-index: 1;
     }
-    /* Solid teal with soft glow — the signature element */
+    /* Emerald italic with a soft pastel halo — the signature element */
     h1 em {
       font-style: italic;
       color: var(--accent);
       text-shadow:
-        0 0 60px oklch(0.86 0.155 168 / 0.40),
-        0 0 120px oklch(0.86 0.155 168 / 0.18);
+        0 0 50px oklch(0.75 0.12 168 / 0.35),
+        0 0 110px oklch(0.80 0.10 168 / 0.20);
     }
 
     .hero-sub {
-      font-size: clamp(15px, 1.8vw, 17px); line-height: 1.65;
-      color: var(--ink-2); max-width: 44ch; margin: 0 auto 50px;
+      font-size: clamp(16px, 1.9vw, 18px); line-height: 1.7;
+      color: var(--ink-2); max-width: 42ch; margin: 0 auto 46px;
       text-wrap: pretty; position: relative; z-index: 1;
     }
 
@@ -262,8 +262,8 @@
     .cta-glow {
       position: absolute; inset: -40px;
       background: radial-gradient(55% 70% at 50% 65%,
-        oklch(0.86 0.155 168 / 0.20), transparent 68%);
-      filter: blur(22px); pointer-events: none; z-index: -1;
+        oklch(0.82 0.10 168 / 0.45), transparent 68%);
+      filter: blur(24px); pointer-events: none; z-index: -1;
       animation: breathe 5.5s ease-in-out infinite;
     }
     @keyframes breathe {
@@ -280,10 +280,10 @@
       -webkit-backdrop-filter: blur(28px) saturate(160%);
       padding: 12px;
       box-shadow:
-        0 1px 0 oklch(1 0 0 / 0.07) inset,
-        0 0 0 1px oklch(1 0 0 / 0.03) inset,
-        0 32px 80px -18px oklch(0 0 0 / 0.80),
-        0 8px 20px -8px oklch(0 0 0 / 0.40);
+        0 1px 0 oklch(1 0 0 / 0.55) inset,
+        0 0 0 1px oklch(1 0 0 / 0.25) inset,
+        0 30px 70px -22px oklch(0.30 0.03 255 / 0.22),
+        0 8px 22px -10px oklch(0.30 0.03 255 / 0.12);
     }
     .platform-row {
       display: grid; grid-template-columns: repeat(3, 1fr);
@@ -326,19 +326,21 @@
 
     /* CTA button with shimmer */
     .cta-btn {
+      /* Opal-signature primary: a deep INK pill with white type, floating in a
+         soft mint aura — the one unmissable object on the cream page. */
       display: flex; align-items: center; justify-content: center; gap: 9px;
-      width: 100%; padding: 16px 20px; border-radius: 14px;
+      width: 100%; padding: 17px 22px; border-radius: 999px;
       border: 0; margin-top: 6px;
-      font-size: 15px; font-weight: 600; letter-spacing: -0.015em;
-      color: oklch(0.09 0.01 240);
+      font-size: 15.5px; font-weight: 600; letter-spacing: -0.012em;
+      color: oklch(0.985 0.005 90);
       background: linear-gradient(175deg,
-        oklch(0.93 0.10 165) 0%,
-        oklch(0.86 0.155 168) 40%,
-        oklch(0.76 0.158 172) 100%);
+        oklch(0.30 0.020 255) 0%,
+        oklch(0.22 0.018 255) 55%,
+        oklch(0.18 0.016 255) 100%);
       box-shadow:
-        0 1px 0 oklch(1 0 0 / 0.45) inset,
-        0 14px 36px -8px oklch(0.86 0.155 168 / 0.50),
-        0 4px 12px -4px oklch(0.86 0.155 168 / 0.30);
+        0 1px 0 oklch(1 0 0 / 0.14) inset,
+        0 16px 40px -10px oklch(0.62 0.14 168 / 0.45),
+        0 4px 14px -4px oklch(0.24 0.02 255 / 0.35);
       transition: transform 130ms, box-shadow 200ms;
       text-decoration: none; position: relative; overflow: hidden;
     }
@@ -359,9 +361,9 @@
     .cta-btn:hover {
       transform: translateY(-2px);
       box-shadow:
-        0 1px 0 oklch(1 0 0 / 0.45) inset,
-        0 20px 44px -8px oklch(0.86 0.155 168 / 0.62),
-        0 6px 16px -4px oklch(0.86 0.155 168 / 0.38);
+        0 1px 0 oklch(1 0 0 / 0.16) inset,
+        0 22px 50px -10px oklch(0.62 0.14 168 / 0.60),
+        0 6px 18px -4px oklch(0.24 0.02 255 / 0.40);
     }
     .cta-btn:active { transform: scale(0.98) translateY(0); }
 
@@ -472,26 +474,27 @@
     .chip-dot  { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 10px var(--accent); }
     .chip-label{ font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.07em; text-transform: uppercase; color: var(--ink-3); }
     .chip-num  { font-family: var(--serif); font-size: 20px; line-height: 1; color: var(--accent); }
-    .chip-bar  { width: 54px; height: 3px; border-radius: 2px; background: oklch(0 0 0 / 0.45); overflow: hidden; }
+    .chip-bar  { width: 54px; height: 3px; border-radius: 2px; background: color-mix(in oklch, var(--ink) 14%, transparent); overflow: hidden; }
     .chip-bar i{ display: block; height: 100%; width: 74%; background: linear-gradient(90deg, var(--accent-s), var(--accent)); border-radius: 2px; }
 
     /* ── Section shared ───────────────────────────────────────── */
-    section { padding: 100px 24px; position: relative; }
-    @media (max-width: 640px) { section { padding: 60px 20px; } }
+    section { padding: 118px 24px; position: relative; }
+    @media (max-width: 640px) { section { padding: 74px 20px; } }
     .section-inner { max-width: 1000px; margin: 0 auto; }
     .section-tag {
       font-family: var(--mono); font-size: 10px; letter-spacing: 0.18em;
       text-transform: uppercase; color: var(--accent); margin-bottom: 18px;
     }
     .section-title {
-      font-family: var(--serif); font-size: clamp(40px, 5.8vw, 70px);
-      font-weight: 400; line-height: 0.96;
-      letter-spacing: -0.025em; margin-bottom: 22px;
+      font-family: var(--serif); font-size: clamp(40px, 5.8vw, 72px);
+      font-weight: 400; line-height: 1.01;
+      letter-spacing: -0.024em; margin-bottom: 18px;
+      text-wrap: balance;
     }
     .section-title em { font-style: italic; color: var(--accent); }
     .section-sub {
-      font-size: 17px; line-height: 1.60; color: var(--ink-2);
-      max-width: 50ch; text-wrap: pretty;
+      font-size: 17.5px; line-height: 1.7; color: var(--ink-2);
+      max-width: 46ch; text-wrap: pretty;
     }
 
     /* ── Shared chat avatar (used in demo phone header) ─────── */
@@ -679,7 +682,7 @@
       content: "";
       position: absolute; inset: 0; pointer-events: none;
       background: radial-gradient(50% 50% at 50% 50%,
-        oklch(0.38 0.08 168 / 0.10), transparent 72%);
+        oklch(0.88 0.07 168 / 0.35), transparent 72%);
     }
     .final-cta h2 {
       font-family: var(--serif); font-size: clamp(44px, 7vw, 84px);
@@ -865,11 +868,12 @@
       text-transform: uppercase; color: var(--accent); margin-bottom: 14px;
     }
     .show-copy h3 {
-      font-family: var(--serif); font-weight: 500; font-size: clamp(27px, 3.4vw, 36px);
-      line-height: 1.12; letter-spacing: -0.01em; color: var(--ink); margin-bottom: 14px;
+      font-family: var(--serif); font-weight: 500; font-size: clamp(28px, 3.6vw, 38px);
+      line-height: 1.10; letter-spacing: -0.012em; color: var(--ink); margin-bottom: 14px;
+      text-wrap: balance;
     }
     .show-copy h3 em { font-style: italic; color: var(--accent); }
-    .show-copy p { font-size: 15px; line-height: 1.65; color: var(--ink-2); max-width: 44ch; }
+    .show-copy p { font-size: 15.5px; line-height: 1.7; color: var(--ink-2); max-width: 44ch; }
     .show-points { margin-top: 18px; display: flex; flex-direction: column; gap: 9px; }
     .show-point { display: flex; gap: 10px; align-items: baseline; font-size: 13.5px; color: var(--ink-2); }
     .show-point::before {
@@ -1691,18 +1695,18 @@
 
     </div>
 
-    <div class="eyebrow">A new kind of fitness coach</div>
+    <div class="eyebrow">The fitness coach with a memory</div>
 
     <h1 class="d-hide">A coach that <em>actually knows you.</em></h1>
     <h1 class="m-hide">A coach that <em>actually knows you.</em></h1>
 
     <p class="hero-sub d-hide">
-      Arnie learns your habits, nutrition, training, and goals over time — remembers
-      you, spots patterns, and keeps you moving, right in the messenger you already use.
+      Text your meals and training like you'd text a friend. Arnie logs everything,
+      learns your patterns, and coaches you toward the goal — every single day.
     </p>
     <p class="hero-sub m-hide">
-      Learns your habits and goals — remembers you,
-      spots patterns, and keeps you moving.
+      Text it like a friend. Arnie logs it, learns you,
+      and coaches you there.
     </p>
 
     <div class="cta-wrap">
@@ -1718,7 +1722,7 @@
                 <path d="M17.05 20.28c-.98.95-2.05.8-3.08.35-1.09-.46-2.09-.48-3.24 0-1.44.62-2.2.44-3.06-.35C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.08.8 1.18-.24 2.31-.93 3.57-.84 1.51.12 2.65.72 3.4 1.8-3.12 1.87-2.38 5.98.48 7.13-.57 1.5-1.31 2.99-2.53 4.08zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25z"/>
               </svg>
             </div>
-            iOS App
+            iOS
           </button>
           <button type="button" class="platform-pill" id="tab-telegram"
                   style="cursor:pointer;" onclick="selectPlatform('telegram')">
@@ -1748,10 +1752,10 @@
               <div style="flex:1;min-width:0">
                 <a href="https://testflight.apple.com/join/XAZQ5sSF" target="_blank" rel="noopener"
                    class="cta-btn" style="display:block;width:100%;text-align:center;border:none">
-                  Download the iOS beta →
+                  Get Arnie on iOS&nbsp;&nbsp;→
                 </a>
                 <p class="cta-fineprint" style="margin-top:9px">
-                  Free via TestFlight — on your phone in under a minute.
+                  Free &nbsp;·&nbsp; via TestFlight &nbsp;·&nbsp; under a minute
                 </p>
               </div>
               <div class="ios-qr d-only">
@@ -1890,8 +1894,8 @@
 
         <div class="demo-copy">
           <div class="section-tag reveal">How it feels</div>
-          <h2 class="section-title reveal reveal-d1">Real coaching,<br><em>in your inbox.</em></h2>
-          <p class="section-sub reveal reveal-d2">No app to learn. No dashboard to maintain. Just text Arnie like you'd text a real coach — it handles the rest.</p>
+          <h2 class="section-title reveal reveal-d1">Real coaching,<br><em>one text at a time.</em></h2>
+          <p class="section-sub reveal reveal-d2">Say what you ate or how you trained — in your own words. Arnie logs it, runs the numbers, and answers like a coach who's paying attention.</p>
           <div class="demo-tabs reveal reveal-d3">
             <button class="demo-tab active" data-scene="nutrition">Nutrition</button>
             <button class="demo-tab" data-scene="training">Training</button>
@@ -1931,7 +1935,7 @@
     <div class="section-inner">
       <div class="section-tag reveal">Inside Arnie</div>
       <h2 class="section-title reveal reveal-d1">You talk.<br><em>It learns you.</em></h2>
-      <p class="section-sub reveal reveal-d2">No forms. No food databases. No plugging in numbers. You text your coach like a person — and a living model of you compounds underneath.</p>
+      <p class="section-sub reveal reveal-d2">No forms. No food databases. You talk like a person — and a living model of you compounds underneath.</p>
 
       <div class="showcase">
 
@@ -1983,7 +1987,7 @@
 
       <!-- The close: positioning + moat in one breath -->
       <p class="show-moat reveal">Most apps track. <em>Arnie coaches.</em></p>
-      <p class="show-moat-sub reveal reveal-d1">And six months in, it knows your body better than any app you could switch to — every conversation compounds. History, injuries, preferences, PRs, patterns. Generic apps start from zero. Arnie never does.</p>
+      <p class="show-moat-sub reveal reveal-d1">Six months in, Arnie knows your body better than anything you could switch to. Every conversation compounds — history, injuries, preferences, PRs, patterns. Generic apps start from zero. Arnie never does.</p>
     </div>
   </section>
 
@@ -1992,7 +1996,7 @@
     <div class="section-inner" style="text-align:center">
       <div class="section-tag reveal">Pricing</div>
       <h2 class="section-title reveal reveal-d1">Start free.<br><em>Stay if it works.</em></h2>
-      <p class="section-sub reveal reveal-d2" style="margin:0 auto">Try it free for a week. No credit card. No commitment.</p>
+      <p class="section-sub reveal reveal-d2" style="margin:0 auto">A full week free, every feature on. No card. Cancel with a text.</p>
       <div class="pricing-cols">
 
         <div class="price-card reveal reveal-d1">
@@ -2034,7 +2038,7 @@
 
         <div class="faq-item">
           <button class="faq-q">What is Arnie?<span class="faq-icon">+</span></button>
-          <div class="faq-a">Arnie is a personal performance partner for fitness and nutrition. You log food, workouts, and weight in plain English and it learns your patterns, projects your trajectory, tracks your momentum, and coaches you off your actual history — getting more valuable the longer you use it. Available as a native iOS app, on Telegram, and on iMessage.</div>
+          <div class="faq-a">Arnie is a personal coach for fitness and nutrition. You log food, workouts, and weight in plain English; it learns your patterns, projects where you're headed, and coaches you off your actual history — more valuable every week you use it. Native iOS app, plus Telegram and iMessage.</div>
         </div>
 
         <div class="faq-item">
@@ -2054,7 +2058,7 @@
 
         <div class="faq-item">
           <button class="faq-q">Is there an iOS app?<span class="faq-icon">+</span></button>
-          <div class="faq-a">Yes — a native iOS app is live in beta, with your Coach feed, daily rings, weight trends, Apple Health sync, and chat. Join the beta to get access. Prefer to just text? Telegram and iMessage work too, and everything stays in sync.</div>
+          <div class="faq-a">Yes — live in beta right now. Tap "Get Arnie on iOS" anywhere on this page (or scan the QR) and TestFlight installs it in under a minute: Coach feed, daily rings, weight trends, Apple Health + Whoop sync, and chat. Prefer to just text? Telegram and iMessage work too, and everything stays in sync.</div>
         </div>
 
       </div>
@@ -2286,7 +2290,7 @@
       <div class="cta-glow"></div>
       <a href="https://testflight.apple.com/join/XAZQ5sSF" target="_blank" rel="noopener"
          class="cta-btn" style="display:block;width:100%;text-align:center;border:none">
-        Download the iOS beta →
+        Get Arnie on iOS&nbsp;&nbsp;→
       </a>
       <p class="cta-fineprint" style="margin-top:10px;text-align:center">
         Via TestFlight · no card required ·
