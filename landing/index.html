@@ -28,19 +28,23 @@
   <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@300;400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
   <style>
     :root {
-      --bg:      oklch(0.060 0.008 240);
-      --bg-2:    oklch(0.042 0.006 242);
-      --ink:     oklch(0.97 0.004 90);
-      --ink-2:   oklch(0.70 0.008 90);
-      --ink-3:   oklch(0.48 0.010 90);
-      --ink-4:   oklch(0.28 0.012 240);
-      --line:    color-mix(in oklch, var(--ink) 7%, transparent);
-      --line-s:  color-mix(in oklch, var(--ink) 13%, transparent);
-      --glass:   color-mix(in oklch, var(--ink) 4.5%, transparent);
-      --glass-2: color-mix(in oklch, var(--ink) 8%, transparent);
-      --accent:  oklch(0.86 0.155 168);
-      --accent-s:oklch(0.72 0.13 168);
-      --violet:  oklch(0.52 0.18 280);
+      /* Opal-inspired light system — warm cream paper, deep soft ink, pastel
+         aurora ambience. Calm, dreamy, wellness-premium; never clinical. */
+      --bg:      oklch(0.972 0.008 85);
+      --bg-2:    oklch(0.955 0.010 85);
+      --ink:     oklch(0.24 0.018 255);
+      --ink-2:   oklch(0.46 0.014 255);
+      --ink-3:   oklch(0.62 0.012 255);
+      --ink-4:   oklch(0.84 0.010 255);
+      --line:    color-mix(in oklch, var(--ink) 9%, transparent);
+      --line-s:  color-mix(in oklch, var(--ink) 15%, transparent);
+      --glass:   color-mix(in oklch, var(--ink) 4%, transparent);
+      --glass-2: color-mix(in oklch, var(--ink) 7%, transparent);
+      /* Emerald deepened so it reads as TEXT/stroke on cream; -s is the bright
+         fill variant (buttons, dots). */
+      --accent:  oklch(0.56 0.135 168);
+      --accent-s:oklch(0.72 0.15 168);
+      --violet:  oklch(0.58 0.15 285);
       --serif:   "Instrument Serif", "Times New Roman", serif;
       --sans:    "Geist", ui-sans-serif, system-ui, sans-serif;
       --mono:    "Geist Mono", ui-monospace, "SF Mono", monospace;
@@ -65,33 +69,33 @@
     .stage { position: fixed; inset: 0; pointer-events: none; overflow: hidden; z-index: 0; }
     .orb   { position: absolute; border-radius: 50%; }
 
-    /* Primary teal — right side, deep and cinematic */
+    /* Pastel aurora field — soft mint / sky / lavender / peach blobs drifting
+       over cream, the Opal-style dreamscape. Pastels need presence on a light
+       page, so opacities run higher than the old dark-cinematic orbs. */
     .orb-a {
-      width: 1000px; height: 860px;
-      right: -220px; top: -140px;
-      background: radial-gradient(closest-side, oklch(0.56 0.15 168 / 0.36), transparent 65%);
-      filter: blur(95px);
+      width: 1050px; height: 900px;
+      right: -240px; top: -160px;
+      background: radial-gradient(closest-side, oklch(0.88 0.09 168 / 0.60), transparent 68%);
+      filter: blur(100px);
     }
-    /* Secondary center warmth */
     .orb-b {
-      width: 680px; height: 620px;
-      left: 10%; top: 2%;
-      background: radial-gradient(closest-side, oklch(0.44 0.10 168 / 0.20), transparent 68%);
+      width: 720px; height: 660px;
+      left: 6%; top: 0%;
+      background: radial-gradient(closest-side, oklch(0.88 0.07 235 / 0.50), transparent 70%);
       filter: blur(110px);
     }
-    /* Tertiary violet edge — bottom-left */
     .orb-c {
-      width: 500px; height: 500px;
-      left: -140px; bottom: 12%;
-      background: radial-gradient(closest-side, oklch(0.44 0.17 268 / 0.14), transparent 70%);
-      filter: blur(85px);
+      width: 560px; height: 560px;
+      left: -160px; bottom: 10%;
+      background: radial-gradient(closest-side, oklch(0.87 0.09 295 / 0.45), transparent 70%);
+      filter: blur(95px);
     }
-    /* Warm gold note — behind the hero CTA, the "achievement" hue */
+    /* Warm peach note — behind the hero CTA, the "achievement" hue */
     .orb-d {
-      width: 420px; height: 400px;
-      right: 14%; top: 34%;
-      background: radial-gradient(closest-side, oklch(0.72 0.13 85 / 0.10), transparent 70%);
-      filter: blur(90px);
+      width: 470px; height: 440px;
+      right: 12%; top: 32%;
+      background: radial-gradient(closest-side, oklch(0.90 0.08 60 / 0.55), transparent 70%);
+      filter: blur(95px);
     }
     /* Living aurora — each orb drifts on its own slow period so the backdrop
        breathes like a real gradient field, never a static wallpaper. */
@@ -110,20 +114,22 @@
 
     .grain {
       position: fixed; inset: 0; z-index: 1; pointer-events: none;
-      background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.95' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.04 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
-      mix-blend-mode: overlay; opacity: 0.55;
+      background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.95' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.05 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+      mix-blend-mode: multiply; opacity: 0.40;
     }
+    /* Soft paper glow — on the light stage the "vignette" brightens the center
+       instead of darkening the edges, so the aurora melts into cream. */
     .vignette {
       position: fixed; inset: 0; z-index: 1; pointer-events: none;
       background:
-        radial-gradient(ellipse 140% 80% at 50% 0%, transparent 24%, oklch(0.04 0.006 240 / 0.90) 100%),
-        radial-gradient(ellipse 100% 40% at 50% 100%, oklch(0.04 0.006 240 / 0.50), transparent 70%);
+        radial-gradient(ellipse 140% 80% at 50% 0%, transparent 30%, oklch(0.975 0.008 85 / 0.85) 100%),
+        radial-gradient(ellipse 100% 40% at 50% 100%, oklch(0.975 0.008 85 / 0.55), transparent 70%);
     }
     .spotlight {
-      position: fixed; inset: 0; pointer-events: none; z-index: 2; opacity: 0.45;
-      background: radial-gradient(320px circle at var(--mx,50%) var(--my,28%),
-        oklch(0.86 0.155 168 / 0.065), transparent 68%);
-      mix-blend-mode: screen;
+      position: fixed; inset: 0; pointer-events: none; z-index: 2; opacity: 0.5;
+      background: radial-gradient(340px circle at var(--mx,50%) var(--my,28%),
+        oklch(0.90 0.06 168 / 0.35), transparent 68%);
+      mix-blend-mode: multiply;
     }
 
     /* ── Page wrapper ────────────────────────────────────────── */
@@ -758,12 +764,26 @@
     }
     .demo-phone-wrap { max-width: 420px; }
     .demo-phone {
+      /* The demo phone stays a DARK device on the light page — so its interior
+         re-declares the dark-theme tokens locally. Everything inside (bubbles,
+         header, glass, hairlines) resolves against these, not the page's cream. */
+      --ink:     oklch(0.97 0.004 90);
+      --ink-2:   oklch(0.70 0.008 90);
+      --ink-3:   oklch(0.48 0.010 90);
+      --ink-4:   oklch(0.28 0.012 240);
+      --line:    color-mix(in oklch, var(--ink) 7%, transparent);
+      --line-s:  color-mix(in oklch, var(--ink) 13%, transparent);
+      --glass:   color-mix(in oklch, var(--ink) 4.5%, transparent);
+      --glass-2: color-mix(in oklch, var(--ink) 8%, transparent);
+      --accent:  oklch(0.86 0.155 168);
+      --accent-s:oklch(0.72 0.13 168);
+      color: var(--ink);
       border-radius: 24px; overflow: hidden;
       border: 1px solid var(--line-s);
       background: oklch(0.068 0.008 238);
       box-shadow:
-        0 32px 80px -20px oklch(0 0 0 / 0.65),
-        0 0 0 1px color-mix(in oklch, var(--ink) 6%, transparent),
+        0 32px 80px -20px oklch(0 0 0 / 0.35),
+        0 0 0 1px oklch(0 0 0 / 0.10),
         inset 0 1px 0 color-mix(in oklch, var(--ink) 10%, transparent);
     }
     .demo-phone-hdr {
