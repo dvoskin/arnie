@@ -21,6 +21,7 @@
   <meta name="twitter:description" content="A performance partner that logs naturally, learns your patterns, and follows up every day. On iOS and Telegram.">
   <meta name="twitter:image"       content="https://tryarnie.com/og-image.png">
 
+  <meta name="theme-color" content="#16181f">
   <link rel="icon" type="image/png" href="favicon.png">
   <link rel="apple-touch-icon" href="favicon.png">
   <link rel="preload" as="image" href="/shots/sim-chat.jpg">
@@ -31,23 +32,25 @@
   <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@300;400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
   <style>
     :root {
-      /* Opal-inspired light system — warm cream paper, deep soft ink, pastel
-         aurora ambience. Calm, dreamy, wellness-premium; never clinical. */
-      --bg:      oklch(0.972 0.008 85);
-      --bg-2:    oklch(0.955 0.010 85);
-      --ink:     oklch(0.24 0.018 255);
-      --ink-2:   oklch(0.46 0.014 255);
-      --ink-3:   oklch(0.62 0.012 255);
-      --ink-4:   oklch(0.84 0.010 255);
-      --line:    color-mix(in oklch, var(--ink) 9%, transparent);
-      --line-s:  color-mix(in oklch, var(--ink) 15%, transparent);
-      --glass:   color-mix(in oklch, var(--ink) 4%, transparent);
-      --glass-2: color-mix(in oklch, var(--ink) 7%, transparent);
-      /* Emerald deepened so it reads as TEXT/stroke on cream; -s is the bright
-         fill variant (buttons, dots). */
-      --accent:  oklch(0.56 0.135 168);
-      --accent-s:oklch(0.72 0.15 168);
-      --violet:  oklch(0.58 0.15 285);
+      /* Opal atmosphere, night edition — deep ink-navy paper, warm off-white
+         type, the same aurora hues glowing instead of tinting. Matches the
+         dark app screens so the phone melts into the page. */
+      color-scheme: dark;
+      --bg:      oklch(0.16 0.012 260);
+      --bg-2:    oklch(0.19 0.014 260);
+      --ink:     oklch(0.94 0.010 90);
+      --ink-2:   oklch(0.72 0.012 250);
+      --ink-3:   oklch(0.56 0.012 250);
+      --ink-4:   oklch(0.34 0.010 250);
+      --line:    color-mix(in oklch, var(--ink) 10%, transparent);
+      --line-s:  color-mix(in oklch, var(--ink) 17%, transparent);
+      --glass:   color-mix(in oklch, var(--ink) 5%, transparent);
+      --glass-2: color-mix(in oklch, var(--ink) 9%, transparent);
+      /* Emerald lifted so it reads as TEXT/stroke on the dark paper; -s is the
+         bright fill variant (buttons, dots). */
+      --accent:  oklch(0.78 0.135 168);
+      --accent-s:oklch(0.74 0.15 168);
+      --violet:  oklch(0.70 0.14 285);
       --serif:   "Instrument Serif", "Times New Roman", serif;
       --sans:    "Geist", ui-sans-serif, system-ui, sans-serif;
       --mono:    "Geist Mono", ui-monospace, "SF Mono", monospace;
@@ -78,26 +81,26 @@
     .orb-a {
       width: 1050px; height: 900px;
       right: -240px; top: -160px;
-      background: radial-gradient(closest-side, oklch(0.88 0.09 168 / 0.60), transparent 68%);
+      background: radial-gradient(closest-side, oklch(0.42 0.11 168 / 0.45), transparent 68%);
       filter: blur(100px);
     }
     .orb-b {
       width: 720px; height: 660px;
       left: 6%; top: 0%;
-      background: radial-gradient(closest-side, oklch(0.88 0.07 235 / 0.50), transparent 70%);
+      background: radial-gradient(closest-side, oklch(0.40 0.09 235 / 0.40), transparent 70%);
       filter: blur(110px);
     }
     .orb-c {
       width: 560px; height: 560px;
       left: -160px; bottom: 10%;
-      background: radial-gradient(closest-side, oklch(0.87 0.09 295 / 0.45), transparent 70%);
+      background: radial-gradient(closest-side, oklch(0.40 0.11 295 / 0.38), transparent 70%);
       filter: blur(95px);
     }
     /* Warm peach note — behind the hero CTA, the "achievement" hue */
     .orb-d {
       width: 470px; height: 440px;
       right: 12%; top: 32%;
-      background: radial-gradient(closest-side, oklch(0.90 0.08 60 / 0.55), transparent 70%);
+      background: radial-gradient(closest-side, oklch(0.45 0.09 60 / 0.35), transparent 70%);
       filter: blur(95px);
     }
     /* Living aurora — each orb drifts on its own slow period so the backdrop
@@ -118,21 +121,20 @@
     .grain {
       position: fixed; inset: 0; z-index: 1; pointer-events: none;
       background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.95' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.05 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
-      mix-blend-mode: multiply; opacity: 0.40;
+      mix-blend-mode: overlay; opacity: 0.5;
     }
-    /* Soft paper glow — on the light stage the "vignette" brightens the center
-       instead of darkening the edges, so the aurora melts into cream. */
+    /* Night vignette — settle the aurora into the ink paper at the edges. */
     .vignette {
       position: fixed; inset: 0; z-index: 1; pointer-events: none;
       background:
-        radial-gradient(ellipse 140% 80% at 50% 0%, transparent 30%, oklch(0.975 0.008 85 / 0.85) 100%),
-        radial-gradient(ellipse 100% 40% at 50% 100%, oklch(0.975 0.008 85 / 0.55), transparent 70%);
+        radial-gradient(ellipse 140% 80% at 50% 0%, transparent 30%, color-mix(in oklch, var(--bg) 85%, transparent) 100%),
+        radial-gradient(ellipse 100% 40% at 50% 100%, color-mix(in oklch, var(--bg) 55%, transparent), transparent 70%);
     }
     .spotlight {
       position: fixed; inset: 0; pointer-events: none; z-index: 2; opacity: 0.5;
       background: radial-gradient(340px circle at var(--mx,50%) var(--my,28%),
-        oklch(0.90 0.06 168 / 0.35), transparent 68%);
-      mix-blend-mode: multiply;
+        oklch(0.45 0.10 168 / 0.30), transparent 68%);
+      mix-blend-mode: screen;
     }
 
     /* ── Page wrapper ────────────────────────────────────────── */
@@ -329,21 +331,21 @@
 
     /* CTA button with shimmer */
     .cta-btn {
-      /* Opal-signature primary: a deep INK pill with white type, floating in a
-         soft mint aura — the one unmissable object on the cream page. */
+      /* Night primary: the bright EMERALD pill with ink type — the one glowing
+         object on the dark paper (same language as the app's Log Food). */
       display: flex; align-items: center; justify-content: center; gap: 9px;
       width: 100%; padding: 17px 22px; border-radius: 999px;
       border: 0; margin-top: 6px;
-      font-size: 15.5px; font-weight: 600; letter-spacing: -0.012em;
-      color: oklch(0.985 0.005 90);
+      font-size: 15.5px; font-weight: 650; letter-spacing: -0.012em;
+      color: oklch(0.13 0.015 255);
       background: linear-gradient(175deg,
-        oklch(0.30 0.020 255) 0%,
-        oklch(0.22 0.018 255) 55%,
-        oklch(0.18 0.016 255) 100%);
+        oklch(0.90 0.11 165) 0%,
+        oklch(0.78 0.145 170) 60%,
+        oklch(0.72 0.15 172) 100%);
       box-shadow:
-        0 1px 0 oklch(1 0 0 / 0.14) inset,
-        0 16px 40px -10px oklch(0.62 0.14 168 / 0.45),
-        0 4px 14px -4px oklch(0.24 0.02 255 / 0.35);
+        0 1px 0 oklch(1 0 0 / 0.45) inset,
+        0 16px 44px -10px oklch(0.70 0.15 168 / 0.40),
+        0 4px 14px -4px oklch(0 0 0 / 0.45);
       transition: transform 130ms, box-shadow 200ms;
       text-decoration: none; position: relative; overflow: hidden;
     }
@@ -351,7 +353,7 @@
     .cta-btn::after {
       content: "";
       position: absolute; top: -50%; left: -65%; width: 38%; height: 200%;
-      background: linear-gradient(90deg, transparent, oklch(1 0 0 / 0.18), transparent);
+      background: linear-gradient(90deg, transparent, oklch(1 0 0 / 0.35), transparent);
       transform: skewX(-22deg);
       animation: shimmer 3.8s ease-in-out infinite;
       animation-delay: 2s;
@@ -364,9 +366,9 @@
     .cta-btn:hover {
       transform: translateY(-2px);
       box-shadow:
-        0 1px 0 oklch(1 0 0 / 0.16) inset,
-        0 22px 50px -10px oklch(0.62 0.14 168 / 0.60),
-        0 6px 18px -4px oklch(0.24 0.02 255 / 0.40);
+        0 1px 0 oklch(1 0 0 / 0.50) inset,
+        0 22px 56px -10px oklch(0.70 0.15 168 / 0.55),
+        0 6px 18px -4px oklch(0 0 0 / 0.50);
     }
     .cta-btn:active { transform: scale(0.98) translateY(0); }
 
@@ -902,11 +904,11 @@
         oklch(0.42 0.008 250) 0%, oklch(0.16 0.006 250) 38%,
         oklch(0.13 0.006 250) 72%, oklch(0.30 0.008 250) 100%);
       box-shadow:
-        0 0 0 1.5px oklch(0.10 0.005 250),
+        0 0 0 1.5px oklch(0.34 0.008 250 / 0.9),
         inset 2px 2px 3px -1px oklch(1 0 0 / 0.35),
         inset -2px -2px 3px -1px oklch(0 0 0 / 0.55),
-        0 60px 120px -32px oklch(0.20 0.03 255 / 0.45),
-        0 22px 44px -18px oklch(0.20 0.03 255 / 0.30);
+        0 60px 120px -32px oklch(0 0 0 / 0.60),
+        0 22px 44px -18px oklch(0 0 0 / 0.45);
       transform: perspective(1400px) rotateY(var(--ry)) rotateX(var(--rx)) rotate(var(--rz));
       animation: phoneFloat 7s ease-in-out infinite;
     }
@@ -1654,14 +1656,24 @@
       flex-wrap: wrap; margin-bottom: 14px;
     }
     .cta-ghost {
-      display: inline-flex; align-items: center; gap: 7px;
-      padding: 15px 24px; border-radius: 999px;
-      font-size: 14.5px; font-weight: 600; letter-spacing: -0.01em;
-      color: var(--ink); background: var(--glass);
+      display: inline-flex; align-items: center; gap: 9px;
+      padding: 16px 26px; border-radius: 999px;
+      font-size: 15px; font-weight: 600; letter-spacing: -0.01em;
+      color: var(--ink); background: var(--glass-2);
       border: 1px solid var(--line-s);
-      transition: transform 130ms, background 200ms;
+      transition: transform 130ms, background 200ms, border-color 200ms;
     }
-    .cta-ghost:hover { transform: translateY(-1px); background: var(--glass-2); }
+    .cta-ghost .arr {
+      font-size: 13px; color: var(--accent); line-height: 1;
+      transition: transform 220ms cubic-bezier(.34,1.4,.64,1);
+    }
+    .cta-ghost:hover {
+      transform: translateY(-1px);
+      background: color-mix(in oklch, var(--ink) 12%, transparent);
+      border-color: color-mix(in oklch, var(--accent) 45%, transparent);
+    }
+    .cta-ghost:hover .arr { transform: translateY(3px); }
+    .cta-ghost:active { transform: scale(0.97); }
     .cine-hero .cta-btn { width: auto; display: inline-flex; padding: 15px 28px; margin-top: 0; }
     .hero-micro {
       font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.10em;
@@ -1685,11 +1697,11 @@
         oklch(0.42 0.008 250) 0%, oklch(0.16 0.006 250) 38%,
         oklch(0.13 0.006 250) 72%, oklch(0.30 0.008 250) 100%);
       box-shadow:
-        0 0 0 1.5px oklch(0.10 0.005 250),
+        0 0 0 1.5px oklch(0.34 0.008 250 / 0.9),
         inset 2px 2px 3px -1px oklch(1 0 0 / 0.35),
         inset -2px -2px 3px -1px oklch(0 0 0 / 0.55),
-        0 60px 120px -32px oklch(0.20 0.03 255 / 0.45),
-        0 22px 44px -18px oklch(0.20 0.03 255 / 0.30);
+        0 60px 120px -32px oklch(0 0 0 / 0.60),
+        0 22px 44px -18px oklch(0 0 0 / 0.45);
       position: relative;
     }
     .pp-island {
@@ -1731,7 +1743,7 @@
     }
     .dcard {
       width: 172px; padding: 13px 15px; border-radius: 16px;
-      background: color-mix(in oklch, var(--bg) 78%, oklch(1 0 0));
+      background: color-mix(in oklch, var(--ink) 7%, var(--bg-2));
       border: 1px solid var(--line-s);
       box-shadow: 0 18px 44px -16px oklch(0.25 0.03 255 / 0.28), 0 4px 12px -6px oklch(0.25 0.03 255 / 0.14);
       backdrop-filter: blur(10px);
@@ -1745,7 +1757,7 @@
     .mnode {
       padding: 8px 13px; border-radius: 999px; white-space: nowrap;
       font-size: 11.5px; font-weight: 550; letter-spacing: -0.008em; color: var(--ink);
-      background: color-mix(in oklch, var(--bg) 72%, oklch(1 0 0));
+      background: color-mix(in oklch, var(--ink) 9%, var(--bg-2));
       border: 1px solid var(--line-s);
       box-shadow: 0 10px 26px -12px oklch(0.25 0.03 255 / 0.25);
     }
@@ -1763,13 +1775,13 @@
       display: inline-flex; align-items: center; gap: 6px;
       padding: 8px 14px; border-radius: 999px;
       font-size: 11.5px; font-weight: 550; color: var(--ink-2);
-      background: color-mix(in oklch, var(--bg) 76%, oklch(1 0 0));
+      background: color-mix(in oklch, var(--ink) 8%, var(--bg-2));
       border: 1px solid var(--line);
     }
     .ipill::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: var(--accent-s); }
     .chcard {
       width: 168px; padding: 13px 15px; border-radius: 16px;
-      background: color-mix(in oklch, var(--bg) 80%, oklch(1 0 0));
+      background: color-mix(in oklch, var(--ink) 7%, var(--bg-2));
       border: 1px solid var(--line-s);
       box-shadow: 0 16px 40px -16px oklch(0.25 0.03 255 / 0.25);
       pointer-events: auto;
@@ -1816,7 +1828,7 @@
     .diff-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; margin-top: 48px; }
     .diff-card {
       text-align: left; padding: 26px 24px; border-radius: 20px;
-      background: color-mix(in oklch, var(--bg) 62%, oklch(1 0 0));
+      background: color-mix(in oklch, var(--ink) 6%, var(--bg-2));
       border: 1px solid var(--line-s);
       box-shadow: 0 20px 48px -22px oklch(0.25 0.03 255 / 0.18);
     }
@@ -1834,7 +1846,7 @@
     .price-one {
       max-width: 480px; margin: 44px auto 0; text-align: left;
       padding: 30px 28px; border-radius: 24px;
-      background: color-mix(in oklch, var(--bg) 58%, oklch(1 0 0));
+      background: color-mix(in oklch, var(--ink) 7%, var(--bg-2));
       border: 1px solid color-mix(in oklch, var(--accent) 26%, transparent);
       box-shadow: 0 30px 70px -26px color-mix(in oklch, var(--accent) 30%, transparent);
     }
@@ -1851,7 +1863,9 @@
       display: inline-flex; align-items: center; gap: 6px;
       padding: 8px 16px; border-radius: 999px;
       font-size: 12px; font-weight: 600; letter-spacing: -0.01em;
-      color: oklch(0.97 0 0); background: oklch(0.22 0.02 255);
+      color: oklch(0.13 0.015 255);
+      background: linear-gradient(175deg, oklch(0.90 0.11 165), oklch(0.74 0.15 172));
+      box-shadow: 0 1px 0 oklch(1 0 0 / 0.40) inset, 0 6px 16px -6px oklch(0.70 0.15 168 / 0.45);
       transition: transform 120ms;
     }
     .nav-cta:hover { transform: translateY(-1px); }
@@ -1900,6 +1914,8 @@
       .chcard .n { font-size: 12px; }
       .cine-hero { padding-top: 72px; }
       .cine-hero .hero-ctas { flex-direction: column; gap: 9px; }
+      /* Clean full-width stack: primary and secondary read as equals. */
+      .cine-hero .cta-btn, .cine-hero .cta-ghost { width: 100%; justify-content: center; }
       /* Captions lead from the TOP on mobile — big, readable, first in the
          eye path; the phone rides lower beneath them. */
       .cine-cap { top: 86px; bottom: auto; width: 92vw; }
@@ -1988,7 +2004,7 @@
         </p>
         <div class="hero-ctas">
           <a href="https://testflight.apple.com/join/XAZQ5sSF" target="_blank" rel="noopener" class="cta-btn">Join the iOS beta&nbsp;&nbsp;→</a>
-          <a href="#cine" class="cta-ghost" onclick="cineJump(0.14);return false;">See how it works</a>
+          <a href="#cine" class="cta-ghost" onclick="cineJump(0.17);return false;">See how it works&nbsp;<span class="arr">↓</span></a>
         </div>
         <div class="hero-micro">Free while in beta · Installs via TestFlight in about 2 minutes</div>
       </div>
