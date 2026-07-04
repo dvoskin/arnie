@@ -1862,7 +1862,7 @@
       .cine { height: 520vh; }
       /* Hero-sized mockup: the phone is the product — let it own the middle
          band (bands layer OVER its lower third by design, Opal-style). */
-      .pp { width: min(260px, 72vw); }
+      .pp { width: min(300px, 82vw); }
       .pp-island { top: 18px; height: 13px; }
       .cine-el { --mob: 0.64; }
       /* Perf: backdrop blur is the single most expensive paint on mobile
@@ -1882,6 +1882,17 @@
          per-frame transforms never re-rasterize (m-cut keeps the count low). */
       .cine-el, .cine-cap, .cine-resolve { will-change: transform, opacity; }
       .cine-el.m-cut, .ipill.m-cut { display: none; }
+      /* Mobile type scale: body copy reads like the headline's equal, not a
+         footnote. (Titles already clamp; this lifts the small text.) */
+      .hero-sub     { font-size: 16.5px; }
+      .section-sub  { font-size: 18.5px; }
+      .diff-card h3 { font-size: 25px; }
+      .diff-card p  { font-size: 16px; }
+      .faq-q        { font-size: 17px; }
+      .faq-a        { font-size: 16px; }
+      .price-one li { font-size: 15.5px; }
+      .price-one .after { font-size: 14.5px; }
+      .final-cta p  { font-size: 17.5px; }
       .dcard { width: 124px; padding: 10px 11px; }
       .dcard .v { font-size: 13.5px; }
       .dcard .m { font-size: 10px; }
@@ -1893,7 +1904,7 @@
          eye path; the phone rides lower beneath them. */
       .cine-cap { top: 86px; bottom: auto; width: 92vw; }
       .cine-cap h3 { font-size: 27px; margin-bottom: 6px; }
-      .cine-cap p { font-size: 14px; line-height: 1.55; max-width: 40ch; }
+      .cine-cap p { font-size: 15.5px; line-height: 1.55; max-width: 40ch; }
       .cine-cap .mc { display: none; }
       .cine-svg { display: none; }
       .cine-resolve { top: 38%; }
@@ -1910,7 +1921,9 @@
       .mn-knee    { --tx: 0px !important;    --ty: -205px !important; }
       .mn-late    { --tx: -95px !important;  --ty: 278px !important; }
       .mn-wt      { --tx: 95px !important;   --ty: 278px !important; }
-      .ip-row     { --tx: 0px !important;    --ty: -160px !important; }
+      /* Explicit width: an absolutely-positioned centered row shrink-wraps to
+         half the stage and wrapped the pills into 3 tall rows. */
+      .ip-row     { --tx: 0px !important;    --ty: -180px !important; width: 92vw; }
       .ip-row > div { max-width: 92vw; gap: 6px; }
       .ipill { font-size: 11px; padding: 5px 11px; }
       .ipill { font-size: 10px; padding: 6px 10px; }
@@ -2081,7 +2094,7 @@
       </div>
       <div class="cine-cap" id="cap4">
         <h3>Start in the <em>iOS beta.</em></h3>
-        <p>The iOS beta is live today, with Telegram alongside. iMessage and WhatsApp are coming soon.</p>
+        <p>The iOS beta is live today — Telegram too. iMessage and WhatsApp are next.</p>
       </div>
 
       <!-- Phase 5 — resolve -->
@@ -2382,13 +2395,15 @@
       const ch1 = Math.min(ease(seg(p, 0.12, 0.18)), 1 - ease(seg(p, 0.26, 0.32)));
       // Keep the phone HERO-SIZED on mobile: shrink just enough to clear the
       // caption/element bands (they ride ±160-280px), ride lower instead.
-      const mShrink = isM ? (0.17 * mid + 0.07 * ch4 + 0.12 * ch1) : 0;
+      // max, not sum — the mid envelope stays saturated through the channels
+      // phase, so summing double-shrank the phone there.
+      const mShrink = isM ? (Math.max(0.275 * mid, 0.25 * ch4) + 0.10 * ch1) : 0;
       const ry = -12 * t2 * (1 - ease(seg(p, 0.62, 0.72))) * (isM ? 0.6 : 1);
-      const yM = isM ? (13 * Math.max(mid, ch4) + 5 * ch1 - 3 * rise) : 0;
-      pp.style.setProperty('--pp-y', ((1 - rise) * (isM ? 63 : 56) + r5 * (isM ? 32 : 38) + yM) + 'dvh');
+      const yM = isM ? (15 * Math.max(mid, ch4) + 11 * ch1 - 3 * rise) : 0;
+      pp.style.setProperty('--pp-y', ((1 - rise) * (isM ? 63 : 56) + r5 * (isM ? 35.5 : 38) + yM) + 'dvh');
       pp.style.setProperty('--pp-ry', ry + 'deg');
       pp.style.setProperty('--pp-rx', (2.5 * t2 * (1 - r5)) + 'deg');
-      pp.style.setProperty('--pp-s', 1 - (isM ? 0.15 : 0.12) * r5 - 0.06 * t2 - mShrink);
+      pp.style.setProperty('--pp-s', 1 - (isM ? 0.17 : 0.12) * r5 - 0.06 * t2 - mShrink);
 
       // Captions — one at a time.
       const wins = [[0.11, 0.27], [0.29, 0.44], [0.47, 0.65], [0.69, 0.82]];
