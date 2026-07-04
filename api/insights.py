@@ -464,9 +464,19 @@ def _build_briefing_summary(stats: dict) -> str:
         "late afternoon / evening — typical training window" if _h < 21 else
         "late evening — the day is mostly over, winding down toward bed"
     )
+    # Explicit "already done today" state so the directive never recommends a
+    # first-move the client has already completed (weigh-in, first meal). These
+    # are computed from the log, unlike the RECENT CONVERSATION above which only
+    # reflects what they SAID — a stated "gonna weigh in" must not outrank an
+    # actual logged weigh-in.
+    weighed_today = bool(stats.get("weighed_today"))
+    logged_food_today = bool(stats.get("logged_food_today")
+                             or (today.get("food_entries")))
     L.append(f"TODAY ({today_iso}, {_today_weekday}, STILL IN PROGRESS, user-local {_now_local.hour:02d}:{_now_local.minute:02d} — {_phase}): "
              f"{today.get('calories', 0)} cal, {today.get('protein', 0)}g protein so far; "
-             f"training: {_training_state(today)}")
+             f"training: {_training_state(today)}; "
+             f"weighed in {'YES (already logged today — do NOT tell them to weigh in)' if weighed_today else 'not yet'}; "
+             f"first meal {'logged' if logged_food_today else 'not yet'}")
     L.append("")
 
     past = [h for h in history if h.get("date") and h["date"] < today_iso][-21:]
@@ -816,6 +826,7 @@ RULES:
 - The hero is THE element on the screen and reads top-to-bottom as a scannable directive, NOT a paragraph: headline = the real-time directive (a confident imperative, no second clause) → stats = the 1-2 grounding numbers ('198g protein · 1,939 cal') → body = ONE short confident status line ('You're right where I want you.') → next = ONE crisp cue for the single next move, a sharp instruction not a sentence, fitting one short line ('First move: protein before 10am.', 'Tonight: water, walk, sleep.'). Each is short and skimmable; never merge them into prose. Never a bare number as the headline; never an editorial header. Milestone only if the data earns it (a real low, a real streak); else null. stats/next are null only when there's genuinely nothing to put there.
 - TIME-AWARE + REALISTIC: read the user-local clock in TODAY and make the headline + next fit reality. Protein matters, but NEVER tell them to eat a big meal or hit a large remaining macro target late at night or right before bed, and never imply hitting most of a day's target in a short window (chasing 135g of protein in 15 minutes is absurd advice). If it's LATE EVENING and a macro is short, at most suggest a small light option, or just let the day stand and pivot to tomorrow. If it's OVERNIGHT / past midnight (the middle-of-the-night phase), TODAY IS OVER: give NO "today" pacing cue and NEVER reference a deadline that already passed ("before midnight" at 1am is nonsense) — the only sane move is sleep, or tomorrow's first step (weigh in, breakfast protein).
 - VARY THE LEVER — do NOT default to a protein-pacing reminder. Across days the single directive must rotate to whatever ACTUALLY matters most right now: a morning weigh-in, getting the training session in, recovery / sleep, hydration, protecting a streak or consistency, a step toward goal weight, or nutrition ONLY when the clock makes it realistic. Read the data + clock and pick the one real lever, not protein by reflex.
+- NEVER RECOMMEND AN ALREADY-DONE MOVE — the TODAY line states what's already been logged today. If it says "weighed in YES", the weigh-in is DONE: do NOT make the headline or next a weigh-in / "log your weight" — acknowledge it or move to the next lever. If "first meal logged", do not tell them to log/eat their first meal. This is a HARD check against the actual log and OUTRANKS the RECENT CONVERSATION: a client who SAID "gonna weigh in soon" and then DID weigh in must not be told to weigh in again. Recommend the next real thing, never a completed one.
 - RESPECT THE LIVE CONVERSATION: the RECENT CONVERSATION section (when present) is what the client JUST told you, and it OVERRIDES any default assumption from the data. If they stated a near-term commitment or plan (family time, travel, an event, dinner out, an intentional rest day, an injury, being slammed at work), do NOT push a directive that fights it. NEVER tell them to train, "get the session in", or do anything they just said they can't or won't. Instead, either (a) suggest something that FITS the moment (a walk while out, light movement, a bit of mobility, "a family walk still counts") or (b) pivot the single directive to a lever that doesn't conflict (protein/hydration/sleep/recovery/tomorrow's first move). Complement the moment; never contradict it.
 - NEVER claim "today is a rest day" unless: (a) the user said so in the RECENT CONVERSATION above, or (b) the day is mostly over (late evening) AND the user has a long-running weekly pattern of skipping THIS weekday (4+ weeks of N on this exact weekday in the LOGGED DAYS section). "Workout not yet" early in the day means it's early — not a rest day. When uncertain, treat today as a normal TRAINING day and frame nutrition + recovery accordingly.
 - STRENGTH vs CARDIO — read the TODAY `training:` line and the [strength]/[cardio] tags literally. Cardio or steps (a walk, a run — ESPECIALLY one "auto-synced from a wearable") is NOT a lift. If training shows "only cardio so far", do NOT tell them their session/lift is done, that they "already trained", or that they "crushed the workout" — they have NOT lifted yet. Treat a lift as still to-do (or credit the cardio as cardio: "nice walk in — still got the lift ahead"). Only call the strength session done when the line actually says a strength workout is done.

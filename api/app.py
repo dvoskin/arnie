@@ -1260,6 +1260,22 @@ async def _build_stats_for_user(db, user, target_date=None):
 
     streak_days = _compute_streak(hist_data)
 
+    # ── Today-state flags for the coach brief ──────────────────────────────────
+    # The brief is strongly conversation-aware (it treats "gonna weigh in soon"
+    # as CURRENT TRUTH) but was blind to whether the move was ALREADY done in the
+    # log — so it kept issuing "log your weight / breakfast" first-moves the user
+    # had already completed (Danny 2026-07-04). Surface explicit booleans so a
+    # "first move" is never something already logged. Weigh-in uses the same
+    # rollover-hour logging day as everything else.
+    from db.queries import _logging_day_of as _logday
+    _tz_flags = user.timezone or "UTC"
+    _today_ld = _user_today(_tz_flags)
+    weighed_today = any(
+        w.timestamp is not None and _logday(w.timestamp, _tz_flags) == _today_ld
+        for w in weights
+    )
+    logged_food_today = bool(day_log and (day_log.food_entries or []))
+
     def _ht():
         if not user.height_cm:
             return ""
@@ -1370,6 +1386,9 @@ async def _build_stats_for_user(db, user, target_date=None):
         "brain": _brain_str,
         # keep legacy 'today' + 'user' keys so existing insights endpoint works unchanged
         "today": _log_to_day(day_log),
+        # Today-state flags — let the brief avoid recommending already-done moves.
+        "weighed_today": weighed_today,
+        "logged_food_today": logged_food_today,
         "user": {"name": user.name or "User", "goal": user.primary_goal or "general fitness",
                  "current_weight_lbs": profile["current_weight_lbs"],
                  "goal_weight_lbs": profile["goal_weight_lbs"]},
