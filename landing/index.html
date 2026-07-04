@@ -1711,6 +1711,7 @@
     .pp-hdr {
       display: flex; align-items: center; gap: 9px;
       padding: 50px 16px 11px; border-bottom: 1px solid oklch(1 0 0 / 0.07);
+      background: oklch(0.135 0.006 250); position: relative; z-index: 2;
     }
     .pp-ava {
       width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0;
@@ -1721,12 +1722,18 @@
     .pp-name { font-size: 13.5px; font-weight: 600; letter-spacing: -0.01em; }
     .pp-stat { display: flex; align-items: center; gap: 4px; font-family: var(--mono); font-size: 8.5px; letter-spacing: 0.08em; text-transform: uppercase; color: oklch(0.72 0.13 168); }
     .pp-stat::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: oklch(0.72 0.13 168); }
-    .pp-chat { flex: 1; padding: 13px 12px; display: flex; flex-direction: column; gap: 8px; overflow: hidden; }
+    .pp-chat { flex: 1; padding: 13px 12px; overflow: hidden; }
+    .pp-msgs {
+      display: flex; flex-direction: column; gap: 8px;
+      transform: translateY(calc(var(--shift, 0) * -1px));
+      transition: transform 520ms cubic-bezier(0.22, 1, 0.36, 1);
+    }
     .pb {
       max-width: 84%; padding: 9px 12px; border-radius: 15px;
       font-size: 12px; line-height: 1.45; letter-spacing: -0.005em;
       opacity: var(--k, 0);
       transform: translateY(calc((1 - var(--k, 0)) * 12px)) scale(calc(0.96 + var(--k, 0) * 0.04));
+      transition: opacity 480ms ease, transform 480ms cubic-bezier(0.22, 1, 0.36, 1);
       will-change: transform, opacity;
     }
     .pb.user  { align-self: flex-end; background: oklch(0.34 0.06 168); border-bottom-right-radius: 5px; }
@@ -1736,6 +1743,7 @@
       background: oklch(1 0 0 / 0.055); border: 1px solid oklch(1 0 0 / 0.08);
       border-radius: 13px; padding: 10px 12px;
       opacity: var(--k, 0); transform: translateY(calc((1 - var(--k, 0)) * 12px));
+      transition: opacity 480ms ease, transform 480ms cubic-bezier(0.22, 1, 0.36, 1);
       will-change: transform, opacity;
     }
     .pp-chipcard .lbl { font-family: var(--mono); font-size: 8px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--sink2); }
@@ -1907,18 +1915,50 @@
 
     /* ── Mobile: simplify + rescale the scene geometry ── */
     @media (max-width: 700px) {
-      .pp { width: min(258px, 72vw); }
-      .cine-el { --mob: 0.52; }
+      .cine { height: 520vh; }
+      .pp { width: min(224px, 66vw); }
+      .pp-hdr { padding: 40px 14px 9px; }
+      .pp-ava { width: 26px; height: 26px; font-size: 13px; }
+      .pp-chat { padding: 10px 10px; gap: 7px; }
+      .pb { font-size: 10.5px; padding: 8px 10px; border-radius: 13px; }
+      .pp-chipcard { padding: 8px 10px; }
+      .pp-chipcard .val { font-size: 13px; margin: 2px 0 6px; }
+      .pp-mem { font-size: 9.5px; padding: 7px 9px; }
+      .pp-input { margin: 6px 10px 11px; padding: 8px 12px; font-size: 10.5px; }
+      .pp-island { top: 18px; height: 13px; }
+      .cine-el { --mob: 0.64; }
       .cine-el.m-cut { display: none; }
-      .dcard { width: 132px; padding: 10px 11px; }
-      .dcard .v { font-size: 14px; }
-      .chcard { width: 132px; padding: 11px 12px; }
-      .cine-hero { padding-top: 76px; }
+      .dcard { width: 124px; padding: 10px 11px; }
+      .dcard .v { font-size: 13.5px; }
+      .dcard .m { font-size: 10px; }
+      .chcard { width: 124px; padding: 10px 11px; }
+      .chcard .n { font-size: 12px; }
+      .cine-hero { padding-top: 72px; }
       .cine-hero .hero-ctas { flex-direction: column; gap: 9px; }
-      .cine-cap { bottom: 12px; }
-      .cine-cap h3 { font-size: 20px; }
-      .cine-cap p { font-size: 12px; }
+      /* Captions must clear the sticky mobile CTA bar. */
+      .cine-cap { bottom: calc(100px + env(safe-area-inset-bottom)); width: 92vw; }
+      .cine-cap h3 { font-size: 19px; margin-bottom: 4px; }
+      .cine-cap p { font-size: 11.5px; line-height: 1.5; }
+      .cine-cap .mc { display: none; }
       .cine-svg { display: none; }
+      .cine-resolve { top: 38%; }
+      .cine-resolve p { font-size: 13.5px; margin-bottom: 20px; }
+      /* Re-place the floating layers vertically — a 375px viewport has no side
+         room. Values are FINAL pixels (mob factor neutralized). */
+      .cine-el { --mob: 1; }
+      .dc-protein { --tx: -72px !important; --ty: -258px !important; --sp: 1 !important; }
+      .dc-weight  { --tx: 72px !important;  --ty: -258px !important; --sp: 1 !important; }
+      .dc-pattern { --tx: 0px !important;   --ty: 212px !important; width: 190px; }
+      .mn-goal    { --tx: -102px !important; --ty: -248px !important; }
+      .mn-target  { --tx: 102px !important;  --ty: -248px !important; }
+      .mn-knee    { --tx: 0px !important;    --ty: -288px !important; }
+      .mn-late    { --tx: -98px !important;  --ty: 208px !important; }
+      .mn-wt      { --tx: 98px !important;   --ty: 208px !important; }
+      .ip-row     { --tx: 0px !important;    --ty: -305px !important; }
+      .ip-row > div { max-width: 92vw; gap: 6px; }
+      .ipill { font-size: 10px; padding: 6px 10px; }
+      .ch-ios { --tx: -70px !important; --ty: 196px !important; }
+      .ch-tg  { --tx: 70px !important;  --ty: 196px !important; }
     }
 
     /* ── Reduced motion: unpin, tell the story statically ── */
@@ -2009,10 +2049,11 @@
               </div>
             </div>
             <div class="pp-chat">
-              <div class="pb user"  id="pb1">Had chicken, rice, and avocado after training.</div>
-              <div class="pb arnie" id="pb2">Logged. Strong post-workout base.</div>
-              <div class="pb arnie" id="pb3">You're still light on protein today.</div>
-              <div class="pb arnie" id="pb4">Next move: 45g lean protein before dinner.</div>
+              <div class="pp-msgs">
+              <div class="pb user"  id="pb1">Ground turkey and rice after the gym — about 350g.</div>
+              <div class="pb arnie" id="pb2">Logged. 620 cal, 54g protein. Strong post-workout base.</div>
+              <div class="pb user"  id="pb3">How am I tracking this week?</div>
+              <div class="pb arnie" id="pb4">Protein's landed 4 of 5 days and you're running a 380-cal deficit. On pace for 0.8 lb down this week.</div>
               <div class="pp-chipcard" id="pb5">
                 <div class="lbl">Protein</div>
                 <div class="val">132g <span style="color:var(--sink2);font-weight:450">/ 180g</span></div>
@@ -2021,6 +2062,7 @@
               <div class="pp-mem" id="pb6">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0;margin-top:1px"><path d="M12 3a5 5 0 0 0-5 5v1a4 4 0 0 0-1 7.4V18a3 3 0 0 0 3 3h6a3 3 0 0 0 3-3v-1.6A4 4 0 0 0 17 9V8a5 5 0 0 0-5-5z"/></svg>
                 <span><b>Remembers:</b> late dinners affect tomorrow's protein</span>
+              </div>
               </div>
             </div>
             <div class="pp-input">
@@ -2039,10 +2081,10 @@
       </div>
 
       <!-- Phase 2 — data cards pull out of the app -->
-      <div class="cine-el dcard g2" style="--tx:-300px; --ty:-170px; --sp:1.06">
+      <div class="cine-el dcard g2 dc-protein" style="--tx:-300px; --ty:-170px; --sp:1.06">
         <div class="t">Protein</div><div class="v">132g / 180g</div><div class="m">48g remaining</div>
       </div>
-      <div class="cine-el dcard g2" style="--tx:300px; --ty:-150px; --sp:0.94">
+      <div class="cine-el dcard g2 dc-weight" style="--tx:300px; --ty:-150px; --sp:0.94">
         <div class="t">Weight</div><div class="v">↓ 1.8 lb this week</div><div class="m">Trend improving</div>
       </div>
       <div class="cine-el dcard g2 m-cut" style="--tx:-330px; --ty:40px; --sp:0.9">
@@ -2051,17 +2093,17 @@
       <div class="cine-el dcard g2 m-cut" style="--tx:330px; --ty:70px; --sp:1.1">
         <div class="t">Recovery</div><div class="v">Sleep dipped</div><div class="m">Keep dinner lighter</div>
       </div>
-      <div class="cine-el dcard g2 pattern" style="--tx:0px; --ty:250px; --sp:1">
+      <div class="cine-el dcard g2 pattern dc-pattern" style="--tx:0px; --ty:250px; --sp:1">
         <div class="t">Pattern</div><div class="v">Late dinners reduce next-day protein completion</div>
       </div>
 
       <!-- Phase 3 — memory nodes -->
-      <div class="cine-el mnode g3" style="--tx:-250px; --ty:-140px">Goal: lose fat</div>
-      <div class="cine-el mnode g3" style="--tx:250px; --ty:-140px">Protein target: 180g</div>
-      <div class="cine-el mnode g3" style="--tx:-90px; --ty:-235px">Knee injury</div>
-      <div class="cine-el mnode g3" style="--tx:95px; --ty:-230px">Trains 4x/week</div>
-      <div class="cine-el mnode g3" style="--tx:-265px; --ty:115px">Late dinners</div>
-      <div class="cine-el mnode g3" style="--tx:268px; --ty:110px">Weight trend ↓</div>
+      <div class="cine-el mnode g3 mn-goal" style="--tx:-250px; --ty:-140px">Goal: lose fat</div>
+      <div class="cine-el mnode g3 mn-target" style="--tx:250px; --ty:-140px">Protein target: 180g</div>
+      <div class="cine-el mnode g3 mn-knee" style="--tx:-90px; --ty:-235px">Knee injury</div>
+      <div class="cine-el mnode g3 m-cut" style="--tx:95px; --ty:-230px">Trains 4x/week</div>
+      <div class="cine-el mnode g3 mn-late" style="--tx:-265px; --ty:115px">Late dinners</div>
+      <div class="cine-el mnode g3 mn-wt" style="--tx:268px; --ty:110px">Weight trend ↓</div>
       <div class="cine-el mnode g3 dim m-cut" style="--tx:-320px; --ty:-15px">Misses lunch on workdays</div>
       <div class="cine-el mnode g3 dim m-cut" style="--tx:322px; --ty:-18px">High-protein breakfasts</div>
       <div class="cine-el mnode g3 dim m-cut" style="--tx:-150px; --ty:235px">Push/pull/legs split</div>
@@ -2070,7 +2112,7 @@
       <div class="cine-el mnode g3 dim m-cut" style="--tx:0px; --ty:282px">Meal timing</div>
 
       <!-- Phase 4 — integrations + channels -->
-      <div class="cine-el g4" style="--tx:0px; --ty:-395px; pointer-events:none">
+      <div class="cine-el g4 ip-row" style="--tx:0px; --ty:-395px; pointer-events:none">
         <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;max-width:520px">
           <span class="ipill">Apple Health</span><span class="ipill">Whoop</span>
           <span class="ipill">Oura</span><span class="ipill">Fitbit</span><span class="ipill">Hume</span>
@@ -2079,11 +2121,11 @@
           <span class="ipill m-cut">Recovery</span>
         </div>
       </div>
-      <a class="cine-el chcard primary g4" style="--tx:-290px; --ty:-60px"
+      <a class="cine-el chcard primary g4 ch-ios" style="--tx:-290px; --ty:-60px"
          href="https://testflight.apple.com/join/XAZQ5sSF" target="_blank" rel="noopener">
         <div class="n"> iOS Beta</div><div class="st">Available now</div>
       </a>
-      <a class="cine-el chcard g4" style="--tx:290px; --ty:-60px"
+      <a class="cine-el chcard g4 ch-tg" style="--tx:290px; --ty:-60px"
          href="https://t.me/Arnie_1026_Bot?start=freetrial" target="_blank" rel="noopener">
         <div class="n">Telegram</div><div class="st">Available now</div>
       </a>
@@ -2378,6 +2420,7 @@
     const stage = document.getElementById('cineStage');
     if (!cine || !stage) return;
     const reduced = matchMedia('(prefers-reduced-motion: reduce)');
+    const mobile = matchMedia('(max-width: 700px)');
 
     const hero = document.getElementById('cineHero');
     const pp = document.getElementById('pp');
@@ -2392,12 +2435,25 @@
     const seg = (p, a, b) => Math.min(1, Math.max(0, (p - a) / (b - a)));
     const ease = t => t * t * (3 - 2 * t);           // smoothstep
 
+    // On load, the conversation types itself in — a living app before the user
+    // ever scrolls. Scroll can only ADD bubbles, never retract a typed one.
+    const intro = [0, 0, 0, 0, 0, 0];
+    if (!reduced.matches) {
+      [650, 1500, 2450, 3300, 4100, 4750].forEach((t, i) =>
+        setTimeout(() => { intro[i] = 1; if (!ticking) frame(); }, t));
+    } else {
+      intro.fill(1);
+    }
+
     let ticking = false;
+    let forcedP = null;                              // test hook (cineSet)
     function frame() {
       ticking = false;
       const rect = cine.getBoundingClientRect();
       const total = rect.height - innerHeight;
-      const p = Math.min(1, Math.max(0, -rect.top / total));
+      const p = forcedP !== null ? forcedP
+              : Math.min(1, Math.max(0, -rect.top / total));
+      const isM = mobile.matches;
 
       // Phase 0 — hero copy hands off, phone rises from its peek to center.
       const hOut = ease(seg(p, 0.03, 0.09));
@@ -2405,17 +2461,23 @@
       hero.style.setProperty('--hero-y', hOut);
       hero.style.setProperty('--hero-pe', hOut > 0.5 ? 'none' : 'auto');
       const rise = ease(seg(p, 0.0, 0.11));
-      const r5 = ease(seg(p, 0.86, 0.96));           // final compression
+      const r5 = ease(seg(p, 0.84, 0.93));           // final compression
 
-      // Phase 1 — chat wakes, bubble by bubble.
+      // Phase 1 — chat wakes (scroll can catch up past the timed intro).
+      let k5 = 0, k6 = 0;
       bubbles.forEach((b, i) => {
-        const k = ease(seg(p, 0.10 + i * 0.026, 0.125 + i * 0.026));
+        const k = Math.max(intro[i], ease(seg(p, 0.10 + i * 0.024, 0.125 + i * 0.024)));
+        if (i === 4) k5 = k;
+        if (i === 5) k6 = k;
         b.style.setProperty('--k', k);
       });
+      // On mobile the column scrolls itself as the chip + memory pill land,
+      // exactly like a live chat — older messages slide up under the header.
+      pp.style.setProperty('--shift', isM ? (k5 * 86 + k6 * 58) : 0);
 
       // Phase 2 — tilt + data cards pull out.
       const t2 = ease(seg(p, 0.28, 0.36));
-      const fade2 = 1 - ease(seg(p, 0.44, 0.50));    // cards yield to memory
+      const fade2 = 1 - ease(seg(p, 0.44, 0.50));
       g2.forEach((el, i) => {
         const k = ease(seg(p, 0.28 + i * 0.016, 0.36 + i * 0.016));
         el.style.setProperty('--k', k);
@@ -2443,17 +2505,21 @@
       // Real screens morph through the phases: chat → Coach feed → forecast → score.
       pp.style.setProperty('--s2', ease(seg(p, 0.29, 0.33)) * (1 - ease(seg(p, 0.45, 0.49))));
       pp.style.setProperty('--s3', ease(seg(p, 0.47, 0.51)) * (1 - ease(seg(p, 0.67, 0.71))));
-      pp.style.setProperty('--s4', ease(seg(p, 0.69, 0.73)) * (1 - ease(seg(p, 0.88, 0.93))));
+      pp.style.setProperty('--s4', ease(seg(p, 0.69, 0.73)) * (1 - ease(seg(p, 0.86, 0.91))));
 
-      // The phone: rises, tilts through the data phase, settles for the close.
-      const ry = -12 * t2 * (1 - ease(seg(p, 0.62, 0.72)));
-      pp.style.setProperty('--pp-y', ((1 - rise) * 56 + r5 * 38) + 'dvh');
+      // The phone: rises, tilts through the data phase, and on MOBILE shrinks
+      // through the busy middle so the floating layers never collide with it.
+      const mid = Math.min(ease(seg(p, 0.27, 0.34)), 1 - ease(seg(p, 0.82, 0.90)));
+      const ch4 = Math.min(ease(seg(p, 0.66, 0.72)), 1 - ease(seg(p, 0.82, 0.90)));
+      const mShrink = isM ? (0.26 * mid + 0.10 * ch4) : 0;
+      const ry = -12 * t2 * (1 - ease(seg(p, 0.62, 0.72))) * (isM ? 0.6 : 1);
+      pp.style.setProperty('--pp-y', ((1 - rise) * 56 + r5 * (isM ? 30 : 38) - (isM ? 5 : 0) * rise) + 'dvh');
       pp.style.setProperty('--pp-ry', ry + 'deg');
       pp.style.setProperty('--pp-rx', (2.5 * t2 * (1 - r5)) + 'deg');
-      pp.style.setProperty('--pp-s', (1 - 0.12 * r5) - 0.06 * t2);
+      pp.style.setProperty('--pp-s', 1 - 0.12 * r5 - 0.06 * t2 - mShrink);
 
       // Captions — one at a time.
-      const wins = [[0.11, 0.27], [0.29, 0.44], [0.47, 0.65], [0.69, 0.84]];
+      const wins = [[0.11, 0.27], [0.29, 0.44], [0.47, 0.65], [0.69, 0.82]];
       caps.forEach((c, i) => {
         const [a, b] = wins[i];
         const k = ease(seg(p, a, a + 0.03)) * (1 - ease(seg(p, b - 0.02, b)));
@@ -2461,10 +2527,11 @@
       });
 
       // Phase 5 — resolve into the CTA.
-      resolve.style.setProperty('--k', ease(seg(p, 0.90, 0.97)));
-      resolve.style.setProperty('--res-pe', p > 0.92 ? 'auto' : 'none');
+      resolve.style.setProperty('--k', ease(seg(p, 0.87, 0.93)));
+      resolve.style.setProperty('--res-pe', p > 0.90 ? 'auto' : 'none');
     }
     function onScroll() {
+      forcedP = null;
       if (!ticking && !reduced.matches) { ticking = true; requestAnimationFrame(frame); }
     }
     addEventListener('scroll', onScroll, { passive: true });
@@ -2477,7 +2544,7 @@
         const rect = cine.getBoundingClientRect();
         const total = rect.height - innerHeight;
         const p = Math.min(1, Math.max(0, -rect.top / total));
-        if (p > 0.25) return;                        // only in the hero/chat phase
+        if (p > 0.25) return;
         const dx = (e.clientX / innerWidth - 0.5) * 4;
         const dy = (e.clientY / innerHeight - 0.5) * -3;
         pp.style.setProperty('--pp-ry', dx + 'deg');
@@ -2490,6 +2557,8 @@
       const top = cine.offsetTop + (cine.offsetHeight - innerHeight) * frac;
       scrollTo({ top, behavior: reduced.matches ? 'auto' : 'smooth' });
     };
+    // Test/debug hook: force a specific progress without scrolling.
+    window.cineSet = function (q) { forcedP = q; frame(); };
   })();
 </script>
 </body>
