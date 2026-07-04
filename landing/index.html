@@ -868,36 +868,68 @@
     }
     .show-point b { color: var(--ink); font-weight: 600; }
 
-    /* Phone frame — floats gently; wrapper carries scroll parallax; the glass
-       carries a slow sheen sweep. Layered so the transforms never fight. */
+    /* Hyperreal device mockups — every phone carries a true 3D pose (per-phone
+       --ry/--rx/--rz vars), a titanium frame with lit + shaded edges, a dynamic
+       island, glass reflection, and a grounded contact shadow. One var-driven
+       float animation serves every pose, so angles and motion never fight. */
     .show-phone-wrap { display: flex; justify-content: center; position: relative; }
     .show-phone-wrap::before {
-      content: ""; position: absolute; inset: 6% 14%;
-      background: radial-gradient(closest-side, color-mix(in oklch, var(--accent) 18%, transparent), transparent 70%);
-      filter: blur(34px); z-index: 0;
+      content: ""; position: absolute; inset: 4% 10%;
+      background: radial-gradient(closest-side, color-mix(in oklch, var(--accent) 22%, transparent), transparent 70%);
+      filter: blur(38px); z-index: 0;
       animation: showGlow 7.5s ease-in-out infinite;
+    }
+    /* Grounded contact shadow — an ellipse pooled under the tilted device. */
+    .show-phone-wrap::after {
+      content: ""; position: absolute; left: 16%; right: 16%; bottom: -3%;
+      height: 8%; z-index: 0;
+      background: radial-gradient(50% 100% at 50% 50%, oklch(0.25 0.02 255 / 0.30), transparent 72%);
+      filter: blur(14px);
     }
     @keyframes showGlow {
       0%, 100% { opacity: 0.65; }
       50%      { opacity: 1; }
     }
     .show-phone {
-      position: relative; z-index: 1; width: min(310px, 86vw);
-      border-radius: 46px; padding: 10px;
-      background: oklch(0.10 0.006 240);
-      border: 1px solid color-mix(in oklch, var(--ink) 14%, transparent);
+      /* Pose — overridden per placement. Lit from the upper-left. */
+      --ry: -11deg; --rx: 2.5deg; --rz: -0.5deg;
+      position: relative; z-index: 1; width: min(365px, 88vw);
+      border-radius: 52px; padding: 11px;
+      background: linear-gradient(145deg,
+        oklch(0.42 0.008 250) 0%, oklch(0.16 0.006 250) 38%,
+        oklch(0.13 0.006 250) 72%, oklch(0.30 0.008 250) 100%);
       box-shadow:
-        0 50px 110px -30px oklch(0 0 0 / 0.75),
-        inset 0 1px 0 color-mix(in oklch, var(--ink) 10%, transparent);
+        0 0 0 1.5px oklch(0.10 0.005 250),
+        inset 2px 2px 3px -1px oklch(1 0 0 / 0.35),
+        inset -2px -2px 3px -1px oklch(0 0 0 / 0.55),
+        0 60px 120px -32px oklch(0.20 0.03 255 / 0.45),
+        0 22px 44px -18px oklch(0.20 0.03 255 / 0.30);
+      transform: perspective(1400px) rotateY(var(--ry)) rotateX(var(--rx)) rotate(var(--rz));
       animation: phoneFloat 7s ease-in-out infinite;
     }
-    .show-row.flip .show-phone { animation-duration: 8.2s; animation-delay: -2.6s; }
-    @keyframes phoneFloat {
-      0%, 100% { transform: translateY(0) rotate(0deg); }
-      50%      { transform: translateY(-9px) rotate(0.4deg); }
+    /* Dynamic island — floating over the screen's status area. */
+    .show-phone::after {
+      content: ""; position: absolute; top: 23px; left: 50%;
+      transform: translateX(-50%);
+      width: 27%; height: 17px;
+      background: oklch(0.05 0 0); border-radius: 999px; z-index: 3;
+      box-shadow: inset 0 0 2px oklch(1 0 0 / 0.10);
     }
-    .show-screen { position: relative; border-radius: 36px; overflow: hidden; }
+    .show-row.flip .show-phone {
+      --ry: 11deg; --rz: 0.5deg;
+      animation-duration: 8.2s; animation-delay: -2.6s;
+    }
+    @keyframes phoneFloat {
+      0%, 100% { transform: perspective(1400px) rotateY(var(--ry)) rotateX(var(--rx)) rotate(var(--rz)) translateY(0); }
+      50%      { transform: perspective(1400px) rotateY(var(--ry)) rotateX(var(--rx)) rotate(var(--rz)) translateY(-9px); }
+    }
+    .show-screen { position: relative; border-radius: 41px; overflow: hidden; }
     .show-screen img { display: block; width: 100%; }
+    /* Static glass reflection — a soft top-left light plane on the glass. */
+    .show-screen::before {
+      content: ""; position: absolute; inset: 0; z-index: 2; pointer-events: none;
+      background: linear-gradient(160deg, oklch(1 0 0 / 0.13), oklch(1 0 0 / 0.04) 24%, transparent 42%);
+    }
     /* Slow specular sheen drifting across the glass — reads as light, not UI. */
     .show-screen::after {
       content: ""; position: absolute; inset: -30%;
@@ -931,21 +963,15 @@
       margin: 0 auto 26px; max-width: 52ch;
       font-size: 14px; line-height: 1.6; color: var(--ink-2);
     }
-    .show-duo { display: flex; justify-content: center; gap: 22px; }
+    .show-duo { display: flex; justify-content: center; gap: 30px; }
     .show-phone-sm {
-      width: min(225px, 43vw); border-radius: 34px; padding: 7px;
+      width: min(255px, 44vw); border-radius: 40px; padding: 8px;
     }
-    .show-phone-sm .show-screen { border-radius: 27px; }
-    .tilt-l { animation: phoneFloatL 7.8s ease-in-out infinite; }
-    .tilt-r { animation: phoneFloatR 8.6s ease-in-out infinite; animation-delay: -3s; }
-    @keyframes phoneFloatL {
-      0%, 100% { transform: rotate(-2.4deg) translateY(0); }
-      50%      { transform: rotate(-2.6deg) translateY(-8px); }
-    }
-    @keyframes phoneFloatR {
-      0%, 100% { transform: rotate(2.4deg) translateY(0); }
-      50%      { transform: rotate(2.6deg) translateY(-8px); }
-    }
+    .show-phone-sm .show-screen { border-radius: 32px; }
+    .show-phone-sm::after { top: 16px; height: 13px; }
+    /* Angled toward each other — a matched pair on the shelf. */
+    .tilt-l { --ry: 12deg;  --rx: 2deg; --rz: -2deg; animation-duration: 7.8s; }
+    .tilt-r { --ry: -12deg; --rx: 2deg; --rz: 2deg;  animation-duration: 8.6s; animation-delay: -3s; }
 
     .show-moat {
       margin-top: 84px; text-align: center;
