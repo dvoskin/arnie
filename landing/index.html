@@ -137,6 +137,23 @@
       mix-blend-mode: screen;
     }
 
+    /* ── Channels — the mid-scroll conversion section ── */
+    #channels { padding: 100px 24px 96px; }
+    .channels-pills {
+      display: flex; flex-wrap: wrap; gap: 8px; justify-content: center;
+      max-width: 560px; margin: 26px auto 0;
+    }
+    .channels-grid {
+      display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px; max-width: 780px; margin: 30px auto 0;
+    }
+    .channels-grid .chcard { width: auto; text-align: left; }
+    .channels-grid .chcard.soon { opacity: 0.7; }
+    @media (max-width: 700px) {
+      #channels { padding: 72px 20px 72px; }
+      .channels-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); max-width: 420px; }
+    }
+
     /* ── Page progress ───────────────────────────────────────── */
     .progress {
       position: fixed; top: 0; left: 0; right: 0; height: 2.5px; z-index: 60;
@@ -1647,7 +1664,7 @@
        One pinned scene: the Arnie iOS app unfolds as you scroll. A single
        rAF handler maps scroll progress onto CSS vars; everything below is
        transform/opacity only. */
-    .cine { height: 640vh; position: relative; }
+    .cine { height: 560vh; position: relative; }
     .cine-stage {
       /* svh, not dvh: iOS resizes dvh as the URL bar collapses, re-laying-out
          the pinned scene MID-SCROLL — the main judder source. svh is constant,
@@ -1884,7 +1901,7 @@
 
     /* ── Mobile: simplify + rescale the scene geometry ── */
     @media (max-width: 700px) {
-      .cine { height: 520vh; }
+      .cine { height: 460vh; }
       /* Hero-sized mockup: the phone is the product — let it own the middle
          band (bands layer OVER its lower third by design, Opal-style). */
       .pp { width: min(300px, 82vw); }
@@ -1945,6 +1962,13 @@
          room. Each phase reuses two clean bands: an upper band between the
          caption and the phone, and a lower band beneath the phone. */
       .cine-el { --mob: 1; }
+      /* Enter by SETTLING, not flying from center — fly-out paths cross in
+         the narrow bands (protein×weight, target×knee were colliding). */
+      .cine-el {
+        transform: translate(-50%, -50%)
+          translate3d(var(--tx), calc(var(--ty) + (1 - var(--k, 0)) * 18px), 0)
+          scale(calc(0.92 + 0.08 * var(--k, 0)));
+      }
       .dc-protein { --tx: -72px !important; --ty: -178px !important; --sp: 1 !important; }
       .dc-weight  { --tx: 72px !important;  --ty: -178px !important; --sp: 1 !important; }
       .dc-pattern { --tx: 0px !important;   --ty: 282px !important; width: 200px; }
@@ -2086,30 +2110,6 @@
       <div class="cine-el mnode g3 dim m-cut" style="--tx:0px; --ty:-278px">Weekend overeating</div>
       <div class="cine-el mnode g3 dim m-cut" style="--tx:0px; --ty:282px">Meal timing</div>
 
-      <!-- Phase 4 — integrations + channels -->
-      <div class="cine-el g4 ip-row" style="--tx:0px; --ty:-395px; pointer-events:none">
-        <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;max-width:520px">
-          <span class="ipill">Apple Health</span><span class="ipill">Whoop</span>
-          <span class="ipill">Oura</span><span class="ipill">Fitbit</span><span class="ipill">Hume</span>
-          <span class="ipill m-cut">Steps</span><span class="ipill m-cut">Sleep</span>
-          <span class="ipill m-cut">Weight</span><span class="ipill m-cut">Workouts</span>
-          <span class="ipill m-cut">Recovery</span>
-        </div>
-      </div>
-      <a class="cine-el chcard primary g4 ch-ios" style="--tx:-290px; --ty:-60px"
-         href="https://testflight.apple.com/join/XAZQ5sSF" target="_blank" rel="noopener">
-        <div class="n"> iOS Beta</div><div class="st">Available now</div>
-      </a>
-      <a class="cine-el chcard g4 ch-tg" style="--tx:290px; --ty:-60px"
-         href="https://t.me/Arnie_1026_Bot?start=freetrial" target="_blank" rel="noopener">
-        <div class="n">Telegram</div><div class="st">Available now</div>
-      </a>
-      <div class="cine-el chcard soon g4 m-cut" style="--tx:-290px; --ty:105px">
-        <div class="n">iMessage</div><div class="st">Coming soon</div>
-      </div>
-      <div class="cine-el chcard soon g4 m-cut" style="--tx:290px; --ty:105px">
-        <div class="n">WhatsApp</div><div class="st">Coming soon</div>
-      </div>
 
       <!-- Phase captions -->
       <div class="cine-cap" id="cap1">
@@ -2125,10 +2125,6 @@
         <p>Goals, injuries, habits, and patterns — all of it shapes how Arnie coaches you.</p>
         <div class="mc">No more starting over every time you ask for help</div>
       </div>
-      <div class="cine-cap" id="cap4">
-        <h3>Start in the <em>iOS beta.</em></h3>
-        <p>The iOS beta is live today — Telegram too. iMessage and WhatsApp are next.</p>
-      </div>
 
       <!-- Phase 5 — resolve -->
       <div class="cine-resolve" id="cineResolve">
@@ -2138,6 +2134,34 @@
         <span class="hero-micro">Free while in beta · Installs via TestFlight</span>
       </div>
 
+    </div>
+  </section>
+
+  <!-- ── CHANNELS — mid-scroll conversion breather ── -->
+  <section id="channels">
+    <div class="section-inner" style="text-align:center">
+      <div class="section-tag reveal">Works where you are</div>
+      <h2 class="section-title reveal reveal-d1">Start in the <em>iOS beta.</em></h2>
+      <p class="section-sub reveal reveal-d2" style="margin:0 auto">Telegram is live too, and iMessage and WhatsApp are next — the same Arnie, the same memory, wherever you text.</p>
+      <div class="channels-pills reveal reveal-d2">
+        <span class="ipill">Apple Health</span><span class="ipill">Whoop</span><span class="ipill">Oura</span>
+        <span class="ipill">Fitbit</span><span class="ipill">Hume</span><span class="ipill">Steps</span>
+        <span class="ipill">Sleep</span><span class="ipill">Weight</span><span class="ipill">Recovery</span>
+      </div>
+      <div class="channels-grid reveal reveal-d3">
+        <a class="chcard primary" href="https://testflight.apple.com/join/XAZQ5sSF" target="_blank" rel="noopener">
+          <div class="n"> iOS Beta</div><div class="st">Available now</div>
+        </a>
+        <a class="chcard" href="https://t.me/Arnie_1026_Bot?start=freetrial" target="_blank" rel="noopener">
+          <div class="n">Telegram</div><div class="st">Available now</div>
+        </a>
+        <div class="chcard soon"><div class="n">iMessage</div><div class="st">Coming soon</div></div>
+        <div class="chcard soon"><div class="n">WhatsApp</div><div class="st">Coming soon</div></div>
+      </div>
+      <div class="cta-wrap reveal reveal-d3" style="max-width:420px;margin:30px auto 0">
+        <a href="https://testflight.apple.com/join/XAZQ5sSF" target="_blank" rel="noopener" class="cta-btn">Join the iOS beta&nbsp;&nbsp;→</a>
+        <p class="cta-fineprint" style="margin-top:10px;text-align:center">Free while in beta · Installs via TestFlight</p>
+      </div>
     </div>
   </section>
 
@@ -2358,10 +2382,9 @@
     const pp = document.getElementById('pp');
     const svg = document.getElementById('cineSvg');
     const resolve = document.getElementById('cineResolve');
-    const caps = [1,2,3,4].map(i => document.getElementById('cap' + i));
+    const caps = [1,2,3].map(i => document.getElementById('cap' + i));
     const g2 = [...stage.querySelectorAll('.g2')];
     const g3 = [...stage.querySelectorAll('.mnode')];
-    const g4 = [...stage.querySelectorAll('.g4')];
 
     const seg = (p, a, b) => Math.min(1, Math.max(0, (p - a) / (b - a)));
     const ease = t => t * t * (3 - 2 * t);           // smoothstep
@@ -2383,72 +2406,63 @@
       // Hero exits FASTER than the phone rises — by the time the phone top
       // reaches the CTA row (~p 0.05) the copy is already gone, so the rise
       // never reads as the phone plowing through text.
-      const hOut = ease(seg(p, 0.02, 0.06));
+      const hOut = ease(seg(p, 0.015, 0.05));
       hero.style.setProperty('--hero-o', 1 - hOut);
       hero.style.setProperty('--hero-y', hOut);
       hero.style.setProperty('--hero-pe', hOut > 0.5 ? 'none' : 'auto');
       const rise = ease(seg(p, 0.0, 0.11));
-      const r5 = ease(seg(p, 0.84, 0.93));           // final compression
+      const r5 = ease(seg(p, 0.84, isM ? 0.90 : 0.92));  // final compression — phone lands BEFORE the resolve copy reads
 
       // Phase 2 — tilt + data cards pull out.
       // MOBILE: phases share the same vertical bands, so hand-offs must be
       // SEQUENTIAL (out, beat of air, in) — desktop's side placement can
       // afford the dissolve overlap, stacked bands can't.
-      const t2 = ease(seg(p, 0.28, 0.36));
-      const fade2 = 1 - ease(seg(p, isM ? 0.41 : 0.44, isM ? 0.46 : 0.50));
+      const t2 = ease(seg(p, 0.31, 0.39));
+      const fade2 = 1 - ease(seg(p, isM ? 0.50 : 0.53, isM ? 0.55 : 0.58));
       g2.forEach((el, i) => {
-        const k = ease(seg(p, 0.28 + i * 0.016, 0.36 + i * 0.016));
+        const k = ease(seg(p, 0.31 + i * 0.016, 0.39 + i * 0.016));
         el.style.setProperty('--k', k);
         el.style.setProperty('--fade', fade2 * (1 - r5));
       });
 
       // Phase 3 — memory map.
-      const g3in = isM ? 0.49 : 0.46;
-      const fade3 = 1 - ease(seg(p, isM ? 0.63 : 0.66, isM ? 0.68 : 0.72));
+      const g3in = isM ? 0.57 : 0.55;
+      const fade3 = 1 - ease(seg(p, isM ? 0.76 : 0.78, isM ? 0.81 : 0.84));
       const g3floor = isM ? 0 : 0.18;   // no lingering ghosts in the bands
       g3.forEach((el, i) => {
         const k = ease(seg(p, g3in + i * 0.012, g3in + 0.07 + i * 0.012));
         el.style.setProperty('--k', k);
         el.style.setProperty('--fade', (g3floor + (1 - g3floor) * fade3) * (1 - r5));
       });
-      svg.style.setProperty('--mk', ease(seg(p, 0.48, 0.54)));
-      svg.style.setProperty('--draw', ease(seg(p, 0.50, 0.64)));
+      svg.style.setProperty('--mk', ease(seg(p, 0.57, 0.63)));
+      svg.style.setProperty('--draw', ease(seg(p, 0.59, 0.75)));
       svg.style.setProperty('--fade', fade3 * (1 - r5));
-
-      // Phase 4 — integrations + channels.
-      const g4in = isM ? 0.70 : 0.68;
-      g4.forEach((el, i) => {
-        const k = ease(seg(p, g4in + i * 0.018, g4in + 0.07 + i * 0.018));
-        el.style.setProperty('--k', k);
-        el.style.setProperty('--fade', 1 - r5);
-      });
 
       // Real screens stack IN (never out mid-story), then release at resolve.
       const hold = 1 - r5;
-      pp.style.setProperty('--s2', ease(seg(p, 0.29, 0.315)) * hold);
-      pp.style.setProperty('--s3', ease(seg(p, 0.475, 0.50)) * hold);
+      pp.style.setProperty('--s2', ease(seg(p, 0.32, 0.345)) * hold);
+      pp.style.setProperty('--s3', ease(seg(p, 0.555, 0.58)) * hold);
 
       // The phone: rises, tilts through the data phase; on MOBILE it shrinks
       // through the busy middle so the floating layers never collide with it.
-      const mid = Math.min(ease(seg(p, 0.27, 0.34)), 1 - ease(seg(p, 0.82, 0.90)));
-      const ch4 = Math.min(ease(seg(p, 0.66, 0.72)), 1 - ease(seg(p, 0.82, 0.90)));
+      const mid = Math.min(ease(seg(p, 0.30, 0.37)), 1 - ease(seg(p, 0.80, 0.87)));
       // ch1: the chat-reading phase — on mobile the phone gives the top of the
       // stage to the caption (small shrink + ride) without cropping its bottom.
-      const ch1 = Math.min(ease(seg(p, 0.12, 0.18)), 1 - ease(seg(p, 0.26, 0.32)));
+      const ch1 = Math.min(ease(seg(p, 0.10, 0.15)), 1 - ease(seg(p, 0.29, 0.35)));
       // Keep the phone HERO-SIZED on mobile: shrink just enough to clear the
       // caption/element bands (they ride ±160-280px), ride lower instead.
       // max, not sum — the mid envelope stays saturated through the channels
       // phase, so summing double-shrank the phone there.
-      const mShrink = isM ? (Math.max(0.275 * mid, 0.25 * ch4) + 0.10 * ch1) : 0;
-      const ry = -12 * t2 * (1 - ease(seg(p, 0.62, 0.72))) * (isM ? 0.6 : 1);
-      const yM = isM ? (15 * Math.max(mid, ch4) + 11 * ch1 - 3 * rise) : 0;
+      const mShrink = isM ? (0.275 * mid + 0.10 * ch1) : 0;
+      const ry = -12 * t2 * (1 - ease(seg(p, 0.74, 0.82))) * (isM ? 0.6 : 1);
+      const yM = isM ? (15 * mid + 11 * ch1 - 3 * rise) : 0;
       pp.style.setProperty('--pp-y', ((1 - rise) * (isM ? 63 : 56) + r5 * (isM ? 35.5 : 38) + yM) + 'svh');
       pp.style.setProperty('--pp-ry', ry + 'deg');
       pp.style.setProperty('--pp-rx', (2.5 * t2 * (1 - r5)) + 'deg');
       pp.style.setProperty('--pp-s', 1 - (isM ? 0.17 : 0.12) * r5 - 0.06 * t2 - mShrink);
 
       // Captions — one at a time.
-      const wins = [[0.11, 0.27], [0.29, 0.44], [0.47, 0.65], [0.69, 0.82]];
+      const wins = [[0.11, 0.30], [0.33, 0.52], [0.55, 0.78]];
       caps.forEach((c, i) => {
         const [a, b] = wins[i];
         const k = ease(seg(p, a, a + 0.03)) * (1 - ease(seg(p, b - 0.02, b)));
@@ -2456,8 +2470,8 @@
       });
 
       // Phase 5 — resolve into the CTA.
-      resolve.style.setProperty('--k', ease(seg(p, 0.87, 0.93)));
-      resolve.style.setProperty('--res-pe', p > 0.90 ? 'auto' : 'none');
+      resolve.style.setProperty('--k', ease(seg(p, isM ? 0.90 : 0.87, isM ? 0.95 : 0.93)));
+      resolve.style.setProperty('--res-pe', p > (isM ? 0.92 : 0.90) ? 'auto' : 'none');
     }
 
     let lastSp = -1, lastTs = 0;
