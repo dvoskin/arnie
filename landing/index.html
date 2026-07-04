@@ -1834,7 +1834,25 @@
     }
     .cine-cap h3 em { font-style: italic; color: var(--accent); }
     .cine-cap p { font-size: 15px; line-height: 1.6; color: var(--ink-2); max-width: 52ch; margin: 0 auto; }
-    .cine-cap .mc { font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-3); margin-top: 8px; }
+    .cine-cap .mc {
+      font-family: var(--mono); font-size: 10px; letter-spacing: 0.09em;
+      text-transform: uppercase; color: var(--ink-3); margin-top: 9px;
+    }
+    .cine-cap .mc::before { content: "▸ "; color: var(--accent); }
+    .cine-cap .mc::after {
+      content: "▍"; color: var(--accent); margin-left: 2px;
+      animation: caretBlink 1.1s steps(1) infinite;
+    }
+    @keyframes caretBlink { 50% { opacity: 0; } }
+    @media (prefers-reduced-motion: reduce) { .cine-cap .mc::after { animation: none; } }
+    .res-sys {
+      font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.09em;
+      text-transform: uppercase; color: var(--accent); margin-bottom: 12px;
+    }
+    .sig-label {
+      font-family: var(--mono); font-size: 10px; letter-spacing: 0.12em;
+      text-transform: uppercase; color: var(--ink-3); margin-top: 26px;
+    }
 
     /* ── Resolve CTA (phase 5) ── */
     .cine-resolve {
@@ -1968,7 +1986,7 @@
       .cine-cap { top: 74px; bottom: auto; width: 92vw; }
       .cine-cap h3 { font-size: 30px; margin-bottom: 7px; }
       .cine-cap p { font-size: 17px; line-height: 1.55; max-width: 38ch; }
-      .cine-cap .mc { display: none; }
+      .cine-cap .mc { font-size: 10.5px; margin-top: 8px; }
       .cine-svg { display: none; }
       .cine-resolve { top: 38%; }
       .cine-resolve p { font-size: 15.5px; margin-bottom: 20px; }
@@ -1983,12 +2001,12 @@
           translate3d(var(--tx), calc(var(--ty) + (1 - var(--k, 0)) * 18px), 0)
           scale(calc(0.92 + 0.08 * var(--k, 0)));
       }
-      .dc-protein { --tx: -72px !important; --ty: -178px !important; --sp: 1 !important; }
-      .dc-weight  { --tx: 72px !important;  --ty: -178px !important; --sp: 1 !important; }
+      .dc-protein { --tx: -72px !important; --ty: -166px !important; --sp: 1 !important; }
+      .dc-weight  { --tx: 72px !important;  --ty: -166px !important; --sp: 1 !important; }
       .dc-pattern { --tx: 0px !important;   --ty: 282px !important; width: 200px; }
-      .mn-goal    { --tx: -100px !important; --ty: -168px !important; }
-      .mn-target  { --tx: 100px !important;  --ty: -168px !important; }
-      .mn-knee    { --tx: 0px !important;    --ty: -205px !important; }
+      .mn-goal    { --tx: -100px !important; --ty: -141px !important; }
+      .mn-target  { --tx: 100px !important;  --ty: -141px !important; }
+      .mn-knee    { --tx: 0px !important;    --ty: -178px !important; }
       .mn-late    { --tx: -95px !important;  --ty: 278px !important; }
       .mn-wt      { --tx: 95px !important;   --ty: 278px !important; }
       /* Explicit width: an absolutely-positioned centered row shrink-wraps to
@@ -2051,7 +2069,7 @@
 
       <!-- Phase 0 — hero copy -->
       <div class="cine-hero" id="cineHero">
-        <div class="eyebrow">Arnie · iOS beta</div>
+        <div class="eyebrow">Arnie · agentic coach · iOS beta</div>
         <h1>A fitness coach that <em>remembers you.</em></h1>
         <p class="hero-sub">
           Log meals, workouts, weight, and progress in the Arnie iOS beta.
@@ -2129,19 +2147,22 @@
       <div class="cine-cap" id="cap1">
         <h3>Text it <em>like a coach.</em></h3>
         <p>Say it like you'd text a friend — Arnie logs it and calls the next move.</p>
+        <div class="mc">input: plain language → structured log</div>
       </div>
       <div class="cine-cap" id="cap2">
         <h3>Your logs <em>become direction.</em></h3>
         <p>Arnie connects what you eat, how you train, and how your body responds.</p>
+        <div class="mc">signal.fusion: meals × training × recovery</div>
       </div>
       <div class="cine-cap" id="cap3">
         <h3>It remembers <em>what apps forget.</em></h3>
         <p>Goals, injuries, habits, and patterns — all of it shapes how Arnie coaches you.</p>
-        <div class="mc">No more starting over every time you ask for help</div>
+        <div class="mc">memory.graph: 61 attributes · retention ∞</div>
       </div>
 
       <!-- Phase 5 — resolve -->
       <div class="cine-resolve" id="cineResolve">
+        <div class="res-sys">coach.loop · waiting for your first log</div>
         <h2>Start with <em>one log.</em></h2>
         <p>Text your first meal, workout, or weight check-in. Arnie will take it from there.</p>
         <a href="https://testflight.apple.com/join/XAZQ5sSF" target="_blank" rel="noopener" class="cta-btn" style="display:inline-flex;width:auto;padding:16px 30px">Join the iOS beta&nbsp;&nbsp;→</a>
@@ -2157,6 +2178,7 @@
       <div class="section-tag reveal">Works where you are</div>
       <h2 class="section-title reveal reveal-d1">Start in the <em>iOS beta.</em></h2>
       <p class="section-sub reveal reveal-d2" style="margin:0 auto">Telegram is live too, and iMessage and WhatsApp are next — the same Arnie, the same memory, wherever you text.</p>
+      <div class="sig-label reveal reveal-d2">connected signal sources</div>
       <div class="channels-pills reveal reveal-d2">
         <span class="ipill">Apple Health</span><span class="ipill">Whoop</span><span class="ipill">Oura</span>
         <span class="ipill">Fitbit</span><span class="ipill">Hume</span><span class="ipill">Steps</span>
@@ -2473,8 +2495,8 @@
       // phase, so summing double-shrank the phone there.
       const mShrink = isM ? (0.275 * mid + 0.10 * ch1) : 0;
       const ry = -12 * t2 * (1 - ease(seg(p, 0.74, 0.82))) * (isM ? 0.6 : 1);
-      const yM = isM ? (15 * mid + 11 * ch1 - 3 * rise) : 0;
-      pp.style.setProperty('--pp-y', ((1 - rise) * (isM ? 63 : 56) + r5 * (isM ? 35.5 : 38) + yM) + 'svh');
+      const yM = isM ? (16.5 * mid + 13 * ch1 - 3 * rise) : 0;
+      pp.style.setProperty('--pp-y', ((1 - rise) * (isM ? 63 : 56) + r5 * (isM ? 37.5 : 38) + yM) + 'svh');
       pp.style.setProperty('--pp-ry', ry + 'deg');
       pp.style.setProperty('--pp-rx', (2.5 * t2 * (1 - r5)) + 'deg');
       pp.style.setProperty('--pp-s', 1 - (isM ? 0.17 : 0.12) * r5 - 0.06 * t2 - mShrink);
