@@ -23,6 +23,9 @@
 
   <link rel="icon" type="image/png" href="favicon.png">
   <link rel="apple-touch-icon" href="favicon.png">
+  <link rel="preload" as="image" href="/shots/sim-chat.jpg">
+  <link rel="preload" as="image" href="/shots/sim-log.jpg">
+  <link rel="preload" as="image" href="/shots/sim-coach.jpg">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@300;400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -1857,9 +1860,27 @@
     /* ── Mobile: simplify + rescale the scene geometry ── */
     @media (max-width: 700px) {
       .cine { height: 520vh; }
-      .pp { width: min(224px, 66vw); }
+      /* Hero-sized mockup: the phone is the product — let it own the middle
+         band (bands layer OVER its lower third by design, Opal-style). */
+      .pp { width: min(260px, 72vw); }
       .pp-island { top: 18px; height: 13px; }
       .cine-el { --mob: 0.64; }
+      /* Perf: backdrop blur is the single most expensive paint on mobile
+         GPUs, and the scene translates cards over it every frame. Kill it
+         below 700px and lean on more-opaque glass instead. */
+      *, *::before, *::after {
+        backdrop-filter: none !important;
+        -webkit-backdrop-filter: none !important;
+      }
+      :root {
+        /* Same ink tint, but mixed over the cream instead of transparent —
+           opaque stand-ins for the frosted look the blur used to provide. */
+        --glass:   color-mix(in oklch, var(--ink) 4%, var(--bg));
+        --glass-2: color-mix(in oklch, var(--ink) 7%, var(--bg));
+      }
+      /* Each animated scene object gets its own compositor layer so the
+         per-frame transforms never re-rasterize (m-cut keeps the count low). */
+      .cine-el, .cine-cap, .cine-resolve { will-change: transform, opacity; }
       .cine-el.m-cut, .ipill.m-cut { display: none; }
       .dcard { width: 124px; padding: 10px 11px; }
       .dcard .v { font-size: 13.5px; }
@@ -1872,7 +1893,7 @@
          eye path; the phone rides lower beneath them. */
       .cine-cap { top: 86px; bottom: auto; width: 92vw; }
       .cine-cap h3 { font-size: 27px; margin-bottom: 6px; }
-      .cine-cap p { font-size: 14px; line-height: 1.55; max-width: 34ch; }
+      .cine-cap p { font-size: 14px; line-height: 1.55; max-width: 40ch; }
       .cine-cap .mc { display: none; }
       .cine-svg { display: none; }
       .cine-resolve { top: 38%; }
@@ -1980,9 +2001,10 @@
                  base; later screens stack IN on top (never fading out mid-way,
                  so no double-exposure), then all release back to chat at the
                  resolve. -->
-            <img class="pp-base" src="/shots/sim-chat.jpg" alt="The Arnie iOS app — coach chat" decoding="async">
-            <img class="pp-layer l2" src="/shots/sim-log.jpg"   alt="" loading="lazy" decoding="async">
-            <img class="pp-layer l3" src="/shots/sim-coach.jpg" alt="" loading="lazy" decoding="async">
+            <img class="pp-base" src="/shots/sim-chat.jpg" alt="The Arnie iOS app — coach chat" width="900" height="1956" decoding="async">
+            <!-- Eager: a lazy decode mid-scroll hitches the pinned scene. -->
+            <img class="pp-layer l2" src="/shots/sim-log.jpg"   alt="" width="900" height="1956" decoding="async">
+            <img class="pp-layer l3" src="/shots/sim-coach.jpg" alt="" width="900" height="1956" decoding="async">
           </div>
         </div>
       </div>
@@ -2046,7 +2068,7 @@
       <!-- Phase captions -->
       <div class="cine-cap" id="cap1">
         <h3>Text it <em>like a coach.</em></h3>
-        <p>Meals, workouts, weight, and progress go straight into the Arnie app. Arnie turns the log into the next move.</p>
+        <p>Say it like you'd text a friend — Arnie logs it and calls the next move.</p>
       </div>
       <div class="cine-cap" id="cap2">
         <h3>Your logs <em>become direction.</em></h3>
@@ -2245,10 +2267,11 @@
     }, {passive:true});
   }
 
-  // Scroll reveal
+  // Scroll reveal — fire a little BEFORE the element enters (negative bottom
+  // margin) so sections are already settling as they arrive; nothing pops in.
   const io = new IntersectionObserver(entries => {
-    entries.forEach(e => { if (e.isIntersecting) e.target.classList.add('in'); });
-  }, {threshold: 0.07});
+    entries.forEach(e => { if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); } });
+  }, {threshold: 0.01, rootMargin: '0px 0px 12% 0px'});
   document.querySelectorAll('.reveal').forEach(el => io.observe(el));
 
   // Sticky mobile bar
@@ -2357,13 +2380,15 @@
       // ch1: the chat-reading phase — on mobile the phone gives the top of the
       // stage to the caption (small shrink + ride) without cropping its bottom.
       const ch1 = Math.min(ease(seg(p, 0.12, 0.18)), 1 - ease(seg(p, 0.26, 0.32)));
-      const mShrink = isM ? (0.26 * mid + 0.10 * ch4 + 0.10 * ch1) : 0;
+      // Keep the phone HERO-SIZED on mobile: shrink just enough to clear the
+      // caption/element bands (they ride ±160-280px), ride lower instead.
+      const mShrink = isM ? (0.17 * mid + 0.07 * ch4 + 0.12 * ch1) : 0;
       const ry = -12 * t2 * (1 - ease(seg(p, 0.62, 0.72))) * (isM ? 0.6 : 1);
-      const yM = isM ? (8 * Math.max(mid, ch4) + 3 * ch1 - 3 * rise) : 0;
-      pp.style.setProperty('--pp-y', ((1 - rise) * (isM ? 63 : 56) + r5 * (isM ? 30 : 38) + yM) + 'dvh');
+      const yM = isM ? (13 * Math.max(mid, ch4) + 5 * ch1 - 3 * rise) : 0;
+      pp.style.setProperty('--pp-y', ((1 - rise) * (isM ? 63 : 56) + r5 * (isM ? 32 : 38) + yM) + 'dvh');
       pp.style.setProperty('--pp-ry', ry + 'deg');
       pp.style.setProperty('--pp-rx', (2.5 * t2 * (1 - r5)) + 'deg');
-      pp.style.setProperty('--pp-s', 1 - 0.12 * r5 - 0.06 * t2 - mShrink);
+      pp.style.setProperty('--pp-s', 1 - (isM ? 0.15 : 0.12) * r5 - 0.06 * t2 - mShrink);
 
       // Captions — one at a time.
       const wins = [[0.11, 0.27], [0.29, 0.44], [0.47, 0.65], [0.69, 0.82]];
@@ -2378,15 +2403,16 @@
       resolve.style.setProperty('--res-pe', p > 0.90 ? 'auto' : 'none');
     }
 
+    let lastSp = -1;
     function loop() {
       const t = targetP();
       sp += (t - sp) * 0.16;                          // the fluid curve
       if (Math.abs(t - sp) < 0.0005) sp = t;
-      render(sp);
-      // Keep animating while the scene is near the viewport or mid-glide.
-      const rect = cine.getBoundingClientRect();
-      const near = rect.top < innerHeight && rect.bottom > 0;
-      if (near || Math.abs(t - sp) > 0.0005) {
+      if (sp !== lastSp) { render(sp); lastSp = sp; }
+      // Animate ONLY mid-glide. Once settled, park — the scroll listener
+      // wakes us. (Free-running "while near" burned a full style pass every
+      // frame across the whole 640vh scene, the main mobile jank source.)
+      if (sp !== t) {
         requestAnimationFrame(loop);
       } else {
         running = false;
