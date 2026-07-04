@@ -34,6 +34,14 @@ router = APIRouter(prefix="/api/v1", tags=["chat"])
 # telemetry. Defined once here so the whole native surface is consistent.
 PLATFORM = "ios"
 
+
+def _voice_replies_enabled() -> bool:
+    """When true, a voice-note turn's reply carries a spoken (TTS) audio field
+    the client can play back. Same flag the Telegram path uses. Requires
+    OPENAI_API_KEY. Defaults OFF."""
+    import os
+    return os.getenv("VOICE_REPLIES_ENABLED", "false").lower() in ("true", "1", "yes")
+
 # Per-identity pipeline lock. Guarantees two turns for the same user can never
 # overlap (the duplicate-log / duplicate-onboarding-question bug class), matching
 # the per-user locks the Telegram and iMessage handlers already hold. In-process
@@ -161,6 +169,24 @@ async def _coached_reply(identity: str, text: str, source_type: str,
 
     payload = serialize_response(turn.response)
     payload["tools"] = _turn_tools(turn)
+
+    # ── Voice-in → voice-out (iOS) ────────────────────────────────────────────
+    # When the user sent a voice note, attach a spoken version of the reply as
+    # base64 audio so the app can play it back alongside the text bubbles. Purely
+    # ADDITIVE — clients that ignore audio_base64 are unaffected. Gated by
+    # VOICE_REPLIES_ENABLED; requires OPENAI_API_KEY. Best-effort: a TTS failure
+    # never blocks the text reply.
+    if source_type == "voice" and _voice_replies_enabled():
+        try:
+            from core.llm import strip_for_speech, text_to_speech
+            spoken = strip_for_speech("|||".join(turn.response.bubbles))
+            if spoken:
+                audio = await text_to_speech(spoken, voice="onyx")
+                if audio:
+                    payload["audio_base64"] = base64.b64encode(audio).decode("ascii")
+                    payload["audio_mime"] = "audio/mpeg"
+        except Exception as e:
+            logger.warning(f"iOS voice reply synth failed (text sent): {e}")
     # Stable identity of this turn's ConversationLog row — the client stamps it
     # on the live bubbles so history reloads dedup by id, not text/timestamp.
     payload["log_id"] = getattr(turn, "log_id", None)
