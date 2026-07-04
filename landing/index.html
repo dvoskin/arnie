@@ -1696,78 +1696,24 @@
       box-shadow: inset 0 0 2px oklch(1 0 0 / 0.10);
     }
     .pp-screen {
-      /* The Arnie iOS app, dark theme — its real design language. */
-      --sink: oklch(0.96 0.004 90); --sink2: oklch(0.66 0.008 90);
       border-radius: 41px; overflow: hidden;
-      background: linear-gradient(180deg, oklch(0.135 0.006 250), oklch(0.115 0.006 250));
-      aspect-ratio: 9 / 19.2;
-      display: flex; flex-direction: column;
-      color: var(--sink); position: relative;
+      background: oklch(0.12 0.006 250);
+      aspect-ratio: 9 / 19.5;
+      position: relative;
     }
+    .pp-base, .pp-layer {
+      position: absolute; inset: 0; width: 100%; height: 100%;
+      object-fit: cover; object-position: top; display: block;
+      will-change: opacity, transform;
+    }
+    /* Screens SWITCH like the app navigating — a fast slide-settle, never a
+       long gradient blend of two busy UIs. */
+    .pp-layer.l2 { opacity: var(--s2,0); transform: translateY(calc((1 - var(--s2,0)) * 7%)) scale(calc(1.03 - var(--s2,0) * 0.03)); }
+    .pp-layer.l3 { opacity: var(--s3,0); transform: translateY(calc((1 - var(--s3,0)) * 7%)) scale(calc(1.03 - var(--s3,0) * 0.03)); }
     .pp-screen::before {
       content: ""; position: absolute; inset: 0; z-index: 5; pointer-events: none;
       background: linear-gradient(160deg, oklch(1 0 0 / 0.10), oklch(1 0 0 / 0.03) 24%, transparent 42%);
     }
-    .pp-hdr {
-      display: flex; align-items: center; gap: 9px;
-      padding: 50px 16px 11px; border-bottom: 1px solid oklch(1 0 0 / 0.07);
-      background: oklch(0.135 0.006 250); position: relative; z-index: 2;
-    }
-    .pp-ava {
-      width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0;
-      display: flex; align-items: center; justify-content: center;
-      font-family: var(--serif); font-size: 15px; color: oklch(0.98 0 0);
-      background: radial-gradient(circle at 30% 28%, oklch(0.72 0.13 168), oklch(0.42 0.10 200) 78%);
-    }
-    .pp-name { font-size: 13.5px; font-weight: 600; letter-spacing: -0.01em; }
-    .pp-stat { display: flex; align-items: center; gap: 4px; font-family: var(--mono); font-size: 8.5px; letter-spacing: 0.08em; text-transform: uppercase; color: oklch(0.72 0.13 168); }
-    .pp-stat::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: oklch(0.72 0.13 168); }
-    .pp-chat { flex: 1; padding: 13px 12px; overflow: hidden; }
-    .pp-msgs {
-      display: flex; flex-direction: column; gap: 8px;
-      transform: translateY(calc(var(--shift, 0) * -1px));
-      transition: transform 520ms cubic-bezier(0.22, 1, 0.36, 1);
-    }
-    .pb {
-      max-width: 84%; padding: 9px 12px; border-radius: 15px;
-      font-size: 12px; line-height: 1.45; letter-spacing: -0.005em;
-      opacity: var(--k, 0);
-      transform: translateY(calc((1 - var(--k, 0)) * 12px)) scale(calc(0.96 + var(--k, 0) * 0.04));
-      transition: opacity 480ms ease, transform 480ms cubic-bezier(0.22, 1, 0.36, 1);
-      will-change: transform, opacity;
-    }
-    .pb.user  { align-self: flex-end; background: oklch(0.34 0.06 168); border-bottom-right-radius: 5px; }
-    .pb.arnie { align-self: flex-start; background: oklch(1 0 0 / 0.07); border-bottom-left-radius: 5px; }
-    .pp-chipcard {
-      align-self: flex-start; width: 78%;
-      background: oklch(1 0 0 / 0.055); border: 1px solid oklch(1 0 0 / 0.08);
-      border-radius: 13px; padding: 10px 12px;
-      opacity: var(--k, 0); transform: translateY(calc((1 - var(--k, 0)) * 12px));
-      transition: opacity 480ms ease, transform 480ms cubic-bezier(0.22, 1, 0.36, 1);
-      will-change: transform, opacity;
-    }
-    .pp-chipcard .lbl { font-family: var(--mono); font-size: 8px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--sink2); }
-    .pp-chipcard .val { font-size: 15px; font-weight: 650; margin: 3px 0 7px; font-variant-numeric: tabular-nums; }
-    .pp-bar { height: 4px; border-radius: 3px; background: oklch(1 0 0 / 0.10); overflow: hidden; }
-    .pp-bar i { display: block; height: 100%; width: 73%; border-radius: 3px; background: linear-gradient(90deg, oklch(0.62 0.12 168), oklch(0.72 0.15 168)); }
-    .pp-mem {
-      align-self: flex-start; display: flex; gap: 7px; align-items: flex-start;
-      max-width: 88%; padding: 8px 11px; border-radius: 12px;
-      background: color-mix(in oklch, oklch(0.72 0.13 85) 10%, transparent);
-      border: 1px solid color-mix(in oklch, oklch(0.72 0.13 85) 22%, transparent);
-      font-size: 10.5px; line-height: 1.4; color: oklch(0.87 0.06 85);
-      opacity: var(--k, 0); transform: translateY(calc((1 - var(--k, 0)) * 12px));
-      will-change: transform, opacity;
-    }
-    .pp-mem b { font-weight: 650; }
-    .pp-input {
-      margin: 8px 12px 14px; padding: 10px 14px; border-radius: 999px;
-      background: oklch(1 0 0 / 0.06); border: 1px solid oklch(1 0 0 / 0.08);
-      display: flex; align-items: center; justify-content: space-between;
-      font-size: 11.5px; color: var(--sink2);
-    }
-    .pp-input svg { opacity: 0.7; }
-
     /* ── Floating layers around the phone ── */
     .cine-el {
       position: absolute; left: 50%; top: 50%; z-index: 3;
@@ -1895,13 +1841,6 @@
     .price-one li::before { content: "✓"; color: var(--accent); font-weight: 700; font-size: 12px; }
     .price-one .cta-btn { width: 100%; }
 
-    .pp-shots { position: absolute; inset: 0; z-index: 4; pointer-events: none; }
-    .pp-shots img {
-      position: absolute; inset: 0; width: 100%; height: 100%;
-      object-fit: cover; object-position: top;
-      will-change: opacity;
-    }
-
     /* Small nav CTA — conversion is one glance away at all times. */
     .nav-cta {
       display: inline-flex; align-items: center; gap: 6px;
@@ -1917,14 +1856,6 @@
     @media (max-width: 700px) {
       .cine { height: 520vh; }
       .pp { width: min(224px, 66vw); }
-      .pp-hdr { padding: 40px 14px 9px; }
-      .pp-ava { width: 26px; height: 26px; font-size: 13px; }
-      .pp-chat { padding: 10px 10px; gap: 7px; }
-      .pb { font-size: 10.5px; padding: 8px 10px; border-radius: 13px; }
-      .pp-chipcard { padding: 8px 10px; }
-      .pp-chipcard .val { font-size: 13px; margin: 2px 0 6px; }
-      .pp-mem { font-size: 9.5px; padding: 7px 9px; }
-      .pp-input { margin: 6px 10px 11px; padding: 8px 12px; font-size: 10.5px; }
       .pp-island { top: 18px; height: 13px; }
       .cine-el { --mob: 0.64; }
       .cine-el.m-cut { display: none; }
@@ -1966,7 +1897,6 @@
       .cine { height: auto; }
       .cine-stage { position: static; height: auto; overflow: visible; padding-bottom: 60px; }
       .pp { position: relative; left: auto; top: auto; transform: none; margin: 40px auto; }
-      .pb, .pp-chipcard, .pp-mem { opacity: 1; transform: none; }
       .cine-el, .cine-cap, .cine-resolve { position: relative; left: auto; top: auto; transform: none; opacity: 1; margin: 10px auto; pointer-events: auto; }
       .cine-svg { display: none; }
       .cine-hero { opacity: 1 !important; transform: none !important; }
@@ -2041,41 +1971,13 @@
         <div class="pp-frame">
           <div class="pp-island"></div>
           <div class="pp-screen">
-            <div class="pp-hdr">
-              <div class="pp-ava">A</div>
-              <div>
-                <div class="pp-name">Arnie</div>
-                <div class="pp-stat">Coach · online</div>
-              </div>
-            </div>
-            <div class="pp-chat">
-              <div class="pp-msgs">
-              <div class="pb user"  id="pb1">Ground turkey and rice after the gym — about 350g.</div>
-              <div class="pb arnie" id="pb2">Logged. 620 cal, 54g protein. Strong post-workout base.</div>
-              <div class="pb user"  id="pb3">How am I tracking this week?</div>
-              <div class="pb arnie" id="pb4">Protein's landed 4 of 5 days and you're running a 380-cal deficit. On pace for 0.8 lb down this week.</div>
-              <div class="pp-chipcard" id="pb5">
-                <div class="lbl">Protein</div>
-                <div class="val">132g <span style="color:var(--sink2);font-weight:450">/ 180g</span></div>
-                <div class="pp-bar"><i></i></div>
-              </div>
-              <div class="pp-mem" id="pb6">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0;margin-top:1px"><path d="M12 3a5 5 0 0 0-5 5v1a4 4 0 0 0-1 7.4V18a3 3 0 0 0 3 3h6a3 3 0 0 0 3-3v-1.6A4 4 0 0 0 17 9V8a5 5 0 0 0-5-5z"/></svg>
-                <span><b>Remembers:</b> late dinners affect tomorrow's protein</span>
-              </div>
-              </div>
-            </div>
-            <div class="pp-input">
-              <span>Message Arnie…</span>
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v3"/></svg>
-            </div>
-            <!-- Real app screens — the phone's display morphs through the story:
-                 chat → Coach feed (data) → forecast (memory) → score (body data). -->
-            <div class="pp-shots" aria-hidden="true">
-              <img src="/shots/shot-coach.jpg"   alt="" loading="lazy" decoding="async" style="opacity:var(--s2,0)">
-              <img src="/shots/shot-predict.jpg" alt="" loading="lazy" decoding="async" style="opacity:var(--s3,0)">
-              <img src="/shots/shot-score.jpg"   alt="" loading="lazy" decoding="async" style="opacity:var(--s4,0)">
-            </div>
+            <!-- Real app screens only. The chat screen is the always-opaque
+                 base; later screens stack IN on top (never fading out mid-way,
+                 so no double-exposure), then all release back to chat at the
+                 resolve. -->
+            <img class="pp-base" src="/shots/sim-chat.jpg" alt="The Arnie iOS app — coach chat" decoding="async">
+            <img class="pp-layer l2" src="/shots/sim-log.jpg"   alt="" loading="lazy" decoding="async">
+            <img class="pp-layer l3" src="/shots/sim-coach.jpg" alt="" loading="lazy" decoding="async">
           </div>
         </div>
       </div>
@@ -2351,54 +2253,6 @@
     stickyBar.classList.toggle('show', !entries[0].isIntersecting);
   }, {threshold: 0}).observe(heroEl);
 
-  // Nav scroll state
-  const nav = document.getElementById('nav');
-  window.addEventListener('scroll', () => {
-    nav.classList.toggle('scrolled', window.scrollY > 20);
-  }, {passive:true});
-
-  // Cursor spotlight
-  const spotlight = document.getElementById('spotlight');
-  document.addEventListener('mousemove', e => {
-    spotlight.style.setProperty('--mx', e.clientX + 'px');
-    spotlight.style.setProperty('--my', e.clientY + 'px');
-  }, {passive:true});
-
-  // Orb parallax
-  const orbA = document.getElementById('orbA');
-  const orbB = document.getElementById('orbB');
-  document.addEventListener('mousemove', e => {
-    const x = (e.clientX / window.innerWidth  - 0.5) * 24;
-    const y = (e.clientY / window.innerHeight - 0.5) * 24;
-    if (orbA) orbA.style.transform = `translate(${x * 0.5}px, ${y * 0.5}px)`;
-    if (orbB) orbB.style.transform = `translate(${-x * 0.3}px, ${-y * 0.3}px)`;
-  }, {passive:true});
-
-  // Gyroscope orb parallax — skip on mobile since orbs are already simplified
-  // and constant transform updates on fixed blur elements cause jank
-  if (window.DeviceOrientationEvent && window.innerWidth > 768) {
-    window.addEventListener('deviceorientation', e => {
-      if (!e.beta || !e.gamma) return;
-      const x = Math.max(-14, Math.min(14, e.gamma));
-      const y = Math.max(-14, Math.min(14, e.beta - 30));
-      if (orbA) orbA.style.transform = `translate(${x * 0.65}px, ${y * 0.65}px)`;
-      if (orbB) orbB.style.transform = `translate(${-x * 0.38}px, ${-y * 0.38}px)`;
-    }, {passive:true});
-  }
-
-  // Scroll reveal
-  const io = new IntersectionObserver(entries => {
-    entries.forEach(e => { if (e.isIntersecting) e.target.classList.add('in'); });
-  }, {threshold: 0.07});
-  document.querySelectorAll('.reveal').forEach(el => io.observe(el));
-
-  // Sticky mobile bar
-  const heroEl    = document.getElementById('hero');
-  const stickyBar = document.getElementById('stickyBar');
-  new IntersectionObserver(entries => {
-    stickyBar.classList.toggle('show', !entries[0].isIntersecting);
-  }, {threshold: 0}).observe(heroEl);
-
   // FAQ accordion
   document.querySelectorAll('.faq-q').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -2412,9 +2266,10 @@
 
 <script>
   // ══════════ Cinematic scroll controller ══════════
-  // One passive scroll listener + one rAF: progress p ∈ [0,1] across the tall
-  // .cine wrapper maps to phase sub-progress, written as CSS vars. Everything
-  // downstream is transform/opacity. Skipped entirely under reduced motion.
+  // Continuous rAF while the scene is on screen. Scroll position sets a TARGET
+  // progress; the rendered progress LERPs toward it every frame, so every
+  // element — phone pose, cards, nodes, captions — moves on the same buttery
+  // curve. All output is transform/opacity. Skipped under reduced motion.
   (function () {
     const cine = document.getElementById('cine');
     const stage = document.getElementById('cineStage');
@@ -2426,7 +2281,6 @@
     const pp = document.getElementById('pp');
     const svg = document.getElementById('cineSvg');
     const resolve = document.getElementById('cineResolve');
-    const bubbles = [1,2,3,4,5,6].map(i => document.getElementById('pb' + i));
     const caps = [1,2,3,4].map(i => document.getElementById('cap' + i));
     const g2 = [...stage.querySelectorAll('.g2')];
     const g3 = [...stage.querySelectorAll('.mnode')];
@@ -2435,24 +2289,17 @@
     const seg = (p, a, b) => Math.min(1, Math.max(0, (p - a) / (b - a)));
     const ease = t => t * t * (3 - 2 * t);           // smoothstep
 
-    // On load, the conversation types itself in — a living app before the user
-    // ever scrolls. Scroll can only ADD bubbles, never retract a typed one.
-    const intro = [0, 0, 0, 0, 0, 0];
-    if (!reduced.matches) {
-      [650, 1500, 2450, 3300, 4100, 4750].forEach((t, i) =>
-        setTimeout(() => { intro[i] = 1; if (!ticking) frame(); }, t));
-    } else {
-      intro.fill(1);
+    let sp = 0;                                      // smoothed progress
+    let forcedP = null;                              // test hook (cineSet)
+    let running = false;
+
+    function targetP() {
+      if (forcedP !== null) return forcedP;
+      const rect = cine.getBoundingClientRect();
+      return Math.min(1, Math.max(0, -rect.top / (rect.height - innerHeight)));
     }
 
-    let ticking = false;
-    let forcedP = null;                              // test hook (cineSet)
-    function frame() {
-      ticking = false;
-      const rect = cine.getBoundingClientRect();
-      const total = rect.height - innerHeight;
-      const p = forcedP !== null ? forcedP
-              : Math.min(1, Math.max(0, -rect.top / total));
+    function render(p) {
       const isM = mobile.matches;
 
       // Phase 0 — hero copy hands off, phone rises from its peek to center.
@@ -2462,18 +2309,6 @@
       hero.style.setProperty('--hero-pe', hOut > 0.5 ? 'none' : 'auto');
       const rise = ease(seg(p, 0.0, 0.11));
       const r5 = ease(seg(p, 0.84, 0.93));           // final compression
-
-      // Phase 1 — chat wakes (scroll can catch up past the timed intro).
-      let k5 = 0, k6 = 0;
-      bubbles.forEach((b, i) => {
-        const k = Math.max(intro[i], ease(seg(p, 0.10 + i * 0.024, 0.125 + i * 0.024)));
-        if (i === 4) k5 = k;
-        if (i === 5) k6 = k;
-        b.style.setProperty('--k', k);
-      });
-      // On mobile the column scrolls itself as the chip + memory pill land,
-      // exactly like a live chat — older messages slide up under the header.
-      pp.style.setProperty('--shift', isM ? (k5 * 86 + k6 * 58) : 0);
 
       // Phase 2 — tilt + data cards pull out.
       const t2 = ease(seg(p, 0.28, 0.36));
@@ -2502,12 +2337,12 @@
         el.style.setProperty('--fade', 1 - r5);
       });
 
-      // Real screens morph through the phases: chat → Coach feed → forecast → score.
-      pp.style.setProperty('--s2', ease(seg(p, 0.29, 0.33)) * (1 - ease(seg(p, 0.45, 0.49))));
-      pp.style.setProperty('--s3', ease(seg(p, 0.47, 0.51)) * (1 - ease(seg(p, 0.67, 0.71))));
-      pp.style.setProperty('--s4', ease(seg(p, 0.69, 0.73)) * (1 - ease(seg(p, 0.86, 0.91))));
+      // Real screens stack IN (never out mid-story), then release at resolve.
+      const hold = 1 - r5;
+      pp.style.setProperty('--s2', ease(seg(p, 0.29, 0.315)) * hold);
+      pp.style.setProperty('--s3', ease(seg(p, 0.475, 0.50)) * hold);
 
-      // The phone: rises, tilts through the data phase, and on MOBILE shrinks
+      // The phone: rises, tilts through the data phase; on MOBILE it shrinks
       // through the busy middle so the floating layers never collide with it.
       const mid = Math.min(ease(seg(p, 0.27, 0.34)), 1 - ease(seg(p, 0.82, 0.90)));
       const ch4 = Math.min(ease(seg(p, 0.66, 0.72)), 1 - ease(seg(p, 0.82, 0.90)));
@@ -2530,21 +2365,32 @@
       resolve.style.setProperty('--k', ease(seg(p, 0.87, 0.93)));
       resolve.style.setProperty('--res-pe', p > 0.90 ? 'auto' : 'none');
     }
-    function onScroll() {
-      forcedP = null;
-      if (!ticking && !reduced.matches) { ticking = true; requestAnimationFrame(frame); }
+
+    function loop() {
+      const t = targetP();
+      sp += (t - sp) * 0.16;                          // the fluid curve
+      if (Math.abs(t - sp) < 0.0005) sp = t;
+      render(sp);
+      // Keep animating while the scene is near the viewport or mid-glide.
+      const rect = cine.getBoundingClientRect();
+      const near = rect.top < innerHeight && rect.bottom > 0;
+      if (near || Math.abs(t - sp) > 0.0005) {
+        requestAnimationFrame(loop);
+      } else {
+        running = false;
+      }
     }
-    addEventListener('scroll', onScroll, { passive: true });
-    addEventListener('resize', onScroll, { passive: true });
-    if (!reduced.matches) frame();
+    function wake() {
+      if (!running && !reduced.matches) { running = true; requestAnimationFrame(loop); }
+    }
+    addEventListener('scroll', wake, { passive: true });
+    addEventListener('resize', wake, { passive: true });
+    if (!reduced.matches) { sp = targetP(); render(sp); wake(); }
 
     // Subtle desktop mouse response on the phone while it's front-facing.
     if (matchMedia('(pointer: fine)').matches && !reduced.matches) {
       addEventListener('mousemove', e => {
-        const rect = cine.getBoundingClientRect();
-        const total = rect.height - innerHeight;
-        const p = Math.min(1, Math.max(0, -rect.top / total));
-        if (p > 0.25) return;
+        if (targetP() > 0.25) return;
         const dx = (e.clientX / innerWidth - 0.5) * 4;
         const dy = (e.clientY / innerHeight - 0.5) * -3;
         pp.style.setProperty('--pp-ry', dx + 'deg');
@@ -2552,13 +2398,15 @@
       }, { passive: true });
     }
 
-    // "See the iOS beta" — glide into the chat phase.
+    // "See the iOS beta" — glide into the story.
     window.cineJump = function (frac) {
       const top = cine.offsetTop + (cine.offsetHeight - innerHeight) * frac;
       scrollTo({ top, behavior: reduced.matches ? 'auto' : 'smooth' });
+      wake();
     };
     // Test/debug hook: force a specific progress without scrolling.
-    window.cineSet = function (q) { forcedP = q; frame(); };
+    window.cineSet = function (q) { forcedP = q; sp = q; render(q); };
+    addEventListener('scroll', () => { forcedP = null; }, { passive: true });
   })();
 </script>
 </body>
