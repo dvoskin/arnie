@@ -180,6 +180,7 @@
       position: fixed; top: 0; left: 0; right: 0; height: 2.5px; z-index: 60;
       transform-origin: 0 50%; transform: scaleX(0);
       background: linear-gradient(90deg, var(--accent-s), var(--violet));
+      box-shadow: 0 0 10px color-mix(in oklch, var(--accent-s) 45%, transparent);
       will-change: transform; pointer-events: none;
     }
 
@@ -530,7 +531,7 @@
     }
     .section-title em { font-style: italic; color: var(--accent); }
     .section-sub {
-      font-size: 17.5px; line-height: 1.7; color: var(--ink-2);
+      font-size: 16px; line-height: 1.7; color: var(--ink-2);
       max-width: 46ch; text-wrap: pretty;
     }
 
@@ -1732,6 +1733,13 @@
     /* ── Product phone — the one central object ── */
     .pp {
       position: absolute; left: 50%; top: 50%; z-index: 4;
+    }
+    .pp::before {
+      content: ""; position: absolute; inset: -22% -30%;
+      background: radial-gradient(closest-side, oklch(0.55 0.11 168 / 0.16), transparent 70%);
+      z-index: -1; pointer-events: none;
+    }
+    .pp {
       width: min(330px, 78vw);
       transform:
         translate(-50%, calc(-50% + var(--pp-y, 56svh)))
@@ -1805,6 +1813,13 @@
 
     .mnode {
       padding: 8px 13px; border-radius: 999px; white-space: nowrap;
+    }
+    .mnode::before {
+      content: ""; display: inline-block; width: 5px; height: 5px;
+      border-radius: 50%; background: var(--accent);
+      margin-right: 7px; vertical-align: 2px; opacity: 0.85;
+    }
+    .mnode {
       font-size: 11.5px; font-weight: 550; letter-spacing: -0.008em; color: var(--ink);
       background: color-mix(in oklch, var(--ink) 9%, var(--bg-2));
       border: 1px solid var(--line-s);
@@ -1830,6 +1845,10 @@
     .ipill::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: var(--accent-s); }
     .chcard {
       width: 168px; padding: 13px 15px; border-radius: 16px;
+      transition: transform 160ms, border-color 200ms;
+    }
+    a.chcard:hover { transform: translateY(-2px); border-color: color-mix(in oklch, var(--accent) 45%, transparent); }
+    .chcard {
       background: color-mix(in oklch, var(--ink) 7%, var(--bg-2));
       border: 1px solid var(--line-s);
       box-shadow: 0 16px 40px -16px oklch(0.25 0.03 255 / 0.25);
@@ -1854,7 +1873,7 @@
       letter-spacing: -0.015em; color: var(--ink); margin-bottom: 7px;
     }
     .cine-cap h3 em { font-style: italic; color: var(--accent); }
-    .cine-cap p { font-size: 15px; line-height: 1.6; color: var(--ink-2); max-width: 52ch; margin: 0 auto; }
+    .cine-cap p { font-size: 14px; line-height: 1.6; color: var(--ink-2); max-width: 52ch; margin: 0 auto; }
     .cine-cap .mc {
       font-family: var(--mono); font-size: 10px; letter-spacing: 0.09em;
       text-transform: uppercase; color: var(--ink-3); margin-top: 9px;
@@ -1985,7 +2004,7 @@
       /* Mobile type scale: body copy reads like the headline's equal, not a
          footnote. (Titles already clamp; this lifts the small text.) */
       .hero-sub     { font-size: 16.5px; }
-      .section-sub  { font-size: 18.5px; }
+      .section-sub  { font-size: 16.5px; }
       .sys-row { flex-direction: column; gap: 3px; }
       .sys-row .v { font-size: 15.5px; }
       .faq-q        { font-size: 17px; }
@@ -1994,6 +2013,7 @@
       .price-one .after { font-size: 14.5px; }
       .final-cta p  { font-size: 17.5px; }
       .dcard { width: 124px; padding: 10px 11px; }
+      .dcard .t { color: color-mix(in oklch, var(--accent) 70%, var(--ink-3)); }
       .dcard .v { font-size: 13.5px; }
       .dcard .m { font-size: 10px; }
       .chcard { width: 124px; padding: 10px 11px; }
@@ -2006,7 +2026,7 @@
          eye path; the phone rides lower beneath them. */
       .cine-cap { top: 74px; bottom: auto; width: 92vw; }
       .cine-cap h3 { font-size: 30px; margin-bottom: 7px; }
-      .cine-cap p { font-size: 17px; line-height: 1.55; max-width: 38ch; }
+      .cine-cap p { font-size: 15px; line-height: 1.55; max-width: 36ch; }
       .cine-cap .mc { font-size: 10.5px; margin-top: 8px; }
       .cine-svg { display: none; }
       .cine-resolve { top: 38%; }
@@ -2226,7 +2246,7 @@
   <section id="partners">
     <div class="section-inner" style="text-align:center">
       <div class="section-tag reveal">In good company</div>
-      <h2 class="section-title reveal reveal-d1" style="font-size:clamp(30px,4.2vw,46px)">Built alongside <em>the floor.</em></h2>
+      <h2 class="section-title reveal reveal-d1" style="font-size:clamp(30px,4.2vw,46px)">Where you <em>already train.</em></h2>
       <p class="section-sub reveal reveal-d2" style="margin:0 auto">Arnie is building affiliations with gyms like The Wright Fit, Equinox, 24 Hour Fitness, and Lifetime, and partnering with trainers who want Arnie working with their clients between sessions.</p>
       <div class="partner-row reveal reveal-d2">
         <span class="partner">The Wright Fit</span>
@@ -2362,7 +2382,7 @@
   <!-- ── FOOTER ── -->
   <footer>
     <div class="foot-brand">Arnie</div>
-    <div class="foot-note">© 2026 &nbsp;·&nbsp; Built for athletes</div>
+    <div class="foot-note">© 2026 &nbsp;·&nbsp; Built for athletes &nbsp;·&nbsp; <span style="font-family:var(--mono);font-size:11px;color:var(--accent)">coach.loop active</span></div>
   </footer>
 
   <!-- Sticky mobile CTA — straight to TestFlight, no form -->
