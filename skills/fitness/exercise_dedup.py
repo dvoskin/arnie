@@ -53,6 +53,7 @@ def is_duplicate_of_recent(
     now_utc: datetime,
     window_sec: int = 120,
     superseded_window_sec: Optional[int] = None,
+    weights_kg: Optional[str] = None,
 ):
     """
     Return the most-recent matching existing entry that should block a write,
@@ -122,7 +123,7 @@ def is_duplicate_of_recent(
         e_reps = str(getattr(e, "reps", "") or "").strip()
         if e_reps != key_reps:
             continue
-        if not _close(getattr(e, "weight", None), weight_kg):
+        if not _weight_matches(e, weight_kg, weights_kg):
             continue
         # Exact payload match.
         if ts >= tight_cutoff:
@@ -136,7 +137,7 @@ def is_duplicate_of_recent(
             if ts2 <= ts:
                 continue
             e2_reps = str(getattr(e2, "reps", "") or "").strip()
-            if e2_reps != key_reps or not _close(getattr(e2, "weight", None), weight_kg):
+            if e2_reps != key_reps or not _weight_matches(e2, weight_kg, weights_kg):
                 return e
     return None
 
@@ -184,6 +185,7 @@ def find_rollup_supersede(
     existing_entries: Iterable,
     now_utc: datetime,
     window_sec: int = 3600,
+    weights_kg: Optional[str] = None,
 ):
     """Detect a CUMULATIVE ROLL-UP and return the existing session entry the
     caller should UPDATE in place (instead of inserting a new overlapping row).
@@ -222,7 +224,7 @@ def find_rollup_supersede(
             continue
         if normalize_exercise_name(getattr(e, "exercise_name", "")) != key_name:
             continue
-        if not _close(getattr(e, "weight", None), weight_kg):
+        if not _weight_matches(e, weight_kg, weights_kg):
             continue
         e_tokens = _reps_tokens(getattr(e, "reps", ""))
         e_sets = getattr(e, "sets", None)
@@ -283,6 +285,30 @@ def _fmt_kg(w: float) -> str:
     """Compact kg for the weights CSV — 2dp with trailing zeros trimmed."""
     s = f"{w:.2f}".rstrip("0").rstrip(".")
     return s or "0"
+
+
+def _weights_csv_close(a_csv, b_csv, tol_kg: float = 0.5) -> bool:
+    """True if two per-set weight CSVs have equal length and every set is within
+    tol_kg. Empty/unparseable on either side → no match."""
+    a = _weights_tokens(a_csv)
+    b = _weights_tokens(b_csv)
+    if not a or not b or len(a) != len(b):
+        return False
+    return all(abs(x - y) <= tol_kg for x, y in zip(a, b))
+
+
+def _weight_matches(entry, weight_kg, weights_kg=None) -> bool:
+    """Load-equality for dedup that tolerates per-set `weights` CSVs.
+
+    Matches when the scalar `weight` fields are close (the common case), OR when
+    the incoming and stored per-set `weights` CSVs line up. The CSV fallback
+    catches a pyramid/drop-set block re-fired WITHOUT a scalar `weight`
+    (weight_kg=None) — which `_close(None, e.weight)` reads as a non-match, so
+    the identical multi-set block escapes the guard and inserts a duplicate row
+    (Danny 2026-07-03: Overhead Cable Extension 14,12,10 @100/110/110 logged 3x)."""
+    if _close(getattr(entry, "weight", None), weight_kg):
+        return True
+    return _weights_csv_close(getattr(entry, "weights", None), weights_kg)
 
 
 def find_incremental_append(
