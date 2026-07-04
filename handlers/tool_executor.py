@@ -1794,6 +1794,7 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
                 now_utc=now_utc,
                 window_sec=_dedup_window,
                 superseded_window_sec=_superseded_window,
+                weights_kg=weights_kg,
             )
             if dup is not None:
                 # TURN-INTENT GATE — if the user's turn signals another set
@@ -1827,6 +1828,7 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
                 weight_kg=weight_kg,
                 existing_entries=candidate_entries,
                 now_utc=now_utc,
+                weights_kg=weights_kg,
             )
             if _roll is not None:
                 _updated = await q_update_exercise_entry(
