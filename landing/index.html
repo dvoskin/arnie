@@ -10,7 +10,7 @@
   <meta property="og:type"        content="website">
   <meta property="og:url"         content="https://tryarnie.com/">
   <meta property="og:title"       content="Arnie — Made For Humans Who Train.">
-  <meta property="og:description" content="A performance partner that logs naturally, learns your patterns, and follows up every day. On iOS, Telegram, and iMessage.">
+  <meta property="og:description" content="A performance partner that logs naturally, learns your patterns, and follows up every day. On iOS and Telegram.">
   <meta property="og:image"       content="https://tryarnie.com/og-image.png">
   <meta property="og:image:width"  content="1200">
   <meta property="og:image:height" content="630">
@@ -18,7 +18,7 @@
   <!-- Twitter / X card -->
   <meta name="twitter:card"        content="summary_large_image">
   <meta name="twitter:title"       content="Arnie — Made For Humans Who Train.">
-  <meta name="twitter:description" content="A performance partner that logs naturally, learns your patterns, and follows up every day. On iOS, Telegram, and iMessage.">
+  <meta name="twitter:description" content="A performance partner that logs naturally, learns your patterns, and follows up every day. On iOS and Telegram.">
   <meta name="twitter:image"       content="https://tryarnie.com/og-image.png">
 
   <link rel="icon" type="image/png" href="favicon.png">
@@ -369,20 +369,6 @@
 
     /* ── iOS pane: CTA + desktop scan-to-install QR ─────────────── */
     .ios-cta-row { display: flex; align-items: center; gap: 14px; }
-    .ios-qr {
-      display: flex; flex-direction: column; align-items: center; gap: 5px;
-      padding: 8px 10px; border-radius: 12px; flex-shrink: 0;
-      background: color-mix(in oklch, var(--ink) 3%, transparent);
-      border: 1px solid color-mix(in oklch, var(--ink) 7%, transparent);
-    }
-    .ios-qr img { border-radius: 6px; display: block; }
-    .ios-qr span {
-      font-family: var(--mono); font-size: 8.5px; line-height: 1.35;
-      letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3);
-      text-align: center;
-    }
-    @media (max-width: 640px) { .ios-qr { display: none; } }
-
     /* ── Beta signup form ───────────────────────────────────────── */
     .beta-form {
       display: flex; gap: 0; width: 100%; margin-top: 6px;
@@ -1641,7 +1627,7 @@
     </a>
     <div class="nav-meta">
       <div class="status-dot"></div>
-      iOS &nbsp;·&nbsp; Telegram &nbsp;·&nbsp; iMessage &nbsp;·&nbsp; Beta
+      iOS &nbsp;·&nbsp; Telegram &nbsp;·&nbsp; Beta
     </div>
     <div class="nav-badge">
       <div class="status-dot"></div>
@@ -1656,7 +1642,7 @@
       <div class="chip chip-1">
         <div class="chip-dot"></div>
         <span>Arnie</span>
-        <span class="chip-label">online · iOS · Telegram · iMessage</span>
+        <span class="chip-label">online · iOS · Telegram</span>
       </div>
 
       <div class="chip chip-2">
@@ -1712,9 +1698,8 @@
     <div class="cta-wrap">
       <div class="cta-glow"></div>
       <div class="cta-card">
-        <!-- Platform selector — iOS app leads (TestFlight is live), Telegram
-             second, iMessage coming back. -->
-        <div class="platform-row" style="grid-template-columns:repeat(3,1fr);">
+        <!-- Platform selector — iOS app leads (TestFlight is live), Telegram second. -->
+        <div class="platform-row" style="grid-template-columns:repeat(2,1fr);">
           <button type="button" class="platform-pill active" id="tab-ios"
                   style="cursor:pointer;" onclick="selectPlatform('ios')">
             <div class="pico" style="background:#111">
@@ -1733,15 +1718,6 @@
             </div>
             Telegram
           </button>
-          <div class="platform-pill coming" id="tab-imessage">
-            <div class="pico" style="background:#34DA50">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="white">
-                <path d="M12 2C6.477 2 2 6.477 2 12c0 1.89.525 3.66 1.438 5.168L2 22l4.832-1.438A9.956 9.956 0 0 0 12 22c5.523 0 10-4.477 10-10S17.523 2 12 2z"/>
-              </svg>
-            </div>
-            iMessage
-            <span class="coming-lbl">back this week</span>
-          </div>
         </div>
 
         <!-- iOS pane — the primary conversion: one tap to TestFlight, plus a
@@ -1758,25 +1734,6 @@
                   Free &nbsp;·&nbsp; via TestFlight &nbsp;·&nbsp; under a minute
                 </p>
               </div>
-              <div class="ios-qr d-only">
-                <img src="qr-testflight.png" alt="Scan to install Arnie on iOS" width="86" height="86">
-                <span>Scan to<br>install</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- iMessage pane — hidden while iMessage is paused -->
-        <div id="pane-imessage" style="display:none">
-          <form class="beta-form" id="imsgForm" onsubmit="handleIMessageSignup(event)">
-            <input type="tel" name="phone" id="imsgPhone" placeholder="your phone number" required autocomplete="tel" inputmode="tel">
-            <button type="submit" class="cta-btn beta-submit-btn" id="imsgBtn">Text me on iMessage →</button>
-          </form>
-          <p class="cta-fineprint">Arnie sends one text to start. Apple devices only · reply STOP anytime.</p>
-          <div class="beta-success" id="imsgSuccess" style="display:none">
-            <div class="beta-success-inner">
-              <span class="beta-check">✓</span>
-              <span id="imsgSuccessMsg">Arnie is texting you now — check your messages.</span>
             </div>
           </div>
         </div>
@@ -2038,7 +1995,7 @@
 
         <div class="faq-item">
           <button class="faq-q">What is Arnie?<span class="faq-icon">+</span></button>
-          <div class="faq-a">Arnie is a personal coach for fitness and nutrition. You log food, workouts, and weight in plain English; it learns your patterns, projects where you're headed, and coaches you off your actual history — more valuable every week you use it. Native iOS app, plus Telegram and iMessage.</div>
+          <div class="faq-a">Arnie is a personal coach for fitness and nutrition. You log food, workouts, and weight in plain English; it learns your patterns, projects where you're headed, and coaches you off your actual history — more valuable every week you use it. Native iOS app, plus Telegram if you'd rather just text.</div>
         </div>
 
         <div class="faq-item">
@@ -2048,7 +2005,7 @@
 
         <div class="faq-item">
           <button class="faq-q">Which platforms can I use?<span class="faq-icon">+</span></button>
-          <div class="faq-a">There's a native iOS app with a Coach feed, daily rings, weight trends, and chat — plus Telegram and iMessage if you'd rather just text. Everything syncs across all three, so you can pick up wherever you are.</div>
+          <div class="faq-a">There's a native iOS app with a Coach feed, daily rings, weight trends, and chat — plus Telegram if you'd rather just text. Everything stays in sync across both, so you can pick up wherever you are.</div>
         </div>
 
         <div class="faq-item">
@@ -2058,7 +2015,7 @@
 
         <div class="faq-item">
           <button class="faq-q">Is there an iOS app?<span class="faq-icon">+</span></button>
-          <div class="faq-a">Yes — live in beta right now. Tap "Get Arnie on iOS" anywhere on this page (or scan the QR) and TestFlight installs it in under a minute: Coach feed, daily rings, weight trends, Apple Health + Whoop sync, and chat. Prefer to just text? Telegram and iMessage work too, and everything stays in sync.</div>
+          <div class="faq-a">Yes — live in beta right now. Tap "Get Arnie on iOS" anywhere on this page and TestFlight installs it in under a minute: Coach feed, daily rings, weight trends, Apple Health + Whoop sync, and chat. Prefer to just text? Telegram works too, and everything stays in sync.</div>
         </div>
 
       </div>
@@ -2324,19 +2281,16 @@
   // Replace FORMSPREE_ID with your actual Formspree form ID from formspree.io
   const FORMSPREE_ENDPOINT = 'https://formspree.io/f/xojbyrwl';
 
-  // iMessage signup — user enters phone, Arnie texts them first
   const ARNIE_API = 'https://arnie.onrender.com';
 
   // ── Platform tab switcher ────────────────────────────────────────
-  // iOS (TestFlight) is the primary; Telegram second; iMessage back soon.
+  // iOS (TestFlight) is the primary; Telegram second.
   function selectPlatform(p) {
-    if (p === 'imessage') return; // iMessage back this week — not interactive yet
     const ios = p === 'ios';
     document.getElementById('tab-ios').classList.toggle('active', ios);
     document.getElementById('tab-telegram').classList.toggle('active', !ios);
     document.getElementById('pane-ios').style.display = ios ? 'block' : 'none';
     document.getElementById('pane-telegram').style.display = ios ? 'none' : 'block';
-    document.getElementById('pane-imessage').style.display = 'none';
   }
 
   // ── Telegram signup — capture email (Formspree), then reveal bot link ──
@@ -2358,35 +2312,7 @@
     document.getElementById('tgSuccess').style.display = 'block';
   }
 
-  async function handleIMessageSignup(e) {
-    e.preventDefault();
-    const form = document.getElementById('imsgForm');
-    const phone = document.getElementById('imsgPhone').value.trim();
-    const btn = document.getElementById('imsgBtn');
-    btn.textContent = 'Sending…';
-    btn.disabled = true;
-    try {
-      const res = await fetch(`${ARNIE_API}/imessage/start`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone }),
-      });
-      const data = await res.json();
-      if (data.ok) {
-        form.style.display = 'none';
-        document.getElementById('imsgSuccessMsg').textContent = data.message;
-        document.getElementById('imsgSuccess').style.display = 'block';
-      } else {
-        btn.textContent = 'Text me on iMessage →';
-        btn.disabled = false;
-        alert(data.message || 'Something went wrong — try again.');
-      }
-    } catch (err) {
-      btn.textContent = 'Text me on iMessage →';
-      btn.disabled = false;
-      alert('Could not reach Arnie. Please try again in a moment.');
-    }
-  }
+
 
   async function handleBetaSubmit(e, formId) {
     e.preventDefault();
