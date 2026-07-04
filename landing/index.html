@@ -1779,9 +1779,11 @@
 
     /* ── Phase captions — one at a time, lower-left on desktop ── */
     .cine-cap {
-      position: absolute; z-index: 6; left: 50%; transform: translateX(-50%);
+      position: absolute; z-index: 6; left: 50%;
+      transform: translateX(-50%) translateY(calc((1 - var(--k, 0)) * 16px));
       bottom: max(30px, env(safe-area-inset-bottom)); width: min(560px, 88vw);
       text-align: center; opacity: var(--k, 0); pointer-events: none;
+      will-change: transform, opacity;
     }
     .cine-cap h3 {
       font-family: var(--serif); font-weight: 450; font-size: clamp(24px, 3.4vw, 34px);
@@ -1866,30 +1868,32 @@
       .chcard .n { font-size: 12px; }
       .cine-hero { padding-top: 72px; }
       .cine-hero .hero-ctas { flex-direction: column; gap: 9px; }
-      /* Captions must clear the sticky mobile CTA bar. */
-      .cine-cap { bottom: calc(100px + env(safe-area-inset-bottom)); width: 92vw; }
-      .cine-cap h3 { font-size: 19px; margin-bottom: 4px; }
-      .cine-cap p { font-size: 11.5px; line-height: 1.5; }
+      /* Captions lead from the TOP on mobile — big, readable, first in the
+         eye path; the phone rides lower beneath them. */
+      .cine-cap { top: 86px; bottom: auto; width: 92vw; }
+      .cine-cap h3 { font-size: 27px; margin-bottom: 6px; }
+      .cine-cap p { font-size: 14px; line-height: 1.55; max-width: 34ch; }
       .cine-cap .mc { display: none; }
       .cine-svg { display: none; }
       .cine-resolve { top: 38%; }
       .cine-resolve p { font-size: 13.5px; margin-bottom: 20px; }
       /* Re-place the floating layers vertically — a 375px viewport has no side
-         room. Values are FINAL pixels (mob factor neutralized). */
+         room. Each phase reuses two clean bands: an upper band between the
+         caption and the phone, and a lower band beneath the phone. */
       .cine-el { --mob: 1; }
-      .dc-protein { --tx: -72px !important; --ty: -258px !important; --sp: 1 !important; }
-      .dc-weight  { --tx: 72px !important;  --ty: -258px !important; --sp: 1 !important; }
-      .dc-pattern { --tx: 0px !important;   --ty: 212px !important; width: 190px; }
-      .mn-goal    { --tx: -102px !important; --ty: -248px !important; }
-      .mn-target  { --tx: 102px !important;  --ty: -248px !important; }
-      .mn-knee    { --tx: 0px !important;    --ty: -288px !important; }
-      .mn-late    { --tx: -98px !important;  --ty: 208px !important; }
-      .mn-wt      { --tx: 98px !important;   --ty: 208px !important; }
-      .ip-row     { --tx: 0px !important;    --ty: -305px !important; }
+      .dc-protein { --tx: -72px !important; --ty: -178px !important; --sp: 1 !important; }
+      .dc-weight  { --tx: 72px !important;  --ty: -178px !important; --sp: 1 !important; }
+      .dc-pattern { --tx: 0px !important;   --ty: 282px !important; width: 200px; }
+      .mn-goal    { --tx: -100px !important; --ty: -168px !important; }
+      .mn-target  { --tx: 100px !important;  --ty: -168px !important; }
+      .mn-knee    { --tx: 0px !important;    --ty: -205px !important; }
+      .mn-late    { --tx: -95px !important;  --ty: 278px !important; }
+      .mn-wt      { --tx: 95px !important;   --ty: 278px !important; }
+      .ip-row     { --tx: 0px !important;    --ty: -185px !important; }
       .ip-row > div { max-width: 92vw; gap: 6px; }
       .ipill { font-size: 10px; padding: 6px 10px; }
-      .ch-ios { --tx: -70px !important; --ty: 196px !important; }
-      .ch-tg  { --tx: 70px !important;  --ty: 196px !important; }
+      .ch-ios { --tx: -70px !important; --ty: 280px !important; }
+      .ch-tg  { --tx: 70px !important;  --ty: 280px !important; }
     }
 
     /* ── Reduced motion: unpin, tell the story statically ── */
@@ -2348,7 +2352,8 @@
       const ch4 = Math.min(ease(seg(p, 0.66, 0.72)), 1 - ease(seg(p, 0.82, 0.90)));
       const mShrink = isM ? (0.26 * mid + 0.10 * ch4) : 0;
       const ry = -12 * t2 * (1 - ease(seg(p, 0.62, 0.72))) * (isM ? 0.6 : 1);
-      pp.style.setProperty('--pp-y', ((1 - rise) * 56 + r5 * (isM ? 30 : 38) - (isM ? 5 : 0) * rise) + 'dvh');
+      const yM = isM ? (8 * Math.max(mid, ch4) - 3 * rise) : 0;
+      pp.style.setProperty('--pp-y', ((1 - rise) * (isM ? 63 : 56) + r5 * (isM ? 30 : 38) + yM) + 'dvh');
       pp.style.setProperty('--pp-ry', ry + 'deg');
       pp.style.setProperty('--pp-rx', (2.5 * t2 * (1 - r5)) + 'deg');
       pp.style.setProperty('--pp-s', 1 - 0.12 * r5 - 0.06 * t2 - mShrink);
@@ -2405,8 +2410,9 @@
       wake();
     };
     // Test/debug hook: force a specific progress without scrolling.
-    window.cineSet = function (q) { forcedP = q; sp = q; render(q); };
-    addEventListener('scroll', () => { forcedP = null; }, { passive: true });
+    // Debug/test hook: cineSet(p) freezes the scene at a progress until
+    // cineSet(null) releases it back to scroll control.
+    window.cineSet = function (q) { forcedP = q; if (q !== null) { sp = q; render(q); } };
   })();
 </script>
 </body>
