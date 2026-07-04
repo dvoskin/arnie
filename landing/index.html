@@ -9,7 +9,7 @@
   <!-- Open Graph / social sharing -->
   <meta property="og:type"        content="website">
   <meta property="og:url"         content="https://tryarnie.com/">
-  <meta property="og:title"       content="Arnie — Made For Humans Who Train.">
+  <meta property="og:title"       content="Arnie · Made For Humans Who Train.">
   <meta property="og:description" content="A performance partner that logs naturally, learns your patterns, and follows up every day. On iOS and Telegram.">
   <meta property="og:image"       content="https://tryarnie.com/og-image.png">
   <meta property="og:image:width"  content="1200">
@@ -17,7 +17,7 @@
 
   <!-- Twitter / X card -->
   <meta name="twitter:card"        content="summary_large_image">
-  <meta name="twitter:title"       content="Arnie — Made For Humans Who Train.">
+  <meta name="twitter:title"       content="Arnie · Made For Humans Who Train.">
   <meta name="twitter:description" content="A performance partner that logs naturally, learns your patterns, and follows up every day. On iOS and Telegram.">
   <meta name="twitter:image"       content="https://tryarnie.com/og-image.png">
 
@@ -57,7 +57,9 @@
     }
 
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    html { scroll-behavior: smooth; }
+    ::selection { background: color-mix(in oklch, var(--accent) 30%, transparent); color: var(--ink); }
+    :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 6px; }
+    html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
     body {
       background: var(--bg);
       color: var(--ink);
@@ -65,6 +67,7 @@
       -webkit-font-smoothing: antialiased;
       -moz-osx-font-smoothing: grayscale;
       overflow-x: hidden;
+      -webkit-tap-highlight-color: transparent;
       font-feature-settings: "ss01","cv11","tnum";
       letter-spacing: -0.005em;
     }
@@ -135,6 +138,24 @@
       background: radial-gradient(340px circle at var(--mx,50%) var(--my,28%),
         oklch(0.45 0.10 168 / 0.30), transparent 68%);
       mix-blend-mode: screen;
+    }
+
+    /* ── Partners — gyms and trainers strip ── */
+    #partners { padding: 84px 24px 72px; }
+    .partner-row {
+      display: flex; flex-wrap: wrap; gap: 12px 34px; justify-content: center;
+      margin: 34px auto 0; max-width: 720px;
+    }
+    .partner {
+      font-family: var(--serif); font-size: 22px; letter-spacing: 0.01em;
+      color: var(--ink-3); white-space: nowrap;
+    }
+    .partner-cta { margin-top: 26px; font-size: 14.5px; color: var(--ink-2); }
+    .partner-cta a { color: var(--accent); font-weight: 600; }
+    @media (max-width: 700px) {
+      #partners { padding: 64px 20px 56px; }
+      .partner { font-size: 19px; }
+      .partner-cta { font-size: 15.5px; }
     }
 
     /* ── Channels — the mid-scroll conversion section ── */
@@ -2001,14 +2022,14 @@
           translate3d(var(--tx), calc(var(--ty) + (1 - var(--k, 0)) * 18px), 0)
           scale(calc(0.92 + 0.08 * var(--k, 0)));
       }
-      .dc-protein { --tx: -72px !important; --ty: -166px !important; --sp: 1 !important; }
-      .dc-weight  { --tx: 72px !important;  --ty: -166px !important; --sp: 1 !important; }
-      .dc-pattern { --tx: 0px !important;   --ty: 282px !important; width: 200px; }
-      .mn-goal    { --tx: -100px !important; --ty: -141px !important; }
-      .mn-target  { --tx: 100px !important;  --ty: -141px !important; }
-      .mn-knee    { --tx: 0px !important;    --ty: -178px !important; }
-      .mn-late    { --tx: -95px !important;  --ty: 278px !important; }
-      .mn-wt      { --tx: 95px !important;   --ty: 278px !important; }
+      .dc-protein { --tx: -72px !important; --ty: calc(256px - 50svh) !important; --sp: 1 !important; }
+      .dc-weight  { --tx: 72px !important;  --ty: calc(256px - 50svh) !important; --sp: 1 !important; }
+      .dc-pattern { --tx: 0px !important;   --ty: calc(50svh - 130px) !important; width: 200px; }
+      .mn-goal    { --tx: -100px !important; --ty: calc(282px - 50svh) !important; }
+      .mn-target  { --tx: 100px !important;  --ty: calc(282px - 50svh) !important; }
+      .mn-knee    { --tx: 0px !important;    --ty: calc(245px - 50svh) !important; }
+      .mn-late    { --tx: -95px !important;  --ty: calc(50svh - 145px) !important; }
+      .mn-wt      { --tx: 95px !important;   --ty: calc(50svh - 145px) !important; }
       /* Explicit width: an absolutely-positioned centered row shrink-wraps to
          half the stage and wrapped the pills into 3 tall rows. */
       .ip-row     { --tx: 0px !important;    --ty: -180px !important; width: 92vw; }
@@ -2146,7 +2167,7 @@
       <!-- Phase captions -->
       <div class="cine-cap" id="cap1">
         <h3>Text it <em>like a coach.</em></h3>
-        <p>Say it like you'd text a friend — Arnie logs it and calls the next move.</p>
+        <p>Say it like you'd text a friend. Arnie logs it and calls the next move.</p>
         <div class="mc">input: plain language → structured log</div>
       </div>
       <div class="cine-cap" id="cap2">
@@ -2156,7 +2177,7 @@
       </div>
       <div class="cine-cap" id="cap3">
         <h3>It remembers <em>what apps forget.</em></h3>
-        <p>Goals, injuries, habits, and patterns — all of it shapes how Arnie coaches you.</p>
+        <p>Goals, injuries, habits, patterns. All of it shapes how Arnie coaches you.</p>
         <div class="mc">memory.graph: 61 attributes · retention ∞</div>
       </div>
 
@@ -2177,7 +2198,7 @@
     <div class="section-inner" style="text-align:center">
       <div class="section-tag reveal">Works where you are</div>
       <h2 class="section-title reveal reveal-d1">Start in the <em>iOS beta.</em></h2>
-      <p class="section-sub reveal reveal-d2" style="margin:0 auto">Telegram is live too, and iMessage and WhatsApp are next — the same Arnie, the same memory, wherever you text.</p>
+      <p class="section-sub reveal reveal-d2" style="margin:0 auto">Telegram is live too, and iMessage and WhatsApp are next. The same Arnie, the same memory, wherever you text.</p>
       <div class="sig-label reveal reveal-d2">connected signal sources</div>
       <div class="channels-pills reveal reveal-d2">
         <span class="ipill">Apple Health</span><span class="ipill">Whoop</span><span class="ipill">Oura</span>
@@ -2201,12 +2222,28 @@
     </div>
   </section>
 
+  <!-- ── PARTNERS — gyms and trainers ── -->
+  <section id="partners">
+    <div class="section-inner" style="text-align:center">
+      <div class="section-tag reveal">In good company</div>
+      <h2 class="section-title reveal reveal-d1" style="font-size:clamp(30px,4.2vw,46px)">Built alongside <em>the floor.</em></h2>
+      <p class="section-sub reveal reveal-d2" style="margin:0 auto">Arnie is building affiliations with gyms like The Wright Fit, Equinox, 24 Hour Fitness, and Lifetime, and partnering with trainers who want Arnie working with their clients between sessions.</p>
+      <div class="partner-row reveal reveal-d2">
+        <span class="partner">The Wright Fit</span>
+        <span class="partner">Equinox</span>
+        <span class="partner">24 Hour Fitness</span>
+        <span class="partner">Lifetime</span>
+      </div>
+      <p class="partner-cta reveal reveal-d3">Train clients? <a href="https://testflight.apple.com/join/XAZQ5sSF" target="_blank" rel="noopener">Get them early access →</a></p>
+    </div>
+  </section>
+
   <!-- ── WHY ARNIE — the agent under the hood ── -->
   <section id="different">
     <div class="section-inner" style="text-align:center">
       <div class="section-tag reveal">Why Arnie</div>
       <h2 class="section-title reveal reveal-d1">Not a tracker.<br><em>A coach.</em></h2>
-      <p class="section-sub reveal reveal-d2" style="margin:0 auto">Trackers store what happened. Arnie runs an agent on top of it — and tells you what to do next.</p>
+      <p class="section-sub reveal reveal-d2" style="margin:0 auto">Trackers store what happened. Arnie runs an agent on top of it, and tells you what to do next.</p>
 
       <div class="sys-card reveal reveal-d2" aria-label="How Arnie works under the hood">
         <div class="sys-head">
@@ -2215,11 +2252,11 @@
           <span class="sys-status">● live</span>
         </div>
         <div class="sys-rows">
-          <div class="sys-row"><span class="k">memory.graph</span><span class="v">goals, injuries, habits, preferences — long-horizon, never resets</span></div>
+          <div class="sys-row"><span class="k">memory.graph</span><span class="v">goals, injuries, habits, preferences. Long horizon, never resets</span></div>
           <div class="sys-row"><span class="k">signal.fusion</span><span class="v">meals × training × sleep × recovery merged into one coaching context</span></div>
-          <div class="sys-row"><span class="k">pattern.engine</span><span class="v">surfaces what repeats — "late dinners cut next-day protein"</span></div>
-          <div class="sys-row"><span class="k">coach.loop</span><span class="v">proactive check-ins, course-corrections, and PR chases — it texts first</span></div>
-          <div class="sys-row"><span class="k">io.channels</span><span class="v">plain language in, next moves out — iOS · Telegram · iMessage soon</span></div>
+          <div class="sys-row"><span class="k">pattern.engine</span><span class="v">surfaces what repeats: "late dinners cut next day protein"</span></div>
+          <div class="sys-row"><span class="k">coach.loop</span><span class="v">proactive nudges, course corrections, and PR chases. It texts first</span></div>
+          <div class="sys-row"><span class="k">io.channels</span><span class="v">plain language in, next moves out. iOS · Telegram · iMessage soon</span></div>
         </div>
       </div>
 
@@ -2235,7 +2272,7 @@
     <div class="section-inner" style="text-align:center">
       <div class="section-tag reveal">Beta access</div>
       <h2 class="section-title reveal reveal-d1">Free while<br><em>in beta.</em></h2>
-      <p class="section-sub reveal reveal-d2" style="margin:0 auto">Full access. No card, no commitment — just coach with us early.</p>
+      <p class="section-sub reveal reveal-d2" style="margin:0 auto">Full access. No card, no commitment. Just coach with us early.</p>
       <div class="price-one reveal reveal-d2">
         <div class="amount">Free<span>&nbsp;during the beta</span></div>
         <div class="after">Installs via TestFlight in about 2 minutes</div>
@@ -2291,12 +2328,12 @@
 
         <div class="faq-item">
           <button class="faq-q">How much does the beta cost?<span class="faq-icon">+</span></button>
-          <div class="faq-a">Nothing. Arnie is free while in beta — full access, no card. Beta testers will hear first about anything that changes.</div>
+          <div class="faq-a">Nothing. Arnie is free while in beta, full access, no card. Beta testers will hear first about anything that changes.</div>
         </div>
 
         <div class="faq-item">
           <button class="faq-q">How do I join?<span class="faq-icon">+</span></button>
-          <div class="faq-a">Tap any Join button on this page. It opens TestFlight — Apple's official beta app — and the install takes about two minutes.</div>
+          <div class="faq-a">Tap any Join button on this page. It opens TestFlight, Apple's official beta app, and the install takes about two minutes.</div>
         </div>
 
       </div>
@@ -2429,6 +2466,19 @@
     const seg = (p, a, b) => Math.min(1, Math.max(0, (p - a) / (b - a)));
     const ease = t => t * t * (3 - 2 * t);           // smoothstep
 
+    // Mobile measurement cache — phone size is capped by stage HEIGHT too
+    // (34svh) so short real-device viewports get a phone that fits their
+    // stage, and caption/resolve bottoms are measured, not assumed.
+    const mm = {};
+    function measureM() {
+      if (!mobile.matches) { pp.style.width = ''; mm.ppH = 0; return; }
+      pp.style.width = Math.min(300, 0.82 * stage.clientWidth, 0.34 * stage.clientHeight) + 'px';
+      mm.ppH = pp.offsetHeight;
+      const c1 = document.getElementById('cap1');
+      mm.capB1 = 74 + (c1 ? c1.offsetHeight : 130);
+      mm.resB = 0.38 * stage.clientHeight + resolve.offsetHeight;
+    }
+
     let sp = 0;                                      // smoothed progress
     let forcedP = null;                              // test hook (cineSet)
     let running = false;
@@ -2495,11 +2545,26 @@
       // phase, so summing double-shrank the phone there.
       const mShrink = isM ? (0.275 * mid + 0.10 * ch1) : 0;
       const ry = -12 * t2 * (1 - ease(seg(p, 0.74, 0.82))) * (isM ? 0.6 : 1);
-      const yM = isM ? (16.5 * mid + 13 * ch1 - 3 * rise) : 0;
-      pp.style.setProperty('--pp-y', ((1 - rise) * (isM ? 63 : 56) + r5 * (isM ? 37.5 : 38) + yM) + 'svh');
+      const sNow = 1 - (isM ? 0.17 : 0.12) * r5 - 0.06 * t2 - mShrink;
+      if (isM) {
+        // CONSTRAINT-BASED: real Safari stages run ~660-740px tall (chrome
+        // eats the rest), so center-relative rides put the phone in the
+        // caption. Instead each beat states where the phone TOP must sit
+        // (below the measured caption / the band) and we solve the offset.
+        const H = stage.clientHeight;
+        const half = (mm.ppH || pp.offsetHeight) * sNow / 2;
+        const cTop = t => t + half - H / 2;
+        const off = (1 - rise) * (0.63 * H)
+                  + ch1 * cTop((mm.capB1 || 200) + 18)
+                  + mid * cTop(311)
+                  + r5  * cTop((mm.resB || 0.38 * H + 320) + 14);
+        pp.style.setProperty('--pp-y', off + 'px');
+      } else {
+        pp.style.setProperty('--pp-y', ((1 - rise) * 56 + r5 * 38) + 'svh');
+      }
       pp.style.setProperty('--pp-ry', ry + 'deg');
       pp.style.setProperty('--pp-rx', (2.5 * t2 * (1 - r5)) + 'deg');
-      pp.style.setProperty('--pp-s', 1 - (isM ? 0.17 : 0.12) * r5 - 0.06 * t2 - mShrink);
+      pp.style.setProperty('--pp-s', sNow);
 
       // Captions — one at a time.
       const wins = [[0.11, 0.30], [0.33, 0.52], [0.55, 0.78]];
@@ -2539,7 +2604,11 @@
       if (!running && !reduced.matches) { running = true; requestAnimationFrame(loop); }
     }
     addEventListener('scroll', wake, { passive: true });
-    addEventListener('resize', wake, { passive: true });
+    addEventListener('resize', () => { measureM(); lastSp = -1; wake(); }, { passive: true });
+    measureM();
+    if (document.fonts && document.fonts.ready) {
+      document.fonts.ready.then(() => { measureM(); lastSp = -1; wake(); });
+    }
     if (!reduced.matches) { sp = targetP(); render(sp); wake(); }
 
     // Subtle desktop mouse response on the phone while it's front-facing.
