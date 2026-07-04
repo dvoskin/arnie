@@ -1853,22 +1853,36 @@
     .cine-resolve .hero-micro { margin-top: 14px; display: block; }
 
     /* ── Why-different cards ── */
-    .diff-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; margin-top: 48px; }
-    .diff-card {
-      text-align: left; padding: 26px 24px; border-radius: 20px;
-      background: color-mix(in oklch, var(--ink) 6%, var(--bg-2));
-      border: 1px solid var(--line-s);
-      box-shadow: 0 20px 48px -22px oklch(0.25 0.03 255 / 0.18);
+    /* System readout — the agent spec card. Terminal-flavored, on-brand. */
+    .sys-card {
+      max-width: 660px; margin: 36px auto 0; text-align: left;
+      border-radius: 18px; border: 1px solid var(--line-s);
+      background: color-mix(in oklch, var(--ink) 5%, var(--bg-2));
+      box-shadow: 0 24px 60px -24px oklch(0 0 0 / 0.55);
+      overflow: hidden;
     }
-    .diff-card .ic {
-      width: 34px; height: 34px; border-radius: 11px; margin-bottom: 16px;
-      display: flex; align-items: center; justify-content: center;
-      background: color-mix(in oklch, var(--accent) 12%, transparent);
-      color: var(--accent);
+    .sys-head {
+      display: flex; align-items: center; gap: 6px;
+      padding: 12px 18px; border-bottom: 1px solid var(--line);
+      background: color-mix(in oklch, var(--ink) 3%, var(--bg-2));
     }
-    .diff-card h3 { font-family: var(--serif); font-weight: 500; font-size: 23px; letter-spacing: -0.01em; margin-bottom: 8px; }
-    .diff-card p { font-size: 13.5px; line-height: 1.65; color: var(--ink-2); }
-    @media (max-width: 760px) { .diff-grid { grid-template-columns: 1fr; } }
+    .sys-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--ink-4); }
+    .sys-title {
+      font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em;
+      text-transform: uppercase; color: var(--ink-3); margin-left: 10px;
+    }
+    .sys-status { margin-left: auto; font-family: var(--mono); font-size: 10.5px; color: var(--accent); }
+    .sys-rows { padding: 6px 18px 12px; }
+    .sys-row {
+      display: flex; gap: 16px; align-items: baseline;
+      padding: 11px 0; border-bottom: 1px dashed var(--line);
+    }
+    .sys-row:last-child { border-bottom: 0; }
+    .sys-row .k {
+      font-family: var(--mono); font-size: 13px; color: var(--accent);
+      white-space: nowrap; min-width: 128px;
+    }
+    .sys-row .v { font-size: 14.5px; line-height: 1.55; color: var(--ink-2); }
 
     /* ── Single pricing card ── */
     .price-one {
@@ -1933,8 +1947,8 @@
          footnote. (Titles already clamp; this lifts the small text.) */
       .hero-sub     { font-size: 16.5px; }
       .section-sub  { font-size: 18.5px; }
-      .diff-card h3 { font-size: 25px; }
-      .diff-card p  { font-size: 16px; }
+      .sys-row { flex-direction: column; gap: 3px; }
+      .sys-row .v { font-size: 15.5px; }
       .faq-q        { font-size: 17px; }
       .faq-a        { font-size: 16px; }
       .price-one li { font-size: 15.5px; }
@@ -2165,27 +2179,31 @@
     </div>
   </section>
 
-  <!-- ── WHY ARNIE IS DIFFERENT ── -->
+  <!-- ── WHY ARNIE — the agent under the hood ── -->
   <section id="different">
     <div class="section-inner" style="text-align:center">
       <div class="section-tag reveal">Why Arnie</div>
       <h2 class="section-title reveal reveal-d1">Not a tracker.<br><em>A coach.</em></h2>
-      <div class="diff-grid">
-        <div class="diff-card reveal reveal-d1">
-          <div class="ic"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3a5 5 0 0 0-5 5v1a4 4 0 0 0-1 7.4V18a3 3 0 0 0 3 3h6a3 3 0 0 0 3-3v-1.6A4 4 0 0 0 17 9V8a5 5 0 0 0-5-5z"/></svg></div>
-          <h3>Memory</h3>
-          <p>Arnie keeps track of your goals, preferences, injuries, routines, and history.</p>
+      <p class="section-sub reveal reveal-d2" style="margin:0 auto">Trackers store what happened. Arnie runs an agent on top of it — and tells you what to do next.</p>
+
+      <div class="sys-card reveal reveal-d2" aria-label="How Arnie works under the hood">
+        <div class="sys-head">
+          <span class="sys-dot"></span><span class="sys-dot"></span><span class="sys-dot"></span>
+          <span class="sys-title">arnie · coaching agent</span>
+          <span class="sys-status">● live</span>
         </div>
-        <div class="diff-card reveal reveal-d2">
-          <div class="ic"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M3 17l5-6 4 4 6-8 3 4"/></svg></div>
-          <h3>Patterns</h3>
-          <p>It notices what keeps happening, from missed lunches to late dinners to weak recovery.</p>
+        <div class="sys-rows">
+          <div class="sys-row"><span class="k">memory.graph</span><span class="v">goals, injuries, habits, preferences — long-horizon, never resets</span></div>
+          <div class="sys-row"><span class="k">signal.fusion</span><span class="v">meals × training × sleep × recovery merged into one coaching context</span></div>
+          <div class="sys-row"><span class="k">pattern.engine</span><span class="v">surfaces what repeats — "late dinners cut next-day protein"</span></div>
+          <div class="sys-row"><span class="k">coach.loop</span><span class="v">proactive check-ins, course-corrections, and PR chases — it texts first</span></div>
+          <div class="sys-row"><span class="k">io.channels</span><span class="v">plain language in, next moves out — iOS · Telegram · iMessage soon</span></div>
         </div>
-        <div class="diff-card reveal reveal-d3">
-          <div class="ic"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M20 6L9 17l-5-5"/></svg></div>
-          <h3>Accountability</h3>
-          <p>It follows up with specific next steps instead of leaving you with another dashboard.</p>
-        </div>
+      </div>
+
+      <div class="cta-wrap reveal reveal-d3" style="max-width:420px;margin:30px auto 0">
+        <a href="https://testflight.apple.com/join/XAZQ5sSF" target="_blank" rel="noopener" class="cta-btn">Put it to work&nbsp;&nbsp;→</a>
+        <p class="cta-fineprint" style="margin-top:10px;text-align:center">Free while in beta · Installs via TestFlight</p>
       </div>
     </div>
   </section>
