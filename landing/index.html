@@ -1629,6 +1629,309 @@
       .ob-exp-btn { padding: 14px 16px; }
       #ob-tg-link { width: 100%; box-sizing: border-box; }
     }
+
+    /* ══════════════ CINEMATIC REVEAL ══════════════
+       One pinned scene: the Arnie iOS app unfolds as you scroll. A single
+       rAF handler maps scroll progress onto CSS vars; everything below is
+       transform/opacity only. */
+    .cine { height: 640vh; position: relative; }
+    .cine-stage {
+      position: sticky; top: 0; height: 100dvh; overflow: hidden;
+      display: flex; flex-direction: column; align-items: center;
+    }
+    /* Phase-0 hero copy — the above-the-fold state. */
+    .cine-hero {
+      text-align: center; padding: 96px 24px 0; position: relative; z-index: 6;
+      opacity: var(--hero-o, 1);
+      transform: translateY(calc(var(--hero-y, 0) * -40px));
+      pointer-events: var(--hero-pe, auto);
+    }
+    .cine-hero .hero-ctas {
+      display: flex; gap: 12px; justify-content: center; align-items: center;
+      flex-wrap: wrap; margin-bottom: 14px;
+    }
+    .cta-ghost {
+      display: inline-flex; align-items: center; gap: 7px;
+      padding: 15px 24px; border-radius: 999px;
+      font-size: 14.5px; font-weight: 600; letter-spacing: -0.01em;
+      color: var(--ink); background: var(--glass);
+      border: 1px solid var(--line-s);
+      transition: transform 130ms, background 200ms;
+    }
+    .cta-ghost:hover { transform: translateY(-1px); background: var(--glass-2); }
+    .cine-hero .cta-btn { width: auto; display: inline-flex; padding: 15px 28px; margin-top: 0; }
+    .hero-micro {
+      font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.10em;
+      text-transform: uppercase; color: var(--ink-3);
+    }
+
+    /* ── Product phone — the one central object ── */
+    .pp {
+      position: absolute; left: 50%; top: 50%; z-index: 4;
+      width: min(330px, 78vw);
+      transform:
+        translate(-50%, calc(-50% + var(--pp-y, 56dvh)))
+        perspective(1500px)
+        rotateY(var(--pp-ry, 0deg)) rotateX(var(--pp-rx, 0deg))
+        scale(var(--pp-s, 1));
+      will-change: transform;
+    }
+    .pp-frame {
+      border-radius: 52px; padding: 11px;
+      background: linear-gradient(145deg,
+        oklch(0.42 0.008 250) 0%, oklch(0.16 0.006 250) 38%,
+        oklch(0.13 0.006 250) 72%, oklch(0.30 0.008 250) 100%);
+      box-shadow:
+        0 0 0 1.5px oklch(0.10 0.005 250),
+        inset 2px 2px 3px -1px oklch(1 0 0 / 0.35),
+        inset -2px -2px 3px -1px oklch(0 0 0 / 0.55),
+        0 60px 120px -32px oklch(0.20 0.03 255 / 0.45),
+        0 22px 44px -18px oklch(0.20 0.03 255 / 0.30);
+      position: relative;
+    }
+    .pp-island {
+      position: absolute; top: 22px; left: 50%; transform: translateX(-50%);
+      width: 27%; height: 16px; background: oklch(0.05 0 0);
+      border-radius: 999px; z-index: 3;
+      box-shadow: inset 0 0 2px oklch(1 0 0 / 0.10);
+    }
+    .pp-screen {
+      /* The Arnie iOS app, dark theme — its real design language. */
+      --sink: oklch(0.96 0.004 90); --sink2: oklch(0.66 0.008 90);
+      border-radius: 41px; overflow: hidden;
+      background: linear-gradient(180deg, oklch(0.135 0.006 250), oklch(0.115 0.006 250));
+      aspect-ratio: 9 / 19.2;
+      display: flex; flex-direction: column;
+      color: var(--sink); position: relative;
+    }
+    .pp-screen::before {
+      content: ""; position: absolute; inset: 0; z-index: 5; pointer-events: none;
+      background: linear-gradient(160deg, oklch(1 0 0 / 0.10), oklch(1 0 0 / 0.03) 24%, transparent 42%);
+    }
+    .pp-hdr {
+      display: flex; align-items: center; gap: 9px;
+      padding: 50px 16px 11px; border-bottom: 1px solid oklch(1 0 0 / 0.07);
+    }
+    .pp-ava {
+      width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center;
+      font-family: var(--serif); font-size: 15px; color: oklch(0.98 0 0);
+      background: radial-gradient(circle at 30% 28%, oklch(0.72 0.13 168), oklch(0.42 0.10 200) 78%);
+    }
+    .pp-name { font-size: 13.5px; font-weight: 600; letter-spacing: -0.01em; }
+    .pp-stat { display: flex; align-items: center; gap: 4px; font-family: var(--mono); font-size: 8.5px; letter-spacing: 0.08em; text-transform: uppercase; color: oklch(0.72 0.13 168); }
+    .pp-stat::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: oklch(0.72 0.13 168); }
+    .pp-chat { flex: 1; padding: 13px 12px; display: flex; flex-direction: column; gap: 8px; overflow: hidden; }
+    .pb {
+      max-width: 84%; padding: 9px 12px; border-radius: 15px;
+      font-size: 12px; line-height: 1.45; letter-spacing: -0.005em;
+      opacity: var(--k, 0);
+      transform: translateY(calc((1 - var(--k, 0)) * 12px)) scale(calc(0.96 + var(--k, 0) * 0.04));
+      will-change: transform, opacity;
+    }
+    .pb.user  { align-self: flex-end; background: oklch(0.34 0.06 168); border-bottom-right-radius: 5px; }
+    .pb.arnie { align-self: flex-start; background: oklch(1 0 0 / 0.07); border-bottom-left-radius: 5px; }
+    .pp-chipcard {
+      align-self: flex-start; width: 78%;
+      background: oklch(1 0 0 / 0.055); border: 1px solid oklch(1 0 0 / 0.08);
+      border-radius: 13px; padding: 10px 12px;
+      opacity: var(--k, 0); transform: translateY(calc((1 - var(--k, 0)) * 12px));
+      will-change: transform, opacity;
+    }
+    .pp-chipcard .lbl { font-family: var(--mono); font-size: 8px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--sink2); }
+    .pp-chipcard .val { font-size: 15px; font-weight: 650; margin: 3px 0 7px; font-variant-numeric: tabular-nums; }
+    .pp-bar { height: 4px; border-radius: 3px; background: oklch(1 0 0 / 0.10); overflow: hidden; }
+    .pp-bar i { display: block; height: 100%; width: 73%; border-radius: 3px; background: linear-gradient(90deg, oklch(0.62 0.12 168), oklch(0.72 0.15 168)); }
+    .pp-mem {
+      align-self: flex-start; display: flex; gap: 7px; align-items: flex-start;
+      max-width: 88%; padding: 8px 11px; border-radius: 12px;
+      background: color-mix(in oklch, oklch(0.72 0.13 85) 10%, transparent);
+      border: 1px solid color-mix(in oklch, oklch(0.72 0.13 85) 22%, transparent);
+      font-size: 10.5px; line-height: 1.4; color: oklch(0.87 0.06 85);
+      opacity: var(--k, 0); transform: translateY(calc((1 - var(--k, 0)) * 12px));
+      will-change: transform, opacity;
+    }
+    .pp-mem b { font-weight: 650; }
+    .pp-input {
+      margin: 8px 12px 14px; padding: 10px 14px; border-radius: 999px;
+      background: oklch(1 0 0 / 0.06); border: 1px solid oklch(1 0 0 / 0.08);
+      display: flex; align-items: center; justify-content: space-between;
+      font-size: 11.5px; color: var(--sink2);
+    }
+    .pp-input svg { opacity: 0.7; }
+
+    /* ── Floating layers around the phone ── */
+    .cine-el {
+      position: absolute; left: 50%; top: 50%; z-index: 3;
+      opacity: calc(var(--k, 0) * var(--fade, 1) * var(--dim, 1));
+      transform: translate(-50%, -50%)
+        translate3d(calc(var(--tx) * var(--k, 0) * var(--sp, 1) * var(--mob, 1)),
+                    calc(var(--ty) * var(--k, 0) * var(--sp, 1) * var(--mob, 1)),
+                    0)
+        scale(calc(0.86 + 0.14 * var(--k, 0)));
+      will-change: transform, opacity;
+      pointer-events: none;
+    }
+    .dcard {
+      width: 172px; padding: 13px 15px; border-radius: 16px;
+      background: color-mix(in oklch, var(--bg) 78%, oklch(1 0 0));
+      border: 1px solid var(--line-s);
+      box-shadow: 0 18px 44px -16px oklch(0.25 0.03 255 / 0.28), 0 4px 12px -6px oklch(0.25 0.03 255 / 0.14);
+      backdrop-filter: blur(10px);
+    }
+    .dcard .t { font-family: var(--mono); font-size: 8.5px; letter-spacing: 0.13em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 5px; }
+    .dcard .v { font-size: 16.5px; font-weight: 650; letter-spacing: -0.015em; color: var(--ink); font-variant-numeric: tabular-nums; }
+    .dcard .m { font-size: 11px; color: var(--ink-2); margin-top: 3px; line-height: 1.4; }
+    .dcard.pattern { border-color: color-mix(in oklch, var(--accent) 30%, transparent); }
+    .dcard.pattern .v { font-size: 12.5px; font-weight: 550; line-height: 1.45; }
+
+    .mnode {
+      padding: 8px 13px; border-radius: 999px; white-space: nowrap;
+      font-size: 11.5px; font-weight: 550; letter-spacing: -0.008em; color: var(--ink);
+      background: color-mix(in oklch, var(--bg) 72%, oklch(1 0 0));
+      border: 1px solid var(--line-s);
+      box-shadow: 0 10px 26px -12px oklch(0.25 0.03 255 / 0.25);
+    }
+    .mnode.dim { color: var(--ink-2); font-size: 10.5px; }
+    .cine-svg {
+      position: absolute; inset: 0; z-index: 2; pointer-events: none;
+      opacity: calc(var(--mk, 0) * var(--fade, 1));
+    }
+    .cine-svg path {
+      fill: none; stroke: color-mix(in oklch, var(--accent) 34%, transparent);
+      stroke-width: 1; stroke-dasharray: 1; stroke-dashoffset: calc(1 - var(--draw, 0));
+    }
+
+    .ipill {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 8px 14px; border-radius: 999px;
+      font-size: 11.5px; font-weight: 550; color: var(--ink-2);
+      background: color-mix(in oklch, var(--bg) 76%, oklch(1 0 0));
+      border: 1px solid var(--line);
+    }
+    .ipill::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: var(--accent-s); }
+    .chcard {
+      width: 168px; padding: 13px 15px; border-radius: 16px;
+      background: color-mix(in oklch, var(--bg) 80%, oklch(1 0 0));
+      border: 1px solid var(--line-s);
+      box-shadow: 0 16px 40px -16px oklch(0.25 0.03 255 / 0.25);
+      pointer-events: auto;
+    }
+    .chcard .n { font-size: 13px; font-weight: 650; letter-spacing: -0.01em; }
+    .chcard .st { font-family: var(--mono); font-size: 8.5px; letter-spacing: 0.10em; text-transform: uppercase; margin-top: 4px; color: var(--accent); }
+    .chcard.soon { --dim: 0.9; }
+    .chcard.soon .st { color: var(--ink-3); }
+    .chcard.primary { border-color: color-mix(in oklch, var(--accent) 40%, transparent); box-shadow: 0 18px 44px -14px color-mix(in oklch, var(--accent) 35%, transparent); }
+
+    /* ── Phase captions — one at a time, lower-left on desktop ── */
+    .cine-cap {
+      position: absolute; z-index: 6; left: 50%; transform: translateX(-50%);
+      bottom: max(30px, env(safe-area-inset-bottom)); width: min(560px, 88vw);
+      text-align: center; opacity: var(--k, 0); pointer-events: none;
+    }
+    .cine-cap h3 {
+      font-family: var(--serif); font-weight: 450; font-size: clamp(24px, 3.4vw, 34px);
+      letter-spacing: -0.015em; color: var(--ink); margin-bottom: 7px;
+    }
+    .cine-cap h3 em { font-style: italic; color: var(--accent); }
+    .cine-cap p { font-size: 13.5px; line-height: 1.6; color: var(--ink-2); max-width: 52ch; margin: 0 auto; }
+    .cine-cap .mc { font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-3); margin-top: 8px; }
+
+    /* ── Resolve CTA (phase 5) ── */
+    .cine-resolve {
+      position: absolute; z-index: 7; left: 50%; top: 42%;
+      transform: translate(-50%, -50%) translateY(calc((1 - var(--k, 0)) * 26px));
+      opacity: var(--k, 0); text-align: center; width: min(560px, 90vw);
+      pointer-events: var(--res-pe, none);
+    }
+    .cine-resolve h2 {
+      font-family: var(--serif); font-weight: 400;
+      font-size: clamp(40px, 6vw, 72px); line-height: 1.0; letter-spacing: -0.024em;
+      margin-bottom: 14px;
+    }
+    .cine-resolve h2 em { font-style: italic; color: var(--accent); }
+    .cine-resolve p { font-size: 15.5px; line-height: 1.65; color: var(--ink-2); max-width: 42ch; margin: 0 auto 26px; }
+    .cine-resolve .hero-micro { margin-top: 14px; display: block; }
+
+    /* ── Why-different cards ── */
+    .diff-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; margin-top: 48px; }
+    .diff-card {
+      text-align: left; padding: 26px 24px; border-radius: 20px;
+      background: color-mix(in oklch, var(--bg) 62%, oklch(1 0 0));
+      border: 1px solid var(--line-s);
+      box-shadow: 0 20px 48px -22px oklch(0.25 0.03 255 / 0.18);
+    }
+    .diff-card .ic {
+      width: 34px; height: 34px; border-radius: 11px; margin-bottom: 16px;
+      display: flex; align-items: center; justify-content: center;
+      background: color-mix(in oklch, var(--accent) 12%, transparent);
+      color: var(--accent);
+    }
+    .diff-card h3 { font-family: var(--serif); font-weight: 500; font-size: 23px; letter-spacing: -0.01em; margin-bottom: 8px; }
+    .diff-card p { font-size: 13.5px; line-height: 1.65; color: var(--ink-2); }
+    @media (max-width: 760px) { .diff-grid { grid-template-columns: 1fr; } }
+
+    /* ── Single pricing card ── */
+    .price-one {
+      max-width: 480px; margin: 44px auto 0; text-align: left;
+      padding: 30px 28px; border-radius: 24px;
+      background: color-mix(in oklch, var(--bg) 58%, oklch(1 0 0));
+      border: 1px solid color-mix(in oklch, var(--accent) 26%, transparent);
+      box-shadow: 0 30px 70px -26px color-mix(in oklch, var(--accent) 30%, transparent);
+    }
+    .price-one .amount { font-family: var(--serif); font-size: 44px; letter-spacing: -0.02em; }
+    .price-one .amount span { font-size: 16px; color: var(--ink-3); }
+    .price-one .after { font-size: 13px; color: var(--ink-2); margin: 4px 0 18px; }
+    .price-one ul { list-style: none; margin: 0 0 22px; display: flex; flex-direction: column; gap: 9px; }
+    .price-one li { display: flex; gap: 9px; align-items: baseline; font-size: 13.5px; color: var(--ink-2); }
+    .price-one li::before { content: "✓"; color: var(--accent); font-weight: 700; font-size: 12px; }
+    .price-one .cta-btn { width: 100%; }
+
+    .pp-shots { position: absolute; inset: 0; z-index: 4; pointer-events: none; }
+    .pp-shots img {
+      position: absolute; inset: 0; width: 100%; height: 100%;
+      object-fit: cover; object-position: top;
+      will-change: opacity;
+    }
+
+    /* Small nav CTA — conversion is one glance away at all times. */
+    .nav-cta {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 8px 16px; border-radius: 999px;
+      font-size: 12px; font-weight: 600; letter-spacing: -0.01em;
+      color: oklch(0.97 0 0); background: oklch(0.22 0.02 255);
+      transition: transform 120ms;
+    }
+    .nav-cta:hover { transform: translateY(-1px); }
+    @media (max-width: 640px) { .nav-cta { display: none; } }
+
+    /* ── Mobile: simplify + rescale the scene geometry ── */
+    @media (max-width: 700px) {
+      .pp { width: min(258px, 72vw); }
+      .cine-el { --mob: 0.52; }
+      .cine-el.m-cut { display: none; }
+      .dcard { width: 132px; padding: 10px 11px; }
+      .dcard .v { font-size: 14px; }
+      .chcard { width: 132px; padding: 11px 12px; }
+      .cine-hero { padding-top: 76px; }
+      .cine-hero .hero-ctas { flex-direction: column; gap: 9px; }
+      .cine-cap { bottom: 12px; }
+      .cine-cap h3 { font-size: 20px; }
+      .cine-cap p { font-size: 12px; }
+      .cine-svg { display: none; }
+    }
+
+    /* ── Reduced motion: unpin, tell the story statically ── */
+    @media (prefers-reduced-motion: reduce) {
+      .cine { height: auto; }
+      .cine-stage { position: static; height: auto; overflow: visible; padding-bottom: 60px; }
+      .pp { position: relative; left: auto; top: auto; transform: none; margin: 40px auto; }
+      .pb, .pp-chipcard, .pp-mem { opacity: 1; transform: none; }
+      .cine-el, .cine-cap, .cine-resolve { position: relative; left: auto; top: auto; transform: none; opacity: 1; margin: 10px auto; pointer-events: auto; }
+      .cine-svg { display: none; }
+      .cine-hero { opacity: 1 !important; transform: none !important; }
+    }
+
   </style>
 </head>
 <body>
@@ -1651,326 +1954,198 @@
       <div class="brand-mark"></div>
       Arnie
     </a>
-    <div class="nav-meta">
-      <div class="status-dot"></div>
-      iOS &nbsp;·&nbsp; Telegram &nbsp;·&nbsp; Beta
-    </div>
-    <div class="nav-badge">
-      <div class="status-dot"></div>
-      Early access
+    <div style="display:flex;align-items:center;gap:18px">
+      <div class="nav-meta">
+        <div class="status-dot"></div>
+        iOS &nbsp;·&nbsp; Telegram &nbsp;·&nbsp; Beta
+      </div>
+      <a class="nav-cta" href="https://testflight.apple.com/join/XAZQ5sSF" target="_blank" rel="noopener">Start free trial</a>
     </div>
   </nav>
 
-  <!-- ── HERO ── -->
-  <section class="hero" id="hero">
-    <div class="float-field" aria-hidden="true">
+  <!-- ══════════ CINEMATIC REVEAL — hero + pinned product story ══════════ -->
+  <section class="cine" id="cine">
+    <!-- Sentinel: once this passes the viewport, the sticky mobile CTA shows. -->
+    <div id="hero" style="position:absolute;top:100vh;height:1px;width:1px"></div>
+    <div class="cine-stage" id="cineStage">
 
-      <div class="chip chip-1">
-        <div class="chip-dot"></div>
-        <span>Arnie</span>
-        <span class="chip-label">online · iOS · Telegram</span>
+      <!-- Phase 0 — hero copy -->
+      <div class="cine-hero" id="cineHero">
+        <div class="eyebrow">Arnie · iOS beta</div>
+        <h1>A fitness coach that <em>remembers you.</em></h1>
+        <p class="hero-sub">
+          Log meals, workouts, weight, and progress in the Arnie iOS beta.
+          Arnie learns your patterns and coaches you with context.
+        </p>
+        <div class="hero-ctas">
+          <a href="https://testflight.apple.com/join/XAZQ5sSF" target="_blank" rel="noopener" class="cta-btn">Start free trial&nbsp;&nbsp;→</a>
+          <a href="#cine" class="cta-ghost" onclick="cineJump(0.14);return false;">See the iOS beta</a>
+        </div>
+        <div class="hero-micro">7 days free · Then $9.99/mo · Cancel anytime</div>
       </div>
 
-      <div class="chip chip-2">
-        <div>
-          <div class="chip-label">Health Score</div>
-          <div style="display:flex;align-items:center;gap:8px;margin-top:3px">
-            <span class="chip-num">74</span>
-            <span style="font-size:11px;color:var(--accent);font-family:var(--mono)">good day</span>
-          </div>
-        </div>
-      </div>
+      <!-- Memory lines (drawn under the nodes) -->
+      <svg class="cine-svg" id="cineSvg" viewBox="0 0 1000 1000" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+        <path d="M500,500 C420,430 330,410 255,385" pathLength="1"/>
+        <path d="M500,500 C580,430 668,405 745,385" pathLength="1"/>
+        <path d="M500,500 C400,520 320,560 240,610" pathLength="1"/>
+        <path d="M500,500 C600,520 682,558 762,606" pathLength="1"/>
+        <path d="M500,500 C470,390 440,330 415,270" pathLength="1"/>
+        <path d="M500,500 C540,620 570,672 595,730" pathLength="1"/>
+        <path d="M255,385 C300,330 360,300 415,270" pathLength="1"/>
+        <path d="M745,385 C700,330 645,298 585,272" pathLength="1"/>
+      </svg>
 
-      <div class="chip chip-3">
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style="flex-shrink:0">
-          <circle cx="8" cy="8" r="7" fill="oklch(0.86 0.155 168 / 0.15)" stroke="oklch(0.86 0.155 168 / 0.3)" stroke-width="1"/>
-          <text x="8" y="12" text-anchor="middle" font-size="9" fill="var(--accent)">🔥</text>
-        </svg>
-        <div>
-          <div class="chip-label">Streak</div>
-          <span class="chip-num">14 <span style="font-size:13px;color:var(--ink-2)">days</span></span>
-        </div>
-      </div>
-
-      <div class="chip chip-4">
-        <div style="width:28px;height:28px;border-radius:8px;background:color-mix(in oklch,var(--accent) 14%,transparent);border:1px solid color-mix(in oklch,var(--accent) 22%,transparent);display:flex;align-items:center;justify-content:center;flex-shrink:0">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 21V10M12 21V3M16 21v-7"/></svg>
-        </div>
-        <div>
-          <div class="chip-label">Bench · est. 1RM</div>
-          <div style="display:flex;align-items:baseline;gap:6px;margin-top:2px">
-            <span class="chip-num" style="font-size:16px">262<span style="font-size:11px;color:var(--ink-2)"> lb</span></span>
-            <span style="font-size:10px;color:var(--accent);font-family:var(--mono)">INTERMEDIATE</span>
-          </div>
-        </div>
-      </div>
-
-    </div>
-
-    <div class="eyebrow">The fitness coach with a memory</div>
-
-    <h1 class="d-hide">A coach that <em>actually knows you.</em></h1>
-    <h1 class="m-hide">A coach that <em>actually knows you.</em></h1>
-
-    <p class="hero-sub d-hide">
-      Text your meals and training like you'd text a friend. Arnie logs everything,
-      learns your patterns, and coaches you toward the goal — every single day.
-    </p>
-    <p class="hero-sub m-hide">
-      Text it like a friend. Arnie logs it, learns you,
-      and coaches you there.
-    </p>
-
-    <div class="cta-wrap">
-      <div class="cta-glow"></div>
-      <div class="cta-card">
-        <!-- Platform selector — iOS app leads (TestFlight is live), Telegram second. -->
-        <div class="platform-row" style="grid-template-columns:repeat(2,1fr);">
-          <button type="button" class="platform-pill active" id="tab-ios"
-                  style="cursor:pointer;" onclick="selectPlatform('ios')">
-            <div class="pico" style="background:#111">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="white">
-                <path d="M17.05 20.28c-.98.95-2.05.8-3.08.35-1.09-.46-2.09-.48-3.24 0-1.44.62-2.2.44-3.06-.35C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.08.8 1.18-.24 2.31-.93 3.57-.84 1.51.12 2.65.72 3.4 1.8-3.12 1.87-2.38 5.98.48 7.13-.57 1.5-1.31 2.99-2.53 4.08zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25z"/>
-              </svg>
-            </div>
-            iOS
-          </button>
-          <button type="button" class="platform-pill" id="tab-telegram"
-                  style="cursor:pointer;" onclick="selectPlatform('telegram')">
-            <div class="pico tg-icon">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="white">
-                <path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/>
-              </svg>
-            </div>
-            Telegram
-          </button>
-        </div>
-
-        <!-- iOS pane — the primary conversion: one tap to TestFlight, plus a
-             desktop QR (Opal-style store-first: scan with your phone, done). -->
-        <div id="pane-ios">
-          <div style="padding:8px">
-            <div class="ios-cta-row">
-              <div style="flex:1;min-width:0">
-                <a href="https://testflight.apple.com/join/XAZQ5sSF" target="_blank" rel="noopener"
-                   class="cta-btn" style="display:block;width:100%;text-align:center;border:none">
-                  Get Arnie on iOS&nbsp;&nbsp;→
-                </a>
-                <p class="cta-fineprint" style="margin-top:9px">
-                  Free &nbsp;·&nbsp; via TestFlight &nbsp;·&nbsp; under a minute
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Telegram pane — opens onboarding modal -->
-        <div id="pane-telegram" style="display:none">
-          <div style="padding:8px">
-            <button type="button"
-               class="cta-btn"
-               style="width:100%;border:none;cursor:pointer"
-               onclick="openObModal()">
-              Set up Arnie in 60 seconds →
-            </button>
-            <p class="cta-fineprint" style="margin-top:9px">
-              Set up once — ready from your first message.
-            </p>
-            <p class="cta-skip" style="text-align:center;margin-top:12px">
-              <a href="https://t.me/Arnie_1026_Bot?start=freetrial" target="_blank" rel="noopener"
-                 style="font-size:11.5px;color:var(--ink-3);letter-spacing:-0.01em">
-                or skip setup and start fresh on Telegram →
-              </a>
-            </p>
-          </div>
-        </div>
-      </div>
-
-      <div class="cta-meta">
-        <span>Free beta</span>
-        <span>iOS · Telegram</span>
-        <span>No card required</span>
-      </div>
-    </div>
-
-    <div class="hero-proof">
-      <span class="stars">★★★★★</span>
-      4.9 from beta members
-    </div>
-  </section>
-
-  <!-- ── INTEGRATIONS STRIP ── -->
-  <div class="int-strip">
-    <div class="int-row">
-      <span class="int-eyebrow">Syncs with your gear</span>
-
-      <!-- Apple Health — live, the hub -->
-      <div class="int-pill">
-        <div class="int-icon">
-          <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
-            <path d="M8 13C8 13 2.5 9.2 2.5 5.8 2.5 4 3.8 2.5 5.5 2.5c1 0 1.9.55 2.5 1.3.6-.75 1.5-1.3 2.5-1.3C12.2 2.5 13.5 4 13.5 5.8 13.5 9.2 8 13 8 13Z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/>
-          </svg>
-        </div>
-        Apple Health
-      </div>
-
-      <!-- Whoop — live -->
-      <div class="int-pill">
-        <div class="int-icon">
-          <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
-            <path d="M13.5 8A5.5 5.5 0 1 1 8 2.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
-            <circle cx="8" cy="8" r="1.8" fill="currentColor"/>
-          </svg>
-        </div>
-        Whoop
-      </div>
-
-      <div class="int-sep"></div>
-
-      <!-- Through Apple Health -->
-      <div class="int-pill">
-        <div class="int-icon">
-          <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
-            <circle cx="8" cy="8" r="5.2" stroke="currentColor" stroke-width="2"/>
-          </svg>
-        </div>
-        Oura
-      </div>
-
-      <div class="int-pill">
-        <div class="int-icon">
-          <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
-            <rect x="4.5" y="2" width="7" height="12" rx="3.5" stroke="currentColor" stroke-width="1.4"/>
-          </svg>
-        </div>
-        Garmin
-      </div>
-
-      <div class="int-pill">
-        <div class="int-icon">
-          <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
-            <rect x="2" y="4" width="12" height="8" rx="2" stroke="currentColor" stroke-width="1.4"/>
-            <path d="M2 8h3l1.3-2 1.4 4L9 8h5" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/>
-          </svg>
-        </div>
-        Withings
-      </div>
-
-      <!-- + more through Apple Health -->
-      <div class="int-pill" style="color:var(--ink-2)">
-        <div class="int-icon">
-          <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
-            <circle cx="8" cy="8" r="5.5" stroke="currentColor" stroke-width="1.3" stroke-dasharray="2.2 2.2"/>
-            <path d="M8 5.5v5M5.5 8h5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
-          </svg>
-        </div>
-        &amp; more
-      </div>
-
-    </div>
-  </div>
-
-  <!-- ── HOW IT FEELS / SEE IT IN ACTION (consolidated) ── -->
-  <section id="demo">
-    <div class="section-inner">
-      <div class="demo-layout">
-
-        <div class="demo-copy">
-          <div class="section-tag reveal">How it feels</div>
-          <h2 class="section-title reveal reveal-d1">Real coaching,<br><em>one text at a time.</em></h2>
-          <p class="section-sub reveal reveal-d2">Say what you ate or how you trained — in your own words. Arnie logs it, runs the numbers, and answers like a coach who's paying attention.</p>
-          <div class="demo-tabs reveal reveal-d3">
-            <button class="demo-tab active" data-scene="nutrition">Nutrition</button>
-            <button class="demo-tab" data-scene="training">Training</button>
-            <button class="demo-tab" data-scene="coaching">Coaching</button>
-          </div>
-        </div>
-
-        <div class="demo-phone-wrap reveal reveal-d2">
-          <div class="demo-phone">
-            <div class="demo-phone-hdr">
-              <div class="chat-avatar">A</div>
+      <!-- The one product object -->
+      <div class="pp" id="pp" aria-label="The Arnie iOS app">
+        <div class="pp-frame">
+          <div class="pp-island"></div>
+          <div class="pp-screen">
+            <div class="pp-hdr">
+              <div class="pp-ava">A</div>
               <div>
-                <div class="demo-phone-name">Arnie</div>
-                <div class="demo-phone-status">
-                  <div class="demo-phone-dot"></div>
-                  <span class="demo-phone-sub">online</span>
-                </div>
+                <div class="pp-name">Arnie</div>
+                <div class="pp-stat">Coach · online</div>
               </div>
             </div>
-            <div class="demo-messages" id="demoMessages"></div>
+            <div class="pp-chat">
+              <div class="pb user"  id="pb1">Had chicken, rice, and avocado after training.</div>
+              <div class="pb arnie" id="pb2">Logged. Strong post-workout base.</div>
+              <div class="pb arnie" id="pb3">You're still light on protein today.</div>
+              <div class="pb arnie" id="pb4">Next move: 45g lean protein before dinner.</div>
+              <div class="pp-chipcard" id="pb5">
+                <div class="lbl">Protein</div>
+                <div class="val">132g <span style="color:var(--sink2);font-weight:450">/ 180g</span></div>
+                <div class="pp-bar"><i></i></div>
+              </div>
+              <div class="pp-mem" id="pb6">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0;margin-top:1px"><path d="M12 3a5 5 0 0 0-5 5v1a4 4 0 0 0-1 7.4V18a3 3 0 0 0 3 3h6a3 3 0 0 0 3-3v-1.6A4 4 0 0 0 17 9V8a5 5 0 0 0-5-5z"/></svg>
+                <span><b>Remembers:</b> late dinners affect tomorrow's protein</span>
+              </div>
+            </div>
+            <div class="pp-input">
+              <span>Message Arnie…</span>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v3"/></svg>
+            </div>
+            <!-- Real app screens — the phone's display morphs through the story:
+                 chat → Coach feed (data) → forecast (memory) → score (body data). -->
+            <div class="pp-shots" aria-hidden="true">
+              <img src="/shots/shot-coach.jpg"   alt="" loading="lazy" decoding="async" style="opacity:var(--s2,0)">
+              <img src="/shots/shot-predict.jpg" alt="" loading="lazy" decoding="async" style="opacity:var(--s3,0)">
+              <img src="/shots/shot-score.jpg"   alt="" loading="lazy" decoding="async" style="opacity:var(--s4,0)">
+            </div>
           </div>
-          <button class="demo-replay" id="demoReplay">
-            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
-            Replay
-          </button>
         </div>
-
       </div>
+
+      <!-- Phase 2 — data cards pull out of the app -->
+      <div class="cine-el dcard g2" style="--tx:-300px; --ty:-170px; --sp:1.06">
+        <div class="t">Protein</div><div class="v">132g / 180g</div><div class="m">48g remaining</div>
+      </div>
+      <div class="cine-el dcard g2" style="--tx:300px; --ty:-150px; --sp:0.94">
+        <div class="t">Weight</div><div class="v">↓ 1.8 lb this week</div><div class="m">Trend improving</div>
+      </div>
+      <div class="cine-el dcard g2 m-cut" style="--tx:-330px; --ty:40px; --sp:0.9">
+        <div class="t">Training</div><div class="v">3 sessions</div><div class="m">Next: upper body</div>
+      </div>
+      <div class="cine-el dcard g2 m-cut" style="--tx:330px; --ty:70px; --sp:1.1">
+        <div class="t">Recovery</div><div class="v">Sleep dipped</div><div class="m">Keep dinner lighter</div>
+      </div>
+      <div class="cine-el dcard g2 pattern" style="--tx:0px; --ty:250px; --sp:1">
+        <div class="t">Pattern</div><div class="v">Late dinners reduce next-day protein completion</div>
+      </div>
+
+      <!-- Phase 3 — memory nodes -->
+      <div class="cine-el mnode g3" style="--tx:-250px; --ty:-140px">Goal: lose fat</div>
+      <div class="cine-el mnode g3" style="--tx:250px; --ty:-140px">Protein target: 180g</div>
+      <div class="cine-el mnode g3" style="--tx:-90px; --ty:-235px">Knee injury</div>
+      <div class="cine-el mnode g3" style="--tx:95px; --ty:-230px">Trains 4x/week</div>
+      <div class="cine-el mnode g3" style="--tx:-265px; --ty:115px">Late dinners</div>
+      <div class="cine-el mnode g3" style="--tx:268px; --ty:110px">Weight trend ↓</div>
+      <div class="cine-el mnode g3 dim m-cut" style="--tx:-320px; --ty:-15px">Misses lunch on workdays</div>
+      <div class="cine-el mnode g3 dim m-cut" style="--tx:322px; --ty:-18px">High-protein breakfasts</div>
+      <div class="cine-el mnode g3 dim m-cut" style="--tx:-150px; --ty:235px">Push/pull/legs split</div>
+      <div class="cine-el mnode g3 dim m-cut" style="--tx:155px; --ty:232px">Sleep quality</div>
+      <div class="cine-el mnode g3 dim m-cut" style="--tx:0px; --ty:-278px">Weekend overeating</div>
+      <div class="cine-el mnode g3 dim m-cut" style="--tx:0px; --ty:282px">Meal timing</div>
+
+      <!-- Phase 4 — integrations + channels -->
+      <div class="cine-el g4" style="--tx:0px; --ty:-395px; pointer-events:none">
+        <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;max-width:520px">
+          <span class="ipill">Apple Health</span><span class="ipill">Whoop</span>
+          <span class="ipill">Oura</span><span class="ipill">Fitbit</span><span class="ipill">Hume</span>
+          <span class="ipill m-cut">Steps</span><span class="ipill m-cut">Sleep</span>
+          <span class="ipill m-cut">Weight</span><span class="ipill m-cut">Workouts</span>
+          <span class="ipill m-cut">Recovery</span>
+        </div>
+      </div>
+      <a class="cine-el chcard primary g4" style="--tx:-290px; --ty:-60px"
+         href="https://testflight.apple.com/join/XAZQ5sSF" target="_blank" rel="noopener">
+        <div class="n"> iOS Beta</div><div class="st">Available now</div>
+      </a>
+      <a class="cine-el chcard g4" style="--tx:290px; --ty:-60px"
+         href="https://t.me/Arnie_1026_Bot?start=freetrial" target="_blank" rel="noopener">
+        <div class="n">Telegram</div><div class="st">Available now</div>
+      </a>
+      <div class="cine-el chcard soon g4 m-cut" style="--tx:-290px; --ty:105px">
+        <div class="n">iMessage</div><div class="st">Coming soon</div>
+      </div>
+      <div class="cine-el chcard soon g4 m-cut" style="--tx:290px; --ty:105px">
+        <div class="n">WhatsApp</div><div class="st">Coming soon</div>
+      </div>
+
+      <!-- Phase captions -->
+      <div class="cine-cap" id="cap1">
+        <h3>Text it <em>like a coach.</em></h3>
+        <p>Meals, workouts, weight, and progress go straight into the Arnie app. Arnie turns the log into the next move.</p>
+      </div>
+      <div class="cine-cap" id="cap2">
+        <h3>Your logs <em>become direction.</em></h3>
+        <p>Arnie connects what you eat, how you train, and how your body responds.</p>
+      </div>
+      <div class="cine-cap" id="cap3">
+        <h3>It remembers <em>what apps forget.</em></h3>
+        <p>Goals, injuries, habits, routines, meals, workouts, and patterns become part of how Arnie coaches you.</p>
+        <div class="mc">No more starting over every time you ask for help</div>
+      </div>
+      <div class="cine-cap" id="cap4">
+        <h3>Start in the <em>iOS beta.</em></h3>
+        <p>Use the Arnie app today, with Telegram available now. iMessage and WhatsApp are coming soon — built around the data you already track.</p>
+      </div>
+
+      <!-- Phase 5 — resolve -->
+      <div class="cine-resolve" id="cineResolve">
+        <h2>Start with <em>one log.</em></h2>
+        <p>Text your first meal, workout, or weight check-in. Arnie will take it from there.</p>
+        <a href="https://testflight.apple.com/join/XAZQ5sSF" target="_blank" rel="noopener" class="cta-btn" style="display:inline-flex;width:auto;padding:16px 30px">Start free trial&nbsp;&nbsp;→</a>
+        <span class="hero-micro">7 days free · Then $9.99/mo · Cancel anytime</span>
+      </div>
+
     </div>
   </section>
 
-  <!-- ── COMPARISON ── -->
-
-
-  <!-- ── INSIDE ARNIE — the story, told with the real app ── -->
-  <section id="inside">
-    <div class="section-inner">
-      <div class="section-tag reveal">Inside Arnie</div>
-      <h2 class="section-title reveal reveal-d1">You talk.<br><em>It learns you.</em></h2>
-      <p class="section-sub reveal reveal-d2">No forms. No food databases. You talk like a person — and a living model of you compounds underneath.</p>
-
-      <div class="showcase">
-
-        <!-- Beat 1 — foresight -->
-        <div class="show-row reveal">
-          <div class="show-copy">
-            <div class="show-eyebrow">It predicts your next move</div>
-            <h3>It sees where you're headed <em>before you do.</em></h3>
-            <p>Arnie runs your real trend — weight, intake, training, recovery — and talks about your future in plain words. Not charts to interpret. A call being made.</p>
-            <div class="show-points">
-              <div class="show-point"><span><b>"Hold this and you're there by mid-July"</b> — a forecast with a date on it</span></div>
-              <div class="show-point"><span>Re-plans the moment life changes — a missed week, a heavy weekend</span></div>
-              <div class="show-point"><span><b>Texts first</b> — morning brief, midday pacing, evening close</span></div>
-            </div>
-          </div>
-          <div class="show-phone-wrap">
-            <div class="show-phone"><div class="show-screen"><img src="/shots/shot-predict.jpg" alt="Arnie's Coach home — a weight forecast written in plain words over a live trend" loading="lazy"></div></div>
-          </div>
+  <!-- ── WHY ARNIE IS DIFFERENT ── -->
+  <section id="different">
+    <div class="section-inner" style="text-align:center">
+      <div class="section-tag reveal">Why Arnie</div>
+      <h2 class="section-title reveal reveal-d1">Not a tracker.<br><em>A coach.</em></h2>
+      <div class="diff-grid">
+        <div class="diff-card reveal reveal-d1">
+          <div class="ic"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3a5 5 0 0 0-5 5v1a4 4 0 0 0-1 7.4V18a3 3 0 0 0 3 3h6a3 3 0 0 0 3-3v-1.6A4 4 0 0 0 17 9V8a5 5 0 0 0-5-5z"/></svg></div>
+          <h3>Memory</h3>
+          <p>Arnie keeps track of your goals, preferences, injuries, routines, and history.</p>
         </div>
-
-        <!-- Beat 2 — the body model -->
-        <div class="show-row flip reveal">
-          <div class="show-copy">
-            <div class="show-eyebrow">It knows your body</div>
-            <h3>Every set you mention feeds a <em>living model of you.</em></h3>
-            <p>Say "205 for 12 on incline" in chat and it lands in a per-muscle recovery board and a PR ledger tiered to your bodyweight. It knows what's fresh, what's fried, and what you're close to unlocking.</p>
-            <div class="show-points">
-              <div class="show-point"><span><b>Muscle recovery gauges</b>, adjusted by your sleep and strain</span></div>
-              <div class="show-point"><span><b>Est. 1RM strength tiers</b> — Novice to Advanced, scaled to you</span></div>
-              <div class="show-point"><span>Apple Health + WHOOP flow in automatically — nothing to sync</span></div>
-            </div>
-          </div>
-          <div class="show-phone-wrap">
-            <div class="show-phone"><div class="show-screen"><img src="/shots/shot-prs.jpg" alt="Arnie's muscle recovery board and personal records with strength tiers" loading="lazy"></div></div>
-          </div>
+        <div class="diff-card reveal reveal-d2">
+          <div class="ic"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M3 17l5-6 4 4 6-8 3 4"/></svg></div>
+          <h3>Patterns</h3>
+          <p>It notices what keeps happening, from missed lunches to late dinners to weak recovery.</p>
         </div>
-
-        <!-- Beat 3 — receipts, deliberately secondary -->
-        <div class="show-duo-block reveal">
-          <div class="show-eyebrow" style="text-align:center">And receipts when you want them</div>
-          <p class="show-duo-sub">Every word becomes structured, correctable data — a scored day, a timestamped timeline, micronutrients included.</p>
-          <div class="show-duo">
-            <div class="show-phone show-phone-sm tilt-l"><div class="show-screen"><img src="/shots/shot-score.jpg" alt="Health Score and burned vs consumed energy balance" loading="lazy"></div></div>
-            <div class="show-phone show-phone-sm tilt-r"><div class="show-screen"><img src="/shots/shot-log.jpg" alt="The daily log timeline — meals, water, and training" loading="lazy"></div></div>
-          </div>
+        <div class="diff-card reveal reveal-d3">
+          <div class="ic"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M20 6L9 17l-5-5"/></svg></div>
+          <h3>Accountability</h3>
+          <p>It follows up with specific next steps instead of leaving you with another dashboard.</p>
         </div>
-
       </div>
-
-      <!-- The close: positioning + moat in one breath -->
-      <p class="show-moat reveal">Most apps track. <em>Arnie coaches.</em></p>
-      <p class="show-moat-sub reveal reveal-d1">Six months in, Arnie knows your body better than anything you could switch to. Every conversation compounds — history, injuries, preferences, PRs, patterns. Generic apps start from zero. Arnie never does.</p>
     </div>
   </section>
 
@@ -1978,36 +2153,20 @@
   <section id="pricing">
     <div class="section-inner" style="text-align:center">
       <div class="section-tag reveal">Pricing</div>
-      <h2 class="section-title reveal reveal-d1">Start free.<br><em>Stay if it works.</em></h2>
-      <p class="section-sub reveal reveal-d2" style="margin:0 auto">A full week free, every feature on. No card. Cancel with a text.</p>
-      <div class="pricing-cols">
-
-        <div class="price-card reveal reveal-d1">
-          <div class="price-badge">Free trial</div>
-          <div class="price-amount">7 days</div>
-          <div class="price-sub">No card required</div>
-          <ul class="price-features">
-            <li>Full access to all features</li>
-            <li>Food &amp; workout logging</li>
-            <li>Daily coaching &amp; check-ins</li>
-            <li>Dashboard access</li>
-          </ul>
-          <a href="https://testflight.apple.com/join/XAZQ5sSF" target="_blank" rel="noopener" class="price-cta">Start Free on iOS →</a>
-        </div>
-
-        <div class="price-card featured reveal reveal-d2">
-          <div class="price-badge">Premium</div>
-          <div class="price-amount">$9.99<span style="font-size:17px;color:var(--ink-3)">/mo</span></div>
-          <div class="price-sub">After trial · Cancel anytime</div>
-          <ul class="price-features">
-            <li>Everything in free trial</li>
-            <li>Persistent memory &amp; history</li>
-            <li>Apple Health &amp; Whoop sync</li>
-            <li>Proactive daily check-ins</li>
-          </ul>
-          <a href="https://testflight.apple.com/join/XAZQ5sSF" target="_blank" rel="noopener" class="price-cta">Start Free on iOS →</a>
-        </div>
-
+      <h2 class="section-title reveal reveal-d1">Start free<br><em>for 7 days.</em></h2>
+      <p class="section-sub reveal reveal-d2" style="margin:0 auto">Then $9.99/month. Cancel anytime.</p>
+      <div class="price-one reveal reveal-d2">
+        <div class="amount">$9.99<span>/mo after 7 days free</span></div>
+        <div class="after">No card to start · Cancel anytime</div>
+        <ul>
+          <li>Arnie iOS beta access</li>
+          <li>Log meals and workouts in chat</li>
+          <li>Personalized coaching with memory</li>
+          <li>Progress tracking and pattern insights</li>
+          <li>Telegram support available now</li>
+          <li>iMessage and WhatsApp coming soon</li>
+        </ul>
+        <a href="https://testflight.apple.com/join/XAZQ5sSF" target="_blank" rel="noopener" class="cta-btn">Start free trial&nbsp;&nbsp;→</a>
       </div>
     </div>
   </section>
@@ -2021,262 +2180,61 @@
 
         <div class="faq-item">
           <button class="faq-q">What is Arnie?<span class="faq-icon">+</span></button>
-          <div class="faq-a">Arnie is a personal coach for fitness and nutrition. You log food, workouts, and weight in plain English; it learns your patterns, projects where you're headed, and coaches you off your actual history — more valuable every week you use it. Native iOS app, plus Telegram if you'd rather just text.</div>
+          <div class="faq-a">Arnie is a fitness and nutrition coach with memory. You log meals, workouts, weight, and progress, and Arnie uses your history to coach you with context.</div>
         </div>
 
         <div class="faq-item">
-          <button class="faq-q">How is it different from MyFitnessPal or ChatGPT?<span class="faq-icon">+</span></button>
-          <div class="faq-a">MyFitnessPal tracks — it doesn't coach. ChatGPT has no memory of your history. Arnie remembers everything: your goals, injuries, past performance — and actively guides you based on all of it.</div>
+          <button class="faq-q">Is Arnie available now?<span class="faq-icon">+</span></button>
+          <div class="faq-a">Yes. Arnie is available now as an iOS beta app. Telegram is also supported.</div>
         </div>
 
         <div class="faq-item">
-          <button class="faq-q">Which platforms can I use?<span class="faq-icon">+</span></button>
-          <div class="faq-a">There's a native iOS app with a Coach feed, daily rings, weight trends, and chat — plus Telegram if you'd rather just text. Everything stays in sync across both, so you can pick up wherever you are.</div>
+          <button class="faq-q">How is Arnie different from MyFitnessPal?<span class="faq-icon">+</span></button>
+          <div class="faq-a">MyFitnessPal is mainly a tracker. Arnie is a coach. It remembers your habits, notices patterns, and tells you what to do next.</div>
         </div>
 
         <div class="faq-item">
-          <button class="faq-q">What happens after my 7-day trial?<span class="faq-icon">+</span></button>
-          <div class="faq-a">After the trial, Arnie continues at $9.99/month. Cancel any time before the trial ends and you won't be charged. No hidden fees, no annual lock-in.</div>
+          <button class="faq-q">How is Arnie different from ChatGPT?<span class="faq-icon">+</span></button>
+          <div class="faq-a">ChatGPT can answer questions. Arnie is built around your ongoing fitness history, logs, reminders, progress, and accountability.</div>
         </div>
 
         <div class="faq-item">
-          <button class="faq-q">Is there an iOS app?<span class="faq-icon">+</span></button>
-          <div class="faq-a">Yes — live in beta right now. Tap "Get Arnie on iOS" anywhere on this page and TestFlight installs it in under a minute: Coach feed, daily rings, weight trends, Apple Health + Whoop sync, and chat. Prefer to just text? Telegram works too, and everything stays in sync.</div>
+          <button class="faq-q">Do I need Telegram?<span class="faq-icon">+</span></button>
+          <div class="faq-a">No. The iOS beta is the main app experience. Telegram is also available for users who want it.</div>
+        </div>
+
+        <div class="faq-item">
+          <button class="faq-q">Do I need a wearable?<span class="faq-icon">+</span></button>
+          <div class="faq-a">No. You can start by logging in the app. Wearables and health data make Arnie more personalized over time.</div>
+        </div>
+
+        <div class="faq-item">
+          <button class="faq-q">What happens after the free trial?<span class="faq-icon">+</span></button>
+          <div class="faq-a">After 7 days, Arnie is $9.99/month. You can cancel anytime.</div>
+        </div>
+
+        <div class="faq-item">
+          <button class="faq-q">Can I cancel anytime?<span class="faq-icon">+</span></button>
+          <div class="faq-a">Yes.</div>
         </div>
 
       </div>
     </div>
   </section>
 
-  <!-- ── WEB ONBOARDING MODAL ── -->
-  <div id="ob-overlay" class="ob-overlay" role="dialog" aria-modal="true" aria-label="Set up your profile"
-       onclick="if(event.target===this)closeObModal()">
-    <div class="ob-modal">
-      <div class="ob-modal-head">
-        <span class="ob-modal-brand"><em>Arnie</em></span>
-        <span class="ob-modal-sep"></span>
-        <span class="ob-modal-tagline">Set up your profile</span>
-        <button class="ob-modal-close" onclick="closeObModal()" aria-label="Close">✕</button>
-      </div>
-
-    <div class="ob-card">
-      <div class="ob-progress"><div class="ob-progress-bar" id="obProgressBar"></div></div>
-
-      <!-- Step 1: Goal -->
-      <div class="ob-step ob-step-enter" id="ob-step-1">
-        <div class="ob-step-label">Step 1 of 5 &nbsp;·&nbsp; Goal</div>
-        <h3 class="ob-step-title">What are you training for?</h3>
-        <div class="ob-goals" id="ob-goals">
-          <button type="button" class="ob-goal-btn" data-val="cut">
-            <span class="ob-goal-icon">📉</span>
-            <span class="ob-goal-name">Losing weight</span>
-            <span class="ob-goal-sub">lose fat</span>
-          </button>
-          <button type="button" class="ob-goal-btn" data-val="bulk">
-            <span class="ob-goal-icon">📈</span>
-            <span class="ob-goal-name">Gaining weight</span>
-            <span class="ob-goal-sub">gain muscle</span>
-          </button>
-          <button type="button" class="ob-goal-btn" data-val="maintain">
-            <span class="ob-goal-icon">⚖️</span>
-            <span class="ob-goal-name">Maintain</span>
-            <span class="ob-goal-sub">stay lean</span>
-          </button>
-          <button type="button" class="ob-goal-btn" data-val="performance">
-            <span class="ob-goal-icon">⚡</span>
-            <span class="ob-goal-name">Performance</span>
-            <span class="ob-goal-sub">get stronger</span>
-          </button>
-          <button type="button" class="ob-goal-btn" data-val="health">
-            <span class="ob-goal-icon">🩺</span>
-            <span class="ob-goal-name">Health</span>
-            <span class="ob-goal-sub">feel better</span>
-          </button>
-        </div>
-        <p class="ob-tap-hint">tap to select · moves to next step</p>
-      </div>
-
-      <!-- Step 2: About you -->
-      <div class="ob-step" id="ob-step-2" style="display:none">
-        <div class="ob-step-label">Step 2 of 5 &nbsp;·&nbsp; About you</div>
-        <h3 class="ob-step-title">A few basics.</h3>
-        <div class="ob-fields">
-          <div class="ob-field">
-            <label class="ob-label" for="ob-name">First name</label>
-            <input type="text" class="ob-input" id="ob-name" placeholder="e.g. Alex" autocomplete="given-name">
-          </div>
-          <div class="ob-field-row">
-            <div class="ob-field">
-              <label class="ob-label" for="ob-age">Age</label>
-              <input type="number" class="ob-input" id="ob-age" placeholder="25" min="13" max="99" inputmode="numeric">
-            </div>
-            <div class="ob-field">
-              <label class="ob-label">Sex</label>
-              <div class="ob-seg" id="ob-sex">
-                <button type="button" class="ob-seg-btn" data-val="male">Male</button>
-                <button type="button" class="ob-seg-btn" data-val="female">Female</button>
-                <button type="button" class="ob-seg-btn" data-val="other">Other</button>
-              </div>
-            </div>
-          </div>
-        </div>
-        <div class="ob-nav">
-          <button class="ob-back-btn" onclick="obGoStep(1)">← Back</button>
-          <button class="ob-next-btn" id="ob-next-2" onclick="obNextStep2()">Continue →</button>
-        </div>
-      </div>
-
-      <!-- Step 3: Body metrics -->
-      <div class="ob-step" id="ob-step-3" style="display:none">
-        <div class="ob-step-label">Step 3 of 5 &nbsp;·&nbsp; Body metrics</div>
-        <h3 class="ob-step-title">Current stats.</h3>
-        <div class="ob-fields">
-          <div class="ob-field">
-            <label class="ob-label">Height</label>
-            <div class="ob-height-row">
-              <input type="number" class="ob-input ob-input-sm" id="ob-height-ft" placeholder="5" min="3" max="8" inputmode="numeric">
-              <span class="ob-unit">ft</span>
-              <input type="number" class="ob-input ob-input-sm" id="ob-height-in" placeholder="10" min="0" max="11" inputmode="numeric">
-              <span class="ob-unit">in</span>
-            </div>
-          </div>
-          <div class="ob-field">
-            <label class="ob-label" for="ob-weight">Current weight</label>
-            <div class="ob-height-row">
-              <input type="number" class="ob-input" id="ob-weight" placeholder="175" min="50" max="600" step="0.5" inputmode="decimal" style="max-width:140px">
-              <span class="ob-unit">lbs</span>
-            </div>
-          </div>
-          <div class="ob-field" id="ob-goal-wt-wrap" style="display:none">
-            <label class="ob-label" for="ob-goal-weight">Goal weight <span style="color:var(--ink-3);font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></label>
-            <div class="ob-height-row">
-              <input type="number" class="ob-input" id="ob-goal-weight" placeholder="160" min="50" max="600" step="0.5" inputmode="decimal" style="max-width:140px">
-              <span class="ob-unit">lbs</span>
-            </div>
-          </div>
-        </div>
-        <div class="ob-nav">
-          <button class="ob-back-btn" onclick="obGoStep(2)">← Back</button>
-          <button class="ob-next-btn" id="ob-next-3" onclick="obNextStep3()">Continue →</button>
-        </div>
-      </div>
-
-      <!-- Step 4: Training experience -->
-      <div class="ob-step" id="ob-step-4" style="display:none">
-        <div class="ob-step-label">Step 4 of 5 &nbsp;·&nbsp; Training</div>
-        <h3 class="ob-step-title">How long have you been lifting?</h3>
-        <div class="ob-exp-group" id="ob-exp-group">
-          <button type="button" class="ob-exp-btn" data-val="beginner">
-            <strong>Beginner</strong><span>0 – 1 year</span>
-          </button>
-          <button type="button" class="ob-exp-btn" data-val="intermediate">
-            <strong>Intermediate</strong><span>1 – 4 years</span>
-          </button>
-          <button type="button" class="ob-exp-btn" data-val="advanced">
-            <strong>Advanced</strong><span>4+ years</span>
-          </button>
-        </div>
-        <div class="ob-field" style="margin-top:20px">
-          <label class="ob-label" for="ob-diet">Dietary preferences <span style="color:var(--ink-3);font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></label>
-          <input type="text" class="ob-input" id="ob-diet" placeholder="e.g. vegetarian, no dairy, high protein…">
-        </div>
-        <div class="ob-nav" style="margin-top:20px">
-          <button class="ob-back-btn" onclick="obGoStep(3)">← Back</button>
-          <button class="ob-next-btn" id="ob-next-4" onclick="obNextStep4()">Continue →</button>
-        </div>
-      </div>
-
-      <!-- Step 5: Targets (auto-calculated, editable) -->
-      <div class="ob-step" id="ob-step-5" style="display:none">
-        <div class="ob-step-label">Step 5 of 5 &nbsp;·&nbsp; Your targets</div>
-        <h3 class="ob-step-title">Your daily targets.</h3>
-        <p class="ob-tgt-sub">
-          Auto-calculated from your goal, body comp, and training level.
-          Adjust anything if you have numbers you trust.
-        </p>
-        <div class="ob-fields">
-          <div class="ob-field">
-            <label class="ob-label" for="ob-tgt-cals">Calories</label>
-            <div class="ob-tgt-row">
-              <input type="number" class="ob-input ob-tgt-input" id="ob-tgt-cals" min="800" max="6000" step="10" inputmode="numeric">
-              <span class="ob-unit">kcal</span>
-            </div>
-          </div>
-          <div class="ob-field-row ob-tgt-macro-grid">
-            <div class="ob-field">
-              <label class="ob-label" for="ob-tgt-protein">Protein</label>
-              <div class="ob-tgt-row">
-                <input type="number" class="ob-input ob-tgt-input" id="ob-tgt-protein" min="20" max="500" step="1" inputmode="numeric">
-                <span class="ob-unit">g</span>
-              </div>
-            </div>
-            <div class="ob-field">
-              <label class="ob-label" for="ob-tgt-carbs">Carbs</label>
-              <div class="ob-tgt-row">
-                <input type="number" class="ob-input ob-tgt-input" id="ob-tgt-carbs" min="0" max="800" step="1" inputmode="numeric">
-                <span class="ob-unit">g</span>
-              </div>
-            </div>
-            <div class="ob-field">
-              <label class="ob-label" for="ob-tgt-fat">Fat</label>
-              <div class="ob-tgt-row">
-                <input type="number" class="ob-input ob-tgt-input" id="ob-tgt-fat" min="10" max="300" step="1" inputmode="numeric">
-                <span class="ob-unit">g</span>
-              </div>
-            </div>
-          </div>
-        </div>
-        <details class="ob-tgt-explain">
-          <summary>How we calculate these</summary>
-          <div class="ob-tgt-explain-body" id="ob-tgt-explain-body">
-            <!-- Filled in JS with BMR/TDEE/deficit + macro split rule -->
-          </div>
-        </details>
-        <div class="ob-error" id="ob-error"></div>
-        <div class="ob-nav" style="margin-top:20px">
-          <button class="ob-back-btn" onclick="obGoStep(4)">← Back</button>
-          <button class="ob-next-btn" id="ob-submit-btn" onclick="obSubmit()">Get my Telegram link →</button>
-        </div>
-      </div>
-
-      <!-- Success state -->
-      <div class="ob-step" id="ob-step-success" style="display:none">
-        <div class="ob-success-icon">✓</div>
-        <h3 class="ob-step-title" style="margin-bottom:10px">
-          You're all set, <span id="ob-success-name">there</span>.
-        </h3>
-        <p class="ob-success-sub" id="ob-success-sub">
-          Arnie already has your goals, stats, and training background.
-          Open Telegram — no onboarding needed.
-        </p>
-        <a href="#" id="ob-tg-link" class="cta-btn" target="_blank" rel="noopener"
-           style="margin-top:20px;text-decoration:none;display:flex;justify-content:center">
-          Open Arnie on Telegram →
-        </a>
-        <div class="ob-code-row" style="margin-top:16px">
-          <span class="ob-code-label">Your code</span>
-          <code class="ob-code" id="ob-code"></code>
-          <span style="font-size:10px;color:var(--ink-4);margin-left:auto">expires in 48 hrs</span>
-        </div>
-      </div>
-
-    </div><!-- /.ob-card -->
-    </div><!-- /.ob-modal -->
-  </div><!-- /#ob-overlay -->
-
   <!-- ── FINAL CTA ── -->
   <section class="final-cta">
     <div class="section-tag reveal">Ready</div>
-    <h2 class="reveal reveal-d1">Ready when<br><em>you are.</em></h2>
-    <p class="reveal reveal-d2">Free on iOS. On your phone in under a minute.</p>
+    <h2 class="reveal reveal-d1">Start with<br><em>one log.</em></h2>
+    <p class="reveal reveal-d2">Text your first meal, workout, or weight check-in. Arnie will take it from there.</p>
     <div class="cta-wrap reveal reveal-d3" style="max-width:500px">
       <div class="cta-glow"></div>
       <a href="https://testflight.apple.com/join/XAZQ5sSF" target="_blank" rel="noopener"
          class="cta-btn" style="display:block;width:100%;text-align:center;border:none">
-        Get Arnie on iOS&nbsp;&nbsp;→
+        Start free trial&nbsp;&nbsp;→
       </a>
       <p class="cta-fineprint" style="margin-top:10px;text-align:center">
-        Via TestFlight · no card required ·
+        7 days free · Then $9.99/mo · Cancel anytime ·
         <a href="https://t.me/Arnie_1026_Bot?start=freetrial" target="_blank" rel="noopener"
            style="color:var(--ink-2)">or start on Telegram →</a>
       </p>
@@ -2292,94 +2250,64 @@
   <!-- Sticky mobile CTA — straight to TestFlight, no form -->
   <div class="sticky-bar" id="stickyBar">
     <div class="sticky-left">
-      <div class="sticky-title">Get the iOS beta</div>
-      <div class="sticky-sub">Free on TestFlight · under a minute</div>
+      <div class="sticky-title">Start free trial</div>
+      <div class="sticky-sub">7 days free · $9.99/mo after · Cancel anytime</div>
     </div>
     <a href="https://testflight.apple.com/join/XAZQ5sSF" target="_blank" rel="noopener" class="sticky-btn">
-      Download →
+      Start&nbsp;→
     </a>
   </div>
 
 </div>
 
 <script>
-  // ── Beta signup handler ──────────────────────────────────────────
-  // Replace FORMSPREE_ID with your actual Formspree form ID from formspree.io
-  const FORMSPREE_ENDPOINT = 'https://formspree.io/f/xojbyrwl';
+  // Nav scroll state
+  const nav = document.getElementById('nav');
+  window.addEventListener('scroll', () => {
+    nav.classList.toggle('scrolled', window.scrollY > 20);
+  }, {passive:true});
 
-  const ARNIE_API = 'https://arnie.onrender.com';
+  // Cursor spotlight
+  const spotlight = document.getElementById('spotlight');
+  document.addEventListener('mousemove', e => {
+    spotlight.style.setProperty('--mx', e.clientX + 'px');
+    spotlight.style.setProperty('--my', e.clientY + 'px');
+  }, {passive:true});
 
-  // ── Platform tab switcher ────────────────────────────────────────
-  // iOS (TestFlight) is the primary; Telegram second.
-  function selectPlatform(p) {
-    const ios = p === 'ios';
-    document.getElementById('tab-ios').classList.toggle('active', ios);
-    document.getElementById('tab-telegram').classList.toggle('active', !ios);
-    document.getElementById('pane-ios').style.display = ios ? 'block' : 'none';
-    document.getElementById('pane-telegram').style.display = ios ? 'none' : 'block';
+  // Orb parallax
+  const orbA = document.getElementById('orbA');
+  const orbB = document.getElementById('orbB');
+  document.addEventListener('mousemove', e => {
+    const x = (e.clientX / window.innerWidth  - 0.5) * 24;
+    const y = (e.clientY / window.innerHeight - 0.5) * 24;
+    if (orbA) orbA.style.transform = `translate(${x * 0.5}px, ${y * 0.5}px)`;
+    if (orbB) orbB.style.transform = `translate(${-x * 0.3}px, ${-y * 0.3}px)`;
+  }, {passive:true});
+
+  // Gyroscope orb parallax — skip on mobile since orbs are already simplified
+  // and constant transform updates on fixed blur elements cause jank
+  if (window.DeviceOrientationEvent && window.innerWidth > 768) {
+    window.addEventListener('deviceorientation', e => {
+      if (!e.beta || !e.gamma) return;
+      const x = Math.max(-14, Math.min(14, e.gamma));
+      const y = Math.max(-14, Math.min(14, e.beta - 30));
+      if (orbA) orbA.style.transform = `translate(${x * 0.65}px, ${y * 0.65}px)`;
+      if (orbB) orbB.style.transform = `translate(${-x * 0.38}px, ${-y * 0.38}px)`;
+    }, {passive:true});
   }
 
-  // ── Telegram signup — capture email (Formspree), then reveal bot link ──
-  async function handleTelegramSignup(e) {
-    e.preventDefault();
-    const form = document.getElementById('tgForm');
-    const email = document.getElementById('tgEmail').value.trim();
-    const btn = document.getElementById('tgBtn');
-    btn.textContent = 'Saving…';
-    btn.disabled = true;
-    try {
-      await fetch(FORMSPREE_ENDPOINT, {
-        method: 'POST',
-        headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, platform: 'telegram' }),
-      });
-    } catch (err) { /* non-blocking — still show the link */ }
-    form.style.display = 'none';
-    document.getElementById('tgSuccess').style.display = 'block';
-  }
+  // Scroll reveal
+  const io = new IntersectionObserver(entries => {
+    entries.forEach(e => { if (e.isIntersecting) e.target.classList.add('in'); });
+  }, {threshold: 0.07});
+  document.querySelectorAll('.reveal').forEach(el => io.observe(el));
 
-
-
-  async function handleBetaSubmit(e, formId) {
-    e.preventDefault();
-    const form = document.getElementById(formId);
-    const successId = formId.replace('Form', 'Success');
-    const successEl = document.getElementById(successId);
-    const btn = form.querySelector('button[type="submit"]');
-    const email = form.querySelector('input[type="email"]').value;
-
-    btn.textContent = 'Sending…';
-    btn.disabled = true;
-
-    try {
-      const data = new FormData();
-      data.append('email', email);
-
-      const res = await fetch(FORMSPREE_ENDPOINT, {
-        method: 'POST',
-        headers: { 'Accept': 'application/json' },
-        body: data
-      });
-
-      const json = await res.json().catch(() => ({}));
-      console.log('Formspree response:', res.status, json);
-
-      if (res.ok) {
-        form.style.display = 'none';
-        successEl.style.display = 'block';
-      } else {
-        btn.textContent = 'Get Access →';
-        btn.disabled = false;
-        const msg = json?.errors?.[0]?.message || json?.error || 'Something went wrong — please try again.';
-        alert(msg);
-      }
-    } catch (err) {
-      console.error('Formspree error:', err);
-      btn.textContent = 'Get Access →';
-      btn.disabled = false;
-      alert('Something went wrong — please check your connection and try again.');
-    }
-  }
+  // Sticky mobile bar
+  const heroEl    = document.getElementById('hero');
+  const stickyBar = document.getElementById('stickyBar');
+  new IntersectionObserver(entries => {
+    stickyBar.classList.toggle('show', !entries[0].isIntersecting);
+  }, {threshold: 0}).observe(heroEl);
 
   // Nav scroll state
   const nav = document.getElementById('nav');
@@ -2429,494 +2357,6 @@
     stickyBar.classList.toggle('show', !entries[0].isIntersecting);
   }, {threshold: 0}).observe(heroEl);
 
-  // ── Animated chat demo ────────────────────────────────────────
-  const DEMO_SCENES = {
-    nutrition: {
-      times: ['12:34','12:34','12:37','12:38'],
-      messages: [
-        { role:'user', text:'just had a chicken caesar salad for lunch' },
-        { role:'bot',  text:'<strong>Logged.</strong> ~520 cal, 41g protein. You\'re at 68% of your protein target — 57g left. Dinner\'s the one that matters.' },
-        { role:'user', text:'how am I tracking this week?' },
-        { role:'bot',  text:'Solid. You\'ve hit protein 4 out of 5 days and you\'re running a 380 cal average deficit. At this rate — 0.8 lbs/week. Right on track.' },
-      ]
-    },
-    training: {
-      times: ['18:02','18:02','18:04','18:05'],
-      messages: [
-        { role:'user', text:'squat day done — 4×5 @ 225, felt clean' },
-        { role:'bot',  text:'<strong>Logged.</strong> +10lbs from last Monday. Squat\'s been up 5lbs/week for 3 weeks. Next session: <strong>230</strong>.' },
-        { role:'user', text:'anything to add for accessories?' },
-        { role:'bot',  text:'Romanian deadlifts 3×10 and leg press 3×15. Targets the posterior chain and quad depth where you\'re lagging based on your last four sessions.' },
-      ]
-    },
-    coaching: {
-      times: ['09:15','09:15','09:17','09:18'],
-      messages: [
-        { role:'user', text:'been exhausted all week, skipped 2 workouts' },
-        { role:'bot',  text:'Your sleep\'s averaged 5.6hrs this week — that\'s the issue. Recovery\'s been in the red both days you missed. <strong>This isn\'t laziness, it\'s your body in a hole.</strong>' },
-        { role:'user', text:'should I train today anyway?' },
-        { role:'bot',  text:'Train light. Skip the heavy compounds, do 20–30 min low-intensity cardio. You keep the habit without digging deeper. <strong>Then get 7+ hrs tonight</strong> — that\'s the real fix.' },
-      ]
-    }
-  };
-
-  let activeScene = 'nutrition';
-  let demoTimer   = null;
-  let demoFired   = false;
-
-  function runDemo(scene) {
-    const container = document.getElementById('demoMessages');
-    if (!container) return;
-    clearTimeout(demoTimer);
-    container.innerHTML = '';
-    const { messages, times } = DEMO_SCENES[scene];
-    let i = 0;
-
-    function addMsg(role, text, time) {
-      const el = document.createElement('div');
-      el.className = 'demo-msg ' + role;
-      el.innerHTML = text + '<div class="demo-msg-time">' + time + '</div>';
-      container.appendChild(el);
-      container.scrollTop = container.scrollHeight;
-      requestAnimationFrame(() => requestAnimationFrame(() => el.classList.add('show')));
-    }
-
-    function step() {
-      if (i >= messages.length) return;
-      const { role, text } = messages[i];
-      const time = times[i];
-      i++;
-      if (role === 'bot') {
-        const typing = document.createElement('div');
-        typing.className = 'demo-typing';
-        typing.innerHTML = '<span></span><span></span><span></span>';
-        container.appendChild(typing);
-        container.scrollTop = container.scrollHeight;
-        requestAnimationFrame(() => requestAnimationFrame(() => typing.classList.add('show')));
-        demoTimer = setTimeout(() => {
-          typing.remove();
-          addMsg(role, text, time);
-          demoTimer = setTimeout(step, 1700);
-        }, 1500);
-      } else {
-        addMsg(role, text, time);
-        demoTimer = setTimeout(step, 900);
-      }
-    }
-
-    demoTimer = setTimeout(step, 500);
-  }
-
-  document.querySelectorAll('.demo-tab').forEach(btn => {
-    btn.addEventListener('click', () => {
-      document.querySelectorAll('.demo-tab').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      activeScene = btn.dataset.scene;
-      runDemo(activeScene);
-    });
-  });
-
-  const replayBtn = document.getElementById('demoReplay');
-  if (replayBtn) replayBtn.addEventListener('click', () => runDemo(activeScene));
-
-  const demoSection = document.getElementById('demo');
-  if (demoSection) {
-    new IntersectionObserver(entries => {
-      if (entries[0].isIntersecting && !demoFired) {
-        demoFired = true;
-        runDemo(activeScene);
-      }
-    }, { threshold: 0.25 }).observe(demoSection);
-  }
-
-  // ── Web onboarding modal ─────────────────────────────────────────
-  const obState = {
-    goal: null, name: null, age: null, sex: null,
-    heightFt: null, heightIn: null, weight: null, goalWeight: null,
-    experience: null, diet: null, timezone: null,
-    // Step 5 — targets (auto-filled on entry, user-editable)
-    calorieTarget: null, proteinTarget: null, carbTarget: null, fatTarget: null,
-  };
-
-  function openObModal() {
-    // Reset state
-    Object.assign(obState, { goal: null, name: null, age: null, sex: null,
-      heightFt: null, heightIn: null, weight: null, goalWeight: null, experience: null, diet: null,
-      calorieTarget: null, proteinTarget: null, carbTarget: null, fatTarget: null });
-    try { obState.timezone = Intl.DateTimeFormat().resolvedOptions().timeZone; } catch(e) {}
-    // Clear selections / inputs
-    document.querySelectorAll('.ob-goal-btn').forEach(b => b.classList.remove('selected'));
-    document.querySelectorAll('#ob-sex .ob-seg-btn').forEach(b => b.classList.remove('active'));
-    document.querySelectorAll('.ob-exp-btn').forEach(b => b.classList.remove('selected'));
-    ['ob-name','ob-age','ob-height-ft','ob-height-in','ob-weight','ob-goal-weight','ob-diet',
-     'ob-tgt-cals','ob-tgt-protein','ob-tgt-carbs','ob-tgt-fat'].forEach(id => {
-      const el = document.getElementById(id);
-      if (el) el.value = '';
-    });
-    const errEl = document.getElementById('ob-error');
-    if (errEl) errEl.style.display = 'none';
-    const submitBtn = document.getElementById('ob-submit-btn');
-    if (submitBtn) { submitBtn.textContent = 'Get my Telegram link →'; submitBtn.disabled = false; }
-    // Open overlay
-    const overlay = document.getElementById('ob-overlay');
-    overlay.classList.add('open');
-    document.body.style.overflow = 'hidden';
-    obGoStep(1);
-  }
-
-  function closeObModal() {
-    document.getElementById('ob-overlay').classList.remove('open');
-    document.body.style.overflow = '';
-  }
-
-  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeObModal(); });
-
-  // Resolve API base dynamically so the form works both locally (served from
-  // FastAPI at localhost:10000) and in production (separate static origin).
-  const OB_API_BASE = (
-    window.location.hostname === 'localhost' ||
-    window.location.hostname === '127.0.0.1'
-  ) ? `${window.location.protocol}//${window.location.host}`
-    : 'https://arnie.onrender.com';
-
-  const _obSuccessSub = {
-    cut:         'Arnie knows your weight, training level, and that you\'re here to cut. Straight to work.',
-    bulk:        'Arnie knows your stats and you\'re here to build. No setup, no Q&A.',
-    maintain:    'Arnie knows your stats and you\'re here to stay lean. Ready when you are.',
-    performance: 'Arnie knows your background. You\'re here for performance. Let\'s go.',
-    health:      'Arnie knows your stats and you\'re here to feel better. Ready when you are.',
-  };
-
-  function obGoStep(n) {
-    document.querySelectorAll('.ob-step').forEach(el => { el.style.display = 'none'; });
-    // n=6 is the success state; n=1..5 are the numbered steps.
-    const key   = n === 6 ? 'success' : n;
-    const stepEl = document.getElementById('ob-step-' + key);
-    if (stepEl) {
-      stepEl.style.display = 'block';
-      // Trigger enter animation
-      stepEl.classList.remove('ob-step-enter');
-      void stepEl.offsetWidth; // reflow
-      stepEl.classList.add('ob-step-enter');
-    }
-    // Update progress bar
-    const pct = n >= 6 ? 100 : (n / 5 * 100);
-    const bar = document.getElementById('obProgressBar');
-    if (bar) bar.style.width = pct + '%';
-    // On success step — inject goal-specific subtitle
-    if (n === 6) {
-      const subEl = document.getElementById('ob-success-sub');
-      if (subEl && obState.goal) {
-        subEl.textContent = _obSuccessSub[obState.goal]
-          || 'Arnie has your goals, stats, and training background. Open Telegram — no onboarding needed.';
-      }
-    }
-    // Reset modal scroll to top
-    const modal = document.querySelector('.ob-modal');
-    if (modal) modal.scrollTop = 0;
-  }
-
-  // Targets math — mirrors core/targets.py:compute_macro_targets() exactly.
-  // Anything changed here MUST be mirrored there (and vice versa) or the
-  // form's preview will diverge from what Arnie + the dashboard compute.
-  function _obComputeTargets() {
-    const wKg = obState.weight * 0.453592;
-    const hCm = ((obState.heightFt * 12) + (obState.heightIn || 0)) * 2.54;
-    const age = obState.age;
-    const sex = (obState.sex || '').toLowerCase();
-    const goal = (obState.goal || 'maintain').toLowerCase();
-
-    const bmr = (sex === 'male' || sex === 'm' || sex === 'man')
-      ? (10 * wKg + 6.25 * hCm - 5 * age + 5)
-      : (10 * wKg + 6.25 * hCm - 5 * age - 161);
-    const factor = 1.4;
-    const tdee = bmr * factor;
-    const wLb = wKg * 2.20462;
-    const goalLb = obState.goalWeight ? obState.goalWeight : wLb;
-
-    let cals, deficitPct;
-    if (goal === 'cut')              { cals = Math.round(tdee * 0.825); deficitPct = -17.5; }
-    else if (goal === 'bulk')        { cals = Math.round(tdee * 1.10);  deficitPct = 10.0; }
-    else if (goal === 'performance') { cals = Math.round(tdee * 1.05);  deficitPct = 5.0; }
-    else                             { cals = Math.round(tdee);         deficitPct = 0.0; }
-
-    let protein, fat;
-    if (goal === 'cut')              { protein = Math.round(1.0 * goalLb); fat = Math.round(0.3 * wLb); }
-    else if (goal === 'bulk')        { protein = Math.round(0.9 * wLb);    fat = Math.round(0.35 * wLb); }
-    else if (goal === 'performance') { protein = Math.round(0.9 * wLb);    fat = Math.round((cals * 0.25) / 9); }
-    else if (goal === 'health')      { protein = Math.round((cals * 0.30) / 4); fat = Math.round((cals * 0.30) / 9); }
-    else                             { protein = Math.round(0.9 * wLb);    fat = Math.round(0.35 * wLb); }
-
-    const carbCals = Math.max(0, cals - protein * 4 - fat * 9);
-    const carbs = Math.round(carbCals / 4);
-    return { calories: cals, protein, carbs, fat,
-      bmr: Math.round(bmr), tdee: Math.round(tdee), deficitPct, goal };
-  }
-
-  function obShowStep5() {
-    const t = _obComputeTargets();
-    obState.calorieTarget = t.calories;
-    obState.proteinTarget = t.protein;
-    obState.carbTarget    = t.carbs;
-    obState.fatTarget     = t.fat;
-
-    document.getElementById('ob-tgt-cals').value    = t.calories;
-    document.getElementById('ob-tgt-protein').value = t.protein;
-    document.getElementById('ob-tgt-carbs').value   = t.carbs;
-    document.getElementById('ob-tgt-fat').value     = t.fat;
-
-    const _goalMacroRule = {
-      cut:         '1.0 g/lb of goal weight protein, 0.3 g/lb current fat, carbs fill the rest',
-      bulk:        '0.9 g/lb current protein, 0.35 g/lb current fat, carbs fill the rest',
-      maintain:    '0.9 g/lb current protein, 0.35 g/lb current fat, carbs fill the rest',
-      performance: '0.9 g/lb current protein, 25% kcal from fat, carbs fill the rest',
-      health:      '30% kcal protein, 30% kcal fat, 40% kcal carbs',
-    };
-    const _goalCalRule = {
-      cut:         'TDEE × 0.825 (≈17.5% deficit, middle of the 10–25% cut range)',
-      bulk:        'TDEE × 1.10 (≈10% lean surplus)',
-      maintain:    'TDEE (no surplus, no deficit)',
-      performance: 'TDEE × 1.05 (5% surplus for output)',
-      health:      'TDEE (maintain for general wellness)',
-    };
-    const macroRule = _goalMacroRule[t.goal] || _goalMacroRule.maintain;
-    const calRule = _goalCalRule[t.goal] || _goalCalRule.maintain;
-    const body = document.getElementById('ob-tgt-explain-body');
-    if (body) {
-      body.innerHTML = `
-        <div class="ob-tgt-row-info"><span>BMR (Mifflin-St Jeor)</span><strong>${t.bmr} kcal</strong></div>
-        <div class="ob-tgt-row-info"><span>TDEE (× activity factor)</span><strong>${t.tdee} kcal</strong></div>
-        <div class="ob-tgt-row-info"><span>Calorie rule</span><strong>${calRule}</strong></div>
-        <div class="ob-tgt-row-info"><span>Macro split</span><strong>${macroRule}</strong></div>
-        <p style="margin:10px 0 0;color:var(--ink-4);font-size:11px">
-          Same math the dashboard "Calculate for me" button uses. Edit freely — your numbers, your call.
-        </p>
-      `;
-    }
-    obGoStep(5);
-  }
-
-  function obNextStep4() {
-    if (!obState.experience) {
-      obShake(document.getElementById('ob-exp-group'));
-      return;
-    }
-    obState.diet = (document.getElementById('ob-diet').value || '').trim() || null;
-    obShowStep5();
-  }
-
-  function obShake(el) {
-    el.classList.remove('shake');
-    void el.offsetWidth; // reflow to restart animation
-    el.classList.add('shake');
-    el.addEventListener('animationend', () => el.classList.remove('shake'), { once: true });
-  }
-
-  // Goal buttons (step 1 — auto-advance on selection)
-  document.querySelectorAll('#ob-goals .ob-goal-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      document.querySelectorAll('#ob-goals .ob-goal-btn').forEach(b => b.classList.remove('selected'));
-      btn.classList.add('selected');
-      obState.goal = btn.dataset.val;
-      setTimeout(() => obGoStep(2), 280);
-    });
-  });
-
-  // Sex segmented control (step 2)
-  document.querySelectorAll('#ob-sex .ob-seg-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      document.querySelectorAll('#ob-sex .ob-seg-btn').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      obState.sex = btn.dataset.val;
-    });
-  });
-
-  function obNextStep2() {
-    const nameEl   = document.getElementById('ob-name');
-    const ageEl    = document.getElementById('ob-age');
-    const name     = nameEl.value.trim();
-    const age      = parseInt(ageEl.value, 10);
-    if (!name)                    { obShake(nameEl); nameEl.focus(); return; }
-    if (!age || age < 13 || age > 99) { obShake(ageEl);  ageEl.focus();  return; }
-    if (!obState.sex)             { obShake(document.getElementById('ob-sex')); return; }
-    obState.name = name;
-    obState.age  = age;
-    // Show goal weight field only for cut/bulk
-    const gwWrap = document.getElementById('ob-goal-wt-wrap');
-    if (gwWrap) gwWrap.style.display = ['cut','bulk'].includes(obState.goal) ? '' : 'none';
-    obGoStep(3);
-  }
-
-  function obNextStep3() {
-    const ftEl  = document.getElementById('ob-height-ft');
-    const inEl  = document.getElementById('ob-height-in');
-    const wEl   = document.getElementById('ob-weight');
-    const ft    = parseInt(ftEl.value, 10);
-    const ins   = parseInt(inEl.value, 10);
-    const wt    = parseFloat(wEl.value);
-    if (!ft || ft < 3 || ft > 8) { obShake(ftEl); ftEl.focus(); return; }
-    if (!wt || wt < 50)          { obShake(wEl);  wEl.focus();  return; }
-    obState.heightFt = ft;
-    obState.heightIn = isNaN(ins) ? 0 : Math.max(0, Math.min(11, ins));
-    obState.weight   = wt;
-    // Capture goal weight (optional, only shown for cut/bulk)
-    const gwEl = document.getElementById('ob-goal-weight');
-    if (gwEl && gwEl.value && ['cut','bulk'].includes(obState.goal)) {
-      const gw = parseFloat(gwEl.value);
-      obState.goalWeight = (gw >= 50 && gw <= 600) ? gw : null;
-    } else {
-      obState.goalWeight = null;
-    }
-    obGoStep(4);
-  }
-
-  // Experience buttons (step 4)
-  document.querySelectorAll('#ob-exp-group .ob-exp-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      document.querySelectorAll('#ob-exp-group .ob-exp-btn').forEach(b => b.classList.remove('selected'));
-      btn.classList.add('selected');
-      obState.experience = btn.dataset.val;
-    });
-  });
-
-  async function obSubmit() {
-    // Step 5 review — re-read the target inputs in case the user edited them
-    // after auto-fill. Bounds mirror the input min/max so an out-of-range
-    // value shakes the offending field instead of throwing a vague banner.
-    const calsEl    = document.getElementById('ob-tgt-cals');
-    const proteinEl = document.getElementById('ob-tgt-protein');
-    const carbsEl   = document.getElementById('ob-tgt-carbs');
-    const fatEl     = document.getElementById('ob-tgt-fat');
-    const cals      = parseInt(calsEl.value, 10);
-    const protein   = parseInt(proteinEl.value, 10);
-    const carbs     = parseInt(carbsEl.value, 10);
-    const fat       = parseInt(fatEl.value, 10);
-
-    const errEl     = document.getElementById('ob-error');
-    if (!cals    || cals    < 800 || cals    > 6000) { obShake(calsEl);    calsEl.focus();    return; }
-    if (!protein || protein < 20  || protein > 500)  { obShake(proteinEl); proteinEl.focus(); return; }
-    if (isNaN(carbs) || carbs < 0 || carbs > 800)    { obShake(carbsEl);   carbsEl.focus();   return; }
-    if (!fat     || fat     < 10  || fat     > 300)  { obShake(fatEl);     fatEl.focus();     return; }
-
-    obState.calorieTarget = cals;
-    obState.proteinTarget = protein;
-    obState.carbTarget    = carbs;
-    obState.fatTarget     = fat;
-
-    const submitBtn = document.getElementById('ob-submit-btn');
-    submitBtn.textContent = 'Setting up…';
-    submitBtn.disabled = true;
-    errEl.style.display = 'none';
-
-    // Convert imperial → metric for the API
-    const heightCm = Math.round(((obState.heightFt * 12) + obState.heightIn) * 2.54 * 10) / 10;
-    const weightKg = Math.round(obState.weight * 0.453592 * 100) / 100;
-
-    try {
-      const res = await fetch(`${OB_API_BASE}/api/preregister`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name:               obState.name,
-          age:                obState.age,
-          sex:                obState.sex,
-          height_cm:          heightCm,
-          weight_kg:          weightKg,
-          primary_goal:       obState.goal,
-          training_experience: obState.experience,
-          dietary_preferences: obState.diet,
-          timezone:           obState.timezone || null,
-          goal_weight_lbs:    obState.goalWeight || null,
-          // Targets — captured at Step 5, persisted on consume so the bot
-          // skips the [COACH NOTE — targets_unset] nudge for these users.
-          calorie_target:     cals,
-          protein_target:     protein,
-          carb_target:        carbs,
-          fat_target:         fat,
-        }),
-      });
-
-      const data = await res.json();
-      if (data.ok) {
-        const firstName = (obState.name || '').split(' ')[0] || 'there';
-        document.getElementById('ob-success-name').textContent = firstName;
-        document.getElementById('ob-tg-link').href = data.bot_link;
-        document.getElementById('ob-code').textContent = data.code;
-        obGoStep(6); // success state
-      } else {
-        errEl.textContent = data.detail || 'Something went wrong — try again.';
-        errEl.style.display = 'block';
-        submitBtn.textContent = 'Try again';
-        submitBtn.disabled = false;
-      }
-    } catch (err) {
-      errEl.textContent = 'Network error — check your connection and try again.';
-      errEl.style.display = 'block';
-      submitBtn.textContent = 'Try again';
-      submitBtn.disabled = false;
-    }
-  }
-
-  // Enter key support for text/number inputs in the form
-  ['ob-name', 'ob-age'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.addEventListener('keydown', e => { if (e.key === 'Enter') obNextStep2(); });
-  });
-  ['ob-height-ft', 'ob-height-in', 'ob-weight'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.addEventListener('keydown', e => { if (e.key === 'Enter') obNextStep3(); });
-  });
-  const dietEl = document.getElementById('ob-diet');
-  if (dietEl) dietEl.addEventListener('keydown', e => { if (e.key === 'Enter') obNextStep4(); });
-  // Step 5 target inputs — Enter on any of them submits the form
-  ['ob-tgt-cals', 'ob-tgt-protein', 'ob-tgt-carbs', 'ob-tgt-fat'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.addEventListener('keydown', e => { if (e.key === 'Enter') obSubmit(); });
-  });
-  // Live re-derivation on Step 5. Editing the calorie anchor re-runs the
-  // goal-specific protein/fat rule and rebalances carbs. Editing protein
-  // or fat alone just rebalances carbs (= remaining kcal / 4) so the
-  // macro equation always sums back to the calorie total. Carbs are the
-  // free variable — editing them doesn't cascade.
-  let _obLiveDebounce = null;
-  function _obRecalcFromCals() {
-    const calsEl = document.getElementById('ob-tgt-cals');
-    const cals = parseInt(calsEl.value, 10);
-    if (!cals || cals < 800 || cals > 6000) return;
-    const wKg = obState.weight * 0.453592;
-    const wLb = wKg * 2.20462;
-    const goalLb = obState.goalWeight ? obState.goalWeight : wLb;
-    const goal = (obState.goal || 'maintain').toLowerCase();
-    let protein, fat;
-    if (goal === 'cut')              { protein = Math.round(1.0 * goalLb); fat = Math.round(0.3 * wLb); }
-    else if (goal === 'bulk')        { protein = Math.round(0.9 * wLb);    fat = Math.round(0.35 * wLb); }
-    else if (goal === 'performance') { protein = Math.round(0.9 * wLb);    fat = Math.round((cals * 0.25) / 9); }
-    else if (goal === 'health')      { protein = Math.round((cals * 0.30) / 4); fat = Math.round((cals * 0.30) / 9); }
-    else                             { protein = Math.round(0.9 * wLb);    fat = Math.round(0.35 * wLb); }
-    const carbs = Math.max(0, Math.round((cals - protein * 4 - fat * 9) / 4));
-    document.getElementById('ob-tgt-protein').value = protein;
-    document.getElementById('ob-tgt-fat').value     = fat;
-    document.getElementById('ob-tgt-carbs').value   = carbs;
-  }
-  function _obRebalanceCarbs() {
-    const cals    = parseInt(document.getElementById('ob-tgt-cals').value, 10);
-    const protein = parseInt(document.getElementById('ob-tgt-protein').value, 10);
-    const fat     = parseInt(document.getElementById('ob-tgt-fat').value, 10);
-    if (!cals || isNaN(protein) || isNaN(fat)) return;
-    const carbs = Math.max(0, Math.round((cals - protein * 4 - fat * 9) / 4));
-    document.getElementById('ob-tgt-carbs').value = carbs;
-  }
-  function _obDebounce(fn) {
-    clearTimeout(_obLiveDebounce);
-    _obLiveDebounce = setTimeout(fn, 220);
-  }
-  const _calsLive = document.getElementById('ob-tgt-cals');
-  if (_calsLive) _calsLive.addEventListener('input', () => _obDebounce(_obRecalcFromCals));
-  ['ob-tgt-protein', 'ob-tgt-fat'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.addEventListener('input', () => _obDebounce(_obRebalanceCarbs));
-  });
-
   // FAQ accordion
   document.querySelectorAll('.faq-q').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -2926,6 +2366,131 @@
       if (!wasOpen) item.classList.add('open');
     });
   });
+</script>
+
+<script>
+  // ══════════ Cinematic scroll controller ══════════
+  // One passive scroll listener + one rAF: progress p ∈ [0,1] across the tall
+  // .cine wrapper maps to phase sub-progress, written as CSS vars. Everything
+  // downstream is transform/opacity. Skipped entirely under reduced motion.
+  (function () {
+    const cine = document.getElementById('cine');
+    const stage = document.getElementById('cineStage');
+    if (!cine || !stage) return;
+    const reduced = matchMedia('(prefers-reduced-motion: reduce)');
+
+    const hero = document.getElementById('cineHero');
+    const pp = document.getElementById('pp');
+    const svg = document.getElementById('cineSvg');
+    const resolve = document.getElementById('cineResolve');
+    const bubbles = [1,2,3,4,5,6].map(i => document.getElementById('pb' + i));
+    const caps = [1,2,3,4].map(i => document.getElementById('cap' + i));
+    const g2 = [...stage.querySelectorAll('.g2')];
+    const g3 = [...stage.querySelectorAll('.mnode')];
+    const g4 = [...stage.querySelectorAll('.g4')];
+
+    const seg = (p, a, b) => Math.min(1, Math.max(0, (p - a) / (b - a)));
+    const ease = t => t * t * (3 - 2 * t);           // smoothstep
+
+    let ticking = false;
+    function frame() {
+      ticking = false;
+      const rect = cine.getBoundingClientRect();
+      const total = rect.height - innerHeight;
+      const p = Math.min(1, Math.max(0, -rect.top / total));
+
+      // Phase 0 — hero copy hands off, phone rises from its peek to center.
+      const hOut = ease(seg(p, 0.03, 0.09));
+      hero.style.setProperty('--hero-o', 1 - hOut);
+      hero.style.setProperty('--hero-y', hOut);
+      hero.style.setProperty('--hero-pe', hOut > 0.5 ? 'none' : 'auto');
+      const rise = ease(seg(p, 0.0, 0.11));
+      const r5 = ease(seg(p, 0.86, 0.96));           // final compression
+
+      // Phase 1 — chat wakes, bubble by bubble.
+      bubbles.forEach((b, i) => {
+        const k = ease(seg(p, 0.10 + i * 0.026, 0.125 + i * 0.026));
+        b.style.setProperty('--k', k);
+      });
+
+      // Phase 2 — tilt + data cards pull out.
+      const t2 = ease(seg(p, 0.28, 0.36));
+      const fade2 = 1 - ease(seg(p, 0.44, 0.50));    // cards yield to memory
+      g2.forEach((el, i) => {
+        const k = ease(seg(p, 0.28 + i * 0.016, 0.36 + i * 0.016));
+        el.style.setProperty('--k', k);
+        el.style.setProperty('--fade', fade2 * (1 - r5));
+      });
+
+      // Phase 3 — memory map.
+      const fade3 = 1 - ease(seg(p, 0.66, 0.72));
+      g3.forEach((el, i) => {
+        const k = ease(seg(p, 0.46 + i * 0.012, 0.53 + i * 0.012));
+        el.style.setProperty('--k', k);
+        el.style.setProperty('--fade', (0.18 + 0.82 * fade3) * (1 - r5));
+      });
+      svg.style.setProperty('--mk', ease(seg(p, 0.48, 0.54)));
+      svg.style.setProperty('--draw', ease(seg(p, 0.50, 0.64)));
+      svg.style.setProperty('--fade', fade3 * (1 - r5));
+
+      // Phase 4 — integrations + channels.
+      g4.forEach((el, i) => {
+        const k = ease(seg(p, 0.68 + i * 0.018, 0.75 + i * 0.018));
+        el.style.setProperty('--k', k);
+        el.style.setProperty('--fade', 1 - r5);
+      });
+
+      // Real screens morph through the phases: chat → Coach feed → forecast → score.
+      pp.style.setProperty('--s2', ease(seg(p, 0.29, 0.33)) * (1 - ease(seg(p, 0.45, 0.49))));
+      pp.style.setProperty('--s3', ease(seg(p, 0.47, 0.51)) * (1 - ease(seg(p, 0.67, 0.71))));
+      pp.style.setProperty('--s4', ease(seg(p, 0.69, 0.73)) * (1 - ease(seg(p, 0.88, 0.93))));
+
+      // The phone: rises, tilts through the data phase, settles for the close.
+      const ry = -12 * t2 * (1 - ease(seg(p, 0.62, 0.72)));
+      pp.style.setProperty('--pp-y', ((1 - rise) * 56 + r5 * 38) + 'dvh');
+      pp.style.setProperty('--pp-ry', ry + 'deg');
+      pp.style.setProperty('--pp-rx', (2.5 * t2 * (1 - r5)) + 'deg');
+      pp.style.setProperty('--pp-s', (1 - 0.12 * r5) - 0.06 * t2);
+
+      // Captions — one at a time.
+      const wins = [[0.11, 0.27], [0.29, 0.44], [0.47, 0.65], [0.69, 0.84]];
+      caps.forEach((c, i) => {
+        const [a, b] = wins[i];
+        const k = ease(seg(p, a, a + 0.03)) * (1 - ease(seg(p, b - 0.02, b)));
+        c.style.setProperty('--k', k);
+      });
+
+      // Phase 5 — resolve into the CTA.
+      resolve.style.setProperty('--k', ease(seg(p, 0.90, 0.97)));
+      resolve.style.setProperty('--res-pe', p > 0.92 ? 'auto' : 'none');
+    }
+    function onScroll() {
+      if (!ticking && !reduced.matches) { ticking = true; requestAnimationFrame(frame); }
+    }
+    addEventListener('scroll', onScroll, { passive: true });
+    addEventListener('resize', onScroll, { passive: true });
+    if (!reduced.matches) frame();
+
+    // Subtle desktop mouse response on the phone while it's front-facing.
+    if (matchMedia('(pointer: fine)').matches && !reduced.matches) {
+      addEventListener('mousemove', e => {
+        const rect = cine.getBoundingClientRect();
+        const total = rect.height - innerHeight;
+        const p = Math.min(1, Math.max(0, -rect.top / total));
+        if (p > 0.25) return;                        // only in the hero/chat phase
+        const dx = (e.clientX / innerWidth - 0.5) * 4;
+        const dy = (e.clientY / innerHeight - 0.5) * -3;
+        pp.style.setProperty('--pp-ry', dx + 'deg');
+        pp.style.setProperty('--pp-rx', dy + 'deg');
+      }, { passive: true });
+    }
+
+    // "See the iOS beta" — glide into the chat phase.
+    window.cineJump = function (frac) {
+      const top = cine.offsetTop + (cine.offsetHeight - innerHeight) * frac;
+      scrollTo({ top, behavior: reduced.matches ? 'auto' : 'smooth' });
+    };
+  })();
 </script>
 </body>
 </html>
