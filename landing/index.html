@@ -175,6 +175,18 @@
       .channels-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); max-width: 420px; }
     }
 
+    /* ── Hero entrance — the first 800ms sets the tone ── */
+    @keyframes heroRise {
+      from { opacity: 0; transform: translateY(16px); }
+      to   { opacity: 1; transform: none; }
+    }
+    .cine-hero > * { animation: heroRise 640ms cubic-bezier(0.22, 0.7, 0.25, 1) both; }
+    .cine-hero > *:nth-child(2) { animation-delay: 90ms; }
+    .cine-hero > *:nth-child(3) { animation-delay: 180ms; }
+    .cine-hero > *:nth-child(4) { animation-delay: 270ms; }
+    .cine-hero > *:nth-child(5) { animation-delay: 360ms; }
+    @media (prefers-reduced-motion: reduce) { .cine-hero > * { animation: none; } }
+
     /* ── Page progress ───────────────────────────────────────── */
     .progress {
       position: fixed; top: 0; left: 0; right: 0; height: 2.5px; z-index: 60;
@@ -1876,7 +1888,9 @@
     .cine-cap p { font-size: 14px; line-height: 1.6; color: var(--ink-2); max-width: 52ch; margin: 0 auto; }
     .cine-cap .mc {
       font-family: var(--mono); font-size: 10px; letter-spacing: 0.09em;
-      text-transform: uppercase; color: var(--ink-3); margin-top: 9px;
+      text-transform: uppercase; color: var(--ink-3);
+      width: fit-content; margin: 9px auto 0;
+      clip-path: inset(-4px calc((1 - var(--tk, 1)) * 100%) -4px -4px);
     }
     .cine-cap .mc::before { content: "▸ "; color: var(--accent); }
     .cine-cap .mc::after {
@@ -2592,6 +2606,10 @@
         const [a, b] = wins[i];
         const k = ease(seg(p, a, a + 0.03)) * (1 - ease(seg(p, b - 0.02, b)));
         c.style.setProperty('--k', k);
+        // Telemetry types on AFTER the headline lands — quantized so the
+        // mono line appears in character steps, like the agent thinking.
+        const tk = ease(seg(p, a + 0.022, a + 0.06));
+        c.style.setProperty('--tk', Math.round(tk * 26) / 26);
       });
 
       // Phase 5 — resolve into the CTA.
