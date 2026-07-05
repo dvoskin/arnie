@@ -88,7 +88,7 @@ def build_receipt(
     day_open = total_cal < 900
 
     if vague:
-        verdict = "Logged the midpoint. Portion size would tighten this."
+        verdict = "Logged as a range. Portion size would tighten this."
     elif rem_c is not None and rem_c < 0:
         if rem_p is not None and rem_p <= 0:
             verdict = "Calories closed over, but protein made it."
@@ -97,16 +97,18 @@ def build_receipt(
             if local_hour is not None and local_hour < 20:
                 nxt = "Next: keep the rest light"
     elif rem_p is not None and rem_p <= 0:
-        verdict = "Protein target hit. The rest of the day stays flexible."
+        verdict = "Protein target is handled. Now just control calories."
     elif closes_gap:
         verdict = "This meaningfully closes today's protein gap."
     elif rem_c is not None and 0 < rem_c <= 250:
         if protein_dense:
             verdict = "Useful protein, but calories are getting tight."
         else:
-            verdict = "You're close on calories. Keep the rest lean."
+            verdict = "Calories are getting tight. Keep the next move lean."
         if rem_p is not None and rem_p > 15:
             nxt = f"Next: {rem_p}g protein, lean sources"
+    elif calories < 150 and rem_p is not None and rem_p > 40 and total_cal >= 400:
+        verdict = "Small add. The day still needs a real meal."
     elif trained_today and protein_dense:
         verdict = "Good post-workout protein. Add carbs if performance matters today."
     elif fat_heavy_day and protein_dense:
@@ -116,6 +118,8 @@ def build_receipt(
             verdict = "Efficient protein. Today still needs a bigger anchor."
         else:
             verdict = "Efficient protein. Calories barely moved."
+    elif protein_dense and 25 <= protein < 35 and calories <= 450:
+        verdict = "Good anchor. Protein is moving without burning the day."
     elif protein >= 35:
         if local_hour is None:
             verdict = "Strong protein hit. The next meal stays flexible."
@@ -133,9 +137,11 @@ def build_receipt(
         if rem_p is not None and rem_p > 0:
             when = "before dinner" if local_hour < 18 else "tonight"
             nxt = f"Next: {min(rem_p, 50)}g protein {when}"
-    elif total_cal - calories <= 60 and calories >= 150:
+    elif total_cal - calories <= 60 and calories >= 100:
         # First real log of the day — name the anchor, not generic praise.
-        if local_hour is not None and local_hour < 11:
+        if protein < 20 and calories < 400:
+            verdict = "Light start. Dinner needs the anchor."
+        elif local_hour is not None and local_hour < 11:
             verdict = "Solid anchor. Build the day on this."
         else:
             verdict = "Clean base. Today still needs structure."

@@ -42,7 +42,7 @@ def test_calorie_heavy_light_protein_gets_direction():
 
 def test_close_to_limit_keeps_it_lean():
     out = r(calories=400, protein=20, total_cal=2000, total_protein=120, local_hour=18)
-    assert out["verdict"] == "You're close on calories. Keep the rest lean."
+    assert out["verdict"] == "Calories are getting tight. Keep the next move lean."
     assert out["next"] == "Next: 60g protein, lean sources"
 
 
@@ -71,7 +71,7 @@ def test_over_calories_protein_short_gets_light_next():
 
 def test_protein_hit_calories_open_stays_flexible():
     out = r(calories=200, protein=30, total_cal=1000, total_protein=185, local_hour=15)
-    assert out["verdict"] == "Protein target hit. The rest of the day stays flexible."
+    assert out["verdict"] == "Protein target is handled. Now just control calories."
 
 
 # ── 6. vague estimate ───────────────────────────────────────────────────────
@@ -79,7 +79,7 @@ def test_protein_hit_calories_open_stays_flexible():
 def test_vague_estimate_shows_ranges_not_precision():
     out = r(calories=750, protein=42, total_cal=900, total_protein=50,
             local_hour=12, confidence=0.5, estimated=True)
-    assert out["verdict"] == "Logged the midpoint. Portion size would tighten this."
+    assert out["verdict"] == "Logged as a range. Portion size would tighten this."
     assert out["cal_low"] == 640 and out["cal_high"] == 850
     assert out["protein_low"] < 42 < out["protein_high"]
 
@@ -105,8 +105,13 @@ def test_first_log_of_day_names_the_anchor():
     assert "next" not in out
 
 
-def test_first_log_afternoon_names_the_structure():
+def test_first_log_afternoon_light_points_at_dinner():
     out = r(calories=300, protein=18, total_cal=310, total_protein=18, local_hour=13)
+    assert out["verdict"] == "Light start. Dinner needs the anchor."
+
+
+def test_first_log_afternoon_substantial_names_structure():
+    out = r(calories=520, protein=24, total_cal=540, total_protein=24, local_hour=13)
     assert out["verdict"] == "Clean base. Today still needs structure."
 
 
@@ -144,3 +149,18 @@ def test_efficient_protein_names_the_anchor_gap():
 def test_calorie_heavy_low_protein_reads_the_return():
     out = r(calories=680, protein=12, total_cal=1500, total_protein=70, local_hour=13)
     assert out["verdict"] == "Calorie-heavy for the protein return."
+
+
+def test_small_snack_asks_for_a_real_meal():
+    out = r(calories=100, protein=7, total_cal=460, total_protein=20, local_hour=12)
+    assert out["verdict"] == "Small add. The day still needs a real meal."
+
+
+def test_good_anchor_moves_protein_without_burning_the_day():
+    out = r(calories=380, protein=32, total_cal=1400, total_protein=95, local_hour=12)
+    assert out["verdict"] == "Good anchor. Protein is moving without burning the day."
+
+
+def test_light_first_meal_points_at_dinner():
+    out = r(calories=260, protein=12, total_cal=260, total_protein=12, local_hour=10)
+    assert out["verdict"] == "Light start. Dinner needs the anchor."

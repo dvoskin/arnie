@@ -2050,6 +2050,25 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
             return f"No food entry #{entry_id} found in today's log."
         await db.refresh(today_log)
 
+        # A correction RE-EMITS the receipt card for the same entry (updated
+        # flag set); the iOS client swaps it in place instead of appending a
+        # duplicate, so the transcript keeps ONE card per food.
+        if isinstance(inp, dict):
+            inp["_entry_id"] = entry.id
+            inp["_card_values"] = {
+                "name":      entry.parsed_food_name or "",
+                "quantity":  entry.quantity or "",
+                "calories":  int(round(entry.calories or 0)),
+                "protein_g": int(round(entry.protein or 0)),
+                "carbs_g":   int(round(entry.carbs or 0)),
+                "fats_g":    int(round(entry.fats or 0)),
+                "source":    "photo" if getattr(entry, "from_photo", False) else "manual",
+            }
+            _stash_receipt(inp, today_log, user, entry.calories, entry.protein,
+                           confidence=getattr(entry, "confidence_score", None),
+                           estimated=bool(getattr(entry, "estimated_flag", False)),
+                           updated=True)
+
         # Recurring-memory correction backfill: when a correction notably shifts
         # macros on a named non-generic food, update the user_food_match so the
         # next log of the same item primes from the corrected profile. Reuses
@@ -2094,7 +2113,9 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
 
         moved = f", moved to {target_date}" if target_date else ""
         return (f"Updated entry #{entry_id}: {entry.parsed_food_name} → "
-                f"{entry.calories:.0f}cal{moved}")
+                f"{entry.calories:.0f}cal{moved}. The app swaps the receipt card "
+                f"in place — confirm with ONE tiny word ('Updated.'); never "
+                f"restate numbers the card shows.")
 
     elif name == "delete_food_entry":
         if not getattr(today_log, "id", None):

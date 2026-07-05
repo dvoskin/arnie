@@ -154,6 +154,19 @@ def _logged_entry_card(name: str, inp: dict) -> Optional[dict]:
         if isinstance(receipt, dict):
             payload.update(receipt)
         return {"type": "macro_card", "payload": payload}
+    if name == "update_food_entry":
+        # A correction re-emits the SAME entry's card (updated=true); the
+        # client swaps it in place. Values were stashed post-write by the
+        # executor — no stash means the update failed, so no card.
+        vals = inp.get("_card_values")
+        if not isinstance(vals, dict):
+            return None
+        payload = {**vals, "entry_id": entry_id}
+        receipt = inp.get("_receipt")
+        if isinstance(receipt, dict):
+            payload.update(receipt)
+        payload.setdefault("updated", True)
+        return {"type": "macro_card", "payload": payload}
     if name == "log_exercise":
         if not _WORKOUT_CARD_ENABLED:
             return None            # workouts are confirmed in text, not a card
