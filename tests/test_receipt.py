@@ -99,6 +99,17 @@ def test_no_targets_degrades_gracefully():
     assert out["verdict"].startswith("Strong protein hit")
 
 
+def test_first_log_of_day_names_the_anchor():
+    out = r(calories=420, protein=28, total_cal=420, total_protein=28, local_hour=9)
+    assert out["verdict"] == "Solid anchor. Build the day on this."
+    assert "next" not in out
+
+
+def test_first_log_afternoon_notes_the_room():
+    out = r(calories=300, protein=18, total_cal=310, total_protein=18, local_hour=13)
+    assert out["verdict"] == "First log in. Plenty of room to work with."
+
+
 def test_clean_default_is_quiet():
     out = r(calories=250, protein=18, total_cal=900, total_protein=80, local_hour=11)
     assert out["verdict"] == "Clean log. No correction needed."

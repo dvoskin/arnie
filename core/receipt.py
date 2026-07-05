@@ -48,6 +48,9 @@ def build_receipt(
     if rem_p is not None:
         out["remaining_protein"] = rem_p
 
+    if confidence is not None:
+        out["confidence"] = round(float(confidence), 2)
+
     # ── Vague estimate: show a range, admit the midpoint ────────────────────
     vague = bool(estimated) and confidence is not None and confidence < 0.6
     if vague and calories >= 100:
@@ -99,6 +102,12 @@ def build_receipt(
         if rem_p is not None and rem_p > 0:
             when = "before dinner" if local_hour < 18 else "tonight"
             nxt = f"Next: {min(rem_p, 50)}g protein {when}"
+    elif total_cal - calories <= 60 and calories >= 150:
+        # First real log of the day — name the anchor, not generic praise.
+        if local_hour is not None and local_hour < 11:
+            verdict = "Solid anchor. Build the day on this."
+        else:
+            verdict = "First log in. Plenty of room to work with."
     else:
         verdict = "Clean log. No correction needed."
 
