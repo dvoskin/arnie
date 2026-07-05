@@ -93,22 +93,22 @@ def build_receipt(
         if rem_p is not None and rem_p <= 0:
             verdict = "Calories closed over, but protein made it."
         else:
-            verdict = "Calories are over for the day."
+            verdict = "Over target. Keep the rest clean."
             if local_hour is not None and local_hour < 20:
                 nxt = "Next: keep the rest light"
     elif rem_p is not None and rem_p <= 0:
-        verdict = "Protein target is handled. Now just control calories."
+        verdict = "Protein handled. Control calories."
     elif closes_gap:
         verdict = "This meaningfully closes today's protein gap."
     elif rem_c is not None and 0 < rem_c <= 250:
         if protein_dense:
             verdict = "Useful protein, but calories are getting tight."
         else:
-            verdict = "Calories are getting tight. Keep the next move lean."
+            verdict = "Calories tight. Keep the next move lean."
         if rem_p is not None and rem_p > 15:
             nxt = f"Next: {rem_p}g protein, lean sources"
     elif calories < 150 and rem_p is not None and rem_p > 40 and total_cal >= 400:
-        verdict = "Small add. The day still needs a real meal."
+        verdict = "Small add. Real meal still needed."
     elif trained_today and protein_dense:
         verdict = "Good post-workout protein. Add carbs if performance matters today."
     elif fat_heavy_day and protein_dense:
@@ -133,7 +133,7 @@ def build_receipt(
         verdict = "Calorie-heavy for the protein return."
         nxt = "Next: lean protein first"
     elif behind_pace and local_hour is not None and local_hour >= 14:
-        verdict = "Protein is behind pace. Next meal needs to anchor it."
+        verdict = "Protein behind pace. Dinner needs the anchor."
         if rem_p is not None and rem_p > 0:
             when = "before dinner" if local_hour < 18 else "tonight"
             nxt = f"Next: {min(rem_p, 50)}g protein {when}"

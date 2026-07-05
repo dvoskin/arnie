@@ -42,7 +42,7 @@ def test_calorie_heavy_light_protein_gets_direction():
 
 def test_close_to_limit_keeps_it_lean():
     out = r(calories=400, protein=20, total_cal=2000, total_protein=120, local_hour=18)
-    assert out["verdict"] == "Calories are getting tight. Keep the next move lean."
+    assert out["verdict"] == "Calories tight. Keep the next move lean."
     assert out["next"] == "Next: 60g protein, lean sources"
 
 
@@ -50,7 +50,7 @@ def test_close_to_limit_keeps_it_lean():
 
 def test_behind_pace_afternoon_anchors_next_meal():
     out = r(calories=300, protein=10, total_cal=1300, total_protein=60, local_hour=16)
-    assert out["verdict"] == "Protein is behind pace. Next meal needs to anchor it."
+    assert out["verdict"] == "Protein behind pace. Dinner needs the anchor."
     assert out["next"] == "Next: 50g protein before dinner"
 
 
@@ -65,13 +65,13 @@ def test_over_calories_protein_hit_is_graceful():
 
 def test_over_calories_protein_short_gets_light_next():
     out = r(calories=800, protein=15, total_cal=2400, total_protein=120, local_hour=18)
-    assert out["verdict"] == "Calories are over for the day."
+    assert out["verdict"] == "Over target. Keep the rest clean."
     assert out["next"] == "Next: keep the rest light"
 
 
 def test_protein_hit_calories_open_stays_flexible():
     out = r(calories=200, protein=30, total_cal=1000, total_protein=185, local_hour=15)
-    assert out["verdict"] == "Protein target is handled. Now just control calories."
+    assert out["verdict"] == "Protein handled. Control calories."
 
 
 # ── 6. vague estimate ───────────────────────────────────────────────────────
@@ -153,7 +153,7 @@ def test_calorie_heavy_low_protein_reads_the_return():
 
 def test_small_snack_asks_for_a_real_meal():
     out = r(calories=100, protein=7, total_cal=460, total_protein=20, local_hour=12)
-    assert out["verdict"] == "Small add. The day still needs a real meal."
+    assert out["verdict"] == "Small add. Real meal still needed."
 
 
 def test_good_anchor_moves_protein_without_burning_the_day():
