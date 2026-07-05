@@ -119,6 +119,30 @@ def _normalize_plan_exercises(exercises) -> list:
 _WORKOUT_CARD_ENABLED = False
 
 
+def _clean_quantity(q: str) -> str:
+    """Normalize a serving string for the receipt card: strip approximation
+    markers ("~", "est.", "about") and round the leading number to a friendly
+    quarter-step — "est. ~1.47 cups" becomes "1.5 cups" so the serving stepper
+    (and the eye) can work with it. Non-numeric quantities pass through."""
+    import re as _re
+    if not q:
+        return q or ""
+    out = _re.sub(r"^\s*(?:[~≈]\s*|about\s+|approx\.?\s+|est\.?\s+|estimated\s+)+",
+                  "", str(q), flags=_re.I).strip()
+    m = _re.match(r"^([0-9]+(?:\.[0-9]+)?)(.*)$", out)
+    if m:
+        num = float(m.group(1))
+        rest = m.group(2)
+        # Grams/ml round to whole; serving-ish numbers to quarter steps.
+        if _re.match(r"^\s*(g|ml|gram|grams)\b", rest, flags=_re.I):
+            num = round(num)
+        else:
+            num = round(num * 4) / 4.0
+        num_s = str(int(num)) if float(num).is_integer() else f"{num:g}"
+        out = f"{num_s}{rest}"
+    return out
+
+
 def _logged_entry_card(name: str, inp: dict) -> Optional[dict]:
     """The macro_card / workout_card for a log_food / log_exercise call — but ONLY
     when it actually created or rolled up into a real DB row.
@@ -139,7 +163,7 @@ def _logged_entry_card(name: str, inp: dict) -> Optional[dict]:
     if name == "log_food":
         payload = {
             "name":      inp.get("food_name") or "",
-            "quantity":  inp.get("quantity") or "",
+            "quantity":  _clean_quantity(inp.get("quantity") or ""),
             "calories":  int(round(inp.get("calories") or 0)),
             "protein_g": int(round(inp.get("protein")  or 0)),
             "carbs_g":   int(round(inp.get("carbs")    or 0)),
@@ -162,6 +186,7 @@ def _logged_entry_card(name: str, inp: dict) -> Optional[dict]:
         if not isinstance(vals, dict):
             return None
         payload = {**vals, "entry_id": entry_id}
+        payload["quantity"] = _clean_quantity(payload.get("quantity") or "")
         receipt = inp.get("_receipt")
         if isinstance(receipt, dict):
             payload.update(receipt)
