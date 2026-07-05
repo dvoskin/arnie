@@ -137,19 +137,23 @@ def _logged_entry_card(name: str, inp: dict) -> Optional[dict]:
     if not entry_id:
         return None
     if name == "log_food":
-        return {
-            "type": "macro_card",
-            "payload": {
-                "name":      inp.get("food_name") or "",
-                "quantity":  inp.get("quantity") or "",
-                "calories":  int(round(inp.get("calories") or 0)),
-                "protein_g": int(round(inp.get("protein")  or 0)),
-                "carbs_g":   int(round(inp.get("carbs")    or 0)),
-                "fats_g":    int(round(inp.get("fats")     or 0)),
-                "source":    "photo" if inp.get("from_photo") else "manual",
-                "entry_id":  entry_id,
-            },
+        payload = {
+            "name":      inp.get("food_name") or "",
+            "quantity":  inp.get("quantity") or "",
+            "calories":  int(round(inp.get("calories") or 0)),
+            "protein_g": int(round(inp.get("protein")  or 0)),
+            "carbs_g":   int(round(inp.get("carbs")    or 0)),
+            "fats_g":    int(round(inp.get("fats")     or 0)),
+            "source":    "photo" if inp.get("from_photo") else "manual",
+            "entry_id":  entry_id,
         }
+        # Decision-receipt context (day impact + verdict), stashed by the
+        # executor at log time — see core/receipt.py. All keys optional on
+        # the wire; older clients simply ignore them.
+        receipt = inp.get("_receipt")
+        if isinstance(receipt, dict):
+            payload.update(receipt)
+        return {"type": "macro_card", "payload": payload}
     if name == "log_exercise":
         if not _WORKOUT_CARD_ENABLED:
             return None            # workouts are confirmed in text, not a card

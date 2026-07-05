@@ -111,6 +111,39 @@ def _weights_csv_to_kg(weights_csv, unit: str = "lbs"):
     return ",".join(out) if out else None
 
 
+def _stash_receipt(inp, target_log, user, calories, protein,
+                   confidence=None, estimated=False, updated=False):
+    """Attach the decision-receipt context to the tool input so
+    conversation.py can surface it on the macro_card payload (same channel as
+    _entry_id). Never raises — a receipt is garnish, the log already stands."""
+    try:
+        if not isinstance(inp, dict):
+            return
+        import pytz
+        from datetime import datetime as _dtt
+        from core.receipt import build_receipt
+        prefs = getattr(user, "preferences", None)
+        try:
+            local_hour = _dtt.now(pytz.timezone(getattr(user, "timezone", None) or "UTC")).hour
+        except Exception:
+            local_hour = None
+        inp["_receipt"] = build_receipt(
+            calories=float(calories or 0),
+            protein=float(protein or 0),
+            total_cal=float(getattr(target_log, "total_calories", 0) or 0),
+            total_protein=float(getattr(target_log, "total_protein", 0) or 0),
+            cal_target=getattr(prefs, "calorie_target", None) if prefs else None,
+            protein_target=getattr(prefs, "protein_target", None) if prefs else None,
+            local_hour=local_hour,
+            confidence=confidence,
+            estimated=estimated,
+        )
+        if updated:
+            inp["_receipt"]["updated"] = True
+    except Exception:
+        pass
+
+
 def _combine_local_time(target_date, time_str, user_timezone: str = "UTC"):
     """Combine a local calendar date + a free-form clock time into a NAIVE UTC
     datetime, matching the utcnow() storage convention (the iOS timeline parses
@@ -1479,6 +1512,7 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
             if isinstance(inp, dict) and getattr(_target, "id", None) is not None:
                 inp["_entry_id"] = _target.id
             await db.refresh(target_log)
+            _stash_receipt(inp, target_log, user, _tot_cal, _tot_pro, updated=True)
             try:
                 from db.queries import resolve_pending_questions_for_logged_items
                 await resolve_pending_questions_for_logged_items(db, user.id, [food_name])
@@ -1539,6 +1573,9 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
         if isinstance(inp, dict) and getattr(_new_food, "id", None) is not None:
             inp["_entry_id"] = _new_food.id
         await db.refresh(target_log)
+        _stash_receipt(inp, target_log, user, analysis.calories, analysis.protein,
+                       confidence=_conf,
+                       estimated=(analysis.confidence == "estimated") or from_photo)
 
         # Item-scoped auto-resolve: close only the food_clarification rows whose
         # item_referenced matches THIS logged food. A log of item A must NOT
