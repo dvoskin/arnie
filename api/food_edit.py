@@ -107,7 +107,7 @@ async def delete_food(
             raise HTTPException(status_code=403, detail="not your entry")
 
         name = before.get("name") or "that entry"
-        arnie_message = f"Removed {name} from today's log."
+        arnie_message = f"Saw you removed {name}. Today's totals are updated."
         await log_conversation(
             db, user.id,
             raw_message="[delete_food_entry]",
@@ -160,5 +160,5 @@ def _build_update_message(before: dict, updated, changes: dict) -> str:
     if "quantity" in changes and changes["quantity"] != before.get("quantity"):
         deltas.append(f"quantity → {changes['quantity']}")
     if not deltas:
-        return f"Updated {name}."
-    return f"Updated {name}: " + ", ".join(deltas) + "."
+        return f"Saw your edit to {name}. All synced."
+    return f"Saw you edited {name}: " + ", ".join(deltas) + "."
