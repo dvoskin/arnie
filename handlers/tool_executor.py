@@ -137,6 +137,9 @@ def _stash_receipt(inp, target_log, user, calories, protein,
             local_hour=local_hour,
             confidence=confidence,
             estimated=estimated,
+            total_fats=float(getattr(target_log, "total_fats", 0) or 0),
+            fat_target=getattr(prefs, "fat_target", None) if prefs else None,
+            trained_today=bool(getattr(target_log, "workout_completed", False)),
         )
         if updated:
             inp["_receipt"]["updated"] = True

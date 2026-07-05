@@ -28,6 +28,9 @@ def build_receipt(
     local_hour: Optional[int],
     confidence: Optional[float] = None,
     estimated: bool = False,
+    total_fats: Optional[float] = None,
+    fat_target: Optional[float] = None,
+    trained_today: bool = False,
 ) -> dict:
     """Context for one logged item against the day so far.
 
@@ -70,6 +73,20 @@ def build_receipt(
         behind_pace = total_protein < (protein_target * frac) - 25
 
     nxt: Optional[str] = None
+    # Day-shape signals (density above is THIS item's protein efficiency)
+    protein_dense = density >= 0.30 and protein >= 15
+    efficient = density >= 0.45 and calories <= 300
+    rem_p_before = (rem_p + int(round(protein))) if rem_p is not None else None
+    closes_gap = (
+        rem_p is not None and rem_p_before is not None
+        and rem_p_before > 45 and rem_p <= 25
+    )
+    fat_heavy_day = (
+        fat_target is not None and total_fats is not None
+        and total_fats >= 0.85 * fat_target
+    )
+    day_open = total_cal < 900
+
     if vague:
         verdict = "Logged the midpoint. Portion size would tighten this."
     elif rem_c is not None and rem_c < 0:
@@ -81,11 +98,25 @@ def build_receipt(
                 nxt = "Next: keep the rest light"
     elif rem_p is not None and rem_p <= 0:
         verdict = "Protein target hit. The rest of the day stays flexible."
+    elif closes_gap:
+        verdict = "This meaningfully closes today's protein gap."
     elif rem_c is not None and 0 < rem_c <= 250:
-        verdict = "You're close on calories. Keep the rest lean."
+        if protein_dense:
+            verdict = "Useful protein, but calories are getting tight."
+        else:
+            verdict = "You're close on calories. Keep the rest lean."
         if rem_p is not None and rem_p > 15:
             nxt = f"Next: {rem_p}g protein, lean sources"
-    elif protein >= 35 or (calories >= 300 and density >= 0.30):
+    elif trained_today and protein_dense:
+        verdict = "Good post-workout protein. Add carbs if performance matters today."
+    elif fat_heavy_day and protein_dense:
+        verdict = "Protein helps, but keep added fats low from here."
+    elif efficient:
+        if rem_p is not None and rem_p > 80:
+            verdict = "Efficient protein. Today still needs a bigger anchor."
+        else:
+            verdict = "Efficient protein. Calories barely moved."
+    elif protein >= 35:
         if local_hour is None:
             verdict = "Strong protein hit. The next meal stays flexible."
         elif local_hour < 11:
@@ -95,7 +126,7 @@ def build_receipt(
         else:
             verdict = "Strong protein hit. Day closes clean."
     elif calories >= 500 and density < 0.15:
-        verdict = "Good meal, but light protein for the calories."
+        verdict = "Calorie-heavy for the protein return."
         nxt = "Next: lean protein first"
     elif behind_pace and local_hour is not None and local_hour >= 14:
         verdict = "Protein is behind pace. Next meal needs to anchor it."
@@ -107,9 +138,11 @@ def build_receipt(
         if local_hour is not None and local_hour < 11:
             verdict = "Solid anchor. Build the day on this."
         else:
-            verdict = "First log in. Plenty of room to work with."
+            verdict = "Clean base. Today still needs structure."
+    elif day_open:
+        verdict = "Clean base. Today still needs structure."
     else:
-        verdict = "Clean log. No correction needed."
+        verdict = "On pace. Nothing to correct."
 
     out["verdict"] = verdict
     if nxt:

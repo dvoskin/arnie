@@ -34,7 +34,7 @@ def test_strong_protein_evening_closes_clean():
 
 def test_calorie_heavy_light_protein_gets_direction():
     out = r(calories=680, protein=12, total_cal=1500, total_protein=70, local_hour=13)
-    assert out["verdict"] == "Good meal, but light protein for the calories."
+    assert out["verdict"] == "Calorie-heavy for the protein return."
     assert out["next"] == "Next: lean protein first"
 
 
@@ -105,12 +105,42 @@ def test_first_log_of_day_names_the_anchor():
     assert "next" not in out
 
 
-def test_first_log_afternoon_notes_the_room():
+def test_first_log_afternoon_names_the_structure():
     out = r(calories=300, protein=18, total_cal=310, total_protein=18, local_hour=13)
-    assert out["verdict"] == "First log in. Plenty of room to work with."
+    assert out["verdict"] == "Clean base. Today still needs structure."
 
 
-def test_clean_default_is_quiet():
-    out = r(calories=250, protein=18, total_cal=900, total_protein=80, local_hour=11)
-    assert out["verdict"] == "Clean log. No correction needed."
+def test_default_is_on_pace_when_day_has_shape():
+    out = r(calories=250, protein=18, total_cal=1400, total_protein=80, local_hour=12)
+    assert out["verdict"] == "On pace. Nothing to correct."
     assert "next" not in out
+
+
+# ── 8. day-aware branches ───────────────────────────────────────────────────
+
+def test_closing_the_protein_gap_is_named():
+    # 55g item takes remaining protein from 75 → 20: the gap-closer.
+    out = r(calories=450, protein=55, total_cal=1500, total_protein=160, local_hour=18)
+    assert out["verdict"] == "This meaningfully closes today's protein gap."
+
+
+def test_trained_today_points_at_carbs():
+    out = r(calories=208, protein=28, total_cal=1200, total_protein=90,
+            local_hour=15, trained_today=True)
+    assert out["verdict"] == "Good post-workout protein. Add carbs if performance matters today."
+
+
+def test_fat_heavy_day_caps_added_fats():
+    out = r(calories=208, protein=28, total_cal=1200, total_protein=90,
+            local_hour=15, total_fats=62, fat_target=70)
+    assert out["verdict"] == "Protein helps, but keep added fats low from here."
+
+
+def test_efficient_protein_names_the_anchor_gap():
+    out = r(calories=208, protein=28, total_cal=760, total_protein=85, local_hour=13)
+    assert out["verdict"] == "Efficient protein. Today still needs a bigger anchor."
+
+
+def test_calorie_heavy_low_protein_reads_the_return():
+    out = r(calories=680, protein=12, total_cal=1500, total_protein=70, local_hour=13)
+    assert out["verdict"] == "Calorie-heavy for the protein return."
