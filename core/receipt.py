@@ -99,7 +99,7 @@ def build_receipt(
     elif rem_p is not None and rem_p <= 0:
         verdict = "Protein handled. Control calories."
     elif closes_gap:
-        verdict = "This meaningfully closes today's protein gap."
+        verdict = "One more protein hit gets you there."
     elif rem_c is not None and 0 < rem_c <= 250:
         if protein_dense:
             verdict = "Useful protein, but calories are getting tight."
@@ -112,7 +112,7 @@ def build_receipt(
     elif trained_today and protein_dense:
         verdict = "Good post-workout protein. Add carbs if performance matters today."
     elif fat_heavy_day and protein_dense:
-        verdict = "Protein helps, but keep added fats low from here."
+        verdict = "Good protein hit. Keep fats low from here."
     elif efficient:
         if rem_p is not None and rem_p > 80:
             verdict = "Efficient protein. Today still needs a bigger anchor."

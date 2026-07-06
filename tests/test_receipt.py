@@ -126,7 +126,7 @@ def test_default_is_on_pace_when_day_has_shape():
 def test_closing_the_protein_gap_is_named():
     # 55g item takes remaining protein from 75 → 20: the gap-closer.
     out = r(calories=450, protein=55, total_cal=1500, total_protein=160, local_hour=18)
-    assert out["verdict"] == "This meaningfully closes today's protein gap."
+    assert out["verdict"] == "One more protein hit gets you there."
 
 
 def test_trained_today_points_at_carbs():
@@ -138,7 +138,7 @@ def test_trained_today_points_at_carbs():
 def test_fat_heavy_day_caps_added_fats():
     out = r(calories=208, protein=28, total_cal=1200, total_protein=90,
             local_hour=15, total_fats=62, fat_target=70)
-    assert out["verdict"] == "Protein helps, but keep added fats low from here."
+    assert out["verdict"] == "Good protein hit. Keep fats low from here."
 
 
 def test_efficient_protein_names_the_anchor_gap():
