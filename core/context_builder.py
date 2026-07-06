@@ -702,25 +702,11 @@ async def build_context(user: User, today_log: Optional[DailyLog], db,
     recent_weights = await get_recent_weights(db, user.id, days=56)
     recent_health = await get_recent_health_snapshots(db, user.id, days=7)
 
-    # Health snapshots may be on a linked identity — check linked users if empty.
-    # ONE query across all linked ids (this used to loop a query per linked row).
-    if not recent_health:
-        try:
-            from datetime import timedelta as _td
-            from sqlalchemy import desc as _desc, select as _sel
-            from db.models import HealthSnapshot as _HS, User as _U
-            _linked_ids = (await db.execute(
-                _sel(_U.id).where(_U.linked_to_user_id == user.id)
-            )).scalars().all()
-            if _linked_ids:
-                _since = date.today() - _td(days=7)
-                recent_health = (await db.execute(
-                    _sel(_HS)
-                    .where(_HS.user_id.in_(_linked_ids), _HS.date >= _since)
-                    .order_by(_desc(_HS.date))
-                )).scalars().all()
-        except Exception:
-            pass
+    # NOTE: the linked-identity snapshot fallback that lived here (added 4f72354
+    # for pre-2026-06-03 rows that synced to the wrong user_id) is GONE — the
+    # legacy rows were migrated to their canonical users on 2026-07-06, and
+    # sync_user_whoop has written to canonical ever since. It cost every
+    # snapshot-less user one extra query per turn to serve nobody.
 
     # Long-term context now lives in user_attributes (queryable, current within
     # seconds of a store_attribute call). The legacy markdown profile and freeform

@@ -1060,6 +1060,22 @@ async def _run_reminders():
     async with AsyncSessionLocal() as db:
         users = await get_all_active_users(db)
 
+        # ── Batch prefetch: set queries, not per-user storms ─────────────────
+        # The tick used to run 2 routing queries + 1 today-log query PER user —
+        # a query storm at :00/:30 as the user count grows. Three set queries
+        # now cover every user; the per-user calls below only run as fallback
+        # if a batch lookup is missing (shouldn't happen, but never fatal).
+        _batch_targets: dict = {}
+        _batch_logs: dict = {}
+        try:
+            from db.queries import batch_send_targets, batch_today_logs
+            _canonicals = [u for u in users
+                           if not getattr(u, "linked_to_user_id", None)]
+            _batch_targets = await batch_send_targets(db, _canonicals)
+            _batch_logs = await batch_today_logs(db, _canonicals)
+        except Exception as e:
+            logger.error(f"Batch prefetch failed — per-user fallback: {e}")
+
         # ── Per-tick skip observability (D-OBSERVE) ───────────────────────────
         # Count why each user was skipped this tick, by reason, and how many
         # actually got a message. Emitted as ONE summary line after the loop so
@@ -1085,7 +1101,8 @@ async def _run_reminders():
 
             # Route this user's proactive messages to their preferred platform
             # (set when they linked both). Falls back to their own identity.
-            send_id = await resolve_send_target(db, user)
+            send_id = _batch_targets.get(user.id) \
+                or await resolve_send_target(db, user)
 
             # ── Safe-rollout allowlist ────────────────────────────────────────
             # Skip non-allowlisted users early so we don't burn LLM calls generating
@@ -1185,7 +1202,10 @@ async def _run_reminders():
                 tz = pytz.timezone(user.timezone or "UTC")
                 now = datetime.now(tz)
                 hour, minute = now.hour, now.minute
-                log = await get_today_log(db, user.id, user.timezone or "UTC")
+                # Batched at tick start (None = genuinely no log today); the
+                # per-user fetch only runs if the batch missed this user.
+                log = _batch_logs[user.id] if user.id in _batch_logs \
+                    else await get_today_log(db, user.id, user.timezone or "UTC")
                 # Per-tick dedup state — used for EOD report and all recurring slots
                 today_str = str(now.date())
                 sent_slots = set(s for s in (user.nudges_sent or "").split(",") if s)
@@ -1945,6 +1965,15 @@ async def _run_conversation_hooks() -> None:
     async with AsyncSessionLocal() as db:
         users = await get_all_active_users(db)
         sent = 0
+        # Routing resolved once for the sweep (two set queries) — mirrors the
+        # main reminder loop's batch prefetch.
+        _hook_targets: dict = {}
+        try:
+            from db.queries import batch_send_targets as _bst
+            _hook_targets = await _bst(
+                db, [u for u in users if not getattr(u, "linked_to_user_id", None)])
+        except Exception as e:
+            logger.error(f"Hook batch routing failed — per-user fallback: {e}")
         from reminders.eligibility import frequency_allows as _freq_allows
         # Per-sweep canonical-user dedupe — Danny's 3 linked identities (iOS +
         # Telegram + iMessage) used to each pick up the same pending question
@@ -1984,7 +2013,8 @@ async def _run_conversation_hooks() -> None:
                 if not _in_win(_hhmm, _wake_w, _sleep_w):
                     continue
 
-                send_id = await resolve_send_target(db, user)
+                send_id = _hook_targets.get(user.id) \
+                    or await resolve_send_target(db, user)
                 if not _allowlist_allows(user.id, user.telegram_id, send_id):
                     continue
 

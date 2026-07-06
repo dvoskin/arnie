@@ -409,14 +409,66 @@ async def resolve_send_target(db: AsyncSession, canonical: User) -> str:
         by_platform.setdefault(_platform_of(u.telegram_id), u.telegram_id)
 
     last_platform = await _last_user_platform(db, canonical.id)
+    return _pick_send_target(canonical, by_platform, last_platform)
+
+
+def _pick_send_target(canonical: User, by_platform: dict, last_platform) -> str:
+    """The routing priority shared by resolve_send_target and its batch twin —
+    one place so the two can never drift: activity platform → explicit
+    preference → canonical identity."""
     if last_platform in by_platform:
         return by_platform[last_platform]
-
     pref = getattr(canonical, "channel_preference", None)
     if pref in by_platform:
         return by_platform[pref]
-
     return canonical.telegram_id
+
+
+async def batch_send_targets(db: AsyncSession, canonicals: list) -> dict:
+    """resolve_send_target for MANY canonical users in TWO set queries — the
+    30-min scheduler tick used to run two queries per user. Returns
+    {canonical_user_id: send_identity}; same priority via _pick_send_target."""
+    from sqlalchemy import func as _func
+    ids = [u.id for u in canonicals]
+    if not ids:
+        return {}
+
+    by_user: dict[int, dict] = {
+        u.id: {_platform_of(u.telegram_id): u.telegram_id} for u in canonicals
+    }
+    secondaries = (await db.execute(
+        select(User).where(User.linked_to_user_id.in_(ids))
+    )).scalars().all()
+    for s in secondaries:
+        by_user[s.linked_to_user_id].setdefault(
+            _platform_of(s.telegram_id), s.telegram_id)
+
+    # Newest real-message platform per user in one query (window function —
+    # supported by both Postgres and the SQLite the tests run on).
+    rn = _func.row_number().over(
+        partition_by=ConversationLog.user_id,
+        order_by=(ConversationLog.timestamp.desc(), ConversationLog.id.desc()),
+    ).label("rn")
+    sub = (
+        select(ConversationLog.user_id, ConversationLog.platform, rn)
+        .where(
+            ConversationLog.user_id.in_(ids),
+            ConversationLog.source_type != "proactive",
+            ConversationLog.raw_message.isnot(None),
+            ConversationLog.raw_message != "",
+            ConversationLog.raw_message != "[start]",
+            ConversationLog.platform.in_(_ROUTABLE_PLATFORMS),
+        )
+    ).subquery()
+    rows = (await db.execute(
+        select(sub.c.user_id, sub.c.platform).where(sub.c.rn == 1)
+    )).all()
+    last_by_user = {uid: plat for uid, plat in rows}
+
+    return {
+        u.id: _pick_send_target(u, by_user[u.id], last_by_user.get(u.id))
+        for u in canonicals
+    }
 
 
 # Logging-day rollover: the local hour at which "today" advances to the new
@@ -497,6 +549,42 @@ async def get_today_log(db: AsyncSession, user_id: int,
         if log is not None:
             return log
 
+
+async def batch_today_logs(db: AsyncSession, users: list) -> dict:
+    """get_today_log for MANY users in ONE query — the scheduler tick used to
+    fetch each user's today-log individually. Per-user candidate days (local
+    today + UTC fallback) are computed in memory; every (user, date) pair comes
+    back in a single eager-loaded select with the same precedence and
+    duplicate-tolerance (lowest id wins) as get_today_log.
+
+    Returns {user_id: DailyLog | None} with an entry for EVERY input user, so
+    callers can distinguish "no log" (None) from "not batched" (missing key)."""
+    if not users:
+        return {}
+    utc_today = _user_today("UTC")
+    candidates = {
+        u.id: (_user_today(getattr(u, "timezone", None) or "UTC"), utc_today)
+        for u in users
+    }
+    all_dates = {d for pair in candidates.values() for d in pair}
+    result = await db.execute(
+        select(DailyLog)
+        .where(DailyLog.user_id.in_(list(candidates)),
+               DailyLog.date.in_(list(all_dates)))
+        .order_by(DailyLog.id)
+        .options(
+            selectinload(DailyLog.food_entries),
+            selectinload(DailyLog.exercise_entries),
+            selectinload(DailyLog.water_entries),
+        )
+    )
+    by_key: dict = {}
+    for log in result.scalars().all():
+        by_key.setdefault((log.user_id, log.date), log)   # ordered by id → oldest wins
+    return {
+        uid: by_key.get((uid, local_d)) or by_key.get((uid, utc_d))
+        for uid, (local_d, utc_d) in candidates.items()
+    }
 
 
 async def get_log_by_date(db: AsyncSession, user_id: int, target_date: date) -> Optional[DailyLog]:

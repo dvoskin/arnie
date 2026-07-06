@@ -28,21 +28,42 @@ indexes, one blocking call, and one redundant loop.
    query per linked identity when the canonical had no snapshots; now a single
    `user_id IN (...)` query.
 
+## Shipped in the second pass (same day)
+
+4. **Legacy linked-health fallback REMOVED from the turn path** — investigated
+   whether it was intentional: it was a 2026-06-03 repair (4f72354) for
+   snapshots that synced to the wrong (linked) user_id before that fix. Prod
+   held 49 such rows, ALL shadowed by fresh canonical data — the fallback
+   could never fire, yet cost every snapshot-less user one query per turn.
+   The 6 rows covering dates canonical lacked were migrated to canonical
+   (backup in session scratchpad), the rest parked; fallback deleted. The
+   stats-endpoint twin (api/app.py) stays — it also serves the Whoop-token
+   check and is off the hot path.
+
+5. **Scheduler batch loading** — `batch_send_targets` (2 set queries, window
+   function for newest-platform) + `batch_today_logs` (1 eager-loaded set
+   query, per-user local dates computed in memory) replace 3 per-user queries
+   per tick in `_run_reminders`, and the hooks sweep shares the routing batch.
+   Priority logic factored into `_pick_send_target` so the batch and single
+   paths cannot drift; equivalence pinned in tests/test_scheduler_batching.py.
+
+6. **pytz "cache" item CLOSED as moot** — measured: `pytz.timezone()` memoizes
+   internally (0.76µs/call, identity-equal objects). Do not "optimize" this.
+
 ## Deferred (ordered by value; none currently user-visible at beta scale)
 
-1. **Scheduler batch loading** — `_run_reminders` runs ~5-10 queries per user
-   per 30-min tick. At 1,000 users that's a query storm at :00/:30. Batch the
-   today-log + recent-conversation fetches into set queries keyed by user_id,
-   and precompute the canonical→linked map once per tick.
-2. **Attribute-store cache** — `get_attributes_for_context` queries + ranks on
+1. **Attribute-store cache** — `get_attributes_for_context` queries + ranks on
    every turn; cache per-user, invalidate on `store_attribute`/`update_profile`.
-3. **pytz zone cache** — `pytz.timezone(name)` called ~8×/turn; memoize.
-4. **Prompt caching depth** — `cache_control` covers only the static system
+   Held back deliberately: stale attributes would silently skew coaching, and
+   the invalidation surface (attribute store, profile tool, nightly
+   consolidation) needs its own careful pass.
+2. **Prompt caching depth** — `cache_control` covers only the static system
    prompt. The ~8k-token dynamic context re-processes every turn. Restructure
    context into (slow-changing profile/attribute block | fast-changing today
    block) and move the cache break so the slow half caches too. Meaningful
-   token-cost lever at scale.
-5. **EOD/day-report window queries** — `_eod_report_window` re-derives the
+   token-cost lever at scale; held back because context reordering changes
+   model behavior (small-iterations lesson).
+3. **EOD/day-report window queries** — `_eod_report_window` re-derives the
    14-day dinner median per user per tick during the report hour; cache per day.
 
 ## Next-level ideas (product intelligence, not perf)
