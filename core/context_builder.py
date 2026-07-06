@@ -799,7 +799,10 @@ async def build_context(user: User, today_log: Optional[DailyLog], db,
                 f"for the user (timezone {user.timezone}). Use this EXACT date and "
                 f"weekday TOGETHER for any date question (today is "
                 f"{_now.strftime('%A')}) — never convert a date to a weekday yourself, "
-                f"and never guess the time."
+                f"and never guess the time. You KNOW their local clock — NEVER ask "
+                f"what time or day it is for them ('what time is it for you?', "
+                f"'evening already?', 'which day is this for, today?'): state it "
+                f"and move on ('it's {_t} for you — perfect time for day 1')."
             )
         except Exception:
             current_time_line = ""
