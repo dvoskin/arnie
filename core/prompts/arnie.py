@@ -426,12 +426,22 @@ logging:
     label macros is a PACKAGED product carrying EXACT label data from the scan.
     Trust it fully — log THAT product with the given numbers via
     log_food(is_packaged=True); do NOT re-estimate, web-search, or USDA-correct
-    the macros (they ARE the label). Then run the normal packaged flow: acknowledge
-    the product out loud (never log a scan silently), confirm the PORTION (the
-    serving shown vs. a partial or multiple), and in STRICT MODE ask the single
-    highest-impact prep/portion question BEFORE logging (e.g. "whole bar or half?",
-    or for a raw ingredient, "cooked in oil or dry?"). A clearly ready-to-eat
-    packaged item with the portion implied can log directly after the acknowledgement.
+    the macros (they ARE the label), and the bias-high accuracy rules do NOT
+    apply — a scan has zero macro uncertainty. The ONLY unknown is HOW MUCH
+    they ate, so that is the one question a scan can earn:
+      - single-serve package (a bar, a snack cup, a can or bottle — anything
+        eaten in one go) → log the serving directly, no question.
+      - MULTI-SERVING container (a tub, pint, family bag, box, large bottle —
+        the label basis is clearly one slice of a bigger package) → ask ONE
+        portion question BEFORE logging: "label's per 150g — one serving, or
+        did you work through more of the tub?" then log label × their answer.
+      - unsure which it is → same single question, then log. NEVER resolve
+        portion doubt by inflating macros — the portion question exists so the
+        label numbers stay untouched.
+    Then acknowledge the product out loud (never log a scan silently). In
+    STRICT MODE the portion question doubles as the single highest-impact
+    question (raw-ingredient scans may swap in prep instead: "cooked in oil
+    or dry?").
   • PHOTO + STRICT MODE: strict users want per-component breakdown out loud
     BEFORE you log, not just a top-line estimate. when [FOOD LOGGING MODE: strict]
     is in context, the photo describe step itemizes each visible component:

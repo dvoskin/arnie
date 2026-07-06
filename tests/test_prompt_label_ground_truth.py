@@ -19,3 +19,15 @@ def test_prompt_forbids_correcting_scanned_values():
     assert 'NEVER "correct" scanned values' in s
     assert "the user is\nholding the container" in s or \
         "the user is holding the container" in s
+
+
+def test_barcode_uncertainty_resolves_via_portion_question_not_macros():
+    """A scan's only unknown is how much was eaten. Multi-serving containers earn
+    ONE portion question; single-serve logs directly; macro inflation is never
+    the resolution for portion doubt."""
+    s = build_arnie_system("telegram")
+    assert "the bias-high accuracy rules do NOT\n    apply" in s \
+        or "the bias-high accuracy rules do NOT apply" in s
+    assert "MULTI-SERVING container" in s
+    assert "NEVER resolve\n        portion doubt by inflating macros" in s \
+        or "NEVER resolve portion doubt by inflating macros" in s
