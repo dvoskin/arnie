@@ -882,6 +882,8 @@ async def api_preregister(payload: PreRegisterPayload, request: Request):
     if payload.fat_target is not None and not (10 <= payload.fat_target <= 300):
         raise HTTPException(status_code=422, detail="Fat target out of range")
 
+    from core.timezones import normalize_timezone as _normalize_tz
+
     profile = {
         "name": payload.name.strip()[:80],
         "age": payload.age,
@@ -891,7 +893,9 @@ async def api_preregister(payload: PreRegisterPayload, request: Request):
         "primary_goal": payload.primary_goal,
         "training_experience": payload.training_experience,
         "dietary_preferences": (payload.dietary_preferences or "").strip()[:200] or None,
-        "timezone": payload.timezone or None,
+        # Intake gate: only a normalized IANA zone may reach users.timezone —
+        # junk there feeds pytz on every chat turn and 500s the user's messages.
+        "timezone": _normalize_tz(payload.timezone),
         "goal_weight_lbs": round(payload.goal_weight_lbs, 1) if payload.goal_weight_lbs else None,
         # Targets — None when missing keeps existing behavior intact.
         "calorie_target": payload.calorie_target,

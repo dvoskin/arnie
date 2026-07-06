@@ -80,14 +80,42 @@ async def patch_profile(
     if not updates:
         return {"ok": True, "updated_fields": []}
 
+    skipped: list[str] = []
+    if "timezone" in updates:
+        # Intake gate: users.timezone feeds pytz on every chat turn — junk here
+        # ("Naples, USA" typed into the onboarding field) used to 500 the user's
+        # every message. Store only a normalized IANA zone; drop anything else
+        # and let the proactive city-ask recover it conversationally.
+        from core.timezones import normalize_timezone
+        tz_norm = normalize_timezone(updates["timezone"])
+        if tz_norm is None:
+            updates.pop("timezone")
+            skipped.append("timezone")
+        else:
+            updates["timezone"] = tz_norm
+
     async with AsyncSessionLocal() as db:
         user = await resolve_user(db, identity)
         applied: list[str] = []
         for field, value in updates.items():
             setattr(user, field, value)
             applied.append(field)
+        # Server-side completion: the iOS submit's completeOnboarding() call is
+        # fire-and-forget (`try?`) — when it silently failed, the user landed in
+        # chat half-onboarded with no greeting and invisible to the proactive
+        # scheduler until some later save. The profile save that completes the
+        # required set now flips the bit itself, so completion never depends on
+        # a separate client call arriving.
+        completion = await _complete_if_ready(db, user)
         await db.commit()
-        return {"ok": True, "updated_fields": applied}
+        resp = {
+            "ok": True,
+            "updated_fields": applied,
+            "onboarding_completed": completion["onboarding_completed"],
+        }
+        if skipped:
+            resp["skipped_fields"] = skipped
+        return resp
 
 
 # ── Targets (user_preferences table) ────────────────────────────────────────
@@ -179,6 +207,90 @@ REQUIRED_ONBOARDING_FIELDS = (
 )
 
 
+async def _complete_if_ready(db, user) -> dict:
+    """Flip `onboarding_completed` + seed the intro turn and first weigh-in once
+    the required fields are present. Shared by POST /onboarding/complete (the
+    explicit iOS signal) and PATCH /profile (server-side auto-flip), so
+    completion can never be lost to a dropped client call.
+
+    Idempotent: already-onboarded users return ok=True untouched; missing
+    fields return ok=False without committing (the caller owns that commit)."""
+    if user.onboarding_completed:
+        return {"ok": True, "onboarding_completed": True, "missing_fields": []}
+    missing = [f for f in REQUIRED_ONBOARDING_FIELDS if getattr(user, f) is None]
+    if missing:
+        return {
+            "ok": False,
+            "onboarding_completed": False,
+            "missing_fields": missing,
+        }
+    # Build Arnie's opening turn from the in-memory user columns BEFORE the
+    # commit (commit expires the instance; reading it after would async
+    # lazy-load and trip MissingGreenlet). `resolve_user` eager-loads
+    # preferences via selectinload, so reading the daily targets here
+    # (pre-commit) is safe. The open now reflects EVERYTHING the user shared:
+    # goal, weight journey, daily targets, diet, injuries, training level, and
+    # their free-form brain dump.
+    prefs = user.preferences
+    cur_kg = user.current_weight_kg   # captured pre-commit for the weigh-in seed
+    intro_bubbles = build_ios_landing_intro(
+        name=user.name,
+        primary_goal=user.primary_goal,
+        current_weight_kg=user.current_weight_kg,
+        goal_weight_kg=user.goal_weight_kg,
+        calorie_target=prefs.calorie_target if prefs else None,
+        protein_target=prefs.protein_target if prefs else None,
+        dietary_preferences=user.dietary_preferences,
+        injuries=user.injuries,
+        training_experience=user.training_experience,
+        brain_dump=user.brain_dump,
+    )
+    # Seed guard: if the user already started talking (the completion call
+    # arrived LATE — after a silent client failure they typed first), a
+    # greeting would land mid-conversation with a now-timestamp and read
+    # broken ("got everything from your signup" under a food log). Flip the
+    # bit but skip the seed.
+    from db.queries import has_real_conversation
+    seed_intro = not await has_real_conversation(db, user.id)
+
+    user.onboarding_completed = True
+    await db.commit()
+    if seed_intro:
+        # Seed it so a native-onboarded user lands in a warm, profile-aware chat
+        # (matching the web SETUP path) instead of an empty thread. First flip only
+        # (the early returns above guard against double-seeding). Non-fatal.
+        try:
+            await log_conversation(
+                db, user.id, "[start]", "|||".join(intro_bubbles),
+                source_type="text", platform="ios",
+            )
+        except Exception:
+            logger.exception("native onboarding intro seed failed (non-fatal)")
+    else:
+        logger.info(
+            f"onboarding intro seed skipped for user {user.id} — thread already live"
+        )
+
+    # Seed the entered weight as a real weigh-in so it shows in the log + weight
+    # trend from day one — the no-Apple-Health fallback. Only when the user has
+    # NO weigh-in yet, so a real HealthKit sync that already landed takes
+    # precedence (cascade: real Health → onboarding seed). Non-fatal.
+    try:
+        if cur_kg:
+            from sqlalchemy import func as _func
+            from db.models import BodyMetric as _BodyMetric
+            from db.queries import add_body_metric
+            existing_ct = (await db.execute(
+                select(_func.count(_BodyMetric.id)).where(_BodyMetric.user_id == user.id)
+            )).scalar() or 0
+            if existing_ct == 0:
+                await add_body_metric(db, user.id, cur_kg, source="manual")
+    except Exception:
+        logger.exception("onboarding weigh-in seed failed (non-fatal)")
+
+    return {"ok": True, "onboarding_completed": True, "missing_fields": []}
+
+
 @router.post("/onboarding/complete")
 async def complete_onboarding(
     identity: str = Depends(current_identity),
@@ -205,67 +317,11 @@ async def complete_onboarding(
     """
     async with AsyncSessionLocal() as db:
         user = await resolve_user(db, identity)
-        if user.onboarding_completed:
-            return {"ok": True, "onboarding_completed": True, "missing_fields": []}
-        missing = [f for f in REQUIRED_ONBOARDING_FIELDS if getattr(user, f) is None]
-        if missing:
-            return {
-                "ok": False,
-                "onboarding_completed": False,
-                "missing_fields": missing,
-            }
-        # Build Arnie's opening turn from the in-memory user columns BEFORE the
-        # commit (commit expires the instance; reading it after would async
-        # lazy-load and trip MissingGreenlet). `resolve_user` eager-loads
-        # preferences via selectinload, so reading the daily targets here
-        # (pre-commit) is safe. The open now reflects EVERYTHING the user shared:
-        # goal, weight journey, daily targets, diet, injuries, training level, and
-        # their free-form brain dump.
-        prefs = user.preferences
-        cur_kg = user.current_weight_kg   # captured pre-commit for the weigh-in seed
-        intro_bubbles = build_ios_landing_intro(
-            name=user.name,
-            primary_goal=user.primary_goal,
-            current_weight_kg=user.current_weight_kg,
-            goal_weight_kg=user.goal_weight_kg,
-            calorie_target=prefs.calorie_target if prefs else None,
-            protein_target=prefs.protein_target if prefs else None,
-            dietary_preferences=user.dietary_preferences,
-            injuries=user.injuries,
-            training_experience=user.training_experience,
-            brain_dump=user.brain_dump,
-        )
-        user.onboarding_completed = True
-        await db.commit()
-        # Seed it so a native-onboarded user lands in a warm, profile-aware chat
-        # (matching the web SETUP path) instead of an empty thread. First flip only
-        # (the early returns above guard against double-seeding). Non-fatal.
-        try:
-            await log_conversation(
-                db, user.id, "[start]", "|||".join(intro_bubbles),
-                source_type="text", platform="ios",
-            )
-        except Exception:
-            logger.exception("native onboarding intro seed failed (non-fatal)")
-
-        # Seed the entered weight as a real weigh-in so it shows in the log + weight
-        # trend from day one — the no-Apple-Health fallback. Only when the user has
-        # NO weigh-in yet, so a real HealthKit sync that already landed takes
-        # precedence (cascade: real Health → onboarding seed). Non-fatal.
-        try:
-            if cur_kg:
-                from sqlalchemy import func as _func
-                from db.models import BodyMetric as _BodyMetric
-                from db.queries import add_body_metric
-                existing_ct = (await db.execute(
-                    select(_func.count(_BodyMetric.id)).where(_BodyMetric.user_id == user.id)
-                )).scalar() or 0
-                if existing_ct == 0:
-                    await add_body_metric(db, user.id, cur_kg, source="manual")
-        except Exception:
-            logger.exception("onboarding weigh-in seed failed (non-fatal)")
-
-        return {"ok": True, "onboarding_completed": True, "missing_fields": []}
+        result = await _complete_if_ready(db, user)
+        if not result["ok"]:
+            # Nothing flipped — leave the session clean for the caller.
+            await db.rollback()
+        return result
 
 
 # ── Linked accounts ─────────────────────────────────────────────────────────

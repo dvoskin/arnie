@@ -278,6 +278,12 @@ _PUSH_TITLES = (
 )
 
 
+def _strip_banner_markdown(s: str) -> str:
+    """APNs banners render markdown literally — a body with "**1,150 calories**"
+    shows raw asterisks on the lock screen. Strip bold/italic markers."""
+    return (s or "").replace("**", "").replace("__", "")
+
+
 def _push_title(slot_key) -> str:
     sk = (slot_key or "").lower()
     for frag, title in _PUSH_TITLES:
@@ -286,14 +292,34 @@ def _push_title(slot_key) -> str:
     return "Arnie"
 
 
-def _push_body(text: str) -> str:
-    """Concise banner body — the LEAD bubble (the hook) only, so the notification
-    teases instead of dumping the whole multi-bubble reply. The full message opens
-    in-app on tap."""
-    first = (text or "").split("|||")[0].strip()
-    if len(first) > 220:
-        first = first[:217].rstrip() + "…"
-    return first or "Tap to open Arnie"
+# A lead bubble this short is a HOOK ("You up?", "End of day check, Danny.") —
+# promote it to the banner title so the notification leads with the coach's
+# opener instead of a generic category label.
+_TITLE_PROMOTE_MAX = 48
+
+
+def _push_banner(text: str, slot_key: str = None) -> tuple[str, str]:
+    """(title, body) for the APNs banner.
+
+    The coach's own opener beats a category label: when the lead bubble is
+    short and punchy it BECOMES the title and the next bubble carries the
+    substance ("You up?" / "Haven't seen breakfast logged yet"). Long leads
+    keep the slot-derived title with the lead as body — same as before."""
+    bubbles = [b.strip() for b in (text or "").split("|||") if b.strip()]
+    if not bubbles:
+        return _push_title(slot_key), "Tap to open Arnie"
+
+    first = _strip_banner_markdown(bubbles[0])
+    if len(bubbles) >= 2 and len(first) <= _TITLE_PROMOTE_MAX:
+        body = _strip_banner_markdown(bubbles[1])
+        if len(body) > 220:
+            body = body[:217].rstrip() + "…"
+        return first, body
+
+    body = first
+    if len(body) > 220:
+        body = body[:217].rstrip() + "…"
+    return _push_title(slot_key), body or "Tap to open Arnie"
 
 
 async def _send_ios(telegram_id: str, text: str, slot_key: str = None) -> None:
@@ -324,10 +350,9 @@ async def _send_ios(telegram_id: str, text: str, slot_key: str = None) -> None:
         logger.info(f"APNs not configured — proactive iOS send to {telegram_id} skipped")
         return
 
-    # Structured banner: a contextual title (by slot) + the lead bubble as a
-    # concise body, grouped under one thread so Arnie's pushes stack neatly.
-    title = _push_title(slot_key)
-    body = _push_body(text)
+    # Structured banner: the coach's short opener as the title (falling back to
+    # a contextual slot label) + a concise body, markdown stripped.
+    title, body = _push_banner(text, slot_key)
 
     async with AsyncSessionLocal() as db:
         user = await resolve_user(db, telegram_id)
@@ -1433,7 +1458,19 @@ async def _run_reminders():
 
                 # ── Late morning (10:00–10:30, only if nothing logged) ─────────
                 elif hour == 10 and minute < 30 and _freq_ok("late_morning_nolog"):
-                    if not log or log.total_calories < 50:
+                    # "You up?" reads absurd to someone who said good morning and
+                    # logged their weigh-in half an hour ago. The 25-min live
+                    # window alone can't catch that (Danny: chatted 9:09-9:30,
+                    # slot fired 10:00) — if they've sent ANY message since wake
+                    # they're obviously up and engaged; midday pacing covers the
+                    # food gap later.
+                    _wake_min = int(wake[:2]) * 60 + int(wake[3:5])
+                    _since_wake = (hour * 60 + minute) - _wake_min
+                    _chatted_since_wake = (
+                        mins_since is not None and _since_wake > 0
+                        and mins_since <= _since_wake
+                    )
+                    if (not log or log.total_calories < 50) and not _chatted_since_wake:
                         msg = await _llm_nudge(user, log, prefs, health_snap, "late_morning_nolog", name,
                                                recent_proactive=recent_proactive)
                         if not msg:
@@ -1931,6 +1968,20 @@ async def _run_conversation_hooks() -> None:
                 # "light" (Morning & evening) is the floor that allows hooks.
                 prefs = getattr(user, "preferences", None)
                 if not _freq_allows(prefs, "conversation_hook"):
+                    continue
+
+                # Respect the user's waking window. Continuity or not, a re-ask
+                # at 1:45am is a phone buzzing on a nightstand — this loop used
+                # to bypass the wake/sleep clamp entirely (only live-convo +
+                # cool-off gated it) and fired small-hours follow-ups. Same
+                # clamped window as the main reminder loop; junk/unknown
+                # timezones fall back to UTC via safe_timezone.
+                from core.timezones import safe_timezone as _safe_tz
+                from reminders.eligibility import clamp_window as _clamp_w, in_window as _in_win
+                _now_local = datetime.now(_safe_tz(getattr(user, "timezone", None)))
+                _hhmm = f"{_now_local.hour:02d}:{_now_local.minute:02d}"
+                _wake_w, _sleep_w = _clamp_w(prefs)
+                if not _in_win(_hhmm, _wake_w, _sleep_w):
                     continue
 
                 send_id = await resolve_send_target(db, user)

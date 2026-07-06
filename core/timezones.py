@@ -54,7 +54,13 @@ _CITY_TZ = {
     "munich": "Europe/Berlin", "hamburg": "Europe/Berlin", "frankfurt": "Europe/Berlin",
     "cologne": "Europe/Berlin", "amsterdam": "Europe/Amsterdam", "rotterdam": "Europe/Amsterdam",
     "brussels": "Europe/Brussels", "rome": "Europe/Rome", "milan": "Europe/Rome",
-    "naples": "Europe/Rome", "venice": "Europe/Rome", "zurich": "Europe/Zurich",
+    "venice": "Europe/Rome", "zurich": "Europe/Zurich",
+    # "naples" alone: our user base is US-centric and Naples FL is a major US
+    # city — a bare "naples" (or "Naples, USA") is far more likely Florida than
+    # Italy. Qualified Italian forms still map to Rome.
+    "naples": "America/New_York", "naples fl": "America/New_York",
+    "naples florida": "America/New_York", "naples usa": "America/New_York",
+    "naples italy": "Europe/Rome",
     "geneva": "Europe/Zurich", "vienna": "Europe/Vienna", "prague": "Europe/Prague",
     "warsaw": "Europe/Warsaw", "stockholm": "Europe/Stockholm", "oslo": "Europe/Oslo",
     "copenhagen": "Europe/Copenhagen", "helsinki": "Europe/Helsinki", "athens": "Europe/Athens",
@@ -216,9 +222,53 @@ def resolve_timezone(text: str) -> str | None:
         if token in _COUNTRY_TZ:
             return _COUNTRY_TZ[token]
 
-    # 5) substring scan — any known city name appearing anywhere
+    # 5) substring scan — any known city name appearing anywhere, on WORD
+    # boundaries. A raw `in` check made every string containing "la"/"dc"/"sf"
+    # resolve ("Planet Xyzzy" → Los Angeles via p-LA-net), which mattered once
+    # normalize_timezone started routing junk timezone-field input through here.
     for city, tz in _CITY_TZ.items():
-        if city in t:
+        if re.search(rf"\b{re.escape(city)}\b", t):
             return tz
 
     return None
+
+
+# ── Intake gate for the users.timezone column ─────────────────────────────────
+# users.timezone feeds pytz.timezone() on the chat turn path
+# (db/queries._user_today), the proactive scheduler, and the context builder.
+# A junk value in the column (a real user typed "Naples, USA" into the
+# onboarding timezone field) used to 500 every message that user sent. The
+# rule: only a real IANA zone name ever lands in the column. Free-form input
+# gets one confident salvage pass through resolve_timezone; anything else
+# normalizes to None ("unknown" — everything falls back to UTC and the
+# proactive city-ask recovers the real zone conversationally).
+
+import pytz as _pytz
+
+# Case-corrected lookup of every IANA zone ("america/new_york" → "America/New_York").
+_IANA_CANONICAL = {z.lower(): z for z in _pytz.all_timezones}
+
+
+def normalize_timezone(value) -> str | None:
+    """The valid IANA zone for `value` — exact (case-corrected) IANA names pass
+    through, free-form locations go through resolve_timezone — or None for
+    anything unrecognizable. Never raises."""
+    if not value or not isinstance(value, str):
+        return None
+    v = value.strip()
+    if not v:
+        return None
+    canon = _IANA_CANONICAL.get(v.lower())
+    if canon:
+        return canon
+    return resolve_timezone(v)
+
+
+def safe_timezone(name):
+    """pytz tzinfo for `name`, falling back to UTC instead of raising — legacy
+    rows written before intake validation may still hold junk values, and a bad
+    timezone must never crash a chat turn or a scheduler tick."""
+    try:
+        return _pytz.timezone(name or "UTC")
+    except _pytz.exceptions.UnknownTimeZoneError:
+        return _pytz.utc

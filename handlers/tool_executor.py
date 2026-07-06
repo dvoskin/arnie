@@ -2450,6 +2450,18 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
         if "name" in fields and isinstance(fields["name"], str):
             fields["name"] = fields["name"].strip().title()
 
+        # Normalize timezone to a valid IANA zone — users.timezone feeds pytz on
+        # every chat turn, so junk ("Naples, USA") must never land in the column.
+        # The LLM usually passes a real zone; free-form slips get one salvage
+        # pass through the city resolver, anything else is dropped.
+        if "timezone" in fields and fields["timezone"] is not None:
+            from core.timezones import normalize_timezone as _norm_tz
+            _tz = _norm_tz(str(fields["timezone"]))
+            if _tz:
+                fields["timezone"] = _tz
+            else:
+                fields.pop("timezone")  # unrecognized → don't store junk
+
         # Normalize channel preference to exactly "telegram" or "imessage"
         if "channel_preference" in fields and isinstance(fields["channel_preference"], str):
             _v = fields["channel_preference"].strip().lower()

@@ -345,35 +345,77 @@ async def migrate_user_data(db: AsyncSession, consumer: User, canonical: User) -
 
 
 def _platform_of(telegram_id: str) -> str:
-    """Identity strings prefixed 'im:' are iMessage; everything else is Telegram."""
-    return "imessage" if (telegram_id or "").startswith("im:") else "telegram"
+    """Platform of a namespaced identity string: 'ios:'/'apple:' → iOS (APNs),
+    'im:' → iMessage, anything else (numeric chat id) → Telegram."""
+    tid = telegram_id or ""
+    if tid.startswith(("ios:", "apple:")):
+        return "ios"
+    if tid.startswith("im:"):
+        return "imessage"
+    return "telegram"
+
+
+# Platforms a proactive message can actually be delivered on. 'web' and other
+# labels that show up in conversation_logs.platform are not send targets.
+_ROUTABLE_PLATFORMS = ("ios", "imessage", "telegram")
+
+
+async def _last_user_platform(db: AsyncSession, user_id: int) -> Optional[str]:
+    """Platform of the user's most recent REAL message (their own turns, not our
+    proactive sends) — where the conversation actually lives right now."""
+    result = await db.execute(
+        select(ConversationLog.platform)
+        .where(
+            ConversationLog.user_id == user_id,
+            ConversationLog.source_type != "proactive",
+            ConversationLog.raw_message.isnot(None),
+            ConversationLog.raw_message != "",
+            ConversationLog.raw_message != "[start]",
+            ConversationLog.platform.in_(_ROUTABLE_PLATFORMS),
+        )
+        .order_by(ConversationLog.timestamp.desc(), ConversationLog.id.desc())
+        .limit(1)
+    )
+    row = result.first()
+    return row[0] if row else None
 
 
 async def resolve_send_target(db: AsyncSession, canonical: User) -> str:
     """
     Decide which platform identity a proactive message to `canonical` should go to.
 
-    Returns the telegram_id string to pass to the scheduler's _send():
-      - 'im:<addr>' routes to iMessage, a numeric string routes to Telegram.
+    Returns the identity string to pass to the scheduler's _send():
+      'ios:<uuid>'/'apple:<sub>' routes to APNs push, 'im:<addr>' to iMessage,
+      a numeric string to Telegram.
 
-    Logic: if the user picked a channel_preference and we have an identity on that
-    platform (the canonical row itself, or a linked secondary row pointing at it),
-    send there. Otherwise fall back to the canonical's own identity. Fully safe
-    when unlinked (just returns canonical.telegram_id).
+    Priority — proactive messages follow the conversation:
+      1. The platform of the user's most recent real message (among identities
+         we actually hold). A user who moved from Telegram to the iOS app gets
+         their nudges on iOS the moment they start talking there — a stale
+         channel_preference from their old platform must not pin them forever
+         (Gi kept getting Telegram nudges after going all-in on iOS).
+      2. Their explicit channel_preference, when they've never messaged (new
+         users) or their activity platform has no identity here.
+      3. The canonical row's own identity.
+
+    Fully safe when unlinked (falls back to canonical.telegram_id).
     """
-    pref = getattr(canonical, "channel_preference", None)
-    if not pref:
-        return canonical.telegram_id
-    if _platform_of(canonical.telegram_id) == pref:
-        return canonical.telegram_id
-    # Preference is the OTHER platform — find a linked identity that matches it.
+    # Identity per platform, canonical first so it wins platform collisions.
     result = await db.execute(
         select(User).where(User.linked_to_user_id == canonical.id)
     )
-    for secondary in result.scalars().all():
-        if _platform_of(secondary.telegram_id) == pref:
-            return secondary.telegram_id
-    # No identity on the preferred platform — fall back to canonical.
+    by_platform: dict[str, str] = {}
+    for u in [canonical] + list(result.scalars().all()):
+        by_platform.setdefault(_platform_of(u.telegram_id), u.telegram_id)
+
+    last_platform = await _last_user_platform(db, canonical.id)
+    if last_platform in by_platform:
+        return by_platform[last_platform]
+
+    pref = getattr(canonical, "channel_preference", None)
+    if pref in by_platform:
+        return by_platform[pref]
+
     return canonical.telegram_id
 
 
@@ -395,7 +437,10 @@ except (TypeError, ValueError):
 def _user_today(user_timezone: str) -> date:
     """The user's current LOGGING day (see LOGGING_DAY_ROLLOVER_HOUR) — the day new
     entries belong to. Before the rollover hour, that's still yesterday."""
-    tz = pytz.timezone(user_timezone or "UTC")
+    from core.timezones import safe_timezone
+    # safe_timezone: a junk users.timezone (pre-validation rows held free text
+    # like "Naples, USA") must degrade to UTC here, not 500 every chat turn.
+    tz = safe_timezone(user_timezone)
     now = datetime.now(tz)
     d = now.date()
     if now.hour < LOGGING_DAY_ROLLOVER_HOUR:
@@ -409,7 +454,8 @@ def _logging_day_of(dt_utc: datetime, user_timezone: str) -> date:
     written via server_default func.now() (naive UTC), so localize to UTC first,
     then convert to the user's zone before applying the rollover. Used by the
     weight UPSERT to decide whether an existing row is the SAME calendar day."""
-    tz = pytz.timezone(user_timezone or "UTC")
+    from core.timezones import safe_timezone
+    tz = safe_timezone(user_timezone)
     if dt_utc.tzinfo is None:
         dt_utc = pytz.utc.localize(dt_utc)
     local = dt_utc.astimezone(tz)
@@ -871,6 +917,22 @@ async def get_conversation_by_idempotency_key(
     )).scalars().first()
 
 
+async def has_real_conversation(db: AsyncSession, user_id: int) -> bool:
+    """True if the user's thread holds anything beyond the seeded '[start]'
+    intro. Used to guard the intro seed: if the user already started talking
+    (or a proactive went out), a greeting would land MID-conversation with a
+    now-timestamp — skip it rather than read broken."""
+    result = await db.execute(
+        select(ConversationLog.id)
+        .where(
+            ConversationLog.user_id == user_id,
+            ConversationLog.raw_message != "[start]",
+        )
+        .limit(1)
+    )
+    return result.first() is not None
+
+
 async def log_conversation(db: AsyncSession, user_id: int, raw_message: str,
                            response: str, parsed_intent: str = None,
                            source_type: str = "text",
@@ -1209,7 +1271,12 @@ async def apply_landing_profile_to_user(
     if profile.get("dietary_preferences"):
         user.dietary_preferences = profile["dietary_preferences"]
     if profile.get("timezone"):
-        user.timezone = profile["timezone"]
+        # Pre-registration rows may predate intake validation — only a
+        # normalized IANA zone may land in users.timezone (junk 500s turns).
+        from core.timezones import normalize_timezone
+        _tz = normalize_timezone(profile["timezone"])
+        if _tz:
+            user.timezone = _tz
     if profile.get("goal_weight_lbs"):
         user.goal_weight_kg = round(profile["goal_weight_lbs"] / 2.20462, 2)
     user.onboarding_completed = True

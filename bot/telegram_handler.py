@@ -836,7 +836,12 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 if profile.get("dietary_preferences"):
                     user.dietary_preferences = profile["dietary_preferences"]
                 if profile.get("timezone"):
-                    user.timezone = profile["timezone"]
+                    # Pre-registration rows may predate intake validation — only a
+                    # normalized IANA zone may land in users.timezone.
+                    from core.timezones import normalize_timezone as _norm_tz
+                    _tz = _norm_tz(profile["timezone"])
+                    if _tz:
+                        user.timezone = _tz
                 if profile.get("goal_weight_lbs"):
                     user.goal_weight_kg = round(profile["goal_weight_lbs"] / 2.20462, 2)
                 user.onboarding_completed = True
