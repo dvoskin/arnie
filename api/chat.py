@@ -124,6 +124,25 @@ def _turn_tools(turn) -> list[str]:
     return seen
 
 
+async def _backfill_city(identity: str, lat: float, lng: float) -> None:
+    """Reverse-geocode the user's city OFF the turn path (fire-and-forget from
+    _coached_reply). Fills users.city only if it's still empty — a user-set or
+    concurrently-set city always wins. Fully swallowed: location niceties must
+    never surface an error."""
+    try:
+        from core.geocode import reverse as _reverse_geocode
+        city = await _reverse_geocode(lat, lng)
+        if not city:
+            return
+        async with AsyncSessionLocal() as db:
+            user = await resolve_user(db, identity)
+            if user and not user.city:
+                user.city = city
+                await db.commit()
+    except Exception:
+        pass
+
+
 # ── Shared core ──────────────────────────────────────────────────────────────
 async def _coached_reply(identity: str, text: str, source_type: str,
                          lat: Optional[float] = None,
@@ -142,21 +161,18 @@ async def _coached_reply(identity: str, text: str, source_type: str,
         async with AsyncSessionLocal() as db:
             user = await resolve_user(db, identity)
             if isinstance(lat, (int, float)) and isinstance(lng, (int, float)):
-                # Reverse-geocode the city if the row doesn't have one yet.
-                # The street-precision readback uses a separate cached call
-                # inside context_builder — no need to fetch it here.
-                city = user.city
-                if not city:
-                    try:
-                        from core.geocode import reverse as _reverse_geocode
-                        city = await _reverse_geocode(lat, lng)
-                    except Exception:
-                        city = None
+                # Persist coords NOW; the city reverse-geocode is network I/O
+                # that used to run inline HERE — while holding the per-user
+                # lock — stalling the coaching turn 100-500ms whenever the
+                # geocoder was slow. It now backfills in the background; the
+                # next context build reads it. (The street-precision readback
+                # uses a separate cached call inside context_builder.)
                 await save_user_location(db, user_id=user.id, lat=lat, lng=lng,
-                                          city=city)
+                                          city=user.city)
+                if not user.city:
+                    asyncio.create_task(_backfill_city(identity, lat, lng))
                 # Re-read so the turn sees the just-saved coords without a
-                # stale-cache surprise (save_user_location may keep an existing
-                # user-set city over the freshly geocoded one).
+                # stale-cache surprise.
                 user = await resolve_user(db, identity)
             try:
                 turn = await run_chat_turn(

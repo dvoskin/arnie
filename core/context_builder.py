@@ -702,19 +702,23 @@ async def build_context(user: User, today_log: Optional[DailyLog], db,
     recent_weights = await get_recent_weights(db, user.id, days=56)
     recent_health = await get_recent_health_snapshots(db, user.id, days=7)
 
-    # Health snapshots may be on a linked identity — check linked users if empty
+    # Health snapshots may be on a linked identity — check linked users if empty.
+    # ONE query across all linked ids (this used to loop a query per linked row).
     if not recent_health:
         try:
-            from sqlalchemy import select as _sel
-            from db.models import User as _U
-            _linked = (await db.execute(
-                _sel(_U).where(_U.linked_to_user_id == user.id)
+            from datetime import timedelta as _td
+            from sqlalchemy import desc as _desc, select as _sel
+            from db.models import HealthSnapshot as _HS, User as _U
+            _linked_ids = (await db.execute(
+                _sel(_U.id).where(_U.linked_to_user_id == user.id)
             )).scalars().all()
-            for _lu in _linked:
-                _snaps = await get_recent_health_snapshots(db, _lu.id, days=7)
-                if _snaps:
-                    recent_health = _snaps
-                    break
+            if _linked_ids:
+                _since = date.today() - _td(days=7)
+                recent_health = (await db.execute(
+                    _sel(_HS)
+                    .where(_HS.user_id.in_(_linked_ids), _HS.date >= _since)
+                    .order_by(_desc(_HS.date))
+                )).scalars().all()
         except Exception:
             pass
 
