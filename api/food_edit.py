@@ -22,7 +22,7 @@ from sqlalchemy import select
 
 from api.auth import current_identity
 from db.database import AsyncSessionLocal
-from db.models import FoodEntry
+from db.models import DailyLog, FoodEntry
 from db.queries import (
     resolve_user, update_food_entry, delete_food_entry, log_conversation,
 )
@@ -63,6 +63,7 @@ async def update_food(
         # passive notification, not coaching. The "before" snapshot lets us
         # spell out what actually moved when nutrition fields changed.
         arnie_message = _build_update_message(before, updated, changes)
+        receipt = await _fresh_receipt(db, user, updated)
         if arnie_message:
             await log_conversation(
                 db, user.id,
@@ -76,6 +77,7 @@ async def update_food(
         return {
             "status": "ok",
             "arnie_message": arnie_message,
+            "receipt": receipt,
             "entry": {
                 "id": updated.id,
                 "name": updated.parsed_food_name or "",
@@ -138,6 +140,44 @@ async def _snapshot_entry(db, entry_id: int) -> Optional[dict]:
         "carbs":    round(row.carbs    or 0),
         "fats":     round(row.fats     or 0),
     }
+
+
+async def _fresh_receipt(db, user, entry) -> Optional[dict]:
+    """Re-run the deterministic receipt engine against the edited entry and the
+    recomputed day, so the chat card's coach read stays true after an edit.
+    Never raises — a missing receipt just leaves the card's log-time read."""
+    try:
+        import pytz
+        from datetime import datetime as _dtt
+        from core.receipt import build_receipt
+        log = (await db.execute(
+            select(DailyLog).where(DailyLog.id == entry.daily_log_id)
+        )).scalar_one_or_none()
+        if log is None:
+            return None
+        prefs = getattr(user, "preferences", None)
+        try:
+            local_hour = _dtt.now(
+                pytz.timezone(getattr(user, "timezone", None) or "UTC")).hour
+        except Exception:
+            local_hour = None
+        return build_receipt(
+            calories=float(entry.calories or 0),
+            protein=float(entry.protein or 0),
+            total_cal=float(log.total_calories or 0),
+            total_protein=float(log.total_protein or 0),
+            cal_target=getattr(prefs, "calorie_target", None) if prefs else None,
+            protein_target=getattr(prefs, "protein_target", None) if prefs else None,
+            local_hour=local_hour,
+            confidence=getattr(entry, "confidence_score", None),
+            estimated=bool(getattr(entry, "estimated_flag", False)),
+            total_fats=float(log.total_fats or 0),
+            fat_target=getattr(prefs, "fat_target", None) if prefs else None,
+            trained_today=bool(getattr(log, "workout_completed", False)),
+            carbs=float(entry.carbs) if entry.carbs is not None else None,
+        )
+    except Exception:
+        return None
 
 
 def _build_update_message(before: dict, updated, changes: dict) -> str:

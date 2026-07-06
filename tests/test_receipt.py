@@ -132,13 +132,26 @@ def test_closing_the_protein_gap_is_named():
 def test_trained_today_points_at_carbs():
     out = r(calories=208, protein=28, total_cal=1200, total_protein=90,
             local_hour=15, trained_today=True)
-    assert out["verdict"] == "Good post-workout protein. Add carbs if performance matters today."
+    assert out["verdict"] == "Good post-workout protein. Carbs help today."
 
 
 def test_fat_heavy_day_caps_added_fats():
     out = r(calories=208, protein=28, total_cal=1200, total_protein=90,
             local_hour=15, total_fats=62, fat_target=70)
-    assert out["verdict"] == "Good protein hit. Keep fats low from here."
+    assert out["verdict"] == "Protein moved. Keep fats low."
+
+
+def test_carb_add_names_the_missing_anchor():
+    # 100g rice mid-day: carbs did the work, protein gap untouched.
+    out = r(calories=130, protein=3, total_cal=1812, total_protein=140,
+            local_hour=13, carbs=28)
+    assert out["verdict"] == "Carbs added. Protein still needs the anchor."
+
+
+def test_carb_add_requires_open_protein_gap():
+    out = r(calories=130, protein=3, total_cal=1400, total_protein=170,
+            local_hour=13, carbs=28)
+    assert out["verdict"] != "Carbs added. Protein still needs the anchor."
 
 
 def test_efficient_protein_names_the_anchor_gap():

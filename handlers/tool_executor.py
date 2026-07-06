@@ -112,7 +112,7 @@ def _weights_csv_to_kg(weights_csv, unit: str = "lbs"):
 
 
 def _stash_receipt(inp, target_log, user, calories, protein,
-                   confidence=None, estimated=False, updated=False):
+                   confidence=None, estimated=False, updated=False, carbs=None):
     """Attach the decision-receipt context to the tool input so
     conversation.py can surface it on the macro_card payload (same channel as
     _entry_id). Never raises — a receipt is garnish, the log already stands."""
@@ -140,6 +140,7 @@ def _stash_receipt(inp, target_log, user, calories, protein,
             total_fats=float(getattr(target_log, "total_fats", 0) or 0),
             fat_target=getattr(prefs, "fat_target", None) if prefs else None,
             trained_today=bool(getattr(target_log, "workout_completed", False)),
+            carbs=float(carbs) if carbs is not None else None,
         )
         if updated:
             inp["_receipt"]["updated"] = True
@@ -1578,7 +1579,8 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
         await db.refresh(target_log)
         _stash_receipt(inp, target_log, user, analysis.calories, analysis.protein,
                        confidence=_conf,
-                       estimated=(analysis.confidence == "estimated") or from_photo)
+                       estimated=(analysis.confidence == "estimated") or from_photo,
+                       carbs=analysis.carbs)
 
         # Item-scoped auto-resolve: close only the food_clarification rows whose
         # item_referenced matches THIS logged food. A log of item A must NOT
@@ -2067,7 +2069,7 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
             _stash_receipt(inp, today_log, user, entry.calories, entry.protein,
                            confidence=getattr(entry, "confidence_score", None),
                            estimated=bool(getattr(entry, "estimated_flag", False)),
-                           updated=True)
+                           updated=True, carbs=entry.carbs)
 
         # Recurring-memory correction backfill: when a correction notably shifts
         # macros on a named non-generic food, update the user_food_match so the

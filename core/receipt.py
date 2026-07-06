@@ -31,6 +31,7 @@ def build_receipt(
     total_fats: Optional[float] = None,
     fat_target: Optional[float] = None,
     trained_today: bool = False,
+    carbs: Optional[float] = None,
 ) -> dict:
     """Context for one logged item against the day so far.
 
@@ -81,6 +82,12 @@ def build_receipt(
         rem_p is not None and rem_p_before is not None
         and rem_p_before > 45 and rem_p <= 25
     )
+    # Carb-dominant, low-protein item (rice, fruit, toast) while the day's
+    # protein gap is still real — name what the food did and didn't do.
+    carb_add = (
+        carbs is not None and calories >= 80
+        and carbs * 4.0 >= 0.55 * calories and protein < 12
+    )
     fat_heavy_day = (
         fat_target is not None and total_fats is not None
         and total_fats >= 0.85 * fat_target
@@ -102,17 +109,19 @@ def build_receipt(
         verdict = "One more protein hit gets you there."
     elif rem_c is not None and 0 < rem_c <= 250:
         if protein_dense:
-            verdict = "Useful protein, but calories are getting tight."
+            verdict = "Useful protein. Calories getting tight."
         else:
             verdict = "Calories tight. Keep the next move lean."
         if rem_p is not None and rem_p > 15:
             nxt = f"Next: {rem_p}g protein, lean sources"
+    elif carb_add and rem_p is not None and rem_p >= 25:
+        verdict = "Carbs added. Protein still needs the anchor."
     elif calories < 150 and rem_p is not None and rem_p > 40 and total_cal >= 400:
         verdict = "Small add. Real meal still needed."
     elif trained_today and protein_dense:
-        verdict = "Good post-workout protein. Add carbs if performance matters today."
+        verdict = "Good post-workout protein. Carbs help today."
     elif fat_heavy_day and protein_dense:
-        verdict = "Good protein hit. Keep fats low from here."
+        verdict = "Protein moved. Keep fats low."
     elif efficient:
         if rem_p is not None and rem_p > 80:
             verdict = "Efficient protein. Today still needs a bigger anchor."
