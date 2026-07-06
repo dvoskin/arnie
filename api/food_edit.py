@@ -180,25 +180,35 @@ async def _fresh_receipt(db, user, entry) -> Optional[dict]:
         return None
 
 
+def _display_food_name(raw: str) -> str:
+    """Database names read like chat: first comma clause, lowercased unless it
+    looks like a brand ("White rice, steamed" → "white rice"; "Barebells Salty
+    Peanut" stays)."""
+    name = (raw or "").strip()
+    clause = name.split(",")[0].strip()
+    if len(clause) >= 4:
+        name = clause
+    if name and not any(c.isupper() for c in name[1:]):
+        name = name[0].lower() + name[1:]
+    return name or "that entry"
+
+
+def _compact_qty(q: str) -> str:
+    """"250 g cooked" reads as "250g cooked" — metric mass hugs its number."""
+    import re
+    return re.sub(r"(\d)\s+(g|ml|mg|kg)\b", r"\1\2", q or "")
+
+
 def _build_update_message(before: dict, updated, changes: dict) -> str:
-    """Pick the smallest line that actually communicates the change."""
-    name = updated.parsed_food_name or before.get("name") or "that entry"
-    deltas: list[str] = []
-    after_macros = {
-        "calories": round(updated.calories or 0),
-        "protein":  round(updated.protein  or 0),
-        "carbs":    round(updated.carbs    or 0),
-        "fats":     round(updated.fats     or 0),
-    }
-    units = {"calories": "cal", "protein": "g protein", "carbs": "g carbs", "fats": "g fat"}
-    for field, unit in units.items():
-        if field in changes:
-            old = before.get(field)
-            new = after_macros[field]
-            if old != new:
-                deltas.append(f"{unit} {old} → {new}")
+    """One human line, end-state not delta soup: the receipt card carries the
+    numbers; this is just Arnie acknowledging he saw the change."""
+    name = _display_food_name(updated.parsed_food_name or before.get("name") or "")
+    cal = round(updated.calories or 0)
+    pro = round(updated.protein or 0)
+    changed_macros = any(f in changes for f in ("calories", "protein", "carbs", "fats"))
     if "quantity" in changes and changes["quantity"] != before.get("quantity"):
-        deltas.append(f"quantity → {changes['quantity']}")
-    if not deltas:
-        return f"Saw your edit to {name}. All synced."
-    return f"Saw you edited {name}: " + ", ".join(deltas) + "."
+        qty = _compact_qty(str(changes["quantity"]))
+        return f"Saw you edited {name}: now {qty} — {cal} cal, {pro}g protein."
+    if changed_macros:
+        return f"Saw you edited {name}: now {cal} cal, {pro}g protein."
+    return f"Saw your edit to {name}. All synced."

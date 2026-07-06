@@ -11,6 +11,7 @@ from __future__ import annotations
 import dataclasses
 import logging
 import os
+import re as _re
 from typing import Any, Callable, Optional
 
 from core.llm import chat, chat_follow_up
@@ -250,6 +251,22 @@ def _canon_bubble(s: str) -> str:
     return " ".join(s.split()).strip()
 
 
+_RECAP_NUM_RE = _re.compile(r"\d")
+_RECAP_WORD_RE = _re.compile(
+    r"cal\b|calorie|kcal|protein|carb|\bfat\b|\bleft\b|to go|over\b|short\b",
+    _re.IGNORECASE)
+
+
+def _numeric_recap_bubble(text: str) -> bool:
+    """A bubble that restates receipt numbers (cal/protein/day totals). On a
+    food-log turn the card IS the reply — these bubbles are duplication.
+    Questions survive: a clarifying ask is never a recap."""
+    t = text.strip()
+    if not t or t.endswith("?"):
+        return False
+    return bool(_RECAP_NUM_RE.search(t)) and bool(_RECAP_WORD_RE.search(t))
+
+
 class _BubbleStreamer:
     """Per-stream accumulator. on_bubble is async fn(text) → None called per
     completed bubble; finalize() flushes the trailing buffer. Single-use:
@@ -260,6 +277,9 @@ class _BubbleStreamer:
 
     def __init__(self, on_bubble):
         self.on_bubble = on_bubble
+        # Armed after a receipt-carrying log_food fires on a card platform:
+        # number-restating bubbles are dropped at the flush choke point.
+        self.suppress_recap = False
         self._buffer = ""
         self._full_text = ""
         self.flushed_count = 0
@@ -293,6 +313,9 @@ class _BubbleStreamer:
         # too, so the prior `.strip()` is redundant — kept the call for clarity.
         text = _sanitize_bubble(text)
         if not text:
+            return
+        if self.suppress_recap and _numeric_recap_bubble(text):
+            logger.info(f"receipt-recap bubble suppressed: {text[:60]!r}")
             return
         try:
             await self.on_bubble(text)
@@ -356,6 +379,7 @@ async def run_turn(
     # first pass + follow-up + any self-heal retry. None when not streaming.
     _streamed_total = 0
     _streamer = _BubbleStreamer(on_text_bubble) if on_text_bubble else None
+    _receipt_turn = False   # set post-tools when a card makes prose duplicative
     _stream_handler = _streamer.on_delta if _streamer else None
     # Only pass stream_handler to LLM calls when active — keeps the chat() and
     # chat_follow_up() signatures backward-compatible with mocks that predate
@@ -598,6 +622,24 @@ async def run_turn(
             else:
                 response_text = _coaching_text
             _response_streamed = False  # built from tool dict, never streamed
+
+        # ── Receipt turn: the card is the reply ──────────────────────────
+        # A receipt-carrying food log on a card platform makes number-restating
+        # prose pure duplication. Arm the streamer so the follow-up's recap
+        # bubbles never flush; response_text gets the same scrub before freeze.
+        # Workout/water/weight logs keep their voiced confirmations (no card).
+        _receipt_turn = (
+            platform == "ios"
+            and any(tc.get("name") == "log_food"
+                    and isinstance(tc.get("input"), dict)
+                    and tc["input"].get("_receipt") is not None
+                    for tc in tool_calls)
+            and not any(tc.get("name") in ("log_exercise", "log_water",
+                                           "log_body_weight")
+                        for tc in tool_calls)
+        )
+        if _receipt_turn and _streamer:
+            _streamer.suppress_recap = True
 
         from db.queries import reload_user
         user = await reload_user(db, user.id)
@@ -917,6 +959,14 @@ async def run_turn(
     # The only legitimate post-split read of response_text is sync_pending_questions,
     # which needs the raw LLM string for hook detection. If you ever join resp.bubbles
     # back into a string, derive it from the pre-dashboard slice, not after URL append.
+    if _receipt_turn and response_text:
+        _kept = [b for b in response_text.split("|||")
+                 if not _numeric_recap_bubble(b)]
+        _scrubbed = "|||".join(b for b in _kept if b.strip())
+        if _scrubbed != response_text:
+            logger.info(f"receipt-recap scrub: {len(response_text)} → {len(_scrubbed)} chars")
+            response_text = _scrubbed or "Logged."
+
     resp = Response.from_text(response_text)
 
     # ── Streaming catch-up: emit any non-streamed response bubbles ────────────
