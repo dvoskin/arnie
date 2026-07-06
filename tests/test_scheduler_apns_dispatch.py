@@ -116,9 +116,10 @@ async def test_apple_identity_also_routes_to_apns(
 async def test_multibubble_teases_with_lead_bubble_and_contextual_title(
     patched_session_local, configured_apns, db, make_user, monkeypatch,
 ):
-    """A multi-bubble proactive (||| -split) teases the banner with the LEAD bubble
-    only (the full reply opens in-app on tap) and carries a contextual title from
-    the slot instead of a constant "Arnie"."""
+    """A multi-bubble proactive (||| -split) promotes a SHORT lead bubble to the
+    banner title (the coach's opener beats a category label) with the second
+    bubble as the teaser body; the full reply opens in-app on tap. Long leads
+    keep the contextual slot title (see test below)."""
     user = await make_user(telegram_id="ios:bubble-test")
     await upsert_device_token(db, user.id, "tok", environment="production")
 
@@ -130,8 +131,18 @@ async def test_multibubble_teases_with_lead_bubble_and_contextual_title(
         slot_key="late_morning_nolog",
     )
 
-    assert recorder.calls[0][1] == "Quick check-in"   # contextual title, not "Arnie"
-    assert recorder.calls[0][2] == "Hey Danny"         # lead bubble only
+    assert recorder.calls[0][1] == "Hey Danny"          # short opener IS the title
+    assert recorder.calls[0][2] == "Time to log lunch"  # substance as teaser body
+
+    recorder.calls.clear()
+    long_lead = ("You're at 360 cal with 1,804 left and protein is only at 20g "
+                 "so dinner needs to carry you hard tonight")
+    await proactive_scheduler._send(
+        "ios:bubble-test", long_lead + "|||Recovery is green.",
+        slot_key="late_morning_nolog",
+    )
+    assert recorder.calls[0][1] == "Quick check-in"     # long lead → slot title
+    assert recorder.calls[0][2].startswith("You're at 360 cal")
 
 
 @pytest.mark.asyncio
