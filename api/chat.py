@@ -279,6 +279,14 @@ def _display_user_text(row) -> Optional[str]:
         return raw[len("[Voice note]:"):].strip() or "🎤 Voice note"
     if raw in ("", "[start]"):
         return None  # skip system/intro rows
+    # Dashboard/card edits store an internal tag ("[edit_food_entry]",
+    # "[delete_food_entry]") as the user side — never render it as a user
+    # bubble. Arnie's one-line acknowledgment still shows, so the change is
+    # surfaced without any internal-looking text.
+    if row.source_type in ("dashboard_edit", "dashboard_delete"):
+        return None
+    if raw.startswith("[") and raw.endswith("]"):
+        return None
     return raw
 
 
