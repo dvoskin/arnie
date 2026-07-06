@@ -1,6 +1,6 @@
 """hot-path composite indexes (2026-07-06 perf sweep)
 
-Revision ID: b3c4d5e6f7a8
+Revision ID: 0a1b2c3d4e5f
 Revises: e2f3a4b5c6d7
 Create Date: 2026-07-06 00:00:00.000000
 
@@ -21,7 +21,7 @@ _migrate is SQLite-only; Postgres relies on alembic).
 from typing import Sequence, Union
 from alembic import op
 
-revision: str = 'b3c4d5e6f7a8'
+revision: str = '0a1b2c3d4e5f'
 down_revision: Union[str, Sequence[str], None] = 'e2f3a4b5c6d7'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None

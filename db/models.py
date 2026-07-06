@@ -175,7 +175,7 @@ class DailyLog(Base):
 class FoodEntry(Base):
     __tablename__ = "food_entries"
     # Day-view joins fetch entries by daily_log_id constantly; Postgres does not
-    # auto-index FK columns. Paired with alembic b3c4d5e6f7a8.
+    # auto-index FK columns. Paired with alembic 0a1b2c3d4e5f.
     __table_args__ = (
         Index("ix_food_entries_daily_log", "daily_log_id"),
     )
@@ -215,7 +215,7 @@ class FoodEntry(Base):
 
 class ExerciseEntry(Base):
     __tablename__ = "exercise_entries"
-    # Same join pattern as FoodEntry. Paired with alembic b3c4d5e6f7a8.
+    # Same join pattern as FoodEntry. Paired with alembic 0a1b2c3d4e5f.
     __table_args__ = (
         Index("ix_exercise_entries_daily_log", "daily_log_id"),
     )
@@ -254,7 +254,7 @@ class ExerciseEntry(Base):
 class BodyMetric(Base):
     __tablename__ = "body_metrics"
     # Weight-trend reads (context build every turn) filter user_id and sort by
-    # timestamp. Paired with alembic b3c4d5e6f7a8.
+    # timestamp. Paired with alembic 0a1b2c3d4e5f.
     __table_args__ = (
         Index("ix_body_metrics_user_ts", "user_id", "timestamp"),
     )
@@ -341,7 +341,7 @@ class ConversationLog(Base):
     __tablename__ = "conversation_logs"
     # The hottest read path in the app: every turn's history fetch, the
     # scheduler's per-user recency window, and proactive routing all filter
-    # user_id + order by timestamp. Paired with alembic b3c4d5e6f7a8.
+    # user_id + order by timestamp. Paired with alembic 0a1b2c3d4e5f.
     __table_args__ = (
         Index("ix_conversation_logs_user_ts", "user_id", "timestamp"),
     )
@@ -457,7 +457,7 @@ class PendingQuestion(Base):
     """
     __tablename__ = "pending_questions"
     # The re-ask loop scans open questions (answered_at IS NULL) per user every
-    # scheduler tick. Paired with alembic b3c4d5e6f7a8.
+    # scheduler tick. Paired with alembic 0a1b2c3d4e5f.
     __table_args__ = (
         Index("ix_pending_questions_user_open", "user_id", "answered_at"),
     )

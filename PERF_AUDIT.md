@@ -8,7 +8,7 @@ indexes, one blocking call, and one redundant loop.
 
 ## Shipped in this pass
 
-1. **Hot-path indexes** (alembic `b3c4d5e6f7a8` + matching model `Index()`s —
+1. **Hot-path indexes** (alembic `0a1b2c3d4e5f` + matching model `Index()`s —
    prod had NONE of these; Postgres does not auto-index FK columns):
    - `conversation_logs(user_id, timestamp)` — every turn's history window,
      scheduler recency/silence gates, proactive routing.
