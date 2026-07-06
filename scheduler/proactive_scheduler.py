@@ -972,6 +972,13 @@ def _cap_bubbles(text: str, max_bubbles: int) -> str:
     return "|||".join(bubbles[:max_bubbles])
 
 
+# One dinner-median computation per user per day: the 14-day log fetch behind
+# _eod_report_window otherwise re-runs on every 30-min tick during the report
+# hours for every user. Keyed (user_id, local_date); previous days evicted on
+# first touch of a new date so the dict never grows past the active user count.
+_eod_window_cache: dict = {}
+
+
 async def _eod_report_window(db, user_id: int, tz) -> tuple[int, int]:
     """Resolve the local hour:minute the EOD report should fire for a user.
 
@@ -980,10 +987,18 @@ async def _eod_report_window(db, user_id: int, tz) -> tuple[int, int]:
     late-dinner users don't get the recap before dinner is logged. Clamped to
     [20:30, 22:30].
 
-    No new DB queries beyond what scheduler already pulls — relies on
-    get_recent_logs's food_entries with meal_type='dinner'. Falls back to
-    (21, 0) on any error.
+    Cached per (user, local day) — today's dinner isn't in the 14-day median
+    yet (it's still being eaten), so recomputing within a day changes nothing.
+    Falls back to (21, 0) on any error.
     """
+    _today_local = datetime.now(tz).date()
+    _key = (user_id, _today_local)
+    cached = _eod_window_cache.get(_key)
+    if cached is not None:
+        return cached
+    # New day for anyone → drop stale entries so the cache stays user-count sized.
+    for k in [k for k in _eod_window_cache if k[1] != _today_local]:
+        _eod_window_cache.pop(k, None)
     try:
         from db.queries import get_recent_logs
         logs = await get_recent_logs(db, user_id, days=14)
@@ -999,14 +1014,19 @@ async def _eod_report_window(db, user_id: int, tz) -> tuple[int, int]:
                     local = mt.replace(tzinfo=_tz.utc).astimezone(tz)
                     dinner_hours.append(local.hour * 60 + local.minute)
         if not dinner_hours:
+            _eod_window_cache[_key] = (21, 0)
             return 21, 0
         dinner_hours.sort()
         median_min = dinner_hours[len(dinner_hours) // 2]
         target_min = median_min + 30
         # Clamp to [20:30, 22:30]
         target_min = max(20 * 60 + 30, min(22 * 60 + 30, target_min))
-        return target_min // 60, target_min % 60
+        window = (target_min // 60, target_min % 60)
+        _eod_window_cache[_key] = window
+        return window
     except Exception:
+        # Errors are NOT cached — a transient DB blip shouldn't pin the
+        # default window for the rest of the day.
         return 21, 0
 
 
