@@ -64,6 +64,7 @@ async def update_food(
         # spell out what actually moved when nutrition fields changed.
         arnie_message = _build_update_message(before, updated, changes)
         receipt = await _fresh_receipt(db, user, updated)
+        _bust_briefing(user.id)
         if arnie_message:
             await log_conversation(
                 db, user.id,
@@ -110,6 +111,7 @@ async def delete_food(
 
         name = before.get("name") or "that entry"
         arnie_message = f"Removed {name} from today's log."
+        _bust_briefing(user.id)
         await log_conversation(
             db, user.id,
             raw_message="[delete_food_entry]",
@@ -123,6 +125,17 @@ async def delete_food(
 
 
 # ── helpers ─────────────────────────────────────────────────────────────────
+
+def _bust_briefing(user_id: int) -> None:
+    """A dashboard/card edit changes the day the coach brief describes — drop
+    the cached briefing so the next Coach open (and chat context block)
+    rebuilds from the corrected log. Never raises."""
+    try:
+        from api.insights import invalidate_briefing
+        invalidate_briefing(user_id)
+    except Exception:
+        pass
+
 
 async def _snapshot_entry(db, entry_id: int) -> Optional[dict]:
     """Snapshot the BEFORE state so the Arnie confirmation can spell out the
