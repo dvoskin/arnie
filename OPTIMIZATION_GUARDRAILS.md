@@ -43,6 +43,12 @@ regressed.
 - **`_eod_report_window` clamps to [20:30, 22:30]** even past a user's stored
   sleep_time — known, flagged in PROACTIVE_AUDIT.md recommendation #3; change
   it deliberately, not as a drive-by.
+- **Proactive sends to iOS users with NO live push token are NOT wasted** —
+  the message is logged to conversation_logs and shows in the in-app chat
+  thread on next open; only the banner is lost. Do not "optimize" by gating
+  nudge generation on token presence — that silently deletes in-app delivery
+  for permission-declined users (Masha, the 6/30 test wave). The right fix is
+  client-side: re-ask notification permission.
 
 ## Data / schema
 
