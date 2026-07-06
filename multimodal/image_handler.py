@@ -122,7 +122,14 @@ CONFIDENCE: 0.0-1.0
 [/FOOD_LOG]
 
 Pull brand and flavor VERBATIM from the package — do not paraphrase ("a pistachio shake").
-If a macro is not visible, write "?" but ALWAYS fill brand, product name/flavor, serving size — downstream enrichment uses these.
+BRAND ONLY IF YOU CAN READ IT. Name a brand ONLY when its text is actually
+legible in this photo. If the brand isn't readable (blurry, turned away,
+unbranded packaging), write a generic descriptor instead ("greek yogurt
+single-serve cup", "protein bar") and set CONFIDENCE <= 0.6 — NEVER infer a
+brand from shape, color, or what the product "looks like". A guessed brand is
+worse than none: downstream enrichment looks up the named brand's label and
+logs the WRONG product's macros with high confidence.
+If a macro is not visible, write "?" but fill product name/flavor and serving size — downstream enrichment uses these.
 Set CONFIDENCE >= 0.9 if label is fully legible; lower if blurry/partial.
 """
 

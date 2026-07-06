@@ -812,7 +812,12 @@ async def build_context(user: User, today_log: Optional[DailyLog], db,
             f"[CURRENT TIME] User's timezone is unknown, so local time is uncertain. "
             f"Server time is {_now.strftime('%A, %B %-d, %Y %-I:%M %p')} UTC — use this "
             f"exact date and weekday together; never convert a date to a weekday yourself. "
-            f"If asked the time, say you're not sure of their timezone and ask what city they're in. "
+            f"Because their clock is a blind spot, RECOVER it the moment timing matters "
+            f"to the conversation — they plan a workout ('tonight', 'in the evening'), "
+            f"want reminders or check-ins, mention a meal by time of day, or ask the "
+            f"time: ask once what city they're in (or what time it is for them) and "
+            f"silently store it via update_profile(fields={{\"city\": \"<their city>\"}}) "
+            f"so every future answer is time-aware. "
             f"Do NOT state a specific local time as fact."
         )
 
