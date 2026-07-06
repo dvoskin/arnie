@@ -60,7 +60,7 @@ def test_over_calories_protein_hit_is_graceful():
     out = r(calories=520, protein=45, total_cal=2300, total_protein=185, local_hour=20)
     assert out["remaining_cal"] == -140
     assert out["remaining_protein"] == -5
-    assert out["verdict"] == "Calories closed over, but protein made it."
+    assert out["verdict"] == "Day closed. Protein made it."
 
 
 def test_over_calories_protein_short_gets_light_next():

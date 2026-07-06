@@ -98,7 +98,7 @@ def build_receipt(
         verdict = "Logged as a range. Portion size would tighten this."
     elif rem_c is not None and rem_c < 0:
         if rem_p is not None and rem_p <= 0:
-            verdict = "Calories closed over, but protein made it."
+            verdict = "Day closed. Protein made it."
         else:
             verdict = "Over target. Keep the rest clean."
             if local_hour is not None and local_hour < 20:
