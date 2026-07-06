@@ -78,6 +78,14 @@ def build_receipt(
     protein_dense = density >= 0.30 and protein >= 15
     efficient = density >= 0.45 and calories <= 300
     rem_p_before = (rem_p + int(round(protein))) if rem_p is not None else None
+    rem_c_before = (rem_c + int(round(calories))) if rem_c is not None else None
+    # A banked win is only worth announcing ONCE — after protein is hit (or
+    # the day closed over), every further log repeating it reads like a
+    # broken record. Repeat states fall to the quiet default the client hides.
+    newly_hit = (rem_p is not None and rem_p <= 0
+                 and rem_p_before is not None and rem_p_before > 0)
+    newly_over = (rem_c is not None and rem_c < 0
+                  and rem_c_before is not None and rem_c_before >= 0)
     closes_gap = (
         rem_p is not None and rem_p_before is not None
         and rem_p_before > 45 and rem_p <= 25
@@ -98,13 +106,16 @@ def build_receipt(
         verdict = "Logged as a range. Portion size would tighten this."
     elif rem_c is not None and rem_c < 0:
         if rem_p is not None and rem_p <= 0:
-            verdict = "Day closed. Protein made it."
+            verdict = ("Day closed. Protein made it."
+                       if newly_hit or newly_over
+                       else "On pace. Nothing to correct.")
         else:
             verdict = "Over target. Keep the rest clean."
             if local_hour is not None and local_hour < 20:
                 nxt = "Next: keep the rest light"
     elif rem_p is not None and rem_p <= 0:
-        verdict = "Protein handled. Control calories."
+        verdict = ("Protein handled. Control calories."
+                   if newly_hit else "On pace. Nothing to correct.")
     elif closes_gap:
         verdict = "One more protein hit gets you there."
     elif rem_c is not None and 0 < rem_c <= 250:

@@ -153,6 +153,12 @@ def _logged_entry_card(name: str, inp: dict) -> Optional[dict]:
         receipt = inp.get("_receipt")
         if isinstance(receipt, dict):
             payload.update(receipt)
+        # The model's own coach read outranks the deterministic verdict —
+        # varied and contextual beats canned. Guarded: short, and no digits
+        # (a number here could mismatch the card's own math).
+        coach = (inp.get("coach_read") or "").strip()
+        if coach and len(coach) <= 90 and not any(ch.isdigit() for ch in coach):
+            payload["verdict"] = coach
         return {"type": "macro_card", "payload": payload}
     if name == "log_exercise":
         if not _WORKOUT_CARD_ENABLED:

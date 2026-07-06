@@ -74,6 +74,18 @@ def test_protein_hit_calories_open_stays_flexible():
     assert out["verdict"] == "Protein handled. Control calories."
 
 
+def test_protein_already_hit_goes_quiet():
+    # Protein was banked BEFORE this snack — announcing it again is noise.
+    out = r(calories=200, protein=8, total_cal=1000, total_protein=195, local_hour=17)
+    assert out["verdict"] == "On pace. Nothing to correct."
+
+
+def test_day_already_closed_goes_quiet():
+    # Both calories over and protein hit before this log — nothing new to say.
+    out = r(calories=150, protein=5, total_cal=2500, total_protein=200, local_hour=21)
+    assert out["verdict"] == "On pace. Nothing to correct."
+
+
 # ── 6. vague estimate ───────────────────────────────────────────────────────
 
 def test_vague_estimate_shows_ranges_not_precision():
