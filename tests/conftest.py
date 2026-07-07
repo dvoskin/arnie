@@ -52,30 +52,6 @@ async def db(engine):
         yield session
 
 
-# ── Known-pending tests (keep `main` green for the CI deploy-gate) ─────────────
-# These pin a compound-meal PROMPT feature a parallel workstream built but has NOT
-# shipped into the live system prompt. They fail on main by design until it lands.
-# Non-strict xfail keeps the suite green so the deploy gate stays meaningful; when
-# the feature ships they'll xpass and this list can be deleted.
-_UNSHIPPED_COMPOUND_MEAL_TESTS = {
-    "test_prompt_has_compound_vs_multi_dish_rule",
-    "test_prompt_directs_one_log_food_for_compound_dish",
-    "test_prompt_directs_breakdown_into_quantity_field",
-    "test_prompt_has_partial_revision_rule",
-    "test_prompt_directs_quantity_update_on_partial_revision",
-}
-
-
-def pytest_collection_modifyitems(config, items):
-    mark = pytest.mark.xfail(
-        reason="compound-meal prompt feature not yet shipped to the live prompt",
-        strict=False,
-    )
-    for item in items:
-        if item.name in _UNSHIPPED_COMPOUND_MEAL_TESTS:
-            item.add_marker(mark)
-
-
 @pytest_asyncio.fixture
 async def make_user(db):
     """Factory: create + persist a User with sensible defaults; returns the row."""

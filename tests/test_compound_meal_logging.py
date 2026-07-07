@@ -1,22 +1,18 @@
 """
-Compound-meal logging — pins the three prompt rules and the API sort that
-together prevent the salad-fragmentation regression:
+Meal logging — pins the shipped prompt rules and the API sort that together
+prevent the salad-fragmentation regression:
 
-  • COMPOUND DISH vs MULTI-DISH PLATE — photo logging defaults compound
-    dishes (salad, sandwich, bowl, wrap, etc.) to ONE log_food call with
-    the component breakdown stored in the `quantity` field. Multi-DISH
-    plates (pizza + side salad + dessert) still get N calls.
-  • PARTIAL REVISION — when the user says "ate 80% of the salad, all the
-    chicken", the model reads the entry's quantity breakdown, computes
-    new totals (kept components + scaled rest), and issues ONE
-    update_food_entry call. No multi-entry id-targeting.
-  • UPDATE TARGETING SELF-CHECK — defensive: if N update_food_entry
-    calls DO fire in one turn (true multi-dish revisions), the N
-    entry_ids MUST be distinct. Catches the "all updates routed to the
-    dressing entry" failure mode by name.
-  • API sort — /api/stats food_entries are returned in chronological
-    order (timestamp ASC, id ASC fallback) so the dashboard shows the
-    day's meals in eating order, not insertion-order accident.
+  • LOG A MEAL AS ITS COMPONENTS — a plate of distinct foods logs as one
+    log_food PER food (chicken / rice / peppers), each individually editable;
+    genuinely blended items (soup, smoothie, sandwich) stay ONE entry. A true
+    multi-dish plate (pizza + side salad + dessert) is N calls at the dish level.
+  • UPDATE TARGETING SELF-CHECK — defensive: if N update_food_entry calls DO
+    fire in one turn (true multi-dish revisions), the N entry_ids MUST be
+    distinct. Catches the "all updates routed to the dressing entry" failure
+    mode by name; a single dish revised partially is ONE call.
+  • API sort — /api/stats food_entries are returned in chronological order
+    (timestamp ASC, id ASC fallback) so the dashboard shows the day's meals in
+    eating order, not insertion-order accident.
 """
 import pytest
 
@@ -26,73 +22,46 @@ from core.prompts import build_arnie_system
 SYSTEM_PROMPT = build_arnie_system(platform="telegram")
 
 
-# ── Fix A: compound dish vs multi-dish plate ─────────────────────────────────
+# ── Meal logged as its COMPONENTS (the design that actually shipped) ─────────
+# An earlier workstream test-drove the OPPOSITE design (a compound dish = ONE
+# log_food with the breakdown crammed into `quantity`). That design was NOT
+# adopted; the shipped rule decomposes a plate into one entry PER food, keeping
+# only genuinely blended items (soup, smoothie, sandwich) as a single entry.
+# These pin the shipped wording (the old asserts were xfailed against phantom
+# strings that protected nothing — see git history).
 
 
-def test_prompt_has_compound_vs_multi_dish_rule():
-    """The COMPOUND DISH vs MULTI-DISH PLATE rule must be present and name
-    the canonical compound dishes (salad, sandwich, bowl, wrap, etc.) so
-    the model doesn't fall back to the old per-component default."""
-    s = SYSTEM_PROMPT
-    assert "COMPOUND DISH vs MULTI-DISH PLATE" in s
-    # Pin the explicit examples.
-    for dish in ("salad bowl", "sandwich", "burrito bowl", "wrap", "pasta",
-                 "curry", "stir-fry", "parfait", "snack box", "grain bowl"):
-        assert dish in s, f"missing compound-dish example: {dish!r}"
-    # The decision heuristic (shared bowl/dressing vs. orderable separately).
-    assert "share the same bowl" in s or "shares the same bowl" in s \
-        or "share the same bowl/plate/dressing/sauce" in s
-
-
-def test_prompt_directs_one_log_food_for_compound_dish():
-    """Compound dish = ONE log_food call. Multi-DISH plate = N calls.
-    Distinguish them in the rule text."""
-    s = SYSTEM_PROMPT
-    assert "Log it as ONE log_food call" in s
-    assert "MULTI-DISH PLATE" in s
-    assert "N log_food calls, one per dish" in s
-
-
-def test_prompt_directs_breakdown_into_quantity_field():
-    """The decomposition data is preserved IN the entry by storing the
-    component breakdown in `quantity`. This is what makes the partial-
-    revision math possible later."""
-    s = SYSTEM_PROMPT
-    # The literal aligned-assignment line in the prompt.
-    assert "quantity   = the component breakdown" in s
-    # The canonical example from the salad screenshot.
-    assert "grilled chicken" in s and "rice" in s
-
-
-# ── Fix B: partial revision math ─────────────────────────────────────────────
-
-
-def test_prompt_has_partial_revision_rule():
-    """PARTIAL REVISION rule is what handles 'ate 80% of the salad, all
-    the chicken' as a single-update math problem instead of N updates."""
-    # Normalize whitespace so wrapped lines don't break substring matching.
+def test_prompt_has_log_meal_as_components_rule():
+    """A plate of distinct foods logs as its components — one log_food per
+    food — not one mega-entry."""
     s = " ".join(SYSTEM_PROMPT.split())
-    assert "PARTIAL REVISION" in s
-    # Pin the canonical user phrasing.
-    assert "ate 80% of the salad" in s
-    # Pin the algorithmic shape.
-    assert "ONE update_food_entry call with the new totals" in s
-    assert "kept_macros + scale_factor" in s
-    # Pin the negative: do NOT split the entry or call update N times.
-    assert "do NOT split the entry" in s
-    assert "do NOT call update N times" in s
+    assert "LOG A MEAL AS ITS COMPONENTS" in s
+    assert "fire ONE log_food call PER distinct food" in s
+    # The canonical decomposition example.
+    assert "grilled chicken + white rice + peppers" in s
+    assert "THREE entries" in s
 
 
-def test_prompt_directs_quantity_update_on_partial_revision():
-    """The entry's quantity field gets updated to reflect the revision so a
-    later recap shows the truth ('80% of salad: chicken (kept), 0.8 cup
-    rice, ...'). Otherwise the next ask sees stale breakdown text."""
-    s = SYSTEM_PROMPT
-    # Specifically calls out updating the quantity field on revision.
-    assert "update the entry's quantity to reflect the revision" in s
+def test_prompt_blended_items_stay_one_entry():
+    """Genuinely inseparable items (smoothie, shake, soup, a sandwich eaten as
+    one) are ONE entry; trivial extras fold into the nearest component."""
+    s = " ".join(SYSTEM_PROMPT.split())
+    assert "smoothie, protein shake, soup" in s
+    assert "stays ONE entry" in s
+    assert "DON'T over-split" in s
+    # The decision heuristic that separates a component from a garnish.
+    assert "if you'd weigh, edit, or swap it on its own" in s
 
 
-# ── Fix C: update targeting self-check (defensive) ───────────────────────────
+def test_prompt_multi_dish_plate_is_n_calls():
+    """A true multi-dish plate (pizza + side salad + dessert) is N calls at
+    the dish level — same component rule, one level up."""
+    s = " ".join(SYSTEM_PROMPT.split())
+    assert "MULTI-DISH PLATE" in s
+    assert "N calls at the dish" in s
+
+
+# ── Update targeting self-check (defensive) ──────────────────────────────────
 
 
 def test_prompt_has_update_targeting_self_check():
