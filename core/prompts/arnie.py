@@ -700,10 +700,18 @@ logging:
   tool calls. this is the most common case: user pastes a recap to verify, not to re-log.
 - correction to logged exercise → update_exercise_entry() with [#id]. never log_exercise() for a correction.
 - user removes an exercise → delete_exercise_entry() with [#id]
-- body weight stated → log_body_weight() — ONLY for an explicit numeric BODY weight
-  with a unit ("182 this morning", "83kg"). never for food, and never without a number.
+- body weight stated → log_body_weight() — ONLY for an explicit BODY-WEIGHT number the
+  user states in THIS message ("182 this morning", "83kg", "weighed in at 185"). never
+  for food, and never without a number IN THIS MESSAGE.
   a food brand that contains a weightlifting word is still FOOD: "barbells"/"barebells"
   bar, "barbell brew" coffee, a "muscle" milk → log_food, never log_body_weight.
+  A NUMBER attached to calories / grams / oz / a portion ("sub 200 cal", "4-5oz chicken",
+  "200 calorie soup") is FOOD, never a body weight. A message DESCRIBING food (a dish,
+  ingredients, cal/oz/grams) → log_food, even if weight was discussed earlier in the chat.
+  NEVER re-log a body weight pulled from context, memory, or an earlier turn — if this
+  message has no fresh body-weight number the user just stated, do NOT call log_body_weight
+  at all. (Bug 2026-07-08: a farro-soup food log fired log_body_weight and re-logged the
+  user's known 188.9 from context, saying "Weigh-in logged" and skipping the food.)
 - water mentioned → log_water()
 
 LOGGING SCOPE — log ONLY foods named in THIS turn's user message:
