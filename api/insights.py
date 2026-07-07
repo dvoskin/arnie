@@ -21,13 +21,23 @@ _TTL = 10800  # 3 hours — analysis stays stable until it auto-refreshes (or a 
 _briefing_refreshing: set = set()
 
 
-def invalidate_briefing(user_id: int) -> None:
-    """Drop a user's cached briefing so the next open regenerates with fresh
-    context. Called after a chat turn so a plan the client JUST stated ('with
-    family tonight') is reflected immediately, not up to 3h later. Cheap + safe:
-    iOS paints its own last-good brief instantly and swaps in the fresh one, so a
-    cold regen never blocks the UI."""
-    _CACHE.pop((user_id, "__briefing__"), None)
+def _local_today_iso(stats: dict) -> str:
+    """The user's LOCAL current date as YYYY-MM-DD. Prefers stats['viewing_date']
+    (built via _user_today(user.timezone) upstream); only falls back to the
+    server's UTC date if it's absent or not a real ISO date. Used to partition
+    'past days' vs the still-in-progress current day in the weekly + briefing
+    summaries — the daily summary already uses viewing_date directly."""
+    from datetime import date as _d
+    vd = stats.get("viewing_date")
+    if isinstance(vd, str) and len(vd) == 10 and vd[4] == "-" and vd[7] == "-":
+        return vd
+    return _d.today().isoformat()
+
+
+# NOTE: invalidate_briefing lives ONCE, lower in this file (it clears the
+# briefing AND per-date insight caches). A weaker duplicate that used to sit
+# here — popping only the briefing key — was dead (the later def shadowed it at
+# import) and a live trap; removed in the 2026-07-07 audit.
 
 
 def _build_summary(stats: dict) -> str:
@@ -202,11 +212,13 @@ def _build_week_summary(stats: dict) -> str:
     tgt_cal = targets.get("calories") or 0
     tgt_pro = targets.get("protein") or 0
 
-    # Past days only — today's totals are still moving until bedtime. The
-    # history list is already sorted by date ascending; the last entry is today
-    # (or empty if the user hasn't logged today). Drop today via date comparison.
+    # Past days only — today's totals are still moving until bedtime. Use the
+    # user's LOCAL "today" (viewing_date), NOT the server's UTC date: for a user
+    # west of UTC logging in their evening, server-date is already tomorrow, so
+    # their in-progress day would be misfiled as a completed past day and drag
+    # the weekly averages down. The daily summary already uses viewing_date.
     from datetime import date as _date
-    today_iso = _date.today().isoformat()
+    today_iso = _local_today_iso(stats)
     past = [h for h in history if h.get("date") and h["date"] < today_iso]
     last7 = past[-7:]
     lines = ["ANALYSIS PERIOD: last 7 logged days (analyse WEEKLY trends, not one day)",
@@ -403,7 +415,10 @@ def _build_briefing_summary(stats: dict) -> str:
     health = stats.get("health") or []
     tgt_cal = targets.get("calories") or 0
     tgt_pro = targets.get("protein") or 0
-    today_iso = _date.today().isoformat()
+    # User-local today (see _build_week_summary) — the briefing's LOGGED-DAYS
+    # partition + weekday must match the user's clock, not the server's UTC date,
+    # or an evening user sees today as both "finished" and "in progress."
+    today_iso = _local_today_iso(stats)
 
     L = [f"CLIENT: {user.get('name','')} — goal: {user.get('goal','')}"]
     cw, gw = user.get("current_weight_lbs"), user.get("goal_weight_lbs")

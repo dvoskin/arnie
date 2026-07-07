@@ -1426,7 +1426,7 @@ async def _run_reminders():
                 wake_h, wake_m = int(wake.split(":")[0]), int(wake.split(":")[1])
                 morn_h, morn_m = wake_h, wake_m + 15
                 if morn_m >= 60:
-                    morn_h += 1
+                    morn_h = (morn_h + 1) % 24   # wrap: wake 23:45-23:59 → 0:00, else morn_h=24 never matches hour (0-23)
                     morn_m -= 60
 
                 if hour == morn_h and 0 <= minute - morn_m < 30 and _freq_ok("morning_checkin"):

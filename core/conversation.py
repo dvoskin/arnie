@@ -668,11 +668,17 @@ async def run_turn(
                         "real read + a forward beat."
                     )
                     try:
+                        # chat_follow_up's signature is (messages,
+                        # raw_assistant_content, tool_calls, tool_results,
+                        # system, …) and it returns a STR. The prior call passed
+                        # system in position 2 and did .get("text") on a string,
+                        # so this whole quick-log voicing retry AlwaysErrored
+                        # into the bare except — dead since it shipped. Fixed.
                         _retry = await chat_follow_up(
-                            messages, system + _directive,
-                            raw_content, tool_results, max_tokens=200,
+                            messages, raw_content, tool_calls, tool_results,
+                            system + _directive, max_tokens=200,
                         )
-                        response_text = (_retry.get("text") or "").strip()
+                        response_text = (_retry or "").strip()
                     except Exception:
                         pass
                 if not response_text:

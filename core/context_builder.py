@@ -728,10 +728,6 @@ async def build_context(user: User, today_log: Optional[DailyLog], db,
     # seconds of a store_attribute call). The legacy markdown profile and freeform
     # arnie_memory.md are kept as read-only fallbacks for users created before the
     # attribute store became authoritative; new writes do not touch them.
-    from memory.profile_manager import read_profile
-    profile = await read_profile(user.telegram_id)
-    raw_notes = await read_memory(user.telegram_id)
-
     # AI profile — all active attributes injected at the top of context as
     # the central source of truth for what Arnie knows about this user.
     from memory.attribute_store import get_attributes_for_context
@@ -739,6 +735,16 @@ async def build_context(user: User, today_log: Optional[DailyLog], db,
         attr_block = await get_attributes_for_context(db, user.id, user_message or "")
     except Exception:
         attr_block = ""
+
+    # Legacy markdown profile + notes are ONLY injected when the attribute store
+    # is empty (older users predating it). Read them lazily behind that gate —
+    # for every modern user (the growing majority) these two aiofiles opens
+    # produced strings that were immediately discarded, pure per-turn waste.
+    profile, raw_notes = "", ""
+    if not attr_block:
+        from memory.profile_manager import read_profile
+        profile = await read_profile(user.telegram_id)
+        raw_notes = await read_memory(user.telegram_id)
 
     # T2.2 — Pending food clarifications (open questions Arnie asked but the
     # user hasn't answered yet). Freshness window scales with food_logging_mode:

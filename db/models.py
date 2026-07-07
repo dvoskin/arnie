@@ -70,7 +70,7 @@ class User(Base):
     whoop_last_notified = Column(String)            # date string of last whoop recovery ping
     weekly_recap_week = Column(String)              # iso year-week of last weekly recap sent
     # Cross-platform continuity — this channel resolves to a canonical user
-    linked_to_user_id = Column(Integer)             # if set, this identity points at another user
+    linked_to_user_id = Column(Integer, index=True)  # canonical pointer; indexed — filtered 2×/turn (context build) + history + every scheduler tick (alembic ee66ff770011)
     link_code = Column(String)                      # active one-time code this user generated
     link_code_expires = Column(DateTime)            # when that code expires
     # Apple Sign-in subject. Set when the iOS app exchanges an Apple identity

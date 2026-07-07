@@ -172,3 +172,46 @@ async def test_empty_post_rejected(patched, make_user):
     beta = [g for g in gs if g.kind == "open"][0]
     with pytest.raises(HTTPException):
         await post_message(beta.id, PostBody(text="   "), identity="ios:E1")
+
+
+@pytest.mark.asyncio
+async def test_feedback_reply_cannot_leak_others_messages(patched, make_user, monkeypatch):
+    """H2 regression: a non-admin must NOT be able to reply-to another member's
+    Feedback message (the reply echoes the quoted text+sender). Iterating
+    reply_to_id used to leak the private line."""
+    ann = await make_user(telegram_id="ios:FBR1", name="Ann")
+    bob = await make_user(telegram_id="ios:FBR2", name="Bob")
+    admin = await make_user(telegram_id="ios:FBRADMIN", name="Danny")
+    monkeypatch.setenv("GROUP_ADMIN_USER_IDS", str(admin.id))
+    gs = await list_groups(identity="ios:FBR1")
+    fb = [g for g in gs if g.kind == "feedback"][0]
+    secret = await post_message(fb.id, PostBody(text="my private bug"), identity="ios:FBR1")
+
+    from fastapi import HTTPException
+    # Bob (non-admin) cannot reply-to Ann's message → 404, no leak.
+    with pytest.raises(HTTPException):
+        await post_message(fb.id, PostBody(text="probe", reply_to_id=secret.id),
+                           identity="ios:FBR2")
+    # Admin CAN reply-to it.
+    r = await post_message(fb.id, PostBody(text="on it", reply_to_id=secret.id),
+                           identity="ios:FBRADMIN")
+    assert r.reply_to and r.reply_to.excerpt.startswith("my private bug")
+
+
+@pytest.mark.asyncio
+async def test_feedback_reaction_cannot_probe_others_messages(patched, make_user, monkeypatch):
+    """M1 regression: reacting to a hidden Feedback message leaks its existence."""
+    from api.groups import ReactBody, toggle_reaction
+    from fastapi import HTTPException
+    ann = await make_user(telegram_id="ios:FBX1", name="Ann")
+    bob = await make_user(telegram_id="ios:FBX2", name="Bob")
+    admin = await make_user(telegram_id="ios:FBXADMIN", name="Danny")
+    monkeypatch.setenv("GROUP_ADMIN_USER_IDS", str(admin.id))
+    gs = await list_groups(identity="ios:FBX1")
+    fb = [g for g in gs if g.kind == "feedback"][0]
+    secret = await post_message(fb.id, PostBody(text="private note"), identity="ios:FBX1")
+    with pytest.raises(HTTPException):
+        await toggle_reaction(fb.id, secret.id, ReactBody(emoji="❤️"), identity="ios:FBX2")
+    # Owner can react to their own.
+    assert (await toggle_reaction(fb.id, secret.id, ReactBody(emoji="❤️"),
+                                  identity="ios:FBX1"))["ok"]

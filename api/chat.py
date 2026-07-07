@@ -81,7 +81,11 @@ class ChatRequest(BaseModel):
 
 
 class PhotoChatRequest(BaseModel):
-    image_base64: str
+    # Cap the base64 payload (~13.3MB base64 ≈ 10MB decoded) so an oversized or
+    # malicious body is rejected by Pydantic BEFORE it's fully decoded into
+    # memory + sent to the vision model. Client photos downscale to a few hundred
+    # KB, so this only ever trips abuse.
+    image_base64: str = Field(..., max_length=13_400_000)
     caption: str = ""
 
     @field_validator("image_base64")
@@ -94,7 +98,9 @@ class PhotoChatRequest(BaseModel):
 
 
 class VoiceChatRequest(BaseModel):
-    audio_base64: str
+    # ~27MB base64 ≈ 20MB decoded — generous for a voice note, rejects abuse
+    # before Whisper transcription runs on it.
+    audio_base64: str = Field(..., max_length=27_000_000)
     filename: str = "voice.m4a"
 
     @field_validator("audio_base64")
@@ -308,6 +314,10 @@ def _display_user_text(row) -> Optional[str]:
 
 @router.get("/chat/history")
 async def chat_history(identity: str = Depends(current_identity), limit: int = 40):
+    # Clamp the client-supplied limit — an unbounded value forces a large ordered
+    # scan + full-thread serialization across all linked identities (mirrors the
+    # groups endpoint's cap).
+    limit = max(1, min(limit, 200))
     """Recent conversation as a flat, chronological message list so the app can
     restore the thread on launch. Each stored turn → one user message (cleaned) +
     its Arnie bubbles (split on the ||| separator). Each message carries the

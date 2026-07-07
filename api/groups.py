@@ -153,6 +153,17 @@ async def _get_group(db, group_id: int) -> Group:
     return g
 
 
+def _can_see_message(group, msg, user_id: int, admins: set) -> bool:
+    """The feedback-visibility rule, in one place: in a feedback group a
+    non-admin may only touch/see their OWN messages; everywhere else, anyone in
+    the group sees everything. Applied to every path that reveals another
+    message's content or existence — read, image, reply-quote, reaction — so a
+    member can't iterate ids to read or probe the private feedback line."""
+    if group.kind == "feedback" and user_id not in admins and msg.user_id != user_id:
+        return False
+    return True
+
+
 async def _ensure_member(db, group_id: int, user_id: int) -> None:
     exists = (await db.execute(
         select(GroupMember.id).where(
@@ -195,8 +206,20 @@ async def get_messages(
         group = await _get_group(db, group_id)
         admins = _admin_ids()
 
+        # Explicit columns — NEVER select the whole entity: image_b64 is a
+        # Text column holding up to ~2MB of base64 per photo, and the page only
+        # needs a has_image boolean (the image loads lazily via /image). Pulling
+        # the entity dragged every blob through Postgres → app → discard on every
+        # poll (multi-MB per fetch at photo volume). This keeps the page in KB.
         q = (
-            select(GroupMessage, User.name, User.id, User.avatar_emoji)
+            select(GroupMessage.id.label("id"),
+                   GroupMessage.text.label("text"),
+                   GroupMessage.reply_to_id.label("reply_to_id"),
+                   GroupMessage.created_at.label("created_at"),
+                   GroupMessage.image_b64.isnot(None).label("has_image"),
+                   User.name.label("name"),
+                   User.id.label("uid"),
+                   User.avatar_emoji.label("avatar"))
             .join(User, User.id == GroupMessage.user_id)
             .where(GroupMessage.group_id == group_id)
         )
@@ -248,7 +271,7 @@ async def _sender_streaks(db, user_ids: set) -> dict:
 async def _hydrate(db, rows, viewer_id: int, admins: set) -> List[MessageOut]:
     """Attach reactions (emoji → count + mine), reply quotes, and sender
     streaks to a message page in THREE set queries — never per-message."""
-    ids = [m.id for m, *_ in rows]
+    ids = [r.id for r in rows]
     reactions: dict = {}
     if ids:
         for mid, emoji, uid in (await db.execute(
@@ -262,9 +285,9 @@ async def _hydrate(db, rows, viewer_id: int, admins: set) -> List[MessageOut]:
             if uid == viewer_id:
                 agg["mine"] = True
 
-    streaks = await _sender_streaks(db, {uid for _, _, uid, _ in rows})
+    streaks = await _sender_streaks(db, {r.uid for r in rows})
 
-    reply_ids = [m.reply_to_id for m, *_ in rows if m.reply_to_id]
+    reply_ids = [r.reply_to_id for r in rows if r.reply_to_id]
     replies: dict = {}
     if reply_ids:
         for rid, rtext, rname in (await db.execute(
@@ -277,23 +300,23 @@ async def _hydrate(db, rows, viewer_id: int, admins: set) -> List[MessageOut]:
 
     return [
         MessageOut(
-            id=m.id,
-            sender_name=(name or "Member"),
-            sender_avatar=avatar,
-            sender_streak=streaks.get(uid, 0),
-            text=m.text,
-            has_image=bool(m.image_b64),
-            created_at=(m.created_at.isoformat() + "Z") if m.created_at else "",
-            mine=(uid == viewer_id),
-            is_admin=(uid in admins),
+            id=r.id,
+            sender_name=(r.name or "Member"),
+            sender_avatar=r.avatar,
+            sender_streak=streaks.get(r.uid, 0),
+            text=r.text,
+            has_image=bool(r.has_image),
+            created_at=(r.created_at.isoformat() + "Z") if r.created_at else "",
+            mine=(r.uid == viewer_id),
+            is_admin=(r.uid in admins),
             reactions=[
                 ReactionOut(emoji=e, count=a["count"], mine=a["mine"])
-                for e, a in sorted(reactions.get(m.id, {}).items(),
+                for e, a in sorted(reactions.get(r.id, {}).items(),
                                    key=lambda kv: -kv[1]["count"])
             ],
-            reply_to=replies.get(m.reply_to_id) if m.reply_to_id else None,
+            reply_to=replies.get(r.reply_to_id) if r.reply_to_id else None,
         )
-        for m, name, uid, avatar in rows
+        for r in rows
     ]
 
 
@@ -305,7 +328,7 @@ async def post_message(
 ) -> MessageOut:
     async with AsyncSessionLocal() as db:
         user = await resolve_user(db, identity)
-        await _get_group(db, group_id)
+        group = await _get_group(db, group_id)
         # Posting implies membership — auto-join keeps the flow one-tap smooth.
         await _ensure_member(db, group_id, user.id)
         if body.is_empty:
@@ -317,7 +340,11 @@ async def post_message(
                     GroupMessage.id == body.reply_to_id,
                     GroupMessage.group_id == group_id)
             )).scalar_one_or_none()
-            if not reply_to:
+            # A reply echoes the quoted text + sender back — so a member must
+            # not be able to reply-to a message they can't see (else they'd
+            # iterate reply_to_id to read others' private feedback). Same 404
+            # as a missing message: don't confirm existence.
+            if not reply_to or not _can_see_message(group, reply_to, user.id, _admin_ids()):
                 raise HTTPException(status_code=404, detail="Replied-to message not found")
         msg = GroupMessage(group_id=group_id, user_id=user.id,
                            text=body.text.strip(),
@@ -357,11 +384,14 @@ async def toggle_reaction(
     from sqlalchemy import delete as _delete
     async with AsyncSessionLocal() as db:
         user = await resolve_user(db, identity)
+        group = await _get_group(db, group_id)
         msg = (await db.execute(
             select(GroupMessage).where(
                 GroupMessage.id == message_id, GroupMessage.group_id == group_id)
         )).scalar_one_or_none()
-        if not msg:
+        # Reacting to a hidden feedback message would leak its existence (count/
+        # mine deltas) — gate it by the same visibility rule.
+        if not msg or not _can_see_message(group, msg, user.id, _admin_ids()):
             raise HTTPException(status_code=404, detail="Message not found")
         existing = (await db.execute(
             select(GroupMessageReaction.id).where(
@@ -396,10 +426,8 @@ async def get_message_image(
             select(GroupMessage).where(
                 GroupMessage.id == message_id, GroupMessage.group_id == group_id)
         )).scalar_one_or_none()
-        if not msg or not msg.image_b64:
-            raise HTTPException(status_code=404, detail="No image")
-        if group.kind == "feedback" and user.id not in _admin_ids() \
-                and msg.user_id != user.id:
+        if not msg or not msg.image_b64 \
+                or not _can_see_message(group, msg, user.id, _admin_ids()):
             raise HTTPException(status_code=404, detail="No image")
         return {"image_b64": msg.image_b64}
 

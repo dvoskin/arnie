@@ -222,6 +222,9 @@ async def test_light_user_conversation_hook_does_not_fire(freq_env):
 
 
 @pytest.mark.asyncio
+@freeze_time("2026-06-15 16:00:00")   # 4pm — inside the wake/sleep window the
+# conversation-hook loop now respects (added 2026-07-06). Without a frozen clock
+# this test fails whenever the suite runs outside 9am-9pm (e.g. overnight CI).
 async def test_moderate_user_conversation_hook_fires(freq_env):
     """At 'moderate' and above, hook re-asks do fire — the gate is selective."""
     PS = freq_env["PS"]
