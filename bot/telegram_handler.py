@@ -776,26 +776,32 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     from_landing = source == "freetrial"
 
     async with AsyncSessionLocal() as db:
-        # Cross-platform link deep-link: /start LINK-XXXX (from iMessage)
+        # Cross-platform link deep-link: /start LINK-XXXX. Two origins share it:
+        # an iMessage user's code, and (2026-07-06) the iOS app's "Connect
+        # Telegram" button (POST /api/v1/auth/link-code → t.me deep link) —
+        # iOS-first users adding Telegram as a second surface.
         from db.queries import linking_enabled, consume_link_code
         if linking_enabled() and raw_arg.upper().startswith("LINK-"):
             channel_user = await get_or_create_user(db, str(update.effective_user.id))
             canonical = await consume_link_code(db, raw_arg, channel_user)
             if canonical:
-                # They linked INTO Telegram (this is the canonical) → default
-                # reminders here, but let them switch to iMessage.
-                if not canonical.channel_preference:
-                    canonical.channel_preference = "telegram"
-                    await db.commit()
+                # NOTE: this path used to stamp channel_preference="telegram" so
+                # the just-linked channel would receive nudges — necessary when
+                # preference was the only router. Proactive routing now follows
+                # the user's ACTUAL activity platform (resolve_send_target,
+                # 2026-07-06), so the stamp is obsolete and actively harmful:
+                # it would pin an iOS-first user's nudges to Telegram (the Gi
+                # bug class). Leave preference alone; routing self-manages.
                 await update.message.reply_text(
-                    f"🔗 Linked. This is now the same account as your other device, "
-                    f"<b>{canonical.name or 'there'}</b> — everything's in sync.",
+                    f"🔗 Linked, <b>{canonical.name or 'there'}</b>. This chat and "
+                    f"your Arnie app are one account now — food, training, and "
+                    f"memory all in sync. Log wherever's closest.",
                     parse_mode="HTML",
                 )
                 await update.message.reply_text(
-                    "quick one — where do you want my check-ins and reminders? "
-                    "i'll only send them on one so you're not double-pinged. "
-                    "reply <b>telegram</b> or <b>imessage</b> (telegram for now).",
+                    "my check-ins follow wherever you talk to me most, so you'll "
+                    "never get double-pinged. want them somewhere specific? just "
+                    "tell me.",
                     parse_mode="HTML",
                 )
             else:

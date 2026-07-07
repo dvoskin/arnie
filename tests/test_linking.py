@@ -40,3 +40,26 @@ async def test_resolve_send_target_routes_by_preference(make_user, db):
 
     tg.channel_preference = None; await db.commit()
     assert await resolve_send_target(db, tg) == "100"  # falls back to canonical
+
+
+async def test_ios_first_link_code_generation(make_user, db, monkeypatch, engine):
+    """iOS-first direction (2026-07-06): POST /auth/link-code mints a code on the
+    CALLING user's canonical row and returns the t.me deep link the bot's
+    /start LINK-XXXX handler consumes. The iOS row stays canonical."""
+    from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncSession
+    from api import auth_routes
+    factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    monkeypatch.setattr(auth_routes, "AsyncSessionLocal", factory)
+
+    ios = await make_user(telegram_id="ios:LINKGEN-1", name="Firstie")
+    resp = await auth_routes.create_link_code(identity="ios:LINKGEN-1")
+    assert resp.code.startswith("LINK-")
+    assert resp.telegram_deep_link.endswith(f"?start={resp.code}")
+
+    # A fresh Telegram identity consuming it binds INTO the iOS account.
+    tg = await get_or_create_user(db, "990001")
+    canonical = await consume_link_code(db, resp.code, tg)
+    assert canonical is not None and canonical.id == ios.id
+    db.expire_all()
+    resolved = await resolve_user(db, "990001")
+    assert resolved.id == ios.id

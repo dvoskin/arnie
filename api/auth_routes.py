@@ -331,6 +331,45 @@ class LinkAccountResponse(BaseModel):
     canonical_name: Optional[str] = None
 
 
+class LinkCodeResponse(BaseModel):
+    code: str
+    expires_in_minutes: int
+    telegram_deep_link: str
+
+
+@router.post("/link-code", response_model=LinkCodeResponse)
+async def create_link_code(
+    identity: str = Depends(current_identity),
+) -> LinkCodeResponse:
+    """Mint a link code FOR the calling (iOS) user — the iOS-first direction.
+
+    /link below welds an iOS row onto a Telegram-canonical account (user
+    started on Telegram). This is the mirror: a user whose FIRST surface is
+    the iOS app taps "Connect Telegram", we mint a code on their canonical
+    row, and the returned t.me deep link opens the bot with /start LINK-XXXX —
+    which the bot already consumes (bot/telegram_handler.py /start handler),
+    binding the fresh Telegram identity to THIS account. The iOS row stays
+    canonical: the code OWNER is always the brain, so nothing migrates and
+    proactive routing keeps following wherever they actually talk.
+    """
+    import os as _os
+    from db.queries import generate_link_code, linking_enabled, resolve_user
+
+    if not linking_enabled():
+        raise HTTPException(
+            status_code=403, detail="Account linking is disabled on this server."
+        )
+    async with AsyncSessionLocal() as db:
+        user = await resolve_user(db, identity)   # canonical (follows any link)
+        code = await generate_link_code(db, user)
+    bot = _os.getenv("TELEGRAM_BOT_USERNAME", "Arnie_1026_Bot")
+    return LinkCodeResponse(
+        code=code,
+        expires_in_minutes=30,
+        telegram_deep_link=f"https://t.me/{bot}?start={code}",
+    )
+
+
 @router.post("/link", response_model=LinkAccountResponse)
 async def link_account(
     req: LinkAccountRequest,
