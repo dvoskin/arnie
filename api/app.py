@@ -1326,6 +1326,7 @@ async def _build_stats_for_user(db, user, target_date=None):
         "dietary_preferences": user.dietary_preferences,
         "injuries": user.injuries,
         "timezone": user.timezone,
+        "avatar_emoji": user.avatar_emoji,
         "coaching_style": prefs.coaching_style if prefs else None,
         "calorie_target": prefs.calorie_target if prefs else None,
         "protein_target": prefs.protein_target if prefs else None,

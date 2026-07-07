@@ -58,6 +58,9 @@ class User(Base):
     # Extended profile — sport and unit preference
     sport = Column(String)                          # e.g. "basketball", "boxing", "running"
     units_preference = Column(String, default="imperial")  # "imperial" | "metric"
+    # User-chosen profile icon — a single emoji from the iOS curated picker
+    # (falls back to the name-initial disc everywhere when null).
+    avatar_emoji = Column(String)
     # AI-generated profile bio (narrative text, refreshed when attributes change significantly)
     user_bio = Column(Text)
     user_bio_updated_at = Column(DateTime)

@@ -62,6 +62,7 @@ class ProfileEditBody(BaseModel):
     brain_dump: Optional[str] = Field(None, max_length=8000)  # free-form onboarding dump
     timezone: Optional[str] = None
     city: Optional[str] = None
+    avatar_emoji: Optional[str] = Field(None, max_length=8)
     channel_preference: Optional[str] = None   # "telegram" | "imessage" — for linked users
 
 

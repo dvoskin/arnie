@@ -97,6 +97,7 @@ class ReplyRef(BaseModel):
 class MessageOut(BaseModel):
     id: int
     sender_name: str
+    sender_avatar: Optional[str] = None
     text: str
     created_at: str
     mine: bool
@@ -188,7 +189,7 @@ async def get_messages(
         admins = _admin_ids()
 
         q = (
-            select(GroupMessage, User.name, User.id)
+            select(GroupMessage, User.name, User.id, User.avatar_emoji)
             .join(User, User.id == GroupMessage.user_id)
             .where(GroupMessage.group_id == group_id)
         )
@@ -207,7 +208,7 @@ async def get_messages(
 async def _hydrate(db, rows, viewer_id: int, admins: set) -> List[MessageOut]:
     """Attach reactions (emoji → count + mine) and reply quotes to a message
     page in TWO set queries — never per-message."""
-    ids = [m.id for m, _, _ in rows]
+    ids = [m.id for m, *_ in rows]
     reactions: dict = {}
     if ids:
         for mid, emoji, uid in (await db.execute(
@@ -221,7 +222,7 @@ async def _hydrate(db, rows, viewer_id: int, admins: set) -> List[MessageOut]:
             if uid == viewer_id:
                 agg["mine"] = True
 
-    reply_ids = [m.reply_to_id for m, _, _ in rows if m.reply_to_id]
+    reply_ids = [m.reply_to_id for m, *_ in rows if m.reply_to_id]
     replies: dict = {}
     if reply_ids:
         for rid, rtext, rname in (await db.execute(
@@ -236,6 +237,7 @@ async def _hydrate(db, rows, viewer_id: int, admins: set) -> List[MessageOut]:
         MessageOut(
             id=m.id,
             sender_name=(name or "Member"),
+            sender_avatar=avatar,
             text=m.text,
             created_at=(m.created_at.isoformat() + "Z") if m.created_at else "",
             mine=(uid == viewer_id),
@@ -247,7 +249,7 @@ async def _hydrate(db, rows, viewer_id: int, admins: set) -> List[MessageOut]:
             ],
             reply_to=replies.get(m.reply_to_id) if m.reply_to_id else None,
         )
-        for m, name, uid in rows
+        for m, name, uid, avatar in rows
     ]
 
 
@@ -286,6 +288,7 @@ async def post_message(
         return MessageOut(
             id=msg.id,
             sender_name=user.name or "Member",
+            sender_avatar=user.avatar_emoji,
             text=msg.text,
             created_at=(msg.created_at.isoformat() + "Z") if msg.created_at else "",
             mine=True,
