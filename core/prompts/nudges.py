@@ -22,6 +22,8 @@ Rules:
   vary the angle, build on it, or move on. never send the same nudge twice in a row.
 - LANGUAGE: match the user's preferred language. Default English.
 - Return ONLY the message text with ||| separators. No labels, no explanation.\
+
+GOAL WORDS: the data may say goal=cut or goal=bulk — never use those words with the user. Say "losing weight"/"the weight loss"/"leaning out" and "putting on size"/"building muscle"/"gaining weight" instead.
 """
 
 NUDGE_SLOT_INSTRUCTIONS: dict[str, str] = {
@@ -78,6 +80,8 @@ Rules:
 - capitalize their name. no em dashes. no "Great job!" filler.
 - LANGUAGE: match their preferred language if known. default English.
 - return ONLY the message text with ||| separators. no labels.\
+
+GOAL WORDS: the data may say goal=cut or goal=bulk — never use those words with the user. Say "losing weight"/"the weight loss"/"leaning out" and "putting on size"/"building muscle"/"gaining weight" instead.
 """
 
 NEW_USER_SLOT_INSTRUCTIONS: dict[str, str] = {

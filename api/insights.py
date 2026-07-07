@@ -154,12 +154,12 @@ GOOD examples:
 - "2063 cal and 192g protein — calories at target, protein solid for muscle preservation"
 - "Recovery at 71% with Strain 14.2 — moderate day done right, sleep well tonight"
 - "Grilled chicken bowl and protein bar covered 78g protein by lunch — strong start"
-- "Skipped workout but hit the calorie floor — one rest day won't stall the cut"
+- "Skipped workout but hit the calorie floor — one rest day won't stall the weight loss"
 
 BAD (never write these):
 - "Only 1 logged day in 30 — can't coach without data" (meta-commentary)
 - "Zero tracking history makes projections impossible" (irrelevant)
-- "Consistency is key to your cut" (filler)
+- "Consistency is key to your weight loss" (filler)
 
 Return ONLY a valid JSON array of strings. No prose.
 
@@ -275,7 +275,7 @@ STRICT RULES:
 - Do NOT lecture about how many days were tracked; work with what's there. No greetings, no filler.
 
 GOOD examples:
-- "Averaged 2180 cal and 195g protein over 6 days — deficit held, protein dialed in for the cut"
+- "Averaged 2180 cal and 195g protein over 6 days — deficit held, protein dialed in for the weight loss"
 - "Weight down 0.8lb on a 78% recovery average — sustainable pace, sleep is doing its job"
 - "Three of seven days ran 300+ over target, all weekends — that's the lever for next week"
 
@@ -755,7 +755,7 @@ def _briefing_tier_guidance(sig: dict) -> str:
         return base + (
             "\nSTAGE — NEW (profile only, no logs). This briefing is a PLAN, not an "
             "analysis. hero = their goal + what their TARGETS imply per week as a PLAN "
-            "framing (e.g. 'these numbers set up a ~0.7 lb/week cut') — NOT a confident "
+            "framing (e.g. 'these numbers set up ~0.7 lb/week of weight loss') — NOT a confident "
             "calendar date or ETA ('on track for ~mid-August' is banned here: zero "
             "weigh-ins can't back a date). focus = the ONE first move: log today's first meal "
             "(a photo, a voice note, or just telling you). cards = goal-specific coaching "

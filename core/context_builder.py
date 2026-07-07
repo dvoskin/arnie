@@ -117,6 +117,22 @@ def _exercise_load_str(e) -> str:
     return ""
 
 
+def _recent_training_days(logs: List[DailyLog], days: int = 14) -> int:
+    """Distinct days in the last `days` with a REAL logged workout — wearable
+    auto-syncs (Whoop walks, Apple Health) don't count as 'training with intent'.
+    Drives the no_program coach note: 3+ real training days without a program
+    means the user is ready to be OFFERED structure."""
+    cutoff = date.today() - timedelta(days=days)
+    trained = set()
+    for lg in logs or []:
+        if lg.date and lg.date >= cutoff:
+            for e in (lg.exercise_entries or []):
+                if getattr(e, "source_type", "") not in ("whoop", "apple_health"):
+                    trained.add(lg.date)
+                    break
+    return len(trained)
+
+
 def fmt_log(log: Optional[DailyLog]) -> str:
     if not log:
         return "No log started today."
@@ -921,6 +937,23 @@ async def build_context(user: User, today_log: Optional[DailyLog], db,
                 }
         except Exception:
             pass
+
+    # No program but training regularly → surface it so Arnie offers to build
+    # one at a natural moment. Most users arrive with NO program; the ladder is
+    # log → log consistently → structure. This is the "ready for structure"
+    # rung detector: real (non-wearable) training on 3+ of the last 14 days.
+    if not training_program_str:
+        _tdays = _recent_training_days(recent_logs, days=14)
+        if _tdays >= 3:
+            training_program_str = (
+                f"[COACH NOTE — no_program] User has trained {_tdays} of the last 14 "
+                f"days but has NO training program. When the moment is natural — "
+                f"right after a workout log, a 'what should I do today?', or a "
+                f"session wrap — offer to build one ('want me to put a real program "
+                f"behind this? takes a minute'), routed through propose_workout_program. "
+                f"ONE light offer at a natural moment, never mid-set, never pushy, "
+                f"never twice in a session — they set the pace, you show the door."
+            )
 
     # [SESSION STATE] — live workout awareness. Built whenever the user has
     # exercise entries today (in_workout=True). Works WITH or WITHOUT a

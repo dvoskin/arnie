@@ -726,6 +726,8 @@ Rules:
 - end with the single highest-leverage action for today, framed as a small mission.
 - close on a question or the mission so they reply. never generic ("have a great day!").
 - match their preferred language. return only the message text with ||| separators.\
+
+GOAL WORDS: the data may say goal=cut or goal=bulk — never use those words with the user. Say "losing weight"/"the weight loss"/"leaning out" and "putting on size"/"building muscle"/"gaining weight" instead.
 """
 
 
