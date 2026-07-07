@@ -1371,6 +1371,22 @@ async def _build_stats_for_user(db, user, target_date=None):
         if (_vals := _brain_by_cat.get(_cat))
     )
 
+    # Program-readiness / stage signal for the morning brief. The chat context
+    # already plants this ([COACH NOTE — no_program] in build_context) but the
+    # brief was blind to it. `history` is already loaded (60d, exercise_entries
+    # eager-loaded) so _recent_training_days is free; the active-program lookup
+    # is one query (briefs are cached ~3h). Fully guarded — a failure here must
+    # never break the stats build.
+    _training_days_14 = 0
+    _active_program = None
+    try:
+        from core.context_builder import _recent_training_days
+        from db.workout_program_queries import get_active_generated_program
+        _training_days_14 = _recent_training_days(history, days=14)
+        _active_program = await get_active_generated_program(db, user.id)
+    except Exception as _e:
+        logger.debug(f"program-readiness signal failed for stats: {_e}")
+
     return {
         "profile": profile,
         "targets": {
@@ -1392,6 +1408,10 @@ async def _build_stats_for_user(db, user, target_date=None):
         # Today-state flags — let the brief avoid recommending already-done moves.
         "weighed_today": weighed_today,
         "logged_food_today": logged_food_today,
+        # Stage / program-readiness signal (see build_context's no_program note).
+        "training_days_14": _training_days_14,
+        "has_program": _active_program is not None,
+        "program_name": (_active_program.name if _active_program else None),
         "user": {"name": user.name or "User", "goal": user.primary_goal or "general fitness",
                  "current_weight_lbs": profile["current_weight_lbs"],
                  "goal_weight_lbs": profile["goal_weight_lbs"]},

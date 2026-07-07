@@ -30,6 +30,19 @@ USER_KEYED = [
 ]
 
 
+async def _is_protected_link(db, user) -> bool:
+    """True if `user` participates in a cross-platform link in EITHER direction —
+    it points at a canonical (linked_to_user_id set) OR another row points at it
+    (some secondary's linked_to_user_id == user.id). Such a row looks exactly
+    like junk (no name, not onboarded, ~1 conv) because its real history lives on
+    the canonical account; deleting it breaks that user's other platform (the
+    Gi-Telegram incident). The delete loop must refuse it either way."""
+    links_out = user.linked_to_user_id is not None
+    links_in = await db.scalar(select(func.count(User.id))
+                               .where(User.linked_to_user_id == user.id)) or 0
+    return links_out or bool(links_in)
+
+
 async def main():
     async with AsyncSessionLocal() as db:
         print(f"{'DRY RUN — no changes' if not APPLY else 'APPLYING CHANGES'}\n")
@@ -52,10 +65,9 @@ async def main():
             # secondary pointer looks exactly like junk (no name, not onboarded, ~1
             # conv) because its real history lives on the canonical account. Deleting
             # it breaks that user's other platform (this is the Gi-Telegram incident).
-            links_out = u.linked_to_user_id is not None
-            links_in = await db.scalar(select(func.count(User.id))
-                                       .where(User.linked_to_user_id == uid)) or 0
-            if links_out or links_in:
+            if await _is_protected_link(db, u):
+                links_in = await db.scalar(select(func.count(User.id))
+                                           .where(User.linked_to_user_id == uid)) or 0
                 print(f"  id={uid} ({u.name}): REFUSED — cross-platform link "
                       f"(linked_to={u.linked_to_user_id}, linked_by={links_in}). Not junk.")
                 continue

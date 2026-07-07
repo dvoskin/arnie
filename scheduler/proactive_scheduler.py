@@ -279,9 +279,21 @@ _PUSH_TITLES = (
 
 
 def _strip_banner_markdown(s: str) -> str:
-    """APNs banners render markdown literally — a body with "**1,150 calories**"
-    shows raw asterisks on the lock screen. Strip bold/italic markers."""
-    return (s or "").replace("**", "").replace("__", "")
+    """Clean a bubble for an APNs banner.
+
+    Two problems, both because the lock screen renders text literally:
+      • markdown markers ("**1,150 calories**") show raw asterisks — strip them.
+      • the no-dash brand rule: the iOS proactive path dispatches to _send_ios
+        and returns BEFORE Response.from_text (where _sanitize_bubble runs), so
+        an em/en dash from the LLM reaches the lock screen unsanitized. Strip
+        them here — this is the banner's only text chokepoint (title + body).
+        A dash is almost always a clause break a comma handles cleanly; number
+        ranges use hyphens, which we leave alone."""
+    s = (s or "").replace("**", "").replace("__", "")
+    s = s.replace(" — ", ", ").replace(" – ", ", ").replace("—", ", ").replace("–", ", ")
+    while "  " in s:
+        s = s.replace("  ", " ")
+    return s.strip()
 
 
 def _push_title(slot_key) -> str:

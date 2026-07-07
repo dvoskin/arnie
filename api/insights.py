@@ -494,6 +494,27 @@ def _build_briefing_summary(stats: dict) -> str:
              f"first meal {'logged' if logged_food_today else 'not yet'}")
     L.append("")
 
+    # Stage / program-readiness — plant the same signal the chat context sees
+    # (build_context's no_program note) so the brief can meet them at their
+    # stage: offer structure when they're training with intent but have no plan,
+    # reference the plan when they have one.
+    _tdays = stats.get("training_days_14") or 0
+    if stats.get("has_program"):
+        _pn = stats.get("program_name")
+        _tag = f" ('{_pn}')" if _pn else ""
+        L.append(
+            f"PROGRAM: on an active training program{_tag}. "
+            f"Reference it when training comes up, point at the next session."
+        )
+        L.append("")
+    elif _tdays >= 3:
+        L.append(
+            f"STAGE, READY FOR STRUCTURE: trained {_tdays} of the last 14 days with NO "
+            f"program. A structured plan is the next rung of the ladder. If the day's "
+            f"focus fits, offer to build one, don't force it."
+        )
+        L.append("")
+
     past = [h for h in history if h.get("date") and h["date"] < today_iso][-21:]
     if past:
         L.append("LOGGED DAYS (oldest→newest) — date (weekday): cal, protein, workout:")
