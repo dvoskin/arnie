@@ -15,6 +15,11 @@ logger = logging.getLogger(__name__)
 # In-memory cache: {user_id: (timestamp, insights_list)}
 _CACHE: dict = {}
 _TTL = 10800  # 3 hours — analysis stays stable until it auto-refreshes (or a manual refresh forces it)
+# The hero briefing refreshes more often than the deeper insights: iOS revalidates
+# it on foreground (stale-while-revalidate, no wait), and a LOG force-refreshes it
+# immediately. 90 min keeps the headline "relatively fresh" between logs without a
+# regen on every app open.
+_BRIEFING_TTL = 5400  # 90 minutes
 
 # Per-key guard so a burst of requests on a stale briefing kicks off only ONE
 # background regeneration, not one per request.
@@ -839,7 +844,7 @@ Return ONLY a valid JSON object with EXACTLY this shape:
 {{
   "hero": {{
     "headline": "<3 to 5 words, a single REAL-TIME directive — the move to make right now, in imperative/confident voice, grounded in TODAY's live numbers. It renders LARGE on the client, so shorter reads stronger: drop trailing time-words ('tonight', 'today') and let `next` carry the timing — 'Close the protein gap', not 'Close the protein gap tonight'. A 6th word is allowed ONLY when it adds genuine PERSONALIZATION ('Cut 150 to break the plateau') vs a generic one. e.g. 'Hit 32g protein', 'Lock in the strong finish', 'Protect the 5-day streak'. NEVER a bare number ('209 lbs') — translate the number into the action. NO second clause. null only if nothing actionable.>",
-    "milestone": "<positive reinforcement IF genuinely earned by the data, e.g. 'Lowest weight in 6 weeks' — else null. No emoji. Keep it SHORT (a chip, not a sentence); use ↓/↑ arrows instead of the words down/up, e.g. '↓ 2 lbs in 5 days'.>",
+    "milestone": "<a SHORT badge-style win IF genuinely earned, else null. MAX ~5 words, terse with symbols/abbreviations, NOT a sentence: '6/7 days 180g+', 'Lowest in 6 wks', '12-day streak', 'PR: 225 bench', '↓ 2 lb in 5 days'. Prefer fractions (6/7 not 'six of last seven'), symbols (+, >, ×, ↓/↑), and unit shorthand (g, wks, lb) over words (of, at, over, in a row). No emoji.>",
     "stats": "<the 1-2 numbers that GROUND the directive, as a compact scannable line joined by ' · ' — pick what matters MOST. When they're a completed day's totals, tag the line with a short time anchor so it's never ambiguous, e.g. '198g protein · 1,939 cal yesterday', '184 lbs · down 1.2 this week'. Otherwise today's live numbers, e.g. '2 workouts · 8,400 steps'. Real logged numbers only; null if there's nothing meaningful to show yet.>",
     "body": "<ONE short, confident status sentence (~5-12 words) — a read on where they stand, NOT a paragraph and NOT a restatement of the numbers. e.g. 'You're right where I want you.', 'Ahead of pace, keep it steady.', 'Protein's the only gap today.'>",
     "next": "<ONE crisp instruction for the single next move: a sharp coach cue, NOT a sentence. About 4 to 7 words, ONE clause only, no second comma-clause. Time-anchor it ONLY when the anchor is still in the future, and a short frame like 'First move:' or 'Tonight:' often helps. Vary it, e.g. 'Weigh in first thing tomorrow.', 'Tonight: wind down, lights out by 11.', 'Get the session in after work.', 'First move: protein at breakfast.', 'Hold steady, no late snacking.' It MUST fit on one short line, so NEVER a long two-part instruction like 'Front-load a protein snack by 10am, close the gap at dinner.' null only if the headline already fully IS the instruction.>"
@@ -963,7 +968,7 @@ async def get_briefing(user_id: int, stats: dict, force: bool = False) -> dict:
     cached = _CACHE.get(cache_key)
 
     if not force and cached:
-        if (now - cached[0]) < _TTL:
+        if (now - cached[0]) < _BRIEFING_TTL:
             return cached[1]                       # fresh — serve as-is
         _schedule_briefing_refresh(user_id, stats, cache_key)  # stale — refresh behind
         return cached[1]

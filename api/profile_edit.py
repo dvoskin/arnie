@@ -242,10 +242,17 @@ async def patch_targets(
 # ── Onboarding completion ───────────────────────────────────────────────────
 
 # Mirrors the iOS `ProfileCompletionBanner` criteria. The banner stays up
-# until the same five fields are filled in the user's row, so the client
-# and server agree on what "complete" means.
+# until the same fields are filled in the user's row, so the client and
+# server agree on what "complete" means.
+#
+# `name` is required too — the belt-and-suspenders backstop for the blind
+# tap-through that shipped nameless profiles to prod: without a name, the
+# opening [start] greeting reads "Hey 👊" (no name) and the whole thing looks
+# unpopulated. If a client bug ever submits a nameless profile again, the bit
+# stays down, no greeting seeds, and the scheduler doesn't treat the row as a
+# real account — instead of silently completing garbage.
 REQUIRED_ONBOARDING_FIELDS = (
-    "age", "sex", "height_cm", "current_weight_kg", "primary_goal",
+    "name", "age", "sex", "height_cm", "current_weight_kg", "primary_goal",
 )
 
 
