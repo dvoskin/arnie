@@ -127,6 +127,7 @@ async def get_profile(identity: str = Depends(current_identity)):
         "v": WIRE_VERSION,
         "name": p.get("name") or "User",
         "primary_goal": clean(p.get("primary_goal")),
+        "avatar_emoji": clean(p.get("avatar_emoji")),
         "streak_days": p.get("streak_days") or 0,
         "stats": {
             "age": p.get("age"),

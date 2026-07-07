@@ -576,6 +576,7 @@ async def profile_data(db, user) -> dict:
     return {
         "profile": {
             "name": user.name or "User",
+            "avatar_emoji": user.avatar_emoji,
             "age": user.age,
             "sex": user.sex,
             "height_cm": user.height_cm,

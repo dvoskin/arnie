@@ -98,6 +98,7 @@ class MessageOut(BaseModel):
     id: int
     sender_name: str
     sender_avatar: Optional[str] = None
+    sender_streak: int = 0
     text: str
     created_at: str
     mine: bool
@@ -211,9 +212,42 @@ async def get_messages(
         return await _hydrate(db, rows, viewer_id=user.id, admins=admins)
 
 
+async def _sender_streaks(db, user_ids: set) -> dict:
+    """Logging streak per sender — same definition as the profile chip and the
+    top-bar bolt (consecutive days walking back from the user's today with
+    calories > 0 or a completed workout). One set query for the whole page."""
+    from datetime import date as _date, timedelta as _td
+    from db.models import DailyLog
+    from db.queries import _user_today
+    if not user_ids:
+        return {}
+    cutoff = _date.today() - _td(days=60)
+    rows = (await db.execute(
+        select(DailyLog.user_id, DailyLog.date, DailyLog.total_calories,
+               DailyLog.workout_completed, User.timezone)
+        .join(User, User.id == DailyLog.user_id)
+        .where(DailyLog.user_id.in_(list(user_ids)), DailyLog.date >= cutoff)
+    )).all()
+    logged: dict = {}
+    tz_by_user: dict = {}
+    for uid, d, cal, workout, tz in rows:
+        tz_by_user[uid] = tz
+        if (cal or 0) > 0 or workout:
+            logged.setdefault(uid, set()).add(d)
+    out = {}
+    for uid, days in logged.items():
+        cur = _user_today(tz_by_user.get(uid) or "UTC")
+        streak = 0
+        while cur in days:
+            streak += 1
+            cur = cur - _td(days=1)
+        out[uid] = streak
+    return out
+
+
 async def _hydrate(db, rows, viewer_id: int, admins: set) -> List[MessageOut]:
-    """Attach reactions (emoji → count + mine) and reply quotes to a message
-    page in TWO set queries — never per-message."""
+    """Attach reactions (emoji → count + mine), reply quotes, and sender
+    streaks to a message page in THREE set queries — never per-message."""
     ids = [m.id for m, *_ in rows]
     reactions: dict = {}
     if ids:
@@ -227,6 +261,8 @@ async def _hydrate(db, rows, viewer_id: int, admins: set) -> List[MessageOut]:
             agg["count"] += 1
             if uid == viewer_id:
                 agg["mine"] = True
+
+    streaks = await _sender_streaks(db, {uid for _, _, uid, _ in rows})
 
     reply_ids = [m.reply_to_id for m, *_ in rows if m.reply_to_id]
     replies: dict = {}
@@ -244,6 +280,7 @@ async def _hydrate(db, rows, viewer_id: int, admins: set) -> List[MessageOut]:
             id=m.id,
             sender_name=(name or "Member"),
             sender_avatar=avatar,
+            sender_streak=streaks.get(uid, 0),
             text=m.text,
             has_image=bool(m.image_b64),
             created_at=(m.created_at.isoformat() + "Z") if m.created_at else "",
