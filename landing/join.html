@@ -600,6 +600,7 @@
             <input type="number" class="ob-input" id="ob-goal-weight" placeholder="160" min="50" max="600" step="0.5" inputmode="decimal" style="max-width:140px">
             <span class="ob-unit">lbs</span>
           </div>
+          <div id="ob-goal-weight-err" style="display:none;color:#e5484d;font-size:13px;margin-top:6px"></div>
         </div>
       </div>
       <div class="ob-nav">
@@ -933,9 +934,32 @@
     obState.weight   = wt;
     // Capture goal weight (optional, only shown for cut/bulk)
     const gwEl = document.getElementById('ob-goal-weight');
+    const gwErrEl = document.getElementById('ob-goal-weight-err');
+    if (gwErrEl) gwErrEl.style.display = 'none';
     if (gwEl && gwEl.value && ['cut','bulk'].includes(obState.goal)) {
       const gw = parseFloat(gwEl.value);
       obState.goalWeight = (gw >= 50 && gw <= 600) ? gw : null;
+      // Direction sanity — a cut goal above current (or bulk below) is ~always
+      // a mix-up; the backend 422s it, so catch it here with a usable message.
+      if (obState.goalWeight) {
+        const wrongWay = obState.goal === 'cut' ? gw >= wt : gw <= wt;
+        if (wrongWay) {
+          if (gwErrEl) {
+            gwErrEl.textContent = obState.goal === 'cut'
+              ? "For a cut, your goal weight should be below your current weight — double-check both."
+              : "For a bulk, your goal weight should be above your current weight — double-check both.";
+            gwErrEl.style.display = '';
+          }
+          obShake(gwEl); gwEl.focus(); return;
+        }
+        // Implausible delta (>25% of body weight) — possible, so confirm rather than block.
+        if (Math.abs(gw - wt) > 0.25 * wt) {
+          const dir = gw < wt ? 'lose' : 'gain';
+          if (!window.confirm(`That's ${Math.round(Math.abs(gw - wt))} lbs to ${dir} — just checking that's what you meant?`)) {
+            gwEl.focus(); return;
+          }
+        }
+      }
     } else {
       obState.goalWeight = null;
     }

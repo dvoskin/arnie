@@ -177,3 +177,158 @@ async def test_patch_profile_no_flip_while_fields_missing(
         select(ConversationLog).where(ConversationLog.user_id == u.id)
     )).scalars().all()
     assert seeds == []
+
+
+# ── goal-weight sanity gate ───────────────────────────────────────────────────
+# Marina (user 76) again: onboarding submitted goal='health' with
+# goal_weight_kg=80.01 against current 65.77 — the iOS goal-weight row echoed
+# its own placeholder (the 80 kg form default) back as input, and the stale
+# value survived her switch to a non-directional goal. The PATCH gate drops
+# contradictory / echoed goal weights instead of persisting them.
+
+
+@pytest.mark.asyncio
+async def test_patch_profile_drops_wrong_direction_cut_goal(
+    patched_session_local, db, make_user,
+):
+    from api.profile_edit import ProfileEditBody, patch_profile
+    await make_user(telegram_id="ios:gw-cut", primary_goal="cut",
+                    current_weight_kg=90.0)
+    resp = await patch_profile(
+        ProfileEditBody(goal_weight_kg=100.0), identity="ios:gw-cut",
+    )
+    assert resp["ok"]
+    assert "goal_weight_kg" in resp.get("skipped_fields", [])
+    db.expire_all()
+    row = (await db.execute(
+        select(User).where(User.telegram_id == "ios:gw-cut"))).scalar_one()
+    assert row.goal_weight_kg is None
+
+
+@pytest.mark.asyncio
+async def test_patch_profile_drops_wrong_direction_bulk_goal(
+    patched_session_local, db, make_user,
+):
+    from api.profile_edit import ProfileEditBody, patch_profile
+    await make_user(telegram_id="ios:gw-bulk", primary_goal="bulk",
+                    current_weight_kg=70.0)
+    resp = await patch_profile(
+        ProfileEditBody(goal_weight_kg=60.0), identity="ios:gw-bulk",
+    )
+    assert "goal_weight_kg" in resp.get("skipped_fields", [])
+
+
+@pytest.mark.asyncio
+async def test_patch_profile_validates_against_incoming_fields(
+    patched_session_local, db, make_user,
+):
+    """The onboarding submit carries goal + current + goal weight in ONE payload —
+    the gate must judge the incoming values against each other, not the empty row."""
+    from api.profile_edit import ProfileEditBody, patch_profile
+    await make_user(telegram_id="ios:gw-self", onboarded=False)
+    resp = await patch_profile(
+        ProfileEditBody(primary_goal="cut", current_weight_kg=80.0,
+                        goal_weight_kg=95.0),
+        identity="ios:gw-self",
+    )
+    assert "goal_weight_kg" in resp.get("skipped_fields", [])
+    db.expire_all()
+    row = (await db.execute(
+        select(User).where(User.telegram_id == "ios:gw-self"))).scalar_one()
+    assert row.goal_weight_kg is None
+    assert row.current_weight_kg == 80.0          # the rest of the patch landed
+    assert row.primary_goal == "cut"
+
+
+@pytest.mark.asyncio
+async def test_patch_profile_drops_goal_weight_on_nondirectional_onboarding(
+    patched_session_local, db, make_user,
+):
+    """Marina's exact shape: mid-onboarding, goal='health', a goal weight the
+    form never showed her. The echoed placeholder must not persist."""
+    from api.profile_edit import ProfileEditBody, patch_profile
+    await make_user(telegram_id="ios:gw-health", onboarded=False,
+                    age=54, sex="female", height_cm=165.0)
+    resp = await patch_profile(
+        ProfileEditBody(primary_goal="health", current_weight_kg=65.77,
+                        goal_weight_kg=80.01),
+        identity="ios:gw-health",
+    )
+    assert "goal_weight_kg" in resp.get("skipped_fields", [])
+    db.expire_all()
+    row = (await db.execute(
+        select(User).where(User.telegram_id == "ios:gw-health"))).scalar_one()
+    assert row.goal_weight_kg is None
+    assert row.onboarding_completed is True        # gate didn't block completion
+
+
+@pytest.mark.asyncio
+async def test_patch_profile_keeps_plausible_goal_weight(
+    patched_session_local, db, make_user,
+):
+    from api.profile_edit import ProfileEditBody, patch_profile
+    await make_user(telegram_id="ios:gw-ok", primary_goal="cut",
+                    current_weight_kg=90.0)
+    resp = await patch_profile(
+        ProfileEditBody(goal_weight_kg=82.0), identity="ios:gw-ok",
+    )
+    assert "goal_weight_kg" in resp["updated_fields"]
+    db.expire_all()
+    row = (await db.execute(
+        select(User).where(User.telegram_id == "ios:gw-ok"))).scalar_one()
+    assert row.goal_weight_kg == 82.0
+
+
+@pytest.mark.asyncio
+async def test_patch_profile_allows_settings_goal_weight_for_onboarded_health_user(
+    patched_session_local, db, make_user,
+):
+    """A fully onboarded user editing goal weight from Settings keeps it, even on
+    a non-directional goal — direction can't be inferred, so nothing contradicts."""
+    from api.profile_edit import ProfileEditBody, patch_profile
+    await make_user(telegram_id="ios:gw-settings", primary_goal="health",
+                    current_weight_kg=70.0)
+    resp = await patch_profile(
+        ProfileEditBody(goal_weight_kg=65.0), identity="ios:gw-settings",
+    )
+    assert "goal_weight_kg" in resp["updated_fields"]
+
+
+@pytest.mark.asyncio
+async def test_patch_profile_implausible_delta_accepted_but_flagged(
+    patched_session_local, db, make_user, caplog,
+):
+    """>25% of body weight is rare-but-real (large cuts) — accept, log."""
+    from api.profile_edit import ProfileEditBody, patch_profile
+    await make_user(telegram_id="ios:gw-large", primary_goal="cut",
+                    current_weight_kg=140.0)
+    with caplog.at_level("WARNING"):
+        resp = await patch_profile(
+            ProfileEditBody(goal_weight_kg=100.0), identity="ios:gw-large",
+        )
+    assert "goal_weight_kg" in resp["updated_fields"]
+    assert any("implausible" in r.message for r in caplog.records)
+
+
+# ── goal_weight_conflict / goal_weight_implausible (unit level) ───────────────
+
+def test_goal_weight_conflict_directions():
+    from core.targets import goal_weight_conflict
+    assert goal_weight_conflict("cut", 90.0, 80.0) is None
+    assert goal_weight_conflict("cut", 90.0, 95.0) == "cut_not_below"
+    assert goal_weight_conflict("cut", 90.0, 90.0) == "cut_not_below"
+    assert goal_weight_conflict("bulk", 70.0, 80.0) is None
+    assert goal_weight_conflict("bulk", 70.0, 65.0) == "bulk_not_above"
+    # Non-directional or missing data → nothing to contradict.
+    assert goal_weight_conflict("health", 65.77, 80.01) is None
+    assert goal_weight_conflict("maintain", 70.0, 90.0) is None
+    assert goal_weight_conflict("cut", None, 80.0) is None
+    assert goal_weight_conflict("cut", 90.0, None) is None
+
+
+def test_goal_weight_implausible_threshold():
+    from core.targets import goal_weight_implausible
+    assert goal_weight_implausible(100.0, 74.0)       # 26% away
+    assert not goal_weight_implausible(100.0, 80.0)   # 20% away
+    assert not goal_weight_implausible(None, 80.0)
+    assert not goal_weight_implausible(100.0, None)

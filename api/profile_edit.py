@@ -96,6 +96,47 @@ async def patch_profile(
 
     async with AsyncSessionLocal() as db:
         user = await resolve_user(db, identity)
+
+        if updates.get("goal_weight_kg") is not None:
+            # Intake gate: a goal weight that contradicts the goal direction is
+            # ~always a units/direction mix-up, and the native-onboarding client
+            # bug that produced prod user 76 (goal='health', current 65.77 kg,
+            # goal 80.01 kg — the form's placeholder echoed back as input).
+            # Cross-check against the EFFECTIVE goal + current weight (incoming
+            # value wins over the stored row, so the onboarding submit — which
+            # carries all three fields — validates against itself).
+            from core.targets import goal_weight_conflict, goal_weight_implausible
+            gw = updates["goal_weight_kg"]
+            eff_goal = updates.get("primary_goal") or user.primary_goal
+            eff_cur = updates.get("current_weight_kg") or user.current_weight_kg
+            conflict = goal_weight_conflict(eff_goal, eff_cur, gw)
+            if conflict:
+                updates.pop("goal_weight_kg")
+                skipped.append("goal_weight_kg")
+                logger.warning(
+                    f"goal_weight_kg skipped for user {user.id}: {conflict} "
+                    f"(goal={eff_goal} current={eff_cur} goal_weight={gw})"
+                )
+            elif eff_goal not in ("cut", "bulk") and not user.onboarding_completed:
+                # Onboarding with a non-directional goal: the client hides the
+                # goal-weight field, so a value here is a stale/echoed leftover
+                # (goal switched after typing, or the placeholder-commit bug) —
+                # never something the user meant. Settings edits (onboarded
+                # users) still pass, direction can't be checked there.
+                updates.pop("goal_weight_kg")
+                skipped.append("goal_weight_kg")
+                logger.warning(
+                    f"goal_weight_kg skipped for user {user.id}: goal weight "
+                    f"submitted during onboarding with non-directional goal={eff_goal}"
+                )
+            elif goal_weight_implausible(eff_cur, gw):
+                # >25% of body weight away — legitimate for large cuts, so
+                # accept, but leave a trail for support / future client confirm.
+                logger.warning(
+                    f"goal_weight_kg implausible delta accepted for user {user.id}: "
+                    f"current={eff_cur} goal_weight={gw} goal={eff_goal}"
+                )
+
         applied: list[str] = []
         for field, value in updates.items():
             setattr(user, field, value)

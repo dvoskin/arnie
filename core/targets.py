@@ -352,3 +352,39 @@ def missing_profile_stats(user) -> list[str]:
     if not user.height_cm:
         missing.append("height")
     return missing
+
+
+def goal_weight_conflict(
+    primary_goal: str | None,
+    current_kg: float | None,
+    goal_kg: float | None,
+) -> str | None:
+    """Sanity-check a goal weight against the stated goal direction.
+
+    A goal weight that points the WRONG WAY for a cut/bulk is ~always a units
+    or direction mix-up at intake, not intent (prod user 76 landed with
+    goal='health', current 65.77 kg, goal 80.01 kg — an iOS placeholder echo).
+    Both intake endpoints call this before persisting so the contradiction
+    never reaches the coaching brain, which plans pace/deficit off it.
+
+    Returns None when plausible, else a machine-readable reason:
+      'cut_not_below'  — cut goal at or above current weight
+      'bulk_not_above' — bulk goal at or below current weight
+    Non-directional goals (maintain/performance/health) and missing values
+    return None — direction can't be inferred, so nothing to contradict.
+    """
+    if not current_kg or not goal_kg:
+        return None
+    if primary_goal == "cut" and goal_kg >= current_kg:
+        return "cut_not_below"
+    if primary_goal == "bulk" and goal_kg <= current_kg:
+        return "bulk_not_above"
+    return None
+
+
+def goal_weight_implausible(current_kg: float | None, goal_kg: float | None) -> bool:
+    """A goal more than 25% of body weight away is possible (large cuts exist)
+    but rare enough to flag for confirmation instead of silently accepting."""
+    if not current_kg or not goal_kg:
+        return False
+    return abs(goal_kg - current_kg) > 0.25 * current_kg

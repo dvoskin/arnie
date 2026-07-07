@@ -870,6 +870,40 @@ async def api_preregister(payload: PreRegisterPayload, request: Request):
     if not (20 <= payload.weight_kg <= 400):
         raise HTTPException(status_code=422, detail="Weight out of range")
 
+    # Goal-weight sanity — the /join form only shows the field for cut/bulk and
+    # clamps to 50–600 lbs, but direct POSTs / stale clients bypass both. A goal
+    # weight pointing the wrong way for the stated goal is ~always a units or
+    # direction mix-up, so reject loudly instead of poisoning pace math later.
+    goal_weight_lbs = payload.goal_weight_lbs
+    if goal_weight_lbs:
+        if payload.primary_goal not in ("cut", "bulk"):
+            # Only meaningful for cut/bulk (matches the form) — drop, don't error.
+            goal_weight_lbs = None
+        else:
+            if not (50 <= goal_weight_lbs <= 600):
+                raise HTTPException(status_code=422, detail="Goal weight out of range")
+            from core.targets import goal_weight_conflict, goal_weight_implausible
+            goal_kg = goal_weight_lbs / 2.20462
+            conflict = goal_weight_conflict(payload.primary_goal, payload.weight_kg, goal_kg)
+            if conflict == "cut_not_below":
+                raise HTTPException(
+                    status_code=422,
+                    detail="Goal weight for a cut should be below your current weight — double-check both numbers (in lbs).",
+                )
+            if conflict == "bulk_not_above":
+                raise HTTPException(
+                    status_code=422,
+                    detail="Goal weight for a bulk should be above your current weight — double-check both numbers (in lbs).",
+                )
+            if goal_weight_implausible(payload.weight_kg, goal_kg):
+                # >25% of body weight — possible (large cuts exist), so accept;
+                # the form confirms client-side. Log so support can spot typos.
+                logger.warning(
+                    f"preregister: implausible goal-weight delta accepted — "
+                    f"current={payload.weight_kg:.1f}kg goal={goal_kg:.1f}kg "
+                    f"goal={payload.primary_goal} name={payload.name.strip()[:40]!r}"
+                )
+
     # Validate target ranges (mirrors the client-side input min/max in /join Step 5).
     # All four are optional — present when the user reaches Step 5, absent for
     # legacy clients posting from an older /join build.
@@ -896,7 +930,7 @@ async def api_preregister(payload: PreRegisterPayload, request: Request):
         # Intake gate: only a normalized IANA zone may reach users.timezone —
         # junk there feeds pytz on every chat turn and 500s the user's messages.
         "timezone": _normalize_tz(payload.timezone),
-        "goal_weight_lbs": round(payload.goal_weight_lbs, 1) if payload.goal_weight_lbs else None,
+        "goal_weight_lbs": round(goal_weight_lbs, 1) if goal_weight_lbs else None,
         # Targets — None when missing keeps existing behavior intact.
         "calorie_target": payload.calorie_target,
         "protein_target": payload.protein_target,
