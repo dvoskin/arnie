@@ -769,3 +769,48 @@ class DeviceToken(Base):
     revoked_at = Column(DateTime, nullable=True)
 
     user = relationship("User", back_populates="device_tokens")
+
+
+class Group(Base):
+    """A community space (2026-07-06, Groups v1). Two kinds:
+      'open'     — normal group chat, every member sees every message.
+      'feedback' — a private line to the team: members see ONLY their own
+                   messages; admins (GROUP_ADMIN_USER_IDS) see everything.
+    Launch set: 'Beta Insiders' (open) + 'Feedback' (feedback), seeded
+    idempotently by api/groups.ensure_default_groups."""
+    __tablename__ = "groups"
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String, nullable=False, unique=True)
+    description = Column(String)
+    emoji = Column(String, default="👥")   # lightweight avatar until images exist
+    kind = Column(String, nullable=False, default="open")  # open | feedback
+    created_at = Column(DateTime, server_default=func.now())
+
+
+class GroupMember(Base):
+    __tablename__ = "group_members"
+    __table_args__ = (
+        UniqueConstraint("group_id", "user_id", name="uq_group_member"),
+        Index("ix_group_members_user", "user_id"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    group_id = Column(Integer, ForeignKey("groups.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    joined_at = Column(DateTime, server_default=func.now())
+
+
+class GroupMessage(Base):
+    __tablename__ = "group_messages"
+    # Chat pagination reads (group_id, id DESC) — covered from day one.
+    __table_args__ = (
+        Index("ix_group_messages_group", "group_id", "id"),
+        Index("ix_group_messages_user", "user_id"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    group_id = Column(Integer, ForeignKey("groups.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    text = Column(Text, nullable=False)
+    created_at = Column(DateTime, server_default=func.now())

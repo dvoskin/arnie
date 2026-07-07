@@ -103,6 +103,7 @@ from api.food_edit import router as food_edit_router
 from api.exercise_edit import router as exercise_edit_router
 from api.dashboard_api import router as dashboard_api_router
 from api.devices import router as devices_router
+from api.groups import router as groups_router
 from api.water import router as water_router
 from api.profile_edit import router as profile_edit_router
 from api.settings_api import prefs_router, feedback_router, signout_router
@@ -122,6 +123,7 @@ app.include_router(health_sync_router)
 app.include_router(food_edit_router)
 app.include_router(exercise_edit_router)
 app.include_router(devices_router)
+app.include_router(groups_router)
 app.include_router(water_router)
 app.include_router(profile_edit_router)
 app.include_router(prefs_router)
