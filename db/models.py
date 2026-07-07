@@ -813,4 +813,23 @@ class GroupMessage(Base):
     group_id = Column(Integer, ForeignKey("groups.id"), nullable=False)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     text = Column(Text, nullable=False)
+    # Direct reply (v1.1) — inline quoted reply, not a separate thread surface.
+    reply_to_id = Column(Integer, ForeignKey("group_messages.id"), nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+
+
+class GroupMessageReaction(Base):
+    """One emoji per (message, user, emoji) — tap toggles (v1.1). Reactions
+    inherit the message's visibility: if you can see the message you see its
+    reactions, which is what lets a member see the team ❤️ on their feedback."""
+    __tablename__ = "group_message_reactions"
+    __table_args__ = (
+        UniqueConstraint("message_id", "user_id", "emoji", name="uq_group_reaction"),
+        Index("ix_group_reactions_message", "message_id"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    message_id = Column(Integer, ForeignKey("group_messages.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    emoji = Column(String, nullable=False)
     created_at = Column(DateTime, server_default=func.now())

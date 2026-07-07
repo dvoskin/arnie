@@ -78,3 +78,40 @@ async def test_post_auto_joins(patched, make_user):
     await post_message(fb.id, PostBody(text="love the app"), identity="ios:G4")
     gs2 = await list_groups(identity="ios:G4")
     assert [g for g in gs2 if g.id == fb.id][0].joined
+
+
+@pytest.mark.asyncio
+async def test_reactions_toggle_and_aggregate(patched, make_user):
+    from api.groups import ReactBody, toggle_reaction
+    await make_user(telegram_id="ios:R1", name="Ann")
+    await make_user(telegram_id="ios:R2", name="Bob")
+    gs = await list_groups(identity="ios:R1")
+    beta = [g for g in gs if g.kind == "open"][0]
+    msg = await post_message(beta.id, PostBody(text="pr day"), identity="ios:R1")
+
+    await toggle_reaction(beta.id, msg.id, ReactBody(emoji="❤️"), identity="ios:R2")
+    await toggle_reaction(beta.id, msg.id, ReactBody(emoji="❤️"), identity="ios:R1")
+    view = await get_messages(beta.id, identity="ios:R1")
+    r = view[-1].reactions
+    assert r and r[0].emoji == "❤️" and r[0].count == 2 and r[0].mine
+
+    # Toggle off removes mine, count drops.
+    await toggle_reaction(beta.id, msg.id, ReactBody(emoji="❤️"), identity="ios:R1")
+    view2 = await get_messages(beta.id, identity="ios:R1")
+    r2 = view2[-1].reactions
+    assert r2[0].count == 1 and r2[0].mine is False
+
+
+@pytest.mark.asyncio
+async def test_reply_carries_quote(patched, make_user):
+    await make_user(telegram_id="ios:Q1", name="Ann")
+    await make_user(telegram_id="ios:Q2", name="Bob")
+    gs = await list_groups(identity="ios:Q1")
+    beta = [g for g in gs if g.kind == "open"][0]
+    first = await post_message(beta.id, PostBody(text="how do I hit 250g protein"),
+                               identity="ios:Q1")
+    reply = await post_message(
+        beta.id, PostBody(text="chicken", reply_to_id=first.id), identity="ios:Q2")
+    assert reply.reply_to and reply.reply_to.sender_name == "Ann"
+    view = await get_messages(beta.id, identity="ios:Q1")
+    assert view[-1].reply_to.excerpt.startswith("how do I hit")

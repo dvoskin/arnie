@@ -21,7 +21,9 @@ from sqlalchemy import func, select
 
 from api.auth import current_identity
 from db.database import AsyncSessionLocal
-from db.models import Group, GroupMember, GroupMessage, User
+from db.models import (
+    Group, GroupMember, GroupMessage, GroupMessageReaction, User,
+)
 from db.queries import resolve_user
 
 logger = logging.getLogger(__name__)
@@ -80,6 +82,18 @@ class GroupOut(BaseModel):
     joined: bool
 
 
+class ReactionOut(BaseModel):
+    emoji: str
+    count: int
+    mine: bool
+
+
+class ReplyRef(BaseModel):
+    id: int
+    sender_name: str
+    excerpt: str
+
+
 class MessageOut(BaseModel):
     id: int
     sender_name: str
@@ -87,10 +101,17 @@ class MessageOut(BaseModel):
     created_at: str
     mine: bool
     is_admin: bool
+    reactions: List[ReactionOut] = []
+    reply_to: Optional[ReplyRef] = None
 
 
 class PostBody(BaseModel):
     text: str = Field(..., min_length=1, max_length=2000)
+    reply_to_id: Optional[int] = None
+
+
+class ReactBody(BaseModel):
+    emoji: str = Field(..., min_length=1, max_length=8)
 
 
 # ── Endpoints ────────────────────────────────────────────────────────────────
@@ -180,17 +201,54 @@ async def get_messages(
 
         rows = (await db.execute(q)).all()
         rows.reverse()   # wire order: oldest → newest
-        return [
-            MessageOut(
-                id=m.id,
-                sender_name=(name or "Member"),
-                text=m.text,
-                created_at=(m.created_at.isoformat() + "Z") if m.created_at else "",
-                mine=(uid == user.id),
-                is_admin=(uid in admins),
-            )
-            for m, name, uid in rows
-        ]
+        return await _hydrate(db, rows, viewer_id=user.id, admins=admins)
+
+
+async def _hydrate(db, rows, viewer_id: int, admins: set) -> List[MessageOut]:
+    """Attach reactions (emoji → count + mine) and reply quotes to a message
+    page in TWO set queries — never per-message."""
+    ids = [m.id for m, _, _ in rows]
+    reactions: dict = {}
+    if ids:
+        for mid, emoji, uid in (await db.execute(
+            select(GroupMessageReaction.message_id, GroupMessageReaction.emoji,
+                   GroupMessageReaction.user_id)
+            .where(GroupMessageReaction.message_id.in_(ids))
+        )).all():
+            slot = reactions.setdefault(mid, {})
+            agg = slot.setdefault(emoji, {"count": 0, "mine": False})
+            agg["count"] += 1
+            if uid == viewer_id:
+                agg["mine"] = True
+
+    reply_ids = [m.reply_to_id for m, _, _ in rows if m.reply_to_id]
+    replies: dict = {}
+    if reply_ids:
+        for rid, rtext, rname in (await db.execute(
+            select(GroupMessage.id, GroupMessage.text, User.name)
+            .join(User, User.id == GroupMessage.user_id)
+            .where(GroupMessage.id.in_(reply_ids))
+        )).all():
+            excerpt = rtext if len(rtext) <= 90 else rtext[:87].rstrip() + "…"
+            replies[rid] = ReplyRef(id=rid, sender_name=rname or "Member", excerpt=excerpt)
+
+    return [
+        MessageOut(
+            id=m.id,
+            sender_name=(name or "Member"),
+            text=m.text,
+            created_at=(m.created_at.isoformat() + "Z") if m.created_at else "",
+            mine=(uid == viewer_id),
+            is_admin=(uid in admins),
+            reactions=[
+                ReactionOut(emoji=e, count=a["count"], mine=a["mine"])
+                for e, a in sorted(reactions.get(m.id, {}).items(),
+                                   key=lambda kv: -kv[1]["count"])
+            ],
+            reply_to=replies.get(m.reply_to_id) if m.reply_to_id else None,
+        )
+        for m, name, uid in rows
+    ]
 
 
 @router.post("/{group_id}/messages")
@@ -204,10 +262,27 @@ async def post_message(
         await _get_group(db, group_id)
         # Posting implies membership — auto-join keeps the flow one-tap smooth.
         await _ensure_member(db, group_id, user.id)
-        msg = GroupMessage(group_id=group_id, user_id=user.id, text=body.text.strip())
+        reply_to = None
+        if body.reply_to_id:
+            reply_to = (await db.execute(
+                select(GroupMessage).where(
+                    GroupMessage.id == body.reply_to_id,
+                    GroupMessage.group_id == group_id)
+            )).scalar_one_or_none()
+            if not reply_to:
+                raise HTTPException(status_code=404, detail="Replied-to message not found")
+        msg = GroupMessage(group_id=group_id, user_id=user.id,
+                           text=body.text.strip(),
+                           reply_to_id=reply_to.id if reply_to else None)
         db.add(msg)
         await db.commit()
         await db.refresh(msg)
+        rref = None
+        if reply_to:
+            rname = (await db.execute(
+                select(User.name).where(User.id == reply_to.user_id))).scalar()
+            ex = reply_to.text if len(reply_to.text) <= 90 else reply_to.text[:87].rstrip() + "…"
+            rref = ReplyRef(id=reply_to.id, sender_name=rname or "Member", excerpt=ex)
         return MessageOut(
             id=msg.id,
             sender_name=user.name or "Member",
@@ -215,4 +290,40 @@ async def post_message(
             created_at=(msg.created_at.isoformat() + "Z") if msg.created_at else "",
             mine=True,
             is_admin=(user.id in _admin_ids()),
+            reactions=[],
+            reply_to=rref,
         )
+
+
+@router.post("/{group_id}/messages/{message_id}/react")
+async def toggle_reaction(
+    group_id: int,
+    message_id: int,
+    body: ReactBody,
+    identity: str = Depends(current_identity),
+) -> dict:
+    """Tap-to-toggle: add the (user, emoji) reaction if absent, remove if present."""
+    from sqlalchemy import delete as _delete
+    async with AsyncSessionLocal() as db:
+        user = await resolve_user(db, identity)
+        msg = (await db.execute(
+            select(GroupMessage).where(
+                GroupMessage.id == message_id, GroupMessage.group_id == group_id)
+        )).scalar_one_or_none()
+        if not msg:
+            raise HTTPException(status_code=404, detail="Message not found")
+        existing = (await db.execute(
+            select(GroupMessageReaction.id).where(
+                GroupMessageReaction.message_id == message_id,
+                GroupMessageReaction.user_id == user.id,
+                GroupMessageReaction.emoji == body.emoji)
+        )).scalar_one_or_none()
+        if existing:
+            await db.execute(_delete(GroupMessageReaction)
+                             .where(GroupMessageReaction.id == existing))
+            await db.commit()
+            return {"ok": True, "reacted": False}
+        db.add(GroupMessageReaction(message_id=message_id, user_id=user.id,
+                                    emoji=body.emoji))
+        await db.commit()
+        return {"ok": True, "reacted": True}
