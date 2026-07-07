@@ -1151,6 +1151,28 @@ def _merge_quantity(old, new):
     return f"2× {base}" if base else (new or old or "")
 
 
+def _format_program_for_chat(payload: dict) -> str:
+    """Lay a program's full week out as compact text for the LLM to present.
+
+    The inline `workout_program_card` only renders on native clients that wire
+    the card type — and even iOS chat currently drops it. So the reply text
+    MUST carry the plan itself, or the user asks "show me my plan" and sees
+    nothing (Anya, prod user 44, asked three times). One line per day:
+    `Day name: Ex A 3x8-10, Ex B 3x8-10, ...`."""
+    if not payload:
+        return ""
+    lines: list[str] = []
+    sessions = sorted(payload.get("sessions") or [],
+                      key=lambda s: s.get("position") or 0)
+    for s in sessions:
+        moves = ", ".join(
+            f"{ex.get('canonical')} {ex.get('sets')}x{ex.get('reps')}"
+            for ex in (s.get("exercises") or [])
+        )
+        lines.append(f"{s.get('name')}: {moves}")
+    return "\n".join(lines)
+
+
 async def execute_tool_calls(
     tool_calls: List[Dict[str, Any]],
     user: User,
@@ -3150,17 +3172,24 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
                 f"sessions={len(program.sessions)}"
             )
             session_count = len(payload["sessions"])
+            week_text = _format_program_for_chat(payload)
             # Tool result text feeds the follow-up LLM. Lead with the rationale
             # so the in-chat reply grounds the explanation in real evidence
-            # (Schoenfeld refs) rather than fabricating.
+            # (Schoenfeld refs) rather than fabricating. CRITICAL: the reply must
+            # LAY OUT THE FULL WEEK in text — the card doesn't render in chat on
+            # every client (iOS chat drops it), and "here's your plan" with no
+            # visible plan is the exact failure Anya hit.
             return (
-                f"Built program: {program.name} — {program.days_per_week} days/week, "
-                f"goal={program.goal}, experience={program.experience_level}. "
-                f"{session_count} sessions saved. "
-                f"RATIONALE for the user (paraphrase, don't paste): {spec.get('rationale')}. "
-                f"Card rendered on the app — your reply should set up the program in 1-2 "
-                f"short bubbles + name the volume + frequency logic in your own words, "
-                f"then invite them to tell you when they want to start day 1."
+                f"Built + saved program: {program.name} — {program.days_per_week} days/week, "
+                f"goal={program.goal}, experience={program.experience_level}, "
+                f"{session_count} sessions.\n\n"
+                f"THE FULL WEEK (present ALL of this to the user, one day per line, "
+                f"exactly these movements + sets×reps — do NOT summarize to 'Day 1'):\n"
+                f"{week_text}\n\n"
+                f"RATIONALE (paraphrase in 1 line, don't paste): {spec.get('rationale')}. "
+                f"Your reply: a 1-line intro, THEN the full week laid out day by day, "
+                f"then invite them to tell you when they want to start day 1. A card may "
+                f"also render on native — but your text must stand alone."
             )
         except Exception as e:
             logger.error(f"propose_workout_program failed: {e}", exc_info=True)
@@ -3185,11 +3214,17 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
         payload = program_to_dict(program)
         if isinstance(inp, dict):
             inp["_program_payload"] = payload
+        week_text = _format_program_for_chat(payload)
         return (
-            f"Showed active program: {program.name} "
+            f"Active program: {program.name} "
             f"({program.days_per_week} d/wk, goal={program.goal}, "
-            f"{len(program.sessions)} sessions). Card rendered — keep your "
-            f"reply short, one line on what's coming up next."
+            f"{len(program.sessions)} sessions).\n\n"
+            f"THE FULL WEEK (the user asked to SEE their plan — present ALL of "
+            f"this, one day per line with the movements + sets×reps; NEVER answer "
+            f"'show me my plan' with just 'Day 1 is tonight'):\n"
+            f"{week_text}\n\n"
+            f"A card may also render on native, but your text must stand alone. "
+            f"Close with one short line on what's next (e.g. which day is up)."
         )
 
     elif name == "track_metric":

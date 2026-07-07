@@ -393,8 +393,9 @@ _FITNESS_TOOLS = [
             "when the user asks 'what's my program?', 'show me my plan', 'remind me "
             "of my split', 'pull up my routine'. DO NOT use for a single day's "
             "session (use suggest_workout) or for today's history (use show_workout_log). "
-            "Native clients render this as an inline program card. Keep your text reply "
-            "short — the card carries the detail."
+            "Native clients ALSO render an inline program card, but your text reply must "
+            "lay out the full week itself (one day per line) — the card does not render on "
+            "every client, and answering 'show me my plan' with no visible plan is a failure."
         ),
         "input_schema": {
             "type": "object",

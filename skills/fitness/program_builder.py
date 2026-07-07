@@ -95,6 +95,16 @@ REST_BY_GOAL = {
 # Default equipment when the user doesn't specify — assume a fully-equipped gym.
 DEFAULT_EQUIPMENT = ("barbell", "dumbbell", "cable", "machine", "bodyweight")
 
+# Never ship a session with fewer than this many movements. Guards against the
+# degenerate 1-exercise day that shipped to Anya (bands+bodyweight → a "Full
+# Body B" of only Nordic Curl) when thin equipment left most focus muscles with
+# no catalog match.
+MIN_EXERCISES = 3
+
+# General backfill muscles for the minimum-floor filler. All have bodyweight
+# coverage, so they resolve even with zero equipment beyond the floor.
+_FALLBACK_MUSCLES = ("quads", "chest_mid", "abs", "glutes", "triceps")
+
 # Valid splits and the cadence each supports.
 SPLITS = {
     "ppl":          {"days_options": (3, 6),       "label": "Push / Pull / Legs"},
@@ -157,8 +167,12 @@ def _by_primary(equipment: tuple[str, ...]) -> dict[str, list[dict]]:
         eq = e.get("equipment")
         if eq not in equipment:
             continue
-        # Skip pure cardio in strength session selection.
-        if e.get("category") == "cardio":
+        # Skip pure cardio AND conditioning finishers (box jumps, burpees,
+        # battle ropes). Those are met-con, not a hypertrophy/strength
+        # prescription — programming a plyometric as a "main lift" was the Anya
+        # bug (Box Jumps became her quad main because it was the only bodyweight
+        # quad entry). They stay in the catalog for logging/canonicalization.
+        if e.get("category") in ("cardio", "finisher"):
             continue
         out.setdefault(e["primary"], []).append(e)
     return out
@@ -166,11 +180,17 @@ def _by_primary(equipment: tuple[str, ...]) -> dict[str, list[dict]]:
 
 def _pick_for_muscle(
     primary: str, by_primary: dict, want_category: str,
-    used_canonicals: set[str],
+    used_canonicals: set[str], *, avoid_advanced: bool = False,
 ) -> Optional[dict]:
     """Pick the first catalog entry for `primary` matching `want_category`
-    ('main' | 'accessory' | 'finisher') that hasn't been used yet in this
-    session. Falls back to any unused movement for that primary."""
+    ('main' | 'accessory') that hasn't been used yet in this session. Falls
+    back to any unused movement for that primary.
+
+    When `avoid_advanced` is set (beginners), movements tagged
+    `level="advanced"` (Pull-Up, Nordic Curl, Pike Push-Up) sink to the back of
+    the queue — so a beginner on bands gets a Band Lat Pulldown / Band RDL
+    before a Pull-Up / Nordic Curl, but still gets the advanced move if it's the
+    only thing that covers the muscle."""
     candidates = by_primary.get(primary) or []
     # Preferred order: main lifts first when want_category == "main", else
     # accessories first. Stable — catalog order is meaningful (compounds first).
@@ -179,8 +199,13 @@ def _pick_for_muscle(
         cand_rest = [c for c in candidates if c.get("category") != "main"]
     else:
         cand_first = [c for c in candidates if c.get("category") == "accessory"]
-        cand_rest = [c for c in candidates if c.get("category") not in ("accessory", "cardio")]
-    for c in cand_first + cand_rest:
+        cand_rest = [c for c in candidates if c.get("category") != "accessory"]
+    ordered = cand_first + cand_rest
+    if avoid_advanced:
+        # Stable sort: advanced movements to the back, tier order preserved
+        # within each level bucket.
+        ordered = sorted(ordered, key=lambda c: 1 if c.get("level") == "advanced" else 0)
+    for c in ordered:
         if c["canonical"] not in used_canonicals:
             return c
     return None
@@ -209,6 +234,7 @@ def _build_session(
     reps = REPS_BY_GOAL.get(goal, REPS_BY_GOAL["general"])
     rir = RIR_BY_GOAL.get(goal, RIR_BY_GOAL["general"])
     rest = REST_BY_GOAL.get(goal, REST_BY_GOAL["general"])
+    avoid_adv = experience == "beginner"
 
     # First half = primary focus (gets main + accessory each); rest = secondary
     # (1 accessory each). Cap session size at ~6 exercises so sessions stay
@@ -219,75 +245,64 @@ def _build_session(
     used: set[str] = set()
     exercises: list[dict] = []
 
-    # MAIN LIFTS on each primary
-    for muscle in primary_focus:
-        pick = _pick_for_muscle(muscle, by_primary, "main", used)
-        if not pick:
-            continue
+    def _add(pick: dict, *, tier: str, notes: str) -> None:
+        """Append a prescription for `pick`. `tier` selects the rep/RIR/rest
+        band (main | accessory | isolation) and the set count."""
         used.add(pick["canonical"])
-        sets_count = 4 if goal != "strength" else 5
         exercises.append({
             "canonical":    pick["canonical"],
-            "sets":         sets_count,
-            "reps":         reps["main"],
-            "rir":          rir["main"] + rir_pad,
-            "rest_seconds": rest["main"],
-            "notes":        "main lift",
+            "sets":         (5 if (tier == "main" and goal == "strength")
+                             else 4 if tier == "main" else 3),
+            "reps":         reps[tier],
+            "rir":          rir[tier] + rir_pad,
+            "rest_seconds": rest[tier],
+            "notes":        notes,
             "primary":      pick["primary"],
             "equipment":    pick["equipment"],
         })
+
+    # MAIN LIFTS on each primary
+    for muscle in primary_focus:
+        pick = _pick_for_muscle(muscle, by_primary, "main", used, avoid_advanced=avoid_adv)
+        if pick:
+            _add(pick, tier="main", notes="main lift")
 
     # ACCESSORIES on primaries
     for muscle in primary_focus:
-        pick = _pick_for_muscle(muscle, by_primary, "accessory", used)
-        if not pick:
-            continue
-        used.add(pick["canonical"])
-        exercises.append({
-            "canonical":    pick["canonical"],
-            "sets":         3,
-            "reps":         reps["accessory"],
-            "rir":          rir["accessory"] + rir_pad,
-            "rest_seconds": rest["accessory"],
-            "notes":        "accessory",
-            "primary":      pick["primary"],
-            "equipment":    pick["equipment"],
-        })
+        pick = _pick_for_muscle(muscle, by_primary, "accessory", used, avoid_advanced=avoid_adv)
+        if pick:
+            _add(pick, tier="accessory", notes="accessory")
 
     # SECONDARY muscles get one isolation each
     for muscle in secondary_focus:
-        pick = _pick_for_muscle(muscle, by_primary, "accessory", used)
-        if not pick:
-            continue
-        used.add(pick["canonical"])
-        exercises.append({
-            "canonical":    pick["canonical"],
-            "sets":         3,
-            "reps":         reps["isolation"],
-            "rir":          rir["isolation"] + rir_pad,
-            "rest_seconds": rest["isolation"],
-            "notes":        "isolation",
-            "primary":      pick["primary"],
-            "equipment":    pick["equipment"],
-        })
+        pick = _pick_for_muscle(muscle, by_primary, "accessory", used, avoid_advanced=avoid_adv)
+        if pick:
+            _add(pick, tier="isolation", notes="isolation")
 
     # WEAK POINTS: +1 accessory each (if this session targets them)
     for muscle in weak_points:
         if muscle in focus_muscles:
-            pick = _pick_for_muscle(muscle, by_primary, "accessory", used)
-            if not pick:
-                continue
-            used.add(pick["canonical"])
-            exercises.append({
-                "canonical":    pick["canonical"],
-                "sets":         3,
-                "reps":         reps["isolation"],
-                "rir":          rir["isolation"] + rir_pad,
-                "rest_seconds": rest["isolation"],
-                "notes":        f"weak-point bias ({muscle})",
-                "primary":      pick["primary"],
-                "equipment":    pick["equipment"],
-            })
+            pick = _pick_for_muscle(muscle, by_primary, "accessory", used, avoid_advanced=avoid_adv)
+            if pick:
+                _add(pick, tier="isolation", notes=f"weak-point bias ({muscle})")
+
+    # MINIMUM FLOOR: never ship a degenerate day. When thin equipment left some
+    # focus muscles with no pick above, backfill more movements — first extra
+    # volume on the focus muscles that DO have coverage, then a general
+    # bodyweight-compound fallback — until we clear the floor or genuinely run
+    # out of movements. Direct guard against the Anya bug (a 1-move session).
+    if len(exercises) < MIN_EXERCISES:
+        backfill = list(focus_muscles) + [
+            m for m in _FALLBACK_MUSCLES if m not in focus_muscles
+        ]
+        for muscle in backfill:
+            while len(exercises) < MIN_EXERCISES:
+                pick = _pick_for_muscle(muscle, by_primary, "accessory", used, avoid_advanced=avoid_adv)
+                if not pick:
+                    break
+                _add(pick, tier="isolation", notes="volume filler")
+            if len(exercises) >= MIN_EXERCISES:
+                break
 
     # Hard cap session size at 6 movements — a focused session beats a sprawling
     # one (better adherence, ~60-75 min). When over, trim the lowest-value tiers
@@ -329,6 +344,41 @@ def _weekly_volume(sessions: list[dict]) -> dict[str, int]:
                 continue
             totals[p] = totals.get(p, 0) + int(ex.get("sets", 0))
     return totals
+
+
+# Never drop a movement below this many working sets when trimming for volume.
+_MIN_SETS_AFTER_CAP = 2
+
+
+def _apply_volume_cap(sessions: list[dict], experience: str) -> None:
+    """Trim weekly set volume down to the experience high-band, IN PLACE.
+
+    High-frequency splits (e.g. a 5-day full body) hit the same muscle every
+    session, stacking 7 sets/session into 20+ sets/week — well past the
+    evidence band and, for a beginner, into overreaching. Without this the
+    rationale ("targets 10-12 sets/muscle") flatly contradicts the program it
+    ships (quads 21). We keep the FREQUENCY (every session still trains the
+    muscle) but shave per-exercise sets — most-sets-first, never below
+    _MIN_SETS_AFTER_CAP — until each muscle sits at/under its high-band."""
+    _, high = VOLUME_BY_EXPERIENCE.get(experience, VOLUME_BY_EXPERIENCE["intermediate"])
+    by_muscle: dict[str, list[dict]] = {}
+    for s in sessions:
+        for ex in s["exercises"]:
+            p = ex.get("primary")
+            if p:
+                by_muscle.setdefault(p, []).append(ex)
+
+    for exs in by_muscle.values():
+        total = sum(int(e.get("sets", 0)) for e in exs)
+        guard = 0
+        while total > high and guard < 1000:
+            guard += 1
+            trimmable = [e for e in exs if int(e.get("sets", 0)) > _MIN_SETS_AFTER_CAP]
+            if not trimmable:
+                break
+            target = max(trimmable, key=lambda e: e["sets"])
+            target["sets"] -= 1
+            total -= 1
 
 
 # ── Public API ────────────────────────────────────────────────────────────────
@@ -448,6 +498,9 @@ def build_program(
             by_primary=by_primary, weak_points=weak_n,
         ))
 
+    # Trim high-frequency-split volume down to the evidence band BEFORE computing
+    # the reported volume + rationale, so what we say matches what we ship.
+    _apply_volume_cap(sessions, exp_n)
     volume = _weekly_volume(sessions)
     rationale = _rationale(goal_n, exp_n, split_n, days_n, volume)
 
