@@ -104,11 +104,17 @@ class MessageOut(BaseModel):
     is_admin: bool
     reactions: List[ReactionOut] = []
     reply_to: Optional[ReplyRef] = None
+    has_image: bool = False
 
 
 class PostBody(BaseModel):
-    text: str = Field(..., min_length=1, max_length=2000)
+    text: str = Field("", max_length=2000)
     reply_to_id: Optional[int] = None
+    image_b64: Optional[str] = Field(None, max_length=2_000_000)
+
+    @property
+    def is_empty(self) -> bool:
+        return not self.text.strip() and not self.image_b64
 
 
 class ReactBody(BaseModel):
@@ -239,6 +245,7 @@ async def _hydrate(db, rows, viewer_id: int, admins: set) -> List[MessageOut]:
             sender_name=(name or "Member"),
             sender_avatar=avatar,
             text=m.text,
+            has_image=bool(m.image_b64),
             created_at=(m.created_at.isoformat() + "Z") if m.created_at else "",
             mine=(uid == viewer_id),
             is_admin=(uid in admins),
@@ -264,6 +271,8 @@ async def post_message(
         await _get_group(db, group_id)
         # Posting implies membership — auto-join keeps the flow one-tap smooth.
         await _ensure_member(db, group_id, user.id)
+        if body.is_empty:
+            raise HTTPException(status_code=422, detail="Message needs text or a photo")
         reply_to = None
         if body.reply_to_id:
             reply_to = (await db.execute(
@@ -275,7 +284,8 @@ async def post_message(
                 raise HTTPException(status_code=404, detail="Replied-to message not found")
         msg = GroupMessage(group_id=group_id, user_id=user.id,
                            text=body.text.strip(),
-                           reply_to_id=reply_to.id if reply_to else None)
+                           reply_to_id=reply_to.id if reply_to else None,
+                           image_b64=body.image_b64)
         db.add(msg)
         await db.commit()
         await db.refresh(msg)
@@ -290,6 +300,7 @@ async def post_message(
             sender_name=user.name or "Member",
             sender_avatar=user.avatar_emoji,
             text=msg.text,
+            has_image=bool(msg.image_b64),
             created_at=(msg.created_at.isoformat() + "Z") if msg.created_at else "",
             mine=True,
             is_admin=(user.id in _admin_ids()),
@@ -330,3 +341,57 @@ async def toggle_reaction(
                                     emoji=body.emoji))
         await db.commit()
         return {"ok": True, "reacted": True}
+
+
+@router.get("/{group_id}/messages/{message_id}/image")
+async def get_message_image(
+    group_id: int,
+    message_id: int,
+    identity: str = Depends(current_identity),
+) -> dict:
+    """The photo for one message, fetched lazily (never inlined in the page).
+    Visibility mirrors the message rule: in a feedback group, a member can
+    only fetch images on THEIR OWN messages; admins fetch any."""
+    async with AsyncSessionLocal() as db:
+        user = await resolve_user(db, identity)
+        group = await _get_group(db, group_id)
+        msg = (await db.execute(
+            select(GroupMessage).where(
+                GroupMessage.id == message_id, GroupMessage.group_id == group_id)
+        )).scalar_one_or_none()
+        if not msg or not msg.image_b64:
+            raise HTTPException(status_code=404, detail="No image")
+        if group.kind == "feedback" and user.id not in _admin_ids() \
+                and msg.user_id != user.id:
+            raise HTTPException(status_code=404, detail="No image")
+        return {"image_b64": msg.image_b64}
+
+
+@router.delete("/{group_id}/messages/{message_id}")
+async def unsend_message(
+    group_id: int,
+    message_id: int,
+    identity: str = Depends(current_identity),
+) -> dict:
+    """Unsend — hard-delete the caller's own message (admins may remove any).
+    Reactions go with it; replies that quoted it keep their text but lose the
+    quote reference (reply_to_id nulled) instead of dangling."""
+    from sqlalchemy import delete as _delete, update as _update
+    async with AsyncSessionLocal() as db:
+        user = await resolve_user(db, identity)
+        msg = (await db.execute(
+            select(GroupMessage).where(
+                GroupMessage.id == message_id, GroupMessage.group_id == group_id)
+        )).scalar_one_or_none()
+        if not msg:
+            raise HTTPException(status_code=404, detail="Message not found")
+        if msg.user_id != user.id and user.id not in _admin_ids():
+            raise HTTPException(status_code=403, detail="Not your message")
+        await db.execute(_update(GroupMessage)
+                         .where(GroupMessage.reply_to_id == message_id)
+                         .values(reply_to_id=None))
+        await db.execute(_delete(GroupMessageReaction)
+                         .where(GroupMessageReaction.message_id == message_id))
+        await db.execute(_delete(GroupMessage).where(GroupMessage.id == message_id))
+        await db.commit()
+        return {"ok": True}

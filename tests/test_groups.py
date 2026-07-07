@@ -115,3 +115,60 @@ async def test_reply_carries_quote(patched, make_user):
     assert reply.reply_to and reply.reply_to.sender_name == "Ann"
     view = await get_messages(beta.id, identity="ios:Q1")
     assert view[-1].reply_to.excerpt.startswith("how do I hit")
+
+
+@pytest.mark.asyncio
+async def test_photo_message_and_lazy_image(patched, make_user, monkeypatch):
+    from api.groups import get_message_image
+    await make_user(telegram_id="ios:P1", name="Ann")
+    await make_user(telegram_id="ios:P2", name="Bob")
+    gs = await list_groups(identity="ios:P1")
+    beta = [g for g in gs if g.kind == "open"][0]
+    msg = await post_message(beta.id, PostBody(text="", image_b64="AAAA"),
+                             identity="ios:P1")
+    assert msg.has_image and msg.text == ""
+    img = await get_message_image(beta.id, msg.id, identity="ios:P2")
+    assert img["image_b64"] == "AAAA"   # open room: any member fetches
+
+    # Feedback: another member can NOT fetch someone's image; admin can.
+    admin = await make_user(telegram_id="ios:PADMIN", name="Danny")
+    monkeypatch.setenv("GROUP_ADMIN_USER_IDS", str(admin.id))
+    fb = [g for g in gs if g.kind == "feedback"][0]
+    fmsg = await post_message(fb.id, PostBody(text="screenshot", image_b64="BBBB"),
+                              identity="ios:P1")
+    from fastapi import HTTPException
+    with pytest.raises(HTTPException):
+        await get_message_image(fb.id, fmsg.id, identity="ios:P2")
+    assert (await get_message_image(fb.id, fmsg.id, identity="ios:PADMIN"))["image_b64"] == "BBBB"
+
+
+@pytest.mark.asyncio
+async def test_unsend_own_only_and_quote_unlinks(patched, make_user):
+    from api.groups import unsend_message
+    from fastapi import HTTPException
+    await make_user(telegram_id="ios:U1", name="Ann")
+    await make_user(telegram_id="ios:U2", name="Bob")
+    gs = await list_groups(identity="ios:U1")
+    beta = [g for g in gs if g.kind == "open"][0]
+    first = await post_message(beta.id, PostBody(text="oops typo"), identity="ios:U1")
+    _reply = await post_message(beta.id, PostBody(text="lol", reply_to_id=first.id),
+                                identity="ios:U2")
+
+    with pytest.raises(HTTPException):        # not Bob's to unsend
+        await unsend_message(beta.id, first.id, identity="ios:U2")
+    await unsend_message(beta.id, first.id, identity="ios:U1")
+
+    view = await get_messages(beta.id, identity="ios:U2")
+    texts = [m.text for m in view]
+    assert "oops typo" not in texts
+    assert view[-1].text == "lol" and view[-1].reply_to is None   # quote unlinked
+
+
+@pytest.mark.asyncio
+async def test_empty_post_rejected(patched, make_user):
+    from fastapi import HTTPException
+    await make_user(telegram_id="ios:E1", name="Ann")
+    gs = await list_groups(identity="ios:E1")
+    beta = [g for g in gs if g.kind == "open"][0]
+    with pytest.raises(HTTPException):
+        await post_message(beta.id, PostBody(text="   "), identity="ios:E1")

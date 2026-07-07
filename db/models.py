@@ -818,6 +818,10 @@ class GroupMessage(Base):
     text = Column(Text, nullable=False)
     # Direct reply (v1.1) — inline quoted reply, not a separate thread surface.
     reply_to_id = Column(Integer, ForeignKey("group_messages.id"), nullable=True)
+    # Photo message (v1.2) — a downscaled JPEG as base64, served lazily via the
+    # per-message image endpoint (never inlined into the page payload). Beta-
+    # scale storage choice; swap to object storage when rooms grow.
+    image_b64 = Column(Text, nullable=True)
     created_at = Column(DateTime, server_default=func.now())
 
 
