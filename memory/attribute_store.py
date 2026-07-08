@@ -214,8 +214,21 @@ def category_for_key(key: str) -> str:
     return "custom"
 
 
+# RELATIONAL "knowing you" markers — the people in their life, their deeper why,
+# and their boundaries/sensitivities. Any attribute key touching these is always
+# core tier: it must be in front of Arnie EVERY turn or the coaching stops
+# feeling personal, and for boundaries/sensitivities, stops being safe.
+_RELATIONAL_CORE_MARKERS = (
+    "person", "people", "family", "_child", "child_", "spouse", "partner_",
+    "motivation", "_why", "why_", "deeper_why", "boundary", "sensitiv",
+)
+
+
 def tier_for_key(key: str) -> str:
     if key in ALWAYS_CORE:
+        return "core"
+    kl = (key or "").lower()
+    if any(m in kl for m in _RELATIONAL_CORE_MARKERS):
         return "core"
     cat = category_for_key(key)
     return DEFAULT_TIERS.get(cat, "contextual")
