@@ -978,6 +978,40 @@ _SEARCH_TOOLS = [
             "required": ["query"],
         },
     },
+    {
+        "name": "deep_research",
+        "description": (
+            "Build a RESEARCHED, multi-part plan that needs several current outside "
+            "facts checked and cross-referenced — a researcher runs multiple web "
+            "searches, reconciles hours/menus/schedules/options, and returns a "
+            "complete plan in your voice. Call for asks like: an eating strategy for "
+            "a trip ('flying to Miami tomorrow, plan my food'), training/eating "
+            "around a real-world event or race, gym + food options in a specific "
+            "place, comparing real products/programs, planning a week around "
+            "restaurant menus. DO NOT call for: logging anything, questions answered "
+            "from the user's own data or standard coaching knowledge, a single fact "
+            "(that's web_search), or a workout program (that's "
+            "propose_workout_program). This is your SLOWEST tool (~20s) — call it at "
+            "most once per turn, ALWAYS with a heads-up bubble first, and only when "
+            "the user clearly wants a researched plan. Put every personal fact that "
+            "should shape the plan into key_context — the researcher can't see the "
+            "conversation."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "objective": {
+                    "type": "string",
+                    "description": "The plan to build, specific and dated: 'eating strategy for Miami trip Wed-Sun, hotel near South Beach, wants to hold 2100 cal'.",
+                },
+                "key_context": {
+                    "type": "string",
+                    "description": "Personal facts that must shape the plan: goal + daily targets, training schedule, dietary preferences, schedule constraints, location/home base, family context. Be generous — this is ALL the researcher knows about them.",
+                },
+            },
+            "required": ["objective", "key_context"],
+        },
+    },
 ]
 
 

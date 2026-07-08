@@ -31,7 +31,10 @@ def OPENAI_API_KEY() -> str:
 
 
 def DEFAULT_MODEL() -> str:
-    return _env("DEFAULT_MODEL", "claude-sonnet-4-6")
+    # Sonnet 5 — every chat turn, follow-up, and briefing rides this. NOTE: a
+    # DEFAULT_MODEL env var on the host OVERRIDES this fallback; when bumping
+    # here, clear/update the Render env too or the bump silently no-ops.
+    return _env("DEFAULT_MODEL", "claude-sonnet-5")
 
 _anthropic = None
 _openai = None
@@ -361,6 +364,13 @@ async def _anthropic_chat(messages, system, use_tools, max_tokens, model=None,
         max_tokens=max_tokens,
         system=system_block,
         messages=messages,
+        # Thinking OFF, explicitly. Sonnet 5 runs ADAPTIVE thinking when this is
+        # OMITTED (a silent default change from 4.6) — that would add latency to
+        # every simple prompt AND let hidden thinking tokens eat the tuned
+        # max_tokens caps and truncate replies. We coach in fast tight bubbles;
+        # deterministic thinking-off is the contract. (deep_research controls its
+        # own thinking budget separately.) Verified accepted by sonnet-5 + haiku.
+        thinking={"type": "disabled"},
     )
     if use_tools:
         kwargs["tools"] = build_tools()
@@ -432,6 +442,7 @@ async def _anthropic_follow_up(messages, raw_assistant_content, tool_calls,
         max_tokens=max_tokens,
         system=system,
         messages=follow_up_messages,
+        thinking={"type": "disabled"},   # see _anthropic_chat — thinking OFF, explicit
     )
 
     if stream_handler is not None:

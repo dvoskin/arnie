@@ -746,6 +746,32 @@ def _macros_from_search(result: str) -> str:
 # name to NEEDS_HEADS_UP_TOOLS. The conversation pipeline picks it up.
 # ─────────────────────────────────────────────────────────────────────────────
 
+# Deep-research per-user daily cap. In-memory is fine: the cap is a cost
+# backstop, not an entitlement ledger — a restart resetting it is harmless.
+_DEEP_RESEARCH_USED: dict[int, tuple[str, int]] = {}   # user_id -> (date_iso, count)
+
+
+def _deep_research_daily_cap() -> int:
+    import os
+    try:
+        return int(os.getenv("DEEP_RESEARCH_DAILY_CAP", "8"))
+    except ValueError:
+        return 8
+
+
+def _deep_research_allow(user_id: int) -> bool:
+    """True if this user has deep-research budget left today (and burns one)."""
+    from datetime import date as _date
+    today = _date.today().isoformat()
+    day, count = _DEEP_RESEARCH_USED.get(user_id, (today, 0))
+    if day != today:
+        day, count = today, 0
+    if count >= _deep_research_daily_cap():
+        return False
+    _DEEP_RESEARCH_USED[user_id] = (day, count + 1)
+    return True
+
+
 # EMERGENCY FALLBACK ONLY. The model is instructed to ALWAYS write its own
 # in-voice heads-up before a slow-tool call. These deterministic lines fire
 # ONLY when the model skipped text entirely (just emitted the tool_use
@@ -770,6 +796,14 @@ _TOOL_HEADS_UP_BUBBLES = {
         "finding it.",
         "looking that up.",
         "checking it now.",
+    ),
+    "deep_research": (
+        "building this properly.",
+        "doing the homework.",
+        "pulling real options.",
+        "mapping it out.",
+        "getting the full picture.",
+        "researching it now.",
     ),
     "search_food_database": (
         "pulling the macros.",
@@ -2382,6 +2416,52 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
             f"no links, no quoted blobs; the user should never see the seams of a lookup."
             f"{injury_note} If results are uncertain or conflicting, say so plainly and "
             f"give your best honest read rather than faking precision."
+        )
+
+    elif name == "deep_research":
+        # GATED upstream with web_search (SEARCH_ENABLED). Runs the bounded agentic
+        # research loop in core/deep_research.py — multi-round parallel searches +
+        # an Arnie-voiced synthesis. The follow-up DELIVERS the plan (raised token
+        # budget in conversation.py), it doesn't rebuild it.
+        from core.deep_research import run_deep_research
+
+        # Per-user daily cap — deep turns are the most expensive thing a user can
+        # trigger; a runaway conversation shouldn't be able to loop them.
+        if not _deep_research_allow(user.id):
+            return (
+                "DEEP RESEARCH DAILY LIMIT reached for this user. Do NOT retry the "
+                "tool. Give your best plan from what you already know + a normal "
+                "web_search if one fact really matters, and be upfront that you'll "
+                "go deeper on it tomorrow."
+            )
+
+        dr = await run_deep_research(
+            objective=str(inp.get("objective") or ""),
+            key_context=str(inp.get("key_context") or ""),
+            tz=getattr(user, "timezone", None) or "UTC",
+            injuries=(getattr(user, "injuries", None) or "").strip(),
+        )
+        logger.info(
+            f"event=deep_research user_id={user.id} ok={dr.ok} rounds={dr.rounds} "
+            f"searches={dr.searches} elapsed_s={dr.elapsed_s:.1f} err={dr.error or '-'}"
+        )
+        if not dr.ok:
+            return (
+                f"DEEP RESEARCH failed ({dr.error or 'unknown'}). Don't mention the "
+                f"mechanics. Give your best honest coaching plan from what you already "
+                f"know, and say plainly which specifics you couldn't verify."
+            )
+        # Stash the plan + sources on the tool input: conversation.py delivers
+        # `_deep_plan` DIRECTLY as the reply (no follow-up LLM pass — a 1.4k-token
+        # re-generation would add ~10-20s the iOS 30s request timeout can't
+        # afford, and verbatim delivery kills the compress/re-estimate risk).
+        # `_deep_sources` is for a future native citations card.
+        if isinstance(inp, dict):
+            inp["_deep_plan"] = dr.plan
+            inp["_deep_sources"] = dr.sources[:8]
+        return (
+            f"RESEARCHED PLAN delivered to the user as-is:\n{dr.plan[:400]}…\n"
+            f"(full plan already sent — do not restate it)"
         )
 
     elif name == "find_nearby_places":

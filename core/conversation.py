@@ -598,6 +598,13 @@ async def run_turn(
         Returns the text, or None on failure (callers own their own fallbacks).
         Streams via _stream_handler when streaming mode is active; finalizes
         the streamer at the end so trailing buffer flushes as the last bubble."""
+        # A deep_research turn delivers a full multi-bubble researched plan
+        # nearly verbatim — 700 tokens would truncate it mid-plan. Raise the
+        # budget for that tool only; every other follow-up keeps the tight cap.
+        if max_tokens == 700 and any(
+            tc.get("name") == "deep_research" for tc in tool_calls
+        ):
+            max_tokens = 2600
         try:
             text = await chat_follow_up(
                 _messages_for_followup, raw_content, tool_calls, tool_results,
@@ -687,23 +694,43 @@ async def run_turn(
                     )
                 _response_streamed = False  # deterministic fallback wasn't streamed
         else:
-            # Voice-by-default: any non-SILENT tool forces a follow-up EVEN when the
-            # first pass already wrote text. Data-fetch results (web_search, etc.)
-            # and native-card closes both live outside pass-1 prose — the first pass
-            # ran before the tool, so it could only write a heads-up/lead-in. The
-            # generic _try_follow_up() re-voices via chat_follow_up (tools=False)
-            # using the full system. Only _SILENT_TOOLS (side-effects) opt out, so a
-            # newly added tool can never silently drop its result. See _SILENT_TOOLS.
-            has_voiceable_result = any(
-                _voices_result(tc["name"]) for tc in tool_calls
+            # DEEP-TURN DIRECT DELIVERY: a successful deep_research run stashed a
+            # user-ready plan (already in Arnie's voice, ||| splits, "My move:"
+            # close) on the tool input. Deliver it AS the reply and skip the
+            # follow-up LLM pass entirely — re-generating ~1.4k tokens would add
+            # 10-20s (the iOS 30s request timeout can't absorb it) and reintroduce
+            # the compress/re-estimate risk the loop's synthesis already solved.
+            # On a failed run `_deep_plan` is absent and the normal follow-up
+            # voices the failure instruction like any other tool result.
+            _deep_plan = next(
+                (tc["input"].get("_deep_plan") for tc in tool_calls
+                 if tc.get("name") == "deep_research"
+                 and isinstance(tc.get("input"), dict)
+                 and tc["input"].get("_deep_plan")),
+                None,
             )
-            need_followup = (
-                tool_calls and raw_content
-                and (in_onboarding or not response_text or has_voiceable_result)
-            )
-            if need_followup:
-                _followup_tried = True
-                response_text = await _try_follow_up()
+            if _deep_plan:
+                response_text = _deep_plan.strip()
+                _response_streamed = False
+            else:
+                # Voice-by-default: any non-SILENT tool forces a follow-up EVEN when
+                # the first pass already wrote text. Data-fetch results (web_search,
+                # etc.) and native-card closes both live outside pass-1 prose — the
+                # first pass ran before the tool, so it could only write a heads-up/
+                # lead-in. The generic _try_follow_up() re-voices via chat_follow_up
+                # (tools=False) using the full system. Only _SILENT_TOOLS (side-
+                # effects) opt out, so a newly added tool can never silently drop
+                # its result. See _SILENT_TOOLS.
+                has_voiceable_result = any(
+                    _voices_result(tc["name"]) for tc in tool_calls
+                )
+                need_followup = (
+                    tool_calls and raw_content
+                    and (in_onboarding or not response_text or has_voiceable_result)
+                )
+                if need_followup:
+                    _followup_tried = True
+                    response_text = await _try_follow_up()
 
     if not response_text:
         # Last-resort follow-up — only if we haven't already tried

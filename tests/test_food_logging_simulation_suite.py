@@ -930,7 +930,8 @@ def test_all_slow_tools_have_heads_up_bubbles():
     """Every slow tool maps to >=2 deterministic heads-up bubbles. A new slow
     tool added without an entry would surface here."""
     REQUIRED = {"web_search", "search_food_database", "query_history",
-                "generate_image", "track_metric", "find_nearby_places"}
+                "generate_image", "track_metric", "find_nearby_places",
+                "deep_research"}
     assert set(_TOOL_HEADS_UP_BUBBLES.keys()) == REQUIRED
     for tool in REQUIRED:
         assert len(_TOOL_HEADS_UP_BUBBLES[tool]) >= 2, f"{tool}: need >=2 bubbles"
