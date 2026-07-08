@@ -61,5 +61,23 @@ async def get_me(identity: str = Depends(current_identity)) -> dict:
                 "WHOOP_CLIENT_ID_set": bool(os.getenv("WHOOP_CLIENT_ID")),
                 "GOOGLE_PLACES_API_KEY_set": bool(os.getenv("GOOGLE_PLACES_API_KEY")),
                 "DEV_AUTH_ENABLED": os.getenv("DEV_AUTH_ENABLED", "false").lower() in ("true", "1", "yes"),
+                # Deep-research + model wiring — the three things that decide
+                # whether smart turns actually work post-deploy. If a deep turn
+                # gives a generic no-specifics plan, check these first.
+                "DEFAULT_MODEL": _default_model(),
+                "TAVILY_API_KEY_set": bool(os.getenv("TAVILY_API_KEY")),
+                "DEEP_RESEARCH_MODEL": os.getenv("DEEP_RESEARCH_MODEL", "claude-sonnet-5"),
+                "DEEP_RESEARCH_DAILY_CAP": os.getenv("DEEP_RESEARCH_DAILY_CAP", "8"),
             },
         }
+
+
+def _default_model() -> str:
+    """The model the chat path actually resolves — so a deploy can confirm the
+    Sonnet 5 bump took (a Render DEFAULT_MODEL env var OVERRIDES the code
+    fallback, so this is the source of truth, not the code default)."""
+    try:
+        from core.llm import DEFAULT_MODEL
+        return DEFAULT_MODEL()
+    except Exception:
+        return os.getenv("DEFAULT_MODEL", "unknown")
