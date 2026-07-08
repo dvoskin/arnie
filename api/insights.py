@@ -186,6 +186,7 @@ DATA:
         client = _get_anthropic()
         response = await client.messages.create(
             model=DEFAULT_MODEL(),
+            thinking={"type": "disabled"},  # Sonnet 5 runs adaptive thinking → a thinking block breaks content[0].text parsing
             max_tokens=600,
             messages=[{"role": "user", "content": prompt}],
         )
@@ -305,10 +306,17 @@ DATA:
         client = _get_anthropic()
         response = await client.messages.create(
             model=DEFAULT_MODEL(),
+            thinking={"type": "disabled"},  # Sonnet 5 runs adaptive thinking → a thinking block breaks content[0].text parsing
             max_tokens=500,
             messages=[{"role": "user", "content": prompt}],
         )
-        text = response.content[0].text.strip()
+        # Join TEXT blocks only — never assume content[0] is text. If a thinking
+        # block is ever present (e.g. a model runs adaptive thinking), content[0]
+        # is the thinking block and `.text` raises → the read silently returns {}
+        # and "doesn't load". Defensive on top of thinking=disabled.
+        text = "".join(
+            b.text for b in response.content if getattr(b, "type", "") == "text"
+        ).strip()
         if text.startswith("```"):
             text = text.split("\n", 1)[1].rsplit("```", 1)[0].strip()
         if text.startswith("json"):
@@ -345,10 +353,17 @@ DATA:
         client = _get_anthropic()
         response = await client.messages.create(
             model=DEFAULT_MODEL(),
+            thinking={"type": "disabled"},  # Sonnet 5 runs adaptive thinking → a thinking block breaks content[0].text parsing
             max_tokens=300,
             messages=[{"role": "user", "content": prompt}],
         )
-        text = response.content[0].text.strip()
+        # Join TEXT blocks only — never assume content[0] is text. If a thinking
+        # block is ever present (e.g. a model runs adaptive thinking), content[0]
+        # is the thinking block and `.text` raises → the read silently returns {}
+        # and "doesn't load". Defensive on top of thinking=disabled.
+        text = "".join(
+            b.text for b in response.content if getattr(b, "type", "") == "text"
+        ).strip()
         if text.startswith("```"):
             text = text.split("\n", 1)[1].rsplit("```", 1)[0].strip()
         if text.startswith("json"):
@@ -895,10 +910,17 @@ DATA:
         client = _get_anthropic()
         response = await client.messages.create(
             model=DEFAULT_MODEL(),
+            thinking={"type": "disabled"},  # Sonnet 5 runs adaptive thinking → a thinking block breaks content[0].text parsing
             max_tokens=900,
             messages=[{"role": "user", "content": prompt}],
         )
-        text = response.content[0].text.strip()
+        # Join TEXT blocks only — never assume content[0] is text. If a thinking
+        # block is ever present (e.g. a model runs adaptive thinking), content[0]
+        # is the thinking block and `.text` raises → the read silently returns {}
+        # and "doesn't load". Defensive on top of thinking=disabled.
+        text = "".join(
+            b.text for b in response.content if getattr(b, "type", "") == "text"
+        ).strip()
         if text.startswith("```"):
             text = text.split("\n", 1)[1].rsplit("```", 1)[0].strip()
         if text.startswith("json"):

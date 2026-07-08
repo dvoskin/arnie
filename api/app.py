@@ -3579,6 +3579,7 @@ Workout description:
         client = _get_anthropic()
         resp = await client.messages.create(
             model=DEFAULT_MODEL(),
+            thinking={"type": "disabled"},  # Sonnet 5 runs adaptive thinking → thinking block breaks JSON parsing
             max_tokens=2000,
             messages=[{"role": "user", "content": prompt}],
         )
@@ -3715,6 +3716,7 @@ If there is not enough workout information to build a meaningful program, return
         client = _get_anthropic()
         resp = await client.messages.create(
             model=DEFAULT_MODEL(),
+            thinking={"type": "disabled"},  # Sonnet 5 runs adaptive thinking → thinking block breaks JSON parsing
             max_tokens=2500,
             messages=[{"role": "user", "content": prompt}],
         )
