@@ -4,6 +4,7 @@ a human-readable result string per tool (used in multi-turn follow-ups).
 """
 import json
 import logging
+from datetime import timedelta
 from typing import Dict, List, Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -1185,6 +1186,67 @@ def _merge_quantity(old, new):
     return f"2× {base}" if base else (new or old or "")
 
 
+def _thread_when_to_dt(when_str, tz_name: str = "UTC"):
+    """Parse a thread's future-oriented 'when' to a naive-UTC datetime, or None.
+    Accepts YYYY-MM-DD (what the model passes, computed from today's date in
+    context) plus a few relative words. Anchored at 09:00 in the user's local
+    tz, so it renders back to the correct calendar day regardless of timezone
+    (mirrors the storage convention: naive UTC)."""
+    s = (when_str or "").strip().lower()
+    if not s:
+        return None
+    from datetime import datetime as _dt, date as _date, time as _time
+    import pytz
+    from core.timezones import safe_timezone
+    tz = safe_timezone(tz_name)
+    today = _dt.now(tz).date()
+    if s in ("today", "tonight"):
+        target = today
+    elif s in ("tomorrow", "tmrw"):
+        target = today + timedelta(days=1)
+    elif s in ("next week",):
+        target = today + timedelta(days=7)
+    else:
+        try:
+            target = _date.fromisoformat(s[:10])
+        except ValueError:
+            return None
+    try:
+        local = tz.localize(_dt.combine(target, _time(9, 0)))
+        return local.astimezone(pytz.utc).replace(tzinfo=None)
+    except Exception:
+        return _dt.combine(target, _time(9, 0))
+
+
+async def _recover_food_entry(db, today_log, inp, user_message):
+    """Recover from a wrong/GUESSED food-entry id. Queries TODAY's entries and
+    returns (best_match_or_None, listing_str). best_match is set only when it's
+    unambiguous — one entry today, or a single name hit from the call's
+    food_name / the user's message — so the caller can self-heal 'move the bagel'
+    even with a bad id. Otherwise it returns the real-id listing so the caller
+    ASKS instead of faking success or re-guessing (the update_food_entry:error
+    loop Danny hit on 'move the bagel to yesterday')."""
+    lid = getattr(today_log, "id", None)
+    if not lid:
+        return None, "  (no log today)"
+    import re as _re
+    from sqlalchemy import select as _select
+    from db.models import FoodEntry as _FE
+    rows = (await db.execute(
+        _select(_FE).where(_FE.daily_log_id == lid).order_by(_FE.id)
+    )).scalars().all()
+    if not rows:
+        return None, "  (no food entries logged today)"
+    listing = "\n".join(f"  [#{e.id}] {e.parsed_food_name or '?'}" for e in rows)
+    if len(rows) == 1:
+        return rows[0], listing
+    def _toks(s):
+        return {w for w in _re.findall(r"[a-z]{3,}", (s or "").lower())}
+    hint = _toks(inp.get("food_name") or "") | _toks(user_message or "")
+    matches = [r for r in rows if _toks(r.parsed_food_name or "") & hint] if hint else []
+    return (matches[0] if len(matches) == 1 else None), listing
+
+
 def _format_program_for_chat(payload: dict) -> str:
     """Lay a program's full week out as compact text for the LLM to present.
 
@@ -2109,7 +2171,23 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
             target_date = None
         entry = await q_update_food_entry(db, entry_id, user.id, **changes)
         if not entry:
-            return f"No food entry #{entry_id} found in today's log."
+            # SELF-HEAL: the model likely GUESSED the id (its own admission:
+            # "instead of guessing at the ID"). Resolve the intended entry from
+            # today's log and retry once, so a bad id doesn't fail a real move.
+            recovered, listing = await _recover_food_entry(db, today_log, inp, user_message)
+            if recovered is not None and recovered.id != entry_id:
+                entry = await q_update_food_entry(db, recovered.id, user.id, **changes)
+                if entry:
+                    entry_id = recovered.id
+            if not entry:
+                # Genuinely unresolvable — NEVER let the model claim it worked or
+                # blind-retry another guess (the stuck loop). Make it ASK.
+                return (
+                    f"COULD NOT FIND food entry #{inp.get('entry_id')} — that id was "
+                    f"likely a guess. Do NOT tell the user it moved or updated, and do "
+                    f"NOT retry with another guessed id. Ask which one they mean, or "
+                    f"use a REAL id from today's log:\n{listing}"
+                )
         await db.refresh(today_log)
 
         # Recurring-memory correction backfill: when a correction notably shifts
@@ -2154,9 +2232,16 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
         except Exception as _e:
             logger.warning(f"recurring-memory backfill on update failed: {_e}")
 
-        moved = f", moved to {target_date}" if target_date else ""
-        return (f"Updated entry #{entry_id}: {entry.parsed_food_name} → "
-                f"{entry.calories:.0f}cal{moved}")
+        # Build the confirmation DEFENSIVELY. The update already committed above;
+        # a formatting hiccup here must never turn a successful move into a
+        # reported failure (the "it actually moved but Arnie said it didn't" bug).
+        try:
+            cal = entry.calories or 0
+            moved = f", moved to {target_date}" if target_date else ""
+            return (f"Updated entry #{entry_id}: {entry.parsed_food_name} → "
+                    f"{cal:.0f}cal{moved}")
+        except Exception:
+            return f"Updated entry #{entry_id}{', moved' if target_date else ''}."
 
     elif name == "delete_food_entry":
         if not getattr(today_log, "id", None):
@@ -3306,6 +3391,76 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
             f"A card may also render on native, but your text must stand alone. "
             f"Close with one short line on what's next (e.g. which day is up)."
         )
+
+    elif name == "remember_thread":
+        # File an open loop into the memory graph (see db/thread_queries.py).
+        # upsert dedups against an existing open thread of the same kind, so a
+        # restated commitment updates instead of duplicating.
+        from db.thread_queries import upsert_thread
+        kind = (inp.get("kind") or "other").strip()
+        summary = (inp.get("summary") or "").strip()
+        if not summary:
+            return "Missing summary — nothing to remember."
+        start_at = _thread_when_to_dt(inp.get("when"), getattr(user, "timezone", "UTC"))
+        # Stage-2 forward-fill: a dated loop gets a proactive touch the day before
+        # (stored now, acted on later by the scheduler).
+        next_touch = (start_at - timedelta(days=1)) if start_at else None
+        try:
+            thread, created = await upsert_thread(
+                db, user.id, kind, summary,
+                salience=int(inp.get("salience") or 3),
+                start_at=start_at, next_touch_at=next_touch,
+                origin_platform=source_type,
+            )
+            verb = "Filed" if created else "Updated"
+            return (
+                f"{verb} open thread [#{thread.id}] ({thread.kind}): {thread.summary}. "
+                f"COACH INSTRUCTION: do NOT announce that you saved it or mention "
+                f"'threads'/'memory'. Just react like a coach who now holds this — "
+                f"acknowledge it naturally in your reply (and if there are OTHER open "
+                f"threads, connect or contrast them, e.g. 'two trips back to back?')."
+            )
+        except Exception as e:
+            logger.error(f"remember_thread failed: {e}")
+            return f"Couldn't file that: {e}"
+
+    elif name == "update_thread":
+        from db.thread_queries import resolve_thread, edit_thread
+        try:
+            tid = int(inp.get("thread_id"))
+        except (TypeError, ValueError):
+            return "Missing or invalid thread_id."
+        status = (inp.get("status") or "").strip()
+        try:
+            if status in ("done", "dropped"):
+                t = await resolve_thread(db, tid, user.id, status=status)
+                if t is None:
+                    return f"No open thread [#{tid}] for this user."
+                return (
+                    f"Closed thread [#{tid}] ({status}). COACH INSTRUCTION: don't say "
+                    f"'thread' or 'closed' — just respond naturally to what they told you."
+                )
+            edits = {}
+            if inp.get("summary"):
+                edits["summary"] = inp["summary"].strip()
+            if inp.get("salience") is not None:
+                edits["salience"] = inp["salience"]
+            _w = _thread_when_to_dt(inp.get("when"), getattr(user, "timezone", "UTC"))
+            if _w:
+                edits["start_at"] = _w
+                edits["next_touch_at"] = _w - timedelta(days=1)
+            if not edits:
+                return "Nothing to update."
+            t = await edit_thread(db, tid, user.id, **edits)
+            if t is None:
+                return f"No thread [#{tid}] for this user."
+            return (
+                f"Updated thread [#{tid}]. COACH INSTRUCTION: acknowledge the new "
+                f"detail naturally; don't mention memory mechanics."
+            )
+        except Exception as e:
+            logger.error(f"update_thread failed: {e}")
+            return f"Couldn't update that: {e}"
 
     elif name == "track_metric":
         from db.queries import upsert_user_metric

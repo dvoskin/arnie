@@ -133,6 +133,58 @@ def _recent_training_days(logs: List[DailyLog], days: int = 14) -> int:
     return len(trained)
 
 
+def _when_phrase(when, tz_name: str) -> str:
+    """A human, relative 'when' for a thread date: 'today', 'tomorrow',
+    'Wed Jul 9', 'in 3 days', 'last week'. Empty when undated."""
+    if when is None:
+        return ""
+    try:
+        from core.timezones import safe_timezone
+        import pytz
+        tz = safe_timezone(tz_name)
+        if when.tzinfo is None:
+            when = pytz.utc.localize(when)
+        local = when.astimezone(tz)
+        today = datetime.now(tz).date()
+        d = (local.date() - today).days
+    except Exception:
+        return ""
+    if d == 0:
+        return "today"
+    if d == 1:
+        return "tomorrow"
+    if d == -1:
+        return "yesterday"
+    if 2 <= d <= 6:
+        return f"{local.strftime('%a')} ({local.strftime('%b %-d')})"
+    if 7 <= d <= 13:
+        return "next week"
+    if d > 13:
+        return local.strftime('%b %-d')
+    if -6 <= d <= -2:
+        return f"{-d} days ago"
+    return "a while ago"
+
+
+def _format_open_threads(threads, tz_name: str) -> str:
+    """Render the bounded open-thread working set for context. One compact line
+    per thread with a [#id] the model can update/resolve against (mirrors the
+    food-entry [#id] pattern). The header carries the discipline: weave in,
+    UPDATE don't duplicate, resolve when done."""
+    lines = [
+        "[OPEN THREADS — what's going on in their life right now. Weave these in "
+        "naturally (never 'per my records'); notice overlaps/conflicts; if they "
+        "mention one already here UPDATE it via update_thread [#id] (don't create "
+        "a duplicate); resolve it when it's done or past.]"
+    ]
+    for t in threads:
+        when = _when_phrase(t.start_at or t.due_at, tz_name)
+        when_str = f" — {when}" if when else ""
+        salient = " ★" if (t.salience or 3) >= 5 else ""
+        lines.append(f"  [#{t.id}] {t.kind}: {t.summary}{when_str}{salient}")
+    return "\n".join(lines)
+
+
 def fmt_log(log: Optional[DailyLog]) -> str:
     if not log:
         return "No log started today."
@@ -516,7 +568,13 @@ def pacing_note(log: Optional[DailyLog], prefs: Optional[UserPreferences],
         tz = pytz.timezone(user_timezone)
         now = datetime.now(tz)
         hour = now.hour
-        if hour < 10:
+        if hour < 5:
+            parts.append(
+                "MIDDLE OF THE NIGHT for them — they're up LATE from the day that's "
+                "ending, not starting a new one. Do NOT treat food now as 'breakfast' "
+                "or ask about the next meal / lunch; the next move is almost certainly "
+                "SLEEP. Read the late hour and coach to winding down.")
+        elif hour < 10:
             parts.append("early morning — most calories ahead")
         elif hour < 14:
             parts.append("midday — roughly half the eating day left")
@@ -961,6 +1019,21 @@ async def build_context(user: User, today_log: Optional[DailyLog], db,
                 f"never twice in a session — they set the pace, you show the door."
             )
 
+    # [OPEN THREADS] — the memory-graph working set: what's going on in this
+    # person's life that Arnie should weave in + follow through on (trips,
+    # intentions, watch-items, promises). Bounded + ranked in thread_queries so
+    # context stays cheap and the model isn't buried in stale loops. Fully
+    # guarded — a memory read must never break a coaching turn.
+    open_threads_str = ""
+    try:
+        from db.thread_queries import get_open_threads
+        _threads = await get_open_threads(db, user.id, limit=6)
+        if _threads:
+            open_threads_str = _format_open_threads(
+                _threads, getattr(user, "timezone", None) or "UTC")
+    except Exception as e:
+        logger.debug(f"open-threads context read failed: {e}")
+
     # [SESSION STATE] — live workout awareness. Built whenever the user has
     # exercise entries today (in_workout=True). Works WITH or WITHOUT a
     # training program — the freeform path still surfaces muscle coverage,
@@ -1153,6 +1226,8 @@ async def build_context(user: User, today_log: Optional[DailyLog], db,
         (coaching_state_str if coaching_state_str else ""),
         "",
         (training_program_str if training_program_str else ""),
+        "",
+        (open_threads_str if open_threads_str else ""),
         "",
         "=== TODAY ===",
         fmt_log(today_log),

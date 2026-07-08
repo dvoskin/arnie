@@ -937,19 +937,28 @@ def _schedule_briefing_refresh(user_id: int, stats: dict, cache_key: tuple) -> N
 
 
 def invalidate_briefing(user_id: int) -> None:
-    """Drop EVERY cached read for `user_id` — briefing AND the daily/insight
-    caches. Call this on any mutation that changes the day's read (food log,
-    weight log, workout log, water) so the next Coach fetch regenerates against
-    the fresh state instead of serving pre-log copy. Cheap dict scan; safe
-    from any thread/coro."""
-    # Pop the briefing entry and discard its refresh marker.
-    _CACHE.pop((user_id, "__briefing__"), None)
-    _briefing_refreshing.discard((user_id, "__briefing__"))
-    # ANY other cache key whose first element matches this user — covers the
-    # per-date insight caches `(user_id, "YYYY-MM-DD")` so the day's insights
-    # also regenerate after a log. Walks the dict once; fine for the scale.
+    """Refresh `user_id`'s cached reads after a mutation (food/weight/workout/
+    water log) WITHOUT a cold block.
+
+    The hero briefing is marked STALE (kept in cache, timestamp zeroed) rather
+    than dropped: get_briefing's stale-while-revalidate then serves the last
+    brief INSTANTLY on the next Coach open and regenerates in the background.
+    Popping it — the old behavior — forced a cold ~10-15s LLM block on the very
+    next open after every log (the 'brief sits blank for ~10 seconds' bug Danny
+    hit: log something, open Coach, stare at 'Hey, Danny'). The per-date insight
+    caches ARE dropped — they're not the blocking hero and regenerate cheaply.
+    """
+    key = (user_id, "__briefing__")
+    cached = _CACHE.get(key)
+    if cached is not None:
+        # Keep the copy, force it stale (epoch 0 << now - TTL) so the next fetch
+        # serves it immediately and kicks a background refresh.
+        _CACHE[key] = (0.0, cached[1])
+    _briefing_refreshing.discard(key)
+    # Drop the per-date insight caches `(user_id, "YYYY-MM-DD")` and week cache.
     stale_keys = [k for k in _CACHE.keys()
-                  if isinstance(k, tuple) and len(k) == 2 and k[0] == user_id]
+                  if isinstance(k, tuple) and len(k) == 2 and k[0] == user_id
+                  and k[1] != "__briefing__"]
     for k in stale_keys:
         _CACHE.pop(k, None)
 

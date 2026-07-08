@@ -1050,6 +1050,86 @@ _LOCATION_TOOLS = [
 # PUBLIC API
 # ─────────────────────────────────────────────────────────────────────────────
 
+# ─────────────────────────────────────────────────────────────────────────────
+# MEMORY — open loops / threads (the followed-through slice of the memory graph)
+# ─────────────────────────────────────────────────────────────────────────────
+
+_MEMORY_TOOLS = [
+    {
+        "name": "remember_thread",
+        "description": (
+            "File an OPEN LOOP — a real, durable thing in this person's life that "
+            "you should carry forward and follow through on, not a one-off. Use for: "
+            "an upcoming event/trip/appointment/race, a stated plan or intention "
+            "('starting a cut Monday'), a habit change they're attempting, a "
+            "constraint with a window (a tweaked shoulder they're resting, travel, "
+            "illness), a decision they're weighing, an experiment they're running, a "
+            "target/milestone in flight, or a promise YOU just made to check on "
+            "something. This is what lets you react like a coach who knows what's "
+            "going on ('two trips? which first?') and come back to it later. "
+            "DO NOT use for: logging food/exercise/weight (dedicated tools), a "
+            "timeless trait or preference (store_attribute — 'likes sushi'), or "
+            "small talk. BEFORE creating, check the [OPEN THREADS] block in context: "
+            "if this is already there, call update_thread instead of making a "
+            "duplicate. Only file what the user actually said or you confidently "
+            "infer. One tight summary per loop."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "kind": {
+                    "type": "string",
+                    "enum": ["event", "intention", "habit", "constraint", "promise",
+                             "watch_item", "decision", "experiment", "milestone",
+                             "state", "other"],
+                    "description": "The loop type. event=dated thing happening; intention=a plan; habit=a behavior change; constraint=an injury/limit with a window; promise=something YOU said you'd do; watch_item=a pattern to keep an eye on; decision=something they're weighing; experiment=a trial with a review; milestone=a target in flight; state=an emotional/motivation state to check back on.",
+                },
+                "summary": {
+                    "type": "string",
+                    "description": "One tight line, in plain terms, with the details that matter: 'Hamptons trip with wife + baby, wants high-end restaurants', 'resting a tweaked left shoulder ~1 week', 'trying to add protein at breakfast'.",
+                },
+                "when": {
+                    "type": "string",
+                    "description": "Optional. The date it happens/starts, as YYYY-MM-DD (compute it from today's date in context — 'tomorrow', 'next Friday'). Omit if there's no specific date.",
+                },
+                "salience": {
+                    "type": "integer",
+                    "minimum": 1, "maximum": 5,
+                    "description": "How much this should shape coaching, 1-5. Default 3. A trip or an injury is 4-5; a mild 'might try X' is 2.",
+                },
+            },
+            "required": ["kind", "summary"],
+        },
+    },
+    {
+        "name": "update_thread",
+        "description": (
+            "Update or CLOSE an existing open loop from the [OPEN THREADS] block, by "
+            "its [#id]. Closing loops matters as much as opening them — when the user "
+            "reports back ('the trip was great', 'shoulder's fine now', 'started the "
+            "cut') or it's clearly past, resolve it so it stops surfacing. Also use "
+            "to add detail or fix a date on a loop they're already tracking (instead "
+            "of creating a duplicate via remember_thread)."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "thread_id": {"type": "integer", "description": "The [#id] from the [OPEN THREADS] block."},
+                "status": {
+                    "type": "string",
+                    "enum": ["done", "dropped"],
+                    "description": "Set 'done' when it happened / they followed through / it resolved; 'dropped' when it's cancelled or no longer relevant. Omit to just edit fields.",
+                },
+                "summary": {"type": "string", "description": "Optional. Replace the summary (e.g. add newly-shared detail)."},
+                "when": {"type": "string", "description": "Optional. Correct the date, YYYY-MM-DD."},
+                "salience": {"type": "integer", "minimum": 1, "maximum": 5, "description": "Optional. Re-rate importance 1-5."},
+            },
+            "required": ["thread_id"],
+        },
+    },
+]
+
+
 ALL_TOOLS = (
     _NUTRITION_TOOLS
     + _FITNESS_TOOLS
@@ -1059,6 +1139,7 @@ ALL_TOOLS = (
     + _HISTORY_TOOLS
     + _FOOD_DB_TOOLS
     + _ATTRIBUTE_TOOLS
+    + _MEMORY_TOOLS
     + _CLARIFICATION_TOOLS
     + _SCHEDULING_TOOLS
 )

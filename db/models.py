@@ -109,6 +109,8 @@ class User(Base):
                                    uselist=False, cascade="all, delete-orphan")
     user_attributes = relationship("UserAttribute", back_populates="user",
                                    cascade="all, delete-orphan")
+    threads = relationship("UserThread", back_populates="user",
+                           cascade="all, delete-orphan")
 
 
 class UserPreferences(Base):
@@ -713,6 +715,59 @@ class UserAttribute(Base):
     created_at = Column(DateTime, server_default=func.now())
 
     user = relationship("User", back_populates="user_attributes")
+
+
+class UserThread(Base):
+    """
+    An open loop Arnie is tracking — the time-bound, followed-through slice of
+    the memory graph. Complements UserAttribute (the durable, timeless "knowing
+    you" slice): an attribute is "likes sushi"; a THREAD is "Hamptons trip next
+    weekend", "trying to fix breakfast", "resting a tweaked shoulder a week", "I
+    promised to check on tonight's workout" — something with a status that
+    OPENS, gets woven into coaching, and eventually CLOSES.
+
+    This is the memory-graph SPINE (Stage 1). Kinds are stored as a string, not
+    an enum, so a new coaching situation never needs a migration. Over later
+    stages pending_questions + schedule_check_in fold into this store; for now it
+    runs alongside them (extend, don't duplicate — see docs/MEMORY_GRAPH.md).
+
+    Lifecycle:
+      open    → created; surfaces in the [OPEN THREADS] context block every turn
+      done    → resolved (they reported back / it happened) — stops surfacing
+      dropped → cancelled / no longer relevant
+      expired → past expires_at with no resolution (garbage-collected)
+
+    Stage 1 STORES next_touch_at but never acts on it; Stage 2's proactive
+    scheduler scans (status, next_touch_at) to follow up the day before an event
+    etc. The indexes below serve both the per-turn open-threads read and that
+    future scan.
+    """
+    __tablename__ = "user_threads"
+    __table_args__ = (
+        Index("ix_user_threads_user_status", "user_id", "status"),
+        Index("ix_user_threads_touch", "status", "next_touch_at"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    # event|intention|habit|constraint|promise|watch_item|decision|experiment|milestone|state|other
+    kind = Column(String, nullable=False)
+    summary = Column(Text, nullable=False)          # "Hamptons trip with wife + baby, high-end restaurants"
+    details = Column(Text)                           # optional JSON/text extras (location, related refs)
+    status = Column(String, default="open", nullable=False)  # open|done|dropped|expired
+    salience = Column(Integer, default=3)           # 1..5 — how much it should shape coaching
+    source = Column(String, default="stated")       # stated|inferred|researched — provenance kind
+    origin_platform = Column(String)                # ios|telegram|imessage
+    provenance_log_id = Column(Integer)             # conversation_logs.id that created it (soft ref, no FK coupling)
+    start_at = Column(DateTime)                     # when the thing happens/starts
+    due_at = Column(DateTime)                       # deadline
+    next_touch_at = Column(DateTime)                # when to proactively surface (Stage 2)
+    expires_at = Column(DateTime)                   # auto-close after this (GC)
+    last_referenced_at = Column(DateTime)           # last time it surfaced / was mentioned
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    user = relationship("User", back_populates="threads")
 
 
 class PreRegistration(Base):
