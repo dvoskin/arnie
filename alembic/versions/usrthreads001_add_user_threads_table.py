@@ -3,11 +3,11 @@
 The memory-graph spine (Stage 1): the time-bound "open loop" node type that
 complements user_attributes (the durable trait node). See docs/MEMORY_GRAPH.md.
 
-Parents one of the current heads (ee66ff770011). The repo runs
-`alembic upgrade heads` (plural) as its pre-deploy step, so the remaining
-independent heads are unaffected — this just extends one branch.
+Parents the current single head (ee66ff770011). Uses a deliberately distinctive
+revision id ('usrthreads001') so it can't collide with the hex-style ids already
+in the tree.
 
-Revision ID: d1e2f3a4b5c6
+Revision ID: usrthreads001
 Revises: ee66ff770011
 Create Date: 2026-07-08 00:00:00.000000
 """
@@ -15,7 +15,7 @@ from typing import Sequence, Union
 from alembic import op
 import sqlalchemy as sa
 
-revision: str = 'd1e2f3a4b5c6'
+revision: str = 'usrthreads001'
 down_revision: Union[str, Sequence[str], None] = 'ee66ff770011'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
