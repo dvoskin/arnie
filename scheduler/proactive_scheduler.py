@@ -1087,6 +1087,80 @@ async def _maybe_followup_pending(db, user, send_id: str, name: str,
         return False
 
 
+async def _llm_thread_nudge(user, thread, name: str) -> str:
+    """A short, in-voice PROACTIVE nudge about an open loop coming due — a trip
+    tomorrow, a habit check, a decision they were weighing. Arnie reaching out
+    FIRST, like a coach who remembers, not a reminder bot. '' on failure."""
+    from core.llm import chat
+    lang = getattr(getattr(user, "preferences", None), "preferred_language", None) or "English"
+    kind = (getattr(thread, "kind", "") or "").lower()
+    when = ""
+    if getattr(thread, "start_at", None):
+        try:
+            from core.context_builder import _when_phrase
+            when = _when_phrase(thread.start_at, getattr(user, "timezone", None) or "UTC")
+        except Exception:
+            when = ""
+    when_line = f" It's happening {when}." if when else ""
+    prompt = (
+        f"Athlete: {name}, language={lang}\n"
+        f"You're reaching out FIRST about something they told you they had going on, "
+        f"and it's coming up now:\n"
+        f'  [{kind}] "{thread.summary}"{when_line}\n'
+        f"Send ONE short, warm, genuinely useful nudge in your coaching voice: "
+        f"reference it naturally like a coach who remembers (NOT a reminder bot; "
+        f"never say 'reminder' or 'I have a note'), and offer the single most helpful "
+        f"next move — prep a plan, a quick check-in question, or an offer to help. "
+        f"1-2 short bubbles split with |||. No em dashes."
+    )
+    try:
+        result = await chat(
+            [{"role": "user", "content": prompt}],
+            system=_NUDGE_SYSTEM,
+            tools=False,
+            max_tokens=140,
+            model="claude-haiku-4-5-20251001",
+        )
+        text = _cap_bubbles((result.get("text") or "").strip(), 2)
+        # Enforce the no-dash brand rule at the source — the model still slips an
+        # em dash in sometimes despite the prompt, and a proactive nudge reaches
+        # the chat body + lock-screen banner.
+        from core.platform import _sanitize_bubble
+        return "|||".join(_sanitize_bubble(b) for b in text.split("|||")) if text else text
+    except Exception as e:
+        logger.error(f"Thread nudge generation failed for user {getattr(user, 'id', '?')}: {e}")
+        return ""
+
+
+async def _maybe_send_thread_nudge(db, user, send_id: str, name: str) -> bool:
+    """If the user has a DUE open loop (memory graph, Stage 2), send ONE in-voice
+    follow-through nudge about the top one and mark it touched so it can never
+    re-fire. Returns True if a nudge went out (caller skips other nudges this
+    tick). The quiet-hours window + frequency gate are applied by the caller;
+    salience floor + due-ness live in get_due_threads."""
+    from db.thread_queries import get_due_threads, mark_thread_touched
+    try:
+        due = await get_due_threads(db, user.id, datetime.utcnow(), limit=1)
+        if not due:
+            return False
+        thread = due[0]
+        msg = await _llm_thread_nudge(user, thread, name)
+        if not msg:
+            return False
+        lang = getattr(getattr(user, "preferences", None), "preferred_language", None) or "English"
+        await _send_logged_with_voice(db, user.id, send_id, msg, "followup_thread",
+                                      name=name, language=lang)
+        await mark_thread_touched(db, thread.id)
+        logger.info(
+            f"event=thread_nudge user_id={user.id} thread_id={thread.id} "
+            f"kind={thread.kind} salience={thread.salience}"
+        )
+        return True
+    except Exception as e:
+        logger.error(f"Thread nudge error for user {getattr(user, 'id', '?')}: {e}")
+        return False
+
+
 async def _run_reminders():
     from db.database import AsyncSessionLocal
     from db.queries import get_all_active_users, get_today_log, get_recent_health_snapshots
@@ -1368,6 +1442,16 @@ async def _run_reminders():
                 # via the followup_ prefix collapse in eligibility.py.
                 if frequency_allows(prefs, "followup_pending"):
                     if await _maybe_followup_pending(db, user, send_id, name, mins_since):
+                        skip_counts["sent"] += 1
+                        continue  # one proactive message per tick
+
+                # ── Open-loop follow-through (memory graph, Stage 2) ──────────
+                # A real commitment coming due — a trip tomorrow, a habit check,
+                # a promise Arnie made — outranks a generic slot nudge, same as a
+                # hanging question. Quiet-hours window already passed above;
+                # salience floor + one-touch-per-thread live in the query/mark.
+                if frequency_allows(prefs, "followup_thread"):
+                    if await _maybe_send_thread_nudge(db, user, send_id, name):
                         skip_counts["sent"] += 1
                         continue  # one proactive message per tick
 

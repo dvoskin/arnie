@@ -1186,6 +1186,40 @@ def _merge_quantity(old, new):
     return f"2× {base}" if base else (new or old or "")
 
 
+# How many days after capture Arnie proactively checks back on an UNDATED but
+# actionable open loop (Stage 2). Dated events instead nudge the day before, so
+# they're not here. Kinds absent from this map (event-with-no-date, watch_item,
+# milestone, other) get NO auto-nudge — they only surface in-conversation.
+_THREAD_FOLLOWUP_DAYS = {
+    "promise": 1,      # "I'll check on tonight's workout" → next morning if unresolved
+    "state": 1,        # "burned out this week" → "how are you feeling now?"
+    "intention": 2,    # "starting a cut Monday" → did it stick?
+    "habit": 3,        # "fixing breakfast" → a few days in, how's it going?
+    "decision": 3,     # "cut or maintain?" → circle back
+    "experiment": 7,   # "creatine for a month" → a week-in check
+}
+
+
+def _default_next_touch(kind: str, tz_name: str = "UTC"):
+    """When to proactively check back on an UNDATED actionable loop — a naive-UTC
+    datetime anchored at 10:00 local N days out, or None for kinds that shouldn't
+    auto-nudge. Keeps the follow-up in the user's morning, not the middle of
+    their night."""
+    days = _THREAD_FOLLOWUP_DAYS.get((kind or "").lower())
+    if not days:
+        return None
+    from datetime import datetime as _dt, time as _time
+    import pytz
+    from core.timezones import safe_timezone
+    tz = safe_timezone(tz_name)
+    target = (_dt.now(tz) + timedelta(days=days)).date()
+    try:
+        local = tz.localize(_dt.combine(target, _time(10, 0)))
+        return local.astimezone(pytz.utc).replace(tzinfo=None)
+    except Exception:
+        return _dt.combine(target, _time(10, 0))
+
+
 def _thread_when_to_dt(when_str, tz_name: str = "UTC"):
     """Parse a thread's future-oriented 'when' to a naive-UTC datetime, or None.
     Accepts YYYY-MM-DD (what the model passes, computed from today's date in
@@ -3401,10 +3435,15 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
         summary = (inp.get("summary") or "").strip()
         if not summary:
             return "Missing summary — nothing to remember."
-        start_at = _thread_when_to_dt(inp.get("when"), getattr(user, "timezone", "UTC"))
-        # Stage-2 forward-fill: a dated loop gets a proactive touch the day before
-        # (stored now, acted on later by the scheduler).
-        next_touch = (start_at - timedelta(days=1)) if start_at else None
+        _tz = getattr(user, "timezone", "UTC")
+        start_at = _thread_when_to_dt(inp.get("when"), _tz)
+        # A dated loop nudges the day before the event; an undated actionable loop
+        # (habit/promise/intention/…) gets a follow-up cadence. The scheduler
+        # (Stage 2) acts on next_touch_at; it's just stored here.
+        if start_at:
+            next_touch = start_at - timedelta(days=1)
+        else:
+            next_touch = _default_next_touch(kind, _tz)
         try:
             thread, created = await upsert_thread(
                 db, user.id, kind, summary,

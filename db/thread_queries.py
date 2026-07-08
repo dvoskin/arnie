@@ -64,7 +64,12 @@ def _similar(a: str, b: str) -> bool:
     ca, cb = _content(a), _content(b)
     if len(ca) < 2 or len(cb) < 2:
         return False
-    return len(ca & cb) / min(len(ca), len(cb)) >= 0.5
+    shared = ca & cb
+    # Require >= 2 shared content words AND a strong overlap. The 2-word floor
+    # stops a single generic token from merging distinct commitments — "Hamptons
+    # trip" vs "trip next month" share only {trip} and must NOT collapse into one
+    # (that was inheriting the wrong next_touch and dropping a real reminder).
+    return len(shared) >= 2 and len(shared) / min(len(ca), len(cb)) >= 0.5
 
 
 async def upsert_thread(
@@ -204,6 +209,44 @@ async def resolve_thread(
     await db.commit()
     await db.refresh(t)
     logger.info(f"event=thread_resolved user_id={user_id} thread_id={thread_id} status={status}")
+    return t
+
+
+async def get_due_threads(
+    db: AsyncSession, user_id: int, now: datetime, *,
+    min_salience: int = 3, limit: int = 1,
+) -> list[UserThread]:
+    """Open threads whose PROACTIVE touch is due (Stage 2): next_touch_at set and
+    <= now, salient enough to be worth a ping, not expired. Ordered most-salient
+    then most-overdue. `now` is naive UTC (matches storage). The (status,
+    next_touch_at) index serves this scan."""
+    rows = (await db.execute(
+        select(UserThread).where(
+            UserThread.user_id == user_id,
+            UserThread.status == "open",
+            UserThread.next_touch_at.isnot(None),
+            UserThread.next_touch_at <= now,
+            UserThread.salience >= min_salience,
+        )
+    )).scalars().all()
+    rows = [t for t in rows if not (t.expires_at and t.expires_at < now)]
+    rows.sort(key=lambda t: (-(t.salience or 3), t.next_touch_at))
+    return rows[:limit]
+
+
+async def mark_thread_touched(db: AsyncSession, thread_id: int) -> Optional[UserThread]:
+    """After a proactive nudge fires: CLEAR next_touch_at so it can never re-fire,
+    and stamp last_referenced_at. This clearing IS the per-thread dedup for the
+    proactive path (one touch per loop). Commits."""
+    t = (await db.execute(
+        select(UserThread).where(UserThread.id == thread_id)
+    )).scalar_one_or_none()
+    if t is None:
+        return None
+    t.next_touch_at = None
+    t.last_referenced_at = datetime.utcnow()
+    await db.commit()
+    await db.refresh(t)
     return t
 
 
