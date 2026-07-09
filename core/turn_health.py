@@ -283,24 +283,37 @@ _SET_REPORT_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Food-report shapes in the USER's message: an eating verb ("had", "ate",
+# "grabbed", "for lunch") or a common food/snack noun. Deliberately broad but
+# still anchored to food language, so it pairs with a recorded-claim reply to
+# catch a phantom FOOD log the same way _SET_REPORT_RE catches a phantom set.
+# The screenshot bug: "I had quest chips and caramel cashew" → "logged, 340 cal"
+# with NO log_food call → nothing written, false confirmation.
+_FOOD_REPORT_RE = re.compile(
+    r"\b(had|ate|eating|grabbed|just\s+had|for\s+(?:breakfast|lunch|dinner|a\s+snack))\b"
+    r"|\b(bar|shake|chips|bagel|meal|snack|smoothie|protein|coffee|latte)\b",
+    re.IGNORECASE,
+)
+
 
 def looks_like_phantom_log_claim(user_text: str, response_text: str,
                                  has_tool_calls: bool) -> bool:
-    """True when the user reported a loggable SET but the model claimed it was
-    recorded ("noted", "on the board", "logged") WITHOUT firing any tool — a
-    confirmation with no write behind it, which silently drops the set.
+    """True when the user reported a loggable SET or FOOD but the model claimed it
+    was recorded ("noted", "on the board", "logged") WITHOUT firing any tool — a
+    confirmation with no write behind it, which silently drops the entry.
 
-    Narrow by construction: requires a set-report user message AND a recorded-claim
-    reply AND zero tool calls. So it never fires on a normal clarifying question
-    ("was that a weight PR?"), an actually-logged turn (a tool fired), or generic
-    chat. Drives quality repair with tools=True so the model logs it on the retry."""
+    Narrow by construction: requires a set-report OR food-report user message AND a
+    recorded-claim reply AND zero tool calls. So it never fires on a normal
+    clarifying question ("was that a weight PR?"), an actually-logged turn (a tool
+    fired), or generic chat. Drives quality repair so the model owns the miss and
+    re-logs on the retry."""
     if has_tool_calls:
         return False
     u = (user_text or "").strip()
     r = (response_text or "").strip().lower()
     if not u or not r:
         return False
-    if not _SET_REPORT_RE.search(u):
+    if not (_SET_REPORT_RE.search(u) or _FOOD_REPORT_RE.search(u)):
         return False
     return any(p in r for p in _RECORDED_CLAIM)
 
