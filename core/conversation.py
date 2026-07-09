@@ -29,6 +29,8 @@ from core.turn_health import (
     detect_turn_flags,
     user_is_signing_off as _user_is_signing_off,
     detect_sarcastic_ack as _detect_sarcastic_ack,
+    extract_stated_day_calories as _extract_stated_day_calories,
+    DAY_TOTAL_TOLERANCE as _DAY_TOTAL_TOLERANCE,
 )
 from handlers.tool_executor import (
     execute_tool_calls, deterministic_confirmation, recovery_message,
@@ -974,6 +976,56 @@ async def run_turn(
         except Exception as e:
             logger.debug(f"Quality repair failed for {_tag}: {e}")
 
+    # ── Day-total truth guard ──────────────────────────────────────────────────
+    # The DB is the only authority on the running day total. today_log.total_calories
+    # is re-derived from the actual entries on every write (recompute_log_totals) and
+    # is refreshed after this turn's tools, so it's exact. If the reply STATES a day
+    # total that diverges from it, the number is not real: a phantom log ("logged,
+    # 984 cal") with no committed write, a dedup no-op the model didn't notice, or
+    # arithmetic carried forward across turns (984 = the true 859 + a Guinness that
+    # never wrote). Correct it against the DB before it ships, and tell the model to
+    # own the miss — never confirm calories that aren't on the board.
+    _total_mismatch = False
+    try:
+        if today_log is not None and not in_onboarding:
+            _db_cal = int(round(getattr(today_log, "total_calories", 0) or 0))
+            _stated = _extract_stated_day_calories(response_text)
+            if _stated is not None and abs(_stated - _db_cal) > _DAY_TOTAL_TOLERANCE:
+                _total_mismatch = True
+                logger.warning(
+                    f"TOTAL_MISMATCH {_tag}: stated={_stated} db={_db_cal} — correcting"
+                )
+                _truth = (
+                    f"\n\nNUMBER CORRECTION — the ONLY correct running day total right "
+                    f"now is {_db_cal} calories, straight from the live log. Your last "
+                    f"reply stated a different total, which is WRONG. Anything the user "
+                    f"reported this turn that isn't reflected in {_db_cal} did NOT get "
+                    f"logged — do not claim it did, do not 'double-check' and insist it's "
+                    f"there. Re-send your reply using {_db_cal} as the day total; if a "
+                    f"food they mentioned is missing, say so plainly in one line and ask "
+                    f"them to re-send it so you can log it now. Never state a day total "
+                    f"that isn't {_db_cal}."
+                )
+                _fix = await chat(
+                    messages + [{"role": "assistant", "content": response_text}],
+                    system + _truth, tools=False, max_tokens=400,
+                )
+                _fix_text = (_fix.get("text") or "").strip()
+                if _fix_text:
+                    if on_text_bubble:
+                        # Streaming: the wrong total already reached the user — emit the
+                        # corrected reply immediately after it. Register each bubble in
+                        # the streamer's flushed set so the post-build catch-up can't
+                        # re-emit it (the doubled-message guard).
+                        for _b in Response.from_text(_fix_text).bubbles:
+                            await on_text_bubble(_b)
+                            if _streamer:
+                                _streamer.flushed_count += 1
+                                _streamer.flushed_canon.add(_canon_bubble(_b))
+                    response_text = _fix_text
+    except Exception as e:
+        logger.debug(f"day-total guard failed for {_tag}: {e}")
+
     # ── Build the platform-agnostic Response ──────────────────────────────────
     # CONTRACT: response_text is FROZEN after this line. All further mutations
     # (bubble injection, dashboard URL, intro prepend) happen on resp.bubbles.
@@ -1168,6 +1220,8 @@ async def run_turn(
             health_flags.append("retried")
         if _dead_ended:
             health_flags.append("dead_end")
+        if _total_mismatch:
+            health_flags.append("total_mismatch")
         # Wall-of-text: the cap is "5+ bubbles only when a plan/breakdown is asked for".
         # Flag turns that blew past it so verbosity is visible in /admin/flagged.
         if len(resp.bubbles) > 5:
