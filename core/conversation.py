@@ -235,6 +235,15 @@ class _BubbleStreamer:
         # loop checks against this so it never re-emits a bubble that was
         # already streamed live (which was producing the doubled-message bug).
         self.flushed_canon: set[str] = set()
+        # HOLD MODE — when True, on_delta buffers completed bubbles into
+        # _held_bubbles instead of emitting them live. The first LLM pass runs
+        # held so a premature log-confirmation it writes ("logged, 340 cal")
+        # can't reach the user BEFORE the DB write actually happens. Once tool
+        # execution returns, run_turn either discard_held() (a logging tool
+        # fired → the follow-up voices the real committed total) or flush_held()
+        # (no write → release the pass-1 text as normal).
+        self.held = False
+        self._held_bubbles: list[str] = []
 
     async def on_delta(self, delta: str):
         if not delta:
@@ -262,12 +271,39 @@ class _BubbleStreamer:
         text = _sanitize_bubble(text)
         if not text:
             return
+        # While held (first pass), buffer instead of sending — the write hasn't
+        # happened yet, so any confirmation text here is unverified.
+        if self.held:
+            self._held_bubbles.append(text)
+            return
         try:
             await self.on_bubble(text)
             self.flushed_count += 1
             self.flushed_canon.add(_canon_bubble(text))
         except Exception as e:
             logger.warning(f"bubble flush failed (continuing stream): {e}")
+
+    async def flush_held(self):
+        """Release any held first-pass bubbles to the user, in order. Called when
+        the turn fired NO logging tool (pure chat, or a data-fetch turn), so the
+        pass-1 text IS the reply and there's nothing to wait on."""
+        self.held = False
+        held, self._held_bubbles = self._held_bubbles, []
+        for text in held:
+            try:
+                await self.on_bubble(text)
+                self.flushed_count += 1
+                self.flushed_canon.add(_canon_bubble(text))
+            except Exception as e:
+                logger.warning(f"held bubble flush failed (continuing): {e}")
+
+    def discard_held(self):
+        """Drop the held first-pass bubbles without sending them. Called when a
+        logging tool fired: the real confirmation (with the committed DAY TOTAL,
+        or an honest 'already on the board' / error line) comes from the
+        post-write follow-up, never from pass-1's unverified text."""
+        self._held_bubbles = []
+        self.held = False
 
 
 async def run_turn(
@@ -337,10 +373,18 @@ async def run_turn(
     # response truncated mid-turn: it logged ~1 item, the rest were cut off, and the
     # dangling preamble ("Now logging everything:") got sent raw. 4096 fits ~30 items.
     try:
+        # Run the first pass HELD: its bubbles are buffered, not sent live, so a
+        # log-confirmation the model writes here ("logged, 340 cal") can't outrun
+        # the DB write (which happens later, in execute_tool_calls). After tools
+        # return we either discard this text (a logging tool fired → the follow-up
+        # voices the real committed total) or flush it (no write happened).
+        if _streamer:
+            _streamer.held = True
         result = await chat(messages, system, tools=True, max_tokens=4096,
                             **_chat_extras)
         # Flush trailing buffer immediately so a no-||| partial doesn't carry
-        # over and prepend itself to the next call's first bubble.
+        # over and prepend itself to the next call's first bubble. (Still held —
+        # this only moves the trailing text into the held buffer.)
         if _streamer:
             await _streamer.finalize()
 
@@ -585,6 +629,24 @@ async def run_turn(
 
         # Onboarding state may have changed (update_profile can complete it)
         in_onboarding = not user.onboarding_completed
+
+    # ── Fate of the held first-pass bubbles ───────────────────────────────────
+    # The first pass ran held (its text was buffered, not sent). Now that tool
+    # execution has returned we know whether a write happened:
+    #   • a logging tool fired → DISCARD the pass-1 text. It may contain a
+    #     premature or fabricated confirmation ("340 cal logged") that the DB
+    #     may not back (dedup no-op, error, or a phantom claim). The follow-up
+    #     below re-voices the truth from tool_results — the committed DAY TOTAL,
+    #     or an honest "already on the board" / recovery line.
+    #   • no logging tool (pure chat, or a data-fetch turn) → FLUSH the held
+    #     bubbles: the pass-1 text IS the reply, nothing to wait on.
+    # Placed OUTSIDE `if tool_calls:` so a no-tool chat turn still releases.
+    if _streamer and _streamer.held:
+        _fired_logging = any(tc["name"] in _LOGGING_TOOLS for tc in tool_calls)
+        if _fired_logging:
+            _streamer.discard_held()
+        else:
+            await _streamer.flush_held()
 
     # ── Detect onboarding completion ──────────────────────────────────────────
     just_completed = was_onboarding and not in_onboarding
