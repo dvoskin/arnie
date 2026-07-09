@@ -259,6 +259,46 @@ def detect_sarcastic_ack(user_text: str, prior_assistant_text: str = "") -> bool
 _CALORIE_ESTIMATE_RE = re.compile(r'\d+\s*(?:cal(?:ories)?|kcal)\b', re.I)
 
 
+# ── Day-total truth guard ────────────────────────────────────────────────────
+# Divergence (in calories) between the total Arnie STATES and the committed DB
+# total that still counts as "matches" — absorbs per-item rounding, never a whole
+# missing item (the smallest real food is ~15 cal, a phantom bar/beer is 90+).
+DAY_TOTAL_TOLERANCE = 30
+
+# The two confirmation shapes Arnie uses to state the running DAY total, and only
+# those — both are current-day-total forms, so a match is reliably the figure we
+# can check against today_log.total_calories:
+#   • "984 / 2,165 calories"  /  "984/2165 cal"     (the standard confirm line)
+#   • "Total: 984 calories"                          (the rerun/list summary)
+# Deliberately NARROW: a bare "200 calories" (a single item's macros) or
+# "1,181 calories left" (remaining) must NOT match, or the guard fires on
+# legitimate per-item / remaining numbers.
+_STATED_DAY_TOTAL_RES = (
+    re.compile(r"\b([\d,]{2,6})\s*/\s*[\d,]{2,6}\s*(?:cal|cals|calories)\b", re.I),
+    re.compile(r"\btotal:?\s*\**\s*([\d,]{2,6})\s*(?:cal|cals|calories)\b", re.I),
+)
+
+
+def extract_stated_day_calories(text: str) -> int | None:
+    """Pull the day-total calorie figure Arnie stated in a reply, or None if the
+    reply states no day total. Only the two current-day-total shapes match (see
+    _STATED_DAY_TOTAL_RES) so per-item macros and 'X left' never register.
+
+    Used by the day-total truth guard to compare what Arnie SAID against the
+    committed DB total — a divergence means a phantom log or carried-forward
+    arithmetic, and the number is corrected before it reaches the user."""
+    if not text:
+        return None
+    for rx in _STATED_DAY_TOTAL_RES:
+        m = rx.search(text)
+        if m:
+            try:
+                return int(m.group(1).replace(",", ""))
+            except (ValueError, AttributeError):
+                continue
+    return None
+
+
 # Past-tense "it's recorded" claims — the sibling of _STALL_MARKERS (which are
 # future-tense promises). When one of these appears with NO tool call on a turn
 # where the user clearly reported a loggable set, the model confirmed a write that
