@@ -93,6 +93,7 @@ def compute_macro_targets(user) -> dict | None:
     Logic (per macro-rules spec):
       Calories
         cut          : TDEE × 0.825  (mid of 10-25% deficit)
+        recomp       : TDEE × 0.95   (slight deficit, both-at-once)
         bulk (lean)  : TDEE × 1.10   (mid of 5-15% surplus)
         performance  : TDEE × 1.05
         maintain     : TDEE
@@ -150,6 +151,10 @@ def compute_macro_targets(user) -> dict | None:
 
     if goal == "cut":
         cals, deficit_pct = round(tdee * 0.825), -17.5
+    elif goal == "recomp":
+        # Both at once: slight deficit + high protein. Users who want to lose
+        # fat AND build muscle shouldn't be forced to pick a single lane.
+        cals, deficit_pct = round(tdee * 0.95), -5.0
     elif goal == "bulk":
         cals, deficit_pct = round(tdee * 1.10), 10.0
     elif goal == "performance":
@@ -159,6 +164,9 @@ def compute_macro_targets(user) -> dict | None:
 
     if goal == "cut":
         protein = round(1.0 * goal_lb)
+        fat = round(0.3 * w_lb)
+    elif goal == "recomp":
+        protein = round(1.0 * w_lb)   # current weight — recomp goal ≈ current
         fat = round(0.3 * w_lb)
     elif goal == "bulk":
         protein = round(0.9 * w_lb)
