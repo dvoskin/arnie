@@ -65,7 +65,11 @@ def test_processing_classifier():
     # No keyword hit = UNKNOWN (-1), never "processed" — the old default
     # scored non-English whole-food days as processed_pct=100.
     assert _processing_class("Mystery casserole") == -1
-    assert _processing_class("Куриное филе запечённое") == -1
+    # RU vocabulary is first-class now (Cyrillic tokenizer + keywords)
+    assert _processing_class("Куриное филе запечённое") == 0
+    assert _processing_class("Помидоры черри") == 0
+    assert _processing_class("Чипсы Lays") == 2
+    assert _processing_class("Хлеб бородинский") == 1
 
 
 def test_score_is_portion_normalized():
@@ -76,17 +80,30 @@ def test_score_is_portion_normalized():
     assert compute_health_score(small)["score"] == compute_health_score(large)["score"]
 
 
-def test_unclassified_foreign_day_is_not_100_processed():
-    """Denys 2026-07-02: Russian whole-food names, no explicit levels — the
-    old no-match default (processed) headlined the day processed_pct=100."""
+def test_unclassified_day_is_not_100_processed():
+    """The Denys shape generalized: names with NO keyword hit (any language)
+    must read unknown — the old default headlined them processed_pct=100."""
+    day = [
+        _e("Xlorbo special", 160, protein=12),
+        _e("Mystery casserole", 165, protein=31),
+        _e("Zzyzx plate", 200),
+    ]
+    s = compute_health_score(day)
+    assert s["processed_pct"] == 0          # nothing CLASSIFIED as processed
+    assert s["coverage"]["classified"] == 0  # honesty: we classified none of it
+
+
+def test_russian_whole_food_day_reads_whole():
+    """Denys 2026-07-02 exactly — now classifies as the whole-food day it was."""
     day = [
         _e("Омлет из 2 яиц", 160, protein=12),
         _e("Куриное филе запечённое", 165, protein=31),
         _e("Помидоры", 9),
     ]
     s = compute_health_score(day)
-    assert s["processed_pct"] == 0          # nothing CLASSIFIED as processed
-    assert s["coverage"]["classified"] == 0  # honesty: we classified none of it
+    assert s["processed_pct"] == 0
+    assert s["whole_pct"] == 100
+    assert s["coverage"]["classified"] == 100
 
 
 def test_ultra_pct_splits_staples_from_ultra():

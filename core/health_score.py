@@ -44,6 +44,10 @@ _ULTRA = (
     "cheetos", "oreo", "snickers", "m&m", "skittles", "twix", "kitkat",
     "monster", "red bull", "pizza", "white bread", "sweet roll", "brownie",
     "cake", "frosting", "cinnamon roll",
+    # RU — high-frequency ultra-processed
+    "чипсы", "газировка", "кола", "конфеты", "печенье", "шоколад",
+    "мороженое", "пицца", "торт", "булочка", "фастфуд", "вафли",
+    "пирожное", "сухарики",
 )
 # Processed-but-defensible staples — small penalty (they carry additives /
 # refined bases but often earn their place in a tracked diet).
@@ -52,6 +56,9 @@ _PROCESSED = (
     "sausage", "bacon", "jerky", "canned", "wrap", "tortilla", "bread",
     "cracker", "granola", "cereal", "pretzel", "lunch meat", "ham", "salami",
     "pepperoni", "frozen meal", "meal prep",
+    # RU — processed staples
+    "хлеб", "сыр", "колбаса", "сосиски", "батончик", "лаваш",
+    "консервы", "протеиновый",
 )
 # Whole-food hints — small bonus by calorie share.
 _WHOLE = (
@@ -66,6 +73,12 @@ _WHOLE = (
     "tilapia", "sardine", "olive", "zucchini", "asparagus", "cauliflower",
     "onion", "mushroom", "kale", "mango", "peach", "pear", "pineapple",
     "watermelon",
+    # RU — whole-leaning (prefix matching covers inflections: "кури" hits
+    # курица/куриное/куриного; "помидор" hits помидоры/помидоров)
+    "курица", "куриное", "куриная", "индейка", "говядина", "рыба", "лосось",
+    "яйцо", "яйца", "омлет", "творог", "гречка", "овсянка", "картофель",
+    "помидор", "огурец", "огурцы", "овощи", "фрукты", "яблоко", "банан",
+    "салат", "капуста", "морковь", "орехи",
 )
 
 # Explicit model classification (log_food.processing_level) → class int.
@@ -77,7 +90,9 @@ _KEYWORD_DAMP = 0.7
 
 
 def _tokens(s: str) -> list:
-    return re.findall(r"[a-z0-9&]+", (s or "").lower())
+    # Latin + Cyrillic — a third of the beta logs food in Russian, and a
+    # Latin-only tokenizer reduced every RU name to zero tokens (= unknown).
+    return re.findall(r"[a-zа-яё0-9&]+", (s or "").lower())
 
 
 def _token_matches(name_tok: str, kw_tok: str) -> bool:

@@ -19,7 +19,7 @@ Whoop sync runs every 2 hours.
 import collections
 import logging
 import os
-from datetime import datetime, date, timezone
+from datetime import datetime, date, timezone, timedelta
 
 import pytz
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -496,13 +496,66 @@ async def _log_proactive(db, user_id, text: str, slot_key: str,
         logger.error(f"Proactive log failed (user {user_id}, slot {slot_key}): {e}")
 
 
+# ── Cadence throttle ─────────────────────────────────────────────────────────
+# Gi's 2026-07-14: FIVE proactives in one day (13:30, 14:00, 17:30, 20:00,
+# 23:00) — every slot was individually legitimate, and together they read as
+# nagging. A coach texts when it matters; a notification system fires on
+# schedule. Global budget across ALL slots: at most PROACTIVE_DAILY_CAP sends
+# per rolling 24h, and never two within PROACTIVE_MIN_GAP_MIN minutes.
+
+def _throttle_decision(sent_24h: int, minutes_since_last, cap: int, gap_min: int) -> str:
+    """Pure verdict: 'send' | 'cap' | 'gap'. minutes_since_last None = never."""
+    if sent_24h >= cap:
+        return "cap"
+    if minutes_since_last is not None and minutes_since_last < gap_min:
+        return "gap"
+    return "send"
+
+
+def _proactive_cap() -> int:
+    return int(os.getenv("PROACTIVE_DAILY_CAP", "4"))
+
+
+def _proactive_gap_min() -> int:
+    return int(os.getenv("PROACTIVE_MIN_GAP_MIN", "90"))
+
+
+async def _within_proactive_budget(db, user_id, slot_key: str) -> bool:
+    """Rolling-24h budget over ALL proactive sends for this user. Fail-open:
+    a budget-query error must never block the send path."""
+    try:
+        from sqlalchemy import text as _sql
+        row = (await db.execute(_sql(
+            "select count(*) as n, max(timestamp) as last from conversation_logs "
+            "where user_id = :u and source_type = 'proactive' "
+            "and timestamp > :cutoff"),
+            {"u": user_id,
+             "cutoff": datetime.utcnow() - timedelta(hours=24)})).one()
+        minutes = None
+        if row.last is not None:
+            minutes = (datetime.utcnow() - row.last).total_seconds() / 60.0
+        verdict = _throttle_decision(row.n, minutes, _proactive_cap(), _proactive_gap_min())
+        if verdict != "send":
+            logger.info(
+                f"event=proactive_throttled user={user_id} slot={slot_key} "
+                f"reason={verdict} sent_24h={row.n} minutes_since_last={minutes}")
+            return False
+        return True
+    except Exception as e:
+        logger.warning(f"proactive budget check failed (user {user_id}): {e}")
+        return True
+
+
 async def _send_logged(db, user_id, telegram_id: str, text: str, slot_key: str) -> None:
     """
     Send a user-facing proactive message, then log it. Wraps the IO-only `_send`
     (which stays send-only, shared by user-LESS internal callers) with the history
     write every user-facing proactive path needs for continuity (D2) and the
     silence streak (D3). slot_key is the structured nudge identity.
+    Budget-gated: see _within_proactive_budget.
     """
+    if not await _within_proactive_budget(db, user_id, slot_key):
+        return
     await _send(telegram_id, text, slot_key=slot_key)
     await _log_proactive(db, user_id, text, slot_key, platform=_channel_for(telegram_id))
 
@@ -511,7 +564,9 @@ async def _send_logged_with_voice(db, user_id, telegram_id: str, text: str,
                                   slot_key: str, name: str = "",
                                   language: str = "English") -> None:
     """Voice-enabled `_send_logged` — the voice-bubble proactive paths (morning
-    briefing, evening pacing, conversation-hook re-ask)."""
+    briefing, evening pacing, conversation-hook re-ask). Budget-gated."""
+    if not await _within_proactive_budget(db, user_id, slot_key):
+        return
     await _send_with_voice(telegram_id, text, name=name, language=language, slot_key=slot_key)
     await _log_proactive(db, user_id, text, slot_key, platform=_channel_for(telegram_id))
 

@@ -584,6 +584,35 @@ async def classify_image(image_data: bytes) -> str:
     return "UNKNOWN"
 
 
+_FOOD_LABELS = {"PREPARED_MEAL", "PACKAGED_PRODUCT", "FOOD_DIARY", "GROCERY", "DELIVERY_APP"}
+
+
+def _extraction_failure_block(label: str) -> str:
+    """Recovery, not a dead end. When extraction fails on a FOOD photo, the
+    block instructs the model to take the user's one-line description and LOG
+    IT immediately from words — the user should never have to re-upload or
+    abandon the log (the 07-11→15 outage stranded 5 photo logs behind a
+    generic "hit a snag" with no path forward)."""
+    if label in _FOOD_LABELS:
+        return (
+            "[UNKNOWN]\n"
+            f"VISIBLE: image classified as {label} but detailed extraction failed\n"
+            "RECOVERY: ask the user to say what it was in one line (item + rough "
+            "portion). The MOMENT they answer, log it with log_food from their "
+            "words — estimate macros yourself, do NOT ask them to resend the "
+            "photo or provide more than one clarifying answer.\n"
+            "ASK_USER: \"couldn't read the photo cleanly — tell me what it was "
+            "and roughly how much, and I'll log it right now\"\n"
+            "[/UNKNOWN]"
+        )
+    return (
+        "[UNKNOWN]\n"
+        f"VISIBLE: image classified as {label} but extraction failed\n"
+        "ASK_USER: \"hit a snag analyzing this — can you describe what you sent?\"\n"
+        "[/UNKNOWN]"
+    )
+
+
 async def process_photo(image_data: bytes, caption: str = "") -> str:
     """
     Smart photo preprocessor. Two-step vision (classify → extract) returns a
@@ -621,23 +650,13 @@ async def process_photo(image_data: bytes, caption: str = "") -> str:
             f"exc_type={type(e).__name__} msg={str(e)[:200]!r}",
             exc_info=True,
         )
-        return (
-            "[UNKNOWN]\n"
-            f"VISIBLE: image classified as {label} but extraction failed\n"
-            "ASK_USER: \"hit a snag analyzing this — can you describe what you sent?\"\n"
-            "[/UNKNOWN]"
-        )
+        return _extraction_failure_block(label)
 
     # Telemetry — greppable in production logs.
     logger.info(f"event=photo_preprocessed label={label} chars={len(block or '')}")
 
     if not block:
-        return (
-            "[UNKNOWN]\n"
-            f"VISIBLE: classified as {label} but extractor returned nothing\n"
-            "ASK_USER: \"didn't get anything from that photo — can you resend or describe it?\"\n"
-            "[/UNKNOWN]"
-        )
+        return _extraction_failure_block(label)
 
     return block
 
