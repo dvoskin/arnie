@@ -614,7 +614,13 @@ async def process_photo(image_data: bytes, caption: str = "") -> str:
     try:
         block = await analyze_image(image_data, prompt, max_tokens=max_tokens)
     except Exception as e:
-        logger.error(f"process_photo: {label} extraction failed: {e}", exc_info=True)
+        # Structured + greppable: this class of failure hid as a generic
+        # "hit a snag" for days. Type and message make prod triage one grep.
+        logger.error(
+            f"event=photo_extraction_error label={label} "
+            f"exc_type={type(e).__name__} msg={str(e)[:200]!r}",
+            exc_info=True,
+        )
         return (
             "[UNKNOWN]\n"
             f"VISIBLE: image classified as {label} but extraction failed\n"

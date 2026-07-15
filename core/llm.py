@@ -323,6 +323,13 @@ async def analyze_image(image_data: bytes, prompt: str,
     response = await client.messages.create(
         model=DEFAULT_MODEL(),
         max_tokens=max_tokens,
+        # Thinking OFF, explicitly — Sonnet 5 runs ADAPTIVE thinking when this
+        # is omitted, and a "hard" visual task (estimating a plated meal)
+        # triggers it: content[0] becomes a thinking block, the old
+        # `content[0].text` raised AttributeError, and EVERY prepared-meal
+        # photo collapsed to "hit a snag" (71% photo failure, 07-11→15) while
+        # easy label-reads (packaged products) sailed through.
+        thinking={"type": "disabled"},
         messages=[{
             "role": "user",
             "content": [
@@ -332,7 +339,12 @@ async def analyze_image(image_data: bytes, prompt: str,
             ],
         }],
     )
-    return response.content[0].text
+    # Belt over the suspenders: never assume block order — take the first
+    # TEXT block whatever the model emitted around it.
+    for block in response.content or []:
+        if getattr(block, "type", "") == "text":
+            return block.text
+    return ""
 
 
 # ── Anthropic internals ───────────────────────────────────────────────────────

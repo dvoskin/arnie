@@ -2,9 +2,11 @@
 from core.health_score import compute_health_score, _processing_class
 
 
-def _e(name, cal, protein=0, fiber=0, sugar=0, sodium=0, micros=None):
+def _e(name, cal, protein=0, fiber=0, sugar=0, sodium=0, micros=None,
+       processing_level=None):
     return {"name": name, "calories": cal, "protein": protein, "fiber": fiber,
-            "sugar": sugar, "sodium": sodium, "micros": micros or {}}
+            "sugar": sugar, "sodium": sodium, "micros": micros or {},
+            "processing_level": processing_level}
 
 
 def test_too_little_signal_returns_none():
@@ -60,7 +62,10 @@ def test_processing_classifier():
     assert _processing_class("Grilled chicken breast") == 0
     assert _processing_class("Barebells protein bar") == 1
     assert _processing_class("Doritos chips") == 2
-    assert _processing_class("Mystery casserole") == 1   # unknown → middle
+    # No keyword hit = UNKNOWN (-1), never "processed" — the old default
+    # scored non-English whole-food days as processed_pct=100.
+    assert _processing_class("Mystery casserole") == -1
+    assert _processing_class("Куриное филе запечённое") == -1
 
 
 def test_score_is_portion_normalized():
@@ -69,3 +74,29 @@ def test_score_is_portion_normalized():
     small = [_e("Chicken and rice", 600, protein=45, fiber=5, sodium=500)]
     large = [_e("Chicken and rice", 1200, protein=90, fiber=10, sodium=1000)]
     assert compute_health_score(small)["score"] == compute_health_score(large)["score"]
+
+
+def test_unclassified_foreign_day_is_not_100_processed():
+    """Denys 2026-07-02: Russian whole-food names, no explicit levels — the
+    old no-match default (processed) headlined the day processed_pct=100."""
+    day = [
+        _e("Омлет из 2 яиц", 160, protein=12),
+        _e("Куриное филе запечённое", 165, protein=31),
+        _e("Помидоры", 9),
+    ]
+    s = compute_health_score(day)
+    assert s["processed_pct"] == 0          # nothing CLASSIFIED as processed
+    assert s["coverage"]["classified"] == 0  # honesty: we classified none of it
+
+
+def test_ultra_pct_splits_staples_from_ultra():
+    day = [
+        _e("Turkey sandwich", 500, protein=30, processing_level="processed"),
+        _e("Doritos chips", 250, processing_level="ultra_processed"),
+        _e("Apple", 250, processing_level="whole"),
+    ]
+    s = compute_health_score(day)
+    assert s["processed_pct"] == 75          # staples + ultra
+    assert s["ultra_pct"] == 25              # the alarming fact, alone
+    assert s["whole_pct"] == 25
+    assert s["coverage"]["classified"] == 100

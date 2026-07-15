@@ -117,12 +117,27 @@ def _exercise_load_str(e) -> str:
     return ""
 
 
-def _recent_training_days(logs: List[DailyLog], days: int = 14) -> int:
+def _local_today(tz_name) -> date:
+    """The user's current LOGGING day — the same clock the WRITE path uses
+    (db.queries._user_today, incl. the pre-dawn rollover). The context layer
+    ran on bare date.today() = server-UTC for months: for an ET user in the
+    evening, "today" was already tomorrow, so summaries read an empty day and
+    Arnie reported "nothing logged" while the entries sat on the local date
+    (Chaya, 2026-07-14: "I TOLD U WHAT I ATE"). Read and write must agree."""
+    try:
+        from db.queries import _user_today
+        return _user_today(tz_name or "UTC")
+    except Exception:
+        return date.today()
+
+
+def _recent_training_days(logs: List[DailyLog], days: int = 14,
+                          today: Optional[date] = None) -> int:
     """Distinct days in the last `days` with a REAL logged workout — wearable
     auto-syncs (Whoop walks, Apple Health) don't count as 'training with intent'.
     Drives the no_program coach note: 3+ real training days without a program
     means the user is ready to be OFFERED structure."""
-    cutoff = date.today() - timedelta(days=days)
+    cutoff = (today or date.today()) - timedelta(days=days)
     trained = set()
     for lg in logs or []:
         if lg.date and lg.date >= cutoff:
@@ -284,9 +299,11 @@ def fmt_profile(user: User, prefs: Optional[UserPreferences]) -> str:
     return "\n".join(lines)
 
 
-def fmt_history(logs: List[DailyLog]) -> str:
+def fmt_history(logs: List[DailyLog], today: Optional[date] = None) -> str:
     # Past days only — today's totals are still moving until bedtime.
-    today_d = date.today()
+    # `today` = the USER-LOCAL logging day; bare date.today() is the UTC
+    # fallback for legacy callers only.
+    today_d = today or date.today()
     past = [l for l in logs if l.date < today_d]
     if not past:
         return "No prior days logged yet."
@@ -300,7 +317,8 @@ def fmt_history(logs: List[DailyLog]) -> str:
     return "\n".join(lines)
 
 
-def fmt_recent_day_detail(logs: List[DailyLog], days: int = 3) -> str:
+def fmt_recent_day_detail(logs: List[DailyLog], days: int = 3,
+                          today: Optional[date] = None) -> str:
     """
     Lists every food entry from the last `days` PAST days (excluding today,
     which has its own [TODAY] block). Lets the model answer "what did I eat
@@ -310,7 +328,7 @@ def fmt_recent_day_detail(logs: List[DailyLog], days: int = 3) -> str:
     Each entry: name + quantity + macros. Same shape the user sees on the
     dashboard. Capped at `days` days to keep the prompt lean.
     """
-    today_d = date.today()
+    today_d = today or date.today()
     past = sorted(
         [l for l in (logs or []) if l.date < today_d],
         key=lambda l: l.date,
@@ -497,13 +515,14 @@ def fmt_food_history(logs: List[DailyLog]) -> str:
     return "\n".join(lines)
 
 
-def fmt_weekly_breakdown(logs: List[DailyLog], prefs: Optional[UserPreferences]) -> str:
+def fmt_weekly_breakdown(logs: List[DailyLog], prefs: Optional[UserPreferences],
+                         today: Optional[date] = None) -> str:
     """Per-week nutrition and workout averages for the last 4 weeks.
     Used by weekly_summary and progress_timeline skills."""
     if not logs:
         return ""
 
-    today_date = date.today()
+    today_date = today or date.today()
     cal_t = prefs.calorie_target if prefs else None
     pro_t = prefs.protein_target if prefs else None
     lines = []
@@ -590,14 +609,15 @@ def pacing_note(log: Optional[DailyLog], prefs: Optional[UserPreferences],
     return "\n".join(parts) if parts else ""
 
 
-def adherence_insights(logs: List[DailyLog], prefs: Optional[UserPreferences]) -> str:
+def adherence_insights(logs: List[DailyLog], prefs: Optional[UserPreferences],
+                       today: Optional[date] = None) -> str:
     """Streak, weekly adherence, and trend callouts."""
     if not logs:
         return ""
     lines = []
 
     # Logging streak
-    today_date = date.today()
+    today_date = today or date.today()
     streak = 0
     check = today_date
     log_dates = {l.date for l in logs}
@@ -820,12 +840,13 @@ async def build_context(user: User, today_log: Optional[DailyLog], db,
         _l.getLogger(__name__).warning(f"pending clarification fetch failed: {e}")
 
     prefs = user.preferences
+    user_today = _local_today(user.timezone)
     pace = pacing_note(today_log, prefs, user.timezone or "UTC")
-    adherence = adherence_insights(recent_logs, prefs)
+    adherence = adherence_insights(recent_logs, prefs, today=user_today)
     progress = goal_progress(user)
     health_str = fmt_health(recent_health)
     weight_progress = fmt_weight_progress(recent_weights, user)
-    weekly_breakdown = fmt_weekly_breakdown(recent_logs, prefs)
+    weekly_breakdown = fmt_weekly_breakdown(recent_logs, prefs, today=user_today)
     strength_prs = fmt_strength_prs(recent_logs)
     food_history = fmt_food_history(recent_logs)
 
@@ -1007,7 +1028,7 @@ async def build_context(user: User, today_log: Optional[DailyLog], db,
     # log → log consistently → structure. This is the "ready for structure"
     # rung detector: real (non-wearable) training on 3+ of the last 14 days.
     if not training_program_str:
-        _tdays = _recent_training_days(recent_logs, days=14)
+        _tdays = _recent_training_days(recent_logs, days=14, today=user_today)
         if _tdays >= 3:
             training_program_str = (
                 f"[COACH NOTE — no_program] User has trained {_tdays} of the last 14 "
@@ -1245,11 +1266,11 @@ async def build_context(user: User, today_log: Optional[DailyLog], db,
         (adherence if adherence else "No adherence data yet."),
         "",
         "=== RECENT HISTORY ===",
-        fmt_history(recent_logs),
+        fmt_history(recent_logs, today=user_today),
         (weight_progress if weight_progress else fmt_weight_trend(recent_weights)),
         (weekly_breakdown if weekly_breakdown else ""),
         "",
-        fmt_recent_day_detail(recent_logs, days=3),
+        fmt_recent_day_detail(recent_logs, days=3, today=user_today),
         "",
         "=== FOOD HISTORY ===",
         (food_history if food_history else "No food history yet."),

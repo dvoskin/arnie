@@ -105,17 +105,21 @@ _WHOLE_T = tuple(tuple(_tokens(k)) for k in _WHOLE)
 
 
 def _processing_class(name: str) -> int:
-    """0 = whole-leaning, 1 = processed staple, 2 = ultra-processed."""
+    """0 = whole-leaning, 1 = processed staple, 2 = ultra-processed,
+    -1 = UNKNOWN (no keyword hit). Unknown must stay unknown: the keyword
+    lists are English-only, so defaulting no-match to "processed" scored
+    Denys's omelet/chicken/tomato day (Russian names, no explicit levels)
+    as processed_pct=100 — the "100% processed on whole foods" report."""
     toks = _tokens(name)
     if not toks:
-        return 1
+        return -1
     if any(_kw_in(toks, k) for k in _ULTRA_T):
         return 2
     if any(_kw_in(toks, k) for k in _PROCESSED_T):
         return 1
     if any(_kw_in(toks, k) for k in _WHOLE_T):
         return 0
-    return 1        # unknown → middle of the road, never assume pristine
+    return -1
 
 
 def _scale(value: float, lo: float, hi: float, points: float) -> float:
@@ -191,6 +195,8 @@ def compute_health_score(entries: list) -> Optional[dict]:
     # explicit calories count fully, keyword-classified calories are damped.
     u = p = w = 0.0
     for cal, cls, explicit in classed:
+        if cls < 0:
+            continue                # unknown: no opinion, no penalty
         weight = (cal / kcal) * (1.0 if explicit else _KEYWORD_DAMP)
         if cls == 2:
             u += weight
@@ -198,11 +204,18 @@ def compute_health_score(entries: list) -> Optional[dict]:
             w += weight
         else:
             p += weight
-    # Raw (undamped) shares for the processed_pct surface — that's a fact about
-    # the food, not about our confidence in the classification.
-    raw_u = sum(cal for cal, cls, _x in classed if cls == 2) / kcal
-    raw_w = sum(cal for cal, cls, _x in classed if cls == 0) / kcal
-    raw_p = 1.0 - raw_u - raw_w
+    # Raw (undamped) shares for the processed_pct surface, computed over the
+    # CLASSIFIED calories only — unknown food is a coverage fact, never a
+    # verdict. classification coverage rides alongside so the card can say
+    # "of what I can classify" honestly.
+    classified_kcal = sum(cal for cal, cls, _x in classed if cls >= 0)
+    class_cov = classified_kcal / kcal if kcal else 0.0
+    if classified_kcal > 0:
+        raw_u = sum(cal for cal, cls, _x in classed if cls == 2) / classified_kcal
+        raw_w = sum(cal for cal, cls, _x in classed if cls == 0) / classified_kcal
+        raw_p = max(0.0, 1.0 - raw_u - raw_w)
+    else:
+        raw_u = raw_w = raw_p = 0.0
 
     drivers = []
 
@@ -231,8 +244,15 @@ def compute_health_score(entries: list) -> Optional[dict]:
         "band": band,
         "drivers": drivers[:4],
         "processed_pct": int(round(100 * (raw_u + raw_p))),
+        # The alarming fact is ULTRA-processed share — staples (sandwiches,
+        # sushi, bread) are context, not a verdict. Clients should headline
+        # ultra_pct and show whole/staple shares alongside.
+        "ultra_pct": int(round(100 * raw_u)),
+        "whole_pct": int(round(100 * raw_w)),
         # Data-honesty surface: how much of the day's calories carry enriched
-        # nutrient data / a micro panel. The card tags low-coverage days softer.
+        # nutrient data / a micro panel / a processing classification. The
+        # card tags low-coverage days softer.
         "coverage": {"nutrients": int(round(100 * nutrient_cov)),
-                     "micros": int(round(100 * micro_cov))},
+                     "micros": int(round(100 * micro_cov)),
+                     "classified": int(round(100 * class_cov))},
     }
