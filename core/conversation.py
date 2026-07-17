@@ -1075,7 +1075,18 @@ async def run_turn(
     elif was_onboarding and onboarding_field_saved:
         resp.reaction = onboarding_reaction(onboarding_field_saved)
     elif not in_onboarding:
-        moment         = detect_moment(response_text, tool_calls)
+        # First-ever food logged this turn? Only a still-gated user can be on
+        # their first food (log_unlocked_at flips at 2 entries and grandfathered
+        # users are pre-seeded), so established users never pay the COUNT query.
+        _first_food = False
+        if (any((tc.get("name") == "log_food") for tc in (tool_calls or []))
+                and getattr(user, "log_unlocked_at", None) is None):
+            try:
+                from core.activation import _food_entry_count
+                _first_food = (await _food_entry_count(db, user.id)) == 1
+            except Exception:
+                _first_food = False
+        moment         = detect_moment(response_text, tool_calls, first_food=_first_food)
         resp.reaction  = moment.reaction
         resp.effect    = moment.effect
         resp.effect_idx = moment.effect_idx

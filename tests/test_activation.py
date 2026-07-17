@@ -139,3 +139,23 @@ async def test_context_line_only_exists_while_locked():
     assert line and "[ACTIVATION]" in line and "1/2" in line
 
     assert activation_context_line({"all_unlocked": True}) is None
+
+
+# ── First-food moment (core/platform.detect_moment) ──────────────────────────
+
+async def test_first_food_fires_celebrate_effect():
+    from core.platform import detect_moment, FX, React
+    m = detect_moment("logged. solid start.", [{"name": "log_food"}], first_food=True)
+    assert m.effect == FX.CELEBRATE and m.reaction == React.LOVE
+
+
+async def test_first_food_flag_without_food_tool_is_ignored():
+    from core.platform import detect_moment
+    m = detect_moment("morning!", [], first_food=True)
+    assert m.effect is None
+
+
+async def test_regular_food_log_gets_no_effect():
+    from core.platform import detect_moment
+    m = detect_moment("logged. that's 610 for the day.", [{"name": "log_food"}])
+    assert m.effect is None

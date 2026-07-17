@@ -379,11 +379,17 @@ class Moment:
     effect_idx: int = -1
 
 
-def detect_moment(response_text: str, tool_calls: list) -> Moment:
+def detect_moment(response_text: str, tool_calls: list,
+                  first_food: bool = False) -> Moment:
     """
     Decide what reaction / effect (if any) a coaching response warrants.
     Pure function — used by both Telegram and iMessage adapters for consistency.
     Priority order: milestones (effect) first, then lighter reactions.
+
+    first_food — the caller (conversation.py, which can see the DB) says this
+    turn logged the user's FIRST-EVER food. The single most important log in
+    the product (activation cliff = food logging) gets the celebration
+    regardless of what the reply text happens to say.
     """
     t = (response_text or "").lower()
     names = {tc.get("name") for tc in (tool_calls or [])}
@@ -391,6 +397,9 @@ def detect_moment(response_text: str, tool_calls: list) -> Moment:
     has_food = "log_food" in names
 
     # ── Milestones (reaction + dramatic effect) ──────────────────────────────
+    if first_food and has_food:
+        return Moment(React.LOVE, FX.CELEBRATE, -1)      # first-ever food → ❤️ + balloons
+
     if has_exercise and any(s in t for s in _PR_SIGNALS):
         return Moment(React.LOVE, FX.SLAM, 0)            # PR → ❤️ + slam
 
