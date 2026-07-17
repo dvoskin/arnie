@@ -39,9 +39,11 @@ COACH_UNLOCK_DAYS = 2        # qualifying days → Coach tab
 QUALIFYING_DAY_KCAL = 1000   # a day "counts" once this many kcal are logged
 
 # Users created before this date predate the gates entirely. The migration
-# already seeded them unlocked; this is the runtime net for any row that
-# missed the seed (restored backups, out-of-band inserts).
-ACTIVATION_EPOCH = date(2026, 7, 18)
+# already seeded everyone existing at deploy time unlocked (that seed is the
+# real grandfather — it covers same-day pre-deploy signups too); this runtime
+# net only catches rows that missed the seed (restored backups, out-of-band
+# inserts).
+ACTIVATION_EPOCH = date(2026, 7, 17)
 
 
 def _grandfathered(user: User) -> bool:
