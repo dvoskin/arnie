@@ -298,10 +298,14 @@ def _sniff_image_mime(data: bytes) -> Optional[str]:
     return None
 
 
-async def analyze_image(image_data: bytes, prompt: str,
+async def analyze_image(image_data, prompt: str,
                         mime_type: str = "image/jpeg",
                         max_tokens: int = 512) -> str:
-    """Analyze an image with Claude vision.
+    """Analyze one image — or several together — with Claude vision.
+
+    image_data: bytes, or a list of bytes to put every photo in ONE vision
+    call (multi-angle meal shots, a label + the plate). The model sees them
+    as consecutive image blocks and reasons across all of them.
 
     max_tokens override useful for: cheap classify calls (~20 tokens) or
     extractor calls that may produce long structured output (blood panels,
@@ -312,14 +316,21 @@ async def analyze_image(image_data: bytes, prompt: str,
         return ""
     import base64
     client = _get_anthropic()
-    # Never trust the caller's media_type hint — sniff the real format so a
-    # PNG-sent-as-JPEG (iOS screenshots) can't 400 the vision call.
-    detected = _sniff_image_mime(image_data)
-    if detected and detected != mime_type:
-        logger.info(f"analyze_image: overrode media_type hint {mime_type!r} "
-                    f"with sniffed {detected!r}")
-    media_type = detected or mime_type
-    b64 = base64.standard_b64encode(image_data).decode()
+    images = image_data if isinstance(image_data, list) else [image_data]
+    content = []
+    for img in images:
+        # Never trust the caller's media_type hint — sniff the real format so a
+        # PNG-sent-as-JPEG (iOS screenshots) can't 400 the vision call.
+        detected = _sniff_image_mime(img)
+        if detected and detected != mime_type:
+            logger.info(f"analyze_image: overrode media_type hint {mime_type!r} "
+                        f"with sniffed {detected!r}")
+        content.append({"type": "image", "source": {
+            "type": "base64",
+            "media_type": detected or mime_type,
+            "data": base64.standard_b64encode(img).decode(),
+        }})
+    content.append({"type": "text", "text": prompt})
     response = await client.messages.create(
         model=DEFAULT_MODEL(),
         max_tokens=max_tokens,
@@ -330,14 +341,7 @@ async def analyze_image(image_data: bytes, prompt: str,
         # photo collapsed to "hit a snag" (71% photo failure, 07-11→15) while
         # easy label-reads (packaged products) sailed through.
         thinking={"type": "disabled"},
-        messages=[{
-            "role": "user",
-            "content": [
-                {"type": "image", "source": {"type": "base64",
-                                              "media_type": media_type, "data": b64}},
-                {"type": "text", "text": prompt},
-            ],
-        }],
+        messages=[{"role": "user", "content": content}],
     )
     # Belt over the suspenders: never assume block order — take the first
     # TEXT block whatever the model emitted around it.

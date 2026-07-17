@@ -86,6 +86,12 @@ class PhotoChatRequest(BaseModel):
     # memory + sent to the vision model. Client photos downscale to a few hundred
     # KB, so this only ever trips abuse.
     image_base64: str = Field(..., max_length=13_400_000)
+    # Optional multi-image turn (client ≥219): every photo of the SAME subject
+    # (two angles of a plate, label + plated portion) analysed in ONE vision
+    # call. When present, this supersedes image_base64 — which clients still
+    # send (first photo) so the payload also works on older servers. Capped at
+    # 4 photos; same per-photo size bound as image_base64.
+    images_base64: Optional[list[str]] = Field(None, max_length=4)
     caption: str = ""
 
     @field_validator("image_base64")
@@ -94,6 +100,19 @@ class PhotoChatRequest(BaseModel):
         v = (v or "").strip()
         if not v:
             raise ValueError("image_base64 must not be empty")
+        return v
+
+    @field_validator("images_base64")
+    @classmethod
+    def _each_bounded(cls, v):
+        if v is None:
+            return v
+        v = [s.strip() for s in v if (s or "").strip()]
+        if not v:
+            return None
+        for s in v:
+            if len(s) > 13_400_000:
+                raise ValueError("each image must be under ~10MB decoded")
         return v
 
 
@@ -245,20 +264,28 @@ async def chat_photo(req: PhotoChatRequest, identity: str = Depends(current_iden
     coach as a `[Photo received]` message (source_type "photo" so logged entries are
     flagged from_photo). Same reply shape as /chat.
     """
-    try:
-        image_data = base64.b64decode(req.image_base64, validate=True)
-    except Exception:
-        raise HTTPException(status_code=400, detail="Invalid image_base64")
-    if not image_data:
+    # Multi-image turn when the client sent one; single legacy field otherwise.
+    raw_list = req.images_base64 or [req.image_base64]
+    images: list[bytes] = []
+    for b64 in raw_list:
+        try:
+            data = base64.b64decode(b64, validate=True)
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid image_base64")
+        if data:
+            images.append(data)
+    if not images:
         raise HTTPException(status_code=400, detail="Empty image")
 
     from multimodal.image_handler import process_photo
-    analysis = await process_photo(image_data, req.caption or "")
+    analysis = await process_photo(images if len(images) > 1 else images[0],
+                                   req.caption or "")
     if not analysis:
         raise HTTPException(status_code=422, detail="Could not analyse the image")
 
     caption_part = f" Caption: {req.caption}" if req.caption else ""
-    combined = f"[Photo received]{caption_part}\n\n{analysis}"
+    photo_tag = "[Photo received]" if len(images) == 1 else f"[{len(images)} photos received]"
+    combined = f"{photo_tag}{caption_part}\n\n{analysis}"
     return await _coached_reply(identity, combined, source_type="photo")
 
 

@@ -613,10 +613,13 @@ def _extraction_failure_block(label: str) -> str:
     )
 
 
-async def process_photo(image_data: bytes, caption: str = "") -> str:
+async def process_photo(image_data, caption: str = "") -> str:
     """
     Smart photo preprocessor. Two-step vision (classify → extract) returns a
     TAGGED block of structured text for the main LLM to route on.
+
+    image_data: bytes, or list[bytes] — multiple shots of the same subject are
+    analysed together in one vision call (classified on the first).
 
     The block is one of:
       [FOOD_LOG] ...                — for log_food downstream
@@ -635,13 +638,25 @@ async def process_photo(image_data: bytes, caption: str = "") -> str:
     Returns "" on hard failure (no API key, network out). Returns an UNKNOWN
     block on classification/extraction failure so the LLM can still respond.
     """
-    label = await classify_image(image_data)
+    # Multi-image: classify on the FIRST photo (cheap), extract with ALL of
+    # them in one vision call — two angles of the same plate, or a label shot
+    # plus the plated portion, land as one coherent estimate instead of two
+    # conflicting logs.
+    images = image_data if isinstance(image_data, list) else [image_data]
+    label = await classify_image(images[0])
     extractor_prompt = _EXTRACTORS.get(label, _UNKNOWN_PROMPT)
     max_tokens = _EXTRACTOR_MAX_TOKENS.get(label, 512)
     prompt = extractor_prompt.format(caption=caption or "none")
+    if len(images) > 1:
+        prompt = (
+            f"[{len(images)} photos of the SAME subject — different angles or "
+            f"a label plus the plate. Combine everything visible across all "
+            f"of them into ONE estimate; never log items twice.]\n" + prompt
+        )
 
     try:
-        block = await analyze_image(image_data, prompt, max_tokens=max_tokens)
+        block = await analyze_image(images if len(images) > 1 else images[0],
+                                    prompt, max_tokens=max_tokens)
     except Exception as e:
         # Structured + greppable: this class of failure hid as a generic
         # "hit a snag" for days. Type and message make prod triage one grep.
