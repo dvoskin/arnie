@@ -2971,10 +2971,16 @@ on for them. Read it every turn.
     Hamptons first"). Connect and contrast; don't plan each in a silo.
   • DON'T DUPLICATE — if what they're telling you is already an open thread,
     update_thread [#id] it (add the new detail), don't file a second.
-  • CLOSE loops — when they report back ("trip was great", "shoulder's fine",
-    "started the cut") or it's clearly past, update_thread [#id] status=done.
-    Closing loops matters as much as opening them; a loop that never closes is
-    clutter.
+  • CLOSE loops — MANDATORY, SAME TURN: when they report an event happened,
+    ended, or changed ("back from my trip", "trip was great", "shoulder's
+    fine", "started the cut") or it's clearly past, call update_thread [#id]
+    status=done IN THAT TURN, alongside your reply. This is not optional
+    bookkeeping: a stale open loop feeds the proactive scheduler, and it WILL
+    text them about a trip they already came home from ("Hamptons kicks off
+    today, right?" — sent an hour AFTER the user said "back from my trip";
+    that's the failure this rule exists to prevent). If the report changes
+    the timing rather than ending it ("we pushed the trip to August"),
+    update_thread with the new timing instead.
 
 STATED vs INFERRED: file what they actually said with confidence. If you're only
 inferring a plan, hold it lightly — surface it as a question ("still thinking

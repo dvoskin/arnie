@@ -556,6 +556,9 @@ async def _send_logged(db, user_id, telegram_id: str, text: str, slot_key: str) 
     """
     if not await _within_proactive_budget(db, user_id, slot_key):
         return
+    text = _clean_proactive_text(text)
+    if not text:
+        return
     await _send(telegram_id, text, slot_key=slot_key)
     await _log_proactive(db, user_id, text, slot_key, platform=_channel_for(telegram_id))
 
@@ -567,8 +570,29 @@ async def _send_logged_with_voice(db, user_id, telegram_id: str, text: str,
     briefing, evening pacing, conversation-hook re-ask). Budget-gated."""
     if not await _within_proactive_budget(db, user_id, slot_key):
         return
+    text = _clean_proactive_text(text)
+    if not text:
+        return
     await _send_with_voice(telegram_id, text, name=name, language=language, slot_key=slot_key)
     await _log_proactive(db, user_id, text, slot_key, platform=_channel_for(telegram_id))
+
+
+def _clean_proactive_text(text: str) -> str:
+    """Normalize generated proactive text at the single choke point every send
+    passes through. Haiku occasionally returns bubbles as QUOTED lines — the
+    user then receives messages wrapped in literal quote marks (Danny's 4:30
+    2026-07-17 nudge arrived as '"It's 4:30 and nothing's logged yet."'). Strip
+    a wrapping quote pair per bubble and drop empty/whitespace bubbles."""
+    QUOTE_OPEN = ('"', "'", "“", "‘")
+    QUOTE_CLOSE = ('"', "'", "”", "’")
+    cleaned = []
+    for b in (text or "").split("|||"):
+        b = b.strip()
+        while len(b) >= 2 and b[0] in QUOTE_OPEN and b[-1] in QUOTE_CLOSE:
+            b = b[1:-1].strip()
+        if b:
+            cleaned.append(b)
+    return "|||".join(cleaned)
 
 
 async def _send_slot_deduped(
@@ -1187,6 +1211,26 @@ async def _llm_thread_nudge(user, thread, name: str) -> str:
         return ""
 
 
+async def _user_spoke_recently(db, user_id: int, minutes: int = 180) -> bool:
+    """True if the user sent a real (non-proactive) message within the window.
+    Fail-CLOSED (returns True) on a query error: when in doubt, don't nudge."""
+    try:
+        from sqlalchemy import text as _sql
+        row = (await db.execute(_sql(
+            "select max(timestamp) as last from conversation_logs "
+            "where user_id = :u and source_type != 'proactive'"),
+            {"u": user_id})).one()
+        if row.last is None:
+            return False
+        last = row.last
+        if isinstance(last, str):   # SQLite hands raw-SQL datetimes back as text
+            last = datetime.fromisoformat(last)
+        return (datetime.utcnow() - last).total_seconds() < minutes * 60
+    except Exception as e:
+        logger.warning(f"user_spoke_recently check failed (user {user_id}): {e}")
+        return True
+
+
 async def _maybe_send_thread_nudge(db, user, send_id: str, name: str) -> bool:
     """If the user has a DUE open loop (memory graph, Stage 2), send ONE in-voice
     follow-through nudge about the top one and mark it touched so it can never
@@ -1199,6 +1243,19 @@ async def _maybe_send_thread_nudge(db, user, send_id: str, name: str) -> bool:
         if not due:
             return False
         thread = due[0]
+        # Staleness guard: if the user spoke RECENTLY, the live conversation
+        # owns the moment — and the thread may already be stale (Hamptons,
+        # 2026-07-17: the user said "back from my trip" at 16:08, the model
+        # didn't close the loop, and the 17:00 thread nudge asserted the trip
+        # "kicks off today"). Defer the nudge a few hours; if the loop got
+        # resolved meanwhile, it never fires at all.
+        if await _user_spoke_recently(db, user.id, minutes=180):
+            from db.thread_queries import defer_thread_touch
+            await defer_thread_touch(db, thread.id, hours=4)
+            logger.info(
+                f"event=thread_nudge_deferred user_id={user.id} thread_id={thread.id} "
+                f"reason=recent_user_activity")
+            return False
         msg = await _llm_thread_nudge(user, thread, name)
         if not msg:
             return False

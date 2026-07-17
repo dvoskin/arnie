@@ -268,3 +268,17 @@ async def edit_thread(
     await db.commit()
     await db.refresh(t)
     return t
+
+
+async def defer_thread_touch(db: AsyncSession, thread_id: int, hours: int = 4) -> None:
+    """Push a due thread's next_touch_at forward WITHOUT consuming its one
+    proactive touch — used when a nudge is skipped because the user is mid-
+    conversation (the thread may be stale; the live turn gets a chance to
+    resolve it first). Commits."""
+    t = (await db.execute(
+        select(UserThread).where(UserThread.id == thread_id)
+    )).scalar_one_or_none()
+    if t is None:
+        return
+    t.next_touch_at = datetime.utcnow() + timedelta(hours=hours)
+    await db.commit()
