@@ -62,6 +62,15 @@ async def get_day(
     async with AsyncSessionLocal() as db:
         user = await resolve_user(db, identity)
         stats = await day_data(db, user, target_date=parsed_date)
+        # Activation gates + streaks ride on /day because it's the payload the
+        # client refreshes right after every log turn — so an unlock or a
+        # streak tick is visible the moment it's earned.
+        from core.activation import get_activation
+        from core.streaks import compute_streaks
+        from db.queries import _user_today, get_recent_logs
+        activation = await get_activation(db, user)
+        _streak_logs = await get_recent_logs(db, user.id, days=90)
+        streaks = compute_streaks(_streak_logs, _user_today(user.timezone or "UTC"))
 
     targets = stats.get("targets") or {}
     day = stats.get("day") or {}
@@ -94,6 +103,11 @@ async def get_day(
         # Day nutrition-quality score (0-100) + signed drivers — the Coach
         # Health Score card. Null under ~300 kcal logged (too little signal).
         "health_score": _health_score(day.get("food_entries", [])),
+        # Earn-your-tabs gate state (core/activation.py) — the client renders
+        # tab locks from this, never computes them.
+        "activation": activation,
+        # Forgiving consistency chains (core/streaks.py) — flame in the top bar.
+        "streaks": streaks,
     }
 
 
@@ -117,6 +131,8 @@ async def get_profile(identity: str = Depends(current_identity)):
     async with AsyncSessionLocal() as db:
         user = await resolve_user(db, identity)
         stats = await profile_data(db, user)
+        from core.activation import get_activation
+        activation = await get_activation(db, user)
 
     p = stats.get("profile") or {}
 
@@ -168,6 +184,9 @@ async def get_profile(identity: str = Depends(current_identity)):
             "city": clean(p.get("city")),
             "coords_set": bool(p.get("coords_set")),
         },
+        # Gate state also rides /profile so the app has it on cold launch
+        # (before any /day fetch) — tab chrome renders correctly on frame one.
+        "activation": activation,
     }
 
 
@@ -202,6 +221,11 @@ async def get_week(identity: str = Depends(current_identity)):
         # here (db in scope) and kept INDEPENDENT of the 7-day `days` window and
         # the adaptive-TDEE input, so adding it can't shift either.
         from db.queries import get_recent_logs as _get_recent_logs
+        # 90 days feeds the streak engine (its `best` window); the 30-day
+        # macro history below slices what it needs from its own fetch.
+        from core.streaks import compute_streaks as _compute_streaks
+        _streak_logs = await _get_recent_logs(db, user.id, days=90)
+        streaks = _compute_streaks(_streak_logs, today)
         _macro_logs = await _get_recent_logs(db, user.id, days=30)
         _macro_by_date = {str(l.date): l for l in _macro_logs}
         macro_history = []
@@ -291,6 +315,8 @@ async def get_week(identity: str = Depends(current_identity)):
         "weights": [{"date": w["date"], "lbs": w["lbs"]} for w in weights[-30:]],
         "adherence_days": adherence_days,
         "macro_history": macro_history,
+        # Consistency chains (current/best/at-risk) — the streak detail sheet.
+        "streaks": streaks,
         # Adaptive TDEE (energy-balance from intake + weight trend); null when data
         # is too thin — the Coach expenditure card hides itself in that case.
         "expenditure": expenditure,

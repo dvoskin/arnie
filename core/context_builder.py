@@ -1228,6 +1228,22 @@ async def build_context(user: User, today_log: Optional[DailyLog], db,
     except Exception:
         _lang_directive = None
 
+    # [ACTIVATION] + [STREAK] — gate progress for new users (so Arnie nudges
+    # toward the unlock naturally) and consistency-chain state (so he
+    # celebrates milestones / protects an at-risk chain in his own voice).
+    # Read-only here (persist=False): flips are owned by /day, and a context
+    # build must never commit mid-turn. Guarded — never blocks a coaching turn.
+    activation_line, streak_line = "", ""
+    try:
+        from core.activation import get_activation, activation_context_line
+        from core.streaks import compute_streaks, streaks_context_line
+        _act = await get_activation(db, user, persist=False)
+        activation_line = activation_context_line(_act) or ""
+        _stk = compute_streaks(recent_logs, user_today)
+        streak_line = streaks_context_line(_stk) or ""
+    except Exception as e:
+        logger.debug(f"activation/streak context failed: {e}")
+
     sections = [
         (_lang_directive if _lang_directive else ""),
         current_time_line,
@@ -1245,6 +1261,7 @@ async def build_context(user: User, today_log: Optional[DailyLog], db,
         "",
         # Coaching state goes at top so every skill sees it first
         (coaching_state_str if coaching_state_str else ""),
+        (activation_line if activation_line else ""),
         "",
         (training_program_str if training_program_str else ""),
         "",
@@ -1259,6 +1276,7 @@ async def build_context(user: User, today_log: Optional[DailyLog], db,
         "",
         "=== MOMENTUM & DISCOVERY ===",
         (momentum_str if momentum_str else ""),
+        (streak_line if streak_line else ""),
         ("\n".join(discovery_lines) if discovery_lines else ""),
         (records_str if records_str else ""),
         "",

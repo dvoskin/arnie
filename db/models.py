@@ -85,6 +85,12 @@ class User(Base):
     mission_metric = Column(String)                 # protein|calories|workouts|steps
     mission_target = Column(Float)                  # numeric target for the metric
     mission_date = Column(String)                   # date string the mission is for
+    # Activation gates — when this user earned each tab. Null = still locked.
+    # Set once by core/activation.py when the threshold is crossed and NEVER
+    # cleared (deleting a food entry must not re-lock a tab). Existing users
+    # are grandfathered by the migration that added these columns.
+    log_unlocked_at = Column(DateTime)
+    coach_unlocked_at = Column(DateTime)
     created_at = Column(DateTime, server_default=func.now())
 
     preferences = relationship("UserPreferences", back_populates="user", uselist=False,

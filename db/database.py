@@ -206,6 +206,11 @@ async def _migrate(conn):
         #    preferred over the health score's keyword proxy. SQLite-only net —
         #    Postgres handled by paired alembic migration e2f3a4b5c6d7.
         ("food_entries", "processing_level", "VARCHAR"),
+        # ── 2026-07-17: activation gates — when the user earned the Log/Coach
+        #    tabs (null = locked). SQLite-only net — Postgres handled by paired
+        #    alembic migration e7750abe4362 (which also grandfathers existing users).
+        ("users", "log_unlocked_at", "DATETIME"),
+        ("users", "coach_unlocked_at", "DATETIME"),
     ]
 
     for table, column, ddl in additions:
