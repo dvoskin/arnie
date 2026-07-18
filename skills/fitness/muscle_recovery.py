@@ -278,12 +278,14 @@ CARDIO_INVOLVEMENT: dict[str, dict[str, float]] = {
 # hard "effective sets" it has absorbed (recency-decayed), NOT linearly with a
 # single session's volume. So one normal session leaves plenty in the tank and
 # only a genuinely high-volume beating drives a muscle toward 0% ("worked VERY
-# hard"). recovery% ≈ exp(-eff_sets / SETS_TAU):
-#     3 sets → ~68%,  6 → ~47% (normal),  10 → ~28%,  14 → ~17%,  18+ → ~10-0%.
+# hard"). recovery% ≈ exp(-eff_sets / SETS_TAU) — tuned 2026-07 (8.0 → 6.5,
+# ~22% more impact per set; the old curve needed unrealistic volume to floor
+# a muscle):
+#     3 sets → ~63%,  6 → ~40% (normal),  10 → ~21%,  14 → ~12%,  18+ → ~6-0%.
 # One logged set counts as `effort` effective sets (RIR-weighted); a synergist
 # gets its involvement fraction of that. Accumulates across every exercise that
 # hits the muscle in the recent window.
-SETS_TAU = 8.0           # effective-sets constant — see the mapping above
+SETS_TAU = 6.5           # effective-sets constant — see the mapping above
 NOMINAL_BW_LOAD = 50.0   # kg stand-in load for bodyweight moves (unused by the set model; kept for API)
 LOOKBACK_HOURS = 10 * 24
 
