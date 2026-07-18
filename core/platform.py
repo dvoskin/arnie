@@ -102,6 +102,11 @@ class Response:
     # {primary: {id,title,line,icon,tier}, new: [ids], celebrate: bool}).
     # iOS drives its celebration overlay from this; other transports ignore it.
     achievement: Optional[dict] = None
+    # True when this turn's tools EDITED the training program (day override,
+    # targets, add/remove exercise) — iOS refetches the program card so the
+    # plan the user just changed in chat is what they see on Coach. Other
+    # transports ignore it.
+    program_updated: bool = False
 
     @classmethod
     def from_text(cls, text: str, **kwargs) -> "Response":
@@ -334,6 +339,8 @@ def serialize_response(response: Response) -> dict:
         "cards": list(response.cards),
         # Newly-earned badge this turn (or null) — older clients ignore it.
         "achievement": response.achievement,
+        # Program edited this turn — older clients ignore it.
+        "program_updated": bool(getattr(response, "program_updated", False)),
     }
 
 

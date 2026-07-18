@@ -1179,6 +1179,10 @@ async def run_turn(
         # first-food moment or goal FX already celebrating mutes the badge's
         # own celebration (it still lands in the trophy sheet). Fail-open:
         # a broken badge check must never break a coaching turn.
+        _prog_tools = {"set_program_day", "set_program_target",
+                       "add_program_exercise", "remove_program_exercise"}
+        if any((tc.get("name") in _prog_tools) for tc in (tool_calls or [])):
+            resp.program_updated = True
         _log_wrote = any(
             (tc.get("name") in ("log_food", "log_exercise")) for tc in (tool_calls or [])
         ) and any(
