@@ -196,3 +196,20 @@ async def test_remove_exercise_scoped_and_everywhere(db, make_user):
         "remove_program_exercise", {"exercise_name": "pec deck"},
         user, _stub_log(), db, "text")
     assert "isn't in the program" in res
+
+
+async def test_set_program_target_bulk_all_scoped(db, make_user):
+    """'3 sets for each movement' — exercise_name='all' + day scope hits every
+    slot on that day and nothing elsewhere; sets-only writes no invented reps."""
+    user = await _seed(db, make_user)
+    res = await TE._dispatch(
+        "set_program_target",
+        {"exercise_name": "all", "day_name": "push", "sets": 3},
+        user, _stub_log(), db, "text")
+    assert "all 2 exercises" in res
+    prog = await _prog(db, user.id)
+    for e in prog["days"][0]["exercises"]:
+        assert e["sets"] == 3
+        assert "reps" not in e          # nothing invented
+    for e in prog["days"][1]["exercises"] + prog["days"][2]["exercises"]:
+        assert "sets" not in e          # scope respected

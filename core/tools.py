@@ -452,7 +452,11 @@ _PROGRAM_TOOLS = [
             "to 225', 'make curls 3x12'. This edits the PROGRAM — for sets actually "
             "performed use log_exercise / update_exercise_entry instead. exercise_name "
             "must match an exercise in [TRAINING PROGRAM]; pass day_name to narrow the "
-            "match when the movement appears on multiple days."
+            "match when the movement appears on multiple days. "
+            "Set ONLY the fields the user stated — '3 sets each' means sets=3 and "
+            "NOTHING else; never invent reps (no AMRAP unless they said AMRAP) or "
+            "weight. For 'every movement' / 'each exercise' requests pass "
+            "exercise_name='all' (with day_name to scope it to one day)."
         ),
         "input_schema": {
             "type": "object",

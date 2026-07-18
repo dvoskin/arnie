@@ -2462,6 +2462,8 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
         if not any(inp.get(k) is not None for k in ("sets", "reps", "weight")):
             return "Nothing to set — pass sets, reps and/or weight."
         _day_want = _day_norm(inp.get("day_name"))
+        # 'all' / 'every movement' — target every exercise in scope.
+        _bulk = _ex_want.lower() in ("all", "every", "everything", "*")
         _hits = []
         for _d in _days:
             _dn = _d.get("name") or ""
@@ -2470,7 +2472,7 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
                     and _dn_norm not in _day_want:
                 continue
             for _e in (_d.get("exercises") or []):
-                if _ex_matches(_e.get("name"), _ex_want):
+                if _bulk or _ex_matches(_e.get("name"), _ex_want):
                     _hits.append((_dn, _e))
         if not _hits:
             return (f"'{_ex_want}' isn't in the program"
@@ -2491,10 +2493,17 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
         _tgt = ""
         if _e0.get("sets") and _e0.get("reps"):
             _tgt = f"{_e0['sets']}\u00d7{_e0['reps']}"
+        elif _e0.get("sets"):
+            _tgt = f"{_e0['sets']} sets"
+        elif _e0.get("reps"):
+            _tgt = f"{_e0['reps']} reps"
         if _e0.get("weight"):
             _tgt += (" @ " if _tgt else "") \
                 + f"{_e0['weight']:g} {_e0.get('weight_unit', 'lbs')}"
         _where = ", ".join(sorted({d for d, _ in _hits if d}))
+        if _bulk:
+            return (f"Target {_tgt or 'updated'} applied to all "
+                    f"{len(_hits)} exercises ({_where}).")
         return f"Target set for {_e0.get('name')}: {_tgt or 'updated'} ({_where})."
 
     elif name == "log_water":
