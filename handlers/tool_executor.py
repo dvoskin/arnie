@@ -2337,6 +2337,95 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
         await db.refresh(today_log)
         return f"Removed exercise entry #{entry_id}"
 
+    elif name in ("set_program_day", "set_program_target"):
+        import json as _json
+        from sqlalchemy import select as _sel
+        from db.models import WorkoutProgram as _WPx
+        _row = (await db.execute(
+            _sel(_WPx).where(_WPx.user_id == user.id)
+        )).scalar_one_or_none()
+        if not _row or not _row.program_json:
+            return ("No training program on file yet — offer to build one "
+                    "before setting days or targets.")
+        try:
+            _prog = _json.loads(_row.program_json)
+        except Exception:
+            return "Couldn't read the stored program."
+        _days = _prog.get("days") or []
+
+        # "leg day" must find "Legs": lowercase, drop a trailing " day",
+        # then substring-match either direction.
+        def _day_norm(t):
+            t = (t or "").strip().lower()
+            return t[:-4].strip() if t.endswith(" day") else t
+
+        if name == "set_program_day":
+            _want = _day_norm(inp.get("day_name"))
+            if not _want:
+                return "Missing day_name"
+            _match = None
+            for _d in _days:
+                _n = _day_norm(_d.get("name"))
+                if _n and (_w_in := (_want in _n or _n in _want)):
+                    _match = _d.get("name")
+                    break
+            if not _match:
+                _names = ", ".join((_d.get("name") or "?") for _d in _days)
+                return (f"No program day matches '{inp.get('day_name')}'. "
+                        f"Days: {_names}. Ask which one they mean.")
+            from db.queries import _user_today
+            _today_iso = _user_today(
+                getattr(user, "timezone", None) or "UTC").isoformat()
+            _prog["today_override"] = {"date": _today_iso, "day": _match}
+            _row.program_json = _json.dumps(_prog)
+            await db.commit()
+            return f"Today is now set to program day: {_match}."
+
+        # set_program_target — write the prescription onto every matching slot
+        # (day_name narrows when the movement repeats across days).
+        from core.session_state import matches_program_exercise as _mpe
+        _ex_want = (inp.get("exercise_name") or "").strip()
+        if not _ex_want:
+            return "Missing exercise_name"
+        if not any(inp.get(k) is not None for k in ("sets", "reps", "weight")):
+            return "Nothing to set — pass sets, reps and/or weight."
+        _day_want = _day_norm(inp.get("day_name"))
+        _hits = []
+        for _d in _days:
+            _dn = _d.get("name") or ""
+            _dn_norm = _day_norm(_dn)
+            if _day_want and _day_want not in _dn_norm \
+                    and _dn_norm not in _day_want:
+                continue
+            for _e in (_d.get("exercises") or []):
+                _en = _e.get("name") or ""
+                if _mpe(_en, _ex_want) or _mpe(_ex_want, _en):
+                    _hits.append((_dn, _e))
+        if not _hits:
+            return (f"'{_ex_want}' isn't in the program"
+                    + (f" under a day matching '{inp.get('day_name')}'"
+                       if _day_want else "")
+                    + ". Name the exercise as it appears in [TRAINING PROGRAM].")
+        for _dn, _e in _hits:
+            if inp.get("sets") is not None:
+                _e["sets"] = int(inp["sets"])
+            if inp.get("reps") is not None:
+                _e["reps"] = str(inp["reps"])
+            if inp.get("weight") is not None:
+                _e["weight"] = float(inp["weight"])
+                _e["weight_unit"] = inp.get("weight_unit") or "lbs"
+        _row.program_json = _json.dumps(_prog)
+        await db.commit()
+        _e0 = _hits[0][1]
+        _tgt = ""
+        if _e0.get("sets") and _e0.get("reps"):
+            _tgt = f"{_e0['sets']}\u00d7{_e0['reps']}"
+        if _e0.get("weight"):
+            _tgt += (" @ " if _tgt else "") \
+                + f"{_e0['weight']:g} {_e0.get('weight_unit', 'lbs')}"
+        _where = ", ".join(sorted({d for d, _ in _hits if d}))
+        return f"Target set for {_e0.get('name')}: {_tgt or 'updated'} ({_where})."
+
     elif name == "log_water":
         # T2.4 — resolve to target log (today by default; supports date= for
         # past-day correction same as food/exercise).

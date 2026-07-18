@@ -418,6 +418,59 @@ _DAY_TOOLS: list = []
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# TRAINING PROGRAM TOOLS — edit the PLAN from conversation (day-of-rotation
+# override + prescribed targets). The log tools above edit what HAPPENED;
+# these edit what's PLANNED. Kept separate so the model never confuses a
+# target with a logged set.
+# ─────────────────────────────────────────────────────────────────────────────
+
+_PROGRAM_TOOLS = [
+    {
+        "name": "set_program_day",
+        "description": (
+            "Mark which day of the user's TRAINING PROGRAM today is. "
+            "Use when the user declares or swaps the day: 'today is leg day', "
+            "'doing Push A today', 'swap today to back'. day_name must refer to "
+            "a day in [TRAINING PROGRAM] (fuzzy match is fine). Overrides the "
+            "automatic day detection for TODAY only — tomorrow reverts to normal "
+            "rotation. Do NOT call for logged exercises; this is the plan, not the log."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "day_name": {"type": "string", "description": "Program day name, e.g. 'Legs' or 'Day 2 - Back'"},
+            },
+            "required": ["day_name"],
+        },
+    },
+    {
+        "name": "set_program_target",
+        "description": (
+            "Set or update the PRESCRIBED target (sets × reps, optional working weight) "
+            "for an exercise in the user's training program. Use when the user sets a "
+            "goal for the PLAN: 'aim for 4x8 at 185 on bench', 'bump my squat target "
+            "to 225', 'make curls 3x12'. This edits the PROGRAM — for sets actually "
+            "performed use log_exercise / update_exercise_entry instead. exercise_name "
+            "must match an exercise in [TRAINING PROGRAM]; pass day_name to narrow the "
+            "match when the movement appears on multiple days."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "exercise_name": {"type": "string"},
+                "day_name":      {"type": "string", "description": "Optional. The program day containing the exercise."},
+                "sets":          {"type": "integer"},
+                "reps":          {"type": "string", "description": "e.g. '8' or '8-10'"},
+                "weight":        {"type": "number", "description": "target working weight, in the unit the user stated"},
+                "weight_unit":   {"type": "string", "enum": ["lbs", "kg"], "default": "lbs"},
+            },
+            "required": ["exercise_name"],
+        },
+    },
+]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # PROFILE & MEMORY TOOLS
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -1141,6 +1194,7 @@ ALL_TOOLS = (
     _NUTRITION_TOOLS
     + _FITNESS_TOOLS
     + _DAY_TOOLS
+    + _PROGRAM_TOOLS
     + _PROFILE_TOOLS
     + _CREATIVE_TOOLS
     + _HISTORY_TOOLS

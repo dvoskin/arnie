@@ -189,6 +189,15 @@ def build_session_state(
     # Auto-pick the program day when caller didn't supply one — we don't
     # store which rotation day the user picked, so derive it from the
     # exercises that have been logged.
+    if todays_program_day_name is None and program_json:
+        # A user-declared day ("today is leg day") beats overlap inference.
+        _ov = program_json.get("today_override") or {}
+        try:
+            _today_iso = now_dt.date().isoformat()
+        except Exception:
+            _today_iso = None
+        if _ov.get("day") and _ov.get("date") == _today_iso:
+            todays_program_day_name = _ov.get("day")
     if todays_program_day_name is None:
         todays_program_day_name = pick_program_day(program_json, entries)
 

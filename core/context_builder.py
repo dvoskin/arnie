@@ -949,7 +949,15 @@ async def build_context(user: User, today_log: Optional[DailyLog], db,
             _prog_parsed = _prog
             _days_txt = []
             for _d in (_prog.get("days") or []):
-                _ex = ", ".join(e["name"] for e in (_d.get("exercises") or []) if e.get("name"))
+                def _exline(e):
+                    _t = ""
+                    if e.get("sets") and e.get("reps"):
+                        _t = f"{e['sets']}\u00d7{e['reps']}"
+                    if e.get("weight"):
+                        _t += (" @ " if _t else "") + \
+                            f"{float(e['weight']):g} {e.get('weight_unit', 'lbs')}"
+                    return e["name"] + (f" [{_t}]" if _t else "")
+                _ex = ", ".join(_exline(e) for e in (_d.get("exercises") or []) if e.get("name"))
                 _goals = ", ".join(_d.get("goals") or [])
                 _days_txt.append(
                     f"  {_d.get('name','')} [{_d.get('priority','')}]"
@@ -963,6 +971,13 @@ async def build_context(user: User, today_log: Optional[DailyLog], db,
                 f"Rotation: {' → '.join(_prog.get('rotation',[]))}\n"
                 + "\n".join(_days_txt)
             )
+            _ov = _prog.get("today_override") or {}
+            try:
+                _ov_today = _now.date().isoformat() if hasattr(_now, "date") else None
+            except Exception:
+                _ov_today = None
+            if _ov.get("day") and _ov.get("date") == _ov_today:
+                training_program_str += f"\nToday (user-set): {_ov['day']}"
     except Exception:
         pass
 
