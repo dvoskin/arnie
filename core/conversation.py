@@ -931,6 +931,80 @@ async def run_turn(
     # a goodnight (the "Logged: Ground turkey" after-goodnight regression).
     _signing_off = _user_is_signing_off(_user_text if isinstance(_user_text, str) else "")
 
+    # ── Phantom-claim RESCUE: execute the log, don't apologize ──────────────
+    # The old text-only repair could at best own the miss and ask the user to
+    # re-send — and when it produced nothing, the false "logged" claim SHIPPED
+    # (Danny, 2026-07-18 01:30 UTC: "another 150g of turkey and 100g rice" →
+    # "Second round of turkey and rice logged" with zero food_entries written;
+    # he had to catch it himself 18 minutes later). Logging is the number-one
+    # thing that must work, so a phantom claim now triggers a REAL recovery:
+    # one tools=True pass whose tool calls are EXECUTED through the same
+    # executor as the main turn (add-intent gate included via user_message).
+    # Only if that still writes nothing do we fall back to owning the miss.
+    if _phantom and not _signing_off:
+        try:
+            _rescue = await chat(
+                messages + [
+                    {"role": "assistant", "content": response_text},
+                    {"role": "user", "content":
+                        "[SYSTEM HEALTH CHECK — not the user] Your reply above "
+                        "claims something was logged, but NO logging tool was "
+                        "called: NOTHING was saved. Call the right log tool NOW "
+                        "for exactly what the user reported this turn (log_food "
+                        "/ log_exercise / log_body_weight / log_water — every "
+                        "item, exact quantities). Then confirm in one short "
+                        "message with the real numbers. Do NOT reply without "
+                        "the tool call. Do NOT re-log anything from earlier "
+                        "turns."},
+                ],
+                system, tools=True, max_tokens=700,
+            )
+            _rescue_calls = [
+                tc for tc in (_rescue.get("tool_calls") or [])
+                if tc.get("name") in ("log_food", "log_exercise",
+                                       "log_body_weight", "log_water")
+            ]
+            if _rescue_calls:
+                # First pass fired no tools, so the executor's log was never
+                # prepared — create today's log here exactly like the main path.
+                if today_log is None:
+                    from db.queries import get_or_create_today_log
+                    today_log = await get_or_create_today_log(
+                        db, user.id, user.timezone or "UTC")
+                _rescue_results = await execute_tool_calls(
+                    _rescue_calls, user, today_log, db, _source,
+                    user_message=_user_text if isinstance(_user_text, str) else "",
+                )
+                _wrote = any(
+                    isinstance(v, str) and v.lstrip().startswith("Logged")
+                    for v in _rescue_results.values()
+                )
+                if _wrote:
+                    if today_log is not None:
+                        try:
+                            await db.refresh(today_log)
+                        except Exception:
+                            pass
+                    _rescue_text = (_rescue.get("text") or "").strip()
+                    if not _rescue_text:
+                        _rescue_text = deterministic_confirmation(
+                            _rescue_calls, today_log, user.preferences, _rescue_results)
+                    if _rescue_text:
+                        if on_text_bubble:
+                            for _b in Response.from_text(_rescue_text).bubbles:
+                                await on_text_bubble(_b)
+                        response_text = _rescue_text
+                        tool_calls = list(tool_calls or []) + _rescue_calls
+                        _phantom = False   # rescued — skip the text-only repair
+                        logger.warning(
+                            f"event=phantom_rescue outcome=logged {_tag} "
+                            f"tools={[tc.get('name') for tc in _rescue_calls]}")
+            if _phantom:
+                logger.warning(f"event=phantom_rescue outcome=unrescued {_tag} — "
+                               f"falling back to honest-miss repair")
+        except Exception as e:
+            logger.error(f"Phantom rescue failed for {_tag}: {e}")
+
     if (_streaming_dead_end or _logging_dead_end or _mechanics
             or _empty_praise or _stall or _phantom) and not _signing_off:
         try:
@@ -1079,8 +1153,15 @@ async def run_turn(
         # their first food (log_unlocked_at flips at 2 entries and grandfathered
         # users are pre-seeded), so established users never pay the COUNT query.
         _first_food = False
-        if (any((tc.get("name") == "log_food") for tc in (tool_calls or []))
-                and getattr(user, "log_unlocked_at", None) is None):
+        # Require an ACTUAL write this turn ("Logged …" result), not just a
+        # log_food call — a deduped re-log of entry #1 must not re-celebrate.
+        _food_wrote = any(
+            (tc.get("name") == "log_food") for tc in (tool_calls or [])
+        ) and any(
+            isinstance(v, str) and v.lstrip().startswith("Logged")
+            for v in (tool_results or {}).values()
+        )
+        if _food_wrote and getattr(user, "log_unlocked_at", None) is None:
             try:
                 from core.activation import _food_entry_count
                 _first_food = (await _food_entry_count(db, user.id)) == 1

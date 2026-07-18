@@ -43,7 +43,9 @@ async def cascade_env(monkeypatch):
 
     sent: list[str] = []
 
-    async def _fake_send(chat_guid, text):
+    async def _fake_send(chat_guid, text, *extra):
+        # *extra absorbs the effect id — first-food logs now send WITH an
+        # iMessage effect (bb_send_text_with_effect is 3-arg).
         sent.append(text)
         return True
 

@@ -938,3 +938,72 @@ async def test_tg_skip_button_routes_through_run_turn_not_canned_card(tg_pipelin
     assert "you're set" in joined or "start there" in joined, env["sent"]
     # Dashboard inline button still fires exactly once on just_completed.
     assert sum("dashboard is live" in s.lower() for s in env["sent"]) == 1, env["sent"]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phantom-claim RESCUE (2026-07-18): a reply that claims "logged" with no tool
+# call must trigger a tools=True rescue whose calls are EXECUTED — the food
+# lands in the DB and the shipped text is the rescue confirmation, never the
+# false claim. (Danny 01:30 UTC: "another 150g of turkey and 100g rice" →
+# "logged" with zero food_entries written.)
+# ─────────────────────────────────────────────────────────────────────────────
+
+async def test_phantom_log_claim_rescued_by_executed_tools(pipeline_env, monkeypatch):
+    H, C, Maker = pipeline_env["H"], pipeline_env["C"], pipeline_env["Maker"]
+    sent = pipeline_env["sent"]
+    addr = "+15550009898"
+    im_id = await _seed_user(Maker, addr)
+
+    seq = {"n": 0}
+
+    async def _fake_chat(messages, system, tools=True, max_tokens=1024,
+                         model=None, stream_handler=None, **kwargs):
+        seq["n"] += 1
+        if seq["n"] == 1:
+            # First pass: the failure mode — text-only claim, no tool call.
+            return {"text": "Second round of turkey and rice logged.|||205 calories, 29g protein on the board.",
+                    "tool_calls": [], "raw_content": [{"x": 1}]}
+        # Rescue pass: the model actually calls log_food this time.
+        return {
+            "text": "Turkey and rice in for real now, 343 calories, 33g protein.",
+            "tool_calls": [
+                {"name": "log_food", "input": {
+                    "food_name": "Ground turkey, 96% lean, pan-cooked",
+                    "quantity": "150g", "calories": 213, "protein": 29,
+                    "carbs": 0, "fats": 9}},
+                {"name": "log_food", "input": {
+                    "food_name": "White rice, steamed",
+                    "quantity": "100g cooked", "calories": 130, "protein": 4,
+                    "carbs": 28, "fats": 0}},
+            ],
+            "raw_content": [{"x": 1}],
+        }
+
+    async def _fake_follow_up(messages, raw, tcs, results, system,
+                              max_tokens=512, stream_handler=None, **kwargs):
+        return "Logged it."
+
+    monkeypatch.setattr(C, "chat", _fake_chat)
+    monkeypatch.setattr(C, "chat_follow_up", _fake_follow_up)
+
+    await H.run_imessage_pipeline(
+        addr, f"iMessage;-;{addr}", "I had another 150g of turkey and 100g rice",
+        message_guid="phantom-rescue-1")
+
+    # The food actually landed.
+    from sqlalchemy import select
+    from db.models import User, DailyLog, FoodEntry
+    async with Maker() as db:
+        u = (await db.execute(select(User).where(User.telegram_id == im_id))).scalar_one()
+        logs = (await db.execute(select(DailyLog).where(DailyLog.user_id == u.id))).scalars().all()
+        entries = []
+        for l in logs:
+            entries += (await db.execute(
+                select(FoodEntry).where(FoodEntry.daily_log_id == l.id))).scalars().all()
+    names = [e.parsed_food_name for e in entries]
+    assert any("turkey" in (n or "").lower() for n in names), names
+    assert any("rice" in (n or "").lower() for n in names), names
+
+    # The shipped reply is the rescue confirmation, not the phantom claim.
+    final = "\n".join(sent)
+    assert "for real now" in final or "343" in final
