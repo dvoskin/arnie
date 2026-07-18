@@ -142,3 +142,57 @@ async def test_session_state_prefers_fresh_override_ignores_stale():
     stale = dict(PROGRAM, today_override={"date": "2026-07-17", "day": "Legs"})
     out = build_session_state(log, stale, now)
     assert "Pull" in out  # yesterday's override is ignored; overlap wins
+
+
+async def test_add_exercise_to_plural_day_phrase(db, make_user):
+    """Danny's live miss: 'add dips to my chest days' — plural phrase,
+    exercise appended to every matching day, targets optional."""
+    user = await _seed(db, make_user)
+    res = await TE._dispatch(
+        "add_program_exercise",
+        {"exercise_name": "Dips", "day_name": "push days",
+         "sets": 3, "reps": "10"},
+        user, _stub_log(), db, "text")
+    assert "Added Dips" in res and "Push" in res
+    prog = await _prog(db, user.id)
+    dips = [e for e in prog["days"][0]["exercises"] if e["name"] == "Dips"]
+    assert len(dips) == 1
+    assert dips[0]["category"] == "accessory"
+    assert dips[0]["sets"] == 3 and dips[0]["reps"] == "10"
+    # re-adding is a no-op with an honest reply, not a duplicate
+    res = await TE._dispatch(
+        "add_program_exercise",
+        {"exercise_name": "dips", "day_name": "push"},
+        user, _stub_log(), db, "text")
+    assert "already on" in res
+    prog = await _prog(db, user.id)
+    assert len([e for e in prog["days"][0]["exercises"]
+                if e["name"].lower() == "dips"]) == 1
+
+
+async def test_add_exercise_unknown_day_no_write(db, make_user):
+    user = await _seed(db, make_user)
+    res = await TE._dispatch(
+        "add_program_exercise",
+        {"exercise_name": "Dips", "day_name": "chest day"},
+        user, _stub_log(), db, "text")
+    assert "No program day matches" in res
+    prog = await _prog(db, user.id)
+    assert all(e["name"] != "Dips"
+               for d in prog["days"] for e in d["exercises"])
+
+
+async def test_remove_exercise_scoped_and_everywhere(db, make_user):
+    user = await _seed(db, make_user)
+    res = await TE._dispatch(
+        "remove_program_exercise",
+        {"exercise_name": "leg press", "day_name": "legs"},
+        user, _stub_log(), db, "text")
+    assert "Removed" in res and "Legs" in res
+    prog = await _prog(db, user.id)
+    assert [e["name"] for e in prog["days"][2]["exercises"]] == ["Squat"]
+    # unknown exercise → clarify, no crash
+    res = await TE._dispatch(
+        "remove_program_exercise", {"exercise_name": "pec deck"},
+        user, _stub_log(), db, "text")
+    assert "isn't in the program" in res

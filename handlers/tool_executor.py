@@ -2337,7 +2337,8 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
         await db.refresh(today_log)
         return f"Removed exercise entry #{entry_id}"
 
-    elif name in ("set_program_day", "set_program_target"):
+    elif name in ("set_program_day", "set_program_target",
+                  "add_program_exercise", "remove_program_exercise"):
         import json as _json
         from sqlalchemy import select as _sel
         from db.models import WorkoutProgram as _WPx
@@ -2353,22 +2354,34 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
             return "Couldn't read the stored program."
         _days = _prog.get("days") or []
 
-        # "leg day" must find "Legs": lowercase, drop a trailing " day",
-        # then substring-match either direction.
+        # "leg day" / "chest days" must find "Legs" / "Chest": lowercase,
+        # drop a trailing " day"/" days", then substring-match either direction.
         def _day_norm(t):
             t = (t or "").strip().lower()
-            return t[:-4].strip() if t.endswith(" day") else t
+            for _suf in (" days", " day"):
+                if t.endswith(_suf):
+                    return t[: -len(_suf)].strip()
+            return t
+
+        def _days_matching(want):
+            out = []
+            for _d in _days:
+                _dn = _day_norm(_d.get("name"))
+                if _dn and (want in _dn or _dn in want):
+                    out.append(_d)
+            return out
+
+        from core.session_state import matches_program_exercise as _mpe
+
+        def _ex_matches(a, b):
+            return _mpe(a or "", b or "") or _mpe(b or "", a or "")
 
         if name == "set_program_day":
             _want = _day_norm(inp.get("day_name"))
             if not _want:
                 return "Missing day_name"
-            _match = None
-            for _d in _days:
-                _n = _day_norm(_d.get("name"))
-                if _n and (_w_in := (_want in _n or _n in _want)):
-                    _match = _d.get("name")
-                    break
+            _hit = _days_matching(_want)
+            _match = _hit[0].get("name") if _hit else None
             if not _match:
                 _names = ", ".join((_d.get("name") or "?") for _d in _days)
                 return (f"No program day matches '{inp.get('day_name')}'. "
@@ -2381,9 +2394,68 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
             await db.commit()
             return f"Today is now set to program day: {_match}."
 
+        if name == "add_program_exercise":
+            _ex_name = (inp.get("exercise_name") or "").strip()
+            if not _ex_name:
+                return "Missing exercise_name"
+            _day_want = _day_norm(inp.get("day_name"))
+            if not _day_want:
+                return "Missing day_name — which program day should it go on?"
+            _targets = _days_matching(_day_want)
+            if not _targets:
+                _names = ", ".join((_d.get("name") or "?") for _d in _days)
+                return (f"No program day matches '{inp.get('day_name')}'. "
+                        f"Days: {_names}. Ask which one they mean.")
+            _added, _already = [], []
+            for _d in _targets:
+                _exs = _d.setdefault("exercises", [])
+                if any(_ex_matches(_e.get("name"), _ex_name) for _e in _exs):
+                    _already.append(_d.get("name"))
+                    continue
+                _new_ex = {"name": _ex_name,
+                           "category": inp.get("category") or "accessory"}
+                if inp.get("sets") is not None:
+                    _new_ex["sets"] = int(inp["sets"])
+                if inp.get("reps") is not None:
+                    _new_ex["reps"] = str(inp["reps"])
+                if inp.get("weight") is not None:
+                    _new_ex["weight"] = float(inp["weight"])
+                    _new_ex["weight_unit"] = inp.get("weight_unit") or "lbs"
+                _exs.append(_new_ex)
+                _added.append(_d.get("name"))
+            if not _added:
+                return f"{_ex_name} is already on: {', '.join(_already)}."
+            _row.program_json = _json.dumps(_prog)
+            await db.commit()
+            _msg = f"Added {_ex_name} to: {', '.join(_added)}."
+            if _already:
+                _msg += f" (Already on {', '.join(_already)}.)"
+            return _msg
+
+        if name == "remove_program_exercise":
+            _ex_name = (inp.get("exercise_name") or "").strip()
+            if not _ex_name:
+                return "Missing exercise_name"
+            _day_want = _day_norm(inp.get("day_name"))
+            _scope = _days_matching(_day_want) if _day_want else _days
+            _removed = []
+            for _d in _scope:
+                _exs = _d.get("exercises") or []
+                _keep = [_e for _e in _exs
+                         if not _ex_matches(_e.get("name"), _ex_name)]
+                if len(_keep) != len(_exs):
+                    _d["exercises"] = _keep
+                    _removed.append(_d.get("name"))
+            if not _removed:
+                return (f"'{_ex_name}' isn't in the program"
+                        + (f" under a day matching '{inp.get('day_name')}'"
+                           if _day_want else "") + ".")
+            _row.program_json = _json.dumps(_prog)
+            await db.commit()
+            return f"Removed {_ex_name} from: {', '.join(_removed)}."
+
         # set_program_target — write the prescription onto every matching slot
         # (day_name narrows when the movement repeats across days).
-        from core.session_state import matches_program_exercise as _mpe
         _ex_want = (inp.get("exercise_name") or "").strip()
         if not _ex_want:
             return "Missing exercise_name"
@@ -2398,8 +2470,7 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
                     and _dn_norm not in _day_want:
                 continue
             for _e in (_d.get("exercises") or []):
-                _en = _e.get("name") or ""
-                if _mpe(_en, _ex_want) or _mpe(_ex_want, _en):
+                if _ex_matches(_e.get("name"), _ex_want):
                     _hits.append((_dn, _e))
         if not _hits:
             return (f"'{_ex_want}' isn't in the program"

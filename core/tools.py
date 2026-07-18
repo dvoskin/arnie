@@ -467,6 +467,49 @@ _PROGRAM_TOOLS = [
             "required": ["exercise_name"],
         },
     },
+    {
+        "name": "add_program_exercise",
+        "description": (
+            "ADD an exercise to the user's TRAINING PROGRAM. Use when the user "
+            "wants a movement in the plan going forward: 'add dips to my chest "
+            "days', 'put face pulls on pull day'. day_name fuzzy-matches program "
+            "days ('chest days' matches every day with chest in the name) and the "
+            "exercise is added to ALL matching days, skipping days that already "
+            "have it. Optionally set a prescription (sets/reps/weight) in the same "
+            "call. This edits the PLAN — for something they just performed, use "
+            "log_exercise."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "exercise_name": {"type": "string"},
+                "day_name":      {"type": "string", "description": "Which program day(s) to add it to, e.g. 'chest days', 'Pull'"},
+                "category":      {"type": "string", "enum": ["main", "accessory", "cardio"], "default": "accessory"},
+                "sets":          {"type": "integer"},
+                "reps":          {"type": "string"},
+                "weight":        {"type": "number"},
+                "weight_unit":   {"type": "string", "enum": ["lbs", "kg"], "default": "lbs"},
+            },
+            "required": ["exercise_name", "day_name"],
+        },
+    },
+    {
+        "name": "remove_program_exercise",
+        "description": (
+            "REMOVE an exercise from the user's TRAINING PROGRAM: 'drop the leg "
+            "press', 'take dips off push day'. Removes from every matching day, "
+            "or only days matching day_name when given. This edits the PLAN — to "
+            "delete a logged set use delete_exercise_entry."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "exercise_name": {"type": "string"},
+                "day_name":      {"type": "string", "description": "Optional. Limit removal to matching day(s)."},
+            },
+            "required": ["exercise_name"],
+        },
+    },
 ]
 
 
