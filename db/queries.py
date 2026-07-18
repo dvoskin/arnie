@@ -1693,6 +1693,32 @@ async def update_food_entry(
     # the SAME primitive as editing a value, just changing which day it belongs to.
     new_log_id = changes.pop("new_daily_log_id", None)
 
+    # A serving/portion edit scales the WHOLE nutrient profile, not just the
+    # macros the client sends: fiber, sugar, sodium, and the micronutrient
+    # panel follow the calorie ratio, so the inspector's readout stays honest
+    # after "make it 200g". (The iOS editor deliberately doesn't display
+    # micros — it relies on this.) Ratio guard: only when both sides are
+    # positive and the change is a real rescale, not a hand-corrected zero.
+    if "calories" in changes:
+        _old_cal = float(entry.calories or 0)
+        _new_cal = float(changes["calories"] or 0)
+        if _old_cal > 0 and _new_cal > 0 and abs(_new_cal - _old_cal) > 0.5:
+            _r = _new_cal / _old_cal
+            for _f in ("fiber", "sugar", "sodium"):
+                _v = getattr(entry, _f, None)
+                if _v is not None:
+                    setattr(entry, _f, round(float(_v) * _r, 2))
+            if entry.micronutrients_json:
+                try:
+                    _micros = json.loads(entry.micronutrients_json)
+                    entry.micronutrients_json = json.dumps({
+                        k: round(float(v) * _r, 3)
+                        for k, v in _micros.items()
+                        if isinstance(v, (int, float))
+                    })
+                except (ValueError, TypeError):
+                    pass  # malformed panel — leave untouched, never block the edit
+
     # Apply nutrition changes to the entry
     for field in ("calories", "protein", "carbs", "fats"):
         if field in changes:

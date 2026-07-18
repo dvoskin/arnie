@@ -104,3 +104,50 @@ async def test_badge_wall_full_registry_in_order(db, make_user):
     wall = await badge_wall(db, u)
     assert [b["id"] for b in wall] == [b["id"] for b in BADGES]
     assert all(b["earned_at"] is None for b in wall)
+
+
+# ── Serving-edit micro scaling (db/queries.update_food_entry) ────────────────
+# Lives here for suite convenience; exercises the whole-profile rescale that
+# the iOS editor relies on (it doesn't display micros — the server scales them).
+
+import json as _json
+from db.queries import update_food_entry
+
+
+async def test_serving_edit_scales_full_nutrient_profile(db, make_user):
+    u = await make_user()
+    log = DailyLog(user_id=u.id, date=date(2026, 7, 12), total_calories=200)
+    db.add(log)
+    await db.flush()
+    e = FoodEntry(daily_log_id=log.id, parsed_food_name="rice", calories=200,
+                  protein=4, carbs=44, fats=0, fiber=1.0, sugar=0.5, sodium=10,
+                  micronutrients_json=_json.dumps({"iron": 2.0, "magnesium": 40}))
+    db.add(e)
+    await db.commit()
+
+    # Double the serving → macros sent doubled by the client; the server
+    # scales fiber/sugar/sodium + micros by the same 2x ratio.
+    updated = await update_food_entry(db, e.id, u.id, calories=400.0,
+                                      protein=8.0, carbs=88.0, fats=0.0)
+    assert updated is not None
+    assert updated.fiber == 2.0 and updated.sugar == 1.0 and updated.sodium == 20
+    micros = _json.loads(updated.micronutrients_json)
+    assert micros["iron"] == 4.0 and micros["magnesium"] == 80
+
+
+async def test_zero_calorie_correction_leaves_micros_alone(db, make_user):
+    u = await make_user()
+    log = DailyLog(user_id=u.id, date=date(2026, 7, 13), total_calories=100)
+    db.add(log)
+    await db.flush()
+    e = FoodEntry(daily_log_id=log.id, parsed_food_name="tea", calories=100,
+                  protein=0, carbs=25, fats=0, fiber=0.5,
+                  micronutrients_json=_json.dumps({"potassium": 30}))
+    db.add(e)
+    await db.commit()
+
+    # Hand-correcting calories to 0 is NOT a rescale — profile stays put.
+    updated = await update_food_entry(db, e.id, u.id, calories=0.0)
+    assert updated is not None
+    assert updated.fiber == 0.5
+    assert _json.loads(updated.micronutrients_json)["potassium"] == 30
