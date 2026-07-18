@@ -123,11 +123,21 @@ def _health_score(food_entries: list):
 async def get_achievements(identity: str = Depends(current_identity)):
     """The trophy sheet: every badge in registry order with earned_at (null =
     unearned, the client ghosts it). Registry lives server-side so new badges
-    appear in old clients without an app update."""
-    from core.achievements import badge_wall
+    appear in old clients without an app update.
+
+    BACKFILL ON READ: badges normally mint on log turns, so an established
+    user's history would sit unearned until their next log. Opening the wall
+    runs the check silently first (effect_taken=True → never a celebration),
+    so years of logging light up the sheet on first view. Fail-open — a
+    broken check must never blank the wall."""
+    from core.achievements import badge_wall, check_achievements
 
     async with AsyncSessionLocal() as db:
         user = await resolve_user(db, identity)
+        try:
+            await check_achievements(db, user, effect_taken=True)
+        except Exception:
+            logger.warning("achievement backfill on wall read failed", exc_info=True)
         wall = await badge_wall(db, user)
     return {"v": WIRE_VERSION, "badges": wall}
 
