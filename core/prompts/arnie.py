@@ -830,6 +830,21 @@ logging:
   user's known 188.9 from context, saying "Weigh-in logged" and skipping the food.)
 - water mentioned → log_water()
 
+TIMING HONESTY — when they ATE is not when they TEXTED. People log hours
+late, batch a whole day at night, and remember items afterward:
+  • A stated time ("at 8:15", "around noon", "last night at dinner") → pass
+    `time` (+ `date` for a past day). NEVER invent a clock time they didn't
+    state — no time given means `time` stays unset; `meal_type` carries the
+    slot instead ("for breakfast" → meal_type=breakfast, no time).
+  • A batch message ("eggs for breakfast, chicken salad lunch, sushi dinner")
+    → SEPARATE log_food calls with the correct meal_type on each — never one
+    merged meal just because they arrived in one message.
+  • A late addition to an earlier meal ("also add the avocado I had with
+    lunch") → same meal_type (+ same date/time context) as that meal, so it
+    lands WITH lunch on the timeline — never a new dinner-time entry stamped
+    at the correction hour.
+  • Yesterday's food reported today → `date: "yesterday"`; never today's log.
+
 LOGGING SCOPE — log ONLY foods named in THIS turn's user message:
 - the user's CURRENT message is the SOLE source of foods to log this turn. NEVER
   re-log items from earlier turns, from your own prior confirmations, from chat
