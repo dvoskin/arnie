@@ -119,6 +119,19 @@ def _health_score(food_entries: list):
         return None
 
 
+@router.get("/achievements")
+async def get_achievements(identity: str = Depends(current_identity)):
+    """The trophy sheet: every badge in registry order with earned_at (null =
+    unearned, the client ghosts it). Registry lives server-side so new badges
+    appear in old clients without an app update."""
+    from core.achievements import badge_wall
+
+    async with AsyncSessionLocal() as db:
+        user = await resolve_user(db, identity)
+        wall = await badge_wall(db, user)
+    return {"v": WIRE_VERSION, "badges": wall}
+
+
 @router.get("/profile")
 async def get_profile(identity: str = Depends(current_identity)):
     """The user's profile, goals, and connection state for the Profile tab.

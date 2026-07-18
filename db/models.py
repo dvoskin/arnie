@@ -147,6 +147,22 @@ class UserPreferences(Base):
     user = relationship("User", back_populates="preferences")
 
 
+class Achievement(Base):
+    """An earned badge — quiet trophies, loud moments. One row per badge per
+    user (the unique constraint makes awarding naturally idempotent); the
+    registry of what each badge_id means lives in core/achievements.py, so
+    adding badges never touches the schema."""
+    __tablename__ = "achievements"
+    __table_args__ = (
+        UniqueConstraint("user_id", "badge_id", name="uq_achievement_user_badge"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), index=True)
+    badge_id = Column(String, nullable=False)
+    earned_at = Column(DateTime, server_default=func.now())
+
+
 class DailyLog(Base):
     __tablename__ = "daily_logs"
     # One log per user per day. Without this, a concurrent check-then-insert in

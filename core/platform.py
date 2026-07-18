@@ -98,6 +98,10 @@ class Response:
     # as a card instead of (or alongside) a text bubble. Telegram/iMessage
     # adapters ignore this — chat-bot transports have no card concept.
     cards: list[dict] = field(default_factory=list)
+    # A newly-earned badge this turn (core/achievements.py wire block:
+    # {primary: {id,title,line,icon,tier}, new: [ids], celebrate: bool}).
+    # iOS drives its celebration overlay from this; other transports ignore it.
+    achievement: Optional[dict] = None
 
     @classmethod
     def from_text(cls, text: str, **kwargs) -> "Response":
@@ -328,6 +332,8 @@ def serialize_response(response: Response) -> dict:
         # client always sees a stable shape — lenient decode lets older clients
         # ignore unknown card `type` values for forward compatibility.
         "cards": list(response.cards),
+        # Newly-earned badge this turn (or null) — older clients ignore it.
+        "achievement": response.achievement,
     }
 
 

@@ -1172,6 +1172,27 @@ async def run_turn(
         resp.effect    = moment.effect
         resp.effect_idx = moment.effect_idx
 
+        # ── Achievements: quiet trophies, loud moments ────────────────────
+        # Only turns that actually WROTE a log can mint a badge (a chat-only
+        # turn can't change any count), so established users pay nothing on
+        # ordinary turns. `effect_taken` keeps one celebration per turn — a
+        # first-food moment or goal FX already celebrating mutes the badge's
+        # own celebration (it still lands in the trophy sheet). Fail-open:
+        # a broken badge check must never break a coaching turn.
+        _log_wrote = any(
+            (tc.get("name") in ("log_food", "log_exercise")) for tc in (tool_calls or [])
+        ) and any(
+            isinstance(v, str) and v.lstrip().startswith("Logged")
+            for v in (tool_results or {}).values()
+        )
+        if _log_wrote:
+            try:
+                from core.achievements import check_achievements
+                resp.achievement = await check_achievements(
+                    db, user, effect_taken=resp.effect is not None)
+            except Exception:
+                logger.warning("achievement check failed (fail-open)", exc_info=True)
+
     # ── Typed inline cards for native clients ─────────────────────────────────
     # A log_food / log_exercise call becomes a macro_card / workout_card — but ONLY
     # when it created a real DB row (see _logged_entry_card; a deduped no-op emits
