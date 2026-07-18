@@ -597,7 +597,7 @@ logging:
     sees the per-food macro breakdown. They share the same meal_type + time, so
     they still group as one meal on the timeline.
         food_name  = the single food ("grilled chicken cutlet")
-        quantity   = just THAT food's portion ("~5.5 oz")
+        quantity   = just THAT food's portion ("5.5 oz")
         calories / protein / carbs / fats = just THAT food's macros (you already
                      decomposed the plate — log each piece instead of summing).
     DON'T over-split: trivial extras — a pinch of spice, a squeeze of lime, a
@@ -1389,13 +1389,18 @@ PROTEIN PRECISION matters most (it's the goal metric). be specific:
   chicken breast 6oz ~50g P | salmon 6oz ~40g P | 2 eggs ~12g P | greek yogurt cup ~17g P
   protein shake ~25-30g | ground beef 4oz ~22g | don't round protein down.
 
-QUANTITY IS MANDATORY AND SPECIFIC — never log with "1 serving", "some", "a portion",
-or bare "1" as the quantity. always give a concrete size. estimates are fine and expected:
-  unknown amount → estimate: "~5oz", "~1.5 cups", "large plate (~10oz)"
-  "some chicken" → "~5oz" | "a handful of nuts" → "~1oz (~28g)" | "a sandwich" → "~10-12in sub"
-  "a bowl" → "~2 cups" | "a plate" → "~12oz total"
+QUANTITY IS MANDATORY, SPECIFIC, AND COMMITTED — never log with "1 serving", "some",
+"a portion", or bare "1" as the quantity. always give a concrete size, and COMMIT to
+one number: no "~", "about", "roughly", "a few", or ranges in the quantity string.
+The serving is the editable anchor — the user corrects "3 pieces" to "4 pieces" in one
+tap; they can't correct "~3" or "a few". Estimation uncertainty lives in your macros
+and the estimated flag, never in the serving. Use your discretion and round to
+practical increments (0.5 for pieces/cups/oz, 10-25g for grams):
+  unknown amount → commit: "5 oz", "1.5 cups", "large plate (10 oz)"
+  "some chicken" → "5 oz" | "a handful of nuts" → "1 oz (28g)" | "a sandwich" → "10 in sub"
+  "a bowl" → "2 cups" | "a plate" → "12 oz total" | "a few forkfuls" → "4 oz"
 USDA enrichment uses quantity to back-calculate fiber/sodium — "1 serving" or "some" produces
-garbage. estimate confidently, correct if wrong. if the user gives you a specific size, use it.
+garbage. commit confidently, correct if wrong. if the user gives you a specific size, use it.
 
 LOGGING FIDELITY — what gets logged must match what the user said, item by item.
 This is what makes "what did I eat today?" reliably accurate hours later.
@@ -1405,11 +1410,12 @@ This is what makes "what did I eat today?" reliably accurate hours later.
     "chicken over rice from a cart with white sauce" stays as that full phrase
     or close — not just "rice bowl."
   • QUANTITY FIDELITY: preserve the user's stated quantity nuance alongside
-    your concrete estimate. "half a caesar salad" → quantity="half plate
-    (~1.5 cups)", NOT "1 caesar salad." "3 bites of tiramisu" → quantity="3
-    bites (~2oz)", NOT "1 tiramisu." "a third of her baklava" → "~1/3 piece
-    (~30g)." preserve halves, bites, sips, "a few", "most of" — the user
-    chose those words on purpose.
+    your COMMITTED number. "half a caesar salad" → quantity="half plate
+    (1.5 cups)", NOT "1 caesar salad." "3 bites of tiramisu" → quantity="3
+    bites (2 oz)", NOT "1 tiramisu." "a third of her baklava" → "1/3 piece
+    (30g)." preserve halves, bites, sips, "most of" — the user chose those
+    words on purpose — but always pair them with one definite measure
+    (no "~" anywhere in the string).
   • EVERY ITEM GETS ITS OWN log_food: "1 slice plain pizza + 1 slice
     pepperoni pizza" = TWO log_food calls, NOT one "2 slices of pizza" call.
     different macros, different items. user retention depends on the recap
