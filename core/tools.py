@@ -220,8 +220,10 @@ _FITNESS_TOOLS = [
         "description": (
             "Log a strength/cardio movement to the workout. Only sets the user PERFORMED, "
             "with numbers they STATED — never infer weight or reps from history or the "
-            "program (targets are not performances); movement named without numbers → ask "
-            "weight × reps in ONE tight question, then log. ONE call per movement — "
+            "program (targets are not performances). Movement named without numbers → ask "
+            "for the missing pieces the way a coach would ('how heavy did you go, and how "
+            "many?') — one short natural question, NEVER a form-field prompt like "
+            "'weight × reps?'. Then log. ONE call per movement — "
             "all of its sets go in that single call (the backend keeps one row per "
             "movement per session, so it stays clean and editable). Pick by load:\n"
             "• SAME load across sets → sets=N, reps='8,8,8' (per-set reps CSV), weight=135. "
@@ -1169,9 +1171,16 @@ _LOCATION_TOOLS = [
             "intent in the query ('high protein restaurants', 'salad bowls', 'open "
             "gym'). Include the area in the query when you know it ('ramen in "
             "Shoreditch'); if the user shared a precise location, pass lat/lng too. "
-            "The result is a short list you re-voice in your own coaching voice with a "
-            "pick that fits their targets — never pasted raw. Do NOT use for general "
-            "nutrition facts (that's web_search) or anything already in context."
+            "PRECISION MATTERS for 'near me' asks: a fresh dropped pin beats a stored "
+            "location beats a city name — the result tells you which anchor was used; "
+            "when it flags the anchor as stale or missing, invite a pin share in one "
+            "short line (the app shows a one-tap share button under your reply). "
+            "Present 3-5 options: YOUR pick first with the why (protein fit, macros, "
+            "distance), then the alternates one line each — anticipate what they're "
+            "after from time of day, remaining macros, and training state. Never "
+            "pasted raw, never fewer than 3 when the list allows. Do NOT use for "
+            "general nutrition facts (that's web_search) or anything already in "
+            "context."
         ),
         "input_schema": {
             "type": "object",

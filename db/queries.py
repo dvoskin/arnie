@@ -1056,7 +1056,8 @@ async def log_conversation(db: AsyncSession, user_id: int, raw_message: str,
                            skills_fired: str | None = None,
                            platform: str | None = None,
                            cards: Optional[list] = None,
-                           idempotency_key: str | None = None):
+                           idempotency_key: str | None = None,
+                           reasoning: Optional[dict] = None):
     """Persist one conversation turn.
 
     `platform` tags which surface the turn happened on ("telegram" | "imessage"
@@ -1086,6 +1087,10 @@ async def log_conversation(db: AsyncSession, user_id: int, raw_message: str,
         entry.cards_json = json.dumps(cards)
     if idempotency_key:
         entry.idempotency_key = idempotency_key
+    # The turn's reasoning receipt — same rehydration story as cards: without
+    # this the "Arnie's Thoughts" disclosure vanishes on every history reload.
+    if reasoning:
+        entry.reasoning_json = json.dumps(reasoning)
     db.add(entry)
     await db.commit()
 

@@ -519,10 +519,10 @@ def deterministic_confirmation(tool_calls, log, prefs, tool_results=None) -> str
         )
         if macro:
             head = f"{food[:1].upper() + food[1:]}: {macro}" if food else macro
-            return f"{head}|||want me to log it?"
+            return f"{head}|||Want me to log it?"
         # No parseable macros (USDA miss) — still don't dead-end.
         return (f"Couldn't pin exact macros on {food or 'that'}.|||"
-                "tell me roughly what it was and I'll log my best estimate.")
+                "Tell me roughly what it was and I'll log my best estimate.")
 
     # Info-query tools (the user asked a QUESTION, not a log) where the model
     # produced no text after the tool ran. The generic "Got that.|||X / Y cal."
@@ -539,10 +539,10 @@ def deterministic_confirmation(tool_calls, log, prefs, tool_results=None) -> str
     })
     if _NO_LOG and "web_search" in names:
         return ("Couldn't pull a clean read on that just now.|||"
-                "want me to try again, or give me a bit more to go on?")
+                "Want me to try again, or give me a bit more to go on?")
     if _NO_LOG and "query_history" in names:
         return ("Couldn't pull that history clean.|||"
-                "give me the metric or timeframe again and I'll dig back in.")
+                "Give me the metric or timeframe again and I'll dig back in.")
 
     cal = round(getattr(log, "total_calories", 0) or 0)
     pro = round(getattr(log, "total_protein", 0) or 0)
@@ -558,7 +558,7 @@ def deterministic_confirmation(tool_calls, log, prefs, tool_results=None) -> str
 
     # Standalone day-clear (no re-log in the same turn) — a clean slate, ask for the rebuild.
     if "clear_day_log" in names and not (names & {"log_food", "log_exercise", "update_food_entry"}):
-        return "Wiped today clean ✅|||send me what you actually had and I'll rebuild it."
+        return "Wiped today clean ✅|||Send me what you actually had and I'll rebuild it."
 
     if names & {"update_food_entry", "update_exercise_entry"} and not (names & {"log_food", "log_exercise"}):
         # Pull the item name from the tool call so the confirmation names what changed.
@@ -589,7 +589,7 @@ def deterministic_confirmation(tool_calls, log, prefs, tool_results=None) -> str
             tail = (f"You're at {cal} / {cal_t} calories today." if cal_t
                     else f"That's {cal} calories so far today." if cal
                     else "Send the next meal.")
-            return f"Got it, already on the board. 🍳|||{tail}"
+            return f"Already had that one from earlier, so I didn't double-log it. 🍳|||{tail}"
         if len(foods) == 1:
             head = f"{foods[0][:1].upper() + foods[0][1:]} logged."
         elif foods:
@@ -621,7 +621,7 @@ def deterministic_confirmation(tool_calls, log, prefs, tool_results=None) -> str
         # check is conservative (we may under-claim) but never false-positive.
         last_ex_result = str(tool_results.get("log_exercise", "") or "")
         if last_ex_result.startswith("Already on the board"):
-            return "Got it, already on the board. 💪|||What's next?"
+            return "That one's already on the board from earlier — no double-log. 💪|||What's next?"
         # Mid-workout detection: if more than one exercise logged today (including this
         # turn) the user is still in session — don't imply "workout done."
         # We check the log totals: workout_completed is set after any exercise entry,
@@ -678,14 +678,14 @@ def deterministic_confirmation(tool_calls, log, prefs, tool_results=None) -> str
                 total_bit += f" (~{int(_wo.group(1))}oz)"
         low = "still building" in last_water_result or "keep drinking" in last_water_result
         if already:
-            head = "already counted that one. 💧"
+            head = "Already counted that one. 💧"
         else:
-            head = "water's in. 💧"
+            head = "Water's in. 💧"
         if total_bit and low:
-            return f"{head}|||{total_bit} so far, still light. grab another glass with your next meal."
+            return f"{head}|||{total_bit} so far — still light. Grab another glass with your next meal."
         if total_bit:
-            return f"{head}|||{total_bit} on the day, right on pace. what's next?"
-        return f"{head}|||what's next?"
+            return f"{head}|||{total_bit} on the day — right on pace. What's next?"
+        return f"{head}|||What's next?"
     if names & {"delete_food_entry", "delete_exercise_entry"}:
         tail = (f"You're at {cal} / {cal_t} calories now." if cal_t
                 else f"That's {cal} calories now.")
@@ -713,13 +713,13 @@ def deterministic_confirmation(tool_calls, log, prefs, tool_results=None) -> str
         if any(k in fields for k in ("calorie_target", "protein_target")):
             return "Targets locked in. ✅|||Send me what you've eaten and we'll track against them."
         # Generic profile update (timezone, language, attributes, etc.)
-        return "Got it, locked in. ✅|||Send me what you've eaten today."
+        return "Locked in. ✅|||What's the day looking like — food or training?"
     # Generic net — only hit for tool turns with no specific branch above. Never a
     # content-free "all set"; keep the ball in their court with the day's standing.
     tail = (f"You're at {cal} / {cal_t} calories today." if cal_t
             else f"That's {cal} calories so far today." if cal
             else "What do you want to log next?")
-    return f"Got that.|||{tail}"
+    return f"On the board.|||{tail}"
 
 
 def _weight_fallback(weight_seed: Any = "") -> str:
@@ -2810,13 +2810,35 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
 
         _lat = inp.get("lat")
         _lng = inp.get("lng")
+        _pin_fresh = isinstance(_lat, (int, float)) and isinstance(_lng, (int, float))
         # Prefer coords the model passed (a freshly shared pin); otherwise fall back
         # to the user's last stored location so "what's near me" works without
-        # re-sharing every time.
-        if not isinstance(_lat, (int, float)):
+        # re-sharing every time — but TELL the model how old that anchor is, so a
+        # stale one earns a one-line pin invite instead of silently pretending the
+        # results are "near you".
+        _anchor_note = ""
+        if not _pin_fresh:
             _lat = getattr(user, "lat", None)
-        if not isinstance(_lng, (int, float)):
             _lng = getattr(user, "lng", None)
+            _loc_ts = getattr(user, "location_updated_at", None)
+            if isinstance(_lat, (int, float)) and isinstance(_lng, (int, float)):
+                from datetime import datetime as _dt_loc
+                _age_h = None
+                if _loc_ts is not None:
+                    try:
+                        _age_h = (_dt_loc.utcnow() - _loc_ts).total_seconds() / 3600
+                    except Exception:
+                        _age_h = None
+                if _age_h is None or _age_h > 3:
+                    _aged = (f"about {int(_age_h)}h ago" if _age_h is not None
+                             else "a while back")
+                    _anchor_note = (
+                        f"\nANCHOR: these results are centered on the location the "
+                        f"user shared {_aged} — they may have moved since. If they "
+                        f"asked for something 'near me' / 'around me', add ONE short "
+                        f"line inviting a fresh pin (a one-tap share button appears "
+                        f"under your reply) so you can re-run it precisely."
+                    )
         pr = await find_places(
             inp.get("query", ""),
             lat=_lat if isinstance(_lat, (int, float)) else None,
@@ -2850,13 +2872,16 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
         facts = "\n".join(lines)
 
         return (
-            f"NEARBY PLACES for '{pr.query}':\n{facts}\n\n"
-            f"COACH INSTRUCTION: re-voice this in YOUR coaching voice. Don't dump the "
-            f"whole list — give 1-2 picks that fit their goals/macros and say WHY "
-            f"(e.g. 'grilled bowl spot, easy 40g protein'). You may include ONE map "
-            f"link for the top pick so they can tap Directions. End with a next move "
-            f"(what to order, or want more options). Never fabricate a place not in "
-            f"this list."
+            f"NEARBY PLACES for '{pr.query}':\n{facts}\n{_anchor_note}\n\n"
+            f"COACH INSTRUCTION: re-voice this in YOUR coaching voice — 3-5 options "
+            f"when the list allows, never a raw dump. Lead with YOUR pick and the "
+            f"why in their terms (protein fit, remaining macros, open now, close), "
+            f"then the alternates one tight line each. Read what they're actually "
+            f"after from time of day / remaining macros / training state and say the "
+            f"order that fits ('grilled bowl, double chicken — covers your 40g'). "
+            f"You may include ONE map link for the top pick so they can tap "
+            f"Directions. End with a next move. Never fabricate a place, address, or "
+            f"rating not in this list."
         )
 
     elif name == "update_profile":

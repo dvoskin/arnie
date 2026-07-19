@@ -150,6 +150,8 @@ async def _migrate(conn):
         ("users", "oura_access_token", "TEXT"),
         ("users", "oura_refresh_token", "TEXT"),
         ("users", "oura_token_expires_at", "DATETIME"),
+        ("conversation_logs", "feedback", "TEXT"),
+        ("conversation_logs", "reasoning_json", "TEXT"),
         ("health_snapshots", "recovery_score", "INTEGER"),
         ("health_snapshots", "strain", "FLOAT"),
         ("health_snapshots", "skin_temp_celsius", "FLOAT"),

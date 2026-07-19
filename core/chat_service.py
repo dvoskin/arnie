@@ -354,6 +354,8 @@ async def run_chat_turn(
         # Stamp the per-send id so a later retry of this exact send replays this
         # row instead of re-running (deterministic dedup).
         idempotency_key=idempotency_key,
+        # Persist the reasoning receipt so "Arnie's Thoughts" survives reloads.
+        reasoning=(getattr(turn.response, "reasoning", None) or None),
     )
     # The row id is this turn's stable identity — clients stamp it on the live
     # bubbles so a later history reload recognizes them by id, not by text.

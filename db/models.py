@@ -400,6 +400,14 @@ class ConversationLog(Base):
     # legacy rows and any caller that doesn't supply one fall back to the text-window
     # heuristic in chat_service. Indexed for the per-turn lookup.
     idempotency_key = Column(String, index=True)
+    # User's verdict on this reply — "up" / "down" / NULL (no rating). Set from
+    # the app's per-turn thumbs; the raw signal for reply-quality review.
+    # Paired with alembic migration (add_convlog_feedback).
+    feedback = Column(String)
+    # The turn's reasoning receipt ("Arnie's Thoughts") as JSON — steps +
+    # duration_ms, assembled deterministically at turn end. Persisted so the
+    # disclosure survives history reloads. Null for pure-chat turns.
+    reasoning_json = Column(Text)
 
     user = relationship("User", back_populates="conversation_logs")
 

@@ -246,8 +246,8 @@ def detect_sarcastic_ack(user_text: str, prior_assistant_text: str = "") -> bool
     prior = prior_assistant_text.lower()
     if looks_like_mechanics(prior):
         return True
-    if "got that." in prior and "calories today" in prior:
-        return True  # the generic-net deterministic_confirmation pattern
+    if ("got that." in prior or "on the board." in prior) and "calories today" in prior:
+        return True  # the generic-net deterministic_confirmation pattern (old + new head)
     if looks_like_bare_log_ack(prior):
         return True
     return False

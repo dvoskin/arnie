@@ -1387,7 +1387,12 @@ async def run_turn(
     try:
         if any(tc["name"] == "find_nearby_places" for tc in tool_calls):
             _r = tool_results.get("find_nearby_places")
-            if isinstance(_r, str) and _r.startswith("PLACES lookup"):
+            # No-location failure ("PLACES lookup ...") OR a stale-anchor
+            # success (the executor's ANCHOR note) — both earn the one-tap
+            # share-location button so a fresh pin is a tap, not typing.
+            if isinstance(_r, str) and (
+                _r.startswith("PLACES lookup") or "\nANCHOR:" in _r
+            ):
                 _needs_location_share = True
     except Exception:
         pass

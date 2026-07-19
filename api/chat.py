@@ -406,13 +406,62 @@ async def chat_history(identity: str = Depends(current_identity), limit: int = 4
                  "platform": plat, "log_id": row.id}
             if cards and i == 0:
                 m["cards"] = cards
+            if getattr(row, "feedback", None):
+                m["feedback"] = row.feedback
             messages.append(m)
         # Card-only turn (no text bubbles) — still surface the cards.
         if cards and not bubbles:
             messages.append({"author": "arnie", "text": "", "created_at": ts_iso,
                              "cards": cards, "platform": plat, "log_id": row.id})
+        # The persisted reasoning receipt rides the turn's LAST message so the
+        # client re-attaches "Arnie's Thoughts" at the end of the turn on restore.
+        if getattr(row, "reasoning_json", None) and messages \
+                and messages[-1].get("author") == "arnie":
+            try:
+                messages[-1]["reasoning"] = json.loads(row.reasoning_json)
+            except Exception:
+                pass
 
     return {"v": WIRE_VERSION, "messages": messages}
+
+
+class FeedbackRequest(BaseModel):
+    log_id: int
+    rating: Optional[str] = None  # "up" | "down" | null (clear a prior rating)
+
+    @field_validator("rating")
+    @classmethod
+    def _valid_rating(cls, v):
+        if v not in (None, "up", "down"):
+            raise ValueError("rating must be 'up', 'down', or null")
+        return v
+
+
+@router.post("/chat/feedback")
+async def chat_feedback(req: FeedbackRequest, identity: str = Depends(current_identity)):
+    """Store the user's thumbs verdict on one reply (the app's per-turn 👍/👎).
+
+    Idempotent upsert on the turn's ConversationLog row; re-rating overwrites,
+    null clears. Scoped to the caller's linked identities — you can only rate
+    your own turns. This is the raw reply-quality signal for review tooling."""
+    from sqlalchemy import select
+    from db.models import User, ConversationLog
+
+    async with AsyncSessionLocal() as db:
+        user = await resolve_user(db, identity)
+        canonical_id = user.linked_to_user_id or user.id
+        id_rows = await db.execute(
+            select(User.id).where(
+                (User.id == canonical_id) | (User.linked_to_user_id == canonical_id)
+            )
+        )
+        ids = set(id_rows.scalars().all()) or {user.id}
+        row = await db.get(ConversationLog, req.log_id)
+        if row is None or row.user_id not in ids:
+            raise HTTPException(status_code=404, detail="turn not found")
+        row.feedback = req.rating
+        await db.commit()
+    return {"ok": True, "log_id": req.log_id, "rating": req.rating}
 
 
 # ── Streaming (WebSocket) ────────────────────────────────────────────────────
