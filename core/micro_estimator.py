@@ -13,6 +13,7 @@ import json
 import logging
 
 from api.usda import micro_units
+from core.food_intelligence import SODIUM_IMPLAUSIBLE_MG
 from core.nutrition import _DAILY_VALUES
 
 logger = logging.getLogger(__name__)
@@ -23,9 +24,10 @@ _KEYS = list(_DAILY_VALUES.keys())   # the vitamins + minerals we estimate
 # Macro-adjacent nutrients the health score needs but gap foods never get from
 # a database match (they live in dedicated food_entries columns, not the micro
 # panel). Estimated in the SAME Haiku call; caller pops them out of the result.
-# Caps are per-single-food plausibility guards, mirroring the sodium clamp in
-# food_intelligence (5000 mg) — implausible values are dropped, not stored.
-_EXTRA_KEYS = {"fiber": ("g", 60.0), "sugar": ("g", 250.0), "sodium": ("mg", 5000.0)}
+# Caps are per-single-food plausibility guards, sharing the sodium clamp with
+# food_intelligence — implausible values are dropped, not stored.
+_EXTRA_KEYS = {"fiber": ("g", 60.0), "sugar": ("g", 250.0),
+               "sodium": ("mg", float(SODIUM_IMPLAUSIBLE_MG))}
 
 _SYSTEM = (
     "You are a precise nutrition database. From your knowledge of a food's typical "

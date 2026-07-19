@@ -11,8 +11,11 @@ from db.models import (
 from datetime import date, datetime, timedelta
 from typing import Optional, List
 import json
+import logging
 import os
 import pytz
+
+logger = logging.getLogger(__name__)
 
 
 async def get_or_create_user(db: AsyncSession, telegram_id: str) -> User:
@@ -1708,6 +1711,19 @@ async def update_food_entry(
                 _v = getattr(entry, _f, None)
                 if _v is not None:
                     setattr(entry, _f, round(float(_v) * _r, 2))
+            # Sodium sanity: a portion upscale can push a vetted value past
+            # any plausible single-entry amount (3000mg × a 3× edit = 9000).
+            # Cap at the shared enrichment bound rather than drop — the
+            # pre-edit value already passed the clamp, so the food IS salty;
+            # keep the signal, bound the absurdity.
+            from core.food_intelligence import SODIUM_IMPLAUSIBLE_MG
+            if entry.sodium is not None and entry.sodium > SODIUM_IMPLAUSIBLE_MG:
+                logger.warning(
+                    f"serving edit scaled sodium to {entry.sodium:.0f}mg for "
+                    f"entry {entry.id} ({entry.parsed_food_name!r}) — capping "
+                    f"at {SODIUM_IMPLAUSIBLE_MG}mg"
+                )
+                entry.sodium = float(SODIUM_IMPLAUSIBLE_MG)
             if entry.micronutrients_json:
                 try:
                     _micros = json.loads(entry.micronutrients_json)

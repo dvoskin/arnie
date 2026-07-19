@@ -18,6 +18,15 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
+# Single-entry sodium plausibility bound, shared by every path that writes
+# entry sodium (analyze() below, the Haiku micro-estimator fallback, and the
+# serving-edit rescale in db.queries). A very salty restaurant meal tops out
+# around 3-3.5g; one food entry beyond 4g means a bad match or a mis-scaled
+# basis, not food. Was 5000 — tightened 2026-07-18 after garbage values in
+# the 4-5g band slipped through (low-cal/100g salty foods × a big implied
+# portion land there).
+SODIUM_IMPLAUSIBLE_MG = 4000
+
 
 # ── Food logging mode ──────────────────────────────────────────────────────────
 # How aggressively Arnie confirms amounts/prep before logging. Three tiers:
@@ -366,14 +375,15 @@ def analyze(name, quantity, llm_cal, llm_protein, llm_carbs, llm_fat,
             if not protein and per100.get("protein"):
                 protein = round(per100["protein"] * ratio, 1)
 
-    # Plausibility clamp: a single logged item should never carry >5000mg sodium.
+    # Plausibility clamp: a single logged item should never carry >4000mg sodium.
     # When it does (corn at 20,378mg — Danny 2026-06-23), the USDA lookup matched a
-    # salt-like/seasoning record or mis-scaled the per-100g basis. Drop the bogus
-    # value rather than store it AND surface a false "high sodium" flag in the
-    # coaching note. 5000mg is ~2x the daily limit, so real foods (even salty
-    # restaurant meals at 2-4g) clear it; only bad matches don't.
-    _SODIUM_IMPLAUSIBLE_MG = 5000
-    if sodium is not None and sodium > _SODIUM_IMPLAUSIBLE_MG:
+    # salt-like/seasoning record or mis-scaled the per-100g basis; the estimate
+    # path can also blow up the multiplier (LLM calories ÷ a tiny cal/100g for
+    # broth/pickles → 15× portions). Drop the bogus value rather than store it
+    # AND surface a false "high sodium" flag in the coaching note. Real foods
+    # (even salty restaurant meals at 2-3.5g) clear the bound; only bad
+    # matches/scales don't.
+    if sodium is not None and sodium > SODIUM_IMPLAUSIBLE_MG:
         logger.warning(
             f"implausible sodium {sodium:.0f}mg for {(name or '')!r} "
             f"(cal={cal}, source={source}, fdc_id={fdc_id}) — dropping enrichment"
