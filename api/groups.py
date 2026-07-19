@@ -186,14 +186,17 @@ class LeaderboardEntry(BaseModel):
     badges: int
 
 
-async def compute_leaderboard(db, group_id: int, me_id: int) -> dict:
+async def compute_leaderboard(db, group_id: int, me_id: int,
+                              window_days: int | None = 7) -> dict:
     """Effort-ranked board for a group — momentum is computed ON READ from the
     last 7 logging days (no score ledger to maintain or drift):
 
         momentum = 10·log_days + 15·workout_days + 5·streak + 2·badges
 
     Consistency outranks intensity by construction: a 7-day logger beats a
-    two-workout hero. Session-injected for testability; the route wraps it."""
+    two-workout hero. window_days: 7, 30, or None (all-time — cumulative
+    board, same weights). Session-injected for testability; the route wraps
+    it."""
     from datetime import date, timedelta
     from sqlalchemy import func as _f
 
@@ -205,15 +208,19 @@ async def compute_leaderboard(db, group_id: int, me_id: int) -> dict:
         if me_id not in member_rows:
             raise HTTPException(status_code=403, detail="not a member")
 
-        since = date.today() - timedelta(days=13)
-        week = date.today() - timedelta(days=6)
         from db.models import DailyLog, Achievement, User as _U
 
-        logs = (await db.execute(
-            select(DailyLog.user_id, DailyLog.date,
-                   DailyLog.total_calories, DailyLog.workout_completed)
-            .where(DailyLog.user_id.in_(member_rows), DailyLog.date >= since)
-        )).all()
+        # Fetch floor: the window itself (plus slack so the streak walk isn't
+        # clipped); all-time fetches everything.
+        _q = select(DailyLog.user_id, DailyLog.date,
+                    DailyLog.total_calories, DailyLog.workout_completed) \
+            .where(DailyLog.user_id.in_(member_rows))
+        if window_days is not None:
+            _q = _q.where(DailyLog.date
+                          >= date.today() - timedelta(days=window_days + 60))
+        logs = (await db.execute(_q)).all()
+        week = (date.today() - timedelta(days=window_days - 1)
+                if window_days is not None else date.min)
         badge_counts = dict((await db.execute(
             select(Achievement.user_id, _f.count(Achievement.id))
             .where(Achievement.user_id.in_(member_rows))
@@ -255,18 +262,22 @@ async def compute_leaderboard(db, group_id: int, me_id: int) -> dict:
             })
         entries.sort(key=lambda e: (-e["momentum"], e["name"]))
         out = [LeaderboardEntry(rank=i + 1, **e) for i, e in enumerate(entries)]
-        return {"v": 1, "window_days": 7, "entries": [e.dict() for e in out]}
+        return {"v": 1,
+                "window": ("all" if window_days is None else f"{window_days}d"),
+                "entries": [e.dict() for e in out]}
 
 
 @router.get("/{group_id}/leaderboard")
 async def group_leaderboard(
-    group_id: int, identity: str = Depends(current_identity)
+    group_id: int, window: str = "7d",
+    identity: str = Depends(current_identity)
 ) -> dict:
     """Names only (first names the group already sees); requester flagged
-    `you`. See compute_leaderboard for the momentum contract."""
+    `you`. window: 7d | 30d | all. See compute_leaderboard."""
+    days = {"7d": 7, "30d": 30, "all": None}.get(window, 7)
     async with AsyncSessionLocal() as db:
         me = await resolve_user(db, identity)
-        return await compute_leaderboard(db, group_id, me.id)
+        return await compute_leaderboard(db, group_id, me.id, window_days=days)
 
 
 @router.post("/{group_id}/join")

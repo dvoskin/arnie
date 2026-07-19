@@ -43,3 +43,30 @@ async def test_momentum_ranks_consistency_over_intensity(db, make_user):
     assert out["entries"][-1]["name"] == "Ghost"
     assert out["entries"][-1]["momentum"] == 0
     assert out["entries"][0]["streak"] >= 7 - 1
+
+
+async def test_windows_30d_and_all_time(db, make_user):
+    g, (danny, anna, _) = await _seed_group(db, make_user)
+    today = date.today()
+    # Danny: 3 recent days. Anna: 20 days, all older than a week.
+    for i in range(3):
+        db.add(DailyLog(user_id=danny.id, date=today - timedelta(days=i),
+                        total_calories=1800))
+    for i in range(8, 28):
+        db.add(DailyLog(user_id=anna.id, date=today - timedelta(days=i),
+                        total_calories=1500, workout_completed=True))
+    await db.commit()
+
+    from api.groups import compute_leaderboard
+    week = await compute_leaderboard(db, g.id, danny.id, window_days=7)
+    assert week["window"] == "7d"
+    assert week["entries"][0]["name"] == "Danny"      # Anna invisible this week
+
+    month = await compute_leaderboard(db, g.id, danny.id, window_days=30)
+    assert month["window"] == "30d"
+    assert month["entries"][0]["name"] == "Anna"      # her 20 days dominate
+
+    alltime = await compute_leaderboard(db, g.id, danny.id, window_days=None)
+    assert alltime["window"] == "all"
+    assert alltime["entries"][0]["name"] == "Anna"
+    assert alltime["entries"][0]["log_days"] == 20
