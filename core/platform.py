@@ -107,6 +107,10 @@ class Response:
     # plan the user just changed in chat is what they see on Coach. Other
     # transports ignore it.
     program_updated: bool = False
+    # The turn's reasoning receipt — REAL artifacts (context read, each tool
+    # step, checks applied), never model narration. iOS renders it behind a
+    # collapsed "How I got this" disclosure. None on trivial turns.
+    reasoning: "Optional[dict]" = None
 
     @classmethod
     def from_text(cls, text: str, **kwargs) -> "Response":
@@ -341,6 +345,8 @@ def serialize_response(response: Response) -> dict:
         "achievement": response.achievement,
         # Program edited this turn — older clients ignore it.
         "program_updated": bool(getattr(response, "program_updated", False)),
+        # Reasoning receipt (or null) — older clients ignore it.
+        "reasoning": getattr(response, "reasoning", None),
     }
 
 

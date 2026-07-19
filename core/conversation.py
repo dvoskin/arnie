@@ -332,6 +332,8 @@ async def run_turn(
 
     Returns a TurnResult so each handler can apply its own delivery layer.
     """
+    import time as _time_mod
+    _turn_t0 = _time_mod.monotonic()
     _source = source_type or platform
     _tag = f"{platform}:{user.id}"
     _retried = False  # turn-health: did the self-heal fire this turn?
@@ -1186,6 +1188,15 @@ async def run_turn(
                 _first_food = (await _food_entry_count(db, user.id)) == 1
             except Exception:
                 _first_food = False
+        # ── Reasoning receipt: the turn's REAL artifacts, humanized ──────
+        try:
+            from core.reasoning import build_reasoning
+            resp.reasoning = build_reasoning(
+                tool_calls, tool_results, None,
+                int((_time_mod.monotonic() - _turn_t0) * 1000))
+        except Exception:
+            resp.reasoning = None   # a broken receipt never breaks a turn
+
         moment         = detect_moment(response_text, tool_calls, first_food=_first_food)
         resp.reaction  = moment.reaction
         resp.effect    = moment.effect
