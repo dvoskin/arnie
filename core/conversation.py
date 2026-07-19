@@ -34,7 +34,7 @@ from core.turn_health import (
 )
 from handlers.tool_executor import (
     execute_tool_calls, deterministic_confirmation, recovery_message,
-    tool_heads_up, _heads_up_seed, NEEDS_HEADS_UP_TOOLS,
+    tool_heads_up, _heads_up_seed, NEEDS_HEADS_UP_TOOLS, blocked_log_reply,
 )
 
 logger = logging.getLogger(__name__)
@@ -713,7 +713,22 @@ async def run_turn(
                 _response_streamed = False  # canned/welcome text wasn't streamed
     else:
         has_logging = any(tc["name"] in _LOGGING_TOOLS for tc in tool_calls)
-        if has_logging and not in_onboarding:
+        _all_blocked = blocked_log_reply(tool_calls, tool_results) \
+            if has_logging else None
+        if _all_blocked is not None and not in_onboarding:
+            # Every log this turn was an already-on-the-board block: no row
+            # written, totals unchanged. The model follow-up is SKIPPED — a
+            # fabricated "logged, you're at X" can't ship if it's never
+            # generated. Deterministic honest readback instead.
+            _followup_tried = True
+            response_text = _all_blocked
+            _response_streamed = False
+            if _streamer:
+                try:
+                    await _streamer.finalize()
+                except Exception:
+                    pass
+        elif has_logging and not in_onboarding:
             # Coach-unmute path: let Arnie coach on a log instead of a template.
             # Authoritative totals come from the tool result; "NUMBERS ARE SACRED"
             # in the system prompt prevents fabrication.

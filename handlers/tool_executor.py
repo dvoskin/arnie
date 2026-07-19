@@ -455,6 +455,27 @@ def _detect_log_divergence(today_log) -> list[str]:
     return flags
 
 
+def blocked_log_reply(tool_calls, tool_results) -> Optional[str]:
+    """The all-blocked logging turn, made structural (the 00:38 turkey
+    incident): when EVERY log_* result this turn is an 'Already on the
+    board:' dedup block, no row was written and the totals did not change —
+    so the model follow-up (which occasionally narrates success with
+    invented totals) is SKIPPED entirely and this deterministic honest
+    reply ships instead. Returns None for mixed or successful turns — those
+    keep the model's voice."""
+    log_names = {tc.get("name") for tc in (tool_calls or [])} & {
+        "log_food", "log_exercise", "log_water"}
+    if not log_names:
+        return None
+    results = [str((tool_results or {}).get(n, "")) for n in log_names]
+    if not results or not all(
+        r.startswith("Already on the board:") for r in results
+    ):
+        return None
+    facts = "|||".join(results)
+    return "That's already on the board from earlier — nothing new logged.|||" + facts
+
+
 def deterministic_confirmation(tool_calls, log, prefs, tool_results=None) -> str:
     """
     Build a meaningful confirmation from what was actually logged, used when the
