@@ -155,7 +155,7 @@ async def generate_insights(stats: dict) -> List[str]:
         return []
 
     summary = _build_summary(stats)
-    prompt = f"""You are Arnie, a direct fitness coach analysing a specific day's data. Write 3 to 5 SHORT coaching observations — each one sentence, 10-22 words.
+    prompt = f"""You are Arnie, a direct fitness coach analysing a specific day's data. Write 3 to 5 SHORT coaching observations — each one sentence, 8-16 words. CONCISE AND USEFUL: every line must either explain WHY a number matters or name the next lever to pull. Cut anything merely descriptive — if removing the line changes nothing about the user's next decision, don't write it.
 
 STRICT RULES:
 - Analyse ONLY the day shown (food logged, workouts done, Whoop data, pacing vs targets)
