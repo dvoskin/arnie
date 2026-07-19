@@ -1614,6 +1614,49 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
                     e for e in candidate_food_entries
                     if getattr(e, "id", None) in pre_existing_food_ids
                 ]
+            # CARRYOVER GUARD (the third-Barebells incident, Danny 07-19):
+            # a follow-up batch ("also 150g turkey and rice") logs ONLY what
+            # THIS message names. The model dragged the prior turn's bar into
+            # the batch; the payload dedup below whiffed because the existing
+            # entry had been reconciled to 2 bars (400 cal) while the phantom
+            # was 1 bar (200 cal) — portion mismatch, no match. This guard is
+            # portion-blind: item name ABSENT from the user's message, the
+            # same food already on the board within the last 90 min, and no
+            # add-cue for this item (_supports_food False — "another one"
+            # style generic cues keep the historical open behavior) → block.
+            # Text turns only; photo estimates name nothing in the message.
+            if (
+                user_message
+                and not _supports_food
+                and not inp.get("from_photo")
+                and candidate_food_entries
+            ):
+                import re as _re_carry
+                _msg_l = str(user_message).lower()
+                _msg_toks = set(_re_carry.split(r"[^a-z0-9а-яё]+", _msg_l))
+                _sig = [w for w in _re_carry.split(r"[^a-z0-9а-яё]+", food_name.lower())
+                        if len(w) >= 3]
+                _named = any(
+                    t == w or t.startswith(w) or w.startswith(t)
+                    for w in _sig for t in _msg_toks if t
+                ) if _sig else True
+                if not _named:
+                    _prior = next(
+                        (e for e in candidate_food_entries
+                         if any(w in (getattr(e, "parsed_food_name", "") or "").lower()
+                                for w in _sig)
+                         and getattr(e, "timestamp", None) is not None
+                         and (now_utc - e.timestamp).total_seconds() < 5400),
+                        None,
+                    )
+                    if _prior is not None:
+                        logger.info(
+                            f"event=carryover_block kind=food "
+                            f"user={getattr(user, 'id', None)} item={food_name!r} "
+                            f"prior=#{getattr(_prior, 'id', None)}"
+                        )
+                        return _format_food_dedup(_prior, now_utc=now_utc)
+
             _dup_food = is_duplicate_food(
                 food_name=food_name,
                 quantity=inp.get("quantity"),

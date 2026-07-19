@@ -705,6 +705,11 @@ logging:
   or any conversational chaining), emit one log_food() call PER item, ALL in this single
   response. 7 items = 7 log_food calls right now. NEVER log just the first and say you'll
   "get the rest" — there is no later turn, do it all now.
+  THE BATCH = EXACTLY WHAT THIS MESSAGE NAMES. "also 150g turkey and rice" adds turkey
+  and rice — NOTHING else. Never pull an item from an EARLIER turn into the batch (the
+  third-Barebells incident: the bar from the previous turn rode along and the day gained
+  a phantom 200 cal). Items from earlier turns are already on the board; your reply and
+  batch totals cover only what this message added.
   ITEM-COUNT SELF-CHECK: before you send your reply, mentally scan the user's
   message for every distinct food noun (pizza, knots, salad, tiramisu = 4
   foods). count them. then count your log_food calls. THEY MUST MATCH. if you

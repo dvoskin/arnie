@@ -347,3 +347,61 @@ async def test_exercise_rapid_refire_without_add_intent_blocked(monkeypatch):
     )
     assert wc["n"] == 0, "no add-intent → rapid re-fire must be blocked"
     assert result.startswith("Already on the board:"), result
+
+
+@pytest.mark.asyncio
+async def test_food_carryover_item_not_named_blocked(monkeypatch):
+    """CARRYOVER GUARD (the third-Barebells incident, Danny 2026-07-19): the
+    user says "Also 150g ground turkey and 100g white rice"; the model drags
+    the PRIOR turn's bar into the batch. The payload dedup whiffs (existing
+    row reconciled to 2 bars / 400 cal vs the phantom 1 bar / 200 cal), but
+    the item is absent from the message and on the board 57 min ago → block."""
+    user = _user()
+    prior = _food_row(1400, "Barebells Salty Peanut Protein Bar", "2 bars",
+                      400.0, ago_s=57 * 60)
+    today_log = _food_log([prior])
+    wc = {"n": 0}
+    _patch_food_writers(monkeypatch, today_log, wc)
+
+    result = await TE._dispatch(
+        "log_food",
+        {"food_name": "Barebells Salty Peanut Protein Bar",
+         "quantity": "1 bar", "calories": 200},
+        user, today_log, db=SimpleNamespace(refresh=_refresh), source_type="ios",
+        user_message="Also 150g ground turkey and 100g white rice",
+    )
+    assert wc["n"] == 0, "carried-over item must NOT write"
+    assert result.startswith("Already on the board:"), result
+
+
+@pytest.mark.asyncio
+async def test_food_carryover_named_item_still_writes(monkeypatch):
+    """Control: the same portion-mismatched shape but the user NAMED the item
+    ("one more barebells bar...") — the add cue + name keeps the write path
+    open (reconcile/merge, never a silent block)."""
+    user = _user()
+    prior = _food_row(1400, "Barebells Salty Peanut Protein Bar", "2 bars",
+                      400.0, ago_s=57 * 60)
+    today_log = _food_log([prior])
+    wc = {"n": 0}
+    _patch_food_writers(monkeypatch, today_log, wc)
+
+    merged = {"calls": 0}
+
+    async def _fake_update(db, entry_id, user_id, **changes):
+        merged["calls"] += 1
+        prior.quantity = changes.get("quantity")
+        prior.calories = changes.get("calories")
+        return prior
+
+    monkeypatch.setattr(TE, "q_update_food_entry", _fake_update)
+
+    result = await TE._dispatch(
+        "log_food",
+        {"food_name": "Barebells Salty Peanut Protein Bar",
+         "quantity": "1 bar", "calories": 200},
+        user, today_log, db=SimpleNamespace(refresh=_refresh), source_type="ios",
+        user_message="one more barebells salty peanut bar",
+    )
+    assert not result.startswith("Already on the board:"), result
+    assert wc["n"] == 1 or merged["calls"] == 1, "named repeat must land"
