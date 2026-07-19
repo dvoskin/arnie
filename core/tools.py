@@ -22,7 +22,11 @@ _NUTRITION_TOOLS = [
             "Do NOT call for future plans or intentions ('going to have', 'planning to eat', "
             "'thinking about', 'about to eat', 'might grab', 'gonna have'). "
             "Call ONCE per distinct food item — one item per call. "
-            "Multiple foods = multiple calls."
+            "Multiple foods = multiple calls. "
+            "BRANDED/PACKAGED items: macros come from THAT product's label "
+            "(web_search it if not already established this conversation) and "
+            "food_name carries the exact product incl. flavor — a new flavor is a "
+            "different product; never reuse another variant's name or numbers."
         ),
         "input_schema": {
             "type": "object",
