@@ -408,6 +408,10 @@ class ConversationLog(Base):
     # duration_ms, assembled deterministically at turn end. Persisted so the
     # disclosure survives history reloads. Null for pure-chat turns.
     reasoning_json = Column(Text)
+    # Set when a [REGENERATE] turn replaced this reply — points at the new
+    # ConversationLog row. Superseded rows are hidden from history (the
+    # regenerate REPLACES the reply, ChatGPT-style, instead of stacking).
+    superseded_by = Column(Integer)
 
     user = relationship("User", back_populates="conversation_logs")
 

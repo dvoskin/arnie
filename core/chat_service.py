@@ -361,6 +361,23 @@ async def run_chat_turn(
     # bubbles so a later history reload recognizes them by id, not by text.
     turn.log_id = getattr(_conv_row, "id", None)
 
+    # [REGENERATE:<id>] — the app's regenerate replaced an earlier reply. Mark
+    # the old row superseded (points at this turn) so history hides it; the
+    # model context still sees it, which is what lets the redo differ. Fully
+    # wrapped — a bad id or race never affects the turn.
+    try:
+        import re as _re_regen
+        _m = _re_regen.match(r"^\[REGENERATE:(\d+)\]$", (text or "").strip())
+        if _m and turn.log_id:
+            from db.models import ConversationLog as _CL
+            _old = await db.get(_CL, int(_m.group(1)))
+            _family = {user.id, user.linked_to_user_id or user.id}
+            if _old is not None and _old.user_id in _family and _old.id != turn.log_id:
+                _old.superseded_by = turn.log_id
+                await db.commit()
+    except Exception:
+        logger.warning("supersede mark failed", exc_info=True)
+
     # ── Background profile synthesis + reflection ─────────────────────────────
     if schedule_background and not turn.in_onboarding:
         schedule_post_turn_jobs(turn.user.id, text, turn.response.bubbles)

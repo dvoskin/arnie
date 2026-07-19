@@ -359,6 +359,10 @@ async def chat_history(identity: str = Depends(current_identity), limit: int = 4
 
     messages: list[dict] = []
     for row in reversed(rows):  # newest-first → chronological
+        # A regenerate REPLACED this reply — the new turn is the reply; the
+        # superseded one never renders again (ChatGPT-style swap, not a stack).
+        if getattr(row, "superseded_by", None):
+            continue
         # `timestamp` is the SQLAlchemy column on ConversationLog. Send it as
         # ISO-8601 so the iOS contract (Date) parses it via ISO8601DateFormatter.
         # All bubbles in a single turn share the row timestamp — fine because
