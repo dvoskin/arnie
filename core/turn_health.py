@@ -310,6 +310,12 @@ _RECORDED_CLAIM = (
     "on the board", "noted", "logged", "got it logged", "locked in",
     "in the books", "on the books", "recorded", "added that", "that's in",
     "got that down",
+    # RU past-tense success claims — Anya 2026-07-19: "Кофе и кола внесены ☕"
+    # with ZERO tool calls sailed straight through the EN-only list. A third
+    # of the beta logs in Russian; the phantom detector must too.
+    "внесены", "внесен", "внесла", "внёс", "внесено",
+    "записано", "записала", "записал", "добавлено", "добавила", "добавил",
+    "залогировано", "залогировала", "занесла", "занёс", "в логе", "в дневнике",
 )
 
 # Exercise set-report shapes in the USER's message: "190x14", "11 x40", "3x12",

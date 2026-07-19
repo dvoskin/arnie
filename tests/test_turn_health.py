@@ -139,3 +139,18 @@ def test_stall_only_flags_when_no_tool_calls():
         has_tool_calls=True, stop_reason="end_turn", retried=False, tool_error=False,
     )
     assert "stall_shipped" not in flags
+
+
+def test_phantom_log_claim_catches_russian():
+    """Anya 2026-07-19 13:47 verbatim: 'coffee\\ncoke' → 'Кофе и кола внесены ☕'
+    with zero tools — the EN-only claim list let it through."""
+    assert looks_like_phantom_log_claim(
+        "coffee\ncoke",
+        "Кофе и кола внесены ☕\n\nПока пусто по еде, **0/1570 калорий**, 0г белка.",
+        has_tool_calls=False)
+    # RU 'logged' claim over a matched food report — still caught
+    assert looks_like_phantom_log_claim(
+        "coffee", "Записала, кофе в дневнике.", has_tool_calls=False)
+    # a genuine RU clarifying reply must NOT fire
+    assert not looks_like_phantom_log_claim(
+        "coffee", "Какой кофе — с молоком или чёрный?", has_tool_calls=False)
