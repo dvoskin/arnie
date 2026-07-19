@@ -584,6 +584,33 @@ async def run_turn(
             user_message=_gate_user_message,
         )
 
+        # ── SCRIBE SHADOW (observe-only) ─────────────────────────────────
+        # The write-set validator judges what the model ACTUALLY did against
+        # the justification rules and logs divergences — it changes nothing.
+        # This is stage-2 groundwork for the talker/scribe split: the
+        # divergence stream tunes the rules until they can gate writes for
+        # real. Kill switch: SCRIBE_SHADOW_ENABLED=false. Fully wrapped.
+        try:
+            if os.getenv("SCRIBE_SHADOW_ENABLED", "true").lower() in ("true", "1", "yes"):
+                from core.write_set import validate_write_set, summarize
+                _shadow = summarize(validate_write_set(
+                    tool_calls, _gate_user_message,
+                    getattr(_log_for_tools, "food_entries", None) or [],
+                    from_photo=(_source == "photo"),
+                ))
+                if _shadow["flagged"]:
+                    logger.warning(
+                        f"event=scribe_shadow user={getattr(user, 'id', None)} "
+                        f"counts={_shadow['counts']} flagged={_shadow['flagged']}"
+                    )
+                else:
+                    logger.info(
+                        f"event=scribe_shadow user={getattr(user, 'id', None)} "
+                        f"counts={_shadow['counts']}"
+                    )
+        except Exception:
+            logger.warning("scribe shadow failed (observe-only)", exc_info=True)
+
         # Deliver image results via the platform callback; replace dict with string
         for tname, tresult in list(tool_results.items()):
             if isinstance(tresult, dict) and tresult.get("_type") == "image":
