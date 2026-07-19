@@ -1,0 +1,44 @@
+{
+  "window_days": 14,
+  "since_utc": "2026-07-05T22:29:29.904231",
+  "generated_utc": "2026-07-19T22:29:29.904644",
+  "turns": 1235,
+  "active_users": 33,
+  "log_turns": 257,
+  "tool_error_turns": 3,
+  "blocked_write_turns": 4,
+  "quick_correction_turns": 20,
+  "thumbs_up": 3,
+  "thumbs_down": 6,
+  "regenerated_turns": 1,
+  "health_flag_distribution": {
+    "dashboard_delete": 13,
+    "dashboard_edit": 9,
+    "retried": 5,
+    "tool_error": 3,
+    "phantom_log_claim": 2,
+    "phantom_log_claim,total_mismatch": 1,
+    "user_frustrated": 1
+  },
+  "turns_by_source": {
+    "ios": 801,
+    "proactive": 358,
+    "photo": 30,
+    "dashboard_edit": 22,
+    "text": 18,
+    "voice": 6
+  },
+  "turns_by_platform": {
+    "ios": 1222,
+    "telegram": 13
+  },
+  "food_entries_written": 369,
+  "logging_user_days": 67,
+  "rates": {
+    "blocked_write_per_log_turn": 0.0156,
+    "quick_correction_per_log_turn": 0.0778,
+    "tool_error_per_log_turn": 0.0117,
+    "log_turn_share_of_all": 0.2081,
+    "entries_per_logging_user_day": 5.51
+  }
+}
