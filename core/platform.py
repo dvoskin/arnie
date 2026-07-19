@@ -399,7 +399,9 @@ class Moment:
 
 
 def detect_moment(response_text: str, tool_calls: list,
-                  first_food: bool = False) -> Moment:
+                  first_food: bool = False,
+                  user_text: str = "",
+                  wrote: bool = True) -> Moment:
     """
     Decide what reaction / effect (if any) a coaching response warrants.
     Pure function — used by both Telegram and iMessage adapters for consistency.
@@ -409,8 +411,15 @@ def detect_moment(response_text: str, tool_calls: list,
     turn logged the user's FIRST-EVER food. The single most important log in
     the product (activation cliff = food logging) gets the celebration
     regardless of what the reply text happens to say.
+
+    user_text — the USER's message. The laugh tapback keys off THEIR humor,
+    never Arnie's own quips (he laughed at his own jokes — Danny 07-19).
+    wrote — did a log tool actually WRITE this turn? Dramatic effects need a
+    real event behind them; goal/streak language merely restated (a recheck,
+    a summary) downgrades to the reaction alone, no fireworks.
     """
     t = (response_text or "").lower()
+    ut = (user_text or "").lower()
     names = {tc.get("name") for tc in (tool_calls or [])}
     has_exercise = "log_exercise" in names
     has_food = "log_food" in names
@@ -420,22 +429,33 @@ def detect_moment(response_text: str, tool_calls: list,
         return Moment(React.LOVE, FX.CELEBRATE, -1)      # first-ever food → ❤️ + balloons
 
     if has_exercise and any(s in t for s in _PR_SIGNALS):
-        return Moment(React.LOVE, FX.SLAM, 0)            # PR → ❤️ + slam
+        if wrote:
+            return Moment(React.LOVE, FX.SLAM, 0)        # PR → ❤️ + slam
+        return Moment(React.LOVE)
 
     if any(s in t for s in _GOAL_HIT_SIGNALS):
-        return Moment(React.LOVE, FX.FIREWORKS, -1)      # goal weight → ❤️ + fireworks
+        if wrote:
+            return Moment(React.LOVE, FX.FIREWORKS, -1)  # goal weight → ❤️ + fireworks
+        return Moment(React.LOVE)
 
     if any(s in t for s in _STREAK):
-        return Moment(React.LOVE, FX.FIREWORKS, -1)      # streak → ❤️ + fireworks
+        if wrote:
+            return Moment(React.LOVE, FX.FIREWORKS, -1)  # streak → ❤️ + fireworks
+        return Moment(React.LOVE)
 
     if any(s in t for s in _PROTEIN_WIN):
-        return Moment(React.LOVE, FX.CELEBRATE, -1)      # protein goal → ❤️ + balloons
+        if wrote:
+            return Moment(React.LOVE, FX.CELEBRATE, -1)  # protein goal → ❤️ + balloons
+        return Moment(React.LOVE)
 
     if any(s in t for s in _CLEAN_DAY):
-        return Moment(React.LOVE, FX.CELEBRATE, -1)      # clean day → ❤️ + balloons
+        if wrote:
+            return Moment(React.LOVE, FX.CELEBRATE, -1)  # clean day → ❤️ + balloons
+        return Moment(React.LOVE)
 
     # ── Lighter reactions (tapback only, no effect) ──────────────────────────
-    if any(s in t for s in _FUNNY):
+    # Laugh at THEIR joke, never Arnie's own — keyed off the user's message.
+    if any(s in ut for s in _FUNNY) or "haha" in ut or "хаха" in ut:
         return Moment(React.LAUGH)                        # funny moment → 😂
 
     if has_exercise:

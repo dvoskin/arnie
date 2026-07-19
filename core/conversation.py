@@ -1197,10 +1197,30 @@ async def run_turn(
         except Exception:
             resp.reasoning = None   # a broken receipt never breaks a turn
 
-        moment         = detect_moment(response_text, tool_calls, first_food=_first_food)
-        resp.reaction  = moment.reaction
-        resp.effect    = moment.effect
-        resp.effect_idx = moment.effect_idx
+        # Effects need a REAL event behind them: a log tool that actually
+        # wrote this turn. Goal/streak language merely restated (a recheck,
+        # a summary) downgrades to the reaction alone inside detect_moment.
+        _any_log_wrote = any(
+            (tc.get("name") in ("log_food", "log_exercise",
+                                "log_body_weight", "log_water"))
+            for tc in (tool_calls or [])
+        ) and any(
+            isinstance(v, str) and v.lstrip().startswith("Logged")
+            for v in (tool_results or {}).values()
+        )
+        _ut = _user_text if isinstance(_user_text, str) else ""
+        import re as _re_moment
+        if _re_moment.match(r"^\[REGENERATE(:\d+)?\]$", _ut.strip()):
+            # A regenerate is a dissatisfaction signal — never tapback or
+            # celebrate it (the balloons-on-recheck report, 07-19).
+            pass
+        else:
+            moment         = detect_moment(response_text, tool_calls,
+                                           first_food=_first_food,
+                                           user_text=_ut, wrote=_any_log_wrote)
+            resp.reaction  = moment.reaction
+            resp.effect    = moment.effect
+            resp.effect_idx = moment.effect_idx
 
         # ── Achievements: quiet trophies, loud moments ────────────────────
         # Only turns that actually WROTE a log can mint a badge (a chat-only
