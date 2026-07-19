@@ -821,6 +821,15 @@ async def run_turn(
                     response_text = deterministic_confirmation(
                         tool_calls, today_log, user.preferences, tool_results
                     )
+                    # Same trailing-send suppression as the generic fallback
+                    # site below: when the follow-up already STREAMED the
+                    # reply and only its RETURN came back empty, the user has
+                    # their answer — the canned text persists for the record
+                    # but must never send after it (the banana-turn triple,
+                    # 2026-07-19 23:15Z, was THIS site: food logs take the
+                    # has_logging branch, which the first fix didn't cover).
+                    if _streamer is not None and _streamer.flushed_count > 0:
+                        _suppress_trailing = True
                 _response_streamed = False  # deterministic fallback wasn't streamed
         else:
             # DEEP-TURN DIRECT DELIVERY: a successful deep_research run stashed a
