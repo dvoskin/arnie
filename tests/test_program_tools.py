@@ -68,8 +68,9 @@ async def test_set_program_day_fuzzy_and_stamped_today(db, make_user):
     assert "Legs" in res
     ov = (await _prog(db, user.id))["today_override"]
     assert ov["day"] == "Legs"
-    from db.queries import _user_today
-    assert ov["date"] == _user_today("UTC").isoformat()
+    from db.queries import _weighin_day_of
+    from datetime import datetime
+    assert ov["date"] == _weighin_day_of(datetime.utcnow(), "UTC").isoformat()
 
 
 async def test_set_program_day_unknown_lists_days_no_write(db, make_user):

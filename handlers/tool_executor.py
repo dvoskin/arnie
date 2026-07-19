@@ -2413,8 +2413,13 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
             # Rest is a first-class state, not a day that must exist in the
             # split — "rest"/"off"/"recovery" stamp the __rest__ sentinel.
             if _want in ("rest", "off", "recovery", "rest and recovery"):
-                from db.queries import _user_today
-                _today_iso = _user_today(
+                from db.queries import _weighin_day_of
+                from datetime import datetime as _dtn
+                # Pre-dawn grace: a 00:34 "rest day today" cancels the evening
+                # being finished, not the day just starting (Danny, 2026-07-19
+                # — the midnight-boundary 'today' gap; same rule as weigh-ins).
+                _today_iso = _weighin_day_of(
+                    _dtn.utcnow(),
                     getattr(user, "timezone", None) or "UTC").isoformat()
                 _prog["today_override"] = {"date": _today_iso, "day": "__rest__"}
                 _row.program_json = _json.dumps(_prog)
@@ -2426,8 +2431,10 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
                 _names = ", ".join((_d.get("name") or "?") for _d in _days)
                 return (f"No program day matches '{inp.get('day_name')}'. "
                         f"Days: {_names}. Ask which one they mean.")
-            from db.queries import _user_today
-            _today_iso = _user_today(
+            from db.queries import _weighin_day_of
+            from datetime import datetime as _dtn
+            _today_iso = _weighin_day_of(
+                _dtn.utcnow(),
                 getattr(user, "timezone", None) or "UTC").isoformat()
             _prog["today_override"] = {"date": _today_iso, "day": _match}
             _row.program_json = _json.dumps(_prog)

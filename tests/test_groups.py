@@ -25,13 +25,17 @@ async def test_launch_groups_seed_and_join(patched, make_user, monkeypatch):
     names = {g.name: g for g in gs}
     assert {"Beta Insiders", "Feedback"} <= set(names)
     assert names["Feedback"].kind == "feedback"
-    assert all(not g.joined for g in gs)
+    # Ship change (123da8a): Beta Insiders auto-enrolls every canonical
+    # onboarded user at seed — Gina arrives already a member; Feedback
+    # stays opt-in.
+    assert names["Beta Insiders"].joined
+    assert not names["Feedback"].joined
+    assert names["Beta Insiders"].member_count == 1
 
-    await join_group(names["Beta Insiders"].id, identity="ios:G1")
+    await join_group(names["Feedback"].id, identity="ios:G1")
     gs2 = await list_groups(identity="ios:G1")
     joined = {g.name for g in gs2 if g.joined}
-    assert joined == {"Beta Insiders"}
-    assert [g for g in gs2 if g.name == "Beta Insiders"][0].member_count == 1
+    assert joined == {"Beta Insiders", "Feedback"}
 
 
 @pytest.mark.asyncio

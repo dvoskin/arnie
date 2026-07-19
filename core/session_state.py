@@ -193,7 +193,13 @@ def build_session_state(
         # A user-declared day ("today is leg day") beats overlap inference.
         _ov = program_json.get("today_override") or {}
         try:
-            _today_iso = now_dt.date().isoformat()
+            # Same pre-dawn grace as the stamp side (see tool_executor):
+            # before 4am local, "today" is still the previous day.
+            _d = now_dt.date()
+            if getattr(now_dt, "hour", 12) < 4:
+                from datetime import timedelta as _td
+                _d = _d - _td(days=1)
+            _today_iso = _d.isoformat()
         except Exception:
             _today_iso = None
         if _ov.get("day") and _ov.get("date") == _today_iso:

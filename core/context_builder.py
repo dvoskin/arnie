@@ -973,7 +973,10 @@ async def build_context(user: User, today_log: Optional[DailyLog], db,
             )
             _ov = _prog.get("today_override") or {}
             try:
-                _ov_today = _now.date().isoformat() if hasattr(_now, "date") else None
+                from db.queries import _weighin_day_of as _wgd
+                from datetime import datetime as _dtn
+                _ov_today = _wgd(_dtn.utcnow(),
+                                 getattr(user, "timezone", None) or "UTC").isoformat()
             except Exception:
                 _ov_today = None
             if _ov.get("day") and _ov.get("date") == _ov_today:
