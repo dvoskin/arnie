@@ -23,7 +23,7 @@ from sqlalchemy import select
 from api.auth import current_identity
 from db.database import AsyncSessionLocal
 from db.models import BodyMetric
-from db.queries import upsert_health_snapshot, resolve_user, _logging_day_of
+from db.queries import upsert_health_snapshot, resolve_user, _weighin_day_of
 
 router = APIRouter(prefix="/api/v1/health", tags=["health"])
 
@@ -116,14 +116,14 @@ async def backfill_weights(
                 BodyMetric.source == "apple_health",
             )
         )).scalars().all()
-        seen_days = {_logging_day_of(t, tz) for t in existing if t is not None}
+        seen_days = {_weighin_day_of(t, tz) for t in existing if t is not None}
 
         added = 0
         for s in payload.weights:
             ts = _parse_instant(s.date)
             if ts is None:
                 continue
-            day = _logging_day_of(ts, tz)
+            day = _weighin_day_of(ts, tz)
             if day in seen_days:
                 continue
             seen_days.add(day)

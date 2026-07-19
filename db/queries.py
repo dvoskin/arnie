@@ -489,6 +489,29 @@ except (TypeError, ValueError):
     LOGGING_DAY_ROLLOVER_HOUR = 0
 
 
+# Weigh-ins get a scoped PRE-DAWN GRACE even while the general logging day
+# rolls at midnight: a 12:03am smart-scale sync is the END of yesterday, not
+# a new morning's reading (Danny, 2026-07-19: evening manual + 12:03am sync
+# marked TWO adherence days). Meals after midnight are deliberately "today"
+# (see LOGGING_DAY_ROLLOVER_HOUR above) — measurements are not meals.
+WEIGHIN_PREDAWN_GRACE_HOUR = 4
+
+
+def _weighin_day_of(dt_utc: datetime, user_timezone: str) -> date:
+    """The day a WEIGH-IN belongs to: user-local date, minus a day before
+    the pre-dawn grace hour. Used by the weight upsert, the Apple Health
+    backfill dedup, and every weigh-in serialization — one day rule."""
+    from core.timezones import safe_timezone
+    tz = safe_timezone(user_timezone)
+    if dt_utc.tzinfo is None:
+        dt_utc = pytz.utc.localize(dt_utc)
+    local = dt_utc.astimezone(tz)
+    d = local.date()
+    if local.hour < WEIGHIN_PREDAWN_GRACE_HOUR:
+        d = d - timedelta(days=1)
+    return d
+
+
 def _user_today(user_timezone: str) -> date:
     """The user's current LOGGING day (see LOGGING_DAY_ROLLOVER_HOUR) — the day new
     entries belong to. Before the rollover hour, that's still yesterday."""
@@ -763,7 +786,7 @@ async def add_body_metric(db: AsyncSession, user_id: int,
     # day-matching is by the user's LOGGING day so it honors the rollover hour for
     # both a live weigh-in and a retroactive one.
     ts = when if when is not None else datetime.utcnow()
-    target_day = _logging_day_of(ts, tz)
+    target_day = _weighin_day_of(ts, tz)
 
     # Pull rows in a ±48h window AROUND the target timestamp (covers both today and
     # a backfilled past date) and match the SAME source + SAME logging day in
@@ -781,7 +804,7 @@ async def add_body_metric(db: AsyncSession, user_id: int,
         (r for r in rows
          if (r.source or "manual") == source
          and r.timestamp is not None
-         and _logging_day_of(r.timestamp, tz) == target_day),
+         and _weighin_day_of(r.timestamp, tz) == target_day),
         None,
     )
 
@@ -791,7 +814,7 @@ async def add_body_metric(db: AsyncSession, user_id: int,
     manual_day_exists = any(
         (r.source or "manual") == "manual"
         and r.timestamp is not None
-        and _logging_day_of(r.timestamp, tz) == target_day
+        and _weighin_day_of(r.timestamp, tz) == target_day
         for r in rows
     )
 

@@ -250,8 +250,8 @@ def _health_block(snap) -> dict:
     }
 
 
-def _one_per_day_prefer_manual(weights):
-    """Collapse raw BodyMetric rows to ONE reading per calendar day, preferring
+def _one_per_day_prefer_manual(weights, tz: str = "UTC"):
+    """Collapse raw BodyMetric rows to ONE reading per LOGGING day, preferring
     the MANUAL (deliberate) reading over an apple_health (passive) one for that
     day, and return them chronologically (oldest → newest).
 
@@ -262,16 +262,19 @@ def _one_per_day_prefer_manual(weights):
     of the most recent day whenever one exists — so callers get manual-wins for
     free by taking `[-1]`.
 
-    Grouping key is the UTC calendar date (matching the %Y-%m-%d the dashboard
-    already emits for trend points). Within a day, manual wins; if a day has only
-    apple_health (or only manual), that single reading is used. Ties within the
-    same source fall to the latest timestamp.
+    Grouping key is the user's LOGGING day (db.queries._logging_day_of — tz +
+    the pre-4am rollover), matching daily logs and the backfill dedup. UTC
+    calendar grouping split a 12:03am scale sync onto "today" while the manual
+    weigh-in sat on "yesterday" (Danny, 2026-07-19) — one morning, two marks.
+    Within a day, manual wins; ties within the same source fall to the latest
+    timestamp.
     """
+    from db.queries import _weighin_day_of
     by_day: dict = {}
     for w in sorted(weights, key=lambda w: w.timestamp):
         if getattr(w, "weight_kg", None) is None:
             continue
-        day = w.timestamp.strftime("%Y-%m-%d")
+        day = _weighin_day_of(w.timestamp, tz).isoformat()
         cur = by_day.get(day)
         if cur is None:
             by_day[day] = w
@@ -299,15 +302,18 @@ def _weight_block(weights, user, as_of_date=None) -> dict | None:
     latest, so a past Daily Log shows the weight that belonged to it."""
     if not weights:
         return None
-    sorted_weights = _one_per_day_prefer_manual(weights)  # ascending by day
+    from db.queries import _weighin_day_of
+    _tz = getattr(user, "timezone", None) or "UTC"
+    sorted_weights = _one_per_day_prefer_manual(weights, _tz)  # ascending by day
     if not sorted_weights:
         return None
     if as_of_date is not None:
-        upto = [w for w in sorted_weights if w.timestamp.date() <= as_of_date]
+        upto = [w for w in sorted_weights
+                if _weighin_day_of(w.timestamp, _tz) <= as_of_date]
         sorted_weights = upto or sorted_weights[:1]
     recent = [
         {
-            "date": w.timestamp.strftime("%Y-%m-%d"),
+            "date": _weighin_day_of(w.timestamp, _tz).isoformat(),
             "kg":   round(w.weight_kg, 1),
             "lbs":  round(w.weight_kg * 2.20462, 1),
             # so iOS can tag an auto-synced reading ("Apple Health") vs a manual one
@@ -350,13 +356,15 @@ async def week_data(db, user) -> dict:
     ]
     # One reading per day, manual preferred — the trend mustn't double-count a
     # day that has both a manual weigh-in and a passive HealthKit sync.
+    from db.queries import _weighin_day_of
+    _tz = getattr(user, "timezone", None) or "UTC"
     weight_data = [
         {
-            "date": w.timestamp.strftime("%Y-%m-%d"),
+            "date": _weighin_day_of(w.timestamp, _tz).isoformat(),
             "kg": round(w.weight_kg, 1),
             "lbs": round(w.weight_kg * 2.20462, 1),
         }
-        for w in _one_per_day_prefer_manual(weights)
+        for w in _one_per_day_prefer_manual(weights, _tz)
     ]
     return {"targets": _targets(user), "history": hist_data, "weights": weight_data}
 

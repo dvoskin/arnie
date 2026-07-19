@@ -65,3 +65,20 @@ async def test_dashboard_wires_apple_health_panel():
     assert "apple_health_connected" in html
     # The simple Apple panel labels — and NOT a dependency on Whoop-only stats.
     assert "Resting cal" in html and "Active cal" in html
+
+
+def test_midnight_scale_sync_stays_on_previous_logging_day():
+    """Danny 2026-07-19: manual weigh-in yesterday evening + a 12:03am scale
+    sync = ONE logging day (4am rollover), never two adherence marks."""
+    from types import SimpleNamespace as NS
+    from datetime import datetime
+    from api.native_data import _one_per_day_prefer_manual
+    rows = [
+        NS(weight_kg=89.1, source="manual",
+           timestamp=datetime(2026, 7, 19, 1, 30)),    # 9:30pm ET Jul 18
+        NS(weight_kg=89.3, source="apple_health",
+           timestamp=datetime(2026, 7, 19, 4, 3)),     # 12:03am ET Jul 19 → still Jul 18
+    ]
+    out = _one_per_day_prefer_manual(rows, "America/New_York")
+    assert len(out) == 1, "one logging day must yield one reading"
+    assert out[0].source == "manual"
