@@ -1070,6 +1070,20 @@ async def build_context(user: User, today_log: Optional[DailyLog], db,
     except Exception as e:
         logger.debug(f"open-threads context read failed: {e}")
 
+    # [COACH SCREEN] — the standing directive on the user's Coach page, so the
+    # model can judge when a message INVALIDATES it (refresh_coach_brief).
+    coach_screen_str = ""
+    try:
+        from api.insights import current_brief_text as _cbt
+        _brief = _cbt(user.id)
+        if _brief:
+            coach_screen_str = (
+                "[COACH SCREEN]\nStanding directive: " + _brief[:300]
+                + "\n(If this message invalidates it, call refresh_coach_brief.)"
+            )
+    except Exception:
+        pass
+
     # [SESSION STATE] — live workout awareness. Built whenever the user has
     # exercise entries today (in_workout=True). Works WITH or WITHOUT a
     # training program — the freeform path still surfaces muscle coverage,
@@ -1279,6 +1293,8 @@ async def build_context(user: User, today_log: Optional[DailyLog], db,
         (activation_line if activation_line else ""),
         "",
         (training_program_str if training_program_str else ""),
+        "",
+        (coach_screen_str if coach_screen_str else ""),
         "",
         (open_threads_str if open_threads_str else ""),
         "",

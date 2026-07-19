@@ -71,6 +71,13 @@ async def get_briefing_for_ios(
         # The brief is otherwise blind to chat — feed it the last few turns so it
         # respects what the client JUST told Arnie (a stated plan, a rest day, a
         # competing commitment) instead of contradicting the live conversation.
+        try:
+            from zoneinfo import ZoneInfo
+            from datetime import datetime as _dt
+            stats["local_hour"] = _dt.now(
+                ZoneInfo(user.timezone or "UTC")).hour
+        except Exception:
+            pass
         convos = await get_recent_conversations_linked(db, user, limit=8)
         stats["recent_conversation"] = [
             {

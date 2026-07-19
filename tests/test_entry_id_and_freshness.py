@@ -81,15 +81,20 @@ async def test_correct_id_still_updates(db, make_user):
 
 # ── 3: brief marked stale on log, not dropped (no cold block) ─────────────────
 
-def test_invalidate_briefing_keeps_hero_stale_not_dropped():
+def test_invalidate_briefing_leaves_hero_standing():
+    """Ship change (block-stability): a routine log must NOT touch the hero —
+    only per-date insight caches drop. Semantic invalidation is a separate,
+    deliberate path (invalidate_briefing_hard)."""
     import api.insights as I
     I._CACHE.clear()
     key = (42, "__briefing__")
-    I._CACHE[key] = (9_999_999_999.0, {"hero": {"headline": "188.6 lbs"}})
+    I._CACHE[key] = (9_999_999_999.0, {"hero": {"headline": "188.6 lbs"}}, "2026-07-08/morning")
     I._CACHE[(42, "2026-07-08")] = (9_999_999_999.0, ["insight"])
     I.invalidate_briefing(42)
-    # hero KEPT (so the next open serves it instantly) but STALE (ts=0 → refresh)
-    assert key in I._CACHE, "hero brief must not be dropped (that caused the cold 10s block)"
+    assert I._CACHE[key][0] == 9_999_999_999.0, "a log must not stale the standing directive"
+    assert (42, "2026-07-08") not in I._CACHE
+    I.invalidate_briefing_hard(42)
+    assert I._CACHE[key][0] == 0.0, "semantic invalidation stales the hero for regen"
     assert I._CACHE[key][0] == 0.0
     assert I._CACHE[key][1]["hero"]["headline"] == "188.6 lbs"
     # per-date insight cache IS dropped

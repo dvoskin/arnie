@@ -78,7 +78,7 @@ _LOGGING_TOOLS = frozenset({
 #                             voices them in pass 1; the result has nothing new.
 _SILENT_TOOLS = frozenset({
     "generate_image", "store_attribute", "note_food_clarification",
-    "schedule_check_in", "set_macro_targets",
+    "schedule_check_in", "set_macro_targets", "refresh_coach_brief",
 })
 
 

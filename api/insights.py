@@ -15,11 +15,12 @@ logger = logging.getLogger(__name__)
 # In-memory cache: {user_id: (timestamp, insights_list)}
 _CACHE: dict = {}
 _TTL = 10800  # 3 hours — analysis stays stable until it auto-refreshes (or a manual refresh forces it)
-# The hero briefing refreshes more often than the deeper insights: iOS revalidates
-# it on foreground (stale-while-revalidate, no wait), and a LOG force-refreshes it
-# immediately. 90 min keeps the headline "relatively fresh" between logs without a
-# regen on every app open.
-_BRIEFING_TTL = 5400  # 90 minutes
+# The hero briefing is BLOCK-STABLE: one standing directive per day-part
+# (morning / midday / evening / night — 3-4 regens a day), held constant
+# within a block so it reads as significant, not a ticker. Routine logs do
+# NOT churn it. Only two things refresh it: the local day-part rolling over,
+# or a SEMANTIC invalidation (the refresh_coach_brief chat tool — the user
+# said something that voids the standing directive).
 
 # Per-key guard so a burst of requests on a stale briefing kicks off only ONE
 # background regeneration, not one per request.
@@ -934,7 +935,8 @@ DATA:
     return {}
 
 
-def _schedule_briefing_refresh(user_id: int, stats: dict, cache_key: tuple) -> None:
+def _schedule_briefing_refresh(user_id: int, stats: dict, cache_key: tuple,
+                               block: str = "") -> None:
     """Fire-and-forget background regen of a stale briefing (stale-while-
     revalidate). No-op if a refresh for this key is already in flight, or if
     there's no running event loop to host the task (e.g. a sync caller / tests)."""
@@ -946,7 +948,7 @@ def _schedule_briefing_refresh(user_id: int, stats: dict, cache_key: tuple) -> N
         try:
             briefing = await generate_briefing(stats)
             if briefing and (briefing.get("hero", {}).get("body") or briefing.get("cards")):
-                _CACHE[cache_key] = (time.time(), briefing)
+                _CACHE[cache_key] = (time.time(), briefing, block)
         except Exception:
             logger.exception("background briefing refresh failed")
         finally:
@@ -970,13 +972,9 @@ def invalidate_briefing(user_id: int) -> None:
     hit: log something, open Coach, stare at 'Hey, Danny'). The per-date insight
     caches ARE dropped — they're not the blocking hero and regenerate cheaply.
     """
-    key = (user_id, "__briefing__")
-    cached = _CACHE.get(key)
-    if cached is not None:
-        # Keep the copy, force it stale (epoch 0 << now - TTL) so the next fetch
-        # serves it immediately and kicks a background refresh.
-        _CACHE[key] = (0.0, cached[1])
-    _briefing_refreshing.discard(key)
+    # The HERO IS NOT TOUCHED here (ship change: block-stability) — a food or
+    # water log must not rotate the standing directive. Semantic invalidation
+    # goes through invalidate_briefing_hard (the refresh_coach_brief tool).
     # Drop the per-date insight caches `(user_id, "YYYY-MM-DD")` and week cache.
     stale_keys = [k for k in _CACHE.keys()
                   if isinstance(k, tuple) and len(k) == 2 and k[0] == user_id
@@ -985,29 +983,67 @@ def invalidate_briefing(user_id: int) -> None:
         _CACHE.pop(k, None)
 
 
-async def get_briefing(user_id: int, stats: dict, force: bool = False) -> dict:
-    """Cached daily briefing per user, with stale-while-revalidate.
+def _brief_block(stats: dict) -> str:
+    """The user-local day-part key — 'YYYY-MM-DD/morning' etc. Boundaries at
+    5 / 11 / 16 / 21 local → at most 4 scheduled regens a day."""
+    hour = stats.get("local_hour")
+    if hour is None:
+        from datetime import datetime as _dtn
+        hour = _dtn.utcnow().hour
+    part = ("night" if hour >= 21 or hour < 5 else
+            "morning" if hour < 11 else
+            "midday" if hour < 16 else "evening")
+    return f"{_local_today_iso(stats)}/{part}"
 
-    Fresh cache → served instantly. Stale cache (older than the TTL) → the stale
-    copy is served instantly AND a background refresh is kicked off, so a user
-    returning after a few hours never waits on the ~15s LLM regen: they see the
-    last brief and the next open is fresh. Only a cold cache (first ever, or after
-    a restart wipes the in-memory store) blocks on generation. `force` always
-    regenerates synchronously (manual pull-to-refresh)."""
+
+async def get_briefing(user_id: int, stats: dict, force: bool = False) -> dict:
+    """Block-stable briefing with stale-while-revalidate.
+
+    Within one local day-part the SAME brief is served every time — the
+    standing directive. When the block rolls over (or refresh_coach_brief
+    semantically invalidated it, ts == 0), the old brief is served instantly
+    and a background regen replaces it. Only a cold cache blocks. `force`
+    (pull-to-refresh) deliberately does NOT regenerate the hero — churn was
+    making the directive feel insignificant; the pull still refreshes every
+    other card."""
     now = time.time()
     cache_key = (user_id, "__briefing__")
     cached = _CACHE.get(cache_key)
+    block = _brief_block(stats)
 
-    if not force and cached:
-        if (now - cached[0]) < _BRIEFING_TTL:
-            return cached[1]                       # fresh — serve as-is
-        _schedule_briefing_refresh(user_id, stats, cache_key)  # stale — refresh behind
-        return cached[1]
+    if cached:
+        ts, brief = cached[0], cached[1]
+        cached_block = cached[2] if len(cached) > 2 else None
+        if ts > 0 and cached_block == block:
+            return brief                            # standing directive holds
+        _schedule_briefing_refresh(user_id, stats, cache_key, block)
+        return brief
 
     briefing = await generate_briefing(stats)
     if briefing and (briefing.get("hero", {}).get("body") or briefing.get("cards")):
-        _CACHE[cache_key] = (now, briefing)
+        _CACHE[cache_key] = (now, briefing, block)
     return briefing
+
+
+def current_brief_text(user_id: int) -> str:
+    """The standing directive's text for chat context ('' when cold) — lets
+    the model judge whether the user just invalidated it."""
+    cached = _CACHE.get((user_id, "__briefing__"))
+    if not cached:
+        return ""
+    hero = (cached[1] or {}).get("hero") or {}
+    return " — ".join(p for p in (hero.get("headline"), hero.get("body")) if p)
+
+
+def invalidate_briefing_hard(user_id: int) -> None:
+    """SEMANTIC invalidation (refresh_coach_brief tool): the user said
+    something that voids the standing directive. Kept-but-stale (ts=0) so the
+    next open serves instantly while the regen runs behind."""
+    key = (user_id, "__briefing__")
+    cached = _CACHE.get(key)
+    if cached is not None:
+        _CACHE[key] = (0.0,) + tuple(cached[1:])
+    _briefing_refreshing.discard(key)
 
 
 async def get_insights(user_id: int, stats: dict, force: bool = False,

@@ -424,6 +424,24 @@ _DAY_TOOLS: list = []
 # target with a logged set.
 # ─────────────────────────────────────────────────────────────────────────────
 
+_COACH_TOOLS = [
+    {
+        "name": "refresh_coach_brief",
+        "description": (
+            "Mark the user's standing Coach-screen directive (shown in "
+            "[COACH SCREEN]) for regeneration because THIS message invalidates "
+            "it — plans changed ('skipping the gym today', 'traveling this "
+            "week', 'I'm sick', 'fasting today'), the goal shifted, or the "
+            "day's context no longer matches what the directive assumes. "
+            "Do NOT call for routine logging, questions, or messages the "
+            "directive already accounts for — the brief is meant to stay "
+            "stable through a normal day."
+        ),
+        "input_schema": {"type": "object", "properties": {}},
+    },
+]
+
+
 _PROGRAM_TOOLS = [
     {
         "name": "set_program_day",
@@ -1242,6 +1260,7 @@ ALL_TOOLS = (
     + _FITNESS_TOOLS
     + _DAY_TOOLS
     + _PROGRAM_TOOLS
+    + _COACH_TOOLS
     + _PROFILE_TOOLS
     + _CREATIVE_TOOLS
     + _HISTORY_TOOLS

@@ -2337,6 +2337,15 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
         await db.refresh(today_log)
         return f"Removed exercise entry #{entry_id}"
 
+    elif name == "refresh_coach_brief":
+        try:
+            from api.insights import invalidate_briefing_hard
+            invalidate_briefing_hard(user.id)
+            return ("Standing coach directive marked for refresh — it will "
+                    "regenerate on the next Coach open.")
+        except Exception:
+            return "Couldn't refresh the coach brief."
+
     elif name in ("set_program_day", "set_program_target",
                   "add_program_exercise", "remove_program_exercise"):
         import json as _json
