@@ -19,15 +19,18 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    """Per-turn thumbs verdict ("up" / "down" / NULL), the persisted reasoning
-    receipt (steps + duration_ms JSON) for history restores, and the
-    supersede pointer set when a [REGENERATE] turn replaces a reply."""
+    """Per-turn thumbs verdict ("up" / "down" / NULL) + the persisted
+    reasoning receipt (steps + duration_ms JSON) for history restores.
+
+    NOTE: this revision was briefly amended in-place to also add
+    superseded_by AFTER prod had already run it — prod stamped this id
+    with only the two columns and the third silently never applied
+    (the 07-19 empty-chat-history outage). superseded_by lives in its
+    own follow-up revision now; NEVER amend a pushed migration."""
     op.add_column("conversation_logs", sa.Column("feedback", sa.String(), nullable=True))
     op.add_column("conversation_logs", sa.Column("reasoning_json", sa.Text(), nullable=True))
-    op.add_column("conversation_logs", sa.Column("superseded_by", sa.Integer(), nullable=True))
 
 
 def downgrade() -> None:
-    op.drop_column("conversation_logs", "superseded_by")
     op.drop_column("conversation_logs", "reasoning_json")
     op.drop_column("conversation_logs", "feedback")
