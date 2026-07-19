@@ -819,8 +819,11 @@ async def add_body_metric(db: AsyncSession, user_id: int,
     )
 
     # A backfilled PAST weigh-in writes that day's row + feeds the trend, but is
-    # NOT the user's CURRENT weight — only a today/live reading moves the headline.
-    is_current_day = target_day >= _user_today(tz)
+    # NOT the user's CURRENT weight — only a today/live reading moves the
+    # headline. BOTH sides use the weigh-in clock (pre-dawn grace): comparing
+    # a graced target_day against ungraced _user_today made every LIVE
+    # midnight-to-4am weigh-in read as a past backfill and skip the headline.
+    is_current_day = target_day >= _weighin_day_of(datetime.utcnow(), tz)
 
     def _sync_current_weight():
         # manual always wins. apple_health updates current_weight_kg only when

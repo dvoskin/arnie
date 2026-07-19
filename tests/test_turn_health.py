@@ -30,8 +30,11 @@ def test_phantom_log_claim_no_false_positives():
     # Not a set report → "noted" is fine.
     assert not looks_like_phantom_log_claim(
         "what should I eat", "Noted - go for the turkey bowl.", has_tool_calls=False)
-    # A bare food amount isn't a set report.
-    assert not looks_like_phantom_log_claim("I had 200", "Noted.", has_tool_calls=False)
+    # Contract change (bbda2dc, parallel session): detection now covers FOOD
+    # reports too — "I had 200" + a bare "Noted." with no tool call IS the
+    # phantom-miss the detector exists to catch. The old assertion predated
+    # that enhancement.
+    assert looks_like_phantom_log_claim("I had 200", "Noted.", has_tool_calls=False)
 
 
 def test_phantom_log_claim_in_detect_turn_flags():
