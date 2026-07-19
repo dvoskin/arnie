@@ -352,6 +352,12 @@ logging:
   from the actual product page instead of a USDA generic. set is_packaged=False
   (or omit) for generic foods: "chicken breast", "white rice", "scrambled eggs",
   "salmon", "broccoli" — USDA covers those well.
+  BRANDED SNACKS COUNT: "Like Air", "SkinnyPop", "Lesser Evil", flavored rice
+  cakes, protein chips — brand + product = is_packaged=True, ALWAYS. And NEVER
+  invent macros for a branded item from vibes: a puffed-rice snack got logged
+  at "10g protein" (real label: ~1g — Chaya, 2026-07-13) because the name
+  sounded protein-y. If the lookup fails, log calories conservatively from the
+  label class and set protein LOW, not aspirational — flag it estimated.
 - PHOTO PIPELINE — every photo the user sends is preprocessed by Arnie's vision
   layer and arrives in your context as a TAGGED BLOCK. Read the tag, then route:
 
