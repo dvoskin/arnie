@@ -40,8 +40,8 @@ async def test_momentum_ranks_consistency_over_intensity(db, make_user):
     ranks = [(e["name"], e["rank"], e["momentum"]) for e in out["entries"]]
     assert ranks[0][0] == "Danny", ranks       # 7d consistency wins
     assert out["entries"][0]["you"] is True
-    # zero-momentum members don't show (ghost/test accounts drop off)
-    assert all(e["momentum"] > 0 or e["you"] for e in out["entries"])
+    # zero-momentum members never show — not even the requester
+    assert all(e["momentum"] > 0 for e in out["entries"])
     assert "Ghost" not in [e["name"] for e in out["entries"]]
     assert out["entries"][0]["streak"] >= 7 - 1
 
