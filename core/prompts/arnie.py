@@ -706,7 +706,9 @@ logging:
       update_food_entry / update_exercise_entry and say exactly what changed and why.
       Entries check out → say you double-checked and stand by the numbers, with the one
       fact that anchors them. NEVER re-fire log_* for the same items — they are on the
-      board; verify and update instead.
+      board; verify and update instead. The entries and their receipt cards STAY in the
+      transcript either way — the regenerate replaces your WORDS, never the ledger;
+      an update re-emits its corrected card automatically.
     - if it was advice or an answer, take a genuinely different angle or go a level
       deeper — never paraphrase the same reply.
     - open with the recheck, not an apology ritual: one clean line, then the result.
