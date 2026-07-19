@@ -661,6 +661,11 @@ async def run_turn(
 
     # ── Follow-up after tool calls ────────────────────────────────────────────
     _followup_tried = False
+    # True when a fallback replaced response_text AFTER real bubbles already
+    # streamed — the user HAS their reply; the fallback is for the RECORD
+    # (persistence), never a second on-screen send (the triple-confirmation
+    # report: full streamed reply + the canned confirmation tail).
+    _suppress_trailing = False
 
     async def _try_follow_up(system_override: Optional[str] = None,
                              max_tokens: int = 700) -> Optional[str]:
@@ -838,6 +843,12 @@ async def run_turn(
             else:
                 response_text = recovery_message("stall", seed=_user_text)
             _response_streamed = False  # neither path was streamed
+            # A follow-up that STREAMED its reply but returned empty/raised on
+            # the way out (e.g. finalize hiccup) lands here with the user
+            # already holding a complete answer. Persist the fallback, but
+            # NEVER send it after the real reply.
+            if _streamer is not None and _streamer.flushed_count > 0:
+                _suppress_trailing = True
 
     # ── Anti-dead-end guard ────────────────────────────────────────────────────
     # "done" / "got it" / "logged" as the WHOLE reply is banned — it kills the
@@ -1144,7 +1155,7 @@ async def run_turn(
     # flushed_count(1) == len(resp.bubbles)(1) and emitted nothing — leaving
     # the user with only the heads-up, never the real answer.
     if _streamer and on_text_bubble:
-        if not _response_streamed:
+        if not _response_streamed and not _suppress_trailing:
             for bubble in resp.bubbles:
                 # Skip any bubble that already streamed live — the streamer
                 # tracks canonical text of every bubble it flushed. Without this
