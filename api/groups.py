@@ -174,6 +174,101 @@ async def _ensure_member(db, group_id: int, user_id: int) -> None:
         await db.commit()
 
 
+class LeaderboardEntry(BaseModel):
+    rank: int
+    user_id: int
+    name: str
+    you: bool
+    momentum: int
+    log_days: int
+    workout_days: int
+    streak: int
+    badges: int
+
+
+async def compute_leaderboard(db, group_id: int, me_id: int) -> dict:
+    """Effort-ranked board for a group — momentum is computed ON READ from the
+    last 7 logging days (no score ledger to maintain or drift):
+
+        momentum = 10·log_days + 15·workout_days + 5·streak + 2·badges
+
+    Consistency outranks intensity by construction: a 7-day logger beats a
+    two-workout hero. Session-injected for testability; the route wraps it."""
+    from datetime import date, timedelta
+    from sqlalchemy import func as _f
+
+    if True:  # keep the original indentation contract below
+        group = await _get_group(db, group_id)
+        member_rows = (await db.execute(
+            select(GroupMember.user_id).where(GroupMember.group_id == group.id)
+        )).scalars().all()
+        if me_id not in member_rows:
+            raise HTTPException(status_code=403, detail="not a member")
+
+        since = date.today() - timedelta(days=13)
+        week = date.today() - timedelta(days=6)
+        from db.models import DailyLog, Achievement, User as _U
+
+        logs = (await db.execute(
+            select(DailyLog.user_id, DailyLog.date,
+                   DailyLog.total_calories, DailyLog.workout_completed)
+            .where(DailyLog.user_id.in_(member_rows), DailyLog.date >= since)
+        )).all()
+        badge_counts = dict((await db.execute(
+            select(Achievement.user_id, _f.count(Achievement.id))
+            .where(Achievement.user_id.in_(member_rows))
+            .group_by(Achievement.user_id)
+        )).all())
+        names = dict((await db.execute(
+            select(_U.id, _U.name).where(_U.id.in_(member_rows))
+        )).all())
+
+        by_user: dict = {}
+        for uid, d, cals, wk in logs:
+            by_user.setdefault(uid, {})[d] = ((cals or 0) > 0, bool(wk))
+
+        entries = []
+        for uid in member_rows:
+            days = by_user.get(uid, {})
+            log_days = sum(1 for d, (ate, _) in days.items()
+                           if d >= week and ate)
+            workout_days = sum(1 for d, (_, wk) in days.items()
+                               if d >= week and wk)
+            streak = 0
+            probe = date.today()
+            # today only counts toward the streak if already logged; an
+            # unlogged today doesn't break yesterday's run.
+            if not days.get(probe, (False, False))[0]:
+                probe -= timedelta(days=1)
+            while days.get(probe, (False, False))[0]:
+                streak += 1
+                probe -= timedelta(days=1)
+            badges = int(badge_counts.get(uid, 0))
+            momentum = 10 * log_days + 15 * workout_days + 5 * streak + 2 * badges
+            entries.append({
+                "user_id": uid,
+                "name": (names.get(uid) or "Member").split(" ")[0],
+                "you": uid == me_id,
+                "momentum": momentum, "log_days": log_days,
+                "workout_days": workout_days, "streak": streak,
+                "badges": badges,
+            })
+        entries.sort(key=lambda e: (-e["momentum"], e["name"]))
+        out = [LeaderboardEntry(rank=i + 1, **e) for i, e in enumerate(entries)]
+        return {"v": 1, "window_days": 7, "entries": [e.dict() for e in out]}
+
+
+@router.get("/{group_id}/leaderboard")
+async def group_leaderboard(
+    group_id: int, identity: str = Depends(current_identity)
+) -> dict:
+    """Names only (first names the group already sees); requester flagged
+    `you`. See compute_leaderboard for the momentum contract."""
+    async with AsyncSessionLocal() as db:
+        me = await resolve_user(db, identity)
+        return await compute_leaderboard(db, group_id, me.id)
+
+
 @router.post("/{group_id}/join")
 async def join_group(group_id: int, identity: str = Depends(current_identity)) -> dict:
     async with AsyncSessionLocal() as db:
