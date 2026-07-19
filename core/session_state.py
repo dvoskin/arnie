@@ -197,7 +197,8 @@ def build_session_state(
         except Exception:
             _today_iso = None
         if _ov.get("day") and _ov.get("date") == _today_iso:
-            todays_program_day_name = _ov.get("day")
+            todays_program_day_name = (
+                None if _ov["day"] == "__rest__" else _ov.get("day"))
     if todays_program_day_name is None:
         todays_program_day_name = pick_program_day(program_json, entries)
 

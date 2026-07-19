@@ -448,8 +448,10 @@ _PROGRAM_TOOLS = [
         "description": (
             "Mark which day of the user's TRAINING PROGRAM today is. "
             "Use when the user declares or swaps the day: 'today is leg day', "
-            "'doing Push A today', 'swap today to back'. day_name must refer to "
-            "a day in [TRAINING PROGRAM] (fuzzy match is fine). Overrides the "
+            "'doing Push A today', 'swap today to back' — AND for rest days: "
+            "'taking a rest day', 'going with a rest day today', 'day off' → "
+            "day_name='rest'. day_name otherwise must refer to a day in "
+            "[TRAINING PROGRAM] (fuzzy match is fine). Overrides the "
             "automatic day detection for TODAY only — tomorrow reverts to normal "
             "rotation. Do NOT call for logged exercises; this is the plan, not the log."
         ),

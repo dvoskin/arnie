@@ -977,7 +977,9 @@ async def build_context(user: User, today_log: Optional[DailyLog], db,
             except Exception:
                 _ov_today = None
             if _ov.get("day") and _ov.get("date") == _ov_today:
-                training_program_str += f"\nToday (user-set): {_ov['day']}"
+                _ov_label = ("Rest day" if _ov["day"] == "__rest__"
+                             else _ov["day"])
+                training_program_str += f"\nToday (user-set): {_ov_label}"
     except Exception:
         pass
 

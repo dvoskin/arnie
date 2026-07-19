@@ -213,3 +213,23 @@ async def test_set_program_target_bulk_all_scoped(db, make_user):
         assert "reps" not in e          # nothing invented
     for e in prog["days"][1]["exercises"] + prog["days"][2]["exercises"]:
         assert "sets" not in e          # scope respected
+
+
+async def test_set_program_day_rest_is_first_class(db, make_user):
+    """'Going with a rest day today' — rest doesn't need to exist in the split;
+    it stamps the __rest__ sentinel and session state skips the day pick."""
+    user = await _seed(db, make_user)
+    res = await TE._dispatch("set_program_day", {"day_name": "rest day"},
+                             user, _stub_log(), db, "text")
+    assert "REST day" in res
+    ov = (await _prog(db, user.id))["today_override"]
+    assert ov["day"] == "__rest__"
+    # session state: fresh rest override suppresses the program-day read
+    from datetime import datetime as _dt
+    now = _dt(2026, 7, 18, 10, 0)
+    entry = SimpleNamespace(exercise_name="Barbell Row",
+                            timestamp=now - timedelta(minutes=10))
+    log = SimpleNamespace(id=1, exercise_entries=[entry])
+    prog = dict(PROGRAM, today_override={"date": "2026-07-18", "day": "__rest__"})
+    out = build_session_state(log, prog, now)
+    assert "__rest__" not in out

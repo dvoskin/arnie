@@ -2389,6 +2389,16 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
             _want = _day_norm(inp.get("day_name"))
             if not _want:
                 return "Missing day_name"
+            # Rest is a first-class state, not a day that must exist in the
+            # split — "rest"/"off"/"recovery" stamp the __rest__ sentinel.
+            if _want in ("rest", "off", "recovery", "rest and recovery"):
+                from db.queries import _user_today
+                _today_iso = _user_today(
+                    getattr(user, "timezone", None) or "UTC").isoformat()
+                _prog["today_override"] = {"date": _today_iso, "day": "__rest__"}
+                _row.program_json = _json.dumps(_prog)
+                await db.commit()
+                return "Today is set as a REST day — no training scheduled."
             _hit = _days_matching(_want)
             _match = _hit[0].get("name") if _hit else None
             if not _match:
