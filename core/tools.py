@@ -38,7 +38,7 @@ _NUTRITION_TOOLS = [
                 "estimated":  {"type": "boolean"},
                 "date":       {"type": "string", "description": "Optional. Log to a specific date instead of today. Use 'yesterday', '2 days ago', or YYYY-MM-DD format. Only set when user explicitly says they forgot to log something for a past day."},
                 "time":       {"type": "string", "description": "Optional. Clock time the food was actually eaten, ONLY when the user states one (e.g. '8:30am', '13:45', 'noon', 'around 7'). Combined with `date` + the user's timezone to place it on the day's timeline. Leave unset if no time is given — do not guess."},
-                "meal_type":  {"type": "string", "enum": ["breakfast", "lunch", "dinner", "snack", "pre_workout", "post_workout"], "description": "Optional. Which meal slot this fits. Infer from time of day + user history if not stated."},
+                "meal_type":  {"type": "string", "enum": ["breakfast", "lunch", "dinner", "snack", "pre_workout", "post_workout"], "description": "Optional. Which meal slot this fits. A slot the user NAMES ('for lunch I had…', 'late lunch') ALWAYS wins over the clock; otherwise infer from time of day + user history."},
                 "alcohol_units": {"type": "number", "description": "Optional. Standard alcohol units (1 unit ≈ 1 beer / 1 glass wine / 1 shot)."},
                 "from_photo": {"type": "boolean", "description": "True when logging from a food photo — sets confidence ≤0.75 and estimated=true automatically."},
                 "is_packaged": {"type": "boolean", "description": "True when this is a branded packaged product (PACKAGED: line from a photo, OR a clearly branded text mention like 'Quest bar', 'Liquid IV', 'Elmhurst shake', 'Oikos yogurt'). Routes enrichment through web search for label-accurate macros. Leave false for generic foods (chicken breast, white rice, eggs)."},
@@ -52,9 +52,11 @@ _NUTRITION_TOOLS = [
         "name": "update_food_entry",
         "description": (
             "CORRECT or MOVE an existing food entry already in the log. "
-            "Use when the user is fixing values for food already logged, OR moving an "
-            "entry to a different day. Find the entry by its [#id] in the context. "
-            "DO NOT call log_food for corrections — that creates a duplicate. "
+            "Use when the user is fixing values for food already logged, moving an "
+            "entry to a different day, OR re-slotting it to a meal ('that turkey and "
+            "rice was my lunch' → meal_type='lunch', one call per entry — the Log page "
+            "regroups under the right heading). Find the entry by its [#id] in the "
+            "context. DO NOT call log_food for corrections — that creates a duplicate. "
             "Only include fields the user is actually changing. "
             "To move an entry to another day, set date= (e.g. 'yesterday'). Moving a WHOLE "
             "day means calling this once per entry with the same date — it's the same "
@@ -71,6 +73,7 @@ _NUTRITION_TOOLS = [
                 "protein":   {"type": "number"},
                 "carbs":     {"type": "number"},
                 "fats":      {"type": "number"},
+                "meal_type": {"type": "string", "enum": ["breakfast", "lunch", "dinner", "snack", "pre_workout", "post_workout"], "description": "Optional. Re-slot the entry to the meal the user named ('that was my lunch')."},
                 "date":      {"type": "string", "description": "Optional. Move this entry to another day: 'yesterday', '2 days ago', or YYYY-MM-DD."},
             },
             "required": ["entry_id"],

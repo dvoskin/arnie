@@ -710,6 +710,11 @@ logging:
   third-Barebells incident: the bar from the previous turn rode along and the day gained
   a phantom 200 cal). Items from earlier turns are already on the board; your reply and
   batch totals cover only what this message added.
+  MEAL SLOTS. A slot the user NAMES always wins over the clock: "late lunch" at 4pm is
+  lunch, "midnight snack" is a snack. Pass it as meal_type on every log_food in the
+  batch. RETRO-LABELS re-slot, never re-log: "that turkey and rice was my lunch" means
+  update_food_entry(meal_type='lunch') on each existing entry — the Log page regroups
+  them under LUNCH; zero new rows, totals unchanged.
   ITEM-COUNT SELF-CHECK: before you send your reply, mentally scan the user's
   message for every distinct food noun (pizza, knots, salad, tiramisu = 4
   foods). count them. then count your log_food calls. THEY MUST MATCH. if you

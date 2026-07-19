@@ -1808,8 +1808,9 @@ async def update_food_entry(
         if field in changes:
             setattr(entry, field, float(changes[field] or 0))
 
-    # Non-nutrition fields
-    for field in ("parsed_food_name", "quantity"):
+    # Non-nutrition fields (meal_type: "that turkey was my lunch" re-slots the
+    # entry so the Log timeline regroups it under the right meal heading)
+    for field in ("parsed_food_name", "quantity", "meal_type"):
         if field in changes and changes[field] is not None:
             setattr(entry, field, changes[field])
 
