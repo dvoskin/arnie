@@ -1610,13 +1610,19 @@ def test_prompt_has_logging_fidelity_section():
 @pytest.mark.parametrize("preserved_phrase", [
     "happy wolf chocolate chip kids bar",
     "royo bagel",
-    "half plate",
-    "3 bites",
-    "1/3 piece",
+    # Quantities are standardized units, never colloquial measures: the
+    # user's phrase converts to a standard measure, partial portions
+    # never round up to a whole item. ("baklava" → "30g" wraps across
+    # lines in source — verify the wrap-safe tail.)
+    '"half a caesar salad" → quantity="1.5 cups"',
+    "3 bites of tiramisu",
+    'baklava" → "30g',
 ])
 def test_prompt_names_fidelity_examples(preserved_phrase):
-    """The fidelity rule must include concrete user-phrase preservation
-    examples so the model has a template."""
+    """The fidelity rule must include concrete conversion examples so the
+    model has a template: food names keep the user's words, quantities
+    convert to standardized units (the user's phrasing lives in the reply
+    and food name, not the quantity field)."""
     s = SYSTEM_PROMPT
     assert preserved_phrase in s, (
         f"fidelity example {preserved_phrase!r} missing from prompt"
