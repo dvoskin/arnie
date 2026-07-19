@@ -110,6 +110,7 @@ from api.settings_api import prefs_router, feedback_router, signout_router
 from api.insights_api import router as insights_api_router
 from api.quick_log import router as quick_log_router
 from api.whoop_api import router as whoop_api_router
+from api.oura_api import router as oura_api_router
 from api.location_api import router as location_api_router
 from api.diagnostics import router as diagnostics_router
 from api.recovery_api import router as recovery_api_router
@@ -132,6 +133,7 @@ app.include_router(signout_router)
 app.include_router(insights_api_router)
 app.include_router(quick_log_router)
 app.include_router(whoop_api_router)
+app.include_router(oura_api_router)
 app.include_router(location_api_router)
 app.include_router(diagnostics_router)
 app.include_router(recovery_api_router)
@@ -524,6 +526,124 @@ async def _background_initial_sync(user_id: int, telegram_id: str = ""):
                 await bot.close()
     except Exception as e:
         logger.error(f"Background Whoop sync failed for user {user_id}: {e}")
+
+
+@app.get("/oura/callback", response_class=HTMLResponse)
+async def oura_callback(request: Request, code: str = "", state: str = "", error: str = ""):
+    """Oura redirects here after user authorizes. Exchange code for tokens.
+
+    Mirrors /whoop/callback: state = user.webhook_token, tokens are written to
+    the raw token-owner row (follow_link=False), and the initial data pull runs
+    in the background so the response returns before Render's LB times out.
+    """
+    if error:
+        # `error` comes straight from the URL — escape it (reflected XSS otherwise).
+        return HTMLResponse(
+            f"<h2>Oura connection failed</h2><p>Error: {html.escape(error)}</p>"
+            f"<p>You can try again in Telegram with /connect oura</p>",
+            status_code=400,
+        )
+    if not code or not state:
+        return HTMLResponse("<h2>Missing code or state.</h2>", status_code=400)
+
+    from api.oura import exchange_code as oura_exchange_code
+    from db.queries import set_oura_tokens
+    from datetime import datetime, timedelta
+
+    base_url = os.getenv("RENDER_EXTERNAL_URL", "http://localhost:10000").rstrip("/")
+    redirect_uri = f"{base_url}/oura/callback"
+
+    result = await oura_exchange_code(code, redirect_uri)
+
+    # Browser back/refresh after a working connection: the code is spent but the
+    # user already holds valid tokens — treat as success, not an error.
+    if not result.get("ok"):
+        async with AsyncSessionLocal() as db:
+            existing_user = await get_user_by_webhook_token(db, state, follow_link=False)
+            if existing_user and existing_user.oura_refresh_token:
+                return HTMLResponse("""<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>Oura already connected</title>
+<style>body{font-family:system-ui;text-align:center;padding:60px 20px;background:#0f1117;color:#f1f5f9}
+.box{max-width:480px;margin:auto;background:#1a1d27;border:1px solid #2e3347;border-radius:12px;padding:32px}
+.check{font-size:48px;color:#22c55e}h1{font-size:24px;margin:16px 0}p{color:#94a3b8;margin:8px 0}</style>
+</head><body>
+<div class="box">
+  <div class="check">✓</div>
+  <h1>Already connected</h1>
+  <p>Your Oura Ring is already linked. No action needed.</p>
+</div></body></html>""")
+
+        # Escape everything interpolated into the HTML below (defense in depth).
+        err = html.escape(str(result.get("error", "Unknown error")))
+        details = html.escape(str(result.get("details", "")))
+        return HTMLResponse(f"""<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>Oura connection failed</title>
+<style>body{{font-family:system-ui;text-align:left;padding:40px;background:#0f1117;color:#f1f5f9;max-width:640px;margin:auto}}
+.box{{background:#1a1d27;border:1px solid #2e3347;border-radius:12px;padding:24px}}
+h1{{font-size:22px;margin:0 0 12px;color:#ef4444}}
+code{{background:#0f1117;padding:2px 6px;border-radius:4px;font-size:12px;color:#94a3b8;display:block;padding:12px;margin-top:8px;white-space:pre-wrap;word-break:break-all}}
+.next{{margin-top:20px;padding-top:16px;border-top:1px solid #2e3347;color:#94a3b8}}</style>
+</head><body><div class="box">
+<h1>Oura connection failed</h1>
+<p><b>Error:</b> {err}</p>
+{f'<code>{details}</code>' if details else ''}
+<div class="next">
+  <p><b>Common causes:</b></p>
+  <ul style="color:#94a3b8;line-height:1.7">
+    <li>The auth code already expired (they're one-time use) — try connecting again</li>
+    <li>OURA_CLIENT_ID or OURA_CLIENT_SECRET env var on Render is wrong or missing</li>
+    <li>The Redirect URI in Oura's developer dashboard doesn't exactly match this server's URL</li>
+  </ul>
+</div></div></body></html>""", status_code=400)
+
+    tokens = result["tokens"]
+    async with AsyncSessionLocal() as db:
+        # Store tokens on the raw token-owner row (follow_link=False), matching
+        # where the Whoop OAuth flow writes them.
+        user = await get_user_by_webhook_token(db, state, follow_link=False)
+        if not user:
+            return HTMLResponse("<h2>Invalid state — user not found.</h2>", status_code=401)
+
+        expires_at = datetime.utcnow() + timedelta(seconds=tokens.get("expires_in", 86400))
+        await set_oura_tokens(
+            db, user.id,
+            access_token=tokens["access_token"],
+            refresh_token=tokens.get("refresh_token", ""),
+            expires_at=expires_at,
+        )
+        user_id_for_sync = user.id
+
+    # Initial pull in the background — don't block the response.
+    import asyncio
+    asyncio.create_task(_background_initial_oura_sync(user_id_for_sync))
+
+    return HTMLResponse("""<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>Oura connected</title>
+<style>body{font-family:system-ui;text-align:center;padding:60px 20px;background:#0f1117;color:#f1f5f9}
+.box{max-width:480px;margin:auto;background:#1a1d27;border:1px solid #2e3347;border-radius:12px;padding:32px}
+.check{font-size:48px;color:#22c55e}h1{font-size:24px;margin:16px 0}p{color:#94a3b8;margin:8px 0}</style>
+</head><body>
+<div class="box">
+  <div class="check">✓</div>
+  <h1>Oura connected</h1>
+  <p>Tokens saved. I'm pulling your last 7 days of data in the background — should be ready in 30 seconds or so.</p>
+  <p style="margin-top:20px">Head back to Arnie — your readiness, sleep, and activity will sync automatically from here.</p>
+</div></body></html>""")
+
+
+async def _background_initial_oura_sync(user_id: int):
+    """Run the initial Oura data pull after the OAuth callback has returned."""
+    import logging
+    logger = logging.getLogger(__name__)
+    from api.oura import sync_user_oura
+    try:
+        async with AsyncSessionLocal() as db:
+            from db.queries import reload_user
+            user = await reload_user(db, user_id)
+            synced = await sync_user_oura(db, user, days=7)
+            logger.info(f"Background Oura sync: user {user_id} → {synced} days")
+    except Exception as e:
+        logger.error(f"Background Oura sync failed for user {user_id}: {e}")
 
 
 @app.get("/privacy", response_class=HTMLResponse)

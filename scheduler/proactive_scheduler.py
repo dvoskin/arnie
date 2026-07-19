@@ -2014,6 +2014,36 @@ async def _run_whoop_sync():
     logger.info(f"Whoop sync complete: {total} user-days updated")
 
 
+async def _run_oura_sync():
+    """Pull latest Oura data for all connected users (silent — no push notification)."""
+    from db.database import AsyncSessionLocal
+    from db.queries import get_users_with_oura
+    from api.oura import sync_user_oura
+
+    async with AsyncSessionLocal() as db:
+        try:
+            users = await get_users_with_oura(db)
+        except Exception as e:
+            logger.error(f"Oura sync: failed to get users: {e}")
+            return
+
+        total = 0
+        for user in users:
+            try:
+                # Resolve canonical so snapshots land on the right user_id
+                from db.queries import resolve_user as _resolve
+                canonical = await _resolve(db, user.telegram_id)
+                snapshot_uid = canonical.id
+
+                synced = await sync_user_oura(db, user, days=7,
+                                              snapshot_user_id=snapshot_uid)
+                total += synced
+            except Exception as e:
+                logger.error(f"Oura sync failed for user {user.id}: {e}")
+
+    logger.info(f"Oura sync complete: {total} user-days updated")
+
+
 async def _run_one_shot_checkin(user_id: int, telegram_id: str, directive: str) -> None:
     """
     Execute a one-shot check-in scheduled by the 'schedule_check_in' tool.
@@ -2380,8 +2410,17 @@ def start_scheduler():
         misfire_grace_time=600,
         coalesce=True,
     )
+    _scheduler.add_job(
+        _run_oura_sync,
+        IntervalTrigger(minutes=30),
+        id="oura_sync",
+        replace_existing=True,
+        max_instances=1,
+        misfire_grace_time=600,
+        coalesce=True,
+    )
     _scheduler.start()
-    logger.info(f"Proactive scheduler started ({reminders_status}, Whoop sync every 30 min)")
+    logger.info(f"Proactive scheduler started ({reminders_status}, Whoop + Oura sync every 30 min)")
 
 
 def stop_scheduler():

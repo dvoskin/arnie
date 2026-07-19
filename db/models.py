@@ -49,6 +49,11 @@ class User(Base):
     whoop_access_token = Column(Text)
     whoop_refresh_token = Column(Text)
     whoop_token_expires_at = Column(DateTime)
+    # Oura OAuth tokens (per-user). NOTE: Oura refresh tokens are single-use —
+    # every refresh rotates them, so oura_refresh_token is rewritten on each sync.
+    oura_access_token = Column(Text)
+    oura_refresh_token = Column(Text)
+    oura_token_expires_at = Column(DateTime)
     whoop_user_id = Column(String)
     # Subscription
     subscription_status = Column(String, default="trial")  # trial / active / cancelled / expired

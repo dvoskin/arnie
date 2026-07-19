@@ -1518,10 +1518,38 @@ async def cmd_connect(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
+    if target == "oura":
+        async with AsyncSessionLocal() as db:
+            # Same canonical-row rule as Whoop: tokens must land on the row that
+            # build_context and the dashboard read from.
+            from db.queries import resolve_user
+            user = await resolve_user(db, str(update.effective_user.id))
+            if not user.onboarding_completed:
+                await update.message.reply_text("Finish setup first, then we'll connect Oura.")
+                return
+            token = await get_or_create_webhook_token(db, user.id)
+
+        from api.oura import build_auth_url as oura_auth_url
+        base_url = os.getenv("RENDER_EXTERNAL_URL", "http://localhost:10000").rstrip("/")
+        redirect_uri = f"{base_url}/oura/callback"
+        auth_url = oura_auth_url(redirect_uri, state=token)
+
+        await update.message.reply_text(
+            "<b>Connect your Oura Ring</b>\n\n"
+            "Tap the link below to authorize. After you approve, your readiness, sleep, "
+            "HRV, and activity will sync automatically.\n\n"
+            f'<a href="{auth_url}">→ Authorize Oura access</a>\n\n'
+            "<i>This is a one-time setup. You can revoke access anytime from your Oura account settings.</i>",
+            parse_mode="HTML",
+            disable_web_page_preview=True,
+        )
+        return
+
     # Default: show options
     await update.message.reply_text(
         "<b>Connect a wearable</b>\n\n"
         "/connect whoop — Whoop band (recovery, sleep, HRV, strain)\n"
+        "/connect oura — Oura Ring (readiness, sleep, HRV, activity)\n"
         "/connect apple — Apple Health via iOS Shortcut (steps, HR, sleep, calories)",
         parse_mode="HTML",
     )

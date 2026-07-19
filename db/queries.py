@@ -1294,6 +1294,43 @@ async def clear_whoop_tokens(db: AsyncSession, user_id: int) -> None:
     await db.commit()
 
 
+async def get_users_with_oura(db: AsyncSession) -> List[User]:
+    """All users who have connected Oura (have a non-empty refresh token)."""
+    result = await db.execute(
+        select(User)
+        .where(
+            User.oura_refresh_token.is_not(None),
+            User.oura_refresh_token != "",
+        )
+        .options(selectinload(User.preferences))
+    )
+    return result.scalars().all()
+
+
+async def set_oura_tokens(
+    db: AsyncSession,
+    user_id: int,
+    access_token: str,
+    refresh_token: str,
+    expires_at: datetime,
+) -> None:
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one()
+    user.oura_access_token = access_token
+    user.oura_refresh_token = refresh_token
+    user.oura_token_expires_at = expires_at
+    await db.commit()
+
+
+async def clear_oura_tokens(db: AsyncSession, user_id: int) -> None:
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one()
+    user.oura_access_token = None
+    user.oura_refresh_token = None
+    user.oura_token_expires_at = None
+    await db.commit()
+
+
 async def get_or_create_webhook_token(db: AsyncSession, user_id: int) -> str:
     """Return existing webhook token, or generate + save a new one."""
     import secrets
