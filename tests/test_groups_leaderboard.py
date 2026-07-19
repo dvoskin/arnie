@@ -70,3 +70,27 @@ async def test_windows_30d_and_all_time(db, make_user):
     assert alltime["window"] == "all"
     assert alltime["entries"][0]["name"] == "Anna"
     assert alltime["entries"][0]["log_days"] == 20
+
+
+async def test_ensure_default_groups_auto_enrolls_canonical(db, make_user):
+    """Telegram-era actives were invisible on the board — every canonical
+    onboarded user belongs to Beta Insiders by default; linked identities and
+    un-onboarded users don't."""
+    from api.groups import ensure_default_groups
+    from db.models import GroupMember, Group
+    from sqlalchemy import select
+
+    u1 = await make_user(telegram_id="901", name="Denys")
+    u2 = await make_user(telegram_id="902", name="Ghosty", onboarded=False)
+    u3 = await make_user(telegram_id="903", name="LinkedTwin",
+                         linked_to_user_id=1)
+    await ensure_default_groups(db)
+
+    insiders = (await db.execute(
+        select(Group).where(Group.name == "Beta Insiders"))).scalar_one()
+    members = set((await db.execute(
+        select(GroupMember.user_id)
+        .where(GroupMember.group_id == insiders.id))).scalars().all())
+    assert u1.id in members
+    assert u2.id not in members
+    assert u3.id not in members

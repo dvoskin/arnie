@@ -69,6 +69,26 @@ async def ensure_default_groups(db) -> None:
     if dirty:
         await db.commit()
 
+    # Beta Insiders is THE community room — every canonical, onboarded user
+    # belongs by default (Telegram-era users never saw an iOS Join button, so
+    # active people were invisible on the board: Danny, 2026-07-19). Idempotent:
+    # only inserts the missing memberships.
+    from db.models import User as _U
+    _insiders = (await db.execute(
+        select(Group).where(Group.name == "Beta Insiders"))).scalar_one_or_none()
+    if _insiders is not None:
+        _members = set((await db.execute(
+            select(GroupMember.user_id)
+            .where(GroupMember.group_id == _insiders.id))).scalars().all())
+        _canonical = (await db.execute(
+            select(_U.id).where(_U.linked_to_user_id.is_(None),
+                                _U.onboarding_completed.is_(True)))).scalars().all()
+        _missing = [uid for uid in _canonical if uid not in _members]
+        for uid in _missing:
+            db.add(GroupMember(group_id=_insiders.id, user_id=uid))
+        if _missing:
+            await db.commit()
+
 
 # ── Wire shapes ──────────────────────────────────────────────────────────────
 
