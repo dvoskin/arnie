@@ -169,6 +169,19 @@ async def run_chat_turn(
     """
     _source = source_type or platform
 
+    # ── [EDIT:<id>] — the app's edit-message flow ─────────────────────────────
+    # The user rewrote their previous message; this turn REPLACES that one.
+    # Strip the sentinel immediately so raw_message, history, and the reply all
+    # see the CLEAN edited text; remember the superseded turn id for after the
+    # log write. The model's copy gets an annotation (below) so it rechecks
+    # anything logged from the original instead of double-logging.
+    import re as _re_edit
+    _edit_replaces: Optional[int] = None
+    _m_edit = _re_edit.match(r"^\[EDIT:(\d+)\]\s*(.*)$", text or "", _re_edit.S)
+    if _m_edit:
+        _edit_replaces = int(_m_edit.group(1))
+        text = _m_edit.group(2).strip()
+
     # ── Deterministic idempotency (preferred over the text-window heuristic) ──
     # A keyed retry replays the already-persisted reply verbatim — no re-run, no
     # double-write — UNLESS the stored reply was an error (then the resend must
@@ -327,7 +340,14 @@ async def run_chat_turn(
     recent = await get_recent_conversations(db, user.id, limit=limit)
     messages = conversations_to_messages(  # reversed internally → chrono
         recent, user_timezone=getattr(user, "timezone", None) or "UTC")
-    messages.append({"role": "user", "content": text})
+    # The MODEL's copy of an edited message carries the annotation; the stored
+    # raw_message and every client render stay clean.
+    _model_text = text
+    if _edit_replaces:
+        _model_text = ("[Edited message — replaces their previous message; recheck "
+                       "anything you logged from the original: update or remove to "
+                       "match this text, never double-log] " + text)
+    messages.append({"role": "user", "content": _model_text})
 
     # ── Coaching brain ────────────────────────────────────────────────────────
     turn = await run_turn(
@@ -361,16 +381,17 @@ async def run_chat_turn(
     # bubbles so a later history reload recognizes them by id, not by text.
     turn.log_id = getattr(_conv_row, "id", None)
 
-    # [REGENERATE:<id>] — the app's regenerate replaced an earlier reply. Mark
+    # [REGENERATE:<id>] / [EDIT:<id>] — this turn replaced an earlier one. Mark
     # the old row superseded (points at this turn) so history hides it; the
     # model context still sees it, which is what lets the redo differ. Fully
     # wrapped — a bad id or race never affects the turn.
     try:
         import re as _re_regen
         _m = _re_regen.match(r"^\[REGENERATE:(\d+)\]$", (text or "").strip())
-        if _m and turn.log_id:
+        _old_id = int(_m.group(1)) if _m else _edit_replaces
+        if _old_id and turn.log_id:
             from db.models import ConversationLog as _CL
-            _old = await db.get(_CL, int(_m.group(1)))
+            _old = await db.get(_CL, _old_id)
             _family = {user.id, user.linked_to_user_id or user.id}
             if _old is not None and _old.user_id in _family and _old.id != turn.log_id:
                 _old.superseded_by = turn.log_id
