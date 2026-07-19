@@ -150,6 +150,30 @@ def _tokens_overlap(a: str, b: str) -> bool:
     return a == b or a.startswith(b) or b.startswith(a)
 
 
+_AFFIRMATION_RX = re.compile(
+    r"^(?:yes|yep|yeah|yup|ya|sure|correct|right|exactly|indeed|ok(?:ay)?|"
+    r"да|ага|угу|конечно|верно|точно)\b",
+    re.IGNORECASE,
+)
+
+
+def effective_intent_message(current: Optional[str], prior: Optional[str]) -> str:
+    """The message the logging-intent gates should judge. A bare affirmation
+    ("Yes", "yes the full one", "да") is an ANSWER to a clarifying question —
+    the actual intent (item names, add cues) lives in the PRIOR user message,
+    so the gates must judge both together. The cookies-and-caramel incident
+    (2026-07-19): the log fired on the "Yes" turn, the gate saw no item and no
+    cue, and blocked a brand-new flavor as a duplicate of a 5-min-old
+    different bar. Conservative: only short (≤4 word) affirmation-led
+    messages combine; anything longer stands on its own."""
+    cur = (current or "").strip()
+    if not cur or not prior:
+        return cur
+    if len(cur.split()) <= 4 and _AFFIRMATION_RX.match(cur):
+        return f"{prior}\n{cur}"
+    return cur
+
+
 def turn_supports_log(user_text: Optional[str], item_name: Optional[str] = None) -> bool:
     """The dedup gate: True when the current user turn justifies honoring this
     log despite a payload+window match — i.e. the user explicitly signalled

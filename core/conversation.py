@@ -563,13 +563,25 @@ async def run_turn(
                 except Exception as e:
                     logger.error(f"on_tool_start failed for {_tag}: {e}")
 
+        # The gates judge the CURRENT message — but a bare "Yes" is an answer
+        # to a clarifying question, and the intent (item names, add cues)
+        # lives in the previous user message. Combine for the gate only.
+        from skills.logging_intent import effective_intent_message
+        _prev_user_text = next(
+            (m.get("content") for m in reversed(messages[:-1])
+             if m.get("role") == "user" and isinstance(m.get("content"), str)),
+            "",
+        )
+        _gate_user_message = effective_intent_message(
+            _user_text if isinstance(_user_text, str) else "", _prev_user_text)
+
         tool_results = await execute_tool_calls(
             tool_calls, user, _log_for_tools, db, _source,
-            # Current turn text → the dedup turn-intent gate (skills/logging_intent.py).
+            # Turn text → the dedup turn-intent gate (skills/logging_intent.py).
             # An explicit add cue ("another", "a second X", "ещё") lets a legit repeat
             # log through instead of being eaten by the payload+window dedup. Defaults
             # to "" everywhere else, so non-conversation call paths are unchanged.
-            user_message=_user_text if isinstance(_user_text, str) else "",
+            user_message=_gate_user_message,
         )
 
         # Deliver image results via the platform callback; replace dict with string

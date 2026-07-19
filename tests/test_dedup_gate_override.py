@@ -405,3 +405,18 @@ async def test_food_carryover_named_item_still_writes(monkeypatch):
     )
     assert not result.startswith("Already on the board:"), result
     assert wc["n"] == 1 or merged["calls"] == 1, "named repeat must land"
+
+
+def test_effective_intent_message_combines_affirmation():
+    """The cookies-and-caramel incident (2026-07-19): the log fires on the
+    "Yes" turn answering a clarifying question — the gate must judge the
+    prior message's item + add cue too."""
+    from skills.logging_intent import effective_intent_message, turn_supports_log
+    prior = "Also just had a cookies and caramel barbell"
+    combined = effective_intent_message("Yes", prior)
+    assert "cookies and caramel" in combined and "Yes" in combined
+    # Longer real messages stand alone — no combining.
+    assert effective_intent_message("connect apple health", prior) == "connect apple health"
+    assert effective_intent_message("Yes", None) == "Yes"
+    # RU affirmation combines too.
+    assert "барбелл" in effective_intent_message("да", "ещё один барбелл")
