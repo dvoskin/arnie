@@ -34,7 +34,7 @@ _NUTRITION_TOOLS = [
                 "carbs":      {"type": "number", "description": "grams"},
                 "fats":       {"type": "number", "description": "grams"},
                 "fiber":      {"type": "number", "description": "grams, optional"},
-                "confidence": {"type": "number", "description": "0.0-1.0. 0.9+ for known foods, 0.6-0.8 for estimates"},
+                "confidence": {"type": "number", "description": "0.0-1.0. 0.9+ for known foods or label/database-sourced macros, 0.6-0.8 for estimates. Below 0.9 the macros must come from a source or a CONSERVATIVE estimate — never a guess dressed as precision (see NEVER INVENT VALUES)."},
                 "estimated":  {"type": "boolean"},
                 "date":       {"type": "string", "description": "Optional. Log to a specific date instead of today. Use 'yesterday', '2 days ago', or YYYY-MM-DD format. Only set when user explicitly says they forgot to log something for a past day."},
                 "time":       {"type": "string", "description": "Optional. Clock time the food was actually eaten, ONLY when the user states one (e.g. '8:30am', '13:45', 'noon', 'around 7'). Combined with `date` + the user's timezone to place it on the day's timeline. Leave unset if no time is given — do not guess."},
@@ -218,7 +218,10 @@ _FITNESS_TOOLS = [
     {
         "name": "log_exercise",
         "description": (
-            "Log a strength/cardio movement to the workout. ONE call per movement — "
+            "Log a strength/cardio movement to the workout. Only sets the user PERFORMED, "
+            "with numbers they STATED — never infer weight or reps from history or the "
+            "program (targets are not performances); movement named without numbers → ask "
+            "weight × reps in ONE tight question, then log. ONE call per movement — "
             "all of its sets go in that single call (the backend keeps one row per "
             "movement per session, so it stays clean and editable). Pick by load:\n"
             "• SAME load across sets → sets=N, reps='8,8,8' (per-set reps CSV), weight=135. "
@@ -774,7 +777,9 @@ _HISTORY_TOOLS = [
             "Offer 2–4 meal IDEAS as an inline carousel. Call when the user "
             "asks 'what should I eat?', 'meal ideas', 'something quick for "
             "lunch', etc. Fit the user's remaining macros + time of day + "
-            "stated preferences. Each meal carries its macros. Native clients "
+            "stated preferences — and HONOR stored dietary constraints, "
+            "allergies, and intolerances from the user's attributes; one "
+            "suggestion that violates a stored allergy is a critical failure. Each meal carries its macros. Native clients "
             "render the carousel one card at a time with a 'Plan it' button: "
             "tapping it does NOT log the meal — it SELECTS it as the user's "
             "plan for an upcoming meal (they may still need to cook or order "
@@ -829,7 +834,9 @@ _HISTORY_TOOLS = [
             "logs that exercise, so the carousel doubles as the workout "
             "guide. Anchor target loads on the user's recent baseline + "
             "trend (visible in [WORKOUT HISTORY] context); progress 2.5–5 "
-            "lb when last week hit all reps clean. Native clients render "
+            "lb when last week hit all reps clean. HONOR stored injuries/"
+            "limitations and the recovery board — never program a movement "
+            "into a flagged joint or a just-hit muscle group. Native clients render "
             "the carousel; keep your text reply short — one line on focus "
             "+ flow, no full list. DO NOT call to log a workout already "
             "named (use log_exercise)."
@@ -924,6 +931,12 @@ _ATTRIBUTE_TOOLS = [
             "SENSITIVITIES (key 'mental_boundary_x' / 'health_sensitivity_x' — e.g. 'past disordered "
             "eating, avoid calorie-shaming', 'hates being weighed'). Capture these the moment they "
             "come up, from what they actually said. "
+            "COACH-CRITICAL, CAPTURE ON FIRST MENTION (these gate every suggestion, and audits "
+            "show they are chronically missed): INJURIES / limitations ('health_injury_shoulder'="
+            "'left shoulder impingement, no overhead pressing'), ALLERGIES & intolerances "
+            "('health_allergy_peanut'), EQUIPMENT / gym access, and SCHEDULE constraints. A "
+            "workout suggested into an injury or a meal into an allergy is a critical failure "
+            "— capturing the fact is what prevents it. "
             "NEVER store live/transient state — wearable daily metrics (HRV, recovery, RHR, last-night sleep), "
             "today's session, streaks, or anything with its own field (weight, macro targets, wake/sleep times). "
             "Protein bars/shakes/energy drinks are FOOD (category=nutrition), not supplements. "
