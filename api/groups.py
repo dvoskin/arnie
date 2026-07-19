@@ -280,6 +280,10 @@ async def compute_leaderboard(db, group_id: int, me_id: int,
                 "workout_days": workout_days, "streak": streak,
                 "badges": badges,
             })
+        # Only people actually MOVING show (Danny: 'all non-zero users') —
+        # zero-momentum rows (ghost/test accounts, dormant members) drop off;
+        # the requester always sees their own row, even at zero.
+        entries = [e for e in entries if e["momentum"] > 0 or e["you"]]
         entries.sort(key=lambda e: (-e["momentum"], e["name"]))
         out = [LeaderboardEntry(rank=i + 1, **e) for i, e in enumerate(entries)]
         return {"v": 1,
