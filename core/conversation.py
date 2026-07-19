@@ -382,6 +382,10 @@ async def run_turn(
         # voices the real committed total) or flush it (no write happened).
         if _streamer:
             _streamer.held = True
+        from core.llm import pick_model
+        _stage_model = pick_model(user)
+        if _stage_model:
+            _chat_extras["model"] = _stage_model
         result = await chat(messages, system, tools=True, max_tokens=4096,
                             **_chat_extras)
         # Flush trailing buffer immediately so a no-||| partial doesn't carry

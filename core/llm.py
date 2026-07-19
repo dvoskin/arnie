@@ -30,6 +30,31 @@ def OPENAI_API_KEY() -> str:
     return _env("OPENAI_API_KEY")
 
 
+def pick_model(user) -> "str | None":
+    """Stage-tiered routing (Danny, 2026-07-19: 'astound users especially in
+    the beginning'). New users get the premium model on the FIRST pass — the
+    tool-selection turn where phantom logs and invented macros are born and
+    where retention is decided — for their first NEW_USER_WINDOW_DAYS.
+    Disabled unless NEW_USER_MODEL is set on the host (no surprise spend);
+    established users stay on DEFAULT_MODEL. Follow-up voicing always stays
+    on the workhorse — style doesn't need the premium tier."""
+    m = _env("NEW_USER_MODEL", "")
+    if not m:
+        return None
+    try:
+        days = int(_env("NEW_USER_WINDOW_DAYS", "14") or 14)
+    except (TypeError, ValueError):
+        days = 14
+    created = getattr(user, "created_at", None)
+    if created is None:
+        return None
+    from datetime import datetime, timedelta
+    try:
+        return m if datetime.utcnow() - created <= timedelta(days=days) else None
+    except TypeError:
+        return None
+
+
 def DEFAULT_MODEL() -> str:
     # Sonnet 5 — every chat turn, follow-up, and briefing rides this. NOTE: a
     # DEFAULT_MODEL env var on the host OVERRIDES this fallback; when bumping
