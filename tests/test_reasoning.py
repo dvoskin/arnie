@@ -32,8 +32,13 @@ def test_exercise_scheme_and_silent_tools():
     assert "Bench — 3×8" in r["steps"][0]["label"]
 
 
-def test_pure_chat_turn_is_none_and_cap():
-    assert build_reasoning([], {}, None, 500) is None
+def test_pure_chat_turn_gets_context_receipt_and_cap():
+    # Every reply carries a receipt — a no-tool turn shows the honest
+    # context-read steps (Danny: thoughts on every reply, like Claude).
+    r = build_reasoning([], {}, None, 500)
+    assert r["duration_ms"] == 500
+    assert len(r["steps"]) == 2
+    assert "Read your logs" in r["steps"][0]["label"]
     many = [{"name": "log_food", "input": {"food_name": f"f{i}"}} for i in range(12)]
     r = build_reasoning(many, {}, None, None)
     assert len(r["steps"]) == 8

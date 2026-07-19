@@ -114,7 +114,12 @@ def build_reasoning(tool_calls: list, tool_results: dict,
         # can state truthfully and readably.
 
     if not steps:
-        return None
+        # Pure-chat coaching turn — no tool fired, but the turn still READ the
+        # user's world before answering (context_builder loads logs, targets,
+        # program, and recent history on every coached turn). One honest step
+        # so every reply carries its receipt; never fabricated specifics.
+        steps = [_step("doc.text", "Read your logs, targets, and recent history"),
+                 _step("brain", "Weighed the reply against your goals")]
     out = {"steps": steps[:8]}
     if duration_ms is not None:
         out["duration_ms"] = int(duration_ms)
