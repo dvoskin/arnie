@@ -83,6 +83,31 @@ def _parse_log_date(date_str: str | None, user_timezone: str = "UTC"):
     return None
 
 
+def _default_meal_type(user) -> str:
+    """Meal slot by the user's LOCAL hour when the model omitted meal_type.
+    Every food entry must carry a slot — the Log timeline sections by it, and
+    a slotless entry renders as an orphan row (and deleting its slotted
+    sibling strips the whole group's header — Danny 07-19). Boundaries mirror
+    the iOS fallback in DayTimeline.inferredSlot."""
+    try:
+        import pytz
+        from datetime import datetime as _dt_mt
+        tz = pytz.timezone(getattr(user, "timezone", None) or "UTC")
+        now = _dt_mt.now(tz)
+        mins = now.hour * 60 + now.minute
+    except Exception:
+        return "snack"
+    if 5 * 60 <= mins < 11 * 60:
+        return "breakfast"
+    if 11 * 60 <= mins < 15 * 60 + 30:
+        return "lunch"
+    if 15 * 60 + 30 <= mins < 17 * 60 + 30:
+        return "snack"
+    if 17 * 60 + 30 <= mins < 22 * 60:
+        return "dinner"
+    return "snack"
+
+
 def _lbs_to_kg(weight, unit: str = "lbs"):
     """Convert a weight value to kg. Returns None for None input, passes kg through."""
     if weight is None:
@@ -1778,7 +1803,7 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
             estimated_flag=(analysis.confidence == "estimated") or from_photo,
             confidence_score=_conf,
             source_type=source_type,
-            meal_type=inp.get("meal_type"),
+            meal_type=inp.get("meal_type") or _default_meal_type(user),
             meal_time=_meal_time,
             alcohol_units=inp.get("alcohol_units"),
             from_photo=from_photo,
