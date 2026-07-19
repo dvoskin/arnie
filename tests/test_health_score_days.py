@@ -169,7 +169,7 @@ def test_whole_food_sugar_discounted_vs_candy():
 def test_payload_contract():
     s = compute_health_score([_e("Chicken bowl", 700, protein=50, fiber=6)])
     assert set(s) == {"score", "band", "drivers", "processed_pct",
-                      "ultra_pct", "whole_pct", "coverage"}
+                      "ultra_pct", "whole_pct", "coverage", "headroom"}
     assert set(s["coverage"]) == {"nutrients", "micros", "classified"}
     assert all(set(d) == {"label", "delta"} for d in s["drivers"])
     assert 0 <= s["score"] <= 100

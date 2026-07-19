@@ -240,14 +240,38 @@ def compute_health_score(entries: list) -> Optional[dict]:
         return delta
 
     score = 50.0
-    score += lane("Protein density", _scale(protein, 25, 55, 16))
-    score += lane("Fiber", _scale(fiber, 4, 14, 14) * nutrient_cov)
-    score += lane("Sugar load", -_scale(sugar_eff, 25, 75, 15) * nutrient_cov)
-    score += lane("Sodium", -_scale(sodium, 1150, 2300, 8) * nutrient_cov)
-    score += lane("Micronutrient breadth",
-                  _scale(float(len(micro_keys)), 2, 12, 8) * micro_cov)
-    score += lane("Whole foods", 12 * w)
-    score += lane("Ultra-processed load", -(26 * u + 6 * p))
+    d_protein = lane("Protein density", _scale(protein, 25, 55, 16))
+    d_fiber = lane("Fiber", _scale(fiber, 4, 14, 14) * nutrient_cov)
+    d_sugar = lane("Sugar load", -_scale(sugar_eff, 25, 75, 15) * nutrient_cov)
+    d_sodium = lane("Sodium", -_scale(sodium, 1150, 2300, 8) * nutrient_cov)
+    d_micro = lane("Micronutrient breadth",
+                   _scale(float(len(micro_keys)), 2, 12, 8) * micro_cov)
+    d_whole = lane("Whole foods", 12 * w)
+    d_ultra = lane("Ultra-processed load", -(26 * u + 6 * p))
+    score += (d_protein + d_fiber + d_sugar + d_sodium
+              + d_micro + d_whole + d_ultra)
+
+    # The drivers show what MOVED — the headroom names the biggest ABSENT
+    # lane, so a 79 is never a mystery ("why not higher?" has an answer).
+    # Coverage-honest: a lane capped by missing data can only promise what
+    # the data could actually earn.
+    headrooms = [
+        ("Fiber", 14 * nutrient_cov - d_fiber,
+         "Fiber's the open lane — vegetables, fruit, oats"),
+        ("Protein density", 16 - d_protein,
+         "More protein per calorie"),
+        ("Micronutrient breadth", 8 * micro_cov - d_micro,
+         "More variety across vitamins and minerals"),
+        ("Whole foods", 12 - d_whole,
+         "More of the day from whole foods"),
+        ("Sugar load", -d_sugar, "Easing sugar back"),
+        ("Sodium", -d_sodium, "Going lighter on sodium"),
+        ("Ultra-processed load", -d_ultra, "Swapping out ultra-processed"),
+    ]
+    _label, _pts, _hint = max(headrooms, key=lambda h: h[1])
+    headroom = ({"label": _label, "points": int(round(_pts)),
+                 "line": f"{_hint} — up to +{int(round(_pts))}."}
+                if _pts >= 3 and score < 97 else None)
 
     score = int(round(max(0.0, min(100.0, score))))
     band = ("excellent" if score >= 80 else
@@ -270,4 +294,7 @@ def compute_health_score(entries: list) -> Optional[dict]:
         "coverage": {"nutrients": int(round(100 * nutrient_cov)),
                      "micros": int(round(100 * micro_cov)),
                      "classified": int(round(100 * class_cov))},
+        # The biggest absent lane (or None near the ceiling) — "what would
+        # raise it". Clients render `line` as one quiet row under the drivers.
+        "headroom": headroom,
     }

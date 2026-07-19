@@ -117,3 +117,40 @@ def test_ultra_pct_splits_staples_from_ultra():
     assert s["ultra_pct"] == 25              # the alarming fact, alone
     assert s["whole_pct"] == 25
     assert s["coverage"]["classified"] == 100
+
+
+def test_headroom_names_the_biggest_absent_lane():
+    """Danny's 79: turkey+rice — protein/whole maxed, fiber empty. The
+    headroom must name Fiber with its real remaining points."""
+    from core.health_score import compute_health_score
+    entries = [
+        {"name": "Ground turkey", "calories": 355, "protein": 49,
+         "fiber": 0.0, "sugar": 0.0, "sodium": 188,
+         "micros": {"iron": 2, "zinc": 3, "b12": 1},
+         "processing_level": "whole"},
+        {"name": "White rice", "calories": 195, "protein": 4,
+         "fiber": 2.2, "sugar": 0.0, "sodium": 0,
+         "micros": {}, "processing_level": "whole"},
+    ]
+    res = compute_health_score(entries)
+    assert res["headroom"] is not None
+    assert res["headroom"]["label"] == "Fiber"
+    assert res["headroom"]["points"] >= 10
+    assert "up to +" in res["headroom"]["line"]
+
+
+def test_headroom_absent_near_ceiling():
+    from core.health_score import compute_health_score
+    # A maxed-out day: dense protein, fiber-rich, varied micros, all whole.
+    entries = [
+        {"name": "Chicken and lentil bowl", "calories": 700, "protein": 60,
+         "fiber": 22.0, "sugar": 4.0, "sodium": 300,
+         "micros": {k: 5 for k in ("iron", "zinc", "b12", "c", "a", "k",
+                                    "folate", "magnesium", "potassium",
+                                    "calcium", "d", "e")},
+         "processing_level": "whole"},
+    ]
+    res = compute_health_score(entries)
+    assert res["score"] >= 90
+    if res["headroom"] is not None:
+        assert res["headroom"]["points"] < 8
