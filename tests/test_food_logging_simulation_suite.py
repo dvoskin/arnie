@@ -80,7 +80,7 @@ def _coaching_stub(food_name="oatmeal", cal=200, p=10, cal_t=2000, pro_t=180):
 # Phase 1 — turn-scoped logging
 @pytest.mark.parametrize("rule_marker", [
     "LOGGING SCOPE",
-    "THIS turn's user message",
+    "SOLE source of foods to log",
     "BRAND VARIANT GUARD",
     "REMOVED-VIA-DASHBOARD AWARENESS",
     "do NOT restore",
@@ -1604,7 +1604,8 @@ def test_prompt_has_logging_fidelity_section():
     assert "FOOD NAME: use the user's words" in s
     assert "QUANTITY FIDELITY" in s
     assert "EVERY ITEM GETS ITS OWN log_food" in s
-    assert "DO NOT INVENT ITEMS" in s
+    # invent-ban consolidated into the bullet + NON-NEGOTIABLE #3
+    assert "not an assumed garlic bread" in s
 
 
 @pytest.mark.parametrize("preserved_phrase", [
@@ -1634,16 +1635,17 @@ def test_prompt_bans_collapsing_distinct_items():
     '2 slices of pizza' — different macros, different items."""
     s = SYSTEM_PROMPT
     # The example wraps across lines in source — verify the key tokens.
-    assert "1 slice plain pizza" in s
-    assert "1 slice" in s and "pepperoni pizza" in s
-    assert "TWO log_food calls" in s
+    assert "1 slice plain" in s and "pepperoni" in s
+    assert "TWO calls" in s
 
 
 def test_prompt_bans_inventing_items():
     """User says 'had pizza' — don't also log garlic bread the user didn't
-    name."""
-    s = SYSTEM_PROMPT
-    assert "DO NOT INVENT ITEMS the user didn't name" in s
+    name. (Diet consolidated the verbose bullet into LOGGING FIDELITY + the
+    non-negotiable 'no invented side'; the ban must still be explicit.)"""
+    s = SYSTEM_PROMPT.lower()
+    assert "not an assumed garlic bread" in s          # LOGGING FIDELITY bullet
+    assert "no invented side" in s                      # NON-NEGOTIABLE #3
 
 
 # ════════════════════════════════════════════════════════════════════════════

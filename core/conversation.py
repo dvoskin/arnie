@@ -1062,6 +1062,34 @@ async def run_turn(
     # Phantom log-claim: the user reported a set but the model claimed it was
     # recorded ("noted" / "on the board") without firing a tool — the dropped-set
     # bug. Repair with tools=True so the model actually logs it on the retry.
+    # ── LEAKED TOOL-CALL XML RECOVERY (Denys #7129) ─────────────────────
+    # An older model under a heavy prompt sometimes writes its function-call
+    # SYNTAX as text ("<invoke name=log_food>…") instead of executing it. The
+    # bubble sanitizer strips it so it never SHIPS; here we RECOVER the intended
+    # log from the markup and force a clean reply. Fully wrapped.
+    try:
+        from core.turn_health import has_leaked_tool_xml, extract_leaked_tool_calls
+        if has_leaked_tool_xml(response_text):
+            logger.warning(f"event=leaked_tool_xml user={getattr(user,'id',None)} — recovering")
+            _leaked = [tc for tc in extract_leaked_tool_calls(response_text)
+                       if tc.get("name") in _LOGGING_TOOLS | {"log_water", "log_body_weight"}]
+            if _leaked:
+                if today_log is None:
+                    from db.queries import get_or_create_today_log
+                    today_log = await get_or_create_today_log(
+                        db, user.id, user.timezone or "UTC")
+                _lr = await execute_tool_calls(
+                    _leaked, user, today_log, db, _source, user_message=_gate_user_message)
+                for _tc in _leaked:
+                    tool_calls.append(_tc)
+                    tool_results[_tc["name"]] = _lr.get(_tc["name"], "")
+            # Strip the markup from the reply; if nothing usable remains, the
+            # phantom rescue below regenerates a proper confirmation.
+            from core.platform import _strip_tool_xml
+            response_text = _strip_tool_xml(response_text).strip()
+    except Exception:
+        logger.warning("leaked-xml recovery failed", exc_info=True)
+
     # Uses the GATE-EFFECTIVE message (prior + clarify-answer combined) so a
     # phantom claim on an answer turn ("regular size minimal oil" → "wrap
     # logged", no tool) is caught — the food name lives in the prior message.

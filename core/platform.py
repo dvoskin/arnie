@@ -61,14 +61,38 @@ class Button:
         return self.value if self.value is not None else self.label
 
 
+import re as _re_platform
+
+# Tool-call markup the model must NEVER show the user. Under a heavy prompt an
+# older model sometimes writes its function-call SYNTAX as text instead of
+# executing it (Denys #7129, 2026-07-20: "<invoke name=log_food><parameter
+# name=food_name>Огурец…" shipped as his reply). Stripped on the way out at the
+# single chokepoint every bubble passes through — closed blocks AND any dangling
+# truncated fragment. The conversation pipeline separately RECOVERS the intended
+# log from the markup (see extract_leaked_tool_calls).
+_TOOL_XML_BLOCK = _re_platform.compile(r"<invoke\b.*?</invoke>", _re_platform.S | _re_platform.I)
+_TOOL_XML_FRAG = _re_platform.compile(
+    r"</?(?:invoke|parameter)\b[^>]*>?|<invoke\b.*$", _re_platform.S | _re_platform.I)
+
+
+def _strip_tool_xml(s: str) -> str:
+    """Remove any leaked tool-call markup from user-facing text."""
+    if s and ("<invoke" in s.lower() or "<parameter" in s.lower()):
+        s = _TOOL_XML_BLOCK.sub("", s)
+        s = _TOOL_XML_FRAG.sub("", s)
+    return s
+
+
 def _sanitize_bubble(s: str) -> str:
     """
     Enforce the no-em-dash brand rule deterministically. The model is told "no em
     dashes" but keeps producing them, so we strip them on the way out: an em dash is
     almost always a parenthetical or clause break, which a comma handles cleanly.
     (En dashes / hyphens are left alone so number ranges like "12-13%" survive.)
+    Also strips any leaked tool-call XML so function-call syntax never ships.
     """
-    s = (s or "").replace(" — ", ", ").replace("—", ", ")
+    s = _strip_tool_xml(s or "")
+    s = s.replace(" — ", ", ").replace("—", ", ")
     while "  " in s:
         s = s.replace("  ", " ")
     return s.strip()

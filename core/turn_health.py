@@ -342,6 +342,36 @@ _FOOD_REPORT_RE = re.compile(
 )
 
 
+_INVOKE_RE = re.compile(r'<invoke\s+name="([^"]+)"\s*>(.*?)</invoke>', re.S | re.I)
+_PARAM_RE = re.compile(r'<parameter\s+name="([^"]+)"\s*>(.*?)</parameter>', re.S | re.I)
+
+
+def has_leaked_tool_xml(text: str) -> bool:
+    """True if the reply contains function-call markup the model wrote as text
+    instead of executing (the Denys #7129 catastrophe)."""
+    t = (text or "").lower()
+    return "<invoke" in t or "<parameter" in t
+
+
+def extract_leaked_tool_calls(text: str) -> list:
+    """Recover real tool calls from leaked <invoke>/<parameter> markup so the
+    intended log actually lands. Only fully-closed blocks are parsed (a
+    truncated fragment can't be trusted). Numeric params are coerced."""
+    calls = []
+    for m in _INVOKE_RE.finditer(text or ""):
+        name, body, inp = m.group(1), m.group(2), {}
+        for pm in _PARAM_RE.finditer(body):
+            v = pm.group(2).strip()
+            if re.fullmatch(r"-?\d+", v):
+                inp[pm.group(1)] = int(v)
+            elif re.fullmatch(r"-?\d+\.\d+", v):
+                inp[pm.group(1)] = float(v)
+            else:
+                inp[pm.group(1)] = v
+        calls.append({"name": name, "input": inp})
+    return calls
+
+
 def looks_like_phantom_log_claim(user_text: str, response_text: str,
                                  has_tool_calls: bool) -> bool:
     """True when the user reported a loggable SET or FOOD but the model claimed it
