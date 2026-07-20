@@ -237,6 +237,14 @@ class _BubbleStreamer:
         # loop checks against this so it never re-emits a bubble that was
         # already streamed live (which was producing the doubled-message bug).
         self.flushed_canon: set[str] = set()
+        # The RAW bubbles actually sent to the user, in order — so the turn's
+        # returned reply can be reconstructed as EXACTLY what streamed. This is
+        # what makes the deterministic fallback impossible to double-send on a
+        # streaming turn: if the model's reply already reached the user, the
+        # returned response IS that reply, not a canned tail (the triple-
+        # confirmation bug, root-caused 2026-07-20 — the done-frame carried the
+        # canned bubbles even after suppression guarded the re-send loop).
+        self.flushed_bubbles: list[str] = []
         # HOLD MODE — when True, on_delta buffers completed bubbles into
         # _held_bubbles instead of emitting them live. The first LLM pass runs
         # held so a premature log-confirmation it writes ("logged, 340 cal")
@@ -282,6 +290,7 @@ class _BubbleStreamer:
             await self.on_bubble(text)
             self.flushed_count += 1
             self.flushed_canon.add(_canon_bubble(text))
+            self.flushed_bubbles.append(text)
         except Exception as e:
             logger.warning(f"bubble flush failed (continuing stream): {e}")
 
@@ -296,6 +305,7 @@ class _BubbleStreamer:
                 await self.on_bubble(text)
                 self.flushed_count += 1
                 self.flushed_canon.add(_canon_bubble(text))
+                self.flushed_bubbles.append(text)
             except Exception as e:
                 logger.warning(f"held bubble flush failed (continuing): {e}")
 
@@ -1231,6 +1241,18 @@ async def run_turn(
     # The only legitimate post-split read of response_text is sync_pending_questions,
     # which needs the raw LLM string for hook detection. If you ever join resp.bubbles
     # back into a string, derive it from the pre-dashboard slice, not after URL append.
+    # STREAMED REPLY IS AUTHORITATIVE. If the model's reply already reached the
+    # user live (the streamer flushed real bubbles) but response_text was then
+    # overwritten by a non-streamed fallback (empty follow-up return → canned
+    # deterministic_confirmation), the RETURNED reply must be what STREAMED —
+    # otherwise the WebSocket done-frame ships the canned bubbles and the client
+    # appends them (the triple-confirmation bug: suppression guarded the re-send
+    # loop but not the returned resp.bubbles the done-frame carries).
+    if (_streamer is not None and _suppress_trailing
+            and getattr(_streamer, "flushed_bubbles", None)):
+        response_text = "|||".join(_streamer.flushed_bubbles)
+        _response_streamed = True   # it IS what streamed — no catch-up needed
+
     resp = Response.from_text(response_text)
 
     # ── Streaming catch-up: emit any non-streamed response bubbles ────────────

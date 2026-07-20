@@ -351,3 +351,20 @@ async def test_heads_up_streamed_then_followup_fails_still_delivers_answer(_stre
     assert "look that up" in streamed[0].lower()
     # The rest is the fallback answer that the catch-up correctly emitted.
     assert any(b.strip() for b in streamed[1:])
+
+
+async def test_streamer_tracks_raw_flushed_bubbles():
+    """flushed_bubbles keeps the RAW reply, in order — the source of truth the
+    triple-confirmation fix uses to reconstruct what the user actually saw."""
+    async def _on_bubble(text):
+        pass
+    s = _BubbleStreamer(_on_bubble)
+    for delta in ["Barebells logged ✅", "|||", "you're at 200 / 2,165", "|||",
+                  "what's lunch?"]:
+        await s.on_delta(delta)
+    await s.finalize()
+    assert s.flushed_bubbles == ["Barebells logged ✅", "you're at 200 / 2,165",
+                                 "what's lunch?"]
+    # The reconstructed reply == exactly what streamed (the value the returned
+    # response is rebuilt from so the done-frame can't carry a canned tail).
+    assert "|||".join(s.flushed_bubbles).count("|||") == 2
