@@ -98,12 +98,24 @@ def promises_more_logging(text: str) -> bool:
 # real extraction, so this only needs to TRIGGER on clear multi-item lists.
 _QTY_MARKER_RE = re.compile(
     r"\b\d+\s*(?:oz|ounces?|g|grams?|kg|lb|lbs|ml|cups?|tbsp|tsp|tablespoons?|teaspoons?|"
-    r"slices?|pieces?|scoops?|handfuls?|servings?|bars?)\b"
+    r"slices?|pieces?|scoops?|handfuls?|servings?|bars?"
+    # Cyrillic units — the 2026-07-20 Russian lunch list ("Рис 200 г, Куриную
+    # отбивную в кляре 150г…") scored ZERO items because only Latin units
+    # matched, so the under-log self-heal never fired on RU/UK messages.
+    r"|г|гр|грамм(?:а|ов)?|кг|мл|л|шт(?:ук[аи]?)?|стакан(?:а|ов)?|"
+    r"ложк[аи]|кусоч?к[аи]?|ломтик(?:а|ов)?|порци[яи]|банк[аи]|бутылк[аи])(?=[\s.,;)]|$)"
     r"|\b(?:½|¼|¾|half|quarter|a\s+(?:cup|handful|glass|can|bottle|slice|piece|scoop)|"
-    r"small|large|medium)\b",
+    r"small|large|medium|полов[иі]н[аук]|пол-|небольш\w+|маленьк\w+|больш\w+)\b",
     re.IGNORECASE,
 )
-_LIST_SEP_RE = re.compile(r",|\band\b|\bwith\b|\bplus\b|\balso\b|\bthen\b", re.IGNORECASE)
+# Newlines count as separators — users paste meals as one-item-per-line lists.
+# Russian/Ukrainian connectors included so RU/UK lists segment like EN ones.
+_LIST_SEP_RE = re.compile(
+    r",|;|\n|\band\b|\bwith\b|\bplus\b|\balso\b|\bthen\b"
+    r"|\bи\b|\bс\b|\bплюс\b|\bеще\b|\bещё\b|\bпотом\b|\bзатем\b|\bтакже\b"
+    r"|\bі\b|\bта\b|\bз\b",
+    re.IGNORECASE,
+)
 
 
 def estimate_food_items(message: str) -> int:
@@ -130,8 +142,13 @@ _LIST_FILLER = {
     "about", "around", "like", "just", "also", "and", "with", "plus", "then", "my",
     "for", "lunch", "dinner", "breakfast", "snack", "today", "it", "was", "were",
     "drank", "got", "grabbed", "small", "big", "handful", "piece", "cup", "half",
+    # Russian / Ukrainian fillers — eating verbs, meal words, prepositions,
+    # units. Without these every RU segment counts its verbs as content words.
+    "я", "съел", "съела", "поел", "поела", "ел", "ела", "выпил", "выпила",
+    "в", "на", "за", "обед", "ужин", "завтрак", "перекус", "сегодня", "вчера",
+    "еще", "ещё", "было", "и", "с", "немного", "примерно", "около", "грамм",
+    "г", "гр", "кг", "мл", "шт", "штук", "з", "та", "і", "їв", "їла", "з'їв",
 }
-
 
 def looks_like_undercounted_food(message: str, num_food_logs: int) -> bool:
     """True when the message clearly ENUMERATES a multi-item meal (>=4 items with >=2
