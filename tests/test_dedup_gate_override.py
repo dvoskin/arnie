@@ -420,3 +420,56 @@ def test_effective_intent_message_combines_affirmation():
     assert effective_intent_message("Yes", None) == "Yes"
     # RU affirmation combines too.
     assert "барбелл" in effective_intent_message("да", "ещё один барбелл")
+
+
+@pytest.mark.asyncio
+async def test_food_salmon_clarify_answer_and_venue_tokens(monkeypatch):
+    """The salmon incident (2026-07-20 01:07Z): the clarify-ANSWER said '6 oz
+    fish…' (never 'salmon'), and the venue parenthetical '(Cafe Luxembourg)'
+    cross-matched the Niçoise from 19 min earlier — the carryover guard ate
+    the plate's centerpiece. With the answer combined against the question's
+    exchange and venue tokens stripped, the salmon writes."""
+    from skills.logging_intent import effective_intent_message
+    user = _user()
+    prior = _food_row(1939, "Niçoise salad with shrimp (Cafe Luxembourg)",
+                      "1 salad", 380.0, ago_s=19 * 60)
+    today_log = _food_log([prior])
+    wc = {"n": 0}
+    _patch_food_writers(monkeypatch, today_log, wc)
+
+    gate_msg = effective_intent_message(
+        "6 oz fish and yes everything else didn't leave some of the corn salad",
+        "I had the full salmon plate 2 pieces French bread and like 5 French fries",
+        prior_assistant="The salmon, was it a full standard entrée portion?")
+    result = await TE._dispatch(
+        "log_food",
+        {"food_name": "Grilled salmon (Cafe Luxembourg)",
+         "quantity": "6 oz", "calories": 350},
+        user, today_log, db=SimpleNamespace(refresh=_refresh), source_type="ios",
+        user_message=gate_msg,
+    )
+    assert not result.startswith("Already on the board:"), result
+    assert wc["n"] == 1, "the salmon must write"
+
+
+@pytest.mark.asyncio
+async def test_food_venue_token_alone_never_matches_carryover(monkeypatch):
+    """Even WITHOUT the combiner (gate judges the bare answer), the venue
+    parenthetical must not manufacture an on-board match — unnamed + no
+    same-item on board falls through to the normal write path."""
+    user = _user()
+    prior = _food_row(1939, "Niçoise salad with shrimp (Cafe Luxembourg)",
+                      "1 salad", 380.0, ago_s=19 * 60)
+    today_log = _food_log([prior])
+    wc = {"n": 0}
+    _patch_food_writers(monkeypatch, today_log, wc)
+
+    result = await TE._dispatch(
+        "log_food",
+        {"food_name": "Grilled salmon (Cafe Luxembourg)",
+         "quantity": "6 oz", "calories": 350},
+        user, today_log, db=SimpleNamespace(refresh=_refresh), source_type="ios",
+        user_message="6 oz fish and yes everything else",
+    )
+    assert not result.startswith("Already on the board:"), result
+    assert wc["n"] == 1

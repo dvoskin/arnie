@@ -157,19 +157,28 @@ _AFFIRMATION_RX = re.compile(
 )
 
 
-def effective_intent_message(current: Optional[str], prior: Optional[str]) -> str:
-    """The message the logging-intent gates should judge. A bare affirmation
-    ("Yes", "yes the full one", "да") is an ANSWER to a clarifying question —
-    the actual intent (item names, add cues) lives in the PRIOR user message,
-    so the gates must judge both together. The cookies-and-caramel incident
-    (2026-07-19): the log fired on the "Yes" turn, the gate saw no item and no
-    cue, and blocked a brand-new flavor as a duplicate of a 5-min-old
-    different bar. Conservative: only short (≤4 word) affirmation-led
-    messages combine; anything longer stands on its own."""
+def effective_intent_message(current: Optional[str], prior: Optional[str],
+                             prior_assistant: Optional[str] = None) -> str:
+    """The message the logging-intent gates should judge. A clarify-ANSWER
+    carries the intent of the exchange it answers — the item names live in
+    the prior user message, not the answer — so the gates must judge them
+    together. Two combine conditions:
+      • short affirmation-led answer ("Yes", "да, ага" — ≤4 words): the
+        cookies-and-caramel incident (2026-07-19).
+      • the assistant's last message ASKED A QUESTION and the answer is a
+        detail-reply of ≤16 words ("6 oz fish and yes everything else…"):
+        the salmon incident (2026-07-20) — the answer said "fish", never
+        "salmon", and the gate judged salmon unnamed.
+    Anything longer stands on its own — combining widens the gate, so both
+    conditions stay tight."""
     cur = (current or "").strip()
     if not cur or not prior:
         return cur
-    if len(cur.split()) <= 4 and _AFFIRMATION_RX.match(cur):
+    words = len(cur.split())
+    if words <= 4 and _AFFIRMATION_RX.match(cur):
+        return f"{prior}\n{cur}"
+    pa = (prior_assistant or "").strip()
+    if pa.rstrip("| ").endswith("?") and words <= 16:
         return f"{prior}\n{cur}"
     return cur
 

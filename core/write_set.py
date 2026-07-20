@@ -37,7 +37,11 @@ class Verdict:
 
 
 def _tokens(text: str) -> set[str]:
-    return {w for w in re.split(r"[^a-z0-9а-яё]+", (text or "").lower()) if len(w) >= 3}
+    # Parentheticals are qualifiers (venue, prep) — never identity. "Grilled
+    # salmon (Cafe Luxembourg)" must not match the Niçoise from the same
+    # restaurant (the salmon incident, 2026-07-20).
+    core = re.sub(r"\([^)]*\)", " ", (text or "").lower())
+    return {w for w in re.split(r"[^a-z0-9а-яё]+", core) if len(w) >= 3}
 
 
 def _named_in(item: str, message: str) -> bool:
@@ -110,9 +114,10 @@ def validate_write_set(
         # 90 min) vs invention shape (nowhere at all).
         recent_same = False
         for e in board:
-            pn = (getattr(e, "parsed_food_name", "") or "").lower()
+            pn = re.sub(r"\([^)]*\)", " ",
+                        (getattr(e, "parsed_food_name", "") or "").lower())
             ts = getattr(e, "timestamp", None)
-            if pn and _named_in(item, pn) and ts is not None:
+            if pn.strip() and _named_in(item, pn) and ts is not None:
                 try:
                     if (now - ts).total_seconds() < 5400:
                         recent_same = True

@@ -1659,17 +1659,26 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
                 import re as _re_carry
                 _msg_l = str(user_message).lower()
                 _msg_toks = set(_re_carry.split(r"[^a-z0-9а-яё]+", _msg_l))
-                _sig = [w for w in _re_carry.split(r"[^a-z0-9а-яё]+", food_name.lower())
+                # VENUE TOKENS POISON THE MATCH (the salmon incident, 07-20
+                # 01:07Z): "Grilled salmon (Cafe Luxembourg)" cross-matched the
+                # Niçoise from the same restaurant via the parenthetical and
+                # got blocked as a carryover. Parentheticals are qualifiers
+                # (venue, prep notes) — strip them on BOTH sides before
+                # tokenizing, for naming and for the on-board match.
+                _core = _re_carry.sub(r"\([^)]*\)", " ", food_name.lower())
+                _sig = [w for w in _re_carry.split(r"[^a-z0-9а-яё]+", _core)
                         if len(w) >= 3]
                 _named = any(
                     t == w or t.startswith(w) or w.startswith(t)
                     for w in _sig for t in _msg_toks if t
                 ) if _sig else True
                 if not _named:
+                    def _entry_core(e):
+                        nm = (getattr(e, "parsed_food_name", "") or "").lower()
+                        return _re_carry.sub(r"\([^)]*\)", " ", nm)
                     _prior = next(
                         (e for e in candidate_food_entries
-                         if any(w in (getattr(e, "parsed_food_name", "") or "").lower()
-                                for w in _sig)
+                         if any(w in _entry_core(e) for w in _sig)
                          and getattr(e, "timestamp", None) is not None
                          and (now_utc - e.timestamp).total_seconds() < 5400),
                         None,
