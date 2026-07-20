@@ -59,6 +59,15 @@ SCENARIOS = {
         dict(say="6 oz salmon, quinoa, roasted brussels sprouts, and a slice of bread",
              min=4, need=["salmon", "quinoa", "brussel", "bread"], must_log=True),
     ],
+    "list_with_ambiguity": [  # Danny 19:42 — a 7-item list where one item's prep is
+        # unstated (broccoli "cooked with olive oil", chicken prep). Must log ALL now
+        # with estimates, NEVER hold the list for a "grilled or oil?" clarify.
+        dict(say="For lunch I had 6 oz grilled chicken breast, 1¼ cups jasmine rice, "
+                 "half an avocado, a cup of roasted broccoli, 2 tbsp spicy mayo, a Diet "
+                 "Coke, and one small chocolate chip cookie",
+             min=6, need=["chicken", "rice", "avocado", "broccoli", "mayo", "cookie"],
+             must_log=True),
+    ],
     # ---- imperative commands (the phantom class) ----
     "imperative_bar": [
         dict(say="add a barebells salty peanut bar", min=1, need=["barebell"], must_log=True),
