@@ -178,9 +178,15 @@ async def run_chat_turn(
     # anything logged from the original instead of double-logging.
     import re as _re_edit
     _edit_replaces: Optional[int] = None
-    _m_edit = _re_edit.match(r"^\[EDIT:(\d+)\]\s*(.*)$", text or "", _re_edit.S)
+    _is_edit = False
+    # The id is OPTIONAL: iMessage edits (BlueBubbles updated-message events)
+    # can't name the superseded ConversationLog row, so they send a bare
+    # "[EDIT]" — the model still gets the recheck annotation, we just skip
+    # the supersede bookkeeping.
+    _m_edit = _re_edit.match(r"^\[EDIT(?::(\d+))?\]\s*(.*)$", text or "", _re_edit.S)
     if _m_edit:
-        _edit_replaces = int(_m_edit.group(1))
+        _is_edit = True
+        _edit_replaces = int(_m_edit.group(1)) if _m_edit.group(1) else None
         text = _m_edit.group(2).strip()
 
     # ── Deterministic idempotency (preferred over the text-window heuristic) ──
@@ -344,7 +350,7 @@ async def run_chat_turn(
     # The MODEL's copy of an edited message carries the annotation; the stored
     # raw_message and every client render stay clean.
     _model_text = text
-    if _edit_replaces:
+    if _is_edit:
         _model_text = ("[Edited message — replaces their previous message; recheck "
                        "anything you logged from the original: update or remove to "
                        "match this text, never double-log] " + text)
