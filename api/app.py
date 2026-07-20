@@ -640,7 +640,12 @@ async def _background_initial_oura_sync(user_id: int):
         async with AsyncSessionLocal() as db:
             from db.queries import reload_user
             user = await reload_user(db, user_id)
-            synced = await sync_user_oura(db, user, days=7)
+            # First connect: backfill a MONTH so the coach has real recovery,
+            # sleep, and workout history immediately (Chaya connected and only
+            # a 2-day window ever synced, leaving her history empty until a
+            # manual wide resync). The routine scheduler keeps the 2-day
+            # rolling window after this.
+            synced = await sync_user_oura(db, user, days=30)
             logger.info(f"Background Oura sync: user {user_id} → {synced} days")
     except Exception as e:
         logger.error(f"Background Oura sync failed for user {user_id}: {e}")

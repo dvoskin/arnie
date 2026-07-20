@@ -233,6 +233,33 @@ def _day_of(rec: dict) -> Optional[date]:
         return None
 
 
+import re as _re_oura
+
+# Oura's `activity` enum arrives in mixed shapes — camelCase ("strengthTraining"),
+# snake_case ("jump_rope"), or already spaced. `.title()` alone COLLAPSES the
+# camelCase hump ("strengthTraining" → "Strengthtraining"), which is how Chaya's
+# entries read "Strengthtraining" / "Jumpingrope". Split on BOTH boundaries first.
+_ACTIVITY_OVERRIDES = {
+    "hiit": "HIIT", "spinning": "Spin", "elliptical": "Elliptical",
+    "crosstraining": "Cross-Training", "strengthtraining": "Strength Training",
+    # already-collapsed legacy values (pre-fix rows) so a re-title repairs them
+    "jumpingrope": "Jumping Rope", "jumprope": "Jump Rope",
+}
+
+
+def _prettify_activity(raw: str) -> str:
+    raw = (raw or "Workout").strip()
+    key = raw.lower().replace("_", "").replace(" ", "").replace("-", "")
+    if key in _ACTIVITY_OVERRIDES:
+        return _ACTIVITY_OVERRIDES[key]
+    # camelCase → spaced ("jumpingRope" → "jumping Rope"), then normalize
+    # separators and Title-Case each word.
+    spaced = _re_oura.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", raw)
+    spaced = spaced.replace("_", " ").replace("-", " ")
+    words = [w for w in spaced.split() if w]
+    return " ".join(w[:1].upper() + w[1:].lower() for w in words) or "Workout"
+
+
 async def _persist_oura_workouts(db, user: User, workouts: list) -> tuple[int, int]:
     """Auto-create ExerciseEntry rows from synced Oura workouts.
 
@@ -270,8 +297,7 @@ async def _persist_oura_workouts(db, user: User, workouts: list) -> tuple[int, i
                         duration_min = round((e - s).total_seconds() / 60)
             except Exception:
                 pass
-            activity = (w.get("activity") or w.get("label") or "Workout")
-            activity = activity.replace("_", " ").title()
+            activity = _prettify_activity(w.get("activity") or w.get("label") or "Workout")
             cals = w.get("calories")
             notes_bits = []
             if w.get("intensity"):
@@ -446,7 +472,10 @@ async def sync_all_oura_users() -> int:
         users = await get_users_with_oura(db)
         for user in users:
             try:
-                synced = await sync_user_oura(db, user, days=2)
+                # 4-day rolling window (was 2): a missed scheduler run or a
+                # late-arriving readiness score can't silently drop a day —
+                # the sync is idempotent (upsert by date), so the overlap is free.
+                synced = await sync_user_oura(db, user, days=4)
                 total += synced
                 logger.info(f"Oura sync: user {user.id} → {synced} days")
             except Exception as e:

@@ -187,3 +187,18 @@ async def test_endpoint_error_does_not_wipe_fields(make_user, db, monkeypatch):
     row = next(s for s in snaps if s.date.isoformat() == today)
     assert row.recovery_score == 82
     assert row.sleep_hours is None
+
+
+def test_prettify_activity_camelcase_and_legacy():
+    """The Strengthtraining/Jumpingrope bug: Oura sends camelCase, .title()
+    collapsed the hump. Prettifier splits camelCase + underscore, keeps the
+    override map, and repairs already-collapsed legacy values."""
+    from api.oura import _prettify_activity
+    assert _prettify_activity("strengthTraining") == "Strength Training"
+    assert _prettify_activity("jumpingRope") == "Jumping Rope"
+    assert _prettify_activity("jump_rope") == "Jump Rope"
+    assert _prettify_activity("golf") == "Golf"
+    assert _prettify_activity("Jumpingrope") == "Jumping Rope"   # legacy repair
+    assert _prettify_activity("strengthtraining") == "Strength Training"
+    assert _prettify_activity("hiit") == "HIIT"
+    assert _prettify_activity("") == "Workout"
