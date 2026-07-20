@@ -358,6 +358,23 @@ async def run_turn(
     _prior_assistant = next((m.get("content", "") for m in reversed(messages)
                              if m.get("role") == "assistant"), "")
 
+    # GATE-EFFECTIVE MESSAGE — computed ONCE, top-level, so it protects EVERY
+    # intent-sensitive path (dedup gate, carryover guard, AND the phantom-claim
+    # rescue). A clarify-ANSWER ("regular size minimal oil") carries the food
+    # named in the prior turn's message; without this the phantom detector saw
+    # only the answer, found no food word, and let a "wrap logged" claim ship
+    # unrescued (Danny's wrap saga #7125-7127, 2026-07-20).
+    from skills.logging_intent import effective_intent_message as _eff_intent
+    _prev_user_text = next(
+        (m.get("content") for m in reversed(messages[:-1])
+         if m.get("role") == "user" and isinstance(m.get("content"), str)), "")
+    _prev_assistant_text = next(
+        (m.get("content") for m in reversed(messages[:-1])
+         if m.get("role") == "assistant" and isinstance(m.get("content"), str)), "")
+    _gate_user_message = _eff_intent(
+        _user_text if isinstance(_user_text, str) else "",
+        _prev_user_text, _prev_assistant_text)
+
     # Sarcasm-on-error detection: a one-word "Great" / "Perfect" right after a
     # mechanics-leak / generic-net / bare-log-ack reply is almost always
     # frustration. Inject a recover cue into the system prompt so the model
@@ -581,22 +598,7 @@ async def run_turn(
         # The gates judge the CURRENT message — but a clarify-ANSWER carries
         # the intent of the exchange it answers (item names live in the prior
         # user message; the answer says "6 oz fish and yes…"). Combine for
-        # the gate only — both combine conditions live in logging_intent.
-        from skills.logging_intent import effective_intent_message
-        _prev_user_text = next(
-            (m.get("content") for m in reversed(messages[:-1])
-             if m.get("role") == "user" and isinstance(m.get("content"), str)),
-            "",
-        )
-        _prev_assistant_text = next(
-            (m.get("content") for m in reversed(messages[:-1])
-             if m.get("role") == "assistant" and isinstance(m.get("content"), str)),
-            "",
-        )
-        _gate_user_message = effective_intent_message(
-            _user_text if isinstance(_user_text, str) else "",
-            _prev_user_text, _prev_assistant_text)
-
+        # the gate only — _gate_user_message is computed once at the top.
         tool_results = await execute_tool_calls(
             tool_calls, user, _log_for_tools, db, _source,
             # Turn text → the dedup turn-intent gate (skills/logging_intent.py).
@@ -1060,8 +1062,11 @@ async def run_turn(
     # Phantom log-claim: the user reported a set but the model claimed it was
     # recorded ("noted" / "on the board") without firing a tool — the dropped-set
     # bug. Repair with tools=True so the model actually logs it on the retry.
+    # Uses the GATE-EFFECTIVE message (prior + clarify-answer combined) so a
+    # phantom claim on an answer turn ("regular size minimal oil" → "wrap
+    # logged", no tool) is caught — the food name lives in the prior message.
     _phantom = (not tool_calls) and _looks_like_phantom_log_claim(
-        _user_text if isinstance(_user_text, str) else "", response_text, bool(tool_calls)
+        _gate_user_message, response_text, bool(tool_calls)
     )
     # TOTAL-CLAIM PHANTOM (the medjool-dates incident, 2026-07-20 03:29Z, on
     # Opus): no claim-word, no tool — the reply simply STATED macros and a
@@ -1078,8 +1083,8 @@ async def run_turn(
             )
             _claim = _claimed_total(response_text)
             _db_total = round(getattr(today_log, "total_calories", 0) or 0)
-            if (_claim is not None and isinstance(_user_text, str)
-                    and _food_report_re.search(_user_text)
+            if (_claim is not None
+                    and _food_report_re.search(_gate_user_message or "")
                     and _claim > _db_total + _day_tol):
                 logger.warning(
                     f"event=total_claim_phantom user={getattr(user, 'id', None)} "
@@ -1112,12 +1117,14 @@ async def run_turn(
                         "[SYSTEM HEALTH CHECK — not the user] Your reply above "
                         "claims something was logged, but NO logging tool was "
                         "called: NOTHING was saved. Call the right log tool NOW "
-                        "for exactly what the user reported this turn (log_food "
-                        "/ log_exercise / log_body_weight / log_water — every "
-                        "item, exact quantities). Then confirm in one short "
-                        "message with the real numbers. Do NOT reply without "
-                        "the tool call. Do NOT re-log anything from earlier "
-                        "turns."},
+                        "for exactly the food/exercise this exchange is about — "
+                        "INCLUDING the item the user named just before answering "
+                        "your clarifying question (e.g. they said 'chicken wrap', "
+                        "you asked size, they said 'regular' → log the wrap). "
+                        "Every item, exact quantities. Then confirm in one short "
+                        "message with the real numbers. Do NOT reply without the "
+                        "tool call. Do NOT re-log items already on today's board "
+                        "from a SEPARATE earlier meal."},
                 ],
                 system, tools=True, max_tokens=700,
             )
@@ -1135,7 +1142,9 @@ async def run_turn(
                         db, user.id, user.timezone or "UTC")
                 _rescue_results = await execute_tool_calls(
                     _rescue_calls, user, today_log, db, _source,
-                    user_message=_user_text if isinstance(_user_text, str) else "",
+                    # Combined prior+answer message so the rescue's dedup gate
+                    # doesn't block the clarify-answer item it's re-logging.
+                    user_message=_gate_user_message,
                 )
                 _wrote = any(
                     isinstance(v, str) and v.lstrip().startswith("Logged")
