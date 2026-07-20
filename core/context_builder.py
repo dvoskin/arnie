@@ -983,6 +983,15 @@ async def build_context(user: User, today_log: Optional[DailyLog], db,
                 _ov_label = ("Rest day" if _ov["day"] == "__rest__"
                              else _ov["day"])
                 training_program_str += f"\nToday (user-set): {_ov_label}"
+            try:
+                from core.program_rotation import infer_next_day, recent_entries_by_day
+                _next_day = infer_next_day(
+                    _prog, await recent_entries_by_day(db, user.id))
+                if _next_day:
+                    training_program_str += (
+                        f"\nNext up (rotation-derived from logged sessions): {_next_day}")
+            except Exception:
+                pass
     except Exception:
         pass
 

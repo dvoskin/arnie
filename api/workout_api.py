@@ -126,6 +126,17 @@ async def get_workout_program(identity: str = Depends(current_identity)):
     async with AsyncSessionLocal() as db:
         user = await resolve_user(db, identity)
         program = await unified_active_program(db, user.id)
+        if program:
+            # Rotation-derived "today" — the scalable default under any
+            # user-set override: last completed day (inferred from logged
+            # exercises) advances the rotation. Served here AND in the model's
+            # [TRAINING PROGRAM] context so the card and chat can't disagree.
+            try:
+                from core.program_rotation import infer_next_day, recent_entries_by_day
+                program["today_day"] = infer_next_day(
+                    program, await recent_entries_by_day(db, user.id))
+            except Exception as e:
+                logger.warning(f"today_day inference failed (user {user.id}): {e}")
     return {"program": program}
 
 
