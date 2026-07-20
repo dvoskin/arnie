@@ -80,7 +80,7 @@ def _coaching_stub(food_name="oatmeal", cal=200, p=10, cal_t=2000, pro_t=180):
 # Phase 1 — turn-scoped logging
 @pytest.mark.parametrize("rule_marker", [
     "LOGGING SCOPE",
-    "SOLE source of foods to log",
+    "source of foods to log",
     "BRAND VARIANT GUARD",
     "REMOVED-VIA-DASHBOARD AWARENESS",
     "do NOT restore",
@@ -1644,8 +1644,9 @@ def test_prompt_bans_inventing_items():
     name. (Diet consolidated the verbose bullet into LOGGING FIDELITY + the
     non-negotiable 'no invented side'; the ban must still be explicit.)"""
     s = SYSTEM_PROMPT.lower()
-    assert "not an assumed garlic bread" in s          # LOGGING FIDELITY bullet
-    assert "no invented side" in s                      # NON-NEGOTIABLE #3
+    assert "not an assumed garlic bread" in s          # LOGGING FIDELITY bullet — the
+    # explicit "only items the user named" ban survives the 2026-07-20 rollback that
+    # removed the NON_NEGOTIABLES "no invented side" phrasing.
 
 
 # ════════════════════════════════════════════════════════════════════════════

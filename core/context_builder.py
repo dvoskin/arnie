@@ -1074,15 +1074,11 @@ async def build_context(user: User, today_log: Optional[DailyLog], db,
     # intentions, watch-items, promises). Bounded + ranked in thread_queries so
     # context stays cheap and the model isn't buried in stale loops. Fully
     # guarded — a memory read must never break a coaching turn.
+    # DISABLED 2026-07-20 — the per-turn OPEN THREADS injection (and its "weave
+    # these in every turn" prompt pressure) diluted food-logging focus. The memory
+    # graph tables/tools stay dormant; nothing is deleted. Re-enable by restoring
+    # the get_open_threads read below alongside MEMORY_RULES/RELATIONSHIP_MEMORY.
     open_threads_str = ""
-    try:
-        from db.thread_queries import get_open_threads
-        _threads = await get_open_threads(db, user.id, limit=6)
-        if _threads:
-            open_threads_str = _format_open_threads(
-                _threads, getattr(user, "timezone", None) or "UTC")
-    except Exception as e:
-        logger.debug(f"open-threads context read failed: {e}")
 
     # [COACH SCREEN] — the standing directive on the user's Coach page, so the
     # model can judge when a message INVALIDATES it (refresh_coach_brief).

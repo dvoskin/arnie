@@ -178,6 +178,10 @@ async def test_update_thread_handler_resolves(db, make_user):
 # ── Prompt discipline ─────────────────────────────────────────────────────────
 
 def test_prompt_ships_memory_discipline():
+    import pytest
+    pytest.skip("OPEN THREADS / memory-graph discipline rolled out of the "
+                "conversational prompt 2026-07-20 to restore food-logging focus; "
+                "tables/tools stay dormant. Un-skip if the feature is re-enabled.")
     from core.prompts import build_arnie_system
     s = " ".join(build_arnie_system(platform="ios").split())
     assert "OPEN THREADS" in s

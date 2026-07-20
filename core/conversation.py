@@ -649,27 +649,14 @@ async def run_turn(
         except Exception:
             logger.warning("scribe shadow failed (observe-only)", exc_info=True)
 
-        # ── EARLY CARD EMIT ──────────────────────────────────────────────
-        # A log_food/log_exercise row is written by now, and its card is fully
-        # buildable from the tool input (macros + _entry_id + receipt context
-        # the executor stashed). Stream it to the client IMMEDIATELY — before
-        # the follow-up voicing pass runs — so the card lands seconds sooner
-        # instead of waiting for the whole turn to finish (Danny: "the food
-        # card lands late"). The done-frame skips these via streamed_card_ids.
+        # ── EARLY CARD EMIT — DISABLED 2026-07-20 ─────────────────────────
+        # Streaming the card the instant the row was written (added 3a656f1,
+        # 2026-07-20) made it arrive BEFORE the user's own message / the reply
+        # on the client — the "card on top of my message" regression. Ordering
+        # matters more than the ~1-2s the card lands sooner, and this is how it
+        # behaved for months. Cards now flow through the done-frame in order
+        # (streamed_card_ids stays empty, so the done-frame emits them all).
         _early_card_ids: list = []
-        if on_card:
-            try:
-                _early = []
-                for tc in tool_calls:
-                    c = _logged_entry_card(tc.get("name"), tc.get("input") or {})
-                    if c is not None:
-                        _early.append(c)
-                        if c.get("entry_id") is not None:
-                            _early_card_ids.append(c["entry_id"])
-                if _early:
-                    await on_card(_early)
-            except Exception as e:
-                logger.warning(f"early card emit failed for {_tag}: {e}")
 
         # Deliver image results via the platform callback; replace dict with string
         for tname, tresult in list(tool_results.items()):

@@ -680,13 +680,6 @@ logging:
     just started. Day-override tools already stamp with this grace — mirror it
     in your language, and never carry a pre-dawn "today" statement forward to
     the next real day as if it were about that day.
-  • DEFINITE-REFERENCE (the 00:38 turkey incident): when the user names a food that is
-    ALREADY in [TODAY] from the last ~hour using definite/bare phrasing — "the rice and
-    turkey", "that shake", "my dinner" — especially as an ANSWER to your own "what did you
-    eat?" question, they are DESCRIBING what's already logged, not reporting a new plate.
-    Do NOT log. Confirm from the real entries: "that's the turkey + rice from 12:32 —
-    already on the board, you're at 1,165." Only log when they signal a NEW portion
-    ("another", "a second", "one more", "again").
   • BLOCKED-WRITE HONESTY: when a log tool's result says the write was skipped as a
     duplicate, the day's totals DID NOT CHANGE. Your reply MUST use the totals from
     [TODAY] / the tool result's readback — never a running total you computed as if the
@@ -723,11 +716,6 @@ logging:
   or any conversational chaining), emit one log_food() call PER item, ALL in this single
   response. 7 items = 7 log_food calls right now. NEVER log just the first and say you'll
   "get the rest" — there is no later turn, do it all now.
-  THE BATCH = EXACTLY WHAT THIS MESSAGE NAMES. "also 150g turkey and rice" adds turkey
-  and rice — NOTHING else. Never pull an item from an EARLIER turn into the batch (the
-  third-Barebells incident: the bar from the previous turn rode along and the day gained
-  a phantom 200 cal). Items from earlier turns are already on the board; your reply and
-  batch totals cover only what this message added.
   MEAL SLOTS. A slot the user NAMES always wins over the clock: "late lunch" at 4pm is
   lunch, "midnight snack" is a snack. Pass it as meal_type on every log_food in the
   batch. RETRO-LABELS re-slot, never re-log: "that turkey and rice was my lunch" means
@@ -915,8 +903,8 @@ late, batch a whole day at night, and remember items afterward:
     at the correction hour.
   • Yesterday's food reported today → `date: "yesterday"`; never today's log.
 
-LOGGING SCOPE — this turn's message is the SOLE source of foods to log (see
-NON-NEGOTIABLE: the batch = this message). Two corollaries: never bundle in an
+LOGGING SCOPE — this turn's message is the source of foods to log. Two
+corollaries: never bundle in an
 earlier-turn food you remember, and if a food you logged before is gone from
 [TODAY], the user deleted it on purpose — do NOT restore or mention it (only
 acknowledge naturally if they ask).
@@ -1381,25 +1369,10 @@ and give them the number. don't ask them to clarify, just answer.\
 FOOD_ACCURACY = """\
 FOOD ACCURACY — think like a dietitian before you log. accuracy is the whole product.
 
-NEVER INVENT VALUES — the prime rule, above everything below. A number you
-don't actually know (a label's macros, a restaurant portion, a weight the user
-never stated) must NEVER be produced from the food's name or vibes — "10g
-protein" for a puffed-rice snack because it sounded protein-y is the exact
-failure. The ladder, in order:
-  1. CLARIFY — if the user can trivially resolve it, ask ONE tight question.
-  2. SEARCH — if they can't or don't answer, web_search / search_food_database
-     for the real figure before logging.
-  3. ESTIMATE — only when both fail: conservative, estimated=true, biased per
-     the rules below. An honest range beats a confident invention, always.
-This applies to every number you utter — macros, weights, distances, history —
-not just food.
-BRANDED PRODUCTS FLIP THE LADDER: a nameable packaged product ("Barebells
-Cookies & Caramel") has a real label the internet knows — SEARCH it first
-('<brand> <flavor> nutrition facts'), then clarify only what search can't tell
-you (how many, whole thing or half). Never quiz the user about numbers a label
-answers, and NEVER carry macros or the name across flavors — a new flavor is a
-DIFFERENT product with its own label. Log from the found label with its exact
-product name; that's what super-accurate logging means for packaged food.
+DON'T FABRICATE A LABEL. Never invent a branded product's macros from its name.
+For a nameable packaged product, search it if you're unsure — but for everyday
+food, LOG IT with a confident estimate (see below); don't interrogate the user
+first. Estimating is the job; asking is the exception.
 
 UNDER-COUNTING IS THE CARDINAL SIN. your instinct is to lowball — textbook serving
 sizes, forgetting the oil, assuming the smaller portion. that silently wrecks the
@@ -1502,8 +1475,8 @@ This is what makes "what did I eat today?" reliably accurate hours later.
     baklava" → "30g." The user's phrasing lives in your REPLY ("logged those
     three bites") and the food name — the quantity field stays a clean,
     editable standard measure.
-  • EVERY ITEM GETS ITS OWN log_food, and only items the user named (see
-    NON-NEGOTIABLE: the batch = this message, all of it): "1 slice plain +
+  • EVERY ITEM GETS ITS OWN log_food, and only items the user named — log every
+    food the message names and nothing it doesn't: "1 slice plain +
     1 slice pepperoni" = TWO calls (different macros); "had pizza" logs pizza,
     not an assumed garlic bread.
 
@@ -3244,6 +3217,12 @@ chat app (think ChatGPT mobile), a real conversation, NOT a dashboard or a repor
 - For a genuinely substantive answer (a real plan, a multi-item breakdown, a true
   comparison) send it as ONE clean message, not a spray of ||| fragments. Reserve |||
   for genuinely separate quick beats (a log confirm, THEN a one-line nudge).
+- A LOG CONFIRMATION IS ONE MESSAGE — TWO BUBBLES MAX. The card already shows the item,
+  its macros, and the day total, so your prose does NOT restate them line by line. Say
+  the read + the next move in ONE short paragraph; at most a SECOND bubble for a single
+  nudge. NEVER split "logged" / the calorie total / the protein number / the next step
+  into four or six separate texts — that spray is the exact over-messaging to avoid. On
+  iOS, one log = one (maybe two) bubbles, period.
 - Between paragraphs leave a FULLY BLANK line (hit return twice) so the app renders
   real spacing. A single line break just stacks lines tight — avoid it. But do NOT
   over-break: two or three breathing paragraphs beat a dozen choppy one-line fragments.
@@ -3387,8 +3366,9 @@ def build_arnie_system(platform: str = "telegram") -> str:
         EXERCISE_LOGGING,
         DASHBOARD_RECAP,
         CONVERSATION_HANDLING,
-        MEMORY_RULES,
-        RELATIONSHIP_MEMORY,
+        # MEMORY_RULES / RELATIONSHIP_MEMORY (open-loops memory graph) removed from
+        # the conversational prompt 2026-07-20 — the per-turn "weave these threads in"
+        # pressure was diluting food-logging focus. Tables/tools stay dormant.
         COACHING_STATE,
         RESILIENCE,
         EMPTY_STATE,
@@ -3439,8 +3419,11 @@ def build_arnie_system(platform: str = "telegram") -> str:
 
     # personality anchor — last thing read before generating
     sections.append(PERSONALITY_ANCHOR)
-    # The ten product-breaking rules get the recency slot — the model reads
-    # them last (before the iOS formatting word), so they bind hardest.
+    # NON_NEGOTIABLES kept in the recency slot — verification (2026-07-20) proved its
+    # #0 (say-logged→called-tool + when-in-doubt-LOG), #3 (log EVERY item, count the
+    # foods) and #10 (under-counting lies) are load-bearing for completeness + the
+    # anti-phantom guard. The "scared to log" timidity lived elsewhere (FOOD_ACCURACY
+    # clarify-ladder, memory-graph, DEFINITE-REFERENCE), which are the parts removed.
     sections.append(NON_NEGOTIABLES)
     # iOS gets the final formatting word AFTER the anchor, so recency favours rich
     # structure (one clean message, blank-line paragraphs, bold) over the anchor's

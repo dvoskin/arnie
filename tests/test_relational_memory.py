@@ -66,6 +66,10 @@ async def test_store_relational_attribute_is_core(db, make_user):
 # ── Prompt ships the capture + weave + boundary-safety discipline ─────────────
 
 def test_prompt_ships_relationship_memory():
+    import pytest
+    pytest.skip("RELATIONSHIP_MEMORY (open-loops memory graph) rolled out of the "
+                "conversational prompt 2026-07-20 to restore food-logging focus; "
+                "tables/tools stay dormant. Un-skip if the feature is re-enabled.")
     from core.prompts import build_arnie_system
     s = " ".join(build_arnie_system(platform="ios").split())
     assert "KNOWING THEM" in s
