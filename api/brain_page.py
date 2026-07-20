@@ -2951,7 +2951,13 @@ _PAGE_HEAD = r"""<!DOCTYPE html>
 _PAGE_LIBS = r"""
 <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<!-- PINNED to Babel 7. The unversioned URL started serving Babel 8 (8.0.4),
+     whose preset-react defaults to the AUTOMATIC JSX runtime — the compiled
+     output begins with `import {jsx} from "react/jsx-runtime"`, which throws
+     "Cannot use import statement outside a module" in a classic script and
+     mounts NOTHING (the blank Brain tab, 2026-07-21). Babel 7 keeps the
+     classic runtime (React.createElement) that this page's UMD React needs. -->
+<script src="https://unpkg.com/@babel/standalone@7/babel.min.js"></script>
 """
 
 _PAGE_TAIL = r"""
