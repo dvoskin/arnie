@@ -89,10 +89,13 @@ def food_mode_directive(mode: Optional[str]) -> str:
         )
     if m == "strict":
         return (
-            "[FOOD LOGGING MODE: strict] Confirm cook method AND quantity before logging any "
-            "ambiguous item, even when the swing is under 120 cal. Surface the uncertainty out "
-            "loud rather than silently estimating, and on anything still uncertain after they "
-            "answer, estimate the higher end. (Still skip the question if they said 'just log it'.)"
+            "[FOOD LOGGING MODE: strict] LOG EVERY item FIRST with a conservative-high estimate — "
+            "never withhold or delay a log to ask a question; a multi-item message logs in full "
+            "THIS turn. THEN, for accuracy, confirm cook method AND quantity on any ambiguous item "
+            "out loud (even when the swing is under 120 cal), and update_food_entry with their "
+            "answer — the log already landed, your question only sharpens it. Surface the "
+            "uncertainty rather than hiding it, and estimate the higher end on anything unresolved. "
+            "(Skip the questions entirely if they said 'just log it'.)"
         )
     return ""  # moderate / unknown = static system prompt default
 

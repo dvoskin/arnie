@@ -59,6 +59,25 @@ SCENARIOS = {
         dict(say="6 oz salmon, quinoa, roasted brussels sprouts, and a slice of bread",
              min=4, need=["salmon", "quinoa", "brussel", "bread"], must_log=True),
     ],
+    "big_meal_vague_portions": [  # Danny 19:59 — the REAL failure: a 5-item meal where
+        # MULTIPLE portions are vague (medium fries, unsized latte, "four bites"). Model
+        # must log ALL 5 now with estimates, NOT hold + ask "fries size? latte oz?" first.
+        dict(say="Just had a big meal :( I had a turkey club on toasted sourdough with "
+                 "about 5 oz turkey, 3 slices of bacon, 2 slices cheddar, lettuce, tomato "
+                 "and mayo. I also had a medium order of fries, some coleslaw, an iced "
+                 "whole-milk latte, and about four bites of cheesecake",
+             min=5, need=["turkey", "fries", "coleslaw", "latte", "cheesecake"],
+             must_log=True),
+    ],
+    "big_meal_vague_portions:strict": [  # Danny's EXACT prod condition: strict mode +
+        # the vague-portion big meal. Must log all 5 FIRST (strict asks to refine AFTER).
+        dict(say="Just had a big meal :( I had a turkey club on toasted sourdough with "
+                 "about 5 oz turkey, 3 slices of bacon, 2 slices cheddar, lettuce, tomato "
+                 "and mayo. I also had a medium order of fries, some coleslaw, an iced "
+                 "whole-milk latte, and about four bites of cheesecake",
+             min=5, need=["turkey", "fries", "coleslaw", "latte", "cheesecake"],
+             must_log=True),
+    ],
     "list_with_ambiguity": [  # Danny 19:42 — a 7-item list where one item's prep is
         # unstated (broccoli "cooked with olive oil", chicken prep). Must log ALL now
         # with estimates, NEVER hold the list for a "grilled or oil?" clarify.
@@ -163,6 +182,15 @@ async def run_scenario(H, model, name, turns, fails):
     import simulate_logging_discipline as S
 
     uid = await H.new_user()
+    # Scenarios whose name ends in ":strict" run under food_logging_mode='strict'
+    # (Danny's real setting — the reason a default-user harness missed the failure).
+    if name.endswith(":strict"):
+        from sqlalchemy import update as _upd
+        from db.models import UserPreferences as _UP
+        async with await H.session() as db:
+            await db.execute(_upd(_UP).where(_UP.user_id == uid)
+                             .values(food_logging_mode="strict"))
+            await db.commit()
     verdicts = []
     last_log_id = None
     transcript = [f"### scenario={name} model={model}"]
