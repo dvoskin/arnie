@@ -5,7 +5,7 @@ a human-readable result string per tool (used in multi-turn follow-ups).
 import json
 import logging
 from datetime import timedelta
-from typing import Dict, List, Any, Optionaly
+from typing import Dict, List, Any, Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
