@@ -147,6 +147,7 @@ async def run_chat_turn(
     on_image: Optional[Callable[[str, str], Awaitable[None]]] = None,
     on_interim: Optional[Callable[[str], Awaitable[None]]] = None,
     on_tool_start: Optional[Callable[[list], Awaitable[None]]] = None,
+    on_card: Optional[Callable[[list], Awaitable[None]]] = None,
     schedule_background: bool = True,
     idempotency_key: Optional[str] = None,
 ) -> TurnResult:
@@ -355,7 +356,7 @@ async def run_chat_turn(
         in_onboarding=in_onboarding, was_onboarding=was_onboarding,
         today_log=today_log, source_type=_source,
         on_image=on_image, on_interim=on_interim,
-        on_text_bubble=on_text_bubble, on_tool_start=on_tool_start,
+        on_text_bubble=on_text_bubble, on_tool_start=on_tool_start, on_card=on_card,
     )
 
     # ── Persist the conversation ──────────────────────────────────────────────

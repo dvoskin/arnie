@@ -124,6 +124,16 @@ def _split_system_for_cache(system: str):
 
 # ── Public API ────────────────────────────────────────────────────────────────
 
+def _usage_dict(u) -> dict:
+    """Flatten an Anthropic usage object to a plain dict incl. cache token
+    counts — so the pipeline/probe can see cache HIT vs reprocess."""
+    if u is None:
+        return {}
+    keys = ("input_tokens", "output_tokens",
+            "cache_creation_input_tokens", "cache_read_input_tokens")
+    return {k: getattr(u, k, None) for k in keys if getattr(u, k, None) is not None}
+
+
 async def chat(
     messages: List[Dict[str, Any]],
     system: str,
@@ -391,13 +401,13 @@ async def _anthropic_chat(messages, system, use_tools, max_tokens, model=None,
     static_prefix, dynamic_suffix = _split_system_for_cache(system)
     if static_prefix is not None:
         system_block = [
-            {"type": "text", "text": static_prefix, "cache_control": {"type": "ephemeral"}},
+            {"type": "text", "text": static_prefix, "cache_control": {"type": "ephemeral", "ttl": "1h"}},
             {"type": "text", "text": dynamic_suffix},
         ]
     else:
         # No marker (e.g. onboarding / reflect / repair systems) → cache the whole block.
         system_block = [
-            {"type": "text", "text": system, "cache_control": {"type": "ephemeral"}},
+            {"type": "text", "text": system, "cache_control": {"type": "ephemeral", "ttl": "1h"}},
         ]
 
     kwargs: Dict[str, Any] = dict(
@@ -442,6 +452,7 @@ async def _anthropic_chat(messages, system, use_tools, max_tokens, model=None,
             "tool_calls": tool_calls,
             "raw_content": final.content,
             "stop_reason": final.stop_reason,
+            "usage": _usage_dict(getattr(final, "usage", None)),
         }
 
     # Non-streaming path — existing buffered behavior.
@@ -459,6 +470,7 @@ async def _anthropic_chat(messages, system, use_tools, max_tokens, model=None,
         "tool_calls": tool_calls,
         "raw_content": resp.content,
         "stop_reason": resp.stop_reason,
+        "usage": _usage_dict(getattr(resp, "usage", None)),
     }
 
 

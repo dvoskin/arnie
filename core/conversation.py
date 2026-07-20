@@ -196,6 +196,9 @@ class TurnResult:
     health_flags: list = dataclasses.field(default_factory=list)  # turn-health telemetry
     skills_fired: Optional[str] = None  # comma-sep tool names this turn (+":error"); null on no-tool turns
     streamed_bubble_count: int = 0  # bubbles already sent via on_text_delta (handler sends the rest)
+    # entry_ids of log cards ALREADY streamed early (right after tool execution,
+    # before the follow-up voicing pass) so the done-frame doesn't re-send them.
+    streamed_card_ids: list = dataclasses.field(default_factory=list)
     needs_location_share: bool = False  # find_nearby_places ran but had no location → prompt a share
     # ConversationLog row id for this turn (set post-persist in chat_service).
     # Surfaced on the wire so native clients can dedup history reloads by a
@@ -335,6 +338,7 @@ async def run_turn(
     completion_facts: Optional[dict] = None,  # ephemeral TDEE/goal for the just-completed reflection
     on_text_bubble: Optional[Callable] = None,  # async fn(bubble) → None — stream bubbles as they land
     on_tool_start: Optional[Callable] = None,   # async fn(tool_names: list[str]) → None — fired once, just before tools run
+    on_card: Optional[Callable] = None,         # async fn(cards: list[dict]) → None — log cards, streamed the instant they're written (before the follow-up pass)
 ) -> TurnResult:
     """
     Core pipeline: LLM call → tool execution → coach-unmute / follow-up /
@@ -373,6 +377,7 @@ async def run_turn(
     # Streaming aggregator — one per turn, accumulates bubble count across the
     # first pass + follow-up + any self-heal retry. None when not streaming.
     _streamed_total = 0
+    _early_card_ids: list = []   # log cards streamed early (before the follow-up)
     _streamer = _BubbleStreamer(on_text_bubble) if on_text_bubble else None
     _stream_handler = _streamer.on_delta if _streamer else None
     # Only pass stream_handler to LLM calls when active — keeps the chat() and
@@ -641,6 +646,28 @@ async def run_turn(
                     )
         except Exception:
             logger.warning("scribe shadow failed (observe-only)", exc_info=True)
+
+        # ── EARLY CARD EMIT ──────────────────────────────────────────────
+        # A log_food/log_exercise row is written by now, and its card is fully
+        # buildable from the tool input (macros + _entry_id + receipt context
+        # the executor stashed). Stream it to the client IMMEDIATELY — before
+        # the follow-up voicing pass runs — so the card lands seconds sooner
+        # instead of waiting for the whole turn to finish (Danny: "the food
+        # card lands late"). The done-frame skips these via streamed_card_ids.
+        _early_card_ids: list = []
+        if on_card:
+            try:
+                _early = []
+                for tc in tool_calls:
+                    c = _logged_entry_card(tc.get("name"), tc.get("input") or {})
+                    if c is not None:
+                        _early.append(c)
+                        if c.get("entry_id") is not None:
+                            _early_card_ids.append(c["entry_id"])
+                if _early:
+                    await on_card(_early)
+            except Exception as e:
+                logger.warning(f"early card emit failed for {_tag}: {e}")
 
         # Deliver image results via the platform callback; replace dict with string
         for tname, tresult in list(tool_results.items()):
@@ -1570,5 +1597,6 @@ async def run_turn(
         health_flags=health_flags,
         skills_fired=_skills_fired,
         streamed_bubble_count=_streamed_total,
+        streamed_card_ids=_early_card_ids,
         needs_location_share=_needs_location_share,
     )

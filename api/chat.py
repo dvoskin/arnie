@@ -519,10 +519,19 @@ async def _stream_turn(ws: WebSocket, identity: str, message: str,
                 # "tool" frames are unaffected.
                 await ws.send_json({"type": "tool", "tools": tools})
 
+            async def on_card(cards: list) -> None:
+                # The log card, streamed the instant the row is written — BEFORE
+                # the follow-up voicing pass — so it lands seconds sooner instead
+                # of riding the final done-frame. Clients that ignore "card"
+                # frames are unaffected (the done-frame still carries the cards
+                # for them). The done-frame dedups these via streamed_card_ids.
+                await ws.send_json({"type": "card", "cards": cards})
+
             try:
                 turn = await run_chat_turn(
                     db, user, message, platform=PLATFORM, source_type=PLATFORM,
                     on_text_bubble=on_bubble, on_tool_start=on_tool_start,
+                    on_card=on_card,
                     idempotency_key=(f"ios:{client_msg_id}" if client_msg_id else None),
                 )
             except Exception as e:
@@ -534,6 +543,13 @@ async def _stream_turn(ws: WebSocket, identity: str, message: str,
     # after the stream), plus reaction/effect/buttons/link/meta.
     done = serialize_response(turn.response)
     done["bubbles"] = turn.response.bubbles[turn.streamed_bubble_count:]
+    # Cards already streamed early (log cards, sent via the "card" frame right
+    # after the write) are dropped here so the client doesn't render them twice.
+    _early_ids = set(getattr(turn, "streamed_card_ids", None) or [])
+    if _early_ids:
+        done["cards"] = [c for c in done.get("cards", [])
+                         if (c.get("payload") or {}).get("entry_id") not in _early_ids
+                         and c.get("entry_id") not in _early_ids]
     done["tools"] = _turn_tools(turn)
     done["type"] = "done"
     # Same stable turn identity as the REST path — see payload["log_id"] there.
