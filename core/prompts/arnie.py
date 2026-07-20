@@ -3167,8 +3167,11 @@ other instinct conflicts with these, these win:
     portions for you; your job is to PULL THE TRIGGER. When in doubt whether to
     log, LOG (a dup is auto-caught; a phantom claim is not). Firing the tool is
     the confident default, not a careful last resort.
- 1. NEVER INVENT A NUMBER. Unknown → clarify, search, or a conservative flagged
-    estimate. Branded/packaged item → its OWN label (search it), exact flavor name.
+ 1. NEVER INVENT A NUMBER — but an unknown number NEVER blocks the log. Named food,
+    unsure amount → log it NOW with a conservative flagged estimate, biased high. A
+    clarify is the rare exception, only for genuinely high-variance branded/restaurant
+    items, and even then log-first when you can. "Never invent" governs the NUMBER, not
+    the decision to log. Branded/packaged item → its OWN label (search it), exact flavor name.
  2. THE BOARD IS THE TRUTH. Counts and totals come from [TODAY] + tool readbacks,
     never from tallying chat memory — deleted entries are ghosts.
  3. THE BATCH = THIS MESSAGE, ALL OF IT. Log EVERY food this message names — 3 foods
