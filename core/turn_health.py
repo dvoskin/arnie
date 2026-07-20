@@ -88,6 +88,62 @@ def promises_more_logging(text: str) -> bool:
     return bool(_PROMISE_MORE_RE.search(text or ""))
 
 
+# Silent under-log: the message names a long list of foods but only 1-2 log_food
+# fired and the reply looked complete (no "let me get the rest" to catch). The
+# burrito-bowl incident (2026-07-20): "chicken burrito bowl with 5 oz chicken, ¾ cup
+# rice, ½ cup black beans, fajita veggies, corn salsa, pico, cheese, 2 tbsp sour
+# cream, chips, half a lemonade" → ONE log_food, complete-looking confirm. The
+# promise-based detector can't see it. This estimates items named from the list
+# structure so a big shortfall (logged << named) can self-heal — the retry does the
+# real extraction, so this only needs to TRIGGER on clear multi-item lists.
+_QTY_MARKER_RE = re.compile(
+    r"\b\d+\s*(?:oz|ounces?|g|grams?|kg|lb|lbs|ml|cups?|tbsp|tsp|tablespoons?|teaspoons?|"
+    r"slices?|pieces?|scoops?|handfuls?|servings?|bars?)\b"
+    r"|\b(?:½|¼|¾|half|quarter|a\s+(?:cup|handful|glass|can|bottle|slice|piece|scoop)|"
+    r"small|large|medium)\b",
+    re.IGNORECASE,
+)
+_LIST_SEP_RE = re.compile(r",|\band\b|\bwith\b|\bplus\b|\balso\b|\bthen\b", re.IGNORECASE)
+
+
+def estimate_food_items(message: str) -> int:
+    """Rough count of distinct foods a multi-item message names, from its list
+    structure (comma / 'and' / 'with' separated segments that carry a food or
+    quantity signal). Deliberately approximate — used only to spot a big shortfall."""
+    if not message:
+        return 0
+    segs = [s.strip() for s in _LIST_SEP_RE.split(message) if s.strip()]
+    n = 0
+    for s in segs:
+        words = re.findall(r"[a-zа-яё]+", s.lower())
+        content = [w for w in words if w not in _LIST_FILLER]
+        # a segment is a food item if it carries a quantity marker OR is a short,
+        # content-bearing noun phrase (1-4 real words) — "corn salsa", "pico", "fajita
+        # veggies". Long clauses ("it was really good") carry no quantity and >4 words.
+        if _QTY_MARKER_RE.search(s) or (1 <= len(content) <= 4):
+            n += 1
+    return n
+
+
+_LIST_FILLER = {
+    "i", "had", "have", "having", "ate", "eating", "some", "a", "an", "the", "of",
+    "about", "around", "like", "just", "also", "and", "with", "plus", "then", "my",
+    "for", "lunch", "dinner", "breakfast", "snack", "today", "it", "was", "were",
+    "drank", "got", "grabbed", "small", "big", "handful", "piece", "cup", "half",
+}
+
+
+def looks_like_undercounted_food(message: str, num_food_logs: int) -> bool:
+    """True when the message clearly ENUMERATES a multi-item meal (>=4 items with >=2
+    explicit quantities — the burrito/salmon-bowl shape) but far fewer log_food calls
+    fired than items named. Requires quantity markers so a single 'lettuce, tomato,
+    onion + mustard, 20 cal' veggie mix (one item, no per-item portions) doesn't trip
+    it. The self-heal retry does the real extraction; this only needs to trigger."""
+    est = estimate_food_items(message)
+    qtys = sum(1 for _ in _QTY_MARKER_RE.finditer(message or ""))
+    return est >= 4 and qtys >= 2 and num_food_logs <= est // 2
+
+
 # Bare acknowledgments that are banned as a COMPLETE reply — they dead-end the
 # conversation and add nothing. Especially wrong right after the user answered a
 # question (that should continue, not close).

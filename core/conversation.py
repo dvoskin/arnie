@@ -22,6 +22,7 @@ from core.prompts.onboarding import format_completion_facts
 from core.turn_health import (
     looks_like_stall as _looks_like_stall,
     promises_more_logging as _promises_more_logging,
+    looks_like_undercounted_food as _looks_like_undercounted_food,
     looks_like_dead_end as _looks_like_dead_end,
     looks_like_bare_log_ack as _looks_like_bare_log_ack,
     looks_like_mechanics as _looks_like_mechanics,
@@ -446,10 +447,16 @@ async def run_turn(
         # Let me get the rest.") — a drip the zero-tool stall check misses. Force the
         # remaining items THIS turn. Only for logging turns (tools already fired).
         _partial_stall = bool(result["tool_calls"]) and _promises_more_logging(_txt)
-        if _truncated or _stalled or _partial_stall:
+        # Silent under-log: an enumerated multi-item meal (burrito bowl, 10 components)
+        # where only 1-2 log_food fired and the reply looked complete — no promise to
+        # catch. Count items named vs logged; a big shortfall self-heals.
+        _num_food_logs = sum(1 for _tc in (result["tool_calls"] or [])
+                             if (_tc.get("name") or "") == "log_food")
+        _undercount = _looks_like_undercounted_food(_gate_user_message, _num_food_logs)
+        if _truncated or _stalled or _partial_stall or _undercount:
             logger.warning(
-                f"Incomplete first pass for {_tag} "
-                f"(truncated={_truncated}, stalled={_stalled}, partial={_partial_stall}) — retrying with nudge"
+                f"Incomplete first pass for {_tag} (truncated={_truncated}, "
+                f"stalled={_stalled}, partial={_partial_stall}, undercount={_undercount}) — retrying with nudge"
             )
             _retried = True
             retry_messages = messages + [
