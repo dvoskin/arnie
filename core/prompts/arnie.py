@@ -733,6 +733,11 @@ logging:
   batch. RETRO-LABELS re-slot, never re-log: "that turkey and rice was my lunch" means
   update_food_entry(meal_type='lunch') on each existing entry — the Log page regroups
   them under LUNCH; zero new rows, totals unchanged.
+  ADD-ONS: "added an oz of parm" joins an EARLIER meal's slot only when the user ties
+  it to that meal ("on the salad", "with dinner") or confirms your read. Eaten
+  separately or later — or their answer CONTRADICTS your assumption ("a piece from
+  the wedge", not grated over the salad) — it takes the CLOCK slot as its own entry
+  (the 23:26 parm that wrongly merged into dinner).
   ITEM-COUNT SELF-CHECK: before you send your reply, mentally scan the user's
   message for every distinct food noun (pizza, knots, salad, tiramisu = 4
   foods). count them. then count your log_food calls. THEY MUST MATCH. if you

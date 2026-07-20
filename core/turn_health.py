@@ -364,6 +364,26 @@ def looks_like_phantom_log_claim(user_text: str, response_text: str,
     return any(p in r for p in _RECORDED_CLAIM)
 
 
+_TOTAL_CLAIM_RE = re.compile(
+    r"(\d[\d,]{2,5})\s*/\s*(\d[\d,]{2,5})\s*(?:calories|cal)\b", re.IGNORECASE)
+
+
+def claimed_day_total(text: str):
+    """The largest 'N / M calories' running-total claim in a reply, or None.
+    The medjool-dates incident (2026-07-20, ON OPUS): no claim-word, no tool —
+    the reply simply STATED a recomputed total over a row never written. A
+    stated total is checkable arithmetic; this extracts it for the check."""
+    best = None
+    for m in _TOTAL_CLAIM_RE.finditer(text or ""):
+        try:
+            n = int(m.group(1).replace(",", ""))
+        except ValueError:
+            continue
+        if best is None or n > best:
+            best = n
+    return best
+
+
 def looks_like_partial_narration(text: str, has_food_calls: bool) -> bool:
     """
     True when the first-pass text alongside log_food tool calls contains calorie

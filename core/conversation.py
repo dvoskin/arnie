@@ -605,15 +605,29 @@ async def run_turn(
                     getattr(_log_for_tools, "food_entries", None) or [],
                     from_photo=(_source == "photo"),
                 ))
+                # OMISSION HINT — the symmetric failure the write-set can't
+                # see (the dates and salmon both began as missed logs): a
+                # food-report-shaped message with zero log writes. Broad by
+                # design (questions about food match too) — a divergence
+                # counter for review, never an alarm on its own.
+                _no_log_write = not any(
+                    (tc.get("name") or "") in
+                    ("log_food", "log_exercise", "log_water", "log_body_weight")
+                    for tc in (tool_calls or []))
+                _omission_hint = False
+                if _no_log_write and isinstance(_user_text, str):
+                    from core.turn_health import _FOOD_REPORT_RE as _frr
+                    _omission_hint = bool(_frr.search(_user_text))
                 if _shadow["flagged"]:
                     logger.warning(
                         f"event=scribe_shadow user={getattr(user, 'id', None)} "
-                        f"counts={_shadow['counts']} flagged={_shadow['flagged']}"
+                        f"counts={_shadow['counts']} flagged={_shadow['flagged']} "
+                        f"omission_hint={_omission_hint}"
                     )
                 else:
                     logger.info(
                         f"event=scribe_shadow user={getattr(user, 'id', None)} "
-                        f"counts={_shadow['counts']}"
+                        f"counts={_shadow['counts']} omission_hint={_omission_hint}"
                     )
         except Exception:
             logger.warning("scribe shadow failed (observe-only)", exc_info=True)
@@ -1012,6 +1026,30 @@ async def run_turn(
     _phantom = (not tool_calls) and _looks_like_phantom_log_claim(
         _user_text if isinstance(_user_text, str) else "", response_text, bool(tool_calls)
     )
+    # TOTAL-CLAIM PHANTOM (the medjool-dates incident, 2026-07-20 03:29Z, on
+    # Opus): no claim-word, no tool — the reply simply STATED macros and a
+    # recomputed running total ("puts you at 2,219 / 2,165") over a row that
+    # was never written. On a no-write food-report turn, a stated total that
+    # exceeds the DB total beyond tolerance is fabricated arithmetic → same
+    # blocking rescue as a worded claim.
+    if not _phantom and not tool_calls:
+        try:
+            from core.turn_health import (
+                claimed_day_total as _claimed_total,
+                _FOOD_REPORT_RE as _food_report_re,
+                DAY_TOTAL_TOLERANCE as _day_tol,
+            )
+            _claim = _claimed_total(response_text)
+            _db_total = round(getattr(today_log, "total_calories", 0) or 0)
+            if (_claim is not None and isinstance(_user_text, str)
+                    and _food_report_re.search(_user_text)
+                    and _claim > _db_total + _day_tol):
+                logger.warning(
+                    f"event=total_claim_phantom user={getattr(user, 'id', None)} "
+                    f"claimed={_claim} db={_db_total}")
+                _phantom = True
+        except Exception:
+            pass
 
     # Sign-off: a clear goodnight/closing → 'Sleep well 🌙' is correct. Repair
     # is disabled in this case so we don't generate a full coaching reply after

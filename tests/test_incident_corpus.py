@@ -40,7 +40,8 @@ def _board(case):
 
 
 def _gate_msg(case):
-    return effective_intent_message(case["user_msg"], case.get("prior_user_msg"))
+    return effective_intent_message(case["user_msg"], case.get("prior_user_msg"),
+                                    case.get("prior_assistant_msg"))
 
 
 _CHECKABLE = [c for c in _cases()
