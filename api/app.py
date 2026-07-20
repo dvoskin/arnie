@@ -805,11 +805,18 @@ async def imessage_webhook(request: Request):
     )
 
     event_type = payload.get("type", "")
-    if event_type != "new-message":
-        # Heartbeat, read receipts, etc. — acknowledge and ignore
-        return {"ok": True}
-
     data = payload.get("data", {})
+
+    # updated-message fires for EDITS but also for delivery/read-status
+    # changes. Only a payload carrying dateEdited is a real edit; everything
+    # else stays ignored. Before this, iMessage edits were dropped entirely
+    # (Denys 2026-07-21: edited a food message to add the chicken quantity —
+    # nothing re-processed) or, when BlueBubbles re-delivered the edit as a
+    # new-message under the SAME guid, silently eaten by the guid dedup below.
+    _is_bb_edit = event_type == "updated-message" and bool(data.get("dateEdited"))
+    if event_type != "new-message" and not _is_bb_edit:
+        # Heartbeat, read receipts, delivery/read updates, etc. — ack and ignore
+        return {"ok": True}
 
     # Skip messages sent by us
     if data.get("isFromMe"):
@@ -854,8 +861,12 @@ async def imessage_webhook(request: Request):
     _seen = getattr(app.state, "_seen_guids", {})
     _now = _time.time()
     # Evict on the longest window we use so the dict can't grow unbounded.
-    _seen = {k: v for k, v in _seen.items() if _now - v < 600}
-    _guid_key = f"guid:{message_guid}" if message_guid else None
+   _seen = {k: v for k, v in _seen.items() if _now - v < 600}
+    # An edit reuses the ORIGINAL message's guid — key it on guid+dateEdited so
+    # the edit isn't eaten by the original's dedup entry (while a re-delivered
+    # copy of the SAME edit still dedups).
+    _guid_key = (f"guid:{message_guid}:edit:{data.get('dateEdited')}" if _is_bb_edit
+                 else f"guid:{message_guid}") if message_guid else None
     # Fingerprint on the audio attachment guid when there's no text (an empty-text
     # key would collide every voice note within the window and wrongly dedup them).
     _text_key = (f"att:{address}:{audio['guid']}" if (audio and not text)
@@ -876,8 +887,12 @@ async def imessage_webhook(request: Request):
     import asyncio
     if text:
         from bot.imessage_handler import handle_imessage
+        # Edits carry the [EDIT] sentinel (id-less form) — chat_service strips
+        # it before storage and annotates the model's copy so it UPDATES what
+        # it logged from the original instead of double-logging.
+        _pipeline_text = f"[EDIT] {text}" if _is_bb_edit else text
         asyncio.create_task(
-            handle_imessage(address, chat_guid, text, message_guid=message_guid)
+            handle_imessage(address, chat_guid, _pipeline_text, message_guid=message_guid)
         )
     else:  # audio attachment with no text → transcribe then process
         from bot.imessage_handler import handle_imessage_audio
