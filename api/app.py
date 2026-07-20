@@ -861,7 +861,7 @@ async def imessage_webhook(request: Request):
     _seen = getattr(app.state, "_seen_guids", {})
     _now = _time.time()
     # Evict on the longest window we use so the dict can't grow unbounded.
-   _seen = {k: v for k, v in _seen.items() if _now - v < 600}
+    _seen = {k: v for k, v in _seen.items() if _now - v < 600}
     # An edit reuses the ORIGINAL message's guid — key it on guid+dateEdited so
     # the edit isn't eaten by the original's dedup entry (while a re-delivered
     # copy of the SAME edit still dedups).
@@ -4417,5 +4417,3 @@ async def download_apple_shortcut(token: str = Query(...)):
             "Cache-Control": "no-store",
         },
     )
-
-
