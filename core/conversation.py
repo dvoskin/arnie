@@ -21,6 +21,7 @@ from core.platform import (
 from core.prompts.onboarding import format_completion_facts
 from core.turn_health import (
     looks_like_stall as _looks_like_stall,
+    promises_more_logging as _promises_more_logging,
     looks_like_dead_end as _looks_like_dead_end,
     looks_like_bare_log_ack as _looks_like_bare_log_ack,
     looks_like_mechanics as _looks_like_mechanics,
@@ -441,10 +442,14 @@ async def run_turn(
         _first_stop_reason = result.get("stop_reason")
         _truncated = _first_stop_reason == "max_tokens"
         _stalled = (not result["tool_calls"]) and _looks_like_stall(_txt)
-        if _truncated or _stalled:
+        # Partial stall: it logged SOME items then promised the rest ("Salmon's in.
+        # Let me get the rest.") — a drip the zero-tool stall check misses. Force the
+        # remaining items THIS turn. Only for logging turns (tools already fired).
+        _partial_stall = bool(result["tool_calls"]) and _promises_more_logging(_txt)
+        if _truncated or _stalled or _partial_stall:
             logger.warning(
                 f"Incomplete first pass for {_tag} "
-                f"(truncated={_truncated}, stalled={_stalled}) — retrying with nudge"
+                f"(truncated={_truncated}, stalled={_stalled}, partial={_partial_stall}) — retrying with nudge"
             )
             _retried = True
             retry_messages = messages + [

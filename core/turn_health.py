@@ -66,6 +66,28 @@ def looks_like_stall(text: str) -> bool:
     return t.endswith(":") or t.startswith("on it") or any(m in t for m in _STALL_MARKERS)
 
 
+# Partial-stall: the model logged SOME items of a multi-item message, then promised
+# to log the rest in a later turn ("Salmon's in. Let me get the rest.") instead of
+# firing every tool this turn. Unlike looks_like_stall (which requires ZERO tool
+# calls), this fires WHEN tools already ran — so it needs its own detector. The
+# self-heal that catches it forces the remaining items in the same turn. Critical
+# because a conversation history full of past drip-logs primes the model to repeat
+# the pattern no matter what the system prompt says.
+_PROMISE_MORE_RE = re.compile(
+    r"\b(?:get|getting|grab|grabbing|log|logging|do|doing|add|adding|knock(?:ing)?\s+out|"
+    r"finish|finishing|handle|handling)\s+(?:the\s+)?(?:rest|others?|remaining|other\s+\w+)\b"
+    r"|\bstill\s+(?:waiting on|need|got|have)\b"
+    r"|\b(?:let me|i'?ll|gonna|going to)\s+(?:get|grab|do|add|log)\s+(?:the\s+)?(?:rest|others)\b"
+    r"|\bone\s+(?:sec|second|moment)\b|\bhang on\b|\bnext up\b|\bonto the\b|\bnow (?:for|onto) the\b",
+    re.IGNORECASE,
+)
+
+
+def promises_more_logging(text: str) -> bool:
+    """True if the reply says it will log MORE items later ('let me get the rest')."""
+    return bool(_PROMISE_MORE_RE.search(text or ""))
+
+
 # Bare acknowledgments that are banned as a COMPLETE reply — they dead-end the
 # conversation and add nothing. Especially wrong right after the user answered a
 # question (that should continue, not close).
