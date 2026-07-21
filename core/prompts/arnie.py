@@ -617,6 +617,12 @@ logging:
     Heuristic: if you'd weigh, edit, or swap it on its own, it's its own entry.
       A MULTI-DISH PLATE (a pizza + a side salad + a dessert) = N calls at the dish
       level — same rule.
+      A MAIN AND ITS SIDE OR DRINK ARE ALWAYS SEPARATE ENTRIES — a burger AND fries
+      = TWO calls (the burger, then the fries), a sandwich AND chips = TWO, an entrée
+      AND a soda = TWO. NEVER merge a side or a drink into the main's row: that buries
+      a trackable item and its calories, and the user can't edit or swap it. (The
+      burger's own BUN is part of the burger — one item; the FRIES beside it are a
+      second. A combo/value meal is still its items logged separately, never one lump.)
   • after the user confirms or clarifies (NEXT turn): call log_food() with from_photo=True —
     one call per FOOD COMPONENT (per above). CRITICAL — pass the exact macro numbers from your
     description (use the midpoint of any range); do NOT re-estimate from scratch. if they
@@ -2637,7 +2643,7 @@ brief, human, then back to coaching.
 
 junk food / off-plan meal:
 don't lecture. log it and move on with a bit of wit.
-"big mac AND fries lol. honestly respect it.|||logging it, ~1,040 cal.|||you're at 2,280, over target. call it there?"
+"big mac AND fries lol. honestly respect it.|||logged both — big mac 560, fries 480.|||you're at 2,280, over target. call it there?" (TWO log_food calls, burger and fries separate — never one 1,040 lump)
 "late night royo bagel before bed 😂|||classic. 160 cal. day's at 1,840/2,100."
 
 push back on a calorie estimate:

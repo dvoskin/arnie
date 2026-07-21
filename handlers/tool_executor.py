@@ -4,6 +4,7 @@ a human-readable result string per tool (used in multi-turn follow-ups).
 """
 import json
 import logging
+import os
 from datetime import timedelta
 from typing import Dict, List, Any, Optional
 
@@ -1035,6 +1036,103 @@ async def _web_lookup_packaged(food_name: str, quantity) -> dict | None:
         return None
 
 
+def web_meal_enrich_enabled() -> bool:
+    """Kill switch for confidence-gated web enrichment of composite meals.
+    WEB_MEAL_ENRICH=false disables it instantly on live users."""
+    return os.getenv("WEB_MEAL_ENRICH", "true").lower() in ("true", "1", "yes")
+
+
+# Meal words that mark a COMPOSITE dish worth a web total-lookup when the DBs
+# miss it — a restaurant bowl/plate the model can only guess at, not a single
+# ingredient it already nails.
+_MEAL_WORD_RE = __import__("re").compile(
+    r"\b(bowl|plate|platter|burrito|wrap|sandwich|sub|roll|salad|combo|meal|"
+    r"burger|taco|quesadilla|curry|stir[\s-]?fry|noodles?|pasta|pizza|parfait|"
+    r"poke|bibimbap|ramen|pho|sushi|nigiri|sashimi|calzone|panini|gyro|"
+    r"shawarma|nachos|enchilada|casserole|skillet|scramble|omelette|omelet)\b",
+    __import__("re").I,
+)
+
+
+def _worth_web_meal(food_name: str, cal) -> bool:
+    """True when a low-confidence estimate is a substantial COMPOSITE meal worth
+    a web total-lookup (CAVA bowl, poke bowl, Med platter) — not a single
+    ingredient the model already gets right (apple, chicken breast). Keeps the
+    web call OFF the common path so latency only lands where accuracy is bad."""
+    n = (food_name or "").strip()
+    if len(n) < 4:
+        return False
+    if _MEAL_WORD_RE.search(n):
+        return True
+    # A multi-word named dish carrying real calories (a restaurant meal), never
+    # a trivial one-worder.
+    return len(_content_tokens(n)) >= 2 and (cal or 0) >= 250
+
+
+async def _web_lookup_meal(food_name: str, quantity) -> dict | None:
+    """Web lookup for the ABSOLUTE calories+macros of a composite/restaurant meal
+    the databases miss. Unlike _web_lookup_packaged (a per-100g density anchored
+    to the LLM's own calories), this returns TOTALS for the stated serving so a
+    lowballed estimate can be REPLACED, not just annotated.
+
+    A cheap Haiku pass extracts structured numbers from the search snippets (far
+    more reliable than regex on freeform pages) and self-reports confidence; only
+    a high/medium hit inside sanity bounds is used. None on miss / low confidence
+    / outage — fail-safe to the LLM estimate. NEVER raises. Bounded by a hard
+    timeout so it can't hang a log."""
+    import asyncio as _asyncio
+    import re as _re
+    try:
+        return await _asyncio.wait_for(
+            _web_lookup_meal_inner(food_name, quantity, _re), timeout=6.0)
+    except Exception as e:
+        logger.warning(f"web meal lookup timed out/failed for {food_name!r}: {e}")
+        return None
+
+
+async def _web_lookup_meal_inner(food_name, quantity, _re) -> dict | None:
+    from core.search import search as _search
+    q = str(food_name or "")
+    if quantity:
+        q += f" {quantity}"
+    q += " calories protein carbs fat nutrition"
+    result = await _search(q)
+    text = (result.answer or "") + "\n" + "\n".join(
+        (r.get("content") or "")[:700] for r in (result.results or [])[:4])
+    if not text.strip():
+        return None
+    from core.llm import chat
+    sys = (
+        "You extract ONE food's total nutrition from web-search snippets. The "
+        "user ate the item below at the stated serving. From the snippets, return "
+        "the TOTAL calories, protein(g), carbs(g), fat(g) for THAT serving — NOT "
+        "per-100g, not a different size or a different item. Output ONLY compact "
+        'JSON: {"calories":N,"protein":N,"carbs":N,"fat":N,"confidence":"high|medium|low"}. '
+        "confidence=high only when the snippets clearly give THIS item's numbers; "
+        "medium for a close match; low when the snippets don't really cover it."
+    )
+    msg = (f"ITEM: {food_name}" + (f" ({quantity})" if quantity else "")
+           + f"\n\nSNIPPETS:\n{text[:3500]}")
+    r = await chat(messages=[{"role": "user", "content": msg}], system=sys,
+                   tools=False, max_tokens=120, model="claude-haiku-4-5-20251001")
+    raw = (r.get("text") or "").strip()
+    m = _re.search(r"\{.*\}", raw, _re.S)
+    if not m:
+        return None
+    data = json.loads(m.group(0))
+    conf = str(data.get("confidence", "low")).lower()
+    cal = float(data.get("calories") or 0)
+    if conf not in ("high", "medium") or not (50 <= cal <= 3000):
+        return None
+    return {
+        "calories": cal,
+        "protein": float(data.get("protein") or 0),
+        "carbs": float(data.get("carbs") or 0),
+        "fat": float(data.get("fat") or 0),
+        "confidence": conf,
+    }
+
+
 async def _check_recent_duplicate(db, target_log_id, food_name: str, quantity, window_min: int = 5):
     """Idempotency check: same (food_name, quantity) logged on the same daily_log
     within the last `window_min` minutes is almost always a retry, not a second
@@ -1296,6 +1394,39 @@ async def _analyze_food(db, user, food_name, inp):
     result = analyze(food_name, inp.get("quantity"), *llm,
                      usda_candidate=usda, memory_match=memory,
                      web_candidate=web)
+
+    # ── CONFIDENCE-GATED WEB MEAL ENRICH ──────────────────────────────────────
+    # The composite/restaurant meals the DBs miss (CAVA bowl, poke bowl, Med
+    # platter) resolve to a low-confidence LLM ESTIMATE that runs ~30% low AND
+    # wanders run-to-run (CAVA 130→760 across 3 runs). When the routing above
+    # found nothing solid (source=='estimate') and the item is a substantial
+    # composite, pull the ABSOLUTE total from the web and REPLACE the guess with
+    # a sourced number. Fail-safe: only a confident in-bounds web hit overrides;
+    # otherwise the estimate stands untouched. A user-stated macro this turn
+    # (_user_macros) always wins over the web. Kill switch: WEB_MEAL_ENRICH=false.
+    if (web_meal_enrich_enabled() and result.source == "estimate"
+            and not inp.get("_user_macros")
+            and _worth_web_meal(food_name, result.calories)):
+        try:
+            meal = await _web_lookup_meal(food_name, inp.get("quantity"))
+        except Exception as e:
+            logger.warning(f"web meal enrich errored for {food_name!r}: {e}")
+            meal = None
+        if meal:
+            logger.info(
+                f"web meal enrich: {food_name!r} {result.calories}→"
+                f"{round(meal['calories'])} cal (conf={meal['confidence']})")
+            # Re-anchor on the web totals (reconciles macro/calorie consistency),
+            # then mark it web-sourced so the receipt shows 'found online' and the
+            # trend math trusts it like any label hit.
+            result = analyze(food_name, inp.get("quantity"),
+                             meal["calories"], meal["protein"],
+                             meal["carbs"], meal["fat"],
+                             usda_candidate=None, memory_match=None,
+                             web_candidate=None)
+            result.source = "web_label"
+            result.confidence = "likely"
+            result.enrichment_source = "web_label"
 
     # Nutrient fallback: no database (USDA/web/memory) data — common for
     # restaurant/branded/composite foods USDA has no entry for. Estimate the
