@@ -217,7 +217,7 @@ async def _llm_new_user_nudge(user, log, prefs, slot: str, name: str,
             [{"role": "user", "content": prompt}],
             system=_NEW_USER_SYSTEM,
             tools=False,
-            max_tokens=130,
+            max_tokens=100,   # a tight 1-2 bubble nudge, not a wall (Danny 2026-07-21)
             model="claude-haiku-4-5-20251001",
         )
         return (result.get("text") or "").strip()
@@ -1605,15 +1605,15 @@ async def _run_reminders():
                         # above — a single state-aware loop that resolves the moment the
                         # stats land, instead of bespoke slot timers here.
 
-                        # Aggressive day-1 cadence, tapering into day 2.
-                        # (window_start, window_end, slot_key) — strongest at the start.
+                        # ONE day-1 nudge only, then spaced day-2 checks.
+                        # (window_start, window_end, slot_key). Danny 2026-07-21:
+                        # Gabriel got 4 long messages his first day (welcome +
+                        # warmup_15m/4h/7h) and it read as spam. The onboarding
+                        # welcome already greets them, so day 1 needs at most a
+                        # single mid-day activation nudge — and only if they haven't
+                        # logged (gated below). The old 15m/1h/2h/7h/10h burst is cut.
                         _windows = [
-                            (0.25, 0.9,  "warmup_15m"),
-                            (1.0,  1.9,  "warmup_1h"),
-                            (2.0,  3.4,  "warmup_2h"),
-                            (4.0,  5.4,  "warmup_4h"),
-                            (7.0,  8.9,  "warmup_7h"),
-                            (10.0, 12.9, "warmup_10h"),
+                            (4.0,  11.9, "warmup_4h"),
                             (23.0, 25.5, "warmup_24h"),
                             (35.0, 37.9, "warmup_36h"),
                             (47.0, 50.0, "warmup_48h"),
@@ -1630,13 +1630,22 @@ async def _run_reminders():
                             # the "never logged" check (one small query) runs only when
                             # one of them actually fires — at most a few times per user.
                             surface_howto = False
-                            if new_slot in ("warmup_24h", "warmup_36h", "warmup_48h"):
+                            if new_slot in ("warmup_4h", "warmup_24h", "warmup_36h", "warmup_48h"):
                                 from db.queries import get_recent_logs
                                 _recent = await get_recent_logs(db, user.id, days=3)
                                 _ever_logged = any(
                                     (dl.food_entries or dl.exercise_entries)
                                     for dl in _recent
                                 )
+                                # The day-1 nudge is PURE ACTIVATION — an already-
+                                # engaged user who logged doesn't need an unprompted
+                                # day-1 poke (that's the spam). Mark it done, skip.
+                                if new_slot == "warmup_4h" and _ever_logged:
+                                    sent_slots.add(new_slot)
+                                    user.nudges_sent = ",".join(sorted(sent_slots))
+                                    await db.commit()
+                                    logger.info(f"warmup_4h skipped for user {user.id} — already engaged")
+                                    continue
                                 surface_howto = not _ever_logged
                             msg = await _llm_new_user_nudge(user, log, prefs, new_slot, name,
                                                             surface_howto=surface_howto)

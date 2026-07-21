@@ -148,7 +148,7 @@ async def test_heavy_user_warmup_burst_fires(freq_env):
     confirms the gate is selective, not blanket-off."""
     PS = freq_env["PS"]
     await _seed(freq_env["Maker"], telegram_id="im:+15550000002",
-                freq="heavy", hours_in_age=0.5)  # in warmup_15m window
+                freq="heavy", hours_in_age=5.0)  # in the (single) day-1 warmup_4h window
 
     await PS._run_reminders()
     warmup_sends = [s for s in freq_env["sends"] if s[0].startswith("warmup_")]
