@@ -93,6 +93,11 @@ def _sanitize_bubble(s: str) -> str:
     """
     s = _strip_tool_xml(s or "")
     s = s.replace(" — ", ", ").replace("—", ", ")
+    # No tildes either (same deterministic brand rule as the em dash): the model
+    # is told not to use "~" but keeps writing "~230 cal". Convert an approximating
+    # tilde to the word "about" (honest, keeps the estimate signal); drop a stray ~.
+    s = _re_platform.sub(r"~\s*(?=\d)", "about ", s)
+    s = s.replace("~", "")
     # Strip leaked INTERNAL entry IDs — "#2032" from a dedup/tool result the model
     # echoed ("logged 13:12 (33s ago) #2032"). Users must NEVER see internal
     # identifiers (Chaya 2026-07-21). 2+ digits so a legit "#1"/"day #2" survives; DB

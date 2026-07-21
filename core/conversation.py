@@ -14,6 +14,7 @@ import os
 from typing import Any, Callable, Optional
 
 from core.llm import chat, chat_follow_up
+from core.log_voice import voice_log, fast_log_voice_enabled
 from core.platform import (
     Response, React, FX, onboarding_reaction, detect_moment,
     _sanitize_bubble,
@@ -89,6 +90,28 @@ def _voices_result(tool_name: str) -> bool:
     """Voice-by-default: a tool's result is voiced via a follow-up unless the tool
     is SILENT. Replaces membership checks against the old opt-in allowlists."""
     return tool_name not in _SILENT_TOOLS
+
+
+_FOOD_LOG_TOOLS = frozenset({"log_food", "update_food_entry"})
+
+
+def _is_pure_food_log(tool_calls, user_text) -> bool:
+    """A turn whose only real action is logging food, with no question to answer.
+
+    These get the fast single-reply voice (core/log_voice). Anything else — a
+    co-asked question ("had a twix, what's for dinner?"), or a data-fetch/workout
+    tool in the same turn — keeps the full follow-up path so that result still
+    gets voiced. Silent side-effect tools don't count against "pure"."""
+    names = [tc.get("name") for tc in (tool_calls or [])]
+    if not any(n in _FOOD_LOG_TOOLS for n in names):
+        return False
+    for n in names:
+        if n in _FOOD_LOG_TOOLS or n in _SILENT_TOOLS:
+            continue
+        return False   # a non-food-log, non-silent tool means there's more to voice
+    if isinstance(user_text, str) and "?" in user_text:
+        return False   # a question needs a real answer, not just a log read
+    return True
 
 
 def _normalize_plan_exercises(exercises) -> list:
@@ -903,11 +926,26 @@ async def run_turn(
                 except Exception:
                     pass
         elif has_logging and not in_onboarding:
-            # Coach-unmute path: let Arnie coach on a log instead of a template.
-            # Authoritative totals come from the tool result; "NUMBERS ARE SACRED"
-            # in the system prompt prevents fabrication.
             _followup_tried = True
-            response_text = await _try_follow_up()
+            # ── FAST CLEAN LOG VOICE ──────────────────────────────────────────
+            # A pure food-log turn gets ONE sub-second read over the committed
+            # facts (core/log_voice): a single reply source (kills the double),
+            # numbers handed in from the DB (can't phantom a total), a tiny focused
+            # prompt (can't ramble / loop / contradict the way the 46k-token pass
+            # did). The heavy follow-up below stays for co-asked questions,
+            # data-fetch combos, and as the fallback. Switch: FAST_LOG_VOICE=false.
+            _fast_voice = None
+            if fast_log_voice_enabled() and _is_pure_food_log(tool_calls, _user_text):
+                _fast_voice = await voice_log(
+                    tool_calls, tool_results, today_log, user)
+            if _fast_voice:
+                response_text = _fast_voice
+                _response_streamed = False   # not streamed — ships once via catch-up
+            else:
+                # Coach-unmute path: let Arnie coach on a log instead of a template.
+                # Authoritative totals come from the tool result; "NUMBERS ARE
+                # SACRED" in the system prompt prevents fabrication.
+                response_text = await _try_follow_up()
             if not response_text:
                 # Before falling to the canned "Keep sipping" / "Consistency is
                 # the whole game" templates, try ONE directive retry for the
