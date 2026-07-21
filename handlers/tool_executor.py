@@ -1094,7 +1094,11 @@ async def _logged_history_match(db, user_id, food_name, quantity, days=90):
         .distinct(func.lower(FoodEntry.parsed_food_name))
         .join(DailyLog, FoodEntry.daily_log_id == DailyLog.id)
         .where(DailyLog.user_id == user_id, DailyLog.date >= cutoff,
-               FoodEntry.calories.isnot(None), FoodEntry.calories > 0)
+               FoodEntry.calories.isnot(None), FoodEntry.calories > 0,
+               # Ground truth = a real prior log, NOT a one-off auto-estimate. Without
+               # this a single bad LLM/photo estimate launders itself into permanent
+               # "user-confirmed" history that then beats USDA/web forever (strip step 5).
+               FoodEntry.estimated_flag.is_(False))
         .order_by(func.lower(FoodEntry.parsed_food_name),
                   DailyLog.date.desc(), FoodEntry.id.desc()).limit(200))).all()
     for fe, _d in rows:
@@ -1932,6 +1936,14 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
         # round-tripping a "please update X" message through Arnie.
         if isinstance(inp, dict) and getattr(_new_food, "id", None) is not None:
             inp["_entry_id"] = _new_food.id
+            # Card mirrors the committed row, not the raw model guess (strip step 9).
+            # The DB row above was written from the ENRICHED analysis; sync inp to those
+            # numbers so the macro_card (built from inp) and the day total can't diverge
+            # from what was actually logged (the estimate-610-vs-logged-786 gap).
+            inp["calories"] = analysis.calories
+            inp["protein"] = analysis.protein
+            inp["carbs"] = analysis.carbs
+            inp["fats"] = analysis.fat
         await db.refresh(target_log)
         _stash_receipt(inp, target_log, user, analysis.calories, analysis.protein,
                        confidence=_conf,
