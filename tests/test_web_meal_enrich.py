@@ -22,9 +22,22 @@ def test_gate_targets_composites_not_single_ingredients():
     assert te._worth_web_meal("CAVA Greens and Grains bowl", 650) is True
     assert te._worth_web_meal("large poke bowl", 700) is True
     assert te._worth_web_meal("Mediterranean chicken platter", 800) is True
+    assert te._worth_web_meal("Chipotle burrito", 1000) is True
     assert te._worth_web_meal("apple", 95) is False
     assert te._worth_web_meal("banana", 105) is False
     assert te._worth_web_meal("egg", 70) is False
+
+
+def test_gate_excludes_beverages(monkeypatch=None):
+    # Beverages must NEVER hit the composite web lookup — the Anya regression
+    # (2026-07-21): "3 coffee" web-"labelled" into a 420-cal De'Longhi cappuccino.
+    # A bare multi-word name at high cal is NOT enough; a meal word is required.
+    for drink, cal in [("coffee", 5), ("iced coffee", 90), ("cappuccino", 140),
+                       ("De'Longhi XL cappuccino with lactose-free 2% milk and 1 tsp sugar", 420),
+                       ("vanilla latte", 250), ("iced caramel latte", 260),
+                       ("Coca-Cola", 420), ("large coke", 300), ("diet coke", 0),
+                       ("protein shake", 300), ("mango smoothie", 320)]:
+        assert te._worth_web_meal(drink, cal) is False, f"{drink!r} should be excluded"
 
 
 def _patch(monkeypatch, snippet, chat_json):

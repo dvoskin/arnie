@@ -1043,30 +1043,32 @@ def web_meal_enrich_enabled() -> bool:
 
 
 # Meal words that mark a COMPOSITE dish worth a web total-lookup when the DBs
-# miss it — a restaurant bowl/plate the model can only guess at, not a single
-# ingredient it already nails.
+# miss it — a restaurant bowl/plate the model can only guess at. A meal word is
+# REQUIRED (see _worth_web_meal): a bare multi-word name is NOT enough, because
+# that caught beverages (Anya's "3 coffee" → a web-"labelled" 420-cal cappuccino,
+# 2026-07-21). None of these match coffee/cappuccino/latte/coke/cola/soda/tea.
 _MEAL_WORD_RE = __import__("re").compile(
     r"\b(bowl|plate|platter|burrito|wrap|sandwich|sub|roll|salad|combo|meal|"
     r"burger|taco|quesadilla|curry|stir[\s-]?fry|noodles?|pasta|pizza|parfait|"
     r"poke|bibimbap|ramen|pho|sushi|nigiri|sashimi|calzone|panini|gyro|"
-    r"shawarma|nachos|enchilada|casserole|skillet|scramble|omelette|omelet)\b",
+    r"shawarma|nachos|enchilada|casserole|skillet|scramble|omelette|omelet|"
+    r"tikka|masala|biryani|teriyaki|alfredo|carbonara|fajita|paella|risotto)\b",
     __import__("re").I,
 )
 
 
 def _worth_web_meal(food_name: str, cal) -> bool:
-    """True when a low-confidence estimate is a substantial COMPOSITE meal worth
-    a web total-lookup (CAVA bowl, poke bowl, Med platter) — not a single
-    ingredient the model already gets right (apple, chicken breast). Keeps the
-    web call OFF the common path so latency only lands where accuracy is bad."""
+    """True ONLY for a substantial COMPOSITE MEAL the DBs miss (CAVA bowl, poke
+    bowl, Med platter, burrito) — identified by an actual MEAL WORD. Everything
+    else is EXCLUDED, especially BEVERAGES (coffee, cappuccino, latte, coke) and
+    single ingredients: web-searching a homemade drink returned a bogus 'product
+    label' and inflated the number (Anya's '3 coffee' → a 420-cal 'De'Longhi
+    cappuccino', 2026-07-21). A bare multi-word name is deliberately NOT enough —
+    a meal word is required, so the web call only lands on real composite dishes."""
     n = (food_name or "").strip()
     if len(n) < 4:
         return False
-    if _MEAL_WORD_RE.search(n):
-        return True
-    # A multi-word named dish carrying real calories (a restaurant meal), never
-    # a trivial one-worder.
-    return len(_content_tokens(n)) >= 2 and (cal or 0) >= 250
+    return bool(_MEAL_WORD_RE.search(n))
 
 
 async def _web_lookup_meal(food_name: str, quantity) -> dict | None:
