@@ -1250,8 +1250,21 @@ async def run_turn(
                 "split sides) so you can log it now — e.g. 'my bad, that one didn't save "
                 "— what was the rear delt set again?'"
             ) if _phantom else ""
+            # END ON A USER MESSAGE, never an assistant prefill. The current
+            # Anthropic model rejects a trailing-assistant message with a 400
+            # ("This model does not support assistant message prefill. The
+            # conversation must end with a user message."), which then fell
+            # through to the OpenAI fallback and a 429 (request too large) —
+            # exactly why the turkey+rice rescue never landed (2026-07-21 logs:
+            # phantom_rescue unrescued → 400 prefill → OpenAI 429). Fold the
+            # prior reply into the user turn instead.
             _repair = await chat(
-                messages + [{"role": "assistant", "content": response_text}],
+                messages + [{"role": "user", "content": (
+                    "[SYSTEM QUALITY CHECK — not the user] Your last reply was:\n"
+                    f"\"\"\"{response_text}\"\"\"\n\n"
+                    "Rewrite it now, following the QUALITY REPAIR instructions "
+                    "in the system prompt."
+                )}],
                 system + f"\n\nQUALITY REPAIR: {_REPAIR_PROMPT}{_repair_extra}",
                 tools=_repair_tools, max_tokens=600 if _repair_tools else 400,
             )
@@ -1316,8 +1329,17 @@ async def run_turn(
                     f"them to re-send it so you can log it now. Never state a day total "
                     f"that isn't {_db_cal}."
                 )
+                # End on a USER message — the model rejects assistant prefill
+                # with a 400 (see the QUALITY REPAIR call above). A prefilled
+                # correction here silently failed, so the wrong day total shipped
+                # uncorrected (turkey+rice 1698-vs-1566, 2026-07-21).
                 _fix = await chat(
-                    messages + [{"role": "assistant", "content": response_text}],
+                    messages + [{"role": "user", "content": (
+                        "[SYSTEM NUMBER CHECK — not the user] Your last reply was:\n"
+                        f"\"\"\"{response_text}\"\"\"\n\n"
+                        "Re-send it corrected, following the NUMBER CORRECTION "
+                        "in the system prompt."
+                    )}],
                     system + _truth, tools=False, max_tokens=400,
                 )
                 _fix_text = (_fix.get("text") or "").strip()
