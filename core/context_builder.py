@@ -248,9 +248,19 @@ def fmt_log(log: Optional[DailyLog]) -> str:
     )
 
 
+def _first_name(user) -> str:
+    """The name to ADDRESS the user by — first name only. Chaya Bleier → 'Chaya'.
+    A coach uses a first name; addressing someone by their full name every time reads
+    cold/robotic (Chaya, 2026-07-21)."""
+    n = (getattr(user, "name", None) or "").strip()
+    return n.split()[0] if n else ""
+
+
 def fmt_profile(user: User, prefs: Optional[UserPreferences]) -> str:
+    _fn = _first_name(user)
     lines = [
-        f"{user.name or 'Unknown'}  age {user.age or '?'}  {user.sex or '?'}",
+        f"{user.name or 'Unknown'}  age {user.age or '?'}  {user.sex or '?'}"
+        + (f"  |  ADDRESS THEM AS: {_fn} (first name only, never the full name)" if _fn else ""),
         f"Height {user.height_cm or '?'}cm  |  "
         f"Weight {user.current_weight_kg or '?'}kg  →  Goal {user.goal_weight_kg or '?'}kg",
         f"Primary goal: {user.primary_goal or 'not set'}  |  "

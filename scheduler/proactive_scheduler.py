@@ -512,12 +512,21 @@ def _throttle_decision(sent_24h: int, minutes_since_last, cap: int, gap_min: int
     return "send"
 
 
-def _proactive_cap() -> int:
-    return int(os.getenv("PROACTIVE_DAILY_CAP", "4"))
+# Cadence scales with the user's reminder_frequency preference. 'moderate' at 4/day,
+# 90-min gaps read as NAGGY (Chaya 2026-07-21: 3 nudges about the same 240-cal day).
+# An explicit env still overrides (ops kill-switch), else these per-tier defaults apply.
+_FREQ_DAILY_CAP = {"none": 0, "light": 2, "moderate": 3, "heavy": 4}
+_FREQ_GAP_MIN   = {"none": 999, "light": 300, "moderate": 180, "heavy": 90}
 
 
-def _proactive_gap_min() -> int:
-    return int(os.getenv("PROACTIVE_MIN_GAP_MIN", "90"))
+def _proactive_cap(freq: str = "moderate") -> int:
+    env = os.getenv("PROACTIVE_DAILY_CAP")
+    return int(env) if env else _FREQ_DAILY_CAP.get((freq or "moderate").lower(), 3)
+
+
+def _proactive_gap_min(freq: str = "moderate") -> int:
+    env = os.getenv("PROACTIVE_MIN_GAP_MIN")
+    return int(env) if env else _FREQ_GAP_MIN.get((freq or "moderate").lower(), 180)
 
 
 async def _within_proactive_budget(db, user_id, slot_key: str) -> bool:
@@ -534,7 +543,18 @@ async def _within_proactive_budget(db, user_id, slot_key: str) -> bool:
         minutes = None
         if row.last is not None:
             minutes = (datetime.utcnow() - row.last).total_seconds() / 60.0
-        verdict = _throttle_decision(row.n, minutes, _proactive_cap(), _proactive_gap_min())
+        # Cadence scales with the user's reminder_frequency ('moderate' → 3/day, 180-min
+        # gaps). Fail-open to 'moderate' if the pref can't be read.
+        _freq = "moderate"
+        try:
+            _fr = (await db.execute(_sql(
+                "select reminder_frequency from user_preferences where user_id = :u"),
+                {"u": user_id})).scalar()
+            _freq = _fr or "moderate"
+        except Exception:
+            pass
+        verdict = _throttle_decision(row.n, minutes,
+                                     _proactive_cap(_freq), _proactive_gap_min(_freq))
         if verdict != "send":
             logger.info(
                 f"event=proactive_throttled user={user_id} slot={slot_key} "
@@ -1403,7 +1423,7 @@ async def _run_reminders():
                         and prefs and prefs.proactive_messaging_enabled
                         and _freq_allows(prefs, "weekly_recap")
                         and user.weekly_recap_week != iso_week):
-                    name = user.name or "hey"
+                    name = (user.name or "").split()[0] or "hey"
                     recap = await _llm_weekly_recap(user, prefs, db, name)
                     if recap:
                         await _send_logged(db, user.id, send_id, recap, "weekly_recap")
@@ -1465,7 +1485,7 @@ async def _run_reminders():
                             and _freq_allows(prefs, "day_report")):
                         day_key = f"day_report:{today_str}"
                         if day_key not in sent_slots:
-                            name = user.name or "hey"
+                            name = (user.name or "").split()[0] or "hey"
                             report = _fmt_day_report(log, prefs, name, user=user)
                             _report_lang = getattr(prefs, "preferred_language", None) or "English"
                             if _report_lang.lower() not in ("english", "en"):
@@ -1495,7 +1515,7 @@ async def _run_reminders():
                     skip_counts["window"] += 1
                     continue
 
-                name = user.name or "hey"
+                name = (user.name or "").split()[0] or "hey"
 
                 # Get latest health snapshot — only use it when it's today's or
                 # yesterday's. A 3-day-old Whoop reading shouldn't drive a morning
@@ -2061,7 +2081,7 @@ async def _run_one_shot_checkin(user_id: int, telegram_id: str, directive: str) 
                 return
             prefs = user.preferences
             log = await get_today_log(db, user_id, getattr(user, "timezone", "UTC"))
-            name = user.name or ""
+            name = (user.name or "").split()[0]
             cal = round(log.total_calories) if log else 0
             pro = round(log.total_protein) if log else 0
             cal_t = prefs.calorie_target if prefs else None
@@ -2326,7 +2346,7 @@ async def _run_conversation_hooks() -> None:
                     handled_canonical.add(canonical)
                     continue
 
-                name = user.name or "hey"
+                name = (user.name or "").split()[0] or "hey"
                 msg = await _llm_followup(user, pq, name)
                 if not msg:
                     continue
