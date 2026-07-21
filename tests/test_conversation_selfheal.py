@@ -43,8 +43,12 @@ async def test_dangling_preamble_triggers_retry(monkeypatch):
     fake_chat, state = _seq_chat([
         {"text": "Now logging everything:", "tool_calls": [], "raw_content": [],
          "stop_reason": "end_turn"},                                   # dangling stall
-        {"text": "logged it all, you're at 1,200 today.", "tool_calls": [],
-         "raw_content": [], "stop_reason": "end_turn"},               # retry succeeds
+        # Retry succeeds. NOTE: the text must not itself be a phantom claim — "log my
+        # whole day" is now recognized as log-intent, so a "logged it all" reply with
+        # no tool would (correctly) trip the phantom rescue for a 3rd call. A clean,
+        # claim-free summary keeps this test focused on the stall→retry mechanic.
+        {"text": "Here's the rundown, you're at about 1,200 calories so far today.",
+         "tool_calls": [], "raw_content": [], "stop_reason": "end_turn"},  # retry succeeds
     ])
     monkeypatch.setattr(C, "chat", fake_chat)
 
@@ -55,7 +59,7 @@ async def test_dangling_preamble_triggers_retry(monkeypatch):
     assert state["n"] == 2, "a dangling preamble must trigger exactly one retry"
     joined = " ".join(turn.response.bubbles).lower()
     assert "now logging everything:" not in joined, "the dangling preamble was shipped"
-    assert "logged it all" in joined
+    assert "rundown" in joined or "1,200" in joined
 
 
 @pytest.mark.asyncio

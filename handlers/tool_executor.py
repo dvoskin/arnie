@@ -1035,11 +1035,72 @@ async def _check_recent_duplicate(db, target_log_id, food_name: str, quantity, w
         return None
 
 
+_HIST_STOP = {"a", "an", "the", "of", "with", "and", "some", "my", "for", "had"}
+
+
+def _content_tokens(name: str) -> frozenset:
+    """Word-order-insensitive content tokens of a food name — drops stopwords, pure
+    numbers, and (via normalize_name) quantity units. So 'everything Royo bagel' and
+    'Royo Everything Bagel' both → {everything, royo, bagel}."""
+    from core.food_intelligence import normalize_name
+    n = normalize_name(name or "")
+    return frozenset(w for w in n.split() if w and not w.isdigit() and w not in _HIST_STOP)
+
+
+def _lead_count(q) -> float:
+    """Leading serving count from a quantity string ('2 bars' → 2), else 1.0."""
+    import re as _re
+    m = _re.match(r"\s*(\d+(?:\.\d+)?)", str(q or ""))
+    try:
+        return float(m.group(1)) if m else 1.0
+    except Exception:
+        return 1.0
+
+
+async def _logged_history_match(db, user_id, food_name, quantity, days=120):
+    """The user's OWN most-recent logged macros for a food matching food_name by
+    content-token set. Their log is GROUND TRUTH for a repeat/branded item — it beats
+    a generic USDA close-match or a poisoned cache (the Royo bagel 290-vs-80 incident,
+    Happy Wolf bars, etc.). Returns per-current-serving macros or None.
+
+    Tight by construction: needs >=2 content tokens (so a bare 'bagel'/'coffee' can't
+    override) and exact content-token-set equality (so 'grilled chicken breast' never
+    matches 'chicken breast')."""
+    q_tokens = _content_tokens(food_name)
+    if len(q_tokens) < 2:
+        return None
+    from db.models import FoodEntry, DailyLog
+    from datetime import date, timedelta
+    from sqlalchemy import select
+    cutoff = date.today() - timedelta(days=days)
+    rows = (await db.execute(
+        select(FoodEntry, DailyLog.date)
+        .join(DailyLog, FoodEntry.daily_log_id == DailyLog.id)
+        .where(DailyLog.user_id == user_id, DailyLog.date >= cutoff,
+               FoodEntry.calories.isnot(None), FoodEntry.calories > 0)
+        .order_by(DailyLog.date.desc(), FoodEntry.id.desc()).limit(400))).all()
+    for fe, _d in rows:
+        if _content_tokens(fe.parsed_food_name or "") == q_tokens:
+            # Scale by serving count if the current log names a different count.
+            ratio = _lead_count(quantity) / max(_lead_count(fe.quantity), 0.5)
+            if ratio <= 0 or ratio > 20:
+                ratio = 1.0
+            return {
+                "calories": round(float(fe.calories) * ratio),
+                "protein": round(float(fe.protein or 0) * ratio, 1),
+                "carbs": round(float(fe.carbs or 0) * ratio, 1),
+                "fats": round(float(fe.fats or 0) * ratio, 1),
+                "name": fe.parsed_food_name,
+            }
+    return None
+
+
 async def _analyze_food(db, user, food_name, inp):
     """
     Enrich a logged food with the right data source, returning a FoodAnalysis.
 
     Routing:
+      logged history (the user's own recent log of this food) → GROUND TRUTH, wins first.
       memory (recurring user food) → highest priority for both branded & generic.
       Branded packaged products (is_packaged=True or _looks_branded heuristic):
           web search FIRST (label-accurate), USDA as backup.
@@ -1056,6 +1117,31 @@ async def _analyze_food(db, user, food_name, inp):
     name_norm = normalize_name(food_name)
     generic = is_generic_food_name(food_name)
     is_packaged = bool(inp.get("is_packaged")) or _looks_branded(food_name)
+
+    # 0) GROUND TRUTH — the user's OWN recent log of this exact food (word-order-
+    # insensitive) wins over USDA/cache/generic. If they logged "Royo Everything Bagel"
+    # at 80, a later "everything Royo bagel" logs at 80 — not a generic 290 or a poisoned
+    # cache. Generic single-word names ("bagel") are excluded inside the matcher, and an
+    # explicit user-stated macro this turn (_user_macros) skips it so a correction wins.
+    if not generic and not inp.get("_user_macros"):
+        try:
+            _hist = await _logged_history_match(db, user.id, food_name, inp.get("quantity"))
+        except Exception as e:
+            logger.warning(f"logged-history match failed: {e}")
+            _hist = None
+        if _hist:
+            logger.info(
+                f"food history ground-truth: {food_name!r} → {_hist['calories']} cal "
+                f"(matched prior {_hist['name']!r}) — beats USDA/cache")
+            _res = analyze(food_name, inp.get("quantity"),
+                           _hist["calories"], _hist["protein"], _hist["carbs"], _hist["fats"],
+                           usda_candidate=None, memory_match=None, web_candidate=None)
+            try:
+                _res.source = "history"
+                _res.confidence = "user-confirmed"
+            except Exception:
+                pass
+            return _res
 
     # 1) Recurring memory — user's known staples (highest priority for any type)
     memory = None

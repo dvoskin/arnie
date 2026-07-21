@@ -154,6 +154,57 @@ SCENARIOS = {
         dict(say="salmon was about 7 oz, caesar was a full portion",
              need=["salmon", "caesar"], must_log=True),
     ],
+
+    # ══ DIFFICULT FOOD COMBINATIONS ══════════════════════════════════════════
+    # Composed bowl — 6 named components, must decompose fully (burrito-shape).
+    "poke_bowl": [
+        dict(say="a poke bowl with about 5 oz ahi tuna, a cup of rice, edamame, "
+                 "half an avocado, seaweed salad, and a drizzle of spicy mayo",
+             min=5, need=["tuna", "rice", "edamame", "avocado", "mayo"], must_log=True),
+    ],
+    # Grazing board — many small distinct items in one message.
+    "charcuterie": [
+        dict(say="a charcuterie board: prosciutto, salami, some brie, a bit of "
+                 "cheddar, a handful of crackers, grapes, a few olives and a little honey",
+             min=6, need=["prosciutto", "salami", "brie", "cracker", "olive"],
+             must_log=True),
+    ],
+    # DEDUP TRAP — same protein, DIFFERENT cuts must stay TWO rows (not merged).
+    "two_chicken_cuts": [
+        dict(say="6 oz grilled chicken breast and 4 oz braised chicken thigh",
+             min=2, need=["breast", "thigh"], max_total=2, must_log=True),
+    ],
+    # OVER-DECOMPOSITION GUARD — a PB&J is ONE item, not three (bread+PB+jelly).
+    "pbj_is_one": [
+        dict(say="a peanut butter and jelly sandwich", min=1, max_total=1,
+             need=["peanut butter", "jelly"]),
+    ],
+    # Branded + homemade in one message.
+    "branded_plus_generic": [
+        dict(say="a Chipotle chicken burrito bowl and a homemade side salad",
+             min=2, need=["chipotle", "salad"], must_log=True),
+    ],
+    # Alcohol — three drinks, each a distinct log.
+    "mixed_drinks": [
+        dict(say="a margarita, a light beer, and a glass of red wine",
+             min=3, need=["margarita", "beer", "wine"], must_log=True),
+    ],
+    # Fried/hidden-fat restaurant meal — must estimate UP, log all three.
+    "restaurant_fried": [
+        dict(say="chicken parm at an Italian spot, probably fried, with a side of "
+                 "spaghetti and a piece of garlic bread",
+             min=3, need=["parm", "spaghetti", "garlic bread"], must_log=True),
+    ],
+    # Russian multi-item lunch — RU units/separators must decompose like EN.
+    "ru_lunch": [
+        dict(say="на обед рис 200г, куриная отбивная 150г и салат из огурцов",
+             min=3, need=["рис", "отбивн", "салат"], must_log=True),
+    ],
+    # Combined dish that IS multiple items — burger + fries + shake = three.
+    "burger_combo": [
+        dict(say="a double cheeseburger with fries and a chocolate milkshake",
+             min=3, need=["burger", "fries", "shake"], must_log=True),
+    ],
 }
 
 _CLAIM_WORDS = (

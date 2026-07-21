@@ -28,6 +28,11 @@ _STALL_MARKERS = (
     "logging it all", "logging all of that", "logging all of it",
     "i'll log all", "let me get all",
     "adding it all", "adding all of that", "gonna log", "going to log",
+    # Update/correction promises — "fixing it now", "updating that", "adjusting it"
+    # said with no update_food_entry (the Royo bagel "Fixing it now" that never wrote).
+    "fixing it", "fixing that", "fixing now", "updating it", "updating that",
+    "adjusting it", "adjusting that", "let me fix", "let me update", "let me adjust",
+    "i'll fix", "i'll update", "i'll adjust",
     # Lookup-promise stalls (the screenshot pattern — "Checking the label on
     # that one" / "Let me grab the exact macros" without ever firing the tool).
     # These read as substantive replies but strand the user when paired with
@@ -407,6 +412,11 @@ _RECORDED_CLAIM = (
     "on the board", "noted", "logged", "got it logged", "locked in",
     "in the books", "on the books", "recorded", "added that", "that's in",
     "got that down",
+    # Correction / UPDATE claims — "I've got yours in at…", "updated", "fixed it",
+    # "adjusted", "trimmed/bumped it to…" said with NO update_food_entry (Danny's Royo
+    # bagel + Happy Wolf, 2026-07-21): a claimed edit that never wrote.
+    "got yours in", "got that in", "updated", "adjusted it", "fixed it",
+    "fixed now", "trimmed", "bumped it", "changed it to", "both fixed", "all fixed",
     # RU past-tense success claims — Anya 2026-07-19: "Кофе и кола внесены ☕"
     # with ZERO tool calls sailed straight through the EN-only list. A third
     # of the beta logs in Russian; the phantom detector must too.
@@ -435,6 +445,19 @@ _SET_REPORT_RE = re.compile(
 _FOOD_REPORT_RE = re.compile(
     r"\b(had|ate|eating|grabbed|just\s+had|for\s+(?:breakfast|lunch|dinner|a\s+snack))\b"
     r"|\b(bar|shake|chips|bagel|meal|snack|smoothie|protein|coffee|latte)\b",
+    re.IGNORECASE,
+)
+
+# Loggable INTENT the food-report regex misses — the model claimed success on these
+# and fired nothing (Danny 2026-07-21): imperative adds ("add a happy wolf", "log the
+# rice"), "also had X" continuations, and CORRECTIONS that state macros ("Royo bagels
+# are 80 cal 10g protein", "make it 200 cal"). Any of these + a recorded-claim reply +
+# zero tools = a phantom that must be rescued into a real log_food/update_food_entry.
+_LOG_INTENT_RE = re.compile(
+    r"\b(add|log|put|track|note|include|throw\s+in|toss\s+in|jot\s+down)\b"
+    r"|\balso\s+(had|ate|got|grabbed|have)\b"
+    r"|\b(is|are|should\s+be|make\s+it|change\s+it\s+to|actually)\b[^.]*\b\d+\s*(?:cal|cals|calorie|kcal)\b"
+    r"|\b\d+\s*(?:cal|cals|calorie|kcal)\b[^.]*\b(?:protein|carbs?|fat)\b",
     re.IGNORECASE,
 )
 
@@ -486,7 +509,8 @@ def looks_like_phantom_log_claim(user_text: str, response_text: str,
     r = (response_text or "").strip().lower()
     if not u or not r:
         return False
-    if not (_SET_REPORT_RE.search(u) or _FOOD_REPORT_RE.search(u)):
+    if not (_SET_REPORT_RE.search(u) or _FOOD_REPORT_RE.search(u)
+            or _LOG_INTENT_RE.search(u)):
         return False
     return any(p in r for p in _RECORDED_CLAIM)
 

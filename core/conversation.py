@@ -1177,7 +1177,11 @@ async def run_turn(
             _rescue_calls = [
                 tc for tc in (_rescue.get("tool_calls") or [])
                 if tc.get("name") in ("log_food", "log_exercise",
-                                       "log_body_weight", "log_water")
+                                       "log_body_weight", "log_water",
+                                       # A CORRECTION phantom ("Royo bagels are 80 cal",
+                                       # "fixing it now") rescues into an UPDATE, not a
+                                       # new log — include it so the edit actually writes.
+                                       "update_food_entry")
             ]
             if _rescue_calls:
                 # First pass fired no tools, so the executor's log was never
@@ -1193,7 +1197,8 @@ async def run_turn(
                     user_message=_gate_user_message,
                 )
                 _wrote = any(
-                    isinstance(v, str) and v.lstrip().startswith("Logged")
+                    isinstance(v, str)
+                    and v.lstrip().startswith(("Logged", "Updated", "Adjusted"))
                     for v in _rescue_results.values()
                 )
                 if _wrote:
