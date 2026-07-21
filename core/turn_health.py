@@ -151,14 +151,16 @@ _LIST_FILLER = {
 }
 
 def looks_like_undercounted_food(message: str, num_food_logs: int) -> bool:
-    """True when the message clearly ENUMERATES a multi-item meal (>=4 items with >=2
-    explicit quantities — the burrito/salmon-bowl shape) but far fewer log_food calls
-    fired than items named. Requires quantity markers so a single 'lettuce, tomato,
-    onion + mustard, 20 cal' veggie mix (one item, no per-item portions) doesn't trip
-    it. The self-heal retry does the real extraction; this only needs to trigger."""
+    """True when a message ENUMERATES a multi-item meal (>=2 items with >=2 explicit
+    quantities — from the burrito bowl down to 'gonna have 150g turkey and 100g rice')
+    but far fewer log_food calls fired than items named. The quantity requirement keeps
+    a single 'lettuce, tomato, onion + mustard, 20 cal' veggie mix (one item, no
+    per-item portions) from tripping it, and a plain 'chicken and rice' (no quantities)
+    too. The self-heal retry does the real extraction; this only needs to trigger.
+    Threshold lowered from 4→2 for the turkey+rice reference-drop (2026-07-20)."""
     est = estimate_food_items(message)
     qtys = sum(1 for _ in _QTY_MARKER_RE.finditer(message or ""))
-    return est >= 4 and qtys >= 2 and num_food_logs <= est // 2
+    return est >= 2 and qtys >= 2 and num_food_logs <= est // 2
 
 
 # Bare acknowledgments that are banned as a COMPLETE reply — they dead-end the

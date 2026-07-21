@@ -156,6 +156,22 @@ _AFFIRMATION_RX = re.compile(
     re.IGNORECASE,
 )
 
+# Definite CONSUMPTION reference — a bare "I ate the thing we just talked about",
+# with no item named in THIS message: the item list lives in the PRIOR user message
+# (usually a stated plan, "gonna have 150g turkey and 100g rice"). The turkey+rice
+# incident (2026-07-20): "Just had that" → only turkey logged, rice dropped, because
+# the gate saw no items in "just had that". Resolving it to the prior message lets
+# the completeness/phantom gates see the full list. Kept tight: must be a SHORT
+# message that is essentially just the reference.
+_CONSUMED_REFERENCE_RX = re.compile(
+    r"^(?:just\s+|already\s+|yeah\s+|yep\s+|ok(?:ay)?\s+|done[,\s]+)*"
+    r"(?:had|ate|finished|did|demolished|crushed|polished\s+off|smashed|"
+    r"съел[аи]?|поел[аи]?|доел[аи]?|всё\s+съел[аи]?)\s+"
+    r"(?:that|it|them|those|all\s+of\s+(?:it|that|them)|the\s+(?:whole|lot|rest)"
+    r"[\w\s]{0,12}|everything|это|всё|их)\b",
+    re.IGNORECASE,
+)
+
 
 def effective_intent_message(current: Optional[str], prior: Optional[str],
                              prior_assistant: Optional[str] = None) -> str:
@@ -176,6 +192,11 @@ def effective_intent_message(current: Optional[str], prior: Optional[str],
         return cur
     words = len(cur.split())
     if words <= 4 and _AFFIRMATION_RX.match(cur):
+        return f"{prior}\n{cur}"
+    # Definite consumption reference ("just had that", "ate all of it") — the items
+    # live in the prior message. Combine so the gates judge the real list, not a
+    # pronoun. Tight: ≤8 words and the message is essentially just the reference.
+    if words <= 8 and _CONSUMED_REFERENCE_RX.match(cur):
         return f"{prior}\n{cur}"
     pa = (prior_assistant or "").strip()
     if pa.rstrip("| ").endswith("?") and words <= 16:

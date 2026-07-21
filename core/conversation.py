@@ -397,6 +397,12 @@ async def run_turn(
     # first pass + follow-up + any self-heal retry. None when not streaming.
     _streamed_total = 0
     _early_card_ids: list = []   # log cards streamed early (before the follow-up)
+    # VERIFY-BEFORE-STREAM: on a streaming logging turn we HOLD the follow-up voicing
+    # (buffer, don't stream live) until the day-total guard has checked its running
+    # total against the DB. Then the verified response_text is emitted ONCE via the
+    # post-build catch-up. Without this, a phantom total streams live and the guard's
+    # correction can only APPEND — the double-reply (turkey+rice: "1698" then "1566").
+    _hold_voicing = False
     _streamer = _BubbleStreamer(on_text_bubble) if on_text_bubble else None
     _stream_handler = _streamer.on_delta if _streamer else None
     # Only pass stream_handler to LLM calls when active — keeps the chat() and
@@ -751,6 +757,12 @@ async def run_turn(
         _fired_logging = any(tc["name"] in _LOGGING_TOOLS for tc in tool_calls)
         if _fired_logging:
             _streamer.discard_held()
+            # Keep HOLDING for the follow-up voicing: its running total must be
+            # verified against the DB before a single bubble reaches the user, so a
+            # phantom total can be CORRECTED (replaced) instead of only appended.
+            # The verified response_text ships once via the post-build catch-up.
+            _streamer.held = True
+            _hold_voicing = True
         else:
             await _streamer.flush_held()
 
@@ -1188,7 +1200,7 @@ async def run_turn(
                         _rescue_text = deterministic_confirmation(
                             _rescue_calls, today_log, user.preferences, _rescue_results)
                     if _rescue_text:
-                        if on_text_bubble:
+                        if on_text_bubble and not _hold_voicing:
                             for _b in Response.from_text(_rescue_text).bubbles:
                                 await on_text_bubble(_b)
                         response_text = _rescue_text
@@ -1233,7 +1245,7 @@ async def run_turn(
             )
             _repair_text = (_repair.get("text") or "").strip()
             if _repair_text:
-                if on_text_bubble:
+                if on_text_bubble and not _hold_voicing:
                     # Streaming: bad bubble already sent — emit repair as immediate follow-up
                     for _b in Response.from_text(_repair_text).bubbles:
                         await on_text_bubble(_b)
@@ -1284,7 +1296,7 @@ async def run_turn(
                 )
                 _fix_text = (_fix.get("text") or "").strip()
                 if _fix_text:
-                    if on_text_bubble:
+                    if on_text_bubble and not _hold_voicing:
                         # Streaming: the wrong total already reached the user — emit the
                         # corrected reply immediately after it. Register each bubble in
                         # the streamer's flushed set so the post-build catch-up can't
@@ -1294,6 +1306,8 @@ async def run_turn(
                             if _streamer:
                                 _streamer.flushed_count += 1
                                 _streamer.flushed_canon.add(_canon_bubble(_b))
+                    # When _hold_voicing, nothing streamed yet — just take the corrected
+                    # text; it ships once via the catch-up. No phantom to append after.
                     response_text = _fix_text
     except Exception as e:
         logger.debug(f"day-total guard failed for {_tag}: {e}")
@@ -1315,6 +1329,14 @@ async def run_turn(
             and getattr(_streamer, "flushed_bubbles", None)):
         response_text = "|||".join(_streamer.flushed_bubbles)
         _response_streamed = True   # it IS what streamed — no catch-up needed
+
+    # VERIFY-BEFORE-STREAM finalize: on a held logging turn the follow-up voicing was
+    # buffered, never shown, and its total was verified/corrected above. Drop the
+    # unverified buffer and mark the reply un-streamed so the catch-up below ships the
+    # final response_text exactly once — one verified reply, never a phantom + a fix.
+    if _hold_voicing and _streamer is not None:
+        _streamer.discard_held()
+        _response_streamed = False
 
     resp = Response.from_text(response_text)
 
