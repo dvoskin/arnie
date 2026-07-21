@@ -15,6 +15,7 @@ import asyncio
 import base64
 import json
 import logging
+import os
 
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field, field_validator
@@ -514,10 +515,14 @@ async def _stream_turn(ws: WebSocket, identity: str, message: str,
                 await ws.send_json({"type": "bubble", "text": text})
 
             async def on_tool_start(tools: list) -> None:
-                # Mid-action heads-up so the iOS thinking indicator can morph
-                # ("Thinking…" → "Logging…"). Additive; clients that ignore
-                # "tool" frames are unaffected.
-                await ws.send_json({"type": "tool", "tools": tools})
+                # This frame morphs the iOS indicator ("Thinking…" → "Logging…").
+                # Danny 2026-07-21: the morphed labels often mismatched the actual
+                # action, so by default we DON'T send it — the indicator stays a
+                # plain "Thinking…" for the whole turn. Re-enable the morph with
+                # STREAM_TOOL_STATUS=true (env only, no code change) once the
+                # tool→label mapping is trustworthy again.
+                if os.getenv("STREAM_TOOL_STATUS", "false").lower() in ("true", "1", "yes"):
+                    await ws.send_json({"type": "tool", "tools": tools})
 
             async def on_card(cards: list) -> None:
                 # The log card, streamed the instant the row is written — BEFORE
