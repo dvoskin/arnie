@@ -155,17 +155,28 @@ _LIST_FILLER = {
     "г", "гр", "кг", "мл", "шт", "штук", "з", "та", "і", "їв", "їла", "з'їв",
 }
 
+# A PORTIONED segment carries an explicit amount: a unit quantity ("3/4 cup", "150g")
+# OR a leading count ("1 egg", "2 bars", "half a bagel"). Counting bare counts — not
+# just units — catches "1 egg plus 3/4 cup of egg whites" (Chaya, 2026-07-21: the egg
+# whites dropped, only 1 unit-qty so the old >=2-quantity gate missed it). Still tight:
+# "lettuce, tomato, onion + mustard, 20 cal" has no per-item amount → won't trip.
+_COUNT_SIGNAL_RE = re.compile(r"^\s*(?:a|an|one|two|three|four|five|half|\d+(?:/\d+)?)\s+[a-z]",
+                              re.IGNORECASE)
+
+
 def looks_like_undercounted_food(message: str, num_food_logs: int) -> bool:
-    """True when a message ENUMERATES a multi-item meal (>=2 items with >=2 explicit
-    quantities — from the burrito bowl down to 'gonna have 150g turkey and 100g rice')
-    but far fewer log_food calls fired than items named. The quantity requirement keeps
-    a single 'lettuce, tomato, onion + mustard, 20 cal' veggie mix (one item, no
-    per-item portions) from tripping it, and a plain 'chicken and rice' (no quantities)
-    too. The self-heal retry does the real extraction; this only needs to trigger.
-    Threshold lowered from 4→2 for the turkey+rice reference-drop (2026-07-20)."""
+    """True when a message ENUMERATES a multi-item meal (>=2 items, >=2 of them carrying
+    an explicit PORTION — a unit quantity or a leading count) but far fewer log_food
+    calls fired than items named. The portion requirement keeps a single 'lettuce,
+    tomato, onion + mustard, 20 cal' veggie mix and a plain 'chicken and rice' (no
+    per-item amounts) from tripping it. The self-heal retry does the real extraction;
+    this only needs to trigger. Threshold 4→2 (turkey+rice reference-drop, 2026-07-20);
+    counts-as-portions added for the egg+egg-whites drop (2026-07-21)."""
     est = estimate_food_items(message)
-    qtys = sum(1 for _ in _QTY_MARKER_RE.finditer(message or ""))
-    return est >= 2 and qtys >= 2 and num_food_logs <= est // 2
+    segs = [s for s in _LIST_SEP_RE.split(message or "") if s.strip()]
+    portioned = sum(1 for s in segs
+                    if _QTY_MARKER_RE.search(s) or _COUNT_SIGNAL_RE.search(s))
+    return est >= 2 and portioned >= 2 and num_food_logs <= est // 2
 
 
 # Bare acknowledgments that are banned as a COMPLETE reply — they dead-end the
@@ -461,6 +472,19 @@ _LOG_INTENT_RE = re.compile(
     re.IGNORECASE,
 )
 
+# WEIGHT report in the USER's message — "weighed in at 194", "weight looks like 194.2
+# this morning", "I'm 194 lbs", "down to 88kg". Danny 2026-07-21: "Weight looks like
+# 194.2 this morning" → "194.2 logged" with ZERO log_body_weight → weight never saved.
+# The food/set gates missed it, so the phantom rescue never fired. Conservative: keys
+# on weigh/weight verbs or an explicit weight UNIT (never a bare number → no "I'm 25").
+_WEIGHT_REPORT_RE = re.compile(
+    r"\bweigh(?:ed|ing|s|-?\s*in)?\b"
+    r"|\bweight(?:'?s)?\s+(?:is|was|looks?|at|of|today|down|up|holding|steady)\b"
+    r"|\b\d{2,3}(?:\.\d)?\s*(?:lbs?|kgs?|pounds?)\b"
+    r"|\bdown\s+to\s+\d{2,3}(?:\.\d)?\s*(?:lbs?|kgs?|pounds?)\b",
+    re.IGNORECASE,
+)
+
 
 _INVOKE_RE = re.compile(r'<invoke\s+name="([^"]+)"\s*>(.*?)</invoke>', re.S | re.I)
 _PARAM_RE = re.compile(r'<parameter\s+name="([^"]+)"\s*>(.*?)</parameter>', re.S | re.I)
@@ -510,7 +534,7 @@ def looks_like_phantom_log_claim(user_text: str, response_text: str,
     if not u or not r:
         return False
     if not (_SET_REPORT_RE.search(u) or _FOOD_REPORT_RE.search(u)
-            or _LOG_INTENT_RE.search(u)):
+            or _LOG_INTENT_RE.search(u) or _WEIGHT_REPORT_RE.search(u)):
         return False
     return any(p in r for p in _RECORDED_CLAIM)
 

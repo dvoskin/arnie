@@ -1057,7 +1057,7 @@ def _lead_count(q) -> float:
         return 1.0
 
 
-async def _logged_history_match(db, user_id, food_name, quantity, days=120):
+async def _logged_history_match(db, user_id, food_name, quantity, days=90):
     """The user's OWN most-recent logged macros for a food matching food_name by
     content-token set. Their log is GROUND TRUTH for a repeat/branded item — it beats
     a generic USDA close-match or a poisoned cache (the Royo bagel 290-vs-80 incident,
@@ -1065,20 +1065,26 @@ async def _logged_history_match(db, user_id, food_name, quantity, days=120):
 
     Tight by construction: needs >=2 content tokens (so a bare 'bagel'/'coffee' can't
     override) and exact content-token-set equality (so 'grilled chicken breast' never
-    matches 'chicken breast')."""
+    matches 'chicken breast'). The >=2-token check runs BEFORE the DB query so a
+    single-word/generic log pays nothing; the query is capped small for latency."""
     q_tokens = _content_tokens(food_name)
     if len(q_tokens) < 2:
         return None
     from db.models import FoodEntry, DailyLog
     from datetime import date, timedelta
-    from sqlalchemy import select
+    from sqlalchemy import select, func
     cutoff = date.today() - timedelta(days=days)
+    # DISTINCT ON collapses to the most-recent row per food name DB-side, so a heavy
+    # logger fetches ~one row per distinct food (capped 200) instead of every entry —
+    # ~halves the per-log cost vs. scanning 400 raw rows.
     rows = (await db.execute(
         select(FoodEntry, DailyLog.date)
+        .distinct(func.lower(FoodEntry.parsed_food_name))
         .join(DailyLog, FoodEntry.daily_log_id == DailyLog.id)
         .where(DailyLog.user_id == user_id, DailyLog.date >= cutoff,
                FoodEntry.calories.isnot(None), FoodEntry.calories > 0)
-        .order_by(DailyLog.date.desc(), FoodEntry.id.desc()).limit(400))).all()
+        .order_by(func.lower(FoodEntry.parsed_food_name),
+                  DailyLog.date.desc(), FoodEntry.id.desc()).limit(200))).all()
     for fe, _d in rows:
         if _content_tokens(fe.parsed_food_name or "") == q_tokens:
             # Scale by serving count if the current log names a different count.
