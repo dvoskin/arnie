@@ -1393,48 +1393,18 @@ async def run_turn(
                     f"(stated={_stated}) — pre-dawn/UTC day-boundary, not a phantom")
             elif _stated is not None and abs(_stated - _db_cal) > _DAY_TOTAL_TOLERANCE:
                 _total_mismatch = True
-                logger.warning(
-                    f"TOTAL_MISMATCH {_tag}: stated={_stated} db={_db_cal} — correcting"
-                )
-                _truth = (
-                    f"\n\nNUMBER CORRECTION — the ONLY correct running day total right "
-                    f"now is {_db_cal} calories, straight from the live log. Your last "
-                    f"reply stated a different total, which is WRONG. Anything the user "
-                    f"reported this turn that isn't reflected in {_db_cal} did NOT get "
-                    f"logged — do not claim it did, do not 'double-check' and insist it's "
-                    f"there. Re-send your reply using {_db_cal} as the day total; if a "
-                    f"food they mentioned is missing, say so plainly in one line and ask "
-                    f"them to re-send it so you can log it now. Never state a day total "
-                    f"that isn't {_db_cal}."
-                )
-                # End on a USER message — the model rejects assistant prefill
-                # with a 400 (see the QUALITY REPAIR call above). A prefilled
-                # correction here silently failed, so the wrong day total shipped
-                # uncorrected (turkey+rice 1698-vs-1566, 2026-07-21).
-                _fix = await chat(
-                    messages + [{"role": "user", "content": (
-                        "[SYSTEM NUMBER CHECK — not the user] Your last reply was:\n"
-                        f"\"\"\"{response_text}\"\"\"\n\n"
-                        "Re-send it corrected, following the NUMBER CORRECTION "
-                        "in the system prompt."
-                    )}],
-                    system + _truth, tools=False, max_tokens=400,
-                )
-                _fix_text = (_fix.get("text") or "").strip()
-                if _fix_text:
-                    if on_text_bubble and not _hold_voicing:
-                        # Streaming: the wrong total already reached the user — emit the
-                        # corrected reply immediately after it. Register each bubble in
-                        # the streamer's flushed set so the post-build catch-up can't
-                        # re-emit it (the doubled-message guard).
-                        for _b in Response.from_text(_fix_text).bubbles:
-                            await on_text_bubble(_b)
-                            if _streamer:
-                                _streamer.flushed_count += 1
-                                _streamer.flushed_canon.add(_canon_bubble(_b))
-                    # When _hold_voicing, nothing streamed yet — just take the corrected
-                    # text; it ships once via the catch-up. No phantom to append after.
-                    response_text = _fix_text
+                logger.warning(f"TOTAL_MISMATCH {_tag}: stated={_stated} db={_db_cal}")
+                # PASSIVE (strip step 7): no corrective model pass, no re-emitted bubble.
+                # voice_log is handed the DB total so a clean log can't mismatch — the old
+                # corrective chat() was dead weight on that path AND a real footgun (it
+                # zeroed a full day at the tz boundary, and its re-emit was a second text
+                # source = a double). The mismatch stays a health_flag metric. When the
+                # reply hasn't shipped yet (it lands via the catch-up) and a log fired,
+                # fall to the deterministic confirmation's real DB numbers — never a
+                # second model call that can itself hallucinate.
+                if _fired_log and not _response_streamed:
+                    response_text = deterministic_confirmation(
+                        tool_calls, today_log, user.preferences, tool_results)
     except Exception as e:
         logger.debug(f"day-total guard failed for {_tag}: {e}")
 
