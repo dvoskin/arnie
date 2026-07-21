@@ -927,24 +927,28 @@ async def run_turn(
                     pass
         elif has_logging and not in_onboarding:
             _followup_tried = True
-            # ── FAST CLEAN LOG VOICE ──────────────────────────────────────────
+            # ── FAST CLEAN LOG VOICE — SINGLE SOURCE ──────────────────────────
             # A pure food-log turn gets ONE sub-second read over the committed
-            # facts (core/log_voice): a single reply source (kills the double),
-            # numbers handed in from the DB (can't phantom a total), a tiny focused
-            # prompt (can't ramble / loop / contradict the way the 46k-token pass
-            # did). The heavy follow-up below stays for co-asked questions,
-            # data-fetch combos, and as the fallback. Switch: FAST_LOG_VOICE=false.
+            # facts (core/log_voice): numbers handed in from the DB (can't phantom
+            # a total), a tiny focused prompt (can't ramble / loop). And if that
+            # read returns nothing (a transient Sonnet miss), the fallback is the
+            # deterministic confirmation — NEVER the legacy follow-up. The follow-up
+            # streams live AND the post-build catch-up re-emits, which is the double;
+            # on a voice_log miss it was silently reappearing (Danny 17:23: long
+            # reply, then hidden, template stored, card late). One source, always.
+            # Switch: FAST_LOG_VOICE=false.
+            _pure_food = _is_pure_food_log(tool_calls, _user_text)
             _fast_voice = None
-            if fast_log_voice_enabled() and _is_pure_food_log(tool_calls, _user_text):
+            if fast_log_voice_enabled() and _pure_food:
                 _fast_voice = await voice_log(
                     tool_calls, tool_results, today_log, user)
-            if _fast_voice:
-                response_text = _fast_voice
-                _response_streamed = False   # not streamed — ships once via catch-up
+            if _pure_food:
+                response_text = _fast_voice or deterministic_confirmation(
+                    tool_calls, today_log, user.preferences, tool_results)
+                _response_streamed = False
             else:
-                # Coach-unmute path: let Arnie coach on a log instead of a template.
-                # Authoritative totals come from the tool result; "NUMBERS ARE
-                # SACRED" in the system prompt prevents fabrication.
+                # Non-pure logging turn (water / weight, or a co-asked question)
+                # keeps the voiced follow-up path for now.
                 response_text = await _try_follow_up()
             if not response_text:
                 # Before falling to the canned "Keep sipping" / "Consistency is

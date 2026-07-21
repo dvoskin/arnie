@@ -110,3 +110,49 @@ async def test_pure_food_log_ships_one_reply_no_double(monkeypatch):
 
     assert len(turn.response.bubbles) == 2
     assert calls["chat"] == 1, f"pure log should be ONE model call, was {calls['chat']}"
+
+
+@pytest.mark.asyncio
+async def test_voice_log_miss_falls_to_deterministic_not_legacy_double(monkeypatch):
+    """When voice_log returns None (a transient Sonnet miss), a pure food log must
+    fall to the deterministic confirmation as a SINGLE source — NEVER the legacy
+    follow-up, whose stream + catch-up is the double (Danny 17:23: the template
+    reappeared with a long hidden reply + a late card)."""
+    async def fake_chat(messages, system, tools=True, max_tokens=1024, model=None, **kw):
+        return {"text": "", "raw_content": [{"type": "text", "text": ""}],
+                "tool_calls": [{"name": "log_food", "input": {"food_name": "Twix bar"}}],
+                "stop_reason": "tool_use"}
+    monkeypatch.setattr(C, "chat", fake_chat)
+
+    async def fake_exec(*a, **k):
+        return {"log_food": "Logged: Twix bar, 250 cal, 2g protein"}
+    monkeypatch.setattr(C, "execute_tool_calls", fake_exec)
+
+    async def fake_reload(db, uid):
+        return _user()
+    monkeypatch.setattr(Q, "reload_user", fake_reload)
+
+    async def fake_voice_miss(*a, **k):
+        return None                      # the transient miss
+    monkeypatch.setattr(C, "voice_log", fake_voice_miss)
+
+    called = {"followup": 0}
+    async def fake_followup(*a, **k):
+        called["followup"] += 1
+        return "LEGACY FOLLOW-UP TEXT THAT MUST NEVER SHIP ON A PURE FOOD LOG"
+    monkeypatch.setattr(C, "chat_follow_up", fake_followup)
+
+    sent = []
+    async def on_text_bubble(b):
+        sent.append(b)
+
+    turn = await run_turn(
+        _user(), _DB(), [{"role": "user", "content": "Twix bar"}], "SYS",
+        "imessage", in_onboarding=False, was_onboarding=False,
+        today_log=_today_log(), on_text_bubble=on_text_bubble,
+    )
+
+    joined = " ".join(sent)
+    assert called["followup"] == 0, "legacy chat_follow_up was called on a pure food log (the double path)"
+    assert "LEGACY FOLLOW-UP" not in joined, "legacy follow-up text reached the user (the double)"
+    assert any("Twix bar logged" in b for b in sent), f"expected deterministic confirmation, got {sent}"
