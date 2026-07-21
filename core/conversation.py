@@ -94,23 +94,38 @@ def _voices_result(tool_name: str) -> bool:
 
 _FOOD_LOG_TOOLS = frozenset({"log_food", "update_food_entry"})
 
+# Lookups a food-log turn may ALSO fire without being "impure": brand-macro and
+# history lookups done IN SERVICE of the log, not a separate answer owed to the
+# user. voice_log reads the COMMITTED food facts (already enriched by these), so
+# it voices the result correctly with NO follow-up. Allowing them here is the
+# double fix (2026-07-21): a branded/multi-item log that also hit
+# search_food_database / web_search used to fall to the follow-up + post-build
+# catch-up path — TWO text sources, the "long reply then only the short one
+# survives reload" bug. Now it takes the single voice source like any log.
+_LOG_COMPANION_TOOLS = frozenset({
+    "search_food_database", "web_search", "query_history", "track_metric",
+})
+
 
 def _is_pure_food_log(tool_calls, user_text) -> bool:
-    """A turn whose only real action is logging food, with no question to answer.
+    """A turn whose real action is logging food — the single fast-voice path.
 
-    These get the fast single-reply voice (core/log_voice). Anything else — a
-    co-asked question ("had a twix, what's for dinner?"), or a data-fetch/workout
-    tool in the same turn — keeps the full follow-up path so that result still
-    gets voiced. Silent side-effect tools don't count against "pure"."""
+    Widened 2026-07-21 to kill the double: a food-log turn stays "pure" even when
+    it also fired a LOOKUP tool (brand macros, history, web) in service of the
+    log — voice_log reads the committed, already-enriched facts, so that result
+    needs no separate voicing. Only a genuinely-asked question (a "?" the log-read
+    can't answer) or a truly unrelated tool (workout, image, nearby-places) drops
+    it to the full follow-up path so THAT result still gets voiced. Silent
+    side-effect tools never count against "pure"."""
     names = [tc.get("name") for tc in (tool_calls or [])]
     if not any(n in _FOOD_LOG_TOOLS for n in names):
         return False
     for n in names:
-        if n in _FOOD_LOG_TOOLS or n in _SILENT_TOOLS:
+        if n in _FOOD_LOG_TOOLS or n in _SILENT_TOOLS or n in _LOG_COMPANION_TOOLS:
             continue
-        return False   # a non-food-log, non-silent tool means there's more to voice
+        return False   # a genuinely unrelated tool means there's more to voice
     if isinstance(user_text, str) and "?" in user_text:
-        return False   # a question needs a real answer, not just a log read
+        return False   # a real question needs a coached answer, not just a log read
     return True
 
 
@@ -1305,8 +1320,18 @@ async def run_turn(
         except Exception as e:
             logger.error(f"Phantom rescue failed for {_tag}: {e}")
 
+    # STRIP (2026-07-21): the quality-repair pass NEVER runs on a logging turn.
+    # It was an added recheck that spent an extra Opus round-trip AND emitted a
+    # second text source on top of the log voice — a latency tax and a double
+    # risk on the exact path that must stay clean. The log voice (voice_log →
+    # deterministic_confirmation fallback) is already number-accurate and
+    # em-dash/tilde-sanitized, so a logging turn needs no rewrite. Non-logging
+    # coaching turns keep the repair (that path is "spot on" per Danny and is
+    # untouched). Phantom claims are handled ABOVE by the rescue, which only
+    # fires on no-tool turns, so gating here can't suppress a real phantom.
     if (_streaming_dead_end or _logging_dead_end or _mechanics
-            or _empty_praise or _stall or _phantom) and not _signing_off:
+            or _empty_praise or _stall or _phantom) and not _signing_off \
+            and not _logging_turn:
         try:
             # Stall repair runs with tools=True — the failure mode is the model
             # promising a tool ("Let me log…") without firing one, so we need to
