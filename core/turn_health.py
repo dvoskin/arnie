@@ -492,6 +492,41 @@ _WEIGHT_REPORT_RE = re.compile(
 )
 
 
+# PAST/PRESENT food-consumption report vs a PLAN. "I had 2 pieces of starburst"
+# is consumed; "probably ground turkey later" is a plan. Used by the OMISSION net.
+_CONSUMED_RE = re.compile(
+    r"\b(had|ate|eaten|having|grabbed|finished|snacked|downed|"
+    r"just\s+(?:had|ate|grabbed|finished|got|made)|"
+    r"for\s+(?:breakfast|lunch|dinner|a\s+snack|dessert))\b", re.I)
+_PLAN_RE = re.compile(
+    r"\b(gonna|going\s+to|about\s+to|planning|plan\s+to|might|maybe|probably|"
+    r"thinking\s+(?:about|of)|will\s+(?:have|eat|grab|do)|later\b|in\s+\d+\s*min|"
+    r"not\s+sure|i'?ll\s+(?:have|eat|grab|do))\b", re.I)
+
+
+def looks_like_unlogged_food_report(user_text: str, response_text: str) -> bool:
+    """True when the user reported EATING a specific food (past/present) and the
+    reply QUANTIFIED it (stated calories/macros) but — the caller confirms — fired
+    no log tool and asked no question. The model commented instead of logging (the
+    '2 Starburst, 40 cal, tiny hit that doesn't change anything' miss, 2026-07-21).
+
+    High-precision by construction: a PLAN ('probably turkey later'), a bare 'had a
+    rough day' (no macros stated), or any turn where the model asked a clarifying
+    question ('?' → it's legitimately deferring) is excluded. The stated
+    calorie/macro figure is the tell that the model RECOGNIZED a real food and
+    chose to narrate it rather than log it."""
+    u = (user_text or "").strip()
+    r = (response_text or "").strip()
+    if not u or not r:
+        return False
+    if _PLAN_RE.search(u) or not _CONSUMED_RE.search(u):
+        return False
+    if "?" in r:
+        return False
+    return bool(_CALORIE_ESTIMATE_RE.search(r)
+                or re.search(r"\d+\s*g\s+(?:protein|carbs?|fat)", r, re.I))
+
+
 _INVOKE_RE = re.compile(r'<invoke\s+name="([^"]+)"\s*>(.*?)</invoke>', re.S | re.I)
 _PARAM_RE = re.compile(r'<parameter\s+name="([^"]+)"\s*>(.*?)</parameter>', re.S | re.I)
 

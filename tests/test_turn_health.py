@@ -2,7 +2,35 @@
 from core.turn_health import (
     looks_like_stall, looks_like_dead_end, detect_frustration, detect_turn_flags,
     looks_like_phantom_log_claim, claimed_day_total, extract_stated_day_calories,
+    looks_like_unlogged_food_report,
 )
+
+
+# ── OMISSION: reported food, quantified in the reply, never logged (starburst) ──
+
+def test_omission_reported_food_commented_not_logged():
+    # The screenshot: "I had 2 pieces of starburst" → reply states 40 cal but the
+    # caller confirms no tool fired. Must be flagged so the rescue logs it.
+    assert looks_like_unlogged_food_report(
+        "I had 2 pieces of starburst",
+        "2 Starburst, about 40 cal, no real protein, tiny hit that doesn't change "
+        "anything.|||Turkey's still the move. Ping me when it's on the plate.") is True
+
+
+def test_omission_excludes_plans_questions_and_non_food():
+    # A plan the model correctly defers on (and asks about) — not an omission.
+    assert looks_like_unlogged_food_report(
+        "I'm not sure yet probably ground turkey I made yesterday",
+        "Good call. Want me to log the turkey now or wait til it's on the plate?") is False
+    # A clarify question — legit deferral, not a miss.
+    assert looks_like_unlogged_food_report(
+        "I had a chicken wrap", "nice — what size, regular or large?") is False
+    # "had" with no food and no macros stated — must NOT trigger a spurious log.
+    assert looks_like_unlogged_food_report(
+        "I had a rough day", "rough ones happen. hang in there.") is False
+    # A future plan.
+    assert looks_like_unlogged_food_report(
+        "gonna grab a snack later", "solid, tell me when it's real.") is False
 
 
 # ── Russian phantom detection (Anya, 2026-07-21) ────────────────────────────────

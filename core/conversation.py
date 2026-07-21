@@ -1230,6 +1230,26 @@ async def run_turn(
         except Exception:
             pass
 
+    # OMISSION rescue: the user reported eating a specific food and the reply even
+    # STATED its calories, but fired NO log tool and asked NO question — it
+    # commented instead of logging (the "2 Starburst, 40 cal, tiny hit that
+    # doesn't change anything" miss, 2026-07-21; the model logs it ~4/5 turns and
+    # editorializes the 5th). No false "logged" claim, so the phantom paths above
+    # miss it. High-precision: plans, questions, and non-food "had a rough day"
+    # (no macros stated) are all excluded (see looks_like_unlogged_food_report).
+    _omission = False
+    if not tool_calls and not _phantom:
+        try:
+            from core.turn_health import looks_like_unlogged_food_report
+            _omission = looks_like_unlogged_food_report(
+                _gate_user_message, response_text)
+            if _omission:
+                logger.warning(
+                    f"event=unlogged_food_report user={getattr(user, 'id', None)} "
+                    f"msg={(_gate_user_message or '')[:60]!r}")
+        except Exception:
+            _omission = False
+
     # Sign-off: a clear goodnight/closing → 'Sleep well 🌙' is correct. Repair
     # is disabled in this case so we don't generate a full coaching reply after
     # a goodnight (the "Logged: Ground turkey" after-goodnight regression).
@@ -1245,25 +1265,31 @@ async def run_turn(
     # one tools=True pass whose tool calls are EXECUTED through the same
     # executor as the main turn (add-intent gate included via user_message).
     # Only if that still writes nothing do we fall back to owning the miss.
-    if _phantom and not _signing_off:
+    if (_phantom or _omission) and not _signing_off:
         try:
             _rescue = await chat(
                 messages + [
                     {"role": "assistant", "content": response_text},
                     {"role": "user", "content":
-                        "[SYSTEM HEALTH CHECK — not the user] Your reply above "
-                        "claims something was logged, but NO logging tool was "
-                        "called: NOTHING was saved. Call the right log tool NOW "
-                        "for exactly what this exchange is about — food (log_food), "
-                        "exercise (log_exercise), BODY WEIGHT (log_body_weight, e.g. "
-                        "'weight looks like 194.2' → log 194.2), or water (log_water) — "
-                        "INCLUDING the item the user named just before answering "
-                        "your clarifying question (e.g. they said 'chicken wrap', "
-                        "you asked size, they said 'regular' → log the wrap). "
-                        "Every item, exact quantities. Then confirm in one short "
-                        "message with the real numbers. Do NOT reply without the "
-                        "tool call. Do NOT re-log items already on today's board "
-                        "from a SEPARATE earlier meal."},
+                        "[SYSTEM HEALTH CHECK — not the user] The user reported "
+                        "eating or doing something (past/present tense) and your "
+                        "reply discussed it — even stated its calories — but NO "
+                        "logging tool was called, so NOTHING was saved. Call the "
+                        "right log tool NOW for exactly what they reported — food "
+                        "(log_food), exercise (log_exercise), BODY WEIGHT "
+                        "(log_body_weight, e.g. 'weight looks like 194.2' → log "
+                        "194.2), or water (log_water) — INCLUDING the item the user "
+                        "named just before answering your clarifying question (e.g. "
+                        "they said 'chicken wrap', you asked size, they said "
+                        "'regular' → log the wrap). Log EVERY item they reported "
+                        "this turn, even a tiny one (2 starburst, a mint, a bite) — "
+                        "a small item is still logged, never just commented on. "
+                        "Exact quantities. Then confirm in one short message with "
+                        "the real numbers. Do NOT reply without the tool call. "
+                        "BUT if the user did NOT actually report consuming/doing a "
+                        "specific thing (just chit-chat, a plan they haven't done, "
+                        "or a question), call NO tool. Do NOT re-log items already "
+                        "on today's board from a SEPARATE earlier meal."},
                 ],
                 system, tools=True, max_tokens=700,
             )
@@ -1310,13 +1336,14 @@ async def run_turn(
                                 await on_text_bubble(_b)
                         response_text = _rescue_text
                         tool_calls = list(tool_calls or []) + _rescue_calls
-                        _phantom = False   # rescued — skip the text-only repair
+                        _trigger = "phantom" if _phantom else "omission"
+                        _phantom = _omission = False  # rescued — skip text-only repair
                         logger.warning(
-                            f"event=phantom_rescue outcome=logged {_tag} "
+                            f"event=log_rescue outcome=logged trigger={_trigger} {_tag} "
                             f"tools={[tc.get('name') for tc in _rescue_calls]}")
-            if _phantom:
-                logger.warning(f"event=phantom_rescue outcome=unrescued {_tag} — "
-                               f"falling back to honest-miss repair")
+            if _phantom or _omission:
+                logger.warning(f"event=log_rescue outcome=unrescued {_tag} — "
+                               f"model fired no tool (likely not a real consumption report)")
         except Exception as e:
             logger.error(f"Phantom rescue failed for {_tag}: {e}")
 
