@@ -496,50 +496,31 @@ async def run_turn(
         _num_food_logs = sum(1 for _tc in (result["tool_calls"] or [])
                              if (_tc.get("name") or "") == "log_food")
         _undercount = _looks_like_undercounted_food(_gate_user_message, _num_food_logs)
-        # SCRIBE reconcile — the deterministic completeness check that replaces
-        # message-text heuristics. On a plausible shortfall (logged fewer than the
-        # message names), consult the parallel extraction for the EXACT missing items
-        # (the egg-whites drop: 'egg' logged, 'egg whites' not). No model-text guessing.
-        _scribe_missing = []
-        _scribe_ran = False
+        # SCRIBE / undercount — SHADOW ONLY (strip step 1, 2026-07-21). Completeness
+        # is OBSERVED, never forced. A scribe/undercount shortfall no longer drives an
+        # 8192-token re-log pass — that pass re-itemized composite dishes (the 6-9 call
+        # burrito bowl) and drove the delete-storms (14-15 rows to undo one meal).
+        # July-5 self-heals ONLY on a real truncation (max_tokens) or a dangling stall;
+        # a dropped item is instead surfaced conversationally, and the parallel scribe
+        # stays a divergence metric (write-set validator below), never a forcing gate.
         if _scribe_task is not None:
-            if _num_food_logs >= 1 and _num_food_logs < _estimate_food_items(_gate_user_message):
-                try:
-                    from core.scribe import missing_items as _missing_items
-                    _extracted = await _scribe_task
-                    if _extracted:
-                        _scribe_ran = True   # authoritative verdict below
-                        _logged_names = [(_tc.get("input") or {}).get("food_name", "")
-                                         for _tc in (result["tool_calls"] or [])
-                                         if _tc.get("name") == "log_food"]
-                        _scribe_missing = _missing_items(_extracted, _logged_names)
-                except Exception:
-                    _scribe_missing, _scribe_ran = [], False
-            else:
-                _scribe_task.cancel()   # no shortfall — don't wait on it
-        # When the scribe RAN it is authoritative on completeness — a composite dish
-        # logged as one item (turkey club) has nothing missing, so DON'T let the coarse
-        # undercount heuristic fire a needless retry. Fall back to the heuristic only
-        # when the scribe couldn't weigh in.
-        _incomplete = (bool(_scribe_missing) if _scribe_ran else _undercount)
-        if _truncated or _stalled or _partial_stall or _incomplete:
+            try:
+                _scribe_task.cancel()   # shadow lane — never block the hot path on it
+            except Exception:
+                pass
+        if _partial_stall or _undercount:
+            logger.info(
+                f"shadow completeness flag for {_tag} (partial_stall={_partial_stall}, "
+                f"undercount={_undercount}, food_logs={_num_food_logs}) — NOT forcing a retry")
+        if _truncated or _stalled:
             logger.warning(
                 f"Incomplete first pass for {_tag} (truncated={_truncated}, "
-                f"stalled={_stalled}, partial={_partial_stall}, undercount={_undercount}, "
-                f"scribe_missing={[m.get('name') for m in _scribe_missing]}) — retrying with nudge"
-            )
+                f"stalled={_stalled}) — retrying once with a finish nudge")
             _retried = True
-            if _scribe_missing:
-                _items = "; ".join((m.get("raw") or m.get("name") or "") for m in _scribe_missing)
-                _nudge = (
-                    "You did NOT log everything the user named. MISSING items — log each "
-                    f"one NOW as its own log_food, exact quantities: {_items}. Do NOT "
-                    "re-log anything already on the board, and confirm with the real total.")
-            else:
-                _nudge = (
-                    "Finish that now, in ONE message: actually CALL the tools for every "
-                    "item you listed, then confirm with the running total. Don't narrate, "
-                    "don't stop on a colon, don't promise to do it next.")
+            _nudge = (
+                "Finish that now, in ONE message: actually CALL the tools for every "
+                "item you listed, then confirm with the running total. Don't narrate, "
+                "don't stop on a colon, don't promise to do it next.")
             retry_messages = messages + [
                 {"role": "assistant", "content": _txt or "(started but didn't finish)"},
                 {"role": "user", "content": _nudge},
