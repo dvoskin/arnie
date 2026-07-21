@@ -515,14 +515,20 @@ async def _stream_turn(ws: WebSocket, identity: str, message: str,
                 await ws.send_json({"type": "bubble", "text": text})
 
             async def on_tool_start(tools: list) -> None:
-                # This frame morphs the iOS indicator ("Thinking…" → "Logging…").
-                # Danny 2026-07-21: the morphed labels often mismatched the actual
-                # action, so by default we DON'T send it — the indicator stays a
-                # plain "Thinking…" for the whole turn. Re-enable the morph with
-                # STREAM_TOOL_STATUS=true (env only, no code change) once the
-                # tool→label mapping is trustworthy again.
-                if os.getenv("STREAM_TOOL_STATUS", "false").lower() in ("true", "1", "yes"):
-                    await ws.send_json({"type": "tool", "tools": tools})
+                # Drives the iOS live indicator. DEFAULT: a NEUTRAL "thinking"
+                # status so the indicator stays "Thinking…" the whole turn.
+                # (Danny 2026-07-21: the action-specific labels often mismatched
+                # the real action — but gating the frame OFF entirely made the
+                # indicator vanish, because this is the ONLY frame that reaches
+                # the client during the held pass-1 + tools + voice window. So we
+                # keep sending it, just neutralized.) STREAM_TOOL_STATUS=true
+                # sends the real tool names so it morphs to action labels again
+                # once the tool→label mapping is trusted.
+                _real = os.getenv("STREAM_TOOL_STATUS", "false").lower() in ("true", "1", "yes")
+                try:
+                    await ws.send_json({"type": "tool", "tools": tools if _real else ["thinking"]})
+                except Exception:
+                    pass
 
             async def on_card(cards: list) -> None:
                 # The log card, streamed the instant the row is written — BEFORE
@@ -531,6 +537,17 @@ async def _stream_turn(ws: WebSocket, identity: str, message: str,
                 # frames are unaffected (the done-frame still carries the cards
                 # for them). The done-frame dedups these via streamed_card_ids.
                 await ws.send_json({"type": "card", "cards": cards})
+
+            # Show the live indicator IMMEDIATELY, before pass-1. The tool
+            # decision can take a few seconds, and on a held food-log turn nothing
+            # else reaches the client until the very end — so without an early
+            # frame the iOS indicator never appears ("thinking doesn't show",
+            # Danny 2026-07-21). A neutral "thinking" token renders the base
+            # "Thinking…" state; on_tool_start (or STREAM_TOOL_STATUS) morphs it.
+            try:
+                await ws.send_json({"type": "tool", "tools": ["thinking"]})
+            except Exception:
+                pass
 
             try:
                 turn = await run_chat_turn(
