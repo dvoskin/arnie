@@ -229,25 +229,35 @@ async def run_scenario(H, model, name, turns, fails):
         must_log = turn.get("must_log", False)
         claimed = _claims_save(reply)
 
+        # A genuine repeat ("had another one") RECONCILES: it bumps an existing row's
+        # quantity/calories instead of adding a new row — a valid log with 0 new rows.
+        # Count a calorie-increasing bump (no new row) as one logged item so the scorer
+        # doesn't false-MISS a correct reconcile.
+        _cal_before = round(sum(float(r.calories or 0) for r in before))
+        _cal_after = round(sum(float(r.calories or 0) for r in after))
+        _bumped = 1 if (len(new) == 0 and _cal_after > _cal_before) else 0
+        logged = len(new) + _bumped
+
         need_ok = all(_has(after, f) for f in need)
         verdict = "PASS"
         if max_total is not None and len(after) > max_total:
             verdict = "DOUBLE"
-        elif len(new) < mn and claimed:
+        elif logged < mn and claimed:
             verdict = "PHANTOM"          # said saved, DB says no
         elif not need_ok and claimed:
             verdict = "PHANTOM"          # claimed complete, an item is missing
-        elif len(new) < mn and must_log:
+        elif logged < mn and must_log:
             verdict = "MISS"             # should've logged, logged nothing, didn't lie
         elif not need_ok and must_log:
             verdict = "DROP"             # partial — a named item didn't land
-        elif len(new) < mn:
+        elif logged < mn:
             verdict = "SOFT"             # under, but a clarify (no claim) — acceptable-ish
 
         verdicts.append((verdict, name, i))
+        _bump_note = f" bump(+{_cal_after - _cal_before}cal)" if _bumped else ""
         transcript.append(
             f"[T{i}] USER: {say}\n"
-            f"  fired={fired} new_rows={newnames} claimed={claimed} → {verdict}\n"
+            f"  fired={fired} new_rows={newnames}{_bump_note} claimed={claimed} → {verdict}\n"
             f"  ARNIE: {reply[:280]!r}"
         )
 

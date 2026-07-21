@@ -457,7 +457,11 @@ async def test_voice_note_transcript_drives_pipeline(pipeline_env, monkeypatch):
     monkeypatch.setattr(H, "bb_download_attachment", fake_download)
     monkeypatch.setattr(H, "transcribe_audio_message", fake_transcribe)
 
-    env["set_llm"](text="Logged that.|||Solid protein.")
+    # Non-phantom reply: a bare "Logged that." with no tool call is a phantom that
+    # (correctly) triggers the rescue path's extra chat() calls. This test checks the
+    # voice-note plumbing (transcribe + no transcript echo), not phantom handling, so
+    # keep the reply clean and claim-free.
+    env["set_llm"](text="Chicken bowl, nice pick.|||Solid protein hit there.")
     await H.handle_imessage_audio(
         "+15550001111", "iMessage;-;+15550001111", "att-guid-1",
         message_guid="v1", transfer_name="Audio Message.caf",

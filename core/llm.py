@@ -61,6 +61,14 @@ def DEFAULT_MODEL() -> str:
     # here, clear/update the Render env too or the bump silently no-ops.
     return _env("DEFAULT_MODEL", "claude-sonnet-5")
 
+
+def FOLLOWUP_MODEL() -> str:
+    # The post-tool voicing pass (chat_follow_up) only VOICES already-committed data
+    # — it makes no logging decision — so it rides a faster model than pass-1. Default
+    # Sonnet 5: meaningfully quicker than Opus while keeping the coaching voice sharp.
+    # Falls back to DEFAULT_MODEL if a host pins FOLLOWUP_MODEL="" to disable the split.
+    return _env("FOLLOWUP_MODEL", "claude-sonnet-5") or DEFAULT_MODEL()
+
 _anthropic = None
 _openai = None
 
@@ -491,7 +499,7 @@ async def _anthropic_follow_up(messages, raw_assistant_content, tool_calls,
     ]
 
     kwargs = dict(
-        model=DEFAULT_MODEL(),
+        model=FOLLOWUP_MODEL(),          # faster voicing pass — see FOLLOWUP_MODEL()
         max_tokens=max_tokens,
         system=system,
         messages=follow_up_messages,

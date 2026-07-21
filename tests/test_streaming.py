@@ -127,7 +127,7 @@ async def _stream_env(monkeypatch):
     chat() invokes stream_handler with the full text if provided."""
     user = SimpleNamespace(
         id=1, telegram_id="42", name="Danny", timezone="America/New_York",
-        onboarding_completed=True,
+        onboarding_completed=True, webhook_token="tok123",
         preferences=SimpleNamespace(calorie_target=2100, protein_target=180,
                                     food_logging_mode="moderate"),
         nudges_sent="",
@@ -178,8 +178,12 @@ async def _stream_env(monkeypatch):
     monkeypatch.setattr(_RL, "sync_pending_questions", _fake_sync_pending)
 
     # Default fake_chat: streams the full text via stream_handler, no tool calls.
-    state = {"chat_text": "Hey.|||Logged.|||What's next?", "tool_calls": None,
-             "follow_up_text": "Logged it.|||Onward.", "stop_reason": "end_turn"}
+    # NOTE: deliberately NOT a "logged"-style claim — a bare "Logged." with no tool
+    # call is a phantom, which correctly trips the phantom-rescue path; the default
+    # must be a clean non-phantom reply so streaming tests exercise streaming, not
+    # phantom handling (that has its own tests).
+    state = {"chat_text": "Hey.|||Good to see you.|||What's the plan?", "tool_calls": None,
+             "follow_up_text": "Nice work.|||Onward.", "stop_reason": "end_turn"}
 
     async def _fake_chat(messages, system, tools=True, max_tokens=1024,
                          model=None, stream_handler=None, **kwargs):
@@ -222,7 +226,7 @@ async def test_run_turn_streams_bubbles_when_on_text_bubble_provided(_stream_env
     )
 
     # All 3 bubbles streamed via the callback (no tool calls → no follow-up).
-    assert streamed == ["Hey.", "Logged.", "What's next?"]
+    assert streamed == ["Hey.", "Good to see you.", "What's the plan?"]
     assert turn.streamed_bubble_count == 3
     # response_text matches and resp.bubbles aligns 1:1.
     assert len(turn.response.bubbles) == 3
@@ -270,10 +274,13 @@ async def test_streaming_with_tool_calls_flushes_first_pass_then_follow_up(_stre
         on_text_bubble=_on_bubble,
     )
 
-    # All 4 bubbles streamed: 2 from first pass + 2 from follow-up.
-    assert streamed == ["logged that.", "quick read coming",
-                        "good morning hit.", "what's lunch?"]
-    assert turn.streamed_bubble_count == 4
+    # VERIFY-BEFORE-STREAM: on a logging turn the first-pass text ("logged that.")
+    # is a PREMATURE confirmation written before the DB commit — it is DISCARDED, not
+    # shown. Only the post-write follow-up voicing reaches the user (held, verified
+    # against the DB, then emitted once via the catch-up). So the user sees exactly
+    # the 2 follow-up bubbles — never the unverified pass-1 confirmation.
+    assert streamed == ["good morning hit.", "what's lunch?"]
+    assert turn.streamed_bubble_count == 2
 
 
 async def test_streaming_falls_back_emit_when_deterministic_confirmation_fires(_stream_env):

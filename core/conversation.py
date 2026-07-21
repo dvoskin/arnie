@@ -966,7 +966,14 @@ async def run_turn(
             # the way out (e.g. finalize hiccup) lands here with the user
             # already holding a complete answer. Persist the fallback, but
             # NEVER send it after the real reply.
-            if _streamer is not None and _streamer.flushed_count > 0:
+            # EXCEPT when the only thing that streamed was a slow-tool HEADS-UP
+            # ("lemme look that up 🔎" for web_search): that is NOT the answer, so
+            # the fallback MUST still reach the user — otherwise a Tavily/re-voice
+            # failure strands them on the heads-up forever (the "Check online" bug).
+            _has_headsup_tool = any(
+                tc.get("name") in NEEDS_HEADS_UP_TOOLS for tc in (tool_calls or []))
+            if (_streamer is not None and _streamer.flushed_count > 0
+                    and not _has_headsup_tool):
                 _suppress_trailing = True
 
     # ── Anti-dead-end guard ────────────────────────────────────────────────────

@@ -546,8 +546,11 @@ class TestPromptRuleIntegrity:
         """'what dressing, and how much?' must be the cue for any salad."""
         assert "what dressing" in system
 
-    def test_ask_question_example_includes_pasta_sauce(self, system):
-        assert "what sauce" in system
+    def test_multi_item_list_logs_first_then_refines(self, system):
+        """The log-all-first rule replaced the old per-item 'pasta → what sauce?'
+        ask example: a multi-item list is logged in full, THEN refined — never held
+        for a question. Pin the rule so the behavior can't silently regress."""
+        assert "LOG THE WHOLE LIST FIRST" in system
 
     def test_ask_question_example_includes_protein_cook_method(self, system):
         assert "grilled or fried" in system
