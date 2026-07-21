@@ -95,9 +95,17 @@ async def extract_food_items(message: str) -> List[dict]:
             qty, name = qty.strip(), name.strip()
         else:
             qty, name = "", line
-        # The model emits NOTHING / a parenthetical when there's no consumed food.
+        # The model emits NOTHING when there's no consumed food — but it sometimes
+        # EXPLAINS instead ("I don't see any foods… please tell me what you ate"),
+        # which must NOT be parsed as a food. Reject those + any over-long "name"
+        # (a real food name is short; a sentence is a non-answer).
         low = name.lower()
-        if not name or low in ("nothing", "none") or "nothing to" in low or "not consumed" in low:
+        if (not name or low in ("nothing", "none")
+                or "nothing to" in low or "not consumed" in low
+                or "don't see" in low or "do not see" in low or "dont see" in low
+                or "please tell" in low or "no food" in low or "no drink" in low
+                or "didn't mention" in low or "did not mention" in low
+                or "let me know" in low or len(name) > 55):
             continue
         out.append({"name": name, "quantity": qty, "raw": line})
     return out
@@ -125,3 +133,24 @@ def missing_items(extracted: List[dict], logged_names: List[str]) -> List[dict]:
     return [it for it in extracted
             if _tokens(it.get("name") or "")
             and not _covered_by(it.get("name") or "", logged_names)]
+
+
+_MISSING_STOP = {"with", "and", "the", "of", "a", "in", "on", "plus", "some"}
+
+
+def distinct_missing_items(extracted: List[dict], logged_names: List[str]) -> List[str]:
+    """The missing items that are DISTINCT foods worth an automatic rescue — a
+    SHORT name (rice, turkey, sweet potato fries), NOT a composite the scribe
+    described with all its fillings ('poke bowl with salmon, tuna, rice, edamame…').
+
+    Why the cap: a composite logs as ONE row, and its scribe-name (full phrasing)
+    vs the model's log-name ('Poke bowl (…)') token-mismatch would FALSE-flag it as
+    missing → a wasteful/duplicating rescue. A genuine dropped distinct dish has a
+    short name, so ≤3 content tokens catches every real drop (turkey, rice, fries)
+    while never firing on a composite. Returns bare name strings, drop order."""
+    out: List[str] = []
+    for it in missing_items(extracted, logged_names):
+        nm = (it.get("name") or "").strip()
+        if nm and len([t for t in _tokens(nm) if t not in _MISSING_STOP]) <= 3:
+            out.append(nm)
+    return out

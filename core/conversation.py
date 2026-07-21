@@ -449,6 +449,7 @@ async def run_turn(
     # T2.1 (no kwarg surface change for non-streaming callers / tests).
     _chat_extras = {"stream_handler": _stream_handler} if _stream_handler else {}
     _scribe_task = None  # the parallel scribe extraction; set inside the pass below
+    _missing_from_scribe: list = []  # named-but-unlogged items → partial-drop rescue
 
     # ── LLM first pass ───────────────────────────────────────────────────────
     # Generous token budget on purpose: a user can dump a whole day of food in one
@@ -511,22 +512,18 @@ async def run_turn(
         _num_food_logs = sum(1 for _tc in (result["tool_calls"] or [])
                              if (_tc.get("name") or "") == "log_food")
         _undercount = _looks_like_undercounted_food(_gate_user_message, _num_food_logs)
-        # SCRIBE / undercount — SHADOW ONLY (strip step 1, 2026-07-21). Completeness
-        # is OBSERVED, never forced. A scribe/undercount shortfall no longer drives an
-        # 8192-token re-log pass — that pass re-itemized composite dishes (the 6-9 call
-        # burrito bowl) and drove the delete-storms (14-15 rows to undo one meal).
-        # July-5 self-heals ONLY on a real truncation (max_tokens) or a dangling stall;
-        # a dropped item is instead surfaced conversationally, and the parallel scribe
-        # stays a divergence metric (write-set validator below), never a forcing gate.
-        if _scribe_task is not None:
-            try:
-                _scribe_task.cancel()   # shadow lane — never block the hot path on it
-            except Exception:
-                pass
+        # SCRIBE — NOT a forcing gate on pass-1 (forcing re-itemized composites →
+        # the delete-storms). It stays ALIVE for the POST-WRITE completeness
+        # reconcile below (2026-07-21): after the writes land we ask the scribe
+        # which named items are MISSING and rescue ONLY those, so a dropped
+        # distinct dish ("175g turkey and 100g rice" → turkey logged, rice dropped
+        # ~1/3 of the time) gets ADDED without touching the composite it correctly
+        # logged as one. Self-heal below still fires only on a real truncation/
+        # stall. Kill switch: SCRIBE_ENABLED.
         if _partial_stall or _undercount:
             logger.info(
-                f"shadow completeness flag for {_tag} (partial_stall={_partial_stall}, "
-                f"undercount={_undercount}, food_logs={_num_food_logs}) — NOT forcing a retry")
+                f"completeness flag for {_tag} (partial_stall={_partial_stall}, "
+                f"undercount={_undercount}, food_logs={_num_food_logs})")
         if _truncated or _stalled:
             logger.warning(
                 f"Incomplete first pass for {_tag} (truncated={_truncated}, "
@@ -799,6 +796,41 @@ async def run_turn(
         user = await reload_user(db, user.id)
         if today_log and hasattr(today_log, "id") and today_log.id:
             await db.refresh(today_log)
+
+        # ── PARTIAL-DROP reconcile (scribe) ───────────────────────────────────
+        # The model intermittently logs the first distinct dish and drops the rest
+        # ("175g turkey and 100g rice" → turkey only, ~1/3 of the time). A tool DID
+        # fire, so the phantom/omission nets can't see it, and self-heal is
+        # truncation/stall-only. Ask the scribe which NAMED items never logged and
+        # (below) rescue ONLY those. SAFE against over-split: the scribe extracts a
+        # bowl/wrap/burrito as ONE item, so a correctly-logged composite has nothing
+        # missing (validated 2026-07-21). Kill switch: SCRIBE_ENABLED.
+        if _scribe_task is not None:
+            _fired_food_log = any(tc.get("name") == "log_food" for tc in tool_calls)
+            try:
+                if _fired_food_log:
+                    from core.scribe import distinct_missing_items as _distinct_missing
+                    _extracted = await _scribe_task
+                    _logged_names = [
+                        (tc.get("input") or {}).get("food_name") or ""
+                        for tc in tool_calls if tc.get("name") == "log_food"
+                    ]
+                    # Only SHORT distinct-food drops (rice, turkey, sweet potato
+                    # fries) — a composite logged as ONE can't false-flag (see
+                    # distinct_missing_items). Never over-splits a composite.
+                    _missing_from_scribe = _distinct_missing(_extracted, _logged_names)
+                    if _missing_from_scribe:
+                        logger.warning(
+                            f"event=partial_drop {_tag} logged={_logged_names} "
+                            f"missing={_missing_from_scribe}")
+                else:
+                    _scribe_task.cancel()
+            except Exception:
+                _missing_from_scribe = []
+                try:
+                    _scribe_task.cancel()
+                except Exception:
+                    pass
 
         # Track which profile field was saved this turn (for onboarding reaction)
         if was_onboarding:
@@ -1241,14 +1273,33 @@ async def run_turn(
     if not tool_calls and not _phantom:
         try:
             from core.turn_health import looks_like_unlogged_food_report
-            _omission = looks_like_unlogged_food_report(
-                _gate_user_message, response_text)
-            if _omission:
-                logger.warning(
-                    f"event=unlogged_food_report user={getattr(user, 'id', None)} "
-                    f"msg={(_gate_user_message or '')[:60]!r}")
+            if looks_like_unlogged_food_report(_gate_user_message, response_text):
+                # The cheap filter passed (reply quantified a food, not a
+                # question/plan/ack). CONFIRM with the scribe that the message
+                # actually NAMES a food — this separates "Barebells caramel cashew"
+                # (a real bare-name log) from "log my whole day" or an ack→recap
+                # (no specific food → the reply's number is a day total, not a
+                # missed item). Reuse the pre-launched scribe if it ran (multi-item
+                # turn), else extract on demand here.
+                from core.scribe import scribe_enabled, extract_food_items
+                if scribe_enabled():
+                    _ex = (await _scribe_task) if _scribe_task is not None \
+                        else (await extract_food_items(_gate_user_message))
+                    _scribe_task = None  # consumed
+                    _omission = any((it.get("name") or "").strip() for it in (_ex or []))
+                    if _omission:
+                        logger.warning(
+                            f"event=unlogged_food_report {_tag} "
+                            f"items={[it.get('name') for it in _ex]}")
         except Exception:
             _omission = False
+    # Lifecycle: cancel a still-pending scribe on a no-tool turn that didn't use it.
+    if not tool_calls and _scribe_task is not None:
+        try:
+            _scribe_task.cancel()
+        except Exception:
+            pass
+        _scribe_task = None
 
     # Sign-off: a clear goodnight/closing → 'Sleep well 🌙' is correct. Repair
     # is disabled in this case so we don't generate a full coaching reply after
@@ -1265,31 +1316,52 @@ async def run_turn(
     # one tools=True pass whose tool calls are EXECUTED through the same
     # executor as the main turn (add-intent gate included via user_message).
     # Only if that still writes nothing do we fall back to owning the miss.
-    if (_phantom or _omission) and not _signing_off:
+    # PARTIAL-DROP: a distinct dish the user named never logged (turkey logged,
+    # rice dropped). tool_calls IS present, so this fires ALONGSIDE the no-tool
+    # phantom/omission triggers.
+    _partial_drop = bool(_missing_from_scribe)
+    if (_phantom or _omission or _partial_drop) and not _signing_off:
         try:
+            if _partial_drop and not (_phantom or _omission):
+                # Add ONLY the missing item(s); everything already on the board —
+                # and any composite correctly logged as one — stays untouched.
+                _rescue_nudge = (
+                    "[SYSTEM HEALTH CHECK — not the user] You logged part of what "
+                    "the user reported but MISSED these item(s): "
+                    f"{', '.join(_missing_from_scribe)}. Call log_food NOW for ONLY "
+                    "those missing item(s), using the exact quantities from the "
+                    "user's message. Do NOT re-log, delete, or modify anything "
+                    "already on the board — only ADD the missing item(s). If an "
+                    "item is really part of a dish you already logged as ONE (a "
+                    "filling inside a bowl/wrap/burrito), call NO tool for it. Then "
+                    "confirm just the added item in one short line with real numbers."
+                )
+            else:
+                _rescue_nudge = (
+                    "[SYSTEM HEALTH CHECK — not the user] The user reported "
+                    "eating or doing something (past/present tense) and your "
+                    "reply discussed it — even stated its calories — but NO "
+                    "logging tool was called, so NOTHING was saved. Call the "
+                    "right log tool NOW for exactly what they reported — food "
+                    "(log_food), exercise (log_exercise), BODY WEIGHT "
+                    "(log_body_weight, e.g. 'weight looks like 194.2' → log "
+                    "194.2), or water (log_water) — INCLUDING the item the user "
+                    "named just before answering your clarifying question (e.g. "
+                    "they said 'chicken wrap', you asked size, they said "
+                    "'regular' → log the wrap). Log EVERY item they reported "
+                    "this turn, even a tiny one (2 starburst, a mint, a bite) — "
+                    "a small item is still logged, never just commented on. "
+                    "Exact quantities. Then confirm in one short message with "
+                    "the real numbers. Do NOT reply without the tool call. "
+                    "BUT if the user did NOT actually report consuming/doing a "
+                    "specific thing (just chit-chat, a plan they haven't done, "
+                    "or a question), call NO tool. Do NOT re-log items already "
+                    "on today's board from a SEPARATE earlier meal."
+                )
             _rescue = await chat(
                 messages + [
                     {"role": "assistant", "content": response_text},
-                    {"role": "user", "content":
-                        "[SYSTEM HEALTH CHECK — not the user] The user reported "
-                        "eating or doing something (past/present tense) and your "
-                        "reply discussed it — even stated its calories — but NO "
-                        "logging tool was called, so NOTHING was saved. Call the "
-                        "right log tool NOW for exactly what they reported — food "
-                        "(log_food), exercise (log_exercise), BODY WEIGHT "
-                        "(log_body_weight, e.g. 'weight looks like 194.2' → log "
-                        "194.2), or water (log_water) — INCLUDING the item the user "
-                        "named just before answering your clarifying question (e.g. "
-                        "they said 'chicken wrap', you asked size, they said "
-                        "'regular' → log the wrap). Log EVERY item they reported "
-                        "this turn, even a tiny one (2 starburst, a mint, a bite) — "
-                        "a small item is still logged, never just commented on. "
-                        "Exact quantities. Then confirm in one short message with "
-                        "the real numbers. Do NOT reply without the tool call. "
-                        "BUT if the user did NOT actually report consuming/doing a "
-                        "specific thing (just chit-chat, a plan they haven't done, "
-                        "or a question), call NO tool. Do NOT re-log items already "
-                        "on today's board from a SEPARATE earlier meal."},
+                    {"role": "user", "content": _rescue_nudge},
                 ],
                 system, tools=True, max_tokens=700,
             )
@@ -1331,19 +1403,33 @@ async def run_turn(
                         _rescue_text = deterministic_confirmation(
                             _rescue_calls, today_log, user.preferences, _rescue_results)
                     if _rescue_text:
-                        if on_text_bubble and not _hold_voicing:
-                            for _b in Response.from_text(_rescue_text).bubbles:
-                                await on_text_bubble(_b)
-                        response_text = _rescue_text
+                        if _partial_drop and not (_phantom or _omission):
+                            # KEEP the valid original confirmation (the items that
+                            # DID log) and APPEND the recovered missing item — never
+                            # overwrite a correct reply with just the add.
+                            _trigger = "partial_drop"
+                            response_text = (
+                                (response_text.rstrip() + "|||" + _rescue_text)
+                                if (response_text or "").strip() else _rescue_text)
+                            if on_text_bubble and not _hold_voicing:
+                                for _b in Response.from_text(_rescue_text).bubbles:
+                                    await on_text_bubble(_b)
+                        else:
+                            # phantom/omission: the original reply was wrong (false
+                            # claim / commented-not-logged) → REPLACE it.
+                            _trigger = "phantom" if _phantom else "omission"
+                            if on_text_bubble and not _hold_voicing:
+                                for _b in Response.from_text(_rescue_text).bubbles:
+                                    await on_text_bubble(_b)
+                            response_text = _rescue_text
                         tool_calls = list(tool_calls or []) + _rescue_calls
-                        _trigger = "phantom" if _phantom else "omission"
-                        _phantom = _omission = False  # rescued — skip text-only repair
+                        _phantom = _omission = _partial_drop = False  # rescued
                         logger.warning(
                             f"event=log_rescue outcome=logged trigger={_trigger} {_tag} "
                             f"tools={[tc.get('name') for tc in _rescue_calls]}")
-            if _phantom or _omission:
+            if _phantom or _omission or _partial_drop:
                 logger.warning(f"event=log_rescue outcome=unrescued {_tag} — "
-                               f"model fired no tool (likely not a real consumption report)")
+                               f"model fired no tool")
         except Exception as e:
             logger.error(f"Phantom rescue failed for {_tag}: {e}")
 

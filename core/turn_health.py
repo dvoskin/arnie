@@ -502,29 +502,48 @@ _PLAN_RE = re.compile(
     r"\b(gonna|going\s+to|about\s+to|planning|plan\s+to|might|maybe|probably|"
     r"thinking\s+(?:about|of)|will\s+(?:have|eat|grab|do)|later\b|in\s+\d+\s*min|"
     r"not\s+sure|i'?ll\s+(?:have|eat|grab|do))\b", re.I)
+# A LOOKUP/advice question, not a food to log ("how many cal in a banana",
+# "what should I eat"). Keyed on a leading question word or a '?'.
+_QUESTION_RE = re.compile(
+    r"^\s*(how|what|why|when|where|which|who|whose|whom|is|are|am|was|were|do|"
+    r"does|did|can|could|should|would|will|has|have|any)\b", re.I)
+# A bare acknowledgment ("ok", "thanks", "nice") — usually the trigger for a
+# day-total RECAP, not a food report. Whole-message match only.
+_ACK_RE = re.compile(
+    r"^(ok(ay)?|k+|thx|thanks|thank\s+you|ty|cool|nice|great|sweet|got\s+it|"
+    r"gotcha|yes|yeah|yep|yup|sure|no+|nope|word|bet|perfect|awesome|amazing|"
+    r"love\s+it|good|alright|right|damn|lol|haha)[.!,\s]*$", re.I)
 
 
 def looks_like_unlogged_food_report(user_text: str, response_text: str) -> bool:
-    """True when the user reported EATING a specific food (past/present) and the
-    reply QUANTIFIED it (stated calories/macros) but — the caller confirms — fired
-    no log tool and asked no question. The model commented instead of logging (the
-    '2 Starburst, 40 cal, tiny hit that doesn't change anything' miss, 2026-07-21).
+    """True when the reply QUANTIFIED a food (stated calories/macros) but — the
+    caller confirms — fired NO log tool and asked no question: the model recognized
+    a loggable item and narrated it instead of logging it.
 
-    High-precision by construction: a PLAN ('probably turkey later'), a bare 'had a
-    rough day' (no macros stated), or any turn where the model asked a clarifying
-    question ('?' → it's legitimately deferring) is excluded. The stated
-    calorie/macro figure is the tell that the model RECOGNIZED a real food and
-    chose to narrate it rather than log it."""
+    Broadened 2026-07-21 (Danny: 'he keeps missing actually logging foods'): the
+    tell is the reply's macro figure, NOT a consumption verb in the message — a
+    BARE FOOD NAME ('Barebells caramel cashew' from a voice note → '200 cal for
+    20g protein… 1,569 on the day', never logged) must count too, not just 'I had
+    X'. High-precision exclusions instead: a PLAN ('probably turkey later'), a
+    LOOKUP question ('how many cal in a banana'), a bare ACK ('ok'/'nice' → a
+    recap, not a report), or any reply that asked a question ('?' → legit defer)."""
     u = (user_text or "").strip()
     r = (response_text or "").strip()
     if not u or not r:
         return False
-    if _PLAN_RE.search(u) or not _CONSUMED_RE.search(u):
+    # The reply must state a food's calories/macros — the recognized-but-unlogged tell.
+    if not (_CALORIE_ESTIMATE_RE.search(r)
+            or re.search(r"\d+\s*g\s+(?:protein|carbs?|fat)", r, re.I)):
         return False
     if "?" in r:
-        return False
-    return bool(_CALORIE_ESTIMATE_RE.search(r)
-                or re.search(r"\d+\s*g\s+(?:protein|carbs?|fat)", r, re.I))
+        return False                 # the model asked something → legit clarify/defer
+    if _PLAN_RE.search(u):
+        return False                 # a plan they haven't eaten yet
+    if "?" in u or _QUESTION_RE.search(u):
+        return False                 # a lookup/advice question, not a log
+    if _ACK_RE.match(u):
+        return False                 # bare ack → the reply is a recap, not a food report
+    return True
 
 
 _INVOKE_RE = re.compile(r'<invoke\s+name="([^"]+)"\s*>(.*?)</invoke>', re.S | re.I)

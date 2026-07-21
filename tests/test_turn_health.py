@@ -17,6 +17,31 @@ def test_omission_reported_food_commented_not_logged():
         "anything.|||Turkey's still the move. Ping me when it's on the plate.") is True
 
 
+def test_omission_catches_bare_food_name_no_verb():
+    # Danny's Barebells voice-note (2026-07-21): no consumption verb, just the food
+    # name; reply quantified it ("200 cal for 20g protein") but never logged.
+    assert looks_like_unlogged_food_report(
+        "Barebells caramel cashew",
+        "Barebells caramel cashew, 200 cal for 20g protein. you're at 182g now, "
+        "1,569 on the day.") is True
+    # bare food + quantity, still no verb
+    assert looks_like_unlogged_food_report(
+        "2 eggs and toast", "eggs and toast, about 240 cal, 16g protein.") is True
+
+
+def test_omission_excludes_lookups_acks_and_recaps():
+    # A lookup/advice question is not a food to log.
+    assert looks_like_unlogged_food_report(
+        "how many calories in a banana", "about 105 cal, mostly carbs.") is False
+    assert looks_like_unlogged_food_report(
+        "what should I eat for dinner", "aim for a 600 cal chicken plate.") is False
+    # A bare acknowledgment triggers a day-total RECAP, not a food log.
+    assert looks_like_unlogged_food_report(
+        "ok", "you're at 1,500 cal, 120g protein today.") is False
+    assert looks_like_unlogged_food_report(
+        "nice", "200 cal already in, you're at 1,500.") is False
+
+
 def test_omission_excludes_plans_questions_and_non_food():
     # A plan the model correctly defers on (and asks about) — not an omission.
     assert looks_like_unlogged_food_report(
