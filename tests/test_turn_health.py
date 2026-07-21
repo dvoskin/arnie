@@ -1,8 +1,32 @@
 """Turn-health detectors — the deterministic signals that flag a bad turn."""
 from core.turn_health import (
     looks_like_stall, looks_like_dead_end, detect_frustration, detect_turn_flags,
-    looks_like_phantom_log_claim,
+    looks_like_phantom_log_claim, claimed_day_total, extract_stated_day_calories,
 )
+
+
+# ── Russian phantom detection (Anya, 2026-07-21) ────────────────────────────────
+# A third of the beta logs in Russian. "3 coffee 3 cokes today" fired NO tool but
+# the reply stated "690 / 1,570 калорий" — an EN-only calorie unit meant the
+# total-claim rescue never saw the number, so nothing logged and she had to
+# re-send. The unit regexes must recognize калорий/ккал.
+
+def test_russian_calorie_total_is_extracted():
+    resp = "Кофе и кола до 3 каждого, теперь на сегодня.\n\n**690 / 1,570 калорий**, 9г белка."
+    assert claimed_day_total(resp) == 690
+    assert extract_stated_day_calories(resp) == 690
+
+
+def test_russian_worded_claim_is_a_phantom():
+    # "Кофе и кола внесены" (logged) with zero tools over a food report.
+    assert looks_like_phantom_log_claim("coffee\ncoke", "Кофе и кола внесены ☕",
+                                        has_tool_calls=False) is True
+
+
+def test_english_totals_still_parse_and_bare_item_does_not():
+    assert claimed_day_total("984 / 2,165 calories") == 984
+    assert extract_stated_day_calories("Total: 1,340 cal") == 1340
+    assert extract_stated_day_calories("200 calories") is None  # single item, not a day total
 
 
 # ── phantom log-claim detection (dropped-set bug) ───────────────────────────────

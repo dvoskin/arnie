@@ -369,7 +369,13 @@ def detect_sarcastic_ack(user_text: str, prior_assistant_text: str = "") -> bool
 # Calorie/macro estimate pattern — signals that a food photo's nutrition analysis
 # text is present in the first-pass response. Used to detect when the LLM narrates
 # macro numbers instead of calling log_food (partial stall from photo turns).
-_CALORIE_ESTIMATE_RE = re.compile(r'\d+\s*(?:cal(?:ories)?|kcal)\b', re.I)
+# Calorie unit, EN + RU. A third of the beta (Anya) logs in Russian, where the
+# unit is "калорий"/"ккал" — an EN-only unit let her stated totals (and the
+# phantom log behind them) sail past BOTH the day-total guard and the total-claim
+# rescue ("690 / 1,570 калорий", zero tool calls → nothing logged, she had to
+# re-send). Every calorie-figure detector below shares this alternation.
+_CAL_UNIT = r"(?:cal|cals|calories|kcal|ккал|калори\w*)"
+_CALORIE_ESTIMATE_RE = re.compile(rf'\d+\s*{_CAL_UNIT}\b', re.I)
 
 
 # ── Day-total truth guard ────────────────────────────────────────────────────
@@ -387,8 +393,8 @@ DAY_TOTAL_TOLERANCE = 30
 # "1,181 calories left" (remaining) must NOT match, or the guard fires on
 # legitimate per-item / remaining numbers.
 _STATED_DAY_TOTAL_RES = (
-    re.compile(r"\b([\d,]{2,6})\s*/\s*[\d,]{2,6}\s*(?:cal|cals|calories)\b", re.I),
-    re.compile(r"\btotal:?\s*\**\s*([\d,]{2,6})\s*(?:cal|cals|calories)\b", re.I),
+    re.compile(rf"\b([\d,]{{2,6}})\s*/\s*[\d,]{{2,6}}\s*{_CAL_UNIT}\b", re.I),
+    re.compile(rf"\b(?:total|итого|всего):?\s*\**\s*([\d,]{{2,6}})\s*{_CAL_UNIT}\b", re.I),
 )
 
 
@@ -540,7 +546,7 @@ def looks_like_phantom_log_claim(user_text: str, response_text: str,
 
 
 _TOTAL_CLAIM_RE = re.compile(
-    r"(\d[\d,]{2,5})\s*/\s*(\d[\d,]{2,5})\s*(?:calories|cal)\b", re.IGNORECASE)
+    rf"(\d[\d,]{{2,5}})\s*/\s*(\d[\d,]{{2,5}})\s*{_CAL_UNIT}\b", re.IGNORECASE)
 
 
 def claimed_day_total(text: str):
