@@ -93,6 +93,13 @@ def _sanitize_bubble(s: str) -> str:
     """
     s = _strip_tool_xml(s or "")
     s = s.replace(" — ", ", ").replace("—", ", ")
+    # Strip leaked INTERNAL entry IDs — "#2032" from a dedup/tool result the model
+    # echoed ("logged 13:12 (33s ago) #2032"). Users must NEVER see internal
+    # identifiers (Chaya 2026-07-21). 2+ digits so a legit "#1"/"day #2" survives; DB
+    # entry ids are multi-digit in practice. Also tidy a now-dangling space before a
+    # closing bracket/period.
+    s = _re_platform.sub(r"\s*#\d{2,}\b", "", s)
+    s = _re_platform.sub(r"\s+([)\].,])", r"\1", s)
     while "  " in s:
         s = s.replace("  ", " ")
     return s.strip()

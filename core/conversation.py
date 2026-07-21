@@ -23,6 +23,7 @@ from core.turn_health import (
     looks_like_stall as _looks_like_stall,
     promises_more_logging as _promises_more_logging,
     looks_like_undercounted_food as _looks_like_undercounted_food,
+    estimate_food_items as _estimate_food_items,
     looks_like_dead_end as _looks_like_dead_end,
     looks_like_bare_log_ack as _looks_like_bare_log_ack,
     looks_like_mechanics as _looks_like_mechanics,
@@ -409,6 +410,7 @@ async def run_turn(
     # chat_follow_up() signatures backward-compatible with mocks that predate
     # T2.1 (no kwarg surface change for non-streaming callers / tests).
     _chat_extras = {"stream_handler": _stream_handler} if _stream_handler else {}
+    _scribe_task = None  # the parallel scribe extraction; set inside the pass below
 
     # ── LLM first pass ───────────────────────────────────────────────────────
     # Generous token budget on purpose: a user can dump a whole day of food in one
@@ -428,6 +430,18 @@ async def run_turn(
         _stage_model = pick_model(user)
         if _stage_model:
             _chat_extras["model"] = _stage_model
+        # SCRIBE — launch deterministic item extraction IN PARALLEL with pass-1 (Haiku
+        # finishes before opus → no added latency). Only for multi-item food messages;
+        # consulted after pass-1 to name a dropped item precisely (egg whites, etc.).
+        _scribe_task = None
+        try:
+            import asyncio as _asyncio
+            from core.scribe import scribe_enabled, looks_multi_item, extract_food_items
+            if scribe_enabled() and looks_multi_item(_gate_user_message):
+                _scribe_task = _asyncio.create_task(
+                    extract_food_items(_gate_user_message))
+        except Exception:
+            _scribe_task = None
         result = await chat(messages, system, tools=True, max_tokens=4096,
                             **_chat_extras)
         # Flush trailing buffer immediately so a no-||| partial doesn't carry
@@ -459,19 +473,53 @@ async def run_turn(
         _num_food_logs = sum(1 for _tc in (result["tool_calls"] or [])
                              if (_tc.get("name") or "") == "log_food")
         _undercount = _looks_like_undercounted_food(_gate_user_message, _num_food_logs)
-        if _truncated or _stalled or _partial_stall or _undercount:
+        # SCRIBE reconcile — the deterministic completeness check that replaces
+        # message-text heuristics. On a plausible shortfall (logged fewer than the
+        # message names), consult the parallel extraction for the EXACT missing items
+        # (the egg-whites drop: 'egg' logged, 'egg whites' not). No model-text guessing.
+        _scribe_missing = []
+        _scribe_ran = False
+        if _scribe_task is not None:
+            if _num_food_logs >= 1 and _num_food_logs < _estimate_food_items(_gate_user_message):
+                try:
+                    from core.scribe import missing_items as _missing_items
+                    _extracted = await _scribe_task
+                    if _extracted:
+                        _scribe_ran = True   # authoritative verdict below
+                        _logged_names = [(_tc.get("input") or {}).get("food_name", "")
+                                         for _tc in (result["tool_calls"] or [])
+                                         if _tc.get("name") == "log_food"]
+                        _scribe_missing = _missing_items(_extracted, _logged_names)
+                except Exception:
+                    _scribe_missing, _scribe_ran = [], False
+            else:
+                _scribe_task.cancel()   # no shortfall — don't wait on it
+        # When the scribe RAN it is authoritative on completeness — a composite dish
+        # logged as one item (turkey club) has nothing missing, so DON'T let the coarse
+        # undercount heuristic fire a needless retry. Fall back to the heuristic only
+        # when the scribe couldn't weigh in.
+        _incomplete = (bool(_scribe_missing) if _scribe_ran else _undercount)
+        if _truncated or _stalled or _partial_stall or _incomplete:
             logger.warning(
                 f"Incomplete first pass for {_tag} (truncated={_truncated}, "
-                f"stalled={_stalled}, partial={_partial_stall}, undercount={_undercount}) — retrying with nudge"
+                f"stalled={_stalled}, partial={_partial_stall}, undercount={_undercount}, "
+                f"scribe_missing={[m.get('name') for m in _scribe_missing]}) — retrying with nudge"
             )
             _retried = True
-            retry_messages = messages + [
-                {"role": "assistant", "content": _txt or "(started but didn't finish)"},
-                {"role": "user", "content": (
+            if _scribe_missing:
+                _items = "; ".join((m.get("raw") or m.get("name") or "") for m in _scribe_missing)
+                _nudge = (
+                    "You did NOT log everything the user named. MISSING items — log each "
+                    f"one NOW as its own log_food, exact quantities: {_items}. Do NOT "
+                    "re-log anything already on the board, and confirm with the real total.")
+            else:
+                _nudge = (
                     "Finish that now, in ONE message: actually CALL the tools for every "
                     "item you listed, then confirm with the running total. Don't narrate, "
-                    "don't stop on a colon, don't promise to do it next."
-                )},
+                    "don't stop on a colon, don't promise to do it next.")
+            retry_messages = messages + [
+                {"role": "assistant", "content": _txt or "(started but didn't finish)"},
+                {"role": "user", "content": _nudge},
             ]
             # Self-heal retry: stream it too if streaming is on. The original
             # truncated/stalled output already flushed (finalize above), so the
@@ -483,6 +531,11 @@ async def run_turn(
             _messages_for_followup = retry_messages
     except Exception as e:
         logger.error(f"LLM call failed for {_tag}: {e}")
+        try:
+            if _scribe_task is not None and not _scribe_task.done():
+                _scribe_task.cancel()   # don't leak the parallel extraction
+        except Exception:
+            pass
         # Whole turn errored — give the user an honest recovery line in voice,
         # with a concrete next move ("resend that"). NEVER drop them into
         # silence or a vague "try again later" — that reads as broken; this
