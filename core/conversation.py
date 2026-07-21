@@ -1286,7 +1286,21 @@ async def run_turn(
         if today_log is not None and not in_onboarding:
             _db_cal = int(round(getattr(today_log, "total_calories", 0) or 0))
             _stated = _extract_stated_day_calories(response_text)
-            if _stated is not None and abs(_stated - _db_cal) > _DAY_TOTAL_TOLERANCE:
+            # DAY-BOUNDARY SAFETY (the 12:15am pops-cereal "0/2165 after a full day"):
+            # at the pre-dawn rollover a log lands on YESTERDAY's log (user-tz grace)
+            # while a UTC-resolved path may hand this turn a fresh EMPTY new-day log.
+            # If a logging tool FIRED this turn but `today_log` is empty, the write went
+            # to another day — NEVER clobber the reply's real total down to that empty
+            # day's 0. (A genuine phantom on an empty day fires NO tool, so it's still
+            # caught.)
+            _fired_log = any(tc["name"] in _LOGGING_TOOLS for tc in tool_calls)
+            _boundary_empty = (_db_cal <= 0
+                               and not (getattr(today_log, "food_entries", None) or []))
+            if _fired_log and _boundary_empty and _stated and _stated > _DAY_TOTAL_TOLERANCE:
+                logger.warning(
+                    f"day-total guard SKIP {_tag}: log fired but today_log empty "
+                    f"(stated={_stated}) — pre-dawn/UTC day-boundary, not a phantom")
+            elif _stated is not None and abs(_stated - _db_cal) > _DAY_TOTAL_TOLERANCE:
                 _total_mismatch = True
                 logger.warning(
                     f"TOTAL_MISMATCH {_tag}: stated={_stated} db={_db_cal} — correcting"
