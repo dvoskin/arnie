@@ -18,11 +18,15 @@ Switches (read per-turn, no deploy needed to change):
                                 the same tier the follow-up split used before —
                                 set claude-haiku-4-5-20251001 for max speed)
 """
+import asyncio
+import logging
 import os
 import re
 from typing import Optional
 
 from core.llm import chat
+
+logger = logging.getLogger(__name__)
 
 # Sonnet-5 by default — the voice the follow-up pass already used, and with the
 # tiny focused prompt below it's still sub-second (the old slowness was the
@@ -51,7 +55,9 @@ _SYSTEM = (
     "- Sentence case. Emoji almost never, and never a joke emoji (no 😅). Usually none.\n"
     "- Dry, confident, specific. Never cutesy or hype: no \"party\", no \"huh\", "
     "no piled-on exclamation points.\n"
-    "- Do NOT restate every macro; the card under your reply already shows them.\n"
+    "- ALWAYS name THIS log's own calories and protein (from the FACTS \"This item\" "
+    "line) so the number is a receipt the user can verify. Don't list carbs or fat, "
+    "and don't restate the day-total breakdown; the card shows those.\n"
     "- Bubble 1: a real read of what this does to their day. Bubble 2 (optional): "
     "one specific, concrete forward move.\n"
     "- Sound like a coach who knows them, never a tracker. Never send \"Logged.\", "
@@ -169,14 +175,30 @@ def build_log_facts(tool_calls, tool_results, log, user) -> str:
 
 async def voice_log(tool_calls, tool_results, log, user) -> Optional[str]:
     """The single reply for a food-log turn. Returns cleaned ||| bubble text, or
-    None on any failure so the caller can fall back to deterministic_confirmation."""
+    None so the caller falls back to deterministic_confirmation.
+
+    Two bounded attempts: a transient miss (timeout, empty text, an API hiccup) must
+    NOT drop a simple log to the robotic template — the bar is voice_log answering
+    >=95% of simple logs. Every failure is LOGGED: the old silent `except` hid
+    exactly why this was returning None in prod (works locally, template in prod)."""
     try:
         facts = build_log_facts(tool_calls, tool_results, log, user)
-        res = await chat(
-            [{"role": "user", "content": facts}],
-            _SYSTEM, tools=False, max_tokens=150, model=_model(),
-        )
-        out = _clean((res.get("text") or "").strip())
-        return out or None
     except Exception:
+        logger.warning("voice_log: build_log_facts failed", exc_info=True)
         return None
+    for attempt in (1, 2):
+        try:
+            res = await asyncio.wait_for(
+                chat([{"role": "user", "content": facts}], _SYSTEM,
+                     tools=False, max_tokens=220, model=_model()),
+                timeout=8.0,
+            )
+            out = _clean((res.get("text") or "").strip())
+            if out:
+                return out
+            logger.warning("voice_log empty text (attempt %d, model=%s)",
+                           attempt, _model())
+        except Exception as e:
+            logger.warning("voice_log failed (attempt %d, model=%s): %s: %s",
+                           attempt, _model(), type(e).__name__, e)
+    return None

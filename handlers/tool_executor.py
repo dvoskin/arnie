@@ -501,6 +501,16 @@ def blocked_log_reply(tool_calls, tool_results) -> Optional[str]:
     return "That's already on the board from earlier — nothing new logged.|||" + facts
 
 
+def _item_macros(result_str: str) -> str:
+    """Pull 'N cal, Pg protein' from a 'Logged: X, N cal, Pg protein' tool result so
+    a confirmation names THIS item's own macros (the receipt on a text surface).
+    Returns '' when the result carries no parseable macros."""
+    import re as _re
+    m = _re.search(r"(\d[\d,]*)\s*cal\b.*?(\d[\d,]*)\s*g\s*protein",
+                   result_str or "", _re.I | _re.S)
+    return f"{m.group(1)} cal, {m.group(2)}g protein" if m else ""
+
+
 def deterministic_confirmation(tool_calls, log, prefs, tool_results=None) -> str:
     """
     Build a meaningful confirmation from what was actually logged, used when the
@@ -616,7 +626,9 @@ def deterministic_confirmation(tool_calls, log, prefs, tool_results=None) -> str
                     else "Send the next meal.")
             return f"Already had that one from earlier, so I didn't double-log it. 🍳|||{tail}"
         if len(foods) == 1:
-            head = f"{foods[0][:1].upper() + foods[0][1:]} logged."
+            item = foods[0][:1].upper() + foods[0][1:]
+            _im = _item_macros(last_food_result)
+            head = f"{item} logged, {_im}." if _im else f"{item} logged."
         elif foods:
             head = "Logged: " + ", ".join(foods) + "."
         else:

@@ -151,10 +151,18 @@ async def root():
 async def healthcheck():
     # Build-stamp: Render injects RENDER_GIT_COMMIT/BRANCH at runtime, so this tells
     # us EXACTLY which commit the live container is running (vs. what's on origin).
+    # Non-secret runtime flags — so we can confirm from outside whether the fast
+    # log voice is actually enabled + which model it uses in the live container.
+    try:
+        from core.log_voice import fast_log_voice_enabled, _model as _lv_model
+        _fast_voice = {"fast_log_voice": fast_log_voice_enabled(), "log_voice_model": _lv_model()}
+    except Exception:
+        _fast_voice = {}
     return {
         "status": "ok",
         "commit": os.getenv("RENDER_GIT_COMMIT", "unknown")[:12],
         "branch": os.getenv("RENDER_GIT_BRANCH", "unknown"),
+        **_fast_voice,
     }
 
 
