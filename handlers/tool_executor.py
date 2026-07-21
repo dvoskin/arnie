@@ -218,6 +218,29 @@ def _stash_receipt(inp, target_log, user, calories, protein,
     except Exception:
         pass
 
+
+def _stash_sourcing(inp, analysis, food_name):
+    """Attach the enrichment SOURCING trace to the tool input so the reasoning
+    receipt ("Arnie's thoughts") can show HOW a food's numbers were sourced —
+    searched → matched source → serving → logged totals (Danny 2026-07-21).
+    Display-only; never affects the write. Fully wrapped: a receipt must never
+    fail a log. Reads FoodAnalysis.source/confidence (history|memory|usda|
+    web_label|estimate)."""
+    try:
+        if not isinstance(inp, dict):
+            return
+        inp["_sourcing"] = {
+            "name": food_name,
+            "quantity": inp.get("quantity") or "",
+            "source": getattr(analysis, "source", None) or "estimate",
+            "confidence": getattr(analysis, "confidence", None) or "estimated",
+            "calories": int(round(getattr(analysis, "calories", 0) or 0)),
+            "protein": int(round(getattr(analysis, "protein", 0) or 0)),
+        }
+    except Exception:
+        pass
+
+
 async def _resolve_log(inp: dict, user, today_log, db):
     """
     Determine which DailyLog to write to and return (target_log, past_date).
@@ -1877,6 +1900,7 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
             await db.refresh(target_log)
             _stash_receipt(inp, target_log, user, _tot_cal, _tot_pro,
                            confidence=_conf, updated=True, carbs=analysis.carbs)
+            _stash_sourcing(inp, analysis, food_name)
             try:
                 from db.queries import resolve_pending_questions_for_logged_items
                 await resolve_pending_questions_for_logged_items(db, user.id, [food_name])
@@ -1949,6 +1973,7 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
                        confidence=_conf,
                        estimated=(analysis.confidence == "estimated") or from_photo,
                        carbs=analysis.carbs)
+        _stash_sourcing(inp, analysis, food_name)
 
         # Item-scoped auto-resolve: close only the food_clarification rows whose
         # item_referenced matches THIS logged food. A log of item A must NOT

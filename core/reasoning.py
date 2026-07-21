@@ -20,20 +20,76 @@ def _step(icon: str, label: str, detail: str = "") -> dict:
     return out
 
 
-def _food_step(inp: dict, result: str) -> dict:
+# How each enrichment source reads in the trace: (icon, "found" line) for the
+# detailed single-item trace, and a one-word source detail for the condensed
+# multi-item line. Keyed by FoodAnalysis.source (see core/food_intelligence).
+_SOURCE_LABELS = {
+    "history":   ("checkmark.seal", "Found it in your own earlier log"),
+    "memory":    ("checkmark.seal", "Found it in your saved foods"),
+    "web_label": ("globe", "Found the product label online"),
+    "usda":      ("magnifyingglass", "Matched the USDA food database"),
+    "estimate":  ("wand.and.stars", "No exact match — estimated from the description"),
+}
+_SOURCE_DETAIL = {
+    "history":   "From your own earlier log",
+    "memory":    "From your saved foods",
+    "web_label": "From the product label",
+    "usda":      "From the USDA database",
+    "estimate":  "Best estimate from the description",
+}
+
+
+def _food_line(inp: dict, result: str) -> dict:
+    """The CONDENSED one-line food step — used when several foods logged this
+    turn (a full trace per item would blow the step budget). Prefers the stashed
+    sourcing detail; falls back to sniffing the tool-result string."""
     name = inp.get("food_name") or "food"
     r = result or ""
     if r.startswith("Already on the board:"):
         return _step("checkmark.circle", f"Duplicate check — {name} already logged",
                      "Skipped the re-log; totals unchanged")
-    cal = inp.get("calories")
-    detail = ""
-    if "usda" in r.lower():
-        detail = "Matched against the USDA database"
-    elif "label" in r.lower() or "web" in r.lower():
-        detail = "Verified against the product label"
+    src = inp.get("_sourcing") or {}
+    cal = src.get("calories") if src else inp.get("calories")
+    detail = _SOURCE_DETAIL.get(src.get("source")) if src else ""
+    if not detail:
+        if "usda" in r.lower():
+            detail = "Matched against the USDA database"
+        elif "label" in r.lower() or "web" in r.lower():
+            detail = "Verified against the product label"
     label = f"Logged {name}" + (f" — {round(cal)} cal" if cal else "")
-    return _step("plus.circle", label, detail)
+    return _step("plus.circle", label, detail or "")
+
+
+def _food_detailed(inp: dict, result: str) -> list:
+    """The FULL sourcing trace for a single-item log — what Danny asked to see:
+    searched → matched source → serving checked → logged totals. Only when the
+    executor stashed `_sourcing` (the real enrichment path); otherwise one line.
+    A dedup no-op collapses to the duplicate-check line."""
+    r = result or ""
+    if r.startswith("Already on the board:"):
+        return [_food_line(inp, result)]
+    src = inp.get("_sourcing") or {}
+    if not src:
+        return [_food_line(inp, result)]
+    name = inp.get("food_name") or "food"
+    source = src.get("source") or "estimate"
+    icon, found = _SOURCE_LABELS.get(source, _SOURCE_LABELS["estimate"])
+    steps = [
+        _step("magnifyingglass", f"Searched for {name}"),
+        _step(icon, found),
+    ]
+    qty = (src.get("quantity") or "").strip()
+    if qty:
+        steps.append(_step("ruler", f"Serving checked — {qty}"))
+    cal, pro = src.get("calories"), src.get("protein")
+    tail = []
+    if cal:
+        tail.append(f"{cal} cal")
+    if pro:
+        tail.append(f"{pro}g protein")
+    steps.append(_step("plus.circle",
+                       f"Logged {name}" + (f" — {', '.join(tail)}" if tail else "")))
+    return steps
 
 
 def _exercise_step(inp: dict, result: str) -> dict:
@@ -100,12 +156,20 @@ def build_reasoning(tool_calls: list, tool_results: dict,
     if ctx_bits:
         steps.append(_step("doc.text", "Read your data — " + ", ".join(ctx_bits)))
 
+    # A single food log gets the FULL sourcing trace (searched → source →
+    # serving → totals); several foods share the step budget, so each gets one
+    # condensed line instead.
+    _n_food = sum(1 for tc in (tool_calls or []) if (tc.get("name") == "log_food"))
+    _detailed_food = _n_food == 1
     for tc in tool_calls or []:
         name = tc.get("name") or ""
         inp = tc.get("input") or {}
         result = str((tool_results or {}).get(name, ""))
         if name == "log_food":
-            steps.append(_food_step(inp, result))
+            if _detailed_food:
+                steps.extend(_food_detailed(inp, result))
+            else:
+                steps.append(_food_line(inp, result))
         elif name == "log_exercise":
             steps.append(_exercise_step(inp, result))
         elif name in _TOOL_STEPS:
