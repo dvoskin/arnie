@@ -759,11 +759,22 @@ async def run_turn(
             from core.clarify import (
                 ask_first_hold_enabled, is_ask_first_mode, clarify_swings)
             if ask_first_hold_enabled() and is_ask_first_mode(user):
+                # If a hold is ALREADY open, THIS turn is the answer to it — never
+                # re-hold (that's the clarify loop that ate the log). Let the
+                # force-log-on-answer branch commit it instead.
+                _already_held = False
                 try:
-                    _ask_first_q = await clarify_swings(tool_calls, None, user)
-                except Exception as _e:
-                    logger.warning(f"ask-first hold check failed: {_e}")
-                    _ask_first_q = None
+                    from db.queries import get_open_pending_question as _gopq
+                    _already_held = (await _gopq(
+                        db, user.id, "food_ask_first")) is not None
+                except Exception:
+                    _already_held = False
+                if not _already_held:
+                    try:
+                        _ask_first_q = await clarify_swings(tool_calls, None, user)
+                    except Exception as _e:
+                        logger.warning(f"ask-first hold check failed: {_e}")
+                        _ask_first_q = None
         if _ask_first_q:
             _held_names = [(tc.get("input") or {}).get("food_name")
                            for tc in tool_calls if tc.get("name") == "log_food"]
@@ -778,8 +789,13 @@ async def run_turn(
                     pass
             try:
                 from db.queries import record_pending_question
+                # kind="food_ask_first" (NOT "food_clarification") so the
+                # force-log-on-answer branch below can tell a HELD meal (nothing
+                # logged, must LOG on the answer) apart from the log-first
+                # clarify-on-swing pending (item already logged, UPDATE on answer)
+                # — mixing them would double-log.
                 _pq = await record_pending_question(
-                    db, user.id, kind="food_clarification", question=_ask_first_q,
+                    db, user.id, kind="food_ask_first", question=_ask_first_q,
                     tier="food_clarification", hook_style="question")
                 _pq.item_referenced = next((n for n in _held_names if n), "meal")
                 await db.commit()
@@ -1622,6 +1638,74 @@ async def run_turn(
                                f"model fired no tool")
         except Exception as e:
             logger.error(f"Phantom rescue failed for {_tag}: {e}")
+
+    # ── ASK-FIRST ANSWER: force the held log on the answer turn ──────────────────
+    # The ask-first HOLD asked before logging and wrote nothing (pending
+    # kind=food_ask_first). opus then clarify-LOOPS on the answer instead of
+    # committing (verified 2026-07-22), so force it: if that pending is open and
+    # this turn logged no food, run ONE forcing pass that logs every item from the
+    # exchange with the user's answer applied, then resolve the pending. Dormant
+    # unless ASK_FIRST_HOLD created the pending — never fires with the hold off.
+    from core.clarify import ask_first_hold_enabled as _afh_enabled
+    if _afh_enabled() and not _signing_off and not _ask_first_q:
+        _held_pq = None
+        try:
+            from db.queries import get_open_pending_question
+            _held_pq = await get_open_pending_question(db, user.id, "food_ask_first")
+        except Exception:
+            _held_pq = None
+        if _held_pq is not None:
+            import re as _re_af
+            _cancel = bool(_re_af.search(
+                r"\b(never\s*mind|don'?t\s+log|do\s+not\s+log|cancel|skip\s+it|"
+                r"forget\s+it|scratch\s+that)\b", _user_text or "", _re_af.I))
+            _fired_food = any(tc.get("name") == "log_food" for tc in tool_calls)
+            try:
+                if not _cancel and not _fired_food:
+                    _af_nudge = (
+                        "[SYSTEM HEALTH CHECK — not the user] Earlier you asked the "
+                        "user to clarify a food BEFORE logging it, and you logged "
+                        f"NOTHING. They have now answered: \"{_user_text}\". Log EVERY "
+                        "food item from that exchange NOW with log_food, applying "
+                        "their answer to the ambiguous detail (cooking fat, sauce, "
+                        "portion). Exact quantities. Do NOT ask another question. Then "
+                        "confirm in one short line with the real numbers.")
+                    _af = await chat(
+                        messages + [{"role": "assistant", "content": response_text or ""},
+                                    {"role": "user", "content": _af_nudge}],
+                        system, tools=True, max_tokens=700)
+                    _af_calls = [tc for tc in (_af.get("tool_calls") or [])
+                                 if tc.get("name") == "log_food"]
+                    if _af_calls:
+                        if today_log is None:
+                            from db.queries import get_or_create_today_log
+                            today_log = await get_or_create_today_log(
+                                db, user.id, user.timezone or "UTC")
+                        _af_results = await execute_tool_calls(
+                            _af_calls, user, today_log, db, _source,
+                            user_message=_gate_user_message)
+                        try:
+                            await db.refresh(today_log)
+                        except Exception:
+                            pass
+                        _af_text = (_af.get("text") or "").strip() or \
+                            deterministic_confirmation(
+                                _af_calls, today_log, user.preferences, _af_results)
+                        if _af_text:
+                            if on_text_bubble and not _hold_voicing:
+                                for _b in Response.from_text(_af_text).bubbles:
+                                    await on_text_bubble(_b)
+                            response_text = _af_text
+                        tool_calls = list(tool_calls or []) + _af_calls
+                        logger.warning(
+                            f"event=ask_first_answer_logged {_tag} "
+                            f"tools={[tc.get('name') for tc in _af_calls]}")
+                # Resolve either way — the user engaged; never re-ask this loop.
+                from datetime import datetime as _dt_af
+                _held_pq.answered_at = _dt_af.utcnow()
+                await db.commit()
+            except Exception as e:
+                logger.error(f"ask-first answer force-log failed for {_tag}: {e}")
 
     # ── ACTIVITY completeness: a co-mentioned workout the model ignored ─────────
     # The user reported a food AND a workout/sport ("chicken plate… and also played
