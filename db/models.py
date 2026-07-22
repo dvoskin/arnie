@@ -513,6 +513,10 @@ class PendingQuestion(Base):
     item_referenced = Column(String)                    # what the question is about (e.g. "chicken sandwich") — used by food_clarification
     tier = Column(String, default="casual")             # casual | goal_critical — scales follow-up urgency
     hook_style = Column(String, default="question")     # question | engagement — controls re-ask framing
+    # ASK-FIRST hold only: JSON of the log_food tool inputs HELD on turn 1, so the
+    # answer turn can replay them DETERMINISTICALLY if the model loops instead of
+    # committing — never lose a held meal. NULL for every other pending kind.
+    payload_json = Column(Text)
     asked_at = Column(DateTime, server_default=func.now())   # first time asked
     last_asked_at = Column(DateTime, server_default=func.now())  # most recent (re-)ask
     follow_up_count = Column(Integer, default=0)        # how many times we've re-asked

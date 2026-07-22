@@ -46,11 +46,15 @@ def clarify_swings_enabled() -> bool:
 
 
 def ask_first_hold_enabled() -> bool:
-    """Kill switch for the ASK-FIRST hold. **Default OFF** pending the deterministic
-    force-log-on-answer (option A): the model-driven force pass occasionally loops
-    even under the nudge (~1 in 3 multi-item answers), which would DROP the held
-    meal. Do NOT enable until the held items are stashed + replayed deterministically
-    so an answer can never lose a log. ASK_FIRST_HOLD=true turns on the hold."""
+    """Kill switch for the ASK-FIRST hold. **Default ON** (2026-07-22). In strict
+    mode a food-log turn with an unstated high-swing detail HOLDS the write and
+    asks BEFORE logging (July-7 behavior). The held items are STASHED on the
+    pending (payload_json) and the answer turn logs them: model-refined when it
+    cooperates, replayed deterministically from the stash when it loops — so a
+    held meal is NEVER lost WHEN opus calls log_food. Default OFF still: opus also
+    PHANTOM-NARRATES "logged" without calling the tool (~1/3 for some items), which
+    the hold cannot engage on — that no-tool phantom needs its own guard first.
+    ASK_FIRST_HOLD=false → log-first."""
     return os.getenv("ASK_FIRST_HOLD", "false").lower() in ("true", "1", "yes")
 
 

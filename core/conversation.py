@@ -9,6 +9,7 @@ owns everything from LLM call through Response assembly.
 from __future__ import annotations
 
 import dataclasses
+import json
 import logging
 import os
 from typing import Any, Callable, Optional
@@ -776,31 +777,44 @@ async def run_turn(
                         logger.warning(f"ask-first hold check failed: {_e}")
                         _ask_first_q = None
         if _ask_first_q:
-            _held_names = [(tc.get("input") or {}).get("food_name")
-                           for tc in tool_calls if tc.get("name") == "log_food"]
-            logger.info(f"event=ask_first_hold user={getattr(user,'id',None)} "
-                        f"items={_held_names}")
-            # Drop the food writes — nothing logs this turn; the answer logs.
-            tool_calls = [tc for tc in tool_calls if tc.get("name") != "log_food"]
-            if _streamer:            # don't show the pass-1 log-confirmation text
-                try:
-                    _streamer.discard_held()
-                except Exception:
-                    pass
+            # STASH the full held log_food inputs so the answer turn can replay
+            # them DETERMINISTICALLY if the model loops (never lose the meal).
+            _held_inputs = [dict(tc.get("input") or {})
+                            for tc in tool_calls if tc.get("name") == "log_food"]
+            _held_names = [i.get("food_name") for i in _held_inputs]
+            # Record the pending WITH the stash FIRST; only actually HOLD (drop the
+            # writes) if it persisted — so we can never remove a meal's writes
+            # without a recoverable way to replay them.
+            _held_ok = False
             try:
                 from db.queries import record_pending_question
                 # kind="food_ask_first" (NOT "food_clarification") so the
-                # force-log-on-answer branch below can tell a HELD meal (nothing
-                # logged, must LOG on the answer) apart from the log-first
-                # clarify-on-swing pending (item already logged, UPDATE on answer)
-                # — mixing them would double-log.
+                # force-log-on-answer branch tells a HELD meal (nothing logged,
+                # must LOG on the answer) apart from the log-first clarify pending
+                # (item already logged, UPDATE on answer) — mixing them double-logs.
                 _pq = await record_pending_question(
                     db, user.id, kind="food_ask_first", question=_ask_first_q,
                     tier="food_clarification", hook_style="question")
                 _pq.item_referenced = next((n for n in _held_names if n), "meal")
+                _pq.payload_json = json.dumps(_held_inputs)
                 await db.commit()
+                _held_ok = True
             except Exception as _e:
-                logger.warning(f"ask-first pending-record failed: {_e}")
+                logger.warning(f"ask-first stash failed, NOT holding: {_e}")
+            if _held_ok:
+                logger.info(f"event=ask_first_hold user={getattr(user,'id',None)} "
+                            f"items={_held_names}")
+                # Drop the food writes — nothing logs this turn; the answer logs.
+                tool_calls = [tc for tc in tool_calls if tc.get("name") != "log_food"]
+                if _streamer:        # don't show the pass-1 log-confirmation text
+                    try:
+                        _streamer.discard_held()
+                    except Exception:
+                        pass
+            else:
+                # Couldn't persist the stash → do NOT hold; let the log go through
+                # normally this turn (log-first fallback), never a silent drop.
+                _ask_first_q = None
 
         # The gates judge the CURRENT message — but a clarify-ANSWER carries
         # the intent of the exchange it answers (item names live in the prior
@@ -1684,6 +1698,21 @@ async def run_turn(
                         system, tools=True, max_tokens=700)
                     _af_calls = [tc for tc in (_af.get("tool_calls") or [])
                                  if tc.get("name") == "log_food"]
+                    _used_stash = False
+                    if not _af_calls:
+                        # The model LOOPED (asked again / fired no tool). Replay the
+                        # EXACT held items from the turn-1 stash so the meal is NEVER
+                        # lost — unrefined by the answer, but captured. This is the
+                        # bulletproof half (option A): model-refined when it
+                        # cooperates, deterministic stash when it doesn't.
+                        try:
+                            _stashed = json.loads(_held_pq.payload_json or "[]")
+                        except Exception:
+                            _stashed = []
+                        _af_calls = [{"name": "log_food", "input": _i}
+                                     for _i in _stashed
+                                     if isinstance(_i, dict) and _i.get("food_name")]
+                        _used_stash = bool(_af_calls)
                     if _af_calls:
                         if today_log is None:
                             from db.queries import get_or_create_today_log
@@ -1696,9 +1725,14 @@ async def run_turn(
                             await db.refresh(today_log)
                         except Exception:
                             pass
-                        _af_text = (_af.get("text") or "").strip() or \
-                            deterministic_confirmation(
-                                _af_calls, today_log, user.preferences, _af_results)
+                        # On a stash replay the model's text is the loop question —
+                        # discard it and voice the deterministic confirmation.
+                        _af_text = deterministic_confirmation(
+                            _af_calls, today_log, user.preferences, _af_results) \
+                            if _used_stash else (
+                                (_af.get("text") or "").strip()
+                                or deterministic_confirmation(
+                                    _af_calls, today_log, user.preferences, _af_results))
                         if _af_text:
                             if on_text_bubble and not _hold_voicing:
                                 for _b in Response.from_text(_af_text).bubbles:
@@ -1707,6 +1741,7 @@ async def run_turn(
                         tool_calls = list(tool_calls or []) + _af_calls
                         logger.warning(
                             f"event=ask_first_answer_logged {_tag} "
+                            f"via={'stash' if _used_stash else 'model'} "
                             f"tools={[tc.get('name') for tc in _af_calls]}")
                 # Resolve either way — the user engaged; never re-ask this loop.
                 from datetime import datetime as _dt_af
