@@ -1339,63 +1339,61 @@ async def _analyze_food(db, user, food_name, inp):
     except Exception as e:
         logger.warning(f"food memory lookup failed: {e}")
 
-    # 2) Branched enrichment — branded goes web-first; generics go USDA-first.
+    # 2) Branched enrichment — STRUCTURED sources FIRST, web only as fallback.
+    #    Ladder (Danny 2026-07-22): own-log/memory (above) → USDA + OFF → web.
+    #    USDA + OFF run CONCURRENTLY so a multi-item paste doesn't serialize the
+    #    lookups; OFF (the branded label DB) is skipped for pure generics, where
+    #    USDA owns the answer and an OFF name-search would only add noise.
     usda = None
+    off = None
     web = None
     if memory is None and name_norm and not generic:
-        if is_packaged:
-            web = await _web_lookup_packaged(food_name, inp.get("quantity"))
-            if web is None:
-                # USDA does carry some branded items (Quest bars, etc.) — try as backup.
-                try:
-                    from api.usda import search_food
-                    candidates = await search_food(food_name, page_size=8)
-                    best, conf = best_candidate(food_name, candidates)
-                    if best:
-                        best["_match"] = conf
-                        usda = best
-                except Exception as e:
-                    logger.warning(f"USDA backup enrichment failed: {e}")
-            # Cache a confident web hit so the same product is instant next time.
-            if web is not None:
-                try:
-                    await upsert_user_food_match(
-                        db, user.id, name_norm, food_name,
-                        web.get("fdc_id"), web.get("per100g", {}), web.get("_match") or "likely",
-                    )
-                except Exception as e:
-                    logger.warning(f"memory cache write failed: {e}")
-        else:
+        import asyncio as _aio
+        from api.usda import search_food
+        from skills.nutrition import off as _off_mod
+        _branded = is_packaged or _looks_branded(food_name)
+
+        async def _fetch_usda():
             try:
-                from api.usda import search_food
-                candidates = await search_food(food_name, page_size=8)
-                best, conf = best_candidate(food_name, candidates)
-                if best:
-                    best["_match"] = conf
-                    usda = best
-                    if conf in ("exact", "likely"):
-                        await upsert_user_food_match(
-                            db, user.id, name_norm, food_name,
-                            best.get("fdc_id"), best.get("per100g", {}), conf,
-                        )
+                cands = await search_food(food_name, page_size=8)
+                b, conf = best_candidate(food_name, cands)
+                if b:
+                    b["_match"] = conf
+                    return b
             except Exception as e:
                 logger.warning(f"USDA enrichment failed: {e}")
-            # USDA missed AND it's a packaged-looking text mention → try web.
-            if usda is None and _looks_branded(food_name):
-                web = await _web_lookup_packaged(food_name, inp.get("quantity"))
-                if web is not None:
-                    try:
-                        await upsert_user_food_match(
-                            db, user.id, name_norm, food_name,
-                            web.get("fdc_id"), web.get("per100g", {}),
-                            web.get("_match") or "likely",
-                        )
-                    except Exception:
-                        pass
+            return None
+
+        async def _fetch_off():
+            if not _branded:
+                return None      # OFF is a branded/product DB; USDA owns generics
+            try:
+                return await _off_mod.search(food_name)
+            except Exception as e:
+                logger.warning(f"OFF enrichment failed: {e}")
+                return None
+
+        usda, off = await _aio.gather(_fetch_usda(), _fetch_off())
+
+        # Web label lookup ONLY when both structured DBs miss a branded item.
+        if usda is None and off is None and _branded:
+            web = await _web_lookup_packaged(food_name, inp.get("quantity"))
+
+        # Cache the winner (USDA > OFF > web) so the same product is instant next time.
+        _hit = usda or off or web
+        if _hit is not None:
+            try:
+                await upsert_user_food_match(
+                    db, user.id, name_norm, food_name,
+                    _hit.get("fdc_id"), _hit.get("per100g", {}),
+                    _hit.get("_match") or "likely",
+                )
+            except Exception as e:
+                logger.warning(f"memory cache write failed: {e}")
 
     result = analyze(food_name, inp.get("quantity"), *llm,
                      usda_candidate=usda, memory_match=memory,
-                     web_candidate=web)
+                     web_candidate=web, off_candidate=off)
 
     # ── CONFIDENCE-GATED WEB MEAL ENRICH ──────────────────────────────────────
     # The composite/restaurant meals the DBs miss (CAVA bowl, poke bowl, Med

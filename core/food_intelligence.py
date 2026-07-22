@@ -274,7 +274,7 @@ def reconcile_macros(cal: float, protein: float, carbs: float, fat: float) -> tu
 
 def analyze(name, quantity, llm_cal, llm_protein, llm_carbs, llm_fat,
             usda_candidate=None, memory_match=None,
-            web_candidate=None) -> FoodAnalysis:
+            web_candidate=None, off_candidate=None) -> FoodAnalysis:
     """
     Build a FoodAnalysis. Priority for the nutrient profile:
       memory_match (user's recurring food)
@@ -302,7 +302,10 @@ def analyze(name, quantity, llm_cal, llm_protein, llm_carbs, llm_fat,
     micros: dict = {}
     _implied_grams = None
 
-    src = memory_match or web_candidate or usda_candidate
+    # Ladder priority (Danny 2026-07-22): own-log/memory > USDA > OFF > web.
+    # USDA wins for generics (it has them); OFF fills branded items USDA misses;
+    # web is the last resort. All carry the same {per100g, _match} shape.
+    src = memory_match or usda_candidate or off_candidate or web_candidate
     computed_forward = False
     if src:
         per100 = src.get("per100g") or {
@@ -313,16 +316,19 @@ def analyze(name, quantity, llm_cal, llm_protein, llm_carbs, llm_fat,
         }
         cal100 = per100.get("calories")
         fdc_id = src.get("fdc_id")
-        if memory_match:
+        # Identity-based so the label matches the winner under the new priority.
+        if src is memory_match:
             source = "memory"
             confidence = "user-confirmed" if memory_match.get("user_confirmed") else (memory_match.get("confidence") or "likely")
-        elif web_candidate:
-            source = "web_label"
-            # Web hits for packaged products are typically the actual label data
-            # — confidence "likely" or "exact" depending on the parser.
+        elif src is usda_candidate:
+            source = "usda"
+            confidence = src.get("_match", "likely")
+        elif src is off_candidate:
+            source = "off"                      # Open Food Facts label data
             confidence = src.get("_match", "likely")
         else:
-            source = "usda"
+            source = "web_label"
+            # Web hits for packaged products are typically the actual label data.
             confidence = src.get("_match", "likely")
 
         from api.usda import MICRO_KEYS as _MICRO_KEYS
