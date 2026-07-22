@@ -1067,12 +1067,47 @@ async def run_turn(
             # Switch: FAST_LOG_VOICE=false.
             _pure_food = _is_pure_food_log(tool_calls, _user_text)
             _fast_voice = None
-            if fast_log_voice_enabled() and _pure_food:
-                _fast_voice = await voice_log(
-                    tool_calls, tool_results, today_log, user)
+            _clarify_q = None
+            if _pure_food:
+                # Mode-gradient clarify-on-swing runs CONCURRENTLY with the voice
+                # read (both are quick reads over the committed log), so asking
+                # about a real swing ("how much butter on the toast?") costs ~no
+                # extra wall-clock. It NEVER withholds a log — every item is already
+                # on the board; the question only sharpens it next turn. Code layer,
+                # not the frozen prompt (feedback_arnie_food_prompt_frozen).
+                import asyncio as _aio
+                from core.clarify import clarify_swings
+                _ct = clarify_swings(tool_calls, tool_results, user)
+                if fast_log_voice_enabled():
+                    _fast_voice, _clarify_q = await _aio.gather(
+                        voice_log(tool_calls, tool_results, today_log, user), _ct)
+                else:
+                    _clarify_q = await _ct
             if _pure_food:
                 response_text = _fast_voice or deterministic_confirmation(
                     tool_calls, today_log, user.preferences, tool_results)
+                if _clarify_q:
+                    response_text = (
+                        (response_text.rstrip() + "|||" + _clarify_q)
+                        if (response_text or "").strip() else _clarify_q)
+                    # Record the open question so next turn [PENDING CLARIFICATION]
+                    # surfaces it and the user's answer UPDATES the entries
+                    # (auto-resolves on update_food_entry). Best-effort — a failed
+                    # record never breaks the reply.
+                    try:
+                        from db.queries import record_pending_question
+                        _pq = await record_pending_question(
+                            db, user.id, kind="food_clarification",
+                            question=_clarify_q, tier="casual",
+                            hook_style="question")
+                        _pq.item_referenced = next(
+                            ((tc.get("input") or {}).get("food_name")
+                             for tc in tool_calls if tc.get("name") == "log_food"),
+                            "meal")
+                        _pq.tier = "food_clarification"
+                        await db.commit()
+                    except Exception as _e:
+                        logger.warning(f"clarify pending-record failed: {_e}")
                 _response_streamed = False
             else:
                 # Non-pure logging turn (water / weight, or a co-asked question)
