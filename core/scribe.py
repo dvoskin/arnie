@@ -202,7 +202,16 @@ def missing_items(extracted: List[dict], logged_names: List[str]) -> List[dict]:
 
 
 def _norm_name(s: str) -> str:
-    return re.sub(r"[^a-z0-9 ]", "", (s or "").lower()).strip()
+    # Cyrillic-aware (2026-07-22): the old ASCII-only [^a-z0-9 ] regex stripped
+    # EVERY character from a Russian/Ukrainian food name ('Домашняя пицца',
+    # 'салат цезарь', 'кола' all normalized to ''), so unlogged_items() below
+    # could not tell any two RU items apart — the fuzzy-similarity fallback then
+    # picked items by list order instead of actual identity. Denys 2026-07-22:
+    # "Съел домашнюю пиццу... Салат цезарь... Выпил колы" logged the pizza
+    # TWICE (pass-1 + the wrongly-selected "missing" item) while the cola —
+    # the genuinely dropped item — never got logged at all. Mirrors the
+    # Cyrillic range already used correctly in write_set._tokens().
+    return re.sub(r"[^a-z0-9а-яё ]", "", (s or "").lower()).strip()
 
 
 def unlogged_items(extracted: List[dict], logged_names: List[str]) -> List[dict]:
@@ -216,6 +225,8 @@ def unlogged_items(extracted: List[dict], logged_names: List[str]) -> List[dict]
         similarity to any logged name, so a RENAMED item ('Parmesan' logged as
         'Parmigiano-Reggiano') is recognized as already covered and NOT re-logged;
         the genuinely-dropped 'caesar salad' (similar to nothing logged) is.
+        Cyrillic-safe (2026-07-22): _norm_name keeps а-яё so RU/UK names are
+        compared on their actual letters instead of all collapsing to ''.
 
     Returns the item dicts (name/quantity/macros) to log directly, capped at the
     count shortfall. Empty when nothing's missing."""
@@ -224,13 +235,19 @@ def unlogged_items(extracted: List[dict], logged_names: List[str]) -> List[dict]
     if n_missing <= 0 or not extracted:
         return []
     logged_norm = [_norm_name(ln) for ln in logged_names]
+    # If literally every logged name is empty after normalization (e.g. all-emoji
+    # or all-punctuation names — a degenerate edge case), similarity can't
+    # discriminate anything; fail SAFE by returning nothing rather than guessing
+    # by list order (which is what produced the pizza double-log).
+    if extracted and not any(logged_norm):
+        return []
 
     def _sim(name: str) -> float:
         nn = _norm_name(name)
         if not nn:
             return 1.0
         return max((difflib.SequenceMatcher(None, nn, ln).ratio()
-                    for ln in logged_norm), default=0.0)
+                    for ln in logged_norm if ln), default=0.0)
 
     ranked = sorted(extracted, key=lambda it: _sim(it.get("name") or ""))
     return ranked[:n_missing]
