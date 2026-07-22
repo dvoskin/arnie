@@ -2,8 +2,35 @@
 from core.turn_health import (
     looks_like_stall, looks_like_dead_end, detect_frustration, detect_turn_flags,
     looks_like_phantom_log_claim, claimed_day_total, extract_stated_day_calories,
-    looks_like_unlogged_food_report,
+    looks_like_unlogged_food_report, looks_like_unaddressed_activity,
 )
+
+
+# ── Co-mentioned workout dropped (Justin's racquetball, 2026-07-21) ──────────────
+
+def test_activity_mentioned_but_ignored_is_flagged():
+    # logged the plate, never touched the racquetball → must be flagged.
+    assert looks_like_unaddressed_activity(
+        "Today i had a chicken fajita plate from just salad and also played racquetball",
+        "560 for 42g protein, strong ratio. still 147g protein to go.") is True
+    assert looks_like_unaddressed_activity(
+        "had a bagel and went for a run", "bagel logged, 250 cal.") is True
+    assert looks_like_unaddressed_activity(
+        "oatmeal and ran 3 miles this morning", "oatmeal, 150 cal, good start.") is True
+
+
+def test_activity_addressed_or_non_exercise_not_flagged():
+    # Reply already asked about it → addressed.
+    assert looks_like_unaddressed_activity(
+        "salad and played racquetball",
+        "salad logged. nice, how long did you play racquetball?") is False
+    # Not exercise.
+    assert looks_like_unaddressed_activity(
+        "had lunch and played with my kids", "lunch logged, 600 cal.") is False
+    assert looks_like_unaddressed_activity(
+        "skipped breakfast, ran out of time", "no worries, what's for lunch?") is False
+    assert looks_like_unaddressed_activity(
+        "just a salad bowl", "salad bowl logged, 300 cal.") is False
 
 
 # ── OMISSION: reported food, quantified in the reply, never logged (starburst) ──

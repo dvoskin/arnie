@@ -546,6 +546,40 @@ def looks_like_unlogged_food_report(user_text: str, response_text: str) -> bool:
     return True
 
 
+# A WORKOUT / SPORT mention in the user's message — high-precision so it never
+# trips on "played with my kids" or "ran out of time". Sport nouns, clear exercise
+# verbs/phrases, "played <sport>", "went for a run/walk", "ran/biked <N>".
+_ACTIVITY_RE = re.compile(
+    r"\b(racquetball|racketball|pickleball|tennis|basketball|soccer|volleyball|"
+    r"baseball|hockey|golf|squash|badminton|boxing|kickbox\w*|"
+    r"yoga|pilates|crossfit|zumba|spin\s+class|"
+    r"jog(?:ged|ging)?|hik(?:e|ed|ing)|swam|swimming|cycled|cycling|rowed|rowing|"
+    r"worked?\s*out|workout|hit\s+the\s+gym|went\s+to\s+the\s+gym|lifted|"
+    r"did\s+(?:legs|chest|back|arms|shoulders|cardio|abs|a\s+workout|a\s+lift)|"
+    r"went\s+(?:for\s+)?a\s+(?:run|walk|ride|swim|jog|hike|bike\s+ride)|"
+    r"(?:ran|walked|biked|swam|rowed)\s+\d|"
+    r"played\s+(?:racquetball|racketball|tennis|basketball|soccer|volleyball|"
+    r"squash|golf|pickleball|hockey|baseball|badminton))\b", re.I)
+
+
+def looks_like_unaddressed_activity(user_text: str, response_text: str) -> bool:
+    """True when the user mentioned a WORKOUT/SPORT (usually alongside food) and the
+    reply neither logged it (caller confirms no log_exercise fired) nor even
+    referenced it — the model handled the food and silently DROPPED the activity
+    (Justin's 'chicken plate… and also played racquetball' → racquetball ignored,
+    2026-07-21). The model should log it or ask one quick question (how long?)."""
+    u = user_text or ""
+    m = _ACTIVITY_RE.search(u)
+    if not m:
+        return False
+    # If the reply already references the activity term, it addressed it (asked /
+    # logged) — not a drop. Use the last word of the match ('racquetball', 'workout').
+    term = re.sub(r"[^a-z]", "", m.group(0).lower().split()[-1])
+    if len(term) < 3:
+        return True
+    return term not in (response_text or "").lower()
+
+
 _INVOKE_RE = re.compile(r'<invoke\s+name="([^"]+)"\s*>(.*?)</invoke>', re.S | re.I)
 _PARAM_RE = re.compile(r'<parameter\s+name="([^"]+)"\s*>(.*?)</parameter>', re.S | re.I)
 

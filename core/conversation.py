@@ -1433,6 +1433,69 @@ async def run_turn(
         except Exception as e:
             logger.error(f"Phantom rescue failed for {_tag}: {e}")
 
+    # ── ACTIVITY completeness: a co-mentioned workout the model ignored ─────────
+    # The user reported a food AND a workout/sport ("chicken plate… and also played
+    # racquetball", Justin 2026-07-21) but the model logged the food and silently
+    # DROPPED the activity — no log_exercise, not even a question. Address it: log
+    # it if there's enough (activity + duration), else ask ONE quick question. The
+    # food reply is VALID, so APPEND the activity line; never overwrite it.
+    _fired_exercise = any(tc.get("name") == "log_exercise" for tc in tool_calls)
+    _activity_omission = False
+    if not _fired_exercise and not _signing_off:
+        try:
+            from core.turn_health import looks_like_unaddressed_activity
+            _activity_omission = looks_like_unaddressed_activity(
+                _gate_user_message, response_text)
+        except Exception:
+            _activity_omission = False
+    if _activity_omission:
+        try:
+            _act_results: dict = {}
+            _act = await chat(
+                messages + [
+                    {"role": "assistant", "content": response_text},
+                    {"role": "user", "content":
+                        "[SYSTEM HEALTH CHECK — not the user] The user mentioned "
+                        "doing a WORKOUT or SPORT this turn (e.g. 'played "
+                        "racquetball', 'went for a run') and you did NOT address it "
+                        "at all. If they gave enough to log it (the activity + a "
+                        "duration or distance), call log_exercise NOW. If not, add "
+                        "ONE short friendly line asking only what you need to log it "
+                        "('nice — how long did you play racquetball?'). Do NOT re-log "
+                        "or touch any FOOD. Reply with ONLY that one activity line."},
+                ],
+                system, tools=True, max_tokens=300,
+            )
+            _act_calls = [tc for tc in (_act.get("tool_calls") or [])
+                          if tc.get("name") == "log_exercise"]
+            if _act_calls:
+                if today_log is None:
+                    from db.queries import get_or_create_today_log
+                    today_log = await get_or_create_today_log(
+                        db, user.id, user.timezone or "UTC")
+                _act_results = await execute_tool_calls(
+                    _act_calls, user, today_log, db, _source,
+                    user_message=_gate_user_message)
+                try:
+                    await db.refresh(today_log)
+                except Exception:
+                    pass
+                tool_calls = list(tool_calls or []) + _act_calls
+            _act_text = (_act.get("text") or "").strip()
+            if not _act_text and _act_calls:
+                _act_text = deterministic_confirmation(
+                    _act_calls, today_log, user.preferences, _act_results)
+            if _act_text:
+                response_text = (
+                    (response_text.rstrip() + "|||" + _act_text)
+                    if (response_text or "").strip() else _act_text)
+                if on_text_bubble and not _hold_voicing:
+                    for _b in Response.from_text(_act_text).bubbles:
+                        await on_text_bubble(_b)
+            logger.warning(f"event=activity_rescue {_tag} logged={bool(_act_calls)}")
+        except Exception as e:
+            logger.error(f"Activity rescue failed for {_tag}: {e}")
+
     # STRIP (2026-07-21): the quality-repair pass NEVER runs on a logging turn.
     # It was an added recheck that spent an extra Opus round-trip AND emitted a
     # second text source on top of the log voice — a latency tax and a double
