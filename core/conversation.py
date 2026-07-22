@@ -831,6 +831,43 @@ async def run_turn(
                         logger.warning(
                             f"event=partial_drop {_tag} logged={_logged_names} "
                             f"missing={_missing_from_scribe}")
+                        # RESCUE NOW — BEFORE voicing — so the meal is confirmed
+                        # COMPLETE in ONE clean reply, not a stale turkey-only voice
+                        # + a separate "rice logged" step with shifting totals
+                        # (Danny 2026-07-21: half those bubbles should be hidden).
+                        # Log ONLY the missing item(s); voice_log below then voices
+                        # the whole meal once. Same call count as before — the
+                        # rescue just moved ahead of the voice.
+                        try:
+                            _pd = await chat(
+                                messages + [{"role": "user", "content": (
+                                    "[SYSTEM HEALTH CHECK — not the user] You logged "
+                                    "part of what the user reported but MISSED: "
+                                    f"{', '.join(_missing_from_scribe)}. Call log_food "
+                                    "for ONLY those missing item(s), exact quantities "
+                                    "from the user's message. Do NOT re-log or touch "
+                                    "anything already on the board; if an item is part "
+                                    "of a dish already logged as ONE, call NO tool.")}],
+                                system, tools=True, max_tokens=400)
+                            _pd_calls = [tc for tc in (_pd.get("tool_calls") or [])
+                                         if tc.get("name") == "log_food"]
+                            if _pd_calls:
+                                _pd_res = await execute_tool_calls(
+                                    _pd_calls, user, _log_for_tools, db, _source,
+                                    user_message=_gate_user_message)
+                                for _tc in _pd_calls:
+                                    tool_calls.append(_tc)
+                                    tool_results[_tc["name"]] = _pd_res.get(_tc["name"], "")
+                                if today_log is not None:
+                                    await db.refresh(today_log)
+                                logger.warning(
+                                    f"event=partial_drop_rescue outcome=logged {_tag} "
+                                    f"added={[(t.get('input') or {}).get('food_name') for t in _pd_calls]}")
+                        except Exception as e:
+                            logger.error(f"partial-drop pre-voice rescue failed {_tag}: {e}")
+                        # Handled here (before the voice) → the late block must not
+                        # re-trigger a second, appended rescue.
+                        _missing_from_scribe = []
                 else:
                     _scribe_task.cancel()
             except Exception:
