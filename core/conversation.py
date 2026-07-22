@@ -111,7 +111,10 @@ def _hold_voicing_enabled() -> bool:
     bubble ships. voice_log is now single-source over the DB-committed total, so
     it structurally can't phantom a number — the hold is dead weight and the
     direct cause of log-reply lag vs July-5's live streaming. HOLD_VOICING=false
-    streams live; =true restores the hold (instant revert)."""
+    streams live; =true restores the hold (default). NOTE 2026-07-22: a blanket
+    default-off REGRESSED — it leaks the pass-1 premature confirmation on the
+    general streaming path (tests/test_streaming.py). Kept ON; a targeted strip
+    (pure-food path only) is the correct next step, not a global flip."""
     return os.getenv("HOLD_VOICING", "true").lower() in ("true", "1", "yes")
 
 
