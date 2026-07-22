@@ -2,6 +2,7 @@
 Executes the tool calls returned by the LLM, writes to DB, and returns
 a human-readable result string per tool (used in multi-turn follow-ups).
 """
+import contextvars
 import json
 import logging
 import os
@@ -107,6 +108,39 @@ def _default_meal_type(user) -> str:
     if 17 * 60 + 30 <= mins < 22 * 60:
         return "dinner"
     return "snack"
+
+
+def _inherit_or_default_meal_type(user, target_log, meal_time) -> str:
+    """Meal slot for an item the model logged WITHOUT one. A multi-item meal gets
+    logged across passes — the partial-drop rescue re-adds the dropped sides in a
+    SECOND pass with no meal_type, so a shawarma dinner split into DINNER (main) +
+    SNACK (sides), the sides falling to the clock default (Danny 2026-07-22). So
+    first INHERIT the slot of a sibling from the same eating occasion (a recent
+    entry that already carries one); only with no sibling fall back to the clock.
+    Defensive: any lazy-load/tz hiccup → clock default (never breaks a log)."""
+    try:
+        entries = getattr(target_log, "food_entries", None) or []
+        _ = len(entries)   # force any lazy load HERE so the except catches it
+
+        def _naive(dt):
+            return dt.replace(tzinfo=None) if getattr(dt, "tzinfo", None) else dt
+
+        ref = _naive(meal_time) if meal_time is not None else None
+        best_ts, best_slot = None, None
+        for e in entries:
+            slot = getattr(e, "meal_type", None)
+            ts = getattr(e, "meal_time", None) or getattr(e, "timestamp", None)
+            if not slot or ts is None or ref is None:
+                continue
+            ts = _naive(ts)
+            if abs((ref - ts).total_seconds()) <= 45 * 60:   # same eating occasion
+                if best_ts is None or ts > best_ts:
+                    best_ts, best_slot = ts, slot
+        if best_slot:
+            return best_slot
+    except Exception:
+        pass
+    return _default_meal_type(user)
 
 
 def _lbs_to_kg(weight, unit: str = "lbs"):
@@ -1042,6 +1076,109 @@ def web_meal_enrich_enabled() -> bool:
     return os.getenv("WEB_MEAL_ENRICH", "true").lower() in ("true", "1", "yes")
 
 
+def enrich_prefetch_enabled() -> bool:
+    """Kill switch for the multi-item enrichment prewarm (fan out USDA+OFF across
+    the foods in one paste). ENRICH_PREFETCH=false falls back to per-item serial
+    lookups instantly."""
+    return os.getenv("ENRICH_PREFETCH", "true").lower() in ("true", "1", "yes")
+
+
+# Per-turn cache of prewarmed enrichment candidates, keyed by normalized food
+# name -> (usda_candidate, off_candidate). Populated by _prewarm_enrichment()
+# before the serial dispatch loop, consumed by _analyze_food()'s enrichment step.
+# A ContextVar (not a module global) so concurrent turns/requests can't see each
+# other's prewarm. Default {} — a miss returns None and the item fetches inline.
+_ENRICH_PREFETCH: "contextvars.ContextVar[dict]" = contextvars.ContextVar(
+    "arnie_enrich_prefetch", default={}
+)
+
+
+async def _fetch_usda_off(food_name: str, is_packaged: bool):
+    """Network-only enrichment fetch: USDA + OFF, run CONCURRENTLY. Touches NO DB,
+    so it is safe to fan out across many foods at once (the multi-item prewarm) —
+    unlike the surrounding _analyze_food, whose memory read + cache write ride the
+    shared AsyncSession and must stay serial. Returns (usda_candidate, off).
+
+    This is the single source of truth for the USDA+OFF lookup: both the inline
+    path in _analyze_food and the prewarm call it, so a prewarmed result is
+    byte-for-byte identical to what the inline fetch would have produced."""
+    import asyncio as _aio
+    from api.usda import search_food
+    from core.food_intelligence import best_candidate
+    from skills.nutrition import off as _off_mod
+    _branded = is_packaged or _looks_branded(food_name)
+
+    async def _u():
+        try:
+            cands = await search_food(food_name, page_size=8)
+            b, conf = best_candidate(food_name, cands)
+            if b:
+                b["_match"] = conf
+                return b
+        except Exception as e:
+            logger.warning(f"USDA enrichment failed: {e}")
+        return None
+
+    async def _o():
+        if not _branded:
+            return None      # OFF is a branded/product DB; USDA owns generics
+        try:
+            return await _off_mod.search(food_name)
+        except Exception as e:
+            logger.warning(f"OFF enrichment failed: {e}")
+            return None
+
+    return await _aio.gather(_u(), _o())
+
+
+async def _prewarm_enrichment(tool_calls: list) -> None:
+    """Fan out the USDA+OFF lookups for every distinct branded/non-generic food in
+    a multi-log batch, BEFORE the serial dispatch loop. The loop's _analyze_food
+    then reuses the prewarmed result instead of paying the network round-trip
+    one-item-at-a-time. DB writes stay in the serial loop — only the (DB-free)
+    network fetch is overlapped, so the shared AsyncSession is never touched
+    concurrently. Best-effort: any failure leaves the cache empty and every item
+    falls back to its inline fetch (identical result, just not overlapped)."""
+    from core.food_intelligence import normalize_name, is_generic_food_name
+    import asyncio as _aio
+
+    # Distinct foods worth prewarming: log_food calls with a real name that isn't
+    # a pure generic (USDA-only, cheap) — keyed by normalized name to dedupe
+    # repeats and to match the key _analyze_food looks up.
+    plan: dict[str, tuple[str, bool]] = {}
+    for tc in tool_calls:
+        if not isinstance(tc, dict) or tc.get("name") != "log_food":
+            continue
+        inp = tc.get("input") or {}
+        if not isinstance(inp, dict):
+            continue
+        fn = (inp.get("food_name") or "").strip()
+        if not fn:
+            continue
+        nn = normalize_name(fn)
+        if not nn or nn in plan or is_generic_food_name(fn):
+            continue
+        plan[nn] = (fn, bool(inp.get("is_packaged")) or _looks_branded(fn))
+
+    # Only worth the fan-out for a genuine multi-item paste. A single item gains
+    # nothing (it would just move the same one lookup earlier) and a giant paste
+    # is capped so we don't open an unbounded burst of concurrent HTTP calls.
+    if len(plan) < 2:
+        return
+    names = list(plan.keys())[:12]
+    results = await _aio.gather(
+        *[_fetch_usda_off(plan[nn][0], plan[nn][1]) for nn in names],
+        return_exceptions=True,
+    )
+    cache: dict[str, tuple] = {}
+    for nn, res in zip(names, results):
+        if isinstance(res, tuple):     # a raised exception is dropped -> inline fetch
+            cache[nn] = res
+    if cache:
+        _ENRICH_PREFETCH.set(cache)
+        logger.info(f"enrichment prewarm: fanned out {len(cache)} foods")
+
+
 # Meal words that mark a COMPOSITE dish worth a web total-lookup when the DBs
 # miss it — a restaurant bowl/plate the model can only guess at. A meal word is
 # REQUIRED (see _worth_web_meal): a bare multi-word name is NOT enough, because
@@ -1348,32 +1485,19 @@ async def _analyze_food(db, user, food_name, inp):
     off = None
     web = None
     if memory is None and name_norm and not generic:
-        import asyncio as _aio
-        from api.usda import search_food
-        from skills.nutrition import off as _off_mod
         _branded = is_packaged or _looks_branded(food_name)
 
-        async def _fetch_usda():
-            try:
-                cands = await search_food(food_name, page_size=8)
-                b, conf = best_candidate(food_name, cands)
-                if b:
-                    b["_match"] = conf
-                    return b
-            except Exception as e:
-                logger.warning(f"USDA enrichment failed: {e}")
-            return None
-
-        async def _fetch_off():
-            if not _branded:
-                return None      # OFF is a branded/product DB; USDA owns generics
-            try:
-                return await _off_mod.search(food_name)
-            except Exception as e:
-                logger.warning(f"OFF enrichment failed: {e}")
-                return None
-
-        usda, off = await _aio.gather(_fetch_usda(), _fetch_off())
+        # Reuse the multi-item prewarm's result if this food was fanned out before
+        # the serial loop; else fetch USDA+OFF inline now. Both paths go through
+        # the same _fetch_usda_off helper, so a prewarmed value is identical to
+        # the inline one — the prewarm only moves the (DB-free) network wait
+        # earlier and overlaps it across the paste's items.
+        _pre = (_ENRICH_PREFETCH.get().get(name_norm)
+                if enrich_prefetch_enabled() else None)
+        if _pre is not None:
+            usda, off = _pre
+        else:
+            usda, off = await _fetch_usda_off(food_name, is_packaged)
 
         # Web label lookup ONLY when both structured DBs miss a branded item.
         if usda is None and off is None and _branded:
@@ -1669,6 +1793,20 @@ async def execute_tool_calls(
     # across the user base without manual log inspection.
     log_calls = {"food": 0, "water": 0, "exercise": 0, "body_weight": 0}
     log_skipped = {"food": 0, "water": 0, "exercise": 0, "body_weight": 0}
+
+    # Multi-item enrichment prewarm: fan out the (DB-free) USDA+OFF lookups for
+    # every branded food in this batch BEFORE the serial dispatch loop, so a big
+    # paste doesn't pay them one-at-a-time. The loop below reuses the results and
+    # keeps every DB write serial (the AsyncSession is not concurrency-safe).
+    # Best-effort — a prewarm failure just means each item fetches inline.
+    # Reset first, unconditionally: this turn must never serve a prior batch's
+    # prewarm if execute_tool_calls is reused within one async task.
+    _ENRICH_PREFETCH.set({})
+    if enrich_prefetch_enabled():
+        try:
+            await _prewarm_enrichment(tool_calls)
+        except Exception as e:
+            logger.warning(f"enrichment prewarm skipped: {e}")
 
     for tc in tool_calls:
         name = tc["name"]
@@ -2075,7 +2213,8 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
             estimated_flag=(analysis.confidence == "estimated") or from_photo,
             confidence_score=_conf,
             source_type=source_type,
-            meal_type=inp.get("meal_type") or _default_meal_type(user),
+            meal_type=inp.get("meal_type") or _inherit_or_default_meal_type(
+                user, target_log, _meal_time),
             meal_time=_meal_time,
             alcohol_units=inp.get("alcohol_units"),
             from_photo=from_photo,

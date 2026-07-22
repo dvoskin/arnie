@@ -150,6 +150,41 @@ def test_different_quantity_not_dup():
     assert dup is None
 
 
+def test_quantity_phrasing_drift_same_calories_is_dup():
+    """The Deny 2026-07-22 gap: same food logged twice ~4 min apart with the
+    quantity phrased differently each turn ("Творог 200г" then just "творог").
+    Calories agree (portion is the same), so the exact-quantity-string mismatch
+    must NOT let the second copy through."""
+    now = datetime(2026, 7, 22, 10, 4, 0)
+    prior = _entry(name="творог", qty="200 г", calories=248.0,
+                   ts=datetime(2026, 7, 22, 10, 0, 0))  # 4 min ago
+    dup = is_duplicate_food(
+        food_name="творог",
+        quantity="порция",          # different STRING, same portion
+        calories=250.0,             # within 15% of 248
+        existing_entries=[prior],
+        now_utc=now,
+    )
+    assert dup is prior
+
+
+def test_quantity_drift_without_calories_still_requires_exact_qty():
+    """Conservative guard: when a calorie is missing we can't confirm the portion
+    from calories, so a different quantity string must NOT match (otherwise a
+    genuinely different portion logged before enrichment would be swallowed)."""
+    now = datetime(2026, 7, 22, 10, 4, 0)
+    prior = _entry(name="творог", qty="200 г", calories=248.0,
+                   ts=datetime(2026, 7, 22, 10, 0, 0))
+    dup = is_duplicate_food(
+        food_name="творог",
+        quantity="порция",
+        calories=None,              # not yet enriched — portion unconfirmed
+        existing_entries=[prior],
+        now_utc=now,
+    )
+    assert dup is None
+
+
 def test_different_name_not_dup():
     now = datetime(2026, 6, 12, 2, 0, 0)
     prior = _entry(name="Chicken thigh", ts=datetime(2026, 6, 12, 1, 0, 0))

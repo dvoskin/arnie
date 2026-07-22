@@ -503,6 +503,10 @@ async def run_turn(
     # post-build catch-up. Without this, a phantom total streams live and the guard's
     # correction can only APPEND — the double-reply (turkey+rice: "1698" then "1566").
     _hold_voicing = False
+    # ASK-FIRST HOLD: set below (pre-execute) when a strict-mode swing holds the
+    # meal's writes; read in the reply-selection block. Init here so a no-tool
+    # turn (which skips the tool-execution block) never reads it unbound.
+    _ask_first_q = None
     _streamer = _BubbleStreamer(on_text_bubble) if on_text_bubble else None
     _stream_handler = _streamer.on_delta if _streamer else None
     # Only pass stream_handler to LLM calls when active — keeps the chat() and
@@ -742,6 +746,45 @@ async def run_turn(
                     await on_tool_start(_started)
                 except Exception as e:
                     logger.error(f"on_tool_start failed for {_tag}: {e}")
+
+        # ── ASK-FIRST HOLD (strict mode, July-7 behavior) ────────────────────
+        # A strict user wants an unstated high-swing detail (grilled vs fried,
+        # butter/sauce amount, portion) ASKED before the log, not sharpened after.
+        # opus-4-8 ignores the frozen prompt's ask-first rule and logs first
+        # (verified 2026-07-22), so enforce it here: detect the swing on the
+        # PROPOSED log_food inputs, and if one clears the mode threshold, HOLD the
+        # meal's writes, ask ONE question, and let the answer turn log it (the
+        # prompt's "hold -> ask -> then log EVERYTHING"). Switch: ASK_FIRST_HOLD.
+        if (not in_onboarding and _is_pure_food_log(tool_calls, _user_text)):
+            from core.clarify import (
+                ask_first_hold_enabled, is_ask_first_mode, clarify_swings)
+            if ask_first_hold_enabled() and is_ask_first_mode(user):
+                try:
+                    _ask_first_q = await clarify_swings(tool_calls, None, user)
+                except Exception as _e:
+                    logger.warning(f"ask-first hold check failed: {_e}")
+                    _ask_first_q = None
+        if _ask_first_q:
+            _held_names = [(tc.get("input") or {}).get("food_name")
+                           for tc in tool_calls if tc.get("name") == "log_food"]
+            logger.info(f"event=ask_first_hold user={getattr(user,'id',None)} "
+                        f"items={_held_names}")
+            # Drop the food writes — nothing logs this turn; the answer logs.
+            tool_calls = [tc for tc in tool_calls if tc.get("name") != "log_food"]
+            if _streamer:            # don't show the pass-1 log-confirmation text
+                try:
+                    _streamer.discard_held()
+                except Exception:
+                    pass
+            try:
+                from db.queries import record_pending_question
+                _pq = await record_pending_question(
+                    db, user.id, kind="food_clarification", question=_ask_first_q,
+                    tier="food_clarification", hook_style="question")
+                _pq.item_referenced = next((n for n in _held_names if n), "meal")
+                await db.commit()
+            except Exception as _e:
+                logger.warning(f"ask-first pending-record failed: {_e}")
 
         # The gates judge the CURRENT message — but a clarify-ANSWER carries
         # the intent of the exchange it answers (item names live in the prior
@@ -1040,7 +1083,19 @@ async def run_turn(
         has_logging = any(tc["name"] in _LOGGING_TOOLS for tc in tool_calls)
         _all_blocked = blocked_log_reply(tool_calls, tool_results) \
             if has_logging else None
-        if _all_blocked is not None and not in_onboarding:
+        if _ask_first_q:
+            # ASK-FIRST HOLD: the meal's writes were dropped so the swing gets
+            # pinned BEFORE logging. The reply IS the question — no log voicing,
+            # no follow-up (nothing was written to voice). The answer turn logs.
+            _followup_tried = True
+            response_text = _ask_first_q
+            _response_streamed = False
+            if _streamer:
+                try:
+                    await _streamer.finalize()
+                except Exception:
+                    pass
+        elif _all_blocked is not None and not in_onboarding:
             # Every log this turn was an already-on-the-board block: no row
             # written, totals unchanged. The model follow-up is SKIPPED — a
             # fabricated "logged, you're at X" can't ship if it's never

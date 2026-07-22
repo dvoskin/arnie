@@ -24,9 +24,12 @@ Window default: 90 minutes (5400s). Longer than exercise's 120s because:
     typically happens at meal intervals — 3+ hours apart — so a 90-min
     window catches the bug without false-positiving the next meal.
 
-Match key: normalized name + normalized quantity + close calories (±15%).
-The calorie tolerance absorbs USDA enrichment variance — the same "150g
-chicken" might come out at 200-235 cal depending on the lookup branch.
+Match key: normalized name + close calories (±15%) + quantity. Quantity is
+calorie-gated: when both sides carry concrete calories that agree, a differently
+PHRASED quantity ("200г" vs "порция") no longer breaks the match — the calories
+already prove the portion. Only when a calorie is missing does the exact quantity
+string become required again. The calorie tolerance also absorbs USDA enrichment
+variance — the same "150g chicken" might come out at 200-235 cal by branch.
 """
 from __future__ import annotations
 
@@ -86,8 +89,11 @@ def is_duplicate_food(
 ):
     """Return the most-recent matching food entry within window_sec, or None.
 
-    Match key: normalized name + normalized quantity + close calories
-    (±15%). All three must agree.
+    Match key: normalized name + close calories (±15%), plus quantity. Name and
+    calories must always agree. The quantity string must match too, EXCEPT when
+    both sides carry concrete calories — then the calorie agreement proves the
+    portion and a phrasing drift in the quantity is ignored (the Deny 2026-07-22
+    double-log, where "Творог 200г" then "творог" slipped the exact-string check).
 
     Caller filters existing_entries to the pre-turn snapshot before passing
     in. That ensures (1) bulk post-factum paste with multiple distinct
@@ -118,9 +124,20 @@ def is_duplicate_food(
             break
         if normalize_food_name(getattr(e, "parsed_food_name", "")) != key_name:
             continue
+        e_cal = getattr(e, "calories", None)
         if normalize_quantity(getattr(e, "quantity", None)) != key_qty:
-            continue
-        if not _calories_close(getattr(e, "calories", None), calories):
+            # Quantity STRINGS differ. In free-text logs the same portion gets
+            # phrased differently across turns ("Творог 200г" one turn, just
+            # "творог" the next — Deny 2026-07-22, double-logged 4 min apart, the
+            # exact-string qty check whiffed). Treat it as the same portion ONLY
+            # when BOTH sides carry concrete calories: the ±15% calorie check
+            # below then proves the portion, so a phrasing drift can't defeat the
+            # guard. When either calorie is missing we can't confirm the portion
+            # from calories alone, so keep requiring the exact quantity string
+            # (conservative — avoids blocking a genuinely different portion).
+            if e_cal is None or calories is None:
+                continue
+        if not _calories_close(e_cal, calories):
             continue
         return e
     return None

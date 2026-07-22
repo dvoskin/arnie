@@ -41,6 +41,21 @@ def clarify_swings_enabled() -> bool:
     return os.getenv("CLARIFY_SWINGS", "true").lower() in ("true", "1", "yes")
 
 
+def ask_first_hold_enabled() -> bool:
+    """Kill switch for the ASK-FIRST hold. **Default OFF** — the turn-1 hold works
+    (verified: opus asks before logging), but opus then CLARIFY-LOOPS on the answer
+    turn instead of committing the log, so held items are LOST without a
+    force-log-on-answer half (still to build). Do NOT enable until that lands, or
+    strict-mode meals silently drop. ASK_FIRST_HOLD=true turns on the hold half."""
+    return os.getenv("ASK_FIRST_HOLD", "false").lower() in ("true", "1", "yes")
+
+
+def is_ask_first_mode(user) -> bool:
+    """Ask-before-log applies to STRICT mode — the 'double-check my food' users
+    who want a swing pinned before it hits the log. Quick/moderate log-first."""
+    return _mode(user) == "strict"
+
+
 def _model() -> str:
     return os.getenv("CLARIFY_SWINGS_MODEL", _MODEL) or _MODEL
 

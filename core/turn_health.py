@@ -636,20 +636,37 @@ def looks_like_phantom_log_claim(user_text: str, response_text: str,
 _TOTAL_CLAIM_RE = re.compile(
     rf"(\d[\d,]{{2,5}})\s*/\s*(\d[\d,]{{2,5}})\s*{_CAL_UNIT}\b", re.IGNORECASE)
 
+# Running-total idioms the SLASH format above misses. The everyday voice states
+# the day total as "you're at 1,695 cal" / "sitting at 1,705 cal" / "puts you at
+# 2,219 cal" — no slash — which shipped a phantom total unchecked (Danny,
+# 2026-07-22: "You're at 1,695 cal … 470 left", toast never written). Anchored on
+# the total idiom BEFORE the number AND a calorie unit AFTER it, so a per-item
+# figure ("180 cal") or a remaining-budget figure ("470 left") is never mistaken
+# for the day total.
+_DAY_TOTAL_PHRASE_RE = re.compile(
+    rf"\b(?:you'?re\s+(?:now\s+)?(?:sitting\s+)?at|you\s+are\s+(?:now\s+)?at|"
+    rf"sitting\s+at|puts?\s+you\s+(?:at|to)|brings?\s+you\s+(?:to|up\s+to)|"
+    rf"now\s+at|that'?s\s+you\s+at|has\s+you\s+at)\s+"
+    rf"(\d[\d,]{{2,5}})\s*{_CAL_UNIT}\b",
+    re.IGNORECASE)
+
 
 def claimed_day_total(text: str):
-    """The largest 'N / M calories' running-total claim in a reply, or None.
-    The medjool-dates incident (2026-07-20, ON OPUS): no claim-word, no tool —
-    the reply simply STATED a recomputed total over a row never written. A
-    stated total is checkable arithmetic; this extracts it for the check."""
+    """The largest running-total claim in a reply, or None. Catches both the
+    'N / M calories' slash format (the medjool-dates incident, 2026-07-20 on Opus)
+    AND the everyday 'you're at / sitting at / puts you at N cal' phrasing (the
+    buttered-toast phantom, 2026-07-22). No claim-word or tool is needed: the
+    reply simply STATED a recomputed total over a row never written. A stated
+    total is checkable arithmetic; this extracts it for the DB-truth guard."""
     best = None
-    for m in _TOTAL_CLAIM_RE.finditer(text or ""):
-        try:
-            n = int(m.group(1).replace(",", ""))
-        except ValueError:
-            continue
-        if best is None or n > best:
-            best = n
+    for rx, grp in ((_TOTAL_CLAIM_RE, 1), (_DAY_TOTAL_PHRASE_RE, 1)):
+        for m in rx.finditer(text or ""):
+            try:
+                n = int(m.group(grp).replace(",", ""))
+            except (ValueError, IndexError):
+                continue
+            if best is None or n > best:
+                best = n
     return best
 
 
