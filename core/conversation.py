@@ -1147,13 +1147,21 @@ async def run_turn(
                 # on the board; the question only sharpens it next turn. Code layer,
                 # not the frozen prompt (feedback_arnie_food_prompt_frozen).
                 import asyncio as _aio
-                from core.clarify import clarify_swings
-                _ct = clarify_swings(tool_calls, tool_results, user)
+                from core.clarify import clarify_swings, clarify_swings_enabled
+                # Log-first clarify is OFF by default now (ask-first replaces it);
+                # gate the call so we don't run it — or append its question — when
+                # CLARIFY_SWINGS is off. clarify_swings no longer self-gates.
+                _run_clarify = clarify_swings_enabled()
                 if fast_log_voice_enabled():
-                    _fast_voice, _clarify_q = await _aio.gather(
-                        voice_log(tool_calls, tool_results, today_log, user), _ct)
-                else:
-                    _clarify_q = await _ct
+                    if _run_clarify:
+                        _fast_voice, _clarify_q = await _aio.gather(
+                            voice_log(tool_calls, tool_results, today_log, user),
+                            clarify_swings(tool_calls, tool_results, user))
+                    else:
+                        _fast_voice = await voice_log(
+                            tool_calls, tool_results, today_log, user)
+                elif _run_clarify:
+                    _clarify_q = await clarify_swings(tool_calls, tool_results, user)
             if _pure_food:
                 response_text = _fast_voice or deterministic_confirmation(
                     tool_calls, today_log, user.preferences, tool_results)

@@ -76,3 +76,31 @@ async def test_live_butter_asks_diet_coke_quiet():
     assert ask and ("butter" in ask.lower())            # it asks about the butter
     quiet = await C.clarify_swings([_tc("diet coke", "1 can", 0)], {}, _user("quick"))
     assert quiet is None                                # nothing to ask on a diet coke
+
+
+# ── OUTPUT GUARD: the model's ask-or-not REASONING must never ship (Danny 07-22) ──
+
+async def test_leaked_reasoning_without_question_returns_none(monkeypatch):
+    """The narrated no-ask analysis (no '?') leaked to a user. Must be None."""
+    monkeypatch.setattr(C, "chat", await _fake_chat(
+        "Jif peanut butter at 2 tsp is usually closer to 130 cal, not 190, but "
+        "that's a stated quantity so no real ambiguity to ask about. Both items "
+        "here are exact branded products with fixed macros."))
+    q = await C.clarify_swings([_tc("jif peanut butter", "2 tsp", 190)], {}, _user("strict"))
+    assert q is None
+
+
+async def test_reasoning_ending_in_none_sentinel_returns_none(monkeypatch):
+    """The model prepended reasoning before the NONE sentinel — still None."""
+    monkeypatch.setattr(C, "chat", await _fake_chat(
+        "Fritos are a fixed portion at a set calorie count per ounce, so there's "
+        "no unstated detail here that would swing things more than 60 kcal. NONE"))
+    q = await C.clarify_swings([_tc("fritos", "1 oz", 160)], {}, _user("strict"))
+    assert q is None
+
+
+async def test_a_real_question_still_passes(monkeypatch):
+    monkeypatch.setattr(C, "chat", await _fake_chat(
+        "quick one so these are right, was the chicken grilled or fried?"))
+    q = await C.clarify_swings([_tc("chicken", "6 oz", 300)], {}, _user("strict"))
+    assert q and q.endswith("?")

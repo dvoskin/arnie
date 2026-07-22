@@ -38,15 +38,19 @@ _THRESH = {"quick": 250, "moderate": 120, "strict": 60}
 
 
 def clarify_swings_enabled() -> bool:
-    return os.getenv("CLARIFY_SWINGS", "true").lower() in ("true", "1", "yes")
+    """Log-FIRST clarify-on-swing (append a question AFTER logging). Default OFF
+    (2026-07-22): the July-7 direction is ask-BEFORE-log (ASK_FIRST_HOLD), not a
+    trailing question — and this path leaked the model's ask-or-not reasoning to
+    users. CLARIFY_SWINGS=true restores the append-after behavior."""
+    return os.getenv("CLARIFY_SWINGS", "false").lower() in ("true", "1", "yes")
 
 
 def ask_first_hold_enabled() -> bool:
-    """Kill switch for the ASK-FIRST hold. **Default OFF** — the turn-1 hold works
-    (verified: opus asks before logging), but opus then CLARIFY-LOOPS on the answer
-    turn instead of committing the log, so held items are LOST without a
-    force-log-on-answer half (still to build). Do NOT enable until that lands, or
-    strict-mode meals silently drop. ASK_FIRST_HOLD=true turns on the hold half."""
+    """Kill switch for the ASK-FIRST hold. **Default OFF** pending the deterministic
+    force-log-on-answer (option A): the model-driven force pass occasionally loops
+    even under the nudge (~1 in 3 multi-item answers), which would DROP the held
+    meal. Do NOT enable until the held items are stashed + replayed deterministically
+    so an answer can never lose a log. ASK_FIRST_HOLD=true turns on the hold."""
     return os.getenv("ASK_FIRST_HOLD", "false").lower() in ("true", "1", "yes")
 
 
@@ -105,9 +109,8 @@ def _items_block(tool_calls, tool_results) -> list[str]:
 
 async def clarify_swings(tool_calls, tool_results, user) -> Optional[str]:
     """Return ONE bundled clarify question for mode-exceeding swings, or None.
-    Safe to run concurrently with voice_log; never raises."""
-    if not clarify_swings_enabled():
-        return None
+    Safe to run concurrently with voice_log; never raises. NOTE: switch-agnostic —
+    callers gate (log-first on CLARIFY_SWINGS, ask-first on ASK_FIRST_HOLD)."""
     items = _items_block(tool_calls, tool_results)
     if not items:
         return None
@@ -125,6 +128,15 @@ async def clarify_swings(tool_calls, tool_results, user) -> Optional[str]:
         logger.warning("clarify_swings failed (mode=%s): %s: %s", mode, type(e).__name__, e)
         return None
     out = _clean(res.get("text") or "")
-    if not out or out.upper().strip(".!") == "NONE" or len(out) < 8:
+    # OUTPUT GUARD (Danny 2026-07-22): the model sometimes NARRATES its no-ask
+    # reasoning instead of emitting a bare "NONE" ("Fritos are a fixed portion...
+    # would swing more than 60 kcal. NONE" / "...no real ambiguity to ask about.
+    # Both items are exact branded products with...") and that leaked to the user.
+    # A real clarify question is ALWAYS a short question, so require a "?", reject
+    # any output carrying the NONE sentinel, and cap the length — the reasoning
+    # leak has no "?" and is long, so all three catch it.
+    if (not out or len(out) < 8 or len(out) > 220
+            or "?" not in out
+            or "NONE" in out.upper()):
         return None
     return out
