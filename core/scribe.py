@@ -53,7 +53,11 @@ _Q_RE = re.compile(
 
 
 def scribe_enabled() -> bool:
-    return os.getenv("SCRIBE_ENABLED", "true").lower() in ("true", "1", "yes")
+    # DISABLED BY DEFAULT (Danny 2026-07-21): the scribe reconcile + partial-drop
+    # rescue added latency (an extra Opus call on ~55% of multi-item turns) and an
+    # edge-case double-log on regenerate — a worse experience than the drops it
+    # caught. Off restores July-5 speed/simplicity. Re-enable with SCRIBE_ENABLED=true.
+    return os.getenv("SCRIBE_ENABLED", "false").lower() in ("true", "1", "yes")
 
 
 def looks_multi_item(message: str) -> bool:
