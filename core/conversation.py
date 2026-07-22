@@ -129,24 +129,25 @@ def _phantom_rescue_enabled() -> bool:
     authority-inverting heuristic that guesses-and-logs instead of letting the
     model clarify, and the flip-flop behind the reliability regression. The
     single-source voice_log can't phantom a total, so this net is redundant.
-    PHANTOM_RESCUE_ENABLED=false strips it; =true keeps it."""
-    return os.getenv("PHANTOM_RESCUE_ENABLED", "true").lower() in ("true", "1", "yes")
+    STRIPPED by default (2026-07-22, restore July-5 reliability); set
+    PHANTOM_RESCUE_ENABLED=true to bring the force-re-log back."""
+    return os.getenv("PHANTOM_RESCUE_ENABLED", "false").lower() in ("true", "1", "yes")
 
 
 def _omission_rescue_enabled() -> bool:
     """The no-tool 'reported a food but logged nothing' forced-re-log pass. Same
     authority inversion as phantom; the deterministic partial-drop reconcile
     already catches genuine drops with no extra model pass.
-    OMISSION_RESCUE_ENABLED=false strips it; =true keeps it."""
-    return os.getenv("OMISSION_RESCUE_ENABLED", "true").lower() in ("true", "1", "yes")
+    STRIPPED by default (2026-07-22); set OMISSION_RESCUE_ENABLED=true to restore."""
+    return os.getenv("OMISSION_RESCUE_ENABLED", "false").lower() in ("true", "1", "yes")
 
 
 def _activity_rescue_enabled() -> bool:
     """The co-mentioned-workout forced tools=True pass — a whole extra
     tool-calling round-trip to log-or-ask an activity on any food+activity turn.
-    ACTIVITY_RESCUE_ENABLED=false strips it (a cheap appended clarify replaces
-    it); =true keeps it."""
-    return os.getenv("ACTIVITY_RESCUE_ENABLED", "true").lower() in ("true", "1", "yes")
+    ACTIVITY_RESCUE_ENABLED default STRIPPED (2026-07-22, a cheap appended clarify
+    replaces it); set =true to restore the extra tool pass."""
+    return os.getenv("ACTIVITY_RESCUE_ENABLED", "false").lower() in ("true", "1", "yes")
 
 
 _FOOD_LOG_TOOLS = frozenset({"log_food", "update_food_entry"})
