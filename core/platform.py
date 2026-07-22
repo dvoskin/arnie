@@ -92,6 +92,13 @@ def _sanitize_bubble(s: str) -> str:
     Also strips any leaked tool-call XML so function-call syntax never ships.
     """
     s = _strip_tool_xml(s or "")
+    # Strip any INTERNAL system-nudge the model echoed — "[SYSTEM HEALTH CHECK —
+    # not the user] ...", "[SYSTEM QUALITY CHECK ...]". These are rescue/guard
+    # directives injected into the model's CONTEXT, NEVER for the user (Danny
+    # 2026-07-22: phantom/clarify/guard machinery must never be user-facing or
+    # leak). Drop the marker AND the rest of its directive, bounded by the bubble
+    # separator (|) / newline so a legit adjacent bubble is never touched.
+    s = _re_platform.sub(r"\[SYSTEM\b[^\]]*\][^\n|]*", "", s, flags=_re_platform.I)
     s = s.replace(" — ", ", ").replace("—", ", ")
     # No tildes either (same deterministic brand rule as the em dash): the model
     # is told not to use "~" but keeps writing "~230 cal". Convert an approximating
