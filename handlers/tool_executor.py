@@ -1743,6 +1743,20 @@ async def execute_tool_calls(
         except Exception:
             pass  # monitoring must never break the turn
 
+    # Widget freshness: a log made on THIS surface (Telegram / web / iOS chat)
+    # never reaches the user's Home / Lock Screen widgets on its own — WidgetKit
+    # reloads on its own schedule and the iOS app never saw this turn. If a real
+    # write landed (log_* calls beyond the ones the dedup guards skipped), fire a
+    # silent background push so the app wakes and reloads its widget timelines.
+    # Fire-and-forget — it must never add latency to, or break, the turn.
+    _net_log_writes = sum(log_calls.values()) - sum(log_skipped.values())
+    if _net_log_writes > 0:
+        try:
+            from notifications.widget_push import schedule_widget_reload
+            schedule_widget_reload(getattr(user, "id", None))
+        except Exception:
+            pass  # widget refresh is best-effort; the turn must never break
+
     # Multi-item batch: when several log_food calls fire in one turn, the
     # single-item coaching ("name the food and its macros") is wrong — it makes
     # the model recap one item, ignoring the rest. Swap to batch coaching so the

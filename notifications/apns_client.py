@@ -285,3 +285,84 @@ async def send_push(
     finally:
         if own_client:
             await client.aclose()
+
+
+async def send_background_push(
+    device_token: str,
+    *,
+    environment: Optional[str] = None,
+    payload_extra: Optional[dict] = None,
+    client: Optional[httpx.AsyncClient] = None,
+) -> dict:
+    """Send one SILENT (content-available) background push to one device.
+
+    Unlike `send_push`, this carries NO alert, sound, or badge — nothing is shown
+    to the user. It's the wake-the-app signal iOS hands to
+    `application(_:didReceiveRemoteNotification:fetchCompletionHandler:)`, so the
+    app can refresh in the background and call `WidgetCenter.reloadAllTimelines()`.
+    The widget-reload path (see `notifications/widget_push.py`) uses it to reflect
+    a log made on ANOTHER surface — a meal logged via Telegram, a weigh-in from the
+    web — on the Home / Lock Screen widget without the user opening the app.
+
+    The APNs contract for a silent push differs from an alert push in three ways,
+    and Apple REJECTS a payload that mixes them up:
+      - header `apns-push-type: background` (not `alert`)
+      - header `apns-priority: 5` (Apple throttles/refuses a background push sent
+        at priority 10 — 10 is for user-visible alerts)
+      - body `{"aps": {"content-available": 1}}` with no `alert` / `sound`
+
+    `payload_extra` is merged at the TOP level (never over the reserved `aps` key)
+    so the caller can tag the push — e.g. `{"purpose": "widget-reload"}` — for the
+    client to branch on. Return shape matches `send_push` exactly:
+    `{"ok": True}` / `{"ok": False, "status", "reason"}` /
+    `{"ok": False, "error": "not_configured"}`.
+    """
+    if not is_configured():
+        logger.warning("apns: env vars not set, send_background_push is a no-op")
+        return {"ok": False, "error": "not_configured"}
+
+    env_label = environment or os.getenv("APNS_ENVIRONMENT", "production")
+    host = _host_for(env_label)
+    bundle_id = os.environ["APNS_BUNDLE_ID"]
+
+    aps_payload: dict = {"aps": {"content-available": 1}}
+    if payload_extra:
+        for k, v in payload_extra.items():
+            if k != "aps":
+                aps_payload[k] = v
+
+    headers = {
+        "authorization": f"bearer {_get_jwt()}",
+        "apns-topic": bundle_id,
+        # A silent push is a distinct APNs type + priority — see docstring.
+        "apns-push-type": "background",
+        "apns-priority": "5",
+    }
+
+    own_client = client is None
+    if own_client:
+        client = httpx.AsyncClient(http2=True, timeout=10.0)
+
+    try:
+        resp = await client.post(
+            f"{host}/3/device/{device_token}",
+            json=aps_payload,
+            headers=headers,
+        )
+        if resp.status_code == 200:
+            return {"ok": True}
+        reason = "unknown"
+        try:
+            payload = resp.json()
+            if isinstance(payload, dict):
+                reason = payload.get("reason", "unknown")
+        except Exception:
+            pass
+        logger.warning(
+            "apns background push rejected: status=%d reason=%s token=%s…",
+            resp.status_code, reason, device_token[:8],
+        )
+        return {"ok": False, "status": resp.status_code, "reason": reason}
+    finally:
+        if own_client:
+            await client.aclose()

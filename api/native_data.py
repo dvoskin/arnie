@@ -369,6 +369,74 @@ async def week_data(db, user) -> dict:
     return {"targets": _targets(user), "history": hist_data, "weights": weight_data}
 
 
+async def widget_data(db, user) -> dict:
+    """Compact 'today at a glance' for the iOS WidgetKit timeline provider.
+
+    Deliberately lean vs. `day_data`: targets + today's totals (and the
+    remaining-to-target deltas the widget actually renders), the workout flags,
+    the logging streak (the flame), the latest weight (+ goal + a short
+    sparkline), and a small wearable glance (steps / recovery / sleep) for the
+    large + Lock Screen families. It does NOT shape the full food / exercise /
+    water entry lists `day_data` carries — a widget never draws them, and a
+    timeline reload should be a small, cheap fetch (battery + WidgetKit's reload
+    budget). Same fetchers as `day_data`, so the numbers always agree.
+    """
+    from core.streaks import compute_streaks
+
+    user_tz = user.timezone or "UTC"
+    targets = _targets(user)
+
+    log = await get_or_create_today_log(db, user.id, user_tz)
+    totals = {
+        "calories": round(log.total_calories or 0),
+        "protein": round(log.total_protein or 0),
+        "carbs": round(log.total_carbs or 0),
+        "fats": round(log.total_fats or 0),
+        "water_ml": round(log.total_water_ml or 0),
+    }
+    # Remaining-to-target per macro; None where the user hasn't set that target
+    # yet (still onboarding — the widget renders a teaser). NOT clamped at zero:
+    # a negative value is meaningful ("120 over") and the client styles it.
+    remaining = {
+        k: (round((targets.get(k) or 0) - totals[k]) if targets.get(k) is not None else None)
+        for k in ("calories", "protein", "carbs", "fats")
+    }
+
+    weights = await get_recent_weights(db, user.id, days=30)
+    weight_block = _weight_block(weights, user)
+
+    # Logging streak (the flame) — same source + rule the Today screen uses.
+    streak_logs = await get_recent_logs(db, user.id, days=90)
+    streaks = compute_streaks(streak_logs, _user_today(user_tz))
+
+    # A small wearable glance for the large / Lock Screen families. Reuse the
+    # linked-account picker so it matches the Today strip exactly.
+    snap = await _today_health_snapshot_linked(db, user)
+    health = None
+    if snap:
+        health = {
+            "steps": snap.steps,
+            "recovery": snap.recovery_score,
+            "sleep_hours": round(snap.sleep_hours, 1) if snap.sleep_hours is not None else None,
+        }
+
+    return {
+        "date": str(log.date),
+        "timezone": user_tz,
+        "targets": targets,
+        "totals": totals,
+        "remaining": remaining,
+        "workout_completed": bool(log.workout_completed),
+        "cardio_completed": bool(log.cardio_completed),
+        # Convenience: the flame number the small widget shows without digging
+        # into the nested block. Full chains (best / at_risk / full_day) ride along.
+        "streak": (streaks.get("logging") or {}).get("current", 0),
+        "streaks": streaks,
+        "weight": weight_block,
+        "health": health,
+    }
+
+
 # ── Fitness + Profile (shared health/whoop/streak helpers) ───────────────────
 
 async def _today_health_snapshot_linked(db, user):
