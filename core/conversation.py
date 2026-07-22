@@ -92,6 +92,14 @@ def _voices_result(tool_name: str) -> bool:
     return tool_name not in _SILENT_TOOLS
 
 
+def _fluid_rescue_enabled() -> bool:
+    """Hold a NO-tool turn's voicing through the rescue decision so any fix ships
+    as ONE reply, never a base reply + a visible late patch (Danny 2026-07-21:
+    "fluid, not witness the backend"). FLUID_RESCUE=false restores the old
+    live-flush behaviour."""
+    return os.getenv("FLUID_RESCUE", "true").lower() in ("true", "1", "yes")
+
+
 _FOOD_LOG_TOOLS = frozenset({"log_food", "update_food_entry"})
 
 # Lookups a food-log turn may ALSO fire without being "impure": brand-macro and
@@ -866,6 +874,19 @@ async def run_turn(
             # phantom total can be CORRECTED (replaced) instead of only appended.
             # The verified response_text ships once via the post-build catch-up.
             _streamer.held = True
+            _hold_voicing = True
+        elif _fluid_rescue_enabled() and not tool_calls:
+            # FLUID (Danny 2026-07-21: "the UX should be fluid, not witness the
+            # backend"). A NO-tool turn is exactly where the phantom/omission
+            # rescue fires — and releasing the pass-1 text HERE made that fix land
+            # as a SECOND late bubble after the user already saw the (often wrong)
+            # base reply — the visible two-step. Keep it held; the FINAL reply
+            # (pass-1 text, or a rescue that replaces it) ships ONCE via the
+            # post-build catch-up. No live-typing is lost — pass-1 ran held. SCOPED
+            # to no-tool turns so a data-fetch heads-up ("let me check", a
+            # web_search turn) still flushes live below — that's an intended cue,
+            # not a seam.
+            _streamer.discard_held()
             _hold_voicing = True
         else:
             await _streamer.flush_held()
