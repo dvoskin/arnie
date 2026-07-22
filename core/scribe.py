@@ -53,11 +53,12 @@ _Q_RE = re.compile(
 
 
 def scribe_enabled() -> bool:
-    # DISABLED BY DEFAULT (Danny 2026-07-21): the scribe reconcile + partial-drop
-    # rescue added latency (an extra Opus call on ~55% of multi-item turns) and an
-    # edge-case double-log on regenerate — a worse experience than the drops it
-    # caught. Off restores July-5 speed/simplicity. Re-enable with SCRIBE_ENABLED=true.
-    return os.getenv("SCRIBE_ENABLED", "false").lower() in ("true", "1", "yes")
+    # ON by default again (2026-07-21) now that partial-drop is DETERMINISTIC: the
+    # scribe extracts items+macros in parallel (Haiku, off the latency path) and a
+    # dropped item is logged DIRECTLY via enrichment — no Opus rescue call, no
+    # regenerate double-log. That was the fix for the latency + double that made
+    # Danny disable it. Kill switch stays: SCRIBE_ENABLED=false.
+    return os.getenv("SCRIBE_ENABLED", "true").lower() in ("true", "1", "yes")
 
 
 def looks_multi_item(message: str) -> bool:
@@ -87,8 +88,11 @@ def should_run_scribe(message: str) -> bool:
 
 _EXTRACT_SYSTEM = (
     "You are a meticulous food-logging scribe. List each food/drink the user should "
-    "have as its OWN log entry, one per line: '<quantity> | <food name>'. Think about "
-    "how a person tracks a meal, not every ingredient. Rules:\n"
+    "have as its OWN log entry, one per line: "
+    "'<quantity> | <food name> | <calories> | <protein g> | <carbs g> | <fat g>'. "
+    "Estimate the macros for the STATED portion — a reasonable estimate is fine, it "
+    "gets refined against a database later. Think about how a person tracks a meal, "
+    "not every ingredient. Rules:\n"
     "- A NAMED SINGLE DISH is ONE entry, even when its fillings/toppings/components are "
     "listed WITHOUT their own amounts. This INCLUDES a sandwich, club, burger, wrap, "
     "taco, burrito, roll, sushi roll, omelette, smoothie, shake, parfait, AND ANY "
@@ -112,10 +116,22 @@ _EXTRACT_SYSTEM = (
 )
 
 
+def _first_num(s: str):
+    """First number in a cell ('220', '~220 cal', '6g') → float, or None."""
+    m = re.search(r"-?\d+(?:\.\d+)?", s or "")
+    if not m:
+        return None
+    try:
+        return float(m.group())
+    except ValueError:
+        return None
+
+
 async def extract_food_items(message: str) -> List[dict]:
-    """Haiku → the canonical list of consumed items as [{'name','quantity','raw'}].
-    Empty list on nothing-consumed or any failure (fail-open: the scribe never breaks
-    a turn)."""
+    """Haiku → the canonical list of consumed items as
+    [{'name','quantity','raw','calories','protein','carbs','fats'}]. Macros are a
+    rough Haiku estimate (refined against USDA/web at log time). Empty list on
+    nothing-consumed or any failure (fail-open: the scribe never breaks a turn)."""
     try:
         res = await chat(
             messages=[{"role": "user", "content": (message or "").strip()}],
@@ -128,11 +144,15 @@ async def extract_food_items(message: str) -> List[dict]:
         line = line.strip().lstrip("-•* ").strip()
         if not line or line.startswith("("):
             continue
-        if "|" in line:
-            qty, _, name = line.partition("|")
-            qty, name = qty.strip(), name.strip()
+        parts = [p.strip() for p in line.split("|")]
+        if len(parts) >= 2:
+            qty, name = parts[0], parts[1]
         else:
-            qty, name = "", line
+            qty, name = "", parts[0]
+        cal = _first_num(parts[2]) if len(parts) > 2 else None
+        pro = _first_num(parts[3]) if len(parts) > 3 else None
+        carb = _first_num(parts[4]) if len(parts) > 4 else None
+        fat = _first_num(parts[5]) if len(parts) > 5 else None
         # The model emits NOTHING when there's no consumed food — but it sometimes
         # EXPLAINS instead ("I don't see any foods… please tell me what you ate"),
         # which must NOT be parsed as a food. Reject those + any over-long "name"
@@ -149,7 +169,8 @@ async def extract_food_items(message: str) -> List[dict]:
                                    "no specific", "it looks like", "you haven't"))
                 or len(name) > 90):
             continue
-        out.append({"name": name, "quantity": qty, "raw": line})
+        out.append({"name": name, "quantity": qty, "raw": line,
+                    "calories": cal, "protein": pro, "carbs": carb, "fats": fat})
     return out
 
 
@@ -175,6 +196,41 @@ def missing_items(extracted: List[dict], logged_names: List[str]) -> List[dict]:
     return [it for it in extracted
             if _tokens(it.get("name") or "")
             and not _covered_by(it.get("name") or "", logged_names)]
+
+
+def _norm_name(s: str) -> str:
+    return re.sub(r"[^a-z0-9 ]", "", (s or "").lower()).strip()
+
+
+def unlogged_items(extracted: List[dict], logged_names: List[str]) -> List[dict]:
+    """The scribe items the model DIDN'T log — the deterministic partial-drop set.
+
+    Two-part robustness:
+      • COUNT gate — a composite logs as ONE item, so scribe==logged → nothing is
+        missing; only when the scribe found MORE items than logged is anything
+        dropped (never over-splits a composite).
+      • FUZZY identity — which items are missing is decided by LOWEST string
+        similarity to any logged name, so a RENAMED item ('Parmesan' logged as
+        'Parmigiano-Reggiano') is recognized as already covered and NOT re-logged;
+        the genuinely-dropped 'caesar salad' (similar to nothing logged) is.
+
+    Returns the item dicts (name/quantity/macros) to log directly, capped at the
+    count shortfall. Empty when nothing's missing."""
+    import difflib
+    n_missing = len(extracted) - len(logged_names)
+    if n_missing <= 0 or not extracted:
+        return []
+    logged_norm = [_norm_name(ln) for ln in logged_names]
+
+    def _sim(name: str) -> float:
+        nn = _norm_name(name)
+        if not nn:
+            return 1.0
+        return max((difflib.SequenceMatcher(None, nn, ln).ratio()
+                    for ln in logged_norm), default=0.0)
+
+    ranked = sorted(extracted, key=lambda it: _sim(it.get("name") or ""))
+    return ranked[:n_missing]
 
 
 _MISSING_STOP = {"with", "and", "the", "of", "a", "in", "on", "plus", "some"}

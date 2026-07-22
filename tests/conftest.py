@@ -30,6 +30,9 @@ def _log(cal=0, pro=0):
 # Deterministic env for tests that read it.
 os.environ.setdefault("LINKING_ENABLED", "true")
 os.environ.setdefault("PROACTIVE_MESSAGING_ENABLED", "false")
+# Scribe off in tests — it launches a real Haiku extraction; run_turn tests stay
+# hermetic. Prod defaults it ON. Tests that exercise the scribe set it explicitly.
+os.environ.setdefault("SCRIBE_ENABLED", "false")
 
 from db.database import Base, _migrate  # noqa: E402
 from db import models  # noqa: E402,F401  (registers tables)
