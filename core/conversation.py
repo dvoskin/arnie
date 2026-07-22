@@ -100,6 +100,55 @@ def _fluid_rescue_enabled() -> bool:
     return os.getenv("FLUID_RESCUE", "true").lower() in ("true", "1", "yes")
 
 
+# ── July-5 strip kill-switches (2026-07-22) ──────────────────────────────────
+# Each gates one bolt-on pass stacked on the healthy 2-pass turn. Introduced
+# DEFAULTING TO CURRENT BEHAVIOR so landing them is a no-op; the strip flips the
+# defaults one at a time, each independently revertible via its env var. The
+# goal is July-5 quality: fast, single-source voice, clarifies on real ambiguity,
+# and NO heuristic forced-re-log passes (they caused the reliability regression).
+def _hold_voicing_enabled() -> bool:
+    """HOLD the pure-food reply until voice_log verifies its total before any
+    bubble ships. voice_log is now single-source over the DB-committed total, so
+    it structurally can't phantom a number — the hold is dead weight and the
+    direct cause of log-reply lag vs July-5's live streaming. HOLD_VOICING=false
+    streams live; =true restores the hold (instant revert)."""
+    return os.getenv("HOLD_VOICING", "true").lower() in ("true", "1", "yes")
+
+
+def _self_heal_enabled() -> bool:
+    """Retry pass-1 once (bigger budget + finish nudge) on truncation/stall.
+    Completeness is now owned by the deterministic scribe reconcile, so the
+    _stalled regex-over-prose trigger over-fires and doubles TTFB. When on, the
+    trigger is also narrowed to truncation-only. SELF_HEAL_ENABLED=false disables
+    the retry entirely; =true keeps it."""
+    return os.getenv("SELF_HEAL_ENABLED", "true").lower() in ("true", "1", "yes")
+
+
+def _phantom_rescue_enabled() -> bool:
+    """The no-tool 'claimed logged but called no tool' forced-re-log pass — an
+    authority-inverting heuristic that guesses-and-logs instead of letting the
+    model clarify, and the flip-flop behind the reliability regression. The
+    single-source voice_log can't phantom a total, so this net is redundant.
+    PHANTOM_RESCUE_ENABLED=false strips it; =true keeps it."""
+    return os.getenv("PHANTOM_RESCUE_ENABLED", "true").lower() in ("true", "1", "yes")
+
+
+def _omission_rescue_enabled() -> bool:
+    """The no-tool 'reported a food but logged nothing' forced-re-log pass. Same
+    authority inversion as phantom; the deterministic partial-drop reconcile
+    already catches genuine drops with no extra model pass.
+    OMISSION_RESCUE_ENABLED=false strips it; =true keeps it."""
+    return os.getenv("OMISSION_RESCUE_ENABLED", "true").lower() in ("true", "1", "yes")
+
+
+def _activity_rescue_enabled() -> bool:
+    """The co-mentioned-workout forced tools=True pass — a whole extra
+    tool-calling round-trip to log-or-ask an activity on any food+activity turn.
+    ACTIVITY_RESCUE_ENABLED=false strips it (a cheap appended clarify replaces
+    it); =true keeps it."""
+    return os.getenv("ACTIVITY_RESCUE_ENABLED", "true").lower() in ("true", "1", "yes")
+
+
 _FOOD_LOG_TOOLS = frozenset({"log_food", "update_food_entry"})
 
 # Lookups a food-log turn may ALSO fire without being "impure": brand-macro and
@@ -532,7 +581,7 @@ async def run_turn(
             logger.info(
                 f"completeness flag for {_tag} (partial_stall={_partial_stall}, "
                 f"undercount={_undercount}, food_logs={_num_food_logs})")
-        if _truncated or _stalled:
+        if _self_heal_enabled() and (_truncated or _stalled):
             logger.warning(
                 f"Incomplete first pass for {_tag} (truncated={_truncated}, "
                 f"stalled={_stalled}) — retrying once with a finish nudge")
@@ -900,7 +949,7 @@ async def run_turn(
             # phantom total can be CORRECTED (replaced) instead of only appended.
             # The verified response_text ships once via the post-build catch-up.
             _streamer.held = True
-            _hold_voicing = True
+            _hold_voicing = _hold_voicing_enabled()
         elif _fluid_rescue_enabled() and not tool_calls:
             # FLUID (Danny 2026-07-21: "the UX should be fluid, not witness the
             # backend"). A NO-tool turn is exactly where the phantom/omission
@@ -913,7 +962,7 @@ async def run_turn(
             # web_search turn) still flushes live below — that's an intended cue,
             # not a seam.
             _streamer.discard_held()
-            _hold_voicing = True
+            _hold_voicing = _hold_voicing_enabled()
         else:
             await _streamer.flush_held()
 
@@ -1281,7 +1330,7 @@ async def run_turn(
     # Uses the GATE-EFFECTIVE message (prior + clarify-answer combined) so a
     # phantom claim on an answer turn ("regular size minimal oil" → "wrap
     # logged", no tool) is caught — the food name lives in the prior message.
-    _phantom = (not tool_calls) and _looks_like_phantom_log_claim(
+    _phantom = _phantom_rescue_enabled() and (not tool_calls) and _looks_like_phantom_log_claim(
         _gate_user_message, response_text, bool(tool_calls)
     )
     # TOTAL-CLAIM PHANTOM (the medjool-dates incident, 2026-07-20 03:29Z, on
@@ -1320,7 +1369,7 @@ async def run_turn(
     if not tool_calls and not _phantom:
         try:
             from core.turn_health import looks_like_unlogged_food_report
-            if looks_like_unlogged_food_report(_gate_user_message, response_text):
+            if _omission_rescue_enabled() and looks_like_unlogged_food_report(_gate_user_message, response_text):
                 # The cheap filter passed (reply quantified a food, not a
                 # question/plan/ack). CONFIRM with the scribe that the message
                 # actually NAMES a food — this separates "Barebells caramel cashew"
@@ -1488,7 +1537,7 @@ async def run_turn(
     # food reply is VALID, so APPEND the activity line; never overwrite it.
     _fired_exercise = any(tc.get("name") == "log_exercise" for tc in tool_calls)
     _activity_omission = False
-    if not _fired_exercise and not _signing_off:
+    if _activity_rescue_enabled() and not _fired_exercise and not _signing_off:
         try:
             from core.turn_health import looks_like_unaddressed_activity
             _activity_omission = looks_like_unaddressed_activity(
