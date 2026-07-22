@@ -3,7 +3,21 @@ the model logged part of and dropped the rest ("175g turkey and 100g rice" →
 turkey logged, rice dropped, ~1/3 of the time), WITHOUT ever over-splitting a
 composite. distinct_missing_items is pure (no LLM), so these are deterministic.
 """
-from core.scribe import distinct_missing_items
+from core.scribe import distinct_missing_items, should_run_scribe
+
+
+def test_should_run_scribe_covers_food_turns_skips_chatter():
+    # Runs on any substantive food-ish message (incl. space-separated lists), not
+    # just separator lists — so completeness is deterministic on every food turn.
+    assert should_run_scribe("175g turkey and 100g rice") is True
+    assert should_run_scribe("eggs bacon toast") is True          # space-separated
+    assert should_run_scribe("Barebells caramel cashew") is True  # bare name
+    assert should_run_scribe("poke bowl with salmon tuna rice") is True
+    # Skips pure acks and lookup questions (no consumed food to extract).
+    assert should_run_scribe("thanks") is False
+    assert should_run_scribe("ok") is False
+    assert should_run_scribe("what should I eat") is False
+    assert should_run_scribe("how many calories in a banana") is False
 
 
 def _items(*names):

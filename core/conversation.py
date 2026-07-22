@@ -475,8 +475,8 @@ async def run_turn(
         _scribe_task = None
         try:
             import asyncio as _asyncio
-            from core.scribe import scribe_enabled, looks_multi_item, extract_food_items
-            if scribe_enabled() and looks_multi_item(_gate_user_message):
+            from core.scribe import scribe_enabled, should_run_scribe, extract_food_items
+            if scribe_enabled() and should_run_scribe(_gate_user_message):
                 _scribe_task = _asyncio.create_task(
                     extract_food_items(_gate_user_message))
         except Exception:

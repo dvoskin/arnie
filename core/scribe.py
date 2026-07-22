@@ -28,12 +28,28 @@ from typing import List
 from core.llm import chat
 from core.write_set import _named_in, _tokens
 
-_SCRIBE_MODEL = "claude-haiku-4-5-20251001"
+# Extraction model. Tested Haiku vs Sonnet (2026-07-21) on the composite/distinct
+# set: with the tightened prompt below they're EQUIVALENT (both keep a poke bowl
+# whole, both split a per-portioned bowl, both catch distinct drops), so Haiku is
+# the default — 10x cheaper and faster for the same result, and it runs in
+# PARALLEL with pass-1 so it's off the latency path anyway. Set SCRIBE_MODEL=
+# claude-sonnet-5 to upgrade if a future ambiguous case ever needs it.
+def _scribe_model() -> str:
+    return os.getenv("SCRIBE_MODEL", "claude-haiku-4-5-20251001")
+
 
 # Cheap multi-item signal — a conjunction/separator between plausible foods. Broad on
 # purpose: it only DECIDES WHETHER TO LOOK; the extraction is the precise part.
 _MULTI_SEP_RE = re.compile(r",|;|\n|\+|\band\b|\bplus\b|\bwith\b|\balso\b|\bи\b|\bс\b|\bплюс\b",
                            re.IGNORECASE)
+# Pure ack / lookup-question — no consumed food to extract, so the scribe skips it.
+_ACK_RE = re.compile(
+    r"^(ok(ay)?|k+|thx|thanks|thank\s+you|ty|cool|nice|great|sweet|got\s+it|gotcha|"
+    r"yes|yeah|yep|yup|sure|no+|nope|word|bet|perfect|awesome|good|alright|lol|haha)"
+    r"[.!,\s]*$", re.I)
+_Q_RE = re.compile(
+    r"^\s*(how|what|why|when|where|which|who|whose|is|are|am|was|were|do|does|did|"
+    r"can|could|should|would|will|has|have)\b|\?", re.I)
 
 
 def scribe_enabled() -> bool:
@@ -50,20 +66,38 @@ def looks_multi_item(message: str) -> bool:
     return bool(_MULTI_SEP_RE.search(m))
 
 
+def should_run_scribe(message: str) -> bool:
+    """Launch the scribe for ANY substantive message that could name food(s) —
+    broadened 2026-07-21 from looks_multi_item so a SPACE-separated list ('eggs
+    bacon toast', no comma/and) is covered too, making completeness deterministic
+    on every food turn rather than only separator-lists. Skips pure acks and
+    lookup questions (no consumed food to extract). The scribe runs in PARALLEL
+    with pass-1, so a non-food false positive costs only a cancelled call — never
+    latency. ≥2 content words = worth a look."""
+    m = (message or "").strip()
+    if len(m) < 3 or _ACK_RE.match(m) or _Q_RE.search(m):
+        return False
+    words = re.findall(r"[A-Za-zА-Яа-яЁё'][A-Za-zА-Яа-яЁё']+", m)
+    return len(words) >= 2
+
+
 _EXTRACT_SYSTEM = (
     "You are a meticulous food-logging scribe. List each food/drink the user should "
     "have as its OWN log entry, one per line: '<quantity> | <food name>'. Think about "
     "how a person tracks a meal, not every ingredient. Rules:\n"
-    "- A NAMED SINGLE DISH is ONE entry, even when its fillings/ingredients are listed: "
-    "a sandwich, club, burger, wrap, taco, burrito, roll, omelette, smoothie, or shake. "
-    "'turkey club with turkey, bacon, cheddar, lettuce, tomato, mayo' → ONE line "
-    "(turkey club) — NOT six.\n"
-    "- SEPARATE FOODS are separate lines: distinct dishes/sides ('a club AND fries AND "
-    "a coffee'), and clearly distinct foods with their own amounts ('1 egg plus 3/4 cup "
-    "egg whites' → two lines).\n"
-    "- A BOWL/PLATE/LIST whose components each have their own portion is those "
-    "components ('burrito bowl with 5oz chicken, 3/4 cup rice, 1/2 cup beans' → chicken, "
-    "rice, beans as separate lines).\n"
+    "- A NAMED SINGLE DISH is ONE entry, even when its fillings/toppings/components are "
+    "listed WITHOUT their own amounts. This INCLUDES a sandwich, club, burger, wrap, "
+    "taco, burrito, roll, sushi roll, omelette, smoothie, shake, parfait, AND ANY "
+    "bowl/plate/platter/salad (poke bowl, grain bowl, burrito bowl, Buddha bowl, grain "
+    "salad). 'poke bowl with salmon, tuna, rice, edamame, avocado' → ONE line (poke "
+    "bowl) — NOT five. 'turkey club with turkey, bacon, cheddar, lettuce, tomato' → ONE "
+    "line (turkey club) — NOT six.\n"
+    "- SPLIT a bowl/plate into its components ONLY when the user gave EACH component its "
+    "OWN explicit amount ('bowl with 5oz chicken, 3/4 cup rice, 1/2 cup beans' → "
+    "chicken, rice, beans). No per-component amount = ONE dish, never split it.\n"
+    "- SEPARATE FOODS are separate lines: distinct dishes/sides/drinks ('a burger AND "
+    "fries AND a coffee' → three), and clearly distinct foods each with their own amount "
+    "('175g turkey and 100g rice' → two; '1 egg plus 3/4 cup egg whites' → two).\n"
     "- Several things sharing ONE combined amount/calorie total are ONE line ('lettuce, "
     "tomato, onion and mustard, 20 cal').\n"
     "- Keep the user's wording and brand (Royo bagel, Barebells). Quantity if stated, "
@@ -81,7 +115,7 @@ async def extract_food_items(message: str) -> List[dict]:
     try:
         res = await chat(
             messages=[{"role": "user", "content": (message or "").strip()}],
-            system=_EXTRACT_SYSTEM, tools=False, max_tokens=200, model=_SCRIBE_MODEL,
+            system=_EXTRACT_SYSTEM, tools=False, max_tokens=200, model=_scribe_model(),
         )
     except Exception:
         return []
@@ -103,9 +137,13 @@ async def extract_food_items(message: str) -> List[dict]:
         if (not name or low in ("nothing", "none")
                 or "nothing to" in low or "not consumed" in low
                 or "don't see" in low or "do not see" in low or "dont see" in low
-                or "please tell" in low or "no food" in low or "no drink" in low
-                or "didn't mention" in low or "did not mention" in low
-                or "let me know" in low or len(name) > 55):
+                or "please tell" in low or "tell me" in low or "no food" in low
+                or "no drink" in low or "didn't mention" in low
+                or "did not mention" in low or "let me know" in low
+                or low.startswith(("if you", "if there", "i don't", "i do not",
+                                   "i'll log", "i can log", "there's no", "there is no",
+                                   "no specific", "it looks like", "you haven't"))
+                or len(name) > 90):
             continue
         out.append({"name": name, "quantity": qty, "raw": line})
     return out
