@@ -420,6 +420,23 @@ async def widget_data(db, user) -> dict:
             "sleep_hours": round(snap.sleep_hours, 1) if snap.sleep_hours is not None else None,
         }
 
+    # Coach read for the large widget — the Coach page's cached hero headline
+    # (never generated on this path: a widget fetch stays cheap), else the
+    # deterministic pacing line, else nothing.
+    coach_read = None
+    try:
+        from api.insights import cached_hero_headline
+        coach_read = cached_hero_headline(user.id)
+    except Exception:
+        coach_read = None
+    if not coach_read:
+        try:
+            from core.context_builder import pacing_note
+            coach_read = (pacing_note(log, getattr(user, "preferences", None),
+                                      user_tz) or "").strip() or None
+        except Exception:
+            coach_read = None
+
     return {
         "date": str(log.date),
         "timezone": user_tz,
@@ -434,6 +451,7 @@ async def widget_data(db, user) -> dict:
         "streaks": streaks,
         "weight": weight_block,
         "health": health,
+        "coach_read": (coach_read[:140] if coach_read else None),
     }
 
 

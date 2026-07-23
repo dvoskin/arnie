@@ -1073,3 +1073,18 @@ async def get_week_insights(user_id: int, stats: dict, force: bool = False) -> L
     if insights:
         _CACHE[cache_key] = (now, insights)
     return insights
+
+
+def cached_hero_headline(user_id: int):
+    """The Coach page's hero headline, CACHE-ONLY — for the widget's coach read.
+    Never generates (a widget fetch must stay cheap); returns None when no brief
+    is cached yet, and the caller falls back to a deterministic pacing line."""
+    try:
+        entry = _CACHE.get((user_id, "__briefing__"))
+        if not entry:
+            return None
+        briefing = entry[1] if len(entry) > 1 else None
+        hero = (briefing or {}).get("hero") or {}
+        return (hero.get("headline") or "").strip() or None
+    except Exception:
+        return None
