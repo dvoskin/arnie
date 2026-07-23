@@ -38,6 +38,28 @@ from db.database import Base, _migrate  # noqa: E402
 from db import models  # noqa: E402,F401  (registers tables)
 
 
+@pytest.fixture(autouse=True)
+def _hermetic_voice_log(request, monkeypatch):
+    """Keep the default suite hermetic on KEYED machines too. log_voice binds
+    `chat` at import (core/log_voice.py), so fixtures that patch conversation's
+    chat never reach it — with ANTHROPIC_API_KEY set, voice_log was silently
+    making live paid calls inside 'hermetic' tests (ironclad eval 2026-07-23).
+    Block it by default; behavioral-marked tests keep the live path, and any
+    test that wants a scripted voice patches core.log_voice.chat itself (a
+    test-level monkeypatch overrides this autouse one)."""
+    if request.node.get_closest_marker("behavioral"):
+        yield
+        return
+    import core.log_voice as _LV
+
+    async def _blocked_live_chat(*a, **k):
+        raise RuntimeError("hermetic suite: live voice_log chat call blocked "
+                           "(patch core.log_voice.chat in your test)")
+
+    monkeypatch.setattr(_LV, "chat", _blocked_live_chat)
+    yield
+
+
 @pytest_asyncio.fixture
 async def engine():
     eng = create_async_engine("sqlite+aiosqlite:///:memory:")
