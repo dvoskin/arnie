@@ -1714,6 +1714,42 @@ async def run_turn(
             _marker_phantom = not any(tc.get("name") in _LOGGING_TOOLS for tc in tool_calls)
             if _marker_phantom:
                 logger.warning(f"event=marker_phantom {_tag} — write claimed ([[DID]]/[[LOGGED]]), no log tool fired")
+    # ── H — ASK-FIRST mode-aware phantom (dormant unless ASK_FIRST_HOLD) ──────────
+    # In strict/ask-first mode, a claimed-but-unfired FOOD write should ASK before
+    # logging (July-7 behavior), not force-log. Derive the intended items with the
+    # small tool-caller, swing-check them; if one clears the mode threshold, HOLD +
+    # ask (stash for the answer turn, exactly like the pre-log ask-first hold) and
+    # CLEAR the phantom flags so the force-log rescue below is skipped. This is the
+    # piece that lets ASK_FIRST_HOLD finally flip on: the marker made the no-tool
+    # phantom detectable, and here it routes to the HOLD instead of a force-log.
+    if (not _signing_off and not _ex_phantom
+            and (_phantom or _omission or _marker_phantom)):
+        try:
+            from core.clarify import (ask_first_hold_enabled, is_ask_first_mode,
+                                      clarify_swings)
+            if ask_first_hold_enabled() and is_ask_first_mode(user):
+                from core.orchestrator import call_tools as _oc
+                _intended = [tc.get("input") or {}
+                             for tc in (await _oc(_gate_user_message))
+                             if tc.get("name") == "log_food"]
+                _afq = await clarify_swings(
+                    [{"name": "log_food", "input": i} for i in _intended], None, user) \
+                    if _intended else None
+                if _afq:
+                    from db.queries import record_pending_question
+                    _pq = await record_pending_question(
+                        db, user.id, kind="food_ask_first", question=_afq,
+                        tier="food_clarification", hook_style="question")
+                    _pq.item_referenced = next(
+                        (i.get("food_name") for i in _intended if i.get("food_name")), "meal")
+                    _pq.payload_json = json.dumps(_intended)
+                    await db.commit()
+                    response_text = _afq
+                    _phantom = _omission = _marker_phantom = False   # held, not force-logged
+                    logger.info(f"event=ask_first_hold_phantom {_tag} "
+                                f"items={[i.get('food_name') for i in _intended]}")
+        except Exception as _e:
+            logger.warning(f"ask-first phantom guard failed for {_tag}: {_e}")
     if (_phantom or _omission or _partial_drop or _ex_phantom or _marker_phantom) \
             and not _signing_off:
         try:
