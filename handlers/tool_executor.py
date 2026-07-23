@@ -1031,6 +1031,13 @@ _BRANDED_RE = __import__("re").compile(
 )
 
 
+def _needs_web_label(db_match_grade) -> bool:
+    """Branded-item web-label gate: fire unless the DB match is EXACT. A weak or
+    wrong-variant text match on a branded product is precisely when the real
+    label (web) beats the database (2026-07-23)."""
+    return db_match_grade != "exact"
+
+
 def _looks_branded(food_name: str) -> bool:
     """Safety-net heuristic when the model forgot to set is_packaged=True.
 
@@ -1520,9 +1527,26 @@ async def _analyze_food(db, user, food_name, inp):
         else:
             usda, off = await _fetch_usda_off(food_name, is_packaged)
 
-        # Web label lookup ONLY when both structured DBs miss a branded item.
-        if usda is None and off is None and _branded:
+        # Web label lookup for a branded item whenever the DB hit isn't
+        # label-grade (Danny 2026-07-23: "I don't see him using web search to
+        # enrich branded items"). The old gate fired only when BOTH DBs missed —
+        # but USDA's branded DB almost always returns SOMETHING for a known
+        # brand (a weak or wrong-variant text match), so the web lane was dead.
+        # Now: exact DB match → trust it, skip the web. Anything less on a
+        # branded item → pull the label from the web, and a successful label
+        # read OUTRANKS the weak text match (candidates curated below so the
+        # ladder picks it). Web miss → the weak DB hit stands, as before.
+        _db_hit = usda or off
+        _db_grade = (_db_hit or {}).get("_match")
+        if _branded and _needs_web_label(_db_grade):
             web = await _web_lookup_packaged(food_name, inp.get("quantity"))
+            if web is not None and _db_hit is not None:
+                logger.info(
+                    f"event=web_label_enrich {food_name!r} — web label replaces "
+                    f"{_db_grade} db match")
+                usda = off = None
+            elif web is not None:
+                logger.info(f"event=web_label_enrich {food_name!r} — db miss, web hit")
 
         # Cache the winner (USDA > OFF > web) so the same product is instant next time.
         _hit = usda or off or web

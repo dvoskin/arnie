@@ -76,3 +76,14 @@ def test_empty_search_fails_safe(monkeypatch):
     monkeypatch.setattr(cs, "search", empty_search)
     # No snippets -> returns None before any extract; estimate will stand.
     assert _run(te._web_lookup_meal("CAVA bowl", "1")) is None
+
+
+def test_needs_web_label_gate():
+    """Branded web-label gate (2026-07-23): only an EXACT db match skips the web.
+    The old gate fired only when BOTH DBs missed — dead in practice, since USDA's
+    branded db returns SOMETHING for any known brand."""
+    from handlers.tool_executor import _needs_web_label
+    assert _needs_web_label(None) is True          # both DBs missed
+    assert _needs_web_label("estimated") is True   # weak text match → web
+    assert _needs_web_label("likely") is True      # wrong-variant risk → web
+    assert _needs_web_label("exact") is False      # label-grade db hit → trust it

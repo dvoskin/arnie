@@ -191,11 +191,12 @@ _SYSTEM = (
     "strips another, a drink another) so each is editable on its own line.\n"
     '- "food": short clean name, 2-4 words, capitalized. Fold a stated adjustment '
     'into the name ("Pizza toppings, crust left").\n'
-    '- "amount": a ROUND, editable number — whole numbers or .5 (1, 2, 0.5, 1.5), '
-    "NEVER 0.33/0.67-style fractions; pick a unit that makes the amount round "
-    "('1 small portion', not '0.33 portion'). \"unit\": one short unit (handfuls, "
-    "strips, oz, g, cup, slices, bar, small bowl). The cleanest reading of what "
-    "they said.\n"
+    '- "amount": a USER-STATED amount is ground truth — keep it EXACTLY, fractions '
+    "included (\"1/3 of a KIND bar\" -> amount 0.33, never rounded to 0.5). Only "
+    "when YOU are estimating an unstated amount, pick a round editable number — "
+    "whole or .5 — and a unit that makes it round ('1 small portion', not '0.33 "
+    "portion'). \"unit\": one short unit (handfuls, strips, oz, g, cup, slices, "
+    "bar, small bowl).\n"
     "- Macros: best estimate for that exact amount; calories consistent with "
     "protein*4 + carbs*4 + fats*9.\n"
     "- ASK only when an unknown detail could swing an item by MORE than {thresh} "
