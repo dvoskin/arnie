@@ -69,9 +69,9 @@ def _log_fastpath_enabled() -> bool:
     / [[LOGGED]]) is present AND a real log tool fired, the write is confirmed — ship
     the deterministic confirmation (real numbers from the committed DB, zero model
     latency) and SKIP the voice_log pass. Confirmations come from the DB, not model
-    narration. Default OFF (a reply-voice change on the hot path — flip after review).
-    Switch: LOG_FASTPATH=true."""
-    return os.getenv("LOG_FASTPATH", "false").lower() in ("true", "1", "yes")
+    narration. **Default ON** (2026-07-23, Danny) — trades voice_log's warmth for
+    latency + guaranteed-correct numbers on pure logs. Revert: LOG_FASTPATH=false."""
+    return os.getenv("LOG_FASTPATH", "true").lower() in ("true", "1", "yes")
 
 
 _LOG_MARKER_INSTRUCTION = (
