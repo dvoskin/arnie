@@ -379,3 +379,17 @@ async def test_branded_flag_routes_to_packaged_lookup(monkeypatch):
     assert a["input"]["food_name"] == "Philadelphia Scallion Cream Cheese"
     assert a["input"].get("is_packaged") is True
     assert "is_packaged" not in b["input"]
+
+
+@pytest.mark.asyncio
+async def test_regulars_ride_into_the_logger_context(monkeypatch):
+    """Danny 2026-07-23 (Barebells on strict): the user's own history rides the
+    logger's context so a brand resolves to THEIR product — exact macros, and a
+    flavor-aware ask ('your usual Caramel Cashew?') instead of invented numbers."""
+    monkeypatch.setattr(FT, "chat", _fake_chat({"action": "pass"}))
+    regs = [{"name": "Barebells Caramel Cashew", "qty": "1 bar", "count": 14,
+             "calories": 200, "protein": 20, "carbs": 18, "fats": 8}]
+    await FT.run("had a barebells bar", SimpleNamespace(), regulars=regs)
+    c = FT.chat.last_content  # type: ignore[attr-defined]
+    assert "THEIR REGULARS" in c and "Barebells Caramel Cashew" in c
+    assert "200 cal" in c and "logged 14x" in c

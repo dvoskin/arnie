@@ -629,9 +629,19 @@ async def run_turn(
                                     "cal": getattr(_fe, "calories", 0) or 0})
                     except Exception:
                         _board = []
+                    # Their REGULARS — the logger resolves "a Barebells" to THEIR
+                    # Barebells (exact history macros, flavor-aware ask) instead
+                    # of inventing an estimate (Danny 2026-07-23, strict mode).
+                    _regs = []
+                    try:
+                        from db.queries import frequent_foods
+                        _regs = await frequent_foods(db, user.id)
+                    except Exception:
+                        _regs = []
                     _sft = await _sft_run(_user_text or "", user, prior=_sft_prior,
                                           day_line=_dl, board=_board,
-                                          last_assistant=_last_assistant)
+                                          last_assistant=_last_assistant,
+                                          regulars=_regs)
                     if _sft is not None:
                         # Day snapshot BEFORE the writes — the say tokens are filled
                         # from the committed delta after enrichment runs.

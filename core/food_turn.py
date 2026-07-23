@@ -160,7 +160,9 @@ _SYSTEM = (
     "{day_cal} {cal_left} {day_protein} {protein_left}. Example: 'Both bags logged, "
     "{batch_cal} cal and {batch_protein}g protein combined. You're at {day_cal} with "
     "{cal_left} left, keep dinner protein-forward.' Never the ~ character, never an "
-    "em dash, never a list. Sound like a sharp coach texting, not a tracker.\n"
+    "em dash, never a list. Never characterize a nutrient (fiber, sugar, sodium) "
+    "unless its value is in your context — no invented nutrition virtues. Sound "
+    "like a sharp coach texting, not a tracker.\n"
     "PIPELINE (work WITH it, not against it):\n"
     "- Your macros are PROVISIONAL: after you log, enrichment refines them from the "
     "user's own logged history, then USDA, then brand databases. Give a sane "
@@ -204,6 +206,11 @@ _SYSTEM = (
     "bar, small bowl).\n"
     "- Macros: best estimate for that exact amount; calories consistent with "
     "protein*4 + carbs*4 + fats*9.\n"
+    "- STRICT mode only: a BRANDED product with an UNSTATED flavor/variant is "
+    "ALWAYS an ask, regardless of swing size — name the range and, when one of "
+    "THEIR REGULARS matches the brand, offer it: 'your usual Caramel Cashew?'. "
+    "A stated variant, or a match to a regular they always log, logs directly "
+    "with those exact numbers.\n"
     "- ASK only when an unknown detail could swing an item by MORE than {thresh} "
     "cal for this user (accuracy mode: {mode}). Swing sources: a vague amount "
     "('some', 'a few', a container portion with no size like 'half a salad'), a "
@@ -310,7 +317,7 @@ def _parse(text: str) -> Optional[dict]:
 
 async def run(message: str, user, prior: Optional[dict] = None,
               day_line: str = "", board: Optional[list] = None,
-              last_assistant: str = "") -> Optional[dict]:
+              last_assistant: str = "", regulars: Optional[list] = None) -> Optional[dict]:
     """Run the logger pass. Returns
         {"action": "log", "tool_calls": [...], "say": "..."}     new items
         {"action": "update", "tool_calls": [...], "say": "..."}  board corrections
@@ -331,6 +338,23 @@ async def run(message: str, user, prior: Optional[dict] = None,
     if (last_assistant or "").strip():
         content = (f"Your previous message to them: "
                    f"\"{last_assistant.strip()[:300]}\"\n\n{content}")
+    if regulars:
+        lines = []
+        for r in regulars[:8]:
+            try:
+                lines.append(f"- {r['name']} ({r.get('qty') or '1'}) — "
+                             f"{int(r.get('calories') or 0)} cal, "
+                             f"{int(r.get('protein') or 0)}P/"
+                             f"{int(r.get('carbs') or 0)}C/"
+                             f"{int(r.get('fats') or 0)}F "
+                             f"(logged {r.get('count', 0)}x)")
+            except Exception:
+                continue
+        if lines:
+            content = (f"{content}\n\nTHEIR REGULARS (their own logged history — "
+                       f"when an item matches one, use these exact macros, never "
+                       f"re-estimate; in an ask, offer the regular by name):\n"
+                       + "\n".join(lines))
     _board_ids = set()
     if board:
         lines = []

@@ -2645,3 +2645,38 @@ async def upsert_user_food_match(db: AsyncSession, user_id: int, name_norm: str,
     db.add(m)
     await db.commit()
     return m
+
+
+async def frequent_foods(db, user_id: int, days: int = 30, limit: int = 8):
+    """The user's REGULARS — most-logged foods in the window, each with the most
+    recent row's macros. Feeds the structured logger's context so 'a Barebells'
+    resolves to THEIR Barebells (exact history macros, flavor-aware ask) instead
+    of an invented estimate (Danny 2026-07-23)."""
+    from datetime import datetime, timedelta
+    from sqlalchemy import select
+    from db.models import DailyLog, FoodEntry
+
+    since = datetime.utcnow() - timedelta(days=days)
+    rows = (await db.execute(
+        select(FoodEntry.parsed_food_name, FoodEntry.quantity, FoodEntry.calories,
+               FoodEntry.protein, FoodEntry.carbs, FoodEntry.fats,
+               FoodEntry.timestamp)
+        .join(DailyLog, FoodEntry.daily_log_id == DailyLog.id)
+        .where(DailyLog.user_id == user_id, FoodEntry.timestamp >= since)
+    )).all()
+    by_name: dict = {}
+    for name, qty, cal, pro, carb, fat, ts in rows:
+        n = (name or "").strip()
+        if not n or len(n) < 3:
+            continue
+        slot = by_name.setdefault(n.lower(), {"count": 0, "name": n})
+        slot["count"] += 1
+        if ts is not None and (slot.get("ts") is None or ts > slot["ts"]):
+            slot.update(ts=ts, qty=qty or "", cal=round(cal or 0),
+                        protein=round(pro or 0), carbs=round(carb or 0),
+                        fats=round(fat or 0))
+    top = sorted(by_name.values(), key=lambda s: -s["count"])[:limit]
+    return [{"name": s["name"], "qty": s.get("qty", ""), "count": s["count"],
+             "calories": s.get("cal", 0), "protein": s.get("protein", 0),
+             "carbs": s.get("carbs", 0), "fats": s.get("fats", 0)}
+            for s in top if s["count"] >= 2]
