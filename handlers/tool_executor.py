@@ -2419,6 +2419,8 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
                 _target = _updated or _row
                 if isinstance(inp, dict) and getattr(_target, "id", None) is not None:
                     inp["_entry_id"] = _target.id
+                    inp["_card_sets"] = _target.sets   # accumulated → live workout card
+                    inp["_card_reps"] = _target.reps
                 await db.refresh(target_log)
                 return format_append_result(_target, now_utc=now_utc)
 
@@ -2505,6 +2507,8 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
                 # Native clients edit the SAME row they've been watching grow.
                 if isinstance(inp, dict) and getattr(_target, "id", None) is not None:
                     inp["_entry_id"] = _target.id
+                    inp["_card_sets"] = _target.sets   # accumulated → live workout card
+                    inp["_card_reps"] = _target.reps
                 await db.refresh(target_log)
                 return format_rollup_result(_target, now_utc=now_utc)
 
@@ -2536,6 +2540,8 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
         # "please update X" message through Arnie.
         if isinstance(inp, dict) and getattr(_new_ex, "id", None) is not None:
             inp["_entry_id"] = _new_ex.id
+            inp["_card_sets"] = _new_ex.sets   # accumulated → live workout card
+            inp["_card_reps"] = _new_ex.reps
         await db.refresh(target_log)
         date_label = f" (for {past_date})" if past_date else ""
 

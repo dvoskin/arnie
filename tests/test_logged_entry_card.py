@@ -29,9 +29,9 @@ def test_deduped_food_log_emits_no_card():
     assert _logged_entry_card("log_food", {"food_name": "Coffee", "_entry_id": 0}) is None
 
 
-def test_exercise_log_emits_no_card_while_deactivated():
-    # Workout card is OFF (_WORKOUT_CARD_ENABLED = False) — a real log_exercise
-    # returns no card now; workouts are confirmed in text instead.
+def test_workout_card_disabled_by_env(monkeypatch):
+    # WORKOUT_CARD=false reverts to text-only — a real log_exercise returns no card.
+    monkeypatch.setenv("WORKOUT_CARD", "false")
     assert _logged_entry_card("log_exercise", {
         "exercise_name": "Bench", "sets": 3, "reps": "8,8,7",
         "weight": 135, "_entry_id": 500,
@@ -39,9 +39,7 @@ def test_exercise_log_emits_no_card_while_deactivated():
 
 
 def test_workout_card_payload_when_enabled(monkeypatch):
-    # The payload builder is retained behind the flag — verify its shape for the
-    # day it's re-enabled.
-    monkeypatch.setattr(conversation, "_WORKOUT_CARD_ENABLED", True)
+    monkeypatch.delenv("WORKOUT_CARD", raising=False)   # default ON (2026-07-23)
     card = _logged_entry_card("log_exercise", {
         "exercise_name": "Bench", "sets": 3, "reps": "8,8,7",
         "weight": 135, "_entry_id": 500,
@@ -49,7 +47,22 @@ def test_workout_card_payload_when_enabled(monkeypatch):
     assert card is not None
     assert card["type"] == "workout_card"
     assert card["payload"]["entry_id"] == 500
+    assert card["payload"]["sets"] == 3
+    assert card["payload"]["reps"] == "8,8,7"
     assert card["payload"]["is_cardio"] is False
+
+
+def test_workout_card_uses_accumulated_row_values(monkeypatch):
+    # An appended set stashes the FINAL row state on _card_sets / _card_reps, so
+    # the card shows the movement's running total, not the lone set this call sent.
+    monkeypatch.delenv("WORKOUT_CARD", raising=False)
+    card = _logged_entry_card("log_exercise", {
+        "exercise_name": "Low-to-High Fly", "sets": 1, "reps": "13",
+        "weight": 60, "_entry_id": 716,
+        "_card_sets": 3, "_card_reps": "12,13,13",
+    })
+    assert card["payload"]["sets"] == 3
+    assert card["payload"]["reps"] == "12,13,13"
 
 
 def test_deduped_exercise_log_emits_no_card():
@@ -65,7 +78,7 @@ def test_non_logging_tools_return_none():
 
 
 def test_cardio_flag_inferred_from_cardio_type(monkeypatch):
-    monkeypatch.setattr(conversation, "_WORKOUT_CARD_ENABLED", True)
+    monkeypatch.delenv("WORKOUT_CARD", raising=False)
     card = _logged_entry_card("log_exercise", {
         "exercise_name": "Run", "cardio_type": "treadmill", "_entry_id": 7,
     })

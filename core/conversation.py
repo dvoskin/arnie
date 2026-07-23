@@ -221,7 +221,13 @@ def _normalize_plan_exercises(exercises) -> list:
 # whose running set count lagged and often contradicted the prose ("3 sets done"
 # sitting over a sets:1 card). Workouts are confirmed in TEXT instead — see the
 # WORKOUT LOGGING prompt rule. Flip this to re-enable the card.
-_WORKOUT_CARD_ENABLED = False
+def _workout_card_enabled() -> bool:
+    """Emit a workout_card on each log_exercise so the iOS card re-renders live as
+    sets/movements land (Danny 2026-07-23 — he couldn't tell if sets logged). The
+    card is gated on a real DB row (_entry_id below), so it appears ONLY when the
+    set actually wrote: no card = it didn't land, which is the visibility signal.
+    WORKOUT_CARD=false reverts to text-only confirmations."""
+    return os.getenv("WORKOUT_CARD", "true").lower() in ("true", "1", "yes")
 
 
 def _logged_entry_card(name: str, inp: dict) -> Optional[dict]:
@@ -266,14 +272,21 @@ def _logged_entry_card(name: str, inp: dict) -> Optional[dict]:
             payload["verdict"] = coach
         return {"type": "macro_card", "payload": payload}
     if name == "log_exercise":
-        if not _WORKOUT_CARD_ENABLED:
-            return None            # workouts are confirmed in text, not a card
+        if not _workout_card_enabled():
+            return None            # WORKOUT_CARD=false → text-only confirmation
+        # Prefer the FINAL DB-row values the dispatcher stashed (_card_sets /
+        # _card_reps) so an appended set shows the movement's running total
+        # ("3×12,13,13"), not the lone set from this one call. Falls back to the
+        # call input for a fresh single log.
+        _cs = inp.get("_card_sets", inp.get("sets"))
+        _cr = inp.get("_card_reps")
+        _cr = str(_cr) if _cr is not None else (str(inp.get("reps") or "") or None)
         return {
             "type": "workout_card",
             "payload": {
                 "name":             inp.get("exercise_name") or "",
-                "sets":             inp.get("sets"),
-                "reps":             str(inp.get("reps") or "") or None,
+                "sets":             _cs,
+                "reps":             _cr,
                 "weight":           inp.get("weight"),
                 "weight_unit":      inp.get("weight_unit") or "lbs",
                 "rir":              inp.get("rir"),
