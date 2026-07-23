@@ -1758,22 +1758,42 @@ async def run_turn(
                 "Let me make sure that's logged.",
                 list(_did_tools & _LOGGING_TOOLS)
                 or (["log_exercise"] if _ex_phantom else ["log_food"]))
-            _rescue = await chat(
-                messages + [
-                    {"role": "assistant", "content": response_text},
-                    {"role": "user", "content": _rescue_nudge},
-                ],
-                system, tools=True, max_tokens=700,
-            )
-            _rescue_calls = [
-                tc for tc in (_rescue.get("tool_calls") or [])
-                if tc.get("name") in ("log_food", "log_exercise",
-                                       "log_body_weight", "log_water",
-                                       # A CORRECTION phantom ("Royo bagels are 80 cal",
-                                       # "fixing it now") rescues into an UPDATE, not a
-                                       # new log — include it so the edit actually writes.
-                                       "update_food_entry")
-            ]
+            _ALLOWED_RESCUE = ("log_food", "log_exercise", "log_body_weight",
+                               "log_water",
+                               # A CORRECTION phantom ("Royo bagels are 80 cal",
+                               # "fixing it now") rescues into an UPDATE, not a new
+                               # log — include it so the edit actually writes.
+                               "update_food_entry")
+            _rescue = {}
+            _rescue_calls = []
+            # PROACTIVE path (I — ORCHESTRATOR, default off): a small/fast tool-only
+            # caller re-derives the dropped call(s) from the user's message — cheaper
+            # and more reliable than re-prompting the 46k-token coach. Full phantoms
+            # only (a partial drop needs the "log ONLY the missing item" nudge, which
+            # the orchestrator can't know). Falls back to the re-prompt when off or empty.
+            from core.orchestrator import orchestrator_enabled as _orch_on
+            if _orch_on() and not _partial_drop:
+                try:
+                    from core.orchestrator import call_tools as _orch_call
+                    _rescue_calls = [tc for tc in (await _orch_call(_gate_user_message))
+                                     if tc.get("name") in _ALLOWED_RESCUE]
+                    if _rescue_calls:
+                        logger.warning(f"event=orchestrator_rescue {_tag} "
+                                       f"tools={[tc.get('name') for tc in _rescue_calls]}")
+                except Exception as _oe:
+                    logger.warning(f"orchestrator rescue failed for {_tag}: {_oe}")
+            if not _rescue_calls:
+                _rescue = await chat(
+                    messages + [
+                        {"role": "assistant", "content": response_text},
+                        {"role": "user", "content": _rescue_nudge},
+                    ],
+                    system, tools=True, max_tokens=700,
+                )
+                _rescue_calls = [
+                    tc for tc in (_rescue.get("tool_calls") or [])
+                    if tc.get("name") in _ALLOWED_RESCUE
+                ]
             if _rescue_calls:
                 # First pass fired no tools, so the executor's log was never
                 # prepared — create today's log here exactly like the main path.
