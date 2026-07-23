@@ -92,6 +92,10 @@ def _sanitize_bubble(s: str) -> str:
     Also strips any leaked tool-call XML so function-call syntax never ships.
     """
     s = _strip_tool_xml(s or "")
+    # Strip the deterministic LOG-CONFIRM marker (core/conversation._LOG_MARKER):
+    # the model appends [[LOGGED]] to assert a real write; the rescue reads it, then
+    # it must NEVER reach the user. Tolerant of case/spacing.
+    s = _re_platform.sub(r"\s*\[\[\s*LOGGED\s*\]\]\s*", " ", s, flags=_re_platform.I)
     # Strip any INTERNAL system-nudge the model echoed — "[SYSTEM HEALTH CHECK —
     # not the user] ...", "[SYSTEM QUALITY CHECK ...]". These are rescue/guard
     # directives injected into the model's CONTEXT, NEVER for the user (Danny

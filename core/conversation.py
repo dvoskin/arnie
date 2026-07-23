@@ -50,6 +50,32 @@ _LOGGING_TOOLS = frozenset({
     "log_body_weight", "log_water", "clear_day_log",
 })
 
+# ── DETERMINISTIC LOG-CONFIRM MARKER (Danny 2026-07-23) ───────────────────────
+# Instead of guessing a phantom from the LLM's freeform phrasing ("🏋️", "logged",
+# "on the board" — a whack-a-mole of hotfixes), the model emits ONE hidden token
+# whenever it CLAIMS a log. It's stripped before display; if it's present but NO
+# logging tool fired, the write didn't happen → force-log. One signal, every log
+# type, deterministic. Switch: LOG_MARKER.
+_LOG_MARKER = "[[LOGGED]]"
+
+
+def _log_marker_enabled() -> bool:
+    return os.getenv("LOG_MARKER", "true").lower() in ("true", "1", "yes")
+
+
+_LOG_MARKER_INSTRUCTION = (
+    "\n\n[LOG-CONFIRM MARKER — machine check, NOT user-facing]\n"
+    "Whenever your reply tells the user you logged, recorded, saved, added, "
+    "updated, or put on the board anything they reported — a food, a set, an "
+    "exercise, body weight, water, anything you assert is now written — append the "
+    "EXACT token [[LOGGED]] at the very end of your final message. It is stripped "
+    "before the user ever sees it; never mention, explain, or vary it. Emit it "
+    "ONLY when you intend a real write AND are actually calling the log tool in the "
+    "same turn. Do NOT emit it for a plan, a question, a clarification, or coaching "
+    "that saved nothing. A [[LOGGED]] with no real log tool call is treated as a "
+    "FAILED write and the item is force-logged — so if you write it, call the tool."
+)
+
 # Voice-by-default for tool results. After ANY tool that yields a user-facing
 # result, a follow-up runs to voice/close it — even when the first pass already
 # wrote a lead-in. Only SILENT tools (pure side-effects whose pass-1 text, if any,
@@ -568,6 +594,11 @@ async def run_turn(
                     extract_food_items(_gate_user_message))
         except Exception:
             _scribe_task = None
+        # Append the log-confirm marker instruction once; every downstream chat
+        # (retry, rescues) reuses this same `system`, so the model is told to emit
+        # [[LOGGED]] on any real log throughout the turn.
+        if _log_marker_enabled():
+            system = system + _LOG_MARKER_INSTRUCTION
         result = await chat(messages, system, tools=True, max_tokens=4096,
                             **_chat_extras)
         # Flush trailing buffer immediately so a no-||| partial doesn't carry
@@ -1581,7 +1612,17 @@ async def run_turn(
                 _gate_user_message, response_text, _ex_fired)
         except Exception:
             _ex_phantom = False
-    if (_phantom or _omission or _partial_drop or _ex_phantom) and not _signing_off:
+    # DETERMINISTIC marker phantom: the model emitted [[LOGGED]] (it thinks it
+    # wrote something) but NO logging tool fired this turn → the write didn't
+    # happen. This is the reliable, log-type-agnostic signal; the "🏋️"/worded
+    # heuristics above stay as backup for a turn where the model forgot the marker.
+    _marker_phantom = False
+    if _log_marker_enabled() and not _signing_off and _LOG_MARKER in (response_text or ""):
+        _marker_phantom = not any(tc.get("name") in _LOGGING_TOOLS for tc in tool_calls)
+        if _marker_phantom:
+            logger.warning(f"event=marker_phantom {_tag} — [[LOGGED]] claimed, no log tool fired")
+    if (_phantom or _omission or _partial_drop or _ex_phantom or _marker_phantom) \
+            and not _signing_off:
         try:
             if _partial_drop and not (_phantom or _omission):
                 # Add ONLY the missing item(s); everything already on the board —
@@ -1685,11 +1726,11 @@ async def run_turn(
                                     await on_text_bubble(_b)
                             response_text = _rescue_text
                         tool_calls = list(tool_calls or []) + _rescue_calls
-                        _phantom = _omission = _partial_drop = _ex_phantom = False  # rescued
+                        _phantom = _omission = _partial_drop = _ex_phantom = _marker_phantom = False  # rescued
                         logger.warning(
                             f"event=log_rescue outcome=logged trigger={_trigger} {_tag} "
                             f"tools={[tc.get('name') for tc in _rescue_calls]}")
-            if _phantom or _omission or _partial_drop or _ex_phantom:
+            if _phantom or _omission or _partial_drop or _ex_phantom or _marker_phantom:
                 logger.warning(f"event=log_rescue outcome=unrescued {_tag} — "
                                f"model fired no tool")
         except Exception as e:
