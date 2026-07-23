@@ -558,12 +558,25 @@ _ESTIMATE_HEDGE_RE = re.compile(
     r"somewhere\s+around|order\s+of|~)", re.I)
 
 
+def _has_brand_token(text: str) -> bool:
+    """A brand/specific-product signal: a capitalized token NOT at the sentence
+    start ("Bonilla", "Quest", "Big Mac") — the thing a generic staple ('an egg',
+    'oatmeal') lacks. Keeps the lookup rescue from needlessly chasing staples."""
+    words = (text or "").split()
+    for w in words[1:]:                       # skip the sentence-start word
+        w2 = w.strip(".,?!:;'\"()")
+        if w2 and w2[0].isupper() and w2.lower() not in ("i", "i'm", "i've", "i'll"):
+            return True
+    return False
+
+
 def looks_like_estimated_product_query(user_text: str, response_text: str) -> bool:
-    """True when the user asked about a SPECIFIC product's nutrition and the reply
-    HEDGED an estimate instead of looking it up (Bonilla de la Vista, IMG_8582).
-    Caller confirms NO lookup tool fired. High-precision: a nutrition question +
-    a stated calorie/macro figure + a hedge word (a looked-up answer states the
-    number flatly). Backs the manifest [[DID: search_food_database]] gap."""
+    """True when the user asked about a SPECIFIC/branded product's nutrition and the
+    reply HEDGED an estimate instead of looking it up (Bonilla de la Vista, IMG_8582).
+    Caller confirms NO lookup tool fired. High-precision: a nutrition question + a
+    brand-like token + a stated calorie/macro figure + a hedge word (a looked-up
+    answer states the number flatly). Staples ('cal in an egg') are excluded by the
+    brand gate. Backs the manifest [[DID: search_food_database]] gap."""
     u = (user_text or "").strip()
     r = (response_text or "").strip()
     if not u or not r:
@@ -572,6 +585,8 @@ def looks_like_estimated_product_query(user_text: str, response_text: str) -> bo
         return False                 # must be a question
     if not _NUTRITION_Q_RE.search(u):
         return False                 # ... about nutrition
+    if not _has_brand_token(u):
+        return False                 # ... about a SPECIFIC/branded product, not a staple
     if not (_CALORIE_ESTIMATE_RE.search(r)
             or re.search(r"\d+\s*g\s+(?:protein|carbs?|fat)", r, re.I)):
         return False                 # the reply must state a figure
