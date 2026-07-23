@@ -364,6 +364,12 @@ async def chat_history(identity: str = Depends(current_identity), limit: int = 4
         # superseded one never renders again (ChatGPT-style swap, not a stack).
         if getattr(row, "superseded_by", None):
             continue
+        # Dashboard/card edits never render in chat AT ALL (Danny 2026-07-23:
+        # "don't reiterate edited foods in the chat"). The rows stay in
+        # conversation_logs so the model's context knows the board changed —
+        # the Log page itself is the visible record of the edit.
+        if row.source_type in ("dashboard_edit", "dashboard_delete"):
+            continue
         # `timestamp` is the SQLAlchemy column on ConversationLog. Send it as
         # ISO-8601 so the iOS contract (Date) parses it via ISO8601DateFormatter.
         # All bubbles in a single turn share the row timestamp — fine because

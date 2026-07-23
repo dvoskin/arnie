@@ -96,7 +96,7 @@ async def update_exercise(
 
         return {
             "status": "ok",
-            "arnie_message": arnie_message,
+            "arnie_message": None,  # context-only; chat never re-narrates dashboard edits
             "entry": {
                 "id": updated.id,
                 "name": updated.exercise_name or "",
@@ -140,7 +140,7 @@ async def delete_exercise(
             source_type="dashboard_edit",
             platform="ios",   # iOS inline editor — without this it defaults to telegram
         )
-        return {"status": "ok", "arnie_message": arnie_message}
+        return {"status": "ok", "arnie_message": None}  # context-only
 
 
 # ── helpers ─────────────────────────────────────────────────────────────────

@@ -74,7 +74,13 @@ _CONSUMED_RE = re.compile(
 _MEAL_RE = re.compile(r"\b(breakfast|lunch|dinner|snack|dessert)\b", re.I)
 _ACK_RE = re.compile(
     r"^(ok(ay)?|k+|thx|thanks|thank\s+you|ty|cool|nice|great|sweet|got\s+it|gotcha|"
-    r"yes|yeah|yep|yup|sure|no+|nope|word|bet|perfect|awesome|good|alright|lol|haha)"
+    r"yes|yeah|yep|yup|sure|no+|nope|word|bet|perfect|awesome|good|alright|lol|haha|"
+    # Keep-as-is family: the user is CLOSING the thread, not asking for a write.
+    # "Leave it like this" after a proposed bump must never apply the bump
+    # (Danny's truffle fries, 2026-07-23).
+    r"leave\s+(?:it|that|them)(?:\s+(?:like\s+(?:this|that)|as\s+is|alone))?|"
+    r"keep\s+(?:it|that|them)(?:\s+(?:like\s+(?:this|that)|as\s+is))?|"
+    r"(?:it|that)'?s\s+fine|don'?t\s+change\s+(?:it|that|anything)|as\s+is)"
     r"[.!,\s]*$", re.I)
 _PLAN_RE = re.compile(
     r"\b(gonna|going\s+to|about\s+to|planning|plan\s+to|might|maybe|probably|"
@@ -147,6 +153,16 @@ _SYSTEM = (
     '"carbs":26,"fats":18}],"say":"Bumped the birria to 2 tacos, {batch_cal} cal '
     'now."}\n'
     "RULES:\n"
+    "- The user declining a change or closing the thread ('leave it like this', "
+    "'keep it as is', 'it's fine', 'don't change it') is NEVER a log or an update "
+    "-> pass. Even if the last assistant message PROPOSED a change ('I'll bump it "
+    "up'), their keep-it means the proposal is dead: write nothing.\n"
+    "- A stated PIECE COUNT is the anchor: '5-6 fries' means 5-6 individual fries "
+    "estimated per piece and multiplied, never a menu side portion's calories. "
+    "The count survives follow-ups too: any later double-check or refinement "
+    "re-prices the SAME counted amount, it never re-portions.\n"
+    '- update "say" starts from words like Updated/Bumped/Fixed and gives the '
+    "entry's new value, NEVER 'logged' — nothing new entered the log.\n"
     "- update: match against TODAY'S BOARD below by name or reference ('those' = "
     "the most recent matching entry). entry_id MUST come from the board. When only "
     "the amount changes, SCALE the board line's macros proportionally. If the "

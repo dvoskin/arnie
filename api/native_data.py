@@ -404,6 +404,12 @@ async def widget_data(db, user) -> dict:
 
     weights = await get_recent_weights(db, user.id, days=30)
     weight_block = _weight_block(weights, user)
+    # Did a weigh-in land on THIS logging day? Drives the widget's morning
+    # "Log today's weight" next-action.
+    try:
+        weighed_today = bool(weights and str(getattr(weights[0], "date", "")) == str(log.date))
+    except Exception:
+        weighed_today = False
 
     # Logging streak (the flame) — same source + rule the Today screen uses.
     streak_logs = await get_recent_logs(db, user.id, days=90)
@@ -452,6 +458,7 @@ async def widget_data(db, user) -> dict:
         "weight": weight_block,
         "health": health,
         "coach_read": (coach_read[:140] if coach_read else None),
+        "weighed_today": weighed_today,
     }
 
 

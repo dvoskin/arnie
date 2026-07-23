@@ -54,22 +54,24 @@ async def update_food(
         if before is None:
             raise HTTPException(status_code=404, detail="food entry not found")
 
-        changes = body.model_dump(exclude_none=True)
+        changes = _reconcile_macros(before, body.model_dump(exclude_none=True))
         updated = await update_food_entry(db, entry_id, user.id, **changes)
         if updated is None:
             raise HTTPException(status_code=403, detail="not your entry")
 
-        # Arnie-voice confirmation. Keep it short and factual — this is a
-        # passive notification, not coaching. The "before" snapshot lets us
-        # spell out what actually moved when nutrition fields changed.
-        arnie_message = _build_update_message(before, updated, changes)
+        # Context-only record of the edit. The diff text is stored so the
+        # model's recent-conversation window knows the board changed, but it
+        # is NEVER shown: chat history skips dashboard_edit rows and
+        # arnie_message returns None so the client appends nothing (Danny
+        # 2026-07-23: "don't reiterate edited foods in the chat").
+        context_note = _build_update_message(before, updated, changes)
         receipt = await _fresh_receipt(db, user, updated)
         _bust_briefing(user.id)
-        if arnie_message:
+        if context_note:
             await log_conversation(
                 db, user.id,
                 raw_message="[edit_food_entry]",
-                response=arnie_message,
+                response=context_note,
                 parsed_intent="dashboard_edit",
                 source_type="dashboard_edit",
                 platform="ios",   # iOS inline editor — without this it defaults to telegram
@@ -77,7 +79,7 @@ async def update_food(
 
         return {
             "status": "ok",
-            "arnie_message": arnie_message,
+            "arnie_message": None,
             "receipt": receipt,
             "entry": {
                 "id": updated.id,
@@ -110,18 +112,17 @@ async def delete_food(
             raise HTTPException(status_code=403, detail="not your entry")
 
         name = before.get("name") or "that entry"
-        arnie_message = f"Removed {name} from today's log."
         _bust_briefing(user.id)
         await log_conversation(
             db, user.id,
             raw_message="[delete_food_entry]",
-            response=arnie_message,
+            response=f"Removed {name} from today's log.",  # context-only, never rendered
             parsed_intent="dashboard_delete",
             source_type="dashboard_edit",
             platform="ios",   # iOS inline editor — without this it defaults to telegram
         )
 
-        return {"status": "ok", "arnie_message": arnie_message}
+        return {"status": "ok", "arnie_message": None}
 
 
 # ── helpers ─────────────────────────────────────────────────────────────────
@@ -135,6 +136,39 @@ def _bust_briefing(user_id: int) -> None:
         invalidate_briefing(user_id)
     except Exception:
         pass
+
+
+def _reconcile_macros(before: dict, changes: dict) -> dict:
+    """Keep every stored row internally coherent: calories must roughly equal
+    4P + 4C + 9F. The iOS editor lets a quantity rescale and a direct calorie
+    edit land in one PATCH, which can ship a row like 80 cal / P5 C25 F27
+    (~363 implied — Danny's truffle fries, 2026-07-23). Resolution order:
+
+      • calories explicitly edited → calories are the user's intent anchor;
+        scale the macros (sent or stored) onto it.
+      • macros edited without calories → recompute calories from the macros.
+      • neither/only cosmetic fields → pass through untouched.
+
+    Rows within ±30% are left exactly as sent — normal rounding and fiber/
+    alcohol slack must not trigger silent rewrites."""
+    result_cal = changes.get("calories", before.get("calories"))
+    p = changes.get("protein", before.get("protein")) or 0
+    c = changes.get("carbs", before.get("carbs")) or 0
+    f = changes.get("fats", before.get("fats")) or 0
+    implied = 4 * p + 4 * c + 9 * f
+    if not result_cal or result_cal <= 0 or implied <= 0:
+        return changes
+    ratio = result_cal / implied
+    if 0.7 <= ratio <= 1.3:
+        return changes
+    fixed = dict(changes)
+    if "calories" in changes:
+        fixed["protein"] = round(p * ratio, 1)
+        fixed["carbs"] = round(c * ratio, 1)
+        fixed["fats"] = round(f * ratio, 1)
+    elif any(k in changes for k in ("protein", "carbs", "fats")):
+        fixed["calories"] = round(implied)
+    return fixed
 
 
 async def _snapshot_entry(db, entry_id: int) -> Optional[dict]:

@@ -151,6 +151,19 @@ def test_thread_routes_state_based_no_phrase_lists():
     assert not FT.thread_routes("bench press 135x10")            # workout
 
 
+def test_keep_as_is_closes_the_thread():
+    """'Leave it like this' after a proposed bump is an ACK, not an update —
+    the truffle-fries turn applied the bump the user was declining
+    (Danny 2026-07-23). Every keep-it form must stay out of the logger."""
+    for msg in ("Leave it like this", "leave it as is", "keep it as is",
+                "leave it", "keep it like that", "that's fine",
+                "don't change it", "as is", "leave them alone"):
+        assert not FT.thread_routes(msg), msg
+        assert not FT.applies(msg), msg
+    # but a real correction with content still routes mid-thread
+    assert FT.thread_routes("make it 6 fries not 4")
+
+
 @pytest.mark.asyncio
 async def test_last_assistant_context_threads_in(monkeypatch):
     monkeypatch.setattr(FT, "chat", _fake_chat({"action": "pass"}))

@@ -1295,8 +1295,12 @@ async def run_turn(
                     _ap = int(getattr(today_log, "total_protein", 0) or 0)
                     _bc0, _bp0 = _sft.get("_before", (_ac, _ap))
                     _batch_c, _batch_p = _ac - _bc0, _ap - _bp0
-                    if _batch_c <= 0 and _batch_p <= 0:
-                        # Refresh miss / update-turn: fall back to the writes' values.
+                    if _sft.get("action") == "update" or (_batch_c <= 0 and _batch_p <= 0):
+                        # Updates: {batch_*} is the entry's NEW value from the
+                        # write itself. The day delta is meaningless here — a
+                        # +95 bump narrated as "logged, 95 cal" reads like a
+                        # phantom food (Danny's truffle fries, 2026-07-23).
+                        # Same fallback covers a refresh miss on log turns.
                         _batch_c = int(sum((tc.get("input") or {}).get("calories") or 0
                                            for tc in _sft["tool_calls"]))
                         _batch_p = int(sum((tc.get("input") or {}).get("protein") or 0
