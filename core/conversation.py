@@ -64,6 +64,16 @@ def _log_marker_enabled() -> bool:
     return os.getenv("LOG_MARKER", "true").lower() in ("true", "1", "yes")
 
 
+def _log_fastpath_enabled() -> bool:
+    """D (marker-gated deterministic fast-path). When the manifest ([[DID: log_food]]
+    / [[LOGGED]]) is present AND a real log tool fired, the write is confirmed — ship
+    the deterministic confirmation (real numbers from the committed DB, zero model
+    latency) and SKIP the voice_log pass. Confirmations come from the DB, not model
+    narration. Default OFF (a reply-voice change on the hot path — flip after review).
+    Switch: LOG_FASTPATH=true."""
+    return os.getenv("LOG_FASTPATH", "false").lower() in ("true", "1", "yes")
+
+
 _LOG_MARKER_INSTRUCTION = (
     "\n\n[ACTION MANIFEST — machine check, NOT user-facing]\n"
     "Whenever your reply tells the user you DID something a tool performs — logged, "
@@ -1266,7 +1276,20 @@ async def run_turn(
                 # gate the call so we don't run it — or append its question — when
                 # CLARIFY_SWINGS is off. clarify_swings no longer self-gates.
                 _run_clarify = clarify_swings_enabled()
-                if fast_log_voice_enabled():
+                # D — marker-gated fast-path: manifest present + a real log tool fired
+                # = the write is confirmed, so ship the deterministic confirmation and
+                # SKIP the voice_log model pass (latency). Falls through to voice_log if
+                # the model forgot the marker, so it never fails a confirmation.
+                _fastpath = (
+                    _log_fastpath_enabled()
+                    and any(tc.get("name") in _LOGGING_TOOLS for tc in tool_calls)
+                    and (_parse_did(response_text or "") or _LOG_MARKER in (response_text or "")))
+                if _fastpath:
+                    _fast_voice = deterministic_confirmation(
+                        tool_calls, today_log, user.preferences, tool_results)
+                    if _run_clarify:
+                        _clarify_q = await clarify_swings(tool_calls, tool_results, user)
+                elif fast_log_voice_enabled():
                     if _run_clarify:
                         _fast_voice, _clarify_q = await _aio.gather(
                             voice_log(tool_calls, tool_results, today_log, user),
