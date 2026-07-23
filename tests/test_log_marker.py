@@ -88,3 +88,58 @@ async def test_marker_without_tool_is_force_logged(monkeypatch):
     assert "eggs" in logged, f"marker phantom NOT force-logged; executor got {logged}"
     # And the marker never reaches the user.
     assert "[[LOGGED]]" not in "|||".join(turn.response.bubbles if turn.response else [])
+
+
+# Every log-type: the model CLAIMS a write (marker) but fires no tool → the rescue
+# force-logs it. Proves the marker is log-type-agnostic (Danny: "any situation
+# where Arnie needs to make a tool call and log something and fails").
+_SCENARIOS = [
+    ("had turkey and rice",
+     "Logged turkey and rice, clean meal. [[LOGGED]]",
+     [{"name": "log_food", "input": {"food_name": "turkey", "calories": 200}},
+      {"name": "log_food", "input": {"food_name": "rice", "calories": 130}}],
+     {"log_food:turkey", "log_food:rice"}),
+    ("weighed in at 194",
+     "Got your weight, 194. [[LOGGED]]",
+     [{"name": "log_body_weight", "input": {"weight": 194}}],
+     {"log_body_weight:?"}),
+    ("drank 16oz of water",
+     "16oz of water is in. [[LOGGED]]",
+     [{"name": "log_water", "input": {"amount_ml": 473}}],
+     {"log_water:?"}),
+]
+
+
+@pytest.mark.parametrize("user_msg,pass1_text,rescue_calls,expected", _SCENARIOS)
+@pytest.mark.asyncio
+async def test_marker_force_logs_every_type(monkeypatch, user_msg, pass1_text,
+                                            rescue_calls, expected):
+    monkeypatch.setenv("LOG_MARKER", "true")
+    calls = {"n": 0}
+
+    async def fake_chat(messages, system, tools=True, max_tokens=1024, model=None, **kw):
+        calls["n"] += 1
+        if calls["n"] == 1:                      # claims the log, fires NO tool
+            return {"text": pass1_text, "raw_content": [], "tool_calls": [],
+                    "stop_reason": "end_turn"}
+        return {"text": "Done.", "raw_content": [], "tool_calls": rescue_calls,
+                "stop_reason": "tool_use"}
+    monkeypatch.setattr(C, "chat", fake_chat)
+
+    got = set()
+    async def fake_exec(tool_calls, *a, **k):
+        for tc in tool_calls:
+            nm = tc.get("name")
+            fn = (tc.get("input") or {}).get("food_name")
+            got.add(f"{nm}:{fn}" if fn else f"{nm}:?")
+        return {tc["name"]: "Logged." for tc in tool_calls}
+    monkeypatch.setattr(C, "execute_tool_calls", fake_exec)
+
+    async def fake_reload(db, uid): return _user()
+    monkeypatch.setattr(Q, "reload_user", fake_reload)
+
+    await run_turn(_user(), _DB(), [{"role": "user", "content": user_msg}],
+                   "SYS", "imessage", in_onboarding=False, was_onboarding=False,
+                   today_log=_today_log())
+
+    assert expected <= got, f"marker rescue missed {expected - got}; executor got {got}"

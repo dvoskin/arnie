@@ -1720,7 +1720,9 @@ async def run_turn(
                             # phantom/omission: the original reply was wrong (false
                             # claim / commented-not-logged) → REPLACE it.
                             _trigger = ("phantom" if _phantom else
-                                        "omission" if _omission else "exercise_phantom")
+                                        "omission" if _omission else
+                                        "exercise_phantom" if _ex_phantom else
+                                        "marker_phantom")
                             if on_text_bubble and not _hold_voicing:
                                 for _b in Response.from_text(_rescue_text).bubbles:
                                     await on_text_bubble(_b)
