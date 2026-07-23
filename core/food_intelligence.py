@@ -347,7 +347,15 @@ def analyze(name, quantity, llm_cal, llm_protein, llm_carbs, llm_fat,
         # accurate) are untouched — no blanket multiplier, no overcorrection.
         from core.portions import mass_grams
         _mg = mass_grams(quantity)
-        _trustworthy = confidence in ("exact", "likely", "user-confirmed")
+        # USDA text-matches must be NEAR-IDENTICAL to override the model (Danny
+        # 2026-07-23: "don't use USDA unless there's an almost identical name
+        # match") — a "likely" 0.6-token-overlap hit is exactly the wrong-cousin
+        # class (lean chicken for "chicken shawarma"). Label-grade sources
+        # (memory / OFF / web) keep their "likely" trust; a demoted USDA item
+        # still feeds the estimate path (fiber/sodium scaled to the model's
+        # calories) and stays eligible for the web-label lane.
+        _trustworthy = (confidence in ("exact", "user-confirmed")
+                        or (confidence == "likely" and src is not usda_candidate))
         if _mg and cal100 and cal100 > 0 and _trustworthy:
             grams = _mg
             ratio = grams / 100.0

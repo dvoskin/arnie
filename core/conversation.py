@@ -712,19 +712,21 @@ async def run_turn(
             # the big model entirely.
             result = {"text": "", "raw_content": [], "tool_calls": _sft["tool_calls"],
                       "stop_reason": "structured_food"}
-            # A big plate takes a few seconds of enrichment lookups — say so
-            # instead of dead air (Danny 2026-07-23: heads-up on long replies).
+            # EVERY structured write turn announces itself — enrichment (USDA/OFF/
+            # web label) is a network round-trip even for one item, and the turns
+            # that skipped the heads-up were exactly the ones that felt hung
+            # (Danny 2026-07-23: "misses the heads up text on some turns").
             _n_items = len(_sft["tool_calls"])
-            if _n_items >= 3:
-                _hu = f"Give me a moment. Logging all {_n_items} now."
-                try:
-                    if _streamer and on_text_bubble:
-                        await on_text_bubble(_hu)
-                        _streamer.flushed_count += 1
-                    elif on_interim:
-                        await on_interim(_hu)
-                except Exception:
-                    pass
+            _hu = (f"Give me a moment. Logging all {_n_items} now."
+                   if _n_items > 1 else "Give me a moment. Logging it now.")
+            try:
+                if _streamer and on_text_bubble:
+                    await on_text_bubble(_hu)
+                    _streamer.flushed_count += 1
+                elif on_interim:
+                    await on_interim(_hu)
+            except Exception:
+                pass
         elif _sft is not None and _sft["action"] == "ask":
             # The one clarify question IS the reply — no tools, nothing logged.
             result = {"text": _sft["text"], "raw_content": [], "tool_calls": [],

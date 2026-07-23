@@ -169,3 +169,22 @@ def test_disagreement_demotion_keeps_model_read_on_lean_usda_mismatch():
     r2 = analyze("Chicken breast", "4 oz", 110, 20, 0, 2, usda_candidate=lean)
     assert r2.calories == round(122 * 1.1339)  # 4 oz = 113.39g forward-computed
     assert r2.source == "usda"
+
+
+def test_usda_likely_match_never_overrides_the_model():
+    """Danny 2026-07-23: "don't use USDA unless there's an almost identical name
+    match." A 'likely' (0.6-overlap) USDA hit no longer forward-computes over the
+    model's read even with a stated mass; EXACT still does. OFF/web keep 'likely'
+    trust (label-grade)."""
+    from core.food_intelligence import analyze
+    likely = {"fdc_id": 2, "_match": "likely",
+              "per100g": {"calories": 500, "protein": 10, "carbs": 50, "fat": 30}}
+    r = analyze("AMC popcorn with butter", "4 oz", 250, 4, 25, 15,
+                usda_candidate=likely)
+    assert r.calories == 250, "likely USDA must not override the model"
+    exact = dict(likely, _match="exact")
+    r2 = analyze("Popcorn", "4 oz", 250, 4, 25, 15, usda_candidate=exact)
+    assert r2.calories == round(500 * 1.1339), "exact USDA still ground-truths"
+    off_likely = dict(likely, _match="likely")
+    r3 = analyze("Quest chips", "1 oz", 140, 19, 4, 5, off_candidate=off_likely)
+    assert r3.calories == round(500 * 0.2835), "OFF keeps likely trust (label-grade)"
