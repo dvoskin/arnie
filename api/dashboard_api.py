@@ -111,6 +111,35 @@ async def get_day(
     }
 
 
+@router.get("/widget")
+async def get_widget(identity: str = Depends(current_identity)):
+    """Lean 'today at a glance' for the iOS WidgetKit timeline provider.
+
+    A small, cheap superset of what a Home / Lock Screen widget draws — targets,
+    today's totals + remaining, the logging streak, latest weight, and a tiny
+    wearable glance. Intentionally NOT `/api/v1/day` (which carries every food and
+    exercise entry): a widget reload runs on a battery + reload budget, so it must
+    stay light on the wire. The numbers match `/day` (same fetchers).
+
+    Shape:
+      { v, date, timezone,
+        targets{calories,protein,carbs,fats},            # null-valued pre-onboarding
+        totals{calories,protein,carbs,fats,water_ml},
+        remaining{calories,protein,carbs,fats},          # null per-macro w/o a target
+        workout_completed, cardio_completed,
+        streak, streaks{logging{...}, full_day{...}},
+        weight{latest,goal,recent[]} | null,
+        health{steps,recovery,sleep_hours} | null }
+    """
+    from api.native_data import widget_data
+
+    async with AsyncSessionLocal() as db:
+        user = await resolve_user(db, identity)
+        data = await widget_data(db, user)
+
+    return {"v": WIRE_VERSION, **data}
+
+
 def _health_score(food_entries: list):
     from core.health_score import compute_health_score
     try:
