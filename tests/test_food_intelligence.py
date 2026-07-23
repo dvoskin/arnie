@@ -151,3 +151,21 @@ def test_pure_estimate_unaffected_by_forward_path():
     a = analyze("grandma's stew", "300g", 420, 25, 30, 20)
     assert a.calories == 420
     assert a.source == "estimate"
+
+
+def test_disagreement_demotion_keeps_model_read_on_lean_usda_mismatch():
+    """Danny 2026-07-23: "chicken shawarma" 4 oz — model read 220 cal, the USDA
+    text-match was plain lean chicken (122 cal/100g) and the mass path wrote 138.
+    Two independent reads disagreeing >30% downward = LOW confidence: keep the
+    model's numbers, demote to source="estimate" so the web lane fires."""
+    from core.food_intelligence import analyze
+    lean = {"fdc_id": 1, "_match": "exact",
+            "per100g": {"calories": 122, "protein": 17.4, "carbs": 2, "fat": 2.7}}
+    r = analyze("Chicken shawarma", "4 oz", 220, 28, 2, 11, usda_candidate=lean)
+    assert r.calories == 220, f"model read must survive; got {r.calories}"
+    assert r.source == "estimate" and r.confidence == "estimated"
+    # Upward correction is untouched: a lean model read on plain chicken still
+    # gets the USDA forward-compute (the ~19% undercount fix).
+    r2 = analyze("Chicken breast", "4 oz", 110, 20, 0, 2, usda_candidate=lean)
+    assert r2.calories == round(122 * 1.1339)  # 4 oz = 113.39g forward-computed
+    assert r2.source == "usda"

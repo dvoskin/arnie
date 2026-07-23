@@ -294,6 +294,9 @@ def analyze(name, quantity, llm_cal, llm_protein, llm_carbs, llm_fat,
     # Invalid macros (protein*4 + carbs*4 + fat*9 ≠ calories) mislead the coaching
     # note and confuse the LLM on follow-up turns.
     cal, protein, carbs, fat = reconcile_macros(cal, protein, carbs, fat)
+    # The model's independent read, pre-enrichment — the disagreement demotion
+    # below compares the database read against it.
+    _llm0 = (cal, protein, carbs, fat)
     fiber = sugar = sodium = None
     fdc_id = None
     confidence = "estimated"
@@ -361,6 +364,34 @@ def analyze(name, quantity, llm_cal, llm_protein, llm_carbs, llm_fat,
                 if _v is not None:
                     micros[_mk] = round(_v * ratio, 2)
             computed_forward = True
+            # DISAGREEMENT DEMOTION (Danny 2026-07-23 — "chicken shawarma" 4 oz:
+            # model read 220 cal, USDA text-match was a plain lean chicken record
+            # and the mass path confidently wrote 138). The forward-computed value
+            # and the model's estimate are two INDEPENDENT reads; when the USDA
+            # read UNDERCUTS the model by >30%, the matched density almost
+            # certainly belongs to a leaner cousin of the dish — two disagreeing
+            # reads = LOW confidence. Keep the model's numbers, demote to
+            # source="estimate", and the web-enrich lane (tool_executor fires on
+            # source=="estimate") fetches a label-grade read. Applies ONLY to
+            # USDA text-matches: the user's own history and label-grade web/OFF
+            # data stay authoritative, and upward correction stays (the model
+            # undercounts ~19%, 2026-07-03).
+            if (src is usda_candidate and _llm0[0] > 0
+                    and cal < 0.7 * _llm0[0]):
+                logger.info(
+                    f"enrichment demoted: usda {cal} cal vs model {_llm0[0]} for "
+                    f"{(name or '')!r} — disagreement, keeping estimate + web lane")
+                cal, protein, carbs, fat = _llm0
+                grams = cal / cal100 * 100
+                _implied_grams = grams
+                ratio = grams / 100.0
+                fiber = round(per100["fiber"] * ratio, 1) if per100.get("fiber") is not None else None
+                sugar = round(per100["sugar"] * ratio, 1) if per100.get("sugar") is not None else None
+                sodium = round(per100["sodium"] * ratio, 0) if per100.get("sodium") is not None else None
+                micros = {mk: round(per100[mk] * ratio, 2)
+                          for mk in _MICRO_KEYS if per100.get(mk) is not None}
+                confidence, source = "estimated", "estimate"
+                computed_forward = False
         elif cal100 and cal100 > 0 and cal > 0:
             # ESTIMATE PATH — no reliable grams (a count/cup/vague amount), so
             # trust the LLM's calories and back the portion out of them, then

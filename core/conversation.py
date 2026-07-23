@@ -595,6 +595,14 @@ async def run_turn(
                     "")
                 if (_sft_prior is not None or _sft_applies(_user_text or "")
                         or (_thread_active and _sft_thread_routes(_user_text or ""))):
+                    # Immediate status: morph the live thinking indicator to
+                    # "Logging…" the moment the logger starts, so its pass is
+                    # never silent dead air (Danny 2026-07-23).
+                    if on_tool_start:
+                        try:
+                            await on_tool_start(["log_food"])
+                        except Exception:
+                            pass
                     # Day context so the logger's own coach line ("say") can state
                     # where the day stands — real numbers we hand it, one model call.
                     _dl = ""
@@ -704,6 +712,19 @@ async def run_turn(
             # the big model entirely.
             result = {"text": "", "raw_content": [], "tool_calls": _sft["tool_calls"],
                       "stop_reason": "structured_food"}
+            # A big plate takes a few seconds of enrichment lookups — say so
+            # instead of dead air (Danny 2026-07-23: heads-up on long replies).
+            _n_items = len(_sft["tool_calls"])
+            if _n_items >= 3:
+                _hu = f"Logging all {_n_items} now."
+                try:
+                    if _streamer and on_text_bubble:
+                        await on_text_bubble(_hu)
+                        _streamer.flushed_count += 1
+                    elif on_interim:
+                        await on_interim(_hu)
+                except Exception:
+                    pass
         elif _sft is not None and _sft["action"] == "ask":
             # The one clarify question IS the reply — no tools, nothing logged.
             result = {"text": _sft["text"], "raw_content": [], "tool_calls": [],
