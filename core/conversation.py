@@ -716,7 +716,7 @@ async def run_turn(
             # instead of dead air (Danny 2026-07-23: heads-up on long replies).
             _n_items = len(_sft["tool_calls"])
             if _n_items >= 3:
-                _hu = f"Logging all {_n_items} now."
+                _hu = f"Give me a moment. Logging all {_n_items} now."
                 try:
                     if _streamer and on_text_bubble:
                         await on_text_bubble(_hu)
@@ -1268,6 +1268,11 @@ async def run_turn(
                 # COMMITTED day (post-enrichment) so say can never disagree with
                 # the card/DB.
                 _say = _sft["say"].strip()
+                # Contract enforcement: model-authored digits outside {tokens} →
+                # the say is replaced with a deterministic tokenized line (the
+                # 647-vs-343 conflict, Danny IMG_8610).
+                from core.food_turn import enforce_say_contract
+                _say = enforce_say_contract(_say, _sft["tool_calls"])
                 if "{" in _say:
                     try:
                         await db.refresh(today_log)

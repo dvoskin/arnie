@@ -157,6 +157,10 @@ _SYSTEM = (
     "unlocks exact per-gram nutrition downstream.\n"
     "- When unsure between two portion reads, estimate HIGH (never under-count); a "
     "stated label/package amount is ground truth, use it exactly.\n"
+    "- Calorie-dense components ON a dish (cream cheese, spreads, sauces, cheese, "
+    "dressing, oil): portion what the VENUE actually applies, never the label "
+    "serving — a bagel-shop schmear is 3-4 tbsp (150-200 cal), a shawarma joint's "
+    "garlic sauce is a heavy pour. Under-counting the rich parts is the #1 miss.\n"
     "- Omit meal_type unless the user names the meal — the pipeline infers the slot "
     "from time and the meal's other items.\n"
     "THREAD CONTEXT (when given YOUR PREVIOUS MESSAGE and TODAY'S BOARD):\n"
@@ -216,6 +220,29 @@ def _format_question(points: list) -> str:
 
 _TOKEN_RE = re.compile(
     r"\{(batch_cal|batch_protein|day_cal|cal_left|day_protein|protein_left)\}")
+
+
+def enforce_say_contract(say: str, tool_calls: list) -> str:
+    """ENFORCE 'the system writes the numbers' — don't just request it. If the
+    model wrote ANY digit outside a {token} (it claimed 647 cal while its own
+    card showed 343 — Danny IMG_8610), its say is rejected and replaced with a
+    deterministic tokenized line naming the items. The contract is physics."""
+    raw = say or ""
+    if not re.search(r"\d", re.sub(r"\{[a-z_]{2,24}\}", "", raw)):
+        return raw
+    names = [((tc.get("input") or {}).get("food_name") or "").strip()
+             for tc in (tool_calls or [])]
+    names = [n for n in names if n]
+    if len(names) > 3:
+        joined = f"{', '.join(names[:3])} and {len(names) - 3} more"
+    elif names:
+        joined = ", ".join(names[:-1]) + (" and " + names[-1] if len(names) > 1
+                                          else names[0])
+    else:
+        joined = "That"
+    return (f"{joined} logged, {{batch_cal}} cal and {{batch_protein}}g protein. "
+            f"You're at {{day_cal}} with {{cal_left}} left and {{protein_left}}g "
+            f"protein to go.")
 
 
 def fill_say_tokens(say: str, batch_cal: int, batch_protein: int,

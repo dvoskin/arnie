@@ -160,6 +160,23 @@ async def test_last_assistant_context_threads_in(monkeypatch):
     assert "140 cal a bag" in FT.chat.last_content  # type: ignore[attr-defined]
 
 
+def test_say_contract_enforced_model_digits_rejected():
+    """Model wrote its own numbers (647 vs the card's 343 — IMG_8610) → say is
+    replaced with a deterministic tokenized line naming the items."""
+    calls = [{"name": "log_food", "input": {"food_name": "Everything Bagel"}},
+             {"name": "log_food", "input": {"food_name": "Scallion Cream Cheese"}}]
+    bad = "Bagel with the works, 647 cal and 46g protein down."
+    out = FT.enforce_say_contract(bad, calls)
+    assert "647" not in out and "{batch_cal}" in out
+    assert "Everything Bagel" in out and "Scallion Cream Cheese" in out
+    # A compliant say (numbers only via tokens) passes through untouched.
+    good = "Both logged, {batch_cal} cal and {batch_protein}g protein combined."
+    assert FT.enforce_say_contract(good, calls) == good
+    # A wordy no-numbers say is also fine.
+    assert FT.enforce_say_contract("Solid brunch, all on the board.", calls) \
+        == "Solid brunch, all on the board."
+
+
 def test_fill_say_tokens_strips_invented_tokens():
     out = FT.fill_say_tokens("Logged, {batch_cal} cal. {made_up_token} done.",
                              300, 20, 1200, 56, 2165, 180)
