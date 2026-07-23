@@ -159,8 +159,12 @@ _SYSTEM = (
     "up'), their keep-it means the proposal is dead: write nothing.\n"
     "- A stated PIECE COUNT is the anchor: '5-6 fries' means 5-6 individual fries "
     "estimated per piece and multiplied, never a menu side portion's calories. "
-    "The count survives follow-ups too: any later double-check or refinement "
-    "re-prices the SAME counted amount, it never re-portions.\n"
+    "A count is HIGH confidence: price each piece at its typical real value and "
+    "do NOT stack the estimate-HIGH bias on top (that bias is for unknown "
+    "amounts, not counted ones). Calibration: one restaurant fry is 25-40 cal "
+    "even loaded with parm/truffle butter, so 5-6 such fries land 150-220, "
+    "never 300+. The count survives follow-ups too: any later double-check or "
+    "refinement re-prices the SAME counted amount, it never re-portions.\n"
     '- update "say" starts from words like Updated/Bumped/Fixed and gives the '
     "entry's new value, NEVER 'logged' — nothing new entered the log.\n"
     "- update: match against TODAY'S BOARD below by name or reference ('those' = "
@@ -222,10 +226,11 @@ _SYSTEM = (
     "bar, small bowl).\n"
     "- Macros: best estimate for that exact amount; calories consistent with "
     "protein*4 + carbs*4 + fats*9.\n"
-    "- 'My usual X' is a POINTER into THEIR REGULARS: one match -> log it with "
-    "those exact numbers; two plausible matches -> ask which ('the americano or "
-    "the oat latte?'); NO matching regular -> ask ONCE how they usually take it "
-    "(that answer becomes the regular). Never estimate a generic for 'my usual'.\n"
+    "- 'My usual X' is a POINTER into THEIR REGULARS: exactly one match -> log it "
+    "with those exact numbers; TWO OR MORE plausible matches -> ALWAYS ask which "
+    "('the americano or the oat latte?') — never pick one by frequency; NO "
+    "matching regular -> ask ONCE how they usually take it (that answer becomes "
+    "the regular). Never estimate a generic for 'my usual'.\n"
     "- STRICT mode only: a BRANDED product with an UNSTATED flavor/variant is "
     "ALWAYS an ask, regardless of swing size — name the range and, when one of "
     "THEIR REGULARS matches the brand, offer it: 'your usual Caramel Cashew?'. "
@@ -362,6 +367,12 @@ async def run(message: str, user, prior: Optional[dict] = None,
         lines = []
         for r in regulars[:8]:
             try:
+                # A malformed regular must never silently vanish from context —
+                # an invisible regulars list makes the pointer rules dead letters.
+                _n = r.get("name") or r.get("food") or ""
+                if not _n:
+                    continue
+                r = {**r, "name": _n}
                 lines.append(f"- {r['name']} ({r.get('qty') or '1'}) — "
                              f"{int(r.get('calories') or 0)} cal, "
                              f"{int(r.get('protein') or 0)}P/"

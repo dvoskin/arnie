@@ -131,7 +131,11 @@ def test_wee_hours_context_says_sleep_not_next_meal():
 
 
 def test_prompt_ships_id_discipline():
-    from core.prompts import build_arnie_system
-    s = " ".join(build_arnie_system(platform="ios").split())
-    assert "NEVER GUESS AN [#id]" in s
-    assert "do NOT retry with another guessed id" in s
+    """Entry-id discipline moved with the architecture: the July-7 prompt
+    revert (017d436) deliberately stripped the legacy [#id] coaching from
+    core/prompts/arnie.py (frozen baseline — no logging prompt adds), and the
+    STRUCTURED logger now owns corrections with a hard board contract."""
+    from core.food_turn import _SYSTEM
+    s = " ".join(_SYSTEM.split())
+    assert "entry_id MUST come from the board" in s
+    assert "If the correction's target isn't on the board, action is pass" in s
