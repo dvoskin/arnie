@@ -601,6 +601,12 @@ async def run_turn(
                         _board = []
                     _sft = await _sft_run(_user_text or "", user, prior=_sft_prior,
                                           day_line=_dl, board=_board)
+                    if _sft is not None:
+                        # Day snapshot BEFORE the writes — the say tokens are filled
+                        # from the committed delta after enrichment runs.
+                        _sft["_before"] = (
+                            int(getattr(today_log, "total_calories", 0) or 0),
+                            int(getattr(today_log, "total_protein", 0) or 0))
                 if _sft and _sft["action"] == "ask":
                     # Hold: record the pending (with the original report stashed) so
                     # the ANSWER turn routes back through this pipeline and logs.
@@ -1214,7 +1220,32 @@ async def run_turn(
             if _sft is not None and (_sft.get("say") or "").strip():
                 # STRUCTURED turn (log OR update): the logger's own coach line rides
                 # the same JSON — one model call per food turn, the July-7 shape.
-                response_text = _sft["say"].strip()
+                # The logger wrote the WORDS; fill the number tokens from the
+                # COMMITTED day (post-enrichment) so say can never disagree with
+                # the card/DB.
+                _say = _sft["say"].strip()
+                if "{" in _say:
+                    try:
+                        await db.refresh(today_log)
+                    except Exception:
+                        pass
+                    from core.food_turn import fill_say_tokens
+                    _ac = int(getattr(today_log, "total_calories", 0) or 0)
+                    _ap = int(getattr(today_log, "total_protein", 0) or 0)
+                    _bc0, _bp0 = _sft.get("_before", (_ac, _ap))
+                    _batch_c, _batch_p = _ac - _bc0, _ap - _bp0
+                    if _batch_c <= 0 and _batch_p <= 0:
+                        # Refresh miss / update-turn: fall back to the writes' values.
+                        _batch_c = int(sum((tc.get("input") or {}).get("calories") or 0
+                                           for tc in _sft["tool_calls"]))
+                        _batch_p = int(sum((tc.get("input") or {}).get("protein") or 0
+                                           for tc in _sft["tool_calls"]))
+                    _p = getattr(user, "preferences", None)
+                    _say = fill_say_tokens(
+                        _say, _batch_c, _batch_p, _ac, _ap,
+                        int(getattr(_p, "calorie_target", 0) or 0) if _p else 0,
+                        int(getattr(_p, "protein_target", 0) or 0) if _p else 0)
+                response_text = _say
                 _response_streamed = False
             elif _pure_food:
                 # Legacy pure-food turn keeps the voice_log read; the deterministic

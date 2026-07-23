@@ -138,6 +138,20 @@ async def test_answer_turn_logs_and_never_reasks(monkeypatch):
     assert "Earlier they reported" in FT.chat.last_content  # type: ignore[attr-defined]
 
 
+def test_fill_say_tokens_numbers_come_from_committed_day():
+    """The logger writes the words, the SYSTEM writes the numbers — say can never
+    disagree with the card/DB (Danny: logger+coach must not conflict)."""
+    out = FT.fill_say_tokens(
+        "Both bags logged, {batch_cal} cal and {batch_protein}g protein combined. "
+        "You're at {day_cal} with {cal_left} left, {protein_left}g protein to go.",
+        batch_cal=310, batch_protein=18, day_cal=1210, day_protein=56,
+        cal_target=2165, protein_target=180)
+    assert out == ("Both bags logged, 310 cal and 18g protein combined. "
+                   "You're at 1210 with 955 left, 124g protein to go.")
+    # Tokens the model didn't use are fine; unknown text untouched.
+    assert FT.fill_say_tokens("Logged, nice.", 0, 0, 0, 0, 0, 0) == "Logged, nice."
+
+
 # ── run_turn wiring ───────────────────────────────────────────────────────────
 def _user():
     return SimpleNamespace(
@@ -179,7 +193,9 @@ def _base(monkeypatch):
 @pytest.mark.asyncio
 async def test_log_turn_skips_big_pass_and_executes_items(monkeypatch):
     async def fake_sft(message, user, prior=None, day_line="", board=None):
-        return {"action": "log", "say": "Salad and chicken logged, 330 cal in.",
+        return {"action": "log",
+                "say": "Salad and chicken logged, {batch_cal} cal in. "
+                       "You're at {day_cal} with {cal_left} left.",
                 "tool_calls": [
             {"name": "log_food", "input": {"food_name": "Caesar salad",
                                            "quantity": "2 handfuls", "calories": 180}},

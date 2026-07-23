@@ -116,11 +116,26 @@ _SYSTEM = (
     "correction's target isn't on the board, action is pass.\n"
     "- An item already on the board reported again as the SAME serving is never "
     "re-logged: correct it (update) or pass.\n"
-    '- "say" (log action only): the coach line the user sees. 1-2 short sentences, '
-    "sentence case, warm and specific, NAMING every item logged (never just one of "
-    "them) with the combined calories and protein for this batch, plus one forward "
-    "read using the day context if given. Never the ~ character, never an em dash, "
-    "never a list. Sound like a sharp coach texting, not a tracker.\n"
+    '- "say" (log and update actions): the coach line the user sees. 1-2 short '
+    "sentences, sentence case, warm and specific, NAMING every item (never just one "
+    "of them), plus one forward read. NEVER write your own totals — the system fills "
+    "these exact tokens from the database AFTER the write: {batch_cal} {batch_protein} "
+    "{day_cal} {cal_left} {day_protein} {protein_left}. Example: 'Both bags logged, "
+    "{batch_cal} cal and {batch_protein}g protein combined. You're at {day_cal} with "
+    "{cal_left} left, keep dinner protein-forward.' Never the ~ character, never an "
+    "em dash, never a list. Sound like a sharp coach texting, not a tracker.\n"
+    "PIPELINE (work WITH it, not against it):\n"
+    "- Your macros are PROVISIONAL: after you log, enrichment refines them from the "
+    "user's own logged history, then USDA, then brand databases. Give a sane "
+    "estimate fast; don't agonize.\n"
+    "- Food names: clean canonical brand + product ('Quest Chips Sweet Spicy', "
+    "'Fage 0% yogurt') — matching against history and USDA depends on the name.\n"
+    "- If the user gave a mass (200g, 6 oz), keep THAT as the unit — an exact mass "
+    "unlocks exact per-gram nutrition downstream.\n"
+    "- When unsure between two portion reads, estimate HIGH (never under-count); a "
+    "stated label/package amount is ground truth, use it exactly.\n"
+    "- Omit meal_type unless the user names the meal — the pipeline infers the slot "
+    "from time and the meal's other items.\n"
     "- Split a combo into natural SEPARATE items (the salad one item, the chicken "
     "strips another, a drink another) so each is editable on its own line.\n"
     '- "food": short clean name, 2-4 words, capitalized. Fold a stated adjustment '
@@ -161,6 +176,27 @@ def _format_question(points: list) -> str:
     for i, (l, q) in enumerate(pts, 1):
         lines.append(f"{i}. **{l}**: {q}" if l else f"{i}. {q}")
     return "\n".join(lines)
+
+
+_TOKEN_RE = re.compile(
+    r"\{(batch_cal|batch_protein|day_cal|cal_left|day_protein|protein_left)\}")
+
+
+def fill_say_tokens(say: str, batch_cal: int, batch_protein: int,
+                    day_cal: int, day_protein: int,
+                    cal_target: int, protein_target: int) -> str:
+    """The logger writes the WORDS; the system writes the NUMBERS. Token values
+    come from the COMMITTED day (post-enrichment), so the say line can never
+    disagree with the card/DB — the logger↔coach handshake (Danny 2026-07-23:
+    'work perfectly together and not conflict')."""
+    vals = {
+        "batch_cal": batch_cal, "batch_protein": batch_protein,
+        "day_cal": day_cal, "day_protein": day_protein,
+        "cal_left": max(0, int(cal_target or 0) - day_cal),
+        "protein_left": max(0, int(protein_target or 0) - day_protein),
+    }
+    out = _TOKEN_RE.sub(lambda m: str(vals.get(m.group(1), "")), say or "")
+    return re.sub(r"[ \t]{2,}", " ", out).strip()
 
 
 def _parse(text: str) -> Optional[dict]:
