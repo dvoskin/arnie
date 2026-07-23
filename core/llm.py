@@ -69,6 +69,21 @@ def FOLLOWUP_MODEL() -> str:
     # Falls back to DEFAULT_MODEL if a host pins FOLLOWUP_MODEL="" to disable the split.
     return _env("FOLLOWUP_MODEL", "claude-sonnet-5") or DEFAULT_MODEL()
 
+
+def FALLBACK_MODEL() -> str:
+    """Known-good Anthropic model the safety-net retries on when the CONFIGURED
+    model errors — a bad DEFAULT_MODEL swap (unknown id, unsupported param) or a
+    transient. Default claude-sonnet-4-6 (proven in prod). A model experiment that
+    breaks then DEGRADES here instead of taking every turn dark (the 2026-07-23
+    Sonnet-5 incident). Set FALLBACK_MODEL to change."""
+    return _env("FALLBACK_MODEL", "claude-sonnet-4-6")
+
+
+def _model_fallback_enabled() -> bool:
+    """Switch: MODEL_FALLBACK=false disables the known-good-model retry (default on)."""
+    return _env("MODEL_FALLBACK", "true").lower() in ("true", "1", "yes")
+
+
 _anthropic = None
 _openai = None
 
@@ -171,11 +186,35 @@ async def chat(
     # If it STILL fails (e.g. a sustained outage) and an OpenAI key is configured,
     # fall back to OpenAI for this turn so Arnie keeps responding instead of going
     # dark. See AUDIT.md #8.
+    _primary = model or DEFAULT_MODEL()
     try:
         return await _anthropic_chat(messages, system, tools, max_tokens,
-                                     model=model, stream_handler=stream_handler)
+                                     model=_primary, stream_handler=stream_handler)
     except Exception as e:
-        if OPENAI_API_KEY():
+        # Log the REAL error prominently — a bad model/config must be diagnosable
+        # from the logs, not swallowed by the caller's generic "hit a snag" reply.
+        # (2026-07-23: a Sonnet-5 swap took prod 100% dark and the actual Anthropic
+        # error never surfaced; every turn just said "Wires crossed".)
+        logger.error(f"model call FAILED model={_primary} err={type(e).__name__}: {e}")
+        # SAFETY-NET 1 — retry ONCE on a known-good Anthropic model. A broken
+        # DEFAULT_MODEL then degrades to a working model instead of erroring every
+        # turn. Immediate model/auth errors raise before any stream delta, so the
+        # retry re-streams cleanly; a rare mid-stream failure may double a bubble,
+        # which still beats a dead turn. Switch: MODEL_FALLBACK=false.
+        _fb = FALLBACK_MODEL()
+        if _model_fallback_enabled() and _fb and _fb != _primary:
+            try:
+                logger.warning(f"model fallback: retrying on {_fb} (primary {_primary} failed)")
+                _r = await _anthropic_chat(messages, system, tools, max_tokens,
+                                           model=_fb, stream_handler=stream_handler)
+                logger.warning(f"model fallback OK on {_fb}")
+                return _r
+            except Exception as e_fb:
+                logger.error(f"model fallback ALSO failed model={_fb} err={type(e_fb).__name__}: {e_fb}")
+        # SAFETY-NET 2 — OpenAI, only if a REAL key is configured (a placeholder
+        # 'your-key' string is truthy but auth-fails, so guard on the sk- prefix).
+        _oai = OPENAI_API_KEY()
+        if _oai and _oai.startswith("sk-"):
             logger.warning(f"Anthropic chat failed ({e}); falling back to OpenAI.")
             try:
                 return await _openai_chat(messages, system, tools, max_tokens)
