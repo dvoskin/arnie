@@ -19,10 +19,15 @@ def test_applies_gate():
     assert FT.applies("I had two slices of pepperoni pizza and half a caesar salad")
     assert FT.applies("had 3 eggs and toast for breakfast")
     assert FT.applies("greek yogurt with honey for a snack")
+    # corrections are IN scope (board-aware updates — Danny IMG_8595)
+    assert FT.applies("I actually had 2 birria")
+    assert FT.applies("actually it was 4 strawberries")
+    assert FT.applies("I had 2 of those")
+    assert FT.applies("make it 6 oz")
     # exclusions → legacy path
     assert not FT.applies("how many calories in a Quest bar?")   # question
     assert not FT.applies("might grab a burger later")           # plan
-    assert not FT.applies("actually it was 4 strawberries")      # correction
+    assert not FT.applies("remove the birria taco")              # destructive
     assert not FT.applies("drank 20oz of water")                 # non-food domain
     assert not FT.applies("bench press 135 for 12 reps")         # workout
     assert not FT.applies("ok cool")                             # ack
@@ -90,6 +95,38 @@ async def test_question_can_never_become_a_food(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_update_resolves_against_board(monkeypatch):
+    """'I actually had 2 birria' → update_food_entry on the board entry with scaled
+    macros — never a dedup-blocked re-log (Danny IMG_8595)."""
+    monkeypatch.setattr(FT, "chat", _fake_chat({
+        "action": "update",
+        "updates": [{"entry_id": 707, "amount": 2, "unit": "tacos",
+                     "calories": 360, "protein": 30}],
+        "say": "Bumped the birria to 2 tacos, 360 cal now."}))
+    board = [{"id": 707, "food": "Birria taco", "qty": "1 taco", "cal": 180}]
+    out = await FT.run("I actually had 2 birria", SimpleNamespace(), board=board)
+    assert out["action"] == "update"
+    tc = out["tool_calls"][0]
+    assert tc["name"] == "update_food_entry"
+    assert tc["input"]["entry_id"] == 707
+    assert tc["input"]["quantity"] == "2 tacos"
+    assert tc["input"]["calories"] == 360
+    assert "Bumped" in out["say"]
+    # The board rendered into the model content (so references can resolve).
+    assert "#707 Birria taco" in FT.chat.last_content  # type: ignore[attr-defined]
+
+
+@pytest.mark.asyncio
+async def test_update_rejects_entry_not_on_board(monkeypatch):
+    monkeypatch.setattr(FT, "chat", _fake_chat({
+        "action": "update",
+        "updates": [{"entry_id": 999, "amount": 2, "unit": "tacos"}]}))
+    board = [{"id": 707, "food": "Birria taco", "qty": "1 taco", "cal": 180}]
+    out = await FT.run("I actually had 2 birria", SimpleNamespace(), board=board)
+    assert out is None, "an entry_id not on the board must never be updated"
+
+
+@pytest.mark.asyncio
 async def test_answer_turn_logs_and_never_reasks(monkeypatch):
     # Model tries to ask AGAIN on the answer turn → run() refuses (legacy handles).
     monkeypatch.setattr(FT, "chat", _fake_chat({
@@ -141,7 +178,7 @@ def _base(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_log_turn_skips_big_pass_and_executes_items(monkeypatch):
-    async def fake_sft(message, user, prior=None, day_line=""):
+    async def fake_sft(message, user, prior=None, day_line="", board=None):
         return {"action": "log", "say": "Salad and chicken logged, 330 cal in.",
                 "tool_calls": [
             {"name": "log_food", "input": {"food_name": "Caesar salad",
@@ -177,8 +214,42 @@ async def test_log_turn_skips_big_pass_and_executes_items(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_update_turn_executes_and_voices_say(monkeypatch):
+    """run_turn integration: a structured UPDATE executes update_food_entry and the
+    say line is the reply — no follow-up model call, no dedup template."""
+    async def fake_sft(message, user, prior=None, day_line="", board=None):
+        return {"action": "update", "say": "Bumped the birria to 2 tacos, 360 cal.",
+                "tool_calls": [{"name": "update_food_entry",
+                                "input": {"entry_id": 707, "quantity": "2 tacos",
+                                          "calories": 360}}]}
+    import core.food_turn as FTmod
+    monkeypatch.setattr(FTmod, "run", fake_sft)
+    async def fake_chat(*a, **k):
+        return {"text": "SHOULD NOT RUN", "raw_content": [], "tool_calls": []}
+    monkeypatch.setattr(C, "chat", fake_chat)
+    async def fake_followup(*a, **k):
+        raise AssertionError("follow-up must not run on a structured update")
+    monkeypatch.setattr(C, "chat_follow_up", fake_followup)
+
+    fired = []
+    async def fake_exec(tcs, *a, **k):
+        fired.extend((tc.get("name"), (tc.get("input") or {}).get("entry_id"))
+                     for tc in tcs)
+        return {"update_food_entry": "Updated: Birria taco"}
+    monkeypatch.setattr(C, "execute_tool_calls", fake_exec)
+
+    turn = await run_turn(_user(), _DB(),
+                          [{"role": "user", "content": "I actually had 2 birria"}],
+                          "SYS", "imessage", in_onboarding=False, was_onboarding=False,
+                          today_log=_today_log())
+    assert ("update_food_entry", 707) in fired
+    reply = "|||".join(turn.response.bubbles if turn.response else [])
+    assert "Bumped the birria" in reply, f"say should be the reply; got {reply!r}"
+
+
+@pytest.mark.asyncio
 async def test_ask_turn_holds_and_records_pending(monkeypatch):
-    async def fake_sft(message, user, prior=None, day_line=""):
+    async def fake_sft(message, user, prior=None, day_line="", board=None):
         return {"action": "ask",
                 "text": "Quick one so it's clean:\n1. **Crust**: how much left?"}
     import core.food_turn as FTmod

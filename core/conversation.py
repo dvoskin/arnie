@@ -586,8 +586,21 @@ async def run_turn(
                                    f"{int(getattr(_p, 'protein_target', 0) or 0)}g protein.")
                     except Exception:
                         _dl = ""
+                    # Today's board — so corrections ("2 of those") resolve to real
+                    # entry ids and repeats aren't re-logged.
+                    _board = []
+                    try:
+                        for _fe in (getattr(today_log, "food_entries", None) or []):
+                            if getattr(_fe, "id", None) is not None:
+                                _board.append({
+                                    "id": _fe.id,
+                                    "food": getattr(_fe, "parsed_food_name", "") or "",
+                                    "qty": getattr(_fe, "quantity", "") or "",
+                                    "cal": getattr(_fe, "calories", 0) or 0})
+                    except Exception:
+                        _board = []
                     _sft = await _sft_run(_user_text or "", user, prior=_sft_prior,
-                                          day_line=_dl)
+                                          day_line=_dl, board=_board)
                 if _sft and _sft["action"] == "ask":
                     # Hold: record the pending (with the original report stashed) so
                     # the ANSWER turn routes back through this pipeline and logs.
@@ -656,9 +669,10 @@ async def run_turn(
                         extract_food_items(_gate_user_message))
             except Exception:
                 _scribe_task = None
-        if _sft is not None and _sft["action"] == "log":
-            # Structured logger already decided the writes — impersonate pass-1
-            # with its clean tool calls and skip the big model entirely.
+        if _sft is not None and _sft["action"] in ("log", "update"):
+            # Structured logger already decided the writes (new items OR board
+            # corrections) — impersonate pass-1 with its clean tool calls and skip
+            # the big model entirely.
             result = {"text": "", "raw_content": [], "tool_calls": _sft["tool_calls"],
                       "stop_reason": "structured_food"}
         elif _sft is not None and _sft["action"] == "ask":
@@ -1197,13 +1211,15 @@ async def run_turn(
             # Switch: FAST_LOG_VOICE=false.
             _pure_food = _is_pure_food_log(tool_calls, _user_text)
             _fast_voice = None
-            if _pure_food:
-                # STRUCTURED turn: the logger's own coach line rides the same JSON
-                # (one model call per food turn, the July-7 shape). Legacy turns
-                # keep the voice_log read. Deterministic template is the last net.
-                if _sft is not None and (_sft.get("say") or "").strip():
-                    _fast_voice = _sft["say"].strip()
-                elif fast_log_voice_enabled():
+            if _sft is not None and (_sft.get("say") or "").strip():
+                # STRUCTURED turn (log OR update): the logger's own coach line rides
+                # the same JSON — one model call per food turn, the July-7 shape.
+                response_text = _sft["say"].strip()
+                _response_streamed = False
+            elif _pure_food:
+                # Legacy pure-food turn keeps the voice_log read; the deterministic
+                # template is the last net.
+                if fast_log_voice_enabled():
                     _fast_voice = await voice_log(
                         tool_calls, tool_results, today_log, user)
                 response_text = _fast_voice or deterministic_confirmation(

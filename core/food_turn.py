@@ -7,9 +7,13 @@ quantity, phantom logs) grew another guard. This module replaces the guards with
 structure: for a food-report turn, ONE small logger pass reads the message and
 returns strict JSON —
 
-  log  -> items [{food, amount, unit, calories, protein, carbs, fats}]
-  ask  -> points [{label, q}]   (ONE rich-formatted question)
-  pass -> not a food report; the normal conversation path takes the turn
+  log    -> items [{food, amount, unit, calories, protein, carbs, fats}]
+  update -> updates [{entry_id, amount, unit, macros}]  (corrections, board-aware:
+            "I actually had 2 birria" / "I had 2 of those" resolve against today's
+            logged entries and become clean update_food_entry calls — no dedup
+            fight, no "already on the board" template. Danny IMG_8595.)
+  ask    -> points [{label, q}]   (ONE rich-formatted question)
+  pass   -> not a food report; the normal conversation path takes the turn
 
 A question structurally CANNOT become a food entry (asks and items are different
 actions), and quantities are always a clean "amount unit" so every entry is
@@ -62,9 +66,13 @@ _ACK_RE = re.compile(
 _PLAN_RE = re.compile(
     r"\b(gonna|going\s+to|about\s+to|planning|plan\s+to|might|maybe|probably|"
     r"thinking\s+(?:about|of)|will\s+(?:have|eat|grab)|later\b|not\s+sure)\b", re.I)
+# Correction/reference cues — IN scope (the logger owns updates, board-aware).
+# Deletes/removes stay legacy: destructive intent gets the big brain's judgment.
 _CORRECTION_RE = re.compile(
-    r"\b(actually|instead|change|fix|wrong|remove|delete|undo|scratch|"
-    r"not\s+the|was\s+supposed)\b", re.I)
+    r"\b(actually|instead|make\s+(?:it|that)|change|it\s+was|that\s+was|"
+    r"of\s+those|of\s+them)\b", re.I)
+_DESTRUCTIVE_RE = re.compile(
+    r"\b(remove|delete|undo|scratch|clear|take\s+(?:it|that)\s+off)\b", re.I)
 # Non-food logging domains → legacy path (log_water / log_exercise / weight).
 _NONFOOD_RE = re.compile(
     r"\b(water|weighed|weigh[- ]?in|workout|gym|bench|squat|deadlift|press|"
@@ -78,9 +86,10 @@ def applies(text: str) -> bool:
         return False
     if _ACK_RE.match(t) or "?" in t:
         return False
-    if _PLAN_RE.search(t) or _CORRECTION_RE.search(t) or _NONFOOD_RE.search(t):
+    if _PLAN_RE.search(t) or _DESTRUCTIVE_RE.search(t) or _NONFOOD_RE.search(t):
         return False
-    return bool(_CONSUMED_RE.search(t) or _MEAL_RE.search(t))
+    return bool(_CONSUMED_RE.search(t) or _MEAL_RE.search(t)
+                or _CORRECTION_RE.search(t))
 
 
 # ── the logger pass ───────────────────────────────────────────────────────────
@@ -96,7 +105,17 @@ _SYSTEM = (
     '"Caesar salad","amount":2,"unit":"handfuls","calories":180,"protein":4,'
     '"carbs":8,"fats":15}],"say":"Pizza and the Caesar logged, 560 cal and 22g '
     'protein for the pair. Dinner protein-forward and the day lands clean."}\n'
+    '4. CORRECTING something already on today\'s board ("I actually had 2 birria", '
+    '"I had 2 of those", "make it 6 oz") -> {"action":"update","updates":[{'
+    '"entry_id":123,"amount":2,"unit":"taco","calories":360,"protein":30,'
+    '"carbs":26,"fats":18}],"say":"Bumped the birria to 2 tacos, 360 cal now."}\n'
     "RULES:\n"
+    "- update: match against TODAY'S BOARD below by name or reference ('those' = "
+    "the most recent matching entry). entry_id MUST come from the board. When only "
+    "the amount changes, SCALE the board line's macros proportionally. If the "
+    "correction's target isn't on the board, action is pass.\n"
+    "- An item already on the board reported again as the SAME serving is never "
+    "re-logged: correct it (update) or pass.\n"
     '- "say" (log action only): the coach line the user sees. 1-2 short sentences, '
     "sentence case, warm and specific, NAMING every item logged (never just one of "
     "them) with the combined calories and protein for this batch, plus one forward "
@@ -156,13 +175,15 @@ def _parse(text: str) -> Optional[dict]:
 
 
 async def run(message: str, user, prior: Optional[dict] = None,
-              day_line: str = "") -> Optional[dict]:
+              day_line: str = "", board: Optional[list] = None) -> Optional[dict]:
     """Run the logger pass. Returns
-        {"action": "log", "tool_calls": [...], "say": "..."}  ready-to-execute
+        {"action": "log", "tool_calls": [...], "say": "..."}     new items
+        {"action": "update", "tool_calls": [...], "say": "..."}  board corrections
         {"action": "ask", "text": "..."}          the formatted question
         None                                       pass / any failure → legacy path
-    ONE model call per food turn — the coach line rides the same JSON (July-7
-    shape: one pass, tools, done). Never raises."""
+    board: today's committed entries [{"id", "food", "qty", "cal"}] so corrections
+    and references ("2 of those") resolve deterministically. ONE model call per
+    food turn — the coach line rides the same JSON. Never raises."""
     if not (message or "").strip():
         return None
     if prior:
@@ -172,6 +193,18 @@ async def run(message: str, user, prior: Optional[dict] = None,
             f"They just answered: \"{message}\"")
     else:
         content = message
+    _board_ids = set()
+    if board:
+        lines = []
+        for b in board[-8:]:
+            try:
+                _board_ids.add(int(b["id"]))
+                lines.append(f"#{b['id']} {b['food']}, {b.get('qty') or '?'}, "
+                             f"{int(b.get('cal') or 0)} cal")
+            except Exception:
+                continue
+        if lines:
+            content = f"{content}\n\nTODAY'S BOARD (already logged):\n" + "\n".join(lines)
     if day_line:
         content = f"{content}\n\nDay context for the 'say' line: {day_line}"
     try:
@@ -188,6 +221,37 @@ async def run(message: str, user, prior: Optional[dict] = None,
     if action == "ask" and not prior:
         text = _format_question(data.get("points") or [])
         return {"action": "ask", "text": text} if text else None
+
+    if action == "update":
+        calls = []
+        for up in (data.get("updates") or []):
+            if not isinstance(up, dict):
+                continue
+            try:
+                eid = int(up.get("entry_id"))
+            except (TypeError, ValueError):
+                continue
+            if eid not in _board_ids:
+                continue          # structural: only entries actually on the board
+            inp = {"entry_id": eid}
+            amount = up.get("amount")
+            unit = str(up.get("unit") or "").strip()
+            try:
+                amount = round(float(amount), 2)
+                amount = int(amount) if float(amount).is_integer() else amount
+                inp["quantity"] = f"{amount} {unit}".strip()
+            except (TypeError, ValueError):
+                pass
+            for k in ("calories", "protein", "carbs", "fats"):
+                v = up.get(k)
+                if isinstance(v, (int, float)):
+                    inp[k] = v
+            calls.append({"name": "update_food_entry", "input": inp})
+        if calls:
+            say = str(data.get("say") or "").strip()
+            say = say.replace("~", "").replace("—", ",").replace("–", ",")
+            return {"action": "update", "tool_calls": calls, "say": say[:400]}
+        return None
 
     if action == "log" or (action == "ask" and prior):
         # An ask on the answer turn means the model ignored the do-not-ask rule;
