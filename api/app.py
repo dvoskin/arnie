@@ -67,6 +67,29 @@ async def _kick_proactive_scheduler():
         )
 
 
+@app.on_event("startup")
+async def _log_resolved_models():
+    """One-line boot record of the model each pass resolves to, so a
+    DEFAULT_MODEL / FOLLOWUP_MODEL env swap can be CONFIRMED from the Render
+    logs instead of guessed (Danny 2026-07-23). Prints once per deploy at
+    WARNING so it isn't filtered; never fatal. Grep the logs for 'MODEL @ boot'
+    right after a redeploy to see exactly what pass-1 is running."""
+    try:
+        import logging
+        from core.llm import DEFAULT_MODEL, FOLLOWUP_MODEL
+        from core.log_voice import fast_log_voice_enabled
+        logging.getLogger(__name__).warning(
+            "MODEL @ boot — pass1(DEFAULT_MODEL)=%s  followup(FOLLOWUP_MODEL)=%s  "
+            "fast_log_voice=%s(on=%s)  new_user_override=%s",
+            DEFAULT_MODEL(), FOLLOWUP_MODEL(),
+            os.getenv("FAST_LOG_VOICE_MODEL", "claude-sonnet-5"),
+            fast_log_voice_enabled(), os.getenv("NEW_USER_MODEL", "") or "(off)",
+        )
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning(f"model-resolution boot log failed: {e}")
+
+
 def _require_admin(token: str) -> None:
     """
     Gate an admin endpoint. FAILS CLOSED: if ADMIN_TOKEN is unset, admin is disabled

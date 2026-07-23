@@ -46,15 +46,17 @@ def clarify_swings_enabled() -> bool:
 
 
 def ask_first_hold_enabled() -> bool:
-    """Kill switch for the ASK-FIRST hold. **Default ON** (2026-07-22). In strict
-    mode a food-log turn with an unstated high-swing detail HOLDS the write and
-    asks BEFORE logging (July-7 behavior). The held items are STASHED on the
-    pending (payload_json) and the answer turn logs them: model-refined when it
-    cooperates, replayed deterministically from the stash when it loops — so a
-    held meal is NEVER lost WHEN opus calls log_food. Default OFF still: opus also
-    PHANTOM-NARRATES "logged" without calling the tool (~1/3 for some items), which
-    the hold cannot engage on — that no-tool phantom needs its own guard first.
-    ASK_FIRST_HOLD=false → log-first."""
+    """Kill switch for the ASK-FIRST hold. **Default OFF** (2026-07-22). In strict
+    mode a food-log turn with an unstated high-swing detail would HOLD the write and
+    ask BEFORE logging (July-7 behavior). The held items are STASHED on the pending
+    (payload_json) and the answer turn logs them: model-refined when it cooperates,
+    replayed deterministically from the stash when it loops — so a held meal is
+    NEVER lost WHEN opus calls log_food. WHY STILL OFF: opus also PHANTOM-NARRATES
+    "logged" without calling the tool (~1/3 for some items), which the hold cannot
+    engage on. The [[LOGGED]] marker (2026-07-23) now guards that no-tool phantom —
+    BUT it force-LOGS, the opposite of holding, so flipping this on first needs the
+    marker made mode-aware (in ask-first mode a marker-phantom must trigger the
+    HOLD/ask, not a force-log). ASK_FIRST_HOLD=false → log-first."""
     return os.getenv("ASK_FIRST_HOLD", "false").lower() in ("true", "1", "yes")
 
 
