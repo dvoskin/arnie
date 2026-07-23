@@ -72,7 +72,7 @@ def _base(monkeypatch):
 @pytest.mark.asyncio
 async def test_ask_first_holds_phantom_and_asks(monkeypatch):
     monkeypatch.setenv("ASK_FIRST_HOLD", "true")
-    async def fake_swing(tool_calls, tool_results, user):
+    async def fake_swing(tool_calls, tool_results, user, user_message=""):
         return "Quick one so it's right, was the chicken grilled or fried?"
     monkeypatch.setattr(CL, "clarify_swings", fake_swing)
     recorded = {}

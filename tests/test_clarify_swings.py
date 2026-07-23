@@ -52,13 +52,17 @@ async def test_no_food_items_skips(monkeypatch):
     assert called["n"] == 0          # no model call when there's no food
 
 
-async def test_mode_threshold_passed(monkeypatch):
+async def test_mode_gradient_system(monkeypatch):
     fc = await _fake_chat("NONE")
     monkeypatch.setattr(C, "chat", fc)
-    await C.clarify_swings([_tc("eggs", "2", 140)], {}, _user("quick"))
-    assert "250" in fc.system        # quick threshold
-    await C.clarify_swings([_tc("eggs", "2", 140)], {}, _user("strict"))
-    assert "60" in fc.system         # strict threshold
+    # non-strict: vague quantity only, no prep questions
+    await C.clarify_swings([_tc("chicken", "some", 300)], {}, _user("moderate"))
+    assert "ONLY about a vague quantity" in fc.system
+    assert "STRICT accuracy" not in fc.system
+    # strict: also cooking method / added fat / sauce
+    await C.clarify_swings([_tc("chicken", "some", 300)], {}, _user("strict"))
+    assert "STRICT accuracy" in fc.system
+    assert "cooking method" in fc.system
 
 
 async def test_disabled_returns_none(monkeypatch):

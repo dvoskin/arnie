@@ -46,24 +46,26 @@ def clarify_swings_enabled() -> bool:
 
 
 def ask_first_hold_enabled() -> bool:
-    """Kill switch for the ASK-FIRST hold. **Default OFF** (2026-07-22). In strict
-    mode a food-log turn with an unstated high-swing detail would HOLD the write and
-    ask BEFORE logging (July-7 behavior). The held items are STASHED on the pending
-    (payload_json) and the answer turn logs them: model-refined when it cooperates,
-    replayed deterministically from the stash when it loops — so a held meal is
-    NEVER lost WHEN opus calls log_food. WHY STILL OFF: opus also PHANTOM-NARRATES
-    "logged" without calling the tool (~1/3 for some items), which the hold cannot
-    engage on. The [[LOGGED]] marker (2026-07-23) now guards that no-tool phantom —
-    BUT it force-LOGS, the opposite of holding, so flipping this on first needs the
-    marker made mode-aware (in ask-first mode a marker-phantom must trigger the
-    HOLD/ask, not a force-log). ASK_FIRST_HOLD=false → log-first."""
-    return os.getenv("ASK_FIRST_HOLD", "false").lower() in ("true", "1", "yes")
+    """Kill switch for the ASK-FIRST hold. **Default ON** (2026-07-23, Danny: "ask
+    and clarify vague things like some strawberries BEFORE, then log cleanly"). In
+    strict mode a food-log turn with a VAGUE QUANTITY or an unstated high-swing detail
+    HOLDS the write and asks BEFORE logging (July-7 behavior) instead of estimate-and-
+    flagging. Held items are STASHED on the pending (payload_json); the answer turn
+    logs them with the confirmed amount — model-refined when it cooperates, replayed
+    deterministically from the stash when it loops. The no-tool-phantom blocker is
+    resolved: H (the marker made mode-aware, 2026-07-23) routes a strict-mode phantom
+    to the HOLD/ask instead of a force-log. ASK_FIRST_HOLD=false → log-first with the
+    estimate flag. Applies to STRICT mode only (is_ask_first_mode)."""
+    return os.getenv("ASK_FIRST_HOLD", "true").lower() in ("true", "1", "yes")
 
 
 def is_ask_first_mode(user) -> bool:
-    """Ask-before-log applies to STRICT mode — the 'double-check my food' users
-    who want a swing pinned before it hits the log. Quick/moderate log-first."""
-    return _mode(user) == "strict"
+    """Ask-before-log applies to ALL users (Danny 2026-07-23): a vague quantity like
+    'some strawberries' warrants a 'how much?' for everyone — you can't log it cleanly
+    otherwise. The clarification DEPTH scales with mode (see clarify_swings): non-strict
+    asks only the vague quantity; STRICT also asks cooking method, added fat, and sauce.
+    The caller already gates on not-in-onboarding + a real food log."""
+    return True
 
 
 def _model() -> str:
@@ -76,19 +78,41 @@ def _mode(user) -> str:
     return m if m in _THRESH else "moderate"
 
 
-_SYSTEM = (
-    "You are the accuracy check for a nutrition logger. Items were JUST logged with "
-    "estimated macros; they are already saved. Find items whose UNSTATED detail would "
-    "swing calories by MORE than {thresh} kcal, and ask ONE bundled question to pin them.\n"
-    "Swing sources: cooking fat (grilled vs fried, dry vs buttered/oiled), sauce/dressing "
-    "amount, vague quantity ('some', a partial), or a branded VARIANT with different macros "
-    "(e.g. Core Power vs Core Power Elite). NOT a swing: diet soda, black coffee, water, "
-    "plain fruit/veg, an exact branded item, anything the user already specified.\n"
-    "OUTPUT: if nothing clears {thresh} kcal, output exactly NONE. Otherwise ONE short "
-    "question, coach voice, sentence case, no preamble, bundling the items: "
-    "\"quick one so these are right, how much butter on the toast and was the chicken "
-    "grilled or fried?\" Never restate macros. Never use ~ or an em dash. Max ~30 words."
+# Mode-gradient clarification (Danny 2026-07-23). ALL users get asked on a vague
+# QUANTITY; STRICT users ALSO get asked cooking method, added fat, and sauce.
+_BASE = (
+    "You are the accuracy check for a nutrition logger. You get the USER'S EXACT MESSAGE "
+    "and the items the model is about to log. The quantities in the proposal may be the "
+    "model's GUESS — your job is to catch when the USER was vague so we confirm instead "
+    "of guessing.\n"
+    "ALWAYS ask when the USER'S OWN WORDS gave a vague or unspecified QUANTITY, for ANY "
+    "food, even plain fruit or veg or a low-calorie item: 'some', 'a bit', 'a little', "
+    "'a handful', 'a few', 'a couple', 'a piece', a partial, or no amount at all. A "
+    "proposed quantity carrying a '~', 'about', or 'approx' is a guess from a vague "
+    "input, so ask to confirm the real amount.\n"
 )
+_STRICT_EXTRA = (
+    "This user wants STRICT accuracy. ALSO, for any COOKED or COMPOSITE food, ask the "
+    "cooking method (grilled, fried, baked), any added fat (butter, oil), and any sauce "
+    "or dressing, even if the calorie impact is small, plus a branded VARIANT with "
+    "different macros. Bundle every open detail into the single question.\n"
+)
+_NONSTRICT_EXTRA = (
+    "Ask ONLY about a vague quantity. Do NOT ask this user about cooking method, added "
+    "fat, or sauce.\n"
+)
+_OUT = (
+    "Never ask about a clearly stated amount, a single countable unit (an apple, a "
+    "banana, a coffee, 2 eggs, 200g chicken), diet soda, black coffee, or water.\n"
+    "OUTPUT: if there is nothing to pin down, output exactly NONE. Otherwise ONE short "
+    "question, coach voice, sentence case, no preamble, bundling everything: \"quick one "
+    "so it's clean, how much chicken, how was it cooked, and any oil or sauce?\" Never "
+    "restate macros. Never use ~ or an em dash. Max ~35 words."
+)
+
+
+def _system_for(mode: str) -> str:
+    return _BASE + (_STRICT_EXTRA if mode == "strict" else _NONSTRICT_EXTRA) + _OUT
 
 
 def _clean(text: str) -> str:
@@ -113,21 +137,23 @@ def _items_block(tool_calls, tool_results) -> list[str]:
     return out
 
 
-async def clarify_swings(tool_calls, tool_results, user) -> Optional[str]:
-    """Return ONE bundled clarify question for mode-exceeding swings, or None.
-    Safe to run concurrently with voice_log; never raises. NOTE: switch-agnostic —
-    callers gate (log-first on CLARIFY_SWINGS, ask-first on ASK_FIRST_HOLD)."""
+async def clarify_swings(tool_calls, tool_results, user, user_message="") -> Optional[str]:
+    """Return ONE bundled clarify question for a vague quantity (or, for strict users,
+    an unstated prep detail), or None. Judges the USER'S OWN WORDS (user_message) — the
+    model estimates 'some' -> '~1 cup' into the proposal, so checking only the proposal
+    misses the vagueness. Safe to run concurrently; never raises. Callers gate."""
     items = _items_block(tool_calls, tool_results)
     if not items:
         return None
     mode = _mode(user)
-    thresh = _THRESH[mode]
-    sys = _SYSTEM.format(thresh=thresh)
-    facts = f"Accuracy mode: {mode} (ask if swing > {thresh} kcal)\nItems:\n" + "\n".join(items)
+    sys = _system_for(mode)   # non-strict: vague quantity only; strict: + cooking/fat/sauce
+    facts = (f"User's exact message: \"{(user_message or '').strip()}\"\n"
+             f"User accuracy mode: {mode}\nItems the model proposes to log:\n"
+             + "\n".join(items))
     try:
         res = await asyncio.wait_for(
             chat([{"role": "user", "content": facts}], sys,
-                 tools=False, max_tokens=80, model=_model()),
+                 tools=False, max_tokens=100, model=_model()),
             timeout=8.0,
         )
     except Exception as e:
@@ -141,7 +167,7 @@ async def clarify_swings(tool_calls, tool_results, user) -> Optional[str]:
     # A real clarify question is ALWAYS a short question, so require a "?", reject
     # any output carrying the NONE sentinel, and cap the length — the reasoning
     # leak has no "?" and is long, so all three catch it.
-    if (not out or len(out) < 8 or len(out) > 220
+    if (not out or len(out) < 8 or len(out) > 280   # strict bundles quantity+cooking+fat+sauce
             or "?" not in out
             or "NONE" in out.upper()):
         return None

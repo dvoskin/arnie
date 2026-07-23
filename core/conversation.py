@@ -882,7 +882,8 @@ async def run_turn(
                     _already_held = False
                 if not _already_held:
                     try:
-                        _ask_first_q = await clarify_swings(tool_calls, None, user)
+                        _ask_first_q = await clarify_swings(
+                            tool_calls, None, user, user_message=_gate_user_message)
                     except Exception as _e:
                         logger.warning(f"ask-first hold check failed: {_e}")
                         _ask_first_q = None
@@ -1288,17 +1289,17 @@ async def run_turn(
                     _fast_voice = deterministic_confirmation(
                         tool_calls, today_log, user.preferences, tool_results)
                     if _run_clarify:
-                        _clarify_q = await clarify_swings(tool_calls, tool_results, user)
+                        _clarify_q = await clarify_swings(tool_calls, tool_results, user, user_message=_gate_user_message)
                 elif fast_log_voice_enabled():
                     if _run_clarify:
                         _fast_voice, _clarify_q = await _aio.gather(
                             voice_log(tool_calls, tool_results, today_log, user),
-                            clarify_swings(tool_calls, tool_results, user))
+                            clarify_swings(tool_calls, tool_results, user, user_message=_gate_user_message))
                     else:
                         _fast_voice = await voice_log(
                             tool_calls, tool_results, today_log, user)
                 elif _run_clarify:
-                    _clarify_q = await clarify_swings(tool_calls, tool_results, user)
+                    _clarify_q = await clarify_swings(tool_calls, tool_results, user, user_message=_gate_user_message)
             if _pure_food:
                 response_text = _fast_voice or deterministic_confirmation(
                     tool_calls, today_log, user.preferences, tool_results)
@@ -1733,8 +1734,8 @@ async def run_turn(
                              for tc in (await _oc(_gate_user_message))
                              if tc.get("name") == "log_food"]
                 _afq = await clarify_swings(
-                    [{"name": "log_food", "input": i} for i in _intended], None, user) \
-                    if _intended else None
+                    [{"name": "log_food", "input": i} for i in _intended], None, user,
+                    user_message=_gate_user_message) if _intended else None
                 if _afq:
                     from db.queries import record_pending_question
                     _pq = await record_pending_question(
