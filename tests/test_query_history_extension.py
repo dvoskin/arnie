@@ -601,11 +601,13 @@ async def test_log_food_turn_unaffected_by_query_history_voiced_addition(
         make_user, db, monkeypatch):
     """Pin that adding query_history to _VOICED_RESULT_TOOLS does NOT change
     behavior on a pure log_food turn. The logging branch is reached first
-    (has_logging=True), so the voiced-result check is never consulted."""
+    (has_logging=True) and is voiced by the single-source voice_log read —
+    the voiced-result check and the legacy follow-up are never consulted."""
     import core.conversation as C
+    import core.log_voice as LV
 
     user = await make_user(telegram_id="t-logfood-unaffected")
-    calls = {"follow_up": 0}
+    calls = {"follow_up": 0, "voice": 0}
 
     async def _fake_chat(messages, system, tools=True, max_tokens=4096, model=None,
                          stream_handler=None):
@@ -627,9 +629,15 @@ async def test_log_food_turn_unaffected_by_query_history_voiced_addition(
     async def _fake_execute(tool_calls, user, log, db, source_type, **_kw):
         return {"log_food": "Logged banana: 105 cal. DAY TOTAL: 1205 cal."}
 
+    async def _fake_voice_chat(messages, system, tools=False, max_tokens=220,
+                               model=None, **kwargs):
+        calls["voice"] += 1
+        return {"text": "Banana logged, 105 cal."}
+
     monkeypatch.setattr(C, "chat", _fake_chat)
     monkeypatch.setattr(C, "chat_follow_up", _fake_follow_up)
     monkeypatch.setattr(C, "execute_tool_calls", _fake_execute)
+    monkeypatch.setattr(LV, "chat", _fake_voice_chat)
 
     await C.run_turn(
         user, db,
@@ -638,8 +646,11 @@ async def test_log_food_turn_unaffected_by_query_history_voiced_addition(
         in_onboarding=False, was_onboarding=False,
     )
 
-    # Logging branch already forces the follow-up — same as before the fix.
-    assert calls["follow_up"] == 1
+    # Logging branch voices via the single-source voice_log — the legacy
+    # follow-up (and the voiced-result path) stay untouched, same as before
+    # the query_history extension.
+    assert calls["voice"] == 1
+    assert calls["follow_up"] == 0
 
 
 # ── native-card tools: the actionable close must survive (iOS teaser bug) ─────

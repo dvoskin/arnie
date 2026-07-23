@@ -39,24 +39,30 @@ from db import models  # noqa: E402,F401  (registers tables)
 
 
 @pytest.fixture(autouse=True)
-def _hermetic_voice_log(request, monkeypatch):
-    """Keep the default suite hermetic on KEYED machines too. log_voice binds
-    `chat` at import (core/log_voice.py), so fixtures that patch conversation's
-    chat never reach it — with ANTHROPIC_API_KEY set, voice_log was silently
-    making live paid calls inside 'hermetic' tests (ironclad eval 2026-07-23).
-    Block it by default; behavioral-marked tests keep the live path, and any
-    test that wants a scripted voice patches core.log_voice.chat itself (a
-    test-level monkeypatch overrides this autouse one)."""
+def _hermetic_llm_bindings(request, monkeypatch):
+    """Keep the default suite hermetic on KEYED machines too. log_voice and
+    food_turn bind `chat` at import (core/log_voice.py, core/food_turn.py), so
+    fixtures that patch conversation's chat never reach them — with
+    ANTHROPIC_API_KEY set, voice_log and the structured-logger pass were
+    silently making live paid calls inside 'hermetic' tests (ironclad eval
+    2026-07-23). Block both by default; behavioral-marked tests keep the live
+    path, and any test that wants a scripted voice/logger patches
+    core.log_voice.chat / core.food_turn.chat itself (a test-level monkeypatch
+    overrides this autouse one). A blocked food_turn pass returns None by
+    design (run() never raises), so gated turns fall to the legacy path —
+    identical to a keyless run."""
     if request.node.get_closest_marker("behavioral"):
         yield
         return
+    import core.food_turn as _FT
     import core.log_voice as _LV
 
     async def _blocked_live_chat(*a, **k):
-        raise RuntimeError("hermetic suite: live voice_log chat call blocked "
-                           "(patch core.log_voice.chat in your test)")
+        raise RuntimeError("hermetic suite: live chat call blocked (patch "
+                           "core.log_voice.chat / core.food_turn.chat in your test)")
 
     monkeypatch.setattr(_LV, "chat", _blocked_live_chat)
+    monkeypatch.setattr(_FT, "chat", _blocked_live_chat)
     yield
 
 

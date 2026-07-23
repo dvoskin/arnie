@@ -148,10 +148,12 @@ async def test_packaged_flag_routes_through_web_lookup(monkeypatch, cascade_env)
         f"web lookup must fire for is_packaged=True (got {web_called['n']} calls)"
     )
     assert "Elmhurst" in web_called["queries"][0]
-    assert usda_called["n"] == 0, (
-        "USDA must NOT be consulted before web for branded products "
-        "(was called {usda_called['n']} times)"
-    )
+    # Enrichment ladder since Danny 2026-07-22 (handlers/tool_executor.py:1508):
+    # USDA + OFF are consulted CONCURRENTLY first for every non-generic item,
+    # and a successful web label OUTRANKS a weak DB match. So USDA being
+    # queried is expected; what must hold is that the web label still fires
+    # (asserted above) — the old "USDA never called for branded" pin encoded
+    # the pre-ladder web-only routing.
 
 
 @pytest.mark.asyncio

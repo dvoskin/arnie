@@ -119,20 +119,22 @@ class (LEAK / ROLL-UP / DUPES).
 
 | # | Gap | Class | Severity | Action |
 |---|-----|-------|----------|--------|
-| 1 | `voice_log` live-called the paid API inside the hermetic suite on keyed machines | test infra | HIGH | **FIXED** — conftest autouse guard |
-| 2 | Discipline sim add-cue contract contradicts RECONCILE-BEFORE-LOG; prove-regression INCOMPLETE | stale sim | HIGH | rewrite add-cue expectations to the fold contract |
-| 3 | 6 tests pin the dead `chat_follow_up` pure-food contract | stale tests | MED | rewrite against voice_log/structured-say |
-| 4 | 7 tests pin pre-revert prompt sentences | stale tests | MED | re-pin to current wording; human check on the dropped "never guess an id" sentence |
-| 5 | 1 test pins pre-`58847b5` USDA override policy | stale test | LOW | update the forward-path assert |
+| 1 | `voice_log` AND the structured-logger pass live-called the paid API inside the hermetic suite on keyed machines (`log_voice.py:27`, `food_turn.py:37` bind `chat` at import) | test infra | HIGH | **FIXED** — conftest autouse guard blocks both for non-behavioral tests |
+| 2 | Discipline sim add-cue contract contradicts RECONCILE-BEFORE-LOG; prove-regression INCOMPLETE | stale sim | HIGH | OPEN — rewrite add-cue expectations to the fold contract (same row, merged qty, summed macros) and redesign the gate-toggle proof around it |
+| 3 | 6 tests pinned dead contracts: 5 × the `chat_follow_up` pure-food path (replaced by single-source voice_log / structured say), 1 × pre-ladder web-only branded routing | stale tests | MED | **FIXED** — rewritten against voice_log (scripted `core.log_voice.chat`), follow-up asserted silent; phantom-rescue test now opts into `PHANTOM_RESCUE_ENABLED=true` and pins the escape hatch; cascade test pins "web fires and outranks", not "USDA never called" |
+| 4 | 7 tests pinned pre-revert prompt sentences | stale tests | MED | **FIXED** — re-pinned to the current (post-`017d436`) wording. Still for a human: the revert dropped the explicit "NEVER GUESS AN [#id] / do NOT retry with another guessed id" sentences; only id-distinctness discipline survives. If guessed-id corrections recur on the legacy path, restore the rule (note lives in the test docstring too) |
+| 5 | 1 test pinned pre-`58847b5` USDA override policy | stale test | LOW | **FIXED** — asserts the new policy (a "likely" match no longer overrides the logger's calories) |
 | 6 | The structured logger had no live behavioral net (existing evals target the legacy path) | coverage | HIGH | **CLOSED** — `scripts/ironclad_eval.py` (needs keyed run) |
 | 7 | No standing data-coherence check over prod rows | coverage | MED | **CLOSED** — `scripts/prod_coherence_scan.py` (needs prod run) |
-| 8 | Suite hermeticity depends on the key being ABSENT; nothing enforces it | process | LOW | run CI/pre-deploy suites with the key unset; the conftest guard covers the known leak |
+| 8 | Suite hermeticity depends on the key being ABSENT; nothing enforces it | process | LOW | conftest guard covers the two known leaks; still recommended: run CI/pre-deploy suites with the key unset (other modules — scribe, blurbs, orchestrator — also bind `chat` at import but are env-gated or unpatched-unreached today) |
 
 ## Verdict
 
-The product code paths evaluated hermetically are sound: 2223 tests green, all
-14 reds are contract drift in the nets, not defects in the stack. The two nets
-that would catch tomorrow's regressions (discipline sim, live matrix) need the
-sim contract update (#2) and one keyed run of the matrix to be trustworthy
-end-to-end. Ironclad = run Phase 3 and Phase 4 on the box that has the key and
-the prod DB; both are one command each.
+The product code paths evaluated hermetically are sound, and after this
+branch's test-debt cleanup the suite is fully green: **2237 passed, 0 failed**
+(was 2223/14 on `main`). All 14 reds were contract drift in the nets — none
+was a defect in the stack; each fix is annotated in-place with the commit or
+decision that changed the contract. Remaining to be ironclad: the discipline
+sim's add-cue contract rewrite (#2), one keyed run of the live matrix
+(Phase 3), and one prod run of the coherence scan (Phase 4) — the latter two
+are one command each on the box that has the key and the prod DB.
