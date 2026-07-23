@@ -127,14 +127,28 @@ async def get_workout_program(identity: str = Depends(current_identity)):
         user = await resolve_user(db, identity)
         program = await unified_active_program(db, user.id)
         if program:
-            # Rotation-derived "today" — the scalable default under any
-            # user-set override: last completed day (inferred from logged
-            # exercises) advances the rotation. Served here AND in the model's
-            # [TRAINING PROGRAM] context so the card and chat can't disagree.
+            # "Today" for the card, 4am-aware (Danny 2026-07-23): a finished day
+            # shows as COMPLETED until the logging-day rollover, then the
+            # rotation's next day takes over. A user-set today_override (set_
+            # program_day, stamped with the same logging-day date) wins — the
+            # chat context already honors it; the card must agree.
             try:
-                from core.program_rotation import infer_next_day, recent_entries_by_day
-                program["today_day"] = infer_next_day(
-                    program, await recent_entries_by_day(db, user.id))
+                from core.program_rotation import infer_today, recent_entries_by_day
+                from db.queries import _user_today
+                _today_iso = _user_today(
+                    getattr(user, "timezone", None) or "UTC").isoformat()
+                _day, _done = infer_today(
+                    program, await recent_entries_by_day(db, user.id), _today_iso)
+                _ov = (program.get("today_override") or {})
+                if _ov.get("date") == _today_iso and _ov.get("day"):
+                    _ov_day = None if _ov["day"] == "__rest__" else _ov["day"]
+                    # Completed only carries over if the override IS the day
+                    # the history shows finished (never "done" on a re-pin).
+                    _done = bool(_done and _ov_day and _day
+                                 and _ov_day.strip().lower() == _day.strip().lower())
+                    _day = _ov_day
+                program["today_day"] = _day
+                program["today_completed"] = _done
             except Exception as e:
                 logger.warning(f"today_day inference failed (user {user.id}): {e}")
     return {"program": program}

@@ -997,12 +997,20 @@ async def build_context(user: User, today_log: Optional[DailyLog], db,
                              else _ov["day"])
                 training_program_str += f"\nToday (user-set): {_ov_label}"
             try:
-                from core.program_rotation import infer_next_day, recent_entries_by_day
-                _next_day = infer_next_day(
-                    _prog, await recent_entries_by_day(db, user.id))
-                if _next_day:
+                from core.program_rotation import (infer_today, infer_next_day,
+                                                   recent_entries_by_day)
+                _hist = await recent_entries_by_day(db, user.id)
+                _tday, _tdone = infer_today(_prog, _hist, _ov_today or "")
+                if _tday and _tdone:
+                    # 4am-aware: a finished day stays "done today" until the
+                    # logging-day rollover, then the next day takes over —
+                    # matches the card (workout_api) exactly.
                     training_program_str += (
-                        f"\nNext up (rotation-derived from logged sessions): {_next_day}")
+                        f"\nToday: {_tday} — COMPLETED. Next up after rollover: "
+                        f"{infer_next_day(_prog, _hist)}")
+                elif _tday:
+                    training_program_str += (
+                        f"\nToday (rotation-derived from logged sessions): {_tday}")
             except Exception:
                 pass
     except Exception:

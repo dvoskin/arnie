@@ -88,6 +88,32 @@ def infer_next_day(program: dict,
     return days[0].get("name")
 
 
+def infer_today(program: dict, entries_by_day: list,
+                today_iso: str) -> tuple[Optional[str], bool]:
+    """(today's program day, completed) — the 4am-aware card/chat answer
+    (Danny 2026-07-23: 'my chest workout should've shown as completed for the
+    day till 4am, THEN switched').
+
+    entries_by_day is grouped by DailyLog.date, which already respects the
+    LOGGING_DAY_ROLLOVER_HOUR grace — so 'today' here IS the logging day:
+      • newest history day == today_iso and it matches a program day
+          → (that day, True): show the finished day as DONE until rollover.
+      • otherwise → (infer_next_day(...), False): the rotation's next day.
+    At 4am the logging day advances, the first branch stops matching, and the
+    card flips to the next split day by itself — no stored state."""
+    days = [d for d in (program.get("days") or []) if isinstance(d, dict)]
+    if days and entries_by_day:
+        newest_date, logged = entries_by_day[0]
+        if str(newest_date) == str(today_iso) and logged:
+            scored = [(d.get("name", ""), _day_matches(d, logged)) for d in days]
+            name, hits = max(scored, key=lambda t: t[1])
+            needed = 1 if len(next((d for d in days if d.get("name") == name),
+                                   {}).get("exercises", []) or []) <= 1 else 2
+            if hits >= needed:
+                return name, True
+    return infer_next_day(program, entries_by_day), False
+
+
 async def recent_entries_by_day(db, user_id: int, days: int = 14):
     """The user's recent training history for the rotation inference —
     [(iso_date, {normalized exercise names})], NEWEST FIRST. One indexed query."""
