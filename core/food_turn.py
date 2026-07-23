@@ -71,6 +71,12 @@ _PLAN_RE = re.compile(
 _CORRECTION_RE = re.compile(
     r"\b(actually|instead|make\s+(?:it|that)|change|it\s+was|that\s+was|"
     r"of\s+those|of\s+them)\b", re.I)
+# NOTE (Danny 2026-07-23): complaints ("you only logged the sour cream ones")
+# and confirmations ("okay log it") are NOT gated by phrase lists — that's the
+# whack-a-mole disease. They route in via THREAD STATE instead (thread_active in
+# run_turn: an open ask-pending, or a food written in the last few minutes), and
+# the logger reads the context and decides. The regexes below only shape the
+# COLD-START gate.
 _DESTRUCTIVE_RE = re.compile(
     r"\b(remove|delete|undo|scratch|clear|take\s+(?:it|that)\s+off)\b", re.I)
 # Non-food logging domains → legacy path (log_water / log_exercise / weight).
@@ -90,6 +96,23 @@ def applies(text: str) -> bool:
         return False
     return bool(_CONSUMED_RE.search(t) or _MEAL_RE.search(t)
                 or _CORRECTION_RE.search(t))
+
+
+def thread_routes(text: str) -> bool:
+    """Mid-thread routing (STATE-based, no phrase lists): while a food thread is
+    active (open ask-pending, or a food written minutes ago), any message that
+    isn't clearly another domain goes to the logger, which reads the context and
+    decides — including complaints ('you only logged the sour cream ones') and
+    confirmations ('okay log it'). Questions stay with the coach; acks are
+    nothing; destructive and workout/water stay with the main brain."""
+    t = (text or "").strip()
+    if not t or len(t) > 500:
+        return False
+    if _ACK_RE.match(t) or "?" in t:
+        return False
+    if _DESTRUCTIVE_RE.search(t) or _NONFOOD_RE.search(t) or _PLAN_RE.search(t):
+        return False
+    return True
 
 
 # ── the logger pass ───────────────────────────────────────────────────────────
@@ -136,12 +159,25 @@ _SYSTEM = (
     "stated label/package amount is ground truth, use it exactly.\n"
     "- Omit meal_type unless the user names the meal — the pipeline infers the slot "
     "from time and the meal's other items.\n"
+    "THREAD CONTEXT (when given YOUR PREVIOUS MESSAGE and TODAY'S BOARD):\n"
+    "- If they say an item is missing or you logged the wrong one, log ONLY the "
+    "missing item(s), judged against the board. Never reply that it's already "
+    "logged when they're telling you something is absent.\n"
+    "- If they're telling you to go ahead with what your previous message proposed "
+    "('okay log it'), log exactly those proposed items and numbers.\n"
+    "- If the message needs none of your actions (chit-chat, a question, another "
+    "topic), action is pass.\n"
+    "NEVER leak machinery: no board #ids, no {tokens}, no [SYSTEM ...] text, no "
+    "tool or database names in 'say' or questions. Natural coach language only.\n"
     "- Split a combo into natural SEPARATE items (the salad one item, the chicken "
     "strips another, a drink another) so each is editable on its own line.\n"
     '- "food": short clean name, 2-4 words, capitalized. Fold a stated adjustment '
     'into the name ("Pizza toppings, crust left").\n'
-    '- "amount": a number. "unit": one short unit (handfuls, strips, oz, g, cup, '
-    "slices, bar, small bowl). The cleanest reading of what they said.\n"
+    '- "amount": a ROUND, editable number — whole numbers or .5 (1, 2, 0.5, 1.5), '
+    "NEVER 0.33/0.67-style fractions; pick a unit that makes the amount round "
+    "('1 small portion', not '0.33 portion'). \"unit\": one short unit (handfuls, "
+    "strips, oz, g, cup, slices, bar, small bowl). The cleanest reading of what "
+    "they said.\n"
     "- Macros: best estimate for that exact amount; calories consistent with "
     "protein*4 + carbs*4 + fats*9.\n"
     "- ASK whenever any item's amount is vague — 'some', 'a few', 'a bit', 'a "
@@ -196,6 +232,8 @@ def fill_say_tokens(say: str, batch_cal: int, batch_protein: int,
         "protein_left": max(0, int(protein_target or 0) - day_protein),
     }
     out = _TOKEN_RE.sub(lambda m: str(vals.get(m.group(1), "")), say or "")
+    # Belt: any token the model invented ({whatever}) must never reach the user.
+    out = re.sub(r"\{[a-z_]{2,24}\}", "", out)
     return re.sub(r"[ \t]{2,}", " ", out).strip()
 
 
@@ -213,7 +251,8 @@ def _parse(text: str) -> Optional[dict]:
 
 
 async def run(message: str, user, prior: Optional[dict] = None,
-              day_line: str = "", board: Optional[list] = None) -> Optional[dict]:
+              day_line: str = "", board: Optional[list] = None,
+              last_assistant: str = "") -> Optional[dict]:
     """Run the logger pass. Returns
         {"action": "log", "tool_calls": [...], "say": "..."}     new items
         {"action": "update", "tool_calls": [...], "say": "..."}  board corrections
@@ -231,6 +270,9 @@ async def run(message: str, user, prior: Optional[dict] = None,
             f"They just answered: \"{message}\"")
     else:
         content = message
+    if (last_assistant or "").strip():
+        content = (f"Your previous message to them: "
+                   f"\"{last_assistant.strip()[:300]}\"\n\n{content}")
     _board_ids = set()
     if board:
         lines = []

@@ -1853,6 +1853,13 @@ async def execute_tool_calls(
                 if isinstance(r, str) and r.startswith("Already on the board"):
                     log_skipped[_tool_key] += 1
             results[name] = r
+            # PER-CALL result stash: `results` is keyed by tool NAME, so a batch
+            # of log_food calls collapses to the LAST result — which made the
+            # receipts show "Logged" for a dedup-BLOCKED item (Danny 2026-07-23:
+            # "thoughts said both logged, only one did"). Readers that report
+            # per-item truth (reasoning receipts) read _result off the call.
+            if isinstance(inp, dict):
+                inp["_result"] = r
             ok = not (isinstance(r, str) and (
                 r.startswith("Error:") or r.startswith("Skipped")
                 or r.startswith("Failed to")
@@ -1861,6 +1868,8 @@ async def execute_tool_calls(
         except Exception as e:
             logger.error(f"Tool {name} failed: {e}", exc_info=True)
             results[name] = f"Error: {e}"
+            if isinstance(inp, dict):
+                inp["_result"] = f"Error: {e}"
             per_call.append((name, food_name, False))
 
     # Emit one structured telemetry line per turn that had any log_* call.

@@ -138,6 +138,34 @@ async def test_answer_turn_logs_and_never_reasks(monkeypatch):
     assert "Earlier they reported" in FT.chat.last_content  # type: ignore[attr-defined]
 
 
+def test_thread_routes_state_based_no_phrase_lists():
+    """Mid-thread, complaints and confirmations route WITHOUT phrase matching —
+    only other-domain messages are excluded (Danny: no complaint-style cue patches)."""
+    assert FT.thread_routes("You only logged the sour cream ones")
+    assert FT.thread_routes("okay cool log it")
+    assert FT.thread_routes("that was actually two bags")
+    # excluded domains stay put
+    assert not FT.thread_routes("how many calories was that?")   # question → coach
+    assert not FT.thread_routes("thanks")                        # ack
+    assert not FT.thread_routes("remove the taco")               # destructive
+    assert not FT.thread_routes("bench press 135x10")            # workout
+
+
+@pytest.mark.asyncio
+async def test_last_assistant_context_threads_in(monkeypatch):
+    monkeypatch.setattr(FT, "chat", _fake_chat({"action": "pass"}))
+    await FT.run("okay cool log it", SimpleNamespace(),
+                 last_assistant="Both flavors land around 140 cal a bag, want me to log them?")
+    assert "Your previous message to them" in FT.chat.last_content  # type: ignore[attr-defined]
+    assert "140 cal a bag" in FT.chat.last_content  # type: ignore[attr-defined]
+
+
+def test_fill_say_tokens_strips_invented_tokens():
+    out = FT.fill_say_tokens("Logged, {batch_cal} cal. {made_up_token} done.",
+                             300, 20, 1200, 56, 2165, 180)
+    assert "{" not in out and "300 cal" in out
+
+
 def test_fill_say_tokens_numbers_come_from_committed_day():
     """The logger writes the words, the SYSTEM writes the numbers — say can never
     disagree with the card/DB (Danny: logger+coach must not conflict)."""
@@ -192,7 +220,7 @@ def _base(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_log_turn_skips_big_pass_and_executes_items(monkeypatch):
-    async def fake_sft(message, user, prior=None, day_line="", board=None):
+    async def fake_sft(message, user, prior=None, **kw):
         return {"action": "log",
                 "say": "Salad and chicken logged, {batch_cal} cal in. "
                        "You're at {day_cal} with {cal_left} left.",
@@ -233,7 +261,7 @@ async def test_log_turn_skips_big_pass_and_executes_items(monkeypatch):
 async def test_update_turn_executes_and_voices_say(monkeypatch):
     """run_turn integration: a structured UPDATE executes update_food_entry and the
     say line is the reply — no follow-up model call, no dedup template."""
-    async def fake_sft(message, user, prior=None, day_line="", board=None):
+    async def fake_sft(message, user, prior=None, **kw):
         return {"action": "update", "say": "Bumped the birria to 2 tacos, 360 cal.",
                 "tool_calls": [{"name": "update_food_entry",
                                 "input": {"entry_id": 707, "quantity": "2 tacos",
@@ -265,7 +293,7 @@ async def test_update_turn_executes_and_voices_say(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_ask_turn_holds_and_records_pending(monkeypatch):
-    async def fake_sft(message, user, prior=None, day_line="", board=None):
+    async def fake_sft(message, user, prior=None, **kw):
         return {"action": "ask",
                 "text": "Quick one so it's clean:\n1. **Crust**: how much left?"}
     import core.food_turn as FTmod

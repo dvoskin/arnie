@@ -100,6 +100,8 @@ def _sanitize_bubble(s: str) -> str:
     # (core/conversation._parse_did): names the tools the model claims it called;
     # read by the phantom/lookup rescues, then stripped. Tolerant of case/spacing.
     s = _re_platform.sub(r"\s*\[\[\s*DID\s*:[^\]]*\]\]\s*", " ", s, flags=_re_platform.I)
+    # ... and any unfilled {say_token} — internal machinery never reaches the user.
+    s = _re_platform.sub(r"\{[a-z_]{2,24}\}", "", s)
     # Strip any INTERNAL system-nudge the model echoed — "[SYSTEM HEALTH CHECK —
     # not the user] ...", "[SYSTEM QUALITY CHECK ...]". These are rescue/guard
     # directives injected into the model's CONTEXT, NEVER for the user (Danny

@@ -89,3 +89,23 @@ def test_pure_chat_turn_gets_context_receipt_and_cap():
     many = [{"name": "log_food", "input": {"food_name": f"f{i}"}} for i in range(12)]
     r = build_reasoning(many, {}, None, None)
     assert len(r["steps"]) == 8
+
+
+def test_per_call_result_truth_blocked_item_never_says_logged():
+    """Danny 2026-07-23 (IMG_8601): the receipts said BOTH Quest bags logged when
+    one was dedup-blocked — tool_results is keyed by tool NAME so a batch shares
+    the LAST result. The executor now stashes each call's own result on the input
+    (_result); the receipt must read it and render the blocked item honestly."""
+    r = build_reasoning(
+        [{"name": "log_food", "input": {
+            "food_name": "Quest Chips Sweet Spicy",
+            "_result": "Already on the board: Quest Chips Sweet Spicy (1 bag, 140 cal)"}},
+         {"name": "log_food", "input": {
+            "food_name": "Quest Chips Sour Cream & Onion", "calories": 140,
+            "_result": "Logged: Quest Chips Sour Cream & Onion, 140 cal"}}],
+        {"log_food": "Logged: Quest Chips Sour Cream & Onion, 140 cal"},  # collapsed!
+        None, None)
+    labels = [s["label"] for s in r["steps"]]
+    assert any("Duplicate check" in l and "Sweet Spicy" in l for l in labels), labels
+    assert not any(l.startswith("Logged Quest Chips Sweet Spicy") for l in labels), labels
+    assert any(l.startswith("Logged Quest Chips Sour Cream") for l in labels), labels

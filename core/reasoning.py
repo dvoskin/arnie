@@ -164,7 +164,11 @@ def build_reasoning(tool_calls: list, tool_results: dict,
     for tc in tool_calls or []:
         name = tc.get("name") or ""
         inp = tc.get("input") or {}
-        result = str((tool_results or {}).get(name, ""))
+        # Prefer THIS call's own result (stashed by the executor) — the shared
+        # dict is keyed by tool name, so a multi-item batch collapses to the last
+        # result and a dedup-BLOCKED item would show as "Logged" (2026-07-23).
+        result = str(inp.get("_result") if inp.get("_result") is not None
+                     else (tool_results or {}).get(name, ""))
         if name == "log_food":
             if _detailed_food:
                 steps.extend(_food_detailed(inp, result))

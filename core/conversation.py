@@ -561,7 +561,8 @@ async def run_turn(
     if not in_onboarding and _source != "photo":
         try:
             from core.food_turn import (structured_food_enabled, ASK_KIND,
-                                        applies as _sft_applies, run as _sft_run)
+                                        applies as _sft_applies, run as _sft_run,
+                                        thread_routes as _sft_thread_routes)
             if structured_food_enabled():
                 _sft_prior_pq = None
                 _sft_prior = None
@@ -572,7 +573,28 @@ async def run_turn(
                         _sft_prior = json.loads(_sft_prior_pq.payload_json or "{}")
                 except Exception:
                     _sft_prior_pq, _sft_prior = None, None
-                if _sft_prior is not None or _sft_applies(_user_text or ""):
+                # THREAD STATE routing (no phrase lists): a food thread is active
+                # when a food was written in the last few minutes — complaints
+                # ("you only logged the sour cream ones") and confirmations
+                # ("okay log it") then go to the logger, which reads the context
+                # and decides (pass is its safety valve).
+                _thread_active = False
+                try:
+                    from datetime import datetime as _dt_t, timedelta as _td_t
+                    _latest = max((getattr(_fe, "timestamp", None)
+                                   for _fe in (getattr(today_log, "food_entries", None) or [])
+                                   if getattr(_fe, "timestamp", None) is not None),
+                                  default=None)
+                    if _latest is not None:
+                        _thread_active = (_dt_t.utcnow() - _latest) < _td_t(minutes=15)
+                except Exception:
+                    _thread_active = False
+                _last_assistant = next(
+                    (m.get("content", "") for m in reversed(messages)
+                     if m.get("role") == "assistant" and isinstance(m.get("content"), str)),
+                    "")
+                if (_sft_prior is not None or _sft_applies(_user_text or "")
+                        or (_thread_active and _sft_thread_routes(_user_text or ""))):
                     # Day context so the logger's own coach line ("say") can state
                     # where the day stands — real numbers we hand it, one model call.
                     _dl = ""
@@ -600,7 +622,8 @@ async def run_turn(
                     except Exception:
                         _board = []
                     _sft = await _sft_run(_user_text or "", user, prior=_sft_prior,
-                                          day_line=_dl, board=_board)
+                                          day_line=_dl, board=_board,
+                                          last_assistant=_last_assistant)
                     if _sft is not None:
                         # Day snapshot BEFORE the writes — the say tokens are filled
                         # from the committed delta after enrichment runs.
