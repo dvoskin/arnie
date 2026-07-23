@@ -131,7 +131,8 @@ _SYSTEM = (
     '4. CORRECTING something already on today\'s board ("I actually had 2 birria", '
     '"I had 2 of those", "make it 6 oz") -> {"action":"update","updates":[{'
     '"entry_id":123,"amount":2,"unit":"taco","calories":360,"protein":30,'
-    '"carbs":26,"fats":18}],"say":"Bumped the birria to 2 tacos, 360 cal now."}\n'
+    '"carbs":26,"fats":18}],"say":"Bumped the birria to 2 tacos, {batch_cal} cal '
+    'now."}\n'
     "RULES:\n"
     "- update: match against TODAY'S BOARD below by name or reference ('those' = "
     "the most recent matching entry). entry_id MUST come from the board. When only "
@@ -223,12 +224,22 @@ _TOKEN_RE = re.compile(
 
 
 def enforce_say_contract(say: str, tool_calls: list) -> str:
-    """ENFORCE 'the system writes the numbers' — don't just request it. If the
-    model wrote ANY digit outside a {token} (it claimed 647 cal while its own
-    card showed 343 — Danny IMG_8610), its say is rejected and replaced with a
-    deterministic tokenized line naming the items. The contract is physics."""
+    """ENFORCE 'the system writes the numbers' — don't just request it. The model
+    claimed 647 cal while its own card showed 343 (Danny IMG_8610). Digits in the
+    say are allowed ONLY when they're quantities the system itself wrote (the
+    amounts in the tool inputs — '2 tacos', '4 oz'); any other number (a calorie
+    or macro claim) must come from a {token}, or the say is rejected and replaced
+    with a deterministic tokenized line naming the items. The contract is physics."""
     raw = say or ""
-    if not re.search(r"\d", re.sub(r"\{[a-z_]{2,24}\}", "", raw)):
+    stripped = re.sub(r"\{[a-z_]{2,24}\}", "", raw)
+    allowed = set()
+    for tc in (tool_calls or []):
+        inp = tc.get("input") or {}
+        for m in re.finditer(r"\d+(?:\.\d+)?", str(inp.get("quantity") or "")):
+            allowed.add(m.group(0).rstrip("0").rstrip(".") or "0")
+    said = {m.group(0).rstrip("0").rstrip(".") or "0"
+            for m in re.finditer(r"\d+(?:\.\d+)?", stripped)}
+    if said <= allowed:
         return raw
     names = [((tc.get("input") or {}).get("food_name") or "").strip()
              for tc in (tool_calls or [])]

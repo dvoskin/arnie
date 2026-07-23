@@ -279,7 +279,7 @@ async def test_update_turn_executes_and_voices_say(monkeypatch):
     """run_turn integration: a structured UPDATE executes update_food_entry and the
     say line is the reply — no follow-up model call, no dedup template."""
     async def fake_sft(message, user, prior=None, **kw):
-        return {"action": "update", "say": "Bumped the birria to 2 tacos, 360 cal.",
+        return {"action": "update", "say": "Bumped the birria to 2 tacos, {batch_cal} cal.",
                 "tool_calls": [{"name": "update_food_entry",
                                 "input": {"entry_id": 707, "quantity": "2 tacos",
                                           "calories": 360}}]}
