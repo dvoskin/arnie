@@ -51,6 +51,19 @@ def _logger_model() -> str:
     return os.getenv("FOOD_LOGGER_MODEL", "claude-sonnet-5") or "claude-sonnet-5"
 
 
+# Ask-threshold by accuracy mode (Danny 2026-07-23): ONE dial — ask only when an
+# unknown detail could swing the item by more than this many calories. The
+# threshold IS the strictness gradient: a "some dressing" (~150 cal swing) asks
+# for strict, not for quick; a "half a platter" (~400) asks for everyone.
+_THRESH = {"quick": 300, "moderate": 200, "strict": 100}
+
+
+def _mode(user) -> str:
+    prefs = getattr(user, "preferences", None)
+    m = (getattr(prefs, "food_logging_mode", None) or "moderate").lower()
+    return m if m in _THRESH else "moderate"
+
+
 # ── pre-gate: is this plausibly a food report? ────────────────────────────────
 # Cheap and conservative. Anything missed just takes the legacy path — the gate
 # exists to avoid an extra model call on obvious non-food turns, not to be right.
@@ -185,13 +198,14 @@ _SYSTEM = (
     "they said.\n"
     "- Macros: best estimate for that exact amount; calories consistent with "
     "protein*4 + carbs*4 + fats*9.\n"
-    "- ASK whenever any item's amount is vague — 'some', 'a few', 'a bit', 'a "
-    "splash', a container portion with no size ('half a salad', 'a bowl') — or a "
-    "calorie-dense add-on (dressing, sauce, oil, butter, cheese, nuts) has no "
-    "amount, or a BRANDED product's flavor/variant meaningfully changes its macros "
-    "and isn't stated ('2 bags of Quest chips' -> which flavor; Core Power vs Core "
-    "Power Elite). A clear count or mass of a plain food ('2 slices', '6 oz', 'a "
-    "banana') never needs asking. Ask ONCE, at most 3 points, bundling every "
+    "- ASK only when an unknown detail could swing an item by MORE than {thresh} "
+    "cal for this user (accuracy mode: {mode}). Swing sources: a vague amount "
+    "('some', 'a few', a container portion with no size like 'half a salad'), a "
+    "calorie-dense add-on (dressing, sauce, oil, butter, cheese, nuts) with no "
+    "amount, or a branded flavor/variant with meaningfully different macros. "
+    "Under {thresh} cal of swing: do NOT ask — estimate HIGH at venue-real "
+    "portions and log. A clear count or mass of a plain food ('2 slices', '6 oz', "
+    "'a banana') never needs asking. Ask ONCE, at most 3 points, bundling every "
     "unclear item; log nothing until answered. Never ask about something clearly "
     "stated, or about water, diet soda, or black coffee.\n"
     "- When PRIOR CONTEXT shows you already asked and they answered: log EVERYTHING "
@@ -325,8 +339,11 @@ async def run(message: str, user, prior: Optional[dict] = None,
             content = f"{content}\n\nTODAY'S BOARD (already logged):\n" + "\n".join(lines)
     if day_line:
         content = f"{content}\n\nDay context for the 'say' line: {day_line}"
+    mode = _mode(user)
+    sys = (_SYSTEM.replace("{thresh}", str(_THRESH[mode]))
+                  .replace("{mode}", mode))
     try:
-        res = await chat([{"role": "user", "content": content}], _SYSTEM,
+        res = await chat([{"role": "user", "content": content}], sys,
                          tools=False, max_tokens=700, model=_logger_model())
     except Exception as e:
         logger.warning(f"food_turn logger pass failed: {e}")

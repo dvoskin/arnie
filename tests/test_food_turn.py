@@ -337,3 +337,23 @@ async def test_ask_turn_holds_and_records_pending(monkeypatch):
     assert "**Crust**" in reply, f"the formatted question should BE the reply; got {reply!r}"
     assert not logged, "an ask turn must log NOTHING"
     assert recorded.get("kind") == FT.ASK_KIND
+
+
+@pytest.mark.asyncio
+async def test_ask_threshold_scales_with_mode(monkeypatch):
+    """Danny 2026-07-23: quick asks only >300 cal swings, moderate >200, strict >100
+    — the threshold IS the strictness gradient, resolved into the system prompt."""
+    monkeypatch.setattr(FT, "chat", _fake_chat({"action": "pass"}))
+    seen = {}
+    _orig = FT.chat
+    async def spy(messages, system, **kw):
+        seen["system"] = system
+        return await _orig(messages, system, **kw)
+    monkeypatch.setattr(FT, "chat", spy)
+    def U(m): return SimpleNamespace(preferences=SimpleNamespace(food_logging_mode=m))
+    await FT.run("had some chips", U("quick"))
+    assert "300 cal" in seen["system"] and "quick" in seen["system"]
+    await FT.run("had some chips", U("strict"))
+    assert "100 cal" in seen["system"] and "strict" in seen["system"]
+    await FT.run("had some chips", SimpleNamespace())   # no prefs → moderate
+    assert "200 cal" in seen["system"]
