@@ -81,13 +81,18 @@ async def test_marker_without_tool_is_force_logged(monkeypatch):
     async def fake_reload(db, uid): return _user()
     monkeypatch.setattr(Q, "reload_user", fake_reload)
 
+    interim, started = [], []
+    async def _ci(t): interim.append(t)
+    async def _cs(n): started.append(n)
     turn = await run_turn(_user(), _DB(), [{"role": "user", "content": "had 2 eggs"}],
                           "SYS", "imessage", in_onboarding=False, was_onboarding=False,
-                          today_log=_today_log())
+                          today_log=_today_log(), on_interim=_ci, on_tool_start=_cs)
 
     assert "eggs" in logged, f"marker phantom NOT force-logged; executor got {logged}"
     # And the marker never reaches the user.
     assert "[[LOGGED]]" not in "|||".join(turn.response.bubbles if turn.response else [])
+    # Universal announce (not lookup-only): the write rescue announced its round-trip.
+    assert interim, "write rescue should announce its round-trip (universal helper)"
 
 
 # Every log-type: the model CLAIMS a write (marker) but fires no tool → the rescue

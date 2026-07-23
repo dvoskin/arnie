@@ -1634,6 +1634,25 @@ async def run_turn(
     # a goodnight (the "Logged: Ground turkey" after-goodnight regression).
     _signing_off = _user_is_signing_off(_user_text if isinstance(_user_text, str) else "")
 
+    async def _announce_work(intent_line: str, tool_names: list):
+        """UNIVERSAL: before ANY operation that adds a round-trip and makes the user
+        wait — a slow tool, or a rescue that re-runs the model to get the best/most
+        accurate info — give immediate feedback: one short in-voice line conveying
+        WHAT Arnie is doing and WHY, plus morph the live thinking indicator to those
+        tools. Not tied to any single tool or rescue (Danny 2026-07-23). Best-effort;
+        never blocks the work it precedes."""
+        try:
+            if intent_line:
+                if _streamer and on_text_bubble:
+                    await on_text_bubble(intent_line)
+                    _streamer.flushed_count += 1
+                elif on_interim:
+                    await on_interim(intent_line)
+            if on_tool_start and tool_names:
+                await on_tool_start(tool_names)
+        except Exception as _e:
+            logger.warning(f"announce_work failed for {_tag}: {_e}")
+
     # ── Phantom-claim RESCUE: execute the log, don't apologize ──────────────
     # The old text-only repair could at best own the miss and ask the user to
     # re-send — and when it produced nothing, the false "logged" claim SHIPPED
@@ -1711,6 +1730,11 @@ async def run_turn(
                     "or a question), call NO tool. Do NOT re-log items already "
                     "on today's board from a SEPARATE earlier meal."
                 )
+            # Announce the round-trip so the re-run isn't dead air (universal).
+            await _announce_work(
+                "Let me make sure that's logged.",
+                list(_did_tools & _LOGGING_TOOLS)
+                or (["log_exercise"] if _ex_phantom else ["log_food"]))
             _rescue = await chat(
                 messages + [
                     {"role": "assistant", "content": response_text},
@@ -1808,21 +1832,11 @@ async def run_turn(
                 _lookup_gap = False
     if _lookup_gap:
         try:
-            # Announce it: the rescue is a full search + re-voice round-trip, so
-            # give immediate feedback instead of dead air (Danny 2026-07-23) — an
-            # in-voice heads-up bubble + morph the thinking indicator to the lookup
-            # ("Weighing your macros"). Best-effort; never blocks the rescue.
-            try:
-                _lu_headsup = tool_heads_up("search_food_database")
-                if _streamer and on_text_bubble:
-                    await on_text_bubble(_lu_headsup)
-                    _streamer.flushed_count += 1
-                elif on_interim:
-                    await on_interim(_lu_headsup)
-                if on_tool_start:
-                    await on_tool_start(["search_food_database"])
-            except Exception as _e:
-                logger.warning(f"lookup-rescue heads-up failed for {_tag}: {_e}")
+            # Announce the search + re-voice round-trip (universal helper) —
+            # intention: getting the accurate numbers instead of an estimate.
+            await _announce_work(
+                "Let me pull the exact numbers so this is accurate.",
+                ["search_food_database"])
             _lu_nudge = (
                 "[SYSTEM HEALTH CHECK — not the user] The user asked about a SPECIFIC "
                 "product's nutrition and you gave your OWN estimate without looking it "
