@@ -30,7 +30,10 @@ def test_mass_stated_salt_record_drops_sodium():
     }
     a = analyze("corn", "200g", 90, 3, 19, 1, usda_candidate=cand)
     assert a.sodium is None
-    assert a.calories == 100          # forward path still applied (50 × 2)
+    # Accuracy policy since 58847b5: a merely-"likely" USDA match no longer
+    # overrides the logger's macros (only near-identical name matches do), so
+    # the LLM's 90 stands rather than the record's forward-computed 50 × 2.
+    assert a.calories == 90
 
 
 # ── 1b. Estimate path: garbage multiplier lands in the 4-5g band ─────────────

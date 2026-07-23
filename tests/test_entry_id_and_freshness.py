@@ -131,7 +131,16 @@ def test_wee_hours_context_says_sleep_not_next_meal():
 
 
 def test_prompt_ships_id_discipline():
+    """The id discipline that ships today (post July-7 scale-back revert,
+    017d436): ids come from TODAY'S board, corrections go through
+    update_food_entry with a [#id], and N corrections in one turn use N
+    DISTINCT ids. NOTE: the revert dropped the explicit 'NEVER GUESS AN
+    [#id] / do NOT retry with another guessed id' sentences — if guessed-id
+    corrections ever recur on the legacy path, restore that rule in the
+    prompt (and re-pin it here), per audits/IRONCLAD_EVAL_2026-07-23.md."""
     from core.prompts import build_arnie_system
     s = " ".join(build_arnie_system(platform="ios").split())
-    assert "NEVER GUESS AN [#id]" in s
-    assert "do NOT retry with another guessed id" in s
+    assert "update_food_entry() with [#id]" in s
+    assert "entry_id values MUST be DISTINCT" in s
+    assert "NEVER pass the same [#id] twice" in s
+    assert "map each named item to its specific [#id]" in s

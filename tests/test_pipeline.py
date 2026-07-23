@@ -145,9 +145,11 @@ async def test_plain_chat_turn_sends_bubbles(pipeline_env):
 
 
 @pytest.mark.asyncio
-async def test_food_log_runs_tool_once_and_coaches(pipeline_env):
-    """Logging a food: tool executes, and the reply COACHES (follow-up), not a bare
-    template. This is the coach-unmute behavior — must survive the pipeline merge."""
+async def test_food_log_runs_tool_once_and_coaches(pipeline_env, monkeypatch):
+    """Logging a food: tool executes, and the reply COACHES — voiced by the
+    single-source voice_log read over the committed facts, NEVER the legacy
+    follow-up (core/conversation.py fast-log-voice: the follow-up double-emits,
+    so a pure-food turn must not touch it) and not the bare template."""
     env = pipeline_env
     await _seed_user(env["Maker"])
     env["set_llm"](
@@ -155,13 +157,22 @@ async def test_food_log_runs_tool_once_and_coaches(pipeline_env):
         tool_calls=[{"name": "log_food",
                      "input": {"food_name": "chicken bowl", "calories": 650,
                                "protein": 45, "carbs": 60, "fats": 18}}],
-        follow_up_text="Logged.|||Solid protein.|||Keep dinner lean.",
+        follow_up_text="MUST-NOT-APPEAR",
     )
+    import core.log_voice as LV
+
+    async def _fake_voice_chat(messages, system, tools=False, max_tokens=220,
+                               model=None, **kwargs):
+        return {"text": "Chicken bowl in, 650 cal and 45g protein.|||Keep dinner lean."}
+
+    monkeypatch.setattr(LV, "chat", _fake_voice_chat)
     await env["H"].run_imessage_pipeline("+15550001111", "iMessage;-;+15550001111",
                                          "had a chicken bowl", message_guid="g2")
-    # coaching follow-up was used (not just the deterministic template)
-    assert env["calls"]["follow_up"] == 1
-    assert len(env["sent"]) >= 1
+    # voice_log's coach line shipped; the legacy follow-up stayed silent
+    assert env["calls"]["follow_up"] == 0
+    joined = " ".join(env["sent"])
+    assert "Chicken bowl in, 650 cal" in joined
+    assert "MUST-NOT-APPEAR" not in joined
     # the food actually persisted exactly once
     from sqlalchemy import select, func
     from db.models import FoodEntry
@@ -809,8 +820,9 @@ async def test_tg_plain_chat_turn_sends_bubbles(tg_pipeline_env):
 
 
 @pytest.mark.asyncio
-async def test_tg_food_log_coaches_not_template(tg_pipeline_env):
-    """Telegram: logging food uses the coach-unmute follow-up, not a canned template."""
+async def test_tg_food_log_coaches_not_template(tg_pipeline_env, monkeypatch):
+    """Telegram: a food log is voiced by the single-source voice_log read, not
+    the legacy follow-up and not a canned template."""
     env = tg_pipeline_env
     await _seed_tg_user(env["Maker"])
     env["set_llm"](
@@ -818,14 +830,23 @@ async def test_tg_food_log_coaches_not_template(tg_pipeline_env):
         tool_calls=[{"name": "log_food",
                      "input": {"food_name": "salmon", "calories": 400,
                                "protein": 40, "carbs": 0, "fats": 18}}],
-        follow_up_text="Logged.|||Great protein source.|||Stay under 500 cal for dinner.",
+        follow_up_text="MUST-NOT-APPEAR",
     )
+    import core.log_voice as LV
+
+    async def _fake_voice_chat(messages, system, tools=False, max_tokens=220,
+                               model=None, **kwargs):
+        return {"text": "Salmon logged, 400 cal.|||Stay under 500 for dinner."}
+
+    monkeypatch.setattr(LV, "chat", _fake_voice_chat)
     async with env["Maker"]() as db:
         await env["TH"]._run_pipeline(
             env["update"], env["context"], "had salmon for lunch", "text", db
         )
-    assert env["calls"]["follow_up"] == 1
-    assert len(env["sent"]) >= 1
+    assert env["calls"]["follow_up"] == 0
+    joined = " ".join(env["sent"])
+    assert "Salmon logged, 400 cal" in joined
+    assert "MUST-NOT-APPEAR" not in joined
     from sqlalchemy import select, func
     from db.models import FoodEntry
     async with env["Maker"]() as db:
@@ -953,7 +974,13 @@ async def test_tg_skip_button_routes_through_run_turn_not_canned_card(tg_pipelin
 # ─────────────────────────────────────────────────────────────────────────────
 
 async def test_phantom_log_claim_rescued_by_executed_tools(pipeline_env, monkeypatch):
+    """The forced-re-log rescue is STRIPPED by default since 2026-07-22
+    (PHANTOM_RESCUE_ENABLED=false — the authority inversion behind the
+    reliability flip-flop; turn_health now flags the claim instead). This test
+    opts back in and pins that the opt-in net still works end to end, so the
+    env flag stays a working escape hatch."""
     H, C, Maker = pipeline_env["H"], pipeline_env["C"], pipeline_env["Maker"]
+    monkeypatch.setenv("PHANTOM_RESCUE_ENABLED", "true")
     sent = pipeline_env["sent"]
     addr = "+15550009898"
     im_id = await _seed_user(Maker, addr)

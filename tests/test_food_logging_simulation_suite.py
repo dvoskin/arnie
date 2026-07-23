@@ -1604,20 +1604,21 @@ def test_prompt_has_logging_fidelity_section():
     assert "FOOD NAME: use the user's words" in s
     assert "QUANTITY FIDELITY" in s
     assert "EVERY ITEM GETS ITS OWN log_food" in s
-    # invent-ban consolidated into the bullet + NON-NEGOTIABLE #3
-    assert "not an assumed garlic bread" in s
+    # invent-ban (re-worded by the July-7 scale-back revert, 017d436: the
+    # garlic-bread example is now a STOP bullet closing on this phrase)
+    assert "Only log what was named" in s
 
 
 @pytest.mark.parametrize("preserved_phrase", [
     "happy wolf chocolate chip kids bar",
     "royo bagel",
-    # Quantities are standardized units, never colloquial measures: the
-    # user's phrase converts to a standard measure, partial portions
-    # never round up to a whole item. ("baklava" → "30g" wraps across
-    # lines in source — verify the wrap-safe tail.)
-    '"half a caesar salad" → quantity="1.5 cups"',
+    # QUANTITY FIDELITY (July-7 revert wording): the user's stated nuance is
+    # PRESERVED alongside the concrete estimate ("half plate (~1.5 cups)",
+    # "~1/3 piece (~30g)") — partial portions never round up to a whole item.
+    # Both examples wrap across lines in source — pin the wrap-safe heads.
+    '"half a caesar salad" → quantity="half plate',
     "3 bites of tiramisu",
-    'baklava" → "30g',
+    'baklava" → "~1/3 piece',
 ])
 def test_prompt_names_fidelity_examples(preserved_phrase):
     """The fidelity rule must include concrete conversion examples so the
@@ -1635,8 +1636,9 @@ def test_prompt_bans_collapsing_distinct_items():
     '2 slices of pizza' — different macros, different items."""
     s = SYSTEM_PROMPT
     # The example wraps across lines in source — verify the key tokens.
+    # (July-7 revert wording: "= TWO log_food calls, NOT one".)
     assert "1 slice plain" in s and "pepperoni" in s
-    assert "TWO calls" in s
+    assert "TWO log_food calls, NOT one" in s
 
 
 def test_prompt_bans_inventing_items():
@@ -1644,9 +1646,10 @@ def test_prompt_bans_inventing_items():
     name. (Diet consolidated the verbose bullet into LOGGING FIDELITY + the
     non-negotiable 'no invented side'; the ban must still be explicit.)"""
     s = SYSTEM_PROMPT.lower()
-    assert "not an assumed garlic bread" in s          # LOGGING FIDELITY bullet — the
-    # explicit "only items the user named" ban survives the 2026-07-20 rollback that
-    # removed the NON_NEGOTIABLES "no invented side" phrasing.
+    assert "only log what was named" in s              # LOGGING FIDELITY bullet — the
+    # explicit "only items the user named" ban survives both the 2026-07-20 rollback
+    # (removed NON_NEGOTIABLES "no invented side") and the July-7 scale-back revert
+    # (re-worded the garlic-bread example into a STOP bullet ending on this phrase).
 
 
 # ════════════════════════════════════════════════════════════════════════════
