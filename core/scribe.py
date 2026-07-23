@@ -53,12 +53,13 @@ _Q_RE = re.compile(
 
 
 def scribe_enabled() -> bool:
-    # ON by default again (2026-07-21) now that partial-drop is DETERMINISTIC: the
-    # scribe extracts items+macros in parallel (Haiku, off the latency path) and a
-    # dropped item is logged DIRECTLY via enrichment — no Opus rescue call, no
-    # regenerate double-log. That was the fix for the latency + double that made
-    # Danny disable it. Kill switch stays: SCRIBE_ENABLED=false.
-    return os.getenv("SCRIBE_ENABLED", "true").lower() in ("true", "1", "yes")
+    # OFF by default (2026-07-23, Danny: "we never had a scribe before and it
+    # worked 200x better"). Food reports are owned by the STRUCTURED food turn
+    # (core/food_turn.py) — items are logged by construction, so the reconcile net
+    # is unnecessary there, and on a legacy turn it re-logged a prior turn's salad
+    # from the combined gate message (the "wth is #3" leak). SCRIBE_ENABLED=true
+    # re-enables it for the legacy paths if ever needed.
+    return os.getenv("SCRIBE_ENABLED", "false").lower() in ("true", "1", "yes")
 
 
 def looks_multi_item(message: str) -> bool:

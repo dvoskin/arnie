@@ -51,84 +51,20 @@ _LOGGING_TOOLS = frozenset({
     "log_body_weight", "log_water", "clear_day_log",
 })
 
-# ── DETERMINISTIC LOG-CONFIRM MARKER (Danny 2026-07-23) ───────────────────────
-# Instead of guessing a phantom from the LLM's freeform phrasing ("🏋️", "logged",
-# "on the board" — a whack-a-mole of hotfixes), the model emits ONE hidden token
-# whenever it CLAIMS a log. It's stripped before display; if it's present but NO
-# logging tool fired, the write didn't happen → force-log. One signal, every log
-# type, deterministic. Switch: LOG_MARKER.
-_LOG_MARKER = "[[LOGGED]]"
+# (The [[LOGGED]]/[[DID]] manifest, its prompt instructions, and the LOG_FASTPATH
+# marker gate were ripped 2026-07-23 — sonnet-5 emitted the manifest 0/4, so it was
+# dead weight, and structured food turns (core/food_turn.py) made it unnecessary.
+# _sanitize_bubble still strips stray [[...]] tokens echoed from old history.)
 
-
-def _log_marker_enabled() -> bool:
-    return os.getenv("LOG_MARKER", "true").lower() in ("true", "1", "yes")
-
-
-def _log_fastpath_enabled() -> bool:
-    """D (marker-gated deterministic fast-path). When the manifest ([[DID: log_food]]
-    / [[LOGGED]]) is present AND a real log tool fired, the write is confirmed — ship
-    the deterministic confirmation (real numbers from the committed DB, zero model
-    latency) and SKIP the voice_log pass. Confirmations come from the DB, not model
-    narration. **Default ON** (2026-07-23, Danny) — trades voice_log's warmth for
-    latency + guaranteed-correct numbers on pure logs. Revert: LOG_FASTPATH=false."""
-    return os.getenv("LOG_FASTPATH", "true").lower() in ("true", "1", "yes")
-
-
-_LOG_MARKER_INSTRUCTION = (
-    "\n\n[ACTION MANIFEST — machine check, NOT user-facing]\n"
-    "Whenever your reply tells the user you DID something a tool performs — logged, "
-    "recorded, saved, added, updated, or deleted a food, set, exercise, body weight, "
-    "or water; or looked up / checked / searched a food's nutrition — append at the "
-    "VERY END a hidden manifest naming the EXACT tool(s) you actually called this "
-    "turn: [[DID: log_food]] , [[DID: log_exercise, log_water]] , "
-    "[[DID: search_food_database]] , [[DID: update_food_entry]] . It is stripped "
-    "before the user ever sees it; never mention, explain, or vary it. Name a tool "
-    "ONLY when you truly called it THIS turn. Do NOT emit it for a plan, a question, "
-    "a clarification, or your own estimate that called no tool. A tool named in "
-    "[[DID: ...]] but not actually called is treated as a FAILED action and is "
-    "force-run — so if you claim it, call it. (A bare [[LOGGED]] is still accepted "
-    "as 'a write happened'.)"
-)
-
-
-# ── GENERIC ACTION MANIFEST + LOOKUP RESCUE (B, 2026-07-23) ───────────────────
-# Generalizes the boolean [[LOGGED]] marker: the model also names the EXACT tool(s)
-# it claims via [[DID: tool, ...]]. A tool named but not fired = a claimed-action
-# gap → rescue. First arm wired here is LOOKUP: the user asks about a SPECIFIC
-# product and the model ANSWERS WITH AN ESTIMATE (Bonilla de la Vista, IMG_8582)
-# instead of calling search_food_database / web_search. This is the reliability
-# foundation meant to scale to many tools. Switch: LOOKUP_RESCUE.
+# LOOKUP RESCUE: the user asks about a SPECIFIC product and the model answers with
+# an ESTIMATE (Bonilla de la Vista, IMG_8582) instead of calling
+# search_food_database / web_search → force the lookup, re-voice real numbers.
+# Detected by the hedged-estimate heuristic (turn_health). Switch: LOOKUP_RESCUE.
 _LOOKUP_TOOLS = frozenset({"search_food_database", "web_search"})
 
 
 def _lookup_rescue_enabled() -> bool:
     return os.getenv("LOOKUP_RESCUE", "true").lower() in ("true", "1", "yes")
-
-
-def _parse_did(text: str) -> set:
-    """Tool names the model claims it called this turn, from [[DID: a, b]] tags."""
-    import re
-    out = set()
-    for m in re.finditer(r"\[\[\s*DID\s*:\s*([^\]]+?)\s*\]\]", text or "", re.I):
-        for name in m.group(1).split(","):
-            name = name.strip()
-            if name:
-                out.add(name)
-    return out
-
-
-_LOOKUP_MARKER_INSTRUCTION = (
-    "\n\n[LOOKUP DISCIPLINE — machine check, NOT user-facing]\n"
-    "When the user asks what's in / how many calories or macros are in a SPECIFIC "
-    "product, brand, or restaurant item (not a staple you know cold like plain rice "
-    "or an egg), you MUST call search_food_database — or web_search for a brand or "
-    "restaurant item USDA won't have — and answer FROM the result. Do NOT give your "
-    "own approximation and imply you checked it. When you DO look something up, "
-    "append the exact hidden tag [[DID: search_food_database]] or [[DID: web_search]] "
-    "at the very end (stripped before the user sees it; never mention or vary it). An "
-    "estimate to a specific-product question with no lookup is force-checked and "
-    "re-answered with the real numbers."
-)
 
 # Voice-by-default for tool results. After ANY tool that yields a user-facing
 # result, a follow-up runs to voice/close it — even when the first pass already
@@ -605,10 +541,6 @@ async def run_turn(
     # post-build catch-up. Without this, a phantom total streams live and the guard's
     # correction can only APPEND — the double-reply (turkey+rice: "1698" then "1566").
     _hold_voicing = False
-    # ASK-FIRST HOLD: set below (pre-execute) when a strict-mode swing holds the
-    # meal's writes; read in the reply-selection block. Init here so a no-tool
-    # turn (which skips the tool-execution block) never reads it unbound.
-    _ask_first_q = None
     _streamer = _BubbleStreamer(on_text_bubble) if on_text_bubble else None
     _stream_handler = _streamer.on_delta if _streamer else None
     # Only pass stream_handler to LLM calls when active — keeps the chat() and
@@ -617,6 +549,78 @@ async def run_turn(
     _chat_extras = {"stream_handler": _stream_handler} if _stream_handler else {}
     _scribe_task = None  # the parallel scribe extraction; set inside the pass below
     _missing_from_scribe: list = []  # named-but-unlogged items → partial-drop rescue
+
+    # ── STRUCTURED FOOD TURN (Danny 2026-07-23): the logger logs, the coach talks.
+    # For a food-report turn, ONE small structured pass decides log-vs-ask and emits
+    # clean editable items (composites split: salad one item, chicken another). Its
+    # tool calls impersonate pass-1, so enrichment/dedup/cards/voice all run
+    # unchanged — and the 46k-token pass is skipped entirely on these turns. A
+    # question is a different ACTION from an item, so it structurally can't be
+    # logged as food. Anything it passes on takes the legacy path untouched.
+    _sft = None
+    if not in_onboarding and _source != "photo":
+        try:
+            from core.food_turn import (structured_food_enabled, ASK_KIND,
+                                        applies as _sft_applies, run as _sft_run)
+            if structured_food_enabled():
+                _sft_prior_pq = None
+                _sft_prior = None
+                try:
+                    from db.queries import get_open_pending_question as _gopq_s
+                    _sft_prior_pq = await _gopq_s(db, user.id, ASK_KIND)
+                    if _sft_prior_pq is not None:
+                        _sft_prior = json.loads(_sft_prior_pq.payload_json or "{}")
+                except Exception:
+                    _sft_prior_pq, _sft_prior = None, None
+                if _sft_prior is not None or _sft_applies(_user_text or ""):
+                    # Day context so the logger's own coach line ("say") can state
+                    # where the day stands — real numbers we hand it, one model call.
+                    _dl = ""
+                    try:
+                        _p = getattr(user, "preferences", None)
+                        if today_log is not None and _p is not None:
+                            _dl = (f"before this meal they were at "
+                                   f"{int(today_log.total_calories or 0)} of "
+                                   f"{int(getattr(_p, 'calorie_target', 0) or 0)} cal and "
+                                   f"{int(today_log.total_protein or 0)} of "
+                                   f"{int(getattr(_p, 'protein_target', 0) or 0)}g protein.")
+                    except Exception:
+                        _dl = ""
+                    _sft = await _sft_run(_user_text or "", user, prior=_sft_prior,
+                                          day_line=_dl)
+                if _sft and _sft["action"] == "ask":
+                    # Hold: record the pending (with the original report stashed) so
+                    # the ANSWER turn routes back through this pipeline and logs.
+                    try:
+                        from db.queries import record_pending_question
+                        _pq_s = await record_pending_question(
+                            db, user.id, kind=ASK_KIND, question=_sft["text"][:500],
+                            tier="food_clarification", hook_style="question")
+                        _pq_s.payload_json = json.dumps(
+                            {"original": _user_text or "", "question": _sft["text"]})
+                        await db.commit()
+                    except Exception as _e:
+                        logger.warning(f"structured-ask stash failed, logging instead: {_e}")
+                        _sft = await _sft_run(_user_text or "", user,
+                                              prior={"original": _user_text or "",
+                                                     "question": ""})
+                        if _sft and _sft["action"] != "log":
+                            _sft = None
+                # The user engaged with the question — resolve the pending either
+                # way so it can never loop.
+                if _sft_prior_pq is not None:
+                    try:
+                        from datetime import datetime as _dt_s
+                        _sft_prior_pq.answered_at = _dt_s.utcnow()
+                        await db.commit()
+                    except Exception:
+                        pass
+                if _sft:
+                    logger.info(f"event=structured_food action={_sft['action']} {_tag} "
+                                f"items={len(_sft.get('tool_calls') or [])}")
+        except Exception as _e:
+            logger.warning(f"structured food turn failed, legacy path: {_e}")
+            _sft = None
 
     # ── LLM first pass ───────────────────────────────────────────────────────
     # Generous token budget on purpose: a user can dump a whole day of food in one
@@ -639,24 +643,31 @@ async def run_turn(
         # SCRIBE — launch deterministic item extraction IN PARALLEL with pass-1 (Haiku
         # finishes before opus → no added latency). Only for multi-item food messages;
         # consulted after pass-1 to name a dropped item precisely (egg whites, etc.).
+        # NEVER on a structured food turn — the structured logger is authoritative
+        # there, and the scribe reconciling against the COMBINED gate message re-logged
+        # a prior turn's salad as a third item (Danny 2026-07-23, "wth is #3").
         _scribe_task = None
-        try:
-            import asyncio as _asyncio
-            from core.scribe import scribe_enabled, should_run_scribe, extract_food_items
-            if scribe_enabled() and should_run_scribe(_gate_user_message):
-                _scribe_task = _asyncio.create_task(
-                    extract_food_items(_gate_user_message))
-        except Exception:
-            _scribe_task = None
-        # Append the log-confirm marker instruction once; every downstream chat
-        # (retry, rescues) reuses this same `system`, so the model is told to emit
-        # [[LOGGED]] on any real log throughout the turn.
-        if _log_marker_enabled():
-            system = system + _LOG_MARKER_INSTRUCTION
-        if _lookup_rescue_enabled():
-            system = system + _LOOKUP_MARKER_INSTRUCTION
-        result = await chat(messages, system, tools=True, max_tokens=4096,
-                            **_chat_extras)
+        if _sft is None:
+            try:
+                import asyncio as _asyncio
+                from core.scribe import scribe_enabled, should_run_scribe, extract_food_items
+                if scribe_enabled() and should_run_scribe(_gate_user_message):
+                    _scribe_task = _asyncio.create_task(
+                        extract_food_items(_gate_user_message))
+            except Exception:
+                _scribe_task = None
+        if _sft is not None and _sft["action"] == "log":
+            # Structured logger already decided the writes — impersonate pass-1
+            # with its clean tool calls and skip the big model entirely.
+            result = {"text": "", "raw_content": [], "tool_calls": _sft["tool_calls"],
+                      "stop_reason": "structured_food"}
+        elif _sft is not None and _sft["action"] == "ask":
+            # The one clarify question IS the reply — no tools, nothing logged.
+            result = {"text": _sft["text"], "raw_content": [], "tool_calls": [],
+                      "stop_reason": "structured_food"}
+        else:
+            result = await chat(messages, system, tools=True, max_tokens=4096,
+                                **_chat_extras)
         # Flush trailing buffer immediately so a no-||| partial doesn't carry
         # over and prepend itself to the next call's first bubble. (Still held —
         # this only moves the trailing text into the held buffer.)
@@ -858,74 +869,9 @@ async def run_turn(
                 except Exception as e:
                     logger.error(f"on_tool_start failed for {_tag}: {e}")
 
-        # ── ASK-FIRST HOLD (strict mode, July-7 behavior) ────────────────────
-        # A strict user wants an unstated high-swing detail (grilled vs fried,
-        # butter/sauce amount, portion) ASKED before the log, not sharpened after.
-        # opus-4-8 ignores the frozen prompt's ask-first rule and logs first
-        # (verified 2026-07-22), so enforce it here: detect the swing on the
-        # PROPOSED log_food inputs, and if one clears the mode threshold, HOLD the
-        # meal's writes, ask ONE question, and let the answer turn log it (the
-        # prompt's "hold -> ask -> then log EVERYTHING"). Switch: ASK_FIRST_HOLD.
-        if (not in_onboarding and _is_pure_food_log(tool_calls, _user_text)):
-            from core.clarify import (
-                ask_first_hold_enabled, is_ask_first_mode, clarify_swings)
-            if ask_first_hold_enabled() and is_ask_first_mode(user):
-                # If a hold is ALREADY open, THIS turn is the answer to it — never
-                # re-hold (that's the clarify loop that ate the log). Let the
-                # force-log-on-answer branch commit it instead.
-                _already_held = False
-                try:
-                    from db.queries import get_open_pending_question as _gopq
-                    _already_held = (await _gopq(
-                        db, user.id, "food_ask_first")) is not None
-                except Exception:
-                    _already_held = False
-                if not _already_held:
-                    try:
-                        _ask_first_q = await clarify_swings(
-                            tool_calls, None, user, user_message=_gate_user_message)
-                    except Exception as _e:
-                        logger.warning(f"ask-first hold check failed: {_e}")
-                        _ask_first_q = None
-        if _ask_first_q:
-            # STASH the full held log_food inputs so the answer turn can replay
-            # them DETERMINISTICALLY if the model loops (never lose the meal).
-            _held_inputs = [dict(tc.get("input") or {})
-                            for tc in tool_calls if tc.get("name") == "log_food"]
-            _held_names = [i.get("food_name") for i in _held_inputs]
-            # Record the pending WITH the stash FIRST; only actually HOLD (drop the
-            # writes) if it persisted — so we can never remove a meal's writes
-            # without a recoverable way to replay them.
-            _held_ok = False
-            try:
-                from db.queries import record_pending_question
-                # kind="food_ask_first" (NOT "food_clarification") so the
-                # force-log-on-answer branch tells a HELD meal (nothing logged,
-                # must LOG on the answer) apart from the log-first clarify pending
-                # (item already logged, UPDATE on answer) — mixing them double-logs.
-                _pq = await record_pending_question(
-                    db, user.id, kind="food_ask_first", question=_ask_first_q,
-                    tier="food_clarification", hook_style="question")
-                _pq.item_referenced = next((n for n in _held_names if n), "meal")
-                _pq.payload_json = json.dumps(_held_inputs)
-                await db.commit()
-                _held_ok = True
-            except Exception as _e:
-                logger.warning(f"ask-first stash failed, NOT holding: {_e}")
-            if _held_ok:
-                logger.info(f"event=ask_first_hold user={getattr(user,'id',None)} "
-                            f"items={_held_names}")
-                # Drop the food writes — nothing logs this turn; the answer logs.
-                tool_calls = [tc for tc in tool_calls if tc.get("name") != "log_food"]
-                if _streamer:        # don't show the pass-1 log-confirmation text
-                    try:
-                        _streamer.discard_held()
-                    except Exception:
-                        pass
-            else:
-                # Couldn't persist the stash → do NOT hold; let the log go through
-                # normally this turn (log-first fallback), never a silent drop.
-                _ask_first_q = None
+        # (Ask-before-log lives in the STRUCTURED FOOD TURN above — one system.
+        # The old model-side ASK_FIRST_HOLD/clarify_swings hold was ripped
+        # 2026-07-23: two ask brains collided and its guards piled up.)
 
         # The gates judge the CURRENT message — but a clarify-ANSWER carries
         # the intent of the exchange it answers (item names live in the prior
@@ -1224,19 +1170,7 @@ async def run_turn(
         has_logging = any(tc["name"] in _LOGGING_TOOLS for tc in tool_calls)
         _all_blocked = blocked_log_reply(tool_calls, tool_results) \
             if has_logging else None
-        if _ask_first_q:
-            # ASK-FIRST HOLD: the meal's writes were dropped so the swing gets
-            # pinned BEFORE logging. The reply IS the question — no log voicing,
-            # no follow-up (nothing was written to voice). The answer turn logs.
-            _followup_tried = True
-            response_text = _ask_first_q
-            _response_streamed = False
-            if _streamer:
-                try:
-                    await _streamer.finalize()
-                except Exception:
-                    pass
-        elif _all_blocked is not None and not in_onboarding:
+        if _all_blocked is not None and not in_onboarding:
             # Every log this turn was an already-on-the-board block: no row
             # written, totals unchanged. The model follow-up is SKIPPED — a
             # fabricated "logged, you're at X" can't ship if it's never
@@ -1263,68 +1197,17 @@ async def run_turn(
             # Switch: FAST_LOG_VOICE=false.
             _pure_food = _is_pure_food_log(tool_calls, _user_text)
             _fast_voice = None
-            _clarify_q = None
             if _pure_food:
-                # Mode-gradient clarify-on-swing runs CONCURRENTLY with the voice
-                # read (both are quick reads over the committed log), so asking
-                # about a real swing ("how much butter on the toast?") costs ~no
-                # extra wall-clock. It NEVER withholds a log — every item is already
-                # on the board; the question only sharpens it next turn. Code layer,
-                # not the frozen prompt (feedback_arnie_food_prompt_frozen).
-                import asyncio as _aio
-                from core.clarify import clarify_swings, clarify_swings_enabled
-                # Log-first clarify is OFF by default now (ask-first replaces it);
-                # gate the call so we don't run it — or append its question — when
-                # CLARIFY_SWINGS is off. clarify_swings no longer self-gates.
-                _run_clarify = clarify_swings_enabled()
-                # D — marker-gated fast-path: manifest present + a real log tool fired
-                # = the write is confirmed, so ship the deterministic confirmation and
-                # SKIP the voice_log model pass (latency). Falls through to voice_log if
-                # the model forgot the marker, so it never fails a confirmation.
-                _fastpath = (
-                    _log_fastpath_enabled()
-                    and any(tc.get("name") in _LOGGING_TOOLS for tc in tool_calls)
-                    and (_parse_did(response_text or "") or _LOG_MARKER in (response_text or "")))
-                if _fastpath:
-                    _fast_voice = deterministic_confirmation(
-                        tool_calls, today_log, user.preferences, tool_results)
-                    if _run_clarify:
-                        _clarify_q = await clarify_swings(tool_calls, tool_results, user, user_message=_gate_user_message)
+                # STRUCTURED turn: the logger's own coach line rides the same JSON
+                # (one model call per food turn, the July-7 shape). Legacy turns
+                # keep the voice_log read. Deterministic template is the last net.
+                if _sft is not None and (_sft.get("say") or "").strip():
+                    _fast_voice = _sft["say"].strip()
                 elif fast_log_voice_enabled():
-                    if _run_clarify:
-                        _fast_voice, _clarify_q = await _aio.gather(
-                            voice_log(tool_calls, tool_results, today_log, user),
-                            clarify_swings(tool_calls, tool_results, user, user_message=_gate_user_message))
-                    else:
-                        _fast_voice = await voice_log(
-                            tool_calls, tool_results, today_log, user)
-                elif _run_clarify:
-                    _clarify_q = await clarify_swings(tool_calls, tool_results, user, user_message=_gate_user_message)
-            if _pure_food:
+                    _fast_voice = await voice_log(
+                        tool_calls, tool_results, today_log, user)
                 response_text = _fast_voice or deterministic_confirmation(
                     tool_calls, today_log, user.preferences, tool_results)
-                if _clarify_q:
-                    response_text = (
-                        (response_text.rstrip() + "|||" + _clarify_q)
-                        if (response_text or "").strip() else _clarify_q)
-                    # Record the open question so next turn [PENDING CLARIFICATION]
-                    # surfaces it and the user's answer UPDATES the entries
-                    # (auto-resolves on update_food_entry). Best-effort — a failed
-                    # record never breaks the reply.
-                    try:
-                        from db.queries import record_pending_question
-                        _pq = await record_pending_question(
-                            db, user.id, kind="food_clarification",
-                            question=_clarify_q, tier="casual",
-                            hook_style="question")
-                        _pq.item_referenced = next(
-                            ((tc.get("input") or {}).get("food_name")
-                             for tc in tool_calls if tc.get("name") == "log_food"),
-                            "meal")
-                        _pq.tier = "food_clarification"
-                        await db.commit()
-                    except Exception as _e:
-                        logger.warning(f"clarify pending-record failed: {_e}")
                 _response_streamed = False
             else:
                 # Non-pure logging turn (water / weight, or a co-asked question)
@@ -1703,55 +1586,11 @@ async def run_turn(
                 _gate_user_message, response_text, _ex_fired)
         except Exception:
             _ex_phantom = False
-    # DETERMINISTIC action-manifest phantom: the model named a write tool in
-    # [[DID: log_food, ...]] (or the legacy [[LOGGED]] token) — it thinks it wrote
-    # something — but NO logging tool fired this turn → the write didn't happen.
-    # The reliable, tool-agnostic signal; the "🏋️"/worded heuristics stay as backup.
-    _marker_phantom = False
-    _did_tools = _parse_did(response_text or "") if _log_marker_enabled() else set()
-    if _log_marker_enabled() and not _signing_off:
-        _write_claimed = bool(_did_tools & _LOGGING_TOOLS) or (_LOG_MARKER in (response_text or ""))
-        if _write_claimed:
-            _marker_phantom = not any(tc.get("name") in _LOGGING_TOOLS for tc in tool_calls)
-            if _marker_phantom:
-                logger.warning(f"event=marker_phantom {_tag} — write claimed ([[DID]]/[[LOGGED]]), no log tool fired")
-    # ── H — ASK-FIRST mode-aware phantom (dormant unless ASK_FIRST_HOLD) ──────────
-    # In strict/ask-first mode, a claimed-but-unfired FOOD write should ASK before
-    # logging (July-7 behavior), not force-log. Derive the intended items with the
-    # small tool-caller, swing-check them; if one clears the mode threshold, HOLD +
-    # ask (stash for the answer turn, exactly like the pre-log ask-first hold) and
-    # CLEAR the phantom flags so the force-log rescue below is skipped. This is the
-    # piece that lets ASK_FIRST_HOLD finally flip on: the marker made the no-tool
-    # phantom detectable, and here it routes to the HOLD instead of a force-log.
-    if (not _signing_off and not _ex_phantom
-            and (_phantom or _omission or _marker_phantom)):
-        try:
-            from core.clarify import (ask_first_hold_enabled, is_ask_first_mode,
-                                      clarify_swings)
-            if ask_first_hold_enabled() and is_ask_first_mode(user):
-                from core.orchestrator import call_tools as _oc
-                _intended = [tc.get("input") or {}
-                             for tc in (await _oc(_gate_user_message))
-                             if tc.get("name") == "log_food"]
-                _afq = await clarify_swings(
-                    [{"name": "log_food", "input": i} for i in _intended], None, user,
-                    user_message=_gate_user_message) if _intended else None
-                if _afq:
-                    from db.queries import record_pending_question
-                    _pq = await record_pending_question(
-                        db, user.id, kind="food_ask_first", question=_afq,
-                        tier="food_clarification", hook_style="question")
-                    _pq.item_referenced = next(
-                        (i.get("food_name") for i in _intended if i.get("food_name")), "meal")
-                    _pq.payload_json = json.dumps(_intended)
-                    await db.commit()
-                    response_text = _afq
-                    _phantom = _omission = _marker_phantom = False   # held, not force-logged
-                    logger.info(f"event=ask_first_hold_phantom {_tag} "
-                                f"items={[i.get('food_name') for i in _intended]}")
-        except Exception as _e:
-            logger.warning(f"ask-first phantom guard failed for {_tag}: {_e}")
-    if (_phantom or _omission or _partial_drop or _ex_phantom or _marker_phantom) \
+    # (The [[DID]]/[[LOGGED]] marker-phantom and the ask-first phantom-hold guard
+    # were ripped 2026-07-23: sonnet-5 emitted the manifest 0/4 so the marker was
+    # dead weight, and ask-before-log now lives in the structured food turn. Food
+    # reports are structured; the worded heuristics below cover the legacy paths.)
+    if (_phantom or _omission or _partial_drop or _ex_phantom) \
             and not _signing_off:
         try:
             if _partial_drop and not (_phantom or _omission):
@@ -1793,8 +1632,7 @@ async def run_turn(
             # Announce the round-trip so the re-run isn't dead air (universal).
             await _announce_work(
                 "Let me make sure that's logged.",
-                list(_did_tools & _LOGGING_TOOLS)
-                or (["log_exercise"] if _ex_phantom else ["log_food"]))
+                ["log_exercise"] if _ex_phantom else ["log_food"])
             _ALLOWED_RESCUE = ("log_food", "log_exercise", "log_body_weight",
                                "log_water",
                                # A CORRECTION phantom ("Royo bagels are 80 cal",
@@ -1883,33 +1721,29 @@ async def run_turn(
                                     await on_text_bubble(_b)
                             response_text = _rescue_text
                         tool_calls = list(tool_calls or []) + _rescue_calls
-                        _phantom = _omission = _partial_drop = _ex_phantom = _marker_phantom = False  # rescued
+                        _phantom = _omission = _partial_drop = _ex_phantom = False  # rescued
                         logger.warning(
                             f"event=log_rescue outcome=logged trigger={_trigger} {_tag} "
                             f"tools={[tc.get('name') for tc in _rescue_calls]}")
-            if _phantom or _omission or _partial_drop or _ex_phantom or _marker_phantom:
+            if _phantom or _omission or _partial_drop or _ex_phantom:
                 logger.warning(f"event=log_rescue outcome=unrescued {_tag} — "
                                f"model fired no tool")
         except Exception as e:
             logger.error(f"Phantom rescue failed for {_tag}: {e}")
 
-    # ── LOOKUP RESCUE (B): estimated a specific product instead of looking it up ──
-    # The user asked about a SPECIFIC product's nutrition and the model answered with
-    # its OWN estimate — it named a lookup tool in the manifest but never called it,
-    # or hedged an estimate with no lookup at all (Bonilla de la Vista, IMG_8582).
-    # Force the lookup and re-answer with the real numbers. Switch: LOOKUP_RESCUE.
+    # ── LOOKUP RESCUE: estimated a specific product instead of looking it up ──────
+    # The user asked about a SPECIFIC product's nutrition and the model hedged its
+    # OWN estimate with no lookup (Bonilla de la Vista, IMG_8582). Force the lookup
+    # and re-answer with the real numbers. Switch: LOOKUP_RESCUE.
     _lookup_fired = any(tc.get("name") in _LOOKUP_TOOLS for tc in tool_calls)
     _lookup_gap = False
     if _lookup_rescue_enabled() and not _signing_off and not _lookup_fired and response_text:
-        if _did_tools & _LOOKUP_TOOLS:
-            _lookup_gap = True   # claimed a lookup tool in the manifest, never fired it
-        else:
-            try:
-                from core.turn_health import looks_like_estimated_product_query
-                _lookup_gap = looks_like_estimated_product_query(
-                    _user_text if isinstance(_user_text, str) else "", response_text)
-            except Exception:
-                _lookup_gap = False
+        try:
+            from core.turn_health import looks_like_estimated_product_query
+            _lookup_gap = looks_like_estimated_product_query(
+                _user_text if isinstance(_user_text, str) else "", response_text)
+        except Exception:
+            _lookup_gap = False
     if _lookup_gap:
         try:
             # Announce the search + re-voice round-trip (universal helper) —
@@ -1957,94 +1791,8 @@ async def run_turn(
         except Exception as e:
             logger.error(f"Lookup rescue failed for {_tag}: {e}")
 
-    # ── ASK-FIRST ANSWER: force the held log on the answer turn ──────────────────
-    # The ask-first HOLD asked before logging and wrote nothing (pending
-    # kind=food_ask_first). opus then clarify-LOOPS on the answer instead of
-    # committing (verified 2026-07-22), so force it: if that pending is open and
-    # this turn logged no food, run ONE forcing pass that logs every item from the
-    # exchange with the user's answer applied, then resolve the pending. Dormant
-    # unless ASK_FIRST_HOLD created the pending — never fires with the hold off.
-    from core.clarify import ask_first_hold_enabled as _afh_enabled
-    if _afh_enabled() and not _signing_off and not _ask_first_q:
-        _held_pq = None
-        try:
-            from db.queries import get_open_pending_question
-            _held_pq = await get_open_pending_question(db, user.id, "food_ask_first")
-        except Exception:
-            _held_pq = None
-        if _held_pq is not None:
-            import re as _re_af
-            _cancel = bool(_re_af.search(
-                r"\b(never\s*mind|don'?t\s+log|do\s+not\s+log|cancel|skip\s+it|"
-                r"forget\s+it|scratch\s+that)\b", _user_text or "", _re_af.I))
-            _fired_food = any(tc.get("name") == "log_food" for tc in tool_calls)
-            try:
-                if not _cancel and not _fired_food:
-                    _af_nudge = (
-                        "[SYSTEM HEALTH CHECK — not the user] Earlier you asked the "
-                        "user to clarify a food BEFORE logging it, and you logged "
-                        f"NOTHING. They have now answered: \"{_user_text}\". Log EVERY "
-                        "food item from that exchange NOW with log_food, applying "
-                        "their answer to the ambiguous detail (cooking fat, sauce, "
-                        "portion). Exact quantities. Do NOT ask another question. Then "
-                        "confirm in one short line with the real numbers.")
-                    _af = await chat(
-                        messages + [{"role": "assistant", "content": response_text or ""},
-                                    {"role": "user", "content": _af_nudge}],
-                        system, tools=True, max_tokens=700)
-                    _af_calls = [tc for tc in (_af.get("tool_calls") or [])
-                                 if tc.get("name") == "log_food"]
-                    _used_stash = False
-                    if not _af_calls:
-                        # The model LOOPED (asked again / fired no tool). Replay the
-                        # EXACT held items from the turn-1 stash so the meal is NEVER
-                        # lost — unrefined by the answer, but captured. This is the
-                        # bulletproof half (option A): model-refined when it
-                        # cooperates, deterministic stash when it doesn't.
-                        try:
-                            _stashed = json.loads(_held_pq.payload_json or "[]")
-                        except Exception:
-                            _stashed = []
-                        _af_calls = [{"name": "log_food", "input": _i}
-                                     for _i in _stashed
-                                     if isinstance(_i, dict) and _i.get("food_name")]
-                        _used_stash = bool(_af_calls)
-                    if _af_calls:
-                        if today_log is None:
-                            from db.queries import get_or_create_today_log
-                            today_log = await get_or_create_today_log(
-                                db, user.id, user.timezone or "UTC")
-                        _af_results = await execute_tool_calls(
-                            _af_calls, user, today_log, db, _source,
-                            user_message=_gate_user_message)
-                        try:
-                            await db.refresh(today_log)
-                        except Exception:
-                            pass
-                        # On a stash replay the model's text is the loop question —
-                        # discard it and voice the deterministic confirmation.
-                        _af_text = deterministic_confirmation(
-                            _af_calls, today_log, user.preferences, _af_results) \
-                            if _used_stash else (
-                                (_af.get("text") or "").strip()
-                                or deterministic_confirmation(
-                                    _af_calls, today_log, user.preferences, _af_results))
-                        if _af_text:
-                            if on_text_bubble and not _hold_voicing:
-                                for _b in Response.from_text(_af_text).bubbles:
-                                    await on_text_bubble(_b)
-                            response_text = _af_text
-                        tool_calls = list(tool_calls or []) + _af_calls
-                        logger.warning(
-                            f"event=ask_first_answer_logged {_tag} "
-                            f"via={'stash' if _used_stash else 'model'} "
-                            f"tools={[tc.get('name') for tc in _af_calls]}")
-                # Resolve either way — the user engaged; never re-ask this loop.
-                from datetime import datetime as _dt_af
-                _held_pq.answered_at = _dt_af.utcnow()
-                await db.commit()
-            except Exception as e:
-                logger.error(f"ask-first answer force-log failed for {_tag}: {e}")
+    # (The ASK-FIRST ANSWER force-log block was ripped 2026-07-23 — the structured
+    # food turn owns ask + answer + log now, with its own pending kind.)
 
     # ── ACTIVITY completeness: a co-mentioned workout the model ignored ─────────
     # The user reported a food AND a workout/sport ("chicken plate… and also played

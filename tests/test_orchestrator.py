@@ -85,7 +85,8 @@ def _today_log():
 @pytest.mark.asyncio
 async def test_orchestrator_catches_phantom_without_reprompt(monkeypatch):
     monkeypatch.setenv("ORCHESTRATOR", "true")
-    monkeypatch.setenv("LOG_MARKER", "true")
+    monkeypatch.setenv("PHANTOM_RESCUE_ENABLED", "true")
+    monkeypatch.setenv("STRUCTURED_FOOD", "false")   # exercise the legacy net
     async def _noop(db, user, llm_reply_text="", **kwargs): return None
     monkeypatch.setattr(RL, "sync_pending_questions", _noop)
     async def fake_reload(db, uid): return _user()
@@ -93,9 +94,9 @@ async def test_orchestrator_catches_phantom_without_reprompt(monkeypatch):
 
     chat_calls = {"n": 0}
     async def fake_chat(messages, system, tools=True, max_tokens=1024, model=None, **k):
-        chat_calls["n"] += 1                       # pass-1: marker phantom, no tool
-        return {"text": "Logged your eggs. [[DID: log_food]]", "raw_content": [],
-                "tool_calls": [], "stop_reason": "end_turn"}
+        chat_calls["n"] += 1                       # pass-1: worded phantom, no tool
+        return {"text": "Eggs logged, 140 cal and 12g protein on the board.",
+                "raw_content": [], "tool_calls": [], "stop_reason": "end_turn"}
     monkeypatch.setattr(C, "chat", fake_chat)
 
     async def fake_orch(user_message, extra_context=""):

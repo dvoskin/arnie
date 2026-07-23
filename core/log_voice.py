@@ -55,9 +55,12 @@ _SYSTEM = (
     "- Sentence case. Emoji almost never, and never a joke emoji (no 😅). Usually none.\n"
     "- Dry, confident, specific. Never cutesy or hype: no \"party\", no \"huh\", "
     "no piled-on exclamation points.\n"
-    "- ALWAYS name THIS log's own calories and protein (from the FACTS \"This item\" "
-    "line) so the number is a receipt the user can verify. Don't list carbs or fat, "
-    "and don't restate the day-total breakdown; the card shows those.\n"
+    "- ONE item logged: name its own calories and protein (from the FACTS \"This "
+    "item\" line) so the number is a receipt the user can verify. SEVERAL items "
+    "logged: acknowledge the MEAL as a whole, naming EVERY item from \"Just "
+    "logged\" briefly (never just one of them), with where the day now stands. "
+    "Don't list carbs or fat, and don't restate the day-total breakdown; the card "
+    "shows those.\n"
     "- Bubble 1: a real read of what this does to their day. Bubble 2 (optional): "
     "one specific, concrete forward move.\n"
     "- Sound like a coach who knows them, never a tracker. Never send \"Logged.\", "
@@ -144,10 +147,14 @@ def build_log_facts(tool_calls, tool_results, log, user) -> str:
 
     lines = ["FACTS:"]
     if foods:
-        lines.append("Just logged: " + ", ".join(foods))
+        lines.append(f"Just logged ({len(foods)} item{'s' if len(foods) != 1 else ''}): "
+                     + ", ".join(foods))
     # The tool result carries this item's own macros ("Logged: X, 250 cal, 2g
-    # protein"); skip it on a dedup no-op so the read never claims a fresh log.
-    if logged_line and not logged_line.startswith("Already on the board"):
+    # protein") — but the results dict is keyed by tool NAME, so with several
+    # log_food calls it holds only the LAST item. Only offer it for a single-item
+    # log; on a multi-item meal it misled the voice into acknowledging one item
+    # ("Caesar salad logged" for a 3-item meal — Danny 2026-07-23).
+    if len(foods) <= 1 and logged_line and not logged_line.startswith("Already on the board"):
         lines.append("This item: " + logged_line[:160])
     if cal_t:
         lines.append(

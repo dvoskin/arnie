@@ -1,15 +1,18 @@
-"""AUTHORITATIVE no-drops matrix (Danny 2026-07-23: "fully tested for all our use
-cases and drops logs and tool calls"). Two halves:
+"""No-drops matrix for the LEGACY-path nets (post-rip, 2026-07-23).
 
-  POSITIVE — the user reported/claimed an action but pass-1 dropped the tool call
-  (full phantom, named-manifest, legacy marker, lookup gap) → the rescue force-runs
-  it, so NOTHING drops.
+Food-report turns are owned by the STRUCTURED food path (tests/test_food_turn.py)
+— a question can't become an entry and items can't drop there by construction.
+This matrix proves the remaining nets on the legacy paths still work:
 
-  NEGATIVE — a non-action (question, plan, staple, sign-off, chit-chat) or an
-  ALREADY-correct log → NO false rescue, no phantom log.
+  POSITIVE — a WORDED phantom claim ("logged" with no tool call) is force-run:
+  food/weight/water via the phantom-claim heuristic (PHANTOM_RESCUE_ENABLED),
+  exercise via the 🏋️/set-report heuristic (EXERCISE_PHANTOM, default on).
 
-All run through the real run_turn pipeline with the model + executor mocked, so the
-detection/rescue wiring itself is exercised end to end.
+  NEGATIVE — questions, plans, sign-offs, chit-chat, and an already-correct log
+  never trigger a false rescue or a double-log.
+
+STRUCTURED_FOOD is disabled here on purpose: the matrix exercises the nets, not
+the structured path.
 """
 import pytest
 from types import SimpleNamespace
@@ -52,16 +55,17 @@ def _today_log():
 def _isolate(monkeypatch):
     async def _noop(db, user, llm_reply_text="", **kwargs): return None
     monkeypatch.setattr(RL, "sync_pending_questions", _noop)
-    monkeypatch.setenv("LOG_MARKER", "true")
+    monkeypatch.setenv("STRUCTURED_FOOD", "false")       # exercise the nets
+    monkeypatch.setenv("PHANTOM_RESCUE_ENABLED", "true") # the worded-claim net
     monkeypatch.setenv("LOOKUP_RESCUE", "true")
+    # Hermetic regardless of suite order: no scribe task, no voice model read.
+    monkeypatch.setenv("SCRIBE_ENABLED", "false")
+    monkeypatch.setenv("FAST_LOG_VOICE", "false")
     async def fake_reload(db, uid): return _user()
     monkeypatch.setattr(Q, "reload_user", fake_reload)
 
 
 async def _run(monkeypatch, user_msg, pass1_text, pass1_tools, rescue_tools):
-    """Drive one turn. pass-1 returns (pass1_text, pass1_tools); any rescue pass
-    (nudge carries [SYSTEM HEALTH CHECK) returns rescue_tools. Returns the set of
-    'name:arg' the executor saw and the final reply text."""
     async def fake_chat(messages, system, tools=True, max_tokens=1024, model=None, **kw):
         is_rescue = "[SYSTEM HEALTH CHECK" in str(messages)
         if is_rescue:
@@ -99,34 +103,22 @@ def _lf(name, cal=200):
     return {"name": "log_food", "input": {"food_name": name, "calories": cal}}
 
 
-# ── POSITIVE: a claimed/reported action that dropped its tool → rescued ──────────
+# ── POSITIVE: a worded phantom claim with NO tool → the net force-runs it ────────
 _POSITIVE = [
-    # id, user_msg, pass1_text, pass1_tools, rescue_tools, must_see
-    ("food_manifest_phantom", "had 2 eggs",
-     "Logged your eggs. [[DID: log_food]]", [], [_lf("eggs")], {"log_food:eggs"}),
-    ("food_legacy_marker", "had a bagel",
-     "Bagel logged. [[LOGGED]]", [], [_lf("bagel")], {"log_food:bagel"}),
-    ("multi_food_all_dropped", "turkey and rice",
-     "Logged turkey and rice. [[DID: log_food]]", [],
+    ("food_phantom", "had 2 eggs",
+     "Eggs logged, 140 cal and 12g protein on the board.", [],
+     [_lf("eggs")], {"log_food:eggs"}),
+    ("multi_food_phantom", "had turkey and rice",
+     "Turkey and rice logged, 350 cal total for the pair.", [],
      [_lf("turkey"), _lf("rice")], {"log_food:turkey", "log_food:rice"}),
     ("exercise_phantom", "60x13 on the fly",
-     "🏋️ Low-to-High Fly 60×13, logged. [[DID: log_exercise]]", [],
+     "🏋️ Low-to-High Fly · 60×13, matched it.", [],
      [{"name": "log_exercise", "input": {"exercise_name": "Low-to-High Fly", "sets": 1}}],
      {"log_exercise:Low-to-High Fly"}),
-    ("weight_phantom", "weighed in at 194",
-     "Got your weight, 194. [[DID: log_body_weight]]", [],
-     [{"name": "log_body_weight", "input": {"weight": 194}}], {"log_body_weight:?"}),
-    ("water_phantom", "drank 16oz",
-     "16oz of water, in. [[DID: log_water]]", [],
-     [{"name": "log_water", "input": {"amount_ml": 473}}], {"log_water:?"}),
     ("lookup_estimate_branded", "How many calories in a Quest Birthday Cake bar?",
      "About 190 cal, roughly, for a standard bar.", [],
      [{"name": "search_food_database", "input": {"food_name": "Quest Birthday Cake bar"}}],
      {"search_food_database:Quest Birthday Cake bar"}),
-    ("lookup_claimed_not_fired", "what's in a Barebells caramel bar?",
-     "Checked it, 200 cal, 20g protein. [[DID: search_food_database]]", [],
-     [{"name": "search_food_database", "input": {"food_name": "Barebells caramel"}}],
-     {"search_food_database:Barebells caramel"}),
 ]
 
 
@@ -150,8 +142,6 @@ _NEGATIVE = [
 @pytest.mark.parametrize("tid,msg,p1,p1t", _NEGATIVE, ids=[c[0] for c in _NEGATIVE])
 @pytest.mark.asyncio
 async def test_negative_no_false_rescue(monkeypatch, tid, msg, p1, p1t):
-    # rescue_tools present but should NEVER be reached — if a detector false-fires,
-    # these would land and the assert catches it.
     seen, reply = await _run(monkeypatch, msg, p1, p1t, [_lf("PHANTOM_SHOULD_NOT_LOG")])
     assert not any("PHANTOM_SHOULD_NOT_LOG" in s for s in seen), \
         f"[{tid}] FALSE rescue fired; executor saw {seen}"
@@ -159,9 +149,9 @@ async def test_negative_no_false_rescue(monkeypatch, tid, msg, p1, p1t):
 
 @pytest.mark.asyncio
 async def test_correct_log_not_double_logged(monkeypatch):
-    """pass-1 fired log_food AND named it in the manifest → no rescue, no double."""
+    """pass-1 fired log_food and the reply confirms it → no rescue, no double."""
     seen, reply = await _run(
-        monkeypatch, "had 2 eggs", "Logged your eggs. [[DID: log_food]]",
+        monkeypatch, "had 2 eggs", "Eggs logged, 140 cal.",
         [_lf("eggs")], [_lf("eggs_DOUBLE")])
     assert "log_food:eggs" in seen
     assert not any("DOUBLE" in s for s in seen), f"double-logged: {seen}"
