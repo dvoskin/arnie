@@ -189,8 +189,13 @@ _SYSTEM = (
     "tool or database names in 'say' or questions. Natural coach language only.\n"
     "- Split a combo into natural SEPARATE items (the salad one item, the chicken "
     "strips another, a drink another) so each is editable on its own line.\n"
-    '- "food": short clean name, 2-4 words, capitalized. Fold a stated adjustment '
-    'into the name ("Pizza toppings, crust left").\n'
+    '- "food": clean capitalized name. A BRAND or restaurant the user named is '
+    'ALWAYS kept in it, verbatim ("Thomas\' Everything Bagel Thin", "Philadelphia '
+    'Scallion Cream Cheese", "Starbucks Turkey Bacon Sandwich") — the brand is the '
+    "database search key; never strip it for brevity. Unbranded items stay short "
+    '(2-4 words). Fold a stated adjustment into the name ("Pizza toppings, crust '
+    'left"). Set "branded": true on any item that is a branded/packaged/restaurant '
+    "product — it routes the item to label-grade lookup.\n"
     '- "amount": a USER-STATED amount is ground truth — keep it EXACTLY, fractions '
     "included (\"1/3 of a KIND bar\" -> amount 0.33, never rounded to 0.5). Only "
     "when YOU are estimating an unstated amount, pick a round editable number — "
@@ -412,6 +417,10 @@ async def run(message: str, user, prior: Optional[dict] = None,
             qty = f"{amount} {unit}".strip() if amount is not None else unit
             inp = {"food_name": food, "quantity": qty,
                    "estimated": True, "confidence": 0.65}
+            if it.get("branded"):
+                # The logger read the message — it declares brandedness; the
+                # downstream heuristic (_looks_branded) is only the backup net.
+                inp["is_packaged"] = True
             for src, dst in (("calories", "calories"), ("protein", "protein"),
                              ("carbs", "carbs"), ("fats", "fats")):
                 v = it.get(src)

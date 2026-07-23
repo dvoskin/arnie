@@ -357,3 +357,25 @@ async def test_ask_threshold_scales_with_mode(monkeypatch):
     assert "100 cal" in seen["system"] and "strict" in seen["system"]
     await FT.run("had some chips", SimpleNamespace())   # no prefs → moderate
     assert "200 cal" in seen["system"]
+
+
+@pytest.mark.asyncio
+async def test_branded_flag_routes_to_packaged_lookup(monkeypatch):
+    """The logger declares brandedness (it read the message) — no noun-list
+    heuristics. branded:true -> is_packaged on the write, which routes the item
+    through the label-grade lookup lane (Danny IMG_8615: 'Philadelphia' stripped
+    + never web-enriched)."""
+    monkeypatch.setattr(FT, "chat", _fake_chat({
+        "action": "log",
+        "items": [
+            {"food": "Philadelphia Scallion Cream Cheese", "amount": 3, "unit": "tbsp",
+             "calories": 150, "branded": True},
+            {"food": "Tomato and onion", "amount": 1, "unit": "small portion",
+             "calories": 15},
+        ]}))
+    out = await FT.run("bagel with Philadelphia scallion cream cheese and tomato",
+                       SimpleNamespace())
+    a, b = out["tool_calls"]
+    assert a["input"]["food_name"] == "Philadelphia Scallion Cream Cheese"
+    assert a["input"].get("is_packaged") is True
+    assert "is_packaged" not in b["input"]
