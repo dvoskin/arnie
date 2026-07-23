@@ -12,9 +12,10 @@ catching a dropped call after the fact, a reliable small caller makes it up fron
 It composes with the shipped work — B verifies, D confirms deterministically,
 E (scoping) would hand it a small tool set, F would order the calls.
 
-Default OFF (ORCHESTRATOR). A/B against the current single-pass on the eval + repro
-harnesses before enabling — proof it makes calls MORE reliably, not less. Kill
-switch. scribe.py (parallel Haiku extraction) is the precedent.
+Default ON (ORCHESTRATOR, 2026-07-23) — validated by the deep-session A/B benchmark
+(scripts/bench_deep_session.py): it cut the deep-session drop rate 47%->36% over 5
+runs and caught every deep exercise set the baseline dropped. Revert: ORCHESTRATOR=false.
+scribe.py (parallel Haiku extraction) is the precedent.
 """
 import logging
 import os
@@ -29,7 +30,10 @@ _ORCH_MODEL = "claude-haiku-4-5-20251001"
 
 
 def orchestrator_enabled() -> bool:
-    return os.getenv("ORCHESTRATOR", "false").lower() in ("true", "1", "yes")
+    # Default ON (2026-07-23) — the deep-session A/B benchmark (scripts/bench_deep_session.py)
+    # showed it cut the deep-session drop rate 47%->36% (and every deep exercise set
+    # baseline dropped, the orchestrator caught). Revert with ORCHESTRATOR=false.
+    return os.getenv("ORCHESTRATOR", "true").lower() in ("true", "1", "yes")
 
 
 def orchestrator_model() -> str:

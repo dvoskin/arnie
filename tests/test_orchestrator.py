@@ -4,11 +4,11 @@ import pytest
 import core.orchestrator as O
 
 
-def test_orchestrator_off_by_default(monkeypatch):
+def test_orchestrator_default_on_and_revertable(monkeypatch):
     monkeypatch.delenv("ORCHESTRATOR", raising=False)
-    assert O.orchestrator_enabled() is False
-    monkeypatch.setenv("ORCHESTRATOR", "true")
-    assert O.orchestrator_enabled() is True
+    assert O.orchestrator_enabled() is True    # default ON (deep-session A/B backed)
+    monkeypatch.setenv("ORCHESTRATOR", "false")
+    assert O.orchestrator_enabled() is False   # reverts cleanly
 
 
 def test_orchestrator_uses_a_small_model(monkeypatch):
