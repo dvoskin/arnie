@@ -1808,6 +1808,21 @@ async def run_turn(
                 _lookup_gap = False
     if _lookup_gap:
         try:
+            # Announce it: the rescue is a full search + re-voice round-trip, so
+            # give immediate feedback instead of dead air (Danny 2026-07-23) — an
+            # in-voice heads-up bubble + morph the thinking indicator to the lookup
+            # ("Weighing your macros"). Best-effort; never blocks the rescue.
+            try:
+                _lu_headsup = tool_heads_up("search_food_database")
+                if _streamer and on_text_bubble:
+                    await on_text_bubble(_lu_headsup)
+                    _streamer.flushed_count += 1
+                elif on_interim:
+                    await on_interim(_lu_headsup)
+                if on_tool_start:
+                    await on_tool_start(["search_food_database"])
+            except Exception as _e:
+                logger.warning(f"lookup-rescue heads-up failed for {_tag}: {_e}")
             _lu_nudge = (
                 "[SYSTEM HEALTH CHECK — not the user] The user asked about a SPECIFIC "
                 "product's nutrition and you gave your OWN estimate without looking it "

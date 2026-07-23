@@ -100,13 +100,21 @@ async def test_estimate_forces_a_lookup_and_revoices(monkeypatch):
     async def fake_reload(db, uid): return _user()
     monkeypatch.setattr(Q, "reload_user", fake_reload)
 
+    interim, started = [], []
+    async def _cap_interim(t): interim.append(t)
+    async def _cap_start(names): started.append(names)
+
     turn = await run_turn(
         _user(), _DB(),
         [{"role": "user", "content": "How many calories in Bonilla de la Vista potato chips?"}],
         "SYS", "imessage", in_onboarding=False, was_onboarding=False,
-        today_log=_today_log())
+        today_log=_today_log(), on_interim=_cap_interim, on_tool_start=_cap_start)
 
     assert "search_food_database" in fired, f"lookup NOT forced; executor got {fired}"
     reply = "|||".join(turn.response.bubbles if turn.response else [])
     assert "per 28g" in reply, f"real numbers not re-voiced; got {reply!r}"
     assert "about 160" not in reply, "the estimate should have been replaced"
+    # No dead air: the rescue announced itself (heads-up bubble + indicator morph).
+    assert interim, "lookup rescue must send a heads-up before the search round-trip"
+    assert any("search_food_database" in n for n in started), \
+        "thinking indicator should morph to the lookup"
