@@ -580,6 +580,30 @@ def looks_like_unaddressed_activity(user_text: str, response_text: str) -> bool:
     return term not in (response_text or "").lower()
 
 
+def looks_like_unlogged_exercise(user_text: str, response_text: str,
+                                 fired_exercise: bool) -> bool:
+    """True when the reply PRESENTS a logged set/movement but NO log_exercise fired
+    — the set was narrated, not written (Danny 2026-07-23: Low-to-High sets 2 & 3
+    and the first Dip set were each confirmed with a "🏋️ … 60×13" log-line yet
+    never landed; the model narrates deeper into a session without firing the tool).
+
+    High-precision: the barbell log-line is Arnie's OWN format for a JUST-logged
+    set, so its presence with no tool call is a phantom. Also catches a plain
+    recorded claim ("on the board"/"logged") when the user's message was a set
+    report. Safe to force-log on: the executor's dedup blocks a genuine duplicate,
+    while a falsely-"already on the board" set (the exact 2026-07-23 failure) finally
+    writes."""
+    if fired_exercise:
+        return False
+    r = response_text or ""
+    if "🏋" in r:                      # the set-log-line = a claimed logged set
+        return True
+    u = user_text or ""
+    if _SET_REPORT_RE.search(u) and any(p in r.lower() for p in _RECORDED_CLAIM):
+        return True
+    return False
+
+
 _INVOKE_RE = re.compile(r'<invoke\s+name="([^"]+)"\s*>(.*?)</invoke>', re.S | re.I)
 _PARAM_RE = re.compile(r'<parameter\s+name="([^"]+)"\s*>(.*?)</parameter>', re.S | re.I)
 

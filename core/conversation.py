@@ -154,6 +154,14 @@ def _activity_rescue_enabled() -> bool:
     return os.getenv("ACTIVITY_RESCUE_ENABLED", "false").lower() in ("true", "1", "yes")
 
 
+def _exercise_phantom_enabled() -> bool:
+    """Force-log a SET/movement the model claimed ("🏋️ … logged") but never wrote
+    (Danny 2026-07-23: sets dropped deeper into the session). Default ON — the
+    exercise-side counterpart to the food phantom rescue, which the food-only
+    trigger never reached. EXERCISE_PHANTOM=false disables."""
+    return os.getenv("EXERCISE_PHANTOM", "true").lower() in ("true", "1", "yes")
+
+
 _FOOD_LOG_TOOLS = frozenset({"log_food", "update_food_entry"})
 
 # Lookups a food-log turn may ALSO fire without being "impure": brand-macro and
@@ -1561,7 +1569,19 @@ async def run_turn(
     # rice dropped). tool_calls IS present, so this fires ALONGSIDE the no-tool
     # phantom/omission triggers.
     _partial_drop = bool(_missing_from_scribe)
-    if (_phantom or _omission or _partial_drop) and not _signing_off:
+    # EXERCISE phantom: a set/movement claimed ("🏋️ … logged") but no log_exercise
+    # fired — the drops Danny hit 2026-07-23. Reuses the same rescue below (its
+    # nudge already handles log_exercise); the executor dedup stops a real dup.
+    _ex_phantom = False
+    if _exercise_phantom_enabled() and not _signing_off:
+        try:
+            from core.turn_health import looks_like_unlogged_exercise
+            _ex_fired = any(tc.get("name") == "log_exercise" for tc in tool_calls)
+            _ex_phantom = looks_like_unlogged_exercise(
+                _gate_user_message, response_text, _ex_fired)
+        except Exception:
+            _ex_phantom = False
+    if (_phantom or _omission or _partial_drop or _ex_phantom) and not _signing_off:
         try:
             if _partial_drop and not (_phantom or _omission):
                 # Add ONLY the missing item(s); everything already on the board —
@@ -1658,17 +1678,18 @@ async def run_turn(
                         else:
                             # phantom/omission: the original reply was wrong (false
                             # claim / commented-not-logged) → REPLACE it.
-                            _trigger = "phantom" if _phantom else "omission"
+                            _trigger = ("phantom" if _phantom else
+                                        "omission" if _omission else "exercise_phantom")
                             if on_text_bubble and not _hold_voicing:
                                 for _b in Response.from_text(_rescue_text).bubbles:
                                     await on_text_bubble(_b)
                             response_text = _rescue_text
                         tool_calls = list(tool_calls or []) + _rescue_calls
-                        _phantom = _omission = _partial_drop = False  # rescued
+                        _phantom = _omission = _partial_drop = _ex_phantom = False  # rescued
                         logger.warning(
                             f"event=log_rescue outcome=logged trigger={_trigger} {_tag} "
                             f"tools={[tc.get('name') for tc in _rescue_calls]}")
-            if _phantom or _omission or _partial_drop:
+            if _phantom or _omission or _partial_drop or _ex_phantom:
                 logger.warning(f"event=log_rescue outcome=unrescued {_tag} — "
                                f"model fired no tool")
         except Exception as e:
