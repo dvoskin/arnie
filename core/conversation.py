@@ -40,6 +40,7 @@ from core.turn_health import (
 from handlers.tool_executor import (
     execute_tool_calls, deterministic_confirmation, recovery_message,
     tool_heads_up, _heads_up_seed, NEEDS_HEADS_UP_TOOLS, blocked_log_reply,
+    headsup_voice_enabled, sentence_case,
 )
 
 logger = logging.getLogger(__name__)
@@ -823,6 +824,8 @@ async def run_turn(
                     )
                 )
                 _interim = _sanitize_bubble(_interim_raw)
+                if headsup_voice_enabled():
+                    _interim = sentence_case(_interim)   # 'checking…' → 'Checking…'
                 try:
                     await on_interim(_interim)
                 except Exception as e:

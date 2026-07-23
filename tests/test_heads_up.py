@@ -79,6 +79,19 @@ def test_tool_heads_up_unknown_tool_falls_back_to_web_search_default():
     assert line and line.strip()
 
 
+def test_headsup_output_is_sentence_cased():
+    """C (2026-07-23): the user saw clipped lowercase 'checking the macros.' /
+    'finding it.' — off Arnie's sentence-case voice. Output lifts the first letter;
+    the pinned literals stay lowercase. Switch: HEADSUP_VOICE."""
+    from handlers.tool_executor import tool_heads_up, sentence_case
+    for name in NEEDS_HEADS_UP_TOOLS:
+        line = tool_heads_up(name, "seed")
+        assert line[:1].isupper(), f"{name} heads-up not sentence-cased: {line!r}"
+    assert sentence_case("checking the macros.") == "Checking the macros."
+    assert sentence_case("finding it.") == "Finding it."
+    assert sentence_case("5 min logged") == "5 min logged"   # number-leading untouched
+
+
 def test_deterministic_fallback_is_intentionally_generic():
     """Fallbacks are emergency-only. The model is instructed to ALWAYS write
     its own in-voice heads-up before a slow tool. The deterministic lines

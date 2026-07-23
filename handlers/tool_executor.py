@@ -972,14 +972,35 @@ _TOOL_HEADS_UP_BUBBLES = {
 NEEDS_HEADS_UP_TOOLS = frozenset(_TOOL_HEADS_UP_BUBBLES.keys())
 
 
+def headsup_voice_enabled() -> bool:
+    """Switch: HEADSUP_VOICE=false restores raw lowercase heads-up lines."""
+    return os.getenv("HEADSUP_VOICE", "true").lower() in ("true", "1", "yes")
+
+
+def sentence_case(s: str) -> str:
+    """Capitalize the first ALPHABETIC character — Arnie's voice is sentence case,
+    never the clipped lowercase 'checking the macros.' the user saw (IMG_8582,
+    feedback_arnie_voice_format). Leaves the rest of the line untouched, so an
+    interim like a proper noun mid-line is preserved."""
+    s = s or ""
+    for i, ch in enumerate(s):
+        if ch.isalpha():
+            return s[:i] + ch.upper() + s[i + 1:]
+        if ch.isdigit():
+            return s          # starts with a number ("5 min…") — leave as-is
+    return s
+
+
 def tool_heads_up(tool_name: str, seed: str | None = None) -> str:
     """One short in-voice heads-up line for a slow-tool turn. Deterministic:
     line is chosen by stable index off the seed length, so a given input
     always maps to the same bubble. Unknown tool name falls through to the
-    web_search set as a safe default. Never empty."""
+    web_search set as a safe default. Never empty. Sentence-cased for voice
+    (HEADSUP_VOICE) — the pinned literals stay lowercase, only the output lifts."""
     bubbles = _TOOL_HEADS_UP_BUBBLES.get(tool_name) or _TOOL_HEADS_UP_BUBBLES["web_search"]
     idx = len(seed or tool_name) % len(bubbles)
-    return bubbles[idx]
+    line = bubbles[idx]
+    return sentence_case(line) if headsup_voice_enabled() else line
 
 
 def search_heads_up(query: str | None = None) -> str:

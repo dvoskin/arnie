@@ -518,8 +518,9 @@ async def test_interim_fires_with_first_pass_text_before_final_and_no_double_sen
         on_interim=_capture,
     )
 
-    # Interim fired exactly once, with the model's own first-pass line.
-    assert seen == ["good q, let me check that real quick."]
+    # Interim fired exactly once, with the model's own first-pass line —
+    # sentence-cased for voice (C, HEADSUP_VOICE): 'good q…' → 'Good q…'.
+    assert seen == ["Good q, let me check that real quick."]
     # The re-voice follow-up still ran (its text is the FINAL answer).
     assert calls["follow_up"] == 1
     final = " ".join(result.response.bubbles).lower()
