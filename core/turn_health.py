@@ -546,6 +546,40 @@ def looks_like_unlogged_food_report(user_text: str, response_text: str) -> bool:
     return True
 
 
+# The user asks about a SPECIFIC product's nutrition and the reply HEDGES an
+# estimate ("about 160 cal, standard 1oz bag") instead of a looked-up figure — the
+# Bonilla de la Vista miss (IMG_8582). Trigger for the lookup rescue (B).
+_NUTRITION_Q_RE = re.compile(
+    r"\b(calor\w+|macros?|protein|carbs?|fat|nutrition|how\s+many\s+cal)\b", re.I)
+_ESTIMATE_HEDGE_RE = re.compile(
+    r"(\babout\b|\baround\b|\broughly\b|\bapproximate\w*\b|\btypically\b|"
+    r"\bgenerally\b|on\s+average|a\s+standard|standard\s+(?:1|one|single|serving|bag|size)|"
+    r"\bballpark\b|give\s+or\s+take|\bestimat\w+\b|\bprobably\b|should\s+be|"
+    r"somewhere\s+around|order\s+of|~)", re.I)
+
+
+def looks_like_estimated_product_query(user_text: str, response_text: str) -> bool:
+    """True when the user asked about a SPECIFIC product's nutrition and the reply
+    HEDGED an estimate instead of looking it up (Bonilla de la Vista, IMG_8582).
+    Caller confirms NO lookup tool fired. High-precision: a nutrition question +
+    a stated calorie/macro figure + a hedge word (a looked-up answer states the
+    number flatly). Backs the manifest [[DID: search_food_database]] gap."""
+    u = (user_text or "").strip()
+    r = (response_text or "").strip()
+    if not u or not r:
+        return False
+    if not ("?" in u or _QUESTION_RE.search(u)):
+        return False                 # must be a question
+    if not _NUTRITION_Q_RE.search(u):
+        return False                 # ... about nutrition
+    if not (_CALORIE_ESTIMATE_RE.search(r)
+            or re.search(r"\d+\s*g\s+(?:protein|carbs?|fat)", r, re.I)):
+        return False                 # the reply must state a figure
+    if not _ESTIMATE_HEDGE_RE.search(r):
+        return False                 # ... and HEDGE it (looked-up = flat number)
+    return True
+
+
 # A WORKOUT / SPORT mention in the user's message — high-precision so it never
 # trips on "played with my kids" or "ran out of time". Sport nouns, clear exercise
 # verbs/phrases, "played <sport>", "went for a run/walk", "ran/biked <N>".

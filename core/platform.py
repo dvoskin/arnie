@@ -96,6 +96,10 @@ def _sanitize_bubble(s: str) -> str:
     # the model appends [[LOGGED]] to assert a real write; the rescue reads it, then
     # it must NEVER reach the user. Tolerant of case/spacing.
     s = _re_platform.sub(r"\s*\[\[\s*LOGGED\s*\]\]\s*", " ", s, flags=_re_platform.I)
+    # ... and the generalized action manifest [[DID: log_food, search_food_database]]
+    # (core/conversation._parse_did): names the tools the model claims it called;
+    # read by the phantom/lookup rescues, then stripped. Tolerant of case/spacing.
+    s = _re_platform.sub(r"\s*\[\[\s*DID\s*:[^\]]*\]\]\s*", " ", s, flags=_re_platform.I)
     # Strip any INTERNAL system-nudge the model echoed — "[SYSTEM HEALTH CHECK —
     # not the user] ...", "[SYSTEM QUALITY CHECK ...]". These are rescue/guard
     # directives injected into the model's CONTEXT, NEVER for the user (Danny

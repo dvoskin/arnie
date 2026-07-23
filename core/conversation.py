@@ -64,16 +64,59 @@ def _log_marker_enabled() -> bool:
 
 
 _LOG_MARKER_INSTRUCTION = (
-    "\n\n[LOG-CONFIRM MARKER — machine check, NOT user-facing]\n"
-    "Whenever your reply tells the user you logged, recorded, saved, added, "
-    "updated, or put on the board anything they reported — a food, a set, an "
-    "exercise, body weight, water, anything you assert is now written — append the "
-    "EXACT token [[LOGGED]] at the very end of your final message. It is stripped "
-    "before the user ever sees it; never mention, explain, or vary it. Emit it "
-    "ONLY when you intend a real write AND are actually calling the log tool in the "
-    "same turn. Do NOT emit it for a plan, a question, a clarification, or coaching "
-    "that saved nothing. A [[LOGGED]] with no real log tool call is treated as a "
-    "FAILED write and the item is force-logged — so if you write it, call the tool."
+    "\n\n[ACTION MANIFEST — machine check, NOT user-facing]\n"
+    "Whenever your reply tells the user you DID something a tool performs — logged, "
+    "recorded, saved, added, updated, or deleted a food, set, exercise, body weight, "
+    "or water; or looked up / checked / searched a food's nutrition — append at the "
+    "VERY END a hidden manifest naming the EXACT tool(s) you actually called this "
+    "turn: [[DID: log_food]] , [[DID: log_exercise, log_water]] , "
+    "[[DID: search_food_database]] , [[DID: update_food_entry]] . It is stripped "
+    "before the user ever sees it; never mention, explain, or vary it. Name a tool "
+    "ONLY when you truly called it THIS turn. Do NOT emit it for a plan, a question, "
+    "a clarification, or your own estimate that called no tool. A tool named in "
+    "[[DID: ...]] but not actually called is treated as a FAILED action and is "
+    "force-run — so if you claim it, call it. (A bare [[LOGGED]] is still accepted "
+    "as 'a write happened'.)"
+)
+
+
+# ── GENERIC ACTION MANIFEST + LOOKUP RESCUE (B, 2026-07-23) ───────────────────
+# Generalizes the boolean [[LOGGED]] marker: the model also names the EXACT tool(s)
+# it claims via [[DID: tool, ...]]. A tool named but not fired = a claimed-action
+# gap → rescue. First arm wired here is LOOKUP: the user asks about a SPECIFIC
+# product and the model ANSWERS WITH AN ESTIMATE (Bonilla de la Vista, IMG_8582)
+# instead of calling search_food_database / web_search. This is the reliability
+# foundation meant to scale to many tools. Switch: LOOKUP_RESCUE.
+_LOOKUP_TOOLS = frozenset({"search_food_database", "web_search"})
+
+
+def _lookup_rescue_enabled() -> bool:
+    return os.getenv("LOOKUP_RESCUE", "true").lower() in ("true", "1", "yes")
+
+
+def _parse_did(text: str) -> set:
+    """Tool names the model claims it called this turn, from [[DID: a, b]] tags."""
+    import re
+    out = set()
+    for m in re.finditer(r"\[\[\s*DID\s*:\s*([^\]]+?)\s*\]\]", text or "", re.I):
+        for name in m.group(1).split(","):
+            name = name.strip()
+            if name:
+                out.add(name)
+    return out
+
+
+_LOOKUP_MARKER_INSTRUCTION = (
+    "\n\n[LOOKUP DISCIPLINE — machine check, NOT user-facing]\n"
+    "When the user asks what's in / how many calories or macros are in a SPECIFIC "
+    "product, brand, or restaurant item (not a staple you know cold like plain rice "
+    "or an egg), you MUST call search_food_database — or web_search for a brand or "
+    "restaurant item USDA won't have — and answer FROM the result. Do NOT give your "
+    "own approximation and imply you checked it. When you DO look something up, "
+    "append the exact hidden tag [[DID: search_food_database]] or [[DID: web_search]] "
+    "at the very end (stripped before the user sees it; never mention or vary it). An "
+    "estimate to a specific-product question with no lookup is force-checked and "
+    "re-answered with the real numbers."
 )
 
 # Voice-by-default for tool results. After ANY tool that yields a user-facing
@@ -599,6 +642,8 @@ async def run_turn(
         # [[LOGGED]] on any real log throughout the turn.
         if _log_marker_enabled():
             system = system + _LOG_MARKER_INSTRUCTION
+        if _lookup_rescue_enabled():
+            system = system + _LOOKUP_MARKER_INSTRUCTION
         result = await chat(messages, system, tools=True, max_tokens=4096,
                             **_chat_extras)
         # Flush trailing buffer immediately so a no-||| partial doesn't carry
@@ -1612,15 +1657,18 @@ async def run_turn(
                 _gate_user_message, response_text, _ex_fired)
         except Exception:
             _ex_phantom = False
-    # DETERMINISTIC marker phantom: the model emitted [[LOGGED]] (it thinks it
-    # wrote something) but NO logging tool fired this turn → the write didn't
-    # happen. This is the reliable, log-type-agnostic signal; the "🏋️"/worded
-    # heuristics above stay as backup for a turn where the model forgot the marker.
+    # DETERMINISTIC action-manifest phantom: the model named a write tool in
+    # [[DID: log_food, ...]] (or the legacy [[LOGGED]] token) — it thinks it wrote
+    # something — but NO logging tool fired this turn → the write didn't happen.
+    # The reliable, tool-agnostic signal; the "🏋️"/worded heuristics stay as backup.
     _marker_phantom = False
-    if _log_marker_enabled() and not _signing_off and _LOG_MARKER in (response_text or ""):
-        _marker_phantom = not any(tc.get("name") in _LOGGING_TOOLS for tc in tool_calls)
-        if _marker_phantom:
-            logger.warning(f"event=marker_phantom {_tag} — [[LOGGED]] claimed, no log tool fired")
+    _did_tools = _parse_did(response_text or "") if _log_marker_enabled() else set()
+    if _log_marker_enabled() and not _signing_off:
+        _write_claimed = bool(_did_tools & _LOGGING_TOOLS) or (_LOG_MARKER in (response_text or ""))
+        if _write_claimed:
+            _marker_phantom = not any(tc.get("name") in _LOGGING_TOOLS for tc in tool_calls)
+            if _marker_phantom:
+                logger.warning(f"event=marker_phantom {_tag} — write claimed ([[DID]]/[[LOGGED]]), no log tool fired")
     if (_phantom or _omission or _partial_drop or _ex_phantom or _marker_phantom) \
             and not _signing_off:
         try:
@@ -1737,6 +1785,65 @@ async def run_turn(
                                f"model fired no tool")
         except Exception as e:
             logger.error(f"Phantom rescue failed for {_tag}: {e}")
+
+    # ── LOOKUP RESCUE (B): estimated a specific product instead of looking it up ──
+    # The user asked about a SPECIFIC product's nutrition and the model answered with
+    # its OWN estimate — it named a lookup tool in the manifest but never called it,
+    # or hedged an estimate with no lookup at all (Bonilla de la Vista, IMG_8582).
+    # Force the lookup and re-answer with the real numbers. Switch: LOOKUP_RESCUE.
+    _lookup_fired = any(tc.get("name") in _LOOKUP_TOOLS for tc in tool_calls)
+    _lookup_gap = False
+    if _lookup_rescue_enabled() and not _signing_off and not _lookup_fired and response_text:
+        if _did_tools & _LOOKUP_TOOLS:
+            _lookup_gap = True   # claimed a lookup tool in the manifest, never fired it
+        else:
+            try:
+                from core.turn_health import looks_like_estimated_product_query
+                _lookup_gap = looks_like_estimated_product_query(
+                    _user_text if isinstance(_user_text, str) else "", response_text)
+            except Exception:
+                _lookup_gap = False
+    if _lookup_gap:
+        try:
+            _lu_nudge = (
+                "[SYSTEM HEALTH CHECK — not the user] The user asked about a SPECIFIC "
+                "product's nutrition and you gave your OWN estimate without looking it "
+                "up. Call search_food_database NOW for exactly that product — or "
+                "web_search for a brand/restaurant item USDA won't have — then give the "
+                "real numbers in your voice, one tight read. If it is a generic staple "
+                "you truly know cold (plain rice, an egg), call no tool and keep your "
+                "answer.")
+            _lu = await chat(
+                messages + [
+                    {"role": "assistant", "content": response_text},
+                    {"role": "user", "content": _lu_nudge},
+                ],
+                system, tools=True, max_tokens=500,
+            )
+            _lu_calls = [tc for tc in (_lu.get("tool_calls") or [])
+                         if tc.get("name") in _LOOKUP_TOOLS]
+            if _lu_calls:
+                if today_log is None:
+                    from db.queries import get_or_create_today_log
+                    today_log = await get_or_create_today_log(
+                        db, user.id, user.timezone or "UTC")
+                _lu_results = await execute_tool_calls(
+                    _lu_calls, user, today_log, db, _source,
+                    user_message=_gate_user_message)
+                _voiced = (await chat_follow_up(
+                    messages, _lu.get("raw_content"), _lu_calls, _lu_results,
+                    system, max_tokens=300) or "").strip()
+                if _voiced:
+                    if on_text_bubble and not _hold_voicing:
+                        for _b in Response.from_text(_voiced).bubbles:
+                            await on_text_bubble(_b)
+                    response_text = _voiced
+                    tool_calls = list(tool_calls or []) + _lu_calls
+                    logger.warning(
+                        f"event=lookup_rescue outcome=looked_up {_tag} "
+                        f"tools={[tc.get('name') for tc in _lu_calls]}")
+        except Exception as e:
+            logger.error(f"Lookup rescue failed for {_tag}: {e}")
 
     # ── ASK-FIRST ANSWER: force the held log on the answer turn ──────────────────
     # The ask-first HOLD asked before logging and wrote nothing (pending

@@ -143,3 +143,38 @@ async def test_marker_force_logs_every_type(monkeypatch, user_msg, pass1_text,
                    today_log=_today_log())
 
     assert expected <= got, f"marker rescue missed {expected - got}; executor got {got}"
+
+
+@pytest.mark.asyncio
+async def test_did_manifest_write_phantom_force_logged(monkeypatch):
+    """The generalized [[DID: log_food]] manifest (not just legacy [[LOGGED]]) also
+    force-logs a claimed-but-unfired write."""
+    monkeypatch.setenv("LOG_MARKER", "true")
+    calls = {"n": 0}
+
+    async def fake_chat(messages, system, tools=True, max_tokens=1024, model=None, **kw):
+        calls["n"] += 1
+        if calls["n"] == 1:                      # claims log_food by NAME, fires nothing
+            return {"text": "Logged your chicken, 200 cal. [[DID: log_food]]",
+                    "raw_content": [], "tool_calls": [], "stop_reason": "end_turn"}
+        return {"text": "Logged.", "raw_content": [],
+                "tool_calls": [{"name": "log_food",
+                                "input": {"food_name": "chicken", "calories": 200}}],
+                "stop_reason": "tool_use"}
+    monkeypatch.setattr(C, "chat", fake_chat)
+
+    logged = []
+    async def fake_exec(tool_calls, *a, **k):
+        logged.extend((tc.get("input") or {}).get("food_name") for tc in tool_calls)
+        return {"log_food": "Logged: chicken"}
+    monkeypatch.setattr(C, "execute_tool_calls", fake_exec)
+
+    async def fake_reload(db, uid): return _user()
+    monkeypatch.setattr(Q, "reload_user", fake_reload)
+
+    turn = await run_turn(_user(), _DB(), [{"role": "user", "content": "had chicken"}],
+                          "SYS", "imessage", in_onboarding=False, was_onboarding=False,
+                          today_log=_today_log())
+
+    assert "chicken" in logged, f"[[DID: log_food]] phantom NOT force-logged; got {logged}"
+    assert "[[DID" not in "|||".join(turn.response.bubbles if turn.response else [])
