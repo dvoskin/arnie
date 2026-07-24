@@ -880,7 +880,25 @@ async def run_turn(
                     _idem_dup = True
                     logger.info(f"event=structured_food_duplicate {_tag}")
                 else:
-                    _ik_mark(_ikey)
+                    # Durable claim (FOOD_LEDGER_V2 Phase 2): survives restarts
+                    # and cross-device races via the processed_turns unique key.
+                    # Fail OPEN — a claim-infra hiccup must never block a real
+                    # meal; the in-process registry above still covers retries.
+                    try:
+                        from db.queries import claim_processed_turn
+                        _names_ik = ", ".join(
+                            (tc.get("input") or {}).get("food_name") or
+                            str((tc.get("input") or {}).get("entry_id") or "")
+                            for tc in _sft["tool_calls"])[:200]
+                        if not await claim_processed_turn(
+                                db, user.id, _ikey, result_summary=_names_ik):
+                            _idem_dup = True
+                            logger.info(
+                                f"event=structured_food_duplicate durable {_tag}")
+                    except Exception:
+                        pass
+                    if not _idem_dup:
+                        _ik_mark(_ikey)
             except Exception:
                 _idem_dup = False
             if _idem_dup:

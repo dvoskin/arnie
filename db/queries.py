@@ -2692,3 +2692,91 @@ async def frequent_foods(db, user_id: int, days: int = 30, limit: int = 8):
              "calories": s.get("cal", 0), "protein": s.get("protein", 0),
              "carbs": s.get("carbs", 0), "fats": s.get("fats", 0)}
             for s in top if s["count"] >= 2]
+
+
+# ── ledger events + exactly-once (FOOD_LEDGER_V2 Phase 2) ─────────────────────
+# Domain-scoped by design (Danny 2026-07-24): food and fitness ride the SAME
+# event history; weight/water join as they migrate onto the contract.
+async def record_ledger_event(
+    db: AsyncSession, user_id: int, event_type: str, domain: str = "food",
+    entry_id: Optional[int] = None, daily_log_id: Optional[int] = None,
+    payload: Optional[dict] = None, source: Optional[str] = None,
+) -> None:
+    """Append one row to the ledger's event history. Callers wrap this in
+    try/except — history must never break the write it describes."""
+    from db.models import LedgerEvent
+    db.add(LedgerEvent(
+        user_id=user_id, domain=domain, entry_id=entry_id,
+        daily_log_id=daily_log_id, event_type=event_type,
+        payload_json=json.dumps(payload) if payload is not None else None,
+        source=source))
+    await db.commit()
+
+
+async def record_food_event(
+    db: AsyncSession, user_id: int, event_type: str,
+    entry_id: Optional[int] = None, daily_log_id: Optional[int] = None,
+    payload: Optional[dict] = None, source: Optional[str] = None,
+) -> None:
+    await record_ledger_event(db, user_id, event_type, domain="food",
+                              entry_id=entry_id, daily_log_id=daily_log_id,
+                              payload=payload, source=source)
+
+
+async def get_ledger_events(
+    db: AsyncSession, user_id: int, domain: Optional[str] = None,
+    entry_id: Optional[int] = None, limit: int = 50,
+):
+    """Event history, newest first — the audit trail behind 'why did you log
+    6 oz?' and the payload source for restoring a deleted entry."""
+    from db.models import LedgerEvent
+    q = select(LedgerEvent).where(LedgerEvent.user_id == user_id)
+    if domain is not None:
+        q = q.where(LedgerEvent.domain == domain)
+    if entry_id is not None:
+        q = q.where(LedgerEvent.entry_id == entry_id)
+    res = await db.execute(q.order_by(desc(LedgerEvent.created_at),
+                                      desc(LedgerEvent.id)).limit(limit))
+    return res.scalars().all()
+
+
+async def claim_processed_turn(
+    db: AsyncSession, user_id: int, idem_key: str,
+    result_summary: str = "", window_minutes: int = 60,
+) -> bool:
+    """Durable exactly-once claim for a structured food commit.
+
+    True  → this turn is first; the claim is recorded, proceed with the writes.
+    False → the same (user, key) was claimed inside the window (resend,
+            double-tap, cross-device race, post-restart redelivery) — answer
+            from the prior outcome, write nothing.
+
+    A claim older than the window is re-claimed: the identical message a day
+    later ('had a banana') is a genuinely new turn. The unique constraint is
+    the last word under concurrency; its violation is absorbed in a SAVEPOINT
+    so the caller's session survives."""
+    from db.models import ProcessedTurn
+    now = datetime.utcnow()
+    res = await db.execute(select(ProcessedTurn).where(and_(
+        ProcessedTurn.user_id == user_id, ProcessedTurn.idem_key == idem_key)))
+    row = res.scalars().first()
+    if row is not None:
+        if (now - (row.created_at or now)) <= timedelta(minutes=window_minutes):
+            return False
+        row.created_at = now
+        row.result_summary = (result_summary or "")[:500]
+        await db.commit()
+        return True
+    try:
+        async with db.begin_nested():
+            db.add(ProcessedTurn(user_id=user_id, idem_key=idem_key,
+                                 result_summary=(result_summary or "")[:500]))
+        await db.commit()
+        return True
+    except IntegrityError:
+        # A concurrent claim (other device / worker) won the insert race.
+        try:
+            await db.rollback()
+        except Exception:
+            pass
+        return False

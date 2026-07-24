@@ -2338,6 +2338,26 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
                 else None
             ),
         )
+        # LEDGER EVENT (FOOD_LEDGER_V2 Phase 2): append the created event with
+        # the committed state — undo/audit history. Best-effort: history must
+        # never break the write it describes.
+        try:
+            from db.queries import record_food_event
+            await record_food_event(
+                db, user.id, "created",
+                entry_id=getattr(_new_food, "id", None),
+                daily_log_id=target_log.id,
+                payload={"food_name": food_name,
+                         "quantity": inp.get("quantity"),
+                         "calories": analysis.calories,
+                         "protein": analysis.protein,
+                         "carbs": analysis.carbs,
+                         "fats": analysis.fat,
+                         "meal_type": getattr(_new_food, "meal_type", None),
+                         "basis": inp.get("basis")},
+                source=inp.get("source") or f"legacy:{source_type}")
+        except Exception as _ev_e:
+            logger.warning(f"food event (created) skipped: {_ev_e}")
         # Stash the entry id on the tool_call's input so conversation.py can
         # surface it in the macro_card payload. Native clients (iOS) use it
         # to edit/delete the entry directly via the foodEdit API instead of
@@ -2649,6 +2669,22 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
             is_cardio=is_cardio,
             occurred_at=_occurred_at,
         )
+        # LEDGER EVENT (domain=exercise): fitness rides the same event history
+        # as food (Danny 2026-07-24). Best-effort, never breaks the write.
+        try:
+            from db.queries import record_ledger_event
+            await record_ledger_event(
+                db, user.id, "created", domain="exercise",
+                entry_id=getattr(_new_ex, "id", None),
+                daily_log_id=target_log.id,
+                payload={"exercise_name": canonical_name,
+                         "sets": inp.get("sets"), "reps": inp.get("reps"),
+                         "weight_kg": weight_kg,
+                         "duration_minutes": inp.get("duration_minutes"),
+                         "is_cardio": is_cardio},
+                source=inp.get("source") or f"legacy:{source_type}")
+        except Exception as _ev_e:
+            logger.warning(f"ledger event (exercise created) skipped: {_ev_e}")
         # Same id stash as log_food: native clients use this for inline
         # edit/delete via the exerciseEdit API without round-tripping a
         # "please update X" message through Arnie.
@@ -2753,6 +2789,16 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
         # weight accordingly.
         context_val = inp.get("context")
         metric = await add_body_metric(db, user.id, weight_kg, context=context_val, when=weigh_when)
+        # LEDGER EVENT (domain=weight): same event history as food/exercise.
+        try:
+            from db.queries import record_ledger_event
+            await record_ledger_event(
+                db, user.id, "created", domain="weight",
+                entry_id=getattr(metric, "id", None),
+                payload={"weight_kg": weight_kg, "context": context_val},
+                source=inp.get("source") or f"legacy:{source_type}")
+        except Exception as _ev_e:
+            logger.warning(f"ledger event (weight created) skipped: {_ev_e}")
         recent = await get_recent_weights(db, user.id, days=14)
         ordered = sorted(
             [w for w in recent if getattr(w, "weight_kg", None) is not None],
@@ -2921,6 +2967,19 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
         except Exception as _e:
             logger.warning(f"recurring-memory backfill on update failed: {_e}")
 
+        # LEDGER EVENT: the applied changes, post-commit. Best-effort.
+        try:
+            from db.queries import record_ledger_event
+            await record_ledger_event(
+                db, user.id, "updated", domain="food", entry_id=entry_id,
+                daily_log_id=getattr(today_log, "id", None),
+                payload={"changes": {k: v for k, v in changes.items()
+                                     if k != "new_daily_log_id"},
+                         "moved_to": str(target_date) if target_date else None},
+                source=inp.get("source") or "legacy")
+        except Exception as _ev_e:
+            logger.warning(f"ledger event (food updated) skipped: {_ev_e}")
+
         # Build the confirmation DEFENSIVELY. The update already committed above;
         # a formatting hiccup here must never turn a successful move into a
         # reported failure (the "it actually moved but Arnie said it didn't" bug).
@@ -2938,9 +2997,37 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
         entry_id = inp.get("entry_id")
         if not entry_id:
             return "Missing entry_id"
+        # Capture the row BEFORE the delete — the deleted event carries the
+        # full payload, which is what makes restore ("bring it back") possible.
+        _del_payload = None
+        try:
+            from db.models import FoodEntry as _FE_del
+            _row_del = await db.get(_FE_del, int(entry_id))
+            if _row_del is not None:
+                _del_payload = {
+                    "food_name": _row_del.parsed_food_name,
+                    "quantity": _row_del.quantity,
+                    "calories": _row_del.calories,
+                    "protein": _row_del.protein,
+                    "carbs": _row_del.carbs,
+                    "fats": _row_del.fats,
+                    "meal_type": _row_del.meal_type,
+                    "daily_log_id": _row_del.daily_log_id,
+                }
+        except Exception:
+            _del_payload = None
         ok = await q_delete_food_entry(db, entry_id, user.id)
         if not ok:
             return f"No food entry #{entry_id} found."
+        try:
+            from db.queries import record_ledger_event
+            await record_ledger_event(
+                db, user.id, "deleted", domain="food", entry_id=entry_id,
+                daily_log_id=(_del_payload or {}).get("daily_log_id")
+                or getattr(today_log, "id", None),
+                payload=_del_payload, source=inp.get("source") or "legacy")
+        except Exception as _ev_e:
+            logger.warning(f"ledger event (food deleted) skipped: {_ev_e}")
         await db.refresh(today_log)
         return f"Removed food entry #{entry_id}"
 
@@ -2976,6 +3063,17 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
         entry = await q_update_exercise_entry(db, entry_id, user.id, **changes)
         if not entry:
             return f"No exercise entry #{entry_id} found in today's log."
+        try:
+            from db.queries import record_ledger_event
+            await record_ledger_event(
+                db, user.id, "updated", domain="exercise", entry_id=entry_id,
+                daily_log_id=getattr(today_log, "id", None),
+                payload={"changes": {k: v for k, v in changes.items()
+                                     if k != "new_daily_log_id"},
+                         "moved_to": str(target_date) if target_date else None},
+                source=inp.get("source") or "legacy")
+        except Exception as _ev_e:
+            logger.warning(f"ledger event (exercise updated) skipped: {_ev_e}")
         await db.refresh(today_log)
         moved = f", moved to {target_date}" if target_date else ""
         return f"Updated exercise #{entry_id}: {entry.exercise_name}{moved}"
@@ -2986,9 +3084,33 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
         entry_id = inp.get("entry_id")
         if not entry_id:
             return "Missing entry_id"
+        # Payload capture before the delete — restore-ability, same as food.
+        _del_ex_payload = None
+        try:
+            from db.models import ExerciseEntry as _EE_del
+            _row_ex = await db.get(_EE_del, int(entry_id))
+            if _row_ex is not None:
+                _del_ex_payload = {
+                    "exercise_name": _row_ex.exercise_name,
+                    "sets": _row_ex.sets, "reps": _row_ex.reps,
+                    "weight": _row_ex.weight,
+                    "duration_minutes": getattr(_row_ex, "duration_minutes", None),
+                    "daily_log_id": _row_ex.daily_log_id,
+                }
+        except Exception:
+            _del_ex_payload = None
         ok = await q_delete_exercise_entry(db, entry_id, user.id)
         if not ok:
             return f"No exercise entry #{entry_id} found."
+        try:
+            from db.queries import record_ledger_event
+            await record_ledger_event(
+                db, user.id, "deleted", domain="exercise", entry_id=entry_id,
+                daily_log_id=(_del_ex_payload or {}).get("daily_log_id")
+                or getattr(today_log, "id", None),
+                payload=_del_ex_payload, source=inp.get("source") or "legacy")
+        except Exception as _ev_e:
+            logger.warning(f"ledger event (exercise deleted) skipped: {_ev_e}")
         await db.refresh(today_log)
         return f"Removed exercise entry #{entry_id}"
 
@@ -3253,6 +3375,16 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
                 source_type=source_type,
             )
             target_log.total_water_ml = await recompute_water_total(db, target_log.id)
+            # LEDGER EVENT (domain=water): same event history as the others.
+            try:
+                from db.queries import record_ledger_event
+                await record_ledger_event(
+                    db, user.id, "created", domain="water",
+                    daily_log_id=target_log.id,
+                    payload={"amount_ml": ml, "context": inp.get("context")},
+                    source=inp.get("source") or f"legacy:{source_type}")
+            except Exception as _ev_e:
+                logger.warning(f"ledger event (water created) skipped: {_ev_e}")
         total_ml = target_log.total_water_ml or 0
         oz_this = round((ml or 0) / 29.5735)
         total_oz = round(total_ml / 29.5735)
