@@ -145,23 +145,32 @@ async def test_plain_chat_turn_sends_bubbles(pipeline_env):
 
 
 @pytest.mark.asyncio
-async def test_food_log_runs_tool_once_and_coaches(pipeline_env):
-    """Logging a food: tool executes, and the reply COACHES (follow-up), not a bare
-    template. This is the coach-unmute behavior — must survive the pipeline merge."""
+async def test_food_log_runs_tool_once_and_coaches(pipeline_env, monkeypatch):
+    """Logging a food: the tool executes exactly once and the reply is the
+    SINGLE-SOURCE log voice (core/log_voice), never the legacy follow-up —
+    repinned 2026-07-24: the follow-up double-reply path was retired for pure
+    food turns (voice_log reads committed facts; deterministic confirmation is
+    the floor)."""
     env = pipeline_env
     await _seed_user(env["Maker"])
+    import core.conversation as C
+
+    async def _fake_voice(tool_calls, tool_results, today_log, user):
+        return "Chicken bowl logged, 650 in.|||Keep dinner lean."
+    monkeypatch.setattr(C, "voice_log", _fake_voice)
     env["set_llm"](
         text="",
         tool_calls=[{"name": "log_food",
                      "input": {"food_name": "chicken bowl", "calories": 650,
                                "protein": 45, "carbs": 60, "fats": 18}}],
-        follow_up_text="Logged.|||Solid protein.|||Keep dinner lean.",
+        follow_up_text="SHOULD NOT RUN",
     )
     await env["H"].run_imessage_pipeline("+15550001111", "iMessage;-;+15550001111",
                                          "had a chicken bowl", message_guid="g2")
-    # coaching follow-up was used (not just the deterministic template)
-    assert env["calls"]["follow_up"] == 1
+    # ONE source: the fast log voice replies; the legacy follow-up stays quiet.
+    assert env["calls"]["follow_up"] == 0
     assert len(env["sent"]) >= 1
+    assert any("Chicken bowl logged" in s for s in env["sent"]), env["sent"]
     # the food actually persisted exactly once
     from sqlalchemy import select, func
     from db.models import FoodEntry
@@ -809,23 +818,31 @@ async def test_tg_plain_chat_turn_sends_bubbles(tg_pipeline_env):
 
 
 @pytest.mark.asyncio
-async def test_tg_food_log_coaches_not_template(tg_pipeline_env):
-    """Telegram: logging food uses the coach-unmute follow-up, not a canned template."""
+async def test_tg_food_log_coaches_not_template(tg_pipeline_env, monkeypatch):
+    """Telegram: a food log replies in the SINGLE-SOURCE log voice, never the
+    legacy follow-up and never a bare canned template (repinned 2026-07-24,
+    same one-source contract as the iMessage test above)."""
     env = tg_pipeline_env
     await _seed_tg_user(env["Maker"])
+    import core.conversation as C
+
+    async def _fake_voice(tool_calls, tool_results, today_log, user):
+        return "Salmon logged, 400 in.|||Stay under 500 for dinner."
+    monkeypatch.setattr(C, "voice_log", _fake_voice)
     env["set_llm"](
         text="",
         tool_calls=[{"name": "log_food",
                      "input": {"food_name": "salmon", "calories": 400,
                                "protein": 40, "carbs": 0, "fats": 18}}],
-        follow_up_text="Logged.|||Great protein source.|||Stay under 500 cal for dinner.",
+        follow_up_text="SHOULD NOT RUN",
     )
     async with env["Maker"]() as db:
         await env["TH"]._run_pipeline(
             env["update"], env["context"], "had salmon for lunch", "text", db
         )
-    assert env["calls"]["follow_up"] == 1
+    assert env["calls"]["follow_up"] == 0
     assert len(env["sent"]) >= 1
+    assert any("Salmon logged" in s for s in env["sent"]), env["sent"]
     from sqlalchemy import select, func
     from db.models import FoodEntry
     async with env["Maker"]() as db:
@@ -952,36 +969,24 @@ async def test_tg_skip_button_routes_through_run_turn_not_canned_card(tg_pipelin
 # "logged" with zero food_entries written.)
 # ─────────────────────────────────────────────────────────────────────────────
 
-async def test_phantom_log_claim_rescued_by_executed_tools(pipeline_env, monkeypatch):
+async def test_phantom_log_claim_flagged_never_fabricates(pipeline_env, monkeypatch,
+                                                          caplog):
+    """Repinned 2026-07-24: the active phantom-claim re-pass was retired — on
+    structured food turns narration-without-write is structurally impossible
+    (say + write are one artifact), and a LEGACY phantom claim is now
+    detection: the turn is flagged phantom_log_claim for the audit view, and
+    crucially NOTHING is fabricated into the ledger. Pin both halves."""
+    import logging as _logging
     H, C, Maker = pipeline_env["H"], pipeline_env["C"], pipeline_env["Maker"]
     sent = pipeline_env["sent"]
     addr = "+15550009898"
     im_id = await _seed_user(Maker, addr)
 
-    seq = {"n": 0}
-
     async def _fake_chat(messages, system, tools=True, max_tokens=1024,
                          model=None, stream_handler=None, **kwargs):
-        seq["n"] += 1
-        if seq["n"] == 1:
-            # First pass: the failure mode — text-only claim, no tool call.
-            return {"text": "Second round of turkey and rice logged.|||205 calories, 29g protein on the board.",
-                    "tool_calls": [], "raw_content": [{"x": 1}]}
-        # Rescue pass: the model actually calls log_food this time.
-        return {
-            "text": "Turkey and rice in for real now, 343 calories, 33g protein.",
-            "tool_calls": [
-                {"name": "log_food", "input": {
-                    "food_name": "Ground turkey, 96% lean, pan-cooked",
-                    "quantity": "150g", "calories": 213, "protein": 29,
-                    "carbs": 0, "fats": 9}},
-                {"name": "log_food", "input": {
-                    "food_name": "White rice, steamed",
-                    "quantity": "100g cooked", "calories": 130, "protein": 4,
-                    "carbs": 28, "fats": 0}},
-            ],
-            "raw_content": [{"x": 1}],
-        }
+        # The failure mode: a text-only "logged" claim, zero tool calls.
+        return {"text": "Second round of turkey and rice logged.|||205 calories, 29g protein on the board.",
+                "tool_calls": [], "raw_content": [{"x": 1}]}
 
     async def _fake_follow_up(messages, raw, tcs, results, system,
                               max_tokens=512, stream_handler=None, **kwargs):
@@ -990,11 +995,13 @@ async def test_phantom_log_claim_rescued_by_executed_tools(pipeline_env, monkeyp
     monkeypatch.setattr(C, "chat", _fake_chat)
     monkeypatch.setattr(C, "chat_follow_up", _fake_follow_up)
 
-    await H.run_imessage_pipeline(
-        addr, f"iMessage;-;{addr}", "I had another 150g of turkey and 100g rice",
-        message_guid="phantom-rescue-1")
+    with caplog.at_level(_logging.WARNING, logger="core.conversation"):
+        await H.run_imessage_pipeline(
+            addr, f"iMessage;-;{addr}",
+            "I had another 150g of turkey and 100g rice",
+            message_guid="phantom-rescue-1")
 
-    # The food actually landed.
+    # Half 1: the claim wrote NOTHING — no fabricated entries in the ledger.
     from sqlalchemy import select
     from db.models import User, DailyLog, FoodEntry
     async with Maker() as db:
@@ -1004,10 +1011,10 @@ async def test_phantom_log_claim_rescued_by_executed_tools(pipeline_env, monkeyp
         for l in logs:
             entries += (await db.execute(
                 select(FoodEntry).where(FoodEntry.daily_log_id == l.id))).scalars().all()
-    names = [e.parsed_food_name for e in entries]
-    assert any("turkey" in (n or "").lower() for n in names), names
-    assert any("rice" in (n or "").lower() for n in names), names
+    assert entries == [], f"a phantom claim must never write entries: {entries}"
 
-    # The shipped reply is the rescue confirmation, not the phantom claim.
-    final = "\n".join(sent)
-    assert "for real now" in final or "343" in final
+    # Half 2: the turn is flagged for the audit view.
+    assert any("phantom_log_claim" in r.message for r in caplog.records), \
+        "phantom claim must be flagged in turn health"
+    # And the user still got a reply.
+    assert len(sent) >= 1
