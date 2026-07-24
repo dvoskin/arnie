@@ -169,7 +169,7 @@ _SYSTEM = (
     'unclear -> {"action":"ask","points":[{"label":"Chicken","qs":["grilled, '
     'baked, or fried?","skin on or off?","rough amount - oz or one breast?"]},'
     '{"label":"Potato","qs":["baked, mashed, or fries?","any butter, cheese, '
-    'or sour cream?"]}]}\n'
+    'or sour cream?"]}],"ready":["Bagel","Greek yogurt"]}\n'
     '3. Consumed food with enough detail -> {"action":"log","items":[{"food":'
     '"Caesar salad","amount":2,"unit":"handfuls","calories":180,"protein":4,'
     '"carbs":8,"fats":15,"meal":"dinner"}],"say":"Pizza and the Caesar logged, {batch_cal} cal and '
@@ -180,6 +180,9 @@ _SYSTEM = (
     '"carbs":26,"fats":18}],"say":"Bumped the birria to 2 tacos, {batch_cal} cal '
     'now."}\n'
     "RULES:\n"
+    "- In an ask, items that need NOTHING go in ready:[names] so the user "
+    "sees every item was heard - never leave a clean item unacknowledged "
+    "while you question the others.\n"
     "- ASK DEPTH scales with mode: on strict, list EVERY calorie-moving facet "
     "per item as its own short sub-question (prep / skin / amount for "
     "proteins; size / toppings for starches; bread, slices, butter for toast; "
@@ -552,7 +555,7 @@ async def run(message: str, user, prior: Optional[dict] = None,
     action = data.get("action")
 
     if action == "ask" and not prior:
-        text = _format_question(data.get("points") or [])
+        text = _format_question(data.get("points") or [], data.get("ready"))
         return {"action": "ask", "text": text} if text else None
 
     if action == "update":
