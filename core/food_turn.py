@@ -15,14 +15,27 @@ returns strict JSON —
   ask    -> points [{label, q}]   (ONE rich-formatted question)
   pass   -> not a food report; the normal conversation path takes the turn
 
-A question structurally CANNOT become a food entry (asks and items are different
-actions), and quantities are always a clean "amount unit" so every entry is
+Asks and items are different actions, so an ask payload cannot carry writes;
+on top of that, run() enforces a consumption-evidence invariant (an
+interrogative or evidence-free cold message never yields a log write, whatever
+the model chose). Quantities are always a clean "amount unit" so every entry is
 editable. Composites split into natural separate items (Caesar salad one item,
-grilled chicken strips another — Danny). The items are executed through the
-EXISTING tool executor (enrichment, dedup, meal-slot inheritance, cards intact)
-by impersonating pass-1's tool calls, and the coach (voice_log) talks over the
-committed result. Non-food, photos, corrections, mixed food+workout messages, and
-non-English reports fall through to the legacy path untouched.
+grilled chicken strips another — Danny).
+
+LEDGER SHAPE (Danny 2026-07-24): the logger is the INTERPRETER for a
+transaction layer (core/food_ledger). It proposes ORDERED OPERATIONS — log,
+update, delete, in one plan, so mixed turns ("bump the tacos and add a Coke")
+commit atomically in order. The deterministic policy engine arbitrates
+reported ambiguities (the system, not the model, owns the final ask
+decision); duplicate delivery is absorbed by idempotency keys; narration
+renders from ONE committed snapshot. The plan executes through the existing
+tool executor (enrichment, dedup, meal-slot inheritance, cards intact) as
+source=structured_food tool calls.
+
+The word "cannot" is earned only where structure enforces it; everything the
+prompt merely instructs (action choice, decomposition, reference resolution)
+is validated downstream, not trusted. Non-food, mixed food+workout messages,
+and non-English reports fall through to the legacy path untouched.
 
 Kill switch: STRUCTURED_FOOD=false.
 """
@@ -39,6 +52,13 @@ from core.llm import chat
 logger = logging.getLogger(__name__)
 
 ASK_KIND = "food_structured_ask"
+
+# The structured interpreter is a NAMED producer, not an impersonation of
+# pass-1: every tool call it emits carries this source tag (persisted in each
+# entry's raw_input), so downstream behavior is testable per source and
+# regressions trace to a version.
+from core.food_ledger import INTERPRETER_VERSION as _IV  # noqa: E402
+_SOURCE = f"structured_food:{_IV}"
 
 
 def structured_food_enabled() -> bool:
@@ -76,6 +96,7 @@ _MEAL_RE = re.compile(r"\b(breakfast|lunch|dinner|snack|dessert)\b", re.I)
 _ACK_RE = re.compile(
     r"^(ok(ay)?|k+|thx|thanks|thank\s+you|ty|cool|nice|great|sweet|got\s+it|gotcha|"
     r"yes|yeah|yep|yup|sure|no+|nope|word|bet|perfect|awesome|good|alright|lol|haha|"
+    r"never\s*mind|nvm|"
     # Keep-as-is family: the user is CLOSING the thread, not asking for a write.
     # "Leave it like this" after a proposed bump must never apply the bump
     # (Danny's truffle fries, 2026-07-23).
@@ -124,6 +145,112 @@ _PORTION_SHAPE_RE = re.compile(
     r"(?:oz|ounces?|g|grams?|kg|ml|l|cups?|tbsp|tsp|slices?|bars?|bags?|"
     r"bowls?|plates?|servings?|scoops?|pieces?|handfuls?|cans?|bottles?|"
     r"packs?|eggs?|strips?)\b", re.I)
+
+# ── mid-thread intent taxonomy (Danny 2026-07-24, fix #4) ─────────────────────
+# "Food happened recently" must not seize the thread. These shapes separate
+# ledger operations (which the logger owns) from food CONVERSATION — estimate
+# challenges, explanation requests, coaching asks, commentary — which the
+# conversational brain owns even seconds after a write.
+_INTERROGATIVE_RE = re.compile(
+    r"^(?:do(?:es)?|did|would|will|can|could|should|is|are|was|were|how|what|"
+    r"which|why|where|when|who|am\s+i)\b", re.I)
+_CHALLENGE_RE = re.compile(
+    r"\b(?:too\s+(?:high|low|much|many|big|small)|way\s+(?:off|too\s+\w+)|"
+    r"seems?\s+(?:high|low|off|wrong)|can'?t\s+be\s+right|no\s+way|"
+    r"doesn'?t\s+(?:seem|look)\s+right)\b", re.I)
+_COACHING_RE = re.compile(
+    r"\b(?:what\s+should\s+i|should\s+i\s+(?:eat|have|get)|suggest|recommend|"
+    r"still\s+hungry|craving)\b", re.I)
+_CLEAR_DAY_RE = re.compile(
+    r"\b(?:clear|wipe|reset)\b[^.!?]*\b(?:day|log|everything|today|all)\b", re.I)
+# Explicit go-ahead on a proposal ("okay log it") — a report cue even with no
+# food noun in the message itself.
+_LOG_CUE_RE = re.compile(r"\b(?:log|add)\s+(?:it|them|those|that|all|the)\b", re.I)
+
+
+def classify_thread_intent(text: str) -> str:
+    """What is this message DOING, mid-food-thread? Ledger ops (report /
+    correction / deletion) route to the logger; everything conversational
+    (question / challenge / coaching / commentary / prospective) stays with
+    the big brain. Order matters: closure and negation win first."""
+    t = (text or "").strip()
+    if not t or len(t) > 500:
+        return "other"
+    if _ACK_RE.match(t):
+        return "ack"
+    if _NEGATED_RE.search(t):
+        return "retraction"
+    if _CLEAR_DAY_RE.search(t):
+        return "other"            # whole-day wipe → big brain's judgment
+    if _DESTRUCTIVE_RE.search(t):
+        return "deletion"
+    if "?" in t or _INTERROGATIVE_RE.match(t):
+        return "question"
+    if _NONFOOD_RE.search(t):
+        return "other_domain"
+    if _CHALLENGE_RE.search(t):
+        return "estimate_challenge"
+    if _COACHING_RE.search(t):
+        return "coaching"
+    if _PLAN_RE.search(t):
+        return "prospective"
+    if _CORRECTION_RE.search(t):
+        return "correction"
+    if (_CONSUMED_RE.search(t) or _MEAL_RE.search(t)
+            or _PORTION_SHAPE_RE.search(t) or _LOG_CUE_RE.search(t)):
+        return "report"
+    return "commentary"
+
+
+def thread_relevance(text: str, minutes_since_write, has_pending: bool) -> bool:
+    """Graded mid-thread routing (replaces the flat 15-minute takeover):
+    an open ask binds anything answer-shaped; a minutes-old write binds
+    reports and corrections; an hours-old write binds only explicit
+    corrections and removals ('actually it was grilled' after lunch).
+    Commentary, challenges, questions and coaching never route here."""
+    intent = classify_thread_intent(text)
+    if has_pending:
+        # Free-text answers to an open ask are often bare fragments
+        # ("half of it", "the big bag") — commentary-shaped, still answers.
+        return intent in ("report", "correction", "deletion", "commentary")
+    if minutes_since_write is None:
+        return False
+    if intent in ("report", "correction", "deletion") and minutes_since_write <= 15:
+        return True
+    if intent in ("correction", "deletion") and minutes_since_write <= 120:
+        return True
+    return False
+
+
+def applies_destructive(text: str) -> bool:
+    """Single-entry removals ('remove the fries', 'undo that') are ledger
+    operations — they route structured so the delete op resolves against the
+    board with a real entry_id. Whole-day wipes and non-food destructive stay
+    with the big brain. Callers gate on a non-empty board."""
+    t = (text or "").strip()
+    if not t or len(t) > 500 or "?" in t:
+        return False
+    if _CLEAR_DAY_RE.search(t) or _NONFOOD_RE.search(t):
+        return False
+    return bool(_DESTRUCTIVE_RE.search(t))
+
+
+def consumption_evidence(message: str, prior=None, thread_active: bool = False) -> bool:
+    """HARD EXECUTION INVARIANT (fix #3): a log write requires a message that
+    can honestly be read as a consumption assertion — whatever action the
+    model chose. An interrogative can never yield one ('Does a chicken caesar
+    have 700 calories?' stays a question even if the model said log); a cold
+    negation or plan can't either. Positive-evidence gating for cold entry
+    lives in applies()/thread_relevance — this invariant is the backstop
+    against the model MISCLASSIFYING the shapes that must never write."""
+    t = (message or "").strip()
+    if not t:
+        return False
+    if "?" in t or _INTERROGATIVE_RE.match(t):
+        return False
+    if prior is not None or thread_active:
+        return True
+    return not (_NEGATED_RE.search(t) or _PLAN_RE.search(t))
 
 
 def applies(text: str) -> bool:
@@ -179,7 +306,39 @@ _SYSTEM = (
     '"entry_id":123,"amount":2,"unit":"taco","calories":360,"protein":30,'
     '"carbs":26,"fats":18}],"say":"Bumped the birria to 2 tacos, {batch_cal} cal '
     'now."}\n'
+    '5. REMOVING an entry from today\'s board ("remove the fries", "undo that", '
+    '"I didn\'t actually eat the yogurt") -> {"action":"delete","deletes":[{'
+    '"entry_id":123}],"say":"Took the fries off. You\'re back to {day_cal} with '
+    '{cal_left} left."}\n'
+    '6. MIXED turns (a correction AND a new item, a removal AND an addition) -> '
+    'ordered {"operations":[{"op":"update","entry_id":123,"amount":2,"unit":'
+    '"taco","calories":360,"protein":30,"carbs":26,"fats":18},{"op":"log",'
+    '"food":"Coke","amount":12,"unit":"oz","calories":140,"carbs":39}],'
+    '"say":"Bumped the tacos and the Coke is on, {batch_cal} cal for the '
+    'changes."} Operation objects use the same fields as items/updates/deletes '
+    'plus "op". Order them the way the user said them.\n'
     "RULES:\n"
+    "- CORRECTION OPERATOR discipline: 'two MORE tacos' is a NEW log (an "
+    "addition), 'actually only one' REPLACES the amount, 'they were chicken "
+    "not beef' keeps the amount and re-estimates macros for the new identity, "
+    "'that was yesterday' is an update carrying date. Never collapse an "
+    "addition into a replace or a replace into an addition.\n"
+    "- AMBIGUITIES you chose to estimate through: when you log despite a "
+    'borderline unknown, report it as "ambiguities":[{"item":"Chicken",'
+    '"field":"quantity","impact_cal":250}] alongside the items (fields: '
+    "quantity, identity, brand, prep, consumed). The system owns the final "
+    "ask decision - report honestly, never round your doubt away.\n"
+    "- ANSWER-TURN follow-up: when their answer itself introduces a NEW "
+    "material unknown (a new item, a new unstated portion), you may ask ONCE "
+    'more - set "new_ambiguity":true on that ask. Never re-ask anything '
+    "already asked or answered.\n"
+    '- Each log item may carry "basis": "stated" (user gave the amount), '
+    '"regular" (from THEIR REGULARS), or "estimate" (your call) - provenance '
+    "for the audit trail.\n"
+    '- Optional "note": ONE short forward-looking coach fragment with NO '
+    "numbers and NO nutrition claims (those come from the system after the "
+    'commit). Optional "follow_up":"save_as_regular" ONLY when the meal looks '
+    "like a repeated order that is not yet in their regulars.\n"
     "- ASK DEPTH scales with mode: on strict, list EVERY calorie-moving facet "
     "per item as its own short sub-question (prep / skin / amount for "
     "proteins; size / toppings for starches; bread, slices, butter for toast; "
@@ -443,19 +602,139 @@ def fill_say_tokens(say: str, batch_cal: int, batch_protein: int,
                     day_cal: int, day_protein: int,
                     cal_target: int, protein_target: int) -> str:
     """The logger writes the WORDS; the system writes the NUMBERS. Token values
-    come from the COMMITTED day (post-enrichment), so the say line can never
-    disagree with the card/DB — the logger↔coach handshake (Danny 2026-07-23:
-    'work perfectly together and not conflict')."""
-    vals = {
+    come from the COMMITTED day (post-enrichment) so the numeric channel of the
+    say can never disagree with the card/DB. Canonical fill lives in the ledger
+    layer (core/food_ledger.fill_tokens); this wrapper keeps the historical
+    signature for the legacy path and tests."""
+    from core.food_ledger import fill_tokens
+    return fill_tokens(say, {
         "batch_cal": batch_cal, "batch_protein": batch_protein,
         "day_cal": day_cal, "day_protein": day_protein,
         "cal_left": max(0, int(cal_target or 0) - day_cal),
         "protein_left": max(0, int(protein_target or 0) - day_protein),
-    }
-    out = _TOKEN_RE.sub(lambda m: str(vals.get(m.group(1), "")), say or "")
-    # Belt: any token the model invented ({whatever}) must never reach the user.
-    out = re.sub(r"\{[a-z_]{2,24}\}", "", out)
-    return re.sub(r"[ \t]{2,}", " ", out).strip()
+    })
+
+
+# ── ordered operations (fix #1): one plan, executed in the user's order ──────
+def _normalize_ops(data: dict) -> list:
+    """Normalize interpreter output into an ordered [(kind, op), ...] plan.
+    Accepts the v2 shape ({"operations":[{"op":...}]}) and the v1 single-action
+    shape (items/updates/deletes) — one executor path either way."""
+    raw = data.get("operations")
+    ops = []
+    if isinstance(raw, list) and raw:
+        for o in raw:
+            if not isinstance(o, dict):
+                continue
+            k = str(o.get("op") or o.get("type") or "").strip().lower()
+            if k in ("log", "update", "delete"):
+                ops.append((k, o))
+        return ops
+    action = data.get("action")
+    key = {"log": "items", "update": "updates", "delete": "deletes"}.get(action)
+    if not key:
+        return []
+    return [(action, o) for o in (data.get(key) or []) if isinstance(o, dict)]
+
+
+def _log_call(it: dict) -> Optional[dict]:
+    if not isinstance(it, dict):
+        return None
+    food = str(it.get("food") or "").strip()
+    # Structural sanity, not a guard pile: an item is a NAMED FOOD.
+    if not food or "?" in food or len(food) > 60:
+        return None
+    amount = it.get("amount")
+    unit = str(it.get("unit") or "").strip()
+    try:
+        amount = round(float(amount), 2)
+        amount = int(amount) if float(amount).is_integer() else amount
+    except (TypeError, ValueError):
+        amount = None
+    qty = f"{amount} {unit}".strip() if amount is not None else unit
+    # First-class source + provenance (ledger fixes #15/"provenance"): the
+    # write names its producer and where the amount came from; both persist
+    # verbatim in the entry's raw_input, so "why did you log 6 oz?" has a
+    # recorded answer instead of a plausible excuse.
+    inp = {"food_name": food, "quantity": qty,
+           "estimated": True, "confidence": 0.65,
+           "source": _SOURCE}
+    _basis = str(it.get("basis") or "").strip().lower()
+    if _basis in ("stated", "regular", "estimate"):
+        inp["basis"] = _basis
+    if it.get("branded"):
+        # The logger read the message — it declares brandedness; the
+        # downstream heuristic (_looks_branded) is only the backup net.
+        inp["is_packaged"] = True
+    for k in ("calories", "protein", "carbs", "fats"):
+        v = it.get(k)
+        if isinstance(v, (int, float)):
+            inp[k] = v
+    mt = str(it.get("meal_type") or "").strip().lower()
+    if mt in ("breakfast", "lunch", "dinner", "snack"):
+        inp["meal_type"] = mt
+    _meal = str(it.get("meal") or "").lower().strip()
+    if _meal in ("breakfast", "lunch", "dinner", "snack"):
+        inp["meal_type"] = _meal
+    return {"name": "log_food", "input": inp}
+
+
+def _update_call(up: dict, board_by_id: dict) -> Optional[dict]:
+    if not isinstance(up, dict):
+        return None
+    try:
+        eid = int(up.get("entry_id"))
+    except (TypeError, ValueError):
+        return None
+    line = board_by_id.get(eid)
+    if line is None:
+        return None          # structural: only entries actually on the board
+    inp = {"entry_id": eid}
+    amount = up.get("amount")
+    unit = str(up.get("unit") or "").strip()
+    try:
+        amount = round(float(amount), 2)
+        amount = int(amount) if float(amount).is_integer() else amount
+        inp["quantity"] = f"{amount} {unit}".strip()
+    except (TypeError, ValueError):
+        pass
+    for k in ("calories", "protein", "carbs", "fats"):
+        v = up.get(k)
+        if isinstance(v, (int, float)):
+            inp[k] = v
+    # Compare-and-swap seed (fix #9): the interpreter targeted this entry
+    # holding a board snapshot; the executor refuses the write if the row has
+    # since changed materially (cross-device edit, enrichment drift) — a
+    # scale computed from stale numbers corrupts the entry.
+    try:
+        inp["expected_calories"] = float(line.get("cal") or 0)
+    except (TypeError, ValueError):
+        pass
+    _hint = str(line.get("food") or "").strip()
+    if _hint:
+        inp["food_hint"] = _hint
+    if str(up.get("date") or "").strip():
+        # move-to-date rides the update primitive ("that was yesterday").
+        inp["date"] = str(up["date"]).strip()
+    inp["source"] = _SOURCE
+    return {"name": "update_food_entry", "input": inp}
+
+
+def _delete_call(d: dict, board_by_id: dict) -> Optional[dict]:
+    if not isinstance(d, dict):
+        return None
+    try:
+        eid = int(d.get("entry_id"))
+    except (TypeError, ValueError):
+        return None
+    line = board_by_id.get(eid)
+    if line is None:
+        return None          # structural: never delete an id not on the board
+    inp = {"entry_id": eid, "source": _SOURCE}
+    _hint = str(line.get("food") or "").strip()
+    if _hint:
+        inp["food_hint"] = _hint
+    return {"name": "delete_food_entry", "input": inp}
 
 
 def _parse(text: str) -> Optional[dict]:
@@ -473,15 +752,20 @@ def _parse(text: str) -> Optional[dict]:
 
 async def run(message: str, user, prior: Optional[dict] = None,
               day_line: str = "", board: Optional[list] = None,
-              last_assistant: str = "", regulars: Optional[list] = None) -> Optional[dict]:
-    """Run the logger pass. Returns
-        {"action": "log", "tool_calls": [...], "say": "..."}     new items
-        {"action": "update", "tool_calls": [...], "say": "..."}  board corrections
+              last_assistant: str = "", regulars: Optional[list] = None,
+              thread_active: bool = False) -> Optional[dict]:
+    """Run the interpreter pass. Returns
+        {"action": "log"|"update"|"delete"|"commit", "tool_calls": [...],
+         "kinds": [...], "say": "...", "note": "...", "follow_up": "..."}
+            an ordered transaction plan (homogeneous plans keep their kind as
+            the action label; mixed plans are "commit")
         {"action": "ask", "text": "..."}          the formatted question
         None                                       pass / any failure → legacy path
-    board: today's committed entries [{"id", "food", "qty", "cal"}] so corrections
-    and references ("2 of those") resolve deterministically. ONE model call per
-    food turn — the coach line rides the same JSON. Never raises."""
+    board: today's committed entries [{"id", "food", "qty", "cal"}] so corrections,
+    deletes and references ("2 of those") resolve deterministically against real
+    ids. thread_active: an active food thread relaxes the cold-start consumption-
+    evidence requirement for additions ("also a coke with it"). ONE model call
+    per food turn — the narration material rides the same JSON. Never raises."""
     if not (message or "").strip():
         return None
     if prior:
@@ -549,97 +833,89 @@ async def run(message: str, user, prior: Optional[dict] = None,
         text = _format_question(data.get("points") or [])
         return {"action": "ask", "text": text} if text else None
 
-    if action == "update":
-        calls = []
-        for up in (data.get("updates") or []):
-            if not isinstance(up, dict):
-                continue
-            try:
-                eid = int(up.get("entry_id"))
-            except (TypeError, ValueError):
-                continue
-            if eid not in _board_ids:
-                continue          # structural: only entries actually on the board
-            inp = {"entry_id": eid}
-            amount = up.get("amount")
-            unit = str(up.get("unit") or "").strip()
-            try:
-                amount = round(float(amount), 2)
-                amount = int(amount) if float(amount).is_integer() else amount
-                inp["quantity"] = f"{amount} {unit}".strip()
-            except (TypeError, ValueError):
-                pass
-            for k in ("calories", "protein", "carbs", "fats"):
-                v = up.get(k)
-                if isinstance(v, (int, float)):
-                    inp[k] = v
-            calls.append({"name": "update_food_entry", "input": inp})
-        if calls:
-            say = str(data.get("say") or "").strip()
-            say = say.replace("~", "").replace("—", ",").replace("–", ",")
-            return {"action": "update", "tool_calls": calls, "say": say[:400]}
+    if action == "ask" and prior:
+        # An unprompted ask on the answer turn = the model chaining its own
+        # questions — refused by default (never loop). Two legitimate lifts:
+        # the USER invited it ("don't you wanna know what kind?"), or their
+        # answer introduced a NEW material unknown (model sets new_ambiguity)
+        # and we haven't already asked twice — bounded information gain, not
+        # an absolute one-question ceiling (fix #11).
+        _user_invited = bool(re.search(
+            r"\?|\b(what|which|don'?t\s+you|shouldn'?t\s+you|why\s+not)\b",
+            message or "", re.I))
+        _ask_count = int((prior or {}).get("ask_count") or 1)
+        _new_amb = bool(data.get("new_ambiguity"))
+        if data.get("points") and (_user_invited or (_new_amb and _ask_count < 2)):
+            return {"action": "ask", "text": _format_question(data["points"]),
+                    "points": data["points"]}
         return None
 
-    if action == "log" or (action == "ask" and prior):
-        # An unprompted ask on the answer turn = the model chaining its own
-        # questions — refuse (never loop). But when the USER'S reply itself
-        # asks or contests ("don't you wanna know what kind", "which one?"),
-        # a follow-up question is invited, not a loop (Dove bar 2026-07-24).
-        if action == "ask":
-            _user_invited = bool(re.search(
-                r"\?|\b(what|which|don'?t\s+you|shouldn'?t\s+you|why\s+not)\b",
-                message or "", re.I))
-            if _user_invited and data.get("points"):
-                return {"action": "ask", "text": _format_question(data["points"]),
-                        "points": data["points"]}
+    ops = _normalize_ops(data)
+    if not ops:
+        return None
+
+    # Consumption-evidence invariant (fix #3): drop any log op the message
+    # cannot support — an interrogative or evidence-free cold message never
+    # yields a write, whatever action the model chose. Updates and deletes
+    # are board-anchored corrections; they stand on their own intent.
+    if any(k == "log" for k, _ in ops) and not consumption_evidence(
+            message, prior=prior, thread_active=thread_active):
+        ops = [(k, o) for k, o in ops if k != "log"]
+        if not ops:
             return None
-        calls = []
-        for it in (data.get("items") or []):
-            if not isinstance(it, dict):
-                continue
-            food = str(it.get("food") or "").strip()
-            # Structural sanity, not a guard pile: an item is a NAMED FOOD.
-            if not food or "?" in food or len(food) > 60:
-                continue
-            amount = it.get("amount")
-            unit = str(it.get("unit") or "").strip()
-            try:
-                amount = round(float(amount), 2)
-                amount = int(amount) if float(amount).is_integer() else amount
-            except (TypeError, ValueError):
-                amount = None
-            qty = f"{amount} {unit}".strip() if amount is not None else unit
-            inp = {"food_name": food, "quantity": qty,
-                   "estimated": True, "confidence": 0.65}
-            if it.get("branded"):
-                # The logger read the message — it declares brandedness; the
-                # downstream heuristic (_looks_branded) is only the backup net.
-                inp["is_packaged"] = True
-            for src, dst in (("calories", "calories"), ("protein", "protein"),
-                             ("carbs", "carbs"), ("fats", "fats")):
-                v = it.get(src)
-                if isinstance(v, (int, float)):
-                    inp[dst] = v
-            mt = str(it.get("meal_type") or "").strip().lower()
-            if mt in ("breakfast", "lunch", "dinner", "snack"):
-                inp["meal_type"] = mt
-            _meal = str(it.get("meal") or "").lower().strip()
-            if _meal in ("breakfast", "lunch", "dinner", "snack"):
-                inp["meal_type"] = _meal
-            calls.append({"name": "log_food", "input": inp})
-        if calls:
-            say = str(data.get("say") or "").strip()
-            say = say.replace("~", "").replace("—", ",").replace("–", ",")
-            if _mode(user) == "strict" and prior is None:
-                # STRICT CONFIRMS (Danny 2026-07-24): with no questions to ask,
-                # the parse is still shown BEFORE the write — nothing commits
-                # silently on strict. The yes-turn logs these exact items
-                # deterministically (no re-parse).
-                _items_c = [it for it in (data.get("items") or [])
-                            if isinstance(it, dict) and (it.get("food") or "").strip()]
-                return {"action": "ask", "kind": "confirm",
-                        "text": format_confirm(_items_c),
-                        "items": _items_c,
-                        "tool_calls": calls, "say": say[:400]}
-            return {"action": "log", "tool_calls": calls, "say": say[:400]}
-    return None
+
+    # Policy engine (fix #12, first inversion step): the model REPORTS the
+    # ambiguities it estimated through; the SYSTEM decides whether any of
+    # them is worth holding the write for. Never on the answer turn — that
+    # turn fills with best estimates instead of re-asking.
+    if prior is None and any(k == "log" for k, _ in ops):
+        from core import food_ledger as _FL
+        _mat = _FL.material_ambiguities(data.get("ambiguities"), mode)
+        if _mat:
+            _pts = _FL.ambiguity_points(_mat)
+            _txt = _format_question(_pts)
+            if _txt:
+                return {"action": "ask", "text": _txt, "points": _pts}
+
+    board_by_id = {}
+    for b in (board or []):
+        try:
+            board_by_id[int(b["id"])] = b
+        except Exception:
+            continue
+
+    calls, kinds, items_logged = [], [], []
+    for kind, o in ops:
+        call = (_log_call(o) if kind == "log"
+                else _update_call(o, board_by_id) if kind == "update"
+                else _delete_call(o, board_by_id))
+        if call is None:
+            continue
+        calls.append(call)
+        kinds.append(kind)
+        if kind == "log":
+            items_logged.append(o)
+    if not calls:
+        return None
+
+    say = str(data.get("say") or "").strip()
+    say = say.replace("~", "").replace("—", ",").replace("–", ",")
+    note = str(data.get("note") or "").strip()[:200]
+    follow_up = str(data.get("follow_up") or "").strip()
+    label = (kinds[0] if all(k == kinds[0] for k in kinds) else "commit")
+
+    if label == "log" and prior is None and _mode(user) == "strict":
+        # STRICT CONFIRMS (Danny 2026-07-24): with no questions to ask, the
+        # parse is still shown BEFORE the write — nothing commits silently on
+        # strict. The yes-turn logs these exact items deterministically (no
+        # re-parse). Mixed plans commit directly: their updates/deletes are
+        # the user's own explicit corrections.
+        _items_c = [it for it in items_logged
+                    if (it.get("food") or "").strip()]
+        return {"action": "ask", "kind": "confirm",
+                "text": format_confirm(_items_c),
+                "items": _items_c,
+                "tool_calls": calls, "say": say[:400],
+                "note": note, "follow_up": follow_up}
+    return {"action": label, "tool_calls": calls, "kinds": kinds,
+            "say": say[:400], "note": note, "follow_up": follow_up}

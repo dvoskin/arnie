@@ -611,7 +611,8 @@ async def run_turn(
         try:
             from core.food_turn import (structured_food_enabled, ASK_KIND,
                                         applies as _sft_applies, run as _sft_run,
-                                        thread_routes as _sft_thread_routes)
+                                        thread_relevance as _sft_rel,
+                                        applies_destructive as _sft_dest)
             if structured_food_enabled():
                 _sft_prior_pq = None
                 _sft_prior = None
@@ -622,22 +623,57 @@ async def run_turn(
                         _sft_prior = json.loads(_sft_prior_pq.payload_json or "{}")
                 except Exception:
                     _sft_prior_pq, _sft_prior = None, None
-                # THREAD STATE routing (no phrase lists): a food thread is active
-                # when a food was written in the last few minutes — complaints
-                # ("you only logged the sour cream ones") and confirmations
-                # ("okay log it") then go to the logger, which reads the context
-                # and decides (pass is its safety valve).
-                _thread_active = False
+                # Pending-state expiry (ledger fix #6): a stale confirm ("yes"
+                # twenty minutes later) or ancient clarify must never bind a
+                # fresh turn — resolve it and treat the turn as cold.
+                if _sft_prior_pq is not None:
+                    try:
+                        from core.food_ledger import pending_expired as _pq_exp
+                        if _pq_exp(_sft_prior_pq, (_sft_prior or {}).get("kind")):
+                            from datetime import datetime as _dt_x
+                            _sft_prior_pq.answered_at = _dt_x.utcnow()
+                            await db.commit()
+                            _sft_prior_pq, _sft_prior = None, None
+                    except Exception:
+                        pass
+                # GRADED THREAD RELEVANCE (ledger fix #4): intent-aware, not a
+                # flat 15-minute takeover. An open ask binds answers; a
+                # minutes-old write binds reports and corrections; an hours-old
+                # write binds only explicit corrections/removals. Challenges,
+                # explanation requests, coaching asks and commentary stay with
+                # the conversational brain even seconds after a write.
+                _mins_since_write = None
                 try:
-                    from datetime import datetime as _dt_t, timedelta as _td_t
+                    from datetime import datetime as _dt_t
                     _latest = max((getattr(_fe, "timestamp", None)
                                    for _fe in (getattr(today_log, "food_entries", None) or [])
                                    if getattr(_fe, "timestamp", None) is not None),
                                   default=None)
                     if _latest is not None:
-                        _thread_active = (_dt_t.utcnow() - _latest) < _td_t(minutes=15)
+                        _mins_since_write = (
+                            _dt_t.utcnow() - _latest).total_seconds() / 60.0
                 except Exception:
-                    _thread_active = False
+                    _mins_since_write = None
+                _route_mid = False
+                try:
+                    _route_mid = _sft_rel(_user_text or "", _mins_since_write,
+                                          _sft_prior is not None)
+                except Exception:
+                    _route_mid = False
+                # Today's board — built BEFORE routing so single-entry deletes
+                # ("remove the fries") can gate on having something to delete,
+                # and corrections/repeats resolve to real entry ids.
+                _board = []
+                try:
+                    for _fe in (getattr(today_log, "food_entries", None) or []):
+                        if getattr(_fe, "id", None) is not None:
+                            _board.append({
+                                "id": _fe.id,
+                                "food": getattr(_fe, "parsed_food_name", "") or "",
+                                "qty": getattr(_fe, "quantity", "") or "",
+                                "cal": getattr(_fe, "calories", 0) or 0})
+                except Exception:
+                    _board = []
                 _last_assistant = next(
                     (m.get("content", "") for m in reversed(messages)
                      if m.get("role") == "assistant" and isinstance(m.get("content"), str)),
@@ -659,7 +695,8 @@ async def run_turn(
                     for _it in _confirm_hit[:8]:
                         _inp = {"food_name": (_it.get("food") or "").strip(),
                                 "quantity": f"{_it.get('amount')} {_it.get('unit') or ''}".strip(),
-                                "estimated": True}
+                                "estimated": True,
+                                "source": "structured_food:confirm_replay"}
                         for _k_src, _k_dst in (("calories", "calories"),
                                                ("protein", "protein"),
                                                ("carbs", "carbs"), ("fats", "fats")):
@@ -684,7 +721,8 @@ async def run_turn(
                         pass
                 elif (_sft_prior is not None or _photo_food is not None
                         or _sft_applies(_user_text or "")
-                        or (_thread_active and _sft_thread_routes(_user_text or ""))):
+                        or (_board and _sft_dest(_user_text or ""))
+                        or _route_mid):
                     # Immediate status: morph the live thinking indicator to
                     # "Logging…" the moment the logger starts, so its pass is
                     # never silent dead air (Danny 2026-07-23).
@@ -706,19 +744,6 @@ async def run_turn(
                                    f"{int(getattr(_p, 'protein_target', 0) or 0)}g protein.")
                     except Exception:
                         _dl = ""
-                    # Today's board — so corrections ("2 of those") resolve to real
-                    # entry ids and repeats aren't re-logged.
-                    _board = []
-                    try:
-                        for _fe in (getattr(today_log, "food_entries", None) or []):
-                            if getattr(_fe, "id", None) is not None:
-                                _board.append({
-                                    "id": _fe.id,
-                                    "food": getattr(_fe, "parsed_food_name", "") or "",
-                                    "qty": getattr(_fe, "quantity", "") or "",
-                                    "cal": getattr(_fe, "calories", 0) or 0})
-                    except Exception:
-                        _board = []
                     # Their REGULARS — the logger resolves "a Barebells" to THEIR
                     # Barebells (exact history macros, flavor-aware ask) instead
                     # of inventing an estimate (Danny 2026-07-23, strict mode).
@@ -732,14 +757,16 @@ async def run_turn(
                                           prior=_sft_prior,
                                           day_line=_dl, board=_board,
                                           last_assistant=_last_assistant,
-                                          regulars=_regs)
+                                          regulars=_regs,
+                                          thread_active=bool(
+                                              _route_mid or _photo_food))
                     if _sft is not None:
                         # Day snapshot BEFORE the writes — the say tokens are filled
                         # from the committed delta after enrichment runs.
                         _sft["_before"] = (
                             int(getattr(today_log, "total_calories", 0) or 0),
                             int(getattr(today_log, "total_protein", 0) or 0))
-                        if (_sft.get("action") == "log" and _sft_prior
+                        if (_sft.get("action") in ("log", "commit") and _sft_prior
                                 and _sft_prior.get("items")):
                             from core.food_turn import note_held_items
                             _sft["say"] = note_held_items(
@@ -753,9 +780,19 @@ async def run_turn(
                         _pq_s = await record_pending_question(
                             db, user.id, kind=ASK_KIND, question=_sft["text"][:500],
                             tier="food_clarification", hook_style="question")
+                        # A follow-up ask threads the earlier exchange into the
+                        # stashed original, and counts itself — the bounded
+                        # re-ask policy (max 2) reads ask_count on the answer
+                        # turn.
+                        _orig_stash = _user_text or ""
+                        if _sft_prior and _sft_prior.get("original"):
+                            _orig_stash = (f"{_sft_prior['original']}\n"
+                                           f"Then: {_user_text or ''}")
                         _pq_s.payload_json = json.dumps(
-                            {"original": _user_text or "", "question": _sft["text"],
+                            {"original": _orig_stash, "question": _sft["text"],
                              "kind": _sft.get("kind") or "clarify",
+                             "ask_count": int((_sft_prior or {}).get("ask_count")
+                                              or 0) + 1,
                              "items": _sft.get("items") or None})
                         await db.commit()
                     except Exception as _e:
@@ -763,7 +800,7 @@ async def run_turn(
                         _sft = await _sft_run(_user_text or "", user,
                                               prior={"original": _user_text or "",
                                                      "question": ""})
-                        if _sft and _sft["action"] != "log":
+                        if _sft and _sft["action"] not in ("log", "commit"):
                             _sft = None
                 # The user engaged with the question — resolve the pending either
                 # way so it can never loop.
@@ -775,8 +812,16 @@ async def run_turn(
                     except Exception:
                         pass
                 if _sft:
-                    logger.info(f"event=structured_food action={_sft['action']} {_tag} "
-                                f"items={len(_sft.get('tool_calls') or [])}")
+                    # Versioned decision trace (ledger fix: version everything)
+                    # — greppable per turn: action, op kinds, and the contract
+                    # versions that produced them.
+                    from core.food_ledger import (INTERPRETER_VERSION,
+                                                  POLICY_VERSION)
+                    logger.info(
+                        f"event=structured_food action={_sft['action']} {_tag} "
+                        f"items={len(_sft.get('tool_calls') or [])} "
+                        f"kinds={','.join(_sft.get('kinds') or []) or '-'} "
+                        f"iv={INTERPRETER_VERSION} pv={POLICY_VERSION}")
         except Exception as _e:
             logger.warning(f"structured food turn failed, legacy path: {_e}")
             _sft = None
@@ -815,27 +860,59 @@ async def run_turn(
                         extract_food_items(_gate_user_message))
             except Exception:
                 _scribe_task = None
-        if _sft is not None and _sft["action"] in ("log", "update"):
-            # Structured logger already decided the writes (new items OR board
-            # corrections) — impersonate pass-1 with its clean tool calls and skip
-            # the big model entirely.
-            result = {"text": "", "raw_content": [], "tool_calls": _sft["tool_calls"],
-                      "stop_reason": "structured_food"}
-            # EVERY structured write turn announces itself — enrichment (USDA/OFF/
-            # web label) is a network round-trip even for one item, and the turns
-            # that skipped the heads-up were exactly the ones that felt hung
-            # (Danny 2026-07-23: "misses the heads up text on some turns").
-            _n_items = len(_sft["tool_calls"])
-            _hu = (f"Give me a moment. Logging all {_n_items} now."
-                   if _n_items > 1 else "Give me a moment. Logging it now.")
+        if _sft is not None and _sft["action"] in ("log", "update", "delete",
+                                                   "commit"):
+            # Structured interpreter already decided the writes (an ordered
+            # plan of new items, board corrections and removals) — the plan
+            # executes as source=structured_food tool calls through the
+            # existing executor, and the big model is skipped entirely.
+            # EXACTLY-ONCE guard (ledger fix #6/#16): the same (user, message,
+            # plan) landing again within the idempotency window is a duplicate
+            # delivery (client retry, double webhook, cross-device race) —
+            # answer honestly, write nothing twice.
+            _idem_dup = False
             try:
-                if _streamer and on_text_bubble:
-                    await on_text_bubble(_hu)
-                    _streamer.flushed_count += 1
-                elif on_interim:
-                    await on_interim(_hu)
+                from core.food_ledger import (turn_idempotency_key as _ik_fn,
+                                              already_processed as _ik_seen,
+                                              mark_processed as _ik_mark)
+                _ikey = _ik_fn(user.id, _user_text or "", _sft["tool_calls"])
+                if _ik_seen(_ikey):
+                    _idem_dup = True
+                    logger.info(f"event=structured_food_duplicate {_tag}")
+                else:
+                    _ik_mark(_ikey)
             except Exception:
-                pass
+                _idem_dup = False
+            if _idem_dup:
+                result = {"text": ("Already got that one - it's on the board "
+                                   "from a moment ago."),
+                          "raw_content": [], "tool_calls": [],
+                          "stop_reason": "structured_food"}
+                _sft = None
+            else:
+                result = {"text": "", "raw_content": [],
+                          "tool_calls": _sft["tool_calls"],
+                          "stop_reason": "structured_food"}
+                # EVERY structured write turn announces itself — enrichment
+                # (USDA/OFF/web label) is a network round-trip even for one
+                # item, and the turns that skipped the heads-up were exactly
+                # the ones that felt hung (Danny 2026-07-23).
+                _n_logs = sum(1 for _tc in _sft["tool_calls"]
+                              if _tc.get("name") == "log_food")
+                if _n_logs > 1:
+                    _hu = f"Give me a moment. Logging all {_n_logs} now."
+                elif _n_logs == 1:
+                    _hu = "Give me a moment. Logging it now."
+                else:
+                    _hu = "One sec. Fixing the board now."
+                try:
+                    if _streamer and on_text_bubble:
+                        await on_text_bubble(_hu)
+                        _streamer.flushed_count += 1
+                    elif on_interim:
+                        await on_interim(_hu)
+                except Exception:
+                    pass
         elif _sft is not None and _sft["action"] == "ask":
             # The one clarify question IS the reply — no tools, nothing logged.
             result = {"text": _sft["text"], "raw_content": [], "tool_calls": [],
@@ -1372,44 +1449,54 @@ async def run_turn(
             # Switch: FAST_LOG_VOICE=false.
             _pure_food = _is_pure_food_log(tool_calls, _user_text)
             _fast_voice = None
-            if _sft is not None and (_sft.get("say") or "").strip():
-                # STRUCTURED turn (log OR update): the logger's own coach line rides
-                # the same JSON — one model call per food turn, the July-7 shape.
-                # The logger wrote the WORDS; fill the number tokens from the
-                # COMMITTED day (post-enrichment) so say can never disagree with
-                # the card/DB.
-                _say = _sft["say"].strip()
-                # Contract enforcement: model-authored digits outside {tokens} →
-                # the say is replaced with a deterministic tokenized line (the
-                # 647-vs-343 conflict, Danny IMG_8610).
+            if _sft is not None and _sft.get("action") in ("log", "update",
+                                                           "delete", "commit"):
+                # STRUCTURED turn: narration comes from ONE committed snapshot
+                # (ledger fix #5) — the interpreter's words are kept only when
+                # they carry no unbacked numeric OR semantic claims; otherwise
+                # the deterministic render from committed numbers takes over.
+                # Numeric contract first: model-authored digits outside
+                # {tokens} → tokenized replacement (647-vs-343, IMG_8610).
                 from core.food_turn import enforce_say_contract
-                _say = enforce_say_contract(_say, _sft["tool_calls"])
-                if "{" in _say:
-                    try:
-                        await db.refresh(today_log)
-                    except Exception:
-                        pass
+                _say = enforce_say_contract((_sft.get("say") or "").strip(),
+                                            _sft["tool_calls"])
+                try:
+                    await db.refresh(today_log)
+                except Exception:
+                    pass
+                _ac = int(getattr(today_log, "total_calories", 0) or 0)
+                _ap = int(getattr(today_log, "total_protein", 0) or 0)
+                _bc0, _bp0 = _sft.get("_before", (_ac, _ap))
+                _batch_c, _batch_p = _ac - _bc0, _ap - _bp0
+                if (_sft.get("action") in ("update", "delete")
+                        or (_batch_c <= 0 and _batch_p <= 0)):
+                    # Updates: {batch_*} is the entry's NEW value from the
+                    # write itself. The day delta is meaningless here — a
+                    # +95 bump narrated as "logged, 95 cal" reads like a
+                    # phantom food (Danny's truffle fries, 2026-07-23).
+                    # Same fallback covers a refresh miss on log turns.
+                    _batch_c = int(sum((tc.get("input") or {}).get("calories") or 0
+                                       for tc in _sft["tool_calls"]))
+                    _batch_p = int(sum((tc.get("input") or {}).get("protein") or 0
+                                       for tc in _sft["tool_calls"]))
+                _p = getattr(user, "preferences", None)
+                _ct = int(getattr(_p, "calorie_target", 0) or 0) if _p else 0
+                _pt = int(getattr(_p, "protein_target", 0) or 0) if _p else 0
+                try:
+                    from core.food_ledger import (build_snapshot,
+                                                  render_committed)
+                    _snap = build_snapshot(_sft["tool_calls"], _batch_c,
+                                           _batch_p, _ac, _ap, _ct, _pt)
+                    response_text = render_committed(
+                        _say, _sft.get("note") or "",
+                        _sft.get("follow_up") or "", _snap)
+                except Exception as _e:
+                    # The renderer must never cost the user their reply — fall
+                    # back to the token-filled say (same committed numbers).
+                    logger.warning(f"render_committed fallback: {_e}")
                     from core.food_turn import fill_say_tokens
-                    _ac = int(getattr(today_log, "total_calories", 0) or 0)
-                    _ap = int(getattr(today_log, "total_protein", 0) or 0)
-                    _bc0, _bp0 = _sft.get("_before", (_ac, _ap))
-                    _batch_c, _batch_p = _ac - _bc0, _ap - _bp0
-                    if _sft.get("action") == "update" or (_batch_c <= 0 and _batch_p <= 0):
-                        # Updates: {batch_*} is the entry's NEW value from the
-                        # write itself. The day delta is meaningless here — a
-                        # +95 bump narrated as "logged, 95 cal" reads like a
-                        # phantom food (Danny's truffle fries, 2026-07-23).
-                        # Same fallback covers a refresh miss on log turns.
-                        _batch_c = int(sum((tc.get("input") or {}).get("calories") or 0
-                                           for tc in _sft["tool_calls"]))
-                        _batch_p = int(sum((tc.get("input") or {}).get("protein") or 0
-                                           for tc in _sft["tool_calls"]))
-                    _p = getattr(user, "preferences", None)
-                    _say = fill_say_tokens(
-                        _say, _batch_c, _batch_p, _ac, _ap,
-                        int(getattr(_p, "calorie_target", 0) or 0) if _p else 0,
-                        int(getattr(_p, "protein_target", 0) or 0) if _p else 0)
-                response_text = _say
+                    response_text = fill_say_tokens(
+                        _say, _batch_c, _batch_p, _ac, _ap, _ct, _pt)
                 _response_streamed = False
             elif _pure_food:
                 # Legacy pure-food turn keeps the voice_log read; the deterministic
