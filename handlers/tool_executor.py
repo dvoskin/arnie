@@ -1346,44 +1346,6 @@ async def _web_lookup_meal_inner(food_name, quantity, _re) -> dict | None:
     }
 
 
-async def _check_recent_duplicate(db, target_log_id, food_name: str, quantity, window_min: int = 5):
-    """Idempotency check: same (food_name, quantity) logged on the same daily_log
-    within the last `window_min` minutes is almost always a retry, not a second
-    portion. Returns the existing entry (with id/calories/etc.) on a hit, or None.
-
-    Catches the shake re-confirmation cascade from the screenshots — when the
-    model keeps promising to "log the shake", the second attempt collapses to
-    a no-op instead of producing a duplicate row.
-    """
-    try:
-        from datetime import datetime as _dt, timedelta as _td
-        from sqlalchemy import select as _select, desc as _desc
-        from db.models import FoodEntry
-        cutoff = _dt.utcnow() - _td(minutes=window_min)
-        qn = (food_name or "").strip().lower()
-        if not qn or target_log_id is None:
-            return None
-        stmt = (_select(FoodEntry)
-                .where(FoodEntry.daily_log_id == target_log_id)
-                .order_by(_desc(FoodEntry.timestamp))
-                .limit(10))
-        rows = (await db.execute(stmt)).scalars().all()
-        for r in rows:
-            ts = getattr(r, "timestamp", None)
-            if (ts is not None and ts >= cutoff
-                    and (r.parsed_food_name or "").strip().lower() == qn
-                    and (str(r.quantity or "").strip().lower()
-                         == str(quantity or "").strip().lower())):
-                return r
-        return None
-    except Exception as e:
-        logger.warning(f"duplicate check failed: {e}")
-        return None
-
-
-_HIST_STOP = {"a", "an", "the", "of", "with", "and", "some", "my", "for", "had"}
-
-
 def _content_tokens(name: str) -> frozenset:
     """Word-order-insensitive content tokens of a food name — drops stopwords, pure
     numbers, and (via normalize_name) quantity units. So 'everything Royo bagel' and
@@ -2280,6 +2242,21 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
             _target = _merged or _food_merge_target
             if isinstance(inp, dict) and getattr(_target, "id", None) is not None:
                 inp["_entry_id"] = _target.id
+            # LEDGER EVENT: a repeat-merge is an UPDATE to the existing row —
+            # it must appear in the history like any other mutation (found by
+            # the 2026-07-24 cleanup audit: merges were the one write path
+            # recording nothing, leaving undo/audit blind to them).
+            try:
+                from db.queries import record_ledger_event
+                await record_ledger_event(
+                    db, user.id, "updated", domain="food",
+                    entry_id=getattr(_target, "id", None),
+                    daily_log_id=target_log.id,
+                    payload={"merge": True, "quantity": _merged_qty,
+                             "calories": _tot_cal, "protein": _tot_pro},
+                    source=inp.get("source") or f"legacy:{source_type}")
+            except Exception as _ev_e:
+                logger.warning(f"ledger event (food merge) skipped: {_ev_e}")
             await db.refresh(target_log)
             _stash_receipt(inp, target_log, user, _tot_cal, _tot_pro,
                            confidence=_conf, updated=True, carbs=analysis.carbs)
@@ -2342,9 +2319,9 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
         # the committed state — undo/audit history. Best-effort: history must
         # never break the write it describes.
         try:
-            from db.queries import record_food_event
-            await record_food_event(
-                db, user.id, "created",
+            from db.queries import record_ledger_event
+            await record_ledger_event(
+                db, user.id, "created", domain="food",
                 entry_id=getattr(_new_food, "id", None),
                 daily_log_id=target_log.id,
                 payload={"food_name": food_name,
@@ -2891,8 +2868,7 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
         # column writes.
         changes = {k: v for k, v in inp.items()
                    if k not in ("entry_id", "date", "expected_calories",
-                                "expected_quantity", "food_hint", "source",
-                                "basis", "_result")
+                                "food_hint", "source", "basis", "_result")
                    and v is not None}
         # Map external name → DB column
         if "food_name" in changes:

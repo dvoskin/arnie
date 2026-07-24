@@ -596,257 +596,257 @@ async def run_turn(
     # T2.1 (no kwarg surface change for non-streaming callers / tests).
     _chat_extras = {"stream_handler": _stream_handler} if _stream_handler else {}
     _scribe_task = None  # the parallel scribe extraction; set inside the pass below
-    _missing_from_scribe: list = []  # named-but-unlogged items → partial-drop rescue
 
-    # ── STRUCTURED FOOD TURN (Danny 2026-07-23): the logger logs, the coach talks.
-    # For a food-report turn, ONE small structured pass decides log-vs-ask and emits
-    # clean editable items (composites split: salad one item, chicken another). Its
-    # tool calls impersonate pass-1, so enrichment/dedup/cards/voice all run
-    # unchanged — and the 46k-token pass is skipped entirely on these turns. A
-    # question is a different ACTION from an item, so it structurally can't be
-    # logged as food. Anything it passes on takes the legacy path untouched.
+    # ── STRUCTURED FOOD TURN (Danny 2026-07-23/24): the interpreter proposes an
+    # ordered plan (log/update/delete, mixed turns commit in the user's order),
+    # deterministic policy arbitrates its reported ambiguities, duplicates are
+    # absorbed by the idempotency claim, and narration renders from ONE
+    # committed snapshot (core/food_ledger.render_committed). The plan executes
+    # as source=structured_food tool calls through the normal executor, so
+    # enrichment/dedup/cards run unchanged — and the 46k-token pass is skipped
+    # entirely on these turns. Asks are a different ACTION from writes and run
+    # BEFORE any commit; "undo"/"bring back" is a deterministic ledger inverse
+    # (core/ledger_undo, zero model calls). Anything the lane passes on takes
+    # the legacy path untouched.
     _sft = None
     # One path for EVERYONE: onboarding users get the ask ladder too
     # (Samuel 2026-07-24: 7 unstated portions, zero asks), and photo
     # turns MUST enter or photo_food_message (5f0e195) never runs.
-    if True:
-        try:
-            from core.food_turn import (structured_food_enabled, ASK_KIND,
-                                        applies as _sft_applies, run as _sft_run,
-                                        thread_relevance as _sft_rel,
-                                        applies_destructive as _sft_dest)
-            if structured_food_enabled():
-                _sft_prior_pq = None
-                _sft_prior = None
-                try:
-                    from db.queries import get_open_pending_question as _gopq_s
-                    _sft_prior_pq = await _gopq_s(db, user.id, ASK_KIND)
-                    if _sft_prior_pq is not None:
-                        _sft_prior = json.loads(_sft_prior_pq.payload_json or "{}")
-                except Exception:
-                    _sft_prior_pq, _sft_prior = None, None
-                # Pending-state expiry (ledger fix #6): a stale confirm ("yes"
-                # twenty minutes later) or ancient clarify must never bind a
-                # fresh turn — resolve it and treat the turn as cold.
+    try:
+        from core.food_turn import (structured_food_enabled, ASK_KIND,
+                                    applies as _sft_applies, run as _sft_run,
+                                    thread_relevance as _sft_rel,
+                                    applies_destructive as _sft_dest)
+        if structured_food_enabled():
+            _sft_prior_pq = None
+            _sft_prior = None
+            try:
+                from db.queries import get_open_pending_question as _gopq_s
+                _sft_prior_pq = await _gopq_s(db, user.id, ASK_KIND)
                 if _sft_prior_pq is not None:
+                    _sft_prior = json.loads(_sft_prior_pq.payload_json or "{}")
+            except Exception:
+                _sft_prior_pq, _sft_prior = None, None
+            # Pending-state expiry (ledger fix #6): a stale confirm ("yes"
+            # twenty minutes later) or ancient clarify must never bind a
+            # fresh turn — resolve it and treat the turn as cold.
+            if _sft_prior_pq is not None:
+                try:
+                    from core.food_ledger import pending_expired as _pq_exp
+                    if _pq_exp(_sft_prior_pq, (_sft_prior or {}).get("kind")):
+                        from datetime import datetime as _dt_x
+                        _sft_prior_pq.answered_at = _dt_x.utcnow()
+                        await db.commit()
+                        _sft_prior_pq, _sft_prior = None, None
+                except Exception:
+                    pass
+            # GRADED THREAD RELEVANCE (ledger fix #4): intent-aware, not a
+            # flat 15-minute takeover. An open ask binds answers; a
+            # minutes-old write binds reports and corrections; an hours-old
+            # write binds only explicit corrections/removals. Challenges,
+            # explanation requests, coaching asks and commentary stay with
+            # the conversational brain even seconds after a write.
+            _mins_since_write = None
+            try:
+                from datetime import datetime as _dt_t
+                _latest = max((getattr(_fe, "timestamp", None)
+                               for _fe in (getattr(today_log, "food_entries", None) or [])
+                               if getattr(_fe, "timestamp", None) is not None),
+                              default=None)
+                if _latest is not None:
+                    _mins_since_write = (
+                        _dt_t.utcnow() - _latest).total_seconds() / 60.0
+            except Exception:
+                _mins_since_write = None
+            _route_mid = False
+            try:
+                _route_mid = _sft_rel(_user_text or "", _mins_since_write,
+                                      _sft_prior is not None)
+            except Exception:
+                _route_mid = False
+            # Today's board — built BEFORE routing so single-entry deletes
+            # ("remove the fries") can gate on having something to delete,
+            # and corrections/repeats resolve to real entry ids.
+            _board = []
+            try:
+                for _fe in (getattr(today_log, "food_entries", None) or []):
+                    if getattr(_fe, "id", None) is not None:
+                        _board.append({
+                            "id": _fe.id,
+                            "food": getattr(_fe, "parsed_food_name", "") or "",
+                            "qty": getattr(_fe, "quantity", "") or "",
+                            "cal": getattr(_fe, "calories", 0) or 0})
+            except Exception:
+                _board = []
+            _last_assistant = next(
+                (m.get("content", "") for m in reversed(messages)
+                 if m.get("role") == "assistant" and isinstance(m.get("content"), str)),
+                "")
+            _photo_food = photo_food_message(_user_text or "")
+            # Strict-confirm fast path: an affirmative on a confirm
+            # pending logs the stashed items verbatim — no re-parse, no
+            # model. Anything non-affirmative falls through to the logger
+            # with the prior (corrections adjust, then log).
+            # DETERMINISTIC UNDO/RESTORE (ledger Phase 2): "undo" / "bring
+            # back the fries" is an inverse on the event ledger — zero
+            # model calls, immediate. Only on a quiet thread (no open ask:
+            # an undo mid-question means "cancel", which the ack path and
+            # pending expiry already cover). The plan feeds the SAME
+            # structured pipeline below (execution, snapshot, renderer).
+            _undo_plan = None
+            if _sft_prior is None:
+                try:
+                    from core.ledger_undo import build_plan as _undo_build
+                    _undo_plan = await _undo_build(db, user, _user_text or "")
+                except Exception:
+                    _undo_plan = None
+            _confirm_hit = None
+            if (_sft_prior is not None
+                    and (_sft_prior.get("kind") == "confirm")
+                    and _sft_prior.get("items")):
+                from core.food_turn import _YES_RE as _yes_re_c
+                if _yes_re_c.match((_user_text or "").strip()):
+                    _confirm_hit = _sft_prior["items"]
+            if _undo_plan is not None:
+                _sft = _undo_plan
+                _sft["_before"] = (
+                    int(getattr(today_log, "total_calories", 0) or 0),
+                    int(getattr(today_log, "total_protein", 0) or 0))
+                logger.info(f"event=ledger_undo outcome=routed {_tag} "
+                            f"kinds={','.join(_sft.get('kinds') or [])}")
+            elif _confirm_hit is not None:
+                # Deterministic replay of the confirmed items through the
+                # SAME builder the interpreter uses (_log_call) — one
+                # item→call codepath; provenance marks the replay.
+                from core.food_turn import _log_call as _sft_log_call
+                _calls_c = [c for c in
+                            (_sft_log_call(_it,
+                                           source="structured_food:confirm_replay")
+                             for _it in _confirm_hit[:8])
+                            if c is not None]
+                _sft = {"action": "log", "tool_calls": _calls_c,
+                        "say": ("Locked in, {batch_cal} cal and "
+                                "{batch_protein}g protein. You're at {day_cal} "
+                                "with {cal_left} left and {protein_left}g "
+                                "protein to go."),
+                        "_before": (
+                            int(getattr(today_log, "total_calories", 0) or 0),
+                            int(getattr(today_log, "total_protein", 0) or 0))}
+                try:
+                    from datetime import datetime as _dt_cf
+                    _sft_prior_pq.answered_at = _dt_cf.utcnow()
+                    await db.commit()
+                except Exception:
+                    pass
+            elif (_sft_prior is not None or _photo_food is not None
+                    or _sft_applies(_user_text or "")
+                    or (_board and _sft_dest(_user_text or ""))
+                    or _route_mid):
+                # Immediate status: morph the live thinking indicator to
+                # "Logging…" the moment the logger starts, so its pass is
+                # never silent dead air (Danny 2026-07-23).
+                if on_tool_start:
                     try:
-                        from core.food_ledger import pending_expired as _pq_exp
-                        if _pq_exp(_sft_prior_pq, (_sft_prior or {}).get("kind")):
-                            from datetime import datetime as _dt_x
-                            _sft_prior_pq.answered_at = _dt_x.utcnow()
-                            await db.commit()
-                            _sft_prior_pq, _sft_prior = None, None
+                        await on_tool_start(["log_food"])
                     except Exception:
                         pass
-                # GRADED THREAD RELEVANCE (ledger fix #4): intent-aware, not a
-                # flat 15-minute takeover. An open ask binds answers; a
-                # minutes-old write binds reports and corrections; an hours-old
-                # write binds only explicit corrections/removals. Challenges,
-                # explanation requests, coaching asks and commentary stay with
-                # the conversational brain even seconds after a write.
-                _mins_since_write = None
+                # Day context so the logger's own coach line ("say") can state
+                # where the day stands — real numbers we hand it, one model call.
+                _dl = ""
                 try:
-                    from datetime import datetime as _dt_t
-                    _latest = max((getattr(_fe, "timestamp", None)
-                                   for _fe in (getattr(today_log, "food_entries", None) or [])
-                                   if getattr(_fe, "timestamp", None) is not None),
-                                  default=None)
-                    if _latest is not None:
-                        _mins_since_write = (
-                            _dt_t.utcnow() - _latest).total_seconds() / 60.0
+                    _p = getattr(user, "preferences", None)
+                    if today_log is not None and _p is not None:
+                        _dl = (f"before this meal they were at "
+                               f"{int(today_log.total_calories or 0)} of "
+                               f"{int(getattr(_p, 'calorie_target', 0) or 0)} cal and "
+                               f"{int(today_log.total_protein or 0)} of "
+                               f"{int(getattr(_p, 'protein_target', 0) or 0)}g protein.")
                 except Exception:
-                    _mins_since_write = None
-                _route_mid = False
+                    _dl = ""
+                # Their REGULARS — the logger resolves "a Barebells" to THEIR
+                # Barebells (exact history macros, flavor-aware ask) instead
+                # of inventing an estimate (Danny 2026-07-23, strict mode).
+                _regs = []
                 try:
-                    _route_mid = _sft_rel(_user_text or "", _mins_since_write,
-                                          _sft_prior is not None)
+                    from db.queries import frequent_foods
+                    _regs = await frequent_foods(db, user.id)
                 except Exception:
-                    _route_mid = False
-                # Today's board — built BEFORE routing so single-entry deletes
-                # ("remove the fries") can gate on having something to delete,
-                # and corrections/repeats resolve to real entry ids.
-                _board = []
-                try:
-                    for _fe in (getattr(today_log, "food_entries", None) or []):
-                        if getattr(_fe, "id", None) is not None:
-                            _board.append({
-                                "id": _fe.id,
-                                "food": getattr(_fe, "parsed_food_name", "") or "",
-                                "qty": getattr(_fe, "quantity", "") or "",
-                                "cal": getattr(_fe, "calories", 0) or 0})
-                except Exception:
-                    _board = []
-                _last_assistant = next(
-                    (m.get("content", "") for m in reversed(messages)
-                     if m.get("role") == "assistant" and isinstance(m.get("content"), str)),
-                    "")
-                _photo_food = photo_food_message(_user_text or "")
-                # Strict-confirm fast path: an affirmative on a confirm
-                # pending logs the stashed items verbatim — no re-parse, no
-                # model. Anything non-affirmative falls through to the logger
-                # with the prior (corrections adjust, then log).
-                # DETERMINISTIC UNDO/RESTORE (ledger Phase 2): "undo" / "bring
-                # back the fries" is an inverse on the event ledger — zero
-                # model calls, immediate. Only on a quiet thread (no open ask:
-                # an undo mid-question means "cancel", which the ack path and
-                # pending expiry already cover). The plan feeds the SAME
-                # structured pipeline below (execution, snapshot, renderer).
-                _undo_plan = None
-                if _sft_prior is None:
-                    try:
-                        from core.ledger_undo import build_plan as _undo_build
-                        _undo_plan = await _undo_build(db, user, _user_text or "")
-                    except Exception:
-                        _undo_plan = None
-                _confirm_hit = None
-                if (_sft_prior is not None
-                        and (_sft_prior.get("kind") == "confirm")
-                        and _sft_prior.get("items")):
-                    from core.food_turn import _YES_RE as _yes_re_c
-                    if _yes_re_c.match((_user_text or "").strip()):
-                        _confirm_hit = _sft_prior["items"]
-                if _undo_plan is not None:
-                    _sft = _undo_plan
+                    _regs = []
+                _sft = await _sft_run(_photo_food or _user_text or "", user,
+                                      prior=_sft_prior,
+                                      day_line=_dl, board=_board,
+                                      last_assistant=_last_assistant,
+                                      regulars=_regs,
+                                      thread_active=bool(
+                                          _route_mid or _photo_food))
+                if _sft is not None:
+                    # Day snapshot BEFORE the writes — the say tokens are filled
+                    # from the committed delta after enrichment runs.
                     _sft["_before"] = (
                         int(getattr(today_log, "total_calories", 0) or 0),
                         int(getattr(today_log, "total_protein", 0) or 0))
-                    logger.info(f"event=ledger_undo {_tag} "
-                                f"kinds={','.join(_sft.get('kinds') or [])}")
-                elif _confirm_hit is not None:
-                    _calls_c = []
-                    for _it in _confirm_hit[:8]:
-                        _inp = {"food_name": (_it.get("food") or "").strip(),
-                                "quantity": f"{_it.get('amount')} {_it.get('unit') or ''}".strip(),
-                                "estimated": True,
-                                "source": "structured_food:confirm_replay"}
-                        for _k_src, _k_dst in (("calories", "calories"),
-                                               ("protein", "protein"),
-                                               ("carbs", "carbs"), ("fats", "fats")):
-                            if _it.get(_k_src) is not None:
-                                _inp[_k_dst] = _it[_k_src]
-                        if _it.get("branded"):
-                            _inp["is_packaged"] = True
-                        _calls_c.append({"name": "log_food", "input": _inp})
-                    _sft = {"action": "log", "tool_calls": _calls_c,
-                            "say": ("Locked in, {batch_cal} cal and "
-                                    "{batch_protein}g protein. You're at {day_cal} "
-                                    "with {cal_left} left and {protein_left}g "
-                                    "protein to go."),
-                            "_before": (
-                                int(getattr(today_log, "total_calories", 0) or 0),
-                                int(getattr(today_log, "total_protein", 0) or 0))}
-                    try:
-                        from datetime import datetime as _dt_cf
-                        _sft_prior_pq.answered_at = _dt_cf.utcnow()
-                        await db.commit()
-                    except Exception:
-                        pass
-                elif (_sft_prior is not None or _photo_food is not None
-                        or _sft_applies(_user_text or "")
-                        or (_board and _sft_dest(_user_text or ""))
-                        or _route_mid):
-                    # Immediate status: morph the live thinking indicator to
-                    # "Logging…" the moment the logger starts, so its pass is
-                    # never silent dead air (Danny 2026-07-23).
-                    if on_tool_start:
-                        try:
-                            await on_tool_start(["log_food"])
-                        except Exception:
-                            pass
-                    # Day context so the logger's own coach line ("say") can state
-                    # where the day stands — real numbers we hand it, one model call.
-                    _dl = ""
-                    try:
-                        _p = getattr(user, "preferences", None)
-                        if today_log is not None and _p is not None:
-                            _dl = (f"before this meal they were at "
-                                   f"{int(today_log.total_calories or 0)} of "
-                                   f"{int(getattr(_p, 'calorie_target', 0) or 0)} cal and "
-                                   f"{int(today_log.total_protein or 0)} of "
-                                   f"{int(getattr(_p, 'protein_target', 0) or 0)}g protein.")
-                    except Exception:
-                        _dl = ""
-                    # Their REGULARS — the logger resolves "a Barebells" to THEIR
-                    # Barebells (exact history macros, flavor-aware ask) instead
-                    # of inventing an estimate (Danny 2026-07-23, strict mode).
-                    _regs = []
-                    try:
-                        from db.queries import frequent_foods
-                        _regs = await frequent_foods(db, user.id)
-                    except Exception:
-                        _regs = []
-                    _sft = await _sft_run(_photo_food or _user_text or "", user,
-                                          prior=_sft_prior,
-                                          day_line=_dl, board=_board,
-                                          last_assistant=_last_assistant,
-                                          regulars=_regs,
-                                          thread_active=bool(
-                                              _route_mid or _photo_food))
-                    if _sft is not None:
-                        # Day snapshot BEFORE the writes — the say tokens are filled
-                        # from the committed delta after enrichment runs.
-                        _sft["_before"] = (
-                            int(getattr(today_log, "total_calories", 0) or 0),
-                            int(getattr(today_log, "total_protein", 0) or 0))
-                        if (_sft.get("action") in ("log", "commit") and _sft_prior
-                                and _sft_prior.get("items")):
-                            from core.food_turn import note_held_items
-                            _sft["say"] = note_held_items(
-                                _sft.get("say") or "", _sft_prior["items"],
-                                _sft["tool_calls"])
-                if _sft and _sft["action"] == "ask":
-                    # Hold: record the pending (with the original report stashed) so
-                    # the ANSWER turn routes back through this pipeline and logs.
-                    try:
-                        from db.queries import record_pending_question
-                        _pq_s = await record_pending_question(
-                            db, user.id, kind=ASK_KIND, question=_sft["text"][:500],
-                            tier="food_clarification", hook_style="question")
-                        # A follow-up ask threads the earlier exchange into the
-                        # stashed original, and counts itself — the bounded
-                        # re-ask policy (max 2) reads ask_count on the answer
-                        # turn.
-                        _orig_stash = _user_text or ""
-                        if _sft_prior and _sft_prior.get("original"):
-                            _orig_stash = (f"{_sft_prior['original']}\n"
-                                           f"Then: {_user_text or ''}")
-                        _pq_s.payload_json = json.dumps(
-                            {"original": _orig_stash, "question": _sft["text"],
-                             "kind": _sft.get("kind") or "clarify",
-                             "ask_count": int((_sft_prior or {}).get("ask_count")
-                                              or 0) + 1,
-                             "items": _sft.get("items") or None})
-                        await db.commit()
-                    except Exception as _e:
-                        logger.warning(f"structured-ask stash failed, logging instead: {_e}")
-                        _sft = await _sft_run(_user_text or "", user,
-                                              prior={"original": _user_text or "",
-                                                     "question": ""})
-                        if _sft and _sft["action"] not in ("log", "commit"):
-                            _sft = None
-                # The user engaged with the question — resolve the pending either
-                # way so it can never loop.
-                if _sft_prior_pq is not None:
-                    try:
-                        from datetime import datetime as _dt_s
-                        _sft_prior_pq.answered_at = _dt_s.utcnow()
-                        await db.commit()
-                    except Exception:
-                        pass
-                if _sft:
-                    # Versioned decision trace (ledger fix: version everything)
-                    # — greppable per turn: action, op kinds, and the contract
-                    # versions that produced them.
-                    from core.food_ledger import (INTERPRETER_VERSION,
-                                                  POLICY_VERSION)
-                    logger.info(
-                        f"event=structured_food action={_sft['action']} {_tag} "
-                        f"items={len(_sft.get('tool_calls') or [])} "
-                        f"kinds={','.join(_sft.get('kinds') or []) or '-'} "
-                        f"iv={INTERPRETER_VERSION} pv={POLICY_VERSION}")
-        except Exception as _e:
-            logger.warning(f"structured food turn failed, legacy path: {_e}")
-            _sft = None
+                    if (_sft.get("action") in ("log", "commit") and _sft_prior
+                            and _sft_prior.get("items")):
+                        # Stash the confirmed items; the hold notice is
+                        # appended AFTER narration renders (a held name's
+                        # digits — "Fage 0%" — must not trip the say
+                        # contract and vaporize the notice).
+                        _sft["_held_stash"] = _sft_prior["items"]
+            if _sft and _sft["action"] == "ask":
+                # Hold: record the pending (with the original report stashed) so
+                # the ANSWER turn routes back through this pipeline and logs.
+                try:
+                    from db.queries import record_pending_question
+                    _pq_s = await record_pending_question(
+                        db, user.id, kind=ASK_KIND, question=_sft["text"][:500],
+                        tier="food_clarification", hook_style="question")
+                    # A follow-up ask threads the earlier exchange into the
+                    # stashed original, and counts itself — the bounded
+                    # re-ask policy (max 2) reads ask_count on the answer
+                    # turn.
+                    _orig_stash = _user_text or ""
+                    if _sft_prior and _sft_prior.get("original"):
+                        _orig_stash = (f"{_sft_prior['original']}\n"
+                                       f"Then: {_user_text or ''}")
+                    _pq_s.payload_json = json.dumps(
+                        {"original": _orig_stash, "question": _sft["text"],
+                         "kind": _sft.get("kind") or "clarify",
+                         "ask_count": int((_sft_prior or {}).get("ask_count")
+                                          or 0) + 1,
+                         "items": _sft.get("items") or None})
+                    await db.commit()
+                except Exception as _e:
+                    logger.warning(f"structured-ask stash failed, logging instead: {_e}")
+                    _sft = await _sft_run(_user_text or "", user,
+                                          prior={"original": _user_text or "",
+                                                 "question": ""})
+                    if _sft and _sft["action"] not in ("log", "commit"):
+                        _sft = None
+            # The user engaged with the question — resolve the pending either
+            # way so it can never loop.
+            if _sft_prior_pq is not None:
+                try:
+                    from datetime import datetime as _dt_s
+                    _sft_prior_pq.answered_at = _dt_s.utcnow()
+                    await db.commit()
+                except Exception:
+                    pass
+            if _sft:
+                # Versioned decision trace (ledger fix: version everything)
+                # — greppable per turn: action, op kinds, and the contract
+                # versions that produced them.
+                from core.food_ledger import (INTERPRETER_VERSION,
+                                              POLICY_VERSION,
+                                              RENDERER_VERSION)
+                logger.info(
+                    f"event=structured_food action={_sft['action']} {_tag} "
+                    f"items={len(_sft.get('tool_calls') or [])} "
+                    f"kinds={','.join(_sft.get('kinds') or []) or '-'} "
+                    f"iv={INTERPRETER_VERSION} pv={POLICY_VERSION} "
+                        f"rv={RENDERER_VERSION}")
+    except Exception as _e:
+        logger.warning(f"structured food turn failed, legacy path: {_e}")
+        _sft = None
 
     # ── LLM first pass ───────────────────────────────────────────────────────
     # Generous token budget on purpose: a user can dump a whole day of food in one
@@ -900,7 +900,7 @@ async def run_turn(
                 _ikey = _ik_fn(user.id, _user_text or "", _sft["tool_calls"])
                 if _ik_seen(_ikey):
                     _idem_dup = True
-                    logger.info(f"event=structured_food_duplicate {_tag}")
+                    logger.info(f"event=structured_food_duplicate layer=memory {_tag}")
                 else:
                     # Durable claim (FOOD_LEDGER_V2 Phase 2): survives restarts
                     # and cross-device races via the processed_turns unique key.
@@ -916,7 +916,7 @@ async def run_turn(
                                 db, user.id, _ikey, result_summary=_names_ik):
                             _idem_dup = True
                             logger.info(
-                                f"event=structured_food_duplicate durable {_tag}")
+                                f"event=structured_food_duplicate layer=durable {_tag}")
                     except Exception:
                         pass
                     if not _idem_dup:
@@ -1492,14 +1492,19 @@ async def run_turn(
             if _sft is not None and _sft.get("action") in ("log", "update",
                                                            "delete", "commit"):
                 # STRUCTURED turn: narration comes from ONE committed snapshot
-                # (ledger fix #5) — the interpreter's words are kept only when
-                # they carry no unbacked numeric OR semantic claims; otherwise
-                # the deterministic render from committed numbers takes over.
-                # Numeric contract first: model-authored digits outside
-                # {tokens} → tokenized replacement (647-vs-343, IMG_8610).
+                # (ledger fix #5), built over the calls the executor actually
+                # COMMITTED — a refused CAS update or blocked write is named,
+                # never narrated as success. The interpreter's words are kept
+                # only when they carry no unbacked numeric OR semantic claims;
+                # otherwise the deterministic render takes over. Numeric
+                # contract first: model-authored digits outside {tokens} →
+                # tokenized replacement (647-vs-343, IMG_8610).
                 from core.food_turn import enforce_say_contract
-                _say = enforce_say_contract((_sft.get("say") or "").strip(),
-                                            _sft["tool_calls"])
+                from core.food_ledger import (successful_calls as _fl_ok,
+                                              failed_call_names as _fl_failed,
+                                              compute_batch as _fl_batch)
+                _ok_calls = _fl_ok(_sft["tool_calls"])
+                _failed_names = _fl_failed(_sft["tool_calls"])
                 try:
                     await db.refresh(today_log)
                 except Exception:
@@ -1507,36 +1512,53 @@ async def run_turn(
                 _ac = int(getattr(today_log, "total_calories", 0) or 0)
                 _ap = int(getattr(today_log, "total_protein", 0) or 0)
                 _bc0, _bp0 = _sft.get("_before", (_ac, _ap))
-                _batch_c, _batch_p = _ac - _bc0, _ap - _bp0
-                if (_sft.get("action") in ("update", "delete")
-                        or (_batch_c <= 0 and _batch_p <= 0)):
-                    # Updates: {batch_*} is the entry's NEW value from the
-                    # write itself. The day delta is meaningless here — a
-                    # +95 bump narrated as "logged, 95 cal" reads like a
-                    # phantom food (Danny's truffle fries, 2026-07-23).
-                    # Same fallback covers a refresh miss on log turns.
-                    _batch_c = int(sum((tc.get("input") or {}).get("calories") or 0
-                                       for tc in _sft["tool_calls"]))
-                    _batch_p = int(sum((tc.get("input") or {}).get("protein") or 0
-                                       for tc in _sft["tool_calls"]))
                 _p = getattr(user, "preferences", None)
                 _ct = int(getattr(_p, "calorie_target", 0) or 0) if _p else 0
                 _pt = int(getattr(_p, "protein_target", 0) or 0) if _p else 0
-                try:
-                    from core.food_ledger import (build_snapshot,
-                                                  render_committed)
-                    _snap = build_snapshot(_sft["tool_calls"], _batch_c,
-                                           _batch_p, _ac, _ap, _ct, _pt)
-                    response_text = render_committed(
-                        _say, _sft.get("note") or "",
-                        _sft.get("follow_up") or "", _snap)
-                except Exception as _e:
-                    # The renderer must never cost the user their reply — fall
-                    # back to the token-filled say (same committed numbers).
-                    logger.warning(f"render_committed fallback: {_e}")
-                    from core.food_turn import fill_say_tokens
-                    response_text = fill_say_tokens(
-                        _say, _batch_c, _batch_p, _ac, _ap, _ct, _pt)
+                if not _ok_calls:
+                    # Every write refused (stale board, missing entry): honest
+                    # reset beats a fabricated confirmation.
+                    response_text = ("Hold on - the board changed since I "
+                                     "looked, so I didn't apply that. Tell me "
+                                     "again and I'll set it straight.")
+                else:
+                    # {batch_*} per plan kind over the COMMITTED calls: pure
+                    # log → post-enrichment day delta; update/delete → the
+                    # entry's new value (a +95 bump narrated as "logged, 95
+                    # cal" reads like a phantom food — truffle fries,
+                    # 2026-07-23); mixed → the logged items' own numbers.
+                    _batch_c, _batch_p = _fl_batch(
+                        _sft.get("action"), _ok_calls, _ac - _bc0, _ap - _bp0)
+                    _say = enforce_say_contract(
+                        (_sft.get("say") or "").strip(), _ok_calls)
+                    try:
+                        from core.food_ledger import (build_snapshot,
+                                                      render_committed)
+                        _snap = build_snapshot(_ok_calls, _batch_c, _batch_p,
+                                               _ac, _ap, _ct, _pt)
+                        response_text = render_committed(
+                            _say, _sft.get("note") or "",
+                            _sft.get("follow_up") or "", _snap)
+                    except Exception as _e:
+                        # The renderer must never cost the user their reply —
+                        # fall back to the token-filled say (same numbers).
+                        logger.warning(f"render_committed fallback: {_e}")
+                        from core.food_turn import fill_say_tokens
+                        response_text = fill_say_tokens(
+                            _say, _batch_c, _batch_p, _ac, _ap, _ct, _pt)
+                    if _failed_names:
+                        _fn = ", ".join(n for n in _failed_names if n)[:120]
+                        response_text = (f"{response_text}|||Couldn't touch "
+                                         f"the {_fn} - the board changed under "
+                                         f"me. Say it again if you still want "
+                                         f"that one.")
+                # Hold notice AFTER the contract/render: held names come from
+                # the system's own stash, and their digits ("Fage 0%") must
+                # never vaporize the notice (Dove bar incident class).
+                if _sft.get("_held_stash"):
+                    from core.food_turn import note_held_items
+                    response_text = note_held_items(
+                        response_text, _sft["_held_stash"], _ok_calls)
                 _response_streamed = False
             elif _pure_food:
                 # Legacy pure-food turn keeps the voice_log read; the deterministic
@@ -1913,9 +1935,9 @@ user_message=_user_text or "")
     # executor as the main turn (add-intent gate included via user_message).
     # Only if that still writes nothing do we fall back to owning the miss.
     # PARTIAL-DROP: a distinct dish the user named never logged (turkey logged,
-    # rice dropped). tool_calls IS present, so this fires ALONGSIDE the no-tool
-    # phantom/omission triggers.
-    _partial_drop = bool(_missing_from_scribe)
+    # rice dropped). (The old _missing_from_scribe partial-drop leg of THIS
+    # rescue was removed 2026-07-24: its producer was superseded by the
+    # deterministic reconcile above, leaving the branch permanently dead.)
     # EXERCISE phantom: a set/movement claimed ("🏋️ … logged") but no log_exercise
     # fired — the drops Danny hit 2026-07-23. Reuses the same rescue below (its
     # nudge already handles log_exercise); the executor dedup stops a real dup.
@@ -1932,25 +1954,10 @@ user_message=_user_text or "")
     # were ripped 2026-07-23: sonnet-5 emitted the manifest 0/4 so the marker was
     # dead weight, and ask-before-log now lives in the structured food turn. Food
     # reports are structured; the worded heuristics below cover the legacy paths.)
-    if (_phantom or _omission or _partial_drop or _ex_phantom) \
+    if (_phantom or _omission or _ex_phantom) \
             and not _signing_off:
         try:
-            if _partial_drop and not (_phantom or _omission):
-                # Add ONLY the missing item(s); everything already on the board —
-                # and any composite correctly logged as one — stays untouched.
-                _rescue_nudge = (
-                    "[SYSTEM HEALTH CHECK — not the user] You logged part of what "
-                    "the user reported but MISSED these item(s): "
-                    f"{', '.join(_missing_from_scribe)}. Call log_food NOW for ONLY "
-                    "those missing item(s), using the exact quantities from the "
-                    "user's message. Do NOT re-log, delete, or modify anything "
-                    "already on the board — only ADD the missing item(s). If an "
-                    "item is really part of a dish you already logged as ONE (a "
-                    "filling inside a bowl/wrap/burrito), call NO tool for it. Then "
-                    "confirm just the added item in one short line with real numbers."
-                )
-            else:
-                _rescue_nudge = (
+            _rescue_nudge = (
                     "[SYSTEM HEALTH CHECK — not the user] The user reported "
                     "eating or doing something (past/present tense) and your "
                     "reply discussed it — even stated its calories — but NO "
@@ -1989,7 +1996,7 @@ user_message=_user_text or "")
             # only (a partial drop needs the "log ONLY the missing item" nudge, which
             # the orchestrator can't know). Falls back to the re-prompt when off or empty.
             from core.orchestrator import orchestrator_enabled as _orch_on
-            if _orch_on() and not _partial_drop:
+            if _orch_on():
                 try:
                     from core.orchestrator import call_tools as _orch_call
                     _rescue_calls = [tc for tc in (await _orch_call(_gate_user_message))
@@ -2040,34 +2047,22 @@ user_message=_user_text or "")
                         _rescue_text = deterministic_confirmation(
                             _rescue_calls, today_log, user.preferences, _rescue_results)
                     if _rescue_text:
-                        if _partial_drop and not (_phantom or _omission):
-                            # KEEP the valid original confirmation (the items that
-                            # DID log) and APPEND the recovered missing item — never
-                            # overwrite a correct reply with just the add.
-                            _trigger = "partial_drop"
-                            response_text = (
-                                (response_text.rstrip() + "|||" + _rescue_text)
-                                if (response_text or "").strip() else _rescue_text)
-                            if on_text_bubble and not _hold_voicing:
-                                for _b in Response.from_text(_rescue_text).bubbles:
-                                    await on_text_bubble(_b)
-                        else:
-                            # phantom/omission: the original reply was wrong (false
-                            # claim / commented-not-logged) → REPLACE it.
-                            _trigger = ("phantom" if _phantom else
-                                        "omission" if _omission else
-                                        "exercise_phantom" if _ex_phantom else
-                                        "marker_phantom")
-                            if on_text_bubble and not _hold_voicing:
-                                for _b in Response.from_text(_rescue_text).bubbles:
-                                    await on_text_bubble(_b)
-                            response_text = _rescue_text
+                        # phantom/omission: the original reply was wrong (false
+                        # claim / commented-not-logged) → REPLACE it.
+                        _trigger = ("phantom" if _phantom else
+                                    "omission" if _omission else
+                                    "exercise_phantom" if _ex_phantom else
+                                    "marker_phantom")
+                        if on_text_bubble and not _hold_voicing:
+                            for _b in Response.from_text(_rescue_text).bubbles:
+                                await on_text_bubble(_b)
+                        response_text = _rescue_text
                         tool_calls = list(tool_calls or []) + _rescue_calls
-                        _phantom = _omission = _partial_drop = _ex_phantom = False  # rescued
+                        _phantom = _omission = _ex_phantom = False  # rescued
                         logger.warning(
                             f"event=log_rescue outcome=logged trigger={_trigger} {_tag} "
                             f"tools={[tc.get('name') for tc in _rescue_calls]}")
-            if _phantom or _omission or _partial_drop or _ex_phantom:
+            if _phantom or _omission or _ex_phantom:
                 logger.warning(f"event=log_rescue outcome=unrescued {_tag} — "
                                f"model fired no tool")
         except Exception as e:

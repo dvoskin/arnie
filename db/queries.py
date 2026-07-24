@@ -2713,16 +2713,6 @@ async def record_ledger_event(
     await db.commit()
 
 
-async def record_food_event(
-    db: AsyncSession, user_id: int, event_type: str,
-    entry_id: Optional[int] = None, daily_log_id: Optional[int] = None,
-    payload: Optional[dict] = None, source: Optional[str] = None,
-) -> None:
-    await record_ledger_event(db, user_id, event_type, domain="food",
-                              entry_id=entry_id, daily_log_id=daily_log_id,
-                              payload=payload, source=source)
-
-
 async def get_ledger_events(
     db: AsyncSession, user_id: int, domain: Optional[str] = None,
     entry_id: Optional[int] = None, limit: int = 50,

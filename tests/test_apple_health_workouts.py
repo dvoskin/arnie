@@ -32,6 +32,9 @@ async def _entries(db, user_id, d):
 
 
 async def test_apple_workouts_persist_as_exercise_entries(make_user, db):
+    """New contract (phantom-workout fix 2026-07-24): _process_apple_workouts
+    takes the USER (tz-aware) and each workout lands on the logging day of its
+    OWN start time — never the day the sync ran."""
     u = await make_user(telegram_id="applewk-1", name="Wrist")
     workouts = [
         AppleWorkoutBody(name="Running", duration_minutes=32.0,
@@ -41,9 +44,9 @@ async def test_apple_workouts_persist_as_exercise_entries(make_user, db):
                          active_calories=220.0, start_time="2026-07-22T18:00:00Z"),
     ]
 
-    await _process_apple_workouts(db, u.id, date.today(), workouts)
+    await _process_apple_workouts(db, u, workouts)
 
-    entries = await _entries(db, u.id, date.today())
+    entries = await _entries(db, u.id, date(2026, 7, 22))
     assert len(entries) == 2
     by_name = {e.exercise_name: e for e in entries}
     assert set(by_name) == {"Running", "Strength Training"}
@@ -58,17 +61,22 @@ async def test_apple_workouts_replace_on_resync(make_user, db):
     """A second sync for the same day replaces the first — no double-count."""
     u = await make_user(telegram_id="applewk-2", name="Wrist")
 
-    await _process_apple_workouts(db, u.id, date.today(), [
-        AppleWorkoutBody(name="Running", duration_minutes=30.0, active_calories=300.0),
-        AppleWorkoutBody(name="Yoga", duration_minutes=20.0, active_calories=60.0),
+    await _process_apple_workouts(db, u, [
+        AppleWorkoutBody(name="Running", duration_minutes=30.0,
+                         active_calories=300.0,
+                         start_time="2026-07-22T07:00:00Z"),
+        AppleWorkoutBody(name="Yoga", duration_minutes=20.0, active_calories=60.0,
+                         start_time="2026-07-22T09:00:00Z"),
     ])
-    assert len(await _entries(db, u.id, date.today())) == 2
+    assert len(await _entries(db, u.id, date(2026, 7, 22))) == 2
 
     # Re-sync the SAME day with a corrected single workout (watch finished it).
-    await _process_apple_workouts(db, u.id, date.today(), [
-        AppleWorkoutBody(name="Running", duration_minutes=42.0, active_calories=430.0),
+    await _process_apple_workouts(db, u, [
+        AppleWorkoutBody(name="Running", duration_minutes=42.0,
+                         active_calories=430.0,
+                         start_time="2026-07-22T07:00:00Z"),
     ])
-    entries = await _entries(db, u.id, date.today())
+    entries = await _entries(db, u.id, date(2026, 7, 22))
     assert len(entries) == 1                            # replaced, not appended
     assert entries[0].exercise_name == "Running"
     assert entries[0].duration_minutes == 42.0
@@ -77,10 +85,11 @@ async def test_apple_workouts_replace_on_resync(make_user, db):
 
 async def test_apple_workouts_name_falls_back_to_workout_type(make_user, db):
     u = await make_user(telegram_id="applewk-3", name="Wrist")
-    await _process_apple_workouts(db, u.id, date.today(), [
-        AppleWorkoutBody(workout_type="hk_type_37", duration_minutes=15.0),
+    await _process_apple_workouts(db, u, [
+        AppleWorkoutBody(workout_type="hk_type_37", duration_minutes=15.0,
+                         start_time="2026-07-22T12:00:00Z"),
     ])
-    entries = await _entries(db, u.id, date.today())
+    entries = await _entries(db, u.id, date(2026, 7, 22))
     assert len(entries) == 1
     assert entries[0].exercise_name == "hk_type_37"     # name absent → workout_type
 

@@ -601,11 +601,18 @@ async def test_log_food_turn_unaffected_by_query_history_voiced_addition(
         make_user, db, monkeypatch):
     """Pin that adding query_history to _VOICED_RESULT_TOOLS does NOT change
     behavior on a pure log_food turn. The logging branch is reached first
-    (has_logging=True), so the voiced-result check is never consulted."""
+    (has_logging=True), so the voiced-result check is never consulted.
+    Repinned 2026-07-24: the log branch now answers via the single-source log
+    voice (voice_log / deterministic floor) — the follow-up must NOT run at
+    all on a pure food turn (the one-source rule that killed the doubles)."""
     import core.conversation as C
 
     user = await make_user(telegram_id="t-logfood-unaffected")
     calls = {"follow_up": 0}
+
+    async def _fake_voice(tool_calls, tool_results, today_log, _user):
+        return "banana logged, 105 in."
+    monkeypatch.setattr(C, "voice_log", _fake_voice)
 
     async def _fake_chat(messages, system, tools=True, max_tokens=4096, model=None,
                          stream_handler=None):
@@ -638,8 +645,9 @@ async def test_log_food_turn_unaffected_by_query_history_voiced_addition(
         in_onboarding=False, was_onboarding=False,
     )
 
-    # Logging branch already forces the follow-up — same as before the fix.
-    assert calls["follow_up"] == 1
+    # Logging branch answers via the single-source log voice; the follow-up
+    # (and with it the voiced-result set) is never consulted.
+    assert calls["follow_up"] == 0
 
 
 # ── native-card tools: the actionable close must survive (iOS teaser bug) ─────

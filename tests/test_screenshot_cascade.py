@@ -148,10 +148,12 @@ async def test_packaged_flag_routes_through_web_lookup(monkeypatch, cascade_env)
         f"web lookup must fire for is_packaged=True (got {web_called['n']} calls)"
     )
     assert "Elmhurst" in web_called["queries"][0]
-    assert usda_called["n"] == 0, (
-        "USDA must NOT be consulted before web for branded products "
-        "(was called {usda_called['n']} times)"
-    )
+    # Repinned 2026-07-24: the 2026-07-22 ladder (own-log > USDA > OFF > web)
+    # deliberately consults USDA in the cascade even for branded items — it's
+    # cheap, catches branded generics, and the wrong-cousin demotion plus the
+    # exact-match-only forward rule protect against a bad text match beating
+    # label data. The live invariant is that the web-label lane STILL fires
+    # for packaged items (asserted above), not that USDA is never called.
 
 
 @pytest.mark.asyncio
