@@ -264,6 +264,13 @@ async def _persist_whoop_workouts(db, user: User, workout_by_date: dict) -> tupl
     from db.queries import get_or_create_log_for_date, recompute_log_totals
 
     created = updated = 0
+    # Refs the user explicitly deleted — a whoop re-sync must not resurrect them.
+    from db.models import HealthImportTombstone
+    tombstoned = set((await db.execute(
+        select(HealthImportTombstone.source_ref).where(
+            HealthImportTombstone.user_id == user.id,
+            HealthImportTombstone.source_ref.like("whoop:%"),
+        ))).scalars().all())
     for d, workouts in (workout_by_date or {}).items():
         try:
             log = await get_or_create_log_for_date(db, user.id, d)
@@ -275,6 +282,8 @@ async def _persist_whoop_workouts(db, user: User, workout_by_date: dict) -> tupl
             if not wid:
                 continue  # no stable key → skip, never risk a dup storm
             source_ref = f"whoop:{wid}"
+            if source_ref in tombstoned:
+                continue
             occurred = None
             if w.get("start"):
                 try:

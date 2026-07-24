@@ -283,6 +283,25 @@ class ExerciseEntry(Base):
     daily_log = relationship("DailyLog", back_populates="exercise_entries")
 
 
+class HealthImportTombstone(Base):
+    """A source_ref the user DELETED — auto-import must never resurrect it.
+
+    Apple Health uses replace-on-sync and WHOOP upserts by ref, so without a
+    tombstone a deleted auto-imported workout reappears on the next sync
+    (Danny's 25-min 'Workout', 2026-07-24). Written by delete_exercise_entry
+    whenever the removed row carries a source_ref; honored by both ingests.
+    Paired with alembic hlthtomb0001.
+    """
+    __tablename__ = "health_import_tombstones"
+    __table_args__ = (
+        UniqueConstraint("user_id", "source_ref", name="uq_tombstone_user_ref"),
+    )
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    source_ref = Column(String, nullable=False)
+    created_at = Column(DateTime, server_default=func.now())
+
+
 class BodyMetric(Base):
     __tablename__ = "body_metrics"
     # Weight-trend reads (context build every turn) filter user_id and sort by

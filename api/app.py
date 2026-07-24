@@ -4020,13 +4020,22 @@ async def brain_insight(token: str, payload: _BrainInsightRequest):
 # ── Apple Health webhook ────────────────────────────────────────────────────────
 
 class AppleWorkout(BaseModel):
-    """One Apple Watch workout record from the iOS Shortcut."""
+    """One Apple Watch workout record. Field names vary by sender: the iOS
+    Shortcut ships name/workout_type/active_calories/start_time; the native
+    app ships type/energy_kcal/start/end (+ the HKWorkout uuid). Accept both —
+    the old model silently dropped every app field except duration, which is
+    how prod grew nameless, dateless 'Workout' rows."""
     name: Optional[str] = None           # e.g. "Running", "Cycling", user-visible label
     workout_type: Optional[str] = None   # raw HKWorkoutActivityType name if name not set
+    type: Optional[str] = None           # native app's readable label
     duration_minutes: Optional[float] = None
     active_calories: Optional[float] = None
+    energy_kcal: Optional[float] = None  # native app's key for the same value
     distance_km: Optional[float] = None
-    start_time: Optional[str] = None     # ISO datetime — used as display metadata
+    start_time: Optional[str] = None     # ISO datetime (Shortcut key)
+    start: Optional[str] = None          # ISO datetime (native app key)
+    end: Optional[str] = None
+    uuid: Optional[str] = None           # HKWorkout UUID — the idempotency ref
 
 
 class AppleHealthPayload(BaseModel):
@@ -4107,44 +4116,139 @@ class AppleHealthPayload(BaseModel):
         non_zero = [p for p in parts if p != 0]
         return float(non_zero[0] if non_zero else parts[0])
 
-async def _process_apple_workouts(db, user_id: int, snap_date, workouts: list) -> None:
-    """
-    Replace this day's Apple-Health-sourced exercise entries with the incoming batch.
-    Uses replace-on-sync: stale entries for the day are deleted first, then the fresh
-    set is inserted. This means a re-sync never double-counts workouts.
-    """
-    from db.queries import get_or_create_log_for_date, recompute_log_totals
-    from db.models import ExerciseEntry
-    from sqlalchemy import delete as sql_delete
+def _norm_apple_workout(d: dict) -> Optional[dict]:
+    """Normalize a raw workout dict (either sender's field names) to one shape.
+    Returns None only when there's nothing loggable (no duration and no time)."""
+    from datetime import timezone as _tz
 
-    log = await get_or_create_log_for_date(db, user_id, snap_date)
+    name = d.get("name") or d.get("workout_type") or d.get("type") or "Workout"
+    iso = d.get("start_time") or d.get("start")
+    start_utc = None
+    if iso:
+        try:
+            parsed = datetime.fromisoformat(str(iso).replace("Z", "+00:00"))
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=_tz.utc)
+            start_utc = parsed.astimezone(_tz.utc).replace(tzinfo=None)
+        except Exception:
+            start_utc = None
+    dur = d.get("duration_minutes")
+    kcal = d.get("active_calories") or d.get("energy_kcal")
+    if dur is None and start_utc is None:
+        return None
+    if d.get("uuid"):
+        ref = f"apple_health:{d['uuid']}"
+    elif iso:
+        ref = f"apple_health:{iso}|{int(dur or 0)}"
+    else:
+        ref = None
+    return {"name": name, "start_utc": start_utc, "duration": dur,
+            "kcal": kcal, "ref": ref}
 
-    # Delete existing apple_health exercise entries for this day only
-    await db.execute(
-        sql_delete(ExerciseEntry).where(
-            ExerciseEntry.daily_log_id == log.id,
-            ExerciseEntry.source_type == "apple_health",
-        )
+
+def _is_cross_source_dup(cand_start_utc, cand_dur, other_occurred, other_dur) -> bool:
+    """The CalAI rule: the same physical session reported by two sources is ONE
+    workout. Prefer timestamps (starts within 30 min + durations within ~40%);
+    with no timestamps to compare, treat same-day near-identical durations as
+    the same session (the exact shape of the Whoop-walk / Apple-'Workout' pair)."""
+    if cand_start_utc is not None and other_occurred is not None:
+        delta_min = abs((cand_start_utc - other_occurred).total_seconds()) / 60
+        if delta_min > 30:
+            return False
+        if not cand_dur or not other_dur:
+            return True
+        lo, hi = sorted([float(cand_dur), float(other_dur)])
+        return hi <= lo * 1.4 + 3
+    if cand_dur and other_dur:
+        return abs(float(cand_dur) - float(other_dur)) <= 3
+    return False
+
+
+async def _process_apple_workouts(db, user, workouts: list) -> None:
+    """Ingest Apple-Health workouts with the three guarantees the old version
+    lacked (Danny's phantom 25-min 'Workout', 2026-07-24):
+
+    1. Each workout lands on the LOGGING DAY of its OWN start time (user tz,
+       4am rollover) — never the day the sync happened to run.
+    2. Cross-source dedup: a session another source already owns (WHOOP,
+       manual) is skipped, matched by start-time proximity or same-day
+       duration identity.
+    3. Deletes stick: refs in health_import_tombstones are never re-imported.
+
+    Still replace-on-sync per affected day among apple_health rows, so a
+    re-sync never self-duplicates.
+    """
+    from db.models import ExerciseEntry, HealthImportTombstone
+    from db.queries import (
+        get_or_create_log_for_date, recompute_log_totals,
+        _logging_day_of, _user_today,
     )
-    await db.flush()
+    from sqlalchemy import delete as sql_delete, select as sql_select
 
+    tz = getattr(user, "timezone", None) or "UTC"
+    normed = []
     for w in workouts:
         d = w.model_dump(exclude_none=True) if hasattr(w, "model_dump") else dict(w)
-        name = d.get("name") or d.get("workout_type") or "Workout"
-        entry = ExerciseEntry(
-            daily_log_id=log.id,
-            exercise_name=name,
-            duration_minutes=d.get("duration_minutes"),
-            calories_burned_estimate=d.get("active_calories"),
-            # cardio_type set so recompute_log_totals marks cardio_completed=True
-            cardio_type="apple_health",
-            source_type="apple_health",
-            notes=d.get("start_time") or "",
-        )
-        db.add(entry)
+        n = _norm_apple_workout(d)
+        if n:
+            n["day"] = (_logging_day_of(n["start_utc"], tz)
+                        if n["start_utc"] else _user_today(tz))
+            normed.append(n)
+    if not normed:
+        return
 
-    await db.flush()
-    await recompute_log_totals(db, log.id)
+    tombstoned = set()
+    refs = [n["ref"] for n in normed if n["ref"]]
+    if refs:
+        rows = (await db.execute(
+            sql_select(HealthImportTombstone.source_ref).where(
+                HealthImportTombstone.user_id == user.id,
+                HealthImportTombstone.source_ref.in_(refs),
+            ))).scalars().all()
+        tombstoned = set(rows)
+
+    by_day: dict = {}
+    for n in normed:
+        by_day.setdefault(n["day"], []).append(n)
+
+    for day, day_workouts in by_day.items():
+        log = await get_or_create_log_for_date(db, user.id, day)
+        # Sessions other sources already own on this day (whoop, manual logs).
+        others = (await db.execute(
+            sql_select(ExerciseEntry.occurred_at, ExerciseEntry.duration_minutes)
+            .where(ExerciseEntry.daily_log_id == log.id,
+                   ExerciseEntry.source_type != "apple_health",
+                   ExerciseEntry.duration_minutes.isnot(None))
+        )).all()
+        # Replace-on-sync within the apple_health lane for this day.
+        await db.execute(
+            sql_delete(ExerciseEntry).where(
+                ExerciseEntry.daily_log_id == log.id,
+                ExerciseEntry.source_type == "apple_health",
+            )
+        )
+        await db.flush()
+
+        for n in day_workouts:
+            if n["ref"] and n["ref"] in tombstoned:
+                continue
+            if any(_is_cross_source_dup(n["start_utc"], n["duration"], occ, dur)
+                   for occ, dur in others):
+                continue
+            db.add(ExerciseEntry(
+                daily_log_id=log.id,
+                exercise_name=n["name"],
+                duration_minutes=n["duration"],
+                calories_burned_estimate=n["kcal"],
+                # cardio_type set so recompute_log_totals marks cardio_completed=True
+                cardio_type="apple_health",
+                source_type="apple_health",
+                source_ref=n["ref"],
+                occurred_at=n["start_utc"],
+                notes="",
+            ))
+        await db.flush()
+        await recompute_log_totals(db, log.id)
     await db.commit()
 
 
@@ -4224,7 +4328,9 @@ async def _process_apple_health(payload: "AppleHealthPayload", token: str) -> di
         await upsert_health_snapshot(db, user.id, snap_date, **data)
 
         if payload.workouts:
-            await _process_apple_workouts(db, user.id, snap_date, payload.workouts)
+            # Workouts date themselves (own start time + user tz + 4am rollover),
+            # so the snapshot's date no longer decides which day they land on.
+            await _process_apple_workouts(db, user, payload.workouts)
 
         # First-sync detection — fire a Telegram notification exactly once
         is_first = "apple_health_connected" not in (user.nudges_sent or "").split(",")

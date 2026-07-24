@@ -1901,6 +1901,18 @@ async def delete_exercise_entry(db: AsyncSession, entry_id: int, user_id: int) -
         return False
 
     daily_log_id = entry.daily_log_id
+    # Auto-imported rows (apple_health replace-on-sync, whoop ref-upsert) would
+    # resurrect on the next sync — tombstone the ref so a delete is FINAL.
+    if entry.source_ref:
+        from db.models import HealthImportTombstone
+        exists = (await db.execute(
+            select(HealthImportTombstone).where(
+                HealthImportTombstone.user_id == user_id,
+                HealthImportTombstone.source_ref == entry.source_ref,
+            ))).scalar_one_or_none()
+        if exists is None:
+            db.add(HealthImportTombstone(user_id=user_id,
+                                         source_ref=entry.source_ref))
     await db.delete(entry)
     await db.flush()
     # Re-derive flags from whatever remains (single source of truth).
