@@ -166,8 +166,10 @@ _SYSTEM = (
     "Pick exactly one action:\n"
     '1. Not a report of food/drink they consumed -> {"action":"pass"}\n'
     '2. Consumed food, but a quantity or calorie-critical prep detail is genuinely '
-    'unclear -> {"action":"ask","points":[{"label":"Chicken","q":"how much, and '
-    'grilled or fried?"}]}\n'
+    'unclear -> {"action":"ask","points":[{"label":"Chicken","qs":["grilled, '
+    'baked, or fried?","skin on or off?","rough amount - oz or one breast?"]},'
+    '{"label":"Potato","qs":["baked, mashed, or fries?","any butter, cheese, '
+    'or sour cream?"]}]}\n'
     '3. Consumed food with enough detail -> {"action":"log","items":[{"food":'
     '"Caesar salad","amount":2,"unit":"handfuls","calories":180,"protein":4,'
     '"carbs":8,"fats":15,"meal":"dinner"}],"say":"Pizza and the Caesar logged, {batch_cal} cal and '
@@ -178,6 +180,11 @@ _SYSTEM = (
     '"carbs":26,"fats":18}],"say":"Bumped the birria to 2 tacos, {batch_cal} cal '
     'now."}\n'
     "RULES:\n"
+    "- ASK DEPTH scales with mode: on strict, list EVERY calorie-moving facet "
+    "per item as its own short sub-question (prep / skin / amount for "
+    "proteins; size / toppings for starches; bread, slices, butter for toast; "
+    "'a scoop' = 1 tbsp, 2, or heaping). Moderate asks only each item's "
+    "single biggest facet; quick asks one question total. Always ONE message.\n"
     "- Judge each item's ambiguity INDEPENDENTLY: a clearly-stated neighbor "
     "never excuses a vague main. 'Some caesar salad with chicken and 3 eggs' "
     "still asks about the salad even though the eggs are exact.\n"
@@ -349,20 +356,37 @@ def format_confirm(items: list) -> str:
 
 
 def _format_question(points: list) -> str:
-    """One rich-formatted clarify bubble: numbered list, bolded labels."""
-    pts = [(str(p.get("label") or "").strip(", ").strip(),
-            str(p.get("q") or "").strip())
-           for p in points if isinstance(p, dict) and (p.get("q") or "").strip()]
-    pts = [(l, q) for l, q in pts if q][:3]
-    if not pts:
+    """One rich clarify bubble at ChatGPT-depth (Danny 2026-07-24): numbered
+    bolded items, each with its calorie-moving FACETS as sub-bullets, closed
+    with the pending guarantee. Single message, single model call — depth
+    without latency. Back-compat: a point may carry one "q" or a "qs" list."""
+    norm = []
+    for p in points if isinstance(points, list) else []:
+        if not isinstance(p, dict):
+            continue
+        label = str(p.get("label") or "").strip(", ").strip()
+        qs = p.get("qs")
+        if not isinstance(qs, list):
+            qs = [p.get("q")]
+        qs = [str(q).strip() for q in qs if q and str(q).strip()][:4]
+        if qs:
+            norm.append((label, qs))
+    norm = norm[:4]
+    if not norm:
         return ""
-    if len(pts) == 1:
-        l, q = pts[0]
-        return f"Quick one so it's clean, **{l.lower()}**: {q}" if l else \
-               f"Quick one so it's clean: {q}"
+    if len(norm) == 1 and len(norm[0][1]) == 1:
+        l, (q,) = norm[0]
+        return (f"Quick one so it's clean, **{l.lower()}**: {q}" if l
+                else f"Quick one so it's clean: {q}")
     lines = ["Quick one so it's clean:"]
-    for i, (l, q) in enumerate(pts, 1):
-        lines.append(f"{i}. **{l}**: {q}" if l else f"{i}. {q}")
+    for i, (label, qs) in enumerate(norm, 1):
+        if len(qs) == 1:
+            lines.append(f"{i}. **{label}**: {qs[0]}" if label
+                         else f"{i}. {qs[0]}")
+        else:
+            lines.append(f"{i}. **{label}**" if label else f"{i}.")
+            lines.extend(f"   • {q}" for q in qs)
+    lines.append("Nothing hits the board till you answer - keeping it exact.")
     return "\n".join(lines)
 
 

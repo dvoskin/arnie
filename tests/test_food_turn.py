@@ -561,3 +561,18 @@ def test_note_held_items_names_the_dropped():
     calls.append({"input": {"food_name": "Dove Ice Cream Bar"}})
     same = FT.note_held_items("All three logged.", stashed, calls)
     assert same == "All three logged."
+
+
+def test_ask_formats_facet_depth():
+    """ChatGPT-depth asks (Danny 2026-07-24): per-item facets as sub-bullets,
+    closed with the pending guarantee; single-q points stay back-compatible."""
+    deep = FT._format_question([
+        {"label": "Chicken", "qs": ["grilled, baked, or fried?",
+                                    "skin on or off?", "rough amount?"]},
+        {"label": "Potato", "qs": ["baked or fries?", "any toppings?"]}])
+    assert "1. **Chicken**" in deep and "   • skin on or off?" in deep
+    assert "2. **Potato**" in deep
+    assert deep.strip().endswith("keeping it exact.")
+    single = FT._format_question([{"label": "Crust", "q": "how much left?"}])
+    assert single.startswith("Quick one so it's clean, **crust**")
+    assert "board" not in single   # one-liner stays light
