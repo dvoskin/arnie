@@ -6,15 +6,16 @@ heuristic on the MESSAGE text scales to every food pair. The scribe instead does
 a human scribe does: read the message, list what was ordered, and check every item
 made it onto the board.
 
-Flow (wired in core/conversation.run_turn):
-  1. cheap gate — only a multi-item food turn that logged FEWER items than it named
-     runs the scribe (single foods, fully-logged meals pay nothing).
-  2. extract_food_items() — a Haiku call returns the canonical item list, RESPECTING
-     groupings (one combined total = one item, so 'lettuce, tomato, onion + mustard,
-     20 cal' is NOT split into four).
-  3. missing_items() — reconcile the list against what actually logged (token overlap,
-     reusing write_set._named_in), returning only the genuinely-unlogged items.
-  4. the caller feeds those exact names into the existing self-heal nudge.
+Flow (wired in core/conversation.run_turn, legacy lane only — structured food
+turns log by construction and skip it):
+  1. should_run_scribe() gates on any substantive non-ack/non-question message;
+     extraction launches IN PARALLEL with pass-1 (Haiku lands first, no latency).
+  2. extract_food_items() — a Haiku call returns the canonical item list,
+     RESPECTING groupings (one combined total = one item).
+  3. unlogged_items() — the count-gated fuzzy reconcile: only when the scribe
+     found MORE items than logged is anything missing, and the missing ones are
+     picked by lowest name-similarity (a renamed item is never re-logged).
+  4. the caller executes those exact items directly (deterministic rescue).
 
 Pure + small: the only side effect is one Haiku call, and it's skipped unless a drop
 is already plausible. Kill switch: SCRIBE_ENABLED=false.
@@ -26,7 +27,6 @@ import re
 from typing import List
 
 from core.llm import chat
-from core.write_set import _named_in, _tokens
 
 # Extraction model. Tested Haiku vs Sonnet (2026-07-21) on the composite/distinct
 # set: with the tightened prompt below they're EQUIVALENT (both keep a poke bowl
@@ -38,10 +38,6 @@ def _scribe_model() -> str:
     return os.getenv("SCRIBE_MODEL", "claude-haiku-4-5-20251001")
 
 
-# Cheap multi-item signal — a conjunction/separator between plausible foods. Broad on
-# purpose: it only DECIDES WHETHER TO LOOK; the extraction is the precise part.
-_MULTI_SEP_RE = re.compile(r",|;|\n|\+|\band\b|\bplus\b|\bwith\b|\balso\b|\bи\b|\bс\b|\bплюс\b",
-                           re.IGNORECASE)
 # Pure ack / lookup-question — no consumed food to extract, so the scribe skips it.
 _ACK_RE = re.compile(
     r"^(ok(ay)?|k+|thx|thanks|thank\s+you|ty|cool|nice|great|sweet|got\s+it|gotcha|"
@@ -62,20 +58,10 @@ def scribe_enabled() -> bool:
     return os.getenv("SCRIBE_ENABLED", "false").lower() in ("true", "1", "yes")
 
 
-def looks_multi_item(message: str) -> bool:
-    """True when the message plausibly names >1 food — worth a completeness check.
-    Cheap and broad; false positives cost only the reconcile (no model call unless a
-    shortfall is also present)."""
-    m = (message or "").strip()
-    if len(m) < 6:
-        return False
-    return bool(_MULTI_SEP_RE.search(m))
-
-
 def should_run_scribe(message: str) -> bool:
     """Launch the scribe for ANY substantive message that could name food(s) —
-    broadened 2026-07-21 from looks_multi_item so a SPACE-separated list ('eggs
-    bacon toast', no comma/and) is covered too, making completeness deterministic
+    broadened 2026-07-21 from a separator-list gate so a SPACE-separated list
+    ('eggs bacon toast', no comma/and) is covered too, making completeness deterministic
     on every food turn rather than only separator-lists. Skips pure acks and
     lookup questions (no consumed food to extract). The scribe runs in PARALLEL
     with pass-1, so a non-food false positive costs only a cancelled call — never
@@ -178,30 +164,6 @@ async def extract_food_items(message: str) -> List[dict]:
     return out
 
 
-def _covered_by(name: str, logged_names: List[str]) -> bool:
-    """True when SOME logged entry covers EVERY content token of `name` (prefix-
-    tolerant). Stricter than write_set._named_in on purpose: for the reconcile we ask
-    'is this whole item logged?', so 'egg whites' must NOT count as covered by a plain
-    'egg (whole)' — the shared 'egg' token isn't enough; 'whites' must be present too."""
-    nt = _tokens(name)
-    if not nt:
-        return True  # vacuous (units-only) — never a drop
-    for ln in logged_names:
-        lt = _tokens(ln)
-        if lt and all(any(t == l or t.startswith(l) or l.startswith(t) for l in lt)
-                      for t in nt):
-            return True
-    return False
-
-
-def missing_items(extracted: List[dict], logged_names: List[str]) -> List[dict]:
-    """The extracted items with NO logged entry covering all their tokens — the genuine
-    drops. 'egg whites' stays missing when only 'Egg (whole)' logged."""
-    return [it for it in extracted
-            if _tokens(it.get("name") or "")
-            and not _covered_by(it.get("name") or "", logged_names)]
-
-
 def _norm_name(s: str) -> str:
     # Cyrillic-aware (2026-07-22): the old ASCII-only [^a-z0-9 ] regex stripped
     # EVERY character from a Russian/Ukrainian food name ('Домашняя пицца',
@@ -252,24 +214,3 @@ def unlogged_items(extracted: List[dict], logged_names: List[str]) -> List[dict]
 
     ranked = sorted(extracted, key=lambda it: _sim(it.get("name") or ""))
     return ranked[:n_missing]
-
-
-_MISSING_STOP = {"with", "and", "the", "of", "a", "in", "on", "plus", "some"}
-
-
-def distinct_missing_items(extracted: List[dict], logged_names: List[str]) -> List[str]:
-    """The missing items that are DISTINCT foods worth an automatic rescue — a
-    SHORT name (rice, turkey, sweet potato fries), NOT a composite the scribe
-    described with all its fillings ('poke bowl with salmon, tuna, rice, edamame…').
-
-    Why the cap: a composite logs as ONE row, and its scribe-name (full phrasing)
-    vs the model's log-name ('Poke bowl (…)') token-mismatch would FALSE-flag it as
-    missing → a wasteful/duplicating rescue. A genuine dropped distinct dish has a
-    short name, so ≤3 content tokens catches every real drop (turkey, rice, fries)
-    while never firing on a composite. Returns bare name strings, drop order."""
-    out: List[str] = []
-    for it in missing_items(extracted, logged_names):
-        nm = (it.get("name") or "").strip()
-        if nm and len([t for t in _tokens(nm) if t not in _MISSING_STOP]) <= 3:
-            out.append(nm)
-    return out

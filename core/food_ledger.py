@@ -22,11 +22,11 @@ Layering: core/food_turn (the interpreter) imports this module; this module
 imports neither food_turn nor conversation. Everything here is pure logic —
 no model calls, no DB session.
 
-Honest scope note: idempotency here is in-process with a short TTL (covers
-retries and double delivery, the common failure). Durable cross-restart
-exactly-once needs a message-id column + unique index — tracked in
-docs/FOOD_LEDGER_V2.md alongside the event-sourced history and calibration
-work this layer is designed to grow into.
+The in-process idempotency registry here is the fast path; the DURABLE half
+lives in the database (processed_turns claim via db.queries.claim_processed_turn,
+ledger_events history via record_ledger_event) — both shipped 2026-07-24.
+Calibration and the full policy inversion are the next growth steps
+(docs/FOOD_LEDGER_V2.md).
 """
 from __future__ import annotations
 
@@ -36,7 +36,7 @@ import os
 import re
 import time
 from collections import OrderedDict
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -183,6 +183,63 @@ class TransactionSnapshot:
             "day_cal": self.day_cal, "day_protein": self.day_protein,
             "cal_left": self.cal_left, "protein_left": self.protein_left,
         }
+
+
+# ── executor-result awareness ─────────────────────────────────────────────────
+# The executor stamps each call's outcome onto its input (_result). Narration
+# must read it: a refused CAS update or dedup-blocked write narrated as success
+# is a lie with committed-looking numbers.
+_FAILURE_PREFIXES = (
+    "Error:", "Skipped", "Failed to", "STALE BOARD", "COULD NOT FIND",
+    "No food entry", "No exercise entry", "Missing entry_id",
+    "Nothing to restore", "Already on the board",
+)
+
+
+def _call_failed(tc: dict) -> bool:
+    r = (tc.get("input") or {}).get("_result")
+    return isinstance(r, str) and r.startswith(_FAILURE_PREFIXES)
+
+
+def successful_calls(tool_calls: list) -> list:
+    """Calls whose executor result reads as a committed write. A call with no
+    stamped result (mocked executors, pre-dispatch) counts as successful."""
+    return [tc for tc in (tool_calls or []) if not _call_failed(tc)]
+
+
+def failed_call_names(tool_calls: list) -> list:
+    out = []
+    for tc in (tool_calls or []):
+        if _call_failed(tc):
+            inp = tc.get("input") or {}
+            out.append(str(inp.get("food_name") or inp.get("food_hint")
+                           or f"entry #{inp.get('entry_id')}").strip())
+    return out
+
+
+def compute_batch(action: str, ok_calls: list,
+                  day_delta_cal: int, day_delta_protein: int) -> tuple:
+    """{batch_*} semantics per plan kind, computed over SUCCESSFUL writes:
+    pure log → the committed day delta (post-enrichment truth) when positive,
+    else the log inputs' sum; update/delete → the entries' new absolute values
+    (the update inputs); mixed commit → the LOGGED items' inputs only — never
+    the day delta, which folds update deltas into numbers the say attributes
+    to the named logged items ('Coke logged, 320 cal' for a 140-cal Coke).
+    Never negative."""
+    def _sum(calls, key):
+        return int(sum((tc.get("input") or {}).get(key) or 0 for tc in calls))
+    logs = [tc for tc in ok_calls
+            if tc.get("name") in ("log_food", "restore_food_entry")]
+    ups = [tc for tc in ok_calls if tc.get("name") == "update_food_entry"]
+    if action == "log":
+        c, p = int(day_delta_cal), int(day_delta_protein)
+        if c <= 0 and p <= 0:
+            c, p = _sum(logs, "calories"), _sum(logs, "protein")
+    elif action in ("update", "delete"):
+        c, p = _sum(ups, "calories"), _sum(ups, "protein")
+    else:
+        c, p = _sum(logs, "calories"), _sum(logs, "protein")
+    return max(0, c), max(0, p)
 
 
 def build_snapshot(tool_calls: list, batch_cal: int, batch_protein: int,

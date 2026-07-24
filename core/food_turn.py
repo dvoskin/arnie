@@ -12,8 +12,10 @@ returns strict JSON —
             "I actually had 2 birria" / "I had 2 of those" resolve against today's
             logged entries and become clean update_food_entry calls — no dedup
             fight, no "already on the board" template. Danny IMG_8595.)
+  delete -> deletes [{entry_id}]  (single-entry removals, board-anchored)
   ask    -> points [{label, q}]   (ONE rich-formatted question)
   pass   -> not a food report; the normal conversation path takes the turn
+  ...or "operations": an ordered mixed plan of the write kinds above.
 
 Asks and items are different actions, so an ask payload cannot carry writes;
 on top of that, run() enforces a consumption-evidence invariant (an
@@ -118,16 +120,17 @@ _PLAN_RE = re.compile(
     r"\b(gonna|going\s+to|about\s+to|planning|plan\s+to|might|maybe|probably|"
     r"thinking\s+(?:about|of)|will\s+(?:have|eat|grab)|later\b(?!\s+than)|for\s+(?:tonight|tomorrow|the\s+(?:week|fridge|freezer))|to\s+(?:save|bring|eat\s+later)|not\s+sure)\b", re.I)
 # Correction/reference cues — IN scope (the logger owns updates, board-aware).
-# Deletes/removes stay legacy: destructive intent gets the big brain's judgment.
+# Single-entry deletes are structured too (applies_destructive routes them with
+# a board present); only whole-day wipes keep the big brain's judgment.
 _CORRECTION_RE = re.compile(
     r"\b(actually|instead|make\s+(?:it|that)|change|it\s+was|that\s+was|"
     r"of\s+those|of\s+them)\b", re.I)
-# NOTE (Danny 2026-07-23): complaints ("you only logged the sour cream ones")
-# and confirmations ("okay log it") are NOT gated by phrase lists — that's the
-# whack-a-mole disease. They route in via THREAD STATE instead (thread_active in
-# run_turn: an open ask-pending, or a food written in the last few minutes), and
-# the logger reads the context and decides. The regexes below only shape the
-# COLD-START gate.
+# NOTE (Danny 2026-07-23/24): complaints ("you only logged the sour cream
+# ones") and confirmations ("okay log it") are NOT gated by phrase lists —
+# that's the whack-a-mole disease. They route via THREAD STATE (an open
+# ask-pending, or graded thread_relevance over a recent write), and the
+# interpreter reads the context and decides. The regexes below shape the
+# COLD-START gate and feed classify_thread_intent's mid-thread taxonomy.
 _DESTRUCTIVE_RE = re.compile(
     r"\b(remove|delete|undo|scratch|clear\s+(?:my|the|it|that|all|everything|today)|take\s+(?:it|that)\s+off)\b", re.I)
 # Non-food logging domains → legacy path (log_water / log_exercise / weight).
@@ -268,22 +271,13 @@ def applies(text: str) -> bool:
 
 
 def thread_routes(text: str) -> bool:
-    """Mid-thread routing (STATE-based, no phrase lists): while a food thread is
-    active (open ask-pending, or a food written minutes ago), any message that
-    isn't clearly another domain goes to the logger, which reads the context and
-    decides — including complaints ('you only logged the sour cream ones') and
-    confirmations ('okay log it'). Questions stay with the coach; acks are
-    nothing; destructive and workout/water stay with the main brain."""
-    t = (text or "").strip()
-    if not t or len(t) > 500:
-        return False
-    if _NEGATED_RE.search(t):
-        return False
-    if _ACK_RE.match(t) or "?" in t:
-        return False
-    if _DESTRUCTIVE_RE.search(t) or _NONFOOD_RE.search(t) or _PLAN_RE.search(t):
-        return False
-    return True
+    """DEPRECATED shim over classify_thread_intent — kept only for the gate
+    evals (scripts/eval_food_matrix) and their tests. Production routing is
+    thread_relevance(); this delegates so the two can never drift. Old
+    contract preserved: deletion stays excluded (it predates the structured
+    delete op) and bare commentary routes (an open thread owned everything
+    that wasn't clearly another domain)."""
+    return classify_thread_intent(text) in ("report", "correction", "commentary")
 
 
 # ── the logger pass ───────────────────────────────────────────────────────────
@@ -498,7 +492,8 @@ def note_held_items(say: str, stashed: list, tool_calls: list) -> str:
     if not missing:
         return say
     held = " and ".join(missing[:3])
-    return (say or "").rstrip(". ") +         f". Holding the {held} - tell me which kind and it goes on too."
+    return ((say or "").rstrip(". ")
+            + f". Holding the {held} - tell me which kind and it goes on too.")
 
 
 def format_confirm(items: list) -> str:
@@ -559,7 +554,8 @@ def _format_question(points: list, ready: list | None = None) -> str:
                        ("Just need one thing: " + q if ready_names
                         else "Quick one so it's clean: " + q))
         return "|||".join(bubbles)
-    head = "Just need a couple things:" if ready_names else            "Quick one so it's clean:"
+    head = ("Just need a couple things:" if ready_names
+            else "Quick one so it's clean:")
     lines = [head]
     for i, (label, qs) in enumerate(norm, 1):
         if len(qs) == 1:
@@ -571,8 +567,6 @@ def _format_question(points: list, ready: list | None = None) -> str:
     bubbles.append("\n".join(lines))
     bubbles.append("Nothing hits the board till then, keeps your log exact.")
     return "|||".join(bubbles)
-_TOKEN_RE = re.compile(
-    r"\{(batch_cal|batch_protein|day_cal|cal_left|day_protein|protein_left)\}")
 
 
 def enforce_say_contract(say: str, tool_calls: list) -> str:
@@ -598,7 +592,9 @@ def enforce_say_contract(say: str, tool_calls: list) -> str:
         # Digits from the system's own writes are legal: quantities AND food
         # names ("Fage 0%", "5-hour Energy") — a product's digit is not an
         # invented total (sim battery 2026-07-24, 17/18 false positive).
-        for field in ("quantity", "food_name"):
+        # food_hint covers update/delete/undo calls, whose narration names the
+        # board entry ("Undone, took the 5-hour Energy off").
+        for field in ("quantity", "food_name", "food_hint"):
             for m in re.finditer(r"\d+(?:\.\d+)?", str(inp.get(field) or "")):
                 allowed.add(m.group(0).rstrip("0").rstrip(".") or "0")
     said = {m.group(0).rstrip("0").rstrip(".") or "0"
@@ -659,7 +655,7 @@ def _normalize_ops(data: dict) -> list:
     return [(action, o) for o in (data.get(key) or []) if isinstance(o, dict)]
 
 
-def _log_call(it: dict) -> Optional[dict]:
+def _log_call(it: dict, source: Optional[str] = None) -> Optional[dict]:
     if not isinstance(it, dict):
         return None
     food = str(it.get("food") or "").strip()
@@ -680,7 +676,7 @@ def _log_call(it: dict) -> Optional[dict]:
     # recorded answer instead of a plausible excuse.
     inp = {"food_name": food, "quantity": qty,
            "estimated": True, "confidence": 0.65,
-           "source": _SOURCE}
+           "source": source or _SOURCE}
     _basis = str(it.get("basis") or "").strip().lower()
     if _basis in ("stated", "regular", "estimate"):
         inp["basis"] = _basis
@@ -781,7 +777,9 @@ async def run(message: str, user, prior: Optional[dict] = None,
          "kinds": [...], "say": "...", "note": "...", "follow_up": "..."}
             an ordered transaction plan (homogeneous plans keep their kind as
             the action label; mixed plans are "commit")
-        {"action": "ask", "text": "..."}          the formatted question
+        {"action": "ask", "text": "...", ...}      the formatted question —
+            answer-turn and policy asks also carry "points"; strict pre-write
+            confirms carry kind="confirm" + "items" + the held "tool_calls"
         None                                       pass / any failure → legacy path
     board: today's committed entries [{"id", "food", "qty", "cal"}] so corrections,
     deletes and references ("2 of those") resolve deterministically against real
@@ -823,12 +821,10 @@ async def run(message: str, user, prior: Optional[dict] = None,
                        f"when an item matches one, use these exact macros, never "
                        f"re-estimate; in an ask, offer the regular by name):\n"
                        + "\n".join(lines))
-    _board_ids = set()
     if board:
         lines = []
         for b in board[-8:]:
             try:
-                _board_ids.add(int(b["id"]))
                 lines.append(f"#{b['id']} {b['food']}, {b.get('qty') or '?'}, "
                              f"{int(b.get('cal') or 0)} cal")
             except Exception:

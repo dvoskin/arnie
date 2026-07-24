@@ -370,3 +370,59 @@ async def test_update_cas_refuses_stale_board(monkeypatch):
     assert "expected_calories" not in applied["changes"]
     assert "food_hint" not in applied["changes"]
     assert applied["changes"]["calories"] == 360
+
+
+# ── executor-result awareness + per-kind batch (2026-07-24 cleanup audit) ─────
+def test_successful_calls_reads_executor_results():
+    calls = [
+        {"name": "update_food_entry",
+         "input": {"entry_id": 1, "calories": 360,
+                   "_result": "STALE BOARD: entry #1 is now 500 cal, not 180."}},
+        {"name": "log_food",
+         "input": {"food_name": "Coke", "calories": 140,
+                   "_result": "Logged Coke: 140 cal."}},
+        {"name": "log_food",
+         "input": {"food_name": "Banana", "calories": 105}},   # unstamped → ok
+    ]
+    ok = FL.successful_calls(calls)
+    assert [c["input"].get("food_name") for c in ok] == ["Coke", "Banana"]
+    assert FL.failed_call_names(calls) == ["entry #1"]
+
+
+def test_compute_batch_per_kind_semantics():
+    log_call = {"name": "log_food", "input": {"food_name": "Coke",
+                                              "calories": 140, "protein": 0}}
+    up_call = {"name": "update_food_entry", "input": {"entry_id": 1,
+                                                      "calories": 360,
+                                                      "protein": 30}}
+    # Pure log: post-enrichment day delta wins when positive...
+    assert FL.compute_batch("log", [log_call], 150, 1) == (150, 1)
+    # ...inputs when the refresh missed.
+    assert FL.compute_batch("log", [log_call], 0, 0) == (140, 0)
+    # Update: the entry's NEW value, never the day delta (+95 bump ≠ a food).
+    assert FL.compute_batch("update", [up_call], 95, 8) == (360, 30)
+    # Mixed commit: the LOGGED item's own numbers — never the folded day
+    # delta ('Coke logged, 320 cal' for a 140-cal Coke was the audit find).
+    assert FL.compute_batch("commit", [up_call, log_call], 320, 30) == (140, 0)
+    # Delete-only: nothing logged, batch zero — and never negative.
+    del_call = {"name": "delete_food_entry", "input": {"entry_id": 2}}
+    assert FL.compute_batch("delete", [del_call], -180, -12) == (0, 0)
+
+
+def test_snapshot_counts_restores_as_logged():
+    snap = FL.build_snapshot(
+        [{"name": "restore_food_entry",
+          "input": {"food_name": "Truffle fries", "calories": 190}}],
+        190, 2, 1400, 80, 2100, 180)
+    assert snap.logged == ("Truffle fries",)
+
+
+def test_say_contract_allows_food_hint_digits():
+    """An undo/delete narration names the board entry via food_hint — its
+    digits ('5-hour Energy') are the system's own write, never an invented
+    total (2026-07-24 cleanup audit)."""
+    calls = [{"name": "delete_food_entry",
+              "input": {"entry_id": 3, "food_hint": "5-hour Energy"}}]
+    say = ("Undone, took the 5-hour Energy off the board. "
+           "You're at {day_cal} with {cal_left} left.")
+    assert FT.enforce_say_contract(say, calls) == say

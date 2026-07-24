@@ -1,5 +1,8 @@
 """
-Fast, clean voicing for a completed log — the SINGLE reply on a food-log turn.
+Fast, clean voicing for a completed LEGACY log turn — the single reply when a
+food/exercise write happened on the legacy lane (structured food turns narrate
+from the committed TransactionSnapshot via core/food_ledger.render_committed
+instead; this path covers what the structured lane passes on).
 
 Replaces the heavy second `opus` pass (+ hold + day-total guard + catch-up) with
 one sub-second Haiku read over the COMMITTED facts:

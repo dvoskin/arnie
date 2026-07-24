@@ -184,18 +184,18 @@ async def build_plan(db, user, text: str) -> Optional[dict]:
                 return None
             plan = _invert(last)
             if plan is None:
-                logger.info(f"event=ledger_undo uninvertible domain={last.domain} "
-                            f"type={last.event_type}")
+                logger.info(f"event=ledger_undo outcome=uninvertible "
+                            f"domain={last.domain} type={last.event_type}")
             return plan
         # restore by (optional) name: newest deleted food event that matches.
         events = await get_ledger_events(db, user.id, domain="food", limit=25)
         name = (shape.get("name") or "").lower()
-        for e in events:
-            if e.event_type != "deleted" or not _fresh(e, _restore_ttl_hours()):
+        for ev in events:
+            if ev.event_type != "deleted" or not _fresh(ev, _restore_ttl_hours()):
                 continue
-            food = str(_payload(e).get("food_name") or "").lower()
+            food = str(_payload(ev).get("food_name") or "").lower()
             if not name or name in food or food in name:
-                return _restore_plan(e)
+                return _restore_plan(ev)
         return None
     except Exception as e:
         logger.warning(f"ledger undo plan failed, legacy path: {e}")

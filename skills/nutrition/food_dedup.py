@@ -4,7 +4,7 @@ Server-side guard against re-log-on-context-shift for food entries.
 Demonstrated bug: Danny 2026-06-12 01:01 — user logs chicken+rice. At 01:59
 user asks "Link my apple health" (totally new topic) and the model re-fires
 log_food for the prior turn's chicken+rice while answering the Apple Health
-question. The existing 5-min `_check_recent_duplicate` window is far too
+question. The former 5-min `_check_recent_duplicate` window (removed 2026-07-24) is far too
 tight to catch this (58 minutes elapsed). The dashboard daily total jumped
 from 1,620 to 1,955 cal — 335 cal of phantom food.
 
