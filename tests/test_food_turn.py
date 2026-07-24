@@ -486,3 +486,22 @@ def test_format_confirm_never_renders_none():
     txt = FT.format_confirm([{"food": "Coffee", "amount": None},
                              {"food": "Eggs", "amount": 2, "unit": ""}])
     assert "None" not in txt and "**Coffee**" in txt and "**2 Eggs**" in txt
+
+
+@pytest.mark.asyncio
+async def test_logger_meal_slot_rides_the_tool_call(monkeypatch):
+    """Universal meal-slot rule (Danny 2026-07-24): the logger's semantic call
+    (plate=meal, lone bag=snack) rides each item; invalid values drop to the
+    clock default downstream."""
+    monkeypatch.setattr(FT, "chat", _fake_chat({
+        "action": "log",
+        "items": [{"food": "Roast turkey plate", "amount": 1, "unit": "plate",
+                   "calories": 500, "meal": "dinner"},
+                  {"food": "Jerky", "amount": 1, "unit": "oz",
+                   "calories": 80, "meal": "snack"},
+                  {"food": "Mystery", "amount": 1, "unit": "cup",
+                   "calories": 100, "meal": "brunchish"}]}))
+    out = await FT.run("turkey plate and jerky",
+                       SimpleNamespace(preferences=SimpleNamespace(food_logging_mode="quick")))
+    slots = [c["input"].get("meal_type") for c in out["tool_calls"]]
+    assert slots == ["dinner", "snack", None]

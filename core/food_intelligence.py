@@ -142,8 +142,16 @@ def score_match(query: str, description: str) -> str:
     if not q or not d:
         return "estimated"
     qa, da = set(q.split()), set(d.split())
-    if q == d or q in d:
+    if q == d:
         return "exact"
+    # Containment counts as exact ONLY when the description adds almost
+    # nothing: "roast turkey breast" inside "roast turkey breast and gravy,
+    # frozen meal" is a composite dish wearing the query's name — the single
+    # most consistent USDA wrong-row source (Danny 2026-07-24).
+    if q in d and len(da) - len(qa) <= 1:
+        return "exact"
+    if q in d:
+        return "likely"
     overlap = len(qa & da) / max(1, len(qa))
     if overlap >= 0.6:
         return "likely"
@@ -155,6 +163,8 @@ _FORM_PENALTY = (
     "breaded", "fried", "dehydrated", "dried", "powder", "flour", "canned",
     "juice", "fortified", "infant", "baby", "pickled", "smoked", "cured",
     "candied", "syrup", "sauce", "concentrate",
+    # Composite-dish markers: a bare food query must never match a full meal.
+    "gravy", "frozen", "meal", "dinner", "casserole", "stuffed", "sandwich",
 )
 
 

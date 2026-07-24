@@ -153,7 +153,7 @@ _SYSTEM = (
     'grilled or fried?"}]}\n'
     '3. Consumed food with enough detail -> {"action":"log","items":[{"food":'
     '"Caesar salad","amount":2,"unit":"handfuls","calories":180,"protein":4,'
-    '"carbs":8,"fats":15}],"say":"Pizza and the Caesar logged, {batch_cal} cal and '
+    '"carbs":8,"fats":15,"meal":"dinner"}],"say":"Pizza and the Caesar logged, {batch_cal} cal and '
     '{batch_protein}g protein for the pair. You are at {day_cal} with {cal_left} left."}\n'
     '4. CORRECTING something already on today\'s board ("I actually had 2 birria", '
     '"I had 2 of those", "make it 6 oz") -> {"action":"update","updates":[{'
@@ -161,6 +161,11 @@ _SYSTEM = (
     '"carbs":26,"fats":18}],"say":"Bumped the birria to 2 tacos, {batch_cal} cal '
     'now."}\n'
     "RULES:\n"
+    "- MEAL SLOT per item when clear: words like breakfast/lunch/dinner win; a "
+    "composed plate or main (protein + sides) is a MEAL even at an odd hour; a "
+    "lone bar, bag, or drink between meals is a snack. A textbook snack must "
+    "never group with a later real meal. Omit when genuinely unclear (the "
+    "clock decides).\n"
     "- The user declining a change or closing the thread ('leave it like this', "
     "'keep it as is', 'it's fine', 'don't change it') is NEVER a log or an update "
     "-> pass. Even if the last assistant message PROPOSED a change ('I'll bump it "
@@ -539,6 +544,9 @@ async def run(message: str, user, prior: Optional[dict] = None,
             mt = str(it.get("meal_type") or "").strip().lower()
             if mt in ("breakfast", "lunch", "dinner", "snack"):
                 inp["meal_type"] = mt
+            _meal = str(it.get("meal") or "").lower().strip()
+            if _meal in ("breakfast", "lunch", "dinner", "snack"):
+                inp["meal_type"] = _meal
             calls.append({"name": "log_food", "input": inp})
         if calls:
             say = str(data.get("say") or "").strip()
