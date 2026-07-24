@@ -97,18 +97,36 @@ proposed narrowing: confirm only when the plan contains system-estimated
 amounts (`basis != stated`), bulk (≥4 items), or destructive/ambiguous ops;
 show assumptions inside the committed card otherwise. Flip when approved.
 
-## Phase 2 — ledger durability
+## Phase 2 — ledger durability (first slice SHIPPED 2026-07-24)
 
-- **Event-sourced history**: corrections append events (created / quantity_changed
-  / component_removed / moved / deleted) with materialized current state; gives
-  reliable undo, debugging, correction analytics, corruption protection.
-  Requires an alembic migration (new `food_events` table).
-- **Durable exactly-once**: per-message idempotency key (user_id +
-  channel_message_id) with a unique index; same message twice returns the prior
-  result pointer. (Phase 1's in-process TTL covers retries/double-webhooks; this
-  survives restarts and cross-device.)
-- **Undo tokens**: every mutation returns one; "Logged lunch · Undo" /
-  "Removed fries · Restore" in cards.
+**Domain decision (Danny 2026-07-24): the ledger is domain-general.** Food,
+fitness, water and weight ride the SAME event history and the same
+exactly-once machinery — food is the reference implementation, not a silo.
+
+Shipped:
+
+- **Event-sourced history** — `ledger_events` (alembic `foodledger002`):
+  append-only created/updated/deleted events with payloads, scoped by
+  `domain` (food | exercise | weight | water), recorded at every executor
+  mutation site. Delete events capture the full entry payload BEFORE the row
+  dies, so restore ("bring it back") is possible; events survive entry
+  deletion by design (entry_id is not a FK). Current state stays materialized
+  on the domain tables. Best-effort recording — history can never break the
+  write it describes.
+- **Durable exactly-once** — `processed_turns` (same migration): structured
+  commits claim (user, idem_key) with a unique constraint before writing;
+  resends, double-taps, cross-device races and post-restart redeliveries find
+  the claim and answer from it. Time-scoped (same message a day later is a new
+  turn); concurrency settled by the constraint inside a SAVEPOINT; fails OPEN
+  so a claim-infra hiccup never blocks a real meal. The Phase 1 in-process TTL
+  registry remains as the fast path.
+- **Restore primitive** — `get_ledger_events(entry_id=…)` returns the deleted
+  payload; wiring a user-facing "restore" flow is Phase 3 UX.
+
+Remaining in Phase 2:
+
+- **Undo tokens**: surface each mutation's event id so cards can render
+  "Logged lunch · Undo" / "Removed fries · Restore" one-tap actions.
 - **Card + narration from the same snapshot**: extend `TransactionSnapshot`
   into the card render path (`transaction_id`, `day_revision`,
   `affected_entries`, `batch_totals`, `day_totals`, `remaining_targets`).
@@ -117,6 +135,10 @@ show assumptions inside the committed card otherwise. Flip when approved.
 - **Meal trees**: hierarchical composite representation (meal event → dish →
   components) with parent ids and atomic/composite/component flags, so
   decomposition helps editability without card noise or double-enrichment.
+- **Structured lane for fitness**: the exercise/water/weight domains now have
+  event history; giving them the full interpreter → policy → renderer contract
+  (like food) is the complementary system Danny flagged — same ledger,
+  domain-specific interpreters.
 
 ## Phase 3 — policy inversion complete + clarification UX
 
