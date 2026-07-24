@@ -1065,13 +1065,22 @@ async def _web_lookup_packaged(food_name: str, quantity) -> dict | None:
         if quantity:
             q += f" per {quantity}"
         result = await _search(q)
-        text = (result.answer or "") + "\n" + "\n".join(
-            (r.get("content") or "")[:600] for r in (result.results or [])[:3]
-        )
-        if not text.strip():
-            return None
         import re as _re
-        # Look for "X calories ... Yg protein ... Zg carbs ... Wg fat" near each other
+        # VARIANT GUARD (task #27, the Sweet & Hot vs Zero Sugar bug): parse
+        # numbers only from the result that actually matches this product's
+        # words — never from a concatenation where any variant's page can win.
+        tokens = [w for w in _re.findall(r"[a-z]{4,}", food_name.lower())]
+        best_text, best_hits = "", 0
+        candidates = [(result.answer or "")] + [
+            (r.get("content") or "")[:800] for r in (result.results or [])[:4]]
+        for text in candidates:
+            tl = text.lower()
+            hits = sum(1 for t in tokens if t in tl)
+            if hits > best_hits:
+                best_hits, best_text = hits, text
+        if not best_text.strip() or best_hits < max(2, (len(tokens) + 1) // 2):
+            return None
+        text = best_text
         cal_m = _re.search(r"(\d{2,4})\s*(?:cal(?:ories)?|kcal)\b", text, _re.I)
         pro_m = _re.search(r"(\d{1,3})\s*g\s*(?:of\s*)?protein\b", text, _re.I)
         if not (cal_m and pro_m):
@@ -1082,9 +1091,31 @@ async def _web_lookup_packaged(food_name: str, quantity) -> dict | None:
         fat_m = _re.search(r"(\d{1,3})\s*g\s*(?:of\s*)?(?:fat|total fat)\b", text, _re.I)
         carbs = float(carb_m.group(1)) if carb_m else 0.0
         fat = float(fat_m.group(1)) if fat_m else 0.0
-        # Estimate serving grams from calorie density. Most packaged foods sit
-        # at 100-500 cal/100g; assume ~200 for the back-out (rough — used only
-        # for fiber/sugar scaling, not the primary macros).
+        # SERVING NORMALIZATION: the label's numbers are per ITS serving, which
+        # is almost never our logged unit (a 20g jerky serving read as '1 oz'
+        # shipped 57 cal/oz for an 80 cal/oz product). Extract the serving in
+        # grams and build a TRUE per-100g density so downstream forward-compute
+        # scales exactly to whatever quantity the user logged.
+        sv_m = _re.search(r"serving(?:\s+size)?[^0-9]{0,12}(\d{1,3}(?:\.\d+)?)\s*"
+                          r"(g|gram|grams|oz|ounce)s?\b", text, _re.I)
+        if not sv_m:
+            sv_m = _re.search(r"per\s+(\d{1,3}(?:\.\d+)?)\s*(g|gram|oz|ounce)s?\b",
+                              text, _re.I)
+        if sv_m:
+            grams = float(sv_m.group(1))
+            if sv_m.group(2).lower().startswith("o"):
+                grams *= 28.35
+            if 5 <= grams <= 600:
+                per100 = {
+                    "calories": cal / grams * 100,
+                    "protein": pro / grams * 100,
+                    "carbs": carbs / grams * 100,
+                    "fat": fat / grams * 100,
+                    "fiber": None, "sugar": None, "sodium": None,
+                }
+                return {"fdc_id": None, "per100g": per100, "_match": "likely"}
+        # No serving found: keep the legacy rough shape (density assumed) so
+        # fiber/sugar scaling still works; primary macros stay the parsed ones.
         per100 = {
             "calories": 200.0,
             "protein": (pro / cal) * 200.0 if cal else None,
