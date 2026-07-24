@@ -505,3 +505,12 @@ async def test_logger_meal_slot_rides_the_tool_call(monkeypatch):
                        SimpleNamespace(preferences=SimpleNamespace(food_logging_mode="quick")))
     slots = [c["input"].get("meal_type") for c in out["tool_calls"]]
     assert slots == ["dinner", "snack", None]
+
+
+def test_say_contract_allows_product_name_digits():
+    """'Fage 0%' / '5-hour Energy' digits come from the write itself — never
+    stripped as invented totals (sim battery false positive, 2026-07-24)."""
+    calls = [{"input": {"food_name": "Fage 0% greek yogurt", "quantity": "1 cup",
+                        "calories": 120}}]
+    say = "Fage 0% logged, {batch_cal} cal. You're at {day_cal} with {cal_left} left."
+    assert FT.enforce_say_contract(say, calls) == say

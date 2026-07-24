@@ -347,8 +347,12 @@ def enforce_say_contract(say: str, tool_calls: list) -> str:
     allowed = set()
     for tc in (tool_calls or []):
         inp = tc.get("input") or {}
-        for m in re.finditer(r"\d+(?:\.\d+)?", str(inp.get("quantity") or "")):
-            allowed.add(m.group(0).rstrip("0").rstrip(".") or "0")
+        # Digits from the system's own writes are legal: quantities AND food
+        # names ("Fage 0%", "5-hour Energy") — a product's digit is not an
+        # invented total (sim battery 2026-07-24, 17/18 false positive).
+        for field in ("quantity", "food_name"):
+            for m in re.finditer(r"\d+(?:\.\d+)?", str(inp.get(field) or "")):
+                allowed.add(m.group(0).rstrip("0").rstrip(".") or "0")
     said = {m.group(0).rstrip("0").rstrip(".") or "0"
             for m in re.finditer(r"\d+(?:\.\d+)?", stripped)}
     if raw and said <= allowed:
