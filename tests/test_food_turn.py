@@ -423,3 +423,35 @@ def test_say_contract_strips_questions_after_write():
     out2 = FT.enforce_say_contract(all_q, calls)
     assert "?" not in out2 and "{day_cal}" in out2   # deterministic fallback
     # ask actions are untouched — this contract only governs log/update says
+
+
+@pytest.mark.asyncio
+async def test_strict_clean_log_becomes_confirm(monkeypatch):
+    """STRICT CONFIRMS (Danny 2026-07-24): with nothing to ask, the parse is
+    still shown before the write — nothing commits silently on strict."""
+    monkeypatch.setattr(FT, "chat", _fake_chat({
+        "action": "log",
+        "items": [{"food": "Roast turkey breast", "amount": 6.5, "unit": "oz",
+                   "calories": 300, "protein": 55},
+                  {"food": "White rice", "amount": 100, "unit": "g",
+                   "calories": 130, "protein": 3}],
+        "say": "Turkey and rice logged."}))
+    strict = SimpleNamespace(preferences=SimpleNamespace(food_logging_mode="strict"))
+    out = await FT.run("6.5 oz turkey and 100g rice", strict)
+    assert out["action"] == "ask" and out.get("kind") == "confirm"
+    assert "6.5 oz Roast turkey breast" in out["text"]
+    assert out["items"][0]["food"] == "Roast turkey breast"
+    # moderate users keep the silent clean log
+    mod = SimpleNamespace(preferences=SimpleNamespace(food_logging_mode="moderate"))
+    out2 = await FT.run("6.5 oz turkey and 100g rice", mod)
+    assert out2["action"] == "log"
+    # and the ANSWER turn (prior set) never re-confirms
+    out3 = await FT.run("yes", strict, prior={"original": "turkey", "question": "q"})
+    assert out3 is None or out3.get("kind") != "confirm"
+
+
+def test_yes_re_shapes():
+    for y in ("yes", "Yep", "looks good", "log it", "go ahead", "that's right", "ok"):
+        assert FT._YES_RE.match(y), y
+    for n in ("no", "make it 2", "actually 8 oz", "add cheese"):
+        assert not FT._YES_RE.match(n), n

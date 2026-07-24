@@ -82,6 +82,11 @@ _ACK_RE = re.compile(
     r"keep\s+(?:it|that|them)(?:\s+(?:like\s+(?:this|that)|as\s+is))?|"
     r"(?:it|that)'?s\s+fine|don'?t\s+change\s+(?:it|that|anything)|as\s+is)"
     r"[.!,\s]*$", re.I)
+_YES_RE = re.compile(
+    r"^(y+e*s+|yes+|yep|yup|yeah|ya|sure|correct|right|good|perfect|exactly|"
+    r"log\s+it|go(\s+ahead)?|do\s+it|confirm(ed)?|looks?\s+(good|right)|"
+    r"that'?s\s+(right|correct|it)|ok(ay)?|k)[.!\s]*$", re.I)
+
 _PLAN_RE = re.compile(
     r"\b(gonna|going\s+to|about\s+to|planning|plan\s+to|might|maybe|probably|"
     r"thinking\s+(?:about|of)|will\s+(?:have|eat|grab)|later\b|not\s+sure)\b", re.I)
@@ -274,6 +279,19 @@ _SYSTEM = (
     "any still-missing detail with your best estimate.\n"
     "- Consumed food only: a plan they haven't eaten or a question is pass."
 )
+
+
+def format_confirm(items: list) -> str:
+    """Strict-mode pre-log confirmation: show the PARSE (item + amount), get a
+    yes, then commit. Numbers stay the system's job — the user confirms WHAT
+    and HOW MUCH, enrichment prices it after the yes."""
+    lines = ["Locking this in:"]
+    for i, it in enumerate(items[:8], 1):
+        amt = f"{it.get('amount')} {it.get('unit') or ''}".strip()
+        food = (it.get("food") or "").strip()
+        lines.append(f"{i}. **{amt} {food}**".replace("  ", " "))
+    lines.append("Good to log, or anything to fix?")
+    return "\n".join(lines)
 
 
 def _format_question(points: list) -> str:
@@ -519,5 +537,16 @@ async def run(message: str, user, prior: Optional[dict] = None,
         if calls:
             say = str(data.get("say") or "").strip()
             say = say.replace("~", "").replace("—", ",").replace("–", ",")
+            if _mode(user) == "strict" and prior is None:
+                # STRICT CONFIRMS (Danny 2026-07-24): with no questions to ask,
+                # the parse is still shown BEFORE the write — nothing commits
+                # silently on strict. The yes-turn logs these exact items
+                # deterministically (no re-parse).
+                _items_c = [it for it in (data.get("items") or [])
+                            if isinstance(it, dict) and (it.get("food") or "").strip()]
+                return {"action": "ask", "kind": "confirm",
+                        "text": format_confirm(_items_c),
+                        "items": _items_c,
+                        "tool_calls": calls, "say": say[:400]}
             return {"action": "log", "tool_calls": calls, "say": say[:400]}
     return None

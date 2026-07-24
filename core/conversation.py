@@ -643,7 +643,46 @@ async def run_turn(
                      if m.get("role") == "assistant" and isinstance(m.get("content"), str)),
                     "")
                 _photo_food = photo_food_message(_user_text or "")
-                if (_sft_prior is not None or _photo_food is not None
+                # Strict-confirm fast path: an affirmative on a confirm
+                # pending logs the stashed items verbatim — no re-parse, no
+                # model. Anything non-affirmative falls through to the logger
+                # with the prior (corrections adjust, then log).
+                _confirm_hit = None
+                if (_sft_prior is not None
+                        and (_sft_prior.get("kind") == "confirm")
+                        and _sft_prior.get("items")):
+                    from core.food_turn import _YES_RE as _yes_re_c
+                    if _yes_re_c.match((_user_text or "").strip()):
+                        _confirm_hit = _sft_prior["items"]
+                if _confirm_hit is not None:
+                    _calls_c = []
+                    for _it in _confirm_hit[:8]:
+                        _inp = {"food_name": (_it.get("food") or "").strip(),
+                                "quantity": f"{_it.get('amount')} {_it.get('unit') or ''}".strip(),
+                                "estimated": True}
+                        for _k_src, _k_dst in (("calories", "calories"),
+                                               ("protein", "protein"),
+                                               ("carbs", "carbs"), ("fats", "fats")):
+                            if _it.get(_k_src) is not None:
+                                _inp[_k_dst] = _it[_k_src]
+                        if _it.get("branded"):
+                            _inp["is_packaged"] = True
+                        _calls_c.append({"name": "log_food", "input": _inp})
+                    _sft = {"action": "log", "tool_calls": _calls_c,
+                            "say": ("Locked in, {batch_cal} cal and "
+                                    "{batch_protein}g protein. You're at {day_cal} "
+                                    "with {cal_left} left and {protein_left}g "
+                                    "protein to go."),
+                            "_before": (
+                                int(getattr(today_log, "total_calories", 0) or 0),
+                                int(getattr(today_log, "total_protein", 0) or 0))}
+                    try:
+                        from datetime import datetime as _dt_cf
+                        _sft_prior_pq.answered_at = _dt_cf.utcnow()
+                        await db.commit()
+                    except Exception:
+                        pass
+                elif (_sft_prior is not None or _photo_food is not None
                         or _sft_applies(_user_text or "")
                         or (_thread_active and _sft_thread_routes(_user_text or ""))):
                     # Immediate status: morph the live thinking indicator to
@@ -709,7 +748,9 @@ async def run_turn(
                             db, user.id, kind=ASK_KIND, question=_sft["text"][:500],
                             tier="food_clarification", hook_style="question")
                         _pq_s.payload_json = json.dumps(
-                            {"original": _user_text or "", "question": _sft["text"]})
+                            {"original": _user_text or "", "question": _sft["text"],
+                             "kind": _sft.get("kind") or "clarify",
+                             "items": _sft.get("items") or None})
                         await db.commit()
                     except Exception as _e:
                         logger.warning(f"structured-ask stash failed, logging instead: {_e}")
