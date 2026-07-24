@@ -300,7 +300,9 @@ def _logged_entry_card(name: str, inp: dict) -> Optional[dict]:
     entry_id = inp.get("_entry_id")
     if not entry_id:
         return None
-    if name == "log_food":
+    if name in ("log_food", "restore_food_entry"):
+        # A restore is a committed food row like any other — it earns the same
+        # tappable card (P0 card/ledger unification, 2026-07-24).
         payload = {
             "name":      inp.get("food_name") or "",
             "quantity":  inp.get("quantity") or "",
@@ -311,6 +313,10 @@ def _logged_entry_card(name: str, inp: dict) -> Optional[dict]:
             "source":    "photo" if inp.get("from_photo") else "manual",
             "entry_id":  entry_id,
         }
+        # Undo token: the ledger event behind this write. Optional on the
+        # wire — older clients ignore it; new clients render one-tap Undo.
+        if inp.get("_event_id") is not None:
+            payload["event_id"] = inp["_event_id"]
         # Decision-receipt context (day impact + verdict), stashed by the
         # executor at log time — see core/receipt.py. All keys optional on
         # the wire; older clients simply ignore them.

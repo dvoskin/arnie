@@ -1566,6 +1566,14 @@ if confidence is "your usual", treat it as a recognized staple ("if this is your
 oikos, i'm treating it as that — correct me if not"). this is what makes you a nutrition
 coach with memory, not a calorie counter.\
 """
+# ONE POLICY, TWO LANES (P0 fix, 2026-07-24): the clarify thresholds in the
+# static block above are sourced from the SAME dial the structured interpreter
+# and food_mode_directive use (core/food_ledger.ASK_THRESHOLDS) — numbers can
+# no longer drift between the lanes.
+from core.food_ledger import ASK_THRESHOLDS as _ASK_T
+FOOD_ACCURACY = (FOOD_ACCURACY
+                 .replace(">120 cal", f">{_ASK_T['moderate']} cal")
+                 .replace(">300 cal", f">{_ASK_T['quick']} cal"))
 
 
 # ─────────────────────────────────────────────────────────────────────────────

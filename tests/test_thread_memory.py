@@ -194,3 +194,18 @@ def test_thread_tools_registered():
     from core.tools import build_tools
     names = {t["name"] for t in build_tools()}
     assert "remember_thread" in names and "update_thread" in names
+
+
+def test_open_threads_block_restored_and_low_pressure():
+    """P0 fix (2026-07-24): the block is back (update_thread [#id] is usable
+    again) but WITHOUT the dilution-era 'weave these in every turn' pressure —
+    threads surface only when the message makes them relevant."""
+    from types import SimpleNamespace
+    from core.context_builder import _format_open_threads
+    t = SimpleNamespace(id=7, kind="event", summary="Trip to Miami",
+                        start_at=None, due_at=None, salience=3)
+    block = _format_open_threads([t], "UTC")
+    assert "[#7]" in block and "Trip to Miami" in block
+    assert "ONLY when the current message makes it relevant" in block
+    assert "Weave these in" not in block
+    assert "never force these into" in block

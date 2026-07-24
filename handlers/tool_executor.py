@@ -2320,7 +2320,7 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
         # never break the write it describes.
         try:
             from db.queries import record_ledger_event
-            await record_ledger_event(
+            _ev_row = await record_ledger_event(
                 db, user.id, "created", domain="food",
                 entry_id=getattr(_new_food, "id", None),
                 daily_log_id=target_log.id,
@@ -2333,6 +2333,9 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
                          "meal_type": getattr(_new_food, "meal_type", None),
                          "basis": inp.get("basis")},
                 source=inp.get("source") or f"legacy:{source_type}")
+            # The event id is the card's undo token (one-tap Undo, Phase 2).
+            if isinstance(inp, dict) and getattr(_ev_row, "id", None) is not None:
+                inp["_event_id"] = _ev_row.id
         except Exception as _ev_e:
             logger.warning(f"food event (created) skipped: {_ev_e}")
         # Stash the entry id on the tool_call's input so conversation.py can
@@ -3060,7 +3063,7 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
         )
         try:
             from db.queries import record_ledger_event
-            await record_ledger_event(
+            _ev_row_r = await record_ledger_event(
                 db, user.id, "created", domain="food",
                 entry_id=getattr(_new_r, "id", None), daily_log_id=_r_log_id,
                 payload={"food_name": _r_name, "quantity": _rp.get("quantity"),
@@ -3069,6 +3072,8 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
                          "carbs": _rp.get("carbs"), "fats": _rp.get("fats"),
                          "meal_type": _rp.get("meal_type")},
                 source=inp.get("source") or "restore")
+            if isinstance(inp, dict) and getattr(_ev_row_r, "id", None) is not None:
+                inp["_event_id"] = _ev_row_r.id
         except Exception as _ev_e:
             logger.warning(f"ledger event (food restored) skipped: {_ev_e}")
         # Mirror the committed row onto the input (id + macros) so card and

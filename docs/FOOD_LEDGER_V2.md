@@ -133,9 +133,12 @@ Shipped:
 
 Remaining in Phase 2:
 
-- **Undo tokens in cards**: surface each mutation's event id so native cards
-  can render "Logged lunch · Undo" / "Removed fries · Restore" one-tap
-  actions (the conversational flow above is the backend for it).
+- **Undo tokens in cards** — backend contract SHIPPED 2026-07-24: every
+  food macro_card (including restores, which now get cards) carries the
+  `event_id` of the ledger event behind the write, optional on the wire.
+  iOS renders "· Undo" from it; the conversational undo flow is the
+  execution backend. Remaining: the native client UI + an API endpoint
+  accepting an event_id inversion.
 - **Card + narration from the same snapshot**: extend `TransactionSnapshot`
   into the card render path (`transaction_id`, `day_revision`,
   `affected_entries`, `batch_totals`, `day_totals`, `remaining_targets`).
