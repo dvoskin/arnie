@@ -572,7 +572,20 @@ def test_ask_formats_facet_depth():
         {"label": "Potato", "qs": ["baked or fries?", "any toppings?"]}])
     assert "1. **Chicken**" in deep and "   • skin on or off?" in deep
     assert "2. **Potato**" in deep
-    assert deep.strip().endswith("keeping it exact.")
+    assert deep.strip().endswith("keeps it exact.")
     single = FT._format_question([{"label": "Crust", "q": "how much left?"}])
-    assert single.startswith("Quick one so it's clean, **crust**")
+    assert "**crust**" in single and single.startswith("Quick one")
     assert "board" not in single   # one-liner stays light
+
+
+def test_ask_acknowledges_ready_items():
+    """Clean items are acknowledged inside the ask — the user sees every item
+    was heard (Danny 2026-07-24)."""
+    txt = FT._format_question(
+        [{"label": "Chicken", "qs": ["grilled or fried?", "how much?"]}],
+        ready=["Bagel", "Greek yogurt"])
+    assert txt.startswith("Bagel and Greek yogurt are set. Quick one on the rest:")
+    assert "**Chicken**" in txt and "   • how much?" in txt
+    one = FT._format_question([{"label": "Corn", "q": "how many ears?"}],
+                              ready=["Steak"])
+    assert one.startswith("Steak is set. Quick one on the **corn**")

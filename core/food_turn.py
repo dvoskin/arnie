@@ -355,11 +355,11 @@ def format_confirm(items: list) -> str:
     return "\n".join(lines)
 
 
-def _format_question(points: list) -> str:
-    """One rich clarify bubble at ChatGPT-depth (Danny 2026-07-24): numbered
-    bolded items, each with its calorie-moving FACETS as sub-bullets, closed
-    with the pending guarantee. Single message, single model call — depth
-    without latency. Back-compat: a point may carry one "q" or a "qs" list."""
+def _format_question(points: list, ready: list | None = None) -> str:
+    """One clarify bubble in Arnie's voice: items that need nothing are
+    ACKNOWLEDGED first (the user must see every item was heard), then numbered
+    bolded items with their calorie-moving facets, closed with the hold
+    guarantee. Single message, single model call."""
     norm = []
     for p in points if isinstance(points, list) else []:
         if not isinstance(p, dict):
@@ -374,11 +374,17 @@ def _format_question(points: list) -> str:
     norm = norm[:4]
     if not norm:
         return ""
+    ready_names = [str(r).strip() for r in (ready or []) if str(r).strip()][:4]
+    ack = ""
+    if ready_names:
+        joined = (ready_names[0] if len(ready_names) == 1
+                  else ", ".join(ready_names[:-1]) + " and " + ready_names[-1])
+        ack = f"{joined} {'is' if len(ready_names) == 1 else 'are'} set. "
     if len(norm) == 1 and len(norm[0][1]) == 1:
         l, (q,) = norm[0]
-        return (f"Quick one so it's clean, **{l.lower()}**: {q}" if l
-                else f"Quick one so it's clean: {q}")
-    lines = ["Quick one so it's clean:"]
+        head = f"{ack}Quick one on the **{l.lower()}**: {q}" if l else                f"{ack}Quick one: {q}"
+        return head
+    lines = [f"{ack}Quick one on the rest:" if ack else "Quick one so it's clean:"]
     for i, (label, qs) in enumerate(norm, 1):
         if len(qs) == 1:
             lines.append(f"{i}. **{label}**: {qs[0]}" if label
@@ -386,7 +392,7 @@ def _format_question(points: list) -> str:
         else:
             lines.append(f"{i}. **{label}**" if label else f"{i}.")
             lines.extend(f"   • {q}" for q in qs)
-    lines.append("Nothing hits the board till you answer - keeping it exact.")
+    lines.append("Holding these off the board till you answer, keeps it exact.")
     return "\n".join(lines)
 
 
@@ -590,7 +596,9 @@ async def run(message: str, user, prior: Optional[dict] = None,
                 r"\?|\b(what|which|don'?t\s+you|shouldn'?t\s+you|why\s+not)\b",
                 message or "", re.I))
             if _user_invited and data.get("points"):
-                return {"action": "ask", "text": _format_question(data["points"]),
+                return {"action": "ask",
+                        "text": _format_question(data["points"],
+                                                 data.get("ready")),
                         "points": data["points"]}
             return None
         calls = []
