@@ -50,6 +50,8 @@ logger = logging.getLogger(__name__)
 _LOGGING_TOOLS = frozenset({
     "log_food", "log_exercise", "update_food_entry",
     "delete_food_entry", "update_exercise_entry",
+    "delete_exercise_entry",
+    "restore_food_entry", "restore_exercise_entry",
     "log_body_weight", "log_water", "clear_day_log",
 })
 
@@ -683,6 +685,19 @@ async def run_turn(
                 # pending logs the stashed items verbatim — no re-parse, no
                 # model. Anything non-affirmative falls through to the logger
                 # with the prior (corrections adjust, then log).
+                # DETERMINISTIC UNDO/RESTORE (ledger Phase 2): "undo" / "bring
+                # back the fries" is an inverse on the event ledger — zero
+                # model calls, immediate. Only on a quiet thread (no open ask:
+                # an undo mid-question means "cancel", which the ack path and
+                # pending expiry already cover). The plan feeds the SAME
+                # structured pipeline below (execution, snapshot, renderer).
+                _undo_plan = None
+                if _sft_prior is None:
+                    try:
+                        from core.ledger_undo import build_plan as _undo_build
+                        _undo_plan = await _undo_build(db, user, _user_text or "")
+                    except Exception:
+                        _undo_plan = None
                 _confirm_hit = None
                 if (_sft_prior is not None
                         and (_sft_prior.get("kind") == "confirm")
@@ -690,7 +705,14 @@ async def run_turn(
                     from core.food_turn import _YES_RE as _yes_re_c
                     if _yes_re_c.match((_user_text or "").strip()):
                         _confirm_hit = _sft_prior["items"]
-                if _confirm_hit is not None:
+                if _undo_plan is not None:
+                    _sft = _undo_plan
+                    _sft["_before"] = (
+                        int(getattr(today_log, "total_calories", 0) or 0),
+                        int(getattr(today_log, "total_protein", 0) or 0))
+                    logger.info(f"event=ledger_undo {_tag} "
+                                f"kinds={','.join(_sft.get('kinds') or [])}")
+                elif _confirm_hit is not None:
                     _calls_c = []
                     for _it in _confirm_hit[:8]:
                         _inp = {"food_name": (_it.get("food") or "").strip(),

@@ -193,7 +193,7 @@ def build_snapshot(tool_calls: list, batch_cal: int, batch_protein: int,
         inp = tc.get("input") or {}
         name = tc.get("name")
         label = str(inp.get("food_name") or inp.get("food_hint") or "").strip()
-        if name == "log_food" and label:
+        if name in ("log_food", "restore_food_entry") and label:
             logged.append(label)
         elif name == "update_food_entry":
             updated.append(label or f"entry #{inp.get('entry_id')}")

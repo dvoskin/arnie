@@ -2904,6 +2904,24 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
                 changes["new_daily_log_id"] = move_log.id
         else:
             target_date = None
+        # BEFORE-STATE capture for the ledger event: the updated event carries
+        # the row as it was, which is what makes "undo" of an update possible
+        # (core/ledger_undo inverts it by writing `before` back).
+        _before_state = None
+        try:
+            from db.models import FoodEntry as _FE_before
+            _row_b = await db.get(_FE_before, int(entry_id))
+            if _row_b is not None:
+                _before_state = {
+                    "food_name": _row_b.parsed_food_name,
+                    "quantity": _row_b.quantity,
+                    "calories": _row_b.calories,
+                    "protein": _row_b.protein,
+                    "carbs": _row_b.carbs,
+                    "fats": _row_b.fats,
+                }
+        except Exception:
+            _before_state = None
         entry = await q_update_food_entry(db, entry_id, user.id, **changes)
         if not entry:
             # SELF-HEAL: the model likely GUESSED the id (its own admission:
@@ -2914,6 +2932,7 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
                 entry = await q_update_food_entry(db, recovered.id, user.id, **changes)
                 if entry:
                     entry_id = recovered.id
+                    _before_state = None   # captured for the ORIGINAL id — stale
             if not entry:
                 # Genuinely unresolvable — NEVER let the model claim it worked or
                 # blind-retry another guess (the stuck loop). Make it ASK.
@@ -2975,6 +2994,7 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
                 daily_log_id=getattr(today_log, "id", None),
                 payload={"changes": {k: v for k, v in changes.items()
                                      if k != "new_daily_log_id"},
+                         "before": _before_state,
                          "moved_to": str(target_date) if target_date else None},
                 source=inp.get("source") or "legacy")
         except Exception as _ev_e:
@@ -3031,6 +3051,106 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
         await db.refresh(today_log)
         return f"Removed food entry #{entry_id}"
 
+    elif name == "restore_food_entry":
+        # Inverse of a delete, from the deleted event's captured payload
+        # (core/ledger_undo). Deterministic: no parsing, no enrichment — the
+        # entry comes back exactly as it died, totals recomputed by
+        # add_food_entry, and the restore appends its own created event.
+        _rp = inp.get("payload") or {}
+        _r_name = _rp.get("food_name") or inp.get("food_name")
+        if not _r_name:
+            return "Nothing to restore."
+        _r_log_id = _rp.get("daily_log_id") or getattr(today_log, "id", None)
+        # Restore into the original day if that log still exists, else today.
+        try:
+            from db.models import DailyLog as _DL_r
+            if _rp.get("daily_log_id") is not None and \
+                    await db.get(_DL_r, int(_rp["daily_log_id"])) is None:
+                _r_log_id = getattr(today_log, "id", None)
+        except Exception:
+            _r_log_id = getattr(today_log, "id", None)
+        if not _r_log_id:
+            return "Skipped — no log to restore into"
+        _new_r = await add_food_entry(
+            db, _r_log_id,
+            raw_input=str(inp),
+            parsed_food_name=_r_name,
+            quantity=_rp.get("quantity"),
+            calories=_rp.get("calories"), protein=_rp.get("protein"),
+            carbs=_rp.get("carbs"), fats=_rp.get("fats"),
+            meal_type=_rp.get("meal_type"),
+            estimated_flag=True, confidence_score=0.8,
+            source_type=source_type,
+        )
+        try:
+            from db.queries import record_ledger_event
+            await record_ledger_event(
+                db, user.id, "created", domain="food",
+                entry_id=getattr(_new_r, "id", None), daily_log_id=_r_log_id,
+                payload={"food_name": _r_name, "quantity": _rp.get("quantity"),
+                         "calories": _rp.get("calories"),
+                         "protein": _rp.get("protein"),
+                         "carbs": _rp.get("carbs"), "fats": _rp.get("fats"),
+                         "meal_type": _rp.get("meal_type")},
+                source=inp.get("source") or "restore")
+        except Exception as _ev_e:
+            logger.warning(f"ledger event (food restored) skipped: {_ev_e}")
+        # Mirror the committed row onto the input (id + macros) so card and
+        # snapshot readers see the same numbers the DB holds.
+        if isinstance(inp, dict):
+            if getattr(_new_r, "id", None) is not None:
+                inp["_entry_id"] = _new_r.id
+            inp["food_name"] = _r_name
+            inp["quantity"] = _rp.get("quantity")
+            for _k_r in ("calories", "protein", "carbs", "fats"):
+                if _rp.get(_k_r) is not None:
+                    inp[_k_r] = _rp[_k_r]
+        if getattr(today_log, "id", None):
+            await db.refresh(today_log)
+        return (f"Restored {_r_name} ({_rp.get('quantity') or 'as before'}, "
+                f"{float(_rp.get('calories') or 0):.0f} cal) to the log.")
+
+    elif name == "restore_exercise_entry":
+        _rpx = inp.get("payload") or {}
+        _rx_name = _rpx.get("exercise_name") or inp.get("exercise_name")
+        if not _rx_name:
+            return "Nothing to restore."
+        _rx_log_id = _rpx.get("daily_log_id") or getattr(today_log, "id", None)
+        try:
+            from db.models import DailyLog as _DL_rx
+            if _rpx.get("daily_log_id") is not None and \
+                    await db.get(_DL_rx, int(_rpx["daily_log_id"])) is None:
+                _rx_log_id = getattr(today_log, "id", None)
+        except Exception:
+            _rx_log_id = getattr(today_log, "id", None)
+        if not _rx_log_id:
+            return "Skipped — no log to restore into"
+        _new_rx = await add_exercise_entry(
+            db, _rx_log_id,
+            exercise_name=_rx_name,
+            sets=_rpx.get("sets"),
+            reps=str(_rpx.get("reps")) if _rpx.get("reps") is not None else None,
+            weight=_rpx.get("weight"),
+            duration_minutes=_rpx.get("duration_minutes"),
+            source_type=source_type,
+        )
+        try:
+            from db.queries import record_ledger_event
+            await record_ledger_event(
+                db, user.id, "created", domain="exercise",
+                entry_id=getattr(_new_rx, "id", None), daily_log_id=_rx_log_id,
+                payload={"exercise_name": _rx_name, "sets": _rpx.get("sets"),
+                         "reps": _rpx.get("reps"), "weight_kg": _rpx.get("weight"),
+                         "duration_minutes": _rpx.get("duration_minutes")},
+                source=inp.get("source") or "restore")
+        except Exception as _ev_e:
+            logger.warning(f"ledger event (exercise restored) skipped: {_ev_e}")
+        if isinstance(inp, dict) and getattr(_new_rx, "id", None) is not None:
+            inp["_entry_id"] = _new_rx.id
+        if getattr(today_log, "id", None):
+            await db.refresh(today_log)
+        return f"Restored {_rx_name} to the workout log."
+
     elif name == "clear_day_log":
         # Wipe today's food/exercise for a clean rebuild. reset_today_log mutates the
         # same session-cached DailyLog row, so any log_food calls dispatched AFTER this
@@ -3060,6 +3180,20 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
                 changes["new_daily_log_id"] = move_log.id
         else:
             target_date = None
+        # BEFORE-STATE capture — same undo contract as food updates.
+        _before_ex = None
+        try:
+            from db.models import ExerciseEntry as _EE_before
+            _row_bx = await db.get(_EE_before, int(entry_id))
+            if _row_bx is not None:
+                _before_ex = {
+                    "exercise_name": _row_bx.exercise_name,
+                    "sets": _row_bx.sets, "reps": _row_bx.reps,
+                    "weight": _row_bx.weight,
+                    "duration_minutes": getattr(_row_bx, "duration_minutes", None),
+                }
+        except Exception:
+            _before_ex = None
         entry = await q_update_exercise_entry(db, entry_id, user.id, **changes)
         if not entry:
             return f"No exercise entry #{entry_id} found in today's log."
@@ -3070,6 +3204,7 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
                 daily_log_id=getattr(today_log, "id", None),
                 payload={"changes": {k: v for k, v in changes.items()
                                      if k != "new_daily_log_id"},
+                         "before": _before_ex,
                          "moved_to": str(target_date) if target_date else None},
                 source=inp.get("source") or "legacy")
         except Exception as _ev_e:
