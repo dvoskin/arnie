@@ -8,6 +8,8 @@ owns everything from LLM call through Response assembly.
 """
 from __future__ import annotations
 
+import re
+
 import dataclasses
 import json
 import logging
@@ -61,6 +63,31 @@ _LOGGING_TOOLS = frozenset({
 # search_food_database / web_search → force the lookup, re-voice real numbers.
 # Detected by the hedged-estimate heuristic (turn_health). Switch: LOOKUP_RESCUE.
 _LOOKUP_TOOLS = frozenset({"search_food_database", "web_search"})
+
+
+def photo_food_message(user_text: str) -> str | None:
+    """Photo turns carry the vision pass's [FOOD_LOG] block inside the user
+    text. When its INTENT is log, synthesize the structured logger's message
+    from the PACKAGED/ITEM lines so photos ride the SAME single path as text —
+    say + write are one artifact, and narration-without-write is structurally
+    impossible (prod phantom 2026-07-24 15:51, task #26). Returns None for
+    non-photo turns, non-log intents (diary deletes etc.), or empty blocks."""
+    if not isinstance(user_text, str) or "[FOOD_LOG]" not in user_text:
+        return None
+    if not re.search(r"INTENT:\s*log\b", user_text):
+        return None
+    items = re.findall(r"(?:PACKAGED|ITEM):\s*(.+)", user_text)
+    cleaned = []
+    for it in items:
+        # Drop the unknown-macro tail ("? cal, ?g P, ...") — enrichment owns
+        # numbers; the logger needs the name + stated serving only.
+        it = re.sub(r",\s*~?\??\s*\d*\s*cal.*$", "", it.strip(), flags=re.I)
+        it = it.strip(" ,")
+        if it:
+            cleaned.append(it)
+    if not cleaned:
+        return None
+    return "I had " + "; ".join(cleaned[:8])
 
 
 def _lookup_rescue_enabled() -> bool:
@@ -593,7 +620,9 @@ async def run_turn(
                     (m.get("content", "") for m in reversed(messages)
                      if m.get("role") == "assistant" and isinstance(m.get("content"), str)),
                     "")
-                if (_sft_prior is not None or _sft_applies(_user_text or "")
+                _photo_food = photo_food_message(_user_text or "")
+                if (_sft_prior is not None or _photo_food is not None
+                        or _sft_applies(_user_text or "")
                         or (_thread_active and _sft_thread_routes(_user_text or ""))):
                     # Immediate status: morph the live thinking indicator to
                     # "Logging…" the moment the logger starts, so its pass is
@@ -638,7 +667,8 @@ async def run_turn(
                         _regs = await frequent_foods(db, user.id)
                     except Exception:
                         _regs = []
-                    _sft = await _sft_run(_user_text or "", user, prior=_sft_prior,
+                    _sft = await _sft_run(_photo_food or _user_text or "", user,
+                                          prior=_sft_prior,
                                           day_line=_dl, board=_board,
                                           last_assistant=_last_assistant,
                                           regulars=_regs)
