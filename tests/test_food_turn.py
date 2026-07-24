@@ -531,3 +531,33 @@ def test_acquisition_verbs_route_structured():
                 "picked up meal prep to eat later",
                 "got snacks for the fridge"):
         assert not FT.applies(msg), msg
+
+
+@pytest.mark.asyncio
+async def test_user_invited_question_lifts_no_reask(monkeypatch):
+    """'Yeah but don't you wanna know what kind of ice cream bar' INVITES the
+    flavor question — the no-re-ask loop-guard only blocks model-initiated
+    chains (Dove bar, 2026-07-24)."""
+    monkeypatch.setattr(FT, "chat", _fake_chat({
+        "action": "ask", "points": [{"label": "Dove bar", "q": "which kind?"}]}))
+    out = await FT.run("Yeah but don't you wanna know what kind of ice cream bar",
+                       SimpleNamespace(),
+                       prior={"original": "apple, nutella, a dove bar",
+                              "question": "Locking this in..."})
+    assert out is not None and out["action"] == "ask"
+    assert "dove bar" in out["text"].lower()
+    # unprompted model re-ask still refused
+    out2 = await FT.run("almost all of it", SimpleNamespace(),
+                        prior={"original": "pizza", "question": "how much?"})
+    assert out2 is None
+
+
+def test_note_held_items_names_the_dropped():
+    stashed = [{"food": "Apple"}, {"food": "Nutella"}, {"food": "Dove Ice Cream Bar"}]
+    calls = [{"input": {"food_name": "Apple"}}, {"input": {"food_name": "Nutella"}}]
+    out = FT.note_held_items("Apple and nutella logged, {batch_cal} cal.", stashed, calls)
+    assert "Dove Ice Cream Bar" in out and "Holding" in out
+    # nothing missing → say untouched
+    calls.append({"input": {"food_name": "Dove Ice Cream Bar"}})
+    same = FT.note_held_items("All three logged.", stashed, calls)
+    assert same == "All three logged."

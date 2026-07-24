@@ -290,7 +290,7 @@ _SYSTEM = (
     "('the 1.25 oz snack bag, the 2.85 oz, or the big sharing bag?') and "
     "confirm which one - same style as every other ask.\n"
     "  2. WHICH ONE - a branded product whose flavor/variant meaningfully "
-    "changes macros. When asking, LIST the variants you know with rough "
+    "changes macros (protein bars, chips, ICE CREAM and candy bars - 'a Dove bar' spans minis to king size). When asking, LIST the variants you know with rough "
     "calories ('Original ~80, Sweet & Hot ~80, Zero Sugar ~60 per oz - which "
     "one?') so they can point at one instead of describing from scratch.\n"
     "  3. HOW WAS IT MADE - prep and calorie-dense add-ons (fried vs grilled, "
@@ -312,6 +312,24 @@ _SYSTEM = (
     "any still-missing detail with your best estimate.\n"
     "- Consumed food only: a plan they haven't eaten or a question is pass."
 )
+
+
+def note_held_items(say: str, stashed: list, tool_calls: list) -> str:
+    """A confirm-answer turn must never silently drop a stashed item: anything
+    the user saw in 'Locking this in' that is not in the write gets NAMED as
+    held (Dove bar incident 2026-07-24 — 3 confirmed, 2 logged, bar vanished)."""
+    logged = {(tc.get("input") or {}).get("food_name", "").lower()
+              for tc in (tool_calls or [])}
+    missing = []
+    for it in (stashed or []):
+        food = (it.get("food") or "").strip()
+        if food and not any(food.lower() in ln or ln in food.lower()
+                            for ln in logged if ln):
+            missing.append(food)
+    if not missing:
+        return say
+    held = " and ".join(missing[:3])
+    return (say or "").rstrip(". ") +         f". Holding the {held} - tell me which kind and it goes on too."
 
 
 def format_confirm(items: list) -> str:
@@ -539,9 +557,17 @@ async def run(message: str, user, prior: Optional[dict] = None,
         return None
 
     if action == "log" or (action == "ask" and prior):
-        # An ask on the answer turn means the model ignored the do-not-ask rule;
-        # never chain questions — fall through to legacy rather than loop.
+        # An unprompted ask on the answer turn = the model chaining its own
+        # questions — refuse (never loop). But when the USER'S reply itself
+        # asks or contests ("don't you wanna know what kind", "which one?"),
+        # a follow-up question is invited, not a loop (Dove bar 2026-07-24).
         if action == "ask":
+            _user_invited = bool(re.search(
+                r"\?|\b(what|which|don'?t\s+you|shouldn'?t\s+you|why\s+not)\b",
+                message or "", re.I))
+            if _user_invited and data.get("points"):
+                return {"action": "ask", "text": _format_question(data["points"]),
+                        "points": data["points"]}
             return None
         calls = []
         for it in (data.get("items") or []):

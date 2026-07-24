@@ -739,6 +739,12 @@ async def run_turn(
                         _sft["_before"] = (
                             int(getattr(today_log, "total_calories", 0) or 0),
                             int(getattr(today_log, "total_protein", 0) or 0))
+                        if (_sft.get("action") == "log" and _sft_prior
+                                and _sft_prior.get("items")):
+                            from core.food_turn import note_held_items
+                            _sft["say"] = note_held_items(
+                                _sft.get("say") or "", _sft_prior["items"],
+                                _sft["tool_calls"])
                 if _sft and _sft["action"] == "ask":
                     # Hold: record the pending (with the original report stashed) so
                     # the ANSWER turn routes back through this pipeline and logs.
