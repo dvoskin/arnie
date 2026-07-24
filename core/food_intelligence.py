@@ -384,8 +384,15 @@ def analyze(name, quantity, llm_cal, llm_protein, llm_carbs, llm_fat,
             # USDA text-matches: the user's own history and label-grade web/OFF
             # data stay authoritative, and upward correction stays (the model
             # undercounts ~19%, 2026-07-03).
+            # PROFILE-FLIP GUARD (Danny 2026-07-24, entry 2283): 6.5 oz roast
+            # turkey enriched to 614 cal / 0g protein / 123g carbs — a wrong
+            # USDA row turned a protein food into a grain. A match that
+            # COLLAPSES the dominant macro is a wrong row, whatever its name
+            # score: protein >=15g in the model's read shrinking below 30%
+            # triggers the same demotion as a low-calorie disagreement.
+            _profile_flip = (_llm0[1] >= 15 and protein < 0.3 * _llm0[1])
             if (src is usda_candidate and _llm0[0] > 0
-                    and cal < 0.7 * _llm0[0]):
+                    and (cal < 0.7 * _llm0[0] or _profile_flip)):
                 logger.info(
                     f"enrichment demoted: usda {cal} cal vs model {_llm0[0]} for "
                     f"{(name or '')!r} — disagreement, keeping estimate + web lane")
