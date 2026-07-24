@@ -358,11 +358,20 @@ def format_confirm(items: list) -> str:
     return "\n".join(lines)
 
 
+def _lc(name: str) -> str:
+    """Sentence-case a food name for mid-sentence use: lowercase unless it
+    reads branded (an uppercase beyond the first letter, or a digit)."""
+    n = (name or "").strip()
+    if any(c.isupper() for c in n[1:]) or any(c.isdigit() for c in n):
+        return n
+    return n.lower()
+
+
 def _format_question(points: list, ready: list | None = None) -> str:
-    """One clarify bubble in Arnie's voice: items that need nothing are
-    ACKNOWLEDGED first (the user must see every item was heard), then numbered
-    bolded items with their calorie-moving facets, closed with the hold
-    guarantee. Single message, single model call."""
+    """The clarify moment in Arnie's full voice: an acknowledgment bubble for
+    what's already locked (✅), the question in his established phrasing with
+    bolded items and facet bullets, and the hold guarantee as its own beat.
+    ||| splits render as separate bubbles on every client."""
     norm = []
     for p in points if isinstance(points, list) else []:
         if not isinstance(p, dict):
@@ -377,28 +386,32 @@ def _format_question(points: list, ready: list | None = None) -> str:
     norm = norm[:4]
     if not norm:
         return ""
-    ready_names = [str(r).strip() for r in (ready or []) if str(r).strip()][:4]
-    ack = ""
+    bubbles = []
+    ready_names = [_lc(str(r)) for r in (ready or []) if str(r).strip()][:4]
     if ready_names:
-        joined = (ready_names[0] if len(ready_names) == 1
-                  else ", ".join(ready_names[:-1]) + " and " + ready_names[-1])
-        ack = f"{joined} {'is' if len(ready_names) == 1 else 'are'} set. "
+        bold = [f"**{n}**" for n in ready_names]
+        joined = (bold[0] if len(bold) == 1
+                  else ", ".join(bold[:-1]) + " and " + bold[-1])
+        bubbles.append(f"{joined} locked in ✅")
     if len(norm) == 1 and len(norm[0][1]) == 1:
         l, (q,) = norm[0]
-        head = f"{ack}Quick one on the **{l.lower()}**: {q}" if l else                f"{ack}Quick one: {q}"
-        return head
-    lines = [f"{ack}Quick one on the rest:" if ack else "Quick one so it's clean:"]
+        lead = "Just need the" if ready_names else "Quick one so it's clean, the"
+        bubbles.append(f"{lead} **{_lc(l)}**: {q}" if l else
+                       ("Just need one thing: " + q if ready_names
+                        else "Quick one so it's clean: " + q))
+        return "|||".join(bubbles)
+    head = "Just need a couple things:" if ready_names else            "Quick one so it's clean:"
+    lines = [head]
     for i, (label, qs) in enumerate(norm, 1):
         if len(qs) == 1:
-            lines.append(f"{i}. **{label}**: {qs[0]}" if label
+            lines.append(f"{i}. **{_lc(label)}**: {qs[0]}" if label
                          else f"{i}. {qs[0]}")
         else:
-            lines.append(f"{i}. **{label}**" if label else f"{i}.")
+            lines.append(f"{i}. **{_lc(label)}**" if label else f"{i}.")
             lines.extend(f"   • {q}" for q in qs)
-    lines.append("Holding these off the board till you answer, keeps it exact.")
-    return "\n".join(lines)
-
-
+    bubbles.append("\n".join(lines))
+    bubbles.append("Nothing hits the board till then, keeps your log exact.")
+    return "|||".join(bubbles)
 _TOKEN_RE = re.compile(
     r"\{(batch_cal|batch_protein|day_cal|cal_left|day_protein|protein_left)\}")
 

@@ -73,9 +73,9 @@ async def test_ask_is_rich_formatted(monkeypatch):
                    {"label": "Chicken", "q": "roughly how much?"}]}))
     out = await FT.run("had pizza and some chicken", SimpleNamespace())
     assert out["action"] == "ask"
-    assert out["text"].startswith("Quick one so it's clean:")
-    assert "1. **Crust**: how much did you leave?" in out["text"]
-    assert "2. **Chicken**: roughly how much?" in out["text"]
+    assert "Quick one so it's clean:" in out["text"]
+    assert "1. **crust**: how much did you leave?" in out["text"]
+    assert "2. **chicken**: roughly how much?" in out["text"]
 
 
 @pytest.mark.asyncio
@@ -564,28 +564,27 @@ def test_note_held_items_names_the_dropped():
 
 
 def test_ask_formats_facet_depth():
-    """ChatGPT-depth asks (Danny 2026-07-24): per-item facets as sub-bullets,
-    closed with the pending guarantee; single-q points stay back-compatible."""
+    """Facet asks in Arnie's full voice: bubbles (|||), bolded items, facet
+    bullets, hold guarantee as its own beat."""
     deep = FT._format_question([
         {"label": "Chicken", "qs": ["grilled, baked, or fried?",
                                     "skin on or off?", "rough amount?"]},
         {"label": "Potato", "qs": ["baked or fries?", "any toppings?"]}])
-    assert "1. **Chicken**" in deep and "   • skin on or off?" in deep
-    assert "2. **Potato**" in deep
-    assert deep.strip().endswith("keeps it exact.")
+    assert "Quick one so it's clean:" in deep
+    assert "1. **chicken**" in deep and "   • skin on or off?" in deep
+    assert deep.endswith("keeps your log exact.")
+    assert deep.count("|||") == 1        # question + closer bubbles
     single = FT._format_question([{"label": "Crust", "q": "how much left?"}])
-    assert "**crust**" in single and single.startswith("Quick one")
-    assert "board" not in single   # one-liner stays light
+    assert "**crust**" in single and "|||" not in single
 
 
 def test_ask_acknowledges_ready_items():
-    """Clean items are acknowledged inside the ask — the user sees every item
-    was heard (Danny 2026-07-24)."""
+    """Locked items get their own ✅ bubble; brands keep their case."""
     txt = FT._format_question(
         [{"label": "Chicken", "qs": ["grilled or fried?", "how much?"]}],
-        ready=["Bagel", "Greek yogurt"])
-    assert txt.startswith("Bagel and Greek yogurt are set. Quick one on the rest:")
-    assert "**Chicken**" in txt and "   • how much?" in txt
+        ready=["Bagel", "Barebells Bar"])
+    assert txt.startswith("**bagel** and **Barebells Bar** locked in ✅|||")
+    assert "Just need a couple things:" in txt
     one = FT._format_question([{"label": "Corn", "q": "how many ears?"}],
                               ready=["Steak"])
-    assert one.startswith("Steak is set. Quick one on the **corn**")
+    assert one == "**steak** locked in ✅|||Just need the **corn**: how many ears?"
