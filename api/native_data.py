@@ -369,6 +369,54 @@ async def week_data(db, user) -> dict:
     return {"targets": _targets(user), "history": hist_data, "weights": weight_data}
 
 
+def _widget_microcopy_ok(text) -> str | None:
+    """Widget NEXT-row validation: one short behavioral sentence. Rejects
+    analytics-style copy (percentages, 'remaining', kcal math), anything over
+    34 characters, and multi-sentence text — those truncate or duplicate the
+    calorie state."""
+    t = (text or "").strip()
+    if not t or len(t) > 34:
+        return None
+    low = t.lower()
+    if any(b in low for b in ("%", "remaining", "kcal", " cal", "used", "left")):
+        return None
+    if t.count(".") > 1 or "\n" in t:
+        return None
+    return t
+
+
+def _widget_next_microcopy(log, prefs, user_tz, weighed_today: bool) -> str:
+    """Deterministic NEXT ladder — always complete, always fits (≤34 chars).
+    Mirrors the coaching priority order: weight → workout → protein → pacing."""
+    try:
+        import pytz
+        from datetime import datetime as _dt
+        hour = _dt.now(pytz.timezone(user_tz)).hour
+    except Exception:
+        hour = 12
+    cal = float(getattr(log, "total_calories", 0) or 0)
+    protein = float(getattr(log, "total_protein", 0) or 0)
+    cal_t = float(getattr(prefs, "calorie_target", 0) or 0) if prefs else 0
+    pro_t = float(getattr(prefs, "protein_target", 0) or 0) if prefs else 0
+    workout_done = bool(getattr(log, "workout_completed", False))
+
+    if not weighed_today and hour < 11:
+        return "Weigh in to start."
+    if cal == 0:
+        return "Log your first meal." if hour < 12 else "Log lunch when you eat."
+    if pro_t and protein < pro_t * 0.35 and hour < 15:
+        return "Protein first at lunch."
+    if not workout_done and hour >= 12:
+        return "Get the lift in."
+    if cal_t and cal > cal_t * 0.85:
+        return "Keep dinner lighter."
+    if cal_t and cal < cal_t * 0.45 and hour >= 15:
+        return "Dinner can go big."
+    if pro_t and protein < pro_t:
+        return "Keep protein climbing."
+    return "Stay steady through dinner."
+
+
 async def widget_data(db, user) -> dict:
     """Compact 'today at a glance' for the iOS WidgetKit timeline provider.
 
@@ -426,22 +474,21 @@ async def widget_data(db, user) -> dict:
             "sleep_hours": round(snap.sleep_hours, 1) if snap.sleep_hours is not None else None,
         }
 
-    # Coach read for the large widget — the Coach page's cached hero headline
-    # (never generated on this path: a widget fetch stays cheap), else the
-    # deterministic pacing line, else nothing.
+    # Widget coach microcopy (Danny 2026-07-24): the NEXT row carries ONE
+    # complete behavioral instruction — never chat-length text, never calorie
+    # analytics (the calorie state already owns those numbers), never anything
+    # that could truncate. The cached hero headline is used only when it passes
+    # widget validation; otherwise a deterministic state ladder speaks.
     coach_read = None
     try:
         from api.insights import cached_hero_headline
-        coach_read = cached_hero_headline(user.id)
+        coach_read = _widget_microcopy_ok(cached_hero_headline(user.id))
     except Exception:
         coach_read = None
     if not coach_read:
-        try:
-            from core.context_builder import pacing_note
-            coach_read = (pacing_note(log, getattr(user, "preferences", None),
-                                      user_tz) or "").strip() or None
-        except Exception:
-            coach_read = None
+        coach_read = _widget_next_microcopy(
+            log, getattr(user, "preferences", None), user_tz,
+            weighed_today=weighed_today)
 
     return {
         "date": str(log.date),
