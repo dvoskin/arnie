@@ -146,6 +146,19 @@ def _invert(event) -> Optional[dict]:
                     "say": (f"Rolled the {before.get('exercise_name') or 'set'} "
                             f"back to how it was.")}
         return None
+    if dom == "water":
+        # A pour is undoable (delete the entry, totals recompute); weight
+        # stays uninvertible for now — its per-day source upsert makes
+        # delete-as-undo lossy without a captured before-state.
+        if etype == "created" and event.entry_id:
+            _ml = p.get("amount_ml")
+            inp = {"entry_id": event.entry_id, "source": UNDO_SOURCE}
+            if _ml is not None:
+                inp["amount_ml"] = _ml
+            return {"action": "delete", "kinds": ["delete"],
+                    "tool_calls": [{"name": "delete_water_entry", "input": inp}],
+                    "say": "Undone, took that water back off. Hydration total corrected."}
+        return None
     return None
 
 

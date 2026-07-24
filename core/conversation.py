@@ -50,7 +50,7 @@ logger = logging.getLogger(__name__)
 _LOGGING_TOOLS = frozenset({
     "log_food", "log_exercise", "update_food_entry",
     "delete_food_entry", "update_exercise_entry",
-    "delete_exercise_entry",
+    "delete_exercise_entry", "delete_water_entry",
     "restore_food_entry", "restore_exercise_entry",
     "log_body_weight", "log_water", "clear_day_log",
 })

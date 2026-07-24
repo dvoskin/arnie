@@ -3230,6 +3230,29 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
         await db.refresh(today_log)
         return f"Removed exercise entry #{entry_id}"
 
+    elif name == "delete_water_entry":
+        # Inverse of a water pour (core/ledger_undo) — deterministic, totals
+        # recomputed from the rows by the query helper.
+        entry_id = inp.get("entry_id")
+        if not entry_id:
+            return "Missing entry_id"
+        from db.queries import delete_water_entry as q_delete_water_entry
+        ok = await q_delete_water_entry(db, int(entry_id), user.id)
+        if not ok:
+            return f"No water entry #{entry_id} found."
+        try:
+            from db.queries import record_ledger_event
+            await record_ledger_event(
+                db, user.id, "deleted", domain="water", entry_id=int(entry_id),
+                daily_log_id=getattr(today_log, "id", None),
+                payload={"amount_ml": inp.get("amount_ml")},
+                source=inp.get("source") or "legacy")
+        except Exception as _ev_e:
+            logger.warning(f"ledger event (water deleted) skipped: {_ev_e}")
+        if getattr(today_log, "id", None):
+            await db.refresh(today_log)
+        return f"Removed water entry #{entry_id} — hydration total corrected."
+
     elif name == "refresh_coach_brief":
         try:
             from api.insights import invalidate_briefing_hard
@@ -3485,17 +3508,19 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
             # no backing row (the inverse of the drift the food path was rewritten to
             # kill). Now the aggregate can never diverge from the rows.
             from db.queries import recompute_water_total
-            await add_water_entry(
+            _new_w = await add_water_entry(
                 db, user.id, target_log.id,
                 amount_ml=ml, context=inp.get("context"),
                 source_type=source_type,
             )
             target_log.total_water_ml = await recompute_water_total(db, target_log.id)
             # LEDGER EVENT (domain=water): same event history as the others.
+            # entry_id makes the pour undoable (core/ledger_undo).
             try:
                 from db.queries import record_ledger_event
                 await record_ledger_event(
                     db, user.id, "created", domain="water",
+                    entry_id=getattr(_new_w, "id", None),
                     daily_log_id=target_log.id,
                     payload={"amount_ml": ml, "context": inp.get("context")},
                     source=inp.get("source") or f"legacy:{source_type}")
