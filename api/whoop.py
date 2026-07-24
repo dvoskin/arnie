@@ -316,6 +316,18 @@ async def _persist_whoop_workouts(db, user: User, workout_by_date: dict) -> tupl
                 existing.notes = notes
                 updated += 1
             else:
+                # CalAI rule: skip if ANOTHER source (apple_health, oura, a
+                # manual log) already owns this physical session on this day.
+                from core.workout_dedup import is_cross_source_dup
+                others = (await db.execute(
+                    select(ExerciseEntry.occurred_at, ExerciseEntry.duration_minutes)
+                    .where(ExerciseEntry.daily_log_id == log.id,
+                           ExerciseEntry.source_type != "whoop",
+                           ExerciseEntry.duration_minutes.isnot(None))
+                )).all()
+                if any(is_cross_source_dup(occurred, dur, occ, odur)
+                       for occ, odur in others):
+                    continue
                 db.add(ExerciseEntry(
                     daily_log_id=log.id,
                     exercise_name=sport,

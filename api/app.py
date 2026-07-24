@@ -4146,22 +4146,7 @@ def _norm_apple_workout(d: dict) -> Optional[dict]:
             "kcal": kcal, "ref": ref}
 
 
-def _is_cross_source_dup(cand_start_utc, cand_dur, other_occurred, other_dur) -> bool:
-    """The CalAI rule: the same physical session reported by two sources is ONE
-    workout. Prefer timestamps (starts within 30 min + durations within ~40%);
-    with no timestamps to compare, treat same-day near-identical durations as
-    the same session (the exact shape of the Whoop-walk / Apple-'Workout' pair)."""
-    if cand_start_utc is not None and other_occurred is not None:
-        delta_min = abs((cand_start_utc - other_occurred).total_seconds()) / 60
-        if delta_min > 30:
-            return False
-        if not cand_dur or not other_dur:
-            return True
-        lo, hi = sorted([float(cand_dur), float(other_dur)])
-        return hi <= lo * 1.4 + 3
-    if cand_dur and other_dur:
-        return abs(float(cand_dur) - float(other_dur)) <= 3
-    return False
+from core.workout_dedup import is_cross_source_dup as _is_cross_source_dup
 
 
 async def _process_apple_workouts(db, user, workouts: list) -> None:

@@ -317,6 +317,18 @@ async def _persist_oura_workouts(db, user: User, workouts: list) -> tuple[int, i
                 existing.notes = notes
                 updated += 1
             else:
+                # CalAI rule: skip if ANOTHER source (whoop, apple_health, a
+                # manual log) already owns this physical session on this day.
+                from core.workout_dedup import is_cross_source_dup
+                others = (await db.execute(
+                    select(ExerciseEntry.occurred_at, ExerciseEntry.duration_minutes)
+                    .where(ExerciseEntry.daily_log_id == log.id,
+                           ExerciseEntry.source_type != "oura",
+                           ExerciseEntry.duration_minutes.isnot(None))
+                )).all()
+                if any(is_cross_source_dup(occurred, duration_min, occ, odur)
+                       for occ, odur in others):
+                    continue
                 db.add(ExerciseEntry(
                     daily_log_id=log.id,
                     exercise_name=activity,
