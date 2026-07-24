@@ -89,7 +89,7 @@ _YES_RE = re.compile(
 
 _PLAN_RE = re.compile(
     r"\b(gonna|going\s+to|about\s+to|planning|plan\s+to|might|maybe|probably|"
-    r"thinking\s+(?:about|of)|will\s+(?:have|eat|grab)|later\b|not\s+sure)\b", re.I)
+    r"thinking\s+(?:about|of)|will\s+(?:have|eat|grab)|later\b(?!\s+than)|not\s+sure)\b", re.I)
 # Correction/reference cues — IN scope (the logger owns updates, board-aware).
 # Deletes/removes stay legacy: destructive intent gets the big brain's judgment.
 _CORRECTION_RE = re.compile(
@@ -102,11 +102,14 @@ _CORRECTION_RE = re.compile(
 # the logger reads the context and decides. The regexes below only shape the
 # COLD-START gate.
 _DESTRUCTIVE_RE = re.compile(
-    r"\b(remove|delete|undo|scratch|clear|take\s+(?:it|that)\s+off)\b", re.I)
+    r"\b(remove|delete|undo|scratch|clear\s+(?:my|the|it|that|all|everything|today)|take\s+(?:it|that)\s+off)\b", re.I)
 # Non-food logging domains → legacy path (log_water / log_exercise / weight).
 _NONFOOD_RE = re.compile(
-    r"\b(water|weighed|weigh[- ]?in|workout|gym|bench|squat|deadlift|press|"
-    r"curls?|reps?|sets?|ran|running|walk\w*|bike|biked|swam|swim|cardio|"
+    r"\b(water|weighed|weigh[- ]?in|workout|gym|bench|squat|deadlift|"
+    r"(?:bench|overhead|leg|shoulder|incline|military)\s+press|"
+    r"curls?|reps?|sets?\s+of\s+(?:\d+\s*(?:x|reps?|@)|bench|squat|curl)|"
+    r"ran|running|walk(?:ed|ing)?\b(?=[^.!?]*\b(?:min|mile|km|steps?)\b)|"
+    r"bike|biked|swam|swim|cardio|"
     r"treadmill|jump\s*rope|min(?:ute)?s?\s+of)\b", re.I)
 
 
@@ -150,8 +153,8 @@ _SYSTEM = (
     'grilled or fried?"}]}\n'
     '3. Consumed food with enough detail -> {"action":"log","items":[{"food":'
     '"Caesar salad","amount":2,"unit":"handfuls","calories":180,"protein":4,'
-    '"carbs":8,"fats":15}],"say":"Pizza and the Caesar logged, 560 cal and 22g '
-    'protein for the pair. Dinner protein-forward and the day lands clean."}\n'
+    '"carbs":8,"fats":15}],"say":"Pizza and the Caesar logged, {batch_cal} cal and '
+    '{batch_protein}g protein for the pair. You are at {day_cal} with {cal_left} left."}\n'
     '4. CORRECTING something already on today\'s board ("I actually had 2 birria", '
     '"I had 2 of those", "make it 6 oz") -> {"action":"update","updates":[{'
     '"entry_id":123,"amount":2,"unit":"taco","calories":360,"protein":30,'
@@ -287,9 +290,12 @@ def format_confirm(items: list) -> str:
     and HOW MUCH, enrichment prices it after the yes."""
     lines = ["Locking this in:"]
     for i, it in enumerate(items[:8], 1):
-        amt = f"{it.get('amount')} {it.get('unit') or ''}".strip()
         food = (it.get("food") or "").strip()
-        lines.append(f"{i}. **{amt} {food}**".replace("  ", " "))
+        if it.get("amount") is not None:
+            amt = f"{it.get('amount')} {it.get('unit') or ''}".strip()
+            lines.append(f"{i}. **{amt} {food}**".replace("  ", " "))
+        else:
+            lines.append(f"{i}. **{food}**")
     lines.append("Good to log, or anything to fix?")
     return "\n".join(lines)
 

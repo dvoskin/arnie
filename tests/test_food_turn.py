@@ -455,3 +455,34 @@ def test_yes_re_shapes():
         assert FT._YES_RE.match(y), y
     for n in ("no", "make it 2", "actually 8 oz", "add cheese"):
         assert not FT._YES_RE.match(n), n
+
+
+def test_gate_exclusions_are_semantic_not_lexical():
+    """Deterministic-case audit (Danny 2026-07-24): exclusion words must hit
+    only in their DOMAIN SHAPE — a french press is coffee, clear broth is
+    soup, 'later than usual' is past tense, walking home is not cardio."""
+    for msg in ("had a french press coffee this morning",
+                "had a clear broth soup for lunch",
+                "I had a protein bar later than usual",
+                "had a snack while walking home",
+                "had 2 sets of ribs from the bbq"):
+        assert FT.applies(msg), msg
+    for msg in ("grabbing a burrito later", "having lunch later",
+                "clear my log for today", "walked 30 min on the treadmill",
+                "did 3 sets of bench at 185", "bench press 3x10"):
+        assert not FT.applies(msg), msg
+
+
+def test_prompt_examples_speak_in_tokens():
+    """Every cited say example in _SYSTEM uses {tokens} — a literal total in
+    an example teaches the violation the runtime contract then strips."""
+    import re as _re
+    for m in _re.finditer(r'"say":"([^"]+)"', FT._SYSTEM):
+        stripped = _re.sub(r"\{[a-z_]+\}", "", m.group(1))
+        assert not _re.findall(r"\d{2,}", stripped), m.group(1)
+
+
+def test_format_confirm_never_renders_none():
+    txt = FT.format_confirm([{"food": "Coffee", "amount": None},
+                             {"food": "Eggs", "amount": 2, "unit": ""}])
+    assert "None" not in txt and "**Coffee**" in txt and "**2 Eggs**" in txt
