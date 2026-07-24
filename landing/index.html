@@ -24,9 +24,9 @@
   <meta name="theme-color" content="#16181f">
   <link rel="icon" type="image/png" href="favicon.png">
   <link rel="apple-touch-icon" href="favicon.png">
-  <link rel="preload" as="image" href="/shots/sim-chat.jpg">
-  <link rel="preload" as="image" href="/shots/sim-log.jpg">
-  <link rel="preload" as="image" href="/shots/sim-coach.jpg">
+  <link rel="preload" as="image" type="image/webp" href="/shots/sim-chat.webp">
+  <link rel="preload" as="image" type="image/webp" href="/shots/sim-log.webp">
+  <link rel="preload" as="image" type="image/webp" href="/shots/sim-coach.webp">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@300;400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -1275,6 +1275,17 @@
       padding: 2px 7px; border-radius: 6px;
     }
 
+    /* ── Below-fold rendering skip ─────────────────────────────
+       Everything after the pinned scene renders lazily: the browser skips
+       layout + paint for these sections until they approach the viewport,
+       which shortens first paint AND keeps the cine scene's frame budget
+       to itself while the phone is rotating. The intrinsic size keeps the
+       scrollbar honest before the real content renders. */
+    #channels, #partners, #different, #pricing, #faq, .final-cta, footer {
+      content-visibility: auto;
+      contain-intrinsic-size: auto 700px;
+    }
+
     /* ── Mobile performance — strip expensive GPU compositing ── */
     @media (max-width: 768px) {
       /* SVG turbulence grain is the single biggest paint cost — remove it */
@@ -2158,10 +2169,10 @@
                  base; later screens stack IN on top (never fading out mid-way,
                  so no double-exposure), then all release back to chat at the
                  resolve. -->
-            <img class="pp-base" src="/shots/sim-chat.jpg" alt="The Arnie iOS app — coach chat" width="900" height="1956" decoding="async">
+            <img class="pp-base" src="/shots/sim-chat.webp" alt="The Arnie app — coach chat" width="900" height="1956" decoding="async">
             <!-- Eager: a lazy decode mid-scroll hitches the pinned scene. -->
-            <img class="pp-layer l2" src="/shots/sim-log.jpg"   alt="" width="900" height="1956" decoding="async">
-            <img class="pp-layer l3" src="/shots/sim-coach.jpg" alt="" width="900" height="1956" decoding="async">
+            <img class="pp-layer l2" src="/shots/sim-log.webp"   alt="" width="900" height="1956" decoding="async">
+            <img class="pp-layer l3" src="/shots/sim-coach.webp" alt="" width="900" height="1956" decoding="async">
           </div>
         </div>
       </div>
@@ -2504,6 +2515,23 @@
     const seg = (p, a, b) => Math.min(1, Math.max(0, (p - a) / (b - a)));
     const ease = t => t * t * (3 - 2 * t);           // smoothstep
 
+    // Style writes are the scene's main CPU cost: ~50 custom-property writes
+    // per frame, each a style invalidation — even for elements whose values
+    // haven't changed (most of them, most of the time: cards sit at --k:0
+    // until their phase arrives). Cache the last written value per element
+    // and skip no-ops; quantizing floats first makes the cache actually hit,
+    // so mid-rotation frames only touch the handful of elements in motion.
+    const varCache = new WeakMap();
+    const q3 = v => Math.round(v * 1000) / 1000;
+    const q1 = v => Math.round(v * 10) / 10;
+    function setVar(el, name, val) {
+      let m = varCache.get(el);
+      if (!m) { m = {}; varCache.set(el, m); }
+      if (m[name] === val) return;
+      m[name] = val;
+      el.style.setProperty(name, val);
+    }
+
     // Mobile measurement cache — phone size is capped by stage HEIGHT too
     // (34svh) so short real-device viewports get a phone that fits their
     // stage, and caption/resolve bottoms are measured, not assumed.
@@ -2535,9 +2563,9 @@
       // reaches the CTA row (~p 0.05) the copy is already gone, so the rise
       // never reads as the phone plowing through text.
       const hOut = ease(seg(p, 0.015, 0.05));
-      hero.style.setProperty('--hero-o', 1 - hOut);
-      hero.style.setProperty('--hero-y', hOut);
-      hero.style.setProperty('--hero-pe', hOut > 0.5 ? 'none' : 'auto');
+      setVar(hero, '--hero-o', q3(1 - hOut));
+      setVar(hero, '--hero-y', q3(hOut));
+      setVar(hero, '--hero-pe', hOut > 0.5 ? 'none' : 'auto');
       const rise = ease(seg(p, 0.0, 0.11));
       const r5 = ease(seg(p, 0.84, isM ? 0.90 : 0.92));  // final compression — phone lands BEFORE the resolve copy reads
 
@@ -2549,8 +2577,8 @@
       const fade2 = 1 - ease(seg(p, isM ? 0.50 : 0.53, isM ? 0.55 : 0.58));
       g2.forEach((el, i) => {
         const k = ease(seg(p, 0.31 + i * 0.016, 0.39 + i * 0.016));
-        el.style.setProperty('--k', k);
-        el.style.setProperty('--fade', fade2 * (1 - r5));
+        setVar(el, '--k', q3(k));
+        setVar(el, '--fade', q3(fade2 * (1 - r5)));
       });
 
       // Phase 3 — memory map.
@@ -2559,17 +2587,17 @@
       const g3floor = isM ? 0 : 0.18;   // no lingering ghosts in the bands
       g3.forEach((el, i) => {
         const k = ease(seg(p, g3in + i * 0.012, g3in + 0.07 + i * 0.012));
-        el.style.setProperty('--k', k);
-        el.style.setProperty('--fade', (g3floor + (1 - g3floor) * fade3) * (1 - r5));
+        setVar(el, '--k', q3(k));
+        setVar(el, '--fade', q3((g3floor + (1 - g3floor) * fade3) * (1 - r5)));
       });
-      svg.style.setProperty('--mk', ease(seg(p, 0.57, 0.63)));
-      svg.style.setProperty('--draw', ease(seg(p, 0.59, 0.75)));
-      svg.style.setProperty('--fade', fade3 * (1 - r5));
+      setVar(svg, '--mk', q3(ease(seg(p, 0.57, 0.63))));
+      setVar(svg, '--draw', q3(ease(seg(p, 0.59, 0.75))));
+      setVar(svg, '--fade', q3(fade3 * (1 - r5)));
 
       // Real screens stack IN (never out mid-story), then release at resolve.
       const hold = 1 - r5;
-      pp.style.setProperty('--s2', ease(seg(p, 0.32, 0.345)) * hold);
-      pp.style.setProperty('--s3', ease(seg(p, 0.555, 0.58)) * hold);
+      setVar(pp, '--s2', q3(ease(seg(p, 0.32, 0.345)) * hold));
+      setVar(pp, '--s3', q3(ease(seg(p, 0.555, 0.58)) * hold));
 
       // The phone: rises, tilts through the data phase; on MOBILE it shrinks
       // through the busy middle so the floating layers never collide with it.
@@ -2596,29 +2624,29 @@
                   + ch1 * cTop((mm.capB1 || 200) + 18)
                   + mid * cTop(311)
                   + r5  * cTop((mm.resB || 0.38 * H + 320) + 14);
-        pp.style.setProperty('--pp-y', off + 'px');
+        setVar(pp, '--pp-y', q1(off) + 'px');
       } else {
-        pp.style.setProperty('--pp-y', ((1 - rise) * 56 + r5 * 38) + 'svh');
+        setVar(pp, '--pp-y', q1((1 - rise) * 56 + r5 * 38) + 'svh');
       }
-      pp.style.setProperty('--pp-ry', ry + 'deg');
-      pp.style.setProperty('--pp-rx', (2.5 * t2 * (1 - r5)) + 'deg');
-      pp.style.setProperty('--pp-s', sNow);
+      setVar(pp, '--pp-ry', q1(ry) + 'deg');
+      setVar(pp, '--pp-rx', q1(2.5 * t2 * (1 - r5)) + 'deg');
+      setVar(pp, '--pp-s', q3(sNow));
 
       // Captions — one at a time.
       const wins = [[0.11, 0.30], [0.33, 0.52], [0.55, 0.78]];
       caps.forEach((c, i) => {
         const [a, b] = wins[i];
         const k = ease(seg(p, a, a + 0.03)) * (1 - ease(seg(p, b - 0.02, b)));
-        c.style.setProperty('--k', k);
+        setVar(c, '--k', q3(k));
         // Telemetry types on AFTER the headline lands — quantized so the
         // mono line appears in character steps, like the agent thinking.
         const tk = ease(seg(p, a + 0.022, a + 0.06));
-        c.style.setProperty('--tk', Math.round(tk * 26) / 26);
+        setVar(c, '--tk', Math.round(tk * 26) / 26);
       });
 
       // Phase 5 — resolve into the CTA.
-      resolve.style.setProperty('--k', ease(seg(p, isM ? 0.90 : 0.87, isM ? 0.95 : 0.93)));
-      resolve.style.setProperty('--res-pe', p > (isM ? 0.92 : 0.90) ? 'auto' : 'none');
+      setVar(resolve, '--k', q3(ease(seg(p, isM ? 0.90 : 0.87, isM ? 0.95 : 0.93))));
+      setVar(resolve, '--res-pe', p > (isM ? 0.92 : 0.90) ? 'auto' : 'none');
     }
 
     let lastSp = -1, lastTs = 0;
@@ -2659,8 +2687,9 @@
         if (targetP() > 0.25) return;
         const dx = (e.clientX / innerWidth - 0.5) * 4;
         const dy = (e.clientY / innerHeight - 0.5) * -3;
-        pp.style.setProperty('--pp-ry', dx + 'deg');
-        pp.style.setProperty('--pp-rx', dy + 'deg');
+        // Through setVar so the cache never goes stale against render()'s writes.
+        setVar(pp, '--pp-ry', q1(dx) + 'deg');
+        setVar(pp, '--pp-rx', q1(dy) + 'deg');
       }, { passive: true });
     }
 
@@ -2684,7 +2713,11 @@
   // deep link, same flow we shipped before the iOS beta). Copy that promises
   // "iOS" or "TestFlight" is re-worded to match where the button now goes.
   (function () {
-    if (!/android/i.test(navigator.userAgent)) return;
+    // UA detection, plus a shareable override (tryarnie.com/?android) for
+    // marketing links and desktop testing of the Android view.
+    const isAndroid = /android/i.test(navigator.userAgent)
+      || /[?&](android|platform=android)(&|$)/.test(location.search);
+    if (!isAndroid) return;
     document.documentElement.classList.add('android');
 
     // Route every TestFlight CTA to the web signup. The iOS channel card is
