@@ -442,6 +442,9 @@
       font-size: 12px; color: oklch(0.72 0.18 27); margin-top: 10px;
       display: none; font-family: var(--mono); letter-spacing: 0.03em;
     }
+    /* On Android the Telegram deep link already carries the setup code, so the
+       TestFlight button and iOS pairing-code UI would only mislead — hide them. */
+    html.android .ob-ios-only { display: none !important; }
 
     /* Footer note */
     .join-footer {
@@ -700,19 +703,19 @@
          style="margin-top:20px;text-decoration:none;display:flex;justify-content:center">
         Open Arnie on Telegram →
       </a>
-      <div class="ob-or-divider">or</div>
+      <div class="ob-or-divider ob-ios-only">or</div>
       <a href="https://testflight.apple.com/join/XAZQ5sSF" id="ob-ios-link"
-         class="ob-secondary-btn" target="_blank" rel="noopener">
+         class="ob-secondary-btn ob-ios-only" target="_blank" rel="noopener">
         <span>Install the iOS app</span>
         <span class="ob-beta-tag">BETA</span>
       </a>
-      <div class="ob-code-row" id="ob-code-row" role="button" tabindex="0"
+      <div class="ob-code-row ob-ios-only" id="ob-code-row" role="button" tabindex="0"
            aria-label="Copy your pairing code">
         <span class="ob-code-label">Your code</span>
         <code class="ob-code" id="ob-code"></code>
         <span class="ob-code-copy" id="ob-code-copy">Tap to copy</span>
       </div>
-      <p class="ob-code-hint">
+      <p class="ob-code-hint ob-ios-only">
         Paste this code into the iOS app on first launch to load your profile.
         Expires in 48 hours.
       </p>
@@ -736,6 +739,8 @@
   };
   // Capture timezone silently on page load
   try { obState.timezone = Intl.DateTimeFormat().resolvedOptions().timeZone; } catch(e) {}
+  // Android users go straight to Telegram — hide the iOS-only success UI.
+  if (/android/i.test(navigator.userAgent)) document.documentElement.classList.add('android');
 
   const OB_API_BASE = (
     window.location.hostname === 'localhost' ||

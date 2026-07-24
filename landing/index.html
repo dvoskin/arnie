@@ -10,7 +10,7 @@
   <meta property="og:type"        content="website">
   <meta property="og:url"         content="https://tryarnie.com/">
   <meta property="og:title"       content="Arnie · Made For Humans Who Train.">
-  <meta property="og:description" content="A performance partner that logs naturally, learns your patterns, and follows up every day. On iOS and Telegram.">
+  <meta property="og:description" content="A performance partner that logs naturally, learns your patterns, and follows up every day. On iOS, and on Android via Telegram.">
   <meta property="og:image"       content="https://tryarnie.com/og-image.png">
   <meta property="og:image:width"  content="1200">
   <meta property="og:image:height" content="630">
@@ -18,7 +18,7 @@
   <!-- Twitter / X card -->
   <meta name="twitter:card"        content="summary_large_image">
   <meta name="twitter:title"       content="Arnie · Made For Humans Who Train.">
-  <meta name="twitter:description" content="A performance partner that logs naturally, learns your patterns, and follows up every day. On iOS and Telegram.">
+  <meta name="twitter:description" content="A performance partner that logs naturally, learns your patterns, and follows up every day. On iOS, and on Android via Telegram.">
   <meta name="twitter:image"       content="https://tryarnie.com/og-image.png">
 
   <meta name="theme-color" content="#16181f">
@@ -2232,7 +2232,7 @@
     <div class="section-inner" style="text-align:center">
       <div class="section-tag reveal">Works where you are</div>
       <h2 class="section-title reveal reveal-d1">Start in the <em>iOS beta.</em></h2>
-      <p class="section-sub reveal reveal-d2" style="margin:0 auto">Telegram is live too, and iMessage and WhatsApp are next. The same Arnie, the same memory, wherever you text.</p>
+      <p class="section-sub reveal reveal-d2" style="margin:0 auto">Telegram is live too — that's where Android starts today — and iMessage and WhatsApp are next. The same Arnie, the same memory, wherever you text.</p>
       <div class="sig-label reveal reveal-d2">connected signal sources</div>
       <div class="channels-pills reveal reveal-d2">
         <span class="ipill">Apple Health</span><span class="ipill">Whoop</span><span class="ipill">Oura</span>
@@ -2240,11 +2240,11 @@
         <span class="ipill">Sleep</span><span class="ipill">Weight</span><span class="ipill">Recovery</span>
       </div>
       <div class="channels-grid reveal reveal-d3">
-        <a class="chcard primary" href="https://testflight.apple.com/join/XAZQ5sSF" target="_blank" rel="noopener">
+        <a class="chcard primary" id="chcardIos" href="https://testflight.apple.com/join/XAZQ5sSF" target="_blank" rel="noopener">
           <div class="n"> iOS Beta</div><div class="st">Available now</div>
         </a>
-        <a class="chcard" href="https://t.me/Arnie_1026_Bot?start=freetrial" target="_blank" rel="noopener">
-          <div class="n">Telegram</div><div class="st">Available now</div>
+        <a class="chcard" id="chcardTg" href="join.html">
+          <div class="n">Telegram</div><div class="st">Available now · Android too</div>
         </a>
         <div class="chcard soon"><div class="n">iMessage</div><div class="st">Coming soon</div></div>
         <div class="chcard soon"><div class="n">WhatsApp</div><div class="st">Coming soon</div></div>
@@ -2315,7 +2315,7 @@
           <li>Log meals and workouts in chat</li>
           <li>Personalized coaching with memory</li>
           <li>Progress tracking and pattern insights</li>
-          <li>Telegram available now</li>
+          <li>Telegram available now — Android starts here</li>
           <li>iMessage and WhatsApp coming soon</li>
         </ul>
         <a href="https://testflight.apple.com/join/XAZQ5sSF" target="_blank" rel="noopener" class="cta-btn">Join the iOS beta&nbsp;&nbsp;→</a>
@@ -2337,7 +2337,7 @@
 
         <div class="faq-item">
           <button class="faq-q">Is Arnie available now?<span class="faq-icon">+</span></button>
-          <div class="faq-a">Yes. Arnie is available now as an iOS beta app. Telegram is also supported.</div>
+          <div class="faq-a">Yes. Arnie is available now as an iOS beta app. On Android, Arnie lives on Telegram — sign up with the 60-second web form and you're coaching from your first message.</div>
         </div>
 
         <div class="faq-item">
@@ -2352,7 +2352,12 @@
 
         <div class="faq-item">
           <button class="faq-q">Do I need Telegram?<span class="faq-icon">+</span></button>
-          <div class="faq-a">No. The iOS beta is the main app experience. Telegram is also available for users who want it.</div>
+          <div class="faq-a">Not on iPhone — the iOS beta is the main app experience there. On Android, Telegram is how you use Arnie today: same coach, same memory, inside the chat app you already have.</div>
+        </div>
+
+        <div class="faq-item">
+          <button class="faq-q">I'm on Android — can I use Arnie?<span class="faq-icon">+</span></button>
+          <div class="faq-a">Yes. Fill in the <a href="join.html" style="color:var(--accent)">60-second web signup</a> — goals, stats, targets — and you'll get a personal Telegram link. Arnie already knows you when you say hi. A native Android app is on the roadmap.</div>
         </div>
 
         <div class="faq-item">
@@ -2367,7 +2372,7 @@
 
         <div class="faq-item">
           <button class="faq-q">How do I join?<span class="faq-icon">+</span></button>
-          <div class="faq-a">Tap any Join button on this page. It opens TestFlight, Apple's official beta app, and the install takes about two minutes.</div>
+          <div class="faq-a">Tap any Join button on this page. On iPhone it opens TestFlight, Apple's official beta app — the install takes about two minutes. On Android it opens the 60-second web signup, then drops you straight into Telegram.</div>
         </div>
 
       </div>
@@ -2387,8 +2392,7 @@
       </a>
       <p class="cta-fineprint" style="margin-top:10px;text-align:center">
         Free while in beta · Installs via TestFlight ·
-        <a href="https://t.me/Arnie_1026_Bot?start=freetrial" target="_blank" rel="noopener"
-           style="color:var(--ink-2)">or start on Telegram →</a>
+        <a href="join.html" style="color:var(--ink-2)">on Android? Sign up &amp; start on Telegram →</a>
       </p>
     </div>
   </section>
@@ -2670,6 +2674,68 @@
     // Debug/test hook: cineSet(p) freezes the scene at a progress until
     // cineSet(null) releases it back to scroll control.
     window.cineSet = function (q) { forcedP = q; if (q !== null) { sp = q; render(q); } };
+  })();
+</script>
+
+<script>
+  // ══════════ Android path — web signup → Telegram ══════════
+  // TestFlight is iOS-only, so on Android every Join CTA routes through the
+  // join.html onboarding form instead (60-second profile → personal Telegram
+  // deep link, same flow we shipped before the iOS beta). Copy that promises
+  // "iOS" or "TestFlight" is re-worded to match where the button now goes.
+  (function () {
+    if (!/android/i.test(navigator.userAgent)) return;
+    document.documentElement.classList.add('android');
+
+    // Route every TestFlight CTA to the web signup. The iOS channel card is
+    // excluded — it stays an honest "this exists on iPhone" reference.
+    document.querySelectorAll('a[href*="testflight.apple.com"]:not(.chcard)').forEach(a => {
+      a.href = 'join.html';
+      a.removeAttribute('target');
+      a.removeAttribute('rel');
+    });
+
+    // Primary buttons — same promise, Telegram wording.
+    document.querySelectorAll('a.cta-btn').forEach(a => {
+      if (a.textContent.includes('iOS beta')) {
+        a.innerHTML = 'Sign up — start on Telegram&nbsp;&nbsp;→';
+      }
+    });
+
+    const setText = (sel, text) =>
+      document.querySelectorAll(sel).forEach(el => { el.textContent = text; });
+
+    // Hero
+    setText('.eyebrow', 'Arnie · agentic coach · Telegram beta');
+    setText('.hero-sub',
+      'Log meals, workouts, weight, and progress with Arnie on Telegram. ' +
+      'Arnie learns your patterns and coaches you with context.');
+    setText('.hero-micro', 'Free while in beta · 60-second signup, then straight to Telegram');
+    setText('.cta-fineprint', 'Free while in beta · 60-second signup, then Telegram');
+
+    // Channels — lead with Telegram, keep iOS as the secondary card.
+    const chTitle = document.querySelector('#channels .section-title');
+    if (chTitle) chTitle.innerHTML = 'Start on <em>Telegram.</em>';
+    const chSub = document.querySelector('#channels .section-sub');
+    if (chSub) chSub.textContent =
+      'The iOS beta is live too, and iMessage and WhatsApp are next. ' +
+      'The same Arnie, the same memory, wherever you text.';
+    const iosCard = document.getElementById('chcardIos');
+    const tgCard  = document.getElementById('chcardTg');
+    if (iosCard && tgCard) {
+      iosCard.classList.remove('primary');
+      tgCard.classList.add('primary');
+    }
+
+    // Pricing
+    const priceAfter = document.querySelector('#pricing .after');
+    if (priceAfter) priceAfter.textContent = 'Sign up on the web in 60 seconds, then chat on Telegram';
+    const priceFirstLi = document.querySelector('#pricing .price-one ul li');
+    if (priceFirstLi) priceFirstLi.textContent = 'The full Arnie coach on Telegram';
+
+    // Sticky mobile bar
+    setText('.sticky-title', 'Join the Arnie beta');
+    setText('.sticky-sub', 'Free while in beta · Via Telegram');
   })();
 </script>
 </body>
