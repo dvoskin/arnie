@@ -173,6 +173,10 @@ _SYSTEM = (
     "correction's target isn't on the board, action is pass.\n"
     "- An item already on the board reported again as the SAME serving is never "
     "re-logged: correct it (update) or pass.\n"
+    "- DECIDE BEFORE YOU WRITE: any calorie-relevant doubt (milk type, prep, "
+    "portion, flavor) means action=ask INSTEAD of log. Once you log, there is "
+    "nothing left to ask - the say NEVER contains a question; later drift is "
+    "handled by corrections, not by asking after the fact.\n"
     '- "say" (log and update actions): the coach line the user sees. 1-2 short '
     "sentences, sentence case, warm and specific, NAMING every item (never just one "
     "of them), plus one forward read. NEVER write your own totals — the system fills "
@@ -283,6 +287,14 @@ def enforce_say_contract(say: str, tool_calls: list) -> str:
     or macro claim) must come from a {token}, or the say is rejected and replaced
     with a deterministic tokenized line naming the items. The contract is physics."""
     raw = say or ""
+    # A committed write's narration NEVER asks (Danny 2026-07-24: "all
+    # clarification should be happening before the log"). If a detail was
+    # worth a question, the action should have been ask — drop any sentence
+    # carrying one; if nothing survives, the tokenized line below takes over.
+    if "?" in raw:
+        kept = [seg for seg in re.split(r"(?<=[.!?])\s+", raw.strip())
+                if "?" not in seg]
+        raw = " ".join(kept).strip()
     stripped = re.sub(r"\{[a-z_]{2,24}\}", "", raw)
     allowed = set()
     for tc in (tool_calls or []):
@@ -291,7 +303,7 @@ def enforce_say_contract(say: str, tool_calls: list) -> str:
             allowed.add(m.group(0).rstrip("0").rstrip(".") or "0")
     said = {m.group(0).rstrip("0").rstrip(".") or "0"
             for m in re.finditer(r"\d+(?:\.\d+)?", stripped)}
-    if said <= allowed:
+    if raw and said <= allowed:
         return raw
     names = [((tc.get("input") or {}).get("food_name") or "").strip()
              for tc in (tool_calls or [])]

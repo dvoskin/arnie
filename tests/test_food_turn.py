@@ -406,3 +406,20 @@ async def test_regulars_ride_into_the_logger_context(monkeypatch):
     c = FT.chat.last_content  # type: ignore[attr-defined]
     assert "THEIR REGULARS" in c and "Barebells Caramel Cashew" in c
     assert "200 cal" in c and "logged 14x" in c
+
+
+def test_say_contract_strips_questions_after_write():
+    """Clarification happens BEFORE the log (Danny 2026-07-24) — a committed
+    write's say can never ask. Question sentences are dropped; an all-question
+    say falls to the deterministic tokenized line."""
+    calls = [{"input": {"food_name": "Venti Cappuccino", "quantity": "1 cup",
+                        "calories": 190}}]
+    mixed = ("Cappuccino logged, {batch_cal} cal. Was that whole milk for "
+             "real, or did they sub something?")
+    out = FT.enforce_say_contract(mixed, calls)
+    assert "?" not in out
+    assert "logged" in out.lower()
+    all_q = "Was that whole milk? Should I lock it in?"
+    out2 = FT.enforce_say_contract(all_q, calls)
+    assert "?" not in out2 and "{day_cal}" in out2   # deterministic fallback
+    # ask actions are untouched — this contract only governs log/update says
