@@ -57,34 +57,46 @@ def user(mode):
         food_logging_mode=mode, calorie_target=2200, protein_target=170))
 
 
+async def run_case(sem, mode, msg, pkg_vague, fails):
+    async with sem:
+        try:
+            out = await FT.run(msg, user(mode),
+                               day_line="Today: 400 cal, 30g protein so far.")
+        except Exception as e:  # noqa: BLE001
+            fails.append(f"EXC [{mode}] {msg!r} :: {type(e).__name__}")
+            return
+    act = out["action"] if out else None
+    kind = (out or {}).get("kind")
+    tag = f"[{mode}] {msg!r} -> {act}{'/' + kind if kind else ''}"
+    if act not in ("log", "update", "ask", None):
+        fails.append(f"BAD ACTION {tag}")
+    elif mode == "strict" and act == "log":
+        fails.append(f"STRICT SILENT LOG {tag}")
+    elif mode != "strict" and pkg_vague and act == "log":
+        fails.append(f"CLASS-1 VAGUE LOGGED SILENTLY {tag}")
+    elif act == "log":
+        say = (out or {}).get("say") or ""
+        if FT.enforce_say_contract(say, out["tool_calls"]) != say:
+            fails.append(f"SAY CONTRACT {tag} :: {say[:80]}")
+
+
 async def main():
     seed = int(sys.argv[1]) if len(sys.argv) > 1 else 24
     n = int(sys.argv[2]) if len(sys.argv) > 2 else 6
     rng = random.Random(seed)
-    fails, runs = [], 0
+    fails, tasks = [], []
+    sem = asyncio.Semaphore(8)
     for mode in ("strict", "moderate", "quick"):
         for _ in range(n):
             msg, pkg_vague = gen_report(rng)
-            out = await FT.run(msg, user(mode),
-                               day_line="Today: 400 cal, 30g protein so far.")
-            runs += 1
-            act = out["action"] if out else None
-            kind = (out or {}).get("kind")
-            tag = f"[{mode}] {msg!r} -> {act}{'/' + kind if kind else ''}"
-            if act not in ("log", "update", "ask", None):
-                fails.append(f"BAD ACTION {tag}")
-            if mode == "strict" and act == "log":
-                fails.append(f"STRICT SILENT LOG {tag}")
-            if mode != "strict" and pkg_vague and act == "log":
-                fails.append(f"CLASS-1 VAGUE LOGGED SILENTLY {tag}")
-            if act == "log":
-                say = (out or {}).get("say") or ""
-                if FT.enforce_say_contract(say, out["tool_calls"]) != say:
-                    fails.append(f"SAY CONTRACT {tag} :: {say[:80]}")
-            print(("FAIL " if fails and fails[-1].endswith(tag) else "ok   ") + tag,
-                  flush=True)
-    print(f"\n{runs - len(fails)}/{runs} passed", flush=True)
-    for f in fails:
+            tasks.append(run_case(sem, mode, msg, pkg_vague, fails))
+    done = 0
+    for chunk_start in range(0, len(tasks), 24):
+        await asyncio.gather(*tasks[chunk_start:chunk_start + 24])
+        done = min(len(tasks), chunk_start + 24)
+        print(f"...{done}/{len(tasks)} ({len(fails)} fails)", flush=True)
+    print(f"\n{len(tasks) - len(fails)}/{len(tasks)} passed", flush=True)
+    for f in fails[:40]:
         print("  •", f)
     return len(fails)
 
