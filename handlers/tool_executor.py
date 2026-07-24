@@ -2820,8 +2820,34 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
         entry_id = inp.get("entry_id")
         if not entry_id:
             return "Missing entry_id"
+        # COMPARE-AND-SWAP (structured ledger, Danny 2026-07-24): the caller
+        # targeted this entry holding a board snapshot (expected_calories). If
+        # the row has since changed materially — another device, a manual edit,
+        # enrichment drift — a scale computed from stale numbers corrupts the
+        # entry. Refuse and force a re-read instead of applying blind.
+        _exp_cal = inp.get("expected_calories")
+        if _exp_cal is not None:
+            try:
+                from db.models import FoodEntry as _FE
+                _row = await db.get(_FE, int(entry_id))
+                if _row is not None and _row.calories is not None:
+                    _cur = float(_row.calories)
+                    _exp = float(_exp_cal)
+                    _tol = max(30.0, 0.2 * max(_cur, _exp))
+                    if abs(_cur - _exp) > _tol:
+                        return (f"STALE BOARD: entry #{entry_id} is now "
+                                f"{_cur:.0f} cal, not {_exp:.0f}. Do NOT apply "
+                                f"this change — re-read today's log first.")
+            except Exception:
+                pass
+        # Contract-carrier fields (CAS expectation, narration hint, source
+        # provenance, per-call result stash) ride the input but are never
+        # column writes.
         changes = {k: v for k, v in inp.items()
-                   if k not in ("entry_id", "date") and v is not None}
+                   if k not in ("entry_id", "date", "expected_calories",
+                                "expected_quantity", "food_hint", "source",
+                                "basis", "_result")
+                   and v is not None}
         # Map external name → DB column
         if "food_name" in changes:
             changes["parsed_food_name"] = changes.pop("food_name")
