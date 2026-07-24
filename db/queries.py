@@ -2701,16 +2701,19 @@ async def record_ledger_event(
     db: AsyncSession, user_id: int, event_type: str, domain: str = "food",
     entry_id: Optional[int] = None, daily_log_id: Optional[int] = None,
     payload: Optional[dict] = None, source: Optional[str] = None,
-) -> None:
-    """Append one row to the ledger's event history. Callers wrap this in
-    try/except — history must never break the write it describes."""
+):
+    """Append one row to the ledger's event history and return it (the id is
+    the undo token cards surface). Callers wrap this in try/except — history
+    must never break the write it describes."""
     from db.models import LedgerEvent
-    db.add(LedgerEvent(
+    ev = LedgerEvent(
         user_id=user_id, domain=domain, entry_id=entry_id,
         daily_log_id=daily_log_id, event_type=event_type,
         payload_json=json.dumps(payload) if payload is not None else None,
-        source=source))
+        source=source)
+    db.add(ev)
     await db.commit()
+    return ev
 
 
 async def get_ledger_events(

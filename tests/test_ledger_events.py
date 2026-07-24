@@ -122,3 +122,29 @@ async def test_claim_reopens_after_window(db, make_user):
     row.created_at = datetime.utcnow() - timedelta(hours=25)
     await db.commit()
     assert await claim_processed_turn(db, user.id, "k1", "Banana") is True
+
+
+def test_card_carries_event_id_undo_token():
+    """P0 card/ledger unification (2026-07-24): the macro_card surfaces the
+    ledger event id behind the write — the backend contract for one-tap Undo.
+    Optional on the wire; a write with no event stays cardable."""
+    from core.conversation import _logged_entry_card
+    with_ev = _logged_entry_card("log_food", {
+        "_entry_id": 42, "_event_id": 900, "food_name": "Banana",
+        "quantity": "1 banana", "calories": 105})
+    assert with_ev["payload"]["event_id"] == 900
+    without = _logged_entry_card("log_food", {
+        "_entry_id": 42, "food_name": "Banana", "calories": 105})
+    assert "event_id" not in without["payload"]
+
+
+def test_restored_entry_gets_a_card():
+    from core.conversation import _logged_entry_card
+    card = _logged_entry_card("restore_food_entry", {
+        "_entry_id": 43, "_event_id": 901, "food_name": "Truffle fries",
+        "quantity": "6 fries", "calories": 190})
+    assert card["type"] == "macro_card"
+    assert card["payload"]["name"] == "Truffle fries"
+    assert card["payload"]["event_id"] == 901
+    # no committed row → no card, same as log_food
+    assert _logged_entry_card("restore_food_entry", {"food_name": "X"}) is None

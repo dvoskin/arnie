@@ -140,9 +140,9 @@ async def test_stale_events_are_not_undone(db, make_user):
 
 @pytest.mark.asyncio
 async def test_uninvertible_last_event_refuses_not_skips(db, make_user):
-    """Water created has no delete branch yet — 'undo' right after it must
-    refuse (legacy brain handles), never skip past it to undo the wrong
-    thing."""
+    """An uninvertible last event — here a water pour recorded WITHOUT an
+    entry_id (pre-2026-07-24 rows), same class as weight — must refuse
+    (legacy brain handles), never skip past it to undo the wrong thing."""
     user = await make_user()
     await record_ledger_event(db, user.id, "created", domain="food",
                               entry_id=7, payload={"food_name": "Eggs"})
@@ -154,4 +154,42 @@ async def test_uninvertible_last_event_refuses_not_skips(db, make_user):
 @pytest.mark.asyncio
 async def test_no_events_no_plan(db, make_user):
     user = await make_user()
+    assert await LU.build_plan(db, user, "undo") is None
+
+
+@pytest.mark.asyncio
+async def test_water_pour_is_undoable(db, make_user):
+    """'undo' right after logging water deletes THAT pour and corrects the
+    total — water joined the invertible domains 2026-07-24 (weight stays
+    uninvertible: its per-day upsert is lossy without a before-state)."""
+    import handlers.tool_executor as TE
+    from db.models import DailyLog, WaterEntry
+    user = await make_user()
+    log = DailyLog(user_id=user.id, date=datetime.utcnow().date(),
+                   total_water_ml=500)
+    db.add(log)
+    await db.flush()
+    we = WaterEntry(user_id=user.id, daily_log_id=log.id, amount_ml=500)
+    db.add(we)
+    await db.commit()
+    await db.refresh(we)
+    await record_ledger_event(db, user.id, "created", domain="water",
+                              entry_id=we.id, daily_log_id=log.id,
+                              payload={"amount_ml": 500})
+    plan = await LU.build_plan(db, user, "undo")
+    assert plan is not None and plan["kinds"] == ["delete"]
+    tc = plan["tool_calls"][0]
+    assert tc["name"] == "delete_water_entry"
+    out = await TE._dispatch(tc["name"], tc["input"], user, log, db, "text")
+    assert "Removed water entry" in out
+    assert await db.get(WaterEntry, we.id) is None
+    events = await get_ledger_events(db, user.id, domain="water")
+    assert events[0].event_type == "deleted"
+
+
+@pytest.mark.asyncio
+async def test_weight_stays_uninvertible(db, make_user):
+    user = await make_user()
+    await record_ledger_event(db, user.id, "created", domain="weight",
+                              entry_id=3, payload={"weight_kg": 86.0})
     assert await LU.build_plan(db, user, "undo") is None

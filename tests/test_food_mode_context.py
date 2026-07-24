@@ -21,14 +21,23 @@ def test_quick_overrides_threshold_downward():
     d = food_mode_directive("quick")
     assert d.startswith("[FOOD LOGGING MODE: quick]")
     assert "best estimate" in d
-    assert ">300 cal" in d  # explicitly relaxes the static >120 cal rule
+    # thresholds come from the ONE dial both lanes share (P0 fix 2026-07-24)
+    from core.food_ledger import ASK_THRESHOLDS
+    assert f">{ASK_THRESHOLDS['quick']} cal" in d
 
 
 def test_strict_overrides_threshold_upward():
+    """Repinned 2026-07-24: strict now mirrors the structured lane's contract
+    — clarify BEFORE the write, never log-first-ask-later (the two lanes said
+    opposite things; that inversion was the P0 policy-duplication fix)."""
     d = food_mode_directive("strict")
     assert d.startswith("[FOOD LOGGING MODE: strict]")
     assert "cook method" in d.lower()
-    assert "under 120 cal" in d  # tightens below the static threshold
+    assert "BEFORE the write" in d
+    assert "hold the log" in d
+    assert "LOG EVERY item FIRST" not in d      # the inverted directive is gone
+    from core.food_ledger import ASK_THRESHOLDS
+    assert f"{ASK_THRESHOLDS['strict']}+" in d
 
 
 def test_case_insensitive():
