@@ -296,7 +296,7 @@ _SYSTEM = (
     'unclear -> {"action":"ask","points":[{"label":"Chicken","qs":["grilled, '
     'baked, or fried?","skin on or off?","rough amount - oz or one breast?"]},'
     '{"label":"Potato","qs":["baked, mashed, or fries?","any butter, cheese, '
-    'or sour cream?"]}]}\n'
+    'or sour cream?"]}],"ready":["Bagel","Greek yogurt"]}\n'
     '3. Consumed food with enough detail -> {"action":"log","items":[{"food":'
     '"Caesar salad","amount":2,"unit":"handfuls","calories":180,"protein":4,'
     '"carbs":8,"fats":15,"meal":"dinner"}],"say":"Pizza and the Caesar logged, {batch_cal} cal and '
@@ -339,6 +339,9 @@ _SYSTEM = (
     "numbers and NO nutrition claims (those come from the system after the "
     'commit). Optional "follow_up":"save_as_regular" ONLY when the meal looks '
     "like a repeated order that is not yet in their regulars.\n"
+    "- In an ask, items that need NOTHING go in ready:[names] so the user "
+    "sees every item was heard - never leave a clean item unacknowledged "
+    "while you question the others.\n"
     "- ASK DEPTH scales with mode: on strict, list EVERY calorie-moving facet "
     "per item as its own short sub-question (prep / skin / amount for "
     "proteins; size / toppings for starches; bread, slices, butter for toast; "
@@ -514,11 +517,20 @@ def format_confirm(items: list) -> str:
     return "\n".join(lines)
 
 
-def _format_question(points: list) -> str:
-    """One rich clarify bubble at ChatGPT-depth (Danny 2026-07-24): numbered
-    bolded items, each with its calorie-moving FACETS as sub-bullets, closed
-    with the pending guarantee. Single message, single model call — depth
-    without latency. Back-compat: a point may carry one "q" or a "qs" list."""
+def _lc(name: str) -> str:
+    """Sentence-case a food name for mid-sentence use: lowercase unless it
+    reads branded (an uppercase beyond the first letter, or a digit)."""
+    n = (name or "").strip()
+    if any(c.isupper() for c in n[1:]) or any(c.isdigit() for c in n):
+        return n
+    return n.lower()
+
+
+def _format_question(points: list, ready: list | None = None) -> str:
+    """The clarify moment in Arnie's full voice: an acknowledgment bubble for
+    what's already locked (✅), the question in his established phrasing with
+    bolded items and facet bullets, and the hold guarantee as its own beat.
+    ||| splits render as separate bubbles on every client."""
     norm = []
     for p in points if isinstance(points, list) else []:
         if not isinstance(p, dict):
@@ -533,22 +545,32 @@ def _format_question(points: list) -> str:
     norm = norm[:4]
     if not norm:
         return ""
+    bubbles = []
+    ready_names = [_lc(str(r)) for r in (ready or []) if str(r).strip()][:4]
+    if ready_names:
+        bold = [f"**{n}**" for n in ready_names]
+        joined = (bold[0] if len(bold) == 1
+                  else ", ".join(bold[:-1]) + " and " + bold[-1])
+        bubbles.append(f"{joined} locked in ✅")
     if len(norm) == 1 and len(norm[0][1]) == 1:
         l, (q,) = norm[0]
-        return (f"Quick one so it's clean, **{l.lower()}**: {q}" if l
-                else f"Quick one so it's clean: {q}")
-    lines = ["Quick one so it's clean:"]
+        lead = "Just need the" if ready_names else "Quick one so it's clean, the"
+        bubbles.append(f"{lead} **{_lc(l)}**: {q}" if l else
+                       ("Just need one thing: " + q if ready_names
+                        else "Quick one so it's clean: " + q))
+        return "|||".join(bubbles)
+    head = "Just need a couple things:" if ready_names else            "Quick one so it's clean:"
+    lines = [head]
     for i, (label, qs) in enumerate(norm, 1):
         if len(qs) == 1:
-            lines.append(f"{i}. **{label}**: {qs[0]}" if label
+            lines.append(f"{i}. **{_lc(label)}**: {qs[0]}" if label
                          else f"{i}. {qs[0]}")
         else:
-            lines.append(f"{i}. **{label}**" if label else f"{i}.")
+            lines.append(f"{i}. **{_lc(label)}**" if label else f"{i}.")
             lines.extend(f"   • {q}" for q in qs)
-    lines.append("Nothing hits the board till you answer - keeping it exact.")
-    return "\n".join(lines)
-
-
+    bubbles.append("\n".join(lines))
+    bubbles.append("Nothing hits the board till then, keeps your log exact.")
+    return "|||".join(bubbles)
 _TOKEN_RE = re.compile(
     r"\{(batch_cal|batch_protein|day_cal|cal_left|day_protein|protein_left)\}")
 
@@ -830,7 +852,7 @@ async def run(message: str, user, prior: Optional[dict] = None,
     action = data.get("action")
 
     if action == "ask" and not prior:
-        text = _format_question(data.get("points") or [])
+        text = _format_question(data.get("points") or [], data.get("ready"))
         return {"action": "ask", "text": text} if text else None
 
     if action == "ask" and prior:
@@ -846,7 +868,8 @@ async def run(message: str, user, prior: Optional[dict] = None,
         _ask_count = int((prior or {}).get("ask_count") or 1)
         _new_amb = bool(data.get("new_ambiguity"))
         if data.get("points") and (_user_invited or (_new_amb and _ask_count < 2)):
-            return {"action": "ask", "text": _format_question(data["points"]),
+            return {"action": "ask",
+                    "text": _format_question(data["points"], data.get("ready")),
                     "points": data["points"]}
         return None
 
