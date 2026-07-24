@@ -434,6 +434,9 @@ async def _run_pipeline(update: Update, context: ContextTypes.DEFAULT_TYPE,
     _on_text_bubble_arg = _on_text_bubble if _streaming_eligible else None
     turn = None
     try:
+        from core.turn_identity import make_turn_id
+        _tg_msg_id = getattr(getattr(update, "effective_message", None),
+                             "message_id", None)
         turn = await run_turn(
             user, db, messages, system, platform="telegram",
             in_onboarding=in_onboarding, was_onboarding=was_onboarding,
@@ -442,6 +445,8 @@ async def _run_pipeline(update: Update, context: ContextTypes.DEFAULT_TYPE,
             on_completion=_tg_completion,
             completion_facts=completion_facts,
             on_text_bubble=_on_text_bubble_arg,
+            turn_id=make_turn_id("telegram", _tg_msg_id, user.id,
+                                 raw_text or ""),
         )
     except Exception as e:
         logger.error(f"run_turn failed (chat {chat_id}): {e}", exc_info=True)

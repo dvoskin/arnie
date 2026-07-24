@@ -514,6 +514,7 @@ async def run_turn(
     on_text_bubble: Optional[Callable] = None,  # async fn(bubble) → None — stream bubbles as they land
     on_tool_start: Optional[Callable] = None,   # async fn(tool_names: list[str]) → None — fired once, just before tools run
     on_card: Optional[Callable] = None,         # async fn(cards: list[dict]) → None — log cards, streamed the instant they're written (before the follow-up pass)
+    turn_id: Optional[str] = None,  # canonical transaction identity (core/turn_identity)
 ) -> TurnResult:
     """
     Core pipeline: LLM call → tool execution → coach-unmute / follow-up /
@@ -523,6 +524,11 @@ async def run_turn(
     """
     import time as _time_mod
     _turn_t0 = _time_mod.monotonic()
+    # Canonical turn identity rides the whole turn ambiently (contextvar):
+    # ledger events stamp it, the exactly-once claim keys on it. Set even when
+    # None so a prior turn's id can never leak into this one on a reused task.
+    from core.turn_identity import CURRENT_TURN_ID as _TID
+    _TID.set(turn_id)
     _source = source_type or platform
     _tag = f"{platform}:{user.id}"
     _retried = False  # turn-health: did the self-heal fire this turn?
@@ -903,7 +909,12 @@ async def run_turn(
                 from core.food_ledger import (turn_idempotency_key as _ik_fn,
                                               already_processed as _ik_seen,
                                               mark_processed as _ik_mark)
-                _ikey = _ik_fn(user.id, _user_text or "", _sft["tool_calls"])
+                # The canonical turn_id (client message identity) is the
+                # strongest dedup key — a transport retry preserves it
+                # byte-for-byte. Semantic fingerprint is the fallback for
+                # turns that arrived without one (P0.1).
+                _ikey = turn_id or _ik_fn(user.id, _user_text or "",
+                                          _sft["tool_calls"])
                 if _ik_seen(_ikey):
                     _idem_dup = True
                     logger.info(f"event=structured_food_duplicate layer=memory {_tag}")

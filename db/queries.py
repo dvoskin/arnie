@@ -2703,14 +2703,18 @@ async def record_ledger_event(
     payload: Optional[dict] = None, source: Optional[str] = None,
 ):
     """Append one row to the ledger's event history and return it (the id is
-    the undo token cards surface). Callers wrap this in try/except — history
-    must never break the write it describes."""
+    the undo token cards surface). The canonical turn identity is stamped
+    from the ambient contextvar (core/turn_identity) so every write traces
+    to its inbound turn without threading a parameter through the executor.
+    Callers wrap this in try/except — history must never break the write it
+    describes."""
     from db.models import LedgerEvent
+    from core.turn_identity import current_turn_id
     ev = LedgerEvent(
         user_id=user_id, domain=domain, entry_id=entry_id,
         daily_log_id=daily_log_id, event_type=event_type,
         payload_json=json.dumps(payload) if payload is not None else None,
-        source=source)
+        source=source, turn_id=current_turn_id())
     db.add(ev)
     await db.commit()
     return ev
