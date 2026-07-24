@@ -585,7 +585,10 @@ async def run_turn(
     # question is a different ACTION from an item, so it structurally can't be
     # logged as food. Anything it passes on takes the legacy path untouched.
     _sft = None
-    if not in_onboarding and _source != "photo":
+    # One path for EVERYONE: onboarding users get the ask ladder too
+    # (Samuel 2026-07-24: 7 unstated portions, zero asks), and photo
+    # turns MUST enter or photo_food_message (5f0e195) never runs.
+    if True:
         try:
             from core.food_turn import (structured_food_enabled, ASK_KIND,
                                         applies as _sft_applies, run as _sft_run,
@@ -1349,7 +1352,8 @@ async def run_turn(
                     _fast_voice = await voice_log(
                         tool_calls, tool_results, today_log, user)
                 response_text = _fast_voice or deterministic_confirmation(
-                    tool_calls, today_log, user.preferences, tool_results)
+tool_calls, today_log, user.preferences, tool_results,
+user_message=_user_text or "")
                 _response_streamed = False
             else:
                 # Non-pure logging turn (water / weight, or a co-asked question)
@@ -1390,7 +1394,8 @@ async def run_turn(
                         pass
                 if not response_text:
                     response_text = deterministic_confirmation(
-                        tool_calls, today_log, user.preferences, tool_results
+                        tool_calls, today_log, user.preferences, tool_results,
+                        user_message=_user_text or ""
                     )
                     # Same trailing-send suppression as the generic fallback
                     # site below: when the follow-up already STREAMED the
@@ -1456,9 +1461,11 @@ async def run_turn(
             #     Admit confusion and tell the user what to send to
             #     recover. Retention play — beats silent dead-air.
             if tool_calls:
+                # The question-guard can empty the canned ack — never dead-air.
                 response_text = deterministic_confirmation(
-                    tool_calls, today_log, user.preferences, tool_results
-                )
+                    tool_calls, today_log, user.preferences, tool_results,
+                    user_message=_user_text or ""
+                ) or recovery_message("stall", seed=_user_text)
             else:
                 response_text = recovery_message("stall", seed=_user_text)
             _response_streamed = False  # neither path was streamed
@@ -2108,7 +2115,8 @@ async def run_turn(
                 # second model call that can itself hallucinate.
                 if _fired_log and not _response_streamed:
                     response_text = deterministic_confirmation(
-                        tool_calls, today_log, user.preferences, tool_results)
+tool_calls, today_log, user.preferences, tool_results,
+user_message=_user_text or "")
     except Exception as e:
         logger.debug(f"day-total guard failed for {_tag}: {e}")
 

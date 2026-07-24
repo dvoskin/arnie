@@ -569,7 +569,8 @@ def _item_macros(result_str: str) -> str:
     return f"{m.group(1)} cal, {m.group(2)}g protein" if m else ""
 
 
-def deterministic_confirmation(tool_calls, log, prefs, tool_results=None) -> str:
+def deterministic_confirmation(tool_calls, log, prefs, tool_results=None,
+                               user_message: str = "") -> str:
     """
     Build a meaningful confirmation from what was actually logged, used when the
     LLM returns no text after a tool call. Never a bare "done." — the user always
@@ -807,7 +808,12 @@ def deterministic_confirmation(tool_calls, log, prefs, tool_results=None) -> str
                     else "Got it, checking in more.|||What's today looking like?")
         if any(k in fields for k in ("calorie_target", "protein_target")):
             return "Targets locked in. ✅|||Send me what you've eaten and we'll track against them."
-        # Generic profile update (timezone, language, attributes, etc.)
+        # Generic profile update (timezone, language, attributes, etc.).
+        # A message that ASKS something never gets the canned ack — return
+        # empty so the voiced follow-up answers the actual question
+        # (Samuel 2026-07-24: 'is my protein too low?' → 'Locked in. ✅' ×3).
+        if "?" in (user_message or ""):
+            return ""
         return "Locked in. ✅|||What's the day looking like — food or training?"
     # Generic net — only hit for tool turns with no specific branch above. Never a
     # content-free "all set"; keep the ball in their court with the day's standing.
