@@ -357,12 +357,15 @@ async def run_chat_turn(
     messages.append({"role": "user", "content": _model_text})
 
     # ── Coaching brain ────────────────────────────────────────────────────────
+    from core.turn_identity import make_turn_id
     turn = await run_turn(
         user, db, messages, system, platform=platform,
         in_onboarding=in_onboarding, was_onboarding=was_onboarding,
         today_log=today_log, source_type=_source,
         on_image=on_image, on_interim=on_interim,
         on_text_bubble=on_text_bubble, on_tool_start=on_tool_start, on_card=on_card,
+        turn_id=make_turn_id(platform or "ios", idempotency_key, user.id,
+                             text or ""),
     )
 
     # ── Persist the conversation ──────────────────────────────────────────────

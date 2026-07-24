@@ -120,6 +120,14 @@ Shipped:
   turn); concurrency settled by the constraint inside a SAVEPOINT; fails OPEN
   so a claim-infra hiccup never blocks a real meal. The Phase 1 in-process TTL
   registry remains as the fast path.
+- **Canonical turn identity** (P0.1, shipped 2026-07-24) — every inbound
+  message resolves to ONE `turn_id` (`core/turn_identity`): the client's own
+  message id scoped by channel (iMessage guid, Telegram message_id, iOS
+  idempotency UUID), content-hash fallback otherwise. The exactly-once claim
+  keys on it when present — a transport retry (same id) is absorbed while the
+  user genuinely re-sending the same text (new id) executes, which semantic
+  fingerprints could not distinguish. Every ledger event stamps the ambient
+  turn_id (alembic `turnid001`), the seed of the end-to-end turn trace.
 - **Conversational undo/restore** (`core/ledger_undo.py`) — "undo" / "bring
   back the fries" is a DETERMINISTIC inverse on the event ledger, zero model
   calls: created→delete, updated→rollback (update events now capture the

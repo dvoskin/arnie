@@ -265,11 +265,16 @@ class LedgerEvent(Base):
     __table_args__ = (
         Index("ix_ledger_events_user_time", "user_id", "created_at"),
         Index("ix_ledger_events_domain_entry", "domain", "entry_id"),
+        Index("ix_ledger_events_turn", "turn_id"),
     )
 
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     domain = Column(String, nullable=False, server_default="food")
+    # Canonical transaction identity (core/turn_identity, alembic turnid001):
+    # which inbound turn produced this write. Null for historical events and
+    # non-turn writes (health imports, background jobs).
+    turn_id = Column(String)
     entry_id = Column(Integer)               # domain entry id at event time
     daily_log_id = Column(Integer)           # day the entry belonged to
     event_type = Column(String, nullable=False)  # created | updated | deleted
