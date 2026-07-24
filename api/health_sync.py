@@ -32,13 +32,22 @@ class AppleWorkoutBody(BaseModel):
     """One completed HealthKit workout the native client read for the day.
     Mirrors the legacy webhook's `AppleWorkout` field-for-field so both ingest
     paths persist through the same `_process_apple_workouts` (per-day
-    replace-on-sync) with one `apple_health` ExerciseEntry contract."""
+    replace-on-sync, cross-source dedup, tombstones) with one `apple_health`
+    ExerciseEntry contract. The native WorkoutSample ships type/start/end/
+    energy_kcal + the HKWorkout uuid; older builds and the Shortcut ship
+    name/start_time/active_calories — accept both, or the app's fields are
+    silently dropped and prod grows nameless, dateless 'Workout' rows."""
     name: Optional[str] = None              # user-visible label, e.g. "Running"
     workout_type: Optional[str] = None      # raw HKWorkoutActivityType label; name fallback
+    type: Optional[str] = None              # native app's readable label
     duration_minutes: Optional[float] = None
     active_calories: Optional[float] = None
+    energy_kcal: Optional[float] = None     # native app's key for the same value
     distance_km: Optional[float] = None     # display metadata; not used by persist
-    start_time: Optional[str] = None        # ISO-8601 start instant; display metadata
+    start_time: Optional[str] = None        # ISO-8601 start instant (Shortcut key)
+    start: Optional[str] = None             # ISO-8601 start instant (native app key)
+    end: Optional[str] = None
+    uuid: Optional[str] = None              # HKWorkout UUID — the idempotency ref
 
 
 class HealthSnapshotBody(BaseModel):
@@ -82,24 +91,16 @@ async def post_snapshot(
         await upsert_health_snapshot(db, user.id, snap_date, **data)
 
         if payload.workouts:
-            # Persist via the legacy webhook's per-day replace-on-sync (one
-            # ExerciseEntry contract for native + Shortcuts; deletes the day's
-            # apple_health entries, re-inserts the batch — idempotent). Lazy
-            # import: api.app imports this router at startup, so a module-level
-            # import would be circular; by request time api.app is fully loaded.
-            #
-            # TZ CORRECTNESS: bucket each workout under ITS OWN local day (user
-            # timezone), NOT the request's UTC date. iOS reads workouts in the
-            # DEVICE-LOCAL day window and re-sends the full set each sync, so a
-            # UTC snap_date would file an evening-local workout on the next UTC
-            # day AND re-insert it next sync — double-counted on two calendar
-            # days (the review's confirmed bug). Keying on the workout's local
-            # start day keeps replace-on-sync idempotent across the UTC boundary.
+            # Persist via the shared apple ingest (one ExerciseEntry contract
+            # for native + Shortcuts). _process_apple_workouts owns day
+            # assignment (each workout's OWN start time, user tz + 4am
+            # rollover), per-day replace-on-sync, cross-source dedup against
+            # whoop/manual rows, and delete tombstones — no bucketing here.
+            # Lazy import: api.app imports this router at startup, so a
+            # module-level import would be circular; by request time api.app
+            # is fully loaded.
             from api.app import _process_apple_workouts
-            tz = getattr(user, "timezone", None) or "UTC"
-            for _wday, _ws in _bucket_workouts_by_local_day(
-                    payload.workouts, tz, snap_date).items():
-                await _process_apple_workouts(db, user.id, _wday, _ws)
+            await _process_apple_workouts(db, user, payload.workouts)
 
         return {"status": "ok", "date": str(snap_date)}
 
@@ -114,20 +115,6 @@ def _parse_instant(s: str) -> Optional[_datetime]:
     if dt.tzinfo is not None:
         dt = dt.astimezone(_timezone.utc).replace(tzinfo=None)
     return dt
-
-
-def _bucket_workouts_by_local_day(workouts, tz: str, fallback_day):
-    """Group workouts by the LOCAL day (user `tz`) of each one's start_time, so
-    replace-on-sync keys on the same day the device windowed them by — not the
-    request's UTC date. Workouts with no parseable start_time fall back to
-    `fallback_day` (the snapshot day). Returns {date: [workout, ...]}."""
-    by_day: dict = {}
-    for w in workouts or []:
-        st = getattr(w, "start_time", None)
-        ts = _parse_instant(st) if st else None
-        day = _weighin_day_of(ts, tz) if ts else fallback_day
-        by_day.setdefault(day, []).append(w)
-    return by_day
 
 
 class WeightSample(BaseModel):
