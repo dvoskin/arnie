@@ -120,13 +120,22 @@ Shipped:
   turn); concurrency settled by the constraint inside a SAVEPOINT; fails OPEN
   so a claim-infra hiccup never blocks a real meal. The Phase 1 in-process TTL
   registry remains as the fast path.
-- **Restore primitive** — `get_ledger_events(entry_id=…)` returns the deleted
-  payload; wiring a user-facing "restore" flow is Phase 3 UX.
+- **Conversational undo/restore** (`core/ledger_undo.py`) — "undo" / "bring
+  back the fries" is a DETERMINISTIC inverse on the event ledger, zero model
+  calls: created→delete, updated→rollback (update events now capture the
+  row's `before` state), deleted→restore through dedicated
+  `restore_food_entry` / `restore_exercise_entry` executor branches (row
+  recreated from the event payload, totals recomputed, restore appends its
+  own created event). Bounded to recent events (12h; name-restores 24h); an
+  uninvertible last event (water/weight for now) REFUSES rather than
+  skipping past it. Food + exercise; the plan feeds the same structured
+  pipeline (execution → snapshot → renderer).
 
 Remaining in Phase 2:
 
-- **Undo tokens**: surface each mutation's event id so cards can render
-  "Logged lunch · Undo" / "Removed fries · Restore" one-tap actions.
+- **Undo tokens in cards**: surface each mutation's event id so native cards
+  can render "Logged lunch · Undo" / "Removed fries · Restore" one-tap
+  actions (the conversational flow above is the backend for it).
 - **Card + narration from the same snapshot**: extend `TransactionSnapshot`
   into the card render path (`transaction_id`, `day_revision`,
   `affected_entries`, `batch_totals`, `day_totals`, `remaining_targets`).
