@@ -88,6 +88,11 @@ _YES_RE = re.compile(
     r"log\s+it|go(\s+ahead)?|do\s+it|confirm(ed)?|looks?\s+(good|right)|"
     r"that'?s\s+(right|correct|it)|ok(ay)?|k)[.!\s]*$", re.I)
 
+_NEGATED_RE = re.compile(
+    r"\b(?:do?n'?t\s+think|won'?t|not\s+(?:going\s+to|gonna|having)|"
+    r"no\s+longer|decided\s+against|skipp?(?:ing|ed)?|pass(?:ing)?\s+on|"
+    r"changed\s+my\s+mind|scrapp?(?:ing|ed))\b", re.I)
+
 _PLAN_RE = re.compile(
     r"\b(gonna|going\s+to|about\s+to|planning|plan\s+to|might|maybe|probably|"
     r"thinking\s+(?:about|of)|will\s+(?:have|eat|grab)|later\b(?!\s+than)|for\s+(?:tonight|tomorrow|the\s+(?:week|fridge|freezer))|to\s+(?:save|bring|eat\s+later)|not\s+sure)\b", re.I)
@@ -125,6 +130,8 @@ def applies(text: str) -> bool:
     t = (text or "").strip()
     if not t or len(t) > 500:
         return False
+    if _NEGATED_RE.search(t):
+        return False
     if _ACK_RE.match(t) or "?" in t:
         return False
     if _PLAN_RE.search(t) or _DESTRUCTIVE_RE.search(t) or _NONFOOD_RE.search(t):
@@ -142,6 +149,8 @@ def thread_routes(text: str) -> bool:
     nothing; destructive and workout/water stay with the main brain."""
     t = (text or "").strip()
     if not t or len(t) > 500:
+        return False
+    if _NEGATED_RE.search(t):
         return False
     if _ACK_RE.match(t) or "?" in t:
         return False

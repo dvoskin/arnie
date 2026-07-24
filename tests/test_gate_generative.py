@@ -66,7 +66,17 @@ def test_generative_routing_2500():
                f"{rng.choice(FOODS)}")
         assert FT.applies(msg), f"verbless report excluded: {msg!r}"
         checked += 1
-    assert checked == 2900
+    # Negated intent (declining/canceling) is coach conversation — never a
+    # report, in cold OR thread state (the chicken-bowl/carrots incident).
+    NEG = ["I don't think I'll have the", "won't be having the",
+           "not going to eat the", "decided against the", "skipping the",
+           "changed my mind on the", "passing on the"]
+    for _ in range(300):
+        msg = f"{rng.choice(NEG)} {rng.choice(FOODS)} later"
+        assert not FT.applies(msg), f"negation leaked in: {msg!r}"
+        assert not FT.thread_routes(msg), f"negation thread-routed: {msg!r}"
+        checked += 1
+    assert checked == 3200
 
 
 def test_generative_say_contract_800():
