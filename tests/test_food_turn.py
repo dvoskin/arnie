@@ -514,3 +514,20 @@ def test_say_contract_allows_product_name_digits():
                         "calories": 120}}]
     say = "Fage 0% logged, {batch_cal} cal. You're at {day_cal} with {cal_left} left."
     assert FT.enforce_say_contract(say, calls) == say
+
+
+def test_acquisition_verbs_route_structured():
+    """'Got like 6-7 oz of roast turkey' leaked to legacy — bare acquisition
+    verbs now enter the structured lane, where strict's confirm IS the
+    did-you-eat-it checkpoint (Danny 2026-07-24). Storage/future acquisitions
+    stay plans."""
+    for msg in ("Got like 6-7 oz of roast turkey and 100g of rice",
+                "bought a chicken shawarma wrap",
+                "ordered a poke bowl",
+                "picked up a cold brew"):
+        assert FT.applies(msg), msg
+    for msg in ("got a pizza for tonight",
+                "bought groceries for the week",
+                "picked up meal prep to eat later",
+                "got snacks for the fridge"):
+        assert not FT.applies(msg), msg

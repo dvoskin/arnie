@@ -69,6 +69,7 @@ def _mode(user) -> str:
 # exists to avoid an extra model call on obvious non-food turns, not to be right.
 _CONSUMED_RE = re.compile(
     r"\b(had|ate|eaten|having|grabbed|finished|snacked|downed|drank|"
+    r"got|bought|ordered|picked\s+up|"
     r"just\s+(?:had|ate|grabbed|finished|got|made)|"
     r"for\s+(?:breakfast|lunch|dinner|a\s+snack|dessert))\b", re.I)
 _MEAL_RE = re.compile(r"\b(breakfast|lunch|dinner|snack|dessert)\b", re.I)
@@ -89,7 +90,7 @@ _YES_RE = re.compile(
 
 _PLAN_RE = re.compile(
     r"\b(gonna|going\s+to|about\s+to|planning|plan\s+to|might|maybe|probably|"
-    r"thinking\s+(?:about|of)|will\s+(?:have|eat|grab)|later\b(?!\s+than)|not\s+sure)\b", re.I)
+    r"thinking\s+(?:about|of)|will\s+(?:have|eat|grab)|later\b(?!\s+than)|for\s+(?:tonight|tomorrow|the\s+(?:week|fridge|freezer))|to\s+(?:save|bring|eat\s+later)|not\s+sure)\b", re.I)
 # Correction/reference cues — IN scope (the logger owns updates, board-aware).
 # Deletes/removes stay legacy: destructive intent gets the big brain's judgment.
 _CORRECTION_RE = re.compile(
@@ -161,6 +162,11 @@ _SYSTEM = (
     '"carbs":26,"fats":18}],"say":"Bumped the birria to 2 tacos, {batch_cal} cal '
     'now."}\n'
     "RULES:\n"
+    "- ACQUISITION verbs (got, grabbed, bought, ordered, picked up) report "
+    "POSSESSION, not proof of eating. Log them as consumed when the shape says "
+    "eaten (a stated amount, meal context, past-tense flow); storage or future "
+    "markers ('for tonight', 'for the fridge', 'to bring to work') -> pass. On "
+    "strict the confirm settles it either way before anything is written.\n"
     "- MEAL SLOT per item when clear: words like breakfast/lunch/dinner win; a "
     "composed plate or main (protein + sides) is a MEAL even at an odd hour; a "
     "lone bar, bag, or drink between meals is a snack. A textbook snack must "
