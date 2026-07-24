@@ -178,6 +178,9 @@ _SYSTEM = (
     '"carbs":26,"fats":18}],"say":"Bumped the birria to 2 tacos, {batch_cal} cal '
     'now."}\n'
     "RULES:\n"
+    "- Judge each item's ambiguity INDEPENDENTLY: a clearly-stated neighbor "
+    "never excuses a vague main. 'Some caesar salad with chicken and 3 eggs' "
+    "still asks about the salad even though the eggs are exact.\n"
     "- ACQUISITION verbs (got, grabbed, bought, ordered, picked up) report "
     "POSSESSION, not proof of eating. Log them as consumed when the shape says "
     "eaten (a stated amount, meal context, past-tense flow); storage or future "
