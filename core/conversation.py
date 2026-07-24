@@ -520,6 +520,25 @@ async def run_turn(
     _retried = False  # turn-health: did the self-heal fire this turn?
     _messages_for_followup = messages
     _first_stop_reason = None
+    # ── Regeneration semantics (Danny 2026-07-24) ─────────────────────────────
+    # A [REGENERATE:<id>] turn re-runs with an explicit directive instead of the
+    # raw marker: a regen of a LOGGED turn means those board entries are suspect
+    # — revise via the board (update/remove), never duplicate; a regen of a
+    # SUGGESTION turn means vary the options ("give me some more options").
+    # The old row is superseded downstream and its card never carries forward.
+    for _m_r in reversed(messages):
+        if _m_r.get("role") == "user" and isinstance(_m_r.get("content"), str) \
+                and _m_r["content"].strip().startswith("[REGENERATE"):
+            _m_r["content"] = (
+                "[The user tapped regenerate on your previous reply. They were "
+                "not satisfied. Redo the turn properly. If that reply logged "
+                "anything, those entries sit on today's board and are suspect: "
+                "revise them through the board (update or remove), never log "
+                "duplicates. If it suggested meals, give clearly DIFFERENT "
+                "options this time, like they asked for more choices. Never "
+                "repeat the rejected reply.]")
+            break
+
     _user_text = next((m.get("content", "") for m in reversed(messages)
                        if m.get("role") == "user"), "")
     _prior_assistant = next((m.get("content", "") for m in reversed(messages)

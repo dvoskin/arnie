@@ -402,13 +402,11 @@ async def run_chat_turn(
             _family = {user.id, user.linked_to_user_id or user.id}
             if _old is not None and _old.user_id in _family and _old.id != turn.log_id:
                 _old.superseded_by = turn.log_id
-                # Receipts follow the ledger: the superseded turn's cards
-                # reference entries that still exist — carry them onto the
-                # replacing row (unless it minted its own, e.g. an update
-                # re-emitted corrected cards) so history reloads keep the
-                # receipt next to the regenerated reply.
-                if getattr(_old, "cards_json", None) and not getattr(_conv_row, "cards_json", None):
-                    _conv_row.cards_json = _old.cards_json
+                # Regeneration WIPES the old card (Danny 2026-07-24): a regen
+                # of a card-bearing turn means the action behind it was wrong
+                # — the replacing turn's OWN cards (or none) are the truth.
+                # The old card disappears with the superseded row; never carry
+                # it forward.
                 await db.commit()
     except Exception:
         logger.warning("supersede mark failed", exc_info=True)
