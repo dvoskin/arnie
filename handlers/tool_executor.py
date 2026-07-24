@@ -1051,6 +1051,26 @@ def _looks_branded(food_name: str) -> bool:
     return bool(_BRANDED_RE.search(food_name))
 
 
+def _best_matching_snippet(result, food_name: str) -> str | None:
+    """Source-selection guard shared by every web nutrition lane (task #27):
+    numbers may only be parsed from the single result whose text best matches
+    the food's own words — never from a concatenation where any variant's or
+    any other dish's page can win. Requires at least half the name tokens."""
+    import re as _re
+    tokens = [w for w in _re.findall(r"[a-z]{4,}", (food_name or "").lower())]
+    best_text, best_hits = "", 0
+    candidates = [(result.answer or "")] + [
+        (r.get("content") or "")[:800] for r in (result.results or [])[:4]]
+    for text in candidates:
+        tl = text.lower()
+        hits = sum(1 for t in tokens if t in tl)
+        if hits > best_hits:
+            best_hits, best_text = hits, text
+    if not best_text.strip() or best_hits < max(2, (len(tokens) + 1) // 2):
+        return None
+    return best_text
+
+
 async def _web_lookup_packaged(food_name: str, quantity) -> dict | None:
     """Tavily lookup for label-accurate macros on a branded packaged product.
 
@@ -1066,21 +1086,9 @@ async def _web_lookup_packaged(food_name: str, quantity) -> dict | None:
             q += f" per {quantity}"
         result = await _search(q)
         import re as _re
-        # VARIANT GUARD (task #27, the Sweet & Hot vs Zero Sugar bug): parse
-        # numbers only from the result that actually matches this product's
-        # words — never from a concatenation where any variant's page can win.
-        tokens = [w for w in _re.findall(r"[a-z]{4,}", food_name.lower())]
-        best_text, best_hits = "", 0
-        candidates = [(result.answer or "")] + [
-            (r.get("content") or "")[:800] for r in (result.results or [])[:4]]
-        for text in candidates:
-            tl = text.lower()
-            hits = sum(1 for t in tokens if t in tl)
-            if hits > best_hits:
-                best_hits, best_text = hits, text
-        if not best_text.strip() or best_hits < max(2, (len(tokens) + 1) // 2):
+        text = _best_matching_snippet(result, food_name)
+        if text is None:
             return None
-        text = best_text
         cal_m = _re.search(r"(\d{2,4})\s*(?:cal(?:ories)?|kcal)\b", text, _re.I)
         pro_m = _re.search(r"(\d{1,3})\s*g\s*(?:of\s*)?protein\b", text, _re.I)
         if not (cal_m and pro_m):
@@ -1295,8 +1303,9 @@ async def _web_lookup_meal_inner(food_name, quantity, _re) -> dict | None:
         q += f" {quantity}"
     q += " calories protein carbs fat nutrition"
     result = await _search(q)
-    text = (result.answer or "") + "\n" + "\n".join(
-        (r.get("content") or "")[:700] for r in (result.results or [])[:4])
+    text = _best_matching_snippet(result, food_name)
+    if text is None:
+        return None
     if not text.strip():
         return None
     from core.llm import chat
