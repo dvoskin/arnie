@@ -114,6 +114,13 @@ _NONFOOD_RE = re.compile(
     r"treadmill|jump\s*rope|min(?:ute)?s?\s+of)\b", re.I)
 
 
+_PORTION_SHAPE_RE = re.compile(
+    r"(?:\b\d+(?:\.\d+)?|\bhalf\s+a?n?|\ba\s+few|\bcouple\s+of)\s*"
+    r"(?:oz|ounces?|g|grams?|kg|ml|l|cups?|tbsp|tsp|slices?|bars?|bags?|"
+    r"bowls?|plates?|servings?|scoops?|pieces?|handfuls?|cans?|bottles?|"
+    r"packs?|eggs?|strips?)\b", re.I)
+
+
 def applies(text: str) -> bool:
     t = (text or "").strip()
     if not t or len(t) > 500:
@@ -123,7 +130,7 @@ def applies(text: str) -> bool:
     if _PLAN_RE.search(t) or _DESTRUCTIVE_RE.search(t) or _NONFOOD_RE.search(t):
         return False
     return bool(_CONSUMED_RE.search(t) or _MEAL_RE.search(t)
-                or _CORRECTION_RE.search(t))
+                or _CORRECTION_RE.search(t) or _PORTION_SHAPE_RE.search(t))
 
 
 def thread_routes(text: str) -> bool:

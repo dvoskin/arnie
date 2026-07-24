@@ -58,7 +58,15 @@ def test_generative_routing_2500():
             assert not FT.applies(msg), f"ack leaked in: {msg!r}"
             assert not FT.thread_routes(msg), f"ack thread-routed: {msg!r}"
         checked += 1
-    assert checked == 2500
+    # Verbless portion-shape reports (no consumed verb at all) route IN —
+    # the quantity+unit shape IS the food signal.
+    for _ in range(400):
+        msg = (f"{rng.choice(['2', '6', '100', 'half a', 'a few'])} "
+               f"{rng.choice(['oz', 'g', 'slices', 'bars', 'cups', 'bowls'])} "
+               f"{rng.choice(FOODS)}")
+        assert FT.applies(msg), f"verbless report excluded: {msg!r}"
+        checked += 1
+    assert checked == 2900
 
 
 def test_generative_say_contract_800():
