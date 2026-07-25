@@ -47,18 +47,18 @@ services:
         fromDatabase:
           name: arnie-db
           property: connectionString
-      # Turn coordinator (core/turns): new_execute owns execution ONLY for
-      # lanes explicitly enabled via TURN_COORDINATOR_LANES — none yet, so
-      # this stages the rollout without changing behavior (Danny 2026-07-24).
+      # Turn coordinator (core/turns): OBSERVE stage — runs safe stages and
+      # records what it would do; legacy executes. Promoted to new_execute
+      # separately, after the resolver rollout (staged per #23's plan).
       - key: TURN_COORDINATOR_MODE
-        value: new_execute
-      # Nutrition resolver: SHADOW is the built stage (observes, never votes;
-      # its disagreement telemetry is the promotion gate). LIVE is pre-set so
-      # the moment the live stage ships it is already on.
-      - key: NUTRITION_RESOLVER_SHADOW
-        value: "1"
-      - key: NUTRITION_RESOLVER_LIVE
-        value: "1"
+        value: new_observe
+      # Nutrition resolver LIVE for ALL users (Danny 2026-07-25): empty
+      # allowlist = everyone. Owns only which candidate's nutrients commit;
+      # micros carried, unresolved/no-calorie never promotes, crash falls to
+      # legacy. Shadow comparison keeps logging in live mode (the record of
+      # what changed); 2.5x calorie moves log LOUD, never blocked.
+      - key: NUTRITION_RESOLVER_MODE
+        value: live
 
       - key: ARNIE_USERS_DIR
         value: /data/users
