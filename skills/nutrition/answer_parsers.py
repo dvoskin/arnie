@@ -103,9 +103,32 @@ _FRACTION_WORDS = {
 }
 
 _PERCENT_RE = re.compile(r"(\d{1,3})\s*%")
-_AMOUNT_RE = re.compile(
-    r"(\d+(?:\.\d+)?)\s*(g|grams?|oz|ounces?|ml|l|liters?|litres?|cups?|"
-    r"tbsp|tsp|slices?|pieces?|servings?|bottles?|cans?|bars?)\b", re.I)
+_UNITS = (r"g|grams?|oz|ounces?|ml|l|liters?|litres?|cups?|tbsp|tablespoons?|"
+          r"tsp|teaspoons?|slices?|pieces?|servings?|bottles?|cans?|bars?|"
+          r"scoops?|handfuls?|bowls?|plates?|glasses|glass|packets?")
+_AMOUNT_RE = re.compile(rf"(\d+(?:\.\d+)?)\s*({_UNITS})\b", re.I)
+
+#: Number words, so a portion answer does not have to be typed as a digit.
+#: "about a cup" is how people actually answer "how much rice?", and requiring
+#: "1 cup" sent every one of those answers back through the interpreter.
+_WORD_AMOUNTS = {"a": 1.0, "an": 1.0, "one": 1.0, "two": 2.0, "three": 3.0,
+                 "four": 4.0, "five": 5.0, "six": 6.0, "seven": 7.0,
+                 "eight": 8.0, "ten": 10.0, "half": 0.5, "quarter": 0.25}
+_WORD_AMOUNT_RE = re.compile(
+    rf"\b({'|'.join(_WORD_AMOUNTS)})\s+(?:of\s+)?(?:a\s+)?({_UNITS})\b", re.I)
+
+#: Ordinal selections. Offered a list, people answer by position at least as
+#: often as by name, and "the first one" resolving to nothing sent them back to
+#: retype the product.
+#: Ordinals only — not cardinals. "two" is a count far more often than it is a
+#: position, and reading it as "the second option" would silently pick a
+#: product from an answer about quantity.
+_ORDINALS = {"first": 0, "1st": 0, "second": 1, "2nd": 1, "third": 2,
+             "3rd": 2, "fourth": 3, "4th": 3}
+_ORDINAL_RE = re.compile(
+    rf"^\s*(?:the\s+)?(?:#\s*(\d)|({'|'.join(_ORDINALS)}))\s*(?:one|option)?"
+    r"\s*$", re.I)
+_LAST_RE = re.compile(r"^\s*(?:the\s+)?last\s*(?:one|option)?\s*$", re.I)
 
 
 def parse_fraction(text: str) -> Optional[float]:
@@ -139,10 +162,18 @@ def parse_quantity_answer(text: str, question=None) -> ClarificationAnswer:
             values={"stated_amount": float(m.group(1)),
                     "stated_unit": m.group(2).lower().rstrip(".")},
             confidence=0.95)
+    # A fraction of the thing beats a word amount: "half a bottle" is 0.5 of a
+    # bottle, not one bottle. Checked in that order for exactly that reason.
     fraction = parse_fraction(text)
     if fraction is not None:
         return ClarificationAnswer(values={"consumed_fraction": fraction},
                                    confidence=0.9)
+    m = _WORD_AMOUNT_RE.search(text or "")
+    if m:
+        return ClarificationAnswer(
+            values={"stated_amount": _WORD_AMOUNTS[m.group(1).lower()],
+                    "stated_unit": m.group(2).lower().rstrip(".")},
+            confidence=0.8)
     return UNPARSED
 
 
@@ -194,6 +225,10 @@ def parse_product_selection(text: str,
         # and guessing here writes the wrong bottle to the ledger.
         return UNPARSED
 
+    chosen = _by_position(text, options)
+    if chosen is not None:
+        return _selection(chosen, question, confidence=0.9)
+
     answer_tokens = _tokens(text)
     if not answer_tokens:
         return UNPARSED
@@ -212,7 +247,27 @@ def parse_product_selection(text: str,
     if len(scored) > 1 and scored[0][0] == scored[1][0]:
         return UNPARSED
 
-    best = scored[0][2]
+    return _selection(scored[0][2], question,
+                      confidence=round(0.6 + 0.35 * scored[0][0], 3))
+
+
+def _by_position(text: str, options: tuple):
+    """The option an ordinal answer names, or None.
+
+    Only unambiguous positions count: "the third one" against two options names
+    nothing, and resolving it to the last would be a guess wearing a number.
+    """
+    if _LAST_RE.match(text or ""):
+        return options[-1] if options else None
+    m = _ORDINAL_RE.match(text or "")
+    if m is None:
+        return None
+    index = (int(m.group(1)) - 1 if m.group(1)
+             else _ORDINALS[m.group(2).lower()])
+    return options[index] if 0 <= index < len(options) else None
+
+
+def _selection(best, question, *, confidence: float) -> ClarificationAnswer:
     fields = tuple(question.requested_fields) if question else ()
     values = {}
     if isinstance(best.value, dict):
@@ -225,8 +280,7 @@ def parse_product_selection(text: str,
         if target:
             values[target] = (best.value if best.value is not None
                               else best.label)
-    return ClarificationAnswer(values=values,
-                               confidence=round(0.6 + 0.35 * scored[0][0], 3),
+    return ClarificationAnswer(values=values, confidence=confidence,
                                matched_candidate_id=best.candidate_id)
 
 

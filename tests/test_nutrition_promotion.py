@@ -318,3 +318,56 @@ async def test_the_executor_keeps_the_cascade_when_not_live(db, make_user,
         {"quantity": "1 bowl", "calories": 400, "protein": 28, "carbs": 30,
          "fats": 18})
     assert out.calories != 80          # the resolver observed, did not vote
+
+
+# ── an unscalable portion must not reach the ledger (PR #28) ─────────────────
+def test_an_unscalable_portion_declines_promotion():
+    """The end of the teaspoon-of-sugar path.
+
+    When the portion cannot be scaled the resolution carries no nutrients, and
+    `promotable` refuses it — so the legacy pass commits instead of a per-100g
+    row being written as if it were the portion.
+    """
+    from skills.nutrition.models import FoodResolutionRequest
+    from skills.nutrition.promotion import promotable
+    from skills.nutrition.resolver import resolve
+    from skills.nutrition.candidates import Candidate
+    from skills.nutrition.models import profile_from_values
+    from skills.nutrition.provenance import MatchGrade, SourceTier
+    from skills.nutrition.scaling import Per100g
+
+    candidate = Candidate(
+        source="usda", tier=SourceTier.GENERIC_EXACT, name="Salad, garden",
+        profile=profile_from_values("usda", basis="per_100g", confidence=0.8,
+                                    calories=20, protein=1),
+        basis=Per100g(), reported_grade=MatchGrade.EXACT)
+    out = resolve(FoodResolutionRequest(food_name="Salad, garden",
+                                        raw_quantity="1 salad"), [candidate])
+
+    assert out.nutrients.is_empty, out.nutrients.as_dict()
+    assert any("portion not scaled" in w for w in out.warnings)
+    assert not promotable(out)
+
+
+def test_a_scalable_vague_portion_does_promote():
+    """The other half of the same rule: a portion the ontology CAN size
+    resolves and promotes. Refusing everything vague would be a different bug
+    with the same shape."""
+    from skills.nutrition.models import FoodResolutionRequest, profile_from_values
+    from skills.nutrition.promotion import promotable
+    from skills.nutrition.resolver import resolve
+    from skills.nutrition.candidates import Candidate
+    from skills.nutrition.provenance import MatchGrade, SourceTier
+    from skills.nutrition.scaling import Per100g
+
+    candidate = Candidate(
+        source="usda", tier=SourceTier.GENERIC_EXACT, name="Nuts, almonds",
+        profile=profile_from_values("usda", basis="per_100g", confidence=0.8,
+                                    calories=579, protein=21),
+        basis=Per100g(), reported_grade=MatchGrade.EXACT)
+    out = resolve(FoodResolutionRequest(food_name="Nuts, almonds",
+                                        raw_quantity="a handful"), [candidate])
+
+    assert promotable(out)
+    assert 160 <= out.nutrients.amount("calories") <= 190
+    assert any("ontology" in a for a in out.assumptions), out.assumptions

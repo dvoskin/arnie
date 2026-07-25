@@ -298,6 +298,12 @@ def decide(items, *, mode: str = "moderate", round_number: int = 0,
     for item in items or []:
         if item.resolution_status is ResolutionStatus.REJECTED:
             continue
+        # Assumptions already recorded ON the item — a learned preference
+        # filling an identity gap is the main one — were being dropped here, so
+        # the user was never told a default had been applied. A default applied
+        # silently is indistinguishable from a fact, and a correction has
+        # nothing to contradict.
+        assumptions.extend(item.assumptions)
         material = tuple(a for a in item.ambiguities if a.is_material)
         if not material:
             ready.append(item.staged_item_id)
