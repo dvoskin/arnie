@@ -15,19 +15,17 @@ import pytest
 from skills.nutrition.candidates import Candidate
 from skills.nutrition.models import FoodResolutionRequest, profile_from_values
 from skills.nutrition.resolver import resolve, should_ask
-from skills.nutrition.scaling import Per100g, Per100ml, PerServing, PerUnit
+from skills.nutrition.provenance import SourceTier
+from skills.nutrition.scaling import basis_from_spec
 from tests.gold.nutrition_cases import ALL_CASES
 
-_BASES = {"per_100g": Per100g, "per_100ml": Per100ml}
-
-
 def _basis(spec):
-    kind = spec.get("basis", "per_100g")
-    if kind in _BASES:
-        return _BASES[kind]()
-    if kind == "per_serving":
-        return PerServing(serving_mass_g=spec.get("serving_mass_g"))
-    return PerUnit(unit_mass_g=spec.get("serving_mass_g"))
+    # `as_served` follows the tier: a branded/USDA serving is measured, every
+    # other tier describes the helping the user actually had.
+    return basis_from_spec(
+        spec.get("basis", "per_100g"),
+        serving_mass_g=spec.get("serving_mass_g"),
+        as_served=SourceTier(spec["tier"]).describes_as_served)
 
 
 def _candidate(spec):

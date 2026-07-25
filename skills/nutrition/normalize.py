@@ -20,7 +20,8 @@ import re
 from dataclasses import replace
 from typing import Optional
 
-from skills.nutrition.models import NormalizedQuantity
+from skills.nutrition.models import (COUNT_BASIS_ESTIMATE, COUNT_BASIS_UNIT,
+                                     NormalizedQuantity)
 
 #: Mass units → grams. Exact conversions; no judgement involved.
 _MASS_G = {
@@ -51,6 +52,62 @@ _COUNT_UNITS = {
     "handfuls", "wing", "wings", "fry", "fries", "cookie", "cookies",
     "cracker", "crackers", "chip", "chips", "nugget", "nuggets",
 }
+
+#: Count units that name a container or a rough helping rather than a discrete
+#: unit of the food. They still take a count — "two bowls" is two of something —
+#: but that count is not one of a label's servings, so scaling has to reach for
+#: the estimated mass instead. Keeping them in `_COUNT_UNITS` is what gets them
+#: a mass estimate at all; this set is what stops that estimate being ignored.
+_VAGUE_COUNT_UNITS = {
+    "scoop", "scoops", "handful", "handfuls", "bowl", "bowls", "plate",
+    "plates", "bite", "bites", "spoonful", "spoonfuls", "drizzle", "drizzles",
+    "splash", "splashes", "dash", "dashes",
+}
+
+#: Drinkware the user poured into, as opposed to a sealed product container. A
+#: can and a bottle are the unit the label describes; a glass is not.
+_VAGUE_VESSELS = {"glass", "mug", "shot"}
+
+
+def _singular(word: str) -> str:
+    """Crude, but correct on the words this module actually compares.
+
+    `rstrip("s")` turned "glass" into "glas", which let every glass through as a
+    countable unit. The sibilant plurals matter here because the vessels and
+    containers are full of them: glasses, dishes, boxes.
+    """
+    if word.endswith(("ses", "shes", "ches", "xes", "zes")):
+        return word[:-2]
+    if word.endswith("s") and not word.endswith("ss"):
+        return word[:-1]
+    return word
+
+
+def _count_basis(unit_word: str, food_name: str = "") -> str:
+    """Whether a count of `unit_word` counts a label's units or a container.
+
+    Deny-list rather than allow-list, because the countable nouns are open-ended
+    and the vague ones are not: "1 burger", "1 platter" and "1 quesadilla" are
+    all genuine single units of the food, and no list will ever hold them all.
+    What CAN be enumerated is the measures that only ever describe a helping.
+
+    Unless the food IS that measure. "1 bowl" of a Chipotle burrito bowl counts
+    the product, not a helping of it — the vague word is the item's own name, so
+    the deny-list has to yield to the food name. Same for a poke bowl, a bread
+    bowl, a cheese plate.
+
+    An empty word means the food is its own unit ("2 eggs") — also a unit count.
+    """
+    word = (unit_word or "").lower().strip()
+    vague = word in _VAGUE_COUNT_UNITS or _singular(word) in _VAGUE_VESSELS
+    if not vague:
+        return COUNT_BASIS_UNIT
+    food_words = {_singular(w)
+                  for w in re.findall(r"[a-z]+", (food_name or "").lower())}
+    if _singular(word) in food_words:
+        return COUNT_BASIS_UNIT
+    return COUNT_BASIS_ESTIMATE
+
 
 _WORD_NUMBERS = {
     "a": 1, "an": 1, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
@@ -211,13 +268,25 @@ VESSEL_ML = {
 
 
 def vessel_volume(unit_text: str) -> Optional[tuple]:
-    """(ml, ± ml) for a named drink vessel, or None. Plurals count: "two
-    bottles" is two vessels, and matching only the singular sent it down the
-    unweighable-count path."""
+    """(name, ml, ± ml) for a named drink vessel, or None.
+
+    The NAME is returned because the caller cannot recover it from the phrase:
+    "large glass" leads with the size word, and taking the first token recorded
+    the vessel as "large". The size word belongs to the volume, not the name, so
+    it is applied here — a large glass is more than a glass, which is the whole
+    reason the user said it.
+
+    Plurals count: "two bottles" is two vessels, and matching only the singular
+    sent it down the unweighable-count path.
+    """
     text = (unit_text or "").lower()
     for name in sorted(VESSEL_ML, key=len, reverse=True):
         if re.search(rf"\b{re.escape(name)}e?s?\b", text):
-            return VESSEL_ML[name]
+            per, spread = VESSEL_ML[name]
+            factor = next((f for mod, f in sorted(_SIZE_MODIFIERS.items(),
+                                                  key=lambda kv: -len(kv[0]))
+                           if re.search(rf"\b{re.escape(mod)}\b", text)), 1.0)
+            return name, round(per * factor, 1), round(spread * factor, 1)
     return None
 
 
@@ -254,7 +323,10 @@ def _from_ontology(raw: str, unit_text: str, food_name: str, amount: float
     dist = result.distribution
     return NormalizedQuantity(
         amount=amount, unit=result.unit, grams=result.mass_equivalent_g,
-        count=amount, unit_label=raw or f"{_fmt(amount)} {result.unit}",
+        # A vague measure by construction — but "1 bowl" of a burrito bowl still
+        # counts the product, so the food name gets the same say it gets above.
+        count=amount, count_basis=_count_basis(result.unit, food_name),
+        unit_label=raw or f"{_fmt(amount)} {result.unit}",
         uncertainty_g=dist.uncertainty_g,
         assumptions=(f"{result.unit} estimated at "
                      f"{_fmt(result.mass_equivalent_g)}g "
@@ -288,7 +360,8 @@ def _ontology_mass(food_name: str, measure: str, unit_text: str,
 
 def _volume(raw: str, unit_text: str, food_name: str, amount: float, ml: float,
             token: str, vessel_note: str = "",
-            count: Optional[float] = None) -> NormalizedQuantity:
+            count: Optional[float] = None,
+            count_basis: str = "") -> NormalizedQuantity:
     """A volume portion, with a mass alongside it where we can honestly state
     one.
 
@@ -307,7 +380,7 @@ def _volume(raw: str, unit_text: str, food_name: str, amount: float, ml: float,
         grams, density, category = bridged
         return NormalizedQuantity(
             amount=amount, unit="ml", milliliters=ml, grams=grams,
-            count=count, unit_label=label,
+            count=count, count_basis=count_basis, unit_label=label,
             uncertainty_g=round(grams * 0.15, 1),
             assumptions=notes + (f"{_fmt(ml)}ml estimated at {_fmt(grams)}g "
                                  f"(density {density} g/ml for {category})",))
@@ -321,7 +394,8 @@ def _volume(raw: str, unit_text: str, food_name: str, amount: float, ml: float,
             grams, uncertainty, source = solid
             return NormalizedQuantity(
                 amount=amount, unit="ml", milliliters=ml, grams=grams,
-                count=count, unit_label=label, uncertainty_g=uncertainty,
+                count=count, count_basis=count_basis, unit_label=label,
+                uncertainty_g=uncertainty,
                 assumptions=notes + (f"{_fmt(amount)} cup estimated at "
                                      f"{_fmt(grams)}g ({source})",))
     # Volume only. That is a complete answer for a per-100ml source and an
@@ -329,6 +403,7 @@ def _volume(raw: str, unit_text: str, food_name: str, amount: float, ml: float,
     # papering over with water density.
     return NormalizedQuantity(
         amount=amount, unit="ml", milliliters=ml, count=count,
+        count_basis=count_basis,
         unit_label=label, assumptions=notes)
 
 
@@ -354,14 +429,21 @@ def normalize_quantity(raw: str, food_name: str = "") -> NormalizedQuantity:
     # A named drink vessel is a volume too — the size belongs to the glass.
     vessel = vessel_volume(unit_text)
     if vessel is not None:
-        per, spread = vessel
-        name = unit_text.split()[0]
+        name, per, spread = vessel
         # `count` stays set: "a can" is one container as well as 355 ml, and a
         # per-serving source scales by the count. Dropping it turned every
         # canned food with a per-serving label into an unscalable portion.
+        #
+        # But only a SEALED container is the label's unit. A glass is drinkware
+        # the user poured into, so its count is an estimate of a helping and the
+        # volume is the honest currency.
+        basis = _count_basis(name, food_name)
+        surface = next((t for t in unit_text.split()
+                        if t.rstrip("s") == name), name)
         return _volume(raw, unit_text, food_name, amount,
                        round(amount * per, 1), name, count=amount,
-                       vessel_note=(f"{name} estimated at {_fmt(per)}ml "
+                       count_basis=basis,
+                       vessel_note=(f"{surface} estimated at {_fmt(per)}ml "
                                     f"(± {_fmt(spread)}ml)"))
 
     # Countable: the mass, if we can estimate it, comes from the FOOD.
@@ -390,6 +472,7 @@ def normalize_quantity(raw: str, food_name: str = "") -> NormalizedQuantity:
             # kind of confident wrong number this layer exists to prevent.
             return NormalizedQuantity(
                 amount=amount, unit=(head or "serving"), count=amount,
+                count_basis=_count_basis(head, food_name),
                 unit_label=raw or f"{amount} {head or 'serving'}",
                 assumptions=("portion mass unknown",))
         grams, spread = est
@@ -399,6 +482,7 @@ def normalize_quantity(raw: str, food_name: str = "") -> NormalizedQuantity:
         return NormalizedQuantity(
             amount=amount, unit=(head or "piece"),
             grams=round(amount * grams, 1), count=amount,
+            count_basis=_count_basis(head, food_name),
             unit_label=raw or f"{amount} {head or 'piece'}",
             uncertainty_g=round(amount * spread, 1),
             assumptions=tuple(assumptions))
@@ -411,6 +495,7 @@ def normalize_quantity(raw: str, food_name: str = "") -> NormalizedQuantity:
         return from_ontology
     return NormalizedQuantity(
         amount=amount, unit=head or "serving", count=amount,
+        count_basis=_count_basis(head, food_name),
         unit_label=raw or food_name,
         assumptions=("unrecognized unit, treated as a serving",))
 

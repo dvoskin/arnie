@@ -102,7 +102,8 @@ def candidates_from_live(food_name: str, inp: dict, *, memory=None, usda=None,
                 confidence=float(web_row.get("confidence") or 0.6),
                 estimated=not branded,
                 **{k: web_row.get(k) for k in _NUTRIENTS}),
-            basis=PerServing(serving_mass_g=web_row.get("serving_mass_g")),
+            basis=PerServing(serving_mass_g=web_row.get("serving_mass_g"),
+                             as_served=not branded),
             reported_grade=(MatchGrade.CLOSE if branded
                             else MatchGrade.CATEGORY)))
 
@@ -118,7 +119,7 @@ def candidates_from_live(food_name: str, inp: dict, *, memory=None, usda=None,
                 confidence=0.95 if inp.get("user_label") else 0.4,
                 estimated=not inp.get("user_label"),
                 **{k: inp.get("fats" if k == "fat" else k) for k in _NUTRIENTS}),
-            basis=PerServing(),
+            basis=PerServing(as_served=True),
             reported_grade=(MatchGrade.EXACT if inp.get("user_label")
                             else MatchGrade.CATEGORY)))
     return out

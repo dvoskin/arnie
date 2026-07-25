@@ -181,6 +181,34 @@ class FoodAssumption:
             f"{self.assumed_value}.")
 
 
+#: Quantity fields that establish HOW MUCH was consumed. Any one of them
+#: answers any quantity ambiguity — "about a cup", "half of it" and "roughly
+#: 300 g" are three shapes of the same answer.
+#:
+#: `descriptor` is deliberately absent: "some" is the vagueness, not its
+#: resolution. So are `mass_confidence` and `mass_range_g`, which describe how
+#: unsure we are rather than what was eaten.
+_CONSUMPTION_FIELDS = frozenset({
+    "stated_amount", "stated_unit", "consumed_fraction", "container_count",
+    "estimated_mass_g",
+})
+
+
+def _settled_by(ambiguity, supplied: set) -> bool:
+    """Whether these supplied field names could settle this ambiguity."""
+    field_name = getattr(ambiguity, "field_name", "")
+    if field_name in supplied:
+        return True
+    if field_name in QuantityIntent.__dataclass_fields__:
+        return bool(supplied & _CONSUMPTION_FIELDS)
+    if field_name in FoodIdentity.__dataclass_fields__:
+        # Identity fields are independently askable — knowing the brand is not
+        # knowing the variant — so only the field itself settles it. A barcode
+        # is the exception: it names the product outright.
+        return "barcode" in supplied
+    return False
+
+
 @dataclass(frozen=True)
 class StagedFoodItem:
     """One food, with everything known and unknown about it.
@@ -221,10 +249,12 @@ class StagedFoodItem:
     def with_assumption(self, assumption: FoodAssumption) -> "StagedFoodItem":
         return replace(self, assumptions=self.assumptions + (assumption,))
 
-    def resolving(self, **fields) -> "StagedFoodItem":
-        """Apply answered fields to identity and quantity, and drop the
-        ambiguities they settled. The item's IDENTITY as a staged row never
-        changes — that is what makes a late answer safe."""
+    def _applying(self, **fields) -> "StagedFoodItem":
+        """Apply answered fields to identity and quantity, settling nothing.
+
+        Split out from `resolving()` so `answering()` can decide for itself
+        which ambiguities an answer settled — including deciding that it settled
+        fewer than the fields would suggest."""
         identity_fields = {k: v for k, v in fields.items()
                            if k in FoodIdentity.__dataclass_fields__}
         quantity_fields = {k: v for k, v in fields.items()
@@ -236,12 +266,20 @@ class StagedFoodItem:
         if quantity_fields:
             item = replace(item, quantity=replace(item.quantity,
                                                   **quantity_fields))
+        return item
+
+    def resolving(self, **fields) -> "StagedFoodItem":
+        """Apply answered fields to identity and quantity, and drop the
+        ambiguities they settled. The item's IDENTITY as a staged row never
+        changes — that is what makes a late answer safe."""
+        item = self._applying(**fields)
         settled = set(fields)
         return replace(item, ambiguities=tuple(
             a for a in item.ambiguities if a.field_name not in settled))
 
-    def answering(self, question, **fields) -> "StagedFoodItem":
-        """Apply an answer and settle the ambiguities THE QUESTION named.
+    def answering(self, question, settled_ambiguity_ids=None,
+                  **fields) -> "StagedFoodItem":
+        """Apply an answer and settle the ambiguities the answer ACTUALLY filled.
 
         `resolving()` settles by field name, which is right when the answer
         fills exactly the field that was asked for. But a question can be
@@ -251,15 +289,33 @@ class StagedFoodItem:
         standing, and the next round asks the same question again — the loop
         `ambiguity_id` exists to prevent and that nothing was reading.
 
-        The question is what the user answered. Its `ambiguity_ids` are what
-        the answer settled.
+        The other direction is worse, and is what this used to do: clearing
+        every ambiguity the question NAMED. Questions are bundled — "Which
+        Fairlife was it, and how much did you drink?" names two — so answering
+        "Elite" cleared the quantity too, and the item committed with a product
+        we knew and an amount we had invented. A partial answer to a bundled
+        question is the normal case, not the exception.
+
+        So each named ambiguity is settled only if the fields supplied could
+        settle THAT ambiguity. A caller who knows exactly what it resolved may
+        say so with `settled_ambiguity_ids` and skip the inference.
         """
-        item = self.resolving(**fields)
-        answered = set(getattr(question, "ambiguity_ids", ()) or ())
-        if not answered:
-            return item
+        item = self._applying(**fields)
+        if settled_ambiguity_ids is not None:
+            settled = set(settled_ambiguity_ids)
+        else:
+            named = set(getattr(question, "ambiguity_ids", ()) or ())
+            supplied = {k for k, v in fields.items() if v is not None}
+            # A field supplied outright settles its own ambiguity wherever it
+            # sits. Answering in a different shape than we asked only settles
+            # what the question named — that is the scope the user was replying
+            # within, and inferring past it is how the bundle got cleared whole.
+            settled = {a.ambiguity_id for a in self.ambiguities
+                       if a.field_name in supplied
+                       or (a.ambiguity_id in named
+                           and _settled_by(a, supplied))}
         return replace(item, ambiguities=tuple(
-            a for a in item.ambiguities if a.ambiguity_id not in answered))
+            a for a in item.ambiguities if a.ambiguity_id not in settled))
 
 
 # ── construction ──────────────────────────────────────────────────────────────
