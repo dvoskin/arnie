@@ -112,6 +112,14 @@ class QuantityIntent:
     """
     stated_amount: Optional[float] = None
     stated_unit: Optional[str] = None
+    #: What the INTERPRETER produced when the user did not state an amount.
+    #: Kept apart from `stated_*` because the difference is the whole point:
+    #: "a scoop of peanut butter" arriving as 1 tbsp is a number we chose, and
+    #: a field that cannot tell the two apart reports it as the user's own —
+    #: which is how a 190-calorie assumption reached a review turn disguised as
+    #: a fact the user had already given us.
+    inferred_amount: Optional[float] = None
+    inferred_unit: Optional[str] = None
     consumed_fraction: Optional[float] = None
     container_count: Optional[float] = None
     estimated_mass_g: Optional[float] = None
@@ -126,6 +134,22 @@ class QuantityIntent:
         return self.stated_amount is not None and bool(self.stated_unit)
 
     @property
+    def is_inferred(self) -> bool:
+        """We chose a number the user did not give. Disclosable, correctable,
+        and never presentable as though they had given it."""
+        return self.inferred_amount is not None
+
+    @property
+    def amount(self) -> Optional[float]:
+        """Whatever amount is in force, stated or inferred."""
+        return (self.stated_amount if self.stated_amount is not None
+                else self.inferred_amount)
+
+    @property
+    def unit(self) -> Optional[str]:
+        return self.stated_unit or self.inferred_unit
+
+    @property
     def is_vague(self) -> bool:
         return (not self.is_stated and self.consumed_fraction is None
                 and self.container_count is None)
@@ -133,6 +157,8 @@ class QuantityIntent:
     def describe(self) -> str:
         if self.is_stated:
             return f"{_trim(self.stated_amount)} {self.stated_unit}"
+        if self.is_inferred:
+            return f"{_trim(self.inferred_amount)} {self.inferred_unit or ''}".strip()
         if self.consumed_fraction is not None:
             return f"{_fraction_words(self.consumed_fraction)}"
         if self.container_count is not None:

@@ -147,6 +147,12 @@ PORTION_ONTOLOGY = {
         "protein_powder": (32.0, 28.0, 38.0, 0.80),
         "ice_cream":      (66.0, 50.0, 90.0, 0.62),
         "rice":           (90.0, 65.0, 120.0, 0.58),
+        # A "scoop" of peanut butter is a spoon, not an ice-cream scoop —
+        # one to two tablespoons. The 45 g default put it at nearly three,
+        # which is 270 calories of peanut butter for a phrase that usually
+        # means one heaped spoonful.
+        "nut_butter":     (24.0, 16.0, 34.0, 0.55),
+        "yogurt":         (60.0, 40.0, 85.0, 0.55),
         "default":        (45.0, 25.0, 75.0, 0.45),
     },
     "drizzle": {

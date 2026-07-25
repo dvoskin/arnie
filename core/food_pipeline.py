@@ -29,6 +29,7 @@ The pipeline never writes. It decides what may be written.
 from __future__ import annotations
 
 import logging
+import re
 import os
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -102,10 +103,19 @@ def stage_items(data: Mapping, *, turn_id: str, message: str = "",
         brand = (str(raw.get("brand") or "").strip() or None)
         stated = _item_is_stated(dict(raw), message)
         amount = raw.get("amount")
+        value = float(amount) if _is_number(amount) else None
+        unit = str(raw.get("unit") or "").strip() or None
+        # The amount lands in `stated_*` ONLY when the user gave it. An
+        # interpreter-chosen amount goes to `inferred_*`, so everything
+        # downstream can tell "they said one tablespoon" from "we picked one
+        # tablespoon" — which the single pair of fields could not, and which is
+        # why "a scoop" reached the user as an approved fact.
         quantity = QuantityIntent(
-            stated_amount=(float(amount) if _is_number(amount) else None),
-            stated_unit=(str(raw.get("unit") or "").strip() or None),
-            descriptor=(None if stated else str(raw.get("unit") or "") or None))
+            stated_amount=(value if stated else None),
+            stated_unit=(unit if stated else None),
+            inferred_amount=(None if stated else value),
+            inferred_unit=(None if stated else unit),
+            descriptor=(None if stated else unit))
         items.append(StagedFoodItem(
             staged_item_id=make_staged_item_id(turn_id, ordinal, food),
             original_text=food, ordinal=ordinal,
@@ -234,6 +244,10 @@ def plan_turn(data: Mapping, *, turn_id: str, message: str = "",
         if not items:
             return None
         items = attach_ambiguities(items, data, mode=mode)
+        # The interpreter reports what IT noticed uncertain. It does not notice
+        # having invented precision — "a scoop" arriving as "1 tbsp" looks like
+        # an answer from where it stands. Derived from the user's own words.
+        items = derive_vague_quantities(items, data, message=message, mode=mode)
         items = apply_preferences(items, preferences, now=now, mode=mode)
 
         decision = decide(list(items), mode=mode, round_number=round_number)
@@ -346,3 +360,220 @@ def build_meal_resolution(decision: FoodTurnDecision, execution, *,
 
 def _call_names(call) -> str:
     return str((getattr(call, "raw_input", None) or {}).get("food_name") or "")
+
+
+# ── derived ambiguity: the user was vague and we were precise ────────────────
+#: Measures a user says when they do not know the amount. Each maps to the
+#: portion ontology's measure name, so the plausible range comes from the
+#: ontology rather than from a second table here.
+VAGUE_MEASURES = {
+    "scoop": "scoop", "scoops": "scoop", "spoonful": "spoonful",
+    "spoonfuls": "spoonful", "spoon": "spoonful", "handful": "handful",
+    "handfuls": "handful", "drizzle": "drizzle", "splash": "drizzle",
+    "dollop": "spoonful", "glug": "drizzle", "bit": "little",
+    "little": "little", "some": "some", "few": "some", "couple": "some",
+    "bowl": "bowl", "plate": "plate", "bite": "bite", "bites": "bite",
+    "chunk": "some", "piece": "some", "smear": "spoonful",
+}
+
+#: The plausible range has to span at least this ratio before the vagueness is
+#: worth a turn. A measure whose upper bound is under 1.6x its lower bound is
+#: vague in wording and precise enough in fact.
+VAGUE_SPREAD_RATIO = 1.6
+
+
+_CLAUSE_SPLIT_RE = re.compile(r"\s*(?:,|\band\b|\bwith\b|\bplus\b|\+)\s*",
+                              re.I)
+_CLAUSE_STOPWORDS = frozenset({
+    "a", "an", "the", "of", "some", "like", "had", "i", "my", "was", "were",
+    "also", "just", "about", "and", "with", "for", "on", "in", "it", "that",
+})
+
+
+def _tokens(text: str) -> set:
+    return {w for w in re.findall(r"[a-z0-9&]+", (text or "").lower())
+            if w not in _CLAUSE_STOPWORDS}
+
+
+def _vague_measure_in(message: str, food: str) -> Optional[str]:
+    """The vague measure the user used for THIS food, if any.
+
+    Matched inside the CLAUSE that names the food, not anywhere in the message.
+    "a scoop of peanut butter and 200g of chicken" contains "scoop", and
+    attaching it to the chicken would ask about a portion the user stated
+    exactly.
+
+    Clause selection is by token overlap rather than by position, because
+    position gets "peanut butter" wrong the moment the message also mentions
+    "peanut M&Ms" — the first "peanut" belongs to the other food.
+    """
+    if not message or not food:
+        return None
+    food_tokens = _tokens(food)
+    if not food_tokens:
+        return None
+
+    best, best_score = None, 0.0
+    for clause in _CLAUSE_SPLIT_RE.split(message):
+        clause_tokens = _tokens(clause)
+        if not clause_tokens:
+            continue
+        overlap = food_tokens & clause_tokens
+        if not overlap:
+            continue
+        score = len(overlap) / len(food_tokens | clause_tokens)
+        if score > best_score:
+            best, best_score = clause, score
+
+    if best is None:
+        return None
+    for word, measure in VAGUE_MEASURES.items():
+        if re.search(rf"\b{re.escape(word)}\b", best.lower()):
+            return measure
+    return None
+
+
+def derive_vague_quantities(items, data: Mapping, *, message: str,
+                            mode: str) -> tuple:
+    """Add an ambiguity where the USER was vague and the interpreter was not.
+
+    The failure this exists for, from a shipped transcript: the user said "a
+    scoop of peanut butter" and the review turn said "1 tbsp Peanut Butter",
+    then asked "Does that look right?". A scoop of peanut butter is plausibly
+    one tablespoon or three, a span of roughly 190 calories, and the user was
+    invited to approve it without ever being shown that a number had been
+    chosen for them.
+
+    The interpreter reports ambiguities it noticed. It did not notice this one,
+    because from its point of view it produced an answer. So the ambiguity is
+    DERIVED here from two facts we already have: the user's own words, and the
+    portion ontology's plausible range for the measure they used.
+    """
+    from skills.nutrition.ambiguity import (AmbiguityOption, AmbiguityType,
+                                            build_ambiguity)
+    from skills.nutrition.portions import distribution_for
+
+    raw_by_ordinal = {}
+    for ordinal, raw in enumerate(data.get("items") or []):
+        if isinstance(raw, Mapping):
+            raw_by_ordinal[ordinal] = raw
+
+    out = []
+    for item in items or ():
+        measure = _vague_measure_in(message, item.original_text)
+        # A stated amount is the user's own number and is never second-guessed.
+        if measure is None or item.quantity.is_stated:
+            out.append(item)
+            continue
+        # An ambiguity the interpreter already reported for this field wins —
+        # it has the better options and the real impact numbers.
+        if any(a.ambiguity_type is AmbiguityType.CONSUMED_QUANTITY
+               for a in item.ambiguities):
+            out.append(item)
+            continue
+
+        # Only when our unit DIFFERS from the user's word. "a plate of turkey"
+        # arriving as 1 plate is vague but not CONVERTED — the vagueness is
+        # inherent to the measure and the portion ontology discloses it. "a
+        # scoop" arriving as 1 tbsp is a different measure than the one they
+        # used, which is the silent conversion this exists to surface.
+        our_unit = (item.quantity.inferred_unit or "").strip().lower()
+        if our_unit and VAGUE_MEASURES.get(our_unit.rstrip("s")) == measure:
+            out.append(item)
+            continue
+
+        distribution = distribution_for(measure, item.original_text)
+        if distribution is None or not distribution.lower_g:
+            out.append(item)
+            continue
+        if distribution.upper_g / max(distribution.lower_g, 1e-6) < \
+                VAGUE_SPREAD_RATIO:
+            out.append(item)
+            continue
+
+        calories = _calories_for(raw_by_ordinal.get(item.ordinal) or {})
+        span = _span_from(distribution, calories)
+        # Descending confidence, deliberately. Equal confidences read as a coin
+        # toss to the clarification policy, which makes QUICK mode ask — and
+        # quick exists precisely to accept this risk and commit with a stated
+        # assumption instead.
+        labels = _measure_options(measure, distribution)
+        options = tuple(
+            AmbiguityOption(label, confidence=confidence)
+            for label, confidence in zip(labels, (0.6, 0.35, 0.2)))
+
+        out.append(item.with_ambiguities(list(item.ambiguities) + [
+            build_ambiguity(
+                staged_item_id=item.staged_item_id,
+                ambiguity_type=AmbiguityType.CONSUMED_QUANTITY,
+                field_name="consumed_fraction", mode=mode,
+                calorie_span=span, options=options,
+                prompt=_vague_prompt(item.original_text, measure,
+                                     _measure_options(measure,
+                                                      distribution)))]))
+    return tuple(out)
+
+
+def _vague_prompt(food: str, measure: str, options) -> str:
+    """Name the food and the measure the USER used.
+
+    "Was the scoop closer to one or two tablespoons?" is ambiguous in a
+    three-food meal; naming the food is what makes the answer bindable by the
+    person answering as well as by the parser.
+    """
+    low, high = options[0], options[-1]
+    food = (food or "").strip()
+    subject = f"the {food.lower()} {measure}" if food else f"the {measure}"
+    return f"Was {subject} closer to {low} or {high}?"
+
+
+def _calories_for(raw: Mapping) -> Optional[float]:
+    for key in ("calories", "cal", "kcal"):
+        value = raw.get(key)
+        if isinstance(value, (int, float)) and value > 0:
+            return float(value)
+    return None
+
+
+def _span_from(distribution, calories: Optional[float]) -> float:
+    """What being wrong about this measure would cost, in calories.
+
+    With the item's own calories we can scale the mass range directly. Without
+    them the span is reported as the mass spread, which is the right ORDER of
+    magnitude for a food at roughly 4 cal/g and is honest about being an
+    estimate — a zero here would rank the vaguest portions as the least worth
+    asking about.
+    """
+    spread = max(0.0, distribution.upper_g - distribution.lower_g)
+    if calories and distribution.median_g:
+        per_gram = calories / distribution.median_g
+        return round(spread * per_gram, 1)
+    return round(spread * 4.0, 1)
+
+
+#: Grams per tablespoon, for the measures people answer in spoons.
+_G_PER_TBSP = 15.0
+
+_SPOKEN = {1: "one", 2: "two", 3: "three", 4: "four", 5: "five"}
+
+
+def _measure_options(measure: str, distribution) -> tuple:
+    """The two ends of the plausible range, in the words the measure invites.
+
+    Spoons get spoons; everything else gets grams. "Was the scoop closer to one
+    or two tablespoons?" is a question someone can answer from memory, and "was
+    it closer to 16g or 34g?" is one they have to convert first — which is the
+    difference between a clarification and a chore.
+    """
+    if measure in ("spoonful", "scoop", "drizzle") and \
+            distribution.upper_g <= 80:
+        low = max(1, int(round(distribution.lower_g / _G_PER_TBSP)))
+        high = max(low + 1, int(round(distribution.upper_g / _G_PER_TBSP)))
+        return (f"{_SPOKEN.get(low, low)} tablespoon"
+                + ("" if low == 1 else "s"),
+                f"{_SPOKEN.get(high, high)} tablespoons")
+    return (f"{_g(distribution.lower_g)}", f"{_g(distribution.upper_g)}")
+
+
+def _g(grams: float) -> str:
+    return f"{int(round(grams))}g"

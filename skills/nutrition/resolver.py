@@ -164,6 +164,26 @@ def _ambiguities(request: FoodResolutionRequest, winner: Candidate,
                 protein_span=gap["protein_span"],
                 detail="two high-confidence sources disagree materially",
                 calorie_fraction=_fraction(gap["calorie_span"])))
+    # A named product answered by a generic database row.
+    #
+    # From a shipped transcript: "15 peanut m&m" logged at 135 calories "from
+    # the USDA database". A standard label puts 15 pieces near 175. The tier
+    # order preferred branded correctly — there simply was no branded
+    # candidate, so a generic won unopposed and was then presented with the
+    # same confidence as a label read off the packet.
+    #
+    # What was missing is that a generic standing in for a NAMED PRODUCT is a
+    # different kind of answer, and the user is entitled to know that is what
+    # happened.
+    if _is_branded_request(request) and int(winner.tier) >= int(
+            SourceTier.GENERIC_EXACT):
+        out.append(ResolutionAmbiguity(
+            field="branded_source",
+            options=(f"{winner.name} (generic)",),
+            calorie_span=round(item_cal * BRANDED_FALLBACK_DOUBT, 1),
+            detail="generic data standing in for a named product",
+            calorie_fraction=BRANDED_FALLBACK_DOUBT))
+
     span = scaling_uncertainty(winner.profile, winner.basis, quantity)
     if span:
         out.append(ResolutionAmbiguity(
@@ -178,6 +198,31 @@ def _ambiguities(request: FoodResolutionRequest, winner: Candidate,
             detail="no known mass for this portion",
             calorie_fraction=1.0))
     return tuple(out)
+
+
+#: How wrong a generic row can be about a specific product, as a fraction of
+#: the item's own calories. Generic "candies, chocolate coated peanuts" against
+#: the Peanut M&M's label is roughly this far apart on the count that shipped,
+#: and branded formulations vary at least that much from a category average.
+#:
+#: Sizes the doubt; never changes the number. The resolver does not know the
+#: label — it knows it is not reading one.
+BRANDED_FALLBACK_DOUBT = 0.3
+
+
+def _is_branded_request(request: FoodResolutionRequest) -> bool:
+    """Whether the user named a PRODUCT rather than a food.
+
+    Three signals, any of which is enough: the interpreter set a brand, it
+    flagged the item as packaged, or the name matches a known product family.
+    """
+    if request.brand or request.is_packaged:
+        return True
+    try:
+        from skills.nutrition.families import rule_for
+        return rule_for(request.brand, request.food_name) is not None
+    except Exception:
+        return False
 
 
 #: A doubt covering this much of an item's own calories is worth asking about
@@ -266,6 +311,16 @@ def resolve(request: FoodResolutionRequest, candidates: list) -> NutritionResolu
     assumptions = tuple(quantity.assumptions) + mix_notes
     if winner.tier.is_estimate:
         assumptions += (f"{winner.source} estimate, not a label",)
+    if _is_branded_request(request) and int(winner.tier) >= int(
+            SourceTier.GENERIC_EXACT):
+        # Disclosure rather than a question. Asking about every named product
+        # with no branded record would interrupt constantly; saying which kind
+        # of source answered costs nothing and is the difference between "135
+        # calories" and "135 calories, from generic data".
+        assumptions += (
+            f"generic data for a named product — no {request.food_name} "
+            f"label available",)
+        confidence *= 0.75
     if scaled.unknown():
         warnings.append(f"unknown: {', '.join(scaled.unknown())}")
 
