@@ -589,6 +589,71 @@ def _apply_clarification_veto(decision, calls, kinds, items_logged):
     return kept_calls, kept_kinds, kept_items, held_names
 
 
+
+def _revalidate_after_answer(ops, prior, message: str):
+    """Re-derive what the answer invalidated, and hold when it cannot be
+    re-derived (correction-turn directive §2, §3, §4).
+
+    Returns an `ask` action when the correction leaves the item without a mass
+    we can stand behind, or None when the turn may proceed.
+
+    The comparison is against the PRIOR INTERPRETATION, not against the user's
+    words — they said "pieces" both times. What changed is that we had read it
+    as skewers, and the only record of that is what we stashed with the
+    question.
+    """
+    prior_items = (prior or {}).get("items") or []
+    if not prior_items:
+        return None
+    from skills.nutrition.unit_change import compare, may_commit, question_for
+    from skills.nutrition.normalize import normalize_quantity
+
+    by_food = {}
+    for it in prior_items:
+        if isinstance(it, dict):
+            name = str(it.get("food") or "").strip().lower()
+            if name:
+                by_food[name] = it
+
+    for kind, op in ops:
+        if kind != "log" or not isinstance(op, dict):
+            continue
+        food = str(op.get("food") or "").strip()
+        was = by_food.get(food.lower())
+        if was is None:
+            continue
+        change = compare(str(was.get("unit") or ""), str(op.get("unit") or ""))
+        if not change.changed:
+            continue
+
+        # EVERYTHING DERIVED FROM THE OLD UNIT IS GONE. Dropped from the op so
+        # nothing downstream can read a stale value: the enrichment path
+        # recomputes from the corrected unit, and a missing key is a recompute
+        # where a stale one is a wrong answer that looks settled.
+        for _k in ("calories", "protein", "carbs", "fats", "grams",
+                   "estimated_mass_g", "count_basis"):
+            op.pop(_k, None)
+        logger.info(
+            "event=unit_correction food=%r %s->%s invalidated=%d",
+            food, change.before, change.after, len(change.invalidated))
+
+        if not change.blocks_commit:
+            continue
+
+        # The units name different physical things. A mass we can stand behind
+        # rescues it; otherwise this is a question, not an estimate.
+        _q = normalize_quantity(
+            f"{op.get('amount') or 1} {op.get('unit') or ''}".strip(), food)
+        if may_commit(change, mass_g=_q.grams):
+            continue
+        return {"action": "ask",
+                "text": question_for(change, food),
+                "points": [question_for(change, food)],
+                "items": [op],
+                "kind": "clarify"}
+    return None
+
+
 def _item_is_stated(it: dict, message: str) -> bool:
     """Is this item's amount the USER's own words? The interpreter's "basis"
     declaration wins when present ("stated"/"regular" vs "estimate"); when
@@ -1430,6 +1495,24 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
         if not ops:
             return None
 
+    # ── §2, §3, §4, §5: the answer turn revalidates ─────────────────────────
+    #
+    # An answer turn used to be treated as automatically safe: the policy
+    # engine was skipped outright ("that turn fills with best estimates instead
+    # of re-asking"), so whatever the user said was folded into the previous
+    # interpretation and written. That is right for an answer that ADDS a
+    # detail and wrong for one that CHANGES the unit, because the unit is what
+    # every downstream value was derived from.
+    #
+    # "3 skewers" corrected to "3 pieces" keeps the count, which is exactly why
+    # it looks like nothing happened. The mass, the count basis, the portion
+    # assumption, the resolver's winner and the macros were all computed for
+    # skewers, and none of them survive.
+    if prior is not None and any(k == "log" for k, _ in ops):
+        _blocked = _revalidate_after_answer(ops, prior, message)
+        if _blocked is not None:
+            return _blocked
+
     # Declared out here because the VETO below reads it. It used to live
     # entirely inside the branch that produces it, which is a fair description
     # of the seam being closed: the decision existed only where it was made,
@@ -1504,6 +1587,14 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
                     "question_id": _q.question_id,
                     "staged_item_id": _q.staged_item_id,
                     "requested_fields": list(_q.requested_fields),
+                    # THE PRIOR INTERPRETATION TRAVELS WITH THE QUESTION (§2).
+                    # An answer turn has to rebuild the affected item from the
+                    # user's original wording, what we made of it, and what
+                    # they just said. Without this it had only the first and
+                    # the third, so "3 pieces" arriving after we had read "3
+                    # skewers" looked like a fresh parse with nothing to
+                    # compare against — and nothing to invalidate.
+                    "items": data.get("items") or None,
                     "meal_group_id": _decision.meal_group_id}
 
         if _decision is None and not _strict_confirm_pending:
