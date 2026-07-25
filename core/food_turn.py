@@ -1452,12 +1452,36 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
         # Same call from both callers: the live turn arrives here, and the
         # coordinator's food stage delegates to this function — so promoting
         # the coordinator changes orchestration, not food intelligence.
-        # STRICT'S WHOLE-PARSE CONFIRM WINS over a per-item ask. The new
-        # engine's strict calorie threshold is 20 against the old policy's 100,
-        # so on strict it now finds material uncertainty in cases that used to
-        # fall through to the confirm — and the confirm is the better exchange
-        # there: it shows the entire parse and takes one yes, rather than
-        # interrogating one item and then still needing approval.
+        # THE PIPELINE RUNS FIRST, ALWAYS.
+        #
+        # Strict's whole-parse confirm used to SUPPRESS it: `plan_turn` was
+        # gated on `not _strict_confirm_pending`, so whenever strict wanted a
+        # confirmation the staging, normalization and ambiguity derivation
+        # never ran at all. The reasoning was that a confirm is the better
+        # exchange than interrogating one item — true when the alternative is a
+        # question about something the confirm would settle, and false when the
+        # alternative is a question the confirm CANNOT settle.
+        #
+        # "3 pieces of chicken shish" is the second case. A piece may be a
+        # chunk or a whole skewer, a spread of several hundred calories, and
+        # "does that look right?" over a parse that already says "3 pieces"
+        # does not ask it — the user says yes to a number nobody established.
+        # A generic confirmation may never stand in for an unresolved unit
+        # question, so the order is now: stage, normalize, derive, resolve what
+        # is material, and only then decide whether a final review is useful.
+        try:
+            from core.food_pipeline import pipeline_enabled, plan_turn
+            if pipeline_enabled():
+                from core.turn_identity import current_turn_id as _pipe_turn
+                _decision = plan_turn(
+                    data, turn_id=(_pipe_turn() or ""), message=message,
+                    mode=mode, preferences=_prefs_for(user))
+        except Exception as _pe:
+            logger.warning(f"food pipeline unavailable: {_pe}")
+            _decision = None
+
+        # Strict's confirm is decided AFTER, on what the pipeline left open. It
+        # is a last look at a settled parse, which is what it was always for.
         _strict_confirm_pending = False
         try:
             if mode == "strict":
@@ -1466,17 +1490,6 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
                     _log_items, data, message)
         except Exception:
             _strict_confirm_pending = False
-
-        try:
-            from core.food_pipeline import pipeline_enabled, plan_turn
-            if pipeline_enabled() and not _strict_confirm_pending:
-                from core.turn_identity import current_turn_id as _pipe_turn
-                _decision = plan_turn(
-                    data, turn_id=(_pipe_turn() or ""), message=message,
-                    mode=mode, preferences=_prefs_for(user))
-        except Exception as _pe:
-            logger.warning(f"food pipeline unavailable: {_pe}")
-            _decision = None
 
         if _decision is not None and _decision.asks:
             _q = _decision.question

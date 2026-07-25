@@ -231,6 +231,24 @@ def _combine_local_time(target_date, time_str, user_timezone: str = "UTC"):
 
 
 
+def _entry_calories(target_log):
+    """Today's food-entry calories, or None when they cannot be read.
+
+    None means "no check", which is the right default: the reconciliation guard
+    exists to catch a total that disagrees with its entries, and a caller that
+    cannot see the entries has nothing to disagree with. Silently returning an
+    empty list would instead claim the day is empty, and every stored total
+    would look wrong.
+    """
+    try:
+        entries = getattr(target_log, "food_entries", None)
+        if entries is None:
+            return None
+        return [float(getattr(e, "calories", 0) or 0) for e in entries]
+    except Exception:
+        return None
+
+
 def _stash_receipt(inp, target_log, user, calories, protein,
                    confidence=None, estimated=False, updated=False, carbs=None):
     """Attach the decision-receipt context to the tool input so
@@ -261,6 +279,11 @@ def _stash_receipt(inp, target_log, user, calories, protein,
             fat_target=getattr(prefs, "fat_target", None) if prefs else None,
             trained_today=bool(getattr(target_log, "workout_completed", False)),
             carbs=float(carbs) if carbs is not None else None,
+            # §7: the day's entries, so the receipt can check that the stored
+            # total still describes them before it reads anything into a large
+            # overage. Best-effort — an unloaded relationship means no check
+            # rather than a failed log.
+            entry_calories=_entry_calories(target_log),
         )
         if updated:
             _receipt_val["updated"] = True
@@ -352,6 +375,7 @@ async def _resync_batch_receipts(ctxs, user, db) -> None:
                 fat_target=getattr(prefs, "fat_target", None) if prefs else None,
                 trained_today=bool(getattr(log, "workout_completed", False)),
                 carbs=batch_carbs,
+                entry_calories=_entry_calories(log),
             )
             shared = {k: batch[k] for k in
                       ("remaining_cal", "remaining_protein", "verdict", "next")

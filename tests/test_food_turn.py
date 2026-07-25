@@ -446,7 +446,11 @@ async def test_strict_confirm_narrowed_to_where_it_earns_friction(monkeypatch):
     """STRICT CONFIRMS, NARROWED (Danny 2026-07-25): a plan whose every amount
     is the user's own words commits DIRECTLY even on strict; the pre-write
     confirm fires only for system-estimated amounts, bulk plans, or
-    consumed-vs-planned doubt."""
+    consumed-vs-planned doubt.
+
+    AND it fires only on what the pipeline left open (correction-turn directive
+    §1). The confirm is a last look at a settled parse, never a substitute for
+    resolving something the confirm itself cannot settle."""
     strict = SimpleNamespace(preferences=SimpleNamespace(food_logging_mode="strict"))
     # 1. Fully user-stated amounts → direct log, no confirm friction.
     monkeypatch.setattr(FT, "chat", _fake_chat({
@@ -465,8 +469,20 @@ async def test_strict_confirm_narrowed_to_where_it_earns_friction(monkeypatch):
                    "calories": 300, "basis": "estimate"}],
         "say": "Salad logged, {batch_cal} cal."}))
     out2 = await FT.run("had some caesar salad", strict)
-    assert out2["action"] == "ask" and out2.get("kind") == "confirm"
+    # A MATERIAL AMBIGUITY OUTRANKS THE CONFIRM (correction-turn directive §1).
+    # This asserted the opposite: the whole-parse confirm used to SUPPRESS
+    # `plan_turn` entirely, so on strict the staging, normalization and
+    # ambiguity derivation never ran when a confirm was pending.
+    #
+    # "Some caesar salad" arriving as 1.5 cups is a 30-200g range collapsed to
+    # a number the user never gave. "Does that look right?" over a parse that
+    # already says 1.5 cups does not ask it — the user says yes to a figure
+    # nobody established. So the question comes first, and the confirm is
+    # decided afterwards on what is left open.
+    assert out2["action"] == "ask" and out2.get("kind") != "confirm"
     assert "caesar salad" in out2["text"].lower()
+    assert "30g" in out2["text"] or "200g" in out2["text"], (
+        "the question must name the range, not just re-show our number")
     # 3. Bulk plan (>=4 items) → confirm even when all stated.
     monkeypatch.setattr(FT, "chat", _fake_chat({
         "action": "log",
@@ -474,6 +490,10 @@ async def test_strict_confirm_narrowed_to_where_it_earns_friction(monkeypatch):
                    "calories": 100, "basis": "stated"} for i in range(4)],
         "say": "All four logged, {batch_cal} cal."}))
     out3 = await FT.run("had one of each of the four things", strict)
+    # The confirm SURVIVES where it earns its place: every amount is stated,
+    # the pipeline finds nothing material, and a last look at four items is a
+    # better exchange than four separate questions. Reordering the gate did not
+    # remove the confirm — it stopped it standing in for something else.
     assert out3["action"] == "ask" and out3.get("kind") == "confirm"
     # 4. Consumed doubt reported below threshold → confirm.
     monkeypatch.setattr(FT, "chat", _fake_chat({
@@ -484,7 +504,12 @@ async def test_strict_confirm_narrowed_to_where_it_earns_friction(monkeypatch):
                          "impact_cal": 50}],
         "say": "Bowl logged, {batch_cal} cal."}))
     out4 = await FT.run("picked up one poke bowl", strict)
-    assert out4["action"] == "ask" and out4.get("kind") == "confirm"
+    # Same reversal as case 2, and for the same reason: "how much of the bowl
+    # did you actually eat" is not something "does that look right?" can
+    # settle. It was reaching the confirm only because the confirm suppressed
+    # the pipeline that would have asked it.
+    assert out4["action"] == "ask" and out4.get("kind") != "confirm"
+    assert "poke bowl" in out4["text"].lower()
     # A vague measure the interpreter CONVERTED now earns a question in
     # moderate (Danny 2026-07-25). "some caesar salad" arriving as 1.5 cups is
     # a 30-200g range collapsed to a number the user never gave — roughly 640
