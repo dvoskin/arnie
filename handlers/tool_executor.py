@@ -1862,6 +1862,37 @@ async def execute_tool_calls(
     source_type: str = "text",
     user_message: str = "",
 ) -> Dict[str, Any]:
+    """Execute a tool batch under one time budget (PR #30).
+
+    Every individual lookup is already bounded, and that is not the same thing
+    as bounding the batch: a four-item meal against a degraded product API
+    spends four per-call timeouts back to back, each behaving exactly as
+    configured, and the user waits for the sum. This is the only place that
+    knows how many calls are coming, so it is the place that can bound them
+    together.
+
+    A `with` block rather than a manual enter/exit: the body has several return
+    points, and a deadline left set on the way out would starve the NEXT turn
+    on the same task of the time it never used.
+
+    Expiry degrades rather than fails — a lookup that runs out of time returns
+    a miss, and the estimate is committed with its provenance intact.
+    """
+    from core import deadline
+    with deadline.budget():
+        return await _execute_tool_calls(
+            tool_calls, user, today_log, db, source_type=source_type,
+            user_message=user_message)
+
+
+async def _execute_tool_calls(
+    tool_calls: List[Dict[str, Any]],
+    user: User,
+    today_log: DailyLog,
+    db: AsyncSession,
+    source_type: str = "text",
+    user_message: str = "",
+) -> Dict[str, Any]:
     """
     Execute each tool call and return {tool_name: result}.
     Result is usually a string (description for follow-up LLM context), but

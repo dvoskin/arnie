@@ -154,11 +154,24 @@ async def _get_json(url: str, params: dict, *, attempts: int = 3,
     blips/timeouts with a short backoff. Timeouts are retried at most once (they
     already cost `timeout` seconds — piling on more would balloon a multi-item
     paste's latency). Returns None when every attempt fails. Never raises."""
+    from core import deadline
+
     backoff = (0.3, 0.7, 1.2)
     timeout_used = False
     for i in range(attempts):
+        # Per-call timeouts do not bound a TURN. A four-item meal against a
+        # degraded API spends four times this budget, each attempt behaving
+        # exactly as configured. Clamping to what the turn has left is what
+        # makes the turn's own limit a guarantee rather than a suggestion.
+        call_timeout = deadline.cap(timeout)
+        if call_timeout <= 0:
+            # Nothing useful left. Making the call anyway would spend the
+            # remainder on connection setup and still return nothing — worse
+            # than the miss we return here, because it costs the time too.
+            logger.info("event=off_skipped reason=turn_budget url=%s", url)
+            return None
         try:
-            r = await _client().get(url, params=params, timeout=timeout)
+            r = await _client().get(url, params=params, timeout=call_timeout)
         except (httpx.TimeoutException, httpx.TransportError) as e:
             if isinstance(e, httpx.TimeoutException):
                 if timeout_used:
