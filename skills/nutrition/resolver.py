@@ -253,13 +253,30 @@ def resolve(request: FoodResolutionRequest, candidates: list) -> NutritionResolu
     cached answer and a recomputed one are the same answer. `test_food_caching`
     fails if that stops being true.
     """
+    # Trace OUTSIDE, memoize INSIDE. The order matters in both directions: a
+    # cache hit still has to appear in the trace, or the latency report stops
+    # being able to show what the cache is worth; and the memo has to sit closer
+    # to the computation than the timer, or every hit would be recorded as a
+    # resolve that did no work.
+    from core import food_trace
     from skills.nutrition.cache import memoize
-    return memoize(request, candidates,
-                   lambda: _resolve(request, candidates))
+    with food_trace.stage(food_trace.Stage.RESOLVE) as timed:
+        out = memoize(request, candidates,
+                      lambda: _resolve(request, candidates))
+        timed.counts.update(candidates=len(candidates or ()),
+                            rejected=len(out.rejected_candidates or ()),
+                            ambiguities=len(out.ambiguities or ()))
+        if out.source == "unresolved":
+            timed.outcome = food_trace.Outcome.HELD
+            timed.detail = "unresolved"
+    return out
 
 
 def _resolve(request: FoodResolutionRequest,
              candidates: list) -> NutritionResolution:
+    """The resolution itself. Split from `resolve` so the timing wrapper and the
+    memo each have one exit to work with — resolve has several, and wrapping each
+    of them separately is how one of them ends up untimed or uncached."""
     quantity = normalize_quantity(request.raw_quantity or "",
                                   request.food_name)
     rejections, viable = [], []

@@ -84,7 +84,11 @@ GATES = {
 #: Log events this reads. Anything else is ignored, so a mixed application log
 #: can be piped in whole.
 _EVENTS = ("turn_observe", "nutrition_shadow", "nutrition_promotion",
-           "nutrition_promotion_large_move", "item_trace", "food_correction")
+           "nutrition_promotion_large_move", "item_trace", "food_correction",
+           # The turn spine (PR #29). Readiness does not gate on it, but it
+           # owns the parser, and a second parser for the same log format is a
+           # second thing to keep correct.
+           "food_trace")
 
 _EVENT_RE = re.compile(r"event=([a-z_]+)")
 _KV_RE = re.compile(r"([a-z_]+)=('[^']*'|\"[^\"]*\"|[^\s]+)")
