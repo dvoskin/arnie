@@ -811,3 +811,116 @@ async def test_promoted_lane_gets_the_native_renderer(monkeypatch):
     assert isinstance(coord.render_stage, NativeRenderStage)
     coord = await build_coordinator(_req("hey"), system="S", messages=[])
     assert isinstance(coord.render_stage, PassthroughRenderStage)
+
+
+# ── end to end: a promoted lane runs a whole turn natively ────────────────────
+@pytest.mark.asyncio
+async def test_a_promoted_undo_lane_runs_the_whole_turn(monkeypatch, db, make_user):
+    """The integration proof: route → plan → validate → execute → snapshot →
+    render, with no legacy involvement, producing a reply built from committed
+    state. This is what "promoting a lane" has to mean."""
+    import core.ledger_undo as LU
+    import db.queries as Q
+    from core.turns.factory import build_coordinator
+    from core.turns.models import TurnPhase
+    from core.execution_result import CallResult, ExecutionResult, LAST_EXECUTION
+
+    monkeypatch.setenv("TURN_COORDINATOR_MODE", "new_execute")
+    monkeypatch.setenv("TURN_COORDINATOR_LANES", "ledger_undo")
+    monkeypatch.delenv("TURN_COORDINATOR_ALLOWLIST", raising=False)
+
+    user = await make_user()
+    op = {"name": "delete_food_entry", "input": {"entry_id": 42,
+                                                 "food_name": "Fries"}}
+
+    async def _undo_plan(_db, _user, text):
+        return {"action": "delete", "kinds": ["delete"], "tool_calls": [op],
+                "say": "Fries are off the board. You're at {day_cal} "
+                       "with {cal_left} left."}
+    monkeypatch.setattr(LU, "build_plan", _undo_plan)
+
+    async def _claim(_db, user_id, key, **kw):
+        return True
+    monkeypatch.setattr(Q, "claim_processed_turn", _claim)
+
+    executed = {"calls": None}
+    async def _executor(calls, _user, _log, _db, **kw):
+        executed["calls"] = calls
+        LAST_EXECUTION.set(ExecutionResult(calls=(
+            CallResult(name="delete_food_entry", raw_input=dict(op["input"]),
+                       status="committed", entry_id=42, event_id=99),)))
+        return {}
+    import handlers.tool_executor as TE
+    monkeypatch.setattr(TE, "execute_tool_calls", _executor)
+
+    class _Log:
+        date = None
+        total_calories = 1200.0
+        total_protein = 100.0
+        total_carbs = total_fats = total_water_ml = 0.0
+        total_steps = 0
+        exercise_entries = ()
+
+    req = TurnRequest(turn_id="imessage:G-9", user_id=user.id,
+                      platform="imessage", source_type="imessage",
+                      text="undo",
+                      metadata={"db": db, "user": user, "today_log": _Log()})
+    coord = await build_coordinator(req, system="SYS", messages=[])
+    state = await coord.run(req)
+
+    assert state.phase is TurnPhase.FINALIZED
+    assert state.route.lane is TurnLane.LEDGER_UNDO
+    assert executed["calls"] == [op]
+    # The snapshot carries the committed truth, not the plan's intent.
+    assert state.snapshot.affected_entities[0]["domain"] == "food"
+    assert state.snapshot.affected_entities[0]["action"] == "deleted"
+    assert state.snapshot.ledger_event_ids == (99,)
+    assert state.snapshot.day_totals["calories"] == 1200.0
+    # And the reply is built from it.
+    text = " ".join(getattr(state.response, "bubbles", None) or [])
+    assert "Fries" in text and "1200" in text
+
+
+@pytest.mark.asyncio
+async def test_a_replayed_promoted_turn_writes_nothing_twice(monkeypatch, db,
+                                                            make_user):
+    """Exactly-once end to end: the second arrival of the same turn never
+    reaches the executor, and the coordinator fails closed rather than
+    answering as though it wrote."""
+    import core.ledger_undo as LU
+    import db.queries as Q
+    from core.turns.factory import build_coordinator
+    from core.turns.models import TurnPhase
+
+    monkeypatch.setenv("TURN_COORDINATOR_MODE", "new_execute")
+    monkeypatch.setenv("TURN_COORDINATOR_LANES", "ledger_undo")
+    monkeypatch.delenv("TURN_COORDINATOR_ALLOWLIST", raising=False)
+
+    user = await make_user()
+    op = {"name": "delete_food_entry", "input": {"entry_id": 42}}
+
+    async def _undo_plan(_db, _user, text):
+        return {"action": "delete", "tool_calls": [op]}
+    monkeypatch.setattr(LU, "build_plan", _undo_plan)
+
+    claims = {"n": 0}
+    async def _claim_once(_db, user_id, key, **kw):
+        claims["n"] += 1
+        return claims["n"] == 1
+    monkeypatch.setattr(Q, "claim_processed_turn", _claim_once)
+
+    runs = {"n": 0}
+    async def _executor(*a, **k):
+        runs["n"] += 1
+        return {}
+    import handlers.tool_executor as TE
+    monkeypatch.setattr(TE, "execute_tool_calls", _executor)
+
+    req = TurnRequest(turn_id="imessage:G-9", user_id=user.id,
+                      platform="imessage", source_type="imessage", text="undo",
+                      metadata={"db": db, "user": user})
+    for _ in range(2):
+        state = await (await build_coordinator(req, system="S",
+                                               messages=[])).run(req)
+    assert runs["n"] == 1                      # the resend never wrote
+    assert state.phase is TurnPhase.FAILED     # and did not claim success

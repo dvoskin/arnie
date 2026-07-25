@@ -88,6 +88,18 @@ def remaining_targets(prefs, totals: dict) -> dict:
     return out
 
 
+def _preferences(user):
+    """Targets, if they are already loaded. Touching an unloaded relationship
+    from async code raises MissingGreenlet, and a snapshot must never be the
+    thing that fails a turn — a missing target simply omits that target."""
+    if user is None:
+        return None
+    try:
+        return user.preferences
+    except Exception:
+        return None
+
+
 def affected_entities(execution) -> tuple:
     """What this turn actually changed, per domain — SUCCESSFUL calls only.
     A dedup-blocked log or a refused CAS update did not affect anything, and
@@ -120,8 +132,7 @@ class CommittedSnapshotStage:
         event_ids = tuple(e["event_id"] for e in entities
                           if e.get("event_id") is not None)
         totals = day_totals(log)
-        prefs = getattr(user, "preferences", None) if user is not None else None
-        targets = remaining_targets(prefs, totals) if totals else {}
+        targets = remaining_targets(_preferences(user), totals) if totals else {}
 
         revision: Optional[int] = None
         if db is not None and user is not None:
