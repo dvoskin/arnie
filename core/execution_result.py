@@ -12,15 +12,15 @@ wherever it stands. This module is the strangler seam that ends that:
   • LAST_EXECUTION — the executor publishes the ExecutionResult here
     (contextvar, same ambient pattern as turn identity); run_turn reads it
     right after execute_tool_calls returns.
-  • from_tool_calls() — the ONE sanctioned scraper of the legacy stash keys.
-    It backfills the typed view when the executor didn't publish (mocked
-    executors in tests, direct callers), and it is where the executor's own
-    tail builds the object today. When the input mutation is finally removed
-    (P0.3b: branches populate CallResults natively), this function shrinks
-    to nothing and no other code will notice.
+  • from_call_contexts() — the executor's NATIVE construction: each call's
+    state comes from its own side-channel context (CALL_CTX), never from the
+    command. The command is immutable end to end (P0.3e).
+  • without_execution_state() — the honest view for a batch the real executor
+    did not run (mocked executors in tests, direct callers): no ids invented,
+    nothing scraped.
 
-Downstream rule from this slice on: cards, narration filters, and receipts
-consume the ExecutionResult — never `inp.get("_...")` directly.
+Downstream rule: cards, narration filters, and receipts consume the
+ExecutionResult — never `inp.get("_...")`, which no longer exists.
 """
 from __future__ import annotations
 
@@ -42,25 +42,25 @@ CALL_CTX: ContextVar[Optional[dict]] = ContextVar("CALL_CTX", default=None)
 
 
 def stash(inp, key: str, value) -> None:
-    """Record per-call execution state. Writes to the ambient call context —
-    the typed path — and, transitionally, to the command input so the legacy
-    fallback readers keep working until they are all gone."""
+    """Record per-call execution state on the ambient call context.
+
+    The command input is NEVER written (P0.3e — executor immutability
+    complete). `inp` is still accepted so call sites read naturally and so a
+    future per-command context can be keyed off it; it is not mutated."""
     try:
         ctx = CALL_CTX.get()
         if ctx is not None:
             ctx[key] = value
     except Exception:
         pass
-    if isinstance(inp, dict):
-        inp["_" + key] = value
 
 
 @dataclass(frozen=True)
 class CallResult:
-    """What one tool call actually did. `raw_input` is the executed input —
-    transitional: it still carries the legacy stash keys and the committed
-    macro sync, and card building reads quantities/macros from it until the
-    executor populates typed fields natively (P0.3b)."""
+    """What one tool call actually did. `raw_input` is the command as
+    executed — read-only here, and free of execution state since P0.3e; card
+    building still reads the committed macros the enrichment step synced onto
+    it."""
     name: str
     raw_input: dict
     status: str                      # committed | blocked | failed
@@ -106,7 +106,7 @@ def from_call_contexts(tool_calls: list, contexts: list,
     own side-channel context, positionally aligned with the batch. No command
     input is read for execution state — the command described intent, the
     context records what happened."""
-    from core.food_ledger import _FAILURE_PREFIXES
+    from core.food_ledger import FAILURE_PREFIXES
     calls = []
     for i, tc in enumerate(tool_calls or []):
         if not isinstance(tc, dict):
@@ -117,7 +117,7 @@ def from_call_contexts(tool_calls: list, contexts: list,
         if not isinstance(r, str) and isinstance(results, dict):
             _r2 = results.get(tc.get("name"))
             r = _r2 if isinstance(_r2, str) else ""
-        blocked = isinstance(r, str) and r.startswith(_FAILURE_PREFIXES)
+        blocked = isinstance(r, str) and r.startswith(FAILURE_PREFIXES)
         calls.append(CallResult(
             name=str(tc.get("name") or ""),
             raw_input=inp,
@@ -133,30 +133,22 @@ def from_call_contexts(tool_calls: list, contexts: list,
     return ExecutionResult(calls=tuple(calls))
 
 
-def from_tool_calls(tool_calls: list, results: Optional[dict] = None) -> ExecutionResult:
-    """Build the typed view from executed tool calls. The ONE sanctioned
-    reader of the legacy stash keys (see module docstring)."""
-    from core.food_ledger import _call_failed
+def without_execution_state(tool_calls: list,
+                            results: Optional[dict] = None) -> ExecutionResult:
+    """The view for a batch the real executor did NOT run — a mocked executor
+    in tests, or a direct caller. There is no execution state to report, so
+    every call is reported as committed with whatever shared result text
+    exists, and no ids/receipts are invented. (Replaced from_tool_calls(),
+    the legacy stash scraper, once executor immutability landed.)"""
     calls = []
     for tc in tool_calls or []:
         if not isinstance(tc, dict):
             continue
-        inp = tc.get("input") or {}
-        r = inp.get("_result")
-        if not isinstance(r, str) and isinstance(results, dict):
-            _r2 = results.get(tc.get("name"))
-            r = _r2 if isinstance(_r2, str) else ""
-        blocked = _call_failed(tc)
+        _r = (results or {}).get(tc.get("name")) if isinstance(results, dict) else ""
         calls.append(CallResult(
             name=str(tc.get("name") or ""),
-            raw_input=inp,
-            status="blocked" if blocked else "committed",
-            result_text=r if isinstance(r, str) else "",
-            entry_id=inp.get("_entry_id"),
-            event_id=inp.get("_event_id"),
-            receipt=inp.get("_receipt") if isinstance(inp.get("_receipt"), dict) else None,
-            sourcing=inp.get("_sourcing") if isinstance(inp.get("_sourcing"), dict) else None,
-            card_sets=inp.get("_card_sets"),
-            card_reps=inp.get("_card_reps"),
+            raw_input=tc.get("input") or {},
+            status="committed",
+            result_text=_r if isinstance(_r, str) else "",
         ))
     return ExecutionResult(calls=tuple(calls))

@@ -1214,8 +1214,10 @@ async def run_turn(
         # fallback covers mocked executors. Downstream (narration filters,
         # cards) consumes THIS — never inp["_..."] keys directly.
         from core.execution_result import (LAST_EXECUTION as _LX,
-                                           from_tool_calls as _exec_from)
-        _execution = _LX.get() or _exec_from(tool_calls, tool_results)
+                                           without_execution_state as _exec_bare)
+        # The real executor publishes the native view; a mocked/stubbed one
+        # leaves nothing, so we report the batch honestly with no invented ids.
+        _execution = _LX.get() or _exec_bare(tool_calls, tool_results)
 
         # ── SCRIBE SHADOW (observe-only) ─────────────────────────────────
         # The write-set validator judges what the model ACTUALLY did against

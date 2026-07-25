@@ -28,31 +28,47 @@ async def _seed_day(db, user, cal=180.0):
     return log, fe
 
 
-# ── the scraper fallback ──────────────────────────────────────────────────────
-def test_from_tool_calls_reads_status_and_stashes():
-    calls = [
-        {"name": "log_food",
-         "input": {"food_name": "Coke", "calories": 140, "_entry_id": 9,
-                   "_event_id": 900, "_result": "Logged Coke: 140 cal."}},
-        {"name": "update_food_entry",
-         "input": {"entry_id": 1, "calories": 360, "food_hint": "Birria taco",
-                   "_result": "STALE BOARD: entry #1 is now 500 cal."}},
-    ]
-    ex = ER.from_tool_calls(calls, {"log_food": "Logged Coke: 140 cal."})
-    assert [c.status for c in ex.calls] == ["committed", "blocked"]
-    assert ex.calls[0].entry_id == 9 and ex.calls[0].event_id == 900
-    assert ex.ok_tool_calls() == [{"name": "log_food",
-                                   "input": calls[0]["input"]}]
+# ── executor immutability (P0.3e) ─────────────────────────────────────────────
+def test_stash_never_writes_to_the_command():
+    """The closing invariant: execution state goes to the context ONLY. A
+    command describes what to do; it never carries what happened."""
+    from core.execution_result import CALL_CTX, stash
+    command = {"food_name": "Banana", "quantity": "1 banana"}
+    ctx = {}
+    tok = CALL_CTX.set(ctx)
+    try:
+        stash(command, "entry_id", 42)
+        stash(command, "event_id", 900)
+        stash(command, "result", "Logged Banana: 105 cal.")
+    finally:
+        CALL_CTX.reset(tok)
+    assert ctx == {"entry_id": 42, "event_id": 900,
+                   "result": "Logged Banana: 105 cal."}
+    assert command == {"food_name": "Banana", "quantity": "1 banana"}
+
+
+def test_no_execution_state_view_invents_nothing():
+    """A batch the real executor did not run (mocked executor, direct caller)
+    reports honestly: no ids, no receipts, nothing scraped."""
+    ex = ER.without_execution_state(
+        [{"name": "log_food", "input": {"food_name": "Banana"}}],
+        {"log_food": "Logged."})
+    cr = ex.calls[0]
+    assert cr.committed and cr.result_text == "Logged."
+    assert cr.entry_id is None and cr.event_id is None
+    assert cr.receipt is None and cr.sourcing is None
+
+
+def test_native_view_reports_blocked_from_context_result():
+    """Blocked/committed status now comes from the CONTEXT's result text —
+    the command carries no _result to read."""
+    ex = ER.from_call_contexts(
+        [{"name": "update_food_entry",
+          "input": {"entry_id": 1, "food_hint": "Birria taco"}}],
+        [{"result": "STALE BOARD: entry #1 is now 500 cal."}])
+    assert ex.calls[0].status == "blocked"
     assert ex.failed_names() == ["Birria taco"]
-
-
-def test_unstamped_calls_count_committed():
-    """Mocked executors don't stamp _result — the view fails open, matching
-    the narration filters' existing semantics."""
-    ex = ER.from_tool_calls([{"name": "log_food",
-                              "input": {"food_name": "Banana"}}])
-    assert ex.calls[0].committed
-    assert ex.failed_names() == []
+    assert ex.ok_tool_calls() == []
 
 
 # ── the real executor publishes it ────────────────────────────────────────────

@@ -189,7 +189,7 @@ class TransactionSnapshot:
 # The executor stamps each call's outcome onto its input (_result). Narration
 # must read it: a refused CAS update or dedup-blocked write narrated as success
 # is a lie with committed-looking numbers.
-_FAILURE_PREFIXES = (
+FAILURE_PREFIXES = (
     "Error:", "Skipped", "Failed to", "STALE BOARD", "COULD NOT FIND",
     "No food entry", "No exercise entry", "Missing entry_id",
     "Nothing to restore", "Already on the board",
@@ -197,17 +197,20 @@ _FAILURE_PREFIXES = (
 
 
 def _call_failed(tc: dict) -> bool:
+    """Legacy shim: judge a call by its shared result text. Kept only for
+    tests that build tool-call dicts by hand — production reads the typed
+    ExecutionResult, which carries per-call status natively."""
     r = (tc.get("input") or {}).get("_result")
-    return isinstance(r, str) and r.startswith(_FAILURE_PREFIXES)
+    return isinstance(r, str) and r.startswith(FAILURE_PREFIXES)
 
 
 def successful_calls(tool_calls: list) -> list:
-    """Calls whose executor result reads as a committed write. A call with no
-    stamped result (mocked executors, pre-dispatch) counts as successful."""
+    """Legacy shim (see _call_failed)."""
     return [tc for tc in (tool_calls or []) if not _call_failed(tc)]
 
 
 def failed_call_names(tool_calls: list) -> list:
+    """Legacy shim (see _call_failed)."""
     out = []
     for tc in (tool_calls or []):
         if _call_failed(tc):
