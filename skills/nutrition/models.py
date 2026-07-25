@@ -123,9 +123,52 @@ class NormalizedQuantity:
     assumptions: tuple = ()
     count_basis: str = COUNT_BASIS_UNIT
 
+    # ── What the USER said, kept separate from what we made of it (§2, §10) ──
+    #
+    # These four are provenance, not inputs. Once a portion had been normalized
+    # there was no way back to the words that produced it, so every layer
+    # downstream — the card, the coach line, a clarifying question — had to
+    # paraphrase from `amount` and `unit` and quietly replaced the user's own
+    # phrasing with our reconstruction of it. "Half a bagel" came back as "0.5
+    # bagel"; a clarification about something else in the meal reprinted it that
+    # way, and the user is then reading their own sentence rewritten by us.
+    #
+    # Keeping the original is also the only way to be honest about the seam:
+    # `user_stated_amount` is None when the user stated no number at all, which
+    # is a different thing from stating one that happened to be 1.
+    original_user_wording: str = ""       # exactly as typed, case intact
+    user_stated_amount: Optional[float] = None
+    user_stated_unit: str = ""
+    size_descriptor: str = ""             # "large", "small" — theirs, not ours
+
+    #: HOW the mass or volume was arrived at: mass_conversion | volume_conversion
+    #: | vessel | piece_weight | ontology | none. A conversion is exact and an
+    #: estimate is not, and a single `grams` field cannot tell them apart —
+    #: which is how estimated masses were presented with the same certainty as
+    #: "200 g".
+    normalization_source: str = ""
+    #: 0–1. Coarse on purpose; four or five states, not a continuum.
+    normalization_confidence: float = 0.0
+
     @property
     def is_mass_known(self) -> bool:
         return self.grams is not None
+
+    @property
+    def normalized_mass_g(self) -> Optional[float]:
+        """Alias with the direction stated. `grams` reads as though it were
+        given; this reads as what it is — the output of a normalization whose
+        method `normalization_source` names."""
+        return self.grams
+
+    @property
+    def normalized_volume_ml(self) -> Optional[float]:
+        return self.milliliters
+
+    @property
+    def mass_is_exact(self) -> bool:
+        return self.normalization_source in ("mass_conversion",
+                                             "volume_conversion")
 
     @property
     def count_is_serving_compatible(self) -> bool:
@@ -134,7 +177,18 @@ class NormalizedQuantity:
                 and self.count_basis != COUNT_BASIS_ESTIMATE)
 
     def describe(self) -> str:
-        return self.unit_label or f"{_trim(self.amount)} {self.unit}"
+        """The portion, in the user's words wherever they exist (§10).
+
+        The reconstruction — `f"{amount} {unit}"` — is the last resort, not the
+        default, because it is not what anyone said. "Half a bagel" becomes
+        amount=0.5, unit="bagel", and reconstructing from those quotes the
+        user's own sentence back to them as "0.5 bagel". `original_user_wording`
+        is exactly as typed, so it leads; `unit_label` (lowercased, in some
+        paths synthesised) follows; the reconstruction is what we fall to when
+        there is genuinely nothing else.
+        """
+        return (self.original_user_wording or self.unit_label
+                or f"{_trim(self.amount)} {self.unit}")
 
 
 @dataclass(frozen=True)

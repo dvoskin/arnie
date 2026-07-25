@@ -115,10 +115,36 @@ _WORD_NUMBERS = {
     "twelve": 12, "dozen": 12, "couple": 2, "few": 3, "several": 4,
 }
 
-_FRACTIONS = {
-    "half": 0.5, "quarter": 0.25, "third": 1 / 3, "three quarters": 0.75,
-    "½": 0.5, "¼": 0.25, "¾": 0.75, "⅓": 1 / 3, "⅔": 2 / 3,
+#: Single characters that ARE a fraction. Handled with the digits rather than
+#: with the words, so "1½" and "1 ½" work like "1 1/2".
+_UNICODE_FRACTIONS = {
+    "½": 0.5, "⅓": 1 / 3, "⅔": 2 / 3, "¼": 0.25, "¾": 0.75,
+    "⅕": 0.2, "⅖": 0.4, "⅗": 0.6, "⅘": 0.8,
+    "⅙": 1 / 6, "⅚": 5 / 6, "⅛": 0.125, "⅜": 0.375,
+    "⅝": 0.625, "⅞": 0.875,
 }
+
+#: The denominator words, singular and plural. "Two thirds" is `2 × third`,
+#: which is also how "three quarters" works, so one table covers both.
+_FRACTION_WORDS = {
+    "half": 0.5, "halves": 0.5,
+    "third": 1 / 3, "thirds": 1 / 3,
+    "quarter": 0.25, "quarters": 0.25,
+    "fourth": 0.25, "fourths": 0.25,
+    "eighth": 0.125, "eighths": 0.125,
+}
+
+#: Words that turn a fraction word into part of a NAME. "A quarter pounder" is
+#: not a quarter of a pounder. Deliberately tiny — the general rule below (a
+#: bare fraction word must be followed by "of", an article, a unit, or nothing)
+#: does the real work, and this covers the compound that rule would let through
+#: because the next word looks like a food.
+_FRACTION_COMPOUNDS = {"pounder", "pounders", "moon", "moons", "time", "times"}
+
+#: Kept for callers that import it; the parser uses the tables above.
+_FRACTIONS = dict(_UNICODE_FRACTIONS)
+_FRACTIONS.update({"half": 0.5, "quarter": 0.25, "third": 1 / 3,
+                   "three quarters": 0.75})
 
 #: Typical mass per piece, with a ± spread. The spread is the point: it is
 #: what the clarification ladder reads. Keys are matched as substrings of the
@@ -235,46 +261,143 @@ _SIZE_MODIFIERS = {
     "extra large": 1.6, "jumbo": 1.6, "mini": 0.5, "medium": 1.0,
 }
 
+#: A leading amount, in every written form. ORDER MATTERS and it was wrong:
+#: the old pattern tried `\d+(?:\.\d+)?` before `\d+/\d+`, and since regex
+#: alternation is leftmost-first, "3/4 cup" matched the bare "3" and left "/4
+#: cup" as the unit. Every digit fraction was silently multiplied by its
+#: numerator — three quarters of a cup of rice logged as three cups.
+#:
+#: `whole` requires trailing WHITESPACE, which is what separates the mixed
+#: number "1 1/2" from the plain fraction "1/2"; without it the whole-number
+#: group eats the numerator again.
+_UNI_CLASS = "".join(_UNICODE_FRACTIONS)
 _QTY_RE = re.compile(
-    r"^\s*(?P<num>\d+(?:\.\d+)?|\d+\s*/\s*\d+)?\s*(?P<rest>.*)$", re.I)
+    r"^\s*(?:(?P<whole>\d+)\s+(?=[\d" + re.escape(_UNI_CLASS) + r"]))?"
+    r"(?:(?P<frac>\d+\s*/\s*\d+)"
+    r"|(?P<uni>[" + re.escape(_UNI_CLASS) + r"])"
+    r"|(?P<dec>\d+(?:\.\d+)?))?"
+    r"\s*(?P<rest>.*)$", re.I | re.S)
 
 
-def _word_amount(text: str) -> Optional[float]:
-    t = text.strip().lower()
-    for phrase, val in _FRACTIONS.items():
-        if t.startswith(phrase):
-            return val
-    first = t.split()[0] if t.split() else ""
-    return _WORD_NUMBERS.get(first)
+def _lead_words(low: str):
+    """`(amount, remainder)` for a written-out amount, or None.
+
+    Handles the shapes a person actually types: "two thirds of a cup", "half a
+    bagel", "a half bagel", "one and a half bagels", "three quarters", "a
+    couple of eggs". The old version checked `_FRACTIONS` by `startswith` and
+    read the first token otherwise, so "two thirds" came back as 2 and
+    "three-quarters" as 1 — both of them portions the user stated exactly.
+    """
+    words = low.split()
+    if not words:
+        return None
+
+    def _frac_at(idx):
+        """`(value, tokens_consumed)` if words[idx:] opens with a fraction."""
+        if idx >= len(words):
+            return None
+        val = _FRACTION_WORDS.get(words[idx])
+        if val is None:
+            return None
+        nxt = words[idx + 1] if idx + 1 < len(words) else ""
+        if nxt in _FRACTION_COMPOUNDS:
+            return None
+        # A bare fraction word is a fraction when something follows that can be
+        # fractioned — "of", an article, or a unit — or when nothing follows.
+        # "Quarter chicken" is a menu item; "quarter of a chicken" is a portion.
+        if nxt and nxt not in ("of", "a", "an") and nxt not in _COUNT_UNITS \
+                and nxt not in _MASS_G and nxt not in _VOL_ML \
+                and _singular(nxt) not in _VAGUE_VESSELS:
+            return None
+        return val, 1
+
+    def _tail(idx):
+        rest = words[idx:]
+        while rest and rest[0] in ("of", "a", "an"):
+            rest = rest[1:]
+        return " ".join(rest)
+
+    lead = _WORD_NUMBERS.get(words[0])
+    if lead is not None:
+        # "a couple of eggs", "a few slices", "a dozen wings" — the article is
+        # not the amount, the word after it is. Reading the article as 1 turned
+        # a couple of eggs into one egg.
+        if words[0] in ("a", "an") and len(words) > 1:
+            nxt = _WORD_NUMBERS.get(words[1])
+            if nxt is not None:
+                return nxt, _tail(2)
+        # "one and a half", "two and a half"
+        if words[1:4] == ["and", "a", "half"]:
+            return lead + 0.5, _tail(4)
+        if words[1:3] == ["and", "half"]:
+            return lead + 0.5, _tail(3)
+        got = _frac_at(1)
+        if got is not None:
+            val, used = got
+            # "a half" is one half, not one times a half — the article is not a
+            # multiplier even though it reads as 1 everywhere else.
+            amount = val if words[0] in ("a", "an") else lead * val
+            return amount, _tail(1 + used)
+        return lead, _tail(1)
+
+    got = _frac_at(0)
+    if got is not None:
+        val, used = got
+        return val, _tail(used)
+    return None
+
+
+def _word_amount(text: str):
+    """Back-compat shim: the amount alone, or None."""
+    got = _lead_words((text or "").strip().lower().replace("-", " "))
+    return got[0] if got else None
 
 
 def _parse_amount(text: str) -> tuple:
-    """(amount, remainder). Handles digits, fractions and number words."""
-    t = (text or "").strip().lower()
+    """(amount, remainder). Digits, fractions, mixed numbers and number words.
+
+    Works on a lowercased, de-hyphenated copy — "three-quarters" and "three
+    quarters" are the same portion, and the remainder is only ever used as unit
+    text, which is lowercased downstream anyway. The user's own spelling is
+    preserved separately (`original_user_wording`), not recovered from here.
+    """
+    t = (text or "").strip()
     if not t:
         return 1.0, ""
-    m = _QTY_RE.match(t)
-    raw = (m.group("num") or "").strip() if m else ""
-    rest = (m.group("rest") or "").strip() if m else t
-    if raw:
-        if "/" in raw:
+    low = t.lower().replace("-", " ")
+
+    m = _QTY_RE.match(low)
+    if m:
+        whole = m.group("whole")
+        frac, uni, dec = m.group("frac"), m.group("uni"), m.group("dec")
+        rest = (m.group("rest") or "").strip()
+        value = None
+        if frac:
             try:
-                num, den = raw.split("/")
-                return float(num) / float(den), rest
+                num, den = frac.split("/")
+                value = float(num) / float(den)
             except (ValueError, ZeroDivisionError):
-                return 1.0, rest
-        try:
-            return float(raw), rest
-        except ValueError:
-            return 1.0, rest
-    word = _word_amount(t)
-    if word is not None:
-        parts = t.split()
-        for phrase in _FRACTIONS:
-            if t.startswith(phrase):
-                return word, t[len(phrase):].strip().lstrip("aof ").strip()
-        return word, " ".join(parts[1:]).strip()
-    return 1.0, t
+                value = None
+        elif uni:
+            value = _UNICODE_FRACTIONS.get(uni)
+        elif dec:
+            try:
+                value = float(dec)
+            except ValueError:
+                value = None
+        if value is not None:
+            if whole:
+                value += float(whole)
+            while rest.split(" ", 1)[0] in ("of", "a", "an") and " " in rest:
+                rest = rest.split(" ", 1)[1].strip()
+            return value, rest
+        if whole:
+            return float(whole), rest
+
+    got = _lead_words(low)
+    if got is not None:
+        return got
+    return 1.0, low
 
 
 def _head_matches(name: str, key: str) -> bool:
@@ -488,7 +611,148 @@ def _volume(raw: str, unit_text: str, food_name: str, amount: float, ml: float,
         unit_label=label, assumptions=notes)
 
 
+#: Foods whose default piece weight IS a size, and which size it is. The 50 g
+#: in PIECE_WEIGHTS_G is a LARGE egg, and nothing said so — the card read "2
+#: eggs, 100 g" as though the user had specified. An assumption the user did
+#: not make must arrive as an assumption they can correct, not as a fact. Only
+#: fires when they stated no size of their own.
+_ASSUMED_SIZE = {
+    "egg": "large", "banana": "medium", "apple": "medium", "orange": "medium",
+    "bagel": "standard", "cookie": "medium",
+}
+
+#: Size words a user actually types. Theirs — recorded, never invented.
+_SIZE_WORDS = {
+    "large", "big", "jumbo", "extra large", "xl", "small", "mini", "tiny",
+    "medium", "regular", "standard", "grande", "venti", "tall",
+    "double", "king", "personal",
+}
+
+#: How much to trust the mass, by how it was arrived at. An oz→g conversion is
+#: arithmetic; a bowl is a guess with a name. These travelled as the same
+#: `grams` float, which is how an estimate got presented like a measurement.
+_NORM_CONFIDENCE = {
+    "mass_conversion": 1.0,
+    "volume_conversion": 0.95,
+    "vessel": 0.6,
+    "piece_weight": 0.7,
+    "ontology": 0.5,
+    "none": 0.2,
+}
+
+
+def _stated_amount(low: str):
+    """The number the user ACTUALLY stated, or None when they stated none.
+
+    `_parse_amount` defaults to 1.0 so the arithmetic has something to work
+    with, and that default is indistinguishable downstream from a user who
+    said "one". They are not the same claim, and only one of them is safe to
+    quote back.
+    """
+    if not low:
+        return None
+    m = _QTY_RE.match(low)
+    if m and (m.group("frac") or m.group("uni") or m.group("dec")
+              or m.group("whole")):
+        return _parse_amount(low)[0]
+    if _lead_words(low) is not None:
+        return _parse_amount(low)[0]
+    return None
+
+
+def _size_descriptor(low: str) -> str:
+    """A size word the user typed — read from what FOLLOWS the amount.
+
+    Scanning the whole string made "half a bagel" report a size descriptor of
+    "half", which is the fraction, already consumed and already counted. A
+    descriptor is a claim about the piece; the amount is a claim about how many.
+    """
+    _, rest = _parse_amount(low)
+    for word in rest.replace(",", " ").split():
+        if word in _SIZE_WORDS:
+            return word
+    return ""
+
+
+def _infer_source(q: NormalizedQuantity) -> str:
+    """The normalization method, read off what the construction produced.
+
+    Only ever used as a floor for construction sites that did not declare one;
+    a site that knows its own method says so and this never overrides it.
+    """
+    if q.normalization_source:
+        return q.normalization_source
+    if q.grams is None and q.milliliters is None:
+        return "none"
+    if q.unit == "g":
+        return "mass_conversion"
+    if q.milliliters is not None:
+        return "vessel" if any("estimated at" in a for a in q.assumptions) \
+            else "volume_conversion"
+    if any("ontology:" in a for a in q.assumptions):
+        return "ontology"
+    if any("estimated per" in a for a in q.assumptions):
+        return "piece_weight"
+    return "none"
+
+
 def normalize_quantity(raw: str, food_name: str = "") -> NormalizedQuantity:
+    """A portion, plus the record of how it became one (§2, §10).
+
+    The normalization itself is `_normalize_quantity`. This wrapper is what
+    keeps the user's own words attached to the result: once a portion had been
+    reduced to `amount` and `unit`, every layer downstream had to paraphrase it
+    back, and "half a bagel" returned to the user as "0.5 bagel" — their
+    sentence, rewritten by us, in a message that was supposed to be about
+    something else.
+    """
+    q = _normalize_quantity(raw, food_name)
+    low = (raw or "").strip().lower().replace("-", " ")
+    source = _infer_source(q)
+    stated = _stated_amount(low)
+    descriptor = _size_descriptor(low)
+
+
+    assumptions = list(q.assumptions)
+    # Disclose an assumed size. The 50 g default IS a large egg; presenting it
+    # without saying so is the same offence as a confident calorie number with
+    # no source — it is a decision we made, wearing the user's authority.
+    if not descriptor and source == "piece_weight":
+        key = next((k for k in _ASSUMED_SIZE
+                    if _head_matches((food_name or "").lower(), k)), "")
+        if key:
+            note = f"assumed {_ASSUMED_SIZE[key]} {key} — say otherwise and I'll rescale"
+            if note not in assumptions:
+                assumptions.append(note)
+
+    return replace(
+        q,
+        original_user_wording=(raw or "").strip(),
+        user_stated_amount=stated,
+        user_stated_unit=_user_stated_unit(low),
+        size_descriptor=descriptor,
+        normalization_source=source,
+        normalization_confidence=_NORM_CONFIDENCE.get(source, 0.2),
+        assumptions=tuple(assumptions),
+    )
+
+
+def _user_stated_unit(low: str) -> str:
+    """The unit word as the user wrote it, before any canonicalisation.
+
+    `unit` is ours: "6 oz" becomes unit="g" because grams are the scaling
+    currency. That is correct arithmetic and the wrong thing to quote back —
+    the user said ounces.
+    """
+    _, rest = _parse_amount(low)
+    for token in rest.split():
+        if token in _SIZE_WORDS or token in ("of", "a", "an"):
+            continue
+        return token
+    return ""
+
+
+def _normalize_quantity(raw: str, food_name: str = "") -> NormalizedQuantity:
     """A portion, in a form the scaler can use — or one that honestly says it
     cannot be scaled by mass."""
     raw = (raw or "").strip()
