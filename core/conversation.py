@@ -529,6 +529,7 @@ async def run_turn(
     # None so a prior turn's id can never leak into this one on a reused task.
     from core.turn_identity import CURRENT_TURN_ID as _TID
     _TID.set(turn_id)
+    _turn_route = "legacy"   # refined by the lanes below; emitted in turn_trace
     _source = source_type or platform
     _tag = f"{platform}:{user.id}"
     _retried = False  # turn-health: did the self-heal fire this turn?
@@ -721,6 +722,7 @@ async def run_turn(
                     _confirm_hit = _sft_prior["items"]
             if _undo_plan is not None:
                 _sft = _undo_plan
+                _turn_route = "ledger_undo"
                 _sft["_before"] = (
                     int(getattr(today_log, "total_calories", 0) or 0),
                     int(getattr(today_log, "total_protein", 0) or 0))
@@ -736,6 +738,7 @@ async def run_turn(
                                            source="structured_food:confirm_replay")
                              for _it in _confirm_hit[:8])
                             if c is not None]
+                _turn_route = "confirm_replay"
                 _sft = {"action": "log", "tool_calls": _calls_c,
                         "say": ("Locked in, {batch_cal} cal and "
                                 "{batch_protein}g protein. You're at {day_cal} "
@@ -941,12 +944,15 @@ async def run_turn(
             except Exception:
                 _idem_dup = False
             if _idem_dup:
+                _turn_route = "duplicate"
                 result = {"text": ("Already got that one - it's on the board "
                                    "from a moment ago."),
                           "raw_content": [], "tool_calls": [],
                           "stop_reason": "structured_food"}
                 _sft = None
             else:
+                if _turn_route == "legacy":
+                    _turn_route = f"structured_{_sft['action']}"
                 result = {"text": "", "raw_content": [],
                           "tool_calls": _sft["tool_calls"],
                           "stop_reason": "structured_food"}
@@ -972,6 +978,7 @@ async def run_turn(
                     pass
         elif _sft is not None and _sft["action"] == "ask":
             # The one clarify question IS the reply — no tools, nothing logged.
+            _turn_route = "structured_ask"
             result = {"text": _sft["text"], "raw_content": [], "tool_calls": [],
                       "stop_reason": "structured_food"}
         else:
@@ -2656,6 +2663,23 @@ user_message=_user_text or "")
             _errored = isinstance(_res, str) and _res.startswith("Error:")
             _parts.append(f"{nm}:error" if _errored else nm)
         _skills_fired = ",".join(_parts) or None
+
+    # ── End-to-end turn trace (review #22): ONE greppable line per turn —
+    # identity, route, tools, health flags, latency, contract versions. The
+    # seed of the replayable decision trace; fully wrapped, never breaks a
+    # turn. `route` answers "which lane handled this?" without log archaeology.
+    try:
+        from core.turn_identity import current_turn_id as _ctid
+        from core.food_ledger import (INTERPRETER_VERSION as _tr_iv,
+                                      POLICY_VERSION as _tr_pv)
+        logger.info(
+            f"event=turn_trace {_tag} turn={_ctid() or '-'} "
+            f"route={_turn_route} tools={_skills_fired or '-'} "
+            f"flags={','.join(health_flags) or '-'} "
+            f"ms={int((_time_mod.monotonic() - _turn_t0) * 1000)} "
+            f"iv={_tr_iv} pv={_tr_pv}")
+    except Exception:
+        pass
 
     return TurnResult(
         response=resp,
