@@ -2437,7 +2437,8 @@ user_message=_user_text or "")
             from core.reasoning import build_reasoning
             resp.reasoning = build_reasoning(
                 tool_calls, tool_results, None,
-                int((_time_mod.monotonic() - _turn_t0) * 1000))
+                int((_time_mod.monotonic() - _turn_t0) * 1000),
+                execution=_execution)
         except Exception:
             resp.reasoning = None   # a broken receipt never breaks a turn
 

@@ -138,9 +138,14 @@ _TOOL_STEPS = {
 
 def build_reasoning(tool_calls: list, tool_results: dict,
                     context_stats: Optional[dict] = None,
-                    duration_ms: Optional[int] = None) -> Optional[dict]:
+                    duration_ms: Optional[int] = None,
+                    execution=None) -> Optional[dict]:
     """The receipt for one turn, or None when there's nothing worth showing
-    (pure-chat turns with no context read and no tools stay clean)."""
+    (pure-chat turns with no context read and no tools stay clean).
+
+    `execution` is the typed ExecutionResult (P0.3c): per-call result text and
+    sourcing come from it, so the receipt reports what the executor actually
+    did. Falls back to the executor's legacy input stash when absent."""
     steps: list = []
 
     ctx = context_stats or {}
@@ -161,14 +166,30 @@ def build_reasoning(tool_calls: list, tool_results: dict,
     # condensed line instead.
     _n_food = sum(1 for tc in (tool_calls or []) if (tc.get("name") == "log_food"))
     _detailed_food = _n_food == 1
+    # Typed per-call view (P0.3c), keyed by executed input identity.
+    _by_input = {}
+    try:
+        for _c in (execution.calls if execution is not None else ()):
+            _by_input[id(_c.raw_input)] = _c
+    except Exception:
+        _by_input = {}
     for tc in tool_calls or []:
         name = tc.get("name") or ""
         inp = tc.get("input") or {}
-        # Prefer THIS call's own result (stashed by the executor) — the shared
-        # dict is keyed by tool name, so a multi-item batch collapses to the last
-        # result and a dedup-BLOCKED item would show as "Logged" (2026-07-23).
-        result = str(inp.get("_result") if inp.get("_result") is not None
-                     else (tool_results or {}).get(name, ""))
+        # THIS call's own result — the shared dict is keyed by tool NAME, so a
+        # multi-item batch collapses to the last result and a dedup-BLOCKED item
+        # would show as "Logged" (2026-07-23). The typed view carries per-call
+        # truth; the legacy stash is the fallback.
+        _cr = _by_input.get(id(inp))
+        if _cr is not None and _cr.result_text:
+            result = _cr.result_text
+        else:
+            result = str(inp.get("_result") if inp.get("_result") is not None
+                         else (tool_results or {}).get(name, ""))
+        if _cr is not None and _cr.sourcing and not inp.get("_sourcing"):
+            # Sourcing rides the typed call; keep the helpers' signature by
+            # handing them a view that carries it.
+            inp = {**inp, "_sourcing": _cr.sourcing}
         if name == "log_food":
             if _detailed_food:
                 steps.extend(_food_detailed(inp, result))
