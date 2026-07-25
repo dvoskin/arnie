@@ -19,7 +19,7 @@ from core.food_response import (ARNIE_VOICE, CARD_FACTS, CoachingOpportunity,
                                 mentions_unapproved_item, plan_clarify,
                                 plan_clarify_from_question,
                                 plan_confirm_answer, plan_correct,
-                                plan_failure, plan_from_resolution, plan_review,
+                                REVIEW_OPENER, plan_failure, plan_from_resolution, plan_review,
                                 plan_undo, validate)
 
 
@@ -239,9 +239,10 @@ def test_the_review_fallback_switches_to_lines_when_prose_stops_scanning():
     text = fallback(plan_review(_items(("chicken shawarma", "4 oz"),
                                        ("rice", "1 cup"), ("hummus", "2 tbsp"),
                                        ("pita", "half"))))
-    assert text.startswith("Here's how I'm reading that:")
+    assert text.startswith(REVIEW_OPENER)
     assert "• 4oz of chicken shawarma" in text
-    assert text.endswith("Does that look right?")
+    # "all" because a list was rendered — it asks about the set, not one item.
+    assert text.endswith("Does that all look right?")
     assert "1." not in text and "**" not in text     # no numbering, no bold
 
 

@@ -838,10 +838,17 @@ def fallback(plan: FoodResponsePlan) -> str:
         # A complete sentence, then a list only when a list earns its place.
         # "I've got:" over three bare rows read as a component spec; the point
         # of a review turn is that the user can hear it as a sentence.
+        #
+        # REVIEW and CLARIFY open differently ON PURPOSE. Nothing is open here,
+        # so the turn is a last look before the write — "here's what I'm about
+        # to log". CLARIFY is still forming an opinion, so it says it is
+        # interpreting. Sharing one opener made the two turns indistinguishable
+        # to a reader, which is how "does that look right?" ended up standing
+        # in front of a question the user had not been shown yet.
         items = plan.resolved_items
         if _wants_a_list(items):
-            return (f"Here's how I'm reading that:\n\n"
-                    f"{format_items(items)}\n\nDoes that look right?")
+            return (f"{REVIEW_OPENER}\n\n"
+                    f"{format_items(items)}\n\nDoes that all look right?")
         described = _join([i.describe() for i in items])
         return f"I'm reading that as {described}. Does that look right?"
 
@@ -853,7 +860,7 @@ def fallback(plan: FoodResponsePlan) -> str:
         question = plan.clarification_question or f"Which {_held_name(plan)} was it?"
         shown = list(plan.resolved_items) + list(plan.pending_items)
         if _wants_a_list(shown):
-            return (f"Here's how I'm reading that:\n\n"
+            return (f"{CLARIFY_OPENER}\n\n"
                     f"{format_items(shown)}\n\n{question}")
         if shown:
             return (f"I'm reading that as "
@@ -890,6 +897,16 @@ def fallback(plan: FoodResponsePlan) -> str:
 
     return ""
 
+
+#: The two review openers. Distinct because the turns are: CLARIFY is still
+#: forming an opinion and is about to ask about part of it; REVIEW has nothing
+#: open and is taking a last look before writing.
+#:
+#: Both are full sentences that introduce what follows. The banned register is
+#: the heading — "Meal check", "Quick review", "Before I log this" — which
+#: labels the list instead of speaking to the person reading it.
+CLARIFY_OPENER = "Here's how I'm interpreting that:"
+REVIEW_OPENER = "Here's what I'm about to log:"
 
 #: Above this many foods, prose stops scanning and a list starts helping.
 LIST_THRESHOLD = 3
