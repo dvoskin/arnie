@@ -505,3 +505,165 @@ def test_card_verdicts_are_complete_sentences():
     for text in verdicts:
         first = text.split(".")[0]
         assert len(first.split()) >= 4, f"telegraphic verdict: {text!r}"
+
+
+# ── 8. "you pick" is a request to decide, not to decide silently ─────────────
+def test_asking_for_an_estimate_produces_an_amount():
+    """The command was parsed and then dropped — nothing turned it into a
+    number, so a user who answered "no idea, you pick" left the item exactly as
+    unresolved as before they answered."""
+    from skills.nutrition.answer_parsers import parse_quantity_answer
+
+    parsed = parse_quantity_answer(
+        "use your best estimate", _Question("one tablespoon",
+                                            "two tablespoons"))
+    assert parsed.values.get("stated_amount") == 1.5
+
+
+def test_an_estimate_says_what_it_chose():
+    """Being asked to choose is not permission to choose silently."""
+    from skills.nutrition.answer_parsers import parse_quantity_answer
+
+    parsed = parse_quantity_answer(
+        "no idea", _Question("one tablespoon", "two tablespoons"))
+    assert "1.5" in parsed.disclosure
+    assert "tablespoon" in parsed.disclosure
+
+
+def test_an_estimate_with_nothing_to_estimate_from_stays_a_command():
+    """No offered range means no basis for a midpoint. The command still
+    stands so the caller falls back to its own estimate path rather than
+    re-asking a question the user has already declined."""
+    from skills.nutrition.answer_parsers import (ClarificationCommand,
+                                                 parse_quantity_answer)
+
+    class _Bare:
+        options = ()
+
+    parsed = parse_quantity_answer("no idea", _Bare())
+    assert parsed.command is ClarificationCommand.ESTIMATE
+    assert not parsed.values
+
+
+# ── 9. the meal total moves with the answer ───────────────────────────────────
+def _peanut_butter(tablespoons):
+    """Resolve peanut butter at N tablespoons through the real resolver."""
+    from skills.nutrition.candidates import Candidate
+    from skills.nutrition.models import (FoodResolutionRequest,
+                                         profile_from_values)
+    from skills.nutrition.provenance import MatchGrade, SourceTier
+    from skills.nutrition.resolver import resolve
+    from skills.nutrition.scaling import Per100g
+
+    candidate = Candidate(
+        source="usda", tier=SourceTier.GENERIC_EXACT, name="Peanut butter",
+        profile=profile_from_values("usda", basis="per_100g", confidence=0.8,
+                                    calories=588, protein=25, fat=50),
+        basis=Per100g(), reported_grade=MatchGrade.EXACT)
+    return resolve(FoodResolutionRequest(
+        food_name="Peanut butter",
+        raw_quantity=f"{tablespoons} tbsp"), [candidate])
+
+
+def test_the_meal_total_moves_when_the_scoop_is_answered():
+    """The reason the question is worth asking. One versus two tablespoons is
+    the difference the user was being asked to approve blind."""
+    one = _peanut_butter(1).nutrients.amount("calories")
+    two = _peanut_butter(2).nutrients.amount("calories")
+
+    assert one and two
+    assert two > one * 1.8, (one, two)
+    # ~95 calories, which is what makes it material rather than a detail.
+    assert 80 <= (two - one) <= 115, (one, two)
+
+
+# ── 10. source precedence for a named product ─────────────────────────────────
+def test_a_saved_user_food_outranks_a_manufacturer_record():
+    """A user's own saved food for the same product is the higher authority —
+    they weighed it, or corrected it, and that beats a database."""
+    from skills.nutrition.provenance import MatchGrade, SourceTier
+
+    out = _resolve_mms([
+        _candidate("off", SourceTier.BRANDED_EXACT, "Peanut M&Ms", 515,
+                   MatchGrade.EXACT),
+        _candidate("user_regular", SourceTier.USER_REGULAR, "Peanut M&Ms",
+                   490, MatchGrade.EXACT)])
+    assert out.source == "user_regular"
+
+
+def test_a_different_variant_does_not_answer_for_this_one():
+    """Peanut M&M's and plain M&M's are different products. A variant mismatch
+    must not quietly answer — it is the near-neighbour failure with a brand
+    name attached."""
+    from skills.nutrition.models import FoodResolutionRequest
+    from skills.nutrition.provenance import MatchGrade, SourceTier
+    from skills.nutrition.resolver import resolve
+
+    out = resolve(
+        FoodResolutionRequest(food_name="Peanut M&Ms", brand="M&Ms",
+                              variant="peanut", raw_quantity="27g",
+                              is_packaged=True),
+        [_candidate("off", SourceTier.BRANDED_EXACT, "Peanut Butter M&Ms",
+                    520, MatchGrade.EXACT)])
+    # DOWNGRADED, not rejected: it is plausibly the same product family, so
+    # throwing it away would leave nothing where a rough answer was available.
+    # What it must not be is EXACT — at that grade it outranks a real match and
+    # its disagreement counts as decisive evidence.
+    assert out.match_grade == "category", out.match_grade
+
+
+# ── 11. nothing narrates the transaction ──────────────────────────────────────
+@pytest.mark.parametrize("narration", [
+    "Give me a moment. Logging all 3 now.",
+    "One sec, saving that.",
+    "Processing your log now.",
+    "Let me log that for you.",
+])
+def test_processing_narration_never_validates(narration):
+    """The turn tells the user what happened, never that something is about to
+    happen. A progress announcement is a stall the user has to sit through."""
+    plan = FoodResponsePlan(intent=FoodResponseIntent.COMMIT,
+                            allow_no_text=True)
+    assert not validate(narration, plan).ok
+
+
+# ── 12. refusing to scale is the loudest doubt, not the quietest ──────────────
+def _unscalable():
+    """A portion with no known mass: "1 platter" of a food nothing can weigh."""
+    from skills.nutrition.candidates import Candidate
+    from skills.nutrition.models import (FoodResolutionRequest,
+                                         profile_from_values)
+    from skills.nutrition.provenance import MatchGrade, SourceTier
+    from skills.nutrition.resolver import resolve
+    from skills.nutrition.scaling import Per100g
+
+    candidate = Candidate(
+        source="usda", tier=SourceTier.GENERIC_EXACT, name="Shawarma platter",
+        profile=profile_from_values("usda", basis="per_100g", confidence=0.8,
+                                    calories=200, protein=20),
+        basis=Per100g(), reported_grade=MatchGrade.EXACT)
+    return resolve(FoodResolutionRequest(
+        food_name="shawarma platter", raw_quantity="1 platter"), [candidate])
+
+
+def test_an_unscalable_portion_logs_nothing_rather_than_the_wrong_portion():
+    """The 588-calorie tablespoon. A per-100g row is not a fallback for a
+    portion we could not convert — it describes a different amount of food."""
+    out = _unscalable()
+    assert out.nutrients.amount("calories") in (None, 0), out.nutrients.as_dict()
+    assert any("not scaled" in w for w in out.warnings), out.warnings
+
+
+def test_a_refused_scaling_still_sizes_its_own_doubt():
+    """The regression this exists to catch: emptying the profile also emptied
+    every calorie_span computed from it, so the state where the resolver knows
+    LEAST reported zero doubt and the ask ladder went quiet. The magnitude for
+    sizing comes from the unscaled row; the ANSWER still comes from nowhere."""
+    from skills.nutrition.resolver import should_ask
+
+    out = _unscalable()
+    basis = [a for a in out.ambiguities if a.field == "serving_basis"]
+    assert basis, out.ambiguities
+    assert basis[0].calorie_span > 0, basis[0]
+    # And it reaches the user in the mode that exists to catch exactly this.
+    assert should_ask(out.ambiguities, "strict") is not None

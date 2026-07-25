@@ -41,6 +41,12 @@ class ClarificationAnswer:
     command: Optional[ClarificationCommand] = None
     unparsed: bool = False
     matched_candidate_id: Optional[str] = None
+    #: What to tell the user we chose on their behalf.
+    #:
+    #: "Use your best estimate" is a request to decide, not permission to
+    #: decide silently — a user who asked for an estimate is still entitled to
+    #: know which one they got. Empty when nothing was assumed.
+    disclosure: str = ""
 
     @property
     def resolves_anything(self) -> bool:
@@ -173,6 +179,8 @@ def parse_quantity_answer(text: str, question=None) -> ClarificationAnswer:
     thing we asked about. Anything else is not a quantity."""
     command = parse_command(text)
     if command is not None:
+        if command is ClarificationCommand.ESTIMATE:
+            return _estimate_answer(question)
         return ClarificationAnswer(command=command, confidence=1.0)
 
     m = _AMOUNT_RE.search(text or "")
@@ -201,6 +209,45 @@ def parse_quantity_answer(text: str, question=None) -> ClarificationAnswer:
         if resolved is not None:
             return ClarificationAnswer(values=resolved, confidence=0.7)
     return UNPARSED
+
+
+def _estimate_answer(question) -> ClarificationAnswer:
+    """"Use your best estimate" — decide, and say what was decided.
+
+    The command was parsed and then dropped: nothing turned it into an amount,
+    so a user who answered the question with "no idea, you pick" left the item
+    exactly as unresolved as before they answered.
+
+    The estimate is the MIDDLE of the range we offered, which is the honest
+    reading of "you pick" — we asked whether it was closer to one end or the
+    other, and they told us they do not know. Returned WITH a disclosure,
+    because being asked to choose is not permission to choose silently.
+    """
+    values = _from_offered_range("mid", getattr(question, "options", ()))
+    if not values:
+        # Nothing to estimate from. The command still stands — the caller
+        # falls back to its own estimate path rather than re-asking.
+        return ClarificationAnswer(command=ClarificationCommand.ESTIMATE,
+                                   confidence=1.0)
+    return ClarificationAnswer(
+        values=values, confidence=0.6,
+        command=ClarificationCommand.ESTIMATE,
+        disclosure=_describe_estimate(values))
+
+
+def _describe_estimate(values: Mapping[str, Any]) -> str:
+    """What we chose, in the words the question was asked in."""
+    amount = values.get("stated_amount")
+    unit = values.get("stated_unit") or ""
+    if amount is None:
+        fraction = values.get("consumed_fraction")
+        if fraction is None:
+            return ""
+        return f"I went with about {round(float(fraction) * 100)}% of it."
+    trimmed = (str(int(amount)) if float(amount).is_integer()
+               else f"{amount:g}")
+    unit = unit.rstrip("s") + ("" if amount == 1 else "s") if unit else ""
+    return f"I went with about {trimmed} {unit}.".replace("  ", " ")
 
 
 def _from_offered_range(end: str, options):

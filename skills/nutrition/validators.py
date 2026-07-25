@@ -115,7 +115,36 @@ def validate_identity(requested: str, candidate_name: str,
 
     if _tokens(req) and _tokens(cand) and _tokens(req).isdisjoint(_tokens(cand)):
         return Verdict(REJECT, "no_shared_terms", f"{requested!r} vs {candidate_name!r}")
+
+    # A NAMED PRODUCT with extra qualifying words is a different SKU.
+    #
+    # "Peanut M&Ms" and "Peanut Butter M&Ms" share enough tokens to pass, and
+    # the second was being accepted as an EXACT match for the first — a
+    # near-neighbour failure with a brand name on it, and a 40-calorie-per-27g
+    # difference between two products sitting next to each other on a shelf.
+    #
+    # Branded only. A generic request legitimately matches a fuller database
+    # name — "chicken breast" against "Chicken breast, roasted, skinless" is
+    # the database being more specific, not a different food — so applying this
+    # to generics would reject the ordinary case.
+    if requested_brand:
+        extra = {t for t in _tokens(cand) - _tokens(req) - _tokens(requested_brand)
+                 if len(t) >= 3 and t not in _NEUTRAL_QUALIFIERS}
+        if extra:
+            return Verdict(DOWNGRADE, "extra_product_qualifier",
+                           f"candidate adds {sorted(extra)}")
     return PASSED
+
+
+#: Words that make a product name longer without making it a different product.
+#: Packaging, format and marketing words — as opposed to "butter" in "Peanut
+#: Butter M&Ms", which names a different sweet entirely.
+_NEUTRAL_QUALIFIERS = frozenset({
+    "the", "and", "with", "original", "classic", "regular", "standard",
+    "pack", "packet", "bag", "box", "single", "serve", "size", "sized",
+    "count", "piece", "pieces", "bar", "bars", "share", "sharing", "share",
+    "new", "improved", "brand", "inc", "ltd", "co", "company", "usa",
+})
 
 
 # ── energy consistency ────────────────────────────────────────────────────────

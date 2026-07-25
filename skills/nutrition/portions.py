@@ -183,6 +183,20 @@ PORTION_ONTOLOGY = {
     "plate": {
         "default":      (400.0, 250.0, 650.0, 0.35),
     },
+    "cup": {
+        # A cup is an exact VOLUME and an inexact mass, and which matters
+        # depends on the food. These rows cover the solids where 236 ml says
+        # very little — a cup of broccoli florets and a cup of nuts differ by
+        # four times.
+        "greens":       (30.0, 20.0, 45.0, 0.60),
+        "berries":      (145.0, 120.0, 170.0, 0.72),
+        "cereal":       (35.0, 25.0, 50.0, 0.62),
+        "chips":        (30.0, 20.0, 45.0, 0.55),
+        "popcorn":      (10.0, 7.0, 15.0, 0.60),
+        "nuts":         (130.0, 110.0, 150.0, 0.70),
+        "dried_fruit":  (150.0, 120.0, 175.0, 0.65),
+        "default":      (120.0, 60.0, 240.0, 0.40),
+    },
 }
 
 #: FORM-SPECIFIC distributions: (category, form) → (median, lower, upper, conf).

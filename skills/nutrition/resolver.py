@@ -144,11 +144,22 @@ def _mix_micros(winner_profile: NutrientProfile, others: list,
 
 def _ambiguities(request: FoodResolutionRequest, winner: Candidate,
                  runners: list, quantity: NormalizedQuantity,
-                 scaled: NutrientProfile) -> tuple:
+                 scaled: NutrientProfile,
+                 unscaled: Optional[NutrientProfile] = None) -> tuple:
     """Everything still genuinely uncertain, sized by what it costs. Reporting
-    is unconditional; whether to ASK is the caller's decision with the mode."""
+    is unconditional; whether to ASK is the caller's decision with the mode.
+
+    `unscaled` is the winner's own row, used ONLY to size doubt when scaling
+    was refused and `scaled` is therefore empty. Refusing to scale is the
+    resolver's least certain state, and sizing every span off an empty profile
+    reported that state as zero doubt — which silenced the ask ladder exactly
+    where it was most needed. The magnitude comes from the row; the ANSWER
+    never does.
+    """
     out = []
     item_cal = scaled.amount("calories") or 0.0
+    if item_cal <= 0 and unscaled is not None:
+        item_cal = unscaled.amount("calories") or 0.0
 
     def _fraction(span: float) -> float:
         return round(span / item_cal, 3) if item_cal > 0 else 1.0
@@ -296,13 +307,21 @@ def resolve(request: FoodResolutionRequest, candidates: list) -> NutritionResolu
     try:
         scaled = scale_profile(merged, winner.basis, quantity)
     except ScalingRefused as e:
-        # Refusing beats guessing, but the turn still needs numbers: fall back
-        # to the source's own basis unscaled and say so loudly.
+        # The source's own unscaled numbers are NOT a fallback. They describe a
+        # different portion than the one eaten, and persisting them logged one
+        # tablespoon of peanut butter as 588 calories — the per-100g row, with
+        # a warning nobody sees, in the day's totals. Two tablespoons logged as
+        # 588 as well, so answering the clarification changed nothing.
+        #
+        # This is "unknown is not zero" applied one level up: unknown is also
+        # not "the wrong portion". An unscalable portion produces no nutrients,
+        # which is a state the ask ladder and `promotable()` can both act on.
         warnings.append(f"portion not scaled: {e}")
-        scaled = merged
+        scaled = NutrientProfile()
 
     grade = _grade(request, winner)
-    ambiguities = _ambiguities(request, winner, runners, quantity, scaled)
+    ambiguities = _ambiguities(request, winner, runners, quantity, scaled,
+                               unscaled=merged)
     cal_value = scaled.get("calories")
     confidence = cal_value.confidence if cal_value is not None else 0.0
     if grade not in DECISIVE_GRADES:

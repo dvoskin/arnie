@@ -159,6 +159,46 @@ def piece_weight(food_name: str, unit_text: str = "") -> Optional[tuple]:
     return round(grams, 1), round(spread, 1)
 
 
+#: Density in g/ml, per portion-ontology food category. There is deliberately
+#: NO default: a food absent from this table has no density we are willing to
+#: claim, and the volume stays a volume. Water density applied to everything is
+#: exactly the silent guess scaling.py refuses — 100 ml of popcorn is not 100 g.
+VOLUME_DENSITY_G_PER_ML = {
+    "oil": 0.92, "syrup": 1.37, "sauce": 1.03, "yogurt": 1.03,
+    "nut_butter": 0.95, "sugar": 0.85, "soup": 1.0, "rice": 0.67,
+    "pasta": 0.59, "oats": 0.38, "cereal": 0.13, "berries": 0.63,
+    "ice_cream": 0.55, "protein_powder": 0.45, "salad": 0.25,
+}
+
+
+def volume_to_grams(milliliters: float, food_name: str):
+    """(grams, density, category) for this food, or None when we have no
+    density for it. None means the volume stays a volume."""
+    try:
+        from skills.nutrition.portions import food_category
+    except Exception:
+        return None
+    category = food_category(food_name)
+    density = VOLUME_DENSITY_G_PER_ML.get(category)
+    if density is None:
+        return None
+    return round(milliliters * density, 1), density, category
+
+
+def _cup_mass(food_name: str, amount: float):
+    """(grams, uncertainty_g, source) for a cup of this solid, or None."""
+    try:
+        from skills.nutrition.portions import distribution_for
+    except Exception:
+        return None
+    dist = distribution_for("cup", food_name)
+    if dist is None:
+        return None
+    scaled = dist.scaled(amount) if amount != 1.0 else dist
+    return (scaled.median_g, scaled.uncertainty_g,
+            f"ontology:{scaled.specificity.value}:{scaled.category}")
+
+
 def normalize_quantity(raw: str, food_name: str = "") -> NormalizedQuantity:
     """A portion, in a form the scaler can use — or one that honestly says it
     cannot be scaled by mass."""
@@ -175,10 +215,43 @@ def normalize_quantity(raw: str, food_name: str = "") -> NormalizedQuantity:
                 unit_label=raw or f"{amount} {token}")
     for token, ml_per in sorted(_VOL_ML.items(), key=lambda kv: -len(kv[0])):
         if re.match(rf"^{re.escape(token)}\b", unit_text):
+            ml = round(amount * ml_per, 1)
+            # A volume is exact AS A VOLUME. Carrying a mass alongside it is
+            # what lets a per-100g source answer at all — and without it, "1
+            # tbsp of peanut butter" against a per-100g row could not be
+            # scaled, so the row was served UNSCALED: 588 calories for a
+            # tablespoon, and the same 588 for two (Danny 2026-07-25).
+            #
+            # The density is an assumption and is stated as one. It is omitted
+            # entirely for a food we have no density for, because water density
+            # applied to everything is the silent guess scaling.py exists to
+            # refuse.
+            bridged = volume_to_grams(ml, food_name)
+            if bridged is None:
+                # A cup of a solid is a volume the FOOD answers, not the
+                # measuring jug. Restricted to `cup` on purpose: a teaspoon and
+                # a tablespoon share the ontology's one "spoonful" row, and
+                # borrowing it would make them the same portion.
+                solid = (_cup_mass(food_name, amount)
+                         if token in ("cup", "cups") else None)
+                if solid is None:
+                    return NormalizedQuantity(
+                        amount=amount, unit="ml", milliliters=ml,
+                        unit_label=raw or f"{amount} {token}")
+                grams, uncertainty, source = solid
+                return NormalizedQuantity(
+                    amount=amount, unit="ml", milliliters=ml, grams=grams,
+                    unit_label=raw or f"{amount} {token}",
+                    uncertainty_g=uncertainty,
+                    assumptions=(f"{_fmt(amount)} cup estimated at "
+                                 f"{_fmt(grams)}g ({source})",))
+            grams, density, category = bridged
             return NormalizedQuantity(
-                amount=amount, unit="ml",
-                milliliters=round(amount * ml_per, 1),
-                unit_label=raw or f"{amount} {token}")
+                amount=amount, unit="ml", milliliters=ml, grams=grams,
+                unit_label=raw or f"{amount} {token}",
+                uncertainty_g=round(grams * 0.15, 1),
+                assumptions=(f"{_fmt(ml)}ml estimated at {_fmt(grams)}g "
+                             f"(density {density} g/ml for {category})",))
 
     # Countable: the mass, if we can estimate it, comes from the FOOD.
     # The count word is not always first — "6 thin slices" leads with a size
