@@ -67,12 +67,25 @@ def _allowlist() -> set:
 
 
 def owns_committed_values(user_id=None) -> bool:
-    """True only when the resolver should decide what gets saved: live mode,
-    and this user allowlisted if an allowlist is set."""
-    if resolver_mode() != MODE_LIVE:
-        return False
-    allow = _allowlist()
-    return (not allow) or (user_id in allow)
+    """True only when the resolver should decide what gets saved.
+
+    Live mode, this user in the cohort, and the rollout not halted. The cohort
+    logic lives in `canary` — allowlist, percentage bucket and the halt flag
+    are one decision and splitting it across two modules is how an allowlist
+    ends up able to override a halt.
+
+    Falls back to the pre-canary rule if canary cannot be imported: a rollout
+    control that fails closed on an import error would take the resolver dark
+    for a reason unrelated to the resolver.
+    """
+    try:
+        from skills.nutrition.canary import owns_committed_values as decide
+        return decide(user_id)
+    except Exception:                                # pragma: no cover
+        if resolver_mode() != MODE_LIVE:
+            return False
+        allow = _allowlist()
+        return (not allow) or (user_id in allow)
 
 
 def shadow_enabled() -> bool:
@@ -164,6 +177,11 @@ def promote(resolution, *, food_name: str, quantity: str, legacy,
     resolution's analysis otherwise. Never raises — a failure here must fall
     back to the value the system would have committed anyway.
     """
+    from core import food_trace
+    food_trace.note(
+        resolver_source=getattr(resolution, "source", "") or "",
+        promoted=False)
+
     if not owns_committed_values(user_id):
         return legacy
     if not promotable(resolution):
@@ -189,6 +207,7 @@ def promote(resolution, *, food_name: str, quantity: str, legacy,
         f"new_source={promoted.source} legacy_cal={legacy_cal} "
         f"new_cal={new_cal} grade={resolution.match_grade} "
         f"unknown={','.join(resolution.nutrients.unknown()) or '-'}")
+    food_trace.note(promoted=True)
     if moved is not None and moved >= LOUD_DELTA_MULTIPLE:
         # Often the correction we want (290 → 80 on a Royo bagel). Never
         # silent, so a systematic regression is one grep away.

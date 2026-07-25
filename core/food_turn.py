@@ -850,6 +850,48 @@ async def run(message: str, user, prior: Optional[dict] = None,
               day_line: str = "", board: Optional[list] = None,
               last_assistant: str = "", regulars: Optional[list] = None,
               thread_active: bool = False) -> Optional[dict]:
+    """The traced entry point (PR #29).
+
+    A thin wrapper rather than instrumentation threaded through the body: the
+    interpreter pass has a dozen return points, and making each of them
+    responsible for closing a trace would mean the one that got missed is the
+    one that mattered. One entry, one exit.
+
+    This is a `span`, not a `begin`/`finish` pair, because this function is NOT
+    the whole food turn. It returns the structured action and the tool calls;
+    the writes, the cards and the coaching line all happen after it, in the
+    coordinator. Owning the trace here ended it before the interesting half —
+    resolution, the commits, the render — so the coordinator opens it now and
+    this defers when it finds one. Direct callers (tests, the simulator) still
+    get a trace of the interpreter pass on its own.
+
+    Everything about the trace is best-effort: `span` yields None when tracing
+    is off, so the wrapper costs a function call and nothing else.
+    """
+    from core import food_trace
+
+    fields = {}
+    try:
+        from core.turn_identity import current_turn_id
+        from skills.nutrition.canary import cohort_label
+        fields = dict(turn_id=(current_turn_id() or ""),
+                      user_id=getattr(user, "id", None), mode=_mode(user),
+                      cohort=cohort_label(getattr(user, "id", None)))
+    except Exception:
+        fields = {}
+
+    with food_trace.span(**fields):
+        return await _run_untraced(
+            message, user, prior=prior, day_line=day_line, board=board,
+            last_assistant=last_assistant, regulars=regulars,
+            thread_active=thread_active)
+
+
+async def _run_untraced(message: str, user, prior: Optional[dict] = None,
+                        day_line: str = "", board: Optional[list] = None,
+                        last_assistant: str = "",
+                        regulars: Optional[list] = None,
+                        thread_active: bool = False) -> Optional[dict]:
     """Run the interpreter pass. Returns
         {"action": "log"|"update"|"delete"|"commit", "tool_calls": [...],
          "kinds": [...], "say": "...", "note": "...", "follow_up": "..."}
