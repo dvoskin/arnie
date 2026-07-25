@@ -240,6 +240,27 @@ class StagedFoodItem:
         return replace(item, ambiguities=tuple(
             a for a in item.ambiguities if a.field_name not in settled))
 
+    def answering(self, question, **fields) -> "StagedFoodItem":
+        """Apply an answer and settle the ambiguities THE QUESTION named.
+
+        `resolving()` settles by field name, which is right when the answer
+        fills exactly the field that was asked for. But a question can be
+        answered in a different shape than it was asked: "about a cup" answers
+        a question about `estimated_mass_g` with a `stated_amount` and a
+        `stated_unit`. Settling by field name alone leaves that ambiguity
+        standing, and the next round asks the same question again — the loop
+        `ambiguity_id` exists to prevent and that nothing was reading.
+
+        The question is what the user answered. Its `ambiguity_ids` are what
+        the answer settled.
+        """
+        item = self.resolving(**fields)
+        answered = set(getattr(question, "ambiguity_ids", ()) or ())
+        if not answered:
+            return item
+        return replace(item, ambiguities=tuple(
+            a for a in item.ambiguities if a.ambiguity_id not in answered))
+
 
 # ── construction ──────────────────────────────────────────────────────────────
 def make_staged_item_id(turn_id: str, ordinal: int, text: str) -> str:

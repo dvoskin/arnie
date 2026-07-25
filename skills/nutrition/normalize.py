@@ -17,6 +17,7 @@ they describe the FOOD, not the database that happens to be answering.
 from __future__ import annotations
 
 import re
+from dataclasses import replace
 from typing import Optional
 
 from skills.nutrition.models import NormalizedQuantity
@@ -138,6 +139,20 @@ def _parse_amount(text: str) -> tuple:
     return 1.0, t
 
 
+def _head_matches(name: str, key: str) -> bool:
+    """Whether `key` is the HEAD of this food name, not merely inside it.
+
+    Plain substring matching made "eggplant parmesan" weigh 50 g (egg), a
+    "chipotle bowl" weigh 2 g (chip) and "banana bread" weigh 118 g (banana).
+    English compounds put the head noun last, so the key has to land at the
+    end — "banana bread" is a bread, "orange chicken" is a chicken, and neither
+    has a piece weight here.
+    """
+    words = [w.rstrip("s") for w in re.findall(r"[a-z']+", name)]
+    key_words = [w.rstrip("s") for w in key.split()]
+    return bool(words) and words[-len(key_words):] == key_words
+
+
 def piece_weight(food_name: str, unit_text: str = "") -> Optional[tuple]:
     """(grams, uncertainty_g) for one piece of this food, or None when we have
     no basis for a guess. None is a legitimate answer — it becomes an unknown
@@ -145,7 +160,7 @@ def piece_weight(food_name: str, unit_text: str = "") -> Optional[tuple]:
     name = f"{unit_text} {food_name}".strip().lower()
     match = None
     for key in sorted(PIECE_WEIGHTS_G, key=len, reverse=True):
-        if key in name:
+        if _head_matches(name, key):
             match = PIECE_WEIGHTS_G[key]
             break
     if match is None:
@@ -157,6 +172,164 @@ def piece_weight(food_name: str, unit_text: str = "") -> Optional[tuple]:
             spread *= factor
             break
     return round(grams, 1), round(spread, 1)
+
+
+#: Density in g/ml, per portion-ontology food category. There is deliberately
+#: NO default: a food absent from this table has no density we are willing to
+#: claim, and the volume stays a volume. Water density applied to everything is
+#: exactly the silent guess scaling.py refuses — 100 ml of popcorn is not 100 g.
+#:
+#: This exists because a per-100g source and a volume portion are otherwise
+#: irreconcilable, and the alternative the resolver used to take — keep the
+#: source's per-100g numbers unscaled — logged a teaspoon of sugar as 387
+#: calories. A stated density, disclosed as an assumption, is worse than a
+#: scale and far better than that.
+VOLUME_DENSITY_G_PER_ML = {
+    "oil": 0.92, "syrup": 1.37, "sauce": 1.03, "yogurt": 1.03,
+    "nut_butter": 0.95, "sugar": 0.85, "soup": 1.0, "rice": 0.67,
+    "pasta": 0.59, "oats": 0.38, "cereal": 0.13, "berries": 0.63,
+    "ice_cream": 0.55, "protein_powder": 0.45, "salad": 0.25,
+}
+
+
+#: Drink vessels → (typical ml, ± ml). A vessel is not a unit of the food; it
+#: is a container whose size is a property of the glass, not the juice. Kept
+#: separate from the portion ontology because the ontology speaks in grams and
+#: the primary quantity here is genuinely a volume.
+#:
+#: Bags, tubs, boxes and packets are DELIBERATELY absent. A bag of chips is 28 g
+#: or 300 g depending on the bag, and inventing a middle is the package-size
+#: ambiguity the clarification ladder exists to ask about.
+#:
+#: "cup" and "pint" are absent too, but for the opposite reason: they are exact
+#: volume units and the loop above claims them first, so a row here would never
+#: be reached.
+VESSEL_ML = {
+    "glass": (250.0, 60.0), "mug": (300.0, 70.0), "can": (355.0, 30.0),
+    "bottle": (500.0, 150.0), "shot": (44.0, 5.0),
+}
+
+
+def vessel_volume(unit_text: str) -> Optional[tuple]:
+    """(ml, ± ml) for a named drink vessel, or None. Plurals count: "two
+    bottles" is two vessels, and matching only the singular sent it down the
+    unweighable-count path."""
+    text = (unit_text or "").lower()
+    for name in sorted(VESSEL_ML, key=len, reverse=True):
+        if re.search(rf"\b{re.escape(name)}e?s?\b", text):
+            return VESSEL_ML[name]
+    return None
+
+
+def volume_to_grams(milliliters: float, food_name: str) -> Optional[tuple]:
+    """(grams, density, category) for this food, or None when we have no
+    density for it. None means the volume stays a volume."""
+    try:
+        from skills.nutrition.portions import food_category
+    except Exception:
+        return None
+    category = food_category(food_name)
+    density = VOLUME_DENSITY_G_PER_ML.get(category)
+    if density is None:
+        return None
+    return round(milliliters * density, 1), density, category
+
+
+def _from_ontology(raw: str, unit_text: str, food_name: str, amount: float
+                   ) -> Optional[NormalizedQuantity]:
+    """The portion ontology's answer for a vague measure, or None.
+
+    normalize's own piece weights are tried first — they are per-FOOD and
+    tighter. This is the tier below: category- and form-specific distributions
+    for the measures people actually use ("a bowl", "a handful", "a plate"),
+    which is what keeps those phrases from degrading to an unscalable count.
+    """
+    try:
+        from skills.nutrition.portions import convert
+    except Exception:
+        return None
+    result = convert(f"{amount} {unit_text}".strip(), food_name)
+    if result.mass_equivalent_g is None or not result.distribution:
+        return None
+    dist = result.distribution
+    return NormalizedQuantity(
+        amount=amount, unit=result.unit, grams=result.mass_equivalent_g,
+        count=amount, unit_label=raw or f"{_fmt(amount)} {result.unit}",
+        uncertainty_g=dist.uncertainty_g,
+        assumptions=(f"{result.unit} estimated at "
+                     f"{_fmt(result.mass_equivalent_g)}g "
+                     f"({result.conversion_source})",))
+
+
+#: Volume tokens whose mass the portion ontology can speak to. Only `cup` is
+#: here; see _volume() for why the spoon measures are not.
+_VOL_MEASURE = {"cup": "cup", "cups": "cup"}
+
+
+def _ontology_mass(food_name: str, measure: str, unit_text: str,
+                   amount: float) -> Optional[tuple]:
+    """(grams, uncertainty_g, source) from the portion ontology, or None."""
+    try:
+        from skills.nutrition.portions import (detect_form, detect_modifier,
+                                               distribution_for)
+    except Exception:
+        return None
+    dist = distribution_for(measure, food_name, detect_modifier(unit_text),
+                            form=(detect_form(f"{unit_text} {food_name}")
+                                  or None))
+    if dist is None:
+        return None
+    scaled = dist.scaled(amount) if amount != 1.0 else dist
+    source = f"ontology:{scaled.specificity.value}:{scaled.category}"
+    if scaled.form:
+        source = f"{source}:{scaled.form}"
+    return scaled.median_g, scaled.uncertainty_g, source
+
+
+def _volume(raw: str, unit_text: str, food_name: str, amount: float, ml: float,
+            token: str, vessel_note: str = "",
+            count: Optional[float] = None) -> NormalizedQuantity:
+    """A volume portion, with a mass alongside it where we can honestly state
+    one.
+
+    The volume is exact as a volume. The mass is not, and without it a per-100g
+    source cannot answer at all — which used to mean the resolver kept the
+    source's per-100g row verbatim and logged a teaspoon of sugar as 387
+    calories. So: density first (a stated assumption), then the portion
+    ontology for the solids a cup says little about, then volume alone.
+    """
+    label = raw or f"{_fmt(amount)} {token}"
+    # A named vessel is itself an assumption — the user said "a glass", not
+    # 250 ml — and it has to be disclosed whether or not a mass follows.
+    notes = (vessel_note,) if vessel_note else ()
+    bridged = volume_to_grams(ml, food_name)
+    if bridged is not None:
+        grams, density, category = bridged
+        return NormalizedQuantity(
+            amount=amount, unit="ml", milliliters=ml, grams=grams,
+            count=count, unit_label=label,
+            uncertainty_g=round(grams * 0.15, 1),
+            assumptions=notes + (f"{_fmt(ml)}ml estimated at {_fmt(grams)}g "
+                                 f"(density {density} g/ml for {category})",))
+    # A cup of a solid is a volume the food answers, not the measuring jug: a
+    # cup of broccoli and a cup of nuts differ by four times. Restricted to
+    # `cup` on purpose — a teaspoon and a tablespoon share the ontology's one
+    # "spoonful" row, and borrowing it would make them the same portion.
+    if _VOL_MEASURE.get(token) == "cup":
+        solid = _ontology_mass(food_name, "cup", unit_text, amount)
+        if solid is not None:
+            grams, uncertainty, source = solid
+            return NormalizedQuantity(
+                amount=amount, unit="ml", milliliters=ml, grams=grams,
+                count=count, unit_label=label, uncertainty_g=uncertainty,
+                assumptions=notes + (f"{_fmt(amount)} cup estimated at "
+                                     f"{_fmt(grams)}g ({source})",))
+    # Volume only. That is a complete answer for a per-100ml source and an
+    # unknown for a per-100g one — which the resolver reports rather than
+    # papering over with water density.
+    return NormalizedQuantity(
+        amount=amount, unit="ml", milliliters=ml, count=count,
+        unit_label=label, assumptions=notes)
 
 
 def normalize_quantity(raw: str, food_name: str = "") -> NormalizedQuantity:
@@ -175,10 +348,21 @@ def normalize_quantity(raw: str, food_name: str = "") -> NormalizedQuantity:
                 unit_label=raw or f"{amount} {token}")
     for token, ml_per in sorted(_VOL_ML.items(), key=lambda kv: -len(kv[0])):
         if re.match(rf"^{re.escape(token)}\b", unit_text):
-            return NormalizedQuantity(
-                amount=amount, unit="ml",
-                milliliters=round(amount * ml_per, 1),
-                unit_label=raw or f"{amount} {token}")
+            return _volume(raw, unit_text, food_name, amount,
+                           round(amount * ml_per, 1), token)
+
+    # A named drink vessel is a volume too — the size belongs to the glass.
+    vessel = vessel_volume(unit_text)
+    if vessel is not None:
+        per, spread = vessel
+        name = unit_text.split()[0]
+        # `count` stays set: "a can" is one container as well as 355 ml, and a
+        # per-serving source scales by the count. Dropping it turned every
+        # canned food with a per-serving label into an unscalable portion.
+        return _volume(raw, unit_text, food_name, amount,
+                       round(amount * per, 1), name, count=amount,
+                       vessel_note=(f"{name} estimated at {_fmt(per)}ml "
+                                    f"(± {_fmt(spread)}ml)"))
 
     # Countable: the mass, if we can estimate it, comes from the FOOD.
     # The count word is not always first — "6 thin slices" leads with a size
@@ -196,9 +380,14 @@ def normalize_quantity(raw: str, food_name: str = "") -> NormalizedQuantity:
     if countable:
         est = piece_weight(food_name, unit_text)
         if est is None:
-            # No basis for a mass. Say so — a made-up gram figure here is
-            # exactly the kind of confident wrong number this layer exists to
-            # prevent.
+            # No per-food piece weight. Before giving up, ask the portion
+            # ontology — "a handful", "a scoop", "a bowl" are distributions it
+            # knows by category and form.
+            from_ontology = _from_ontology(raw, unit_text, food_name, amount)
+            if from_ontology is not None:
+                return from_ontology
+            # Still nothing. Say so — a made-up gram figure here is exactly the
+            # kind of confident wrong number this layer exists to prevent.
             return NormalizedQuantity(
                 amount=amount, unit=(head or "serving"), count=amount,
                 unit_label=raw or f"{amount} {head or 'serving'}",
@@ -214,7 +403,12 @@ def normalize_quantity(raw: str, food_name: str = "") -> NormalizedQuantity:
             uncertainty_g=round(amount * spread, 1),
             assumptions=tuple(assumptions))
 
-    # An unrecognized unit is a count of something we can't weigh.
+    # An unrecognized unit. It may still be a measure the ontology knows —
+    # "a bowl", "a plate", "some" are not count units and have no piece weight,
+    # but they do have distributions.
+    from_ontology = _from_ontology(raw, unit_text, food_name, amount)
+    if from_ontology is not None:
+        return from_ontology
     return NormalizedQuantity(
         amount=amount, unit=head or "serving", count=amount,
         unit_label=raw or food_name,

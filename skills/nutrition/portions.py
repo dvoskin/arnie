@@ -177,6 +177,20 @@ PORTION_ONTOLOGY = {
     "plate": {
         "default":      (400.0, 250.0, 650.0, 0.35),
     },
+    "cup": {
+        # A cup is an exact VOLUME and an inexact mass, and which one matters
+        # depends on the food. For anything with a density we use the density;
+        # these rows are for the solids where 236 ml says very little — a cup
+        # of broccoli florets and a cup of flour differ by three times.
+        "greens":       (30.0, 20.0, 45.0, 0.60),
+        "berries":      (145.0, 120.0, 170.0, 0.72),
+        "cereal":       (35.0, 25.0, 50.0, 0.62),
+        "chips":        (30.0, 20.0, 45.0, 0.55),
+        "popcorn":      (10.0, 7.0, 15.0, 0.60),
+        "nuts":         (130.0, 110.0, 150.0, 0.70),
+        "dried_fruit":  (150.0, 120.0, 175.0, 0.65),
+        "default":      (120.0, 60.0, 240.0, 0.40),
+    },
 }
 
 #: FORM-SPECIFIC distributions: (category, form) → (median, lower, upper, conf).
@@ -307,13 +321,31 @@ SIZE_MODIFIERS = {"tiny": 0.5, "small": 0.72, "little": 0.72, "medium": 1.0,
                   "thick": 1.4, "extra large": 1.6, "jumbo": 1.6}
 
 
+#: How much longer than the fragment the word containing it may be. The
+#: fragments are deliberately truncated stems ("blueberr" covers blueberry and
+#: blueberries), so a plain substring test is the only practical match — but an
+#: unbounded one made "chipotle" a chip and "dates" a category for "update".
+#: Three characters covers the inflections and excludes the different words.
+_STEM_SLACK = 3
+
+
+def _stem_matches(name: str, fragment: str) -> bool:
+    """Whether `fragment` appears as the stem of a word in `name`."""
+    tail = fragment.split()[-1]
+    for match in re.finditer(rf"\b{re.escape(fragment)}", name):
+        word = re.match(r"[a-z]*", name[match.start() + len(fragment) - len(tail):])
+        if word and len(word.group(0)) - len(tail) <= _STEM_SLACK:
+            return True
+    return False
+
+
 def food_category(food_name: str) -> str:
     """Which ontology row applies. Longest fragment wins so "peanut butter"
     does not resolve as "nuts"."""
     n = (food_name or "").lower()
     best, best_len = "default", 0
     for fragment, category in FOOD_CATEGORIES.items():
-        if fragment in n and len(fragment) > best_len:
+        if len(fragment) > best_len and _stem_matches(n, fragment):
             best, best_len = category, len(fragment)
     return best
 

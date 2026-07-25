@@ -8,6 +8,8 @@ test is the resolution logic, not whether USDA is up.
 A failure here names the case id, which is also the ticket: adding a case is
 the cheapest way to make a nutrition bug stay fixed.
 """
+from collections import Counter
+
 import pytest
 
 from skills.nutrition.candidates import Candidate
@@ -159,3 +161,20 @@ def test_the_set_covers_every_category():
 def test_case_ids_are_unique():
     ids = [c["id"] for c in ALL_CASES]
     assert len(ids) == len(set(ids))
+
+
+#: Floors, not targets. A gold set shrinks by attrition — a case deleted to
+#: make a change go green, a category quietly stopping at four rows — and the
+#: shrinking is invisible without a number to fail against. Raise these when
+#: the set grows; lowering one should take an argument.
+CATEGORY_FLOORS = {"branded": 45, "generic": 15, "pieces": 12,
+                   "composite": 22, "micros": 20, "modes": 6,
+                   "ambiguity": 12, "portioning": 20}
+
+
+def test_the_set_has_not_shrunk():
+    counts = Counter(c["category"] for c in ALL_CASES)
+    short = {k: (counts.get(k, 0), floor)
+             for k, floor in CATEGORY_FLOORS.items() if counts.get(k, 0) < floor}
+    assert not short, f"categories below their floor (have, floor): {short}"
+    assert len(ALL_CASES) >= 170, len(ALL_CASES)
