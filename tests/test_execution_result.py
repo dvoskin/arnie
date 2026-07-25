@@ -159,3 +159,62 @@ def test_receipt_sourcing_rides_the_typed_call():
     assert "USDA" in str(rec)
     # And the input itself was never mutated by the receipt build.
     assert "_sourcing" not in inp
+
+
+# ── native construction: the command is never the carrier (P0.3d) ─────────────
+@pytest.mark.asyncio
+async def test_execution_state_rides_the_side_channel_not_the_command(db, make_user):
+    """The executor records what HAPPENED in a per-call context; the typed view
+    is built from THAT, never by scraping the command."""
+    import handlers.tool_executor as TE
+    user = await make_user()
+    log, fe = await _seed_day(db, user)
+    # log_food reads user.preferences for the receipt — load it eagerly so the
+    # async lazy-load never fires outside a greenlet in this harness.
+    await db.refresh(user, attribute_names=["preferences"])
+    calls = [{"name": "log_food",
+              "input": {"food_name": "Banana", "quantity": "1 banana",
+                        "calories": 105}}]
+    await TE.execute_tool_calls(calls, user, log, db, source_type="text")
+    cr = ER.LAST_EXECUTION.get().calls[0]
+    assert cr.committed
+    assert cr.entry_id is not None          # committed row id, from the context
+    assert cr.event_id is not None          # ledger event id (undo token)
+    assert isinstance(cr.receipt, dict)     # decision receipt
+
+
+def test_native_view_needs_no_stash_keys_on_the_command():
+    """Proof the command is no longer the carrier: with every underscore key
+    stripped from the input, the context alone still yields the full view."""
+    from core.execution_result import from_call_contexts
+    clean_input = {"food_name": "Banana", "quantity": "1 banana", "calories": 105}
+    ctx = {"entry_id": 42, "event_id": 900, "receipt": {"day_calories": 1200},
+           "sourcing": {"source": "usda"}, "result": "Logged Banana: 105 cal."}
+    ex = from_call_contexts([{"name": "log_food", "input": clean_input}], [ctx])
+    cr = ex.calls[0]
+    assert cr.committed and cr.entry_id == 42 and cr.event_id == 900
+    assert cr.receipt["day_calories"] == 1200 and cr.sourcing["source"] == "usda"
+    assert not any(k.startswith("_") for k in clean_input)
+
+
+@pytest.mark.asyncio
+async def test_batch_contexts_stay_per_call(db, make_user):
+    """Two calls in one batch get independent contexts — the second can never
+    inherit the first's committed ids."""
+    import handlers.tool_executor as TE
+    from core.execution_result import LAST_EXECUTION
+    user = await make_user()
+    log, fe = await _seed_day(db, user)
+    await db.refresh(user, attribute_names=["preferences"])
+    calls = [
+        {"name": "log_food", "input": {"food_name": "Coke", "quantity": "12 oz",
+                                       "calories": 140}},
+        {"name": "log_food", "input": {"food_name": "Chips", "quantity": "1 bag",
+                                       "calories": 150}},
+    ]
+    await TE.execute_tool_calls(calls, user, log, db, source_type="text")
+    ex = LAST_EXECUTION.get()
+    assert ex is not None and len(ex.calls) == 2
+    ids = [c.entry_id for c in ex.calls]
+    assert all(i is not None for i in ids), ids
+    assert ids[0] != ids[1], "each call must carry its OWN committed row id"

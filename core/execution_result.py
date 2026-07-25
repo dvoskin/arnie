@@ -34,6 +34,26 @@ from typing import Optional
 LAST_EXECUTION: ContextVar[Optional["ExecutionResult"]] = ContextVar(
     "LAST_EXECUTION", default=None)
 
+# The SIDE CHANNEL for one call's execution state (P0.3d). The executor writes
+# committed ids, receipts and sourcing here instead of onto the command it was
+# handed — a command describes what to do, never what happened. Set fresh per
+# call by execute_tool_calls; read straight back into the CallResult.
+CALL_CTX: ContextVar[Optional[dict]] = ContextVar("CALL_CTX", default=None)
+
+
+def stash(inp, key: str, value) -> None:
+    """Record per-call execution state. Writes to the ambient call context —
+    the typed path — and, transitionally, to the command input so the legacy
+    fallback readers keep working until they are all gone."""
+    try:
+        ctx = CALL_CTX.get()
+        if ctx is not None:
+            ctx[key] = value
+    except Exception:
+        pass
+    if isinstance(inp, dict):
+        inp["_" + key] = value
+
 
 @dataclass(frozen=True)
 class CallResult:
@@ -49,6 +69,8 @@ class CallResult:
     event_id: Optional[int] = None
     receipt: Optional[dict] = None
     sourcing: Optional[dict] = None
+    card_sets: Optional[int] = None    # committed running totals for the
+    card_reps: Optional[str] = None    # workout card (appended-set aware)
 
     @property
     def committed(self) -> bool:
@@ -78,6 +100,39 @@ class ExecutionResult:
         return out
 
 
+def from_call_contexts(tool_calls: list, contexts: list,
+                       results: Optional[dict] = None) -> ExecutionResult:
+    """NATIVE construction (P0.3d): each call's execution state comes from its
+    own side-channel context, positionally aligned with the batch. No command
+    input is read for execution state — the command described intent, the
+    context records what happened."""
+    from core.food_ledger import _FAILURE_PREFIXES
+    calls = []
+    for i, tc in enumerate(tool_calls or []):
+        if not isinstance(tc, dict):
+            continue
+        ctx = contexts[i] if i < len(contexts) and isinstance(contexts[i], dict) else {}
+        inp = tc.get("input") or {}
+        r = ctx.get("result")
+        if not isinstance(r, str) and isinstance(results, dict):
+            _r2 = results.get(tc.get("name"))
+            r = _r2 if isinstance(_r2, str) else ""
+        blocked = isinstance(r, str) and r.startswith(_FAILURE_PREFIXES)
+        calls.append(CallResult(
+            name=str(tc.get("name") or ""),
+            raw_input=inp,
+            status="blocked" if blocked else "committed",
+            result_text=r if isinstance(r, str) else "",
+            entry_id=ctx.get("entry_id"),
+            event_id=ctx.get("event_id"),
+            receipt=ctx.get("receipt") if isinstance(ctx.get("receipt"), dict) else None,
+            sourcing=ctx.get("sourcing") if isinstance(ctx.get("sourcing"), dict) else None,
+            card_sets=ctx.get("card_sets"),
+            card_reps=ctx.get("card_reps"),
+        ))
+    return ExecutionResult(calls=tuple(calls))
+
+
 def from_tool_calls(tool_calls: list, results: Optional[dict] = None) -> ExecutionResult:
     """Build the typed view from executed tool calls. The ONE sanctioned
     reader of the legacy stash keys (see module docstring)."""
@@ -101,5 +156,7 @@ def from_tool_calls(tool_calls: list, results: Optional[dict] = None) -> Executi
             event_id=inp.get("_event_id"),
             receipt=inp.get("_receipt") if isinstance(inp.get("_receipt"), dict) else None,
             sourcing=inp.get("_sourcing") if isinstance(inp.get("_sourcing"), dict) else None,
+            card_sets=inp.get("_card_sets"),
+            card_reps=inp.get("_card_reps"),
         ))
     return ExecutionResult(calls=tuple(calls))
