@@ -565,6 +565,49 @@ def _item_is_stated(it: dict, message: str) -> bool:
     # has to sit in the clause about this food AND next to the unit or the food
     # itself.
     clause = _clause_for(message, str(it.get("food") or ""))
+
+    # ASK THE NORMALIZER FIRST (§1, §3, §13). It parses the user's own words —
+    # digit fractions, unicode fractions, "two thirds", "one and a half",
+    # mixed numbers — and reports `user_stated_amount` as the number they
+    # actually gave, or None when they gave none.
+    #
+    # The checks below this line are a SECOND, weaker implementation of the
+    # same question, and they disagreed with the first on every fraction: "3/4
+    # cup of rice" reaches here as f=0.75, "0.75" is not in the clause, 0.75 is
+    # not 0.5, and it is not an integer — so a portion the user stated exactly
+    # was classified as our inference, and strict mode asked them to confirm
+    # their own words. The friction was the disagreement, not the strictness.
+    #
+    # Kept as the first check rather than the only one: it answers about the
+    # clause's LEADING amount, and the older heuristics still catch a number
+    # sitting further inside a clause that names several things.
+    try:
+        from skills.nutrition.normalize import normalize_quantity
+        _food = str(it.get("food") or "")
+        _unit = str(it.get("unit") or "").strip().lower()
+        _words = clause.split()
+        # The amount is rarely the first word — "I had 3/4 cup of rice" leads
+        # with a verb. Walk in from the left until something parses, bounded so
+        # a long clause naming several foods can't reach the next one's number.
+        for _skip in range(min(len(_words), 6)):
+            _q = normalize_quantity(" ".join(_words[_skip:]), _food)
+            _said = _q.user_stated_amount
+            if _said is None:
+                continue
+            if abs(_said - f) > max(0.02, abs(f) * 0.02):
+                break
+            # THE UNIT HAS TO AGREE TOO. "A scoop of peanut butter" arriving as
+            # 1 tbsp matches on the amount alone, and treating that as stated
+            # is precisely the shipped failure: a 190-calorie assumption
+            # presented as the user's own words. They said scoop; we said
+            # tablespoon; that is an inference whatever the number did.
+            _said_unit = (_q.user_stated_unit or "").rstrip("s")
+            if _unit and _said_unit and _said_unit != _unit.rstrip("s"):
+                break
+            return True
+    except Exception:
+        pass
+
     s = str(int(f)) if f.is_integer() else str(f)
     # Plain substring for digits: "200" has no word boundary before the "g" in
     # "200g", and requiring one dropped every mass the user actually typed.
