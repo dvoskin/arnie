@@ -14,6 +14,10 @@ The Arnie confirmation text is also returned in the HTTP response so the iOS
 client can append it to the in-memory chat transcript immediately (live
 "Arnie said" feel without needing a persistent WebSocket broadcast).
 """
+import logging
+
+logger = logging.getLogger(__name__)
+
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -64,6 +68,20 @@ async def update_food(
         # is NEVER shown: chat history skips dashboard_edit rows and
         # arnie_message returns None so the client appends nothing (Danny
         # 2026-07-23: "don't reiterate edited foods in the chat").
+        # LEDGER EVENT (P0.6): a dashboard edit is a ledger mutation like any
+        # other — same history, same undo reach. `before` makes it invertible.
+        try:
+            from db.queries import record_ledger_event
+            from core.turn_identity import CURRENT_TURN_ID
+            CURRENT_TURN_ID.set(f"ios_edit:update:{entry_id}")
+            await record_ledger_event(
+                db, user.id, "updated", domain="food", entry_id=entry_id,
+                daily_log_id=before.get("daily_log_id"),
+                payload={"changes": changes, "before": before},
+                source="ios_edit")
+        except Exception as _ev_e:
+            logger.warning(f"ledger event (ios food edit) skipped: {_ev_e}")
+
         context_note = _build_update_message(before, updated, changes)
         receipt = await _fresh_receipt(db, user, updated)
         _bust_briefing(user.id)
@@ -110,6 +128,17 @@ async def delete_food(
         ok = await delete_food_entry(db, entry_id, user.id)
         if not ok:
             raise HTTPException(status_code=403, detail="not your entry")
+
+        try:
+            from db.queries import record_ledger_event
+            from core.turn_identity import CURRENT_TURN_ID
+            CURRENT_TURN_ID.set(f"ios_edit:delete:{entry_id}")
+            await record_ledger_event(
+                db, user.id, "deleted", domain="food", entry_id=entry_id,
+                daily_log_id=before.get("daily_log_id"),
+                payload=before, source="ios_edit")
+        except Exception as _ev_e:
+            logger.warning(f"ledger event (ios food delete) skipped: {_ev_e}")
 
         name = before.get("name") or "that entry"
         _bust_briefing(user.id)
@@ -173,7 +202,9 @@ def _reconcile_macros(before: dict, changes: dict) -> dict:
 
 async def _snapshot_entry(db, entry_id: int) -> Optional[dict]:
     """Snapshot the BEFORE state so the Arnie confirmation can spell out the
-    delta ('protein 31 → 28'). Returns None if no entry exists."""
+    delta ('protein 31 → 28') AND so the ledger event is restorable (P0.6:
+    REST edits leave the same history as chat edits). Returns None if no
+    entry exists."""
     row = (await db.execute(
         select(FoodEntry).where(FoodEntry.id == entry_id)
     )).scalar_one_or_none()
@@ -186,6 +217,10 @@ async def _snapshot_entry(db, entry_id: int) -> Optional[dict]:
         "protein":  round(row.protein  or 0),
         "carbs":    round(row.carbs    or 0),
         "fats":     round(row.fats     or 0),
+        # Restore-shaped keys (mirror the executor's deleted-event payload).
+        "food_name":    row.parsed_food_name,
+        "meal_type":    row.meal_type,
+        "daily_log_id": row.daily_log_id,
     }
 
 
