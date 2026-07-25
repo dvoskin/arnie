@@ -2777,3 +2777,26 @@ async def claim_processed_turn(
         except Exception:
             pass
         return False
+
+
+async def record_surface_mutation(
+    db: AsyncSession, user_id: int, event_type: str, *, domain: str,
+    entry_id: Optional[int] = None, daily_log_id: Optional[int] = None,
+    payload: Optional[dict] = None, surface: str = "dashboard",
+) -> None:
+    """Best-effort ledger event for a NON-CHAT mutation — dashboard edits, API
+    quick-logs, health imports (P0.6). Stamps a surface turn identity so the
+    write traces back to the action that caused it, and NEVER raises: history
+    must never break the edit it describes.
+
+    Same events, same payload shapes as the chat executor, so undo/restore and
+    the audit trail reach every surface rather than just the chat lane.
+    """
+    try:
+        from core.turn_identity import CURRENT_TURN_ID
+        CURRENT_TURN_ID.set(f"{surface}:{event_type}:{entry_id or '-'}")
+        await record_ledger_event(
+            db, user_id, event_type, domain=domain, entry_id=entry_id,
+            daily_log_id=daily_log_id, payload=payload, source=surface)
+    except Exception as e:
+        logger.warning(f"surface ledger event skipped ({surface}/{domain}/{event_type}): {e}")

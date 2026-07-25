@@ -125,3 +125,68 @@ async def test_chat_undo_can_invert_a_dashboard_delete(db, make_user, monkeypatc
     tc = plan["tool_calls"][0]
     assert tc["name"] == "restore_food_entry"
     assert tc["input"]["food_name"] == "Birria taco"
+
+
+@pytest.mark.asyncio
+async def test_dashboard_exercise_delete_is_restorable(db, make_user, monkeypatch):
+    """The exercise surface joins too: a dashboard delete leaves a restorable
+    event, so 'undo' in chat can put the set back."""
+    import api.exercise_edit as EE
+    import core.ledger_undo as LU
+    from db.models import DailyLog, ExerciseEntry
+    user = await make_user()
+    log = DailyLog(user_id=user.id, date=datetime.utcnow().date())
+    db.add(log)
+    await db.flush()
+    ex = ExerciseEntry(daily_log_id=log.id, exercise_name="Bench press",
+                       sets=3, reps="10", weight=61.2)
+    db.add(ex)
+    await db.commit()
+    await db.refresh(ex)
+
+    from contextlib import asynccontextmanager
+
+    @asynccontextmanager
+    async def _session():
+        yield db
+    monkeypatch.setattr(EE, "AsyncSessionLocal", _session)
+    async def _resolve(_db, _identity):
+        return user
+    monkeypatch.setattr(EE, "resolve_user", _resolve)
+    async def _noop_log(*a, **k):
+        return None
+    monkeypatch.setattr(EE, "log_conversation", _noop_log)
+
+    out = await EE.delete_exercise(ex.id, identity="im:+1555")
+    assert out["status"] == "ok"
+
+    events = await get_ledger_events(db, user.id, domain="exercise")
+    deleted = [e for e in events if e.event_type == "deleted"]
+    assert deleted and deleted[0].source == "ios_edit"
+    import json
+    payload = json.loads(deleted[0].payload_json)
+    assert payload["exercise_name"] == "Bench press"
+
+    plan = await LU.build_plan(db, user, "undo")
+    assert plan is not None
+    assert plan["tool_calls"][0]["name"] == "restore_exercise_entry"
+
+
+@pytest.mark.asyncio
+async def test_surface_helper_never_raises(db, make_user):
+    """History must never break the edit it describes — a bad payload or a
+    dead session degrades to a logged warning, not a failed request."""
+    from db.queries import record_surface_mutation
+
+    class _Boom:
+        def add(self, *a, **k):
+            raise RuntimeError("db down")
+        async def commit(self):
+            raise RuntimeError("db down")
+    user = await make_user()
+    # Bad session: must not raise.
+    await record_surface_mutation(_Boom(), user.id, "created", domain="water",
+                                  entry_id=1, payload={"amount_ml": 500})
+    # Unserializable payload: must not raise either.
+    await record_surface_mutation(db, user.id, "created", domain="water",
+                                  entry_id=2, payload={"bad": object()})
