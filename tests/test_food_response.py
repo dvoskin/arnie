@@ -411,3 +411,172 @@ def test_no_composer_means_the_deterministic_text():
 def test_a_composer_returning_nothing_on_a_silent_intent_stays_silent():
     text, reason = compose(_commit_plan(), lambda p: "")
     assert text == "" and reason == Reason.OK
+
+
+# ── the invariant that catches fallback drift ─────────────────────────────────
+def _every_intent_plan():
+    """One plan per intent, built the way a caller would."""
+    return {
+        FoodResponseIntent.REVIEW: plan_review(_items(("toast", "1 slice"))),
+        FoodResponseIntent.CLARIFY: plan_clarify(
+            question=None, unresolved=FoodItemSummary(name="shake")),
+        FoodResponseIntent.CONFIRM_ANSWER: plan_confirm_answer(
+            "half of the Elite"),
+        FoodResponseIntent.COMMIT: _commit_plan(),
+        FoodResponseIntent.PARTIAL_COMMIT: apply_policy(FoodResponsePlan(
+            intent=FoodResponseIntent.PARTIAL_COMMIT,
+            committed_items=_items(("sandwich", "")),
+            pending_items=(FoodItemSummary(name="shake"),))),
+        FoodResponseIntent.CORRECT: plan_correct("the jam"),
+        FoodResponseIntent.UNDO: plan_undo("the bagel update"),
+        FoodResponseIntent.FAILURE: plan_failure(FailureIntent(
+            code="no_match", user_fixable=True,
+            recovery_action="ask for the label",
+            approved_message="I couldn't identify that exact product. The "
+                             "label calories and protein would be enough.")),
+        FoodResponseIntent.COACH: apply_policy(FoodResponsePlan(
+            intent=FoodResponseIntent.COACH)),
+    }
+
+
+@pytest.mark.parametrize("intent,plan", list(_every_intent_plan().items()),
+                         ids=lambda v: getattr(v, "value", ""))
+def test_every_fallback_satisfies_its_own_plan(intent, plan):
+    """compose() returns a fallback WITHOUT re-validating it, so a fallback that
+    violates its own plan ships unchecked. This is the guard: a CLARIFY fallback
+    with no question, or a CORRECT fallback that narrates the write, would be
+    emitted silently otherwise."""
+    text = fallback(plan)
+    result = validate(text, plan)
+    assert result.ok, f"{intent.value} fallback {text!r} → {result.reason}"
+
+
+def test_a_clarify_fallback_names_the_item_it_is_asking_about():
+    """"Which one was it?" names nothing — the vague question this whole layer
+    exists to avoid. It must reach for the held item's name."""
+    from_unresolved = fallback(plan_clarify(
+        question=None, unresolved=FoodItemSummary(name="shake")))
+    assert "shake" in from_unresolved
+
+    from_pending = fallback(apply_policy(FoodResponsePlan(
+        intent=FoodResponseIntent.CLARIFY,
+        pending_items=(FoodItemSummary(name="yogurt"),))))
+    assert "yogurt" in from_pending
+
+
+def test_a_partial_commit_fallback_names_the_held_item():
+    plan = apply_policy(FoodResponsePlan(
+        intent=FoodResponseIntent.PARTIAL_COMMIT,
+        committed_items=_items(("sandwich", "")),
+        pending_items=(FoodItemSummary(name="shake"),)))
+    text = fallback(plan)
+    assert "shake" in text and "one item" not in text
+
+
+def test_a_long_committed_list_is_honest_about_overflow():
+    """Silent truncation is how "A, B and C in" gets said about five committed
+    items — a miscount the user cannot see."""
+    plan = apply_policy(FoodResponsePlan(
+        intent=FoodResponseIntent.PARTIAL_COMMIT,
+        committed_items=_items(("eggs", ""), ("toast", ""), ("jam", ""),
+                               ("coffee", ""), ("banana", "")),
+        pending_items=(FoodItemSummary(name="shake"),)))
+    text = fallback(plan)
+    assert "2 more" in text
+
+
+def test_a_quantities_only_card_does_not_make_calories_a_duplicate():
+    """facts_visible_in_card granularity has to mean something. A card showing
+    only portions leaves the nutrition unsaid, so saying it is not repetition."""
+    plan = apply_policy(FoodResponsePlan(
+        intent=FoodResponseIntent.COMMIT, card_will_render=True,
+        facts_visible_in_card=frozenset({"quantities"})))
+    assert validate("That's about 300 calories.", plan).ok
+
+
+def test_the_directive_approved_quick_disclosure_survives_the_filter():
+    """A near-miss worth pinning: "I logged that as a regular Core Power
+    bottle" is the approved QUICK-mode assumption disclosure, and the
+    transaction-narration filter must not eat it."""
+    plan = _commit_plan()
+    assert validate("I logged that as a regular Core Power bottle. Tell me if "
+                    "it was the Elite.", plan).ok
+
+
+def test_an_invented_food_is_rejected_when_a_vocabulary_is_supplied():
+    plan = _commit_plan(known_foods=("toast", "bacon"))
+    assert validate("Nice, the bacon works there.",
+                    plan).reason == Reason.INVENTED_ITEM
+    assert validate("Light start.", plan).ok
+
+
+# ── stripping the card read-back (the screenshot failure) ─────────────────────
+def _card_plan(**kw):
+    base = dict(intent=FoodResponseIntent.COMMIT, card_will_render=True,
+                facts_visible_in_card=CARD_FACTS)
+    base.update(kw)
+    return apply_policy(FoodResponsePlan(**base))
+
+
+def test_pure_recitation_becomes_silence_when_a_card_renders():
+    """The screenshot: a card, then "130 calories and 3g protein, 1,990
+    remaining" underneath it."""
+    from core.food_response import strip_card_recitation
+    text = ("Toast logged, 130 cal and 3g protein. You're at 130 with 1990 "
+            "left and 176g protein to go.")
+    assert strip_card_recitation(text, _card_plan()) == ""
+
+
+def test_nothing_is_stripped_when_no_card_renders():
+    """Telegram has no card frame — there the same sentences are the ONLY
+    confirmation the user gets, so stripping them would lose the reply."""
+    from core.food_response import strip_card_recitation
+    text = "Rice logged, 200 cal and 5g protein. You're at 1500."
+    plan = apply_policy(FoodResponsePlan(intent=FoodResponseIntent.COMMIT))
+    assert strip_card_recitation(text, plan) == text
+
+
+def test_a_vetted_follow_up_bubble_survives_the_strip():
+    """Each ||| bubble is judged on its own, so the whitelisted coaching
+    follow-up is never collateral damage."""
+    from core.food_response import strip_card_recitation
+    text = ("Toast logged, 130 cal and 3g protein. You're at 130.|||Want me to "
+            "save that as one of your regulars?")
+    out = strip_card_recitation(text, _card_plan())
+    assert out == "Want me to save that as one of your regulars?"
+
+
+def test_a_recommendation_survives_alongside_a_stripped_recitation():
+    from core.food_response import strip_card_recitation
+    text = "Rice logged, 200 cal. I'd aim for 30-40g protein at lunch."
+    assert strip_card_recitation(text, _card_plan()) == \
+        "I'd aim for 30-40g protein at lunch."
+
+
+def test_a_confirmation_without_numbers_is_left_alone():
+    """"Took the fries off the board" is not recitation — the card does not say
+    it, and a delete has no macros to repeat."""
+    from core.food_response import strip_card_recitation
+    text = "Took the fries off the board."
+    assert strip_card_recitation(text, _card_plan()) == text
+
+
+def test_the_refusal_notice_survives():
+    """A write the board refused must still be named — that bubble is the
+    honest part of the reply."""
+    from core.food_response import strip_card_recitation
+    text = ("Rice logged, 200 cal and 5g protein. You're at 1500.|||Couldn't "
+            "touch the fries - the board changed under me.")
+    out = strip_card_recitation(text, _card_plan())
+    assert "Couldn't touch the fries" in out
+    assert "200 cal" not in out
+
+
+def test_stripping_leaves_a_result_that_passes_validation():
+    """The point of the exercise: what survives must itself obey the plan."""
+    from core.food_response import strip_card_recitation
+    plan = _card_plan()
+    for text in ("Toast logged, 130 cal and 3g protein. You're at 130.",
+                 "Rice logged, 200 cal. I'd aim for 30-40g at lunch.",
+                 "Took the fries off the board."):
+        assert validate(strip_card_recitation(text, plan), plan).ok, text

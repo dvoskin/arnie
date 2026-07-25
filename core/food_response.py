@@ -117,6 +117,11 @@ class FoodResponsePlan:
     card_will_render: bool = False
     facts_visible_in_card: FrozenSet[str] = frozenset()
 
+    #: Foods in play this turn, for the invented-item check. A general
+    #: "is this a food word" test would flag ordinary language, so the caller
+    #: supplies the vocabulary.
+    known_foods: Tuple[str, ...] = ()
+
     # Conversational context.
     user_message: str = ""
     user_emotional_context: Optional[str] = None
@@ -279,6 +284,11 @@ def plan_confirm_answer(summary: str, *, user_message: str = "",
 CARD_FACTS = frozenset({"calories", "protein", "carbs", "fat", "quantities",
                         "day_totals", "remaining_targets"})
 
+#: The subset whose presence makes a number in the text a RECITATION. A card
+#: showing only item quantities does not make "about 300 calories" a duplicate.
+_NUTRIENT_CARD_FACTS = frozenset({"calories", "protein", "carbs", "fat",
+                                  "day_totals", "remaining_targets"})
+
 
 # ── validation ────────────────────────────────────────────────────────────────
 class Reason:
@@ -340,6 +350,13 @@ _RECOMMENDATION_RE = re.compile(
 _NUTRIENT_NUMBER_RE = re.compile(
     r"\b\d[\d,]*\s*(?:kcal|cal(?:orie)?s?|g\b|grams?|mg)\b", re.I)
 
+#: Day-total and remaining phrasings, where the number carries NO unit —
+#: "You're at 130." reads as a running total and is exactly what the card's
+#: progress row shows, but a unit-anchored pattern misses it entirely.
+_DAY_TOTAL_RE = re.compile(
+    r"(?:\byou'?re at\s+\d|\bat\s+\d[\d,]*\s+(?:today|so far)|"
+    r"\b\d[\d,]*\s+(?:left|remaining|to go)\b)", re.I)
+
 #: More than one recommendation in a coaching message.
 _RECOMMENDATION_SPLIT_RE = re.compile(r"\b(?:i'?d|you should|try to|make sure|"
                                       r"aim to|aim for|focus on)\b", re.I)
@@ -377,15 +394,12 @@ def _recites_card_facts(text: str, plan: FoodResponsePlan) -> bool:
     carrying the number is forward-looking; "I'd aim for 30-40g at lunch" is a
     recommendation, "130 calories and 3g protein" is the card read aloud.
     """
-    if not plan.facts_visible_in_card:
+    # Only NUTRIENT facts make a number a recitation. A card showing just
+    # quantities does not make "about 300 calories" a duplicate.
+    if not (plan.facts_visible_in_card & _NUTRIENT_CARD_FACTS):
         return False
-    for sentence in re.split(r"(?<=[.!?])\s+|\n", text or ""):
-        if not _NUTRIENT_NUMBER_RE.search(sentence):
-            continue
-        if _RECOMMENDATION_RE.search(sentence):
-            continue
-        return True
-    return False
+    return any(_is_recitation(s)
+               for s in re.split(r"(?<=[.!?])\s+|\n", text or ""))
 
 
 def validate(text: str, plan: FoodResponsePlan) -> ValidationResult:
@@ -426,11 +440,9 @@ def validate(text: str, plan: FoodResponsePlan) -> ValidationResult:
             return ValidationResult(False, Reason.PENDING_AS_COMMITTED,
                                     item.name)
 
-    approved = plan.approved_names
-    if approved:
-        for quoted in re.findall(r"\b([a-z]{4,}(?:\s+[a-z]{3,}){0,2})\b",
-                                 lowered):
-            pass   # names are checked positively below, not by extraction
+    if plan.known_foods and mentions_unapproved_item(raw, plan,
+                                                     plan.known_foods):
+        return ValidationResult(False, Reason.INVENTED_ITEM)
 
     words = len(raw.split())
     if words > plan.max_words:
@@ -579,12 +591,32 @@ def build_prompt(plan: FoodResponsePlan) -> str:
 
 # ── deterministic fallbacks ───────────────────────────────────────────────────
 def _join(names, limit: int = 3) -> str:
-    names = [n for n in names if n][:limit]
+    """Natural list, honest about overflow.
+
+    Silently truncating is how "I've got A, B and C in" gets said about five
+    committed items — a miscount the user has no way to see.
+    """
+    names = [n for n in names if n]
     if not names:
         return "that"
     if len(names) == 1:
         return names[0]
-    return ", ".join(names[:-1]) + " and " + names[-1]
+    if len(names) <= limit:
+        return ", ".join(names[:-1]) + " and " + names[-1]
+    rest = len(names) - limit
+    return (", ".join(names[:limit])
+            + f" and {rest} more" + ("" if rest == 1 else ""))
+
+
+def _held_name(plan: "FoodResponsePlan") -> str:
+    """The item a clarification is about. Prefers the explicit unresolved item,
+    falls back to the first pending one — dropping to "one item" names nothing,
+    which is exactly the vague question this layer exists to avoid."""
+    if plan.unresolved_item is not None and plan.unresolved_item.name:
+        return plan.unresolved_item.name
+    if plan.pending_items and plan.pending_items[0].name:
+        return plan.pending_items[0].name
+    return "one item"
 
 
 def fallback(plan: FoodResponsePlan) -> str:
@@ -593,13 +625,15 @@ def fallback(plan: FoodResponsePlan) -> str:
     intent = plan.intent
 
     if intent is FoodResponseIntent.REVIEW:
-        return f"{format_items(plan.resolved_items)}\n\nDoes that look right?" \
-            if len(plan.resolved_items) > 2 else \
-            f"I've got {_join([i.describe() for i in plan.resolved_items])}. " \
-            f"Does that look right?"
+        # Prose while it still scans; one food per line once it stops.
+        if len(plan.resolved_items) > 2:
+            return (f"{format_items(plan.resolved_items)}"
+                    f"\n\nDoes that look right?")
+        described = _join([i.describe() for i in plan.resolved_items])
+        return f"I've got {described}. Does that look right?"
 
     if intent is FoodResponseIntent.CLARIFY:
-        question = plan.clarification_question or "Which one was it?"
+        question = plan.clarification_question or f"Which {_held_name(plan)} was it?"
         if plan.resolved_items:
             return (f"I've got {_join([i.name for i in plan.resolved_items])}. "
                     f"{question}")
@@ -613,7 +647,7 @@ def fallback(plan: FoodResponsePlan) -> str:
 
     if intent is FoodResponseIntent.PARTIAL_COMMIT:
         question = plan.clarification_question or ""
-        held = plan.unresolved_item.name if plan.unresolved_item else "one item"
+        held = _held_name(plan)
         got = _join([i.name for i in plan.committed_items])
         base = f"I've got {got} in."
         return f"{base} {question}".strip() if question else \
@@ -643,6 +677,54 @@ def format_items(items) -> str:
     for item in items[:8]:
         lines.append(item.describe())
     return "\n".join(lines)
+
+
+def strip_card_recitation(text: str, plan: FoodResponsePlan) -> str:
+    """Remove sentences that only read the card back, keep the ones that work.
+
+    The deterministic committed renderer (core.food_ledger.render_committed)
+    predates the meal card and says everything: what was logged, its macros, the
+    day total, what is left. On a surface where the card renders, most of that
+    is the card read aloud — and on a surface where it does NOT (Telegram has no
+    card frame), the same sentences are the only confirmation the user gets.
+
+    So this strips rather than replaces, and only when a card is actually
+    rendering. A sentence survives if it carries no nutrition number, or if it
+    is forward-looking — "I'd aim for 30-40g at lunch" earns its digits.
+
+    Bubbles (|||) are handled independently so a whitelisted coaching follow-up
+    or a refusal notice is never collateral.
+    """
+    if not text or not (plan.facts_visible_in_card & _NUTRIENT_CARD_FACTS):
+        return text
+
+    kept_bubbles = []
+    for bubble in text.split("|||"):
+        bubble = bubble.strip()
+        if not bubble:
+            continue
+        # A question is never recitation — it is asking for something.
+        if "?" in bubble:
+            kept_bubbles.append(bubble)
+            continue
+        kept = [s for s in re.split(r"(?<=[.!?])\s+", bubble)
+                if s.strip() and not _is_recitation(s)]
+        if kept:
+            kept_bubbles.append(" ".join(kept).strip())
+    return "|||".join(kept_bubbles)
+
+
+def _is_recitation(sentence: str) -> bool:
+    """A number doing no work beyond repeating the card.
+
+    Two shapes, because they are written differently: a nutrient with a unit
+    ("3g protein") and a running total without one ("You're at 130"). Only
+    checking the first left the day-total sentence standing.
+    """
+    if not (_NUTRIENT_NUMBER_RE.search(sentence)
+            or _DAY_TOTAL_RE.search(sentence)):
+        return False
+    return not _RECOMMENDATION_RE.search(sentence)
 
 
 # ── composition ───────────────────────────────────────────────────────────────

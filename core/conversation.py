@@ -1586,6 +1586,34 @@ async def run_turn(
                                          f"the {_fn} - the board changed under "
                                          f"me. Say it again if you still want "
                                          f"that one.")
+                    # THE CARD OWNS THE FACTS (Danny 2026-07-25). The renderer
+                    # above predates the meal card and says everything: items,
+                    # macros, day total, remaining. Where a card renders, most
+                    # of that is the card read back — the screenshot's "130
+                    # calories and 3g protein, 1,990 remaining" under a card
+                    # already showing it.
+                    #
+                    # Stripped, not replaced, and only when a card is actually
+                    # rendering: Telegram has no card frame, so there the same
+                    # sentences are the only confirmation the user gets. A
+                    # sentence survives if it carries no nutrition number or is
+                    # forward-looking, and each ||| bubble is judged on its own
+                    # so a vetted follow-up is never collateral.
+                    try:
+                        from core.food_response import (CARD_FACTS,
+                                                        FoodResponseIntent,
+                                                        FoodResponsePlan,
+                                                        apply_policy,
+                                                        strip_card_recitation)
+                        if on_card is not None:
+                            _rp = apply_policy(FoodResponsePlan(
+                                intent=FoodResponseIntent.COMMIT,
+                                card_will_render=True,
+                                facts_visible_in_card=CARD_FACTS))
+                            response_text = strip_card_recitation(
+                                response_text, _rp)
+                    except Exception as _e:
+                        logger.warning(f"card-recitation strip skipped: {_e}")
                 # Hold notice AFTER the contract/render: held names come from
                 # the system's own stash, and their digits ("Fage 0%") must
                 # never vaporize the notice (Dove bar incident class).
