@@ -44,7 +44,12 @@ class Candidate:
     variant: Optional[str] = None
     source_id: Optional[str] = None
     reported_grade: str = MatchGrade.NONE
+    #: The source's OWN serving panel — "35 g (12 pieces)" — and its mass.
+    #: Kept beside `basis` rather than folded into it because a per-100g row
+    #: still has a serving panel, and that panel is the only thing that knows
+    #: how much one piece of THIS product weighs.
     serving_text: str = ""
+    serving_mass_g: Optional[float] = None
 
     @property
     def calories(self) -> Optional[float]:
@@ -135,7 +140,9 @@ def usda_candidates(rows) -> list:
             basis=Per100g(),
             brand=str(row.get("brand") or "") or None,
             source_id=str(row.get("fdc_id") or "") or None,
-            reported_grade=MatchGrade.CATEGORY))
+            reported_grade=MatchGrade.CATEGORY,
+            serving_text=str(row.get("serving_text") or ""),
+            serving_mass_g=row.get("serving_mass_g")))
     return out
 
 
@@ -158,7 +165,9 @@ def off_candidate(hit) -> Optional[Candidate]:
                ("calories", "protein", "carbs", "fat", "fiber", "sugar",
                 "sodium")}),
         basis=Per100g(), brand=hit.get("brand"),
-        reported_grade=grade)
+        reported_grade=grade,
+        serving_text=str(hit.get("serving_text") or ""),
+        serving_mass_g=hit.get("serving_mass_g"))
 
 
 def web_label_candidate(hit, request: FoodResolutionRequest) -> Optional[Candidate]:

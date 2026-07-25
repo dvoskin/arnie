@@ -1082,14 +1082,29 @@ def _needs_web_label(db_match_grade) -> bool:
 def _looks_branded(food_name: str) -> bool:
     """Safety-net heuristic when the model forgot to set is_packaged=True.
 
-    Targets ProperNoun-Brand + common-package-noun patterns (e.g. "Quest Bar",
-    "Elmhurst Clean Protein", "Liquid IV"). Conservative — only matches when at
-    least one capitalized brand-like token precedes a known package word.
-    Never matches "chicken breast" / "white rice" — those are lowercase generics.
+    Delegates to `skills.nutrition.branded`, which the resolver also asks. The
+    two used to decide this independently, and both were blind in their own
+    way: this one required a LOWERCASE package noun (`_BRANDED_RE` carries no
+    re.I) while the interpreter emits Title Case, so "Barebells Salty Peanut
+    Protein Bar" never matched — the pattern wanted "bar" and got "Bar". The
+    net had been dead for the names it was written for, which is why OFF and
+    the web-label lane were skipped for "Peanut M&Ms" and a generic USDA row
+    won a branded product unopposed (2026-07-25).
+
+    WEAK+ is the right bar HERE: a false positive costs one lookup that
+    identity validation then discards, and a false negative costs the label.
     """
-    if not food_name or len(food_name) < 6:
+    if not food_name or len(food_name) < 3:
         return False
-    return bool(_BRANDED_RE.search(food_name))
+    from skills.nutrition.branded import names_a_product
+    return names_a_product(food_name)
+
+
+def _names_a_product(food_name: str, is_packaged: bool = False) -> bool:
+    """STRONG only — the user named a manufactured product, not a food that
+    happens to come in packets. Gates the web-label lane; see the note there."""
+    from skills.nutrition.branded import names_a_specific_product
+    return names_a_specific_product(food_name, is_packaged=bool(is_packaged))
 
 
 def _best_matching_snippet(result, food_name: str) -> str | None:
@@ -1614,9 +1629,19 @@ async def _analyze_food(db, user, food_name, inp):
         # branded item → pull the label from the web, and a successful label
         # read OUTRANKS the weak text match (candidates curated below so the
         # ladder picks it). Web miss → the weak DB hit stands, as before.
+        #
+        # The web lane asks for STRONG, where OFF asks for WEAK+. Widening
+        # `_looks_branded` to fix the Title-Case blindness also widened this,
+        # and the two lanes do not carry the same risk: OFF is a structured
+        # branded index whose answer still has to survive identity validation,
+        # while the web lane parses a "product label" out of search results and
+        # has a documented history of finding the wrong product (Anya's "3
+        # coffee" → a 420-cal De'Longhi cappuccino, 2026-07-21). A capitalised
+        # word in front of "butter" is enough to check a database. It is not
+        # enough to go looking for a packet.
         _db_hit = usda or off
         _db_grade = (_db_hit or {}).get("_match")
-        if _branded and _needs_web_label(_db_grade):
+        if _names_a_product(food_name, is_packaged) and _needs_web_label(_db_grade):
             web = await _web_lookup_packaged(food_name, inp.get("quantity"))
             if web is not None and _db_hit is not None:
                 logger.info(

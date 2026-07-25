@@ -26,13 +26,15 @@ interrupting the user for.
 from __future__ import annotations
 
 import logging
+from dataclasses import replace
 from typing import Optional
 
 from skills.nutrition.candidates import Candidate
 from skills.nutrition.models import (FoodResolutionRequest,
                                      NormalizedQuantity, NutrientProfile,
                                      NutritionResolution, ResolutionAmbiguity)
-from skills.nutrition.normalize import normalize_quantity
+from skills.nutrition.normalize import (MASS_UNKNOWN, count_units_compatible,
+                                        normalize_quantity, serving_unit_mass)
 from skills.nutrition.provenance import (CandidateRejection, DECISIVE_GRADES,
                                          MatchGrade, SourceTier)
 from skills.nutrition.scaling import (Per100g, ScalingRefused, scale_profile,
@@ -298,16 +300,58 @@ BRANDED_FALLBACK_DOUBT = 0.3
 def _is_branded_request(request: FoodResolutionRequest) -> bool:
     """Whether the user named a PRODUCT rather than a food.
 
-    Three signals, any of which is enough: the interpreter set a brand, it
-    flagged the item as packaged, or the name matches a known product family.
+    Asks `skills.nutrition.branded` at STRONG, the same module the executor's
+    source gate asks at WEAK+. Sharing it is the fix: this used to accept only
+    an explicit brand, the is_packaged flag, or a product-family rule, so
+    "Peanut M&Ms" was not a branded request and the disclosure below never
+    fired on the very transcript it was written for.
+
+    STRONG and not WEAK+, because this gate decides whether to TELL the user a
+    generic row stood in for their product. "Peanut Butter" is worth a branded
+    lookup and is not worth a caveat.
     """
-    if request.brand or request.is_packaged:
-        return True
-    try:
-        from skills.nutrition.families import rule_for
-        return rule_for(request.brand, request.food_name) is not None
-    except Exception:
-        return False
+    from skills.nutrition.branded import names_a_specific_product
+    return names_a_specific_product(request.food_name, request.brand,
+                                    request.is_packaged)
+
+
+def _anchor_count_to_serving(quantity: NormalizedQuantity,
+                             winner: Candidate) -> NormalizedQuantity:
+    """Give a bare count a mass, using the winner's OWN serving panel.
+
+    "15 pieces" of a per-100g row is unscalable, so the resolution came back
+    empty, `promotable()` declined it, and the interpreter's guess was
+    committed — wearing the database's name. That is the shipped transcript:
+    "Logged Peanut M&Ms — 135 cal, from the USDA database", where nothing from
+    USDA had in fact been scaled at all.
+
+    A label that says "35 g (12 pieces)" knows what one piece of THAT product
+    weighs. `PIECE_WEIGHTS_G` never can — it describes foods, and a table of
+    food-shaped averages cannot know a Peanut M&M is three times a plain one.
+    So the mass comes from the selected record, per product, and a different
+    variant or a reformulation carries its own.
+
+    Returns the quantity unchanged whenever the panel does not say both things
+    or names a different object. Unscalable is a state the ask ladder can act
+    on; a substituted average is not.
+    """
+    if quantity.grams is not None or quantity.count is None:
+        return quantity
+    unit_mass = serving_unit_mass(winner.serving_text, winner.serving_mass_g)
+    if unit_mass is None:
+        return quantity
+    grams_per, serving_unit = unit_mass
+    if not count_units_compatible(quantity.unit, serving_unit):
+        return quantity
+    # The mass is known now, so "portion mass unknown" is no longer true.
+    # Assumptions are shown to the user; carrying a superseded one beside the
+    # thing that superseded it reads as the system contradicting itself.
+    kept = tuple(a for a in quantity.assumptions if a != MASS_UNKNOWN)
+    return replace(
+        quantity, grams=round(quantity.count * grams_per, 1),
+        assumptions=kept + (
+            f"{grams_per:g} g per {serving_unit}, from the "
+            f"{winner.source} serving panel",))
 
 
 #: A doubt covering this much of an item's own calories is worth asking about
@@ -443,7 +487,8 @@ def _resolve(request: FoodResolutionRequest,
             profile=profile, basis=candidate.basis, brand=candidate.brand,
             variant=candidate.variant, source_id=candidate.source_id,
             reported_grade=candidate.reported_grade,
-            serving_text=candidate.serving_text))
+            serving_text=candidate.serving_text,
+            serving_mass_g=candidate.serving_mass_g))
 
     if not viable:
         return NutritionResolution(
@@ -473,6 +518,12 @@ def _resolve(request: FoodResolutionRequest,
             r.source_id)
         for r in runners)
     merged, mix_notes = _mix_micros(winner.profile, runners, request)
+
+    # A bare count gets its mass from the winner's own serving panel, before
+    # anything is scaled. Deliberately AFTER the winner is chosen: the mass
+    # must come from the record whose numbers are about to be used, not from
+    # whichever candidate happened to carry a panel.
+    quantity = _anchor_count_to_serving(quantity, winner)
 
     warnings = []
     try:

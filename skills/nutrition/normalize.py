@@ -147,6 +147,86 @@ PIECE_WEIGHTS_G = {
     "slice": (28.0, 10.0),          # last resort for an unqualified "slice"
 }
 
+#: Singular form for the count units a serving panel actually names, so
+#: "12 pieces" on a label and "15 piece" from the parser compare as equal.
+def _singular(unit: str) -> str:
+    u = (unit or "").strip().lower()
+    return u[:-1] if len(u) > 3 and u.endswith("s") else u
+
+
+#: Count units that are interchangeable with each other. A label saying
+#: "12 pieces" answers a user who said "15 pieces" and equally one who said
+#: "15 units"; it does NOT answer one who said "1 bar", because a bar is a
+#: different object from a piece of one.
+_INTERCHANGEABLE_COUNTS = {"piece", "unit", "item", "serving"}
+
+_SERVING_MASS_RE = re.compile(r"(\d+(?:\.\d+)?)\s*(g|gram|grams)\b", re.I)
+
+#: Recorded when a countable portion has no mass we are willing to claim.
+#: Named so the resolver can DROP it when a serving panel later supplies one,
+#: rather than matching the sentence by hand in two places.
+MASS_UNKNOWN = "portion mass unknown"
+
+
+def _serving_count(serving_text: str) -> Optional[tuple]:
+    """(count, singular_unit) named by a serving panel, or None."""
+    for match in re.finditer(r"(\d+(?:\.\d+)?)\s*([a-z]+)", serving_text or "",
+                             re.I):
+        unit = _singular(match.group(2))
+        if unit in {_singular(u) for u in _COUNT_UNITS}:
+            try:
+                count = float(match.group(1))
+            except ValueError:
+                continue
+            if count > 0:
+                return count, unit
+    return None
+
+
+def serving_unit_mass(serving_text: str,
+                      serving_mass_g: Optional[float] = None) -> Optional[tuple]:
+    """(grams_per_unit, unit) implied by a source's OWN serving panel, or None.
+
+    "35 g (12 pieces)" says one piece is 2.9 g — for THIS product, off THIS
+    record. That is the only honest way to turn "15 pieces" of a named
+    confection into a mass: `PIECE_WEIGHTS_G` describes foods, and no table of
+    food-shaped averages knows that a Peanut M&M is three times a plain one.
+
+    Nothing is derived when the panel does not say both things. A serving with
+    a mass but no count, or a count but no mass, returns None and the portion
+    stays unscalable — which the ask ladder can act on and a guess cannot.
+    """
+    text = serving_text or ""
+    mass = serving_mass_g
+    if mass is None:
+        found = _SERVING_MASS_RE.search(text)
+        mass = float(found.group(1)) if found else None
+    if not mass or mass <= 0:
+        return None
+    count = _serving_count(text)
+    if count is None:
+        return None
+    per_unit, unit = mass / count[0], count[1]
+    if per_unit <= 0:
+        return None
+    return round(per_unit, 3), unit
+
+
+def count_units_compatible(portion_unit: str, serving_unit: str) -> bool:
+    """Whether a serving panel's count unit answers the portion's.
+
+    Same object, or both generic counters. "15 pieces" against a panel of
+    "12 pieces" is the same object. "15 pieces" against "1 bar" is not, and
+    scaling one by the other is how a portion silently becomes a package.
+    """
+    a, b = _singular(portion_unit), _singular(serving_unit)
+    if not a or not b:
+        return False
+    if a == b:
+        return True
+    return a in _INTERCHANGEABLE_COUNTS and b in _INTERCHANGEABLE_COUNTS
+
+
 #: Adjectives that shift a piece weight. Small effect, large in aggregate over
 #: six slices — and cheap to honour.
 _SIZE_MODIFIERS = {
@@ -474,7 +554,7 @@ def normalize_quantity(raw: str, food_name: str = "") -> NormalizedQuantity:
                 amount=amount, unit=(head or "serving"), count=amount,
                 count_basis=_count_basis(head, food_name),
                 unit_label=raw or f"{amount} {head or 'serving'}",
-                assumptions=("portion mass unknown",))
+                assumptions=(MASS_UNKNOWN,))
         grams, spread = est
         assumptions.append(
             f"{_fmt(amount)} × {_fmt(grams)}g estimated per "

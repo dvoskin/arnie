@@ -288,5 +288,11 @@ async def search(name: str, page_size: int = 8) -> Optional[dict]:
         "_match": "exact" if best_ov >= 0.85 else "likely",
         "name": (p.get("product_name") or "").strip(),
         "brand": (p.get("brands") or "").split(",")[0].strip() or None,
+        # The serving panel was already in _FIELDS and was thrown away here.
+        # It is the only thing that knows one Peanut M&M weighs ~2.9 g, and
+        # without it a "15 pieces" portion of a per-100g row cannot be scaled
+        # at all — so the resolution came back empty and a guess was committed
+        # under this source's name (2026-07-25).
+        "serving_text": (p.get("serving_size") or "").strip(),
         "source": "off",
     }
