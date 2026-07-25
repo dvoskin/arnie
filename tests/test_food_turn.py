@@ -529,9 +529,19 @@ def test_prompt_examples_speak_in_tokens():
 
 
 def test_format_confirm_never_renders_none():
+    """An amount-less item must read as the food alone, never "None Coffee".
+
+    The bold numbered list this used to assert is gone (Danny 2026-07-25): the
+    confirmation now comes from the response contract, which uses prose for a
+    short meal and one-food-per-line for a long one. No bold, no numbering —
+    that shape read as a form rather than a coach checking something.
+    """
     txt = FT.format_confirm([{"food": "Coffee", "amount": None},
                              {"food": "Eggs", "amount": 2, "unit": ""}])
-    assert "None" not in txt and "**Coffee**" in txt and "**2 Eggs**" in txt
+    assert "None" not in txt
+    assert "Coffee" in txt and "2 Eggs" in txt
+    assert "**" not in txt and "Locking this in" not in txt
+    assert txt.endswith("Does that look right?")
 
 
 @pytest.mark.asyncio

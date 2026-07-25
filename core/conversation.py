@@ -965,26 +965,19 @@ async def run_turn(
                 result = {"text": "", "raw_content": [],
                           "tool_calls": _sft["tool_calls"],
                           "stop_reason": "structured_food"}
-                # EVERY structured write turn announces itself — enrichment
-                # (USDA/OFF/web label) is a network round-trip even for one
-                # item, and the turns that skipped the heads-up were exactly
-                # the ones that felt hung (Danny 2026-07-23).
-                _n_logs = sum(1 for _tc in _sft["tool_calls"]
-                              if _tc.get("name") == "log_food")
-                if _n_logs > 1:
-                    _hu = f"Give me a moment. Logging all {_n_logs} now."
-                elif _n_logs == 1:
-                    _hu = "Give me a moment. Logging it now."
-                else:
-                    _hu = "One sec. Fixing the board now."
-                try:
-                    if _streamer and on_text_bubble:
-                        await on_text_bubble(_hu)
-                        _streamer.flushed_count += 1
-                    elif on_interim:
-                        await on_interim(_hu)
-                except Exception:
-                    pass
+                # NO TRANSACTION NARRATION (Danny 2026-07-25). This used to
+                # emit "Give me a moment. Logging all 2 now." as a real chat
+                # bubble before the write — which is the same pre-action
+                # narration the system prompt bans the MODEL from producing and
+                # turn_health flags as a stall marker. Emitting it
+                # deterministically bypassed both guards and made the flow read
+                # as several systems taking turns.
+                #
+                # Enrichment is still a network round-trip, so the wait is
+                # real. It is covered by on_tool_start below (line ~1182),
+                # which the transports already use to drive the typing
+                # indicator — and which disappears when the card lands, instead
+                # of leaving a permanent bubble describing a wait that is over.
         elif _sft is not None and _sft["action"] == "ask":
             # The one clarify question IS the reply — no tools, nothing logged.
             _turn_route = "structured_ask"
@@ -1593,6 +1586,34 @@ async def run_turn(
                                          f"the {_fn} - the board changed under "
                                          f"me. Say it again if you still want "
                                          f"that one.")
+                    # THE CARD OWNS THE FACTS (Danny 2026-07-25). The renderer
+                    # above predates the meal card and says everything: items,
+                    # macros, day total, remaining. Where a card renders, most
+                    # of that is the card read back — the screenshot's "130
+                    # calories and 3g protein, 1,990 remaining" under a card
+                    # already showing it.
+                    #
+                    # Stripped, not replaced, and only when a card is actually
+                    # rendering: Telegram has no card frame, so there the same
+                    # sentences are the only confirmation the user gets. A
+                    # sentence survives if it carries no nutrition number or is
+                    # forward-looking, and each ||| bubble is judged on its own
+                    # so a vetted follow-up is never collateral.
+                    try:
+                        from core.food_response import (CARD_FACTS,
+                                                        FoodResponseIntent,
+                                                        FoodResponsePlan,
+                                                        apply_policy,
+                                                        strip_card_recitation)
+                        if on_card is not None:
+                            _rp = apply_policy(FoodResponsePlan(
+                                intent=FoodResponseIntent.COMMIT,
+                                card_will_render=True,
+                                facts_visible_in_card=CARD_FACTS))
+                            response_text = strip_card_recitation(
+                                response_text, _rp)
+                    except Exception as _e:
+                        logger.warning(f"card-recitation strip skipped: {_e}")
                 # Hold notice AFTER the contract/render: held names come from
                 # the system's own stash, and their digits ("Fage 0%") must
                 # never vaporize the notice (Dove bar incident class).
