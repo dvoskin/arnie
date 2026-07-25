@@ -283,6 +283,38 @@ class LedgerEvent(Base):
     created_at = Column(DateTime, server_default=func.now())
 
 
+class BackgroundJob(Base):
+    """Durable post-turn work (P0.7, architecture review 2026-07-24).
+
+    Profile synthesis and memory reflection used to run as detached
+    asyncio.create_task calls: a deploy, crash or process shutdown dropped
+    them silently, with no retry — so whether a durable fact got remembered
+    depended on process luck. A row here survives all three. The in-process
+    task stays the FAST path; the row is the guarantee, swept by the
+    scheduler for anything left pending or failed.
+
+    dedup_key collapses repeats (same user + kind within a window) so a busy
+    conversation doesn't queue twenty profile rebuilds.
+    """
+    __tablename__ = "background_jobs"
+    __table_args__ = (
+        Index("ix_background_jobs_due", "status", "next_attempt_at"),
+        Index("ix_background_jobs_user", "user_id"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    kind = Column(String, nullable=False)          # profile_update | reflection
+    payload_json = Column(Text)
+    status = Column(String, nullable=False, server_default="pending")  # pending|done|failed
+    attempts = Column(Integer, server_default="0")
+    dedup_key = Column(String)
+    last_error = Column(Text)
+    next_attempt_at = Column(DateTime)
+    created_at = Column(DateTime, server_default=func.now())
+    completed_at = Column(DateTime)
+
+
 class ProcessedTurn(Base):
     """Durable exactly-once for structured food commits (FOOD_LEDGER_V2 Phase 2).
 

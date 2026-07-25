@@ -2417,6 +2417,25 @@ def start_scheduler():
         )
     else:
         reminders_status = "reminders DISABLED (PROACTIVE_MESSAGING_ENABLED not set)"
+    # Durable background-job sweep (P0.7): post-turn profile/memory work that
+    # a deploy or crash dropped mid-task is still queued as a row — this tick
+    # finishes it. Runs regardless of PROACTIVE_MESSAGING_ENABLED: it is data
+    # integrity, not outbound messaging. Offset to :10/:40 so it never lands
+    # in the same minute as the nudge or hook jobs.
+    async def _sweep_bg_jobs():
+        from core.background_jobs import sweep_background_jobs
+        await sweep_background_jobs()
+
+    _scheduler.add_job(
+        _sweep_bg_jobs,
+        CronTrigger(minute="10,40"),
+        id="background_job_sweep",
+        replace_existing=True,
+        max_instances=1,
+        misfire_grace_time=300,
+        coalesce=True,
+    )
+
     # Conversation-hook re-asks always run — they're conversation continuity,
     # not proactive nudges, and don't require PROACTIVE_MESSAGING_ENABLED.
     # Offset to :15 and :45 so a hook re-ask and a slot nudge can't fire in the
