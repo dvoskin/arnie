@@ -48,6 +48,8 @@ async def build_coordinator(request, **legacy_kwargs) -> TurnCoordinator:
     from core.turns.stages.render import PassthroughRenderStage
     from core.turns.stages.finalize import Finalizer
 
+    render_stage = PassthroughRenderStage()
+
     route = await RouteStage().run(request)
     native = native_stages_for(route.lane)
     go_native = native is not None and lane_executes_natively(
@@ -58,6 +60,10 @@ async def build_coordinator(request, **legacy_kwargs) -> TurnCoordinator:
         plan_stage, validation_stage = native
         execution_stage = NativeExecutionStage()
         snapshot_stage = CommittedSnapshotStage()
+        # A native turn has no legacy Response to surface — it renders from
+        # the committed snapshot, which is the whole point.
+        from core.turns.stages.render_native import NativeRenderStage
+        render_stage = NativeRenderStage()
         logger.info(f"event=turn_native turn={request.turn_id} "
                     f"lane={route.lane.value} reason={route.reason_code}")
     else:
@@ -73,7 +79,7 @@ async def build_coordinator(request, **legacy_kwargs) -> TurnCoordinator:
         validation_stage=validation_stage,
         execution_stage=execution_stage,
         snapshot_stage=snapshot_stage,
-        render_stage=PassthroughRenderStage(),
+        render_stage=render_stage,
         finalizer=Finalizer())
 
 

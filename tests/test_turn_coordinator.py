@@ -697,3 +697,117 @@ async def test_context_stage_records_what_the_turn_was_given():
         messages=[{"role": "user", "content": "y" * 200}]).run(_req())
     assert manifest.token_estimate == 150      # ~4 chars per token, an estimate
     assert manifest.included_sections == ("system", "messages")
+
+
+# ── native rendering: the reply is the committed state ────────────────────────
+def _snapshot_with(execution, cal=1500.0, protein=120.0, cal_left=700.0,
+                   protein_left=60.0):
+    return TurnSnapshot(turn_id="t", execution=execution,
+                        day_totals={"calories": cal, "protein": protein},
+                        remaining_targets={"calories": cal_left,
+                                           "protein": protein_left})
+
+
+@pytest.mark.asyncio
+async def test_native_reply_names_only_what_committed():
+    """The failure this exists to prevent: a dedup-blocked item narrated as
+    logged, with committed-looking day numbers behind it."""
+    from core.turns.stages.render_native import NativeRenderStage
+    from core.execution_result import CallResult, ExecutionResult
+
+    ops = ({"name": "log_food", "input": {"food_name": "Rice", "calories": 200}},
+           {"name": "log_food", "input": {"food_name": "Chicken", "calories": 300}})
+    execution = ExecutionResult(calls=(
+        CallResult(name="log_food", raw_input=dict(ops[0]["input"]),
+                   status="committed", entry_id=1),
+        CallResult(name="log_food", raw_input=dict(ops[1]["input"]),
+                   status="blocked", result_text="Skipped duplicate")))
+
+    resp = await NativeRenderStage().run(
+        _req(), plan=TurnPlan(operations=ops),
+        validation=ValidationResult(disposition="execute",
+                                    approved_operations=ops),
+        snapshot=_snapshot_with(execution))
+    text = " ".join(getattr(resp, "bubbles", None) or [str(resp)])
+    assert "Rice" in text and "Chicken" not in text
+
+
+@pytest.mark.asyncio
+async def test_native_reply_uses_committed_day_numbers():
+    from core.turns.stages.render_native import NativeRenderStage
+    from core.execution_result import CallResult, ExecutionResult
+
+    ops = ({"name": "log_food", "input": {"food_name": "Rice", "calories": 200,
+                                          "protein": 5}},)
+    execution = ExecutionResult(calls=(
+        CallResult(name="log_food", raw_input=dict(ops[0]["input"]),
+                   status="committed", entry_id=1),))
+    resp = await NativeRenderStage().run(
+        _req(), plan=TurnPlan(operations=ops),
+        validation=ValidationResult(disposition="execute",
+                                    approved_operations=ops),
+        snapshot=_snapshot_with(execution))
+    text = " ".join(getattr(resp, "bubbles", None) or [str(resp)])
+    assert "1500" in text and "700" in text        # committed day + remaining
+
+
+@pytest.mark.asyncio
+async def test_a_model_sentence_with_a_database_claim_is_replaced():
+    """The narration hint is a hint. A sentence asserting something only the
+    database knows gets swapped for the deterministic line."""
+    from core.turns.stages.render_native import NativeRenderStage
+    from core.execution_result import CallResult, ExecutionResult
+
+    ops = ({"name": "log_food", "input": {"food_name": "Rice", "calories": 200}},)
+    execution = ExecutionResult(calls=(
+        CallResult(name="log_food", raw_input=dict(ops[0]["input"]),
+                   status="committed", entry_id=1),))
+    plan = TurnPlan(operations=ops,
+                    narration_hint="Nice, that's a protein-packed plate.")
+    resp = await NativeRenderStage().run(
+        _req(), plan=plan,
+        validation=ValidationResult(disposition="execute",
+                                    approved_operations=ops),
+        snapshot=_snapshot_with(execution))
+    text = " ".join(getattr(resp, "bubbles", None) or [str(resp)])
+    assert "protein-packed" not in text
+    assert "Rice logged" in text
+
+
+@pytest.mark.asyncio
+async def test_an_ask_renders_before_any_commit():
+    from core.turns.stages.render_native import NativeRenderStage
+    resp = await NativeRenderStage().run(
+        _req(), validation=ValidationResult(
+            disposition="ask",
+            clarification={"say": "How much rice — a cup or two?"}),
+        snapshot=None)
+    assert "How much rice" in " ".join(getattr(resp, "bubbles", None) or [])
+
+
+@pytest.mark.asyncio
+async def test_a_turn_that_committed_nothing_renders_nothing():
+    """Silence hands the turn back rather than inventing a confirmation."""
+    from core.turns.stages.render_native import NativeRenderStage
+    from core.execution_result import ExecutionResult
+    ops = ({"name": "log_food", "input": {"food_name": "Rice"}},)
+    resp = await NativeRenderStage().run(
+        _req(), plan=TurnPlan(operations=ops),
+        validation=ValidationResult(disposition="execute",
+                                    approved_operations=ops),
+        snapshot=_snapshot_with(ExecutionResult(calls=())))
+    assert resp is None
+
+
+@pytest.mark.asyncio
+async def test_promoted_lane_gets_the_native_renderer(monkeypatch):
+    from core.turns.factory import build_coordinator
+    from core.turns.stages.render_native import NativeRenderStage
+    from core.turns.stages.render import PassthroughRenderStage
+    monkeypatch.setenv("TURN_COORDINATOR_MODE", "new_execute")
+    monkeypatch.setenv("TURN_COORDINATOR_LANES", "ledger_undo")
+    monkeypatch.delenv("TURN_COORDINATOR_ALLOWLIST", raising=False)
+    coord = await build_coordinator(_req("undo"), system="S", messages=[])
+    assert isinstance(coord.render_stage, NativeRenderStage)
+    coord = await build_coordinator(_req("hey"), system="S", messages=[])
+    assert isinstance(coord.render_stage, PassthroughRenderStage)

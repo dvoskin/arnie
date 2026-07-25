@@ -45,6 +45,7 @@ def _lift(plan: Optional[dict], version: str) -> TurnPlan:
                         planner_version=version)
     return TurnPlan(operations=tuple(plan.get("tool_calls") or ()),
                     response_intent=plan.get("action") or "",
+                    narration_hint=str(plan.get("say") or ""),
                     planner_version=version)
 
 

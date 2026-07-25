@@ -67,6 +67,7 @@ class FoodPlanStage:
             operations=tuple(out.get("tool_calls") or ()),
             response_intent=action or "",
             ambiguities=(),
+            narration_hint=str(out.get("say") or ""),
             planner_version=FOOD_PLANNER_VERSION)
 
 

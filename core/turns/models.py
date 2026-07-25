@@ -80,6 +80,10 @@ class TurnPlan:
     operations: tuple = ()
     response_intent: str = ""
     ambiguities: tuple = ()
+    # The model's PROPOSED sentence. A hint, never the reply: it is subject to
+    # say-safety (a database-dependent claim is replaced by the deterministic
+    # line) and its numbers are tokens filled from the committed snapshot.
+    narration_hint: str = ""
     planner_version: str = ""
 
 
