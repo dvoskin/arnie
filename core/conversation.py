@@ -1201,6 +1201,12 @@ async def run_turn(
             # to "" everywhere else, so non-conversation call paths are unchanged.
             user_message=_gate_user_message,
         )
+        # Typed execution view (P0.3a): the executor publishes it; the scraper
+        # fallback covers mocked executors. Downstream (narration filters,
+        # cards) consumes THIS — never inp["_..."] keys directly.
+        from core.execution_result import (LAST_EXECUTION as _LX,
+                                           from_tool_calls as _exec_from)
+        _execution = _LX.get() or _exec_from(tool_calls, tool_results)
 
         # ── SCRIBE SHADOW (observe-only) ─────────────────────────────────
         # The write-set validator judges what the model ACTUALLY did against
@@ -1524,11 +1530,11 @@ async def run_turn(
                 # contract first: model-authored digits outside {tokens} →
                 # tokenized replacement (647-vs-343, IMG_8610).
                 from core.food_turn import enforce_say_contract
-                from core.food_ledger import (successful_calls as _fl_ok,
-                                              failed_call_names as _fl_failed,
-                                              compute_batch as _fl_batch)
-                _ok_calls = _fl_ok(_sft["tool_calls"])
-                _failed_names = _fl_failed(_sft["tool_calls"])
+                from core.food_ledger import compute_batch as _fl_batch
+                # Committed-vs-refused now reads from the typed execution view
+                # (P0.3a) — on structured turns the executed batch IS the plan.
+                _ok_calls = _execution.ok_tool_calls()
+                _failed_names = _execution.failed_names()
                 try:
                     await db.refresh(today_log)
                 except Exception:
