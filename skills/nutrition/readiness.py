@@ -31,28 +31,54 @@ import json
 import re
 import sys
 from collections import Counter, defaultdict
+from enum import Enum
 from dataclasses import dataclass, field
 from typing import Iterable, Mapping, Optional
 
 READINESS_VERSION = "readiness_v1"
 
-#: The thresholds from the directive. Stated as data so a gate can be retuned
-#: from production without touching the code that computes it.
+class Stage(str, Enum):
+    """Which rollout stage a gate belongs to.
+
+    The first version of this file had one flat gate set and an overall
+    `ready` that required every gate to pass — including gates that need
+    post-promotion signals. "All pass before promotion" was therefore
+    unreachable by construction: a duplicate-commit rate cannot exist before
+    anything commits natively. Splitting by stage makes each verdict answerable
+    at the point it is asked.
+    """
+    SHADOW = "shadow_ready"      # before any live ownership
+    CANARY = "canary_safe"       # before widening past the allowlist
+    SCALE = "scale_ready"        # before all users
+
+
+#: The thresholds from the directive, each tagged with the stage at which it
+#: becomes answerable. Stated as data so a gate can be retuned from production
+#: without touching the code that computes it.
 GATES = {
     # Must be exactly zero — each is a correctness violation, not a rate to
     # optimize.
-    "wrong_item_binding": {"max": 0, "absolute": True},
-    "duplicate_commit": {"max": 0, "absolute": True},
-    "stale_clarification_mutation": {"max": 0, "absolute": True},
-    "snapshot_card_mismatch": {"max": 0, "absolute": True},
-    "package_vs_consumed_confusion": {"max": 0, "absolute": True},
-    # Quality targets.
-    "branded_top1_accuracy": {"min": 0.97},
-    "branded_top3_recall": {"min": 0.99},
-    "material_ambiguity_recall": {"min": 0.95},
-    "unnecessary_clarification_quick": {"max": 0.08},
-    "unnecessary_clarification_moderate": {"max": 0.18},
-    "strict_unresolved_after_3_rounds": {"max": 0.05},
+    # CANARY — each needs a native write to have happened, so none of them can
+    # be answered while the resolver is still in shadow.
+    "wrong_item_binding": {"max": 0, "absolute": True, "stage": Stage.CANARY},
+    "duplicate_commit": {"max": 0, "absolute": True, "stage": Stage.CANARY},
+    "stale_clarification_mutation": {"max": 0, "absolute": True,
+                                     "stage": Stage.CANARY},
+    "snapshot_card_mismatch": {"max": 0, "absolute": True,
+                               "stage": Stage.CANARY},
+    "package_vs_consumed_confusion": {"max": 0, "absolute": True,
+                                      "stage": Stage.CANARY},
+    # SHADOW — answerable now, from logs and the labelled gold suite.
+    "branded_top1_accuracy": {"min": 0.97, "stage": Stage.SHADOW},
+    "branded_top3_recall": {"min": 0.99, "stage": Stage.SHADOW},
+    "material_ambiguity_recall": {"min": 0.95, "stage": Stage.SHADOW},
+    "coordinator_route_agreement": {"min": 0.95, "stage": Stage.SHADOW},
+    "resolution_unresolved_rate": {"max": 0.15, "stage": Stage.SHADOW},
+    "resolver_crash_rate": {"max": 0.005, "stage": Stage.SHADOW},
+    # SCALE — need sustained usage, not just a canary.
+    "clarification_rate_quick": {"max": 0.08, "stage": Stage.SCALE},
+    "clarification_rate_moderate": {"max": 0.18, "stage": Stage.SCALE},
+    "strict_unresolved_after_3_rounds": {"max": 0.05, "stage": Stage.SCALE},
 }
 
 #: Log events this reads. Anything else is ignored, so a mixed application log
@@ -189,7 +215,9 @@ def macro_delta(records) -> Metric:
     if not deltas:
         return Metric("median_calorie_delta")
     deltas.sort()
-    median = deltas[len(deltas) // 2]
+    mid = len(deltas) // 2
+    median = (deltas[mid] if len(deltas) % 2
+              else (deltas[mid - 1] + deltas[mid]) / 2.0)
     return Metric("median_calorie_delta", median, len(deltas),
                   detail={"p90": deltas[int(len(deltas) * 0.9)],
                           "max": deltas[-1]})
@@ -234,33 +262,58 @@ def large_move_rate(records) -> Metric:
 def clarification_rate(records, mode: str) -> Metric:
     """Share of items in `mode` that produced a question.
 
-    Named "unnecessary" in the gates, and the name is aspirational: from logs
-    alone this is the clarification rate, and only a correction or an
-    abandonment tells you a given question was unnecessary. Reported under the
-    gate name because it is the best available proxy, and flagged as a proxy.
+    Named for what it MEASURES. It was previously reported as
+    "unnecessary_clarification_{mode}", which is a different quantity: only a
+    correction or an abandonment establishes that a given question was
+    unnecessary, and a gate reading the raw rate under that name would be
+    answering a question it never asked.
     """
     rows = [r for r in records if r.get("event") == "item_trace"
             and r.get("mode") == mode]
     if not rows:
-        return Metric(f"unnecessary_clarification_{mode}")
+        return Metric(f"clarification_rate_{mode}")
     asked = sum(1 for r in rows if r.get("decision") == "ask")
-    return Metric(f"unnecessary_clarification_{mode}", asked / len(rows),
-                  len(rows), detail={"proxy": "clarification rate, not "
-                                              "necessarily unnecessary"})
+    return Metric(f"clarification_rate_{mode}", asked / len(rows), len(rows),
+                  detail={"note": "raw rate; unnecessary-question share needs "
+                                  "correction and abandonment signals"})
+
+
+def resolver_crash_rate(records) -> Metric:
+    """Shadow turns where the resolver failed outright. A promotion gate that
+    nothing computes is a gate that silently never fails."""
+    rows = [r for r in records if r.get("event") == "nutrition_shadow"]
+    if not rows:
+        return Metric("resolver_crash_rate")
+    crashed = sum(1 for r in rows if r.get("new_source") in ("error", "crash"))
+    return Metric("resolver_crash_rate", crashed / len(rows), len(rows))
 
 
 def wrong_item_binding(records) -> Metric:
-    """Corrections whose field indicates an answer landed on the wrong entity.
+    """Clarification answers that landed on the wrong entity.
 
-    Zero-tolerance: this is the failure the whole staged-item model exists to
-    prevent, so a single occurrence is a defect rather than a rate.
+    The denominator is every APPLIED clarification answer, not the corrections
+    alone. Measuring wrong bindings against corrections asks "of the times the
+    user told us we were wrong, how often were we wrong" — which is 100% by
+    construction, and reports a confident zero when nobody has complained yet.
+    No applied answers means UNMEASURED, not a demonstrated zero.
+
+    Zero-tolerance: one occurrence is a defect, not a rate to optimise.
     """
-    rows = [r for r in records if r.get("event") == "food_correction"]
-    if not rows:
-        return Metric("wrong_item_binding", 0.0, 0)
-    wrong = sum(1 for r in rows
-                if r.get("field") in ("staged_item", "entry_id", "wrong_item"))
-    return Metric("wrong_item_binding", float(wrong), len(rows))
+    applied = [r for r in records
+               if r.get("event") == "item_trace"
+               and r.get("decision") in ("commit", "correct")
+               and r.get("question", "-") not in ("-", "")]
+    wrong = sum(1 for r in records
+                if r.get("event") == "food_correction"
+                and r.get("field") in ("staged_item", "entry_id", "wrong_item"))
+    if not applied:
+        # Nothing to divide by. A correction with no applied answers still
+        # counts as a defect — it cannot be explained away by a missing
+        # denominator.
+        return Metric("wrong_item_binding",
+                      value=(float(wrong) if wrong else None),
+                      sample=wrong)
+    return Metric("wrong_item_binding", float(wrong), len(applied))
 
 
 # ── metrics that need the gold suite ──────────────────────────────────────────
@@ -306,7 +359,12 @@ def gold_identity_accuracy(cases=None) -> tuple:
             for s in case["candidates"]]
         expected = case["expect"]["identity"]
         out = resolve(request, candidates)
-        if out.canonical_name == expected:
+        # `resolve()` copies canonical_name from the REQUEST when nothing
+        # survives validation, so a name match alone is not a selection — for
+        # any case whose request text equals the expected identity it would
+        # score a rejected-everything turn as correct.
+        resolved = out.source not in ("", "unresolved")
+        if resolved and out.canonical_name == expected:
             top1 += 1
         ranked = sorted(candidates, key=lambda c: score(request, c))[:3]
         if any(c.name == expected for c in ranked):
@@ -381,21 +439,67 @@ def build_report(records, *, include_gold: bool = True) -> dict:
         except Exception as e:                       # pragma: no cover
             metrics.append(Metric("gold_suite_error", detail={"error": str(e)}))
 
-    gated = [m for m in metrics if m.name in GATES]
-    verdicts = Counter(m.verdict() for m in gated)
+    metrics.append(resolver_crash_rate(records))
+
+    # Every DECLARED gate must reach the verdict count, not just the ones some
+    # metric happened to emit. Without this, a gate nothing computes is absent
+    # from `gated` entirely — contributing no "unmeasured" — and a stage can
+    # report clear while several of its gates were never answered. A gold-suite
+    # exception would silently remove all three gold gates the same way.
+    produced = {m.name for m in metrics}
+    for name in GATES:
+        if name not in produced:
+            metrics.append(Metric(name))
+
+    by_stage = {}
+    for stage in Stage:
+        gated = [m for m in metrics
+                 if GATES.get(m.name, {}).get("stage") is stage]
+        verdicts = Counter(m.verdict() for m in gated)
+        by_stage[stage.value] = {
+            "pass": verdicts["pass"], "fail": verdicts["fail"],
+            "insufficient": verdicts["insufficient"],
+            "unmeasured": verdicts["unmeasured"],
+            # A stage clears only when every gate IN THAT STAGE is answered and
+            # passing. Gates from later stages cannot hold it back — they are
+            # not answerable yet, which is the whole reason for the split.
+            "clear": (verdicts["fail"] == 0 and verdicts["insufficient"] == 0
+                      and verdicts["unmeasured"] == 0 and bool(gated)),
+        }
+
     return {
         "version": READINESS_VERSION,
         "records": len(records),
         "metrics": {m.name: {"value": m.value, "sample": m.sample,
                              "source": m.source, "detail": dict(m.detail),
+                             "stage": GATES.get(m.name, {}).get(
+                                 "stage", Stage.SHADOW).value
+                             if m.name in GATES else None,
                              "verdict": m.verdict() if m.name in GATES else None}
                     for m in metrics},
-        "gates": {"pass": verdicts["pass"], "fail": verdicts["fail"],
-                  "insufficient": verdicts["insufficient"],
-                  "unmeasured": verdicts["unmeasured"]},
-        "ready": verdicts["fail"] == 0 and verdicts["insufficient"] == 0
-        and verdicts["unmeasured"] == 0,
+        "stages": by_stage,
+        # The actionable answer: the furthest stage whose gates all clear.
+        "cleared": [s for s, v in by_stage.items() if v["clear"]],
+        "next_action": _next_action(by_stage),
     }
+
+
+def _next_action(by_stage: Mapping) -> str:
+    """What the report is actually for: the one thing to do next."""
+    order = [(Stage.SHADOW.value,
+              "promote the resolver to a live allowlist "
+              "(NUTRITION_RESOLVER_MODE=live)"),
+             (Stage.CANARY.value,
+              "widen past the allowlist"),
+             (Stage.SCALE.value,
+              "promote the coordinator's structured_food lane")]
+    for stage, action in order:
+        if not by_stage.get(stage, {}).get("clear"):
+            return f"not yet — {stage} gates are not all answered and passing"
+        return_action = action
+        if stage == order[-1][0]:
+            return f"clear to {return_action}"
+    return "clear to promote the coordinator's structured_food lane"
 
 
 def format_report(report: Mapping) -> str:
@@ -410,15 +514,15 @@ def format_report(report: Mapping) -> str:
                      f"{m['source']}")
         for key, detail in (m["detail"] or {}).items():
             lines.append(f"           {key}: {detail}")
-    g = report["gates"]
-    lines += ["",
-              f"gates: {g['pass']} pass, {g['fail']} fail, "
-              f"{g['insufficient']} insufficient sample, "
-              f"{g['unmeasured']} unmeasured",
-              f"ready to promote: {'YES' if report['ready'] else 'NO'}"]
-    if not report["ready"]:
-        lines.append("  (an unmeasured or low-sample gate is not a pass — it "
-                     "is a gate you cannot yet answer)")
+    lines.append("")
+    for stage, v in report["stages"].items():
+        mark = "CLEAR" if v["clear"] else "     "
+        lines.append(f"  [{mark}] {stage:<14} {v['pass']} pass, {v['fail']} "
+                     f"fail, {v['insufficient']} low-n, "
+                     f"{v['unmeasured']} unmeasured")
+    lines += ["", f"next: {report['next_action']}",
+              "  (an unmeasured or low-sample gate is not a pass — it is a "
+              "gate you cannot yet answer)"]
     return "\n".join(lines)
 
 
@@ -434,8 +538,8 @@ def main(argv=None) -> int:      # pragma: no cover - CLI wrapper
     report = build_report(records)
     print(format_report(report))
     print()
-    print(json.dumps(report["gates"]))
-    return 0 if report["ready"] else 1
+    print(json.dumps(report["stages"]))
+    return 0 if Stage.SHADOW.value in report["cleared"] else 1
 
 
 if __name__ == "__main__":       # pragma: no cover

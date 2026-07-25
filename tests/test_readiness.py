@@ -9,15 +9,16 @@ make a rollout decision on evidence that does not exist.
 """
 import pytest
 
-from skills.nutrition.readiness import (GATES, Metric, build_report,
+from skills.nutrition.readiness import (GATES, Metric, Stage, build_report,
                                         clarification_rate,
                                         coordinator_agreement, format_report,
                                         gold_ambiguity_recall,
                                         gold_identity_accuracy, large_move_rate,
                                         macro_delta, micronutrient_rejection_rate,
                                         nutrition_agreement, parse_line,
-                                        parse_log, unresolved_rate,
-                                        agreement_by_source, wrong_item_binding)
+                                        parse_log, resolver_crash_rate,
+                                        unresolved_rate, agreement_by_source,
+                                        wrong_item_binding)
 
 OBSERVE = ("INFO event=turn_observe turn=imessage:G-1 predicted_lane={p} "
            "actual_lane={a} predicted_disposition=- actual_disposition=- "
@@ -113,7 +114,9 @@ def test_the_size_of_the_correction_is_reported_not_just_its_frequency():
                          _shadow(lc=100, nc=100, agree="yes")])
     m = macro_delta(records)
     assert m.sample == 2                    # agreeing turns contribute nothing
-    assert m.value in (50.0, 210.0)
+    # This assertion used to accept either middle value, hedging around a real
+    # median bug rather than pinning the answer. 50 and 210 is 130.
+    assert m.value == 130.0
     assert m.detail["max"] == 210.0
 
 
@@ -156,7 +159,8 @@ def test_the_clarification_rate_says_it_is_a_proxy():
                          _trace("quick", "commit"), _trace("quick", "commit")])
     m = clarification_rate(records, "quick")
     assert m.value == 0.25
-    assert "proxy" in m.detail
+    assert m.name == "clarification_rate_quick"     # named for what it measures
+    assert "note" in m.detail
 
 
 def test_clarification_rates_are_per_mode():
@@ -176,8 +180,25 @@ def test_wrong_item_binding_is_absolute_not_a_rate():
     assert wrong_item_binding(parse_log(lines)).value == 1.0
 
 
-def test_no_corrections_means_no_wrong_bindings():
-    assert wrong_item_binding([]).value == 0.0
+def test_no_data_means_unmeasured_not_a_demonstrated_zero():
+    """Zero correction rows is "nobody has complained yet", not "we bound every
+    answer correctly". Reporting 0.0 there would clear a canary gate on the
+    absence of evidence."""
+    m = wrong_item_binding([])
+    assert m.value is None
+    assert m.verdict() == "unmeasured"
+
+
+def test_the_denominator_is_applied_answers_not_corrections():
+    """Measuring wrong bindings against corrections asks "of the times the user
+    told us we were wrong, how often were we wrong" — 100% by construction."""
+    lines = [TRACE.format(mode="moderate", decision="commit").replace(
+                 "question=-", "question=q1") for _ in range(20)]
+    lines.append("INFO event=food_correction user=7 turn=t field=entry_id "
+                 "text='x' chose='a' meant='b' alias=- mode=moderate ranked=2")
+    m = wrong_item_binding(parse_log(lines))
+    assert m.sample == 20
+    assert m.value == 1.0
 
 
 # ── verdicts ──────────────────────────────────────────────────────────────────
@@ -203,8 +224,8 @@ def test_a_zero_tolerance_gate_needs_no_sample_size():
 def test_min_and_max_gates_both_evaluate():
     assert Metric("branded_top1_accuracy", 0.90, 100).verdict() == "fail"
     assert Metric("branded_top1_accuracy", 0.98, 100).verdict() == "pass"
-    assert Metric("unnecessary_clarification_quick", 0.20, 100).verdict() == "fail"
-    assert Metric("unnecessary_clarification_quick", 0.05, 100).verdict() == "pass"
+    assert Metric("clarification_rate_quick", 0.20, 100).verdict() == "fail"
+    assert Metric("clarification_rate_quick", 0.05, 100).verdict() == "pass"
 
 
 def test_an_ungated_metric_has_no_verdict():
@@ -230,10 +251,10 @@ def test_ambiguity_recall_measures_against_expected_asks():
 
 
 # ── the report ────────────────────────────────────────────────────────────────
-def test_an_empty_log_is_not_ready():
+def test_an_empty_log_clears_no_stage():
     report = build_report([], include_gold=False)
-    assert report["ready"] is False
-    assert report["gates"]["unmeasured"] > 0
+    assert report["cleared"] == []
+    assert report["stages"]["shadow_ready"]["clear"] is False
 
 
 def test_a_report_over_real_lines_measures_what_it_can():
@@ -249,7 +270,8 @@ def test_the_report_formats_readably():
     report = build_report(parse_log([_shadow()]), include_gold=False)
     text = format_report(report)
     assert "nutrition readiness" in text
-    assert "ready to promote: NO" in text
+    assert "shadow_ready" in text and "canary_safe" in text
+    assert "next:" in text
     assert "is a gate you cannot yet answer" in text
 
 
@@ -271,3 +293,128 @@ def test_every_gate_name_is_produced_by_some_metric():
                        "snapshot_card_mismatch",
                        "package_vs_consumed_confusion",
                        "strict_unresolved_after_3_rounds"}
+
+
+# ── gates are staged, because they are not all answerable at once ─────────────
+def test_every_gate_declares_the_stage_it_becomes_answerable():
+    """The original flat gate set made "all pass before promotion" unreachable:
+    a duplicate-commit rate cannot exist before anything commits natively, yet
+    the overall verdict required it to pass."""
+    for name, gate in GATES.items():
+        assert "stage" in gate, name
+        assert isinstance(gate["stage"], Stage), name
+
+
+def test_post_promotion_gates_are_not_in_the_shadow_stage():
+    """These need a native write to have happened. Holding shadow readiness on
+    them is asking a question nothing can answer yet."""
+    for name in ("duplicate_commit", "stale_clarification_mutation",
+                 "snapshot_card_mismatch", "package_vs_consumed_confusion",
+                 "wrong_item_binding"):
+        assert GATES[name]["stage"] is Stage.CANARY, name
+
+
+def test_shadow_gates_are_all_answerable_from_logs_or_the_gold_suite():
+    for name in ("branded_top1_accuracy", "branded_top3_recall",
+                 "material_ambiguity_recall", "coordinator_route_agreement",
+                 "resolution_unresolved_rate", "resolver_crash_rate"):
+        assert GATES[name]["stage"] is Stage.SHADOW, name
+
+
+def test_a_later_stage_cannot_hold_back_an_earlier_one():
+    """The whole point of the split: canary gates being unmeasured must not
+    make shadow readiness unreachable."""
+    report = build_report([], include_gold=True)
+    shadow = report["stages"]["shadow_ready"]
+    canary = report["stages"]["canary_safe"]
+    assert canary["unmeasured"] > 0
+    # Shadow's verdict is decided only by shadow gates.
+    assert shadow["fail"] == 0
+    assert shadow["insufficient"] + shadow["unmeasured"] > 0
+
+
+def test_the_report_names_one_next_action():
+    report = build_report([], include_gold=False)
+    assert "shadow_ready" in report["next_action"]
+
+
+def test_resolver_crash_rate_is_computed_not_just_declared():
+    """A promotion gate nothing computes is a gate that silently never fails."""
+    records = parse_log([_shadow(ns="error"), _shadow(ns="off"),
+                         _shadow(ns="off"), _shadow(ns="off")])
+    assert resolver_crash_rate(records).value == 0.25
+
+
+def test_every_gate_is_produced_by_some_metric():
+    report = build_report(parse_log([_shadow(), _trace()]), include_gold=True)
+    produced = set(report["metrics"])
+    missing = set(GATES) - produced
+    # What remains needs post-promotion signals and is reported as unmeasured
+    # rather than quietly absent.
+    assert missing <= {"duplicate_commit", "stale_clarification_mutation",
+                       "snapshot_card_mismatch",
+                       "package_vs_consumed_confusion",
+                       "strict_unresolved_after_3_rounds"}
+
+
+# ── findings from the Codex review on #26 ─────────────────────────────────────
+def test_the_median_is_the_middle_of_an_even_sample():
+    """50 and 210 is a median of 130, not 210. Picking the upper middle
+    overstates the typical disagreement in exactly the direction that makes a
+    rollout look riskier than it is."""
+    records = parse_log([_shadow(lc=100, nc=150, agree="NO"),
+                         _shadow(lc=100, nc=310, agree="NO")])
+    assert macro_delta(records).value == 130.0
+
+
+def test_the_median_still_works_on_an_odd_sample():
+    records = parse_log([_shadow(lc=100, nc=150, agree="NO"),
+                         _shadow(lc=100, nc=200, agree="NO"),
+                         _shadow(lc=100, nc=400, agree="NO")])
+    assert macro_delta(records).value == 100.0
+
+
+def test_an_unresolved_result_never_scores_as_a_correct_identity():
+    """resolve() copies canonical_name from the REQUEST when nothing survives
+    validation. For any gold case whose request text equals the expected
+    identity, a name match alone would score a rejected-everything turn as
+    correct — leaving the branded-accuracy gate falsely green after a validator
+    regression."""
+    from skills.nutrition.readiness import gold_identity_accuracy
+    # A case that resolves to nothing, whose request text IS the expected name.
+    from skills.nutrition.provenance import MatchGrade, SourceTier
+    case = {
+        "id": "everything-rejected", "category": "branded",
+        "request": {"food_name": "Ghost Product", "raw_quantity": "100g",
+                    "brand": "Ghost"},
+        "candidates": [{"source": "off", "tier": SourceTier.BRANDED_EXACT,
+                        "name": "Totally Different Thing", "basis": "per_100g",
+                        "grade": MatchGrade.EXACT, "brand": "Rival",
+                        "values": {"calories": 100}}],
+        "expect": {"identity": "Ghost Product"},
+    }
+    top1, _ = gold_identity_accuracy([case])
+    assert top1.sample == 1
+    assert top1.value == 0.0        # not 1.0
+
+
+def test_a_declared_gate_with_no_metric_still_counts_as_unmeasured():
+    """Otherwise a gate nothing computes is absent from the verdict entirely,
+    and a stage reports clear while several of its gates were never answered."""
+    report = build_report([], include_gold=False)
+    for name in ("duplicate_commit", "snapshot_card_mismatch",
+                 "package_vs_consumed_confusion",
+                 "stale_clarification_mutation"):
+        assert name in report["metrics"], name
+        assert report["metrics"][name]["verdict"] == "unmeasured", name
+    assert report["stages"]["canary_safe"]["clear"] is False
+
+
+def test_a_gold_suite_failure_cannot_silently_drop_its_gates():
+    """The same hole from the other direction: if the gold metrics never get
+    appended, their gates must still be counted as unanswered."""
+    report = build_report([], include_gold=False)
+    for name in ("branded_top1_accuracy", "branded_top3_recall",
+                 "material_ambiguity_recall"):
+        assert report["metrics"][name]["verdict"] == "unmeasured", name
+    assert report["stages"]["shadow_ready"]["clear"] is False
