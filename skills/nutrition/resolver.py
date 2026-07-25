@@ -36,7 +36,7 @@ from skills.nutrition.normalize import normalize_quantity
 from skills.nutrition.provenance import (CandidateRejection, DECISIVE_GRADES,
                                          MatchGrade, SourceTier)
 from skills.nutrition.scaling import (Per100g, ScalingRefused, scale_profile,
-                                      scaling_uncertainty)
+                                      scaling_spans, scaling_uncertainty)
 from skills.nutrition import validators as V
 
 logger = logging.getLogger(__name__)
@@ -50,6 +50,22 @@ _GRADE_RANK = {MatchGrade.EXACT: 0, MatchGrade.CLOSE: 1,
 
 #: Calorie spans that justify interrupting, per mode. Mirrors the interpreter's
 #: ASK_THRESHOLDS deliberately: one ladder, two places it is consulted.
+#:
+#: Left at 300/200/100 by the PR #31 calibration, after a detour worth
+#: recording.
+#:
+#: The sweep first recommended 250/120/60, because two granolas 65 calories
+#: apart on a 60 g serving went unasked in strict. Lowering the absolute
+#: threshold would have caught them — and would also have started interrupting
+#: on 80 calories of doubt in a 900-calorie platter, which is noise. The two
+#: requirements are incompatible on the absolute axis: nothing satisfies
+#: "ask at 65" and "stay quiet at 80" at once.
+#:
+#: They separate cleanly on the RELATIVE axis — 22% of the item against 9% —
+#: which is what MATERIAL_FRACTION is for. So the absolute thresholds stayed
+#: and the fraction rule moved. The lesson is in the sweep's blind spot: the
+#: platter expectation lived in a unit test rather than the gold suite, so the
+#: sweep could not see the conflict. It is a labelled gold case now.
 ASK_SPANS = {"quick": 300.0, "moderate": 200.0, "strict": 100.0}
 
 #: Micros worth pulling from a lower-tier candidate when the winner is silent.
@@ -160,7 +176,17 @@ def _ambiguities(request: FoodResolutionRequest, winner: Candidate,
         return round(span / item_cal, 3) if item_cal > 0 else 1.0
 
     for other in runners[:2]:
-        gap = V.sources_disagree(winner.profile, other.profile)
+        # Compare the candidates AT THE PORTION, not per 100 g.
+        #
+        # The per-100g comparison sized every cross-source doubt in the wrong
+        # units: two granolas 109 cal/100g apart became a "109 calorie" span on
+        # a 60 g serving whose real gap was 65, and `calorie_fraction` divided
+        # that per-100g number by a portion-scale total — overstating the doubt
+        # ~3× on a small portion and understating it ~3× on a large one. Every
+        # threshold in the ask ladder was being compared against a number in
+        # the wrong unit (PR #31 calibration).
+        gap = V.sources_disagree(_at_portion(winner, quantity),
+                                 _at_portion(other, quantity))
         if gap and _grade(request, other) in DECISIVE_GRADES:
             out.append(ResolutionAmbiguity(
                 field="nutrient_values",
@@ -170,13 +196,18 @@ def _ambiguities(request: FoodResolutionRequest, winner: Candidate,
                 protein_span=gap["protein_span"],
                 detail="two high-confidence sources disagree materially",
                 calorie_fraction=_fraction(gap["calorie_span"])))
-    span = scaling_uncertainty(winner.profile, winner.basis, quantity)
-    if span:
+    spans = scaling_spans(winner.profile, winner.basis, quantity)
+    span = spans.get("calories")
+    if spans:
         out.append(ResolutionAmbiguity(
             field="portion_size", options=(quantity.describe(),),
-            calorie_span=span,
+            calorie_span=span or 0.0,
+            # A mass doubt scales protein exactly as it scales energy. Leaving
+            # this at zero told the ladder protein was certain when the mass
+            # was not.
+            protein_span=spans.get("protein", 0.0),
             detail="portion mass is estimated, not stated",
-            calorie_fraction=_fraction(span)))
+            calorie_fraction=_fraction(span or 0.0)))
     if quantity.grams is None and quantity.count is not None:
         out.append(ResolutionAmbiguity(
             field="serving_basis", options=(quantity.describe(),),
@@ -211,12 +242,79 @@ def _mass_is_a_loose_guess(quantity: NormalizedQuantity) -> bool:
     return quantity.uncertainty_g / quantity.grams >= LOOSE_MASS_RATIO
 
 
+def _at_portion(candidate: Candidate,
+                quantity: NormalizedQuantity) -> NutrientProfile:
+    """This candidate's numbers for the portion actually eaten.
+
+    Falls back to the unscaled profile when the candidate's basis cannot be
+    reconciled with the portion — a comparison in mixed units is still more
+    informative than no comparison, and the alternative is dropping the
+    ambiguity entirely on exactly the turns that are hardest to scale.
+    """
+    try:
+        return scale_profile(candidate.profile, candidate.basis, quantity)
+    except ScalingRefused:
+        return candidate.profile
+
+
 #: A doubt covering this much of an item's own calories is worth asking about
 #: even when its absolute size is small — being 100% wrong about an 80-calorie
 #: bagel is not a small error. Applied below quick mode only, since quick
 #: exists precisely to accept that risk.
-MATERIAL_FRACTION = 0.5
+#: A doubt covering this much of an item's own calories is material even when
+#: its absolute size is small.
+#:
+#: The PR #31 sweep found 0.3 equally clean — but so were 0.35, 0.4 and the
+#: incumbent 0.5, which means the labelled set cannot distinguish them and
+#: tightening would be a change with no evidence behind it. Deliberately left
+#: alone. The calorie thresholds moved in the same sweep because there the
+#: evidence was positive: a specific case was being missed. "Nothing got worse"
+#: is not the same finding as "something got better", and only the second one
+#: justifies moving a threshold.
+#:
+#: What would settle it: the production frequency of small-item ambiguities,
+#: which the labelled set under-represents.
+#: Per MODE, which is the actual finding. A single constant served both
+#: moderate and strict, so it could not express "strict cares about a fifth of
+#: a small item, moderate does not" — every attempt to tighten it for strict
+#: started interrupting moderate users on the same cases.
+#:
+#: 0.3/0.15 is the only setting in the sweep with zero missed material
+#: ambiguities and zero needless interruptions across all 73 labelled
+#: expectations. Rerun with `python -m skills.nutrition.calibration`.
+#:
+#: The pair that pinned the shape: 65 calories on a 293-calorie item (22%) must
+#: ask in strict, and 80 on a 900-calorie platter (9%) must not. Both are
+#: labelled gold cases now — the second used to live only in a unit test, where
+#: the sweep could not see it and therefore recommended a setting that broke
+#: it.
+#:
+#: Quick is 1.01 rather than a sentinel: quick exists to accept exactly this
+#: risk, and a number above 1.0 says "no fraction is material here" in the same
+#: units as the rest of the table rather than as a special case in the code.
+MATERIAL_FRACTIONS = {"quick": 1.01, "moderate": 0.3, "strict": 0.15}
+
+#: Back-compat alias. Some callers and tests read the scalar.
+MATERIAL_FRACTION = MATERIAL_FRACTIONS["moderate"]
 FRACTION_FLOOR = 50.0
+
+#: Protein spans that justify interrupting, per mode (PR #31 calibration).
+#:
+#: Calibrated rather than picked: the tightest setting in the sweep that adds no
+#: needless interruption to any of the 69 labelled ask expectations. Rerun with
+#: `python -m skills.nutrition.calibration`.
+#:
+#: Stated honestly: every setting from 15/8/4 upward is clean on the labelled
+#: set, so the evidence says tightening to here COSTS nothing — not that it
+#: catches more than 25/15/8 would. The tightest clean setting is the right
+#: default for a new rule, because a threshold that could have been tighter for
+#: free leaves real ambiguity unasked. Production frequency data is what will
+#: distinguish these rows.
+#:
+#: Tighter than the calorie thresholds in energy terms, because a protein miss
+#: is not interchangeable with a calorie miss for the people who track it —
+#: they are logging to hit a protein target, and 8 g is a meaningful part of it.
+ASK_PROTEIN_SPANS = {"quick": 15.0, "moderate": 8.0, "strict": 4.0}
 
 
 def should_ask(ambiguities: tuple, mode: str) -> Optional[ResolutionAmbiguity]:
@@ -228,15 +326,27 @@ def should_ask(ambiguities: tuple, mode: str) -> Optional[ResolutionAmbiguity]:
     """
     mode = (mode or "moderate").lower()
     threshold = ASK_SPANS.get(mode, ASK_SPANS["moderate"])
+    protein_threshold = ASK_PROTEIN_SPANS.get(mode,
+                                              ASK_PROTEIN_SPANS["moderate"])
     worst = None
     for a in ambiguities or ():
         material = a.calorie_span >= threshold
         if not material and mode != "quick":
-            material = (a.calorie_fraction >= MATERIAL_FRACTION
+            material = (a.calorie_fraction >= MATERIAL_FRACTIONS.get(
+                            mode, MATERIAL_FRACTIONS["moderate"])
                         and a.calorie_span >= FRACTION_FLOOR)
         if not material:
+            # Protein on its own can carry the decision. This is the third and
+            # last part of the calorie-blindness fix: making the span material
+            # and populating it changes nothing until the ladder reads it.
+            material = a.protein_span >= protein_threshold
+        if not material:
             continue
-        if worst is None or a.calorie_span > worst.calorie_span:
+        # Ranked by calorie span still, with protein as the tiebreak — the
+        # ordering only decides WHICH question to ask when several qualify, and
+        # energy remains the better proxy for "how wrong could this meal be".
+        if worst is None or (a.calorie_span, a.protein_span) > (
+                worst.calorie_span, worst.protein_span):
             worst = a
     return worst
 
