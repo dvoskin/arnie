@@ -1143,18 +1143,33 @@ AMBIGUITY_CASES = [
                grade=MatchGrade.CATEGORY, calories=61, protein=3.2)],
          expect={"asks": {"quick": False}}),
 
-    case("protein-spread-alone-is-not-yet-material", "ambiguity",
+    case("a-small-protein-gap-on-a-small-scoop-stays-quiet", "ambiguity",
          "whey protein", "31g",
          candidates=[
              c("off", BRANDED, "Whey protein isolate", calories=380,
                protein=80, carbs=6, fat=4),
              c("off", BRANDED, "Whey protein blend", calories=390, protein=60,
                carbs=25, fat=6)],
-         # A 20 g/100 g protein gap is 6 g on this scoop and the calorie spans
-         # barely differ, so nothing asks. The gap the ladder cannot see: it
-         # ranks on calories, and protein is why people buy the isolate.
+         # 20 g/100 g is 6 g of protein on a 31 g scoop, and the calories agree
+         # to within 3. Below the calibrated protein floor, so it commits — the
+         # lower edge of the rule, which a threshold needs as much as its
+         # upper one.
          expect={"source": "off",
                  "asks": {"quick": False, "moderate": False}}),
+
+    case("a-protein-gap-with-matching-calories-asks", "ambiguity",
+         "whey protein", "200g",
+         candidates=[
+             c("off", BRANDED, "Whey protein isolate", calories=380,
+               protein=80, carbs=6, fat=4),
+             c("off", BRANDED, "Whey protein blend", calories=390, protein=60,
+               carbs=25, fat=6)],
+         # The capability the calorie-only ladder did not have (PR #31). At
+         # 200 g the protein gap is 40 g and the calorie gap is 20 — a rounding
+         # error. Isolate and blend are the same food by energy and different
+         # products by the number the user bought them for.
+         expect={"source": "off",
+                 "asks": {"quick": True, "moderate": True, "strict": True}}),
 
     case("a-single-candidate-is-never-ambiguous", "ambiguity",
          "cottage cheese", "226g",
@@ -1575,5 +1590,189 @@ COMPOSITE_CASES_3 = [
 ]
 
 
+# ══ tranche 7: labelled ambiguity, to make the recall gate answerable ════════
+# `material_ambiguity_recall` sat at "insufficient" — value 1.0 on a sample of
+# 18, against a minimum of 30. The gate was not failing; it was unanswerable,
+# and the fix for that is labels, not thresholds. Each of these states that
+# STRICT should ask, and each is a distinct way a meal can be materially
+# uncertain rather than a variation on one.
+AMBIGUITY_CASES_2 = [
+    case("two-cuts-of-beef-differ-by-half", "ambiguity",
+         "ground beef", "200g",
+         candidates=[
+             c("usda", GENERIC, "Beef, ground, 80% lean", calories=254,
+               protein=17, fat=20),
+             c("usda", GENERIC, "Beef, ground, 93% lean", calories=152,
+               protein=21, fat=7)],
+         expect={"asks": {"strict": True}}),
+
+    case("skin-on-versus-skinless-chicken", "ambiguity",
+         "chicken thigh", "180g",
+         candidates=[
+             c("usda", GENERIC, "Chicken thigh, roasted, skinless",
+               calories=179, protein=25, fat=8),
+             c("usda", GENERIC, "Chicken thigh, roasted, with skin",
+               calories=247, protein=23, fat=17)],
+         expect={"asks": {"strict": True}}),
+
+    case("greek-yogurt-full-fat-versus-nonfat", "ambiguity",
+         "Greek yogurt", "225g",
+         candidates=[
+             c("usda", GENERIC, "Yogurt, Greek, plain, nonfat", calories=59,
+               protein=10.3),
+             c("usda", GENERIC, "Yogurt, Greek, plain, whole milk",
+               calories=97, protein=9)],
+         expect={"asks": {"strict": True}}),
+
+    case("granola-plain-versus-with-chocolate", "ambiguity",
+         "granola", "70g",
+         candidates=[
+             c("usda", GENERIC, "Cereal, granola, plain", calories=489,
+               protein=13, fat=24),
+             c("usda", GENERIC, "Cereal, granola, with chocolate",
+               calories=396, protein=8, fat=15)],
+         expect={"asks": {"strict": True}}),
+
+    case("bacon-streaky-versus-back", "ambiguity",
+         "bacon", "60g",
+         candidates=[
+             c("usda", GENERIC, "Bacon, pork, cooked", calories=541,
+               protein=37, fat=42),
+             c("usda", GENERIC, "Bacon, back, grilled", calories=287,
+               protein=25, fat=20)],
+         expect={"asks": {"strict": True}}),
+
+    case("tuna-in-oil-versus-in-water", "ambiguity",
+         "canned tuna", "150g",
+         candidates=[
+             c("usda", GENERIC, "Tuna, canned in water", calories=116,
+               protein=26, fat=1),
+             c("usda", GENERIC, "Tuna, canned in oil", calories=198,
+               protein=29, fat=8)],
+         expect={"asks": {"strict": True}}),
+
+    case("mozzarella-fresh-versus-low-moisture", "ambiguity",
+         "mozzarella", "120g",
+         candidates=[
+             c("usda", GENERIC, "Cheese, mozzarella, low moisture",
+               calories=318, protein=24, fat=25),
+             c("usda", GENERIC, "Cheese, mozzarella, fresh, in water",
+               calories=190, protein=17, fat=13)],
+         expect={"asks": {"strict": True}}),
+
+    case("avocado-half-versus-whole", "ambiguity",
+         "avocado", "200g",
+         candidates=[
+             c("usda", GENERIC, "Avocado, raw", calories=160, protein=2,
+               fat=15),
+             c("usda", GENERIC, "Avocado, California, raw", calories=167,
+               protein=2, fat=15.4)],
+         expect={"asks": {"quick": False, "moderate": False}}),
+
+    case("salmon-farmed-versus-wild", "ambiguity",
+         "salmon", "170g",
+         candidates=[
+             c("usda", GENERIC, "Salmon, Atlantic, farmed, cooked",
+               calories=206, protein=22, fat=12),
+             c("usda", GENERIC, "Salmon, sockeye, wild, cooked", calories=156,
+               protein=26, fat=5)],
+         expect={"asks": {"strict": True}}),
+
+    case("bread-white-versus-wholemeal-seeded", "ambiguity",
+         "bread", "90g",
+         candidates=[
+             c("usda", GENERIC, "Bread, white, commercial", calories=266,
+               protein=9, carbs=49),
+             c("usda", GENERIC, "Bread, multigrain, seeded", calories=380,
+               protein=13, carbs=48, fat=12)],
+         expect={"asks": {"strict": True}}),
+
+    case("hummus-commercial-versus-restaurant", "ambiguity",
+         "hummus", "120g",
+         candidates=[
+             c("usda", GENERIC, "Hummus, commercial", calories=166,
+               protein=8, fat=10),
+             c("usda", GENERIC, "Hummus, restaurant style", calories=290,
+               protein=8, fat=24)],
+         expect={"asks": {"strict": True}}),
+
+    case("coconut-milk-canned-versus-carton", "ambiguity",
+         "coconut milk", "200ml",
+         candidates=[
+             c("usda", GENERIC, "Coconut milk, canned", basis="per_100ml",
+               calories=197, protein=2, fat=21),
+             c("usda", GENERIC, "Coconut milk beverage", basis="per_100ml",
+               calories=31, protein=0.2, fat=3)],
+         expect={"asks": {"strict": True}}),
+
+    case("two-dark-chocolate-strengths-agree-closely", "ambiguity",
+         "dark chocolate", "50g",
+         candidates=[
+             c("off", BRANDED, "Dark chocolate 70%", calories=598, protein=8,
+               carbs=46, fat=43),
+             c("off", BRANDED, "Dark chocolate 85%", calories=630, protein=10,
+               carbs=29, fat=50)],
+         # 32 cal/100g is 16 on this bar. The lower edge again: a 5% gap is a
+         # free choice, and asking about it would be friction for nothing.
+         expect={"source": "off",
+                 "asks": {"quick": False, "moderate": False,
+                          "strict": False}}),
+
+    case("chocolate-dark-versus-milk", "ambiguity",
+         "chocolate", "100g",
+         candidates=[
+             c("off", BRANDED, "Dark chocolate 85%", calories=630, protein=10,
+               carbs=29, fat=50),
+             c("off", BRANDED, "Milk chocolate", calories=535, protein=7,
+               carbs=59, fat=30)],
+         expect={"asks": {"strict": True}}),
+
+    case("pesto-fresh-versus-jarred", "ambiguity",
+         "pesto", "60g",
+         candidates=[
+             c("usda", GENERIC, "Pesto, fresh", calories=450, protein=8,
+               fat=44),
+             c("off", GENERIC, "Pesto, jarred", calories=320, protein=5,
+               fat=31)],
+         expect={"asks": {"strict": True}}),
+
+    # The pair that pinned the absolute/relative split (PR #31). 65 calories of
+    # doubt on a 293-calorie item must ask in strict; 80 on a 900-calorie
+    # platter must not. No absolute threshold satisfies both, and the fraction
+    # rule separates them at 22% against 9%. The second lived only in a unit
+    # test, so the calibration sweep could not see the conflict — it is a
+    # labelled case now.
+    case("a-fifth-of-a-small-item-is-material-in-strict", "ambiguity",
+         "Cereal, granola", "60g",
+         candidates=[
+             c("usda", GENERIC, "Cereal, granola, homemade", calories=489,
+               protein=13),
+             c("usda", GENERIC, "Cereal, granola, lowfat", calories=380,
+               protein=8)],
+         expect={"asks": {"quick": False, "moderate": False, "strict": True}}),
+
+    case("a-tenth-of-a-large-platter-is-noise", "ambiguity",
+         "chicken shawarma platter", "600g",
+         candidates=[
+             c("web_label", ESTIMATE, "chicken shawarma platter",
+               calories=150, protein=9.2),
+             c("web_label", ESTIMATE, "chicken shawarma platter, large",
+               calories=163, protein=9.7)],
+         # Weighed on purpose: "1 platter" would fire a serving-basis ambiguity
+         # worth the whole meal, and this case is about the size of a
+         # cross-source gap, not about an unknown portion.
+         expect={"asks": {"strict": False}}),
+
+    case("lentils-dry-versus-cooked-is-a-fourfold-error", "ambiguity",
+         "lentils", "150g",
+         candidates=[
+             c("usda", GENERIC, "Lentils, raw", calories=352, protein=25,
+               carbs=63),
+             c("usda", GENERIC, "Lentils, cooked", calories=116, protein=9,
+               carbs=20)],
+         expect={"asks": {"strict": True}}),
+]
+
 ALL_CASES = (ALL_CASES + BRANDED_CASES_3 + BRANDED_CASES_4 + AMBIGUITY_CASES
-             + PORTION_CASES + COMPOSITE_CASES_3)
+             + PORTION_CASES + COMPOSITE_CASES_3
+             + AMBIGUITY_CASES_2)
