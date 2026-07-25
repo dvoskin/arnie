@@ -58,7 +58,8 @@ def user_label_candidate(request: FoodResolutionRequest) -> Optional[Candidate]:
     return Candidate(
         source="user_label", tier=SourceTier.USER_LABEL,
         name=request.food_name, profile=request.user_label_values,
-        basis=PerUnit() if request.unit not in ("g", "ml") else Per100g(),
+        basis=(PerUnit(as_served=True) if request.unit not in ("g", "ml")
+               else Per100g()),
         brand=request.brand, variant=request.variant,
         reported_grade=MatchGrade.EXACT)
 
@@ -70,7 +71,8 @@ def provisional_candidate(request: FoodResolutionRequest) -> Optional[Candidate]
     return Candidate(
         source="provisional", tier=SourceTier.PROVISIONAL,
         name=request.food_name, profile=request.provisional_values,
-        basis=PerUnit() if request.unit not in ("g", "ml") else Per100g(),
+        basis=(PerUnit(as_served=True) if request.unit not in ("g", "ml")
+               else Per100g()),
         brand=request.brand, variant=request.variant,
         reported_grade=MatchGrade.CATEGORY)
 
@@ -162,7 +164,10 @@ def web_label_candidate(hit, request: FoodResolutionRequest) -> Optional[Candida
             **{k: hit.get(k) for k in
                ("calories", "protein", "carbs", "fat", "fiber", "sugar",
                 "sodium")}),
-        basis=PerServing(serving_mass_g=hit.get("serving_mass_g")),
+        # A branded label's serving is measured; a restaurant-item lookup's is
+        # the dish as served, so a vague helping counts as one of them.
+        basis=PerServing(serving_mass_g=hit.get("serving_mass_g"),
+                         as_served=not branded),
         brand=request.brand,
         reported_grade=MatchGrade.CLOSE if branded else MatchGrade.CATEGORY,
         serving_text=str(hit.get("serving_text") or ""))

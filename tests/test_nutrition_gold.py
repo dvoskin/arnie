@@ -8,24 +8,24 @@ test is the resolution logic, not whether USDA is up.
 A failure here names the case id, which is also the ticket: adding a case is
 the cheapest way to make a nutrition bug stay fixed.
 """
+from collections import Counter
+
 import pytest
 
 from skills.nutrition.candidates import Candidate
 from skills.nutrition.models import FoodResolutionRequest, profile_from_values
 from skills.nutrition.resolver import resolve, should_ask
-from skills.nutrition.scaling import Per100g, Per100ml, PerServing, PerUnit
+from skills.nutrition.provenance import SourceTier
+from skills.nutrition.scaling import basis_from_spec
 from tests.gold.nutrition_cases import ALL_CASES
 
-_BASES = {"per_100g": Per100g, "per_100ml": Per100ml}
-
-
 def _basis(spec):
-    kind = spec.get("basis", "per_100g")
-    if kind in _BASES:
-        return _BASES[kind]()
-    if kind == "per_serving":
-        return PerServing(serving_mass_g=spec.get("serving_mass_g"))
-    return PerUnit(unit_mass_g=spec.get("serving_mass_g"))
+    # `as_served` follows the tier: a branded/USDA serving is measured, every
+    # other tier describes the helping the user actually had.
+    return basis_from_spec(
+        spec.get("basis", "per_100g"),
+        serving_mass_g=spec.get("serving_mass_g"),
+        as_served=SourceTier(spec["tier"]).describes_as_served)
 
 
 def _candidate(spec):
@@ -159,3 +159,20 @@ def test_the_set_covers_every_category():
 def test_case_ids_are_unique():
     ids = [c["id"] for c in ALL_CASES]
     assert len(ids) == len(set(ids))
+
+
+#: Floors, not targets. A gold set shrinks by attrition — a case deleted to
+#: make a change go green, a category quietly stopping at four rows — and the
+#: shrinking is invisible without a number to fail against. Raise these when
+#: the set grows; lowering one should take an argument.
+CATEGORY_FLOORS = {"branded": 45, "generic": 15, "pieces": 12,
+                   "composite": 22, "micros": 20, "modes": 6,
+                   "ambiguity": 12, "portioning": 20}
+
+
+def test_the_set_has_not_shrunk():
+    counts = Counter(c["category"] for c in ALL_CASES)
+    short = {k: (counts.get(k, 0), floor)
+             for k, floor in CATEGORY_FLOORS.items() if counts.get(k, 0) < floor}
+    assert not short, f"categories below their floor (have, floor): {short}"
+    assert len(ALL_CASES) >= 170, len(ALL_CASES)

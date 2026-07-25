@@ -86,6 +86,17 @@ class NutrientProfile:
         return not (self.values or {})
 
 
+#: What a `count` actually counts. The distinction exists because a count is
+#: only a valid multiplier for a per-serving or per-unit label when the thing
+#: counted IS that label's unit.
+#:
+#: UNIT is the default because it is what a bare count means nearly everywhere:
+#: "2 bagels", "6 slices", "1 bottle". Only the vague measures are the exception,
+#: they all come from one module, and they say so explicitly.
+COUNT_BASIS_UNIT = "unit"        # discrete units/products: 2 bagels, 1 bottle
+COUNT_BASIS_ESTIMATE = "estimate"  # a vague container or portion: a bowl, a plate
+
+
 @dataclass(frozen=True)
 class NormalizedQuantity:
     """What the user ate, in one canonical shape.
@@ -94,6 +105,13 @@ class NormalizedQuantity:
     thin deli slices" — `count` and `unit_label` carry the intent and
     `uncertainty_g` carries the honesty. That uncertainty is what the
     clarification ladder reads; it is not a number to hide.
+
+    `count_basis` says what the count counts. "One plate of pasta" and "one
+    bottle of Fairlife" both arrive with count=1, but only the second is one of
+    the label's servings; the first is a container we estimated a mass for. A
+    per-serving source that multiplies by the count regardless turns a 400 g
+    plate estimate into "exactly one serving", so the basis has to travel with
+    the count rather than being re-guessed downstream.
     """
     amount: float
     unit: str                            # g | ml | piece | slice | serving | ...
@@ -103,10 +121,17 @@ class NormalizedQuantity:
     unit_label: str = ""                 # the user's own words
     uncertainty_g: Optional[float] = None
     assumptions: tuple = ()
+    count_basis: str = COUNT_BASIS_UNIT
 
     @property
     def is_mass_known(self) -> bool:
         return self.grams is not None
+
+    @property
+    def count_is_serving_compatible(self) -> bool:
+        """True when `count` may be read as N of a label's servings/units."""
+        return (self.count is not None
+                and self.count_basis != COUNT_BASIS_ESTIMATE)
 
     def describe(self) -> str:
         return self.unit_label or f"{_trim(self.amount)} {self.unit}"
