@@ -28,7 +28,8 @@ because that string is what the user will read.
 """
 import pytest
 
-from core.food_response import (FoodItemSummary, FoodResponseIntent,
+from core.food_response import (CLARIFY_OPENER, REVIEW_OPENER,
+                                FoodItemSummary, FoodResponseIntent,
                                 FoodResponsePlan, describe_portion, fallback,
                                 plan_review, strip_card_recitation, validate)
 from core.food_turn import _item_is_stated, clarify_text, format_confirm
@@ -56,7 +57,9 @@ def test_the_review_turn_reads_as_prose_not_as_a_form():
     decision = _decision()
     text = clarify_text(decision, decision.question, user_message=MESSAGE)
 
-    assert text.startswith("Here's how I'm reading that:")
+    # CLARIFY, not REVIEW: the peanut butter scoop is still open, so the turn
+    # says it is interpreting rather than about to log.
+    assert text.startswith(CLARIFY_OPENER)
     for banned in ("I've got:", "Meal check", "Quick review",
                    "Before I log this"):
         assert banned not in text, banned
@@ -782,3 +785,115 @@ def test_no_failures_produces_no_notice():
     assert build_failure_notice([]) == ""
     assert build_failure_notice(_exec(
         _call("log_food", "committed", "")).failures()) == ""
+
+
+# ── 14. the two review turns do not sound alike ──────────────────────────────
+#
+# The directive gives two openers because the turns differ: one is still
+# forming an opinion and is about to ask about part of it, the other has
+# nothing open and is taking a last look before writing. Sharing an opener made
+# them indistinguishable to a reader, which is how "does that look right?"
+# ended up standing in front of a question not yet asked.
+def test_an_open_question_says_it_is_interpreting():
+    decision = _decision()
+    text = clarify_text(decision, decision.question, user_message=MESSAGE)
+    assert text.startswith(CLARIFY_OPENER)
+    assert REVIEW_OPENER not in text
+
+
+def test_a_settled_meal_says_it_is_about_to_log():
+    text = fallback(plan_review(
+        tuple(FoodItemSummary(name=n, portion=p) for n, p in
+              (("egg", "2"), ("sourdough toast", "1 slice"),
+               ("butter", "1 tsp")))))
+    assert text.startswith(REVIEW_OPENER)
+    assert CLARIFY_OPENER not in text
+    assert text.endswith("Does that all look right?")
+
+
+def test_neither_opener_is_a_heading():
+    """The banned register is the label over a list — "Meal check", "Quick
+    review". Both openers must be sentences addressed to a person."""
+    for opener in (CLARIFY_OPENER, REVIEW_OPENER):
+        assert opener.endswith(":"), opener
+        assert len(opener.split()) >= 5, opener
+        assert opener[0].isupper() and "'" in opener
+
+
+def test_the_question_names_what_is_uncertain():
+    """"Was the peanut butter scoop closer to..." reads like a form validating
+    a field. Naming the food first lets the ask stay short and keeps it
+    bindable in a three-food meal."""
+    decision = _decision()
+    prompt = decision.question.prompt
+    assert prompt.startswith("The peanut butter is the only part")
+    assert "Was the scoop closer to" in prompt
+
+
+@pytest.mark.parametrize("low,high,expected", [
+    ("one tablespoon", "two tablespoons", "one or two tablespoons"),
+    ("one cup", "two cups", "one or two cups"),
+    # Different units must both survive — this is a real choice, not a plural.
+    ("one teaspoon", "one tablespoon", "one teaspoon or one tablespoon"),
+    # An article is not an amount: "a or two scoops" reads as a typo.
+    ("a scoop", "two scoops", "a scoop or two scoops"),
+    # A qualifier does not survive losing its noun: "half a or one cup".
+    ("half a cup", "one cup", "half a cup or one cup"),
+])
+def test_a_shared_unit_is_said_once(low, high, expected):
+    from core.food_pipeline import _shared_unit
+    assert _shared_unit(low, high) == expected
+
+
+# ── 15. coaching is prose, not a status line ─────────────────────────────────
+def _tail(cal, pro, cal_t=2165, pro_t=180):
+    from types import SimpleNamespace
+    from handlers.tool_executor import deterministic_confirmation
+    return deterministic_confirmation(
+        [{"name": "log_food", "input": {"food_name": "Peanut M&Ms"}}],
+        SimpleNamespace(total_calories=cal, total_protein=pro),
+        SimpleNamespace(calorie_target=cal_t, protein_target=pro_t))
+
+
+@pytest.mark.parametrize("banned", [
+    "Good room left.", "good room left", "Tight finish.", "tight finish",
+    "Small add.", "Real meal still needed.", "Go protein-first next.",
+])
+def test_the_compressed_phrases_are_gone(banned):
+    """Named in the directive as the register to leave behind."""
+    for cal, pro in ((458, 12), (1200, 170), (1900, 170), (2300, 170)):
+        assert banned not in _tail(cal, pro), (banned, cal, pro)
+
+
+def test_the_calorie_and_protein_states_share_one_bubble():
+    """Split across two they read as a pair of status lines, which is the debug
+    output the card already owns."""
+    bubbles = _tail(458, 12).split("|||")
+    assert len(bubbles) == 2, bubbles
+    assert "calories" in bubbles[1] and "protein-forward" in bubbles[1]
+
+
+def test_the_coaching_bubble_is_complete_sentences():
+    """Every sentence starts as one, and the bubble as a whole is prose rather
+    than a status line.
+
+    Deliberately NOT a per-sentence word count. "Good room left." (banned) and
+    "Protein's tracking well." (fine) are both three words — the difference is
+    a subject and a verb, not length, and a length threshold that separated
+    them would be a coincidence rather than a rule. The named fragments are
+    pinned directly in test_the_compressed_phrases_are_gone; this asserts the
+    shape around them.
+    """
+    for cal, pro in ((458, 12), (1200, 170), (1900, 170), (2300, 170)):
+        coaching = _tail(cal, pro).split("|||")[-1]
+        sentences = [s.strip() for s in coaching.split(". ") if s.strip()]
+        assert len(coaching.split()) >= 12, (coaching, cal, pro)
+        for sentence in sentences:
+            assert sentence[0].isupper(), (sentence, cal, pro)
+
+
+def test_no_slash_totals_survive_anywhere_in_the_tail():
+    """"458 / 2165 calories" is a progress bar someone typed out."""
+    import re
+    for cal, pro in ((458, 12), (1200, 170), (1900, 170), (2300, 170)):
+        assert not re.search(r"\d+\s*/\s*\d+", _tail(cal, pro))

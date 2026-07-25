@@ -26,7 +26,10 @@ from datetime import datetime, timedelta
 from types import SimpleNamespace
 
 from tests.conftest import _prefs, _log
-from handlers.tool_executor import deterministic_confirmation, _macros_from_search
+from handlers.tool_executor import (CAL_STATE_OPEN, CAL_STATE_OVER,
+                                    CAL_STATE_TIGHT, PROTEIN_LOW, PROTEIN_OK,
+                                    deterministic_confirmation,
+                                    _macros_from_search)
 from core.context_builder import render_pending_clarification_block
 
 
@@ -95,8 +98,8 @@ class TestSingleItemClear:
     def test_oatmeal(self):
         out = deterministic_confirmation([_food("oatmeal")], _log(350, 12), _prefs(cal_t=2000))
         assert "oatmeal" in out.lower()
-        # 350 / 2000 = 17.5% → good room left
-        assert "good room left" in out.lower()
+        # 350 / 2000 = 17.5% → open day
+        assert CAL_STATE_OPEN in out
 
     def test_never_dead_ends(self):
         """Every single-item log must end with some kind of next-step signal."""
@@ -122,24 +125,24 @@ class TestCalorieContext:
         assert "so far today" in out.lower()
 
     def test_good_room_left_when_well_under_target(self):
-        # 400 / 2000 = 20% — clearly "good room left"
+        # 400 / 2000 = 20% — clearly the open-day branch
         out = deterministic_confirmation([_food("banana")], _log(400, 5), _prefs(cal_t=2000, pro_t=None))
-        assert "good room left" in out.lower()
+        assert CAL_STATE_OPEN in out
 
     def test_tight_finish_when_near_target(self):
-        # 1800 / 2000 = 90% — "tight finish"
+        # 1800 / 2000 = 90% — the tight branch
         out = deterministic_confirmation([_food("chicken")], _log(1800, 80), _prefs(cal_t=2000, pro_t=None))
-        assert "tight finish" in out.lower()
+        assert CAL_STATE_TIGHT in out
 
     def test_keep_controlled_when_at_target(self):
-        # 2000 / 2000 = 100% — "keep the rest controlled"
+        # 2000 / 2000 = 100% — the over-target branch
         out = deterministic_confirmation([_food("pasta")], _log(2000, 60), _prefs(cal_t=2000, pro_t=None))
-        assert "keep the rest controlled" in out.lower()
+        assert CAL_STATE_OVER in out
 
     def test_keep_controlled_when_over_target(self):
-        # 2400 / 2000 = 120% — still "keep the rest controlled"
+        # 2400 / 2000 = 120% — still the over-target branch
         out = deterministic_confirmation([_food("burger")], _log(2400, 90), _prefs(cal_t=2000, pro_t=None))
-        assert "keep the rest controlled" in out.lower()
+        assert CAL_STATE_OVER in out
 
     def test_calorie_context_is_a_sentence_not_a_progress_bar(self):
         """Was: "must write 'X / Y calories'". The slash form IS the progress
@@ -176,9 +179,13 @@ class TestProteinState:
         out = deterministic_confirmation([_food("chicken")], _log(1100, 220), _prefs(pro_t=200))
         assert "protein-forward" not in out.lower()
 
-    def test_no_protein_target_ends_with_send_next_meal(self):
+    def test_no_protein_target_still_ends_on_a_hook(self):
+        """With no protein target there is no protein sentence, so the calorie
+        sentence is the whole reply — it still has to hand the turn back rather
+        than trail off. Asserts the hook, not its wording."""
         out = deterministic_confirmation([_food("fruit salad")], _log(200, 3), _prefs(pro_t=None))
-        assert "send the next meal" in out.lower()
+        assert out.rstrip().endswith("?"), out
+        assert PROTEIN_LOW not in out and PROTEIN_OK not in out
 
     def test_no_protein_target_no_protein_line(self):
         """When there's no protein target, don't show a protein fraction."""
@@ -217,7 +224,7 @@ class TestMultiItemAllClear:
     def test_multi_item_still_shows_calorie_state(self):
         tcs = [_food("chicken"), _food("rice")]
         out = deterministic_confirmation(tcs, _log(1850, 70), _prefs(cal_t=2000, pro_t=None))
-        assert "tight finish" in out.lower()
+        assert CAL_STATE_TIGHT in out
 
     def test_multi_item_still_shows_protein_nudge(self):
         tcs = [_food("pasta"), _food("bread")]
@@ -280,34 +287,34 @@ class TestCalorieBoundaries:
     """The 85% boundary must be exact: at or above → tight finish."""
 
     def test_just_below_85_pct_is_good_room_left(self):
-        # 84% of 2000 = 1680 → "good room left"
+        # 84% of 2000 = 1680 → the open-day branch
         out = deterministic_confirmation([_food("rice")], _log(1680, 50), _prefs(cal_t=2000, pro_t=None))
-        assert "good room left" in out.lower()
+        assert CAL_STATE_OPEN in out
 
     def test_exactly_at_85_pct_is_tight_finish(self):
-        # 85% of 2000 = 1700 → "tight finish"
+        # 85% of 2000 = 1700 → the tight branch
         out = deterministic_confirmation([_food("rice")], _log(1700, 50), _prefs(cal_t=2000, pro_t=None))
-        assert "tight finish" in out.lower()
+        assert CAL_STATE_TIGHT in out
 
     def test_just_above_85_pct_is_tight_finish(self):
-        # 86% of 2000 = 1720 → "tight finish"
+        # 86% of 2000 = 1720 → the tight branch
         out = deterministic_confirmation([_food("rice")], _log(1720, 50), _prefs(cal_t=2000, pro_t=None))
-        assert "tight finish" in out.lower()
+        assert CAL_STATE_TIGHT in out
 
     def test_exactly_at_100_pct_is_controlled(self):
-        # 100% of 2000 = 2000 → "keep the rest controlled"
+        # 100% of 2000 = 2000 → the over-target branch
         out = deterministic_confirmation([_food("rice")], _log(2000, 50), _prefs(cal_t=2000, pro_t=None))
-        assert "keep the rest controlled" in out.lower()
+        assert CAL_STATE_OVER in out
 
     def test_one_calorie_over_is_controlled(self):
-        # 2001 / 2000 → "keep the rest controlled"
+        # 2001 / 2000 → the over-target branch
         out = deterministic_confirmation([_food("rice")], _log(2001, 50), _prefs(cal_t=2000, pro_t=None))
-        assert "keep the rest controlled" in out.lower()
+        assert CAL_STATE_OVER in out
 
     def test_zero_calories_is_good_room_left(self):
-        # 0 / 2000 → "good room left"
+        # 0 / 2000 → the open-day branch
         out = deterministic_confirmation([_food("water")], _log(0, 0), _prefs(cal_t=2000, pro_t=None))
-        assert "good room left" in out.lower()
+        assert CAL_STATE_OPEN in out
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

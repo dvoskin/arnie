@@ -573,6 +573,20 @@ def _item_macros(result_str: str) -> str:
     return f"{m.group(1)} cal, {m.group(2)}g protein" if m else ""
 
 
+#: The three calorie-state branches of the deterministic tail, named so the
+#: BRANCH can be asserted without pinning its wording. Fifteen tests used to
+#: hold literal copies of these phrases, which meant a copy change read as
+#: fifteen behaviour regressions and the real question — did the right branch
+#: fire — was buried. Reword freely; the branch identity is the constant.
+CAL_STATE_OVER = "keep the rest of it clean"
+CAL_STATE_TIGHT = "the rest needs to stay light"
+CAL_STATE_OPEN = "still have plenty of flexibility today"
+
+#: Likewise for the protein branches.
+PROTEIN_LOW = "Protein is running light"
+PROTEIN_OK = "Protein's tracking well"
+
+
 def deterministic_confirmation(tool_calls, log, prefs, tool_results=None,
                                user_message: str = "") -> str:
     """
@@ -701,27 +715,32 @@ def deterministic_confirmation(tool_calls, log, prefs, tool_results=None,
         # renders it duplicates the card, and where one does not it still reads
         # like debug output. The remaining amount is the useful part, and it
         # belongs in a sentence that says what to do with it.
+        # "Good room left." and "Tight finish." were the compressed register
+        # this is meant to replace, not a shorter way of writing it. The
+        # calorie state and the protein state also belong in ONE bubble: split
+        # across two they read as a pair of status lines, which is the debug
+        # output the card already owns.
         if cal_t:
             _left = max(0, cal_t - cal)
             if cal >= cal_t:
-                tail = ("You're past your calorie target for today, so keep "
-                        "the rest controlled.")
+                tail = (f"You're past your calorie target for today, so "
+                        f"{CAL_STATE_OVER}.")
             elif cal >= cal_t * 0.85:
                 tail = (f"That leaves about {_left} calories for the day, so "
-                        f"it's a tight finish.")
+                        f"{CAL_STATE_TIGHT}.")
             else:
-                tail = (f"That leaves you around {_left} calories, so there's "
-                        f"good room left.")
+                tail = (f"That leaves you around {_left} calories, so you "
+                        f"{CAL_STATE_OPEN}.")
         else:
             tail = f"That puts you at roughly {cal} calories so far today."
         if pro_t and pro < pro_t * 0.85:
             _need = max(0, pro_t - pro)
-            return (f"{head}|||{tail}|||Protein is running light — you've got "
-                    f"about {_need}g to go, so make the next meal "
+            return (f"{head}|||{tail} {PROTEIN_LOW}, though — "
+                    f"about {_need}g to go, so make your next meal "
                     f"protein-forward.")
         if pro_t:
-            return f"{head}|||{tail}|||Protein's tracking well. What's next?"
-        return f"{head}|||{tail}|||Send the next meal."
+            return f"{head}|||{tail} {PROTEIN_OK}. What's next?"
+        return f"{head}|||{tail} What's next?"
 
     if "log_exercise" in names:
         # Dedup-aware fallback: if the LAST log_exercise tool result starts with
