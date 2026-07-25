@@ -186,7 +186,13 @@ def normalize_quantity(raw: str, food_name: str = "") -> NormalizedQuantity:
     tokens = unit_text.split()
     head = next((t for t in tokens if t in _COUNT_UNITS),
                 tokens[0] if tokens else "")
-    countable = head in _COUNT_UNITS or not unit_text
+    # A food is often its own unit — "1 banana", "2 bagels", "3 wings". The
+    # count-unit list can never be complete, so a unit word that appears in
+    # the food name is a count of that food.
+    food_words = set(re.findall(r"[a-z]+", (food_name or "").lower()))
+    food_as_unit = bool(tokens) and any(
+        t.rstrip("s") in {w.rstrip("s") for w in food_words} for t in tokens)
+    countable = head in _COUNT_UNITS or food_as_unit or not unit_text
     if countable:
         est = piece_weight(food_name, unit_text)
         if est is None:

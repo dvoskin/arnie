@@ -25,8 +25,8 @@ import re
 from dataclasses import dataclass
 from typing import Optional
 
-from skills.nutrition.models import (ATWATER, NormalizedQuantity,
-                                     NutrientProfile)
+from skills.nutrition.models import (ATWATER, MACRO_FIELDS,
+                                     NormalizedQuantity, NutrientProfile)
 from skills.nutrition.provenance import MatchGrade
 
 logger = logging.getLogger(__name__)
@@ -67,7 +67,16 @@ _CONCENTRATED_FORMS = ("powder", "powdered", "concentrate", "extract",
 
 
 def _tokens(text: str) -> set:
-    return set(re.findall(r"[a-z]+", (text or "").lower()))
+    """Word set for overlap checks, crudely singularized.
+
+    Without this, "onion" and "Onions, raw" share no tokens and the correct
+    candidate is rejected as unrelated — a plural is not a different food.
+    Deliberately crude: over-stemming risks a false MATCH, so only a trailing
+    's' comes off, and only from words long enough for it to be a plural.
+    """
+    words = re.findall(r"[a-z]+", (text or "").lower())
+    return {w[:-1] if (len(w) > 3 and w.endswith("s") and not w.endswith("ss"))
+            else w for w in words}
 
 
 def validate_identity(requested: str, candidate_name: str,
@@ -219,11 +228,15 @@ def validate_bounds(profile: NutrientProfile, food_name: str = "",
             bad.append(name)
     if not bad:
         return PASSED, ()
-    # Calories out of bounds condemns the whole candidate; a single wild micro
-    # condemns only that field — dropping the macros too would throw away a
-    # good answer over one bad number.
-    if "calories" in bad:
-        return Verdict(REJECT, "bounds_violation", ",".join(bad)), tuple(bad)
+    # An impossible MACRO condemns the whole candidate. Macros are what the
+    # food nutritionally is: 95 g of protein per 100 g does not describe a
+    # chicken breast with one bad field, it describes the wrong record. A wild
+    # MICRO condemns only that field — dropping good macros over one bad
+    # sodium throws away a correct answer.
+    macro_violations = [f for f in bad if f in MACRO_FIELDS]
+    if macro_violations:
+        return (Verdict(REJECT, "bounds_violation", ",".join(bad)),
+                tuple(bad))
     return Verdict(DOWNGRADE, "micro_out_of_bounds", ",".join(bad)), tuple(bad)
 
 
