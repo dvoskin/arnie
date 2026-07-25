@@ -89,3 +89,73 @@ async def test_executor_view_marks_stale_update_blocked(db, make_user):
     assert ex.calls[0].status == "blocked"
     assert ex.failed_names() == ["Birria taco"]
     assert ex.ok_tool_calls() == []
+
+
+# ── cards render from the typed view (P0.3b) ──────────────────────────────────
+def test_card_prefers_typed_call_over_stashed_keys():
+    """The card mirrors what the executor COMMITTED: ids come from the typed
+    CallResult, not from whatever was stashed on the model's input."""
+    from core.conversation import _logged_entry_card
+    inp = {"food_name": "Banana", "quantity": "1 banana", "calories": 105,
+           "_entry_id": 11, "_event_id": 800}     # stale/legacy stash
+    cr = ER.CallResult(name="log_food", raw_input=inp, status="committed",
+                       entry_id=42, event_id=900,
+                       receipt={"day_calories": 1200})
+    card = _logged_entry_card("log_food", inp, call=cr)
+    assert card["payload"]["entry_id"] == 42     # typed wins
+    assert card["payload"]["event_id"] == 900
+    assert card["payload"]["day_calories"] == 1200   # receipt from the call
+    # Legacy path (no typed call) still reads the stash — unit tests and any
+    # caller that hasn't converted yet keep working.
+    legacy = _logged_entry_card("log_food", inp)
+    assert legacy["payload"]["entry_id"] == 11
+
+
+def test_uncommitted_call_still_produces_no_card():
+    """No committed row → no card, whichever path built it."""
+    from core.conversation import _logged_entry_card
+    inp = {"food_name": "Banana", "calories": 105}
+    cr = ER.CallResult(name="log_food", raw_input=inp, status="blocked")
+    assert _logged_entry_card("log_food", inp, call=cr) is None
+
+
+# ── the reasoning receipt reads the typed view (P0.3c) ────────────────────────
+def test_receipt_reports_per_call_truth_from_typed_view():
+    """The name-keyed results dict collapses a multi-item batch to the LAST
+    result — a blocked item would read as 'Logged'. The typed view carries
+    per-call truth, so the receipt reports what each call actually did."""
+    from core.reasoning import build_reasoning
+    inp_ok = {"food_name": "Coke", "calories": 140}
+    inp_dup = {"food_name": "Banana", "calories": 105}
+    calls = [{"name": "log_food", "input": inp_ok},
+             {"name": "log_food", "input": inp_dup}]
+    execution = ER.ExecutionResult(calls=(
+        ER.CallResult(name="log_food", raw_input=inp_ok, status="committed",
+                      result_text="Logged Coke: 140 cal."),
+        ER.CallResult(name="log_food", raw_input=inp_dup, status="blocked",
+                      result_text="Already on the board: Banana"),
+    ))
+    # The shared dict says everything logged (last write wins) — the typed
+    # view must override that for the blocked item.
+    rec = build_reasoning(calls, {"log_food": "Logged Coke: 140 cal."},
+                          execution=execution)
+    blob = str(rec)
+    assert "Duplicate check" in blob and "Banana" in blob
+    # Without the typed view, the collapsed dict misreports it as logged.
+    rec_legacy = build_reasoning(calls, {"log_food": "Logged Coke: 140 cal."})
+    assert "Duplicate check" not in str(rec_legacy)
+
+
+def test_receipt_sourcing_rides_the_typed_call():
+    from core.reasoning import build_reasoning
+    inp = {"food_name": "Fage 0% yogurt", "calories": 120}
+    execution = ER.ExecutionResult(calls=(
+        ER.CallResult(name="log_food", raw_input=inp, status="committed",
+                      result_text="Logged Fage: 120 cal.",
+                      sourcing={"source": "usda", "calories": 120}),
+    ))
+    rec = build_reasoning([{"name": "log_food", "input": inp}], {},
+                          execution=execution)
+    assert "USDA" in str(rec)
+    # And the input itself was never mutated by the receipt build.
+    assert "_sourcing" not in inp
