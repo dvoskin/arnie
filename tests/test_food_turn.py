@@ -66,16 +66,32 @@ async def test_composite_splits_into_clean_editable_items(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_ask_is_rich_formatted(monkeypatch):
+async def test_an_interpreter_ask_goes_through_the_response_contract(monkeypatch):
+    """Was `test_ask_is_rich_formatted`, asserting the numbered form and the
+    system vocabulary that came with it — "Quick one so it's clean:",
+    "1. **crust**:", "locked in ✅", "Nothing hits the board till then".
+
+    That copy was retired from the response contract, but this path never went
+    through the contract: `_format_question` rendered it directly. So two meals
+    with near-identical uncertainty got different conversational treatment
+    depending on which engine noticed it, and the numbered form survived in the
+    one place nothing was checking (review item 4).
+
+    ONE question, about ONE item — the shape the staged engine has always used
+    and the shape the plan is built for. The item not asked about stays named
+    and held, so nothing commits behind an unanswered question."""
     monkeypatch.setattr(FT, "chat", _fake_chat({
         "action": "ask",
         "points": [{"label": "Crust", "q": "how much did you leave?"},
                    {"label": "Chicken", "q": "roughly how much?"}]}))
     out = await FT.run("had pizza and some chicken", SimpleNamespace())
     assert out["action"] == "ask"
-    assert "Quick one so it's clean:" in out["text"]
-    assert "1. **crust**: how much did you leave?" in out["text"]
-    assert "2. **chicken**: roughly how much?" in out["text"]
+    text = out["text"]
+    assert "How much did you leave?" in text
+    assert "crust" in text.lower() and "chicken" in text.lower()
+    for retired in ("Quick one so it's clean", "locked in ✅",
+                    "1. **crust**", "Nothing hits the board till then"):
+        assert retired not in text, retired
 
 
 @pytest.mark.asyncio

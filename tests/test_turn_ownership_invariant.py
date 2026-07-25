@@ -195,3 +195,37 @@ def test_a_tool_is_announced_once_per_turn():
     assert "_announced" in source
     assert "_announced.add(\"log_food\")" in source
     assert "n not in _announced" in source
+
+
+# ── One clarification renderer ──────────────────────────────────────────────
+
+def test_no_clarification_bypasses_the_response_contract():
+    """Review item 4. `_format_question` rendered clarifications directly, so
+    the response contract governed the staged engine's questions and not the
+    interpreter's — two meals with near-identical uncertainty could get
+    different conversational treatment depending on which one noticed it, and
+    the retired system vocabulary survived in the path nothing was checking.
+
+    It stays defined for the gate evals that assert on its exact strings. It
+    may not be CALLED from the turn.
+    """
+    live = [(lineno, src) for lineno, src
+            in _calls_in(REPO / "core/food_turn.py", "_format_question")]
+    assert live == [], live
+
+
+def test_the_retired_clarification_copy_cannot_be_emitted():
+    """Checked against the string literals the live renderer could EMIT, not
+    against its source text — the docstring quotes the retired copy on purpose,
+    to say what was removed and why, and a check that cannot tell an example
+    from an output would forbid explaining the fix."""
+    tree = ast.parse((REPO / "core/food_turn.py").read_text())
+    fn = next(n for n in ast.walk(tree)
+              if isinstance(n, ast.FunctionDef)
+              and n.name == "clarify_text_from_points")
+    body = fn.body[1:] if ast.get_docstring(fn) else fn.body
+    emitted = [n.value for stmt in body for n in ast.walk(stmt)
+               if isinstance(n, ast.Constant) and isinstance(n.value, str)]
+    for retired in ("Quick one so it's clean", "locked in ✅",
+                    "Nothing hits the board till then"):
+        assert not any(retired in e for e in emitted), retired
