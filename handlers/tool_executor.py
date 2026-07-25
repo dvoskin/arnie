@@ -265,8 +265,104 @@ def _stash_receipt(inp, target_log, user, calories, protein,
         if updated:
             _receipt_val["updated"] = True
         _stash_call(inp, "receipt", _receipt_val)
+        # What this receipt was computed FROM, so the batch resync below can
+        # recompute it against the day as it finally stood. See
+        # `_resync_batch_receipts` — the numbers here are correct for the
+        # moment they were taken and wrong by the time the user reads them.
+        _stash_call(inp, "receipt_basis", {
+            "daily_log_id": getattr(target_log, "id", None),
+            "calories": float(calories or 0),
+            "protein": float(protein or 0),
+            "carbs": float(carbs) if carbs is not None else None,
+            "confidence": confidence,
+            "estimated": estimated,
+            "updated": updated,
+            "local_hour": local_hour,
+        })
     except Exception:
         pass
+
+
+async def _resync_batch_receipts(ctxs, user, db) -> None:
+    """Recompute every receipt in the batch against the FINAL day total.
+
+    The executor runs tool calls SERIALLY, and each `_stash_receipt` reads the
+    day right after its own write. In a one-item turn that is the whole day. In
+    a multi-item meal it is a partial one — item 1's card is computed against a
+    day containing only item 1, and by the time the user reads it, items 2..N
+    have landed too.
+
+    That is the "stale day total" in the shipped screenshots. A meal logged
+    eggs and dinner together: the eggs card said "10 cal left" (the day with
+    the eggs but not the dinner) and the dinner card, computed moments later,
+    said "2,320 cal over". Both were accurate about the instant they were
+    taken; neither described the day the user was looking at, and they
+    contradicted each other on screen.
+
+    So the batch is treated as what it is — one meal, one day state. Every card
+    in it reports the same remaining figures, and the VERDICT is computed once
+    from the batch's combined macros rather than N times from slices of it: a
+    verdict is a read of what this meal did to the day, and a sixth of a meal
+    did not do it.
+
+    Per-item facts (the honest range on a vague estimate, its confidence) stay
+    per item. Only the day-state and the verdict are shared, because only those
+    were describing the day.
+
+    Never raises. A receipt is garnish; the logs already stand.
+    """
+    from collections import defaultdict
+
+    by_log = defaultdict(list)
+    for ctx in ctxs or ():
+        if not isinstance(ctx, dict):
+            continue
+        basis = ctx.get("receipt_basis")
+        if isinstance(basis, dict) and isinstance(ctx.get("receipt"), dict) \
+                and basis.get("daily_log_id") is not None:
+            by_log[basis["daily_log_id"]].append((ctx, basis))
+
+    for log_id, entries in by_log.items():
+        # One item wrote to this day — its receipt already describes the whole
+        # day, and recomputing it would only risk changing a correct card.
+        if len(entries) < 2:
+            continue
+        try:
+            from sqlalchemy import select as _select
+            from db.models import DailyLog as _DailyLog
+            from core.receipt import build_receipt
+            log = (await db.execute(
+                _select(_DailyLog).where(_DailyLog.id == log_id))).scalar_one()
+            prefs = getattr(user, "preferences", None)
+            batch_cal = sum(b["calories"] for _, b in entries)
+            batch_pro = sum(b["protein"] for _, b in entries)
+            batch_carbs = sum(b["carbs"] for _, b in entries
+                              if b.get("carbs") is not None) or None
+            # The batch's own verdict, from the batch's own macros against the
+            # finished day. `build_receipt` reads "before this log" as
+            # total minus what was logged, which for a meal is the meal.
+            batch = build_receipt(
+                calories=batch_cal, protein=batch_pro,
+                total_cal=float(getattr(log, "total_calories", 0) or 0),
+                total_protein=float(getattr(log, "total_protein", 0) or 0),
+                cal_target=getattr(prefs, "calorie_target", None) if prefs else None,
+                protein_target=getattr(prefs, "protein_target", None) if prefs else None,
+                local_hour=entries[0][1].get("local_hour"),
+                total_fats=float(getattr(log, "total_fats", 0) or 0),
+                fat_target=getattr(prefs, "fat_target", None) if prefs else None,
+                trained_today=bool(getattr(log, "workout_completed", False)),
+                carbs=batch_carbs,
+            )
+            shared = {k: batch[k] for k in
+                      ("remaining_cal", "remaining_protein", "verdict", "next")
+                      if k in batch}
+            for ctx, _basis in entries:
+                receipt = dict(ctx["receipt"])
+                receipt.pop("next", None)   # replaced wholesale or dropped
+                receipt.update(shared)
+                ctx["receipt"] = receipt
+        except Exception as e:
+            logger.warning(f"batch receipt resync skipped for log {log_id}: {e}")
 
 
 def _stash_sourcing(inp, analysis, food_name):
@@ -2201,6 +2297,12 @@ async def _execute_tool_calls(
             schedule_widget_reload(getattr(user, "id", None))
         except Exception:
             pass  # widget refresh is best-effort; the turn must never break
+
+    # Every card in this batch reports the day as it FINALLY stands, before the
+    # typed view is built from these contexts. Each receipt was taken right
+    # after its own write, which in a multi-item meal is a day that no longer
+    # exists by the time the user sees the card.
+    await _resync_batch_receipts(_ctxs, user, db)
 
     # Publish the typed per-call view (P0.3a). Built by the one sanctioned
     # scraper of the legacy stash keys; when branches populate CallResults
