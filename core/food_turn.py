@@ -525,6 +525,19 @@ def _item_is_stated(it: dict, message: str) -> bool:
     return any(w in m for w in _words.get(int(f), ())) if f.is_integer() else False
 
 
+def _prefs_for(user):
+    """Learned food defaults for this user, if they are already loaded.
+
+    Never triggers a lazy load: the interpreter runs inside an async turn and
+    touching an unloaded relationship raises MissingGreenlet. No preferences
+    simply means none are applied — a degraded default, not a failed turn.
+    """
+    try:
+        return list(getattr(user, "food_preferences", None) or ())
+    except Exception:
+        return []
+
+
 def _strict_needs_confirm(items: list, data: dict, message: str) -> bool:
     """The narrowed strict-confirm gate (Danny 2026-07-25): pre-write
     confirmation only for the cases where it earns its friction —
@@ -953,13 +966,63 @@ async def run(message: str, user, prior: Optional[dict] = None,
     # them is worth holding the write for. Never on the answer turn — that
     # turn fills with best estimates instead of re-asking.
     if prior is None and any(k == "log" for k, _ in ops):
-        from core import food_ledger as _FL
-        _mat = _FL.material_ambiguities(data.get("ambiguities"), mode)
-        if _mat:
-            _pts = _FL.ambiguity_points(_mat)
-            _txt = _format_question(_pts)
-            if _txt:
-                return {"action": "ask", "text": _txt, "points": _pts}
+        # THE STAGED-ITEM PIPELINE OWNS THIS (Danny 2026-07-25). The old policy
+        # read one number — the model's impact_cal — against calorie-only
+        # thresholds, so an item that was calorie-tight and protein-wild sailed
+        # through. core/food_pipeline.py stages the items, scores calorie,
+        # protein, carb, fat, identity and serving-basis risk, applies learned
+        # preferences, and ranks questions across the WHOLE meal instead of
+        # firing on the first material one.
+        #
+        # Same call from both callers: the live turn arrives here, and the
+        # coordinator's food stage delegates to this function — so promoting
+        # the coordinator changes orchestration, not food intelligence.
+        # STRICT'S WHOLE-PARSE CONFIRM WINS over a per-item ask. The new
+        # engine's strict calorie threshold is 20 against the old policy's 100,
+        # so on strict it now finds material uncertainty in cases that used to
+        # fall through to the confirm — and the confirm is the better exchange
+        # there: it shows the entire parse and takes one yes, rather than
+        # interrogating one item and then still needing approval.
+        _strict_confirm_pending = False
+        try:
+            if mode == "strict":
+                _log_items = [o for k, o in ops if k == "log"]
+                _strict_confirm_pending = _strict_needs_confirm(
+                    _log_items, data, message)
+        except Exception:
+            _strict_confirm_pending = False
+
+        _decision = None
+        try:
+            from core.food_pipeline import pipeline_enabled, plan_turn
+            if pipeline_enabled() and not _strict_confirm_pending:
+                from core.turn_identity import current_turn_id as _pipe_turn
+                _decision = plan_turn(
+                    data, turn_id=(_pipe_turn() or ""), message=message,
+                    mode=mode, preferences=_prefs_for(user))
+        except Exception as _pe:
+            logger.warning(f"food pipeline unavailable: {_pe}")
+            _decision = None
+
+        if _decision is not None and _decision.asks:
+            _q = _decision.question
+            return {"action": "ask", "text": _q.prompt,
+                    "points": [_q.prompt],
+                    "question_id": _q.question_id,
+                    "staged_item_id": _q.staged_item_id,
+                    "requested_fields": list(_q.requested_fields),
+                    "meal_group_id": _decision.meal_group_id}
+
+        if _decision is None and not _strict_confirm_pending:
+            # Pipeline off or unavailable — the calorie-only policy still
+            # stands rather than the turn losing its ask entirely.
+            from core import food_ledger as _FL
+            _mat = _FL.material_ambiguities(data.get("ambiguities"), mode)
+            if _mat:
+                _pts = _FL.ambiguity_points(_mat)
+                _txt = _format_question(_pts)
+                if _txt:
+                    return {"action": "ask", "text": _txt, "points": _pts}
 
     board_by_id = {}
     for b in (board or []):
