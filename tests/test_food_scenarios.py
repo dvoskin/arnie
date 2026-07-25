@@ -493,8 +493,9 @@ def test_scenario_a_review_reads_as_a_sentence_not_a_form():
     text = format_confirm([{"food": "toast", "amount": 1, "unit": "slice"},
                            {"food": "gooseberry jam", "amount": 1,
                             "unit": "tbsp"}])
-    assert text == ("I've got 1 slice toast and 1 tbsp gooseberry jam. "
-                    "Does that look right?")
+    # Spoken rather than tabulated (Danny 2026-07-25).
+    assert text == ("I'm reading that as one slice of toast and one "
+                    "tablespoon of gooseberry jam. Does that look right?")
     for banned in ("Locking this in", "anything to fix", "**", "1."):
         assert banned not in text
 

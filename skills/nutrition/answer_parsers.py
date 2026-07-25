@@ -41,6 +41,12 @@ class ClarificationAnswer:
     command: Optional[ClarificationCommand] = None
     unparsed: bool = False
     matched_candidate_id: Optional[str] = None
+    #: What to tell the user we chose on their behalf.
+    #:
+    #: "Use your best estimate" is a request to decide, not permission to
+    #: decide silently — a user who asked for an estimate is still entitled to
+    #: know which one they got. Empty when nothing was assumed.
+    disclosure: str = ""
 
     @property
     def resolves_anything(self) -> bool:
@@ -105,12 +111,15 @@ _FRACTION_WORDS = {
 _PERCENT_RE = re.compile(r"(\d{1,3})\s*%")
 _UNITS = (r"g|grams?|oz|ounces?|ml|l|liters?|litres?|cups?|tbsp|tablespoons?|"
           r"tsp|teaspoons?|slices?|pieces?|servings?|bottles?|cans?|bars?|"
-          r"scoops?|handfuls?|bowls?|plates?|glasses|glass|packets?")
+          r"scoops?|handfuls?|spoons?|spoonfuls?|bowls?|plates?|glasses|glass|"
+          r"packets?")
 _AMOUNT_RE = re.compile(rf"(\d+(?:\.\d+)?)\s*({_UNITS})\b", re.I)
 
 #: Number words, so a portion answer does not have to be typed as a digit.
 #: "about a cup" is how people actually answer "how much rice?", and requiring
-#: "1 cup" sent every one of those answers back through the interpreter.
+#: "1 cup" sent every one of those answers back through the interpreter. Same
+#: for "one tablespoon" against "was it closer to one tablespoon or two?" —
+#: until this existed, both options the question itself offered were unparseable.
 _WORD_AMOUNTS = {"a": 1.0, "an": 1.0, "one": 1.0, "two": 2.0, "three": 3.0,
                  "four": 4.0, "five": 5.0, "six": 6.0, "seven": 7.0,
                  "eight": 8.0, "ten": 10.0, "half": 0.5, "quarter": 0.25}
@@ -129,6 +138,36 @@ _ORDINAL_RE = re.compile(
     rf"^\s*(?:the\s+)?(?:#\s*(\d)|({'|'.join(_ORDINALS)}))\s*(?:one|option)?"
     r"\s*$", re.I)
 _LAST_RE = re.compile(r"^\s*(?:the\s+)?last\s*(?:one|option)?\s*$", re.I)
+
+#: Answers that pick an END of the offered range rather than a number.
+#: "A heaping spoonful" and "just a small spoon" are real answers to "one
+#: tablespoon or two?", and treating them as unparseable sends the user back
+#: to type a number they did not have in the first place.
+_QUALITATIVE = (
+    ("high", re.compile(r"\b(?:heaping|heaped|big|large|generous|good|full|"
+                        r"proper|decent|more like (?:the )?(?:two|bigger)|"
+                        r"bigger|closer to (?:the )?(?:two|bigger|larger)|"
+                        r"the (?:bigger|larger|higher) one)\b", re.I)),
+    ("low", re.compile(r"\b(?:small|little|light|scant|modest|thin|just a|"
+                       r"closer to (?:the )?(?:one|smaller|less)|"
+                       r"the (?:smaller|lower) one)\b", re.I)),
+    ("mid", re.compile(r"\b(?:in between|in-between|somewhere between|"
+                       r"middle|middling|average|normal|regular|"
+                       r"somewhere in the middle)\b", re.I)),
+)
+
+
+def parse_qualitative(text: str):
+    """"high" | "low" | "mid" | None — which end of the offered range.
+
+    Checked in that order deliberately: "just a big spoonful" carries both a
+    low marker ("just a") and a high one ("big"), and the size word is the one
+    describing the portion.
+    """
+    for end, pattern in _QUALITATIVE:
+        if pattern.search(text or ""):
+            return end
+    return None
 
 
 def parse_fraction(text: str) -> Optional[float]:
@@ -154,6 +193,8 @@ def parse_quantity_answer(text: str, question=None) -> ClarificationAnswer:
     thing we asked about. Anything else is not a quantity."""
     command = parse_command(text)
     if command is not None:
+        if command is ClarificationCommand.ESTIMATE:
+            return _estimate_answer(question)
         return ClarificationAnswer(command=command, confidence=1.0)
 
     m = _AMOUNT_RE.search(text or "")
@@ -174,7 +215,88 @@ def parse_quantity_answer(text: str, question=None) -> ClarificationAnswer:
             values={"stated_amount": _WORD_AMOUNTS[m.group(1).lower()],
                     "stated_unit": m.group(2).lower().rstrip(".")},
             confidence=0.8)
+    # An end of the range, against the options the question offered. Only
+    # meaningful WITH a question — "a small one" says nothing on its own.
+    end = parse_qualitative(text)
+    if end is not None and question is not None:
+        resolved = _from_offered_range(end, getattr(question, "options", ()))
+        if resolved is not None:
+            return ClarificationAnswer(values=resolved, confidence=0.7)
     return UNPARSED
+
+
+def _estimate_answer(question) -> ClarificationAnswer:
+    """"Use your best estimate" — decide, and say what was decided.
+
+    The command was parsed and then dropped: nothing turned it into an amount,
+    so a user who answered the question with "no idea, you pick" left the item
+    exactly as unresolved as before they answered.
+
+    The estimate is the MIDDLE of the range we offered, which is the honest
+    reading of "you pick" — we asked whether it was closer to one end or the
+    other, and they told us they do not know. Returned WITH a disclosure,
+    because being asked to choose is not permission to choose silently.
+    """
+    values = _from_offered_range("mid", getattr(question, "options", ()))
+    if not values:
+        # Nothing to estimate from. The command still stands — the caller
+        # falls back to its own estimate path rather than re-asking.
+        return ClarificationAnswer(command=ClarificationCommand.ESTIMATE,
+                                   confidence=1.0)
+    return ClarificationAnswer(
+        values=values, confidence=0.6,
+        command=ClarificationCommand.ESTIMATE,
+        disclosure=_describe_estimate(values))
+
+
+def _describe_estimate(values: Mapping[str, Any]) -> str:
+    """What we chose, in the words the question was asked in."""
+    amount = values.get("stated_amount")
+    unit = values.get("stated_unit") or ""
+    if amount is None:
+        fraction = values.get("consumed_fraction")
+        if fraction is None:
+            return ""
+        return f"I went with about {round(float(fraction) * 100)}% of it."
+    trimmed = (str(int(amount)) if float(amount).is_integer()
+               else f"{amount:g}")
+    unit = unit.rstrip("s") + ("" if amount == 1 else "s") if unit else ""
+    return f"I went with about {trimmed} {unit}.".replace("  ", " ")
+
+
+def _from_offered_range(end: str, options):
+    """Resolve "small"/"heaping"/"in between" against the offered options.
+
+    The options are built in ascending order by the code that offers them, so
+    position is magnitude for the two ends.
+
+    "In between" is the interesting one. With two options there IS no middle
+    option, and picking either end would be the silent choice this whole
+    clarification exists to avoid — so the midpoint is computed from their
+    values instead. That is what the user said, and it is answerable.
+    """
+    parsed = []
+    for option in (options or ()):
+        label = getattr(option, "label", "")
+        if not label:
+            continue
+        answer = parse_quantity_answer(label)
+        if answer.values.get("stated_amount") is not None:
+            parsed.append(dict(answer.values))
+    if not parsed:
+        return None
+
+    if end == "low":
+        return parsed[0]
+    if end == "high":
+        return parsed[-1]
+
+    low, high = parsed[0], parsed[-1]
+    if low is high:
+        return dict(low)
+    midpoint = (low["stated_amount"] + high["stated_amount"]) / 2.0
+    return {"stated_amount": round(midpoint, 3),
+            "stated_unit": high.get("stated_unit") or low.get("stated_unit")}
 
 
 # ── product selection ─────────────────────────────────────────────────────────

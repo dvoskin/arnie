@@ -163,7 +163,15 @@ def _ambiguities(request: FoodResolutionRequest, winner: Candidate,
                  scaled: NutrientProfile,
                  unscaled: Optional[NutrientProfile] = None) -> tuple:
     """Everything still genuinely uncertain, sized by what it costs. Reporting
-    is unconditional; whether to ASK is the caller's decision with the mode."""
+    is unconditional; whether to ASK is the caller's decision with the mode.
+
+    `unscaled` is the winner's own row, used ONLY to size doubt when scaling
+    was refused and `scaled` is therefore empty. Refusing to scale is the
+    resolver's least certain state, and sizing every span off an empty profile
+    reported that state as zero doubt — which silenced the ask ladder exactly
+    where it was most needed. The magnitude comes from the row; the ANSWER
+    never does.
+    """
     out = []
     # `scaled` is empty when the portion could not be scaled at all — which is
     # exactly the case that most needs a question. Sizing the doubt from the
@@ -196,6 +204,26 @@ def _ambiguities(request: FoodResolutionRequest, winner: Candidate,
                 protein_span=gap["protein_span"],
                 detail="two high-confidence sources disagree materially",
                 calorie_fraction=_fraction(gap["calorie_span"])))
+    # A named product answered by a generic database row.
+    #
+    # From a shipped transcript: "15 peanut m&m" logged at 135 calories "from
+    # the USDA database". A standard label puts 15 pieces near 175. The tier
+    # order preferred branded correctly — there simply was no branded
+    # candidate, so a generic won unopposed and was then presented with the
+    # same confidence as a label read off the packet.
+    #
+    # What was missing is that a generic standing in for a NAMED PRODUCT is a
+    # different kind of answer, and the user is entitled to know that is what
+    # happened.
+    if _is_branded_request(request) and int(winner.tier) >= int(
+            SourceTier.GENERIC_EXACT):
+        out.append(ResolutionAmbiguity(
+            field="branded_source",
+            options=(f"{winner.name} (generic)",),
+            calorie_span=round(item_cal * BRANDED_FALLBACK_DOUBT, 1),
+            detail="generic data standing in for a named product",
+            calorie_fraction=BRANDED_FALLBACK_DOUBT))
+
     spans = scaling_spans(winner.profile, winner.basis, quantity)
     span = spans.get("calories")
     if spans:
@@ -255,6 +283,31 @@ def _at_portion(candidate: Candidate,
         return scale_profile(candidate.profile, candidate.basis, quantity)
     except ScalingRefused:
         return candidate.profile
+
+
+#: How wrong a generic row can be about a specific product, as a fraction of
+#: the item's own calories. Generic "candies, chocolate coated peanuts" against
+#: the Peanut M&M's label is roughly this far apart on the count that shipped,
+#: and branded formulations vary at least that much from a category average.
+#:
+#: Sizes the doubt; never changes the number. The resolver does not know the
+#: label — it knows it is not reading one.
+BRANDED_FALLBACK_DOUBT = 0.3
+
+
+def _is_branded_request(request: FoodResolutionRequest) -> bool:
+    """Whether the user named a PRODUCT rather than a food.
+
+    Three signals, any of which is enough: the interpreter set a brand, it
+    flagged the item as packaged, or the name matches a known product family.
+    """
+    if request.brand or request.is_packaged:
+        return True
+    try:
+        from skills.nutrition.families import rule_for
+        return rule_for(request.brand, request.food_name) is not None
+    except Exception:
+        return False
 
 
 #: A doubt covering this much of an item's own calories is worth asking about
@@ -426,13 +479,14 @@ def _resolve(request: FoodResolutionRequest,
         scaled = scale_profile(merged, winner.basis, quantity)
     except ScalingRefused as e:
         # The source's own unscaled numbers are NOT a fallback. They describe a
-        # different portion than the one that was eaten, and persisting them
-        # logged a teaspoon of sugar as 387 calories — the per-100g row, with a
-        # warning nobody sees, in the day's totals.
+        # different portion than the one eaten, and persisting them logged one
+        # tablespoon of peanut butter as 588 calories — the per-100g row, with
+        # a warning nobody sees, in the day's totals. Two tablespoons logged as
+        # 588 as well, so answering the clarification changed nothing.
         #
-        # This is the "unknown is not zero" rule applied one level up: unknown
-        # is also not "the wrong portion". An unscalable portion produces no
-        # nutrients, which is the state the ask ladder can act on.
+        # This is "unknown is not zero" applied one level up: unknown is also
+        # not "the wrong portion". An unscalable portion produces no nutrients,
+        # which is a state the ask ladder and `promotable()` can both act on.
         warnings.append(f"portion not scaled: {e}")
         scaled = NutrientProfile()
 
@@ -447,6 +501,16 @@ def _resolve(request: FoodResolutionRequest,
     assumptions = tuple(quantity.assumptions) + mix_notes
     if winner.tier.is_estimate:
         assumptions += (f"{winner.source} estimate, not a label",)
+    if _is_branded_request(request) and int(winner.tier) >= int(
+            SourceTier.GENERIC_EXACT):
+        # Disclosure rather than a question. Asking about every named product
+        # with no branded record would interrupt constantly; saying which kind
+        # of source answered costs nothing and is the difference between "135
+        # calories" and "135 calories, from generic data".
+        assumptions += (
+            f"generic data for a named product — no {request.food_name} "
+            f"label available",)
+        confidence *= 0.75
     if scaled.unknown():
         warnings.append(f"unknown: {', '.join(scaled.unknown())}")
 

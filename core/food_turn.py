@@ -514,15 +514,82 @@ def _item_is_stated(it: dict, message: str) -> bool:
         f = float(amt)
     except (TypeError, ValueError):
         return False
-    m = (message or "").lower()
+    # Scoped to the CLAUSE that names this food, not the whole message.
+    #
+    # The bug this fixes, straight from a shipped transcript: "I had like 15
+    # peanut m&m, half a banana and a scoop of peanut butter" was read as
+    # STATING one tablespoon of peanut butter, because the whole-message check
+    # for the word "a" matched "a banana". The user was then asked to approve a
+    # 190-calorie assumption they had never been shown.
+    #
+    # An article is the weakest possible evidence of a stated amount, so it now
+    # has to sit in the clause about this food AND next to the unit or the food
+    # itself.
+    clause = _clause_for(message, str(it.get("food") or ""))
     s = str(int(f)) if f.is_integer() else str(f)
-    if s in m:
+    # Plain substring for digits: "200" has no word boundary before the "g" in
+    # "200g", and requiring one dropped every mass the user actually typed.
+    if s in clause:
         return True
-    if f == 0.5 and "half" in m:
+    if f == 0.5 and re.search(r"\bhalf\b", clause):
         return True
-    _words = {1: ("one ", "a ", "an "), 2: ("two ",), 3: ("three ",),
-              4: ("four ",), 5: ("five ",), 6: ("six ",)}
-    return any(w in m for w in _words.get(int(f), ())) if f.is_integer() else False
+    if not f.is_integer():
+        return False
+    _words = {1: ("one",), 2: ("two",), 3: ("three",), 4: ("four",),
+              5: ("five",), 6: ("six",)}
+    if any(re.search(rf"\b{w}\b", clause) for w in _words.get(int(f), ())):
+        return True
+    if f == 1.0:
+        # "a"/"an" counts only immediately before the unit or the food.
+        unit = str(it.get("unit") or "").strip().lower()
+        food = str(it.get("food") or "").strip().lower()
+        head = (food.split()[-1] if food else "")
+        targets = [t for t in (unit, head) if t]
+        if targets:
+            return any(re.search(rf"\ban?\s+{re.escape(t)}\b", clause)
+                       for t in targets)
+        # Nothing to anchor to — no food, no unit. The bare article is weak
+        # evidence, but it is the only evidence there is, and refusing it here
+        # would call every unnamed single item an estimate.
+        return bool(re.search(r"\ban?\b", clause))
+    return False
+
+
+def _clause_for(message: str, food: str) -> str:
+    """The part of the message that talks about this food.
+
+    Shared shape with the pipeline's vague-measure matcher: split on the
+    conjunctions people actually use, then pick the clause with the most token
+    overlap. Falls back to the whole message when nothing matches, which keeps
+    the old behaviour for single-food messages.
+    """
+    text = (message or "").lower()
+    if not text or not food:
+        return text
+    parts = [p for p in re.split(r"\s*(?:,|\band\b|\bwith\b|\bplus\b|\+)\s*",
+                                 text) if p.strip()]
+    if len(parts) <= 1:
+        return text
+
+    stop = {"a", "an", "the", "of", "some", "like", "had", "i", "my", "was",
+            "also", "just", "about"}
+
+    def _tok(t):
+        return {w for w in re.findall(r"[a-z0-9&]+", t) if w not in stop}
+
+    food_tokens = _tok(food.lower())
+    if not food_tokens:
+        return text
+    best, best_score = text, 0.0
+    for part in parts:
+        part_tokens = _tok(part)
+        overlap = food_tokens & part_tokens
+        if not overlap:
+            continue
+        score = len(overlap) / len(food_tokens | part_tokens)
+        if score > best_score:
+            best, best_score = part, score
+    return best
 
 
 def _prefs_for(user):
@@ -575,6 +642,55 @@ def review_plan(items: list, *, user_message: str = ""):
             name=food, portion=portion,
             estimated=not _item_is_stated(it, user_message)))
     return plan_review(summaries, user_message=user_message)
+
+
+def clarify_text(decision, question, *, user_message: str = "") -> str:
+    """The whole meal as we read it, then the one thing we need.
+
+    Items the user stated are shown as they said them. The item we are asking
+    about is shown in THEIR words too — "one scoop of peanut butter", never
+    "one tablespoon of peanut butter", because the tablespoon is the thing in
+    question and printing it as settled is what made the assumption invisible.
+    """
+    from core.food_response import (FoodItemSummary, FoodResponseIntent,
+                                    FoodResponsePlan, fallback)
+
+    held = {question.staged_item_id}
+    resolved, pending = [], []
+    for item in (decision.staged_items or ()):
+        summary = FoodItemSummary(
+            name=item.original_text,
+            portion=_spoken_portion(item, user_message),
+            estimated=not item.quantity.is_stated,
+            staged_item_id=item.staged_item_id,
+            branded=(item.food_class.value == "branded"))
+        (pending if item.staged_item_id in held else resolved).append(summary)
+
+    return fallback(FoodResponsePlan(
+        intent=FoodResponseIntent.CLARIFY,
+        resolved_items=tuple(resolved), pending_items=tuple(pending),
+        clarification_question=question.prompt,
+        unresolved_item=(pending[0] if pending else None),
+        requires_answer=True, user_message=user_message))
+
+
+def _spoken_portion(item, user_message: str) -> str:
+    """The portion in the user's own words where we have them.
+
+    An INFERRED amount on an item we are about to ask about must not be shown
+    as the portion — that is the silent conversion. The measure the user
+    actually used is recovered from their message instead.
+    """
+    quantity = item.quantity
+    if quantity.is_stated:
+        return f"{quantity.stated_amount:g} {quantity.stated_unit or ''}".strip()
+    from core.food_pipeline import _vague_measure_in
+    measure = _vague_measure_in(user_message, item.original_text)
+    if measure:
+        return f"1 {measure}"
+    if quantity.is_inferred:
+        return f"{quantity.inferred_amount:g} {quantity.inferred_unit or ''}".strip()
+    return ""
 
 
 def format_confirm(items: list, *, user_message: str = "") -> str:
@@ -1048,7 +1164,13 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
 
         if _decision is not None and _decision.asks:
             _q = _decision.question
-            return {"action": "ask", "text": _q.prompt,
+            # The interpretation AND the question, in one turn. Sending the
+            # bare question made the user answer about a food they had not
+            # been shown our reading of; sending "does that look right?" first
+            # and the question second spent two turns and invited them to
+            # approve an assumption they never saw.
+            _text = clarify_text(_decision, _q, user_message=message)
+            return {"action": "ask", "text": _text,
                     "points": [_q.prompt],
                     "question_id": _q.question_id,
                     "staged_item_id": _q.staged_item_id,

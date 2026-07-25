@@ -696,19 +696,31 @@ def deterministic_confirmation(tool_calls, log, prefs, tool_results=None,
             head = "Logged: " + ", ".join(foods) + "."
         else:
             head = "Meal logged."
+        # Sentences, not a progress bar (Danny 2026-07-25). "You're at 458 /
+        # 2165 calories today" is a dashboard someone typed out; where a card
+        # renders it duplicates the card, and where one does not it still reads
+        # like debug output. The remaining amount is the useful part, and it
+        # belongs in a sentence that says what to do with it.
         if cal_t:
+            _left = max(0, cal_t - cal)
             if cal >= cal_t:
-                tail = f"You're at {cal} / {cal_t} calories today, keep the rest controlled."
+                tail = ("You're past your calorie target for today, so keep "
+                        "the rest controlled.")
             elif cal >= cal_t * 0.85:
-                tail = f"You're at {cal} / {cal_t} calories today, tight finish."
+                tail = (f"That leaves about {_left} calories for the day, so "
+                        f"it's a tight finish.")
             else:
-                tail = f"You're at {cal} / {cal_t} calories today, good room left."
+                tail = (f"That leaves you around {_left} calories, so there's "
+                        f"good room left.")
         else:
-            tail = f"That's {cal} calories so far today."
+            tail = f"That puts you at roughly {cal} calories so far today."
         if pro_t and pro < pro_t * 0.85:
-            return f"{head}|||{tail}|||Protein's at {pro} / {pro_t}g, go protein-first next."
+            _need = max(0, pro_t - pro)
+            return (f"{head}|||{tail}|||Protein is running light — you've got "
+                    f"about {_need}g to go, so make the next meal "
+                    f"protein-forward.")
         if pro_t:
-            return f"{head}|||{tail}|||{pro} / {pro_t}g protein so far. What's next?"
+            return f"{head}|||{tail}|||Protein's tracking well. What's next?"
         return f"{head}|||{tail}|||Send the next meal."
 
     if "log_exercise" in names:

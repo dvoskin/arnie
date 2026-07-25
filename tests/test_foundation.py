@@ -281,6 +281,9 @@ def test_fallback_confirmation_is_sentence_case():
 def test_fallback_uses_authoritative_totals():
     tc = [{"name": "log_food", "input": {"food_name": "eggs"}}]
     out = deterministic_confirmation(tc, _log(435, 60), _prefs())
-    assert "435" in out and "1800" in out
+    # The running total and the target were a progress bar rendered as text
+    # (Danny 2026-07-25). The REMAINING figure is derived from both, so a
+    # hallucinated total still fails here.
+    assert "1365" in out and "140g to go" in out
     # must never echo the historical hallucinated numbers
     assert "1,601" not in out and "192g" not in out

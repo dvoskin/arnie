@@ -450,7 +450,7 @@ async def test_strict_confirm_narrowed_to_where_it_earns_friction(monkeypatch):
         "say": "Salad logged, {batch_cal} cal."}))
     out2 = await FT.run("had some caesar salad", strict)
     assert out2["action"] == "ask" and out2.get("kind") == "confirm"
-    assert "Caesar salad" in out2["text"]
+    assert "caesar salad" in out2["text"].lower()
     # 3. Bulk plan (>=4 items) → confirm even when all stated.
     monkeypatch.setattr(FT, "chat", _fake_chat({
         "action": "log",
@@ -469,14 +469,22 @@ async def test_strict_confirm_narrowed_to_where_it_earns_friction(monkeypatch):
         "say": "Bowl logged, {batch_cal} cal."}))
     out4 = await FT.run("picked up one poke bowl", strict)
     assert out4["action"] == "ask" and out4.get("kind") == "confirm"
-    # moderate users keep the silent clean log throughout
+    # A vague measure the interpreter CONVERTED now earns a question in
+    # moderate (Danny 2026-07-25). "some caesar salad" arriving as 1.5 cups is
+    # a 30-200g range collapsed to a number the user never gave — roughly 640
+    # calories of doubt, approved silently. Quick still commits it.
     mod = SimpleNamespace(preferences=SimpleNamespace(food_logging_mode="moderate"))
     monkeypatch.setattr(FT, "chat", _fake_chat({
         "action": "log",
         "items": [{"food": "Caesar salad", "amount": 1.5, "unit": "cups",
                    "calories": 300, "basis": "estimate"}]}))
     out5 = await FT.run("had some caesar salad", mod)
-    assert out5["action"] == "log"
+    assert out5["action"] == "ask"
+    assert "caesar salad" in out5["text"].lower()
+
+    quick = SimpleNamespace(preferences=SimpleNamespace(food_logging_mode="quick"))
+    out5b = await FT.run("had some caesar salad", quick)
+    assert out5b["action"] == "log", "quick accepts the risk and commits"
     # and the ANSWER turn (prior set) never re-confirms
     out6 = await FT.run("yes", strict, prior={"original": "turkey", "question": "q"})
     assert out6 is None or out6.get("kind") != "confirm"
@@ -539,7 +547,9 @@ def test_format_confirm_never_renders_none():
     txt = FT.format_confirm([{"food": "Coffee", "amount": None},
                              {"food": "Eggs", "amount": 2, "unit": ""}])
     assert "None" not in txt
-    assert "Coffee" in txt and "2 Eggs" in txt
+    # Cased and spoken for reading aloud now (Danny 2026-07-25): "2 Eggs" was
+    # the interpreter's row showing through the sentence.
+    assert "coffee" in txt.lower() and "two eggs" in txt.lower()
     assert "**" not in txt and "Locking this in" not in txt
     assert txt.endswith("Does that look right?")
 

@@ -61,6 +61,180 @@ class FoodResponseIntent(str, Enum):
     GENERAL_CONVERSATION = "general_conversation"
 
 
+#: Amounts people say as words, with the connector each one needs. "0.5 banana"
+#: is a parser's output; nobody says it aloud, and a review turn is read aloud
+#: in the user's head. The connector is stored rather than derived because
+#: "half a banana" and "a quarter of a banana" do not take the same one.
+_SPOKEN_FRACTIONS = {
+    0.5: ("half", "a"), 0.25: ("a quarter", "of a"),
+    0.33: ("a third", "of a"), 0.333: ("a third", "of a"),
+    0.67: ("two thirds", "of a"), 0.667: ("two thirds", "of a"),
+    0.75: ("three quarters", "of a"), 0.125: ("an eighth", "of a"),
+}
+_SPOKEN_COUNTS = {1: "one", 2: "two", 3: "three", 4: "four", 5: "five",
+                  6: "six", 7: "seven", 8: "eight", 9: "nine", 10: "ten",
+                  11: "eleven", 12: "twelve"}
+
+#: Units carrying no information beyond "there was a number of them". "15
+#: pieces Peanut M&M's" is worse than "15 Peanut M&M's" — the unit does nothing
+#: except make the sentence sound like a database row.
+_EMPTY_UNITS = frozenset({"piece", "pieces", "item", "items", "unit", "units",
+                          "serving", "servings", "x", "count", ""})
+
+#: Measured units. The number attaches directly — "150g", not "150 g of".
+_MASS_UNITS = {"g": "g", "gram": "g", "grams": "g", "gm": "g", "kg": "kg",
+               "oz": "oz", "ounce": "oz", "ounces": "oz", "lb": "lb",
+               "lbs": "lb", "ml": "ml", "l": "l"}
+
+#: Units that follow the food rather than preceding it: "a Barebells bar", not
+#: "one bar of Barebells".
+_FORMAT_UNITS = {"bar": "bar", "bars": "bar", "can": "can", "cans": "can",
+                 "bottle": "bottle", "bottles": "bottle",
+                 "packet": "packet", "packets": "packet",
+                 "pack": "pack", "packs": "pack"}
+
+#: Everything else, spoken in full. "1 tbsp" reads as a label; "one tablespoon"
+#: reads as a sentence.
+_SPOKEN_UNITS = {
+    "tbsp": "tablespoon", "tablespoon": "tablespoon",
+    "tablespoons": "tablespoon", "tsp": "teaspoon", "teaspoon": "teaspoon",
+    "teaspoons": "teaspoon", "cup": "cup", "cups": "cup", "scoop": "scoop",
+    "scoops": "scoop", "slice": "slice", "slices": "slice",
+    "handful": "handful", "handfuls": "handful", "bowl": "bowl",
+    "bowls": "bowl", "plate": "plate", "plates": "plate", "glass": "glass",
+    "glasses": "glass", "shot": "shot", "square": "square",
+    "squares": "square", "wedge": "wedge", "strip": "strip",
+}
+
+_PORTION_RE = re.compile(r"^\s*(-?\d+(?:\.\d+)?)\s*(.*)$")
+
+
+def _plural(word: str, amount: float) -> str:
+    if amount == 1 or not word:
+        return word
+    return word + ("es" if word.endswith(("s", "sh", "ch", "x")) else "s")
+
+
+def _article(word: str) -> str:
+    return "an" if (word or " ")[:1].lower() in "aeiou" else "a"
+
+
+def _spoken_name(name: str, branded: bool = False) -> str:
+    """Lowercase a generic food for mid-sentence use; leave a brand alone.
+
+    "Banana" mid-sentence is a database row showing through. "Barebells" is a
+    product and keeps its capital.
+
+    `branded` is passed in rather than guessed, because guessing it from
+    capitalisation gets "Barebells" wrong — one capitalised token with no
+    internal capital and no digit looks exactly like "Banana". The interpreter
+    already knows which one it is.
+    """
+    n = (name or "").strip()
+    if not n or branded:
+        return n
+    # Brand-ish means a capital INSIDE a word, a digit, or an ampersand —
+    # "M&Ms", "RXBAR", "Core Power 26g". Checking `n[1:]` for any capital made
+    # every Title Case generic look branded, so "Peanut Butter" kept its
+    # capitals mid-sentence and read like a database row.
+    for word in n.split():
+        if any(c.isupper() for c in word[1:]) or any(c.isdigit() for c in word):
+            return n
+    if "&" in n:
+        return n
+    return " ".join([n.split()[0][0].lower() + n.split()[0][1:]]
+                    + [w[0].lower() + w[1:] if w[:1].isupper() else w
+                       for w in n.split()[1:]])
+
+
+def describe_portion(portion: str, name: str,
+                     branded: bool = False) -> str:
+    """The item as a person would say it.
+
+    Every rule here fixes something visible in a shipped screenshot:
+
+        "0.5 banana Banana"      → "half a banana"
+        "15 pieces Peanut M&Ms"  → "15 Peanut M&Ms"
+        "1 tbsp Peanut Butter"   → "one tablespoon of Peanut Butter"
+        "1 bar Barebells"        → "a Barebells bar"
+
+    In order: a unit that IS the food is said once, a count unit that means
+    nothing is dropped, measures are spoken in full, and a container unit
+    follows the food instead of preceding it.
+    """
+    name = (name or "").strip()
+    portion = (portion or "").strip()
+    if not portion:
+        return _spoken_name(name, branded)
+    if not name:
+        return portion
+
+    match = _PORTION_RE.match(portion)
+    if match is None:
+        return f"{portion} {name}".strip()
+
+    amount = float(match.group(1))
+    unit = match.group(2).strip().lower()
+    spoken = _spoken_name(name, branded)
+
+    # The unit IS the food — "0.5 banana" of "Banana" — or says nothing.
+    stem = spoken.lower().rstrip("s")
+    if unit in _EMPTY_UNITS or (
+            unit and (unit.rstrip("s") == stem
+                      or stem.endswith(" " + unit.rstrip("s")))):
+        return _count_of(amount, spoken)
+
+    if unit in _MASS_UNITS:
+        return f"{_trim_amount(amount)}{_MASS_UNITS[unit]} of {spoken}"
+
+    if unit in _FORMAT_UNITS:
+        word = _FORMAT_UNITS[unit]
+        if amount == 1:
+            return f"{_article(spoken)} {spoken} {word}"
+        return f"{_number_word(amount)} {spoken} {_plural(word, amount)}"
+
+    measure = _SPOKEN_UNITS.get(unit, unit)
+    fraction = _SPOKEN_FRACTIONS.get(round(amount, 3))
+    if fraction:
+        word, connector = fraction
+        return f"{word} {connector} {measure} of {spoken}"
+    return f"{_number_word(amount)} {_plural(measure, amount)} of {spoken}"
+
+
+def _count_of(amount: float, name: str) -> str:
+    """A count of the food itself, with no unit worth naming."""
+    fraction = _SPOKEN_FRACTIONS.get(round(amount, 3))
+    if fraction:
+        word, connector = fraction
+        if connector == "a":
+            return f"{word} {_article(name)} {name}"
+        return f"{word} of {_article(name)} {name}"
+    if amount == 1:
+        return f"{_article(name)} {name}"
+    return f"{_number_word(amount)} {_plural_food(name, amount)}"
+
+
+def _plural_food(name: str, amount: float) -> str:
+    """Pluralize the head noun only: "two Peanut M&M's" already reads plural,
+    "two egg" does not."""
+    if amount == 1 or not name:
+        return name
+    if name.endswith(("s", "'s", "x", "ch", "sh")):
+        return name
+    return name + "s"
+
+
+def _number_word(amount: float) -> str:
+    if amount == int(amount):
+        return _SPOKEN_COUNTS.get(int(amount)) or _trim_amount(amount)
+    return _trim_amount(amount)
+
+
+def _trim_amount(amount: float) -> str:
+    return (str(int(amount)) if float(amount).is_integer()
+            else f"{amount:g}")
+
+
 @dataclass(frozen=True)
 class FoodItemSummary:
     """One item, as the response layer is allowed to describe it. Deliberately
@@ -71,11 +245,21 @@ class FoodItemSummary:
     estimated: bool = False
     entry_id: Optional[int] = None
     staged_item_id: str = ""
+    #: A named product rather than a generic food. Drives capitalisation, and
+    #: is data the interpreter already has rather than something to infer.
+    branded: bool = False
 
     def describe(self) -> str:
-        if self.portion:
-            return f"{self.portion} {self.name}".strip()
-        return self.name
+        """The item as a person would say it.
+
+        Was `f"{portion} {name}"`, which produced "0.5 banana Banana" the
+        moment the interpreter used the food as its own unit — and "15 pieces
+        Peanut M&Ms" and "1 tbsp Peanut Butter" the rest of the time. Those
+        read like a form, not a sentence, which is what the whole review turn
+        was accused of.
+        """
+        return describe_portion(self.portion, self.name,
+                                branded=self.branded)
 
 
 @dataclass(frozen=True)
@@ -308,6 +492,7 @@ class Reason:
     SYSTEM_TONE = "system_tone"
     REPEATED_OPENER = "repeated_opener"
     EMPTY_NOT_ALLOWED = "empty_not_allowed"
+    DASHBOARD_SYNTAX = "dashboard_syntax"
 
 
 @dataclass(frozen=True)
@@ -365,6 +550,18 @@ _NUTRIENT_NUMBER_RE = re.compile(
 _DAY_TOTAL_RE = re.compile(
     r"(?:\byou'?re at\s+\d|\bat\s+\d[\d,]*\s+(?:today|so far)|"
     r"\b\d[\d,]*\s+(?:left|remaining|to go)\b)", re.I)
+
+#: Progress rendered as arithmetic: "458 / 2165 calories", "12 / 180g".
+#:
+#: Stripped and rejected unconditionally, unlike the other recitation patterns,
+#: because this one is not a fact repeated in the wrong place — it is a
+#: DASHBOARD leaking into a sentence. It survived the recitation check by
+#: carrying a recommendation ("go protein-first next"), which is exactly the
+#: shape that reached production: a progress bar with advice stapled to it.
+#: The card owns the numbers; the sentence says what they mean.
+_SLASH_TOTAL_RE = re.compile(
+    r"\b\d[\d,]*\s*/\s*\d[\d,]*\s*(?:g\b|kcal|cal(?:orie)?s?|grams?)?",
+    re.I)
 
 #: More than one recommendation in a coaching message.
 _RECOMMENDATION_SPLIT_RE = re.compile(r"\b(?:i'?d|you should|try to|make sure|"
@@ -425,6 +622,10 @@ def validate(text: str, plan: FoodResponsePlan) -> ValidationResult:
         return ValidationResult(False, Reason.TRANSACTION_NARRATION)
     if _SYSTEM_TONE_RE.search(raw):
         return ValidationResult(False, Reason.SYSTEM_TONE)
+    # Progress as arithmetic is never acceptable copy, card or no card. "12 /
+    # 180g" is a progress bar someone typed out.
+    if _SLASH_TOTAL_RE.search(raw):
+        return ValidationResult(False, Reason.DASHBOARD_SYNTAX)
 
     has_question = "?" in raw
     if has_question and not plan.allow_question:
@@ -634,18 +835,29 @@ def fallback(plan: FoodResponsePlan) -> str:
     intent = plan.intent
 
     if intent is FoodResponseIntent.REVIEW:
-        # Prose while it still scans; one food per line once it stops.
-        if len(plan.resolved_items) > 2:
-            return (f"{format_items(plan.resolved_items)}"
-                    f"\n\nDoes that look right?")
-        described = _join([i.describe() for i in plan.resolved_items])
-        return f"I've got {described}. Does that look right?"
+        # A complete sentence, then a list only when a list earns its place.
+        # "I've got:" over three bare rows read as a component spec; the point
+        # of a review turn is that the user can hear it as a sentence.
+        items = plan.resolved_items
+        if _wants_a_list(items):
+            return (f"Here's how I'm reading that:\n\n"
+                    f"{format_items(items)}\n\nDoes that look right?")
+        described = _join([i.describe() for i in items])
+        return f"I'm reading that as {described}. Does that look right?"
 
     if intent is FoodResponseIntent.CLARIFY:
+        # The interpretation and the question in ONE turn. Asking "does that
+        # look right?" and then asking a second question afterwards spends two
+        # turns on one meal and invites the user to approve an assumption they
+        # were never shown.
         question = plan.clarification_question or f"Which {_held_name(plan)} was it?"
-        if plan.resolved_items:
-            return (f"I've got {_join([i.name for i in plan.resolved_items])}. "
-                    f"{question}")
+        shown = list(plan.resolved_items) + list(plan.pending_items)
+        if _wants_a_list(shown):
+            return (f"Here's how I'm reading that:\n\n"
+                    f"{format_items(shown)}\n\n{question}")
+        if shown:
+            return (f"I'm reading that as "
+                    f"{_join([i.describe() for i in shown])}. {question}")
         return question
 
     if intent is FoodResponseIntent.CONFIRM_ANSWER:
@@ -679,13 +891,47 @@ def fallback(plan: FoodResponsePlan) -> str:
     return ""
 
 
+#: Above this many foods, prose stops scanning and a list starts helping.
+LIST_THRESHOLD = 3
+
+#: A food whose description is longer than this is doing enough work on its own
+#: that two of them in a sentence is already a wall.
+_LONG_ITEM_CHARS = 36
+
+
+def _wants_a_list(items) -> bool:
+    """Whether these foods read better as a list than as a sentence.
+
+    Not a fixed template: one or two simple foods belong in a sentence, three
+    or more belong in a list, and two complicated ones belong in a list too.
+    Forcing every response into the same shape is what made the review turn
+    read like a form.
+    """
+    items = [i for i in items if i]
+    if len(items) >= LIST_THRESHOLD:
+        return True
+    return any(len(i.describe()) > _LONG_ITEM_CHARS for i in items)
+
+
 def format_items(items) -> str:
-    """One food per line, quantity on the same line. Used when prose would be
-    hard to scan — not as the default shape."""
-    lines = ["I've got:"]
-    for item in items[:8]:
-        lines.append(item.describe())
-    return "\n".join(lines)
+    """One food per line, as a bulleted list.
+
+    No heading — the caller supplies the sentence that introduces it. A heading
+    here ("I've got:") plus rows below is the shape that read as a component
+    spec rather than a coach talking.
+    """
+    return "\n".join(f"• {_sentence_case(item.describe())}"
+                     for item in list(items)[:8])
+
+
+def _sentence_case(text: str) -> str:
+    """Capitalise a bullet's first letter without touching the rest.
+
+    `.capitalize()` would lowercase "Peanut M&Ms" to "Peanut m&ms"; the rest of
+    the line has already been cased deliberately.
+    """
+    text = (text or "").strip()
+    return text[:1].upper() + text[1:] if text else text
 
 
 def strip_card_recitation(text: str, plan: FoodResponsePlan) -> str:
@@ -717,7 +963,8 @@ def strip_card_recitation(text: str, plan: FoodResponsePlan) -> str:
             kept_bubbles.append(bubble)
             continue
         kept = [s for s in re.split(r"(?<=[.!?])\s+", bubble)
-                if s.strip() and not _is_recitation(s)]
+                if s.strip() and not _is_recitation(s)
+                and not _is_roll_call(s, plan)]
         if kept:
             kept_bubbles.append(" ".join(kept).strip())
     return "|||".join(kept_bubbles)
@@ -726,14 +973,43 @@ def strip_card_recitation(text: str, plan: FoodResponsePlan) -> str:
 def _is_recitation(sentence: str) -> bool:
     """A number doing no work beyond repeating the card.
 
-    Two shapes, because they are written differently: a nutrient with a unit
-    ("3g protein") and a running total without one ("You're at 130"). Only
-    checking the first left the day-total sentence standing.
+    Three shapes, because they are written differently: a nutrient with a unit
+    ("3g protein"), a running total without one ("You're at 130"), and progress
+    as arithmetic ("458 / 2165 calories"). The third is stripped even when it
+    carries a recommendation — a recommendation does not redeem a progress bar
+    rendered as text.
     """
+    if _SLASH_TOTAL_RE.search(sentence):
+        return True
     if not (_NUTRIENT_NUMBER_RE.search(sentence)
             or _DAY_TOTAL_RE.search(sentence)):
         return False
     return not _RECOMMENDATION_RE.search(sentence)
+
+
+def _is_roll_call(sentence: str, plan: "FoodResponsePlan") -> bool:
+    """A sentence that only re-lists what the card already lists.
+
+    "Logged: Peanut M&Ms, Banana, Peanut Butter." carries no number, so the
+    recitation check never saw it — and it shipped directly above a card
+    showing the same three names with their macros. A receipt printed twice is
+    not a receipt, it is noise between the user and the thing they wanted.
+    """
+    names = [i.name for i in (plan.committed_items or ()) if i.name]
+    if len(names) < 1:
+        return False
+    text = (sentence or "").strip().rstrip(".")
+    if not text:
+        return False
+    # Strip a leading receipt verb, then see whether what is left is only the
+    # item names and separators.
+    stripped = re.sub(r"^(?:logged|added|saved|got|in)\s*[:\-—]?\s*", "",
+                      text, flags=re.I)
+    for name in names:
+        stripped = re.sub(rf"\b{re.escape(name)}\b", "", stripped,
+                          flags=re.I)
+    remainder = re.sub(r"[,\s;&·]+|\band\b", "", stripped, flags=re.I)
+    return not remainder and stripped != text
 
 
 # ── composition ───────────────────────────────────────────────────────────────
