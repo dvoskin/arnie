@@ -22,6 +22,21 @@ from typing import Optional
 #: above it, it is the fact of the day and the coaching has to lead with it.
 SUBSTANTIALLY_OVER_CAL = 300
 
+#: How far the stored daily total may sit from the sum of the day's entries
+#: before the total is not describing the day (correction-turn directive §7).
+#: Generous, because rounding at write time is real and small: entries are
+#: stored rounded and the total is recomputed from them, so agreement should be
+#: near-exact and a gap this size means something is actually wrong.
+RECONCILE_TOLERANCE_CAL = 25.0
+RECONCILE_TOLERANCE_FRAC = 0.02
+
+#: Only guard the claims that DEPEND on the total being right. A day 80
+#: calories over reads the same whether the total is off by 30 or not, and
+#: failing closed there would trade a rare wrong sentence for a common missing
+#: one. An extreme overage is the opposite: it is the whole message, and it is
+#: exactly what an unreconciled total manufactures.
+RECONCILE_GUARD_OVER_CAL = 500
+
 
 def build_receipt(
     *,
@@ -38,6 +53,7 @@ def build_receipt(
     fat_target: Optional[float] = None,
     trained_today: bool = False,
     carbs: Optional[float] = None,
+    entry_calories: Optional[list] = None,
 ) -> dict:
     """Context for one logged item against the day so far.
 
@@ -50,6 +66,30 @@ def build_receipt(
                          estimates instead of fake precision
     """
     out: dict = {}
+
+    # ── §7: is the total describing the day? ────────────────────────────────
+    #
+    # `total_cal` is recomputed from the day's entries on every write, so it
+    # and their sum should agree to within rounding. When they do not, one of
+    # them is describing a day that does not exist — and the sentence most
+    # likely to be built on the disagreement is the one that leads with a large
+    # number ("that puts you 2,320 calories over"), which is also the one a
+    # user acts on.
+    #
+    # Fail closed, and only where it matters: an extreme overage is suppressed
+    # rather than voiced, the numbers are still reported so the card renders,
+    # and the mismatch is flagged for whoever has to explain it. Coaching from
+    # an unreconciled day state is worse than not coaching.
+    unreconciled = False
+    if entry_calories is not None and cal_target:
+        summed = float(sum(entry_calories))
+        gap = abs(summed - float(total_cal or 0))
+        allowed = max(RECONCILE_TOLERANCE_CAL,
+                      RECONCILE_TOLERANCE_FRAC * max(summed, 1.0))
+        if gap > allowed:
+            unreconciled = True
+            out["day_total_unreconciled"] = True
+            out["day_total_gap_cal"] = int(round(summed - float(total_cal or 0)))
 
     rem_c = int(round(cal_target - total_cal)) if cal_target else None
     rem_p = int(round(protein_target - total_protein)) if protein_target else None
@@ -121,6 +161,18 @@ def build_receipt(
         # string chosen is a claim, and it is false. A shipped card read
         # "Protein covered · 2,320 cal over" directly above it.
         over = -rem_c
+        if unreconciled and over >= RECONCILE_GUARD_OVER_CAL:
+            # §7. The overage IS the message here, and an unreconciled total is
+            # exactly what manufactures a large one. Say what is known — the
+            # item landed — and nothing that depends on a total we cannot
+            # stand behind. The numbers still ride on the receipt, so the card
+            # renders and the user can see the day for themselves; what is
+            # withheld is the sentence telling them what it means.
+            verdict = ("That's logged, but today's total isn't adding up "
+                       "against your entries — I'd rather re-check it than "
+                       "tell you something wrong about the day.")
+            out["verdict"] = verdict
+            return out
         if over >= SUBSTANTIALLY_OVER_CAL:
             verdict = (f"That puts you about {int(over)} calories over for the "
                        f"day — worth knowing rather than fixing tonight.")

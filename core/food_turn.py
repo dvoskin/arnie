@@ -589,6 +589,119 @@ def _apply_clarification_veto(decision, calls, kinds, items_logged):
     return kept_calls, kept_kinds, kept_items, held_names
 
 
+
+def _revalidate_after_answer(ops, prior, message: str, mode: str = "moderate"):
+    """Re-derive what the answer invalidated, and decide MODE-APPROPRIATELY
+    what to do when it cannot be re-derived (§2, §3, §4).
+
+    Returns an `ask` action when the turn must stop, or None when it may
+    proceed — with the correction disclosed as an assumption.
+
+    The comparison is against the PRIOR INTERPRETATION, not against the user's
+    words: they said "pieces" both times. What changed is that we had read it
+    as skewers, and the only record of that is what we stashed with the
+    question.
+
+    MODERATE IS THE DAILY EXPERIENCE, and a second question on an answer turn
+    is the most expensive thing this can do to it — the user has already been
+    interrupted once and answered. So the modes differ in what they do with an
+    unresolvable correction, not in whether they notice it:
+
+      * a STALE estimate — the interpreter repeating its previous number under
+        the new unit — stops every mode. There is no number to commit, and
+        quick's licence is to accept an estimate, not to accept one nobody
+        made.
+      * otherwise, with a range available, moderate and quick COMMIT and
+        disclose the range. Strict asks, because confirming assumptions before
+        the write is what strict is.
+      * with no range and no mass, everyone asks. Nothing else is honest.
+
+    The result for a moderate user correcting "skewers" to "pieces": one
+    question if we genuinely cannot size a piece, and otherwise a committed log
+    that says on its face what was assumed.
+    """
+    prior_items = (prior or {}).get("items") or []
+    if not prior_items:
+        return None
+    from skills.nutrition.unit_change import (compare, estimate_is_stale,
+                                              mass_range_for, may_commit,
+                                              question_for)
+    from skills.nutrition.normalize import normalize_quantity
+
+    by_food = {}
+    for it in prior_items:
+        if isinstance(it, dict):
+            name = str(it.get("food") or "").strip().lower()
+            if name:
+                by_food[name] = it
+
+    for kind, op in ops:
+        if kind != "log" or not isinstance(op, dict):
+            continue
+        food = str(op.get("food") or "").strip()
+        was = by_food.get(food.lower())
+        if was is None:
+            continue
+        change = compare(str(was.get("unit") or ""), str(op.get("unit") or ""))
+        if not change.changed:
+            continue
+
+        _before_cal = op.get("calories")
+        # EVERYTHING DERIVED FROM THE OLD UNIT IS GONE. Dropped from the op so
+        # nothing downstream can read a stale value: the enrichment path
+        # recomputes from the corrected unit, and a missing key is a recompute
+        # where a stale one is a wrong answer that looks settled.
+        for _k in ("calories", "protein", "carbs", "fats", "grams",
+                   "estimated_mass_g", "count_basis"):
+            op.pop(_k, None)
+        logger.info(
+            "event=unit_correction food=%r %s->%s invalidated=%d",
+            food, change.before, change.after, len(change.invalidated))
+
+        # A REPEATED NUMBER IS NOT A RE-ESTIMATE. The interpreter sees the
+        # prior exchange, and the easiest thing it can do with "actually they
+        # were pieces" is hand back the figure it already gave. Identical
+        # calories across a unit change that means a different amount of food
+        # is the previous answer, unrevised — and it stops every mode.
+        _stale = estimate_is_stale(was.get("calories"), _before_cal)
+        if not change.blocks_commit and not _stale:
+            continue
+
+        _q = normalize_quantity(
+            f"{op.get('amount') or 1} {op.get('unit') or ''}".strip(), food)
+        _range = mass_range_for(op.get("unit") or "", food)
+        # A MASS WE CAN STAND BEHIND MEANS A MEASURED ONE. "6 oz" and "200 g"
+        # are conversions and settle the correction for every mode. An ontology
+        # or piece-weight mass is an ESTIMATE wearing a gram figure — enough for
+        # moderate and quick to commit against with the range disclosed, and
+        # exactly the kind of assumption strict exists to confirm. Reading a
+        # bare `grams` here made them the same thing, and strict committed a
+        # correction it should have asked about.
+        if not _stale and may_commit(change,
+                                     mass_g=(_q.grams if _q.mass_is_exact
+                                             else None)):
+            continue
+
+        # Moderate and quick resolve rather than re-ask, WHEN there is
+        # something honest to resolve with. Strict asks: confirming an
+        # assumption before the write is the whole of what strict is.
+        if not _stale and _range and mode in ("moderate", "quick"):
+            _lo, _hi = _range
+            _amount = op.get("amount") or 1
+            op["assumption"] = (
+                f"a {change.after} of {food} taken as "
+                f"{_lo:.0f}-{_hi:.0f}g, so {_amount} is a range not a figure")
+            logger.info("event=unit_correction_ranged food=%r %s->%s %s-%sg",
+                        food, change.before, change.after, _lo, _hi)
+            continue
+
+        _text = question_for(change, food) or (
+            f"How big were the {change.after}s of {food}?")
+        return {"action": "ask", "text": _text, "points": [_text],
+                "items": [op], "kind": "clarify"}
+    return None
+
+
 def _item_is_stated(it: dict, message: str) -> bool:
     """Is this item's amount the USER's own words? The interpreter's "basis"
     declaration wins when present ("stated"/"regular" vs "estimate"); when
@@ -1430,6 +1543,24 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
         if not ops:
             return None
 
+    # ── §2, §3, §4, §5: the answer turn revalidates ─────────────────────────
+    #
+    # An answer turn used to be treated as automatically safe: the policy
+    # engine was skipped outright ("that turn fills with best estimates instead
+    # of re-asking"), so whatever the user said was folded into the previous
+    # interpretation and written. That is right for an answer that ADDS a
+    # detail and wrong for one that CHANGES the unit, because the unit is what
+    # every downstream value was derived from.
+    #
+    # "3 skewers" corrected to "3 pieces" keeps the count, which is exactly why
+    # it looks like nothing happened. The mass, the count basis, the portion
+    # assumption, the resolver's winner and the macros were all computed for
+    # skewers, and none of them survive.
+    if prior is not None and any(k == "log" for k, _ in ops):
+        _blocked = _revalidate_after_answer(ops, prior, message, _mode(user))
+        if _blocked is not None:
+            return _blocked
+
     # Declared out here because the VETO below reads it. It used to live
     # entirely inside the branch that produces it, which is a fair description
     # of the seam being closed: the decision existed only where it was made,
@@ -1452,12 +1583,36 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
         # Same call from both callers: the live turn arrives here, and the
         # coordinator's food stage delegates to this function — so promoting
         # the coordinator changes orchestration, not food intelligence.
-        # STRICT'S WHOLE-PARSE CONFIRM WINS over a per-item ask. The new
-        # engine's strict calorie threshold is 20 against the old policy's 100,
-        # so on strict it now finds material uncertainty in cases that used to
-        # fall through to the confirm — and the confirm is the better exchange
-        # there: it shows the entire parse and takes one yes, rather than
-        # interrogating one item and then still needing approval.
+        # THE PIPELINE RUNS FIRST, ALWAYS.
+        #
+        # Strict's whole-parse confirm used to SUPPRESS it: `plan_turn` was
+        # gated on `not _strict_confirm_pending`, so whenever strict wanted a
+        # confirmation the staging, normalization and ambiguity derivation
+        # never ran at all. The reasoning was that a confirm is the better
+        # exchange than interrogating one item — true when the alternative is a
+        # question about something the confirm would settle, and false when the
+        # alternative is a question the confirm CANNOT settle.
+        #
+        # "3 pieces of chicken shish" is the second case. A piece may be a
+        # chunk or a whole skewer, a spread of several hundred calories, and
+        # "does that look right?" over a parse that already says "3 pieces"
+        # does not ask it — the user says yes to a number nobody established.
+        # A generic confirmation may never stand in for an unresolved unit
+        # question, so the order is now: stage, normalize, derive, resolve what
+        # is material, and only then decide whether a final review is useful.
+        try:
+            from core.food_pipeline import pipeline_enabled, plan_turn
+            if pipeline_enabled():
+                from core.turn_identity import current_turn_id as _pipe_turn
+                _decision = plan_turn(
+                    data, turn_id=(_pipe_turn() or ""), message=message,
+                    mode=mode, preferences=_prefs_for(user))
+        except Exception as _pe:
+            logger.warning(f"food pipeline unavailable: {_pe}")
+            _decision = None
+
+        # Strict's confirm is decided AFTER, on what the pipeline left open. It
+        # is a last look at a settled parse, which is what it was always for.
         _strict_confirm_pending = False
         try:
             if mode == "strict":
@@ -1466,17 +1621,6 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
                     _log_items, data, message)
         except Exception:
             _strict_confirm_pending = False
-
-        try:
-            from core.food_pipeline import pipeline_enabled, plan_turn
-            if pipeline_enabled() and not _strict_confirm_pending:
-                from core.turn_identity import current_turn_id as _pipe_turn
-                _decision = plan_turn(
-                    data, turn_id=(_pipe_turn() or ""), message=message,
-                    mode=mode, preferences=_prefs_for(user))
-        except Exception as _pe:
-            logger.warning(f"food pipeline unavailable: {_pe}")
-            _decision = None
 
         if _decision is not None and _decision.asks:
             _q = _decision.question
@@ -1491,6 +1635,14 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
                     "question_id": _q.question_id,
                     "staged_item_id": _q.staged_item_id,
                     "requested_fields": list(_q.requested_fields),
+                    # THE PRIOR INTERPRETATION TRAVELS WITH THE QUESTION (§2).
+                    # An answer turn has to rebuild the affected item from the
+                    # user's original wording, what we made of it, and what
+                    # they just said. Without this it had only the first and
+                    # the third, so "3 pieces" arriving after we had read "3
+                    # skewers" looked like a fresh parse with nothing to
+                    # compare against — and nothing to invalidate.
+                    "items": data.get("items") or None,
                     "meal_group_id": _decision.meal_group_id}
 
         if _decision is None and not _strict_confirm_pending:
