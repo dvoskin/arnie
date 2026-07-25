@@ -57,10 +57,13 @@ def test_behind_pace_afternoon_anchors_next_meal():
 # ── 5. over calories ────────────────────────────────────────────────────────
 
 def test_over_calories_protein_hit_is_graceful():
+    """Graceful, but not silent about the overage. Protein completion is a
+    SECONDARY fact and may not stand in for an adverse calorie state."""
     out = r(calories=520, protein=45, total_cal=2300, total_protein=185, local_hour=20)
     assert out["remaining_cal"] == -140
     assert out["remaining_protein"] == -5
-    assert out["verdict"] == "That closes the day and protein made it."
+    assert out["verdict"] == ("That closes the day and protein made it, "
+                              "a little over on calories.")
 
 
 def test_over_calories_protein_short_gets_light_next():
@@ -80,10 +83,36 @@ def test_protein_already_hit_goes_quiet():
     assert out["verdict"] == "You're on pace, so there's nothing to correct."
 
 
-def test_day_already_closed_goes_quiet():
-    # Both calories over and protein hit before this log — nothing new to say.
+def test_day_already_over_never_claims_to_be_on_pace():
+    """The repeat state used to fall to "You're on pace, so there's nothing to
+    correct." — a quiet default, but a false one. A shipped card read "Protein
+    covered · 2,320 cal over" with exactly that sentence underneath it.
+
+    Quiet is fine. Claiming to be on pace while 340 calories over is not.
+    """
     out = r(calories=150, protein=5, total_cal=2500, total_protein=200, local_hour=21)
-    assert out["verdict"] == "You're on pace, so there's nothing to correct."
+    assert out["remaining_cal"] == -340
+    assert "on pace" not in out["verdict"]
+    assert "nothing to correct" not in out["verdict"]
+    assert "340" in out["verdict"], "the overage is the fact of the day"
+
+
+def test_a_large_overage_leads_with_the_calories():
+    """The transcript case: 2,320 over with protein covered."""
+    out = r(calories=2330, protein=107, total_cal=4480, total_protein=400,
+            local_hour=14)
+    assert out["remaining_cal"] == -2320
+    assert "on pace" not in out["verdict"]
+    assert "2320" in out["verdict"]
+
+
+def test_protein_completion_never_overrides_an_adverse_calorie_state():
+    for total_cal in (2200, 2500, 3000, 4500):
+        out = r(calories=200, protein=10, total_cal=total_cal,
+                total_protein=250, local_hour=19)
+        if out["remaining_cal"] < 0:
+            assert "on pace" not in out["verdict"], (
+                f"claimed to be on pace at {out['remaining_cal']} remaining")
 
 
 # ── 6. vague estimate ───────────────────────────────────────────────────────

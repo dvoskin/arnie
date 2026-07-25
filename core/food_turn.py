@@ -256,6 +256,45 @@ def consumption_evidence(message: str, prior=None, thread_active: bool = False) 
     return not (_NEGATED_RE.search(t) or _PLAN_RE.search(t))
 
 
+def decline_reason(text: str) -> str:
+    """WHY the cold-start gate declined this message, as a stable code.
+
+    `applies()` returns a bare bool, so every message it turns away looked
+    identical in the logs — and this is the single most consequential routing
+    decision in the turn. A workout-and-food message and a plan ("I'm going to
+    have salmon") both come back False and both land on the legacy path, but
+    they are not the same event and a rollout cannot be read without telling
+    them apart. Kept beside `applies` and in the same order, so the two cannot
+    disagree about what happened.
+    """
+    t = (text or "").strip()
+    if not t:
+        return "empty"
+    if len(t) > 500:
+        return "too_long"
+    if _NEGATED_RE.search(t):
+        return "negated"
+    if _ACK_RE.match(t):
+        return "acknowledgement"
+    if "?" in t:
+        return "question"
+    if _PLAN_RE.search(t):
+        return "future_plan"
+    if _DESTRUCTIVE_RE.search(t):
+        return "destructive"
+    if _NONFOOD_RE.search(t):
+        return "mixed_domain"
+    if not (_CONSUMED_RE.search(t) or _MEAL_RE.search(t)
+            or _CORRECTION_RE.search(t) or _PORTION_SHAPE_RE.search(t)):
+        # Every shape the gate recognises is written in ASCII, so a food report
+        # in another script matches nothing and falls through here. Naming it
+        # separately is the difference between "we don't serve that language
+        # yet" and "the gate has a hole".
+        return ("non_english" if any(ord(c) > 0x2FF for c in t)
+                else "no_food_shape")
+    return ""
+
+
 def applies(text: str) -> bool:
     t = (text or "").strip()
     if not t or len(t) > 500:
@@ -496,6 +535,60 @@ def note_held_items(say: str, stashed: list, tool_calls: list) -> str:
             + f". Holding the {held} - tell me which kind and it goes on too.")
 
 
+def _apply_clarification_veto(decision, calls, kinds, items_logged):
+    """Drop the log calls the clarification policy did not clear.
+
+    Returns `(calls, kinds, items_logged, held_names)`.
+
+    Only LOG calls are subject to it. Updates and deletes are the user's own
+    explicit corrections to rows already on the board — they were never staged,
+    the policy never reasoned about them, and vetoing them on the strength of a
+    set they are absent from would silently swallow "remove the fries".
+
+    Matched on the staged item's own text rather than on ids, because the
+    interpreter's op and the staged item share exactly that: `_log_call` builds
+    `food_name` from `o["food"]`, and `stage_items` builds `original_text` from
+    the same field. Substring both ways, since the executor normalises names.
+    """
+    clarification = getattr(decision, "clarification", None)
+    staged = getattr(decision, "staged_items", ()) or ()
+    if clarification is None or not staged:
+        return calls, kinds, items_logged, []
+
+    held_ids = set(getattr(clarification, "held_item_ids", ()) or ())
+    if not held_ids:
+        return calls, kinds, items_logged, []
+    held_texts = {(i.original_text or "").strip().lower()
+                  for i in staged if i.staged_item_id in held_ids}
+    held_texts.discard("")
+    if not held_texts:
+        return calls, kinds, items_logged, []
+
+    def _is_held(call) -> bool:
+        name = str(((call or {}).get("input") or {}).get("food_name")
+                   or "").strip().lower()
+        if not name:
+            return False
+        return any(name == t or name in t or t in name for t in held_texts)
+
+    kept_calls, kept_kinds, held_names = [], [], []
+    for call, kind in zip(calls, kinds):
+        if kind == "log" and _is_held(call):
+            held_names.append(
+                str((call.get("input") or {}).get("food_name") or ""))
+            continue
+        kept_calls.append(call)
+        kept_kinds.append(kind)
+
+    if not held_names:
+        return calls, kinds, items_logged, []
+
+    lowered = {n.lower() for n in held_names}
+    kept_items = [o for o in items_logged
+                  if str(o.get("food") or "").strip().lower() not in lowered]
+    return kept_calls, kept_kinds, kept_items, held_names
+
+
 def _item_is_stated(it: dict, message: str) -> bool:
     """Is this item's amount the USER's own words? The interpreter's "basis"
     declaration wins when present ("stated"/"regular" vs "estimate"); when
@@ -526,6 +619,49 @@ def _item_is_stated(it: dict, message: str) -> bool:
     # has to sit in the clause about this food AND next to the unit or the food
     # itself.
     clause = _clause_for(message, str(it.get("food") or ""))
+
+    # ASK THE NORMALIZER FIRST (§1, §3, §13). It parses the user's own words —
+    # digit fractions, unicode fractions, "two thirds", "one and a half",
+    # mixed numbers — and reports `user_stated_amount` as the number they
+    # actually gave, or None when they gave none.
+    #
+    # The checks below this line are a SECOND, weaker implementation of the
+    # same question, and they disagreed with the first on every fraction: "3/4
+    # cup of rice" reaches here as f=0.75, "0.75" is not in the clause, 0.75 is
+    # not 0.5, and it is not an integer — so a portion the user stated exactly
+    # was classified as our inference, and strict mode asked them to confirm
+    # their own words. The friction was the disagreement, not the strictness.
+    #
+    # Kept as the first check rather than the only one: it answers about the
+    # clause's LEADING amount, and the older heuristics still catch a number
+    # sitting further inside a clause that names several things.
+    try:
+        from skills.nutrition.normalize import normalize_quantity
+        _food = str(it.get("food") or "")
+        _unit = str(it.get("unit") or "").strip().lower()
+        _words = clause.split()
+        # The amount is rarely the first word — "I had 3/4 cup of rice" leads
+        # with a verb. Walk in from the left until something parses, bounded so
+        # a long clause naming several foods can't reach the next one's number.
+        for _skip in range(min(len(_words), 6)):
+            _q = normalize_quantity(" ".join(_words[_skip:]), _food)
+            _said = _q.user_stated_amount
+            if _said is None:
+                continue
+            if abs(_said - f) > max(0.02, abs(f) * 0.02):
+                break
+            # THE UNIT HAS TO AGREE TOO. "A scoop of peanut butter" arriving as
+            # 1 tbsp matches on the amount alone, and treating that as stated
+            # is precisely the shipped failure: a 190-calorie assumption
+            # presented as the user's own words. They said scoop; we said
+            # tablespoon; that is an inference whatever the number did.
+            _said_unit = (_q.user_stated_unit or "").rstrip("s")
+            if _unit and _said_unit and _said_unit != _unit.rstrip("s"):
+                break
+            return True
+    except Exception:
+        pass
+
     s = str(int(f)) if f.is_integer() else str(f)
     # Plain substring for digits: "200" has no word boundary before the "g" in
     # "200g", and requiring one dropped every mass the user actually typed.
@@ -1208,6 +1344,12 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
         if not ops:
             return None
 
+    # Declared out here because the VETO below reads it. It used to live
+    # entirely inside the branch that produces it, which is a fair description
+    # of the seam being closed: the decision existed only where it was made,
+    # and the place that executes never saw it.
+    _decision = None
+
     # Policy engine (fix #12, first inversion step): the model REPORTS the
     # ambiguities it estimated through; the SYSTEM decides whether any of
     # them is worth holding the write for. Never on the answer turn — that
@@ -1239,7 +1381,6 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
         except Exception:
             _strict_confirm_pending = False
 
-        _decision = None
         try:
             from core.food_pipeline import pipeline_enabled, plan_turn
             if pipeline_enabled() and not _strict_confirm_pending:
@@ -1295,6 +1436,32 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
         kinds.append(kind)
         if kind == "log":
             items_logged.append(o)
+
+    # ── THE POLICY'S VETO, APPLIED TO THE CALLS THAT WILL ACTUALLY RUN ──────
+    #
+    # `plan_turn` ran above and returned early if it wanted to ASK. Everything
+    # else it decided was then dropped on the floor: the calls below were built
+    # from the complete operation list, and `decision.approved_operations` was
+    # never consulted. So the staged-ambiguity architecture's promise — only
+    # approved commands execute — was not structurally true in the live path.
+    # It held only because a hold almost always comes WITH a question, and the
+    # question returns early. A no-question hold, an unsupported edge case, or
+    # any future change to the clarification policy would have executed
+    # everything the interpreter proposed.
+    #
+    # `approved_operations` itself could not close this: it filters
+    # `data["_calls"]`, which the interpreter's JSON does not carry live — it
+    # is present only in the fixtures that exercise the policy directly. So the
+    # veto is applied HERE, against the calls as constructed, keyed on the
+    # staged item ids the policy actually reasoned about.
+    if _decision is not None:
+        calls, kinds, items_logged, _held_names = _apply_clarification_veto(
+            _decision, calls, kinds, items_logged)
+        if _held_names:
+            logger.info(
+                "event=policy_veto held=%s %s",
+                ",".join(_held_names), (data.get("say") or "")[:40])
+
     if not calls:
         return None
 

@@ -15,6 +15,7 @@ from db.models import User, DailyLog, MemoryUpdate
 # P0.3d: execution state goes to the ambient per-call context, never onto the
 # command the executor was handed.
 from core.execution_result import stash as _stash_call
+from skills.nutrition import authority as _authority
 from db.queries import (
     add_food_entry, add_exercise_entry, add_body_metric, add_water_entry,
     reload_user,
@@ -264,8 +265,104 @@ def _stash_receipt(inp, target_log, user, calories, protein,
         if updated:
             _receipt_val["updated"] = True
         _stash_call(inp, "receipt", _receipt_val)
+        # What this receipt was computed FROM, so the batch resync below can
+        # recompute it against the day as it finally stood. See
+        # `_resync_batch_receipts` — the numbers here are correct for the
+        # moment they were taken and wrong by the time the user reads them.
+        _stash_call(inp, "receipt_basis", {
+            "daily_log_id": getattr(target_log, "id", None),
+            "calories": float(calories or 0),
+            "protein": float(protein or 0),
+            "carbs": float(carbs) if carbs is not None else None,
+            "confidence": confidence,
+            "estimated": estimated,
+            "updated": updated,
+            "local_hour": local_hour,
+        })
     except Exception:
         pass
+
+
+async def _resync_batch_receipts(ctxs, user, db) -> None:
+    """Recompute every receipt in the batch against the FINAL day total.
+
+    The executor runs tool calls SERIALLY, and each `_stash_receipt` reads the
+    day right after its own write. In a one-item turn that is the whole day. In
+    a multi-item meal it is a partial one — item 1's card is computed against a
+    day containing only item 1, and by the time the user reads it, items 2..N
+    have landed too.
+
+    That is the "stale day total" in the shipped screenshots. A meal logged
+    eggs and dinner together: the eggs card said "10 cal left" (the day with
+    the eggs but not the dinner) and the dinner card, computed moments later,
+    said "2,320 cal over". Both were accurate about the instant they were
+    taken; neither described the day the user was looking at, and they
+    contradicted each other on screen.
+
+    So the batch is treated as what it is — one meal, one day state. Every card
+    in it reports the same remaining figures, and the VERDICT is computed once
+    from the batch's combined macros rather than N times from slices of it: a
+    verdict is a read of what this meal did to the day, and a sixth of a meal
+    did not do it.
+
+    Per-item facts (the honest range on a vague estimate, its confidence) stay
+    per item. Only the day-state and the verdict are shared, because only those
+    were describing the day.
+
+    Never raises. A receipt is garnish; the logs already stand.
+    """
+    from collections import defaultdict
+
+    by_log = defaultdict(list)
+    for ctx in ctxs or ():
+        if not isinstance(ctx, dict):
+            continue
+        basis = ctx.get("receipt_basis")
+        if isinstance(basis, dict) and isinstance(ctx.get("receipt"), dict) \
+                and basis.get("daily_log_id") is not None:
+            by_log[basis["daily_log_id"]].append((ctx, basis))
+
+    for log_id, entries in by_log.items():
+        # One item wrote to this day — its receipt already describes the whole
+        # day, and recomputing it would only risk changing a correct card.
+        if len(entries) < 2:
+            continue
+        try:
+            from sqlalchemy import select as _select
+            from db.models import DailyLog as _DailyLog
+            from core.receipt import build_receipt
+            log = (await db.execute(
+                _select(_DailyLog).where(_DailyLog.id == log_id))).scalar_one()
+            prefs = getattr(user, "preferences", None)
+            batch_cal = sum(b["calories"] for _, b in entries)
+            batch_pro = sum(b["protein"] for _, b in entries)
+            batch_carbs = sum(b["carbs"] for _, b in entries
+                              if b.get("carbs") is not None) or None
+            # The batch's own verdict, from the batch's own macros against the
+            # finished day. `build_receipt` reads "before this log" as
+            # total minus what was logged, which for a meal is the meal.
+            batch = build_receipt(
+                calories=batch_cal, protein=batch_pro,
+                total_cal=float(getattr(log, "total_calories", 0) or 0),
+                total_protein=float(getattr(log, "total_protein", 0) or 0),
+                cal_target=getattr(prefs, "calorie_target", None) if prefs else None,
+                protein_target=getattr(prefs, "protein_target", None) if prefs else None,
+                local_hour=entries[0][1].get("local_hour"),
+                total_fats=float(getattr(log, "total_fats", 0) or 0),
+                fat_target=getattr(prefs, "fat_target", None) if prefs else None,
+                trained_today=bool(getattr(log, "workout_completed", False)),
+                carbs=batch_carbs,
+            )
+            shared = {k: batch[k] for k in
+                      ("remaining_cal", "remaining_protein", "verdict", "next")
+                      if k in batch}
+            for ctx, _basis in entries:
+                receipt = dict(ctx["receipt"])
+                receipt.pop("next", None)   # replaced wholesale or dropped
+                receipt.update(shared)
+                ctx["receipt"] = receipt
+        except Exception as e:
+            logger.warning(f"batch receipt resync skipped for log {log_id}: {e}")
 
 
 def _stash_sourcing(inp, analysis, food_name):
@@ -274,18 +371,25 @@ def _stash_sourcing(inp, analysis, food_name):
     searched → matched source → serving → logged totals (Danny 2026-07-21).
     Display-only; never affects the write. Fully wrapped: a receipt must never
     fail a log. Reads FoodAnalysis.source/confidence (history|memory|usda|
-    web_label|estimate)."""
+    web_label|estimate) AND the split provenance, which is what the receipt
+    line is actually built from — `source` alone cannot tell a database that
+    determined the calories from one that contributed sodium (§7)."""
     try:
         if not isinstance(inp, dict):
             return
-        _stash_call(inp, "sourcing", {
+        _payload = {
             "name": food_name,
             "quantity": inp.get("quantity") or "",
             "source": getattr(analysis, "source", None) or "estimate",
             "confidence": getattr(analysis, "confidence", None) or "estimated",
             "calories": int(round(getattr(analysis, "calories", 0) or 0)),
             "protein": int(round(getattr(analysis, "protein", 0) or 0)),
-        })
+        }
+        _prov = getattr(analysis, "provenance", None)
+        if _prov is not None:
+            _payload["provenance"] = _prov.as_dict()
+            _payload["detail"] = _authority.display_detail(_prov)
+        _stash_call(inp, "sourcing", _payload)
     except Exception:
         pass
 
@@ -1679,7 +1783,18 @@ async def _analyze_food(db, user, food_name, inp):
         # enough to go looking for a packet.
         _db_hit = usda or off
         _db_grade = (_db_hit or {}).get("_match")
-        if _names_a_product(food_name, is_packaged) and _needs_web_label(_db_grade):
+        # §5: the lookup is mandatory when what we hold for a named product is
+        # only a fallback rung. Asking the ladder rather than re-deriving the
+        # condition here means the gate and the selection cannot drift apart —
+        # the class of bug where an exact-looking USDA text match blocked the
+        # official manufacturer label.
+        _fc_pre = _authority.classify(food_name, is_packaged=is_packaged)
+        _rung_pre, _ = _authority.select(
+            _authority.candidate_map(food_class=_fc_pre, usda_candidate=usda,
+                                     off_candidate=off), _fc_pre)
+        _needs_branded = _authority.needs_branded_lookup(_fc_pre, _rung_pre)
+        if _names_a_product(food_name, is_packaged) and (
+                _needs_branded or _needs_web_label(_db_grade)):
             web = await _web_lookup_packaged(food_name, inp.get("quantity"))
             if web is not None and _db_hit is not None:
                 logger.info(
@@ -1689,20 +1804,30 @@ async def _analyze_food(db, user, food_name, inp):
             elif web is not None:
                 logger.info(f"event=web_label_enrich {food_name!r} — db miss, web hit")
 
-        # Cache the winner (USDA > OFF > web) so the same product is instant next time.
-        _hit = usda or off or web
+        # Cache THE RESOLVER'S WINNER — same ladder, same map, same call the
+        # analysis makes (§8). This used to be a second, independent selection
+        # (`usda or off or web`), so the row written could disagree with the row
+        # used: a web label could answer the turn while USDA's generic was what
+        # got cached under the product's name, and every later log of that
+        # product then read the generic back as though it were the answer.
+        _fc = _authority.classify(food_name, is_packaged=is_packaged)
+        _rung, _hit = _authority.select(
+            _authority.candidate_map(food_class=_fc, usda_candidate=usda,
+                                     off_candidate=off, web_candidate=web), _fc)
+        if _hit is None:
+            # Nothing this food's ladder will seat. Caching it anyway is what
+            # made a generic permanent under a branded name.
+            _hit = _rung = None
         if _hit is not None:
             try:
-                # Record WHICH source filled this row. This write is the start of
-                # the laundering path: the row it creates is read back as a
-                # candidate, and without an origin every cached generic returned
-                # as a user-confirmed regular outranking the real product label.
-                # A branded database only earns branded authority on a good
-                # match — a weak hit in OFF is still just a guess.
+                # The rung IS the origin: a row cannot claim an authority the
+                # selection did not use, because there is only one selection.
+                # Names the storage layer already understands, so old rows and
+                # new ones compare on the same scale.
                 _grade = _hit.get("_match") or "likely"
-                _branded_src = (_hit is off or _hit is web) and _hit is not usda
                 _origin = ("branded_exact"
-                           if _branded_src and _grade in ("exact", "likely")
+                           if _rung in _authority.BRANDED_RUNGS
+                           and _grade in ("exact", "likely")
                            else "generic_exact")
                 await upsert_user_food_match(
                     db, user.id, name_norm, food_name,
@@ -1714,7 +1839,8 @@ async def _analyze_food(db, user, food_name, inp):
 
     result = analyze(food_name, inp.get("quantity"), *llm,
                      usda_candidate=usda, memory_match=memory,
-                     web_candidate=web, off_candidate=off)
+                     web_candidate=web, off_candidate=off,
+                     is_packaged=bool(is_packaged))
 
     # ── CONFIDENCE-GATED WEB MEAL ENRICH ──────────────────────────────────────
     # The composite/restaurant meals the DBs miss (CAVA bowl, poke bowl, Med
@@ -2171,6 +2297,12 @@ async def _execute_tool_calls(
             schedule_widget_reload(getattr(user, "id", None))
         except Exception:
             pass  # widget refresh is best-effort; the turn must never break
+
+    # Every card in this batch reports the day as it FINALLY stands, before the
+    # typed view is built from these contexts. Each receipt was taken right
+    # after its own write, which in a multi-item meal is a day that no longer
+    # exists by the time the user sees the card.
+    await _resync_batch_receipts(_ctxs, user, db)
 
     # Publish the typed per-call view (P0.3a). Built by the one sanctioned
     # scraper of the legacy stash keys; when branches populate CallResults

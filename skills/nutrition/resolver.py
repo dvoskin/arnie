@@ -553,6 +553,27 @@ def _resolve(request: FoodResolutionRequest,
         warnings.append(f"portion not scaled: {e}")
         scaled = NutrientProfile()
 
+    # ── §9: does the scaled result describe a food at all? ──────────────────
+    # Scaling is arithmetic, and arithmetic does not notice when its premise is
+    # wrong: every failure here is a correct multiplication against a basis
+    # that did not describe the source. The checks run on the SCALED profile,
+    # because the source row was fine in each of the shipped cases.
+    #
+    # An impossible result is dropped rather than persisted. Keeping it "with a
+    # warning" is what put 588 calories of peanut butter in a day's totals
+    # behind a warning nobody read — unknown is not zero, and it is not the
+    # wrong portion either.
+    from skills.nutrition import sanity as _sanity
+    basis_findings = _sanity.check(scaled, winner.basis, quantity)
+    fatal = [f for f in basis_findings if f.is_fatal]
+    for finding in basis_findings:
+        warnings.append(f"{finding.code}: {finding.message}")
+    if fatal:
+        logger.warning(
+            "sanity refusal for %r: %s",
+            request.food_name, "; ".join(f.code for f in fatal))
+        scaled = NutrientProfile()
+
     grade = _grade(request, winner)
     ambiguities = _ambiguities(request, winner, runners, quantity, scaled,
                                unscaled=merged)
@@ -574,6 +595,12 @@ def _resolve(request: FoodResolutionRequest,
             f"generic data for a named product — no {request.food_name} "
             f"label available",)
         confidence *= 0.75
+    if basis_findings and not fatal:
+        # Physically possible, probably scaled against the wrong basis. A
+        # penalty and a disclosure — not a refusal, because oils, nut butters
+        # and spirits sit near these bounds legitimately and refusing there
+        # would trade a rare wrong answer for a common missing one.
+        confidence *= 0.7
     if scaled.unknown():
         warnings.append(f"unknown: {', '.join(scaled.unknown())}")
 

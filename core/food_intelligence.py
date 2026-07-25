@@ -218,6 +218,25 @@ class FoodAnalysis:
     micros_estimated: bool = False  # micros came from the LLM fallback, not a DB match
     coach_note: str = ""                   # the analysis line surfaced to the LLM
     enrichment_source: Optional[str] = None  # "memory" | "usda" | "web_label" | None
+    #: Per-ROLE provenance (skills.nutrition.authority.SourceProvenance): who
+    #: identified the food, who sized the portion, who determined the macros,
+    #: who filled the micros. `source` above stays as the coarse legacy label
+    #: the storage layer and the trend math already key on; the display reads
+    #: THIS, because only this can distinguish a label that set the calories
+    #: from a database that contributed sodium.
+    provenance: Optional[object] = None
+
+
+#: The word-grade confidences the enrichment path speaks in, as the number the
+#: provenance record carries. Kept coarse on purpose — these are four states,
+#: not a continuum, and inventing precision here would be the same offence the
+#: rest of this module exists to stop.
+_CONF_NUM = {
+    "user-confirmed": 0.98,
+    "exact": 0.9,
+    "likely": 0.7,
+    "estimated": 0.4,
+}
 
 
 def _derive(cal, protein, carbs, fat, fiber, sugar) -> tuple:
@@ -284,17 +303,33 @@ def reconcile_macros(cal: float, protein: float, carbs: float, fat: float) -> tu
 
 def analyze(name, quantity, llm_cal, llm_protein, llm_carbs, llm_fat,
             usda_candidate=None, memory_match=None,
-            web_candidate=None, off_candidate=None) -> FoodAnalysis:
+            web_candidate=None, off_candidate=None,
+            is_packaged=False, brand=None, restaurant=None) -> FoodAnalysis:
     """
-    Build a FoodAnalysis. Priority for the nutrient profile:
-      memory_match (user's recurring food)
-        > web_candidate (label-accurate web lookup for packaged products)
-        > usda_candidate
-        > LLM-only.
-    The LLM's calories/protein anchor the portion; the enrichment source fills
-    in fiber/sugar/sodium and confidence. web_candidate carries the same shape
-    as usda_candidate ({"fdc_id": …, "per100g": {...}, "_match": "exact|likely"}).
+    Build a FoodAnalysis. Which source answers depends on WHAT THE FOOD IS —
+    `skills.nutrition.authority` holds one ladder per food class and this
+    function walks the one that applies (directive §4).
+
+    The old order was a constant, `memory or usda or off or web`, for every food
+    alike. USDA has no label for a named manufactured good and no row at all for
+    a chain's menu item, so on both it answered from the nearest generic: a
+    shipped meal put Philadelphia scallion cream cheese at 100 calories against
+    a 60-calorie label and half a Starbucks turkey bacon sandwich at 180 against
+    a published 115, and those two lines alone were three quarters of that
+    meal's 33% overcount. The bagel and the salmon, needing no branded lookup,
+    were both right — which is the tell that the ladder, not the lookup, was
+    what failed.
+
+    A candidate the ladder does not seat still fills fiber/sugar/sodium and the
+    micronutrient panel; it just stops determining the calories, and the
+    provenance says so per role rather than through one `source` string that
+    could only be true about one of them (§6, §7).
+
+    The LLM's calories/protein anchor the portion unless the quantity is an
+    explicit mass and the winner is trustworthy. web_candidate carries the same
+    shape as usda_candidate ({"fdc_id": …, "per100g": {...}, "_match": …}).
     """
+    from skills.nutrition import authority
     cal = float(llm_cal or 0)
     protein = float(llm_protein or 0)
     carbs = float(llm_carbs or 0)
@@ -315,12 +350,30 @@ def analyze(name, quantity, llm_cal, llm_protein, llm_carbs, llm_fat,
     micros: dict = {}
     _implied_grams = None
 
-    # Ladder priority (Danny 2026-07-22): own-log/memory > USDA > OFF > web.
-    # USDA wins for generics (it has them); OFF fills branded items USDA misses;
-    # web is the last resort. All carry the same {per100g, _match} shape.
-    src = memory_match or usda_candidate or off_candidate or web_candidate
+    # Which ladder, then which rung. `select` skips a rung with no candidate and
+    # returns the name of the one it took, so the disclosure, the cache row and
+    # the numbers all name the same winner.
+    food_class = authority.classify(name, brand=brand, is_packaged=is_packaged,
+                                    restaurant=restaurant)
+    _cands = authority.candidate_map(
+        food_class=food_class, memory_match=memory_match,
+        usda_candidate=usda_candidate, off_candidate=off_candidate,
+        web_candidate=web_candidate)
+    rung, src = authority.select(_cands, food_class)
+    # Nothing the ladder would seat. A candidate it refused — USDA against a
+    # Starbucks sandwich, say — may still fill the nutrient panel; it just does
+    # not get to set the calories, and `macros_from_source=False` is what keeps
+    # the card from crediting it with numbers it did not produce.
+    macros_from_source = src is not None
+    if src is None:
+        src = authority.off_ladder(None, usda_candidate, off_candidate,
+                                   web_candidate)
+    micro_rung = rung if macros_from_source else (
+        "usda_generic" if src is usda_candidate else
+        "branded_exact" if src is off_candidate else
+        "manufacturer" if src is web_candidate else "")
     computed_forward = False
-    if src:
+    if src is not None:
         per100 = src.get("per100g") or {
             "calories": src.get("cal_100"), "protein": src.get("protein_100"),
             "carbs": src.get("carbs_100"), "fat": src.get("fat_100"),
@@ -364,8 +417,9 @@ def analyze(name, quantity, llm_cal, llm_protein, llm_carbs, llm_fat,
         # (memory / OFF / web) keep their "likely" trust; a demoted USDA item
         # still feeds the estimate path (fiber/sodium scaled to the model's
         # calories) and stays eligible for the web-label lane.
-        _trustworthy = (confidence in ("exact", "user-confirmed")
-                        or (confidence == "likely" and src is not usda_candidate))
+        _trustworthy = macros_from_source and (
+            confidence in ("exact", "user-confirmed")
+            or (confidence == "likely" and src is not usda_candidate))
         if _mg and cal100 and cal100 > 0 and _trustworthy:
             grams = _mg
             ratio = grams / 100.0
@@ -452,6 +506,15 @@ def analyze(name, quantity, llm_cal, llm_protein, llm_carbs, llm_fat,
         )
         sodium = None
 
+    # A source that only supplemented the panel never names itself as the
+    # answer. Before the split fields existed this was the one place the lie got
+    # in: the row was filled by one party, the calories determined by another,
+    # and a single `source` string had to pick one and be wrong about the other.
+    if src is not None and not macros_from_source:
+        source, confidence = "estimate", "estimated"
+        rung = "component_estimate" if food_class is authority.FoodClass.RESTAURANT \
+            else "estimate"
+
     pd, satiety, quality = _derive(cal, protein, carbs, fat, fiber, sugar)
 
     # Build the coaching note the LLM uses to actually coach (not just acknowledge)
@@ -495,4 +558,18 @@ def analyze(name, quantity, llm_cal, llm_protein, llm_carbs, llm_fat,
         micros=micros,
         coach_note=f"{note} [{conf_note}]",
         enrichment_source=(source if source != "estimate" else None),
+        provenance=authority.provenance_for(
+            rung=rung or "estimate", food_class=food_class,
+            portion_source=("computed_mass" if computed_forward
+                            else "user_stated"),
+            micronutrient_source=(micro_rung if (micros or sodium is not None
+                                                 or fiber is not None) else ""),
+            confidence=_CONF_NUM.get(confidence, 0.4),
+            # Honest switch: the winner determined the calories only when we
+            # computed them forward from its density. Everywhere else the
+            # model's numbers are the ones on the card, and saying otherwise is
+            # how "From the USDA database" ended up under numbers USDA never
+            # produced.
+            macros_from_source=computed_forward,
+        ),
     )

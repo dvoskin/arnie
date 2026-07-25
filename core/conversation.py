@@ -590,6 +590,25 @@ async def _run_turn(
     from core.turn_identity import CURRENT_TURN_ID as _TID
     _TID.set(turn_id)
     _turn_route = "legacy"   # refined by the lanes below; emitted in turn_trace
+    # Tool names the user has already been shown a progress event for. The
+    # indicator is a claim about what is happening NOW, so announcing a name
+    # twice reads as two separate backend actions.
+    _announced: set = set()
+    # WHY this turn is on the legacy path, when it is. A silent `_sft = None`
+    # made the single most consequential routing decision in the turn
+    # undiagnosable in production: the same message could take either path on
+    # different days and the logs looked identical. Codes are stable strings
+    # (mixed_domain, non_english, kill_switch, interpreter_none,
+    # interpreter_timeout, pipeline_exception, ask_stash_failed, idempotent_dup)
+    # and ride out in turn_trace next to the route.
+    _legacy_reason = ""
+
+    def _to_legacy(reason: str):
+        """Hand this turn back to the legacy path, on the record."""
+        nonlocal _legacy_reason
+        _legacy_reason = reason
+        logger.info(f"event=structured_food_fallback reason={reason} {_tag}")
+        return None
     _source = source_type or platform
     _tag = f"{platform}:{user.id}"
     _retried = False  # turn-health: did the self-heal fire this turn?
@@ -691,6 +710,8 @@ async def _run_turn(
                                     applies as _sft_applies, run as _sft_run,
                                     thread_relevance as _sft_rel,
                                     applies_destructive as _sft_dest)
+        if not structured_food_enabled():
+            _to_legacy("kill_switch")
         if structured_food_enabled():
             _sft_prior_pq = None
             _sft_prior = None
@@ -814,16 +835,23 @@ async def _run_turn(
                     await db.commit()
                 except Exception:
                     pass
-            elif (_sft_prior is not None or _photo_food is not None
-                    or _sft_applies(_user_text or "")
-                    or (_board and _sft_dest(_user_text or ""))
-                    or _route_mid):
+            elif not (_sft_prior is not None or _photo_food is not None
+                      or _sft_applies(_user_text or "")
+                      or (_board and _sft_dest(_user_text or ""))
+                      or _route_mid):
+                # The cold-start gate turned this message away. WHICH shape it
+                # was is the difference between a language we don't serve yet
+                # and a hole in the gate, and both used to log as nothing.
+                from core.food_turn import decline_reason as _sft_why
+                _to_legacy(_sft_why(_user_text or "") or "not_food_shaped")
+            else:
                 # Immediate status: morph the live thinking indicator to
                 # "Logging…" the moment the logger starts, so its pass is
                 # never silent dead air (Danny 2026-07-23).
                 if on_tool_start:
                     try:
                         await on_tool_start(["log_food"])
+                        _announced.add("log_food")
                     except Exception:
                         pass
                 # Day context so the logger's own coach line ("say") can state
@@ -855,6 +883,12 @@ async def _run_turn(
                                       regulars=_regs,
                                       thread_active=bool(
                                           _route_mid or _photo_food))
+                if _sft is None:
+                    # The interpreter times out or the model fails and control
+                    # transfers to legacy behaviour. Fail-safe during rollout —
+                    # but a transfer nobody can see is a transfer nobody can
+                    # measure, and this is the most common one.
+                    _to_legacy("interpreter_none")
                 if _sft is not None:
                     # Day snapshot BEFORE the writes — the say tokens are filled
                     # from the committed delta after enrichment runs.
@@ -897,7 +931,7 @@ async def _run_turn(
                                           prior={"original": _user_text or "",
                                                  "question": ""})
                     if _sft and _sft["action"] not in ("log", "commit"):
-                        _sft = None
+                        _sft = _to_legacy("ask_stash_failed")
             # The user engaged with the question — resolve the pending either
             # way so it can never loop.
             if _sft_prior_pq is not None:
@@ -922,7 +956,7 @@ async def _run_turn(
                         f"rv={RENDERER_VERSION}")
     except Exception as _e:
         logger.warning(f"structured food turn failed, legacy path: {_e}")
-        _sft = None
+        _sft = _to_legacy("pipeline_exception")
 
     # ── LLM first pass ───────────────────────────────────────────────────────
     # Generous token budget on purpose: a user can dump a whole day of food in one
@@ -1236,13 +1270,21 @@ async def _run_turn(
         # "Reviewing your week…") the moment tools dispatch. Fired once, in
         # call order; the client maps names→labels and ignores internal tools.
         # Purely additive — failure here never blocks the turn.
+        # ONE ANNOUNCEMENT PER NAME PER TURN. The structured food branch fires
+        # "log_food" early so the interpreter's pass isn't silent dead air, and
+        # this site then fired it again for the same dispatch — the client reads
+        # each call as a fresh action, so the live indicator restarted and the
+        # turn looked like two backend operations. `_announced` is the turn's
+        # record of what the user has already been told; a name in it is not
+        # re-sent, and a batch with nothing new sends nothing at all.
         if on_tool_start:
             _started: list = []
             for _tc in tool_calls:
                 _n = _tc.get("name")
-                if _n and _n not in _started:
+                if _n and _n not in _started and _n not in _announced:
                     _started.append(_n)
             if _started:
+                _announced.update(_started)
                 try:
                     await on_tool_start(_started)
                 except Exception as e:
@@ -1711,10 +1753,25 @@ async def _run_turn(
                                                         apply_policy,
                                                         strip_card_recitation)
                         if on_card is not None:
+                            # The committed item NAMES have to travel with the
+                            # plan. `_is_roll_call` compares the sentence
+                            # against them, so an empty plan made it
+                            # structurally unable to fire — and "Logged: Mashed
+                            # Potato, Grilled Corn, Filet Mignon, Reese's
+                            # Pieces." shipped directly above a card listing the
+                            # same four names with their macros.
+                            from core.food_response import FoodItemSummary
+                            _names = tuple(
+                                FoodItemSummary(name=str(
+                                    (c.get("input") or {}).get("food_name")
+                                    or "").strip())
+                                for c in (_ok_calls or []))
                             _rp = apply_policy(FoodResponsePlan(
                                 intent=FoodResponseIntent.COMMIT,
                                 card_will_render=True,
-                                facts_visible_in_card=CARD_FACTS))
+                                facts_visible_in_card=CARD_FACTS,
+                                committed_items=tuple(
+                                    n for n in _names if n.name)))
                             response_text = strip_card_recitation(
                                 response_text, _rp)
                     except Exception as _e:
@@ -2102,7 +2159,10 @@ user_message=_user_text or "")
                 elif on_interim:
                     await on_interim(intent_line)
             if on_tool_start and tool_names:
-                await on_tool_start(tool_names)
+                _fresh = [n for n in tool_names if n not in _announced]
+                if _fresh:
+                    _announced.update(_fresh)
+                    await on_tool_start(_fresh)
         except Exception as _e:
             logger.warning(f"announce_work failed for {_tag}: {_e}")
 
@@ -2843,6 +2903,10 @@ user_message=_user_text or "")
         logger.info(
             f"event=turn_trace {_tag} turn={_ctid() or '-'} "
             f"route={_turn_route} tools={_skills_fired or '-'} "
+            # Only meaningful when the turn ACTUALLY ended up on legacy — a
+            # reason recorded on a turn the structured path went on to own is
+            # noise, and worse, reads as a fallback that never happened.
+            f"legacy_reason={(_legacy_reason or '-') if _turn_route == 'legacy' else '-'} "
             f"flags={','.join(health_flags) or '-'} "
             f"ms={int((_time_mod.monotonic() - _turn_t0) * 1000)} "
             f"iv={_tr_iv} pv={_tr_pv}")

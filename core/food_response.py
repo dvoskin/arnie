@@ -108,9 +108,61 @@ _SPOKEN_UNITS = {
 
 _PORTION_RE = re.compile(r"^\s*(-?\d+(?:\.\d+)?)\s*(.*)$")
 
+#: Size words are ADJECTIVES, not units. They modify whatever follows them and
+#: are never the head of the phrase.
+#:
+#: A portion string arrives as free text, and the old code took everything after
+#: the number as one opaque "unit" to be pluralized by suffix. So "2 large" of
+#: eggs produced "two larges of eggs", and "2 small slice" produced "two small
+#: sliceses" once the suffix rule met a word that was already plural. Splitting
+#: the descriptor off is what lets the adjective attach to the noun it belongs
+#: to — "two large eggs", "two small slices of vodka pizza".
+_SIZE_DESCRIPTORS = (
+    "extra large", "extra-large", "x-large", "jumbo", "large", "big",
+    "medium", "regular", "standard", "small", "mini", "tiny",
+    "thin", "thick", "heaping", "heaped", "generous", "scant", "level",
+)
+
+#: Irregular plurals worth knowing. Everything else takes the suffix rule, but
+#: only AFTER the phrase has been parsed — never on a raw unit string.
+_IRREGULAR_PLURALS = {"half": "halves", "loaf": "loaves", "leaf": "leaves",
+                      "knife": "knives", "foot": "feet", "tooth": "teeth"}
+
+
+def _split_descriptor(unit_text: str) -> tuple:
+    """`"small slice"` → `("small", "slice")`. Longest descriptor wins.
+
+    Returns `("", unit_text)` when nothing modifies the unit, so callers can
+    treat the descriptor as optional without a second code path.
+    """
+    text = (unit_text or "").strip().lower()
+    for word in sorted(_SIZE_DESCRIPTORS, key=len, reverse=True):
+        # A descriptor is an adjective, so a PLURAL one is always malformed
+        # input — "2 larges" is an upstream inflection of a word that should
+        # never have been inflected. Accept it and correct it here rather than
+        # passing it through to be pluralized a second time.
+        for form in (word, word + "s"):
+            if text == form:
+                return word, ""
+            if text.startswith(form + " "):
+                return word, text[len(form) + 1:].strip()
+    return "", text
+
 
 def _plural(word: str, amount: float) -> str:
+    """Pluralize a single NOUN. Never call this on a raw portion string.
+
+    Already-plural words are left alone: the suffix rule applied to "slices"
+    produced "sliceses" and to "sticks" produced "stickses", which is what put
+    both on a shipped screenshot.
+    """
     if amount == 1 or not word:
+        return word
+    if word in _IRREGULAR_PLURALS:
+        return _IRREGULAR_PLURALS[word]
+    # Already plural — "slices", "sticks", "wings". Bare "s" after a consonant
+    # is the ordinary plural; "ss" (glass, hummus) is not.
+    if word.endswith("s") and not word.endswith(("ss", "us", "is")):
         return word
     return word + ("es" if word.endswith(("s", "sh", "ch", "x")) else "s")
 
@@ -174,54 +226,143 @@ def describe_portion(portion: str, name: str,
         return f"{portion} {name}".strip()
 
     amount = float(match.group(1))
-    unit = match.group(2).strip().lower()
+    descriptor, unit = _split_descriptor(match.group(2))
     spoken = _spoken_name(name, branded)
 
     # The unit IS the food — "0.5 banana" of "Banana" — or says nothing.
+    #
+    # "Names the food" means the unit word appears ANYWHERE in the food name,
+    # not only at its end. Checking only the tail let "3 stick" of "mozzarella
+    # sticks with marinara" through as "three sticks of mozzarella sticks with
+    # marinara", saying the same noun twice in one phrase.
     stem = spoken.lower().rstrip("s")
-    if unit in _EMPTY_UNITS or (
-            unit and (unit.rstrip("s") == stem
-                      or stem.endswith(" " + unit.rstrip("s")))):
-        return _count_of(amount, spoken)
+    food_words = {w.rstrip("s") for w in re.findall(r"[a-z]+", spoken.lower())}
+    # An "empty" unit stops being empty once a descriptor modifies it: "piece"
+    # says nothing, "thin piece" says the thing the user bothered to tell us.
+    names_the_food = unit and (unit.rstrip("s") == stem
+                               or stem.endswith(" " + unit.rstrip("s"))
+                               or unit.rstrip("s") in food_words)
+    # A food that IS a discrete item does not also need "piece". "2 large
+    # piece" of eggs came out as "two large pieces of eggs" — the descriptor
+    # rescued the empty unit, correctly for "2 large pieces of pizza" and
+    # wrongly here, because an egg is already the piece. The countable-noun
+    # list in the normalizer is what knows the difference, and asking it beats
+    # keeping a second list in sync with it.
+    if unit in _EMPTY_UNITS and not names_the_food:
+        try:
+            from skills.nutrition.normalize import _COUNT_UNITS
+            head = re.findall(r"[a-z]+", spoken.lower())
+            if head and head[-1] in _COUNT_UNITS:
+                names_the_food = True
+        except Exception:
+            pass
+    # No unit word at all ("2 large" of eggs) means the descriptor belongs to the
+    # food: two large eggs, not two large pieces of eggs.
+    if names_the_food or not unit or (unit in _EMPTY_UNITS and not descriptor):
+        return _count_of(amount, spoken, descriptor)
+    if unit in _EMPTY_UNITS:
+        sized = f"{descriptor} {unit.rstrip('s') or 'piece'}".strip()
+        if amount == 1:
+            return f"{_article(sized)} {sized} of {spoken}"
+        return f"{_number_word(amount)} {_plural_phrase(sized, amount)} of {spoken}"
 
     if unit in _MASS_UNITS:
         return f"{_trim_amount(amount)}{_MASS_UNITS[unit]} of {spoken}"
 
     if unit in _FORMAT_UNITS:
         word = _FORMAT_UNITS[unit]
+        sized = f"{descriptor} {word}".strip() if descriptor else word
         if amount == 1:
-            return f"{_article(spoken)} {spoken} {word}"
-        return f"{_number_word(amount)} {spoken} {_plural(word, amount)}"
+            return f"{_article(sized)} {spoken} {sized}"
+        return f"{_number_word(amount)} {spoken} {_plural_phrase(sized, amount)}"
 
     measure = _SPOKEN_UNITS.get(unit, unit)
+    sized = f"{descriptor} {measure}".strip() if descriptor else measure
     fraction = _SPOKEN_FRACTIONS.get(round(amount, 3))
     if fraction:
         word, connector = fraction
-        return f"{word} {connector} {measure} of {spoken}"
-    return f"{_number_word(amount)} {_plural(measure, amount)} of {spoken}"
+        return f"{word} {connector} {sized} of {spoken}"
+    return f"{_number_word(amount)} {_plural_phrase(sized, amount)} of {spoken}"
 
 
-def _count_of(amount: float, name: str) -> str:
-    """A count of the food itself, with no unit worth naming."""
+def _count_of(amount: float, name: str, descriptor: str = "") -> str:
+    """A count of the food itself, with no unit worth naming.
+
+    The descriptor stays an adjective on the food: "2 large" of eggs is "two
+    large eggs", never "two larges of eggs".
+    """
+    sized = f"{descriptor} {name}".strip() if descriptor else name
     fraction = _SPOKEN_FRACTIONS.get(round(amount, 3))
     if fraction:
         word, connector = fraction
         if connector == "a":
-            return f"{word} {_article(name)} {name}"
-        return f"{word} of {_article(name)} {name}"
+            return f"{word} {_article(sized)} {sized}"
+        return f"{word} of {_article(sized)} {sized}"
     if amount == 1:
-        return f"{_article(name)} {name}"
-    return f"{_number_word(amount)} {_plural_food(name, amount)}"
+        one = _singular_food(sized)
+        return f"{_article(one)} {one}"
+    return f"{_number_word(amount)} {_plural_food(sized, amount)}"
+
+
+def _plural_phrase(phrase: str, amount: float) -> str:
+    """Pluralize the HEAD of an adjective phrase: "small slice" → "small
+    slices". Pluralizing the whole string gave "small sliceses"."""
+    parts = (phrase or "").split()
+    if not parts:
+        return phrase
+    parts[-1] = _plural(parts[-1], amount)
+    return " ".join(parts)
+
+
+#: Prepositions that end the head of a food name. "mozzarella sticks with
+#: marinara" is a kind of STICK; everything from "with" onward is a modifier.
+_HEAD_STOPS = (" with ", " and ", " in ", " of ", " on ", " over ", " topped ")
+
+
+def _head_span(name: str) -> int:
+    """Index where the head noun phrase ends — before the first preposition."""
+    lowered = f" {name.lower()} "
+    cuts = [lowered.index(stop) for stop in _HEAD_STOPS if stop in lowered]
+    return min(cuts) if cuts else len(name)
 
 
 def _plural_food(name: str, amount: float) -> str:
-    """Pluralize the head noun only: "two Peanut M&M's" already reads plural,
-    "two egg" does not."""
+    """Pluralize the food's HEAD noun only.
+
+    "two Peanut M&M's" already reads plural and "two egg" does not — but the
+    head is not always the last word. Pluralizing the last word turned
+    "mozzarella sticks with marinara" into "...with marinaras", inflecting the
+    sauce instead of the sticks. And a head that is ALREADY plural needs
+    nothing: that is the same "sticks"→"stickses" mistake one level up.
+    """
     if amount == 1 or not name:
         return name
-    if name.endswith(("s", "'s", "x", "ch", "sh")):
+    head = name[:_head_span(name)].rstrip()
+    tail = name[len(head):]
+    if not head:
         return name
-    return name + "s"
+    words = head.split()
+    last = words[-1]
+    if last.endswith(("s", "'s", "x", "ch", "sh")):
+        return name
+    words[-1] = last + "s"
+    return " ".join(words) + tail
+
+
+def _singular_food(name: str) -> str:
+    """"eggs" → "egg", for the amount==1 case. The head only, and never a word
+    whose "s" is part of it ("hummus", "asparagus")."""
+    if not name:
+        return name
+    head = name[:_head_span(name)].rstrip()
+    tail = name[len(head):]
+    words = head.split()
+    if not words:
+        return name
+    last = words[-1]
+    if last.endswith("s") and not last.endswith(("ss", "us", "is", "'s")):
+        words[-1] = last[:-1]
+    return " ".join(words) + tail
 
 
 def _number_word(amount: float) -> str:
@@ -581,6 +722,26 @@ _DAY_TOTAL_RE = re.compile(
 #: The card owns the numbers; the sentence says what they mean.
 _SLASH_TOTAL_RE = re.compile(
     r"\b\d[\d,]*\s*/\s*\d[\d,]*\s*(?:g\b|kcal|cal(?:orie)?s?|grams?)?",
+    re.I)
+
+#: The day's REMAINING budget, restated in prose.
+#:
+#: "That leaves about 240 calories for the day" and "about 60g to go" are the
+#: card's own remaining row read aloud — the card renders "240 cal left · 60g
+#: protein to go" directly above them, and often "Next: 60g protein, lean
+#: sources" as well. They survived the recitation check by ending
+#: forward-looking ("so make your next meal protein-forward"), which is the
+#: shape that shipped: the remaining row, twice, with advice stapled to the
+#: second copy.
+#:
+#: A recommendation still earns its digits — "I'd aim for 30-40g at lunch" names
+#: a target for a future meal rather than restating today's balance. The
+#: difference is the leaves/left/to-go phrasing, not the presence of a number.
+_REMAINING_RE = re.compile(
+    r"(?:\bleaves?\s+(?:you\s+)?(?:about\s+|around\s+|roughly\s+)?\d"
+    r"|\b\d[\d,]*\s*(?:g|grams?|kcal|cal(?:orie)?s?)?\s*"
+    r"(?:left|to go|remaining)\b"
+    r"|\b(?:about|around|roughly)\s+\d[\d,]*\s*(?:g|grams?)?\s*to go\b)",
     re.I)
 
 #: More than one recommendation in a coaching message.
@@ -1061,6 +1222,11 @@ def _is_recitation(sentence: str) -> bool:
     rendered as text.
     """
     if _SLASH_TOTAL_RE.search(sentence):
+        return True
+    # The remaining budget is the card's own row. Unlike an ordinary nutrition
+    # number, a recommendation does not redeem it — the card already shows both
+    # the remaining figures and its own "Next:" line.
+    if _REMAINING_RE.search(sentence):
         return True
     if not (_NUTRIENT_NUMBER_RE.search(sentence)
             or _DAY_TOTAL_RE.search(sentence)):

@@ -50,7 +50,13 @@ def _food_line(inp: dict, result: str) -> dict:
                      "Skipped the re-log; totals unchanged")
     src = inp.get("_sourcing") or {}
     cal = src.get("calories") if src else inp.get("calories")
-    detail = _SOURCE_DETAIL.get(src.get("source")) if src else ""
+    # The executor precomputes this from the SPLIT provenance. Preferred over
+    # the coarse `source` because that field answered "who filled this row",
+    # while the line under an item claims "who determined these calories" —
+    # which is how "From the USDA database" appeared beneath numbers whose only
+    # USDA contribution was the sodium.
+    detail = src.get("detail") or (
+        _SOURCE_DETAIL.get(src.get("source")) if src else "")
     if not detail:
         if "usda" in r.lower():
             detail = "Matched against the USDA database"
@@ -74,6 +80,13 @@ def _food_detailed(inp: dict, result: str) -> list:
     name = inp.get("food_name") or "food"
     source = src.get("source") or "estimate"
     icon, found = _SOURCE_LABELS.get(source, _SOURCE_LABELS["estimate"])
+    # When a source only supplemented the panel, the "found it" line says what
+    # was found — not that the answer came from there.
+    _detail = src.get("detail") or ""
+    if _detail and _detail != _SOURCE_DETAIL.get(source):
+        found = _detail
+        if "supplemented" in _detail:
+            icon = "wand.and.stars"
     steps = [
         _step("magnifyingglass", f"Searched for {name}"),
         _step(icon, found),

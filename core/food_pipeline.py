@@ -350,6 +350,15 @@ def _approved_operations(data: Mapping, items, decision) -> tuple:
     Filtered, not rebuilt: the call construction (units, ids, provenance,
     board binding) is already correct and re-deriving it here would be a second
     implementation to keep in step. What this adds is the veto.
+
+    **This is not where the veto is enforced.** `data["_calls"]` is populated by
+    the transcript fixtures and by the coordinator's food stage; the live turn
+    reaches here with the interpreter's raw JSON, which has no `_calls` at all,
+    so this returns empty and reports nothing about what was allowed. That gap
+    is why the enforcement lives in `core.food_turn._apply_clarification_veto`,
+    against the calls as actually constructed. What this function is for is the
+    callers that DO hold their calls at decision time — for them it is the
+    filter, and for everyone else it is a report.
     """
     ready = set(decision.ready_item_ids or ())
     if not ready:
