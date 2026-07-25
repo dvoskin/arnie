@@ -294,6 +294,15 @@ class FoodResponsePlan:
     unresolved_item: Optional[FoodItemSummary] = None
     committed_items: Tuple[FoodItemSummary, ...] = ()
     pending_items: Tuple[FoodItemSummary, ...] = ()
+    #: Items that were attempted and did NOT land. A fourth bucket rather than
+    #: a flag, for the same reason `pending_items` is its own collection:
+    #: MealResolution has carried a `failed` tuple all along, and
+    #: `plan_from_resolution` dropped it on the floor. So a failed item reached
+    #: the composer as nothing at all — which made the false claim legal (the
+    #: validator had no item to check) and the honest mention illegal (the name
+    #: was not in `approved_names`, so the invented-item guard would flag it).
+    #: The Barebells bar in the 2026-07-25 transcript came through this seam.
+    failed_items: Tuple[FoodItemSummary, ...] = ()
     assumptions: Tuple[Any, ...] = ()
 
     # Clarification.
@@ -334,8 +343,11 @@ class FoodResponsePlan:
     @property
     def approved_names(self) -> set:
         names = set()
+        # Failed items are approved for MENTION. Naming what did not land is
+        # the honest thing to do, and it must not be mistaken for an invented
+        # food; whether the text may claim it LANDED is a separate check.
         for group in (self.resolved_items, self.committed_items,
-                      self.pending_items):
+                      self.pending_items, self.failed_items):
             for item in group:
                 names.add(item.name.lower())
         if self.unresolved_item is not None:
@@ -412,6 +424,12 @@ def plan_from_resolution(resolution, *, user_message: str = "",
     pending = tuple(FoodItemSummary(name=p.name, portion="",
                                     staged_item_id=p.staged_item_id)
                     for p in (resolution.pending or ()))
+    # MealReso1ution's own words: "Renderers read `committed` for what to
+    # narrate as logged and `pending` for what to describe as waiting." There
+    # is a third state it has always tracked and this builder never read.
+    failed = tuple(FoodItemSummary(name=f.name, portion="",
+                                   staged_item_id=f.staged_item_id)
+                   for f in (resolution.failed or ()) if f.name)
 
     if pending and committed:
         intent = FoodResponseIntent.PARTIAL_COMMIT
@@ -422,6 +440,7 @@ def plan_from_resolution(resolution, *, user_message: str = "",
 
     return apply_policy(FoodResponsePlan(
         intent=intent, committed_items=committed, pending_items=pending,
+        failed_items=failed,
         unresolved_item=(pending[0] if pending else None),
         assumptions=tuple(resolution.assumptions or ()),
         clarification_question=clarification_question,
@@ -486,6 +505,7 @@ class Reason:
     FORBIDDEN_QUESTION = "forbidden_question"
     MISSING_QUESTION = "missing_question"
     PENDING_AS_COMMITTED = "pending_as_committed"
+    FAILED_AS_COMMITTED = "failed_as_committed"
     INVENTED_ITEM = "invented_item"
     TOO_LONG = "too_long"
     MULTIPLE_COACHING = "multiple_coaching"
@@ -640,15 +660,19 @@ def validate(text: str, plan: FoodResponsePlan) -> ValidationResult:
         return ValidationResult(False, Reason.CARD_DUPLICATION)
 
     lowered = raw.lower()
-    for item in plan.pending_items:
-        name = item.name.lower()
-        if not name or name not in lowered:
-            continue
-        # Naming a held item is fine — saying it is IN is not.
-        if re.search(rf"{re.escape(name)}[^.?!]{{0,40}}\b(?:logged|in|added|"
-                     rf"counted|committed)\b", lowered):
-            return ValidationResult(False, Reason.PENDING_AS_COMMITTED,
-                                    item.name)
+    # Held and failed items are both "not in the day", and a reply may name
+    # either — but neither may be described as landed. The two share one check
+    # and differ only in the reason code, because a guard written for one state
+    # and not the other is how the failed bucket went unchecked for as long as
+    # it did.
+    for items, reason in ((plan.pending_items, Reason.PENDING_AS_COMMITTED),
+                          (plan.failed_items, Reason.FAILED_AS_COMMITTED)):
+        for item in items:
+            name = item.name.lower()
+            if not name or name not in lowered:
+                continue
+            if _claims_it_landed(lowered, name):
+                return ValidationResult(False, reason, item.name)
 
     if plan.known_foods and mentions_unapproved_item(raw, plan,
                                                      plan.known_foods):
@@ -673,6 +697,46 @@ def validate(text: str, plan: FoodResponsePlan) -> ValidationResult:
         return ValidationResult(False, Reason.REPEATED_OPENER, opener)
 
     return ValidationResult(True)
+
+
+#: Success verbs that may follow the food's name — "the bar is in", "the bar
+#: was counted". Bare "in" belongs only here: before a name it is ordinary
+#: English ("in the morning I had a bar") and would fire on everything.
+_LANDED_AFTER_RE = r"[^.?!]{0,40}\b(?:logged|in|added|counted|committed)\b"
+
+#: The same claim with the verb in front — "logged the Barebells bar". The
+#: original guard only looked forward from the name, so the most natural way to
+#: say it walked straight through.
+_LANDED_BEFORE_RE = (r"\b(?:logged|added|counted|committed|got)\b[^.?!]{0,40}")
+
+#: Negations that turn a success verb into an honest report of the failure.
+#: Without these the guard would reject the very sentence it wants — "couldn't
+#: get the Barebells bar in" contains the food, then "in".
+_NOT_LANDED_RE = re.compile(
+    r"\b(?:could\s*n[o']?t|couldn't|did\s*n[o']?t|didn't|was\s*n[o']?t|wasn't|"
+    r"is\s*n[o']?t|isn't|never|failed|unable|no|not)\b")
+
+
+def _claims_it_landed(lowered: str, name: str) -> bool:
+    """Whether the text says this food made it onto the log.
+
+    Naming a held or failed item is fine. Saying it is IN is not — unless the
+    clause negates it, which is the honest report and must stay expressible.
+    """
+    escaped = re.escape(name)
+    for pattern in (rf"{escaped}{_LANDED_AFTER_RE}",
+                    rf"{_LANDED_BEFORE_RE}{escaped}"):
+        match = re.search(pattern, lowered)
+        if match is None:
+            continue
+        # Judge the whole clause, not just the matched span: the negation
+        # usually sits in front of the verb ("couldn't touch the X", "didn't
+        # log the X"), which a forward-only window never sees.
+        start = max((lowered.rfind(c, 0, match.start()) for c in ".?!"),
+                    default=-1)
+        if _NOT_LANDED_RE.search(lowered[start + 1:match.end()]) is None:
+            return True
+    return False
 
 
 def mentions_unapproved_item(text: str, plan: FoodResponsePlan,
