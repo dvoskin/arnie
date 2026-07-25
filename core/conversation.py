@@ -1651,11 +1651,20 @@ async def _run_turn(
                         response_text = fill_say_tokens(
                             _say, _batch_c, _batch_p, _ac, _ap, _ct, _pt)
                     if _failed_names:
-                        _fn = ", ".join(n for n in _failed_names if n)[:120]
-                        response_text = (f"{response_text}|||Couldn't touch "
-                                         f"the {_fn} - the board changed under "
-                                         f"me. Say it again if you still want "
-                                         f"that one.")
+                        from core.food_ledger import build_failure_notice
+                        # Log the RESULT TEXT, not just the name. The Barebells
+                        # drop was undiagnosable after the fact — "it got
+                        # dropped for some reason" — because the only record of
+                        # why was a notice that named a cause it had guessed.
+                        for _c in _execution.calls:
+                            if not _c.committed:
+                                logger.warning(
+                                    f"event=food_call_blocked tool={_c.name} "
+                                    f"status={_c.status} "
+                                    f"result={(_c.result_text or '')[:200]!r}")
+                        response_text = (
+                            f"{response_text}|||"
+                            f"{build_failure_notice(_execution.failures())}")
                     # THE CARD OWNS THE FACTS (Danny 2026-07-25). The renderer
                     # above predates the meal card and says everything: items,
                     # macros, day total, remaining. Where a card renders, most

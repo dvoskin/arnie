@@ -113,6 +113,16 @@ def _default_meal_type(user) -> str:
     return "snack"
 
 
+#: How long a GENERIC cache row may stand in for a named product before the
+#: branded sources are consulted again. Short on purpose: the cost of being
+#: wrong is a branded food logged at generic numbers indefinitely, and the cost
+#: of re-checking is one lookup a week per product name.
+#:
+#: A row the user actually corrected never expires by this rule — that one IS
+#: the answer, and re-enriching over it would overwrite them with a database.
+BRANDED_RECHECK_DAYS = 7
+
+
 def _inherit_or_default_meal_type(user, target_log, meal_time) -> str:
     """Meal slot for an item the model logged WITHOUT one. A multi-item meal gets
     logged across passes — the partial-drop rescue re-adds the dropped sides in a
@@ -573,6 +583,20 @@ def _item_macros(result_str: str) -> str:
     return f"{m.group(1)} cal, {m.group(2)}g protein" if m else ""
 
 
+#: The three calorie-state branches of the deterministic tail, named so the
+#: BRANCH can be asserted without pinning its wording. Fifteen tests used to
+#: hold literal copies of these phrases, which meant a copy change read as
+#: fifteen behaviour regressions and the real question — did the right branch
+#: fire — was buried. Reword freely; the branch identity is the constant.
+CAL_STATE_OVER = "keep the rest of it clean"
+CAL_STATE_TIGHT = "the rest needs to stay light"
+CAL_STATE_OPEN = "still have plenty of flexibility today"
+
+#: Likewise for the protein branches.
+PROTEIN_LOW = "Protein is running light"
+PROTEIN_OK = "Protein's tracking well"
+
+
 def deterministic_confirmation(tool_calls, log, prefs, tool_results=None,
                                user_message: str = "") -> str:
     """
@@ -701,27 +725,32 @@ def deterministic_confirmation(tool_calls, log, prefs, tool_results=None,
         # renders it duplicates the card, and where one does not it still reads
         # like debug output. The remaining amount is the useful part, and it
         # belongs in a sentence that says what to do with it.
+        # "Good room left." and "Tight finish." were the compressed register
+        # this is meant to replace, not a shorter way of writing it. The
+        # calorie state and the protein state also belong in ONE bubble: split
+        # across two they read as a pair of status lines, which is the debug
+        # output the card already owns.
         if cal_t:
             _left = max(0, cal_t - cal)
             if cal >= cal_t:
-                tail = ("You're past your calorie target for today, so keep "
-                        "the rest controlled.")
+                tail = (f"You're past your calorie target for today, so "
+                        f"{CAL_STATE_OVER}.")
             elif cal >= cal_t * 0.85:
                 tail = (f"That leaves about {_left} calories for the day, so "
-                        f"it's a tight finish.")
+                        f"{CAL_STATE_TIGHT}.")
             else:
-                tail = (f"That leaves you around {_left} calories, so there's "
-                        f"good room left.")
+                tail = (f"That leaves you around {_left} calories, so you "
+                        f"{CAL_STATE_OPEN}.")
         else:
             tail = f"That puts you at roughly {cal} calories so far today."
         if pro_t and pro < pro_t * 0.85:
             _need = max(0, pro_t - pro)
-            return (f"{head}|||{tail}|||Protein is running light — you've got "
-                    f"about {_need}g to go, so make the next meal "
+            return (f"{head}|||{tail} {PROTEIN_LOW}, though — "
+                    f"about {_need}g to go, so make your next meal "
                     f"protein-forward.")
         if pro_t:
-            return f"{head}|||{tail}|||Protein's tracking well. What's next?"
-        return f"{head}|||{tail}|||Send the next meal."
+            return f"{head}|||{tail} {PROTEIN_OK}. What's next?"
+        return f"{head}|||{tail} What's next?"
 
     if "log_exercise" in names:
         # Dedup-aware fallback: if the LAST log_exercise tool result starts with
@@ -1063,14 +1092,29 @@ def _needs_web_label(db_match_grade) -> bool:
 def _looks_branded(food_name: str) -> bool:
     """Safety-net heuristic when the model forgot to set is_packaged=True.
 
-    Targets ProperNoun-Brand + common-package-noun patterns (e.g. "Quest Bar",
-    "Elmhurst Clean Protein", "Liquid IV"). Conservative — only matches when at
-    least one capitalized brand-like token precedes a known package word.
-    Never matches "chicken breast" / "white rice" — those are lowercase generics.
+    Delegates to `skills.nutrition.branded`, which the resolver also asks. The
+    two used to decide this independently, and both were blind in their own
+    way: this one required a LOWERCASE package noun (`_BRANDED_RE` carries no
+    re.I) while the interpreter emits Title Case, so "Barebells Salty Peanut
+    Protein Bar" never matched — the pattern wanted "bar" and got "Bar". The
+    net had been dead for the names it was written for, which is why OFF and
+    the web-label lane were skipped for "Peanut M&Ms" and a generic USDA row
+    won a branded product unopposed (2026-07-25).
+
+    WEAK+ is the right bar HERE: a false positive costs one lookup that
+    identity validation then discards, and a false negative costs the label.
     """
-    if not food_name or len(food_name) < 6:
+    if not food_name or len(food_name) < 3:
         return False
-    return bool(_BRANDED_RE.search(food_name))
+    from skills.nutrition.branded import names_a_product
+    return names_a_product(food_name)
+
+
+def _names_a_product(food_name: str, is_packaged: bool = False) -> bool:
+    """STRONG only — the user named a manufactured product, not a food that
+    happens to come in packets. Gates the web-label lane; see the note there."""
+    from skills.nutrition.branded import names_a_specific_product
+    return names_a_specific_product(food_name, is_packaged=bool(is_packaged))
 
 
 def _best_matching_snippet(result, food_name: str) -> str | None:
@@ -1521,8 +1565,36 @@ async def _analyze_food(db, user, food_name, inp):
         if m is not None and not m.user_confirmed:
             from datetime import datetime as _dt, timedelta as _td
             _lu = m.last_used or m.created_at
-            if _lu is not None and _lu < _dt.utcnow() - _td(days=90):
-                logger.info(f"food memory stale (>90d) for {name_norm!r} — re-resolving")
+            # A GENERIC cache row standing in for a NAMED PRODUCT expires far
+            # sooner than an ordinary one, because it is not merely stale — it is
+            # the wrong kind of answer, and every reuse re-caches it.
+            #
+            # The suppression was self-sustaining: the row is written after any
+            # successful lookup, so one generic answer for "Peanut M&Ms" kept
+            # winning, kept being rewritten, and branded enrichment never ran
+            # again inside the 90-day horizon. #33 stopped it laundering its tier
+            # and #36 discloses it, but neither makes the branded lookup happen.
+            #
+            # Bounded re-enrichment rather than invalidation-on-migration: a
+            # one-off migration fixes the rows that exist today and nothing about
+            # the rows written tomorrow, since a branded name whose lookup misses
+            # once still caches generic.
+            _horizon = _td(days=90)
+            try:
+                from skills.nutrition.branded import names_a_product
+                from skills.nutrition.provenance import SourceTier, TIER_BY_LABEL
+                _origin = TIER_BY_LABEL.get(
+                    str(getattr(m, "origin_tier", "") or "").strip().lower())
+                _origin_is_generic = (_origin is None
+                                      or _origin >= SourceTier.GENERIC_EXACT)
+                if _origin_is_generic and names_a_product(food_name):
+                    _horizon = _td(days=BRANDED_RECHECK_DAYS)
+            except Exception:
+                pass
+            if _lu is not None and _lu < _dt.utcnow() - _horizon:
+                logger.info(
+                    f"food memory stale (>{_horizon.days}d) for {name_norm!r} "
+                    f"— re-resolving")
                 m = None
         if m:
             per100g = {"calories": m.cal_100, "protein": m.protein_100,
@@ -1552,6 +1624,10 @@ async def _analyze_food(db, user, food_name, inp):
             memory = {
                 "fdc_id": m.fdc_id, "user_confirmed": m.user_confirmed,
                 "confidence": m.confidence,
+                # Which tier first produced these numbers. Without it the
+                # resolver cannot tell a cache of its own generic answer from a
+                # food the user corrected, and credits both as the latter.
+                "origin_tier": getattr(m, "origin_tier", None),
                 "per100g": per100g,
             }
             await upsert_user_food_match(db, user.id, name_norm, food_name,
@@ -1591,9 +1667,19 @@ async def _analyze_food(db, user, food_name, inp):
         # branded item → pull the label from the web, and a successful label
         # read OUTRANKS the weak text match (candidates curated below so the
         # ladder picks it). Web miss → the weak DB hit stands, as before.
+        #
+        # The web lane asks for STRONG, where OFF asks for WEAK+. Widening
+        # `_looks_branded` to fix the Title-Case blindness also widened this,
+        # and the two lanes do not carry the same risk: OFF is a structured
+        # branded index whose answer still has to survive identity validation,
+        # while the web lane parses a "product label" out of search results and
+        # has a documented history of finding the wrong product (Anya's "3
+        # coffee" → a 420-cal De'Longhi cappuccino, 2026-07-21). A capitalised
+        # word in front of "butter" is enough to check a database. It is not
+        # enough to go looking for a packet.
         _db_hit = usda or off
         _db_grade = (_db_hit or {}).get("_match")
-        if _branded and _needs_web_label(_db_grade):
+        if _names_a_product(food_name, is_packaged) and _needs_web_label(_db_grade):
             web = await _web_lookup_packaged(food_name, inp.get("quantity"))
             if web is not None and _db_hit is not None:
                 logger.info(
@@ -1607,10 +1693,21 @@ async def _analyze_food(db, user, food_name, inp):
         _hit = usda or off or web
         if _hit is not None:
             try:
+                # Record WHICH source filled this row. This write is the start of
+                # the laundering path: the row it creates is read back as a
+                # candidate, and without an origin every cached generic returned
+                # as a user-confirmed regular outranking the real product label.
+                # A branded database only earns branded authority on a good
+                # match — a weak hit in OFF is still just a guess.
+                _grade = _hit.get("_match") or "likely"
+                _branded_src = (_hit is off or _hit is web) and _hit is not usda
+                _origin = ("branded_exact"
+                           if _branded_src and _grade in ("exact", "likely")
+                           else "generic_exact")
                 await upsert_user_food_match(
                     db, user.id, name_norm, food_name,
                     _hit.get("fdc_id"), _hit.get("per100g", {}),
-                    _hit.get("_match") or "likely",
+                    _grade, origin_tier=_origin,
                 )
             except Exception as e:
                 logger.warning(f"memory cache write failed: {e}")
@@ -3046,9 +3143,13 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
                         "sugar": float(entry.sugar) if entry.sugar is not None else None,
                         "sodium": float(entry.sodium) if entry.sodium is not None else None,
                     }
+                    # user_confirmed is the BOOLEAN, not just the string. Passing
+                    # only the string left the flag False, so the "upgrade,
+                    # never downgrade" branch was dead and the cache-bust below
+                    # deleted rows the user had in fact corrected by hand.
                     await upsert_user_food_match(
                         db, user.id, name_norm, fn,
-                        None, per100, "user-confirmed",
+                        None, per100, "user-confirmed", user_confirmed=True,
                     )
                 elif any(k in changes for k in ("calories", "protein", "carbs", "fats")):
                     # Can't derive per-100g from this portion, but the user just

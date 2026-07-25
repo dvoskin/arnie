@@ -157,6 +157,17 @@ PRODUCT_FAMILIES = {
         brand="Core Power",
         required_identity_fields=("product_line", "package_size"),
         note="A Fairlife line, but users name it directly."),
+    "m&m": ProductFamilyRule(
+        brand="M&M's",
+        required_identity_fields=("variant",),
+        aliases=("m&ms", "m&m's", "mms", "peanut m&m"),
+        note="Plain, Peanut, Peanut Butter and Almond differ by roughly 3x "
+             "PER PIECE, so a piece count means nothing without the variant."),
+    "barebells": ProductFamilyRule(
+        brand="Barebells",
+        required_identity_fields=("variant",),
+        aliases=("bare bells", "barebell"),
+        note="Flavour moves the macros; the Soft line differs again."),
 }
 
 

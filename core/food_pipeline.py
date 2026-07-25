@@ -556,16 +556,45 @@ def derive_vague_quantities(items, data: Mapping, *, message: str,
 
 
 def _vague_prompt(food: str, measure: str, options) -> str:
-    """Name the food and the measure the USER used.
+    """Name what is uncertain, then ask about it.
 
-    "Was the scoop closer to one or two tablespoons?" is ambiguous in a
-    three-food meal; naming the food is what makes the answer bindable by the
-    person answering as well as by the parser.
+    Two sentences rather than one long one. The lead says which food the
+    question is about, so the ask itself can stay short and can use the user's
+    own measure — "was the scoop closer to one or two tablespoons" reads like a
+    person asking, where "was the peanut butter scoop closer to one tablespoon
+    or two tablespoons" reads like a form validating a field.
+
+    The lead is also the part that keeps the question bindable in a three-food
+    meal: without it, "the scoop" could be any of them.
     """
     low, high = options[0], options[-1]
     food = (food or "").strip()
-    subject = f"the {food.lower()} {measure}" if food else f"the {measure}"
-    return f"Was {subject} closer to {low} or {high}?"
+    if not food:
+        return f"Was the {measure} closer to {_shared_unit(low, high)}?"
+    return (f"The {food.lower()} is the only part I'm unsure about. "
+            f"Was the {measure} closer to {_shared_unit(low, high)}?")
+
+
+def _shared_unit(low: str, high: str) -> str:
+    """"one tablespoon" + "two tablespoons" → "one or two tablespoons".
+
+    Saying the unit twice is the tell of generated text. Only collapses when
+    the two options really do share a unit — "one tablespoon or half a cup"
+    must keep both.
+    """
+    lo, hi = (low or "").split(), (high or "").split()
+    # Exactly "<amount> <unit>" on the low side. Anything longer carries an
+    # article or a qualifier that does not survive having its noun removed:
+    # "half a cup" would collapse to "half a or one cup".
+    # An article is not an amount: "a scoop" would collapse to "a or two
+    # scoops", which reads as a typo rather than a choice.
+    if len(lo) == 2 and len(hi) >= 2 and lo[0].lower() not in ("a", "an"):
+        lo_unit, hi_unit = lo[-1], hi[-1]
+        # Same unit, differing only by plural — the common case (tablespoon /
+        # tablespoons), and the only one where dropping the first is lossless.
+        if hi_unit in (lo_unit, f"{lo_unit}s") or lo_unit == f"{hi_unit}s":
+            return f"{lo[0]} or {high}"
+    return f"{low} or {high}"
 
 
 def _calories_for(raw: Mapping) -> Optional[float]:

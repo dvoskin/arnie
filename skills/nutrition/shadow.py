@@ -21,7 +21,7 @@ from typing import Optional
 
 from skills.nutrition.candidates import Candidate
 from skills.nutrition.models import (FoodResolutionRequest, profile_from_values)
-from skills.nutrition.provenance import MatchGrade, SourceTier
+from skills.nutrition.provenance import MatchGrade, SourceTier, memory_authority
 from skills.nutrition.resolver import resolve, resolution_log
 from skills.nutrition.scaling import Per100g, PerServing
 
@@ -43,7 +43,8 @@ def shadow_enabled() -> bool:
 
 def _from_per100g(source: str, tier: SourceTier, name: str, per100g: dict,
                   brand=None, grade=MatchGrade.CLOSE,
-                  source_id=None) -> Optional[Candidate]:
+                  source_id=None, serving_text="",
+                  serving_mass_g=None) -> Optional[Candidate]:
     per100g = per100g or {}
     if not per100g.get("calories"):
         return None
@@ -53,7 +54,8 @@ def _from_per100g(source: str, tier: SourceTier, name: str, per100g: dict,
             source, basis="per_100g", confidence=0.8, source_id=source_id,
             **{k: per100g.get(k) for k in _NUTRIENTS}),
         basis=Per100g(), brand=brand, source_id=source_id,
-        reported_grade=grade)
+        reported_grade=grade, serving_text=str(serving_text or ""),
+        serving_mass_g=serving_mass_g)
 
 
 def candidates_from_live(food_name: str, inp: dict, *, memory=None, usda=None,
@@ -64,10 +66,16 @@ def candidates_from_live(food_name: str, inp: dict, *, memory=None, usda=None,
     this is the adapter, and the only place that knows those shapes.
     """
     out = []
-    mem = _from_per100g("user_regular", SourceTier.USER_REGULAR, food_name,
-                        (memory or {}).get("per100g"),
-                        grade=MatchGrade.EXACT,
-                        source_id=str((memory or {}).get("fdc_id") or "") or None)
+    # A remembered lookup is not a user confirmation. See memory_authority.
+    _mem_row = memory or {}
+    _tier, _grade, _label = memory_authority(
+        user_confirmed=bool(_mem_row.get("user_confirmed")),
+        origin_tier=str(_mem_row.get("origin_tier") or ""),
+        confidence=str(_mem_row.get("confidence") or ""))
+    mem = _from_per100g(_label, _tier, food_name,
+                        _mem_row.get("per100g"),
+                        grade=_grade,
+                        source_id=str(_mem_row.get("fdc_id") or "") or None)
     if mem is not None:
         out.append(mem)
 
@@ -77,7 +85,9 @@ def candidates_from_live(food_name: str, inp: dict, *, memory=None, usda=None,
                       usda_row.get("per100g"),
                       brand=usda_row.get("brand") or None,
                       grade=MatchGrade.CATEGORY,
-                      source_id=str(usda_row.get("fdc_id") or "") or None)
+                      source_id=str(usda_row.get("fdc_id") or "") or None,
+                      serving_text=usda_row.get("serving_text"),
+                      serving_mass_g=usda_row.get("serving_mass_g"))
     if u is not None:
         out.append(u)
 
@@ -86,7 +96,9 @@ def candidates_from_live(food_name: str, inp: dict, *, memory=None, usda=None,
                       off_row.get("name") or "", off_row.get("per100g"),
                       brand=off_row.get("brand"),
                       grade=(MatchGrade.EXACT if off_row.get("_match") == "exact"
-                             else MatchGrade.CLOSE))
+                             else MatchGrade.CLOSE),
+                      serving_text=off_row.get("serving_text"),
+                      serving_mass_g=off_row.get("serving_mass_g"))
     if o is not None:
         out.append(o)
 

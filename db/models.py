@@ -728,6 +728,13 @@ class UserFoodMatch(Base):
     micros_100_json = Column(Text)  # per-100g micronutrient panel (vitamins/minerals/fats)
     confidence = Column(String, default="estimated")  # exact|likely|estimated|user-confirmed
     user_confirmed = Column(Boolean, default=False)
+    # Which authority tier produced these numbers the FIRST time. This row is
+    # written automatically after every successful lookup, so most rows are a
+    # cache of our own answer rather than anything the user vouched for — and
+    # without this column there was no way to tell the two apart after the
+    # fact. A cached generic that re-enters as a user regular outranks the
+    # actual product label forever; see resolver tier order.
+    origin_tier = Column(String)  # SourceTier label, e.g. "generic_exact"
     times_used = Column(Integer, default=1)
     last_used = Column(DateTime, server_default=func.now())
     created_at = Column(DateTime, server_default=func.now())

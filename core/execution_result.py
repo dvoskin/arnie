@@ -91,12 +91,32 @@ class ExecutionResult:
         return [{"name": c.name, "input": c.raw_input} for c in self.successful]
 
     def failed_names(self) -> list:
+        """Every call that did not commit, named.
+
+        The predicate used to be `status == "blocked"`, while `status` is
+        documented as `committed | blocked | failed`. Anything landing on
+        `failed` was therefore excluded from `ok_tool_calls()` for not
+        committing AND from this list for not being blocked — so the item
+        vanished from the card and from the notice both, with no user-visible
+        trace and nothing in the log. Nothing sets `failed` today, which is
+        precisely why it is worth closing now: the trap springs the first time
+        a third status is introduced, and the symptom is a food silently
+        missing from a meal.
+        """
+        return [name for name, _reason in self.failures()]
+
+    def failures(self) -> list:
+        """`(name, reason)` per non-committed call, reason read from that
+        call's own result text rather than assumed. See FAILURE_REASONS."""
+        from core.food_ledger import failure_reason
         out = []
         for c in self.calls:
-            if not c.committed and c.status == "blocked":
-                inp = c.raw_input or {}
-                out.append(str(inp.get("food_name") or inp.get("food_hint")
-                               or f"entry #{inp.get('entry_id')}").strip())
+            if c.committed:
+                continue
+            inp = c.raw_input or {}
+            name = str(inp.get("food_name") or inp.get("food_hint")
+                       or f"entry #{inp.get('entry_id')}").strip()
+            out.append((name, failure_reason(c.result_text)))
         return out
 
 
