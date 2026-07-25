@@ -124,11 +124,54 @@ def scale_profile(profile: NutrientProfile, source_basis: SourceBasis,
     return NutrientProfile(values=scaled)
 
 
+def scaling_spans(profile: NutrientProfile, source_basis: SourceBasis,
+                  consumed: NormalizedQuantity) -> dict:
+    """Per-field spans implied by the portion's mass uncertainty.
+
+    What "six thin deli slices" actually costs if we are wrong about the
+    slices — for every macro, not just calories. A mass doubt scales protein
+    exactly as it scales energy, and the calorie-only version reported
+    protein_span=0 on every portion ambiguity, which told the ask ladder that
+    protein was certain when the mass was not (PR #31 calibration).
+
+    Returns {} when there is nothing uncertain to report.
+    """
+    if consumed.uncertainty_g is None or consumed.grams is None:
+        return {}
+    out = {}
+    for field in ("calories", "protein"):
+        if profile.amount(field) is None:
+            continue
+        span = _span_for(profile, source_basis, consumed, field)
+        if span:
+            out[field] = span
+    return out
+
+
+def _span_for(profile: NutrientProfile, source_basis: SourceBasis,
+              consumed: NormalizedQuantity, field: str) -> Optional[float]:
+    try:
+        low = NormalizedQuantity(
+            amount=consumed.amount, unit=consumed.unit,
+            grams=max(0.0, consumed.grams - consumed.uncertainty_g),
+            milliliters=consumed.milliliters, count=consumed.count)
+        high = NormalizedQuantity(
+            amount=consumed.amount, unit=consumed.unit,
+            grams=consumed.grams + consumed.uncertainty_g,
+            milliliters=consumed.milliliters, count=consumed.count)
+        lo = scale_profile(profile, source_basis, low).amount(field)
+        hi = scale_profile(profile, source_basis, high).amount(field)
+    except ScalingRefused:
+        return None
+    if lo is None or hi is None:
+        return None
+    return round(abs(hi - lo), 1)
+
+
 def scaling_uncertainty(profile: NutrientProfile, source_basis: SourceBasis,
                         consumed: NormalizedQuantity) -> Optional[float]:
-    """Calorie span implied by the portion's mass uncertainty — what "six thin
-    deli slices" actually costs if we are wrong about the slices. Feeds the
-    clarification ladder; None when there is nothing uncertain to report."""
+    """The calorie span alone. Kept as the narrow entry point callers already
+    use; `scaling_spans` is the one that sees protein."""
     if consumed.uncertainty_g is None or consumed.grams is None:
         return None
     cal = profile.amount("calories")
