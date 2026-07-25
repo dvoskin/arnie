@@ -332,20 +332,17 @@ def gold_identity_accuracy(cases=None) -> tuple:
     from skills.nutrition.models import (FoodResolutionRequest,
                                          profile_from_values)
     from skills.nutrition.resolver import resolve, score
-    from skills.nutrition.scaling import Per100g, Per100ml, PerServing, PerUnit
+    from skills.nutrition.provenance import SourceTier
+    from skills.nutrition.scaling import basis_from_spec
 
     if cases is None:
         from tests.gold.nutrition_cases import ALL_CASES as cases
 
-    bases = {"per_100g": Per100g, "per_100ml": Per100ml}
-
     def _basis(spec):
-        kind = spec.get("basis", "per_100g")
-        if kind in bases:
-            return bases[kind]()
-        if kind == "per_serving":
-            return PerServing(serving_mass_g=spec.get("serving_mass_g"))
-        return PerUnit(unit_mass_g=spec.get("serving_mass_g"))
+        return basis_from_spec(
+            spec.get("basis", "per_100g"),
+            serving_mass_g=spec.get("serving_mass_g"),
+            as_served=SourceTier(spec["tier"]).describes_as_served)
 
     branded = [c for c in cases
                if c["category"] == "branded" and "identity" in c["expect"]]
@@ -388,12 +385,18 @@ def gold_ambiguity_recall(cases=None) -> Metric:
     from skills.nutrition.models import (FoodResolutionRequest,
                                          profile_from_values)
     from skills.nutrition.resolver import resolve
-    from skills.nutrition.scaling import Per100g, Per100ml, PerServing, PerUnit
+    from skills.nutrition.provenance import SourceTier
+    from skills.nutrition.scaling import basis_from_spec
 
     if cases is None:
         from tests.gold.nutrition_cases import ALL_CASES as cases
 
-    bases = {"per_100g": Per100g, "per_100ml": Per100ml}
+    def _basis(spec):
+        return basis_from_spec(
+            spec.get("basis", "per_100g"),
+            serving_mass_g=spec.get("serving_mass_g"),
+            as_served=SourceTier(spec["tier"]).describes_as_served)
+
     expected_asks = [c for c in cases
                      if (c["expect"].get("asks") or {}).get("strict") is True]
     if not expected_asks:
@@ -404,11 +407,7 @@ def gold_ambiguity_recall(cases=None) -> Metric:
         request = FoodResolutionRequest(**{**case["request"], "mode": "strict"})
         candidates = []
         for s in case["candidates"]:
-            kind = s.get("basis", "per_100g")
-            basis = (bases[kind]() if kind in bases
-                     else PerServing(serving_mass_g=s.get("serving_mass_g"))
-                     if kind == "per_serving"
-                     else PerUnit(unit_mass_g=s.get("serving_mass_g")))
+            basis = _basis(s)
             candidates.append(Candidate(
                 source=s["source"], tier=s["tier"], name=s["name"],
                 profile=profile_from_values(s["source"], basis=s["basis"],

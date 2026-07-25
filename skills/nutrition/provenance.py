@@ -56,6 +56,21 @@ class SourceTier(IntEnum):
     def is_estimate(self) -> bool:
         return self >= SourceTier.ESTIMATED
 
+    @property
+    def describes_as_served(self) -> bool:
+        """Whether one serving of this source is the dish AS SERVED.
+
+        A branded label and a USDA row define a MEASURED serving — 43 g, 240 ml
+        — so "one plate" is not one of them. Every other tier describes the
+        helping the user actually had: the label they read us, their own saved
+        regular, a restaurant-item estimate, the interpreter's guess. For those,
+        one helping is one serving however vaguely it was described.
+
+        Read by scaling to decide whether a count may multiply a per-serving or
+        per-unit source; see PerServing.as_served.
+        """
+        return self not in (SourceTier.BRANDED_EXACT, SourceTier.GENERIC_EXACT)
+
 
 _TIER_LABELS = {
     SourceTier.USER_LABEL: "user_label",

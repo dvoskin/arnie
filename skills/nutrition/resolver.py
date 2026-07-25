@@ -144,11 +144,17 @@ def _mix_micros(winner_profile: NutrientProfile, others: list,
 
 def _ambiguities(request: FoodResolutionRequest, winner: Candidate,
                  runners: list, quantity: NormalizedQuantity,
-                 scaled: NutrientProfile) -> tuple:
+                 scaled: NutrientProfile,
+                 unscaled: Optional[NutrientProfile] = None) -> tuple:
     """Everything still genuinely uncertain, sized by what it costs. Reporting
     is unconditional; whether to ASK is the caller's decision with the mode."""
     out = []
-    item_cal = scaled.amount("calories") or 0.0
+    # `scaled` is empty when the portion could not be scaled at all — which is
+    # exactly the case that most needs a question. Sizing the doubt from the
+    # source's own row keeps it the right order of magnitude; a span of zero
+    # would rank the worst case as the least worth asking about.
+    item_cal = (scaled.amount("calories")
+                or (unscaled.amount("calories") if unscaled else None) or 0.0)
 
     def _fraction(span: float) -> float:
         return round(span / item_cal, 3) if item_cal > 0 else 1.0
@@ -177,7 +183,32 @@ def _ambiguities(request: FoodResolutionRequest, winner: Candidate,
             calorie_span=item_cal,
             detail="no known mass for this portion",
             calorie_fraction=1.0))
+    elif not span and _mass_is_a_loose_guess(quantity):
+        # The portion HAS an estimated mass, the estimate is loose, and the
+        # source scales by count or serving — so the looseness never reached
+        # `span` and would otherwise be silent. Having a number is not the same
+        # as knowing it: "a plate" resolving to 400 g ± 200 g is a wider doubt
+        # than having no mass at all, and it must not be quieter.
+        share = min(1.0, quantity.uncertainty_g / quantity.grams)
+        out.append(ResolutionAmbiguity(
+            field="serving_basis", options=(quantity.describe(),),
+            calorie_span=round(item_cal * share, 1),
+            detail="portion mass is a broad estimate",
+            calorie_fraction=round(share, 3)))
     return tuple(out)
+
+
+#: Above this ratio of uncertainty to mass, an estimated portion is a guess
+#: rather than an estimate. Chosen to sit above the ontology's category rows
+#: (a handful of nuts is 30 g ± 11) and below its broad fallbacks (a plate is
+#: 400 g ± 200) — which is exactly the line the ask ladder should care about.
+LOOSE_MASS_RATIO = 0.4
+
+
+def _mass_is_a_loose_guess(quantity: NormalizedQuantity) -> bool:
+    if not quantity.grams or not quantity.uncertainty_g:
+        return False
+    return quantity.uncertainty_g / quantity.grams >= LOOSE_MASS_RATIO
 
 
 #: A doubt covering this much of an item's own calories is worth asking about
@@ -257,24 +288,47 @@ def _resolve(request: FoodResolutionRequest,
             nutrients=NutrientProfile(), source="unresolved",
             tier=SourceTier.PROVISIONAL, match_grade=MatchGrade.NONE,
             confidence=0.0,
+            # The portion was still normalized, and what we assumed about it
+            # is still true. Dropping those on the unresolved path left the
+            # turn unable to say "I read that as a 400 g plate" at the exact
+            # moment the user most needs to know what we thought they ate.
+            assumptions=tuple(quantity.assumptions),
             warnings=("no candidate survived validation",),
             rejected_candidates=tuple(rejections),
             resolver_version=RESOLVER_VERSION)
 
     winner, runners = viable[0], viable[1:]
+    # A candidate that lost on precedence lost. It was previously dropped
+    # silently, which made "why USDA and not the label?" unanswerable from the
+    # resolution alone — the one question this object exists to answer. Fields
+    # borrowed from a runner are still reported by the mix notes below; losing
+    # the selection and contributing a micro are not mutually exclusive.
+    rejections.extend(
+        CandidateRejection(
+            r.source, r.name, "outranked",
+            f"{winner.source} ({winner.tier.label}) ranked higher",
+            r.source_id)
+        for r in runners)
     merged, mix_notes = _mix_micros(winner.profile, runners, request)
 
     warnings = []
     try:
         scaled = scale_profile(merged, winner.basis, quantity)
     except ScalingRefused as e:
-        # Refusing beats guessing, but the turn still needs numbers: fall back
-        # to the source's own basis unscaled and say so loudly.
+        # The source's own unscaled numbers are NOT a fallback. They describe a
+        # different portion than the one that was eaten, and persisting them
+        # logged a teaspoon of sugar as 387 calories — the per-100g row, with a
+        # warning nobody sees, in the day's totals.
+        #
+        # This is the "unknown is not zero" rule applied one level up: unknown
+        # is also not "the wrong portion". An unscalable portion produces no
+        # nutrients, which is the state the ask ladder can act on.
         warnings.append(f"portion not scaled: {e}")
-        scaled = merged
+        scaled = NutrientProfile()
 
     grade = _grade(request, winner)
-    ambiguities = _ambiguities(request, winner, runners, quantity, scaled)
+    ambiguities = _ambiguities(request, winner, runners, quantity, scaled,
+                               unscaled=merged)
     cal_value = scaled.get("calories")
     confidence = cal_value.confidence if cal_value is not None else 0.0
     if grade not in DECISIVE_GRADES:

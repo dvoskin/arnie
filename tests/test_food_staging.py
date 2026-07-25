@@ -161,6 +161,67 @@ def test_answering_clears_only_the_ambiguities_it_settled():
     assert [a.field_name for a in resolved.ambiguities] == ["consumed_fraction"]
 
 
+# ── a partial answer to a bundled question ────────────────────────────────────
+# "Which Fairlife was it, and how much did you drink?" names two ambiguities.
+# `answering()` used to clear every ambiguity the QUESTION named, so "Elite"
+# cleared the quantity as well and the item committed with a product we knew and
+# an amount we had invented. Bundled questions get partial answers routinely.
+def _bundled_item():
+    from skills.nutrition.ambiguity import AmbiguityType, FoodAmbiguity
+    return _item(identity=FoodIdentity(brand="Fairlife"),
+                 quantity=QuantityIntent(descriptor="some")).with_ambiguities([
+        FoodAmbiguity(ambiguity_id="a1", staged_item_id="i",
+                      ambiguity_type=AmbiguityType.PRODUCT_LINE,
+                      field_name="product_line"),
+        FoodAmbiguity(ambiguity_id="a2", staged_item_id="i",
+                      ambiguity_type=AmbiguityType.CONSUMED_QUANTITY,
+                      field_name="consumed_fraction")])
+
+
+class _Q:
+    """The bundled question: both ambiguities, asked in one sentence."""
+    ambiguity_ids = ("a1", "a2")
+    requested_fields = ("product_line", "consumed_fraction")
+
+
+def test_naming_the_product_leaves_the_quantity_open():
+    resolved = _bundled_item().answering(_Q(), product_line="Core Power Elite")
+    assert resolved.identity.product_line == "Core Power Elite"
+    assert [a.ambiguity_id for a in resolved.ambiguities] == ["a2"]
+
+
+def test_giving_the_amount_leaves_the_product_open():
+    resolved = _bundled_item().answering(_Q(), consumed_fraction=0.5)
+    assert resolved.quantity.consumed_fraction == 0.5
+    assert [a.ambiguity_id for a in resolved.ambiguities] == ["a1"]
+
+
+def test_answering_both_settles_both():
+    resolved = _bundled_item().answering(_Q(), product_line="Core Power Elite",
+                                         consumed_fraction=0.5)
+    assert resolved.ambiguities == ()
+
+
+def test_an_answer_in_a_different_shape_still_settles_the_quantity():
+    """"about a cup" answers a mass question with an amount and a unit. Settling
+    by field name alone left it standing and the next round re-asked it."""
+    resolved = _bundled_item().answering(_Q(), stated_amount=8.0,
+                                         stated_unit="oz")
+    assert [a.ambiguity_id for a in resolved.ambiguities] == ["a1"]
+
+
+def test_a_vague_descriptor_settles_nothing():
+    """"some" is the vagueness, not its resolution."""
+    resolved = _bundled_item().answering(_Q(), descriptor="a bit")
+    assert {a.ambiguity_id for a in resolved.ambiguities} == {"a1", "a2"}
+
+
+def test_a_caller_that_knows_what_it_settled_is_believed():
+    resolved = _bundled_item().answering(_Q(), settled_ambiguity_ids=("a2",),
+                                         product_line="Core Power Elite")
+    assert [a.ambiguity_id for a in resolved.ambiguities] == ["a1"]
+
+
 # ── identity of the row itself ────────────────────────────────────────────────
 def test_item_ids_are_stable_within_a_turn_and_unique_across_items():
     a = make_staged_item_id("imessage:G-1", 0, "a Fairlife")
