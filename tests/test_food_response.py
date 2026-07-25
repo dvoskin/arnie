@@ -227,8 +227,10 @@ def test_the_review_fallback_is_prose_for_a_simple_meal():
     or anything to fix?" — a form, not a coach checking something."""
     text = fallback(plan_review(_items(("toast", "1 slice"),
                                        ("gooseberry jam", "1 tbsp"))))
-    assert text == ("I've got 1 slice toast and 1 tbsp gooseberry jam. "
-                    "Does that look right?")
+    # Spoken, not tabulated (Danny 2026-07-25). "1 slice toast" is a row from
+    # the interpreter; "one slice of toast" is what a person says.
+    assert text == ("I'm reading that as one slice of toast and one "
+                    "tablespoon of gooseberry jam. Does that look right?")
     assert "Locking this in" not in text
     assert "anything to fix" not in text
 
@@ -237,8 +239,8 @@ def test_the_review_fallback_switches_to_lines_when_prose_stops_scanning():
     text = fallback(plan_review(_items(("chicken shawarma", "4 oz"),
                                        ("rice", "1 cup"), ("hummus", "2 tbsp"),
                                        ("pita", "half"))))
-    assert text.startswith("I've got:")
-    assert "\n4 oz chicken shawarma" in text
+    assert text.startswith("Here's how I'm reading that:")
+    assert "• 4oz of chicken shawarma" in text
     assert text.endswith("Does that look right?")
     assert "1." not in text and "**" not in text     # no numbering, no bold
 
@@ -257,7 +259,7 @@ def test_the_coach_fallback_is_silence_not_generic_advice():
 def test_the_clarify_fallback_acknowledges_context_before_asking():
     text = fallback(plan_clarify(question="Which Chobani yogurt was it?",
                                  resolved=_items(("toast", ""), ("fruit", ""))))
-    assert text == "I've got toast and fruit. Which Chobani yogurt was it?"
+    assert text == "I'm reading that as toast and fruit. Which Chobani yogurt was it?"
 
 
 def test_the_partial_commit_fallback_never_implies_the_held_item_landed():
@@ -610,7 +612,7 @@ def test_a_clarify_plan_carries_what_was_already_understood():
 
 def test_the_semantic_fallback_acknowledges_before_asking():
     text = fallback(plan_clarify_from_question(_question()))
-    assert text == "I've got toast and fruit. Which Chobani yogurt was it?"
+    assert text == "I'm reading that as toast and fruit. Which Chobani yogurt was it?"
 
 
 def test_a_material_assumption_reaches_the_prompt():

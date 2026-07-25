@@ -146,6 +146,16 @@ PORTION_ONTOLOGY = {
     "scoop": {
         "protein_powder": (32.0, 28.0, 38.0, 0.80),
         "ice_cream":      (66.0, 50.0, 90.0, 0.62),
+        # A "scoop" of peanut butter is a SPOON, not an ice-cream scoop — one
+        # to two tablespoons. Falling through to the 45 g default put it at
+        # nearly three, which is 270 calories of peanut butter for a phrase
+        # that usually means one heaped spoonful.
+        #
+        # Encoded as a category row rather than an override somewhere else on
+        # purpose: the ontology is the single source of truth for what a vague
+        # measure weighs, and a second place that adjusts the answer afterwards
+        # is how two implementations of the same rule start disagreeing.
+        "nut_butter":     (24.0, 16.0, 34.0, 0.55),
         "rice":           (90.0, 65.0, 120.0, 0.58),
         "default":        (45.0, 25.0, 75.0, 0.45),
     },
