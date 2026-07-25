@@ -1417,6 +1417,17 @@ async def _logged_history_match(db, user_id, food_name, quantity, days=90):
     return None
 
 
+def _user_stated_label(inp) -> bool:
+    """True when this write carries values the USER supplied off a label.
+
+    Set by the entity-bound clarification path (core/pending_clarification),
+    which only marks a write after the user answered a question we asked about
+    that specific entity. Requires an actual calorie value: the flag alone,
+    with nothing to honour, must not disable enrichment."""
+    inp = inp or {}
+    return bool(inp.get("user_label")) and inp.get("calories") is not None
+
+
 async def _analyze_food(db, user, food_name, inp):
     """
     Enrich a logged food with the right data source, returning a FoodAnalysis.
@@ -1440,12 +1451,32 @@ async def _analyze_food(db, user, food_name, inp):
     generic = is_generic_food_name(food_name)
     is_packaged = bool(inp.get("is_packaged")) or _looks_branded(food_name)
 
+    # TIER 1 — the user read us the label (core/pending_clarification). We
+    # asked, they answered: that IS the product, and no database outranks it.
+    # Enrichment is skipped entirely rather than run-and-discarded, so a
+    # cousin match can never leak in through a field the reply left unstated.
+    if _user_stated_label(inp):
+        _res = analyze(food_name, inp.get("quantity"),
+                       inp.get("calories"), inp.get("protein"),
+                       inp.get("carbs"), inp.get("fats"),
+                       usda_candidate=None, memory_match=None,
+                       web_candidate=None)
+        try:
+            _res.source = "user_label"
+            _res.confidence = "user-confirmed"
+            _res.enrichment_source = "user_label"
+        except Exception:
+            pass
+        logger.info(f"user label ground-truth: {food_name!r} → "
+                    f"{inp.get('calories')} cal — enrichment skipped")
+        return _res
+
     # 0) GROUND TRUTH — the user's OWN recent log of this exact food (word-order-
     # insensitive) wins over USDA/cache/generic. If they logged "Royo Everything Bagel"
     # at 80, a later "everything Royo bagel" logs at 80 — not a generic 290 or a poisoned
     # cache. Generic single-word names ("bagel") are excluded inside the matcher, and an
-    # explicit user-stated macro this turn (_user_macros) skips it so a correction wins.
-    if not generic and not inp.get("_user_macros"):
+    # explicit user-stated label this turn short-circuits above, so a correction wins.
+    if not generic:
         try:
             _hist = await _logged_history_match(db, user.id, food_name, inp.get("quantity"))
         except Exception as e:
@@ -1583,10 +1614,9 @@ async def _analyze_food(db, user, food_name, inp):
     # found nothing solid (source=='estimate') and the item is a substantial
     # composite, pull the ABSOLUTE total from the web and REPLACE the guess with
     # a sourced number. Fail-safe: only a confident in-bounds web hit overrides;
-    # otherwise the estimate stands untouched. A user-stated macro this turn
-    # (_user_macros) always wins over the web. Kill switch: WEB_MEAL_ENRICH=false.
+    # otherwise the estimate stands untouched. A user-stated label never
+    # reaches here — it returns above. Kill switch: WEB_MEAL_ENRICH=false.
     if (web_meal_enrich_enabled() and result.source == "estimate"
-            and not inp.get("_user_macros")
             and _worth_web_meal(food_name, result.calories)):
         try:
             meal = await _web_lookup_meal(food_name, inp.get("quantity"))

@@ -1,5 +1,5 @@
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_, or_, desc, delete, update
+from sqlalchemy import select, and_, or_, desc, delete, update, func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 from db.models import (
@@ -2735,6 +2735,29 @@ async def get_ledger_events(
     res = await db.execute(q.order_by(desc(LedgerEvent.created_at),
                                       desc(LedgerEvent.id)).limit(limit))
     return res.scalars().all()
+
+
+async def ledger_revision(db: AsyncSession, user_id: int,
+                          since: Optional[datetime] = None) -> int:
+    """Monotonic version of a user's logged state (P0.2 Phase 4).
+
+    The count of ledger events, which only ever grows — a delete appends an
+    event rather than removing one. That makes it a usable optimistic-
+    concurrency token: a card built at revision N can be detected as stale
+    when the day has moved to N+1, without a schema column to keep in sync.
+
+    `since` scopes it to a day (pass the day's start) — the common case, since
+    a card renders one day.
+    """
+    from db.models import LedgerEvent
+    q = select(func.count(LedgerEvent.id)).where(LedgerEvent.user_id == user_id)
+    if since is not None:
+        q = q.where(LedgerEvent.created_at >= since)
+    try:
+        return int((await db.execute(q)).scalar() or 0)
+    except Exception as e:
+        logger.debug(f"ledger_revision unavailable: {e}")
+        return 0
 
 
 async def claim_processed_turn(

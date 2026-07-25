@@ -1,6 +1,9 @@
-"""Snapshot. Phase 1: wraps whatever execution produced so the contract
-exists end to end. The universal TurnSnapshot (day revision, affected rows,
-totals, remaining targets) fills in as lanes migrate — food first."""
+"""Snapshot for DELEGATED turns: wraps whatever the legacy pipeline produced
+so the contract exists end to end, without claiming totals it did not read.
+
+Native lanes use stages/snapshot_builder.CommittedSnapshotStage, which reads
+committed state back per domain. This one is deleted with the legacy adapter.
+"""
 from __future__ import annotations
 
 from core.turns.models import TurnSnapshot
