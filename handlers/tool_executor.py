@@ -1552,6 +1552,10 @@ async def _analyze_food(db, user, food_name, inp):
             memory = {
                 "fdc_id": m.fdc_id, "user_confirmed": m.user_confirmed,
                 "confidence": m.confidence,
+                # Which tier first produced these numbers. Without it the
+                # resolver cannot tell a cache of its own generic answer from a
+                # food the user corrected, and credits both as the latter.
+                "origin_tier": getattr(m, "origin_tier", None),
                 "per100g": per100g,
             }
             await upsert_user_food_match(db, user.id, name_norm, food_name,
@@ -1607,10 +1611,21 @@ async def _analyze_food(db, user, food_name, inp):
         _hit = usda or off or web
         if _hit is not None:
             try:
+                # Record WHICH source filled this row. This write is the start of
+                # the laundering path: the row it creates is read back as a
+                # candidate, and without an origin every cached generic returned
+                # as a user-confirmed regular outranking the real product label.
+                # A branded database only earns branded authority on a good
+                # match — a weak hit in OFF is still just a guess.
+                _grade = _hit.get("_match") or "likely"
+                _branded_src = (_hit is off or _hit is web) and _hit is not usda
+                _origin = ("branded_exact"
+                           if _branded_src and _grade in ("exact", "likely")
+                           else "generic_exact")
                 await upsert_user_food_match(
                     db, user.id, name_norm, food_name,
                     _hit.get("fdc_id"), _hit.get("per100g", {}),
-                    _hit.get("_match") or "likely",
+                    _grade, origin_tier=_origin,
                 )
             except Exception as e:
                 logger.warning(f"memory cache write failed: {e}")
@@ -3046,9 +3061,13 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
                         "sugar": float(entry.sugar) if entry.sugar is not None else None,
                         "sodium": float(entry.sodium) if entry.sodium is not None else None,
                     }
+                    # user_confirmed is the BOOLEAN, not just the string. Passing
+                    # only the string left the flag False, so the "upgrade,
+                    # never downgrade" branch was dead and the cache-bust below
+                    # deleted rows the user had in fact corrected by hand.
                     await upsert_user_food_match(
                         db, user.id, name_norm, fn,
-                        None, per100, "user-confirmed",
+                        None, per100, "user-confirmed", user_confirmed=True,
                     )
                 elif any(k in changes for k in ("calories", "protein", "carbs", "fats")):
                     # Can't derive per-100g from this portion, but the user just

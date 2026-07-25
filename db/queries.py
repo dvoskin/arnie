@@ -2623,11 +2623,34 @@ def _extract_micros_100(per100: dict) -> dict:
     return {k: per100[k] for k in MICRO_KEYS if per100.get(k) is not None}
 
 
+#: The coarse `confidence` string is the only origin signal legacy rows carry.
+#: Deliberately pessimistic — "exact" is the one value implying a branded or
+#: label match, and anything unrecognised reads as generic rather than
+#: inheriting user authority by default.
+_ORIGIN_BY_CONFIDENCE = {
+    "user-confirmed": "user_regular",
+    "exact": "branded_exact",
+    "likely": "generic_exact",
+    "estimated": "estimated",
+}
+
+
 async def upsert_user_food_match(db: AsyncSession, user_id: int, name_norm: str,
                                  display_name: str, fdc_id: str, per100: dict,
-                                 confidence: str, user_confirmed: bool = False):
-    """Store/refresh a user's recurring food match. Bumps usage on repeat."""
+                                 confidence: str, user_confirmed: bool = False,
+                                 origin_tier: str = ""):
+    """Store/refresh a user's recurring food match. Bumps usage on repeat.
+
+    `origin_tier` is the authority that produced these numbers. It exists so a
+    reader can tell a cache of our own lookup from something the user actually
+    vouched for — those must not re-enter resolution at the same authority.
+    Defaults to generic rather than user authority: this function is called
+    automatically after every successful lookup, so the common case is a cache.
+    """
     micros = _extract_micros_100(per100)
+    origin = (origin_tier or ("user_regular" if user_confirmed
+                              else _ORIGIN_BY_CONFIDENCE.get(confidence,
+                                                             "generic_exact")))
     existing = await get_user_food_match(db, user_id, name_norm)
     if existing:
         existing.times_used = (existing.times_used or 1) + 1
@@ -2641,6 +2664,11 @@ async def upsert_user_food_match(db: AsyncSession, user_id: int, name_norm: str,
         if user_confirmed:
             existing.user_confirmed = True
             existing.confidence = "user-confirmed"
+            existing.origin_tier = "user_regular"
+        elif not existing.origin_tier:
+            # Legacy row, or one written before this column existed. Record what
+            # we can infer now; never let a refresh RAISE the stored authority.
+            existing.origin_tier = origin
         await db.commit()
         return existing
     m = UserFoodMatch(
@@ -2653,6 +2681,7 @@ async def upsert_user_food_match(db: AsyncSession, user_id: int, name_norm: str,
         micros_100_json=(json.dumps(micros) if micros else None),
         confidence="user-confirmed" if user_confirmed else confidence,
         user_confirmed=user_confirmed,
+        origin_tier=origin,
     )
     db.add(m)
     await db.commit()

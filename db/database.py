@@ -217,6 +217,11 @@ async def _migrate(conn):
         #    alembic migration e7750abe4362 (which also grandfathers existing users).
         ("users", "log_unlocked_at", "DATETIME"),
         ("users", "coach_unlocked_at", "DATETIME"),
+        # ── 2026-07-25: which authority tier first produced a cached food
+        #    profile, so a cache of our own generic answer stops re-entering as
+        #    a user-confirmed regular. SQLite-only net — Postgres handled by
+        #    paired alembic migration 9c814ca1d70d.
+        ("user_food_matches", "origin_tier", "VARCHAR"),
     ]
 
     for table, column, ddl in additions:

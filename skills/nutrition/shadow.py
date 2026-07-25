@@ -21,7 +21,7 @@ from typing import Optional
 
 from skills.nutrition.candidates import Candidate
 from skills.nutrition.models import (FoodResolutionRequest, profile_from_values)
-from skills.nutrition.provenance import MatchGrade, SourceTier
+from skills.nutrition.provenance import MatchGrade, SourceTier, memory_authority
 from skills.nutrition.resolver import resolve, resolution_log
 from skills.nutrition.scaling import Per100g, PerServing
 
@@ -64,10 +64,16 @@ def candidates_from_live(food_name: str, inp: dict, *, memory=None, usda=None,
     this is the adapter, and the only place that knows those shapes.
     """
     out = []
-    mem = _from_per100g("user_regular", SourceTier.USER_REGULAR, food_name,
-                        (memory or {}).get("per100g"),
-                        grade=MatchGrade.EXACT,
-                        source_id=str((memory or {}).get("fdc_id") or "") or None)
+    # A remembered lookup is not a user confirmation. See memory_authority.
+    _mem_row = memory or {}
+    _tier, _grade, _label = memory_authority(
+        user_confirmed=bool(_mem_row.get("user_confirmed")),
+        origin_tier=str(_mem_row.get("origin_tier") or ""),
+        confidence=str(_mem_row.get("confidence") or ""))
+    mem = _from_per100g(_label, _tier, food_name,
+                        _mem_row.get("per100g"),
+                        grade=_grade,
+                        source_id=str(_mem_row.get("fdc_id") or "") or None)
     if mem is not None:
         out.append(mem)
 
