@@ -12,6 +12,7 @@ is promoted to new_execute.
 from __future__ import annotations
 
 import logging
+import os
 from typing import Optional
 
 from core.turns.coordinator import (coordinator_mode, MODE_NEW_OBSERVE,
@@ -24,6 +25,35 @@ logger = logging.getLogger(__name__)
 
 def observing() -> bool:
     return coordinator_mode() in (MODE_NEW_OBSERVE, MODE_NEW_EXECUTE)
+
+
+def deep_observing() -> bool:
+    """Planning stages re-run the interpreter, which is a second model call on
+    every food turn. Route agreement is the first thing worth measuring and
+    costs nothing, so it is the default; disposition agreement is opt-in."""
+    return (os.getenv("TURN_COORDINATOR_OBSERVE_DEEP", "") or "").strip().lower() \
+        in ("1", "true", "yes")
+
+
+#: legacy `_turn_route` values → coordinator lanes. Comparison is only
+#: meaningful against a route the coordinator also models; anything absent
+#: here (a duplicate claim, say) is reported without a verdict.
+_LEGACY_LANES = {
+    "ledger_undo": TurnLane.LEDGER_UNDO.value,
+    "confirm_replay": TurnLane.STRUCTURED_FOOD.value,
+    "structured_log": TurnLane.STRUCTURED_FOOD.value,
+    "structured_update": TurnLane.STRUCTURED_FOOD.value,
+    "structured_delete": TurnLane.STRUCTURED_FOOD.value,
+    "structured_commit": TurnLane.STRUCTURED_FOOD.value,
+    "structured_ask": TurnLane.STRUCTURED_FOOD.value,
+    "legacy": TurnLane.GENERAL.value,
+}
+
+
+def legacy_lane(turn_route: str) -> str:
+    """Map what run_turn() actually did onto a lane, or "" when the route has
+    no coordinator equivalent yet."""
+    return _LEGACY_LANES.get((turn_route or "").strip(), "")
 
 
 async def observe_turn(request: TurnRequest,
@@ -39,7 +69,7 @@ async def observe_turn(request: TurnRequest,
         prediction = {"lane": route.lane.value, "reason": route.reason_code,
                       "disposition": ""}
         plan = validation = None
-        if route.lane is TurnLane.STRUCTURED_FOOD:
+        if route.lane is TurnLane.STRUCTURED_FOOD and deep_observing():
             from core.turns.stages.food import FoodPlanStage, FoodValidationStage
             plan = await FoodPlanStage().run(request, route=route)
             validation = await FoodValidationStage().run(request, plan=plan)

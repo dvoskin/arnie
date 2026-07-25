@@ -2708,6 +2708,35 @@ user_message=_user_text or "")
     except Exception:
         pass
 
+    # ── SHADOW OBSERVATION (P0.2): the parallel coordinator predicts this
+    # turn's lane from the same gates and logs predicted-vs-actual. Inert
+    # unless TURN_COORDINATOR_MODE is set, read-only always, and it runs
+    # AFTER the turn is decided so it can never influence the answer. The
+    # disagreement rate this produces is the promotion gate.
+    try:
+        from core.turns.observe import observing as _obs_on
+        if _obs_on():
+            from core.turns.models import TurnRequest as _TReq
+            from core.turns.observe import (observe_turn as _observe,
+                                            legacy_lane as _legacy_lane)
+            from core.turn_identity import current_turn_id as _obs_ctid
+            await _observe(
+                _TReq(turn_id=_obs_ctid() or "-", user_id=user.id,
+                      platform=platform, source_type=source_type,
+                      text=_user_text or "",
+                      metadata={"db": db, "user": user,
+                                "today_log": today_log,
+                                "in_onboarding": bool(in_onboarding),
+                                "has_board": bool(getattr(today_log,
+                                                          "food_entries", None)),
+                                "food_prior": locals().get("_sft_prior"),
+                                "food_pending": locals().get("_sft_prior") is not None}),
+                actual_route=_legacy_lane(_turn_route),
+                actual_disposition=("ask" if _turn_route == "structured_ask"
+                                    else ""))
+    except Exception:
+        pass
+
     return TurnResult(
         response=resp,
         tool_calls=tool_calls,
