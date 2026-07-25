@@ -266,10 +266,14 @@ def plan_turn(data: Mapping, *, turn_id: str, message: str = "",
         for trace in traces:
             logger.info(trace.log_line())
 
+        # `items_ready`, not `items_committed`: this is the clarifier's approval
+        # to write, recorded before the executor has written anything. A blocked
+        # or failed write used to surface here as a commit. The executor sets the
+        # committed and failed counts once it knows them (core/conversation.py).
         food_trace.note(
             meal_group_id=meal_group_id, mode=mode,
             items_staged=len(items),
-            items_committed=len(decision.ready_item_ids or ()),
+            items_ready=len(decision.ready_item_ids or ()),
             items_held=len(decision.held_item_ids or ()),
             questions_asked=len(decision.questions or ()),
             assumptions_made=len(decision.assumptions or ()))

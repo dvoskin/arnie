@@ -42,6 +42,7 @@ where these questions get asked at 2am.
 """
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
 import time
@@ -118,7 +119,17 @@ class FoodTurnTrace:
     meal_group_id: str = ""
     stages: Tuple[StageRecord, ...] = ()
     items_staged: int = 0
+    #: The commit funnel, kept as four separate numbers on purpose.
+    #:
+    #: `items_ready` is the clarifier's verdict — approved to write. It is NOT
+    #: evidence that anything was written, and reporting it as `items_committed`
+    #: meant a turn whose every write was blocked still showed a full commit
+    #: rate. Only the executor may move `items_committed`, and it reports
+    #: `items_failed` in the same breath.
+    items_ready: int = 0
+    items_attempted: int = 0
     items_committed: int = 0
+    items_failed: int = 0
     items_held: int = 0
     questions_asked: int = 0
     assumptions_made: int = 0
@@ -128,6 +139,8 @@ class FoodTurnTrace:
     error: str = ""
     started_at: float = field(default_factory=time.monotonic)
     version: str = TRACE_VERSION
+    #: ContextVar reset token, set by `begin`. Not part of the record.
+    _token: Any = None
 
     # ── accumulation ──────────────────────────────────────────────────────────
     def record(self, stage: Stage, *, duration_ms: float = 0.0,
@@ -176,11 +189,14 @@ class FoodTurnTrace:
 
     def as_dict(self) -> dict:
         return {
-            "turn_id": self.turn_id, "user_id": self.user_id,
+            "turn_id": self.turn_id, "user": self.user_ref,
             "mode": self.mode, "channel": self.channel,
             "meal_group_id": self.meal_group_id, "cohort": self.cohort,
             "items_staged": self.items_staged,
+            "items_ready": self.items_ready,
+            "items_attempted": self.items_attempted,
             "items_committed": self.items_committed,
+            "items_failed": self.items_failed,
             "items_held": self.items_held,
             "questions_asked": self.questions_asked,
             "assumptions_made": self.assumptions_made,
@@ -190,6 +206,27 @@ class FoodTurnTrace:
             "stages": [s.as_dict() for s in self.stages],
             "version": self.version,
         }
+
+    @property
+    def user_ref(self) -> str:
+        """A stable pseudonym for the log line.
+
+        The trace exists to be grepped and shipped to wherever logs go, and a raw
+        account id in it makes every one of those places a system holding user
+        identifiers. The hash is stable, so "find this user's other turns" still
+        works from a trace you already have; it is one-way, so a log reader
+        cannot turn a trace back into an account. Triage that genuinely needs the
+        account has the turn id and the database.
+
+        Salted per deployment where a salt is configured, so the same account
+        does not carry one recognizable pseudonym across environments.
+        """
+        if self.user_id is None:
+            return "-"
+        salt = os.getenv("FOOD_TRACE_SALT", "")
+        digest = hashlib.sha256(
+            f"{salt}:{self.user_id}".encode("utf-8")).hexdigest()
+        return f"u{digest[:12]}"
 
     def log_line(self) -> str:
         """The greppable summary.
@@ -207,10 +244,13 @@ class FoodTurnTrace:
                            for s in self.stages)
         return (
             f"event=food_trace turn={self.turn_id or '-'} "
-            f"user={self.user_id if self.user_id is not None else '-'} "
-            f"mode={self.mode or '-'} cohort={self.cohort or '-'} "
+            f"user={self.user_ref} "
+            f"mode={self.mode or '-'} channel={self.channel or '-'} "
+            f"cohort={self.cohort or '-'} "
             f"stopped_at={self.stopped_at or '-'} total_ms={self.total_ms:.0f} "
-            f"staged={self.items_staged} committed={self.items_committed} "
+            f"staged={self.items_staged} ready={self.items_ready} "
+            f"attempted={self.items_attempted} "
+            f"committed={self.items_committed} failed={self.items_failed} "
             f"held={self.items_held} asked={self.questions_asked} "
             f"assumed={self.assumptions_made} "
             f"source={self.resolver_source or '-'} "
@@ -236,14 +276,20 @@ def tracing_enabled() -> bool:
 def begin(*, turn_id: str = "", user_id=None, mode: str = "",
           channel: str = "", cohort: str = "") -> Optional[FoodTurnTrace]:
     """Start a trace for this turn and make it ambient. Returns None when
-    tracing is off, which every caller must tolerate."""
+    tracing is off, which every caller must tolerate.
+
+    The reset token is kept ON the trace so `finish` can restore whatever was
+    ambient before rather than blanking the variable. Setting it to None
+    unconditionally is wrong in any nested or inherited context: an inner
+    finish would blind the outer turn for the rest of its life.
+    """
     if not tracing_enabled():
         return None
     try:
         trace = FoodTurnTrace(turn_id=turn_id or "", user_id=user_id,
                               mode=mode or "", channel=channel or "",
                               cohort=cohort or "")
-        CURRENT_TRACE.set(trace)
+        trace._token = CURRENT_TRACE.set(trace)
         return trace
     except Exception:
         return None
@@ -317,21 +363,78 @@ class stage:
 
 
 def finish(trace: Optional[FoodTurnTrace] = None) -> Optional[FoodTurnTrace]:
-    """Emit the summary line and clear the ambient trace.
+    """Emit the summary line and release the ambient trace.
 
     Safe to call twice — the second call finds nothing and does nothing, which
     matters because the food path has more than one exit and making each of
     them prove it is the last would be worse than an idempotent finish.
+
+    A trace that recorded NO stages is not emitted. The trace now opens at the
+    top of the turn, before anything knows whether food is involved, so most
+    turns end here with an empty record — and a food_trace line per non-food
+    turn would swamp every rate in the dashboards with turns that never had a
+    food path to measure.
     """
     trace = trace if trace is not None else current()
     if trace is None:
         return None
     try:
-        CURRENT_TRACE.set(None)
-        logger.info(trace.log_line())
+        token = getattr(trace, "_token", None)
+        if token is not None:
+            CURRENT_TRACE.reset(token)
+            trace._token = None
+        else:
+            CURRENT_TRACE.set(None)
+    except Exception:
+        pass
+    try:
+        if trace.stages or trace.error:
+            logger.info(trace.log_line())
     except Exception:
         pass
     return trace
+
+
+class span:
+    """Own the ambient trace for one turn, deferring to an outer owner.
+
+        with food_trace.span(turn_id=..., channel="imessage"):
+            ...
+
+    Nesting is the point. The turn now opens its trace in the coordinator, well
+    before `food_turn.run()`, so that resolution, the writes and the render all
+    land inside it. But `food_turn.run()` is also called directly — by tests, by
+    the simulator — and it still needs a trace when nobody above it made one.
+
+    An inner span therefore does NOT begin or finish anything; it fills in any
+    turn-level fields the outer span could not know yet and leaves ownership
+    where it is. Two owners would mean the inner `finish` emitted a half-turn
+    and blinded the rest of it.
+    """
+
+    __slots__ = ("_fields", "_trace", "_owner")
+
+    def __init__(self, **fields):
+        self._fields = fields
+        self._trace = None
+        self._owner = False
+
+    def __enter__(self) -> Optional[FoodTurnTrace]:
+        existing = current()
+        if existing is not None:
+            self._trace, self._owner = existing, False
+            note(**self._fields)
+            return existing
+        self._trace = begin(**self._fields)
+        self._owner = self._trace is not None
+        return self._trace
+
+    def __exit__(self, exc_type, exc, tb) -> bool:
+        if exc_type is not None:
+            note(error=f"turn:{exc_type.__name__}")
+        if self._owner:
+            finish(self._trace)
+        return False           # never suppress
 
 
 # ── correction linkage ────────────────────────────────────────────────────────

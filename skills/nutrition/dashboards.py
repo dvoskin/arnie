@@ -202,7 +202,13 @@ def _of(records, event: str) -> list:
 
 
 def _timings(record: Mapping) -> dict:
-    """`timings=interpret:3 resolve:180` → {stage: ms}.
+    """`timings=interpret:3,resolve:120,resolve:80` → {stage: total ms}.
+
+    Repeated stages are SUMMED, not overwritten. A turn resolves once per item,
+    so a three-food meal writes three `resolve:` pairs, and assigning them into a
+    dict kept only the last — which reported the cheapest item's latency as the
+    turn's and made multi-food resolution look as fast as single-food. The user
+    waits for all of them, so the total is the honest per-turn figure.
 
     Parsed defensively: the field is written by a formatter and read by a
     dashboard, and a malformed pair should cost that pair rather than the run.
@@ -213,7 +219,20 @@ def _timings(record: Mapping) -> dict:
         stage, _, ms = pair.partition(":")
         value = _num(ms)
         if stage and value is not None:
-            out[stage] = value
+            out[stage] = out.get(stage, 0.0) + value
+    return out
+
+
+def _timing_occurrences(record: Mapping) -> dict:
+    """`{stage: how many times it ran}` for one turn. Keeps the per-item count
+    visible next to the summed duration, so a slow turn and a busy one are
+    distinguishable rather than both showing as "resolve was slow"."""
+    raw = str(record.get("timings") or "")
+    out = {}
+    for pair in raw.replace(",", " ").split():
+        stage, _, ms = pair.partition(":")
+        if stage and _num(ms) is not None:
+            out[stage] = out.get(stage, 0) + 1
     return out
 
 
@@ -252,20 +271,27 @@ def turn_funnel(records) -> Funnel:
 
 
 def item_funnel(records) -> Funnel:
-    """Items staged → not held → committed.
+    """Items staged → not held → approved to write → written.
 
     Counted in ITEMS, and separate from the turn funnel for that reason. A turn
     is finished or not; an item is committed or not; one number cannot be both.
+
+    "Approved to write" and "written" are two steps because they are two facts,
+    and collapsing them hid the whole failure class where the clarifier approves
+    an item and the write is refused. The drop between these two steps IS the
+    failed-write rate.
     """
     traces = _of(records, "food_trace")
     staged = sum(_int(t.get("staged")) for t in traces)
     held = sum(_int(t.get("held")) for t in traces)
+    ready = sum(_int(t.get("ready")) for t in traces)
     committed = sum(_int(t.get("committed")) for t in traces)
 
     return _funnel("item funnel", [
         ("items staged", staged),
         ("not held", max(0, staged - held)),
-        ("committed", committed),
+        ("approved to write", ready),
+        ("written", committed),
     ], note="counted in items across all turns")
 
 
@@ -400,17 +426,32 @@ def latency_report(records) -> dict:
     traces = _of(records, "food_trace")
     totals = [_num(t.get("total_ms")) for t in traces]
     by_stage = defaultdict(list)
+    runs_per_turn = defaultdict(list)
     for trace in traces:
+        # One sample per TURN per stage, holding that turn's total time in the
+        # stage. Appending each occurrence separately would weight a three-food
+        # turn three times in the percentiles and quietly turn a turn-latency
+        # report into an item-latency one.
         for stage, ms in _timings(trace).items():
             by_stage[stage].append(ms)
+        for stage, runs in _timing_occurrences(trace).items():
+            runs_per_turn[stage].append(runs)
 
     from core.food_trace import STAGE_ORDER
     ordered = [s for s in STAGE_ORDER if s in by_stage]
     ordered += sorted(s for s in by_stage if s not in STAGE_ORDER)
 
+    def _stage_row(stage: str) -> dict:
+        row = latency_for(stage, by_stage[stage]).as_dict()
+        runs = [r for r in runs_per_turn.get(stage, []) if r]
+        if runs:
+            row["runs_per_turn_max"] = max(runs)
+            row["runs_per_turn_avg"] = round(sum(runs) / len(runs), 2)
+        return row
+
     return {
         "turn_total": latency_for("turn_total", totals).as_dict(),
-        "stages": [latency_for(s, by_stage[s]).as_dict() for s in ordered],
+        "stages": [_stage_row(s) for s in ordered],
     }
 
 

@@ -257,12 +257,19 @@ def test_a_real_readiness_report_evaluates_without_error():
 
 # ── funnels ───────────────────────────────────────────────────────────────────
 def _trace_line(turn, meal, *, staged=1, committed=1, held=0, asked=0,
-                cohort="control", stages=(("interpret", 2), ("stage", 1))):
+                ready=None, failed=0, cohort="control",
+                stages=(("interpret", 2), ("stage", 1))):
+    """`ready` defaults to what committed: an item is never written without
+    first being approved, so a trace with commits and no approvals is a shape
+    production cannot produce."""
     trace = FoodTurnTrace(turn_id=turn, user_id=1, mode="moderate",
                           cohort=cohort, meal_group_id=meal)
     for name, ms in stages:
         trace.record(Stage(name), duration_ms=ms)
-    trace.note(items_staged=staged, items_committed=committed,
+    trace.note(items_staged=staged,
+               items_ready=(committed + failed if ready is None else ready),
+               items_attempted=committed + failed,
+               items_committed=committed, items_failed=failed,
                items_held=held, questions_asked=asked, resolver_source="off")
     return trace.log_line()
 
@@ -465,3 +472,272 @@ def test_resolution_is_identical_with_tracing_on_and_off(monkeypatch):
     assert without.nutrients.as_dict() == with_tracing.nutrients.as_dict()
     assert without.source == with_tracing.source
     assert without.assumptions == with_tracing.assumptions
+
+
+# ── the trace has to outlive the interpreter pass ─────────────────────────────
+def test_a_nested_span_defers_to_the_outer_owner(monkeypatch):
+    """`food_turn.run()` is not the whole turn — it returns before the writes and
+    the render. It used to own the trace and finish it there, so resolution, the
+    commits and the rendered reply all landed outside the record. An inner span
+    must therefore neither finish nor replace the outer one."""
+    monkeypatch.setenv("FOOD_TRACE", "true")
+    with food_trace.span(turn_id="outer", channel="imessage") as outer:
+        assert outer is not None
+        with food_trace.span(turn_id="inner") as inner:
+            assert inner is outer, "the inner span replaced the outer trace"
+            food_trace.record(Stage.INTERPRET)
+        # Still ambient, still the same record — the inner exit finished nothing.
+        assert food_trace.current() is outer
+        food_trace.record(Stage.EXECUTE)
+    assert food_trace.current() is None
+    assert outer.reached == ("interpret", "execute")
+
+
+def test_an_inner_span_fills_fields_the_outer_one_could_not_know():
+    """The coordinator knows the channel; only the interpreter knows the mode."""
+    with food_trace.span(turn_id="t", channel="telegram") as outer:
+        with food_trace.span(mode="strict", cohort="canary"):
+            pass
+        assert outer.channel == "telegram"
+        assert outer.mode == "strict" and outer.cohort == "canary"
+
+
+def test_finishing_restores_what_was_ambient_before(monkeypatch):
+    """`finish` used to set the contextvar to None outright. In any nested or
+    inherited context that blinds the outer turn for the rest of its life."""
+    monkeypatch.setenv("FOOD_TRACE", "true")
+    outer = food_trace.begin(turn_id="outer")
+    inner = food_trace.begin(turn_id="inner")
+    assert food_trace.current() is inner
+    food_trace.finish(inner)
+    assert food_trace.current() is outer, "the outer trace was blanked"
+    food_trace.finish(outer)
+    assert food_trace.current() is None
+
+
+def test_a_turn_with_no_food_emits_nothing(monkeypatch, caplog):
+    """The trace now opens at the top of every turn, before anything knows
+    whether food is involved. A line per non-food turn would swamp every rate in
+    the dashboards with turns that had no food path to measure."""
+    monkeypatch.setenv("FOOD_TRACE", "true")
+    with caplog.at_level(logging.INFO):
+        with food_trace.span(turn_id="t", channel="web"):
+            pass
+    assert not any("event=food_trace" in r.message for r in caplog.records)
+
+
+def test_a_turn_that_recorded_a_stage_does_emit(monkeypatch, caplog):
+    monkeypatch.setenv("FOOD_TRACE", "true")
+    with caplog.at_level(logging.INFO):
+        with food_trace.span(turn_id="t"):
+            food_trace.record(Stage.STAGE)
+    assert any("event=food_trace" in r.message for r in caplog.records)
+
+
+# ── committed means written ────────────────────────────────────────────────────
+def test_approval_is_not_a_commit():
+    """`items_ready` is the clarifier's verdict. Reporting it as `items_committed`
+    meant a turn whose every write was blocked still showed a full commit rate —
+    the one number the rollout gates on."""
+    trace = FoodTurnTrace(turn_id="t", items_staged=2, items_ready=2)
+    assert trace.items_committed == 0
+    assert "ready=2" in trace.log_line()
+    assert "committed=0" in trace.log_line()
+
+
+def test_a_failed_commit_never_raises_the_committed_funnel():
+    trace = FoodTurnTrace(turn_id="t", items_staged=2, items_ready=2)
+    trace.note(items_attempted=2, items_committed=0, items_failed=2)
+    line = trace.log_line()
+    assert "committed=0" in line and "failed=2" in line
+
+    parsed = dashboards.parse_log([line])
+    funnel = dashboards.item_funnel(parsed)
+    steps = {s.name: s.count for s in funnel.steps}
+    assert steps["approved to write"] == 2
+    assert steps["written"] == 0
+
+
+def test_a_partial_commit_records_both_counts():
+    trace = FoodTurnTrace(turn_id="t", items_staged=3, items_ready=3)
+    trace.note(items_attempted=3, items_committed=2, items_failed=1)
+    steps = {s.name: s.count for s in dashboards.item_funnel(
+        dashboards.parse_log([trace.log_line()])).steps}
+    assert steps["approved to write"] == 3
+    assert steps["written"] == 2
+
+
+def test_the_pipeline_reports_readiness_not_commits(monkeypatch):
+    """plan_turn runs before the executor exists. It may not claim a commit."""
+    monkeypatch.setenv("FOOD_TRACE", "true")
+    from core.food_pipeline import plan_turn
+
+    trace = food_trace.begin(turn_id="t1", user_id=1, mode="moderate")
+    plan_turn({"items": [{"food": "100g chicken breast", "grams": 100}]},
+              turn_id="t1", message="100g chicken", mode="moderate")
+    assert trace.items_committed == 0, "the planner claimed a commit"
+    assert trace.items_ready >= 0
+
+
+# ── latency must not collapse repeated stages ─────────────────────────────────
+def test_repeated_stage_timings_are_summed_not_overwritten():
+    """A three-food meal resolves three times. Assigning each pair into a dict
+    kept only the last, so multi-food resolution looked as fast as single-food."""
+    line = ("event=food_trace turn=t staged=3 committed=3 "
+            "total_ms=900 timings=interpret:10,resolve:120,resolve:80,resolve:200")
+    report = dashboards.latency_report(dashboards.parse_log([line]))
+    resolve = next(s for s in report["stages"] if s["name"] == "resolve")
+    assert resolve["max_ms"] == 400.0, "repeated resolve stages were not summed"
+    assert resolve["runs_per_turn_max"] == 3
+
+
+def test_one_latency_sample_per_turn_not_per_item():
+    """Otherwise a three-food turn votes three times in the percentiles and the
+    turn-latency report quietly becomes an item-latency one."""
+    lines = [
+        "event=food_trace turn=a total_ms=100 timings=resolve:100",
+        "event=food_trace turn=b total_ms=300 timings=resolve:100,resolve:100,resolve:100",
+    ]
+    report = dashboards.latency_report(dashboards.parse_log(lines))
+    resolve = next(s for s in report["stages"] if s["name"] == "resolve")
+    assert resolve["samples"] == 2
+
+
+# ── the canary must actually bound the cohort ──────────────────────────────────
+def test_a_canary_percentage_excludes_everyone_outside_it(live, monkeypatch):
+    """The gate used to end at `return not allow`, so with a 10% canary and an
+    empty allowlist the other 90% still owned the new values. A percentage that
+    excludes nobody is not a canary and cannot be rolled back by turning it
+    down."""
+    monkeypatch.setenv("NUTRITION_RESOLVER_CANARY_PCT", "10")
+    inside = [u for u in range(400) if canary.in_canary(u)]
+    outside = [u for u in range(400) if not canary.in_canary(u)]
+    assert inside and outside, "10% of 400 users should split both ways"
+
+    assert all(canary.owns_committed_values(u) for u in inside)
+    assert not any(canary.owns_committed_values(u) for u in outside), (
+        "users outside the canary own resolver values")
+
+
+def test_the_cohort_label_agrees_with_who_actually_owns(live, monkeypatch):
+    """`cohort_label` called the excluded 90% "control" while they ran the
+    treatment, so canary-versus-control compared the new path against itself."""
+    monkeypatch.setenv("NUTRITION_RESOLVER_CANARY_PCT", "10")
+    for user_id in range(200):
+        owns = canary.owns_committed_values(user_id)
+        label = canary.cohort_label(user_id)
+        assert owns == (label in ("canary", "allowlist", "live")), (
+            f"user {user_id}: owns={owns} but labelled {label}")
+
+
+def test_unrestricted_live_has_no_control_group(live):
+    """No canary and no allowlist means everyone is treatment. Calling them
+    control invented a baseline that does not exist."""
+    assert canary.canary_percent() == 0
+    assert canary.owns_committed_values(7) is True
+    assert canary.cohort_label(7) == "live"
+
+
+def test_an_allowlist_without_a_canary_still_excludes_everyone_else(live,
+                                                                   monkeypatch):
+    monkeypatch.setenv("NUTRITION_RESOLVER_ALLOWLIST", "42")
+    assert canary.owns_committed_values(42) is True
+    assert canary.cohort_label(42) == "allowlist"
+    assert canary.owns_committed_values(43) is False
+    assert canary.cohort_label(43) == "control"
+
+
+def test_a_full_canary_covers_everyone(live, monkeypatch):
+    monkeypatch.setenv("NUTRITION_RESOLVER_CANARY_PCT", "100")
+    assert all(canary.owns_committed_values(u) for u in range(50))
+
+
+# ── the halt needs a control path ─────────────────────────────────────────────
+@pytest.fixture(autouse=True)
+def _clear_halt_latch():
+    canary.clear_halt()
+    yield
+    canary.clear_halt()
+
+
+def test_evaluating_a_halt_changes_nothing_on_its_own(live):
+    """`evaluate` is a pure evaluator, so the number that stops a rollout can be
+    recomputed without stopping one."""
+    decision = canary.evaluate(
+        {"metrics": {"resolver_crash_rate": {"verdict": "fail"}}})
+    assert decision.should_halt
+    assert canary.halted() is False
+    assert canary.owns_committed_values(1) is True
+
+
+def test_activating_a_halt_stops_ownership_in_this_process(live):
+    """The gap the review found: evaluate() could return HALT and nothing
+    anywhere acted on it, so no application process could stop a rollout."""
+    decision = canary.evaluate(
+        {"metrics": {"resolver_crash_rate": {"verdict": "fail"}}},
+        stage="canary_10")
+    assert canary.activate_halt(decision) is True
+    assert canary.halted() is True
+    assert canary.owns_committed_values(1) is False
+    assert canary.cohort_label(1) == "halted"
+    assert canary.halt_state()["process_latch"] == "resolver_crash_rate"
+    assert canary.halt_state()["environment"] is False
+
+
+def test_evaluate_and_halt_closes_the_loop(live):
+    canary.evaluate_and_halt(
+        {"metrics": {"resolver_crash_rate": {"verdict": "fail"}}},
+        stage="canary_25")
+    assert canary.halted() is True
+
+
+def test_a_healthy_report_does_not_latch(live):
+    canary.evaluate_and_halt({"metrics": {"resolver_crash_rate":
+                                          {"verdict": "pass"}}})
+    assert canary.halted() is False
+
+
+def test_a_watch_verdict_does_not_latch(live):
+    decision = canary.evaluate_and_halt({"metrics": {"ask_rate":
+                                                     {"verdict": "fail"}}})
+    assert decision.verdict is canary.Verdict.WATCH
+    assert canary.halted() is False
+
+
+def test_resuming_is_never_automatic(live):
+    canary.evaluate_and_halt(
+        {"metrics": {"resolver_crash_rate": {"verdict": "fail"}}})
+    canary.evaluate_and_halt({"metrics": {"resolver_crash_rate":
+                                          {"verdict": "pass"}}})
+    assert canary.halted() is True, "a passing report resumed the rollout"
+    canary.clear_halt()
+    assert canary.halted() is False
+
+
+def test_the_halt_state_distinguishes_its_two_mechanisms(live, monkeypatch):
+    """"halted by this process" and "halted by the deploy" call for different
+    actions, and the boolean cannot tell them apart."""
+    monkeypatch.setenv("NUTRITION_RESOLVER_HALT", "true")
+    state = canary.halt_state()
+    assert state["halted"] is True and state["environment"] is True
+    assert state["process_latch"] is None
+
+
+# ── the user id does not travel in the log line ───────────────────────────────
+def test_the_log_line_carries_a_pseudonym_not_an_account_id():
+    """The trace is grepped and shipped wherever logs go; a raw account id makes
+    every one of those places a system holding user identifiers."""
+    line = FoodTurnTrace(turn_id="t", user_id=413).log_line()
+    assert "user=413" not in line
+    assert "413" not in line.split("user=")[1].split()[0]
+
+
+def test_the_pseudonym_is_stable_so_a_users_turns_still_join():
+    a = FoodTurnTrace(turn_id="t1", user_id=413).user_ref
+    b = FoodTurnTrace(turn_id="t2", user_id=413).user_ref
+    other = FoodTurnTrace(turn_id="t3", user_id=414).user_ref
+    assert a == b and a != other
+
+
+def test_a_missing_user_is_a_dash_not_a_hash():
+    assert FoodTurnTrace(turn_id="t").user_ref == "-"

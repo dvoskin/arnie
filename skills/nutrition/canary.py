@@ -19,16 +19,34 @@ the 25% cohort, because the bucket is a property of the id rather than of the
 percentage. Going from 10 to 25 therefore adds users and never swaps them, and
 rolling back from 25 to 10 removes exactly the ones that were added.
 
-**A halt that does not need a human.** The readiness gates already know what
-"unsafe" looks like. What was missing is anything that reads them while the
-rollout is running and stops it. `evaluate()` turns a readiness report into a
-typed decision, and `halted()` reads the resulting flag on the live path.
+**A halt with a control path.** The readiness gates already know what "unsafe"
+looks like. `evaluate()` turns a readiness report into a typed decision — and
+that is ALL it does; it is a pure evaluator, so the number that stops a rollout
+can be recomputed without stopping one.
 
-Two deliberate asymmetries:
+Activating a halt is a separate, explicit call:
 
-*Halting is automatic; resuming is not.* An automatic resume would oscillate
-against whatever caused the halt, and the halt is exactly the moment a person
-should look. The flag is set by the operator or the deploy that clears it.
+    decision = evaluate(report, stage="canary_10")
+    if decision.should_halt:
+        activate_halt(decision)          # or: evaluate_and_halt(report, ...)
+
+Be precise about what that latch reaches, because the earlier version of this
+docstring promised more than the code could do. `activate_halt()` sets a
+PROCESS-LOCAL flag: it stops the process that called it, immediately, with no
+storage dependency on the live path. It does not reach the other workers. The
+deployment-wide, restart-surviving control is still the environment flag
+`NUTRITION_RESOLVER_HALT`, which is what an operator or a deploy sets.
+
+So: automatic within the process that evaluates, manual across the fleet. A
+monitoring job that evaluates and latches has halted itself and nothing else —
+`halt_state()` reports which mechanism is active so that distinction is visible
+rather than assumed.
+
+One deliberate asymmetry:
+
+*Resuming is never automatic.* An automatic resume would oscillate against
+whatever caused the halt, and the halt is exactly the moment a person should
+look. `clear_halt()` exists for tests and for an operator who has looked.
 
 *A halt disables OWNERSHIP, not observation.* Shadow logging keeps running
 through a halt, because the data explaining why it halted is produced by the
@@ -132,25 +150,93 @@ def cohort_label(user_id) -> str:
     if halted():
         return "halted"
     from skills.nutrition.promotion import _allowlist, resolver_mode
-    if resolver_mode() != "live":
-        return "off" if resolver_mode() == "off" else "shadow"
+    mode = resolver_mode()
+    if mode != "live":
+        return "off" if mode == "off" else "shadow"
     if user_id is not None and user_id in _allowlist():
         return "allowlist"
     if in_canary(user_id):
         return "canary"
-    return "control"
+    # Not on the new path — but "control" is a claim about a comparison, and it
+    # is only true if something is actually restricting the rollout. Unrestricted
+    # live has no control group: everyone is treatment. Labelling them "control"
+    # made canary-versus-control reports compare the new path against itself.
+    if canary_percent() > 0 or _allowlist():
+        return "control"
+    return "live"
 
 
 # ── the halt flag ─────────────────────────────────────────────────────────────
-def halted() -> bool:
-    """Whether the rollout is currently stopped.
+#: The process-local latch. Set by `activate_halt()`, never by `evaluate()`.
+#: A module global rather than a contextvar on purpose: a halt must apply to
+#: every turn this process goes on to serve, including ones already in flight in
+#: other tasks, and a contextvar would scope it to the caller that tripped it.
+_HALT_LATCH: Optional[str] = None
 
-    Read on the live path, so it stays a plain environment read: an
-    availability dependency here would mean the resolver goes dark whenever the
-    thing storing the flag does.
+
+def halted() -> bool:
+    """Whether the rollout is currently stopped, for THIS process.
+
+    Two mechanisms, both cheap enough for the live path — an availability
+    dependency here would mean the resolver goes dark whenever the thing storing
+    the flag does:
+
+      • `NUTRITION_RESOLVER_HALT` — the deployment-wide, restart-surviving
+        control. Set by an operator or a deploy.
+      • the process latch — set by `activate_halt()` when this process evaluated
+        a report and found a zero-tolerance gate broken.
     """
+    if _HALT_LATCH is not None:
+        return True
     raw = (os.getenv("NUTRITION_RESOLVER_HALT", "") or "").strip().lower()
     return raw in ("1", "true", "yes", "on")
+
+
+def halt_state() -> dict:
+    """Which halt mechanism is active. Reported rather than inferred, because
+    "halted by this process" and "halted by the deploy" call for different
+    actions and the boolean cannot tell them apart."""
+    raw = (os.getenv("NUTRITION_RESOLVER_HALT", "") or "").strip().lower()
+    return {"halted": halted(), "process_latch": _HALT_LATCH,
+            "environment": raw in ("1", "true", "yes", "on")}
+
+
+def activate_halt(decision: "HaltDecision") -> bool:
+    """Stop the rollout in this process. Returns whether the latch moved.
+
+    Separate from `evaluate()` so evaluation stays pure and so nothing claims a
+    halt happened as a side effect of measuring one. The log line is loud
+    because a process that has halted itself while its siblings have not is a
+    state an operator must be told about — the environment flag is what makes it
+    fleet-wide.
+    """
+    global _HALT_LATCH
+    if decision is None or not getattr(decision, "should_halt", False):
+        return False
+    if _HALT_LATCH is not None:
+        return False
+    _HALT_LATCH = ",".join(decision.reasons) or "unspecified"
+    logger.error(
+        "event=canary_halt_activated scope=process "
+        f"stage={decision.stage or '-'} reasons={_HALT_LATCH} "
+        "note=set NUTRITION_RESOLVER_HALT to halt every worker")
+    return True
+
+
+def clear_halt() -> None:
+    """Release the process latch. For tests, and for an operator who has looked
+    at why it tripped. Never called automatically — see the module docstring on
+    why resuming is not symmetric with halting."""
+    global _HALT_LATCH
+    _HALT_LATCH = None
+
+
+def evaluate_and_halt(report: Mapping, *, stage: str = "") -> "HaltDecision":
+    """Evaluate a report and act on a HALT verdict. The one call that closes the
+    loop; `evaluate()` alone deliberately changes nothing."""
+    decision = evaluate(report, stage=stage)
+    activate_halt(decision)
+    return decision
 
 
 def owns_committed_values(user_id=None) -> bool:
@@ -162,10 +248,18 @@ def owns_committed_values(user_id=None) -> bool:
                         allowlist could override is not a halt.
         not live      → nobody.
         allowlisted   → yes. An explicitly named user is always in.
-        in canary     → yes.
+        canary set    → ONLY the users inside it.
         allowlist set → no. A configured allowlist with no canary means
                         allowlist-only, which is the pre-canary behaviour.
         otherwise     → yes, the unrestricted live case.
+
+    The canary line is the one that was missing. The gate used to end at
+    `return not allow`, so with a 10% canary and an empty allowlist the 90%
+    outside the cohort still owned the new values — the canary percentage
+    bounded nothing, and `cohort_label` called those users "control" while they
+    ran the treatment. A percentage that does not exclude anyone is not a
+    canary, and a rollout measured that way cannot be rolled back by turning it
+    down.
     """
     from skills.nutrition.promotion import MODE_LIVE, _allowlist, resolver_mode
     if halted():
@@ -175,8 +269,8 @@ def owns_committed_values(user_id=None) -> bool:
     allow = _allowlist()
     if user_id is not None and user_id in allow:
         return True
-    if in_canary(user_id):
-        return True
+    if canary_percent() > 0:
+        return in_canary(user_id)
     return not allow
 
 
@@ -272,6 +366,7 @@ def plan(report: Mapping = None, *, user_id=None) -> dict:
     return {
         "mode": _mode(),
         "halted": halted(),
+        "halt_state": halt_state(),
         "canary_pct": canary_percent(),
         "allowlist_size": len(_allow()),
         "cohort": cohort_label(user_id) if user_id is not None else "",
