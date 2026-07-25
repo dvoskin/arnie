@@ -87,15 +87,17 @@ zero new failures elsewhere in the suite.
 - Original user statement + full tool input persisted per entry (`raw_input`).
 - Scribe completeness reconcile, dedup guards, meal-slot inheritance.
 
-## Open product decision (needs Danny's call)
+## Product decision: strict-mode confirmations — RESOLVED 2026-07-25
 
-**Strict-mode confirmations.** The 2026-07-24 incident fix ("nothing commits
-silently on strict") conflicts with the later direction ("do not overuse strict
-confirmations — reserve them for high-impact/destructive/ambiguous/bulk").
-Phase 1 keeps the incident behavior (every strict pure-log confirms). The
-proposed narrowing: confirm only when the plan contains system-estimated
-amounts (`basis != stated`), bulk (≥4 items), or destructive/ambiguous ops;
-show assumptions inside the committed card otherwise. Flip when approved.
+Danny's call: "strict mode should work for the narrower set when it's logical
+based on the scoped work." Shipped: the pre-write confirm fires only where it
+earns its friction — a SYSTEM-ESTIMATED amount (`basis == estimate`, or basis
+absent and the amount is not the user's own words — `_item_is_stated`'s
+deterministic proxy), a BULK plan (≥4 items), or unresolved consumed-vs-planned
+doubt reported below the ask threshold. A plan whose every amount is user-stated
+commits directly even on strict; the committed card shows the assumptions and
+stays one tap from repair. Both lanes' policy prose updated together
+(food_mode_directive), per the one-policy rule.
 
 ## Phase 2 — ledger durability (first slice SHIPPED 2026-07-24)
 
