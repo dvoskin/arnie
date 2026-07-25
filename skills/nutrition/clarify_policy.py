@@ -80,7 +80,18 @@ EFFORT = {
 BUNDLES = (
     ({AmbiguityType.PRODUCT_LINE, AmbiguityType.PACKAGE_SIZE,
       AmbiguityType.CONSUMED_QUANTITY}, ResponseSchema.PRODUCT_AND_FRACTION),
+    # "Which one, and how much of it?" — any identity question pairs naturally
+    # with the portion question. PRODUCT_LINE was missing here, which meant the
+    # directive's own headline example ("Which Fairlife bottle was it, and did
+    # you drink the whole thing?") did not bundle: the brand was known, so the
+    # ambiguity was PRODUCT_LINE rather than PRODUCT_IDENTITY.
     ({AmbiguityType.PRODUCT_IDENTITY, AmbiguityType.CONSUMED_QUANTITY},
+     ResponseSchema.PRODUCT_AND_FRACTION),
+    ({AmbiguityType.PRODUCT_LINE, AmbiguityType.CONSUMED_QUANTITY},
+     ResponseSchema.PRODUCT_AND_FRACTION),
+    ({AmbiguityType.PRODUCT_VARIANT, AmbiguityType.CONSUMED_QUANTITY},
+     ResponseSchema.PRODUCT_AND_FRACTION),
+    ({AmbiguityType.PACKAGE_SIZE, AmbiguityType.CONSUMED_QUANTITY},
      ResponseSchema.PRODUCT_AND_FRACTION),
     ({AmbiguityType.PRODUCT_LINE, AmbiguityType.PACKAGE_SIZE},
      ResponseSchema.PRODUCT_SELECTION),
@@ -103,9 +114,17 @@ _SCHEMA_BY_TYPE = {
 
 @dataclass(frozen=True)
 class ClarificationOption:
+    """One offered answer.
+
+    `field_name` is what makes bundled questions parseable: a bundle offers
+    product options AND portion options together, and without knowing which
+    field an option answers, a parser matching "about half" against the whole
+    list can assign it to product_line.
+    """
     label: str
     value: object = None
     candidate_id: Optional[str] = None
+    field_name: str = ""
 
 
 @dataclass(frozen=True)
@@ -205,7 +224,8 @@ def _options_from(ambiguities) -> tuple:
     for amb in ambiguities:
         for opt in amb.top_options(4):
             out.append(ClarificationOption(label=opt.label, value=opt.payload,
-                                           candidate_id=opt.candidate_id))
+                                           candidate_id=opt.candidate_id,
+                                           field_name=amb.field_name))
     return tuple(out)
 
 
@@ -254,6 +274,11 @@ def decide(items, *, mode: str = "moderate", round_number: int = 0,
         material = tuple(a for a in item.ambiguities if a.is_material)
         if not material:
             ready.append(item.staged_item_id)
+            # An ESTIMATED portion is an assumption whether or not it was worth
+            # asking about. Materiality governs asking; disclosure is
+            # unconditional, or "some blueberries" commits at 80 g with nothing
+            # said and the user has no idea a number was invented.
+            assumptions.extend(_estimated_portion_assumptions(item))
             continue
         if exhausted:
             # Out of rounds: stop asking, assume the leading option, and say
@@ -304,6 +329,36 @@ def _is_coin_toss(material, margin: float = 0.15) -> bool:
         if (opts[0].confidence - opts[1].confidence) < margin:
             return True
     return False
+
+
+def _estimated_portion_assumptions(item: StagedFoodItem) -> list:
+    """Disclose an inferred portion mass.
+
+    Not gated on materiality: the user said "some blueberries" and we wrote a
+    number. Whether that number was worth interrupting them for is a separate
+    question from whether they should be told it was ours.
+    """
+    from skills.nutrition.staging import NutrientDeltaRange
+    q = item.quantity
+    if q.is_stated or q.estimated_mass_g is None:
+        return []
+    label = (item.identity.describe() or item.original_text or "that").strip()
+    said = (q.descriptor or "that").strip()
+    return [FoodAssumption(
+        staged_item_id=item.staged_item_id, field_name="estimated_mass_g",
+        assumed_value=q.estimated_mass_g,
+        alternatives=(tuple(q.mass_range_g) if q.mass_range_g else ()),
+        confidence=(q.mass_confidence if q.mass_confidence is not None else 0.5),
+        nutrition_impact=NutrientDeltaRange(),
+        user_visible_text=(f"Estimated “{said}” of the {label} at about "
+                           f"{_round_g(q.estimated_mass_g)}g."))]
+
+
+def _round_g(grams) -> str:
+    try:
+        return str(int(round(float(grams))))
+    except (TypeError, ValueError):
+        return str(grams)
 
 
 def _assume_leading(item: StagedFoodItem, material) -> list:
