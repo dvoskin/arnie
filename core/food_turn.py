@@ -496,6 +496,51 @@ def note_held_items(say: str, stashed: list, tool_calls: list) -> str:
             + f". Holding the {held} - tell me which kind and it goes on too.")
 
 
+def _item_is_stated(it: dict, message: str) -> bool:
+    """Is this item's amount the USER's own words? The interpreter's "basis"
+    declaration wins when present ("stated"/"regular" vs "estimate"); when
+    absent, the amount literally appearing in the message is the deterministic
+    proxy (digits, spelled small counts, "half"). Unsure → False, which errs
+    toward confirming — the safe direction on strict."""
+    b = str(it.get("basis") or "").strip().lower()
+    if b in ("stated", "regular"):
+        return True
+    if b == "estimate":
+        return False
+    amt = it.get("amount")
+    if amt is None:
+        return False
+    try:
+        f = float(amt)
+    except (TypeError, ValueError):
+        return False
+    m = (message or "").lower()
+    s = str(int(f)) if f.is_integer() else str(f)
+    if s in m:
+        return True
+    if f == 0.5 and "half" in m:
+        return True
+    _words = {1: ("one ", "a ", "an "), 2: ("two ",), 3: ("three ",),
+              4: ("four ",), 5: ("five ",), 6: ("six ",)}
+    return any(w in m for w in _words.get(int(f), ())) if f.is_integer() else False
+
+
+def _strict_needs_confirm(items: list, data: dict, message: str) -> bool:
+    """The narrowed strict-confirm gate (Danny 2026-07-25): pre-write
+    confirmation only for the cases where it earns its friction —
+      • any item's amount is system-estimated (not the user's own words),
+      • a bulk plan (>=4 items),
+      • unresolved consumed-vs-planned doubt the model reported below the
+        ask threshold (above it, the policy engine already asked).
+    Everything clearly stated commits directly, even on strict."""
+    if len(items) >= 4:
+        return True
+    if any(str(a.get("field") or "").strip().lower() == "consumed"
+           for a in (data.get("ambiguities") or []) if isinstance(a, dict)):
+        return True
+    return any(not _item_is_stated(it, message) for it in items)
+
+
 def format_confirm(items: list) -> str:
     """Strict-mode pre-log confirmation: show the PARSE (item + amount), get a
     yes, then commit. Numbers stay the system's job — the user confirms WHAT
@@ -923,12 +968,17 @@ async def run(message: str, user, prior: Optional[dict] = None,
     follow_up = str(data.get("follow_up") or "").strip()
     label = (kinds[0] if all(k == kinds[0] for k in kinds) else "commit")
 
-    if label == "log" and prior is None and _mode(user) == "strict":
-        # STRICT CONFIRMS (Danny 2026-07-24): with no questions to ask, the
-        # parse is still shown BEFORE the write — nothing commits silently on
-        # strict. The yes-turn logs these exact items deterministically (no
-        # re-parse). Mixed plans commit directly: their updates/deletes are
-        # the user's own explicit corrections.
+    if (label == "log" and prior is None and _mode(user) == "strict"
+            and _strict_needs_confirm(items_logged, data, message)):
+        # STRICT CONFIRMS, NARROWED (Danny 2026-07-25: "the narrower set when
+        # it's logical based on the scoped work"): the pre-write confirm fires
+        # only where it earns its friction — a SYSTEM-ESTIMATED amount, a BULK
+        # plan (>=4 items), or unresolved CONSUMED doubt. A plan whose every
+        # amount is the user's own words commits directly even on strict; the
+        # committed card shows the assumptions and stays one tap from repair.
+        # The yes-turn logs these exact items deterministically (no re-parse).
+        # Mixed plans commit directly: their updates/deletes are the user's
+        # own explicit corrections.
         _items_c = [it for it in items_logged
                     if (it.get("food") or "").strip()]
         return {"action": "ask", "kind": "confirm",

@@ -101,13 +101,15 @@ def food_mode_directive(mode: Optional[str]) -> str:
         return (
             "[FOOD LOGGING MODE: strict] Accuracy BEFORE the write: when a calorie-moving "
             "detail is genuinely unclear (cook method, size, milk, sauce amount), ask the 1-2 "
-            "highest-impact questions FIRST and hold the log until they answer — nothing "
-            "commits silently on strict. Bundle a multi-item message into ONE combined ask "
-            "covering every unclear item, then log EVERYTHING together with their answers "
-            f"applied. Ask even when the swing is under {_T['moderate']} cal (anything around "
-            f"{_T['strict']}+ matters here); clearly-stated items log without questions — "
-            "strict is not 'always ask'. If they said 'just log it', skip the questions and "
-            "log conservative-high immediately."
+            "highest-impact questions FIRST and hold the log until they answer. Bundle a "
+            "multi-item message into ONE combined ask covering every unclear item, then log "
+            f"EVERYTHING together with their answers applied. Ask even when the swing is "
+            f"under {_T['moderate']} cal (anything around {_T['strict']}+ matters here); "
+            "clearly-stated items log DIRECTLY without questions or confirmation — strict is "
+            "not 'always ask'. Reserve a pre-write confirm for amounts YOU estimated, bulk "
+            "multi-item plans, and did-they-actually-eat-it doubt (narrowed 2026-07-25). If "
+            "they said 'just log it', skip the questions and log conservative-high "
+            "immediately."
         )
     return ""  # moderate / unknown = static system prompt default
 

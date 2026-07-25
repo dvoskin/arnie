@@ -426,28 +426,74 @@ def test_say_contract_strips_questions_after_write():
 
 
 @pytest.mark.asyncio
-async def test_strict_clean_log_becomes_confirm(monkeypatch):
-    """STRICT CONFIRMS (Danny 2026-07-24): with nothing to ask, the parse is
-    still shown before the write — nothing commits silently on strict."""
+async def test_strict_confirm_narrowed_to_where_it_earns_friction(monkeypatch):
+    """STRICT CONFIRMS, NARROWED (Danny 2026-07-25): a plan whose every amount
+    is the user's own words commits DIRECTLY even on strict; the pre-write
+    confirm fires only for system-estimated amounts, bulk plans, or
+    consumed-vs-planned doubt."""
+    strict = SimpleNamespace(preferences=SimpleNamespace(food_logging_mode="strict"))
+    # 1. Fully user-stated amounts → direct log, no confirm friction.
     monkeypatch.setattr(FT, "chat", _fake_chat({
         "action": "log",
         "items": [{"food": "Roast turkey breast", "amount": 6.5, "unit": "oz",
-                   "calories": 300, "protein": 55},
+                   "calories": 300, "protein": 55, "basis": "stated"},
                   {"food": "White rice", "amount": 100, "unit": "g",
-                   "calories": 130, "protein": 3}],
-        "say": "Turkey and rice logged."}))
-    strict = SimpleNamespace(preferences=SimpleNamespace(food_logging_mode="strict"))
+                   "calories": 130, "protein": 3, "basis": "stated"}],
+        "say": "Turkey and rice logged, {batch_cal} cal."}))
     out = await FT.run("6.5 oz turkey and 100g rice", strict)
-    assert out["action"] == "ask" and out.get("kind") == "confirm"
-    assert "6.5 oz Roast turkey breast" in out["text"]
-    assert out["items"][0]["food"] == "Roast turkey breast"
-    # moderate users keep the silent clean log
+    assert out["action"] == "log", "stated amounts commit directly on strict"
+    # 2. A system-estimated amount → confirm before the write.
+    monkeypatch.setattr(FT, "chat", _fake_chat({
+        "action": "log",
+        "items": [{"food": "Caesar salad", "amount": 1.5, "unit": "cups",
+                   "calories": 300, "basis": "estimate"}],
+        "say": "Salad logged, {batch_cal} cal."}))
+    out2 = await FT.run("had some caesar salad", strict)
+    assert out2["action"] == "ask" and out2.get("kind") == "confirm"
+    assert "Caesar salad" in out2["text"]
+    # 3. Bulk plan (>=4 items) → confirm even when all stated.
+    monkeypatch.setattr(FT, "chat", _fake_chat({
+        "action": "log",
+        "items": [{"food": f"Item {i}", "amount": 1, "unit": "piece",
+                   "calories": 100, "basis": "stated"} for i in range(4)],
+        "say": "All four logged, {batch_cal} cal."}))
+    out3 = await FT.run("had one of each of the four things", strict)
+    assert out3["action"] == "ask" and out3.get("kind") == "confirm"
+    # 4. Consumed doubt reported below threshold → confirm.
+    monkeypatch.setattr(FT, "chat", _fake_chat({
+        "action": "log",
+        "items": [{"food": "Poke bowl", "amount": 1, "unit": "bowl",
+                   "calories": 550, "basis": "stated"}],
+        "ambiguities": [{"item": "Poke bowl", "field": "consumed",
+                         "impact_cal": 50}],
+        "say": "Bowl logged, {batch_cal} cal."}))
+    out4 = await FT.run("picked up one poke bowl", strict)
+    assert out4["action"] == "ask" and out4.get("kind") == "confirm"
+    # moderate users keep the silent clean log throughout
     mod = SimpleNamespace(preferences=SimpleNamespace(food_logging_mode="moderate"))
-    out2 = await FT.run("6.5 oz turkey and 100g rice", mod)
-    assert out2["action"] == "log"
+    monkeypatch.setattr(FT, "chat", _fake_chat({
+        "action": "log",
+        "items": [{"food": "Caesar salad", "amount": 1.5, "unit": "cups",
+                   "calories": 300, "basis": "estimate"}]}))
+    out5 = await FT.run("had some caesar salad", mod)
+    assert out5["action"] == "log"
     # and the ANSWER turn (prior set) never re-confirms
-    out3 = await FT.run("yes", strict, prior={"original": "turkey", "question": "q"})
-    assert out3 is None or out3.get("kind") != "confirm"
+    out6 = await FT.run("yes", strict, prior={"original": "turkey", "question": "q"})
+    assert out6 is None or out6.get("kind") != "confirm"
+
+
+def test_item_is_stated_proxy():
+    """basis wins when present; otherwise the amount must be the user's own
+    words (digits, 'half', spelled small counts). Unsure → False (errs toward
+    confirming, the safe strict direction)."""
+    assert FT._item_is_stated({"amount": 6.5, "basis": "stated"}, "whatever")
+    assert not FT._item_is_stated({"amount": 2, "basis": "estimate"}, "2 tacos")
+    assert FT._item_is_stated({"amount": 6.5}, "6.5 oz turkey")
+    assert FT._item_is_stated({"amount": 0.5}, "half a bagel")
+    assert FT._item_is_stated({"amount": 2}, "two slices of pizza")
+    assert FT._item_is_stated({"amount": 1}, "a banana")
+    assert not FT._item_is_stated({"amount": 1.5}, "some caesar salad")
+    assert not FT._item_is_stated({"amount": None}, "some fries")
 
 
 def test_yes_re_shapes():
