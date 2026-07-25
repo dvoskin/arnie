@@ -1711,10 +1711,25 @@ async def _run_turn(
                                                         apply_policy,
                                                         strip_card_recitation)
                         if on_card is not None:
+                            # The committed item NAMES have to travel with the
+                            # plan. `_is_roll_call` compares the sentence
+                            # against them, so an empty plan made it
+                            # structurally unable to fire — and "Logged: Mashed
+                            # Potato, Grilled Corn, Filet Mignon, Reese's
+                            # Pieces." shipped directly above a card listing the
+                            # same four names with their macros.
+                            from core.food_response import FoodItemSummary
+                            _names = tuple(
+                                FoodItemSummary(name=str(
+                                    (c.get("input") or {}).get("food_name")
+                                    or "").strip())
+                                for c in (_ok_calls or []))
                             _rp = apply_policy(FoodResponsePlan(
                                 intent=FoodResponseIntent.COMMIT,
                                 card_will_render=True,
-                                facts_visible_in_card=CARD_FACTS))
+                                facts_visible_in_card=CARD_FACTS,
+                                committed_items=tuple(
+                                    n for n in _names if n.name)))
                             response_text = strip_card_recitation(
                                 response_text, _rp)
                     except Exception as _e:

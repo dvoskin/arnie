@@ -710,6 +710,26 @@ _SLASH_TOTAL_RE = re.compile(
     r"\b\d[\d,]*\s*/\s*\d[\d,]*\s*(?:g\b|kcal|cal(?:orie)?s?|grams?)?",
     re.I)
 
+#: The day's REMAINING budget, restated in prose.
+#:
+#: "That leaves about 240 calories for the day" and "about 60g to go" are the
+#: card's own remaining row read aloud — the card renders "240 cal left · 60g
+#: protein to go" directly above them, and often "Next: 60g protein, lean
+#: sources" as well. They survived the recitation check by ending
+#: forward-looking ("so make your next meal protein-forward"), which is the
+#: shape that shipped: the remaining row, twice, with advice stapled to the
+#: second copy.
+#:
+#: A recommendation still earns its digits — "I'd aim for 30-40g at lunch" names
+#: a target for a future meal rather than restating today's balance. The
+#: difference is the leaves/left/to-go phrasing, not the presence of a number.
+_REMAINING_RE = re.compile(
+    r"(?:\bleaves?\s+(?:you\s+)?(?:about\s+|around\s+|roughly\s+)?\d"
+    r"|\b\d[\d,]*\s*(?:g|grams?|kcal|cal(?:orie)?s?)?\s*"
+    r"(?:left|to go|remaining)\b"
+    r"|\b(?:about|around|roughly)\s+\d[\d,]*\s*(?:g|grams?)?\s*to go\b)",
+    re.I)
+
 #: More than one recommendation in a coaching message.
 _RECOMMENDATION_SPLIT_RE = re.compile(r"\b(?:i'?d|you should|try to|make sure|"
                                       r"aim to|aim for|focus on)\b", re.I)
@@ -1188,6 +1208,11 @@ def _is_recitation(sentence: str) -> bool:
     rendered as text.
     """
     if _SLASH_TOTAL_RE.search(sentence):
+        return True
+    # The remaining budget is the card's own row. Unlike an ordinary nutrition
+    # number, a recommendation does not redeem it — the card already shows both
+    # the remaining figures and its own "Next:" line.
+    if _REMAINING_RE.search(sentence):
         return True
     if not (_NUTRIENT_NUMBER_RE.search(sentence)
             or _DAY_TOTAL_RE.search(sentence)):
