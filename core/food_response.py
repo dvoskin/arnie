@@ -455,6 +455,29 @@ class FoodResponsePlan:
     card_will_render: bool = False
     facts_visible_in_card: FrozenSet[str] = frozenset()
 
+    # ── What a COMMIT is allowed to say (review item 3) ─────────────────────
+    #
+    # The commit confirmation used to be authored OUTSIDE this module —
+    # `food_ledger.render_committed()` produced the whole reply, and
+    # `strip_card_recitation()` then removed the parts the card was already
+    # showing. So the response contract was a post-processing pass over text
+    # somebody else wrote: old copy could be generated first and then
+    # imperfectly stripped, and the plan had no say in what got written.
+    #
+    # These are the inputs that rendering needs, carried on the plan so the
+    # authoring happens here, once, with the card facts already known.
+    # `committed_snapshot` is a food_ledger.TransactionSnapshot — the numbers
+    # as the database holds them after the write, never the plan's own.
+    committed_snapshot: Optional[Any] = None
+    #: The interpreter's sentence. An INPUT, not the answer: it is used only if
+    #: it is question-free and claim-free, which is the say contract.
+    model_say: str = ""
+    note: str = ""
+    follow_up: str = ""
+    #: What did NOT land, already phrased. Never suppressed by the card — a
+    #: card cannot show an item that was not written.
+    failure_notice: str = ""
+
     #: Foods in play this turn, for the invented-item check. A general
     #: "is this a food word" test would flag ordinary language, so the caller
     #: supplies the vocabulary.
@@ -1054,6 +1077,45 @@ def _held_name(plan: "FoodResponsePlan") -> str:
     return "one item"
 
 
+def _commit_text(plan: FoodResponsePlan) -> str:
+    """The confirmation for a write, authored HERE (review item 3).
+
+    This used to happen outside the response contract entirely:
+    `food_ledger.render_committed()` wrote the whole reply and
+    `strip_card_recitation()` then took back the parts the card was already
+    showing. Old copy generated first, imperfectly stripped second — and the
+    plan, which knows exactly which facts the card shows, had no say in what
+    got written.
+
+    Both steps happen here now, in one owner, in the order that makes the
+    second one a consequence of the first rather than a correction to it. The
+    words are unchanged: the say contract, the deterministic line and the
+    follow-up whitelist all still live in `food_ledger`, which is where the
+    committed numbers live, and this asks them for the text rather than being
+    handed it.
+
+    A surface with no card frame — Telegram — gets the whole thing, because
+    there the sentence IS the confirmation. That is why "the card already said
+    it" cannot be a property of the intent, only of the turn.
+    """
+    snapshot = plan.committed_snapshot
+    if snapshot is None:
+        # Nothing committed to describe. The old behaviour, which is right:
+        # where a card renders it has already said what happened.
+        return "" if plan.allow_no_text else "Got it."
+
+    from core.food_ledger import render_committed
+
+    text = render_committed(plan.model_say or "", plan.note or "",
+                            plan.follow_up or "", snapshot)
+    if plan.failure_notice:
+        # Never card-suppressed, and appended before the strip so the strip
+        # judges it — a failure notice carries no nutrition number, so it
+        # survives, and asserting that is better than exempting it by hand.
+        text = f"{text}|||{plan.failure_notice}" if text else plan.failure_notice
+    return strip_card_recitation(text, plan)
+
+
 def fallback(plan: FoodResponsePlan) -> str:
     """Correct without sounding procedural. Reached when generation fails
     validation twice, or when no composer is available."""
@@ -1096,15 +1158,22 @@ def fallback(plan: FoodResponsePlan) -> str:
         return f"Got it, {_join([i.name for i in plan.resolved_items])}."
 
     if intent is FoodResponseIntent.COMMIT:
-        return "" if plan.allow_no_text else "Got it."
+        return _commit_text(plan)
 
     if intent is FoodResponseIntent.PARTIAL_COMMIT:
         question = plan.clarification_question or ""
         held = _held_name(plan)
         got = _join([i.name for i in plan.committed_items])
-        base = f"I've got {got} in."
-        return f"{base} {question}".strip() if question else \
-            f"{base} Still need a detail on the {held}."
+        # A snapshot means the write really happened and its numbers are
+        # available, so the confirmation is authored the same way a full
+        # COMMIT's is. Without one — the ordinary case, where the plan
+        # describes intent rather than a completed write — the item names are
+        # all there is to say, and `_commit_text` would answer "Got it.",
+        # which drops the names the user needs to see.
+        base = (_commit_text(plan) if plan.committed_snapshot is not None
+                else "") or f"I've got {got} in."
+        tail = question or f"Still need a detail on the {held}."
+        return f"{base} {tail}".strip()
 
     if intent is FoodResponseIntent.CORRECT:
         return f"Updated {_join([i.name for i in plan.committed_items])}."
