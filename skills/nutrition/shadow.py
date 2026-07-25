@@ -43,7 +43,8 @@ def shadow_enabled() -> bool:
 
 def _from_per100g(source: str, tier: SourceTier, name: str, per100g: dict,
                   brand=None, grade=MatchGrade.CLOSE,
-                  source_id=None) -> Optional[Candidate]:
+                  source_id=None, serving_text="",
+                  serving_mass_g=None) -> Optional[Candidate]:
     per100g = per100g or {}
     if not per100g.get("calories"):
         return None
@@ -53,7 +54,8 @@ def _from_per100g(source: str, tier: SourceTier, name: str, per100g: dict,
             source, basis="per_100g", confidence=0.8, source_id=source_id,
             **{k: per100g.get(k) for k in _NUTRIENTS}),
         basis=Per100g(), brand=brand, source_id=source_id,
-        reported_grade=grade)
+        reported_grade=grade, serving_text=str(serving_text or ""),
+        serving_mass_g=serving_mass_g)
 
 
 def candidates_from_live(food_name: str, inp: dict, *, memory=None, usda=None,
@@ -83,7 +85,9 @@ def candidates_from_live(food_name: str, inp: dict, *, memory=None, usda=None,
                       usda_row.get("per100g"),
                       brand=usda_row.get("brand") or None,
                       grade=MatchGrade.CATEGORY,
-                      source_id=str(usda_row.get("fdc_id") or "") or None)
+                      source_id=str(usda_row.get("fdc_id") or "") or None,
+                      serving_text=usda_row.get("serving_text"),
+                      serving_mass_g=usda_row.get("serving_mass_g"))
     if u is not None:
         out.append(u)
 
@@ -92,7 +96,9 @@ def candidates_from_live(food_name: str, inp: dict, *, memory=None, usda=None,
                       off_row.get("name") or "", off_row.get("per100g"),
                       brand=off_row.get("brand"),
                       grade=(MatchGrade.EXACT if off_row.get("_match") == "exact"
-                             else MatchGrade.CLOSE))
+                             else MatchGrade.CLOSE),
+                      serving_text=off_row.get("serving_text"),
+                      serving_mass_g=off_row.get("serving_mass_g"))
     if o is not None:
         out.append(o)
 

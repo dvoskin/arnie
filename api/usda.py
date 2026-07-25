@@ -117,12 +117,24 @@ async def _search(query: str, data_types: list[str], page_size: int) -> list[dic
             per100 = _extract_nutrients(f)
             if not per100.get("calories"):
                 continue
+            # Serving panel, carried so a COUNT portion ("15 pieces") can be
+            # given a mass from the record that is answering. USDA's Branded
+            # rows state both halves: servingSize/servingSizeUnit is the mass,
+            # householdServingFullText is what the packet calls it.
+            _unit = str(f.get("servingSizeUnit") or "").strip().lower()
+            _mass = f.get("servingSize")
             out.append({
                 "fdc_id": f.get("fdcId"),
                 "description": f.get("description", ""),
                 "brand": f.get("brandName") or f.get("brandOwner") or "",
                 "data_type": f.get("dataType", ""),
                 "per100g": per100,
+                "serving_text": str(
+                    f.get("householdServingFullText") or "").strip(),
+                "serving_mass_g": (float(_mass)
+                                   if _unit in ("g", "gram", "grams")
+                                   and isinstance(_mass, (int, float))
+                                   else None),
             })
         return out
     except Exception as e:
