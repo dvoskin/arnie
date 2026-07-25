@@ -17,6 +17,12 @@ from __future__ import annotations
 from typing import Optional
 
 
+#: Above this many calories over target, "a little over" is no longer an honest
+#: description. Below it the overage is a rounding-scale event on most targets;
+#: above it, it is the fact of the day and the coaching has to lead with it.
+SUBSTANTIALLY_OVER_CAL = 300
+
+
 def build_receipt(
     *,
     calories: float,
@@ -105,14 +111,29 @@ def build_receipt(
     if vague:
         verdict = "I logged that as a range — a portion size would tighten it up."
     elif rem_c is not None and rem_c < 0:
-        if rem_p is not None and rem_p <= 0:
-            verdict = ("That closes the day and protein made it."
-                       if newly_hit or newly_over
-                       else "You're on pace, so there's nothing to correct.")
+        # THE CALORIE STATE IS PRIMARY. Protein landing is a secondary fact and
+        # may be said alongside, but it may never soften or replace an adverse
+        # calorie state.
+        #
+        # This branch used to fall through to "You're on pace, so there's
+        # nothing to correct." whenever the day was ALREADY over before this
+        # item — the intent was a quiet default for a repeat state, but the
+        # string chosen is a claim, and it is false. A shipped card read
+        # "Protein covered · 2,320 cal over" directly above it.
+        over = -rem_c
+        if over >= SUBSTANTIALLY_OVER_CAL:
+            verdict = (f"That puts you about {int(over)} calories over for the "
+                       f"day — worth knowing rather than fixing tonight.")
+            if rem_p is not None and rem_p <= 0:
+                verdict = (f"Protein landed, but that's about {int(over)} "
+                           f"calories over for the day.")
+        elif rem_p is not None and rem_p <= 0:
+            verdict = ("That closes the day and protein made it, a little over "
+                       "on calories.")
         else:
             verdict = "You're over target for the day, so keep the rest of it clean."
-            if local_hour is not None and local_hour < 20:
-                nxt = "Next: keep the rest light"
+        if local_hour is not None and local_hour < 20:
+            nxt = "Next: keep the rest light"
     elif rem_p is not None and rem_p <= 0:
         verdict = ("Protein's handled for the day — calories are the thing to watch now."
                    if newly_hit else "You're on pace, so there's nothing to correct.")
