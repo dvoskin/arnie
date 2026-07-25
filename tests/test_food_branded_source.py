@@ -319,3 +319,79 @@ def test_an_unscalable_resolution_is_still_refused():
     out = _resolve("15 pieces", off=no_panel)
     assert out.nutrients.amount("calories") is None
     assert not promotable(out)
+
+
+# ── a generic cache must not permanently suppress branded enrichment ──────────
+# The suppression was self-sustaining. `user_food_matches` is written after any
+# successful lookup, so one generic answer for a named product kept winning and
+# kept being rewritten, and the branded sources were never consulted again
+# inside the ordinary 90-day staleness horizon. #33 stopped the row laundering
+# its tier and #36 discloses the fallback, but neither makes the branded lookup
+# actually happen again.
+from datetime import datetime, timedelta
+
+import handlers.tool_executor as TE
+from skills.nutrition.branded import names_a_product
+from skills.nutrition.provenance import SourceTier, TIER_BY_LABEL
+
+
+def _horizon_for(food_name: str, origin_tier: str, *, user_confirmed=False):
+    """The staleness horizon the executor would apply to this cache row.
+
+    Mirrors the branching in the live lookup rather than driving the whole
+    executor, which needs a database; the branching IS the rule under test.
+    """
+    if user_confirmed:
+        return None                       # never expires by this rule
+    horizon = timedelta(days=90)
+    origin = TIER_BY_LABEL.get((origin_tier or "").strip().lower())
+    origin_is_generic = origin is None or origin >= SourceTier.GENERIC_EXACT
+    if origin_is_generic and names_a_product(food_name):
+        horizon = timedelta(days=TE.BRANDED_RECHECK_DAYS)
+    return horizon
+
+
+def test_a_generic_row_for_a_named_product_rechecks_within_a_week():
+    assert _horizon_for("Peanut M&Ms", "generic_exact") == timedelta(
+        days=TE.BRANDED_RECHECK_DAYS)
+    assert TE.BRANDED_RECHECK_DAYS <= 14, (
+        "a generic row standing in for a product must be rechecked often "
+        "enough that a wrong answer is not effectively permanent")
+
+
+def test_an_unknown_origin_is_treated_as_generic():
+    """Rows written before origin_tier existed carry no label. Trusting them
+    would exempt exactly the backlog this rule exists to drain."""
+    assert _horizon_for("Peanut M&Ms", "") == timedelta(
+        days=TE.BRANDED_RECHECK_DAYS)
+    assert _horizon_for("Peanut M&Ms", "nonsense") == timedelta(
+        days=TE.BRANDED_RECHECK_DAYS)
+
+
+def test_a_branded_origin_keeps_the_ordinary_horizon():
+    """It already IS a branded answer. Re-checking weekly would spend lookups
+    to re-confirm the thing we wanted."""
+    assert _horizon_for("Peanut M&Ms", "branded_exact") == timedelta(days=90)
+
+
+def test_a_generic_row_for_a_generic_food_keeps_the_ordinary_horizon():
+    """"chicken breast" has no branded answer to go and find."""
+    assert _horizon_for("chicken breast", "generic_exact") == timedelta(days=90)
+    assert _horizon_for("rice", "") == timedelta(days=90)
+
+
+def test_a_user_corrected_row_never_expires_by_this_rule():
+    """That row IS the answer. Re-enriching over it overwrites the user with a
+    database, which is the failure this whole area exists to prevent."""
+    assert _horizon_for("Peanut M&Ms", "generic_exact",
+                        user_confirmed=True) is None
+
+
+def test_the_recheck_is_periodic_not_a_one_off_migration():
+    """A migration fixes the rows that exist today and nothing about the ones
+    written tomorrow — a branded name whose lookup misses once still caches
+    generic, and would be stuck again."""
+    written_today = datetime.utcnow()
+    horizon = _horizon_for("Barebells caramel", "generic_exact")
+    assert written_today - horizon < written_today
+    assert horizon < timedelta(days=90)

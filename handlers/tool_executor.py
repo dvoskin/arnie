@@ -113,6 +113,16 @@ def _default_meal_type(user) -> str:
     return "snack"
 
 
+#: How long a GENERIC cache row may stand in for a named product before the
+#: branded sources are consulted again. Short on purpose: the cost of being
+#: wrong is a branded food logged at generic numbers indefinitely, and the cost
+#: of re-checking is one lookup a week per product name.
+#:
+#: A row the user actually corrected never expires by this rule — that one IS
+#: the answer, and re-enriching over it would overwrite them with a database.
+BRANDED_RECHECK_DAYS = 7
+
+
 def _inherit_or_default_meal_type(user, target_log, meal_time) -> str:
     """Meal slot for an item the model logged WITHOUT one. A multi-item meal gets
     logged across passes — the partial-drop rescue re-adds the dropped sides in a
@@ -1555,8 +1565,36 @@ async def _analyze_food(db, user, food_name, inp):
         if m is not None and not m.user_confirmed:
             from datetime import datetime as _dt, timedelta as _td
             _lu = m.last_used or m.created_at
-            if _lu is not None and _lu < _dt.utcnow() - _td(days=90):
-                logger.info(f"food memory stale (>90d) for {name_norm!r} — re-resolving")
+            # A GENERIC cache row standing in for a NAMED PRODUCT expires far
+            # sooner than an ordinary one, because it is not merely stale — it is
+            # the wrong kind of answer, and every reuse re-caches it.
+            #
+            # The suppression was self-sustaining: the row is written after any
+            # successful lookup, so one generic answer for "Peanut M&Ms" kept
+            # winning, kept being rewritten, and branded enrichment never ran
+            # again inside the 90-day horizon. #33 stopped it laundering its tier
+            # and #36 discloses it, but neither makes the branded lookup happen.
+            #
+            # Bounded re-enrichment rather than invalidation-on-migration: a
+            # one-off migration fixes the rows that exist today and nothing about
+            # the rows written tomorrow, since a branded name whose lookup misses
+            # once still caches generic.
+            _horizon = _td(days=90)
+            try:
+                from skills.nutrition.branded import names_a_product
+                from skills.nutrition.provenance import SourceTier, TIER_BY_LABEL
+                _origin = TIER_BY_LABEL.get(
+                    str(getattr(m, "origin_tier", "") or "").strip().lower())
+                _origin_is_generic = (_origin is None
+                                      or _origin >= SourceTier.GENERIC_EXACT)
+                if _origin_is_generic and names_a_product(food_name):
+                    _horizon = _td(days=BRANDED_RECHECK_DAYS)
+            except Exception:
+                pass
+            if _lu is not None and _lu < _dt.utcnow() - _horizon:
+                logger.info(
+                    f"food memory stale (>{_horizon.days}d) for {name_norm!r} "
+                    f"— re-resolving")
                 m = None
         if m:
             per100g = {"calories": m.cal_100, "protein": m.protein_100,

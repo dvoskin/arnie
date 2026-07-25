@@ -147,11 +147,12 @@ PIECE_WEIGHTS_G = {
     "slice": (28.0, 10.0),          # last resort for an unqualified "slice"
 }
 
-#: Singular form for the count units a serving panel actually names, so
-#: "12 pieces" on a label and "15 piece" from the parser compare as equal.
-def _singular(unit: str) -> str:
-    u = (unit or "").strip().lower()
-    return u[:-1] if len(u) > 3 and u.endswith("s") else u
+#: `_singular` (defined above) is what compares a serving panel's count unit
+#: with the parser's, so "12 pieces" on a label and "15 piece" from the user
+#: line up. It deliberately lives in ONE place: this module briefly carried two
+#: functions of that name, and the second silently shadowed the first — which
+#: turned "glass" back into "glas" and let every poured drink through as a
+#: countable unit again, with no import error and no test naming either one.
 
 
 #: Count units that are interchangeable with each other. A label saying
