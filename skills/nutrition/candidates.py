@@ -212,10 +212,26 @@ async def gather_candidates(request: FoodResolutionRequest, *,
                          provisional_candidate(request)) if c is not None]
 
     async def _safe(coro_fn, label):
+        """One source, bounded by the turn's budget and absent if it fails.
+
+        Bounded HERE rather than in each source module: this is the one place
+        every remote source passes through, and wiring the budget per module
+        meant OpenFoodFacts honoured it while USDA and the web-label lookup did
+        not — so a turn's ceiling was really a ceiling on one of three sources.
+
+        A source that runs out of time is a MISS, not an error. The estimate is
+        committed with its provenance intact, which is the degradation the
+        deadline module promises.
+        """
         if coro_fn is None:
             return None
+        from core import deadline
         try:
-            return await coro_fn()
+            return await deadline.wait_for(coro_fn())
+        except deadline.DeadlineExceeded:
+            logger.info("event=candidate_source_skipped reason=turn_budget "
+                        f"source={label}")
+            return None
         except Exception as e:
             logger.warning(f"candidate source {label} failed: {e}")
             return None

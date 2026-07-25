@@ -44,6 +44,9 @@ from handlers.tool_executor import (
     tool_heads_up, _heads_up_seed, NEEDS_HEADS_UP_TOOLS, blocked_log_reply,
     headsup_voice_enabled, sentence_case,
 )
+# Module level rather than per-call: the model calls below consult it, and
+# core.deadline imports nothing but the stdlib, so there is no cycle to dodge.
+from core import deadline
 
 logger = logging.getLogger(__name__)
 
@@ -505,19 +508,31 @@ class _BubbleStreamer:
 
 
 async def run_turn(*args, **kwargs) -> TurnResult:
-    """Traced entry point for a turn (review fix, PR #29).
+    """Entry point for a turn: one food trace, one time budget (PRs #29, #30).
 
-    The food trace opens HERE rather than inside `core.food_turn.run()`, which
-    is what makes it end to end. `food_turn.run()` returns the structured action
-    and the tool calls — the nutrient resolution during execution, the database
-    writes, the failed writes, the card render and the final coaching line all
-    happen afterwards, in this function. A trace that closed with the
-    interpreter pass could not see any of them, so the seven-stage trace was
-    really a three-stage one wearing a longer name.
+    Both of the things opened here used to open too late, for the same reason —
+    each was installed at the layer that happened to need it rather than at the
+    layer that bounds a turn.
+
+    THE TRACE opened inside `core.food_turn.run()`, which returns the structured
+    action and the tool calls. The nutrient resolution during execution, the
+    database writes, the failed writes, the card render and the final coaching
+    line all happen afterwards, in this function, so a trace that closed with the
+    interpreter pass could not see any of them: the seven-stage trace was really
+    a three-stage one wearing a longer name.
+
+    THE BUDGET opened inside `execute_tool_calls`, which made it a tool-batch
+    budget wearing a turn budget's name — it began after the interpreter model
+    call and ended before the response composer, so a turn could spend the
+    interpreter's timeout, then a full batch budget, then the composer's, with
+    every part behaving exactly as configured while the user waited for the sum.
 
     Opening a trace for EVERY turn, food or not, is deliberate: nothing at the
     top of a turn knows yet whether food is involved. `finish` only emits a line
-    for traces that actually recorded a stage, so non-food turns stay silent.
+    for traces that actually recorded a stage, so non-food turns stay silent. The
+    nested budget in the executor stays too — nested budgets can only tighten, so
+    it still protects the paths that call the executor directly and cannot extend
+    this one.
 
     `*args`/`**kwargs` rather than the real signature: callers pass a mix of
     positional and keyword arguments, and restating twenty parameters here would
@@ -535,7 +550,9 @@ async def run_turn(*args, **kwargs) -> TurnResult:
     except Exception:
         fields = {}
 
-    with food_trace.span(**fields):
+    # Trace outside the budget: a turn that runs out of time is exactly the turn
+    # whose trace has to survive to say so.
+    with food_trace.span(**fields), deadline.budget():
         return await _run_turn(*args, **kwargs)
 
 
@@ -1019,8 +1036,16 @@ async def _run_turn(
             result = {"text": _sft["text"], "raw_content": [], "tool_calls": [],
                       "stop_reason": "structured_food"}
         else:
-            result = await chat(messages, system, tools=True, max_tokens=4096,
-                                **_chat_extras)
+            # Under the turn budget. Setting the deadline contextvar bounds
+            # nothing on its own — only calls that consult it are bounded, and
+            # this is the largest blocking call a non-food turn makes. Without
+            # it, a food interpreter pass that exhausted the budget still handed
+            # this call a fresh full model timeout, so the degraded-source case
+            # the budget exists for could still cost interpreter + composer back
+            # to back.
+            result = await deadline.wait_for(
+                chat(messages, system, tools=True, max_tokens=4096,
+                     **_chat_extras))
         # Flush trailing buffer immediately so a no-||| partial doesn't carry
         # over and prepend itself to the next call's first bubble. (Still held —
         # this only moves the trailing text into the held buffer.)
@@ -1078,8 +1103,9 @@ async def _run_turn(
             # Self-heal retry: stream it too if streaming is on. The original
             # truncated/stalled output already flushed (finalize above), so the
             # retry's stream starts with a clean buffer.
-            result = await chat(retry_messages, system, tools=True, max_tokens=8192,
-                                **_chat_extras)
+            result = await deadline.wait_for(
+                chat(retry_messages, system, tools=True, max_tokens=8192,
+                     **_chat_extras))
             if _streamer:
                 await _streamer.finalize()
             _messages_for_followup = retry_messages

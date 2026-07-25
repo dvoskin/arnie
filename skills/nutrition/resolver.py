@@ -454,10 +454,22 @@ def resolve(request: FoodResolutionRequest, candidates: list) -> NutritionResolu
     Never raises. An unresolvable request returns a provisional resolution
     carrying the reason, because a food turn that cannot answer still has to
     answer.
+
+    Memoized on (request, candidates). Safe because this is a pure function of
+    exactly those two things — no clock, no database, no environment — so a
+    cached answer and a recomputed one are the same answer. `test_food_caching`
+    fails if that stops being true.
     """
+    # Trace OUTSIDE, memoize INSIDE. The order matters in both directions: a
+    # cache hit still has to appear in the trace, or the latency report stops
+    # being able to show what the cache is worth; and the memo has to sit closer
+    # to the computation than the timer, or every hit would be recorded as a
+    # resolve that did no work.
     from core import food_trace
+    from skills.nutrition.cache import memoize
     with food_trace.stage(food_trace.Stage.RESOLVE) as timed:
-        out = _resolve(request, candidates)
+        out = memoize(request, candidates,
+                      lambda: _resolve(request, candidates))
         timed.counts.update(candidates=len(candidates or ()),
                             rejected=len(out.rejected_candidates or ()),
                             ambiguities=len(out.ambiguities or ()))
@@ -469,9 +481,9 @@ def resolve(request: FoodResolutionRequest, candidates: list) -> NutritionResolu
 
 def _resolve(request: FoodResolutionRequest,
              candidates: list) -> NutritionResolution:
-    """The resolution itself. Split from `resolve` only so the timing wrapper
-    has one exit to measure — resolve has several, and timing each of them
-    separately is how one of them ends up untimed."""
+    """The resolution itself. Split from `resolve` so the timing wrapper and the
+    memo each have one exit to work with — resolve has several, and wrapping each
+    of them separately is how one of them ends up untimed or uncached."""
     quantity = normalize_quantity(request.raw_quantity or "",
                                   request.food_name)
     rejections, viable = [], []
