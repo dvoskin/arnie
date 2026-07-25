@@ -242,6 +242,20 @@ def describe_portion(portion: str, name: str,
     names_the_food = unit and (unit.rstrip("s") == stem
                                or stem.endswith(" " + unit.rstrip("s"))
                                or unit.rstrip("s") in food_words)
+    # A food that IS a discrete item does not also need "piece". "2 large
+    # piece" of eggs came out as "two large pieces of eggs" — the descriptor
+    # rescued the empty unit, correctly for "2 large pieces of pizza" and
+    # wrongly here, because an egg is already the piece. The countable-noun
+    # list in the normalizer is what knows the difference, and asking it beats
+    # keeping a second list in sync with it.
+    if unit in _EMPTY_UNITS and not names_the_food:
+        try:
+            from skills.nutrition.normalize import _COUNT_UNITS
+            head = re.findall(r"[a-z]+", spoken.lower())
+            if head and head[-1] in _COUNT_UNITS:
+                names_the_food = True
+        except Exception:
+            pass
     # No unit word at all ("2 large" of eggs) means the descriptor belongs to the
     # food: two large eggs, not two large pieces of eggs.
     if names_the_food or not unit or (unit in _EMPTY_UNITS and not descriptor):
