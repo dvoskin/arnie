@@ -57,6 +57,12 @@ def _noop_pending(monkeypatch):
 @pytest.mark.asyncio
 async def test_deterministic_partial_drop_logs_missing_without_opus(monkeypatch):
     monkeypatch.setenv("SCRIBE_ENABLED", "true")
+    # This test is about the MODEL lane: pass-1 drops an item and the scribe
+    # rescues it. "175g turkey and 100g rice" is now handled by the zero-model
+    # fast path (PR #30), which cannot drop an item — it parses every segment
+    # or refuses the message — so the rescue it exercises would never be
+    # reached. Disabled here so the model lane is the thing under test.
+    monkeypatch.setenv("FOOD_FAST_PATH", "off")
     calls = {"chat": 0}
 
     # pass-1 logs ONLY the turkey — drops the rice.

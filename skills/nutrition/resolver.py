@@ -216,7 +216,19 @@ def resolve(request: FoodResolutionRequest, candidates: list) -> NutritionResolu
     Never raises. An unresolvable request returns a provisional resolution
     carrying the reason, because a food turn that cannot answer still has to
     answer.
+
+    Memoized on (request, candidates). Safe because this is a pure function of
+    exactly those two things — no clock, no database, no environment — so a
+    cached answer and a recomputed one are the same answer. `test_food_caching`
+    fails if that stops being true.
     """
+    from skills.nutrition.cache import memoize
+    return memoize(request, candidates,
+                   lambda: _resolve(request, candidates))
+
+
+def _resolve(request: FoodResolutionRequest,
+             candidates: list) -> NutritionResolution:
     quantity = normalize_quantity(request.raw_quantity or "",
                                   request.food_name)
     rejections, viable = [], []

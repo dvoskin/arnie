@@ -912,15 +912,38 @@ async def run(message: str, user, prior: Optional[dict] = None,
     if day_line:
         content = f"{content}\n\nDay context for the 'say' line: {day_line}"
     mode = _mode(user)
-    sys = (_SYSTEM.replace("{thresh}", str(_THRESH[mode]))
-                  .replace("{mode}", mode))
-    try:
-        res = await chat([{"role": "user", "content": content}], sys,
-                         tools=False, max_tokens=700, model=_logger_model())
-    except Exception as e:
-        logger.warning(f"food_turn logger pass failed: {e}")
-        return None
-    data = _parse(res.get("text") or "")
+
+    # The zero-model-call path. "150g chicken breast" has one reading, and
+    # spending a round trip to discover that is most of the latency the user
+    # experiences. The parser refuses everything it cannot prove, so a miss
+    # costs what the turn costs today and a hit costs nothing.
+    #
+    # Only for a cold turn: a `prior` means this is an answer to a question we
+    # asked, which needs the question's context, and a thread means the message
+    # may reference what came before.
+    data = None
+    if not prior and not thread_active and not board:
+        try:
+            from core.food_fast_path import parse as _fast_parse
+            data = _fast_parse(message)
+            if data is not None:
+                logger.info(f"event=food_fast_path outcome=parsed "
+                            f"items={len(data.get('items') or [])}")
+        except Exception as _fe:
+            logger.warning(f"fast path skipped: {_fe}")
+            data = None
+
+    if data is None:
+        sys = (_SYSTEM.replace("{thresh}", str(_THRESH[mode]))
+                      .replace("{mode}", mode))
+        try:
+            res = await chat([{"role": "user", "content": content}], sys,
+                             tools=False, max_tokens=700,
+                             model=_logger_model())
+        except Exception as e:
+            logger.warning(f"food_turn logger pass failed: {e}")
+            return None
+        data = _parse(res.get("text") or "")
     if not isinstance(data, dict):
         return None
     action = data.get("action")
