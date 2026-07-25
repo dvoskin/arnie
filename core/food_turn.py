@@ -535,6 +535,60 @@ def note_held_items(say: str, stashed: list, tool_calls: list) -> str:
             + f". Holding the {held} - tell me which kind and it goes on too.")
 
 
+def _apply_clarification_veto(decision, calls, kinds, items_logged):
+    """Drop the log calls the clarification policy did not clear.
+
+    Returns `(calls, kinds, items_logged, held_names)`.
+
+    Only LOG calls are subject to it. Updates and deletes are the user's own
+    explicit corrections to rows already on the board — they were never staged,
+    the policy never reasoned about them, and vetoing them on the strength of a
+    set they are absent from would silently swallow "remove the fries".
+
+    Matched on the staged item's own text rather than on ids, because the
+    interpreter's op and the staged item share exactly that: `_log_call` builds
+    `food_name` from `o["food"]`, and `stage_items` builds `original_text` from
+    the same field. Substring both ways, since the executor normalises names.
+    """
+    clarification = getattr(decision, "clarification", None)
+    staged = getattr(decision, "staged_items", ()) or ()
+    if clarification is None or not staged:
+        return calls, kinds, items_logged, []
+
+    held_ids = set(getattr(clarification, "held_item_ids", ()) or ())
+    if not held_ids:
+        return calls, kinds, items_logged, []
+    held_texts = {(i.original_text or "").strip().lower()
+                  for i in staged if i.staged_item_id in held_ids}
+    held_texts.discard("")
+    if not held_texts:
+        return calls, kinds, items_logged, []
+
+    def _is_held(call) -> bool:
+        name = str(((call or {}).get("input") or {}).get("food_name")
+                   or "").strip().lower()
+        if not name:
+            return False
+        return any(name == t or name in t or t in name for t in held_texts)
+
+    kept_calls, kept_kinds, held_names = [], [], []
+    for call, kind in zip(calls, kinds):
+        if kind == "log" and _is_held(call):
+            held_names.append(
+                str((call.get("input") or {}).get("food_name") or ""))
+            continue
+        kept_calls.append(call)
+        kept_kinds.append(kind)
+
+    if not held_names:
+        return calls, kinds, items_logged, []
+
+    lowered = {n.lower() for n in held_names}
+    kept_items = [o for o in items_logged
+                  if str(o.get("food") or "").strip().lower() not in lowered]
+    return kept_calls, kept_kinds, kept_items, held_names
+
+
 def _item_is_stated(it: dict, message: str) -> bool:
     """Is this item's amount the USER's own words? The interpreter's "basis"
     declaration wins when present ("stated"/"regular" vs "estimate"); when
@@ -1290,6 +1344,12 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
         if not ops:
             return None
 
+    # Declared out here because the VETO below reads it. It used to live
+    # entirely inside the branch that produces it, which is a fair description
+    # of the seam being closed: the decision existed only where it was made,
+    # and the place that executes never saw it.
+    _decision = None
+
     # Policy engine (fix #12, first inversion step): the model REPORTS the
     # ambiguities it estimated through; the SYSTEM decides whether any of
     # them is worth holding the write for. Never on the answer turn — that
@@ -1321,7 +1381,6 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
         except Exception:
             _strict_confirm_pending = False
 
-        _decision = None
         try:
             from core.food_pipeline import pipeline_enabled, plan_turn
             if pipeline_enabled() and not _strict_confirm_pending:
@@ -1377,6 +1436,32 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
         kinds.append(kind)
         if kind == "log":
             items_logged.append(o)
+
+    # ── THE POLICY'S VETO, APPLIED TO THE CALLS THAT WILL ACTUALLY RUN ──────
+    #
+    # `plan_turn` ran above and returned early if it wanted to ASK. Everything
+    # else it decided was then dropped on the floor: the calls below were built
+    # from the complete operation list, and `decision.approved_operations` was
+    # never consulted. So the staged-ambiguity architecture's promise — only
+    # approved commands execute — was not structurally true in the live path.
+    # It held only because a hold almost always comes WITH a question, and the
+    # question returns early. A no-question hold, an unsupported edge case, or
+    # any future change to the clarification policy would have executed
+    # everything the interpreter proposed.
+    #
+    # `approved_operations` itself could not close this: it filters
+    # `data["_calls"]`, which the interpreter's JSON does not carry live — it
+    # is present only in the fixtures that exercise the policy directly. So the
+    # veto is applied HERE, against the calls as constructed, keyed on the
+    # staged item ids the policy actually reasoned about.
+    if _decision is not None:
+        calls, kinds, items_logged, _held_names = _apply_clarification_veto(
+            _decision, calls, kinds, items_logged)
+        if _held_names:
+            logger.info(
+                "event=policy_veto held=%s %s",
+                ",".join(_held_names), (data.get("say") or "")[:40])
+
     if not calls:
         return None
 
