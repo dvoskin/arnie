@@ -569,7 +569,8 @@ def _item_macros(result_str: str) -> str:
     return f"{m.group(1)} cal, {m.group(2)}g protein" if m else ""
 
 
-def deterministic_confirmation(tool_calls, log, prefs, tool_results=None) -> str:
+def deterministic_confirmation(tool_calls, log, prefs, tool_results=None,
+                               user_message: str = "") -> str:
     """
     Build a meaningful confirmation from what was actually logged, used when the
     LLM returns no text after a tool call. Never a bare "done." — the user always
@@ -807,7 +808,12 @@ def deterministic_confirmation(tool_calls, log, prefs, tool_results=None) -> str
                     else "Got it, checking in more.|||What's today looking like?")
         if any(k in fields for k in ("calorie_target", "protein_target")):
             return "Targets locked in. ✅|||Send me what you've eaten and we'll track against them."
-        # Generic profile update (timezone, language, attributes, etc.)
+        # Generic profile update (timezone, language, attributes, etc.).
+        # A message that ASKS something never gets the canned ack — return
+        # empty so the voiced follow-up answers the actual question
+        # (Samuel 2026-07-24: 'is my protein too low?' → 'Locked in. ✅' ×3).
+        if "?" in (user_message or ""):
+            return ""
         return "Locked in. ✅|||What's the day looking like — food or training?"
     # Generic net — only hit for tool turns with no specific branch above. Never a
     # content-free "all set"; keep the ball in their court with the day's standing.
@@ -1340,44 +1346,6 @@ async def _web_lookup_meal_inner(food_name, quantity, _re) -> dict | None:
     }
 
 
-async def _check_recent_duplicate(db, target_log_id, food_name: str, quantity, window_min: int = 5):
-    """Idempotency check: same (food_name, quantity) logged on the same daily_log
-    within the last `window_min` minutes is almost always a retry, not a second
-    portion. Returns the existing entry (with id/calories/etc.) on a hit, or None.
-
-    Catches the shake re-confirmation cascade from the screenshots — when the
-    model keeps promising to "log the shake", the second attempt collapses to
-    a no-op instead of producing a duplicate row.
-    """
-    try:
-        from datetime import datetime as _dt, timedelta as _td
-        from sqlalchemy import select as _select, desc as _desc
-        from db.models import FoodEntry
-        cutoff = _dt.utcnow() - _td(minutes=window_min)
-        qn = (food_name or "").strip().lower()
-        if not qn or target_log_id is None:
-            return None
-        stmt = (_select(FoodEntry)
-                .where(FoodEntry.daily_log_id == target_log_id)
-                .order_by(_desc(FoodEntry.timestamp))
-                .limit(10))
-        rows = (await db.execute(stmt)).scalars().all()
-        for r in rows:
-            ts = getattr(r, "timestamp", None)
-            if (ts is not None and ts >= cutoff
-                    and (r.parsed_food_name or "").strip().lower() == qn
-                    and (str(r.quantity or "").strip().lower()
-                         == str(quantity or "").strip().lower())):
-                return r
-        return None
-    except Exception as e:
-        logger.warning(f"duplicate check failed: {e}")
-        return None
-
-
-_HIST_STOP = {"a", "an", "the", "of", "with", "and", "some", "my", "for", "had"}
-
-
 def _content_tokens(name: str) -> frozenset:
     """Word-order-insensitive content tokens of a food name — drops stopwords, pure
     numbers, and (via normalize_name) quantity units. So 'everything Royo bagel' and
@@ -1835,6 +1803,10 @@ async def execute_tool_calls(
     the pipeline detects and sends as a photo to the user.
     """
     results = {}
+    # Typed execution view (P0.3a): cleared now, published at the end — a
+    # prior batch can never leak into a turn whose executor was mocked.
+    from core.execution_result import LAST_EXECUTION as _LAST_EXEC
+    _LAST_EXEC.set(None)
     # Track per-call outcomes so the batch coaching can name individual
     # failures (otherwise the name-keyed `results` dict only retains the LAST
     # log_food's tool result and partial-failure detail is lost).
@@ -1986,6 +1958,15 @@ async def execute_tool_calls(
             schedule_widget_reload(getattr(user, "id", None))
         except Exception:
             pass  # widget refresh is best-effort; the turn must never break
+
+    # Publish the typed per-call view (P0.3a). Built by the one sanctioned
+    # scraper of the legacy stash keys; when branches populate CallResults
+    # natively (P0.3b) this becomes a pass-through.
+    try:
+        from core.execution_result import from_tool_calls as _exec_view
+        _LAST_EXEC.set(_exec_view(tool_calls, results))
+    except Exception as _ev_e:
+        logger.warning(f"execution view publish skipped: {_ev_e}")
 
     # Multi-item batch: when several log_food calls fire in one turn, the
     # single-item coaching ("name the food and its macros") is wrong — it makes
@@ -2274,6 +2255,21 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
             _target = _merged or _food_merge_target
             if isinstance(inp, dict) and getattr(_target, "id", None) is not None:
                 inp["_entry_id"] = _target.id
+            # LEDGER EVENT: a repeat-merge is an UPDATE to the existing row —
+            # it must appear in the history like any other mutation (found by
+            # the 2026-07-24 cleanup audit: merges were the one write path
+            # recording nothing, leaving undo/audit blind to them).
+            try:
+                from db.queries import record_ledger_event
+                await record_ledger_event(
+                    db, user.id, "updated", domain="food",
+                    entry_id=getattr(_target, "id", None),
+                    daily_log_id=target_log.id,
+                    payload={"merge": True, "quantity": _merged_qty,
+                             "calories": _tot_cal, "protein": _tot_pro},
+                    source=inp.get("source") or f"legacy:{source_type}")
+            except Exception as _ev_e:
+                logger.warning(f"ledger event (food merge) skipped: {_ev_e}")
             await db.refresh(target_log)
             _stash_receipt(inp, target_log, user, _tot_cal, _tot_pro,
                            confidence=_conf, updated=True, carbs=analysis.carbs)
@@ -2332,6 +2328,29 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
                 else None
             ),
         )
+        # LEDGER EVENT (FOOD_LEDGER_V2 Phase 2): append the created event with
+        # the committed state — undo/audit history. Best-effort: history must
+        # never break the write it describes.
+        try:
+            from db.queries import record_ledger_event
+            _ev_row = await record_ledger_event(
+                db, user.id, "created", domain="food",
+                entry_id=getattr(_new_food, "id", None),
+                daily_log_id=target_log.id,
+                payload={"food_name": food_name,
+                         "quantity": inp.get("quantity"),
+                         "calories": analysis.calories,
+                         "protein": analysis.protein,
+                         "carbs": analysis.carbs,
+                         "fats": analysis.fat,
+                         "meal_type": getattr(_new_food, "meal_type", None),
+                         "basis": inp.get("basis")},
+                source=inp.get("source") or f"legacy:{source_type}")
+            # The event id is the card's undo token (one-tap Undo, Phase 2).
+            if isinstance(inp, dict) and getattr(_ev_row, "id", None) is not None:
+                inp["_event_id"] = _ev_row.id
+        except Exception as _ev_e:
+            logger.warning(f"food event (created) skipped: {_ev_e}")
         # Stash the entry id on the tool_call's input so conversation.py can
         # surface it in the macro_card payload. Native clients (iOS) use it
         # to edit/delete the entry directly via the foodEdit API instead of
@@ -2643,6 +2662,22 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
             is_cardio=is_cardio,
             occurred_at=_occurred_at,
         )
+        # LEDGER EVENT (domain=exercise): fitness rides the same event history
+        # as food (Danny 2026-07-24). Best-effort, never breaks the write.
+        try:
+            from db.queries import record_ledger_event
+            await record_ledger_event(
+                db, user.id, "created", domain="exercise",
+                entry_id=getattr(_new_ex, "id", None),
+                daily_log_id=target_log.id,
+                payload={"exercise_name": canonical_name,
+                         "sets": inp.get("sets"), "reps": inp.get("reps"),
+                         "weight_kg": weight_kg,
+                         "duration_minutes": inp.get("duration_minutes"),
+                         "is_cardio": is_cardio},
+                source=inp.get("source") or f"legacy:{source_type}")
+        except Exception as _ev_e:
+            logger.warning(f"ledger event (exercise created) skipped: {_ev_e}")
         # Same id stash as log_food: native clients use this for inline
         # edit/delete via the exerciseEdit API without round-tripping a
         # "please update X" message through Arnie.
@@ -2747,6 +2782,16 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
         # weight accordingly.
         context_val = inp.get("context")
         metric = await add_body_metric(db, user.id, weight_kg, context=context_val, when=weigh_when)
+        # LEDGER EVENT (domain=weight): same event history as food/exercise.
+        try:
+            from db.queries import record_ledger_event
+            await record_ledger_event(
+                db, user.id, "created", domain="weight",
+                entry_id=getattr(metric, "id", None),
+                payload={"weight_kg": weight_kg, "context": context_val},
+                source=inp.get("source") or f"legacy:{source_type}")
+        except Exception as _ev_e:
+            logger.warning(f"ledger event (weight created) skipped: {_ev_e}")
         recent = await get_recent_weights(db, user.id, days=14)
         ordered = sorted(
             [w for w in recent if getattr(w, "weight_kg", None) is not None],
@@ -2814,8 +2859,33 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
         entry_id = inp.get("entry_id")
         if not entry_id:
             return "Missing entry_id"
+        # COMPARE-AND-SWAP (structured ledger, Danny 2026-07-24): the caller
+        # targeted this entry holding a board snapshot (expected_calories). If
+        # the row has since changed materially — another device, a manual edit,
+        # enrichment drift — a scale computed from stale numbers corrupts the
+        # entry. Refuse and force a re-read instead of applying blind.
+        _exp_cal = inp.get("expected_calories")
+        if _exp_cal is not None:
+            try:
+                from db.models import FoodEntry as _FE
+                _row = await db.get(_FE, int(entry_id))
+                if _row is not None and _row.calories is not None:
+                    _cur = float(_row.calories)
+                    _exp = float(_exp_cal)
+                    _tol = max(30.0, 0.2 * max(_cur, _exp))
+                    if abs(_cur - _exp) > _tol:
+                        return (f"STALE BOARD: entry #{entry_id} is now "
+                                f"{_cur:.0f} cal, not {_exp:.0f}. Do NOT apply "
+                                f"this change — re-read today's log first.")
+            except Exception:
+                pass
+        # Contract-carrier fields (CAS expectation, narration hint, source
+        # provenance, per-call result stash) ride the input but are never
+        # column writes.
         changes = {k: v for k, v in inp.items()
-                   if k not in ("entry_id", "date") and v is not None}
+                   if k not in ("entry_id", "date", "expected_calories",
+                                "food_hint", "source", "basis", "_result")
+                   and v is not None}
         # Map external name → DB column
         if "food_name" in changes:
             changes["parsed_food_name"] = changes.pop("food_name")
@@ -2826,6 +2896,24 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
                 changes["new_daily_log_id"] = move_log.id
         else:
             target_date = None
+        # BEFORE-STATE capture for the ledger event: the updated event carries
+        # the row as it was, which is what makes "undo" of an update possible
+        # (core/ledger_undo inverts it by writing `before` back).
+        _before_state = None
+        try:
+            from db.models import FoodEntry as _FE_before
+            _row_b = await db.get(_FE_before, int(entry_id))
+            if _row_b is not None:
+                _before_state = {
+                    "food_name": _row_b.parsed_food_name,
+                    "quantity": _row_b.quantity,
+                    "calories": _row_b.calories,
+                    "protein": _row_b.protein,
+                    "carbs": _row_b.carbs,
+                    "fats": _row_b.fats,
+                }
+        except Exception:
+            _before_state = None
         entry = await q_update_food_entry(db, entry_id, user.id, **changes)
         if not entry:
             # SELF-HEAL: the model likely GUESSED the id (its own admission:
@@ -2836,6 +2924,7 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
                 entry = await q_update_food_entry(db, recovered.id, user.id, **changes)
                 if entry:
                     entry_id = recovered.id
+                    _before_state = None   # captured for the ORIGINAL id — stale
             if not entry:
                 # Genuinely unresolvable — NEVER let the model claim it worked or
                 # blind-retry another guess (the stuck loop). Make it ASK.
@@ -2889,6 +2978,20 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
         except Exception as _e:
             logger.warning(f"recurring-memory backfill on update failed: {_e}")
 
+        # LEDGER EVENT: the applied changes, post-commit. Best-effort.
+        try:
+            from db.queries import record_ledger_event
+            await record_ledger_event(
+                db, user.id, "updated", domain="food", entry_id=entry_id,
+                daily_log_id=getattr(today_log, "id", None),
+                payload={"changes": {k: v for k, v in changes.items()
+                                     if k != "new_daily_log_id"},
+                         "before": _before_state,
+                         "moved_to": str(target_date) if target_date else None},
+                source=inp.get("source") or "legacy")
+        except Exception as _ev_e:
+            logger.warning(f"ledger event (food updated) skipped: {_ev_e}")
+
         # Build the confirmation DEFENSIVELY. The update already committed above;
         # a formatting hiccup here must never turn a successful move into a
         # reported failure (the "it actually moved but Arnie said it didn't" bug).
@@ -2906,11 +3009,141 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
         entry_id = inp.get("entry_id")
         if not entry_id:
             return "Missing entry_id"
+        # Capture the row BEFORE the delete — the deleted event carries the
+        # full payload, which is what makes restore ("bring it back") possible.
+        _del_payload = None
+        try:
+            from db.models import FoodEntry as _FE_del
+            _row_del = await db.get(_FE_del, int(entry_id))
+            if _row_del is not None:
+                _del_payload = {
+                    "food_name": _row_del.parsed_food_name,
+                    "quantity": _row_del.quantity,
+                    "calories": _row_del.calories,
+                    "protein": _row_del.protein,
+                    "carbs": _row_del.carbs,
+                    "fats": _row_del.fats,
+                    "meal_type": _row_del.meal_type,
+                    "daily_log_id": _row_del.daily_log_id,
+                }
+        except Exception:
+            _del_payload = None
         ok = await q_delete_food_entry(db, entry_id, user.id)
         if not ok:
             return f"No food entry #{entry_id} found."
+        try:
+            from db.queries import record_ledger_event
+            await record_ledger_event(
+                db, user.id, "deleted", domain="food", entry_id=entry_id,
+                daily_log_id=(_del_payload or {}).get("daily_log_id")
+                or getattr(today_log, "id", None),
+                payload=_del_payload, source=inp.get("source") or "legacy")
+        except Exception as _ev_e:
+            logger.warning(f"ledger event (food deleted) skipped: {_ev_e}")
         await db.refresh(today_log)
         return f"Removed food entry #{entry_id}"
+
+    elif name == "restore_food_entry":
+        # Inverse of a delete, from the deleted event's captured payload
+        # (core/ledger_undo). Deterministic: no parsing, no enrichment — the
+        # entry comes back exactly as it died, totals recomputed by
+        # add_food_entry, and the restore appends its own created event.
+        _rp = inp.get("payload") or {}
+        _r_name = _rp.get("food_name") or inp.get("food_name")
+        if not _r_name:
+            return "Nothing to restore."
+        _r_log_id = _rp.get("daily_log_id") or getattr(today_log, "id", None)
+        # Restore into the original day if that log still exists, else today.
+        try:
+            from db.models import DailyLog as _DL_r
+            if _rp.get("daily_log_id") is not None and \
+                    await db.get(_DL_r, int(_rp["daily_log_id"])) is None:
+                _r_log_id = getattr(today_log, "id", None)
+        except Exception:
+            _r_log_id = getattr(today_log, "id", None)
+        if not _r_log_id:
+            return "Skipped — no log to restore into"
+        _new_r = await add_food_entry(
+            db, _r_log_id,
+            raw_input=str(inp),
+            parsed_food_name=_r_name,
+            quantity=_rp.get("quantity"),
+            calories=_rp.get("calories"), protein=_rp.get("protein"),
+            carbs=_rp.get("carbs"), fats=_rp.get("fats"),
+            meal_type=_rp.get("meal_type"),
+            estimated_flag=True, confidence_score=0.8,
+            source_type=source_type,
+        )
+        try:
+            from db.queries import record_ledger_event
+            _ev_row_r = await record_ledger_event(
+                db, user.id, "created", domain="food",
+                entry_id=getattr(_new_r, "id", None), daily_log_id=_r_log_id,
+                payload={"food_name": _r_name, "quantity": _rp.get("quantity"),
+                         "calories": _rp.get("calories"),
+                         "protein": _rp.get("protein"),
+                         "carbs": _rp.get("carbs"), "fats": _rp.get("fats"),
+                         "meal_type": _rp.get("meal_type")},
+                source=inp.get("source") or "restore")
+            if isinstance(inp, dict) and getattr(_ev_row_r, "id", None) is not None:
+                inp["_event_id"] = _ev_row_r.id
+        except Exception as _ev_e:
+            logger.warning(f"ledger event (food restored) skipped: {_ev_e}")
+        # Mirror the committed row onto the input (id + macros) so card and
+        # snapshot readers see the same numbers the DB holds.
+        if isinstance(inp, dict):
+            if getattr(_new_r, "id", None) is not None:
+                inp["_entry_id"] = _new_r.id
+            inp["food_name"] = _r_name
+            inp["quantity"] = _rp.get("quantity")
+            for _k_r in ("calories", "protein", "carbs", "fats"):
+                if _rp.get(_k_r) is not None:
+                    inp[_k_r] = _rp[_k_r]
+        if getattr(today_log, "id", None):
+            await db.refresh(today_log)
+        return (f"Restored {_r_name} ({_rp.get('quantity') or 'as before'}, "
+                f"{float(_rp.get('calories') or 0):.0f} cal) to the log.")
+
+    elif name == "restore_exercise_entry":
+        _rpx = inp.get("payload") or {}
+        _rx_name = _rpx.get("exercise_name") or inp.get("exercise_name")
+        if not _rx_name:
+            return "Nothing to restore."
+        _rx_log_id = _rpx.get("daily_log_id") or getattr(today_log, "id", None)
+        try:
+            from db.models import DailyLog as _DL_rx
+            if _rpx.get("daily_log_id") is not None and \
+                    await db.get(_DL_rx, int(_rpx["daily_log_id"])) is None:
+                _rx_log_id = getattr(today_log, "id", None)
+        except Exception:
+            _rx_log_id = getattr(today_log, "id", None)
+        if not _rx_log_id:
+            return "Skipped — no log to restore into"
+        _new_rx = await add_exercise_entry(
+            db, _rx_log_id,
+            exercise_name=_rx_name,
+            sets=_rpx.get("sets"),
+            reps=str(_rpx.get("reps")) if _rpx.get("reps") is not None else None,
+            weight=_rpx.get("weight"),
+            duration_minutes=_rpx.get("duration_minutes"),
+            source_type=source_type,
+        )
+        try:
+            from db.queries import record_ledger_event
+            await record_ledger_event(
+                db, user.id, "created", domain="exercise",
+                entry_id=getattr(_new_rx, "id", None), daily_log_id=_rx_log_id,
+                payload={"exercise_name": _rx_name, "sets": _rpx.get("sets"),
+                         "reps": _rpx.get("reps"), "weight_kg": _rpx.get("weight"),
+                         "duration_minutes": _rpx.get("duration_minutes")},
+                source=inp.get("source") or "restore")
+        except Exception as _ev_e:
+            logger.warning(f"ledger event (exercise restored) skipped: {_ev_e}")
+        if isinstance(inp, dict) and getattr(_new_rx, "id", None) is not None:
+            inp["_entry_id"] = _new_rx.id
+        if getattr(today_log, "id", None):
+            await db.refresh(today_log)
+        return f"Restored {_rx_name} to the workout log."
 
     elif name == "clear_day_log":
         # Wipe today's food/exercise for a clean rebuild. reset_today_log mutates the
@@ -2941,9 +3174,35 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
                 changes["new_daily_log_id"] = move_log.id
         else:
             target_date = None
+        # BEFORE-STATE capture — same undo contract as food updates.
+        _before_ex = None
+        try:
+            from db.models import ExerciseEntry as _EE_before
+            _row_bx = await db.get(_EE_before, int(entry_id))
+            if _row_bx is not None:
+                _before_ex = {
+                    "exercise_name": _row_bx.exercise_name,
+                    "sets": _row_bx.sets, "reps": _row_bx.reps,
+                    "weight": _row_bx.weight,
+                    "duration_minutes": getattr(_row_bx, "duration_minutes", None),
+                }
+        except Exception:
+            _before_ex = None
         entry = await q_update_exercise_entry(db, entry_id, user.id, **changes)
         if not entry:
             return f"No exercise entry #{entry_id} found in today's log."
+        try:
+            from db.queries import record_ledger_event
+            await record_ledger_event(
+                db, user.id, "updated", domain="exercise", entry_id=entry_id,
+                daily_log_id=getattr(today_log, "id", None),
+                payload={"changes": {k: v for k, v in changes.items()
+                                     if k != "new_daily_log_id"},
+                         "before": _before_ex,
+                         "moved_to": str(target_date) if target_date else None},
+                source=inp.get("source") or "legacy")
+        except Exception as _ev_e:
+            logger.warning(f"ledger event (exercise updated) skipped: {_ev_e}")
         await db.refresh(today_log)
         moved = f", moved to {target_date}" if target_date else ""
         return f"Updated exercise #{entry_id}: {entry.exercise_name}{moved}"
@@ -2954,11 +3213,58 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
         entry_id = inp.get("entry_id")
         if not entry_id:
             return "Missing entry_id"
+        # Payload capture before the delete — restore-ability, same as food.
+        _del_ex_payload = None
+        try:
+            from db.models import ExerciseEntry as _EE_del
+            _row_ex = await db.get(_EE_del, int(entry_id))
+            if _row_ex is not None:
+                _del_ex_payload = {
+                    "exercise_name": _row_ex.exercise_name,
+                    "sets": _row_ex.sets, "reps": _row_ex.reps,
+                    "weight": _row_ex.weight,
+                    "duration_minutes": getattr(_row_ex, "duration_minutes", None),
+                    "daily_log_id": _row_ex.daily_log_id,
+                }
+        except Exception:
+            _del_ex_payload = None
         ok = await q_delete_exercise_entry(db, entry_id, user.id)
         if not ok:
             return f"No exercise entry #{entry_id} found."
+        try:
+            from db.queries import record_ledger_event
+            await record_ledger_event(
+                db, user.id, "deleted", domain="exercise", entry_id=entry_id,
+                daily_log_id=(_del_ex_payload or {}).get("daily_log_id")
+                or getattr(today_log, "id", None),
+                payload=_del_ex_payload, source=inp.get("source") or "legacy")
+        except Exception as _ev_e:
+            logger.warning(f"ledger event (exercise deleted) skipped: {_ev_e}")
         await db.refresh(today_log)
         return f"Removed exercise entry #{entry_id}"
+
+    elif name == "delete_water_entry":
+        # Inverse of a water pour (core/ledger_undo) — deterministic, totals
+        # recomputed from the rows by the query helper.
+        entry_id = inp.get("entry_id")
+        if not entry_id:
+            return "Missing entry_id"
+        from db.queries import delete_water_entry as q_delete_water_entry
+        ok = await q_delete_water_entry(db, int(entry_id), user.id)
+        if not ok:
+            return f"No water entry #{entry_id} found."
+        try:
+            from db.queries import record_ledger_event
+            await record_ledger_event(
+                db, user.id, "deleted", domain="water", entry_id=int(entry_id),
+                daily_log_id=getattr(today_log, "id", None),
+                payload={"amount_ml": inp.get("amount_ml")},
+                source=inp.get("source") or "legacy")
+        except Exception as _ev_e:
+            logger.warning(f"ledger event (water deleted) skipped: {_ev_e}")
+        if getattr(today_log, "id", None):
+            await db.refresh(today_log)
+        return f"Removed water entry #{entry_id} — hydration total corrected."
 
     elif name == "refresh_coach_brief":
         try:
@@ -3215,12 +3521,24 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
             # no backing row (the inverse of the drift the food path was rewritten to
             # kill). Now the aggregate can never diverge from the rows.
             from db.queries import recompute_water_total
-            await add_water_entry(
+            _new_w = await add_water_entry(
                 db, user.id, target_log.id,
                 amount_ml=ml, context=inp.get("context"),
                 source_type=source_type,
             )
             target_log.total_water_ml = await recompute_water_total(db, target_log.id)
+            # LEDGER EVENT (domain=water): same event history as the others.
+            # entry_id makes the pour undoable (core/ledger_undo).
+            try:
+                from db.queries import record_ledger_event
+                await record_ledger_event(
+                    db, user.id, "created", domain="water",
+                    entry_id=getattr(_new_w, "id", None),
+                    daily_log_id=target_log.id,
+                    payload={"amount_ml": ml, "context": inp.get("context")},
+                    source=inp.get("source") or f"legacy:{source_type}")
+            except Exception as _ev_e:
+                logger.warning(f"ledger event (water created) skipped: {_ev_e}")
         total_ml = target_log.total_water_ml or 0
         oz_this = round((ml or 0) / 29.5735)
         total_oz = round(total_ml / 29.5735)

@@ -547,10 +547,14 @@ class TestPromptRuleIntegrity:
         assert "what dressing" in system
 
     def test_multi_item_list_logs_first_then_refines(self, system):
-        """The log-all-first rule replaced the old per-item 'pasta → what sauce?'
-        ask example: a multi-item list is logged in full, THEN refined — never held
-        for a question. Pin the rule so the behavior can't silently regress."""
-        assert "LOG THE WHOLE LIST FIRST" in system
+        """Repinned 2026-07-24: the log-first-refine-later rule was
+        deliberately inverted by the structured-food work — clarification now
+        happens BEFORE the write (Danny: 'all clarification should be
+        happening before the log'). For a multi-item message the prompt
+        bundles every unclear item into ONE ask, then logs everything
+        together on the answer. Pin the new shape so it can't regress."""
+        assert "ask one question per" in system
+        assert "log everything together once they answer" in system
 
     def test_ask_question_example_includes_protein_cook_method(self, system):
         assert "grilled or fried" in system

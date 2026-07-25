@@ -124,11 +124,6 @@ _FITNESS_NAV_SIDEBAR = """      <button class="navitem" id="nav-fitness" onclick
       </button>
 """
 
-_FITNESS_NAV_BOTTOM = """  <button class="bn-item" id="bn-fitness" onclick="switchTab('fitness')">
-    <span class="bn-ico"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v10M7 5v14M17 5v14M21 7v10M7 12h10"/></svg></span>Fitness
-  </button>
-"""
-
 _FITNESS_PANEL_HTML = """  <!-- FITNESS TAB -->
   <div class="tab-panel" id="panel-fitness">
     <div class="log-section">
@@ -6967,9 +6962,6 @@ async function sendChatMessage(){{
     _page = _page.replace(
         '      <button class="navitem" id="nav-profile"',
         _FITNESS_NAV_SIDEBAR + '      <button class="navitem" id="nav-profile"', 1)
-    _page = _page.replace(
-        '  <button class="bn-item" id="bn-brain"',
-        _FITNESS_NAV_BOTTOM + '  <button class="bn-item" id="bn-brain"', 1)
     _page = _page.replace(
         '  <!-- PROFILE TAB -->',
         _FITNESS_PANEL_HTML + '\n  <!-- PROFILE TAB -->', 1)

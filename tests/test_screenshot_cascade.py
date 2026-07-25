@@ -125,6 +125,15 @@ async def test_packaged_flag_routes_through_web_lookup(monkeypatch, cascade_env)
     monkeypatch.setattr(TE, "_web_lookup_packaged", _fake_web)
     from api import usda as _USDA
     monkeypatch.setattr(_USDA, "search_food", _fake_usda)
+    # OFF must be mocked too: it is a REAL product database and Elmhurst is in
+    # it — an unmocked call returns an exact label match in CI (where outbound
+    # network works), which correctly skips the web lane and flakes this test
+    # to 0 web calls (caught on CI 2026-07-24; local proxies masked it).
+    from skills.nutrition import off as _OFF
+
+    async def _fake_off(name):
+        return None
+    monkeypatch.setattr(_OFF, "search", _fake_off)
 
     env = cascade_env
     await _seed_user(env["Maker"])
@@ -148,10 +157,12 @@ async def test_packaged_flag_routes_through_web_lookup(monkeypatch, cascade_env)
         f"web lookup must fire for is_packaged=True (got {web_called['n']} calls)"
     )
     assert "Elmhurst" in web_called["queries"][0]
-    assert usda_called["n"] == 0, (
-        "USDA must NOT be consulted before web for branded products "
-        "(was called {usda_called['n']} times)"
-    )
+    # Repinned 2026-07-24: the 2026-07-22 ladder (own-log > USDA > OFF > web)
+    # deliberately consults USDA in the cascade even for branded items — it's
+    # cheap, catches branded generics, and the wrong-cousin demotion plus the
+    # exact-match-only forward rule protect against a bad text match beating
+    # label data. The live invariant is that the web-label lane STILL fires
+    # for packaged items (asserted above), not that USDA is never called.
 
 
 @pytest.mark.asyncio
@@ -172,6 +183,15 @@ async def test_branded_text_mention_caught_by_heuristic(monkeypatch, cascade_env
     monkeypatch.setattr(TE, "_web_lookup_packaged", _fake_web)
     from api import usda as _USDA
     monkeypatch.setattr(_USDA, "search_food", _fake_usda)
+    # OFF must be mocked too: it is a REAL product database and Elmhurst is in
+    # it — an unmocked call returns an exact label match in CI (where outbound
+    # network works), which correctly skips the web lane and flakes this test
+    # to 0 web calls (caught on CI 2026-07-24; local proxies masked it).
+    from skills.nutrition import off as _OFF
+
+    async def _fake_off(name):
+        return None
+    monkeypatch.setattr(_OFF, "search", _fake_off)
 
     env = cascade_env
     await _seed_user(env["Maker"])

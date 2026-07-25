@@ -245,6 +245,68 @@ class FoodEntry(Base):
     daily_log = relationship("DailyLog", back_populates="food_entries")
 
 
+class LedgerEvent(Base):
+    """Append-only history for the ledger — ALL logging domains
+    (FOOD_LEDGER_V2 Phase 2; Danny 2026-07-24: fitness rides the same system).
+
+    Corrections create EVENTS instead of only overwriting state: created /
+    updated / deleted rows carrying the entry's state (or the applied changes)
+    at event time, scoped by domain (food | exercise | weight | water | …).
+    Current state stays materialized on the domain tables for performance;
+    this table gives reliable undo (a deleted event carries the full payload
+    to restore from), debugging, correction-frequency analytics, and
+    protection against silent corruption.
+
+    entry_id is deliberately NOT a foreign key — events must survive the
+    entry's deletion (that is the point of the deleted event), and its meaning
+    is per-domain (food → food_entries.id, exercise → exercise_entries.id).
+    """
+    __tablename__ = "ledger_events"
+    __table_args__ = (
+        Index("ix_ledger_events_user_time", "user_id", "created_at"),
+        Index("ix_ledger_events_domain_entry", "domain", "entry_id"),
+        Index("ix_ledger_events_turn", "turn_id"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    domain = Column(String, nullable=False, server_default="food")
+    # Canonical transaction identity (core/turn_identity, alembic turnid001):
+    # which inbound turn produced this write. Null for historical events and
+    # non-turn writes (health imports, background jobs).
+    turn_id = Column(String)
+    entry_id = Column(Integer)               # domain entry id at event time
+    daily_log_id = Column(Integer)           # day the entry belonged to
+    event_type = Column(String, nullable=False)  # created | updated | deleted
+    payload_json = Column(Text)              # entry state / changes at event time
+    source = Column(String)                  # structured_food:vX | legacy | ...
+    created_at = Column(DateTime, server_default=func.now())
+
+
+class ProcessedTurn(Base):
+    """Durable exactly-once for structured food commits (FOOD_LEDGER_V2 Phase 2).
+
+    One row per (user, idempotency key) claimed at commit time. A resend,
+    double-tap, cross-device race, or post-restart redelivery of the same
+    (message, plan) finds the claim and is answered from it instead of writing
+    a second meal. The in-process TTL registry (core/food_ledger) stays as the
+    fast path; this table is what survives restarts. Rows are time-scoped by
+    the reader (a key older than the dedup window no longer blocks — the same
+    'had a banana' tomorrow is a new turn).
+    """
+    __tablename__ = "processed_turns"
+    __table_args__ = (
+        UniqueConstraint("user_id", "idem_key", name="uq_processed_turn_key"),
+        Index("ix_processed_turns_user_time", "user_id", "created_at"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    idem_key = Column(String, nullable=False)
+    result_summary = Column(Text)            # what the turn did (item names)
+    created_at = Column(DateTime, server_default=func.now())
+
+
 class ExerciseEntry(Base):
     __tablename__ = "exercise_entries"
     # Same join pattern as FoodEntry. Paired with alembic 0a1b2c3d4e5f.

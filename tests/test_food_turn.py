@@ -73,9 +73,9 @@ async def test_ask_is_rich_formatted(monkeypatch):
                    {"label": "Chicken", "q": "roughly how much?"}]}))
     out = await FT.run("had pizza and some chicken", SimpleNamespace())
     assert out["action"] == "ask"
-    assert out["text"].startswith("Quick one so it's clean:")
-    assert "1. **Crust**: how much did you leave?" in out["text"]
-    assert "2. **Chicken**: roughly how much?" in out["text"]
+    assert "Quick one so it's clean:" in out["text"]
+    assert "1. **crust**: how much did you leave?" in out["text"]
+    assert "2. **chicken**: roughly how much?" in out["text"]
 
 
 @pytest.mark.asyncio
@@ -423,3 +423,168 @@ def test_say_contract_strips_questions_after_write():
     out2 = FT.enforce_say_contract(all_q, calls)
     assert "?" not in out2 and "{day_cal}" in out2   # deterministic fallback
     # ask actions are untouched — this contract only governs log/update says
+
+
+@pytest.mark.asyncio
+async def test_strict_clean_log_becomes_confirm(monkeypatch):
+    """STRICT CONFIRMS (Danny 2026-07-24): with nothing to ask, the parse is
+    still shown before the write — nothing commits silently on strict."""
+    monkeypatch.setattr(FT, "chat", _fake_chat({
+        "action": "log",
+        "items": [{"food": "Roast turkey breast", "amount": 6.5, "unit": "oz",
+                   "calories": 300, "protein": 55},
+                  {"food": "White rice", "amount": 100, "unit": "g",
+                   "calories": 130, "protein": 3}],
+        "say": "Turkey and rice logged."}))
+    strict = SimpleNamespace(preferences=SimpleNamespace(food_logging_mode="strict"))
+    out = await FT.run("6.5 oz turkey and 100g rice", strict)
+    assert out["action"] == "ask" and out.get("kind") == "confirm"
+    assert "6.5 oz Roast turkey breast" in out["text"]
+    assert out["items"][0]["food"] == "Roast turkey breast"
+    # moderate users keep the silent clean log
+    mod = SimpleNamespace(preferences=SimpleNamespace(food_logging_mode="moderate"))
+    out2 = await FT.run("6.5 oz turkey and 100g rice", mod)
+    assert out2["action"] == "log"
+    # and the ANSWER turn (prior set) never re-confirms
+    out3 = await FT.run("yes", strict, prior={"original": "turkey", "question": "q"})
+    assert out3 is None or out3.get("kind") != "confirm"
+
+
+def test_yes_re_shapes():
+    for y in ("yes", "Yep", "looks good", "log it", "go ahead", "that's right", "ok"):
+        assert FT._YES_RE.match(y), y
+    for n in ("no", "make it 2", "actually 8 oz", "add cheese"):
+        assert not FT._YES_RE.match(n), n
+
+
+def test_gate_exclusions_are_semantic_not_lexical():
+    """Deterministic-case audit (Danny 2026-07-24): exclusion words must hit
+    only in their DOMAIN SHAPE — a french press is coffee, clear broth is
+    soup, 'later than usual' is past tense, walking home is not cardio."""
+    for msg in ("had a french press coffee this morning",
+                "had a clear broth soup for lunch",
+                "I had a protein bar later than usual",
+                "had a snack while walking home",
+                "had 2 sets of ribs from the bbq"):
+        assert FT.applies(msg), msg
+    for msg in ("grabbing a burrito later", "having lunch later",
+                "clear my log for today", "walked 30 min on the treadmill",
+                "did 3 sets of bench at 185", "bench press 3x10"):
+        assert not FT.applies(msg), msg
+
+
+def test_prompt_examples_speak_in_tokens():
+    """Every cited say example in _SYSTEM uses {tokens} — a literal total in
+    an example teaches the violation the runtime contract then strips."""
+    import re as _re
+    for m in _re.finditer(r'"say":"([^"]+)"', FT._SYSTEM):
+        stripped = _re.sub(r"\{[a-z_]+\}", "", m.group(1))
+        assert not _re.findall(r"\d{2,}", stripped), m.group(1)
+
+
+def test_format_confirm_never_renders_none():
+    txt = FT.format_confirm([{"food": "Coffee", "amount": None},
+                             {"food": "Eggs", "amount": 2, "unit": ""}])
+    assert "None" not in txt and "**Coffee**" in txt and "**2 Eggs**" in txt
+
+
+@pytest.mark.asyncio
+async def test_logger_meal_slot_rides_the_tool_call(monkeypatch):
+    """Universal meal-slot rule (Danny 2026-07-24): the logger's semantic call
+    (plate=meal, lone bag=snack) rides each item; invalid values drop to the
+    clock default downstream."""
+    monkeypatch.setattr(FT, "chat", _fake_chat({
+        "action": "log",
+        "items": [{"food": "Roast turkey plate", "amount": 1, "unit": "plate",
+                   "calories": 500, "meal": "dinner"},
+                  {"food": "Jerky", "amount": 1, "unit": "oz",
+                   "calories": 80, "meal": "snack"},
+                  {"food": "Mystery", "amount": 1, "unit": "cup",
+                   "calories": 100, "meal": "brunchish"}]}))
+    out = await FT.run("turkey plate and jerky",
+                       SimpleNamespace(preferences=SimpleNamespace(food_logging_mode="quick")))
+    slots = [c["input"].get("meal_type") for c in out["tool_calls"]]
+    assert slots == ["dinner", "snack", None]
+
+
+def test_say_contract_allows_product_name_digits():
+    """'Fage 0%' / '5-hour Energy' digits come from the write itself — never
+    stripped as invented totals (sim battery false positive, 2026-07-24)."""
+    calls = [{"input": {"food_name": "Fage 0% greek yogurt", "quantity": "1 cup",
+                        "calories": 120}}]
+    say = "Fage 0% logged, {batch_cal} cal. You're at {day_cal} with {cal_left} left."
+    assert FT.enforce_say_contract(say, calls) == say
+
+
+def test_acquisition_verbs_route_structured():
+    """'Got like 6-7 oz of roast turkey' leaked to legacy — bare acquisition
+    verbs now enter the structured lane, where strict's confirm IS the
+    did-you-eat-it checkpoint (Danny 2026-07-24). Storage/future acquisitions
+    stay plans."""
+    for msg in ("Got like 6-7 oz of roast turkey and 100g of rice",
+                "bought a chicken shawarma wrap",
+                "ordered a poke bowl",
+                "picked up a cold brew"):
+        assert FT.applies(msg), msg
+    for msg in ("got a pizza for tonight",
+                "bought groceries for the week",
+                "picked up meal prep to eat later",
+                "got snacks for the fridge"):
+        assert not FT.applies(msg), msg
+
+
+@pytest.mark.asyncio
+async def test_user_invited_question_lifts_no_reask(monkeypatch):
+    """'Yeah but don't you wanna know what kind of ice cream bar' INVITES the
+    flavor question — the no-re-ask loop-guard only blocks model-initiated
+    chains (Dove bar, 2026-07-24)."""
+    monkeypatch.setattr(FT, "chat", _fake_chat({
+        "action": "ask", "points": [{"label": "Dove bar", "q": "which kind?"}]}))
+    out = await FT.run("Yeah but don't you wanna know what kind of ice cream bar",
+                       SimpleNamespace(),
+                       prior={"original": "apple, nutella, a dove bar",
+                              "question": "Locking this in..."})
+    assert out is not None and out["action"] == "ask"
+    assert "dove bar" in out["text"].lower()
+    # unprompted model re-ask still refused
+    out2 = await FT.run("almost all of it", SimpleNamespace(),
+                        prior={"original": "pizza", "question": "how much?"})
+    assert out2 is None
+
+
+def test_note_held_items_names_the_dropped():
+    stashed = [{"food": "Apple"}, {"food": "Nutella"}, {"food": "Dove Ice Cream Bar"}]
+    calls = [{"input": {"food_name": "Apple"}}, {"input": {"food_name": "Nutella"}}]
+    out = FT.note_held_items("Apple and nutella logged, {batch_cal} cal.", stashed, calls)
+    assert "Dove Ice Cream Bar" in out and "Holding" in out
+    # nothing missing → say untouched
+    calls.append({"input": {"food_name": "Dove Ice Cream Bar"}})
+    same = FT.note_held_items("All three logged.", stashed, calls)
+    assert same == "All three logged."
+
+
+def test_ask_formats_facet_depth():
+    """Facet asks in Arnie's full voice: bubbles (|||), bolded items, facet
+    bullets, hold guarantee as its own beat."""
+    deep = FT._format_question([
+        {"label": "Chicken", "qs": ["grilled, baked, or fried?",
+                                    "skin on or off?", "rough amount?"]},
+        {"label": "Potato", "qs": ["baked or fries?", "any toppings?"]}])
+    assert "Quick one so it's clean:" in deep
+    assert "1. **chicken**" in deep and "   • skin on or off?" in deep
+    assert deep.endswith("keeps your log exact.")
+    assert deep.count("|||") == 1        # question + closer bubbles
+    single = FT._format_question([{"label": "Crust", "q": "how much left?"}])
+    assert "**crust**" in single and "|||" not in single
+
+
+def test_ask_acknowledges_ready_items():
+    """Locked items get their own ✅ bubble; brands keep their case."""
+    txt = FT._format_question(
+        [{"label": "Chicken", "qs": ["grilled or fried?", "how much?"]}],
+        ready=["Bagel", "Barebells Bar"])
+    assert txt.startswith("**bagel** and **Barebells Bar** locked in ✅|||")
+    assert "Just need a couple things:" in txt
+    one = FT._format_question([{"label": "Corn", "q": "how many ears?"}],
+                              ready=["Steak"])
+    assert one == "**steak** locked in ✅|||Just need the **corn**: how many ears?"

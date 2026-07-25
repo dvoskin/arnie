@@ -17,7 +17,41 @@ import os
 
 from core.prompts.arnie import build_arnie_system
 from core.llm import chat, DEFAULT_MODEL
-from core.scribe import extract_food_items, distinct_missing_items
+from core.scribe import extract_food_items
+from core.write_set import _tokens
+
+# Moved out of core/scribe.py (2026-07-24 cleanup): the token-overlap reconcile
+# below is a STRESS-HARNESS metric only — production uses scribe.unlogged_items
+# (count-gated fuzzy reconcile). Kept here so the harness's coverage numbers
+# stay comparable across runs.
+_MISSING_STOP = {"with", "and", "the", "of", "a", "in", "on", "plus", "some"}
+
+
+def _covered_by(name, logged_names):
+    nt = _tokens(name)
+    if not nt:
+        return True
+    for ln in logged_names:
+        lt = _tokens(ln)
+        if lt and all(any(t == l or t.startswith(l) or l.startswith(t) for l in lt)
+                      for t in nt):
+            return True
+    return False
+
+
+def missing_items(extracted, logged_names):
+    return [it for it in extracted
+            if _tokens(it.get("name") or "")
+            and not _covered_by(it.get("name") or "", logged_names)]
+
+
+def distinct_missing_items(extracted, logged_names):
+    out = []
+    for it in missing_items(extracted, logged_names):
+        nm = (it.get("name") or "").strip()
+        if nm and len([t for t in _tokens(nm) if t not in _MISSING_STOP]) <= 3:
+            out.append(nm)
+    return out
 
 RUNS = 3
 CONCURRENCY = 6

@@ -250,16 +250,24 @@ async def test_run_turn_buffered_path_unchanged_when_no_on_text_bubble(_stream_e
     assert len(turn.response.bubbles) == 3
 
 
-async def test_streaming_with_tool_calls_flushes_first_pass_then_follow_up(_stream_env):
-    """Tool-call turn: first-pass text streams, tools run, follow-up text streams.
-    streamed_bubble_count = total bubbles from BOTH passes."""
+async def test_streaming_with_tool_calls_flushes_first_pass_then_follow_up(
+        _stream_env, monkeypatch):
+    """Tool-call turn: the held first-pass confirmation is DISCARDED and the
+    post-write voicing streams via the catch-up. Repinned 2026-07-24: on a
+    pure food turn that voicing is the SINGLE-SOURCE log voice (voice_log),
+    not the legacy follow-up — same verify-before-stream guarantee, one
+    source."""
     env = _stream_env
-    # First pass: 2 bubbles + tool call. Follow-up: 2 bubbles.
+    # First pass: 2 bubbles + tool call (premature confirmation — must not show).
     env["state"]["chat_text"] = "logged that.|||quick read coming"
     env["state"]["tool_calls"] = [{"name": "log_food", "id": "t1",
                                    "input": {"food_name": "coffee"}}]
     env["state"]["stop_reason"] = "tool_use"
-    env["state"]["follow_up_text"] = "good morning hit.|||what's lunch?"
+    env["state"]["follow_up_text"] = "SHOULD NOT RUN"
+
+    async def _fake_voice(tool_calls, tool_results, today_log, user):
+        return "good morning hit.|||what's lunch?"
+    monkeypatch.setattr(C, "voice_log", _fake_voice)
 
     streamed: list[str] = []
 
@@ -275,10 +283,10 @@ async def test_streaming_with_tool_calls_flushes_first_pass_then_follow_up(_stre
     )
 
     # VERIFY-BEFORE-STREAM: on a logging turn the first-pass text ("logged that.")
-    # is a PREMATURE confirmation written before the DB commit — it is DISCARDED, not
-    # shown. Only the post-write follow-up voicing reaches the user (held, verified
-    # against the DB, then emitted once via the catch-up). So the user sees exactly
-    # the 2 follow-up bubbles — never the unverified pass-1 confirmation.
+    # is a PREMATURE confirmation written before the DB commit — it is DISCARDED,
+    # not shown. Only the post-write log voice reaches the user (emitted once via
+    # the post-build catch-up). So the user sees exactly the 2 voice bubbles —
+    # never the unverified pass-1 confirmation, and never a follow-up double.
     assert streamed == ["good morning hit.", "what's lunch?"]
     assert turn.streamed_bubble_count == 2
 

@@ -22,7 +22,25 @@ from core.micro_estimator import _parse_estimate
 def test_mass_stated_salt_record_drops_sodium():
     """The corn incident shape (Danny 2026-06-23): USDA matched a seasoning-like
     record carrying 20,378mg sodium per 100g. '200g' of it computes forward to
-    ~40g sodium — dropped, while the rest of the profile stays."""
+    ~40g sodium — dropped, while the rest of the profile stays.
+    Repinned 2026-07-24: only an EXACT USDA name match may forward-compute
+    over the model ('don't use USDA unless there's an almost identical name
+    match', 2026-07-23) — a 'likely' hit keeps the model's calories and the
+    sodium drop happens on the estimate path instead (covered below)."""
+    cand = {
+        "fdc_id": "SALT", "_match": "exact",
+        "per100g": {"calories": 50, "protein": 2, "carbs": 10, "fat": 0.5,
+                    "sodium": 20378},
+    }
+    a = analyze("corn", "200g", 90, 3, 19, 1, usda_candidate=cand)
+    assert a.sodium is None
+    assert a.calories == 100          # forward path applied (50 × 2)
+
+
+def test_mass_stated_likely_usda_keeps_model_calories_still_drops_sodium():
+    """The same salt record at 'likely' trust: the 2026-07-23 ladder demotes it
+    off the forward path (wrong-cousin class), the model's calories stand, and
+    the implausible sodium is still dropped by the estimate-path bound."""
     cand = {
         "fdc_id": "SALT", "_match": "likely",
         "per100g": {"calories": 50, "protein": 2, "carbs": 10, "fat": 0.5,
@@ -30,7 +48,7 @@ def test_mass_stated_salt_record_drops_sodium():
     }
     a = analyze("corn", "200g", 90, 3, 19, 1, usda_candidate=cand)
     assert a.sodium is None
-    assert a.calories == 100          # forward path still applied (50 × 2)
+    assert a.calories == 90           # model's read stands on a likely match
 
 
 # ── 1b. Estimate path: garbage multiplier lands in the 4-5g band ─────────────

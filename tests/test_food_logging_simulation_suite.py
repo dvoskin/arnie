@@ -1597,33 +1597,33 @@ def test_prompt_has_multi_item_confirmation_integrity_rule():
 
 def test_prompt_has_logging_fidelity_section():
     """LOGGING FIDELITY rule must be present in FOOD_ACCURACY so the model
-    knows what gets stored is what gets restated."""
+    knows what gets stored is what gets restated. (Assertions repinned
+    2026-07-24 to the current wording — the invariants survive, the exact
+    phrasing evolved with the structured-food work.)"""
     s = SYSTEM_PROMPT
     assert "LOGGING FIDELITY" in s
     # Three sub-rules
     assert "FOOD NAME: use the user's words" in s
     assert "QUANTITY FIDELITY" in s
     assert "EVERY ITEM GETS ITS OWN log_food" in s
-    # invent-ban consolidated into the bullet + NON-NEGOTIABLE #3
-    assert "not an assumed garlic bread" in s
+    # invent-ban bullet — current phrasing
+    assert "DO NOT INVENT ITEMS" in s and "Only log what was named" in s
 
 
 @pytest.mark.parametrize("preserved_phrase", [
     "happy wolf chocolate chip kids bar",
     "royo bagel",
-    # Quantities are standardized units, never colloquial measures: the
-    # user's phrase converts to a standard measure, partial portions
-    # never round up to a whole item. ("baklava" → "30g" wraps across
-    # lines in source — verify the wrap-safe tail.)
-    '"half a caesar salad" → quantity="1.5 cups"',
+    # QUANTITY FIDELITY now preserves the user's stated nuance ALONGSIDE the
+    # concrete estimate ("half plate (~1.5 cups)"), rather than replacing it
+    # with a bare standardized unit — repinned to the current examples.
+    '"half a caesar salad" → quantity="half plate',
     "3 bites of tiramisu",
-    'baklava" → "30g',
+    'baklava" → "~1/3 piece',
 ])
 def test_prompt_names_fidelity_examples(preserved_phrase):
     """The fidelity rule must include concrete conversion examples so the
-    model has a template: food names keep the user's words, quantities
-    convert to standardized units (the user's phrasing lives in the reply
-    and food name, not the quantity field)."""
+    model has a template: food names keep the user's words, quantities keep
+    the user's nuance alongside a concrete estimate."""
     s = SYSTEM_PROMPT
     assert preserved_phrase in s, (
         f"fidelity example {preserved_phrase!r} missing from prompt"
@@ -1636,17 +1636,16 @@ def test_prompt_bans_collapsing_distinct_items():
     s = SYSTEM_PROMPT
     # The example wraps across lines in source — verify the key tokens.
     assert "1 slice plain" in s and "pepperoni" in s
-    assert "TWO calls" in s
+    assert "TWO log_food calls" in s
 
 
 def test_prompt_bans_inventing_items():
     """User says 'had pizza' — don't also log garlic bread the user didn't
-    name. (Diet consolidated the verbose bullet into LOGGING FIDELITY + the
-    non-negotiable 'no invented side'; the ban must still be explicit.)"""
+    name. The ban must stay explicit whatever the surrounding section
+    wording does."""
     s = SYSTEM_PROMPT.lower()
-    assert "not an assumed garlic bread" in s          # LOGGING FIDELITY bullet — the
-    # explicit "only items the user named" ban survives the 2026-07-20 rollback that
-    # removed the NON_NEGOTIABLES "no invented side" phrasing.
+    assert "do not invent items" in s
+    assert "garlic bread" in s and "only log what was named" in s
 
 
 # ════════════════════════════════════════════════════════════════════════════

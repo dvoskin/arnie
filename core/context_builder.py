@@ -2,6 +2,7 @@
 Assembles the system-level context string injected into every Arnie prompt.
 Keeps retrieval deterministic (pure SQL, no vectors).
 """
+import os
 from typing import Optional, List
 from datetime import datetime, date, timedelta
 
@@ -75,27 +76,38 @@ def food_mode_directive(mode: Optional[str]) -> str:
 
     Pure + tiny so it's unit-testable and the only place the override prose lives.
     "moderate" (or None / unknown) returns "" — the static FOOD_ACCURACY block in the
-    system prompt is the baseline, and only quick/strict deviate from it. Mirrors the
-    ACCURACY MODE section the system prompt points the model at.
+    system prompt is the baseline, and only quick/strict deviate from it.
+
+    ONE POLICY, TWO LANES (P0 fix, 2026-07-24): the thresholds come from
+    core/food_ledger.ASK_THRESHOLDS — the same dial the structured interpreter
+    uses — and the STRICT semantics mirror the structured lane's contract
+    (clarify/confirm BEFORE the write, nothing commits silently on strict).
+    The old directive said the opposite ("LOG EVERY item FIRST... THEN
+    confirm"), so a strict turn that fell to the legacy lane behaved inverted
+    from a structured one — the 'sometimes Arnie gets weird' class.
     """
+    from core.food_ledger import ASK_THRESHOLDS as _T
     m = (mode or "moderate").strip().lower()
     if m == "quick":
         return (
             "[FOOD LOGGING MODE: quick] Log food immediately on your best estimate — but "
             "because you're not asking, PAD FOR THE UNKNOWN: assume the generous end (fuller "
             "portion, cooking fat included, normal-to-heavy sauce). Fast never means low. Do "
-            "NOT ask the usual >120 cal clarifying question — only ask when the prep gap is "
-            "extreme (>300 cal, e.g. grilled vs deep-fried). Favor flow over confirmation."
+            f"NOT ask the usual >{_T['moderate']} cal clarifying question — only ask when the "
+            f"prep gap is extreme (>{_T['quick']} cal, e.g. grilled vs deep-fried). Favor flow "
+            "over confirmation."
         )
     if m == "strict":
         return (
-            "[FOOD LOGGING MODE: strict] LOG EVERY item FIRST with a conservative-high estimate — "
-            "never withhold or delay a log to ask a question; a multi-item message logs in full "
-            "THIS turn. THEN, for accuracy, confirm cook method AND quantity on any ambiguous item "
-            "out loud (even when the swing is under 120 cal), and update_food_entry with their "
-            "answer — the log already landed, your question only sharpens it. Surface the "
-            "uncertainty rather than hiding it, and estimate the higher end on anything unresolved. "
-            "(Skip the questions entirely if they said 'just log it'.)"
+            "[FOOD LOGGING MODE: strict] Accuracy BEFORE the write: when a calorie-moving "
+            "detail is genuinely unclear (cook method, size, milk, sauce amount), ask the 1-2 "
+            "highest-impact questions FIRST and hold the log until they answer — nothing "
+            "commits silently on strict. Bundle a multi-item message into ONE combined ask "
+            "covering every unclear item, then log EVERYTHING together with their answers "
+            f"applied. Ask even when the swing is under {_T['moderate']} cal (anything around "
+            f"{_T['strict']}+ matters here); clearly-stated items log without questions — "
+            "strict is not 'always ask'. If they said 'just log it', skip the questions and "
+            "log conservative-high immediately."
         )
     return ""  # moderate / unknown = static system prompt default
 
@@ -190,10 +202,11 @@ def _format_open_threads(threads, tz_name: str) -> str:
     food-entry [#id] pattern). The header carries the discipline: weave in,
     UPDATE don't duplicate, resolve when done."""
     lines = [
-        "[OPEN THREADS — what's going on in their life right now. Weave these in "
-        "naturally (never 'per my records'); notice overlaps/conflicts; if they "
-        "mention one already here UPDATE it via update_thread [#id] (don't create "
-        "a duplicate); resolve it when it's done or past.]"
+        "[OPEN THREADS — what's going on in their life right now. Reference one "
+        "ONLY when the current message makes it relevant (never force these into "
+        "a logging turn, never 'per my records'); if they mention one already "
+        "here UPDATE it via update_thread [#id] instead of creating a duplicate; "
+        "resolve it when it's done or past.]"
     ]
     for t in threads:
         when = _when_phrase(t.start_at or t.due_at, tz_name)
@@ -1091,15 +1104,28 @@ async def build_context(user: User, today_log: Optional[DailyLog], db,
             )
 
     # [OPEN THREADS] — the memory-graph working set: what's going on in this
-    # person's life that Arnie should weave in + follow through on (trips,
-    # intentions, watch-items, promises). Bounded + ranked in thread_queries so
-    # context stays cheap and the model isn't buried in stale loops. Fully
-    # guarded — a memory read must never break a coaching turn.
-    # DISABLED 2026-07-20 — the per-turn OPEN THREADS injection (and its "weave
-    # these in every turn" prompt pressure) diluted food-logging focus. The memory
-    # graph tables/tools stay dormant; nothing is deleted. Re-enable by restoring
-    # the get_open_threads read below alongside MEMORY_RULES/RELATIONSHIP_MEMORY.
+    # person's life that Arnie should follow through on (trips, intentions,
+    # watch-items, promises). Bounded + ranked in thread_queries so context
+    # stays cheap. Fully guarded — a memory read must never break a turn.
+    # RESTORED 2026-07-24 (P0: "disable or fully restore, never half-active").
+    # It was disabled 2026-07-20 for diluting food-logging focus, but the tools
+    # (remember_thread / update_thread [#id]) stayed live and instruct the
+    # model to read a block that never arrived — update_thread was unusable
+    # and duplicates untraceable. The dilution cause is also largely gone:
+    # structured food turns skip this prompt entirely, so the block reaches
+    # only conversational turns. Restored SMALLER (4 threads, not 6) with the
+    # weave-pressure removed from the header (_format_open_threads).
+    # Kill switch: OPEN_THREADS_CONTEXT=false.
     open_threads_str = ""
+    if os.getenv("OPEN_THREADS_CONTEXT", "true").lower() in ("true", "1", "yes"):
+        try:
+            from db.thread_queries import get_open_threads
+            _threads = await get_open_threads(db, user.id, limit=4)
+            if _threads:
+                open_threads_str = _format_open_threads(
+                    _threads, getattr(user, "timezone", None) or "UTC")
+        except Exception as e:
+            logger.debug(f"open-threads context read failed: {e}")
 
     # [COACH SCREEN] — the standing directive on the user's Coach page, so the
     # model can judge when a message INVALIDATES it (refresh_coach_brief).
