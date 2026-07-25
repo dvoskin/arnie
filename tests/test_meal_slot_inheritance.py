@@ -41,15 +41,23 @@ def test_no_sibling_falls_back_to_clock_default():
         "breakfast", "lunch", "dinner", "snack"}
 
 
-def test_old_sibling_outside_occasion_does_not_leak():
+def test_old_sibling_outside_occasion_does_not_leak(monkeypatch):
+    """A lunch entry 5 hours earlier is OUTSIDE the 45-minute window, so it must
+    not be inherited — the item falls back to the clock default.
+
+    The clock default is pinned here because it reads the WALL CLOCK rather than
+    the `meal_time` it was handed, so between roughly 11am and 2pm in the user's
+    zone the real default IS "lunch" and the assertion failed for reasons that
+    had nothing to do with inheritance. A test that passes depending on when it
+    runs reports a red build as a code change.
+    """
+    import handlers.tool_executor as TE
+    monkeypatch.setattr(TE, "_default_meal_type", lambda user: "dinner")
+
     now = datetime(2026, 7, 22, 20, 0, 0)
-    # A lunch entry 5 hours earlier is OUTSIDE the 45-min window, so it must NOT be
-    # inherited — the item falls back to the clock default (whatever the run hour
-    # maps to), never 'lunch'.
     log = _log([_entry("lunch", now - timedelta(hours=5))])
     slot = _inherit_or_default_meal_type(_user(), log, now)
-    assert slot != "lunch"
-    assert slot in {"breakfast", "lunch", "dinner", "snack"} and slot != "lunch"
+    assert slot == "dinner", "the stale lunch sibling leaked into a new occasion"
 
 
 def test_most_recent_sibling_wins():
