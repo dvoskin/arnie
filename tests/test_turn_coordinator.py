@@ -197,3 +197,103 @@ async def test_legacy_execution_stage_delegates_with_its_kwargs():
     out = await stage.run(_req())
     assert out == "LEGACY_RESULT"
     assert seen == {"system": "SYS", "platform": "imessage"}
+
+
+# ── Phase 2: native food stages + observe mode ────────────────────────────────
+@pytest.mark.asyncio
+async def test_food_plan_stage_lifts_the_interpreter_into_a_typed_plan():
+    from core.turns.stages.food import FoodPlanStage, FoodValidationStage
+
+    async def _fake_interpreter(text, user, **kw):
+        return {"action": "log",
+                "tool_calls": [{"name": "log_food",
+                                "input": {"food_name": "Banana"}}],
+                "say": "Logged."}
+    plan = await FoodPlanStage(_fake_interpreter).run(_req())
+    assert plan.response_intent == "log" and len(plan.operations) == 1
+    validation = await FoodValidationStage().run(_req(), plan=plan)
+    assert validation.disposition == "execute"
+    assert len(validation.approved_operations) == 1
+
+
+@pytest.mark.asyncio
+async def test_ask_and_confirm_hold_the_write():
+    """The disposition is the SYSTEM's call: an ask/confirm plan carries no
+    approved operations, so the coordinator's phase model can't execute it."""
+    from core.turns.stages.food import FoodPlanStage, FoodValidationStage
+
+    for kind, intent in (("clarify", "ask"), ("confirm", "confirm")):
+        async def _fake(text, user, _k=kind, **kw):
+            return {"action": "ask", "kind": _k, "text": "how much?"}
+        plan = await FoodPlanStage(_fake).run(_req())
+        assert plan.response_intent == intent
+        v = await FoodValidationStage().run(_req(), plan=plan)
+        assert v.disposition == "ask" and v.approved_operations == ()
+
+
+@pytest.mark.asyncio
+async def test_interpreter_pass_becomes_a_pass_disposition():
+    from core.turns.stages.food import FoodPlanStage, FoodValidationStage
+
+    async def _none(text, user, **kw):
+        return None
+    plan = await FoodPlanStage(_none).run(_req())
+    v = await FoodValidationStage().run(_req(), plan=plan)
+    assert v.disposition == "pass" and v.approved_operations == ()
+
+
+@pytest.mark.asyncio
+async def test_observe_mode_predicts_without_side_effects(monkeypatch, caplog):
+    """Shadow running: the coordinator's read-only stages record what they
+    WOULD do. Nothing executes — proven by the interpreter being the only
+    thing called and no executor touched."""
+    import logging as _logging
+    import core.turns.observe as OB
+    monkeypatch.setenv("TURN_COORDINATOR_MODE", "new_observe")
+
+    called = {"interpreter": 0}
+    async def _fake_interpreter(text, user, **kw):
+        called["interpreter"] += 1
+        return {"action": "log",
+                "tool_calls": [{"name": "log_food", "input": {"food_name": "Egg"}}]}
+
+    import core.turns.stages.food as FS
+    monkeypatch.setattr(FS.FoodPlanStage, "_interpreter", None, raising=False)
+    orig_init = FS.FoodPlanStage.__init__
+    monkeypatch.setattr(FS.FoodPlanStage, "__init__",
+                        lambda self, interpreter=None: orig_init(self, _fake_interpreter))
+
+    async def _boom(*a, **k):
+        raise AssertionError("observe mode must never execute")
+    import handlers.tool_executor as TE
+    monkeypatch.setattr(TE, "execute_tool_calls", _boom)
+
+    with caplog.at_level(_logging.INFO, logger="core.turns.observe"):
+        pred = await OB.observe_turn(_req("had 2 eggs and toast"),
+                                     actual_route="structured_food",
+                                     actual_disposition="execute")
+    assert pred["lane"] == "structured_food"
+    assert pred["disposition"] == "execute"
+    assert called["interpreter"] == 1
+    line = [r.message for r in caplog.records if "event=turn_observe" in r.message][-1]
+    assert "agree=yes" in line
+
+
+@pytest.mark.asyncio
+async def test_observe_is_inert_in_legacy_only(monkeypatch):
+    import core.turns.observe as OB
+    monkeypatch.setenv("TURN_COORDINATOR_MODE", "legacy_only")
+    assert await OB.observe_turn(_req()) is None
+
+
+@pytest.mark.asyncio
+async def test_observe_flags_disagreement(monkeypatch, caplog):
+    """A divergence between predicted and actual is what promotion gating
+    reads — it must be loud, not silent."""
+    import logging as _logging
+    import core.turns.observe as OB
+    monkeypatch.setenv("TURN_COORDINATOR_MODE", "new_observe")
+    with caplog.at_level(_logging.INFO, logger="core.turns.observe"):
+        await OB.observe_turn(_req("hey what's up"), actual_route="structured_food")
+    line = [r.message for r in caplog.records if "event=turn_observe" in r.message][-1]
+    assert "agree=NO" in line
