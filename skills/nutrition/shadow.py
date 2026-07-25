@@ -35,8 +35,10 @@ _NUTRIENTS = ("calories", "protein", "carbs", "fat", "fiber", "sugar", "sodium")
 
 
 def shadow_enabled() -> bool:
-    return (os.getenv("NUTRITION_RESOLVER_SHADOW", "") or "").strip().lower() \
-        in ("1", "true", "yes")
+    """Delegates to the single mode switch so shadow and promotion can never
+    disagree about whether the layer is running."""
+    from skills.nutrition.promotion import shadow_enabled as _enabled
+    return _enabled()
 
 
 def _from_per100g(source: str, tier: SourceTier, name: str, per100g: dict,
@@ -131,21 +133,51 @@ def _material(legacy_cal, new_cal) -> bool:
     return delta / max(float(legacy_cal), float(new_cal), 1.0) >= MATERIAL_DELTA
 
 
-def compare(food_name: str, inp: dict, legacy_result, *, memory=None,
-            usda=None, off=None, web=None, mode: str = "moderate",
-            turn_id: str = "") -> Optional[dict]:
+def live_request(food_name: str, inp: dict,
+                 mode: str = "moderate") -> FoodResolutionRequest:
+    return FoodResolutionRequest(
+        food_name=food_name, raw_quantity=str(inp.get("quantity") or ""),
+        brand=inp.get("brand"), mode=mode,
+        is_packaged=bool(inp.get("is_packaged")))
+
+
+def resolve_from_live(food_name: str, inp: dict, *, memory=None, usda=None,
+                      off=None, web=None, mode: str = "moderate"):
+    """Resolve using the candidates the live path already fetched.
+
+    Split out from compare() so shadow logging and promotion share ONE
+    resolution. Resolving twice would double the arithmetic and, worse, allow
+    the logged comparison to describe a different answer from the committed
+    one. Returns None on failure — never raises.
+    """
+    try:
+        return resolve(live_request(food_name, inp, mode),
+                       candidates_from_live(food_name, inp, memory=memory,
+                                            usda=usda, off=off, web=web))
+    except Exception as e:
+        logger.warning(f"nutrition resolve skipped: {e}")
+        return None
+
+
+def compare(food_name: str, inp: dict, legacy_result, *, resolution=None,
+            memory=None, usda=None, off=None, web=None,
+            mode: str = "moderate", turn_id: str = "") -> Optional[dict]:
     """Log the live answer against the resolver's. Returns the comparison (for
-    tests) or None when not shadowing. NEVER raises, NEVER writes."""
+    tests) or None when not shadowing. NEVER raises, NEVER writes.
+
+    `resolution` is passed in by the executor so the comparison describes the
+    exact answer promotion acted on; it is resolved here only for callers that
+    have not already done so.
+    """
     if not shadow_enabled():
         return None
     try:
-        request = FoodResolutionRequest(
-            food_name=food_name, raw_quantity=str(inp.get("quantity") or ""),
-            brand=inp.get("brand"), mode=mode,
-            is_packaged=bool(inp.get("is_packaged")))
-        candidates = candidates_from_live(food_name, inp, memory=memory,
-                                          usda=usda, off=off, web=web)
-        new = resolve(request, candidates)
+        request = live_request(food_name, inp, mode)
+        new = resolution
+        if new is None:
+            candidates = candidates_from_live(food_name, inp, memory=memory,
+                                              usda=usda, off=off, web=web)
+            new = resolve(request, candidates)
 
         legacy_cal = getattr(legacy_result, "calories", None)
         new_cal = new.nutrients.amount("calories")

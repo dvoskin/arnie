@@ -1677,18 +1677,37 @@ async def _analyze_food(db, user, food_name, inp):
         except Exception as e:
             logger.warning(f"nutrient estimation fallback failed: {e}")
 
-    # SHADOW (work order step 10): the resolution layer runs beside the live
-    # cascade and the two answers are logged side by side. It reuses the
-    # candidates fetched above, so it costs arithmetic and no network — a
-    # shadow that doubled USDA traffic would be its own incident. Inert
-    # unless NUTRITION_RESOLVER_SHADOW is set; observes, never votes.
+    # THE RESOLUTION LAYER (review 2026-07-25 step 3). One resolve() over the
+    # candidates ALREADY fetched above — arithmetic, no network, because a
+    # second lookup pass would be its own incident. Its answer is then either
+    # logged beside the cascade's (shadow) or committed instead of it (live),
+    # decided by NUTRITION_RESOLVER_MODE.
+    #
+    # Promotion replaces exactly one thing: which candidate's nutrients get
+    # saved. The micro-estimation fallback below, card building, dedup, ledger
+    # events and narration are untouched — so if committed nutrition regresses
+    # after the flip, the resolver is the only thing that changed.
     try:
-        from skills.nutrition.shadow import compare as _shadow_compare
-        from core.turn_identity import current_turn_id as _shadow_turn
-        _shadow_compare(food_name, inp, result, memory=memory, usda=usda,
-                        off=off, web=web, turn_id=_shadow_turn() or "")
-    except Exception:
-        pass
+        from skills.nutrition import promotion as _promo
+        if _promo.resolver_mode() != _promo.MODE_OFF:
+            from core.turn_identity import current_turn_id as _res_turn
+            from skills.nutrition.shadow import (compare as _shadow_compare,
+                                                 resolve_from_live as _resolve_live)
+            _turn = _res_turn() or ""
+            _resolution = _resolve_live(food_name, inp, memory=memory,
+                                        usda=usda, off=off, web=web)
+            if _promo.shadow_enabled():
+                _shadow_compare(food_name, inp, result, resolution=_resolution,
+                                memory=memory, usda=usda, off=off, web=web,
+                                turn_id=_turn)
+            result = _promo.promote(_resolution, food_name=food_name,
+                                    quantity=inp.get("quantity") or "",
+                                    legacy=result, user_id=user.id,
+                                    turn_id=_turn)
+    except Exception as e:
+        # A failure here must leave the turn with the value it would have
+        # committed anyway.
+        logger.warning(f"nutrition resolution layer skipped: {e}")
 
     return result
 
