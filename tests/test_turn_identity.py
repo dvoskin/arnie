@@ -131,3 +131,45 @@ async def test_same_turn_id_absorbed_new_turn_id_executes(monkeypatch):
     # New turn_id, same text — a genuine re-send. Executes.
     t3 = await _turn("imessage:G-2")
     assert executed["n"] == 2
+
+
+@pytest.mark.asyncio
+async def test_turn_trace_emitted_with_route_and_id(monkeypatch, caplog):
+    """Review #22: every turn ends with ONE event=turn_trace line carrying the
+    canonical id and the lane that handled it."""
+    import logging as _logging
+    import core.conversation as C
+    import core.food_turn as FTmod
+    import db.queries as Q
+    import reminders.lifecycle as RL
+
+    async def _noop(db, user, llm_reply_text="", **kwargs): return None
+    monkeypatch.setattr(RL, "sync_pending_questions", _noop)
+    async def fake_reload(db, uid): return _user()
+    monkeypatch.setattr(Q, "reload_user", fake_reload)
+    async def fake_sft(message, user, prior=None, **kw):
+        return {"action": "log", "say": "Logged, {batch_cal} cal.",
+                "tool_calls": [{"name": "log_food",
+                                "input": {"food_name": "Coffee",
+                                          "quantity": "1 cup",
+                                          "calories": 5}}]}
+    monkeypatch.setattr(FTmod, "run", fake_sft)
+    async def fake_chat(*a, **k):
+        return {"text": "", "raw_content": [], "tool_calls": []}
+    monkeypatch.setattr(C, "chat", fake_chat)
+    async def fake_exec(tcs, *a, **k):
+        return {"log_food": "Logged."}
+    monkeypatch.setattr(C, "execute_tool_calls", fake_exec)
+
+    with caplog.at_level(_logging.INFO, logger="core.conversation"):
+        await C.run_turn(
+            _user(), _DB(),
+            [{"role": "user", "content": "had a coffee"}],
+            "SYS", "imessage", in_onboarding=False, was_onboarding=False,
+            today_log=_today_log(), turn_id="imessage:TRACE-1")
+    traces = [r.message for r in caplog.records if "event=turn_trace" in r.message]
+    assert traces, "every turn must emit exactly one turn_trace line"
+    line = traces[-1]
+    assert "turn=imessage:TRACE-1" in line
+    assert "route=structured_log" in line
+    assert "ms=" in line and "iv=" in line
