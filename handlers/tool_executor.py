@@ -15,6 +15,7 @@ from db.models import User, DailyLog, MemoryUpdate
 # P0.3d: execution state goes to the ambient per-call context, never onto the
 # command the executor was handed.
 from core.execution_result import stash as _stash_call
+from skills.nutrition import authority as _authority
 from db.queries import (
     add_food_entry, add_exercise_entry, add_body_metric, add_water_entry,
     reload_user,
@@ -274,18 +275,25 @@ def _stash_sourcing(inp, analysis, food_name):
     searched → matched source → serving → logged totals (Danny 2026-07-21).
     Display-only; never affects the write. Fully wrapped: a receipt must never
     fail a log. Reads FoodAnalysis.source/confidence (history|memory|usda|
-    web_label|estimate)."""
+    web_label|estimate) AND the split provenance, which is what the receipt
+    line is actually built from — `source` alone cannot tell a database that
+    determined the calories from one that contributed sodium (§7)."""
     try:
         if not isinstance(inp, dict):
             return
-        _stash_call(inp, "sourcing", {
+        _payload = {
             "name": food_name,
             "quantity": inp.get("quantity") or "",
             "source": getattr(analysis, "source", None) or "estimate",
             "confidence": getattr(analysis, "confidence", None) or "estimated",
             "calories": int(round(getattr(analysis, "calories", 0) or 0)),
             "protein": int(round(getattr(analysis, "protein", 0) or 0)),
-        })
+        }
+        _prov = getattr(analysis, "provenance", None)
+        if _prov is not None:
+            _payload["provenance"] = _prov.as_dict()
+            _payload["detail"] = _authority.display_detail(_prov)
+        _stash_call(inp, "sourcing", _payload)
     except Exception:
         pass
 
@@ -1679,7 +1687,18 @@ async def _analyze_food(db, user, food_name, inp):
         # enough to go looking for a packet.
         _db_hit = usda or off
         _db_grade = (_db_hit or {}).get("_match")
-        if _names_a_product(food_name, is_packaged) and _needs_web_label(_db_grade):
+        # §5: the lookup is mandatory when what we hold for a named product is
+        # only a fallback rung. Asking the ladder rather than re-deriving the
+        # condition here means the gate and the selection cannot drift apart —
+        # the class of bug where an exact-looking USDA text match blocked the
+        # official manufacturer label.
+        _fc_pre = _authority.classify(food_name, is_packaged=is_packaged)
+        _rung_pre, _ = _authority.select(
+            _authority.candidate_map(food_class=_fc_pre, usda_candidate=usda,
+                                     off_candidate=off), _fc_pre)
+        _needs_branded = _authority.needs_branded_lookup(_fc_pre, _rung_pre)
+        if _names_a_product(food_name, is_packaged) and (
+                _needs_branded or _needs_web_label(_db_grade)):
             web = await _web_lookup_packaged(food_name, inp.get("quantity"))
             if web is not None and _db_hit is not None:
                 logger.info(
@@ -1689,20 +1708,30 @@ async def _analyze_food(db, user, food_name, inp):
             elif web is not None:
                 logger.info(f"event=web_label_enrich {food_name!r} — db miss, web hit")
 
-        # Cache the winner (USDA > OFF > web) so the same product is instant next time.
-        _hit = usda or off or web
+        # Cache THE RESOLVER'S WINNER — same ladder, same map, same call the
+        # analysis makes (§8). This used to be a second, independent selection
+        # (`usda or off or web`), so the row written could disagree with the row
+        # used: a web label could answer the turn while USDA's generic was what
+        # got cached under the product's name, and every later log of that
+        # product then read the generic back as though it were the answer.
+        _fc = _authority.classify(food_name, is_packaged=is_packaged)
+        _rung, _hit = _authority.select(
+            _authority.candidate_map(food_class=_fc, usda_candidate=usda,
+                                     off_candidate=off, web_candidate=web), _fc)
+        if _hit is None:
+            # Nothing this food's ladder will seat. Caching it anyway is what
+            # made a generic permanent under a branded name.
+            _hit = _rung = None
         if _hit is not None:
             try:
-                # Record WHICH source filled this row. This write is the start of
-                # the laundering path: the row it creates is read back as a
-                # candidate, and without an origin every cached generic returned
-                # as a user-confirmed regular outranking the real product label.
-                # A branded database only earns branded authority on a good
-                # match — a weak hit in OFF is still just a guess.
+                # The rung IS the origin: a row cannot claim an authority the
+                # selection did not use, because there is only one selection.
+                # Names the storage layer already understands, so old rows and
+                # new ones compare on the same scale.
                 _grade = _hit.get("_match") or "likely"
-                _branded_src = (_hit is off or _hit is web) and _hit is not usda
                 _origin = ("branded_exact"
-                           if _branded_src and _grade in ("exact", "likely")
+                           if _rung in _authority.BRANDED_RUNGS
+                           and _grade in ("exact", "likely")
                            else "generic_exact")
                 await upsert_user_food_match(
                     db, user.id, name_norm, food_name,
@@ -1714,7 +1743,8 @@ async def _analyze_food(db, user, food_name, inp):
 
     result = analyze(food_name, inp.get("quantity"), *llm,
                      usda_candidate=usda, memory_match=memory,
-                     web_candidate=web, off_candidate=off)
+                     web_candidate=web, off_candidate=off,
+                     is_packaged=bool(is_packaged))
 
     # ── CONFIDENCE-GATED WEB MEAL ENRICH ──────────────────────────────────────
     # The composite/restaurant meals the DBs miss (CAVA bowl, poke bowl, Med
