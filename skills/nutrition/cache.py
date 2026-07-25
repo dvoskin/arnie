@@ -39,7 +39,9 @@ from collections import OrderedDict
 from dataclasses import dataclass
 from typing import Any, Callable, Optional
 
-CACHE_VERSION = "resolution_cache_v1"
+#: Bumped when the KEY changes meaning, so entries written under the old
+#: scheme can never be read under the new one.
+CACHE_VERSION = "resolution_cache_v2"
 
 #: Entries. Small on purpose: this is a working-set cache for the foods a
 #: process is currently seeing, not a store. The tail of the distribution is
@@ -139,8 +141,70 @@ CACHE = ResolutionCache()
 
 
 def caching_enabled() -> bool:
-    raw = (os.getenv("NUTRITION_RESOLUTION_CACHE", "true") or "").strip().lower()
-    return raw not in ("0", "false", "off", "no")
+    """Default OFF (review fix, PR #30).
+
+    The safety argument for this cache is that `resolve()` is a pure function of
+    (request, candidates), so a correct key cannot change an answer. That argument
+    is sound and the key was not: it omitted the serving-basis numbers, so two
+    candidates with different totals shared an entry. A cache whose key was wrong
+    once ships off and earns its way on — limited canary first, hit rate and
+    correction rate watched, then widened.
+
+    `NUTRITION_RESOLUTION_CACHE=on` opts in.
+    """
+    raw = (os.getenv("NUTRITION_RESOLUTION_CACHE", "false") or "").strip().lower()
+    return raw in ("1", "true", "on", "yes")
+
+
+def _fingerprint(value, depth: int = 0) -> str:
+    """Stable text for anything the resolver reads.
+
+    Recursive and structural rather than a list of field names, because a
+    hand-listed subset is a correctness bug waiting for the next field. The
+    candidate side of the key WAS such a list, and it named the basis's TYPE
+    ("per_serving") without any of the basis's own numbers — so a 30 g serving
+    and a 60 g serving of the same product, with the same panel, shared a cache
+    key and the second one got the first one's answer, wrong by 2x.
+
+    Type names are included because the type is part of the meaning: PerServing()
+    and PerUnit() are both empty of fields and are not the same basis. `basis` is
+    a class attribute rather than a dataclass field, so a field walk alone cannot
+    tell them apart.
+
+    Nothing here may use `hash()` or `id()`: keys have to be identical across
+    processes and restarts, and PYTHONHASHSEED makes `hash()` neither.
+    """
+    if depth > 6:                       # cycles, or a shape we should not cache
+        raise ValueError("fingerprint too deep")
+    if value is None or isinstance(value, (bool, int, float, str, bytes)):
+        return repr(value)
+
+    # A NutrientProfile: a mapping of name → NutrientValue. The VALUE is what
+    # changes the answer, not the wrapper's provenance fields.
+    values = getattr(value, "values", None)
+    if values is not None and hasattr(values, "items"):
+        return "profile(" + ",".join(
+            f"{k}={getattr(v, 'value', v)!r}"
+            for k, v in sorted(values.items(), key=lambda kv: str(kv[0]))
+        ) + ")"
+
+    fields = getattr(value, "__dataclass_fields__", None)
+    if fields:
+        return f"{type(value).__name__}(" + ",".join(
+            f"{name}={_fingerprint(getattr(value, name, None), depth + 1)}"
+            for name in sorted(fields)
+        ) + ")"
+
+    if hasattr(value, "items"):
+        return "{" + ",".join(
+            f"{k!r}:{_fingerprint(v, depth + 1)}"
+            for k, v in sorted(value.items(), key=lambda kv: str(kv[0]))
+        ) + "}"
+
+    if isinstance(value, (list, tuple)):
+        return "[" + ",".join(_fingerprint(v, depth + 1) for v in value) + "]"
+
+    return repr(value)
 
 
 def key_for(request, candidates) -> Optional[str]:
@@ -151,37 +215,14 @@ def key_for(request, candidates) -> Optional[str]:
     request shape the key builder does not understand is a reason to skip the
     cache, never a reason to fail the turn.
 
-    Every field that can change the answer is in the digest. A field that is
-    NOT in it and does change the answer is a correctness bug, so the builder
-    reads the request's own dataclass fields rather than a hand-listed subset
-    that would silently fall behind when a field is added.
+    Every field that can change the answer is in the digest. A field that is NOT
+    in it and does change the answer is a correctness bug, so both sides are
+    walked structurally — see `_fingerprint`.
     """
     try:
-        parts = [CACHE_VERSION]
-        for name in sorted(getattr(request, "__dataclass_fields__", {})):
-            value = getattr(request, name, None)
-            if hasattr(value, "values"):
-                # A NutrientProfile: the user's own label values, which
-                # absolutely change the answer.
-                value = sorted((k, getattr(v, "value", v))
-                               for k, v in (value.values or {}).items())
-            parts.append(f"{name}={value!r}")
-
-        for candidate in (candidates or ()):
-            parts.append("|".join((
-                str(getattr(candidate, "source", "")),
-                str(getattr(candidate, "name", "")),
-                str(getattr(candidate, "brand", "")),
-                str(getattr(candidate, "variant", "")),
-                str(getattr(candidate, "source_id", "")),
-                str(getattr(candidate, "reported_grade", "")),
-                str(int(getattr(candidate, "tier", 6))),
-                str(getattr(getattr(candidate, "basis", None), "basis", "")),
-                repr(sorted(
-                    (k, getattr(v, "value", v))
-                    for k, v in (getattr(getattr(candidate, "profile", None),
-                                         "values", None) or {}).items())),
-            )))
+        parts = [CACHE_VERSION, _fingerprint(request)]
+        parts.extend(_fingerprint(candidate)
+                     for candidate in (candidates or ()))
         return hashlib.sha1("\n".join(parts).encode("utf-8")).hexdigest()
     except Exception:
         return None

@@ -846,6 +846,53 @@ def _parse(text: str) -> Optional[dict]:
         return None
 
 
+def _fast_path_items(data) -> tuple:
+    """(food, amount, unit) per item, comparable across the two paths."""
+    if not isinstance(data, dict):
+        return ()
+    out = []
+    for item in (data.get("items") or []):
+        if not isinstance(item, dict):
+            continue
+        out.append((
+            str(item.get("food") or item.get("food_name") or "").strip().lower(),
+            item.get("amount") if item.get("amount") is not None
+            else item.get("grams"),
+            str(item.get("unit") or "").strip().lower()))
+    return tuple(out)
+
+
+def _log_fast_path_shadow(parsed, model_data) -> None:
+    """Record what the fast path WOULD have done against what the model did.
+
+    The step that has to come before the parser is trusted with a write: the
+    review's rollout note asks for the disagreement rate measured in shadow, and
+    a rate nobody emits cannot be measured. Deliberately compares only the fields
+    the fast path claims to decide — how much and how many, never what.
+    """
+    try:
+        fast_items = _fast_path_items(parsed)
+        model_items = _fast_path_items(model_data)
+        model_action = (model_data or {}).get("action") \
+            if isinstance(model_data, dict) else None
+        agree = (fast_items == model_items and model_action == "log")
+        logger.info(
+            "event=food_fast_path_shadow "
+            f"agree={str(agree).lower()} "
+            f"fast_items={len(fast_items)} model_items={len(model_items)} "
+            f"model_action={model_action or '-'} "
+            f"version={FAST_PATH_VERSION_FOR_SHADOW}")
+    except Exception:
+        pass
+
+
+try:                                    # pragma: no cover - import shape only
+    from core.food_fast_path import FAST_PATH_VERSION as _FPV
+    FAST_PATH_VERSION_FOR_SHADOW = _FPV
+except Exception:                       # pragma: no cover
+    FAST_PATH_VERSION_FOR_SHADOW = "unknown"
+
+
 async def run(message: str, user, prior: Optional[dict] = None,
               day_line: str = "", board: Optional[list] = None,
               last_assistant: str = "", regulars: Optional[list] = None,
@@ -922,13 +969,23 @@ async def run(message: str, user, prior: Optional[dict] = None,
     # asked, which needs the question's context, and a thread means the message
     # may reference what came before.
     data = None
+    _shadow_parse = None
     if not prior and not thread_active and not board:
         try:
-            from core.food_fast_path import parse as _fast_parse
-            data = _fast_parse(message)
-            if data is not None:
-                logger.info(f"event=food_fast_path outcome=parsed "
-                            f"items={len(data.get('items') or [])}")
+            from core.food_fast_path import (parse as _fast_parse,
+                                             fast_path_enabled,
+                                             shadow_enabled)
+            if fast_path_enabled():
+                data = _fast_parse(message)
+                if data is not None:
+                    logger.info(f"event=food_fast_path outcome=parsed "
+                                f"items={len(data.get('items') or [])}")
+            elif shadow_enabled():
+                # SHADOW: parse, keep the result, act on none of it. The model
+                # runs as usual below and the two are compared, which is how the
+                # disagreement rate gets measured before the parser is trusted
+                # with a write.
+                _shadow_parse = _fast_parse(message)
         except Exception as _fe:
             logger.warning(f"fast path skipped: {_fe}")
             data = None
@@ -937,13 +994,22 @@ async def run(message: str, user, prior: Optional[dict] = None,
         sys = (_SYSTEM.replace("{thresh}", str(_THRESH[mode]))
                       .replace("{mode}", mode))
         try:
-            res = await chat([{"role": "user", "content": content}], sys,
-                             tools=False, max_tokens=700,
-                             model=_logger_model())
+            # Under the turn's budget like everything else that waits. The
+            # interpreter pass is the single largest block in a food turn — a
+            # forty-five-second model timeout inside a twenty-second turn budget
+            # meant the "turn budget" could not bound the turn's biggest wait.
+            from core import deadline
+            res = await deadline.wait_for(
+                chat([{"role": "user", "content": content}], sys,
+                     tools=False, max_tokens=700, model=_logger_model()))
         except Exception as e:
+            # Includes DeadlineExceeded: out of time is a fall-through to the
+            # legacy path, never a lost meal.
             logger.warning(f"food_turn logger pass failed: {e}")
             return None
         data = _parse(res.get("text") or "")
+        if _shadow_parse is not None:
+            _log_fast_path_shadow(_shadow_parse, data)
     if not isinstance(data, dict):
         return None
     action = data.get("action")

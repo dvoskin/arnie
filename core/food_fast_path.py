@@ -34,7 +34,8 @@ a message the clarification ladder might want to interrupt on, and that
 decision belongs to the pipeline with the ambiguity engine behind it, not to a
 regex. Anything vague goes to the model.
 
-`FOOD_FAST_PATH=off` disables it entirely.
+`FOOD_FAST_PATH=on` enables it; it is OFF by default, and
+`FOOD_FAST_PATH_SHADOW=on` measures it without letting it write.
 """
 from __future__ import annotations
 
@@ -50,12 +51,50 @@ SOURCE = "structured_food:fast_path"
 #: unit whose meaning we would be guessing at.
 _UNITS = {
     "g": "g", "gram": "g", "grams": "g", "gm": "g", "kg": "kg",
+    "kilogram": "kg", "kilograms": "kg",
     "oz": "oz", "ounce": "oz", "ounces": "oz", "lb": "lb", "lbs": "lb",
-    "ml": "ml", "l": "l", "liter": "l", "litre": "l", "liters": "l",
-    "cup": "cup", "cups": "cup", "tbsp": "tbsp", "tsp": "tsp",
+    "pound": "lb", "pounds": "lb",
+    "ml": "ml", "milliliter": "ml", "millilitre": "ml", "milliliters": "ml",
+    "millilitres": "ml", "l": "l", "liter": "l", "litre": "l", "liters": "l",
+    "litres": "l",
+    "cup": "cup", "cups": "cup",
+    # Spelled-out spoons were missing, so "2 tablespoons peanut butter" fell
+    # through to the unknown-word branch and logged 2 pieces of "tablespoons
+    # peanut butter". These are exact conversions; there is nothing to guess.
+    "tbsp": "tbsp", "tablespoon": "tbsp", "tablespoons": "tbsp",
+    "tsp": "tsp", "teaspoon": "tsp", "teaspoons": "tsp",
     "slice": "slice", "slices": "slice", "piece": "piece", "pieces": "piece",
-    "egg": "piece", "eggs": "piece", "scoop": "scoop", "scoops": "scoop",
+    "egg": "piece", "eggs": "piece",
 }
+
+#: Measurement and container nouns this path must REFUSE rather than interpret.
+#:
+#: Two different reasons, both fatal to a fast parse:
+#:
+#:   • A container's contents depend on the product. "1 bottle" of Fairlife is
+#:     414 ml or 340 ml depending which bottle, and the fast path has no product
+#:     lookup — that is the whole reason it is fast.
+#:   • A vague helping is not a stated portion. This path marks everything it
+#:     emits `basis="stated"`, which tells the rest of the system NOT to clarify.
+#:     Emitting "a scoop" or "a handful" as stated is how a guess acquires the
+#:     authority of a measurement.
+#:
+#: Critically these must not fall through to the unknown-word branch either: as
+#: a food-name fragment, "bottle Fairlife" and "bowls rice" are worse than a
+#: refusal, because they log confidently under a name no source will ever match.
+#: A refusal here just means the model path handles the message, which is the
+#: path that can ask.
+_REFUSED_UNITS = frozenset({
+    "bottle", "bottles", "can", "cans", "bar", "bars", "packet", "packets",
+    "package", "packages", "container", "containers", "carton", "cartons",
+    "box", "boxes", "bag", "bags", "stick", "sticks", "tub", "tubs",
+    "bowl", "bowls", "plate", "plates", "glass", "glasses", "mug", "mugs",
+    "shot", "shots", "cone", "cones",
+    "serving", "servings", "portion", "portions", "helping", "helpings",
+    "scoop", "scoops", "handful", "handfuls", "spoonful", "spoonfuls",
+    "pinch", "pinches", "dash", "dashes", "splash", "splashes",
+    "drizzle", "drizzles", "bite", "bites", "sip", "sips",
+})
 
 _WORD_NUMBERS = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
                  "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
@@ -95,6 +134,13 @@ _REFUSE = (
      "stated_macros"),
     # Conditionals and negation.
     (r"\b(?:if|unless|but|except|without|no|didn'?t|not)\b", "conditional"),
+    # A container or a vague helping used as the unit. Listed here as well as
+    # enforced in `parse` so the refusal is ATTRIBUTABLE — "we fall back on
+    # container_or_vague_unit 12% of the time" is the number that says whether
+    # this path is worth widening, and a bare None in the parser says nothing.
+    (r"\b(?:\d+(?:\.\d+)?|one|two|three|four|five|six|seven|eight|nine|ten|"
+     r"an?)\s*(?:" + "|".join(sorted(_REFUSED_UNITS, key=len, reverse=True))
+     + r")\b", "container_or_vague_unit"),
 )
 
 _REFUSE_COMPILED = tuple((re.compile(p, re.I), why) for p, why in _REFUSE)
@@ -116,8 +162,30 @@ _MAX_ITEMS = 6
 
 
 def fast_path_enabled() -> bool:
-    raw = (os.getenv("FOOD_FAST_PATH", "true") or "").strip().lower()
-    return raw not in ("0", "false", "off", "no")
+    """Default OFF (review fix, PR #30).
+
+    This is a new parser standing in front of the model on the write path. It
+    shipped defaulting on, which is the wrong posture for something whose failure
+    mode is a confidently wrong log: a misparse here does not fall back, it
+    commits. The staged rollout is shadow first (compare this parse against the
+    model's and measure disagreement), then an allowlist, then widen once the
+    disagreement and correction rates say it is safe.
+
+    `FOOD_FAST_PATH=on` opts in.
+    """
+    raw = (os.getenv("FOOD_FAST_PATH", "false") or "").strip().lower()
+    return raw in ("1", "true", "on", "yes")
+
+
+def shadow_enabled() -> bool:
+    """Parse and LOG the comparison without acting on it.
+
+    The step between off and on: the parse runs, its result is recorded against
+    what the model path decided, and nothing downstream reads it. This is how the
+    disagreement rate gets measured before the parser is trusted with a write.
+    """
+    raw = (os.getenv("FOOD_FAST_PATH_SHADOW", "false") or "").strip().lower()
+    return raw in ("1", "true", "on", "yes")
 
 
 def refusal_reason(message: str) -> Optional[str]:
@@ -162,8 +230,11 @@ def parse(message: str) -> Optional[dict]:
     branch — it produces the same input the model does and everything after it
     is unchanged.
     """
-    if not fast_path_enabled():
-        return None
+    # Deliberately does NOT consult `fast_path_enabled()`. This is a pure
+    # parser; whether its answer is USED is a rollout decision, and it belongs to
+    # the one integration point in core/food_turn.py. Keeping the switch out of
+    # here is what lets shadow mode call the parser for comparison without the
+    # switch that gates writes also gating measurement.
     if refusal_reason(message) is not None:
         return None
 
@@ -188,9 +259,23 @@ def parse(message: str) -> Optional[dict]:
         unit_raw = (match.group("unit") or "").lower()
         food = _clean_food(match.group("food"))
 
+        if unit_raw in _REFUSED_UNITS:
+            # A measure we cannot resolve without the product, or a helping we
+            # would be guessing at. Either way this message is not ours. Also
+            # caught by `refusal_reason`; kept here because this is the branch
+            # that would otherwise fold the word into the food name, and a
+            # parser whose safety depends on an upstream regex still matching is
+            # one refactor away from logging "bottle Fairlife".
+            return None
+
         if unit_raw and unit_raw not in _UNITS:
             # The word after the number is not a unit, so it is part of the
             # food: "2 chicken thighs". Put it back rather than dropping it.
+            #
+            # Only reachable for words that are neither a unit NOR a refused
+            # measure, which is what keeps this branch to actual food words. It
+            # used to catch every unrecognized token, so "2 bowls rice" became
+            # 2 pieces of "bowls rice".
             food = _clean_food(f"{unit_raw} {food}")
             unit = "piece"
         elif unit_raw:

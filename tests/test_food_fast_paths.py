@@ -15,6 +15,7 @@ import pytest
 
 from core import deadline
 from core.food_fast_path import parse, refusal_reason
+from core.food_fast_path import refusal_reason
 from skills.nutrition import cache
 
 
@@ -93,9 +94,30 @@ def test_absurd_amounts_are_refused():
     assert parse("0 g chicken") is None
 
 
-def test_the_fast_path_can_be_switched_off(monkeypatch):
+def test_the_fast_path_is_off_by_default(monkeypatch):
+    """A new parser in front of the write path ships off. A misparse here does
+    not fall back — it commits."""
+    from core.food_fast_path import fast_path_enabled, shadow_enabled
+    monkeypatch.delenv("FOOD_FAST_PATH", raising=False)
+    monkeypatch.delenv("FOOD_FAST_PATH_SHADOW", raising=False)
+    assert fast_path_enabled() is False
+    assert shadow_enabled() is False
+
+
+def test_the_switch_gates_use_not_parsing(monkeypatch):
+    """`parse` is a pure parser and does not read the switch: shadow mode has to
+    be able to measure the parse without the flag that gates writes also gating
+    measurement. Whether the answer is USED is decided in core/food_turn.py."""
+    from core.food_fast_path import fast_path_enabled
     monkeypatch.setenv("FOOD_FAST_PATH", "off")
-    assert parse("150g chicken breast") is None
+    assert fast_path_enabled() is False
+    assert parse("150g chicken breast") is not None
+
+
+def test_the_fast_path_can_be_switched_on(monkeypatch):
+    from core.food_fast_path import fast_path_enabled
+    monkeypatch.setenv("FOOD_FAST_PATH", "on")
+    assert fast_path_enabled() is True
 
 
 def test_the_output_is_the_shape_the_existing_executor_accepts():
@@ -144,6 +166,7 @@ def test_a_cached_resolution_equals_a_recomputed_one(monkeypatch):
     answer. If this fails, the cache is unsafe and not merely slow."""
     from skills.nutrition.resolver import _resolve, resolve
 
+    monkeypatch.setenv("NUTRITION_RESOLUTION_CACHE", "on")
     request, candidates = _request(), [_candidate()]
     cached = resolve(request, candidates)
     assert resolve(request, candidates) is cached          # actually a hit
@@ -190,7 +213,16 @@ def test_user_label_values_change_the_key():
         _request(), [_candidate()])
 
 
-def test_the_cache_can_be_switched_off(monkeypatch):
+def test_the_cache_is_off_by_default(monkeypatch):
+    """A cache whose key was wrong once earns its way back on."""
+    from skills.nutrition.resolver import resolve
+    monkeypatch.delenv("NUTRITION_RESOLUTION_CACHE", raising=False)
+    assert cache.caching_enabled() is False
+    request, candidates = _request(), [_candidate()]
+    assert resolve(request, candidates) is not resolve(request, candidates)
+
+
+def test_the_cache_can_be_switched_off_explicitly(monkeypatch):
     from skills.nutrition.resolver import resolve
     monkeypatch.setenv("NUTRITION_RESOLUTION_CACHE", "off")
     request, candidates = _request(), [_candidate()]
@@ -432,3 +464,162 @@ async def test_a_message_with_a_board_never_takes_the_fast_path(monkeypatch):
     await FT.run("2 eggs", _User(),
                  board=[{"id": 1, "food": "eggs", "qty": "2", "cal": 140}])
     assert called["n"] == 1
+
+
+# ── an unknown unit is refused, never folded into the food name ───────────────
+# The parser's promise is that it only accepts messages with one provable
+# reading. The unknown-word branch broke that promise: any token it did not
+# recognise as a unit became part of the food name, so "2 tablespoons peanut
+# butter" logged 2 pieces of "tablespoons peanut butter" — a confident write
+# under a name no source will ever match, with basis="stated" telling the rest of
+# the system not to ask.
+@pytest.mark.parametrize("message", [
+    # Measures we can convert exactly — these must PARSE, not refuse. Their
+    # absence from the unit table is what sent them down the unknown-word branch.
+    "2 tablespoons peanut butter",
+    "1 tablespoon olive oil",
+    "2 teaspoons sugar",
+    "1 teaspoon honey",
+])
+def test_a_spelled_out_spoon_is_a_unit_not_a_food_word(message):
+    parsed = parse(message)
+    assert parsed is not None, f"{message!r} was refused"
+    item = parsed["items"][0]
+    assert item["unit"] in ("tbsp", "tsp"), item
+    assert "spoon" not in item["food"], (
+        f"the measure was folded into the food name: {item['food']!r}")
+
+
+@pytest.mark.parametrize("message", [
+    # Containers: the contents depend on the product, and there is no lookup.
+    "1 bottle Fairlife",
+    "2 bottles sparkling water",
+    "1 can Diet Coke",
+    "1 bar Barebells",
+    "2 bars granola",
+    "1 packet oatmeal",
+    "1 package ramen",
+    "1 container yogurt",
+    "1 carton egg whites",
+    "1 box cereal",
+    # Vague helpings: not stated portions, and this path marks what it emits
+    # `stated`, which tells the pipeline not to ask.
+    "2 bowls rice",
+    "1 bowl oatmeal",
+    "1 plate pasta",
+    "2 servings pasta",
+    "1 serving rice",
+    "1 scoop whey",
+    "2 scoops protein powder",
+    "1 handful almonds",
+    "2 glasses milk",
+    "1 mug coffee",
+    "1 shot espresso",
+    "1 spoonful peanut butter",
+    "1 bite cake",
+])
+def test_a_container_or_vague_helping_is_refused(message):
+    assert parse(message) is None, f"{message!r} was accepted"
+    assert refusal_reason(message) is not None, (
+        f"{message!r} refused without an attributable reason")
+
+
+@pytest.mark.parametrize("message", [
+    "1 bottle Fairlife", "2 bowls rice", "1 scoop whey", "1 bar Barebells",
+])
+def test_the_refusal_is_attributable(message):
+    """"we fall back 80% of the time" is not actionable; "we fall back 80% of
+    the time on container_or_vague_unit" is."""
+    assert refusal_reason(message) == "container_or_vague_unit"
+
+
+@pytest.mark.parametrize("message,food", [
+    # The case the unknown-word branch exists for, and which must keep working:
+    # a food whose own name follows the count.
+    ("2 chicken thighs", "chicken thighs"),
+    ("3 chicken wings", "chicken wings"),
+    ("2 corn tortillas", "corn tortillas"),
+])
+def test_a_food_word_after_the_count_still_belongs_to_the_food(message, food):
+    parsed = parse(message)
+    assert parsed is not None, f"{message!r} was refused"
+    assert parsed["items"][0]["food"] == food
+    assert parsed["items"][0]["unit"] == "piece"
+
+
+# ── the cache key covers everything that changes the answer ───────────────────
+# The candidate side was a hand-listed subset that named the basis's TYPE
+# ("per_serving") and none of its numbers, so two candidates with the same panel
+# and different serving masses shared a key. The second one got the first one's
+# answer — wrong by exactly the ratio of the serving masses.
+def _with_basis(basis, **kw):
+    from skills.nutrition.candidates import Candidate
+    from skills.nutrition.models import profile_from_values
+    from skills.nutrition.provenance import MatchGrade, SourceTier
+    return Candidate(
+        source=kw.get("source", "off"),
+        tier=kw.get("tier", SourceTier.BRANDED_EXACT),
+        name=kw.get("name", "Protein bar"),
+        profile=profile_from_values("off", basis="per_serving", confidence=0.8,
+                                    calories=200, protein=20),
+        basis=basis, brand=kw.get("brand"), variant=kw.get("variant"),
+        reported_grade=MatchGrade.EXACT)
+
+
+@pytest.mark.parametrize("a,b,why", [
+    ("PerServing(serving_mass_g=30)", "PerServing(serving_mass_g=60)",
+     "serving mass"),
+    ("PerServing(serving_ml=240)", "PerServing(serving_ml=480)",
+     "serving volume"),
+    ("PerServing(servings_per_package=1)", "PerServing(servings_per_package=2)",
+     "servings per package"),
+    ("PerUnit(unit_mass_g=30)", "PerUnit(unit_mass_g=60)", "unit mass"),
+    ("PerServing()", "PerUnit()", "basis type with no fields set"),
+    ("PerServing()", "Per100g()", "basis type"),
+])
+def test_the_key_separates_candidates_that_scale_differently(a, b, why):
+    from skills.nutrition.scaling import Per100g, PerServing, PerUnit  # noqa
+    request = _request()
+    key_a = cache.key_for(request, [_with_basis(eval(a))])
+    key_b = cache.key_for(request, [_with_basis(eval(b))])
+    assert key_a and key_b
+    assert key_a != key_b, f"cache key ignores {why}"
+
+
+@pytest.mark.parametrize("field,one,two", [
+    ("name", "Protein bar", "Protein bar, chocolate"),
+    ("brand", "Barebells", "Quest"),
+    ("variant", "caramel", "cookies and cream"),
+])
+def test_the_key_separates_candidates_with_different_identities(field, one, two):
+    from skills.nutrition.scaling import PerServing
+    request = _request()
+    key_a = cache.key_for(request, [_with_basis(PerServing(), **{field: one})])
+    key_b = cache.key_for(request, [_with_basis(PerServing(), **{field: two})])
+    assert key_a != key_b, f"cache key ignores candidate {field}"
+
+
+def test_the_key_is_stable_for_identical_inputs():
+    from skills.nutrition.scaling import PerServing
+    request = _request()
+    first = cache.key_for(request, [_with_basis(PerServing(serving_mass_g=30))])
+    again = cache.key_for(request, [_with_basis(PerServing(serving_mass_g=30))])
+    assert first == again
+
+
+def test_a_new_basis_field_cannot_be_forgotten():
+    """The structural walk is the point: adding a field to a basis changes the
+    key without anyone remembering to list it. This asserts the mechanism rather
+    than the field list, because the field list is what went stale."""
+    from dataclasses import fields
+    from skills.nutrition.scaling import PerServing
+    for f in fields(PerServing):
+        base = PerServing()
+        bumped = PerServing(**{f.name: (
+            2.0 if f.type != "bool" and not isinstance(
+                getattr(base, f.name), bool) else True)})
+        if bumped == base:
+            continue
+        assert cache.key_for(_request(), [_with_basis(base)]) != \
+            cache.key_for(_request(), [_with_basis(bumped)]), (
+                f"cache key ignores PerServing.{f.name}")

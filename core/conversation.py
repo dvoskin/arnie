@@ -504,7 +504,31 @@ class _BubbleStreamer:
         self.held = False
 
 
-async def run_turn(
+async def run_turn(*args, **kwargs) -> TurnResult:
+    """Entry point for a turn, under ONE time budget (review fix, PR #30).
+
+    The budget used to open inside `execute_tool_calls`, which made it a
+    tool-batch budget wearing the name of a turn budget: it began after the
+    interpreter model call had already happened, and ended before the response
+    composer ran. A four-item meal could therefore spend the interpreter's
+    timeout, then a full batch budget, then the composer's timeout, and every one
+    of those behaved exactly as configured while the user waited for the sum.
+
+    Opening it here is what makes `deadline.remaining()` mean "time left in this
+    turn". The nested budget in the executor stays — nested budgets can only
+    tighten, so it still protects the other paths that call the executor
+    directly, and it cannot extend this one.
+
+    `*args`/`**kwargs` rather than the real signature: callers pass a mix of
+    positional and keyword arguments, and restating twenty parameters here would
+    be a second signature to keep in step with the first.
+    """
+    from core import deadline
+    with deadline.budget():
+        return await _run_turn(*args, **kwargs)
+
+
+async def _run_turn(
     user,
     db,
     messages: list,

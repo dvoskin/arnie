@@ -13,6 +13,22 @@ So: one deadline for the turn, set at the top, consulted by anything about to
 wait. `remaining()` shrinks as the turn proceeds, so the fourth lookup gets
 what is left rather than a fresh six seconds.
 
+"At the top" is load-bearing, and the first version of this got it wrong: the
+budget opened inside `execute_tool_calls`, so it began after the interpreter
+model call and ended before the response composer — a tool-batch budget with a
+turn budget's name. It now opens in `core.conversation.run_turn`, and these
+consult it:
+
+    the food interpreter model call      core/food_turn.py
+    every remote candidate source        skills/nutrition/candidates.py
+      (USDA, OpenFoodFacts, web label)
+    the OpenFoodFacts HTTP retries       skills/nutrition/off.py
+    the tool batch                       handlers/tool_executor.py
+
+A blocking food operation that consults NEITHER `cap()` nor `wait_for()` is
+outside the guarantee. That list is the guarantee's actual extent — keep it
+honest when adding one.
+
 Three rules that make it usable rather than merely present:
 
 **Expiry degrades, it does not fail.** Past the deadline, `wait_for` raises
