@@ -47,6 +47,19 @@ services:
         fromDatabase:
           name: arnie-db
           property: connectionString
+      # Turn coordinator (core/turns): new_execute owns execution ONLY for
+      # lanes explicitly enabled via TURN_COORDINATOR_LANES — none yet, so
+      # this stages the rollout without changing behavior (Danny 2026-07-24).
+      - key: TURN_COORDINATOR_MODE
+        value: new_execute
+      # Nutrition resolver: SHADOW is the built stage (observes, never votes;
+      # its disagreement telemetry is the promotion gate). LIVE is pre-set so
+      # the moment the live stage ships it is already on.
+      - key: NUTRITION_RESOLVER_SHADOW
+        value: "1"
+      - key: NUTRITION_RESOLVER_LIVE
+        value: "1"
+
       - key: ARNIE_USERS_DIR
         value: /data/users
       - key: TELEGRAM_BOT_TOKEN
