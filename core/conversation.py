@@ -283,7 +283,7 @@ def _workout_card_enabled() -> bool:
     return os.getenv("WORKOUT_CARD", "true").lower() in ("true", "1", "yes")
 
 
-def _logged_entry_card(name: str, inp: dict) -> Optional[dict]:
+def _logged_entry_card(name: str, inp, call=None) -> Optional[dict]:
     """The macro_card / workout_card for a log_food / log_exercise call — but ONLY
     when it actually created or rolled up into a real DB row.
 
@@ -294,10 +294,13 @@ def _logged_entry_card(name: str, inp: dict) -> Optional[dict]:
     the earlier coffee's macro_card with entry_id=null). The card must mirror a row
     the user can actually tap/edit. Returns None for any non-logging tool.
 
-    Payload is pulled from the tool_call INPUT — what the LLM said to log, which is
-    what Arnie's reply confirms. Pure + side-effect free for unit testing."""
-    inp = inp or {}
-    entry_id = inp.get("_entry_id")
+    Payload is pulled from the executed call — the committed macros the executor
+    synced back, which is what Arnie's reply confirms. `call` is the typed
+    CallResult (P0.3b); `inp` remains accepted for the legacy/unit-test path.
+    Pure + side-effect free for unit testing."""
+    inp = (call.raw_input if call is not None else inp) or {}
+    entry_id = (call.entry_id if call is not None and call.entry_id is not None
+                else inp.get("_entry_id"))
     if not entry_id:
         return None
     if name in ("log_food", "restore_food_entry"):
@@ -315,12 +318,15 @@ def _logged_entry_card(name: str, inp: dict) -> Optional[dict]:
         }
         # Undo token: the ledger event behind this write. Optional on the
         # wire — older clients ignore it; new clients render one-tap Undo.
-        if inp.get("_event_id") is not None:
-            payload["event_id"] = inp["_event_id"]
+        _ev = (call.event_id if call is not None and call.event_id is not None
+               else inp.get("_event_id"))
+        if _ev is not None:
+            payload["event_id"] = _ev
         # Decision-receipt context (day impact + verdict), stashed by the
         # executor at log time — see core/receipt.py. All keys optional on
         # the wire; older clients simply ignore them.
-        receipt = inp.get("_receipt")
+        receipt = (call.receipt if call is not None and call.receipt is not None
+                   else inp.get("_receipt"))
         if isinstance(receipt, dict):
             payload.update(receipt)
         # The model's own coach read outranks the deterministic verdict —
@@ -609,6 +615,7 @@ async def run_turn(
     # T2.1 (no kwarg surface change for non-streaming callers / tests).
     _chat_extras = {"stream_handler": _stream_handler} if _stream_handler else {}
     _scribe_task = None  # the parallel scribe extraction; set inside the pass below
+    _execution = None    # typed per-call execution view; set after tools run
 
     # ── STRUCTURED FOOD TURN (Danny 2026-07-23/24): the interpreter proposes an
     # ordered plan (log/update/delete, mixed turns commit in the user's order),
@@ -2491,10 +2498,19 @@ user_message=_user_text or "")
     # iOS client renders these inline beneath the text; Telegram/iMessage adapters
     # ignore the field.
     if tool_calls:
+        _calls_by_id = {}
+        try:
+            for _c in (_execution.calls if _execution is not None else ()):
+                _calls_by_id[id(_c.raw_input)] = _c
+        except Exception:
+            _calls_by_id = {}
         for tc in tool_calls:
             name = tc.get("name")
             inp = tc.get("input") or {}
-            _logged = _logged_entry_card(name, inp)
+            # Typed view first (P0.3b): the card mirrors what the executor
+            # actually committed, not what the model asked for.
+            _cr = _calls_by_id.get(id(inp))
+            _logged = _logged_entry_card(name, inp, call=_cr)
             if _logged is not None:
                 resp.cards.append(_logged)
                 continue

@@ -89,3 +89,31 @@ async def test_executor_view_marks_stale_update_blocked(db, make_user):
     assert ex.calls[0].status == "blocked"
     assert ex.failed_names() == ["Birria taco"]
     assert ex.ok_tool_calls() == []
+
+
+# ── cards render from the typed view (P0.3b) ──────────────────────────────────
+def test_card_prefers_typed_call_over_stashed_keys():
+    """The card mirrors what the executor COMMITTED: ids come from the typed
+    CallResult, not from whatever was stashed on the model's input."""
+    from core.conversation import _logged_entry_card
+    inp = {"food_name": "Banana", "quantity": "1 banana", "calories": 105,
+           "_entry_id": 11, "_event_id": 800}     # stale/legacy stash
+    cr = ER.CallResult(name="log_food", raw_input=inp, status="committed",
+                       entry_id=42, event_id=900,
+                       receipt={"day_calories": 1200})
+    card = _logged_entry_card("log_food", inp, call=cr)
+    assert card["payload"]["entry_id"] == 42     # typed wins
+    assert card["payload"]["event_id"] == 900
+    assert card["payload"]["day_calories"] == 1200   # receipt from the call
+    # Legacy path (no typed call) still reads the stash — unit tests and any
+    # caller that hasn't converted yet keep working.
+    legacy = _logged_entry_card("log_food", inp)
+    assert legacy["payload"]["entry_id"] == 11
+
+
+def test_uncommitted_call_still_produces_no_card():
+    """No committed row → no card, whichever path built it."""
+    from core.conversation import _logged_entry_card
+    inp = {"food_name": "Banana", "calories": 105}
+    cr = ER.CallResult(name="log_food", raw_input=inp, status="blocked")
+    assert _logged_entry_card("log_food", inp, call=cr) is None
