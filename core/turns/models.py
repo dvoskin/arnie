@@ -1,0 +1,122 @@
+"""Typed turn model (P0.2, architecture review 2026-07-25).
+
+run_turn() is a ~2000-line procedural coordinator whose progress lives in
+mutable locals: whether text streamed, whether tools fired, whether a rescue
+re-entered execution. Every reliability fix has to reason about that whole
+implicit state machine at once.
+
+This module makes progress EXPLICIT — without rewriting run_turn in place.
+The shape is deliberately hybrid: the coordinator owns one mutable TurnState,
+but every payload assigned to it is frozen. A fully immutable state copied at
+each transition creates friction; a mutable bag reproduces today's problem.
+
+Stages never reach into TurnState — each takes what it needs and returns ONE
+typed result, which the coordinator assigns. Only the coordinator advances
+the phase, and only along legal edges (see coordinator._ALLOWED_TRANSITIONS).
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import Any, Mapping, Optional
+
+
+class TurnPhase(str, Enum):
+    RECEIVED = "received"
+    CONTEXT_READY = "context_ready"
+    ROUTED = "routed"
+    PLANNED = "planned"
+    VALIDATED = "validated"
+    EXECUTED = "executed"
+    SNAPSHOT_READY = "snapshot_ready"
+    RENDERED = "rendered"
+    FINALIZED = "finalized"
+    FAILED = "failed"
+
+
+class TurnLane(str, Enum):
+    STRUCTURED_FOOD = "structured_food"
+    LEDGER_UNDO = "ledger_undo"
+    ONBOARDING = "onboarding"
+    GENERAL = "general"
+    DETERMINISTIC = "deterministic"
+
+
+@dataclass(frozen=True)
+class TurnRequest:
+    """One inbound message, transport-independent. turn_id is the canonical
+    identity from core/turn_identity — the same id the ledger stamps."""
+    turn_id: str
+    user_id: int
+    platform: str
+    source_type: str
+    text: str
+    client_message_id: Optional[str] = None
+    metadata: Mapping[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class ContextManifest:
+    """What the turn was given to think with — and what it was NOT. The
+    omitted list is the seed of per-turn token budgeting (P1)."""
+    system_prompt: str
+    messages: tuple = ()
+    user_timezone: str = "UTC"
+    token_estimate: int = 0
+    included_sections: tuple = ()
+    omitted_sections: tuple = ()
+
+
+@dataclass(frozen=True)
+class RouteDecision:
+    lane: TurnLane
+    reason_code: str
+    confidence: float = 1.0
+    contract_version: str = ""
+
+
+@dataclass(frozen=True)
+class TurnPlan:
+    operations: tuple = ()
+    response_intent: str = ""
+    ambiguities: tuple = ()
+    planner_version: str = ""
+
+
+@dataclass(frozen=True)
+class ValidationResult:
+    disposition: str                 # execute | ask | pass | reject
+    approved_operations: tuple = ()
+    clarification: Optional[Any] = None
+    policy_version: str = ""
+
+
+@dataclass(frozen=True)
+class TurnSnapshot:
+    """The committed result every renderer reads from. Domain-general by
+    design: food is the first consumer, exercise/water/weight follow."""
+    turn_id: str
+    execution: Any = None
+    affected_entities: tuple = ()
+    ledger_event_ids: tuple = ()
+    day_revision: Optional[int] = None
+    day_totals: Optional[Mapping[str, float]] = None
+    remaining_targets: Optional[Mapping[str, float]] = None
+    snapshot_version: str = "turn_snapshot_v1"
+
+
+@dataclass
+class TurnState:
+    """Coordinator-owned. Mutable container, frozen contents."""
+    request: TurnRequest
+    phase: TurnPhase = TurnPhase.RECEIVED
+    context: Optional[ContextManifest] = None
+    route: Optional[RouteDecision] = None
+    plan: Optional[TurnPlan] = None
+    validation: Optional[ValidationResult] = None
+    execution: Optional[Any] = None
+    snapshot: Optional[TurnSnapshot] = None
+    response: Optional[Any] = None
+    health_flags: set = field(default_factory=set)
+    timings_ms: dict = field(default_factory=dict)
+    error: Optional[BaseException] = None
