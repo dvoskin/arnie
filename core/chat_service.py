@@ -17,7 +17,7 @@ WHY THIS EXISTS
 WHAT LIVES HERE (shared, platform-neutral)
   • resolve onboarding state → system prompt (+ context for the active turn)
   • build the message history the model sees
-  • run_turn — the coaching brain
+  • core.turns.entrypoint — the coordinator, the one way into a turn
   • persist the conversation
   • kick off background profile / reflection jobs
 
@@ -41,7 +41,11 @@ from db.queries import (
 )
 from core.background_jobs import schedule_post_turn_jobs
 from core.context_builder import build_context
-from core.conversation import TurnResult, run_turn
+# `run_turn` is deliberately NOT imported here any more. The coaching brain
+# is reached through core.turns.entrypoint, and a module-level alias to the
+# legacy function would be a second door into the turn — one a test could
+# patch and pass against while nothing called it.
+from core.conversation import TurnResult
 from core.history import conversations_to_messages
 from core.platform import Response
 from core.prompts.arnie import build_arnie_system
@@ -357,15 +361,33 @@ async def run_chat_turn(
     messages.append({"role": "user", "content": _model_text})
 
     # ── Coaching brain ────────────────────────────────────────────────────────
+    #
+    # THROUGH THE COORDINATOR, ALWAYS. This used to call run_turn() directly and
+    # never build a coordinator at all — so the coordinator, which has legal
+    # phase transitions and structurally prevents render-before-commit and
+    # double execution, was a shadow observer predicting what it would have done
+    # while the procedural path did it. Two systems, one of them unreachable.
+    #
+    # The delegating lane still calls run_turn() underneath, through the adapter
+    # that exists for exactly that, and this is unchanged. What changed is that
+    # the caller no longer chooses: there is no state where the coordinator and
+    # the legacy pipeline are both independently invoked for one message, and
+    # promoting a lane is a configuration change with nothing here to edit.
     from core.turn_identity import make_turn_id
-    turn = await run_turn(
-        user, db, messages, system, platform=platform,
+    from core.turns import entrypoint as _turns
+    _turn_id = make_turn_id(platform or "ios", idempotency_key, user.id,
+                            text or "")
+    turn = await _turns.run_turn(
+        request=_turns.build_request(
+            turn_id=_turn_id, user=user, platform=platform,
+            source_type=_source, text=text or "", db=db, today_log=today_log,
+            in_onboarding=in_onboarding, client_message_id=idempotency_key),
+        user=user, db=db, messages=messages, system=system, platform=platform,
         in_onboarding=in_onboarding, was_onboarding=was_onboarding,
         today_log=today_log, source_type=_source,
         on_image=on_image, on_interim=on_interim,
-        on_text_bubble=on_text_bubble, on_tool_start=on_tool_start, on_card=on_card,
-        turn_id=make_turn_id(platform or "ios", idempotency_key, user.id,
-                             text or ""),
+        on_text_bubble=on_text_bubble, on_tool_start=on_tool_start,
+        on_card=on_card, turn_id=_turn_id,
     )
 
     # ── Persist the conversation ──────────────────────────────────────────────

@@ -851,11 +851,93 @@ def _lc(name: str) -> str:
     return n.lower()
 
 
+def clarify_text_from_points(points: list, ready: list | None = None, *,
+                             user_message: str = "") -> str:
+    """A clarification the INTERPRETER raised, phrased by the response layer.
+
+    Every clarification goes through one renderer now, whatever noticed the
+    ambiguity — the staged engine, the interpreter's own `ask`, or the
+    calorie-only fallback. They used to have two: `clarify_text` built a
+    FoodResponsePlan, and this path called `_format_question`, which spoke in
+    system vocabulary the response contract had already retired ("locked in
+    ✅", "Quick one so it's clean", "Nothing hits the board till then, keeps
+    your log exact", numbered forms).
+
+    The effect was not cosmetic. Two meals with near-identical uncertainty got
+    different conversational treatment depending on which engine happened to
+    notice it, and neither the user nor anyone reading a transcript could tell
+    why. A response contract that governs one of its inputs is not a contract.
+
+    The interpreter reports `points` (what it is unsure about) and `ready`
+    (what it is not). Those map onto the plan's unresolved and resolved items
+    exactly, so nothing is lost in the translation — only the phrasing moves to
+    the layer that owns phrasing.
+    """
+    from core.food_response import (FoodItemSummary, FoodResponseIntent,
+                                    FoodResponsePlan, fallback)
+
+    asks = []
+    for point in points if isinstance(points, list) else []:
+        if not isinstance(point, dict):
+            continue
+        label = str(point.get("label") or "").strip(", ").strip()
+        qs = point.get("qs")
+        if not isinstance(qs, list):
+            qs = [point.get("q")]
+        qs = [str(q).strip() for q in qs if q and str(q).strip()][:4]
+        if qs:
+            asks.append((label, qs))
+    asks = asks[:4]
+    if not asks:
+        return ""
+
+    resolved = tuple(FoodItemSummary(name=str(r).strip())
+                     for r in (ready or ()) if str(r).strip())[:4]
+    pending = tuple(FoodItemSummary(name=label) for label, _ in asks if label)
+    # Several facets of one item ("grilled or fried?", "skin on or off?") are
+    # ONE question about that item. Joining them keeps the plan's promise that
+    # `clarification_question` is a question and not a form.
+    #
+    # The label is NOT repeated into the question. The plan already carries the
+    # item as `unresolved_item` and the renderer names it; prefixing it here
+    # too produced "Chicken — chicken: grilled or fried?", which is the shape
+    # the numbered form had, reassembled one layer down.
+    # ONE QUESTION, about ONE item. The staged engine has always worked this
+    # way — `should_ask` returns a single ambiguity — and the plan is shaped
+    # for it: `unresolved_item` is singular. The interpreter can raise several
+    # points at once, and concatenating them produced "How much did you leave?
+    # roughly how much?", which is the numbered form again with the numbers
+    # taken off.
+    #
+    # The items NOT asked about stay pending, so nothing commits behind an
+    # unanswered question — they are named in the plan and the user sees them
+    # held. Asking about them is the next turn's job.
+    # Several facets of that ONE item ("grilled or fried?", "skin on or off?")
+    # are still one question about it, so they stay together — each as its own
+    # sentence, because the interpreter writes them lowercase as fragments of a
+    # form while the staged engine writes whole sentences. Both land in the same
+    # renderer now, so they have to arrive in the same shape, or the
+    # unification is only structural and the user can still tell which engine
+    # asked.
+    question = " ".join(q[:1].upper() + q[1:] for q in asks[0][1])
+
+    return fallback(FoodResponsePlan(
+        intent=FoodResponseIntent.CLARIFY,
+        resolved_items=resolved, pending_items=pending,
+        unresolved_item=(pending[0] if pending else None),
+        clarification_question=question,
+        requires_answer=True, user_message=user_message))
+
+
 def _format_question(points: list, ready: list | None = None) -> str:
-    """The clarify moment in Arnie's full voice: an acknowledgment bubble for
-    what's already locked (✅), the question in his established phrasing with
-    bolded items and facet bullets, and the hold guarantee as its own beat.
-    ||| splits render as separate bubbles on every client."""
+    """RETIRED from routing — kept only for the gate evals that assert on its
+    exact strings. Live clarifications go through `clarify_text_from_points`,
+    and `tests/test_turn_ownership_invariant.py` fails if this is called from
+    the turn again.
+
+    The clarify moment in Arnie's older voice: an acknowledgment bubble for
+    what's already locked (✅), the question with bolded items and facet
+    bullets, and the hold guarantee as its own beat."""
     norm = []
     for p in points if isinstance(points, list) else []:
         if not isinstance(p, dict):
@@ -1309,7 +1391,9 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
     action = data.get("action")
 
     if action == "ask" and not prior:
-        text = _format_question(data.get("points") or [], data.get("ready"))
+        text = clarify_text_from_points(data.get("points") or [],
+                                        data.get("ready"),
+                                        user_message=message)
         return {"action": "ask", "text": text} if text else None
 
     if action == "ask" and prior:
@@ -1326,7 +1410,9 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
         _new_amb = bool(data.get("new_ambiguity"))
         if data.get("points") and (_user_invited or (_new_amb and _ask_count < 2)):
             return {"action": "ask",
-                    "text": _format_question(data["points"], data.get("ready")),
+                    "text": clarify_text_from_points(
+                        data["points"], data.get("ready"),
+                        user_message=message),
                     "points": data["points"]}
         return None
 
@@ -1414,7 +1500,8 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
             _mat = _FL.material_ambiguities(data.get("ambiguities"), mode)
             if _mat:
                 _pts = _FL.ambiguity_points(_mat)
-                _txt = _format_question(_pts)
+                _txt = clarify_text_from_points(_pts,
+                                                user_message=message)
                 if _txt:
                     return {"action": "ask", "text": _txt, "points": _pts}
 
