@@ -674,3 +674,111 @@ def test_a_refused_scaling_still_sizes_its_own_doubt():
     assert basis[0].calorie_span > 0, basis[0]
     # And it reaches the user in the mode that exists to catch exactly this.
     assert should_ask(out.ambiguities, "strict") is not None
+
+
+# ── 13. a dropped food says what actually happened ───────────────────────────
+#
+# From the same pair of screenshots as section 5. The confirmed Barebells bar
+# came back as "Couldn't touch the Barebells Salty Peanut Protein Bar - the
+# board changed under me", and the user's note was "it got dropped for some
+# reason." The reason was unrecoverable afterwards, which is the defect these
+# pin: one notice asserted a single cause for every failure mode, and nothing
+# recorded the real one.
+def _exec(*calls):
+    from core.execution_result import CallResult, ExecutionResult
+    return ExecutionResult(calls=tuple(calls))
+
+
+def _call(name, status, result_text, food="Barebells bar"):
+    from core.execution_result import CallResult
+    return CallResult(name=name, raw_input={"food_name": food},
+                      status=status, result_text=result_text)
+
+
+def test_the_notice_no_longer_blames_a_stale_board_for_everything():
+    """STALE BOARD is only ever emitted by update_food_entry's compare-and-swap.
+    The dropped bar was a log_food, so a concurrent edit could not have been
+    the cause — the user was sent to re-read a board that was never involved."""
+    from core.food_ledger import build_failure_notice
+    out = build_failure_notice(_exec(
+        _call("log_food", "blocked", "Error: something broke")).failures())
+    assert "board" not in out.lower(), out
+    assert "Barebells bar" in out
+
+
+def test_a_stale_board_is_still_reported_as_one():
+    """The fix must not flatten every failure into one vague sentence either.
+    Where the board really did change, say so."""
+    from core.food_ledger import build_failure_notice
+    out = build_failure_notice(_exec(
+        _call("update_food_entry", "blocked",
+              "STALE BOARD: entry #1 is now 500 cal, not 180.")).failures())
+    assert "changed while I was writing" in out, out
+
+
+@pytest.mark.parametrize("result_text,expected", [
+    ("Already on the board — duplicate", "it was already logged"),
+    ("COULD NOT FIND that food", "I couldn't find it"),
+    ("Nothing to restore", "there was nothing to restore"),
+    ("Skipped — no log to update", "it didn't save"),
+    ("Failed to write", "it didn't save"),
+])
+def test_each_failure_class_gets_its_own_words(result_text, expected):
+    from core.food_ledger import failure_reason
+    assert failure_reason(result_text) == expected
+
+
+def test_every_failure_prefix_is_explained_or_falls_back_honestly():
+    """A prefix added without a reason must degrade to "it didn't save" rather
+    than to a confident wrong cause. This is the drift guard: the two tuples
+    live together, and this asserts the fallback is the safe one."""
+    from core.food_ledger import (FAILURE_PREFIXES, GENERIC_FAILURE_REASON,
+                                  failure_reason)
+    for prefix in FAILURE_PREFIXES:
+        reason = failure_reason(f"{prefix} whatever")
+        assert reason, prefix
+        assert "board" not in reason or prefix == "STALE BOARD", (prefix, reason)
+    assert failure_reason("something entirely new") == GENERIC_FAILURE_REASON
+
+
+# ── the silent-drop hole ──────────────────────────────────────────────────────
+def test_a_failed_call_is_reported_not_swallowed():
+    """`status` is documented as committed|blocked|failed, but failed_names()
+    filtered to "blocked" alone. A call landing on "failed" was excluded from
+    ok_tool_calls() for not committing AND from the notice for not being
+    blocked — gone from the card and the reply both, with no trace anywhere.
+    Nothing sets it today; that is what makes it a trap rather than a bug."""
+    ex = _exec(_call("log_food", "failed", "Error: boom", food="Protein bar"))
+    assert ex.ok_tool_calls() == []
+    assert "Protein bar" in ex.failed_names()
+
+
+def test_a_committed_call_is_never_reported_as_dropped():
+    ex = _exec(_call("log_food", "committed", "", food="Banana"))
+    assert ex.failed_names() == []
+    assert len(ex.ok_tool_calls()) == 1
+
+
+def test_two_foods_lost_the_same_way_read_as_one_sentence():
+    from core.food_ledger import build_failure_notice
+    out = build_failure_notice(_exec(
+        _call("log_food", "blocked", "Error: a", food="bagel"),
+        _call("log_food", "blocked", "Error: b", food="eggs")).failures())
+    assert out.count("I couldn't log") == 1, out
+    assert "bagel and eggs" in out
+
+
+def test_the_notice_is_a_complete_sentence():
+    """Same contract as the card verdicts — no terse fragments."""
+    from core.food_ledger import build_failure_notice
+    out = build_failure_notice(_exec(
+        _call("log_food", "blocked", "Error: x", food="bagel")).failures())
+    assert out[0].isupper() and out.rstrip().endswith("?"), out
+    assert " — " in out
+
+
+def test_no_failures_produces_no_notice():
+    from core.food_ledger import build_failure_notice
+    assert build_failure_notice([]) == ""
+    assert build_failure_notice(_exec(
+        _call("log_food", "committed", "")).failures()) == ""

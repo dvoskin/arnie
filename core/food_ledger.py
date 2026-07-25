@@ -195,6 +195,44 @@ FAILURE_PREFIXES = (
     "Nothing to restore", "Already on the board",
 )
 
+#: Prefix → what to actually TELL the user, in their terms.
+#:
+#: Every blocked call used to be narrated as "the board changed under me",
+#: which is the explanation for exactly ONE of these prefixes. In the
+#: 2026-07-25 transcript a Barebells bar the user had just confirmed came back
+#: as "Couldn't touch the Barebells Salty Peanut Protein Bar - the board
+#: changed under me" — and STALE BOARD is only ever emitted by
+#: update_food_entry's compare-and-swap, so whatever actually stopped that log
+#: was not a concurrent edit. The user was handed a cause that could not apply,
+#: which is a worse failure than saying nothing: it sends them to re-read a
+#: board that was never the problem.
+#:
+#: Lives beside FAILURE_PREFIXES on purpose. A prefix added in one place and
+#: explained in another drifts, and the fallback quietly absorbs the drift.
+FAILURE_REASONS = (
+    ("STALE BOARD", "it changed while I was writing"),
+    ("Already on the board", "it was already logged"),
+    ("COULD NOT FIND", "I couldn't find it"),
+    ("No food entry", "I couldn't find that entry"),
+    ("No exercise entry", "I couldn't find that exercise"),
+    ("Nothing to restore", "there was nothing to restore"),
+    ("Missing entry_id", "I lost track of which entry you meant"),
+)
+
+#: When the prefix carries no specific cause ("Error:", "Skipped", "Failed
+#: to"). Says that it did not save and nothing more — inventing a reason is
+#: how the stale-board line came to be attached to unrelated failures.
+GENERIC_FAILURE_REASON = "it didn't save"
+
+
+def failure_reason(result_text: str) -> str:
+    """The honest clause for one blocked call's result text."""
+    text = result_text or ""
+    for prefix, reason in FAILURE_REASONS:
+        if text.startswith(prefix):
+            return reason
+    return GENERIC_FAILURE_REASON
+
 
 def _call_failed(tc: dict) -> bool:
     """Legacy shim: judge a call by its shared result text. Kept only for
@@ -365,3 +403,38 @@ def render_committed(say: str, note: str, follow_up: str,
     if fu and snap.logged:
         text = f"{text}|||{fu}"
     return text.strip()
+
+
+def build_failure_notice(failures: list) -> str:
+    """The sentence the user reads when something did not make it onto the log.
+
+    Groups by reason so two foods lost the same way read as one sentence rather
+    than two near-identical ones, and only ever states the reason the call
+    actually reported.
+    """
+    if not failures:
+        return ""
+    by_reason: dict = {}
+    for name, reason in failures:
+        if name:
+            by_reason.setdefault(reason, []).append(name)
+    if not by_reason:
+        return ""
+    parts = []
+    for reason, names in by_reason.items():
+        listed = _join_names(names)
+        parts.append(f"I couldn't log the {listed} — {reason}")
+    notice = "; ".join(parts)
+    tail = ("Want me to try again?" if len(failures) == 1
+            else "Want me to try those again?")
+    return f"{notice[0].upper()}{notice[1:]}. {tail}"
+
+
+def _join_names(names: list) -> str:
+    """"a", "a and b", "a, b and c" — capped so a long batch cannot run away."""
+    names = [n for n in names if n][:4]
+    if len(names) == 1:
+        return names[0]
+    if len(names) == 2:
+        return f"{names[0]} and {names[1]}"
+    return f"{', '.join(names[:-1])} and {names[-1]}"

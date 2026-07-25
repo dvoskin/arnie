@@ -566,12 +566,18 @@ def test_a_confirmation_without_numbers_is_left_alone():
 
 def test_the_refusal_notice_survives():
     """A write the board refused must still be named — that bubble is the
-    honest part of the reply."""
+    honest part of the reply.
+
+    Built from the REAL producer rather than a copy of its output: as a frozen
+    string this passed while the notice it was standing in for had changed
+    wording, so it would not have noticed the live notice being stripped.
+    """
+    from core.food_ledger import build_failure_notice
     from core.food_response import strip_card_recitation
-    text = ("Rice logged, 200 cal and 5g protein. You're at 1500.|||Couldn't "
-            "touch the fries - the board changed under me.")
+    notice = build_failure_notice([("fries", "it didn't save")])
+    text = f"Rice logged, 200 cal and 5g protein. You're at 1500.|||{notice}"
     out = strip_card_recitation(text, _card_plan())
-    assert "Couldn't touch the fries" in out
+    assert notice in out, out
     assert "200 cal" not in out
 
 
