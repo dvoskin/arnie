@@ -57,8 +57,18 @@ def transcript(tid, category, turns, mode="moderate", expect=None):
 
 
 def item(food, amount=None, unit=None, brand=None, basis=None,
-         is_packaged=False):
+         is_packaged=False, calories=None):
+    """`calories` is the interpreter's own per-item estimate.
+
+    It is not decoration. The materiality policy's fraction rule reads it — a
+    190-calorie span is 95% of a protein bar and a fifth of a platter, and
+    without the item's size the scorer sees only the flat threshold. Production
+    interpreter output always carries it; these fixtures did not, which made
+    them quietly untestable against the proportional half of the policy.
+    """
     out = {"food": food, "is_packaged": is_packaged}
+    if calories is not None:
+        out["calories"] = calories
     if amount is not None:
         out["amount"] = amount
     if unit is not None:
@@ -82,7 +92,7 @@ def amb(food, field, options=(), impact_cal=0.0, impact_protein=0.0):
 CLARIFICATION = [
     transcript("fairlife-line-then-commit", "clarification", [
         log("had a fairlife",
-            items=[item("fairlife", brand="Fairlife")],
+            items=[item("fairlife", brand="Fairlife", calories=170)],
             ambiguities=[amb("fairlife", "brand",
                              ["Core Power", "Core Power Elite",
                               "Nutrition Plan"], impact_cal=190,
@@ -96,7 +106,7 @@ CLARIFICATION = [
 
     transcript("portion-question-then-commit", "clarification", [
         log("ate some rice",
-            items=[item("white rice")],
+            items=[item("white rice", calories=205)],
             ambiguities=[amb("white rice", "portion", ["1 cup", "2 cups"],
                              impact_cal=205)],
             expect={"asks": True, "fields": ["estimated_mass_g"],
@@ -108,7 +118,7 @@ CLARIFICATION = [
 
     transcript("a-skip-command-is-not-an-answer", "clarification", [
         log("a fairlife and a banana",
-            items=[item("fairlife", brand="Fairlife"),
+            items=[item("fairlife", brand="Fairlife", calories=170),
                    item("banana", amount=1, unit="piece", basis="stated")],
             ambiguities=[amb("fairlife", "brand",
                              ["Core Power", "Core Power Elite"],
@@ -130,7 +140,7 @@ CLARIFICATION = [
 
     transcript("cancel-drops-the-whole-meal", "clarification", [
         log("a fairlife and a bagel",
-            items=[item("fairlife", brand="Fairlife"),
+            items=[item("fairlife", brand="Fairlife", calories=170),
                    item("bagel")],
             ambiguities=[amb("fairlife", "brand",
                              ["Core Power", "Core Power Elite"],
@@ -141,7 +151,7 @@ CLARIFICATION = [
 
     transcript("an-unparseable-answer-does-not-guess", "clarification", [
         log("a fairlife",
-            items=[item("fairlife", brand="Fairlife")],
+            items=[item("fairlife", brand="Fairlife", calories=170)],
             ambiguities=[amb("fairlife", "brand",
                              ["Core Power", "Core Power Elite"],
                              impact_cal=190, impact_protein=16)],
@@ -152,8 +162,8 @@ CLARIFICATION = [
 
     transcript("the-answer-binds-to-the-item-it-was-about", "clarification", [
         log("a fairlife and a chobani",
-            items=[item("fairlife", brand="Fairlife"),
-                   item("chobani", brand="Chobani")],
+            items=[item("fairlife", brand="Fairlife", calories=170),
+                   item("chobani", brand="Chobani", calories=140)],
             ambiguities=[
                 amb("fairlife", "brand", ["Core Power", "Core Power Elite"],
                     impact_cal=190, impact_protein=16),
@@ -170,7 +180,7 @@ CLARIFICATION = [
                "clarification", [
         log("two eggs and a fairlife",
             items=[item("egg", amount=2, unit="piece", basis="stated"),
-                   item("fairlife", brand="Fairlife")],
+                   item("fairlife", brand="Fairlife", calories=170)],
             ambiguities=[amb("fairlife", "brand",
                              ["Core Power", "Core Power Elite"],
                              impact_cal=190, impact_protein=16)],
@@ -181,7 +191,7 @@ CLARIFICATION = [
     transcript("strict-holds-the-clear-item-too", "clarification", [
         log("two eggs and a fairlife",
             items=[item("egg", amount=2, unit="piece", basis="stated"),
-                   item("fairlife", brand="Fairlife")],
+                   item("fairlife", brand="Fairlife", calories=170)],
             ambiguities=[amb("fairlife", "brand",
                              ["Core Power", "Core Power Elite"],
                              impact_cal=190, impact_protein=16)],
@@ -196,7 +206,7 @@ CLARIFICATION = [
         # confidence, which quick correctly treats as a coin toss; that is the
         # transcript below, not this one.)
         log("some rice",
-            items=[item("white rice")],
+            items=[item("white rice", calories=205)],
             ambiguities=[amb("white rice", "portion", ["about a cup"],
                              impact_cal=205)],
             expect={"asks": False, "committed": 1, "assumptions_min": 1,
@@ -205,7 +215,7 @@ CLARIFICATION = [
 
     transcript("rounds-run-out-and-the-questions-stop", "clarification", [
         log("a fairlife",
-            items=[item("fairlife", brand="Fairlife")],
+            items=[item("fairlife", brand="Fairlife", calories=170)],
             ambiguities=[amb("fairlife", "brand",
                              ["Core Power", "Core Power Elite"],
                              impact_cal=190, impact_protein=16)],
@@ -216,10 +226,10 @@ CLARIFICATION = [
 
     transcript("two-questions-is-the-ceiling", "clarification", [
         log("a fairlife, a chobani, a quest bar and a kind bar",
-            items=[item("fairlife", brand="Fairlife"),
-                   item("chobani", brand="Chobani"),
-                   item("quest bar", brand="Quest"),
-                   item("kind bar", brand="KIND")],
+            items=[item("fairlife", brand="Fairlife", calories=170),
+                   item("chobani", brand="Chobani", calories=140),
+                   item("quest bar", brand="Quest", calories=190),
+                   item("kind bar", brand="KIND", calories=200)],
             ambiguities=[
                 amb("fairlife", "brand", ["Core Power", "Elite"],
                     impact_cal=190, impact_protein=16),
@@ -234,8 +244,8 @@ CLARIFICATION = [
 
     transcript("the-highest-value-question-is-asked-first", "clarification", [
         log("a kind bar and a fairlife",
-            items=[item("kind bar", brand="KIND"),
-                   item("fairlife", brand="Fairlife")],
+            items=[item("kind bar", brand="KIND", calories=200),
+                   item("fairlife", brand="Fairlife", calories=170)],
             ambiguities=[
                 amb("kind bar", "variant", ["Dark Chocolate", "Peanut"],
                     impact_cal=30, impact_protein=2),
@@ -247,7 +257,7 @@ CLARIFICATION = [
     transcript("a-tiny-doubt-never-becomes-a-question", "clarification", [
         log("a kind bar",
             items=[item("kind bar", brand="KIND", amount=1, unit="bar",
-                        basis="stated")],
+                        basis="stated", calories=200)],
             ambiguities=[amb("kind bar", "variant",
                              ["Dark Chocolate", "Almond"], impact_cal=12,
                              impact_protein=1)],
@@ -258,7 +268,7 @@ CLARIFICATION = [
         log("200g chicken breast and 150g rice",
             items=[item("chicken breast", amount=200, unit="g",
                         basis="stated"),
-                   item("white rice", amount=150, unit="g", basis="stated")],
+                   item("white rice", amount=150, unit="g", basis="stated", calories=205)],
             expect={"asks": False, "committed": 2, "held": 0}),
     ]),
 
@@ -273,7 +283,7 @@ CLARIFICATION = [
 
     transcript("commit-ready-logs-the-rest", "clarification", [
         log("a fairlife and a banana",
-            items=[item("fairlife", brand="Fairlife"),
+            items=[item("fairlife", brand="Fairlife", calories=170),
                    item("banana", amount=1, unit="piece", basis="stated")],
             ambiguities=[amb("fairlife", "brand",
                              ["Core Power", "Core Power Elite"],
@@ -284,7 +294,7 @@ CLARIFICATION = [
 
     transcript("start-over-is-a-command-not-a-product", "clarification", [
         log("a fairlife",
-            items=[item("fairlife", brand="Fairlife")],
+            items=[item("fairlife", brand="Fairlife", calories=170)],
             ambiguities=[amb("fairlife", "brand",
                              ["Core Power", "Core Power Elite"],
                              impact_cal=190, impact_protein=16)],
@@ -295,7 +305,7 @@ CLARIFICATION = [
     transcript("a-numeric-answer-to-a-product-question-is-not-a-product",
                "clarification", [
         log("a fairlife",
-            items=[item("fairlife", brand="Fairlife")],
+            items=[item("fairlife", brand="Fairlife", calories=170)],
             ambiguities=[amb("fairlife", "brand",
                              ["Core Power", "Core Power Elite"],
                              impact_cal=190, impact_protein=16)],
@@ -305,7 +315,7 @@ CLARIFICATION = [
 
     transcript("half-answers-the-portion-not-the-product", "clarification", [
         log("some of a quest bar",
-            items=[item("quest bar", brand="Quest")],
+            items=[item("quest bar", brand="Quest", calories=190)],
             ambiguities=[amb("quest bar", "consumed",
                              ["all of it", "half"], impact_cal=100)],
             expect={"asks": True, "fields": ["consumed_fraction"]}),
@@ -316,7 +326,7 @@ CLARIFICATION = [
     transcript("a-yes-is-only-an-answer-to-a-yes-no-question",
                "clarification", [
         log("a fairlife",
-            items=[item("fairlife", brand="Fairlife")],
+            items=[item("fairlife", brand="Fairlife", calories=170)],
             ambiguities=[amb("fairlife", "brand",
                              ["Core Power", "Core Power Elite"],
                              impact_cal=190, impact_protein=16)],
@@ -327,7 +337,7 @@ CLARIFICATION = [
     transcript("an-answer-naming-the-option-verbatim-parses",
                "clarification", [
         log("a chobani",
-            items=[item("chobani", brand="Chobani")],
+            items=[item("chobani", brand="Chobani", calories=140)],
             ambiguities=[amb("chobani", "variant",
                              ["Zero Sugar", "Complete"], impact_cal=60,
                              impact_protein=8)],
@@ -337,7 +347,7 @@ CLARIFICATION = [
 
     transcript("an-ordinal-answer-selects-an-option", "clarification", [
         log("a chobani",
-            items=[item("chobani", brand="Chobani")],
+            items=[item("chobani", brand="Chobani", calories=140)],
             ambiguities=[amb("chobani", "variant",
                              ["Zero Sugar", "Complete"], impact_cal=60,
                              impact_protein=8)],
@@ -347,7 +357,7 @@ CLARIFICATION = [
 
     transcript("quick-still-asks-about-a-coin-toss", "clarification", [
         log("a fairlife",
-            items=[item("fairlife", brand="Fairlife")],
+            items=[item("fairlife", brand="Fairlife", calories=170)],
             ambiguities=[amb("fairlife", "brand",
                              ["Core Power", "Core Power Elite"],
                              impact_cal=190, impact_protein=16)],
@@ -368,7 +378,7 @@ PREFERENCES = [
         learn("fairlife", "product_line", "Core Power Elite",
               confirmations=3),
         log("a fairlife",
-            items=[item("fairlife", brand="Fairlife")],
+            items=[item("fairlife", brand="Fairlife", calories=170)],
             ambiguities=[amb("fairlife", "brand",
                              ["Core Power", "Core Power Elite"],
                              impact_cal=190, impact_protein=16)],
@@ -380,7 +390,7 @@ PREFERENCES = [
         learn("fairlife", "product_line", "Core Power Elite",
               confirmations=1),
         log("a fairlife",
-            items=[item("fairlife", brand="Fairlife")],
+            items=[item("fairlife", brand="Fairlife", calories=170)],
             ambiguities=[amb("fairlife", "brand",
                              ["Core Power", "Core Power Elite"],
                              impact_cal=190, impact_protein=16)],
@@ -391,7 +401,7 @@ PREFERENCES = [
         learn("fairlife", "product_line", "Core Power Elite",
               confirmations=3),
         log("a chobani",
-            items=[item("chobani", brand="Chobani")],
+            items=[item("chobani", brand="Chobani", calories=140)],
             ambiguities=[amb("chobani", "variant",
                              ["Zero Sugar", "Complete"], impact_cal=60,
                              impact_protein=8)],
@@ -416,7 +426,7 @@ PREFERENCES = [
         learn("fairlife", "product_line", "Core Power Elite",
               confirmations=3),
         log("a fairlife",
-            items=[item("fairlife", brand="Fairlife")],
+            items=[item("fairlife", brand="Fairlife", calories=170)],
             ambiguities=[amb("fairlife", "portion", ["1 bottle", "half"],
                              impact_cal=120)],
             expect={"asks": True, "fields": ["estimated_mass_g"]}),
@@ -430,7 +440,7 @@ PREFERENCES = [
         learn("fairlife", "product_line", "Core Power Elite",
               confirmations=3),
         log("a fairlife",
-            items=[item("fairlife", brand="Fairlife")],
+            items=[item("fairlife", brand="Fairlife", calories=170)],
             ambiguities=[amb("fairlife", "brand",
                              ["Core Power", "Core Power Elite"],
                              impact_cal=190, impact_protein=16)],
@@ -443,7 +453,7 @@ PREFERENCES = [
         learn("fairlife", "product_line", "Core Power Elite",
               confirmations=5),
         log("a fairlife",
-            items=[item("fairlife", brand="Fairlife")],
+            items=[item("fairlife", brand="Fairlife", calories=170)],
             ambiguities=[amb("fairlife", "brand",
                              ["Core Power", "Core Power Elite"],
                              impact_cal=190, impact_protein=16)],
@@ -464,7 +474,7 @@ PREFERENCES = [
         learn("fairlife", "product_line", "Core Power Elite",
               confirmations=4),
         log("a fairlife",
-            items=[item("fairlife", brand="Fairlife")],
+            items=[item("fairlife", brand="Fairlife", calories=170)],
             ambiguities=[amb("fairlife", "brand",
                              ["Core Power", "Core Power Elite"],
                              impact_cal=190, impact_protein=16)],
@@ -500,7 +510,7 @@ PREFERENCES = [
         learn("Fairlife", "product_line", "Core Power Elite",
               confirmations=3),
         log("  FAIRLIFE ",
-            items=[item("fairlife", brand="Fairlife")],
+            items=[item("fairlife", brand="Fairlife", calories=170)],
             ambiguities=[amb("fairlife", "brand",
                              ["Core Power", "Core Power Elite"],
                              impact_cal=190, impact_protein=16)],
@@ -510,7 +520,7 @@ PREFERENCES = [
     transcript("a-preference-on-a-variant-fills-the-variant", "preferences", [
         learn("chobani", "variant", "Zero Sugar", confirmations=3),
         log("a chobani",
-            items=[item("chobani", brand="Chobani")],
+            items=[item("chobani", brand="Chobani", calories=140)],
             ambiguities=[amb("chobani", "variant",
                              ["Zero Sugar", "Complete"], impact_cal=60,
                              impact_protein=8)],
@@ -523,8 +533,8 @@ PREFERENCES = [
         learn("fairlife", "product_line", "Core Power Elite",
               confirmations=3),
         log("a fairlife and a chobani",
-            items=[item("fairlife", brand="Fairlife"),
-                   item("chobani", brand="Chobani")],
+            items=[item("fairlife", brand="Fairlife", calories=170),
+                   item("chobani", brand="Chobani", calories=140)],
             ambiguities=[
                 amb("fairlife", "brand", ["Core Power", "Core Power Elite"],
                     impact_cal=190, impact_protein=16),
@@ -537,7 +547,7 @@ PREFERENCES = [
                "preferences", [
         learn("fairlife", "variant", "chocolate", confirmations=3),
         log("a fairlife",
-            items=[item("fairlife", brand="Fairlife")],
+            items=[item("fairlife", brand="Fairlife", calories=170)],
             ambiguities=[amb("fairlife", "portion", ["1 bottle", "half"],
                              impact_cal=120)],
             expect={"asks": True, "fields": ["estimated_mass_g"]}),
@@ -547,7 +557,7 @@ PREFERENCES = [
         learn("fairlife", "product_line", "Core Power Elite",
               confirmations=3),
         log("a fairlife",
-            items=[item("fairlife", brand="Fairlife")],
+            items=[item("fairlife", brand="Fairlife", calories=170)],
             ambiguities=[amb("fairlife", "brand",
                              ["Core Power", "Core Power Elite"],
                              impact_cal=190, impact_protein=16)],
@@ -557,7 +567,7 @@ PREFERENCES = [
 
     transcript("no-preference-at-all-behaves-as-before", "preferences", [
         log("a fairlife",
-            items=[item("fairlife", brand="Fairlife")],
+            items=[item("fairlife", brand="Fairlife", calories=170)],
             ambiguities=[amb("fairlife", "brand",
                              ["Core Power", "Core Power Elite"],
                              impact_cal=190, impact_protein=16)],
@@ -569,7 +579,7 @@ PREFERENCES = [
               confirmations=3),
         log("two fairlifes",
             items=[item("fairlife", brand="Fairlife", amount=2,
-                        unit="bottle", basis="stated")],
+                        unit="bottle", basis="stated", calories=170)],
             ambiguities=[amb("fairlife", "brand",
                              ["Core Power", "Core Power Elite"],
                              impact_cal=190, impact_protein=16)],
@@ -581,7 +591,7 @@ PREFERENCES = [
         learn("fairlife", "product_line", "Core Power Elite",
               confirmations=3),
         log("some of a fairlife",
-            items=[item("fairlife", brand="Fairlife")],
+            items=[item("fairlife", brand="Fairlife", calories=170)],
             ambiguities=[
                 amb("fairlife", "brand", ["Core Power", "Core Power Elite"],
                     impact_cal=190, impact_protein=16),
@@ -597,7 +607,7 @@ PREFERENCES = [
         learn("fairlife", "product_line", "Core Power Elite",
               confirmations=3),
         log("some of a fairlife",
-            items=[item("fairlife", brand="Fairlife")],
+            items=[item("fairlife", brand="Fairlife", calories=170)],
             ambiguities=[
                 amb("fairlife", "brand", ["Core Power", "Core Power Elite"],
                     impact_cal=190, impact_protein=16),
@@ -614,7 +624,7 @@ PREFERENCES = [
         learn("fairlife", "product_line", "Core Power Elite",
               confirmations=3),
         log("a fairlife",
-            items=[item("fairlife", brand="Fairlife")],
+            items=[item("fairlife", brand="Fairlife", calories=170)],
             ambiguities=[amb("fairlife", "brand",
                              ["Core Power", "Core Power Elite"],
                              impact_cal=190, impact_protein=16)],
@@ -635,7 +645,7 @@ CORRECTIONS = [
                "corrections", [
         learn("fairlife", "product_line", "Core Power", confirmations=3),
         log("a fairlife",
-            items=[item("fairlife", brand="Fairlife")],
+            items=[item("fairlife", brand="Fairlife", calories=170)],
             ambiguities=[amb("fairlife", "brand",
                              ["Core Power", "Core Power Elite"],
                              impact_cal=190, impact_protein=16)],
@@ -649,7 +659,7 @@ CORRECTIONS = [
     transcript("a-correction-on-a-quick-assumption-is-the-same-shape",
                "corrections", [
         log("a fairlife",
-            items=[item("fairlife", brand="Fairlife")],
+            items=[item("fairlife", brand="Fairlife", calories=170)],
             ambiguities=[amb("fairlife", "brand",
                              ["Core Power", "Core Power Elite"],
                              impact_cal=190, impact_protein=16)],

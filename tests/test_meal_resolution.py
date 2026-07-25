@@ -37,9 +37,18 @@ def _item(item_id, text, *, ambiguities=(), status=None, name=None,
 
 
 def _material_amb(item_id):
+    """A Fairlife whose product line is unsettled: 190 calories of doubt on a
+    170-calorie drink.
+
+    `item_calories` is what makes it material. The one materiality policy
+    judges a span against the flat threshold AND as a proportion of the item,
+    and 190 calories is under the calorie line while being MORE than the whole
+    drink. Without the item's size the scorer sees only the flat half — which
+    is why this used to need a 60-calorie threshold nothing else shared."""
     return build_ambiguity(
         staged_item_id=item_id, ambiguity_type=AmbiguityType.PRODUCT_LINE,
         field_name="product_line", mode="moderate", calorie_span=190,
+        item_calories=170,
         options=(AmbiguityOption("Core Power · 26g", 0.51, candidate_id="c1"),
                  AmbiguityOption("Elite · 42g", 0.31, candidate_id="c2")))
 

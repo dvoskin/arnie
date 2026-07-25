@@ -52,7 +52,14 @@ RENDERER_VERSION = "food_renderer_v1"
 # any of them is worth holding the write for. (First step of inverting
 # "model decides" → "system decides"; the prompt keeps a mirror of the
 # threshold only as guidance for what to report.)
-ASK_THRESHOLDS = {"quick": 300, "moderate": 200, "strict": 100}
+#: Derived, never declared. This was a fourth copy of the same decision, and a
+#: copy is a place for the numbers to disagree.
+def _ask_thresholds() -> dict:
+    from skills.nutrition.materiality import calorie_threshold
+    return {m: calorie_threshold(m) for m in ("quick", "moderate", "strict")}
+
+
+ASK_THRESHOLDS = _ask_thresholds()
 
 
 def material_ambiguities(ambiguities, mode: str) -> list:

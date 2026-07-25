@@ -68,7 +68,13 @@ _GRADE_RANK = {MatchGrade.EXACT: 0, MatchGrade.CLOSE: 1,
 #: and the fraction rule moved. The lesson is in the sweep's blind spot: the
 #: platter expectation lived in a unit test rather than the gold suite, so the
 #: sweep could not see the conflict. It is a labelled gold case now.
-ASK_SPANS = {"quick": 300.0, "moderate": 200.0, "strict": 100.0}
+from skills.nutrition.materiality import (  # noqa: E402
+    FRACTION_FLOOR, MATERIAL_FRACTIONS, calorie_threshold, thresholds_for)
+
+#: Derived. These were the CALIBRATED numbers — the sweep is recorded below —
+#: which is why the shared policy adopted them rather than the staged
+#: pipeline's self-described placeholders.
+ASK_SPANS = {m: calorie_threshold(m) for m in ("quick", "moderate", "strict")}
 
 #: Micros worth pulling from a lower-tier candidate when the winner is silent.
 #: Macros are never mixed — a calorie count from one source and protein from
@@ -389,11 +395,11 @@ def _anchor_count_to_serving(quantity: NormalizedQuantity,
 #: Quick is 1.01 rather than a sentinel: quick exists to accept exactly this
 #: risk, and a number above 1.0 says "no fraction is material here" in the same
 #: units as the rest of the table rather than as a special case in the code.
-MATERIAL_FRACTIONS = {"quick": 1.01, "moderate": 0.3, "strict": 0.15}
-
-#: Back-compat alias. Some callers and tests read the scalar.
+#: Back-compat alias. Some callers and tests read the scalar. The table and the
+#: floor are imported from `materiality` at the top of this module — the
+#: fraction rule is what makes ONE calorie threshold safe to share across every
+#: layer, so it cannot be a resolver-local idea.
 MATERIAL_FRACTION = MATERIAL_FRACTIONS["moderate"]
-FRACTION_FLOOR = 50.0
 
 #: Protein spans that justify interrupting, per mode (PR #31 calibration).
 #:
@@ -411,7 +417,8 @@ FRACTION_FLOOR = 50.0
 #: Tighter than the calorie thresholds in energy terms, because a protein miss
 #: is not interchangeable with a calorie miss for the people who track it —
 #: they are logging to hit a protein target, and 8 g is a meaningful part of it.
-ASK_PROTEIN_SPANS = {"quick": 15.0, "moderate": 8.0, "strict": 4.0}
+ASK_PROTEIN_SPANS = {m: thresholds_for(m)["protein"]
+                     for m in ("quick", "moderate", "strict")}
 
 
 def should_ask(ambiguities: tuple, mode: str) -> Optional[ResolutionAmbiguity]:

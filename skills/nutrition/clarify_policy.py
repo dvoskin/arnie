@@ -312,6 +312,19 @@ def decide(items, *, mode: str = "moderate", round_number: int = 0,
             # unconditional, or "some blueberries" commits at 80 g with nothing
             # said and the user has no idea a number was invented.
             assumptions.extend(_estimated_portion_assumptions(item))
+            # ...and the same rule applied to a SUB-THRESHOLD ambiguity, which
+            # it was not. An uncertainty below the line is still a choice we
+            # made, and quick's whole contract is "commit with the assumption
+            # stated" — so an option picked without asking has to be said.
+            #
+            # This only surfaced when the four materiality tables became one:
+            # quick's threshold moved from a placeholder 120 to the calibrated
+            # 300, and a 205-calorie portion doubt that used to be material
+            # (and so disclosed on the way past) stopped being material and
+            # went silent. The threshold change was right; the silence was a
+            # pre-existing hole it walked into.
+            if policy is TransactionPolicy.COMMIT_WITH_ASSUMPTIONS:
+                assumptions.extend(_assume_leading(item, item.ambiguities))
             continue
         if exhausted:
             # Out of rounds: stop asking, assume the leading option, and say
