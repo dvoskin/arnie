@@ -120,3 +120,51 @@ class CandidateRejection:
     reason: str
     detail: str = ""
     source_id: Optional[str] = None
+
+
+#: What a stored `origin_tier` label means as an authority class. Unknown or
+#: missing labels floor at GENERIC_EXACT: a row whose origin we cannot establish
+#: is not evidence of anything better than a database lookup.
+_ORIGIN_TIERS = {
+    "user_label": SourceTier.USER_LABEL,
+    "user_regular": SourceTier.USER_REGULAR,
+    "branded_exact": SourceTier.BRANDED_EXACT,
+    "generic_exact": SourceTier.GENERIC_EXACT,
+    "estimated": SourceTier.ESTIMATED,
+    "provisional": SourceTier.PROVISIONAL,
+}
+
+
+def memory_authority(*, user_confirmed: bool = False, origin_tier: str = "",
+                     confidence: str = "") -> tuple:
+    """The authority a stored food-memory row carries when it re-enters
+    resolution, as `(tier, grade, source_label)`.
+
+    `user_food_matches` is written automatically after every successful lookup,
+    so the overwhelming majority of rows are a **cache of our own answer** —
+    not something the user vouched for. Both candidate builders used to read
+    only the nutrient columns and hand every row `USER_REGULAR` with
+    `MatchGrade.EXACT`, which had three compounding consequences:
+
+      * tier 2 outranks `BRANDED_EXACT`, so a cached generic beat the actual
+        product label — permanently, and more firmly every time it was reused;
+      * the generic-fallback disclosure keys on the winner being at or below
+        `GENERIC_EXACT`, so laundering the tier also **hid the fact**; and
+      * `promotion.py` maps `user_regular` to the words "user-confirmed",
+        reporting our own guess back to the user as their own confirmation.
+
+    So a cache re-enters at the tier that produced it and never claims to be an
+    exact match. Only a row the user actually corrected is `USER_REGULAR` — and
+    that one genuinely outranks a database, which is why the tier order itself
+    is right and only the assignment was wrong.
+    """
+    if user_confirmed or confidence == "user-confirmed":
+        return (SourceTier.USER_REGULAR, MatchGrade.EXACT, "user_regular")
+    tier = _ORIGIN_TIERS.get((origin_tier or "").strip().lower())
+    if tier is None or tier < SourceTier.BRANDED_EXACT:
+        # No usable origin, or one claiming user authority without the flag to
+        # back it. Floor it rather than trust the label.
+        tier = SourceTier.GENERIC_EXACT
+    # CLOSE, never EXACT: this is a remembered lookup for a matching name, which
+    # is not the same as having confirmed the product, brand and serving basis.
+    return (tier, MatchGrade.CLOSE, "food_memory")

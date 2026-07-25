@@ -21,7 +21,8 @@ from typing import Optional
 
 from skills.nutrition.models import (FoodResolutionRequest, NutrientProfile,
                                      profile_from_values)
-from skills.nutrition.provenance import MatchGrade, SourceTier
+from skills.nutrition.provenance import (MatchGrade, SourceTier,
+                                         memory_authority)
 from skills.nutrition.scaling import Per100g, PerServing, PerUnit, SourceBasis
 
 logger = logging.getLogger(__name__)
@@ -76,27 +77,40 @@ def provisional_candidate(request: FoodResolutionRequest) -> Optional[Candidate]
 
 
 def regular_candidate(row, request: FoodResolutionRequest) -> Optional[Candidate]:
-    """Tier 2 — a saved regular of the user's own.
+    """A stored food-memory row, at the authority it actually carries.
 
-    Only ever built by a caller that matched on product, brand, variant AND
-    serving basis. A high token overlap is not a match: "Royo bagel" must not
-    resolve to an unrelated prior bagel because the words line up.
+    This used to hard-code tier 2 / `MatchGrade.EXACT` on the strength of a
+    docstring promising the caller had matched product, brand, variant AND
+    serving basis. Nothing enforced that promise and the live caller did not
+    keep it — the row is written automatically after every lookup, keyed on a
+    normalized name. So the tier now comes from `memory_authority`, and only a
+    row the user actually corrected is treated as theirs.
+
+    A high token overlap is still not a match: "Royo bagel" must not resolve to
+    an unrelated prior bagel because the words line up.
     """
     if row is None:
         return None
     per100 = getattr(row, "per100g", None) or {}
     if not per100.get("calories"):
         return None
+    tier, grade, label = memory_authority(
+        user_confirmed=bool(getattr(row, "user_confirmed", False)),
+        origin_tier=str(getattr(row, "origin_tier", "") or ""),
+        confidence=str(getattr(row, "confidence", "") or ""))
+    # A cache is not more certain than what filled it. 0.95 was asserting the
+    # confidence of a label read off the packet for a remembered name match.
+    strength = 0.95 if tier is SourceTier.USER_REGULAR else 0.75
     profile = profile_from_values(
-        "user_regular", basis="per_100g", confidence=0.95,
+        label, basis="per_100g", confidence=strength,
         source_id=str(getattr(row, "fdc_id", "") or "") or None,
         **{k: per100.get(k) for k in
            ("calories", "protein", "carbs", "fat", "fiber", "sugar", "sodium")})
     return Candidate(
-        source="user_regular", tier=SourceTier.USER_REGULAR,
+        source=label, tier=tier,
         name=getattr(row, "food_name", request.food_name), profile=profile,
         basis=Per100g(), brand=request.brand, variant=request.variant,
-        reported_grade=MatchGrade.EXACT)
+        reported_grade=grade)
 
 
 def usda_candidates(rows) -> list:

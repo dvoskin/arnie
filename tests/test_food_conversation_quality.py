@@ -580,7 +580,14 @@ def test_the_meal_total_moves_when_the_scoop_is_answered():
 # ── 10. source precedence for a named product ─────────────────────────────────
 def test_a_saved_user_food_outranks_a_manufacturer_record():
     """A user's own saved food for the same product is the higher authority —
-    they weighed it, or corrected it, and that beats a database."""
+    they weighed it, or corrected it, and that beats a database.
+
+    Read this together with tests/test_food_memory_authority.py: the tier is
+    only reached by a row the user ACTUALLY corrected. Auto-cached lookups used
+    to arrive here too, which is how a generic estimate came to outrank a real
+    product label. This test constructs the tier directly, so it pins the
+    ordering; that file pins who is allowed into it.
+    """
     from skills.nutrition.provenance import MatchGrade, SourceTier
 
     out = _resolve_mms([
