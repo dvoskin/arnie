@@ -254,21 +254,81 @@ def strip_out_of_bounds(profile: NutrientProfile, fields) -> NutrientProfile:
 MATERIAL_CALORIE_DELTA = 0.20
 MATERIAL_CALORIE_FLOOR = 40.0
 
+#: An absolute gap this large is material regardless of how small it is
+#: relatively (PR #31 calibration).
+#:
+#: The relative test alone silently pre-empted the ask ladder. Two granolas 65
+#: calories apart on a 70 g serving are a 19% gap, so `sources_disagree`
+#: reported agreement and no ambiguity was ever created — which meant strict
+#: mode's 60-calorie threshold could not fire on a 65-calorie disagreement,
+#: because there was nothing to fire on. Two gates in two modules, each
+#: reasonable alone, and the looser-looking one winning.
+#:
+#: This module's job is to REPORT a disagreement; deciding whether it is worth
+#: interrupting for belongs to the mode ladder. So the bar here is the tightest
+#: threshold any mode uses — anything the strictest mode could act on gets
+#: reported, and the ladder does the rest.
+#:
+#: Kept as a literal rather than imported from resolver.ASK_SPANS to avoid a
+#: cycle; `test_food_calibration` fails if the two drift apart.
+MATERIAL_CALORIE_ABSOLUTE = 60.0
+
+#: The same test for protein, because a calorie-only test cannot see the
+#: disagreement people actually care about here (PR #31 calibration).
+#:
+#: Whey isolate and a whey blend differ by 20 g of protein per 100 g and agree
+#: on calories to within a rounding error. Under a calorie-only gate that is not
+#: a disagreement at all — `sources_disagree` returned None, no ambiguity was
+#: recorded, and no mode asked. For the users who log protein powder, the
+#: protein number IS the reason they bought it.
+#:
+#: 6 g is roughly a large egg; below that the choice is genuinely free. 25% is
+#: looser than the calorie delta on purpose: protein values are smaller, so the
+#: same relative gap is a smaller absolute one.
+MATERIAL_PROTEIN_DELTA = 0.25
+MATERIAL_PROTEIN_FLOOR = 6.0
+
 
 def sources_disagree(a: NutrientProfile, b: NutrientProfile) -> Optional[dict]:
-    """The calorie gap between two candidates, when it is big enough to
-    matter. None when they agree closely enough that the choice is free."""
+    """The gap between two candidates, when it is big enough to matter.
+
+    Material on EITHER calories or protein. The calorie-only version could not
+    see a whey isolate against a whey blend — 20 g of protein apart, identical
+    calories — and returned None, so no ambiguity existed and no mode asked.
+    A macro tracker's most-watched number was the one the materiality test
+    could not read.
+
+    None when both agree closely enough that the choice is free.
+    """
     ca, cb = a.amount("calories"), b.amount("calories")
-    if ca is None or cb is None:
-        return None
-    delta = abs(ca - cb)
-    if delta < MATERIAL_CALORIE_FLOOR:
-        return None
-    base = max(ca, cb, 1.0)
-    if delta / base < MATERIAL_CALORIE_DELTA:
-        return None
     pa, pb = a.amount("protein"), b.amount("protein")
-    return {"calorie_span": round(delta, 1),
-            "protein_span": (round(abs(pa - pb), 1)
-                             if pa is not None and pb is not None else 0.0),
-            "options": (round(ca, 1), round(cb, 1))}
+
+    calorie_span = (abs(ca - cb) if ca is not None and cb is not None
+                    else None)
+    protein_span = (abs(pa - pb) if pa is not None and pb is not None
+                    else None)
+
+    calories_differ = (
+        calorie_span is not None
+        and calorie_span >= MATERIAL_CALORIE_FLOOR
+        and (calorie_span / max(ca, cb, 1.0) >= MATERIAL_CALORIE_DELTA
+             or calorie_span >= MATERIAL_CALORIE_ABSOLUTE))
+    protein_differs = (
+        protein_span is not None
+        and protein_span >= MATERIAL_PROTEIN_FLOOR
+        and protein_span / max(pa, pb, 1.0) >= MATERIAL_PROTEIN_DELTA)
+
+    if not (calories_differ or protein_differs):
+        return None
+    if ca is None or cb is None:
+        # A protein-only disagreement between candidates that do not both
+        # report calories. Real, and reportable — the options are the protein
+        # values, since those are what differ.
+        return {"calorie_span": 0.0, "protein_span": round(protein_span, 1),
+                "options": (round(pa, 1), round(pb, 1)),
+                "driver": "protein"}
+    return {"calorie_span": round(calorie_span, 1),
+            "protein_span": (round(protein_span, 1)
+                             if protein_span is not None else 0.0),
+            "options": (round(ca, 1), round(cb, 1)),
+            "driver": ("calories" if calories_differ else "protein")}
