@@ -38,12 +38,21 @@ async def observe_turn(request: TurnRequest,
         route = await RouteStage().run(request)
         prediction = {"lane": route.lane.value, "reason": route.reason_code,
                       "disposition": ""}
+        plan = validation = None
         if route.lane is TurnLane.STRUCTURED_FOOD:
             from core.turns.stages.food import FoodPlanStage, FoodValidationStage
             plan = await FoodPlanStage().run(request, route=route)
             validation = await FoodValidationStage().run(request, plan=plan)
+        elif route.lane is TurnLane.LEDGER_UNDO:
+            from core.turns.stages.deterministic import (
+                UndoPlanStage, DeterministicValidationStage)
+            plan = await UndoPlanStage().run(request, route=route)
+            validation = await DeterministicValidationStage().run(
+                request, plan=plan)
+        if validation is not None:
             prediction["disposition"] = validation.disposition
             prediction["ops"] = len(validation.approved_operations)
+            prediction["planner"] = plan.planner_version
         agree_lane = (not actual_route) or (actual_route == prediction["lane"])
         agree_disp = (not actual_disposition
                       or not prediction["disposition"]

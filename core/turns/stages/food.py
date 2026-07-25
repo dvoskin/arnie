@@ -29,6 +29,13 @@ class FoodPlanStage:
         self._interpreter = interpreter
 
     async def run(self, request, context=None, route=None) -> TurnPlan:
+        # A "yes" answering an open confirm is already decided (P0.2 Phase 3):
+        # replay the stashed items rather than paying for a re-parse. Anything
+        # else answering a confirm is a correction, and falls through.
+        from core.turns.stages.deterministic import ConfirmReplayPlanStage
+        replay = await ConfirmReplayPlanStage().run(request, context, route)
+        if replay is not None:
+            return replay
         run_interpreter = self._interpreter
         if run_interpreter is None:
             from core.food_turn import run as run_interpreter

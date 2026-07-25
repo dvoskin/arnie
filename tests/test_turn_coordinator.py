@@ -297,3 +297,116 @@ async def test_observe_flags_disagreement(monkeypatch, caplog):
         await OB.observe_turn(_req("hey what's up"), actual_route="structured_food")
     line = [r.message for r in caplog.records if "event=turn_observe" in r.message][-1]
     assert "agree=NO" in line
+
+
+# ── Phase 3: deterministic lanes go native ────────────────────────────────────
+@pytest.mark.asyncio
+async def test_undo_stage_lifts_the_ledger_inverse(monkeypatch):
+    """"undo" is answered by the ledger, not the model — the stage produces a
+    plan with zero model calls."""
+    from core.turns.stages.deterministic import (UndoPlanStage,
+                                                 DeterministicValidationStage)
+    import core.ledger_undo as LU
+
+    async def _plan(db, user, text):
+        return {"action": "delete", "kinds": ["delete"],
+                "tool_calls": [{"name": "delete_food_entry",
+                                "input": {"entry_id": 4}}]}
+    monkeypatch.setattr(LU, "build_plan", _plan)
+
+    req = _req("undo", db=object(), user=object())
+    plan = await UndoPlanStage().run(req)
+    assert plan.planner_version == "undo_planner_v1"
+    assert [c["name"] for c in plan.operations] == ["delete_food_entry"]
+    v = await DeterministicValidationStage().run(req, plan=plan)
+    assert v.disposition == "execute"
+    assert v.policy_version == "deterministic_policy_v1"
+
+
+@pytest.mark.asyncio
+async def test_uninvertible_undo_passes_to_the_conversational_lane(monkeypatch):
+    """Nothing to invert (a weight change, an expired event) must fall back,
+    never fabricate a write."""
+    from core.turns.stages.deterministic import UndoPlanStage
+    import core.ledger_undo as LU
+
+    async def _none(db, user, text):
+        return None
+    monkeypatch.setattr(LU, "build_plan", _none)
+    plan = await UndoPlanStage().run(_req("undo", db=object(), user=object()))
+    assert plan.operations == () and plan.response_intent == "pass"
+
+
+@pytest.mark.asyncio
+async def test_undo_defers_while_a_question_is_open():
+    """An undo mid-question means "cancel", which the ack path owns. The
+    stage must not reach the ledger at all."""
+    from core.turns.stages.deterministic import UndoPlanStage
+    plan = await UndoPlanStage().run(
+        _req("undo", db=object(), user=object(),
+             food_prior={"kind": "clarify", "items": [{"food": "rice"}]}))
+    assert plan.response_intent == "pass"
+
+
+@pytest.mark.asyncio
+async def test_confirm_replay_skips_the_interpreter_entirely():
+    """"yes" to a confirm replays the stashed items through the same call
+    builder — no re-parse, and the interpreter is never invoked."""
+    from core.turns.stages.food import FoodPlanStage, FoodValidationStage
+
+    called = {"n": 0}
+    async def _interpreter(*a, **k):
+        called["n"] += 1
+        return {"action": "log", "tool_calls": []}
+
+    req = _req("yes", food_prior={"kind": "confirm",
+                                  "items": [{"food": "chicken breast",
+                                             "qty": "8 oz"}]})
+    plan = await FoodPlanStage(_interpreter).run(req)
+    assert called["n"] == 0
+    assert plan.planner_version == "confirm_replay_v1"
+    assert len(plan.operations) == 1
+    # Provenance survives the replay: a confirmed item is not a parsed one.
+    assert plan.operations[0]["input"]["source"] == "structured_food:confirm_replay"
+    v = await FoodValidationStage().run(req, plan=plan)
+    assert v.disposition == "execute"
+
+
+@pytest.mark.asyncio
+async def test_a_correction_to_a_confirm_still_reaches_the_interpreter():
+    """Only an affirmative replays. "no, make it 6 oz" is a correction and
+    still needs parsing."""
+    from core.turns.stages.food import FoodPlanStage
+
+    called = {"n": 0}
+    async def _interpreter(*a, **k):
+        called["n"] += 1
+        return {"action": "log",
+                "tool_calls": [{"name": "log_food", "input": {"food_name": "X"}}]}
+
+    plan = await FoodPlanStage(_interpreter).run(
+        _req("no, make it 6 oz", food_prior={"kind": "confirm",
+                                             "items": [{"food": "chicken"}]}))
+    assert called["n"] == 1
+    assert plan.planner_version == "food_planner_v1"
+
+
+@pytest.mark.asyncio
+async def test_observe_predicts_the_undo_lane(monkeypatch, caplog):
+    import logging as _logging
+    import core.turns.observe as OB
+    import core.ledger_undo as LU
+    monkeypatch.setenv("TURN_COORDINATOR_MODE", "new_observe")
+
+    async def _plan(db, user, text):
+        return {"action": "delete",
+                "tool_calls": [{"name": "delete_food_entry", "input": {}}]}
+    monkeypatch.setattr(LU, "build_plan", _plan)
+
+    with caplog.at_level(_logging.INFO, logger="core.turns.observe"):
+        pred = await OB.observe_turn(_req("undo", db=object(), user=object()),
+                                     actual_route="ledger_undo",
+                                     actual_disposition="execute")
+    assert pred["lane"] == "ledger_undo" and pred["disposition"] == "execute"
+    line = [r.message for r in caplog.records if "event=turn_observe" in r.message][-1]
+    assert "agree=yes" in line
