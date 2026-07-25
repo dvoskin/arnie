@@ -268,3 +268,116 @@ def test_no_entries_means_no_check_rather_than_an_empty_day():
     out = _receipt(None, total_cal=4520)
     assert out.get("day_total_unreconciled") is None
     assert "2320" in out["verdict"]
+
+
+# ── Moderate is the daily experience ────────────────────────────────────────
+#
+# A second question on an answer turn is the most expensive thing a correction
+# can cost: the user has already been interrupted once, and answered. The modes
+# differ in what they do with an unresolvable correction, never in whether they
+# notice it.
+
+def _mod():
+    return SimpleNamespace(preferences=SimpleNamespace(
+        food_logging_mode="moderate"))
+
+
+def _quick():
+    return SimpleNamespace(preferences=SimpleNamespace(
+        food_logging_mode="quick"))
+
+
+#: 3 pieces corrected to 1 bowl. Incompatible — a bowl holds several pieces —
+#: but the NEW unit is the one that has to be sizeable, and the ontology knows
+#: a bowl of salad (100-250 g). The reverse direction is not rangeable, which
+#: is the point: a piece of something nobody has written a row for cannot be
+#: sized, so it is a question in every mode.
+PRIOR_PIECES = {"original": "had a few pieces of salad", "question": "how much?",
+                "kind": "clarify", "ask_count": 1,
+                "items": [{"food": "Salad", "amount": 3, "unit": "piece",
+                           "calories": 200}]}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("who", [_mod, _quick])
+async def test_moderate_and_quick_resolve_a_rangeable_correction(monkeypatch, who):
+    """`piece` → `bowl` is incompatible, and the ontology can size a bowl. The
+    honest move is a committed log that says what it assumed — not a second
+    question."""
+    monkeypatch.setattr(FT, "chat", _fake_chat({
+        "action": "log",
+        "items": [{"food": "Salad", "amount": 1, "unit": "bowl",
+                   "calories": 320, "protein": 8}],
+        "say": "Logged."}))
+    out = await FT.run("actually a whole bowl", who(), prior=PRIOR_PIECES)
+    assert out["action"] == "log", "moderate must not re-ask what it can range"
+
+
+@pytest.mark.asyncio
+async def test_strict_still_asks_the_same_correction(monkeypatch):
+    """Same input, different posture. Confirming an assumption before the write
+    is the whole of what strict is."""
+    monkeypatch.setattr(FT, "chat", _fake_chat({
+        "action": "log",
+        "items": [{"food": "Salad", "amount": 1, "unit": "bowl",
+                   "calories": 320, "protein": 8}],
+        "say": "Logged."}))
+    out = await FT.run("actually a whole bowl", _strict(), prior=PRIOR_PIECES)
+    assert out["action"] == "ask"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("who", [_mod, _quick, _strict])
+async def test_a_repeated_number_stops_every_mode(monkeypatch, who):
+    """The interpreter sees the prior exchange, and the easiest thing it can do
+    with "actually they were pieces" is hand back the figure it already gave.
+    Identical calories across a unit change that means a different amount of
+    food is the previous answer, unrevised.
+
+    Quick's licence is to accept an estimate, not to accept one nobody made."""
+    monkeypatch.setattr(FT, "chat", _fake_chat({
+        "action": "log",
+        "items": [{"food": "Salad", "amount": 1, "unit": "bowl",
+                   "calories": 200}],          # ← identical to the prior read
+        "say": "Logged."}))
+    out = await FT.run("actually a whole bowl", who(), prior=PRIOR_PIECES)
+    assert out["action"] == "ask", (
+        "a rangeable correction still stops when the number is not a new one")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("who", [_mod, _quick])
+async def test_moderate_asks_when_there_is_nothing_honest_to_range_with(
+        monkeypatch, who):
+    """No piece weight and no ontology row for a piece of chicken shish. One
+    question is the floor — inventing a number to avoid it is the failure this
+    whole directive is about."""
+    prior = {"original": MESSAGE_1, "question": "whole skewers?",
+             "kind": "clarify", "ask_count": 1,
+             "items": [{"food": "Chicken shish", "amount": 3,
+                        "unit": "skewer", "calories": 660}]}
+    monkeypatch.setattr(FT, "chat", _fake_chat({
+        "action": "log",
+        "items": [{"food": "Chicken shish", "amount": 3, "unit": "piece",
+                   "calories": 240, "protein": 30}],
+        "say": "Logged."}))
+    out = await FT.run(MESSAGE_2, who(), prior=prior)
+    assert out["action"] == "ask"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("who", [_mod, _quick, _strict])
+async def test_an_ordinary_answer_is_never_slowed_down(monkeypatch, who):
+    """The guard must cost nothing on the common path. A unit that did not
+    change invalidates nothing, in any mode."""
+    prior = {"original": "had some caesar salad", "question": "how much?",
+             "kind": "clarify", "ask_count": 1,
+             "items": [{"food": "Caesar salad", "amount": 1.5,
+                        "unit": "cups", "calories": 300}]}
+    monkeypatch.setattr(FT, "chat", _fake_chat({
+        "action": "log",
+        "items": [{"food": "Caesar salad", "amount": 2, "unit": "cups",
+                   "calories": 400, "protein": 8}],
+        "say": "Logged."}))
+    out = await FT.run("more like two cups", who(), prior=prior)
+    assert out["action"] == "log"

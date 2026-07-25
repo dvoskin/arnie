@@ -136,6 +136,60 @@ def compare(before: str, after: str) -> UnitChange:
     )
 
 
+def mass_range_for(unit: str, food: str = "") -> Optional[Tuple[float, float]]:
+    """A plausible mass span for one of `unit`, or None when we have none.
+
+    The third of §4's three ways to earn a commit back. A range is honest where
+    a point estimate is not: "somewhere between 90 and 320 g" is a true
+    statement about three pieces of chicken shish, and 200 g is a guess wearing
+    a decimal point.
+
+    Sources, in order of how much they know: the food's own piece weight, then
+    the portion ontology's distribution for the measure. Neither covers every
+    unit — "piece" of a dish nobody has written a row for returns None, and
+    None means ask rather than invent.
+    """
+    canon = _canon(unit)
+    try:
+        from skills.nutrition.normalize import piece_weight
+        est = piece_weight(food or "", canon)
+        if est:
+            grams, spread = est
+            return (max(0.0, grams - spread), grams + spread)
+    except Exception:
+        pass
+    try:
+        from skills.nutrition.portions import distribution_for
+        dist = distribution_for(canon, food or "")
+        if dist is not None and dist.lower_g and dist.upper_g:
+            return (float(dist.lower_g), float(dist.upper_g))
+    except Exception:
+        pass
+    return None
+
+
+def estimate_is_stale(before_calories, after_calories) -> bool:
+    """Whether the "new" estimate is the old one wearing a new unit.
+
+    The hazard specific to a correction turn: the interpreter sees the prior
+    exchange in its context, and the easiest thing it can do with "actually
+    they were pieces" is repeat the number it already gave. An identical
+    calorie figure across a unit change that means a different amount of food
+    is not an estimate — it is the previous answer, unrevised.
+
+    This is mode-independent. A stale number must not commit on quick either;
+    quick's licence is to accept an estimate, not to accept a number nobody
+    made.
+    """
+    try:
+        before, after = float(before_calories or 0), float(after_calories or 0)
+    except (TypeError, ValueError):
+        return False
+    if before <= 0 or after <= 0:
+        return False
+    return abs(before - after) <= max(1.0, 0.01 * before)
+
+
 def may_commit(change: UnitChange, *, mass_g: Optional[float] = None,
                serving_definition: Optional[str] = None,
                disclosed_range: Optional[Tuple[float, float]] = None) -> bool:

@@ -590,22 +590,42 @@ def _apply_clarification_veto(decision, calls, kinds, items_logged):
 
 
 
-def _revalidate_after_answer(ops, prior, message: str):
-    """Re-derive what the answer invalidated, and hold when it cannot be
-    re-derived (correction-turn directive §2, §3, §4).
+def _revalidate_after_answer(ops, prior, message: str, mode: str = "moderate"):
+    """Re-derive what the answer invalidated, and decide MODE-APPROPRIATELY
+    what to do when it cannot be re-derived (§2, §3, §4).
 
-    Returns an `ask` action when the correction leaves the item without a mass
-    we can stand behind, or None when the turn may proceed.
+    Returns an `ask` action when the turn must stop, or None when it may
+    proceed — with the correction disclosed as an assumption.
 
     The comparison is against the PRIOR INTERPRETATION, not against the user's
-    words — they said "pieces" both times. What changed is that we had read it
+    words: they said "pieces" both times. What changed is that we had read it
     as skewers, and the only record of that is what we stashed with the
     question.
+
+    MODERATE IS THE DAILY EXPERIENCE, and a second question on an answer turn
+    is the most expensive thing this can do to it — the user has already been
+    interrupted once and answered. So the modes differ in what they do with an
+    unresolvable correction, not in whether they notice it:
+
+      * a STALE estimate — the interpreter repeating its previous number under
+        the new unit — stops every mode. There is no number to commit, and
+        quick's licence is to accept an estimate, not to accept one nobody
+        made.
+      * otherwise, with a range available, moderate and quick COMMIT and
+        disclose the range. Strict asks, because confirming assumptions before
+        the write is what strict is.
+      * with no range and no mass, everyone asks. Nothing else is honest.
+
+    The result for a moderate user correcting "skewers" to "pieces": one
+    question if we genuinely cannot size a piece, and otherwise a committed log
+    that says on its face what was assumed.
     """
     prior_items = (prior or {}).get("items") or []
     if not prior_items:
         return None
-    from skills.nutrition.unit_change import compare, may_commit, question_for
+    from skills.nutrition.unit_change import (compare, estimate_is_stale,
+                                              mass_range_for, may_commit,
+                                              question_for)
     from skills.nutrition.normalize import normalize_quantity
 
     by_food = {}
@@ -626,6 +646,7 @@ def _revalidate_after_answer(ops, prior, message: str):
         if not change.changed:
             continue
 
+        _before_cal = op.get("calories")
         # EVERYTHING DERIVED FROM THE OLD UNIT IS GONE. Dropped from the op so
         # nothing downstream can read a stale value: the enrichment path
         # recomputes from the corrected unit, and a missing key is a recompute
@@ -637,20 +658,47 @@ def _revalidate_after_answer(ops, prior, message: str):
             "event=unit_correction food=%r %s->%s invalidated=%d",
             food, change.before, change.after, len(change.invalidated))
 
-        if not change.blocks_commit:
+        # A REPEATED NUMBER IS NOT A RE-ESTIMATE. The interpreter sees the
+        # prior exchange, and the easiest thing it can do with "actually they
+        # were pieces" is hand back the figure it already gave. Identical
+        # calories across a unit change that means a different amount of food
+        # is the previous answer, unrevised — and it stops every mode.
+        _stale = estimate_is_stale(was.get("calories"), _before_cal)
+        if not change.blocks_commit and not _stale:
             continue
 
-        # The units name different physical things. A mass we can stand behind
-        # rescues it; otherwise this is a question, not an estimate.
         _q = normalize_quantity(
             f"{op.get('amount') or 1} {op.get('unit') or ''}".strip(), food)
-        if may_commit(change, mass_g=_q.grams):
+        _range = mass_range_for(op.get("unit") or "", food)
+        # A MASS WE CAN STAND BEHIND MEANS A MEASURED ONE. "6 oz" and "200 g"
+        # are conversions and settle the correction for every mode. An ontology
+        # or piece-weight mass is an ESTIMATE wearing a gram figure — enough for
+        # moderate and quick to commit against with the range disclosed, and
+        # exactly the kind of assumption strict exists to confirm. Reading a
+        # bare `grams` here made them the same thing, and strict committed a
+        # correction it should have asked about.
+        if not _stale and may_commit(change,
+                                     mass_g=(_q.grams if _q.mass_is_exact
+                                             else None)):
             continue
-        return {"action": "ask",
-                "text": question_for(change, food),
-                "points": [question_for(change, food)],
-                "items": [op],
-                "kind": "clarify"}
+
+        # Moderate and quick resolve rather than re-ask, WHEN there is
+        # something honest to resolve with. Strict asks: confirming an
+        # assumption before the write is the whole of what strict is.
+        if not _stale and _range and mode in ("moderate", "quick"):
+            _lo, _hi = _range
+            _amount = op.get("amount") or 1
+            op["assumption"] = (
+                f"a {change.after} of {food} taken as "
+                f"{_lo:.0f}-{_hi:.0f}g, so {_amount} is a range not a figure")
+            logger.info("event=unit_correction_ranged food=%r %s->%s %s-%sg",
+                        food, change.before, change.after, _lo, _hi)
+            continue
+
+        _text = question_for(change, food) or (
+            f"How big were the {change.after}s of {food}?")
+        return {"action": "ask", "text": _text, "points": [_text],
+                "items": [op], "kind": "clarify"}
     return None
 
 
@@ -1509,7 +1557,7 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
     # assumption, the resolver's winner and the macros were all computed for
     # skewers, and none of them survive.
     if prior is not None and any(k == "log" for k, _ in ops):
-        _blocked = _revalidate_after_answer(ops, prior, message)
+        _blocked = _revalidate_after_answer(ops, prior, message, _mode(user))
         if _blocked is not None:
             return _blocked
 
