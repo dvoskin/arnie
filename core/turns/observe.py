@@ -11,6 +11,7 @@ is promoted to new_execute.
 """
 from __future__ import annotations
 
+import contextvars
 import logging
 import os
 from typing import Optional
@@ -21,6 +22,17 @@ from core.turns.models import TurnLane, TurnRequest
 from core.turns.stages.route import RouteStage
 
 logger = logging.getLogger(__name__)
+
+#: The route THIS turn actually took, published by the coordinator so nothing
+#: downstream has to recompute it. Ambient rather than threaded through because
+#: the observation happens deep inside run_turn(), and adding a parameter to
+#: every frame between here and there is how the two copies diverged in the
+#: first place.
+#:
+#: Always set — to None when no coordinator ran — so a previous turn's route can
+#: never leak into one on a reused task.
+CURRENT_ROUTE: contextvars.ContextVar = contextvars.ContextVar(
+    "current_route_decision", default=None)
 
 
 def observing() -> bool:
@@ -65,7 +77,13 @@ async def observe_turn(request: TurnRequest,
     if not observing():
         return None
     try:
-        route = await RouteStage().run(request)
+        # ONE ROUTE PER TURN. This used to call RouteStage itself, which was
+        # correct while the coordinator was a bystander — nobody else was
+        # routing. Now the coordinator is the entrypoint and has already routed
+        # for real, so recomputing here would be a second router whose answer
+        # could differ from the one the turn actually took, and the agreement
+        # line would then be comparing legacy against a route nothing ran.
+        route = CURRENT_ROUTE.get() or await RouteStage().run(request)
         prediction = {"lane": route.lane.value, "reason": route.reason_code,
                       "disposition": ""}
         plan = validation = None

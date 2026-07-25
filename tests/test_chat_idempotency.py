@@ -77,7 +77,13 @@ def _no_llm(monkeypatch):
     async def _ctx(*a, **k):
         return ""
 
-    monkeypatch.setattr(cs, "run_turn", _boom)
+    # Patched on `core.conversation`, not on chat_service. The turn reaches the
+    # coaching brain THROUGH the coordinator now, and the adapter imports
+    # run_turn at call time — so this proves the whole path ran, where patching
+    # a module-level alias in chat_service would only have proved that one name
+    # was still bound to something.
+    import core.conversation as _conv
+    monkeypatch.setattr(_conv, "run_turn", _boom)
     monkeypatch.setattr(cs, "build_context", _ctx)
     monkeypatch.setattr(cs, "build_arnie_system", lambda *a, **k: "")
 
