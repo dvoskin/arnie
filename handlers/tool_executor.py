@@ -1803,6 +1803,10 @@ async def execute_tool_calls(
     the pipeline detects and sends as a photo to the user.
     """
     results = {}
+    # Typed execution view (P0.3a): cleared now, published at the end — a
+    # prior batch can never leak into a turn whose executor was mocked.
+    from core.execution_result import LAST_EXECUTION as _LAST_EXEC
+    _LAST_EXEC.set(None)
     # Track per-call outcomes so the batch coaching can name individual
     # failures (otherwise the name-keyed `results` dict only retains the LAST
     # log_food's tool result and partial-failure detail is lost).
@@ -1954,6 +1958,15 @@ async def execute_tool_calls(
             schedule_widget_reload(getattr(user, "id", None))
         except Exception:
             pass  # widget refresh is best-effort; the turn must never break
+
+    # Publish the typed per-call view (P0.3a). Built by the one sanctioned
+    # scraper of the legacy stash keys; when branches populate CallResults
+    # natively (P0.3b) this becomes a pass-through.
+    try:
+        from core.execution_result import from_tool_calls as _exec_view
+        _LAST_EXEC.set(_exec_view(tool_calls, results))
+    except Exception as _ev_e:
+        logger.warning(f"execution view publish skipped: {_ev_e}")
 
     # Multi-item batch: when several log_food calls fire in one turn, the
     # single-item coaching ("name the food and its macros") is wrong — it makes
