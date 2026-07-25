@@ -209,14 +209,57 @@ def classify_failure(*, candidates, source_errors: int = 0,
     return None
 
 
+#: Which recovery each failure points at. The composer phrases it; this decides
+#: WHAT the next useful action is, which is a different question from how to
+#: say it.
+_RECOVERY = {
+    CandidateResolutionFailure.NO_MATCH:
+        ("ask for the label calories and protein", True, True),
+    CandidateResolutionFailure.MULTIPLE_MATERIAL_MATCHES:
+        ("ask which version it was", True, True),
+    CandidateResolutionFailure.SOURCE_UNAVAILABLE:
+        ("offer an estimate or the label values", False, False),
+    CandidateResolutionFailure.INVALID_SERVING_BASIS:
+        ("ask what the label says per serving", True, True),
+    CandidateResolutionFailure.UNSUPPORTED:
+        ("ask for calories and protein and log as stated", True, True),
+}
+
+
+def failure_intent(failure: CandidateResolutionFailure, options=()):
+    """The structured failure, for the response layer to phrase.
+
+    This module owns the TAXONOMY — what went wrong and what would fix it. It
+    does not own Arnie's voice: hard-coding polished prose here means a tone
+    change has to be made in every module that can fail, and it means a failure
+    reads differently depending on which subsystem noticed it.
+
+    `user_fixable` is the distinction that matters most. A dead API is not the
+    user's problem to solve, and asking them to read a label they may not need
+    is worse than saying we cannot check right now.
+    """
+    from core.food_response import FailureIntent
+    recovery, fixable, asks = _RECOVERY.get(
+        failure, _RECOVERY[CandidateResolutionFailure.NO_MATCH])
+    return FailureIntent(
+        code=failure.value, user_fixable=fixable, recovery_action=recovery,
+        approved_message=failure_message(failure, options),
+        requires_question=(asks and failure.is_askable))
+
+
 def failure_message(failure: CandidateResolutionFailure,
                     options=()) -> str:
     """User-facing text, differing by failure kind. Options are appended only
     for the state where choosing actually resolves something."""
     base = FAILURE_MESSAGES.get(failure, FAILURE_MESSAGES[
         CandidateResolutionFailure.NO_MATCH])
-    if (failure is CandidateResolutionFailure.MULTIPLE_MATERIAL_MATCHES
-            and options):
-        labels = " or ".join(str(o) for o in list(options)[:3])
-        return f"{base} Was it {labels}?"
+    if failure is CandidateResolutionFailure.MULTIPLE_MATERIAL_MATCHES:
+        if options:
+            labels = " or ".join(str(o) for o in list(options)[:3])
+            return f"{base} Was it {labels}?"
+        # This failure REQUIRES an answer, so the message has to ask for one.
+        # Without options the base sentence merely reported the problem and
+        # left the user with nothing to do — a question the plan promised and
+        # the text never delivered.
+        return f"{base} Which one was it?"
     return base

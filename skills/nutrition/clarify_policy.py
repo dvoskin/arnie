@@ -142,6 +142,15 @@ class ClarificationQuestion:
     resolved_materiality: float = 0.0
     value: float = 0.0
     allows_free_text: bool = True
+    #: SEMANTIC CONTEXT for natural wording. The policy owns what must be
+    #: asked; the response layer owns how to say it, and it cannot say
+    #: "I've got the toast and fruit — which Chobani was it?" without knowing
+    #: which items were already understood. Supplying these keeps Arnie's
+    #: personality out of this module while still letting the sentence be a
+    #: sentence rather than a field prompt.
+    resolved_item_names: tuple = ()
+    unresolved_item_name: str = ""
+    material_assumption: str = ""
 
 
 @dataclass(frozen=True)
@@ -173,8 +182,23 @@ def _bundle_for(types: set):
     return None, None
 
 
+def _semantics(item: StagedFoodItem, all_items=()) -> dict:
+    """What the response layer needs to phrase a question naturally."""
+    resolved = tuple(
+        other.identity.describe() or other.original_text
+        for other in (all_items or ())
+        if other.staged_item_id != item.staged_item_id
+        and not [a for a in other.ambiguities if a.is_material])
+    assumption = next((a.user_visible_text for a in (item.assumptions or ())
+                       if a.user_visible_text), "")
+    return {"resolved_item_names": resolved,
+            "unresolved_item_name": (item.identity.describe()
+                                     or item.original_text),
+            "material_assumption": assumption}
+
+
 def build_questions_for_item(item: StagedFoodItem,
-                             material: tuple) -> tuple:
+                             material: tuple, all_items=()) -> tuple:
     """Turn one item's material ambiguities into as few questions as possible.
 
     Bundling is not cosmetic: three separate turns to establish which bottle,
@@ -185,6 +209,7 @@ def build_questions_for_item(item: StagedFoodItem,
         return ()
     by_type = {a.ambiguity_type: a for a in material}
     members, schema = _bundle_for(set(by_type))
+    semantics = _semantics(item, all_items)
     questions = []
 
     if members:
@@ -199,7 +224,8 @@ def build_questions_for_item(item: StagedFoodItem,
             options=_options_from(bundled),
             ambiguity_ids=tuple(a.ambiguity_id for a in bundled),
             resolved_materiality=round(resolved, 3),
-            value=round(resolved / EFFORT.get(schema, 1.5), 3)))
+            value=round(resolved / EFFORT.get(schema, 1.5), 3),
+            **semantics))
         remaining = [a for a in material if a.ambiguity_type not in members]
     else:
         remaining = list(material)
@@ -215,7 +241,8 @@ def build_questions_for_item(item: StagedFoodItem,
             response_schema=schema, options=_options_from([amb]),
             ambiguity_ids=(amb.ambiguity_id,),
             resolved_materiality=round(amb.materiality_score, 3),
-            value=round(amb.materiality_score / EFFORT.get(schema, 1.5), 3)))
+            value=round(amb.materiality_score / EFFORT.get(schema, 1.5), 3),
+            **semantics))
     return tuple(questions)
 
 
@@ -292,13 +319,15 @@ def decide(items, *, mode: str = "moderate", round_number: int = 0,
             # committing a coin toss is not "low friction", it is wrong.
             if _is_coin_toss(material):
                 held.append(item.staged_item_id)
-                questions.extend(build_questions_for_item(item, material))
+                questions.extend(build_questions_for_item(
+                    item, material, all_items=items))
             else:
                 ready.append(item.staged_item_id)
                 assumptions.extend(_assume_leading(item, material))
             continue
         held.append(item.staged_item_id)
-        questions.extend(build_questions_for_item(item, material))
+        questions.extend(build_questions_for_item(
+            item, material, all_items=items))
 
     # Rank across the WHOLE meal: what a question resolves per unit of effort.
     questions.sort(key=lambda q: -q.value)

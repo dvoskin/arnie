@@ -17,6 +17,7 @@ from core.food_response import (ARNIE_VOICE, CARD_FACTS, CoachingOpportunity,
                                 FoodResponseIntent, FoodResponsePlan, Reason,
                                 apply_policy, build_prompt, compose, fallback,
                                 mentions_unapproved_item, plan_clarify,
+                                plan_clarify_from_question,
                                 plan_confirm_answer, plan_correct,
                                 plan_failure, plan_from_resolution, plan_review,
                                 plan_undo, validate)
@@ -580,3 +581,157 @@ def test_stripping_leaves_a_result_that_passes_validation():
                  "Rice logged, 200 cal. I'd aim for 30-40g at lunch.",
                  "Took the fries off the board."):
         assert validate(strip_card_recitation(text, plan), plan).ok, text
+
+
+# ── PR #27: semantic plans, typed failures, the live composer ────────────────
+def _question(**kw):
+    from skills.nutrition.clarify_policy import (ClarificationOption,
+                                                 ClarificationQuestion,
+                                                 ResponseSchema)
+    base = dict(question_id="q1", staged_item_id="i1",
+                requested_fields=("product_line",),
+                prompt="Which Chobani yogurt was it?",
+                response_schema=ResponseSchema.PRODUCT_SELECTION,
+                options=(ClarificationOption("Zero Sugar", "Zero Sugar"),),
+                resolved_item_names=("toast", "fruit"),
+                unresolved_item_name="yogurt")
+    base.update(kw)
+    return ClarificationQuestion(**base)
+
+
+def test_a_clarify_plan_carries_what_was_already_understood():
+    """Without this the composer can only ask "Which yogurt?" — the
+    acknowledgement that makes it one conversation is unavailable to it."""
+    plan = plan_clarify_from_question(_question())
+    assert [i.name for i in plan.resolved_items] == ["toast", "fruit"]
+    assert plan.unresolved_item.name == "yogurt"
+    assert plan.requires_answer and plan.allow_question
+
+
+def test_the_semantic_fallback_acknowledges_before_asking():
+    text = fallback(plan_clarify_from_question(_question()))
+    assert text == "I've got toast and fruit. Which Chobani yogurt was it?"
+
+
+def test_a_material_assumption_reaches_the_prompt():
+    plan = plan_clarify_from_question(
+        _question(material_assumption="Estimated the handful at about 45g."))
+    assert "45g" in build_prompt(plan)
+
+
+def test_the_policy_supplies_semantics_without_owning_the_voice():
+    """clarify_policy decides WHAT must be asked. If it also wrote the
+    sentence, a tone change would mean editing the policy engine."""
+    import inspect
+    import skills.nutrition.clarify_policy as CP
+    # Comments may quote an example sentence to explain WHY the semantics are
+    # exported; what must not appear is voice in the code itself.
+    code = "\n".join(line for line in inspect.getsource(CP).splitlines()
+                     if not line.strip().startswith("#"))
+    for voice in ("I've got", "Got it,", "Light start"):
+        assert voice not in code
+
+
+# ── typed failure intents ─────────────────────────────────────────────────────
+def test_a_failure_becomes_a_typed_intent_not_prose():
+    from skills.nutrition.families import (CandidateResolutionFailure,
+                                           failure_intent)
+    intent = failure_intent(CandidateResolutionFailure.NO_MATCH)
+    assert intent.code == "no_match"
+    assert intent.user_fixable and intent.requires_question
+    assert "label" in intent.recovery_action
+
+
+def test_an_outage_is_not_the_users_problem_to_solve():
+    """The distinction that matters most: asking someone to read a label they
+    may not need, because our API is down, is worse than saying we can't
+    check."""
+    from skills.nutrition.families import (CandidateResolutionFailure,
+                                           failure_intent)
+    intent = failure_intent(CandidateResolutionFailure.SOURCE_UNAVAILABLE)
+    assert not intent.user_fixable
+    assert not intent.requires_question
+    plan = plan_failure(intent)
+    assert not plan.requires_answer
+    assert "Do not ask them to fix it" in build_prompt(plan)
+
+
+def test_every_failure_state_produces_a_usable_intent():
+    from skills.nutrition.families import (CandidateResolutionFailure,
+                                           failure_intent)
+    for failure in CandidateResolutionFailure:
+        intent = failure_intent(failure)
+        assert intent.code and intent.recovery_action
+        assert intent.approved_message
+        plan = plan_failure(intent)
+        assert validate(fallback(plan), plan).ok, failure
+
+
+# ── the constrained live composer ─────────────────────────────────────────────
+def test_the_composer_is_off_by_default(monkeypatch):
+    """The deterministic fallbacks are already correct and non-robotic. The
+    composer buys tone and costs a model call on every food turn."""
+    from core.food_response import composer_enabled
+    monkeypatch.delenv("FOOD_COMPOSER", raising=False)
+    assert not composer_enabled()
+    monkeypatch.setenv("FOOD_COMPOSER", "true")
+    assert composer_enabled()
+
+
+@pytest.mark.asyncio
+async def test_the_async_composer_uses_a_valid_generation(monkeypatch):
+    import core.llm as LLM
+
+    async def _chat(messages, system, **kw):
+        return {"text": "Light start there."}
+    monkeypatch.setattr(LLM, "chat", _chat)
+
+    from core.food_response import compose_async
+    text, reason = await compose_async(_commit_plan())
+    assert text == "Light start there." and reason == Reason.OK
+
+
+@pytest.mark.asyncio
+async def test_the_async_composer_falls_back_on_a_violating_generation(
+        monkeypatch):
+    import core.llm as LLM
+
+    async def _chat(messages, system, **kw):
+        return {"text": "Give me a moment. Logging it now."}
+    monkeypatch.setattr(LLM, "chat", _chat)
+
+    from core.food_response import compose_async
+    text, reason = await compose_async(plan_correct("the jam"))
+    assert reason == Reason.TRANSACTION_NARRATION
+    assert text == "Updated the jam."
+
+
+@pytest.mark.asyncio
+async def test_a_model_outage_is_not_an_error_just_a_plainer_reply(monkeypatch):
+    import core.llm as LLM
+
+    async def _boom(*a, **k):
+        raise RuntimeError("model down")
+    monkeypatch.setattr(LLM, "chat", _boom)
+
+    from core.food_response import compose_async
+    text, _ = await compose_async(plan_undo("that log"))
+    assert text == "Undid that log."
+
+
+@pytest.mark.asyncio
+async def test_the_composer_shares_the_validator_with_the_sync_path(monkeypatch):
+    """Wrapping rather than duplicating: the rules cannot drift between the
+    path tests exercise and the one production uses."""
+    import core.llm as LLM
+    calls = []
+
+    async def _chat(messages, system, **kw):
+        calls.append(system)
+        return {"text": "Nice. Anything else?"}
+    monkeypatch.setattr(LLM, "chat", _chat)
+
+    from core.food_response import compose_async
+    _, reason = await compose_async(_commit_plan())
+    assert reason == Reason.FORBIDDEN_QUESTION
+    assert "YOUR LAST ATTEMPT FAILED" in calls[-1]
