@@ -541,20 +541,40 @@ def _strict_needs_confirm(items: list, data: dict, message: str) -> bool:
     return any(not _item_is_stated(it, message) for it in items)
 
 
-def format_confirm(items: list) -> str:
-    """Strict-mode pre-log confirmation: show the PARSE (item + amount), get a
-    yes, then commit. Numbers stay the system's job — the user confirms WHAT
-    and HOW MUCH, enrichment prices it after the yes."""
-    lines = ["Locking this in:"]
-    for i, it in enumerate(items[:8], 1):
+def review_plan(items: list, *, user_message: str = ""):
+    """The pre-log confirmation as a RESPONSE PLAN rather than final prose.
+
+    The logger decides and writes; it does not author the conversation. What it
+    supplies here is the parse — which items, at what amounts — and the
+    response layer phrases it (core/food_response.py).
+    """
+    from core.food_response import FoodItemSummary, plan_review
+
+    summaries = []
+    for it in (items or [])[:8]:
         food = (it.get("food") or "").strip()
+        if not food:
+            continue
+        portion = ""
         if it.get("amount") is not None:
-            amt = f"{it.get('amount')} {it.get('unit') or ''}".strip()
-            lines.append(f"{i}. **{amt} {food}**".replace("  ", " "))
-        else:
-            lines.append(f"{i}. **{food}**")
-    lines.append("Good to log, or anything to fix?")
-    return "\n".join(lines)
+            portion = f"{it.get('amount')} {it.get('unit') or ''}".strip()
+        summaries.append(FoodItemSummary(
+            name=food, portion=portion,
+            estimated=not _item_is_stated(it, user_message)))
+    return plan_review(summaries, user_message=user_message)
+
+
+def format_confirm(items: list, *, user_message: str = "") -> str:
+    """Deterministic confirmation text.
+
+    Was: a numbered, bolded list under "Locking this in:" ending in "Good to
+    log, or anything to fix?" — three pieces of transaction vocabulary in one
+    message, and a shape that reads like a form rather than a coach checking
+    something. Now it is the response layer's REVIEW fallback: prose for one or
+    two items, one food per line only when prose stops being scannable.
+    """
+    from core.food_response import fallback
+    return fallback(review_plan(items, user_message=user_message))
 
 
 def _lc(name: str) -> str:

@@ -965,26 +965,19 @@ async def run_turn(
                 result = {"text": "", "raw_content": [],
                           "tool_calls": _sft["tool_calls"],
                           "stop_reason": "structured_food"}
-                # EVERY structured write turn announces itself — enrichment
-                # (USDA/OFF/web label) is a network round-trip even for one
-                # item, and the turns that skipped the heads-up were exactly
-                # the ones that felt hung (Danny 2026-07-23).
-                _n_logs = sum(1 for _tc in _sft["tool_calls"]
-                              if _tc.get("name") == "log_food")
-                if _n_logs > 1:
-                    _hu = f"Give me a moment. Logging all {_n_logs} now."
-                elif _n_logs == 1:
-                    _hu = "Give me a moment. Logging it now."
-                else:
-                    _hu = "One sec. Fixing the board now."
-                try:
-                    if _streamer and on_text_bubble:
-                        await on_text_bubble(_hu)
-                        _streamer.flushed_count += 1
-                    elif on_interim:
-                        await on_interim(_hu)
-                except Exception:
-                    pass
+                # NO TRANSACTION NARRATION (Danny 2026-07-25). This used to
+                # emit "Give me a moment. Logging all 2 now." as a real chat
+                # bubble before the write — which is the same pre-action
+                # narration the system prompt bans the MODEL from producing and
+                # turn_health flags as a stall marker. Emitting it
+                # deterministically bypassed both guards and made the flow read
+                # as several systems taking turns.
+                #
+                # Enrichment is still a network round-trip, so the wait is
+                # real. It is covered by on_tool_start below (line ~1182),
+                # which the transports already use to drive the typing
+                # indicator — and which disappears when the card lands, instead
+                # of leaving a permanent bubble describing a wait that is over.
         elif _sft is not None and _sft["action"] == "ask":
             # The one clarify question IS the reply — no tools, nothing logged.
             _turn_route = "structured_ask"
