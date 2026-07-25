@@ -10,7 +10,8 @@ the only signal that says "ask about this one".
 """
 import pytest
 
-from skills.nutrition.portions import (PORTION_ONTOLOGY, UnitKind, convert,
+from skills.nutrition.portions import (FOOD_CATEGORIES, FORM_ALIASES,
+                                       PORTION_ONTOLOGY, UnitKind, convert,
                                        detect_measure, detect_modifier,
                                        distribution_for, food_category)
 
@@ -147,7 +148,8 @@ def test_a_vague_measure_carries_its_distribution():
     assert out.distribution is not None
     assert out.mass_equivalent_g == out.distribution.median_g
     assert out.conversion_confidence < 0.8       # never claimed as exact
-    assert out.conversion_source.startswith("ontology:berries")
+    # Source now carries the specificity tier that answered.
+    assert out.conversion_source == "ontology:category:berries_handful"
 
 
 def test_six_deli_slices_records_count_mass_and_confidence():
@@ -189,3 +191,183 @@ def test_a_multi_unit_vague_portion_scales_the_distribution():
     assert three.mass_equivalent_g == pytest.approx(
         one.mass_equivalent_g * 3, abs=0.5)
     assert three.distribution.spread_g > one.distribution.spread_g
+
+
+# ── form-specific distributions above the broad fallbacks ─────────────────────
+# The directive: retain the broad vague-quantity ranges, but progressively
+# replace them with category-AND-form-specific distributions. So the fallbacks
+# must stay, the form rows must sit above them, and which tier answered must be
+# visible — otherwise "progressively" has no way to measure itself.
+from skills.nutrition.portions import (FORM_DISTRIBUTIONS, Specificity,
+                                       detect_form, ontology_coverage)
+
+
+def test_the_broad_fallbacks_are_still_there():
+    """They are the safety net for every combination not yet written down.
+    Adding form rows must never delete them."""
+    for measure, rows in PORTION_ONTOLOGY.items():
+        assert "default" in rows, measure
+
+
+def test_the_fallbacks_are_still_wide():
+    """A narrow fallback would silence the clarification that fixes it — the
+    original calibration argument still applies at this tier."""
+    for measure, rows in PORTION_ONTOLOGY.items():
+        median, lower, upper, conf = rows["default"]
+        assert upper > lower
+        assert (upper - lower) / median > 0.5, measure
+
+
+def test_form_beats_category_beats_fallback():
+    """The whole lookup chain, in one assertion."""
+    form = distribution_for("handful", "cooked spinach")
+    category = distribution_for("handful", "spinach")
+    fallback = distribution_for("handful", "grandma's mystery goo")
+    assert form.specificity is Specificity.FORM
+    assert category.specificity is Specificity.CATEGORY
+    assert fallback.specificity is Specificity.FALLBACK
+    assert fallback.specificity.is_fallback
+
+
+def test_an_unrecognised_food_reports_fallback_not_category():
+    """food_category() returns the literal "default" for an unknown food, which
+    matches the fallback row. Reporting that as category-specific would corrupt
+    the one metric this tier exists to produce."""
+    d = distribution_for("handful", "grandma's mystery goo")
+    assert d.specificity is Specificity.FALLBACK
+    assert d.form == ""
+
+
+def test_cooked_greens_weigh_far_more_than_raw():
+    """Spinach wilts to roughly a third of its volume — the clearest case for
+    why form has to be its own dimension."""
+    raw = distribution_for("handful", "raw spinach")
+    cooked = distribution_for("handful", "cooked spinach")
+    assert cooked.median_g > raw.median_g * 2
+
+
+def test_dry_and_cooked_oats_differ_by_five_times():
+    dry = distribution_for("bowl", "dry oatmeal")
+    cooked = distribution_for("bowl", "cooked oatmeal")
+    assert cooked.median_g > dry.median_g * 4
+    assert dry.specificity is Specificity.FORM
+    assert cooked.specificity is Specificity.FORM
+
+
+def test_shredded_and_cubed_cheese_are_distinguished():
+    shredded = distribution_for("handful", "shredded cheddar")
+    cubed = distribution_for("handful", "cubed cheddar")
+    assert cubed.median_g > shredded.median_g
+
+
+def test_a_form_row_is_only_worth_having_if_it_moves_the_number():
+    """Keeps the table honest. A form row that duplicates its category
+    fallback makes the ontology look more informed than it is, so every row
+    must either shift the median materially or be meaningfully more
+    confident."""
+    for measure, rows in FORM_DISTRIBUTIONS.items():
+        base = PORTION_ONTOLOGY.get(measure, {})
+        for (category, form), (median, lower, upper, conf) in rows.items():
+            fallback = base.get(category) or base["default"]
+            base_median, _, _, base_conf = fallback
+            moved = abs(median - base_median) / max(base_median, 1.0) > 0.10
+            # 0.03, not 0.02: 0.02 sat exactly on a float knife-edge —
+            # `0.64 > 0.62 + 0.02` is False while `0.64 - 0.62 > 0.02` is True,
+            # so the check passed or failed depending on how it was written.
+            sharper = conf - base_conf >= 0.03
+            assert moved or sharper, f"{measure}/{category}/{form} adds nothing"
+
+
+def test_every_form_row_is_internally_coherent():
+    for measure, rows in FORM_DISTRIBUTIONS.items():
+        for key, (median, lower, upper, conf) in rows.items():
+            assert lower < median < upper, f"{measure}/{key}"
+            assert 0.0 < conf <= 1.0, f"{measure}/{key}"
+
+
+def test_every_form_row_is_reachable():
+    """A row keyed on a category no food maps to, or a form no alias produces,
+    is dead weight that silently never fires."""
+    reachable_categories = set(FOOD_CATEGORIES.values()) | {"default"}
+    reachable_forms = set(FORM_ALIASES.values())
+    for measure, rows in FORM_DISTRIBUTIONS.items():
+        assert measure in PORTION_ONTOLOGY, measure
+        for category, form in rows:
+            assert category in reachable_categories, f"{measure}/{category}"
+            assert form in reachable_forms, f"{measure}/{form}"
+
+
+@pytest.mark.parametrize("text,form", [
+    ("cooked spinach", "cooked"),
+    ("steamed broccoli", "cooked"),
+    ("raw kale", "raw"),
+    ("dry oats", "dry"),
+    ("dried cranberries", "dried"),
+    ("shredded cheese", "shredded"),
+    ("grated parmesan", "shredded"),
+    ("diced cheddar", "cubed"),
+    ("chopped almonds", "chopped"),
+    ("packed brown sugar", "packed"),
+    ("melted peanut butter", "melted"),
+    ("greek yogurt", "greek"),
+    ("shaved turkey", "shaved"),
+    ("plain rice", ""),
+])
+def test_forms_are_detected(text, form):
+    assert detect_form(text) == form
+
+
+def test_the_form_can_come_from_the_portion_phrase_not_only_the_food_name():
+    """"a handful of cooked spinach" names the form in the phrase; the food may
+    arrive as bare "spinach"."""
+    out = convert("a handful of cooked spinach", "spinach")
+    assert out.distribution.specificity is Specificity.FORM
+    assert out.distribution.form == "cooked"
+
+
+def test_the_specificity_is_greppable_in_the_conversion_source():
+    """Counting `ontology:fallback:` in production is how the next rows get
+    chosen — that is what makes replacement progressive rather than
+    aspirational."""
+    assert convert("a handful", "mystery goo").conversion_source == \
+        "ontology:fallback:default_handful"
+    assert convert("a handful", "blueberries").conversion_source == \
+        "ontology:category:berries_handful"
+    assert convert("a handful", "cooked spinach").conversion_source == \
+        "ontology:form:greens_handful:cooked"
+
+
+def test_form_and_specificity_survive_scaling():
+    one = distribution_for("slice", "shaved turkey deli slice")
+    six = one.scaled(6)
+    assert six.specificity is one.specificity
+    assert six.form == one.form
+
+
+def test_a_form_row_still_respects_size_modifiers():
+    small = distribution_for("handful", "cooked spinach", "small")
+    large = distribution_for("handful", "cooked spinach", "large")
+    assert small.median_g < large.median_g
+    assert small.specificity is Specificity.FORM
+
+
+def test_an_explicit_form_overrides_detection():
+    """Callers that already know the form — from a candidate's product data,
+    say — should not have to encode it back into a string."""
+    assert distribution_for("bowl", "oatmeal", form="dry").median_g < \
+        distribution_for("bowl", "oatmeal", form="cooked").median_g
+
+
+def test_an_unknown_form_falls_through_to_category():
+    """A form with no row must not break the lookup — it degrades one tier."""
+    d = distribution_for("handful", "blueberries", form="julienned")
+    assert d.specificity is Specificity.CATEGORY
+    assert d.median_g == 45.0
+
+
+def test_coverage_is_reportable():
+    """Progress on replacing the fallbacks is a number, not a feeling."""
+    cov = ontology_coverage()
+    assert cov["measures"] == len(PORTION_ONTOLOGY)
+    assert cov["form_rows"] > 0
+    assert cov["measures_with_forms"] <= cov["measures"]

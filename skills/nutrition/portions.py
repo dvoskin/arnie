@@ -37,6 +37,23 @@ class UnitKind(str, Enum):
     DESCRIPTIVE = "descriptive"
 
 
+class Specificity(str, Enum):
+    """Which tier of the ontology answered.
+
+    Recorded on every distribution so "where is the broad fallback still being
+    hit?" is a query rather than a guess. That is what makes replacing the
+    fallbacks progressive instead of aspirational — production tells you which
+    (measure, category, form) to write next.
+    """
+    FORM = "form"            # category AND form: "a handful of cooked spinach"
+    CATEGORY = "category"    # category only: "a handful of spinach"
+    FALLBACK = "fallback"    # the measure's broad default
+
+    @property
+    def is_fallback(self) -> bool:
+        return self is Specificity.FALLBACK
+
+
 @dataclass(frozen=True)
 class QuantityDistribution:
     """What a vague portion could plausibly be.
@@ -50,6 +67,8 @@ class QuantityDistribution:
     upper_g: float
     confidence: float = 0.6
     category: str = ""
+    form: str = ""
+    specificity: Specificity = Specificity.FALLBACK
 
     @property
     def spread_g(self) -> float:
@@ -160,6 +179,79 @@ PORTION_ONTOLOGY = {
     },
 }
 
+#: FORM-SPECIFIC distributions: (category, form) → (median, lower, upper, conf).
+#:
+#: This table sits ABOVE the category table and never replaces it — the broad
+#: rows stay as the safety net for everything not yet written down. Adding a
+#: row here is purely additive: nothing else changes, and the lookup starts
+#: preferring it immediately.
+#:
+#: A form earns a row when it moves the portion MATERIALLY. Raw spinach wilts
+#: to roughly a third of its volume, so a handful of cooked spinach is nearly
+#: three times the mass of a raw one; dry oats and cooked oats differ by five
+#: times. Shredded and cubed cheese differ enough to matter over a handful.
+#: Forms that barely move the number are deliberately absent — a row that
+#: duplicates its category fallback is noise that makes the table look more
+#: informed than it is, and a test enforces that.
+FORM_DISTRIBUTIONS = {
+    "handful": {
+        ("greens", "cooked"):     (68.0, 48.0, 95.0, 0.55),
+        ("nuts", "chopped"):      (34.0, 24.0, 46.0, 0.66),
+        ("rice", "cooked"):       (55.0, 40.0, 78.0, 0.55),
+        ("cereal", "granola"):    (44.0, 32.0, 60.0, 0.64),
+        ("cereal", "flakes"):     (17.0, 11.0, 25.0, 0.60),
+        ("cheese", "shredded"):   (28.0, 20.0, 38.0, 0.68),
+        ("cheese", "cubed"):      (38.0, 27.0, 52.0, 0.62),
+        ("berries", "dried"):     (40.0, 28.0, 55.0, 0.62),
+    },
+    "spoonful": {
+        ("sugar", "packed"):      (14.5, 11.0, 19.0, 0.72),
+        ("nut_butter", "melted"): (19.0, 14.0, 26.0, 0.66),
+        ("yogurt", "greek"):      (34.0, 26.0, 45.0, 0.68),
+    },
+    "scoop": {
+        ("ice_cream", "softened"): (78.0, 58.0, 105.0, 0.58),
+        ("protein_powder", "whey"): (32.0, 29.0, 36.0, 0.84),
+    },
+    "bowl": {
+        ("oats", "dry"):        (48.0, 36.0, 62.0, 0.68),
+        ("oats", "cooked"):     (255.0, 185.0, 340.0, 0.58),
+        ("cereal", "granola"):  (62.0, 45.0, 85.0, 0.60),
+        ("cereal", "flakes"):   (32.0, 22.0, 45.0, 0.58),
+        ("greens", "raw"):      (85.0, 55.0, 130.0, 0.52),
+        ("soup", "chunky"):     (340.0, 250.0, 460.0, 0.58),
+    },
+    "slice": {
+        ("bread", "sourdough"): (48.0, 36.0, 64.0, 0.68),
+        ("deli_meat", "shaved"): (12.0, 8.0, 18.0, 0.66),
+        ("deli_meat", "roast"): (32.0, 22.0, 45.0, 0.62),
+    },
+    "drizzle": {
+        ("oil", "cooking"):     (9.0, 5.0, 15.0, 0.56),
+        ("syrup", "thick"):     (17.0, 10.0, 27.0, 0.55),
+    },
+}
+
+#: Text fragments → canonical form. Longest match wins, so "extra virgin olive
+#: oil" does not resolve on a shorter accidental substring.
+FORM_ALIASES = {
+    "cooked": "cooked", "boiled": "cooked", "steamed": "cooked",
+    "sauteed": "cooked", "sautéed": "cooked", "wilted": "cooked",
+    "raw": "raw", "fresh": "raw", "uncooked": "dry", "dry": "dry",
+    "dried": "dried", "dehydrated": "dried",
+    "shredded": "shredded", "grated": "shredded",
+    "cubed": "cubed", "diced": "cubed", "cubes": "cubed",
+    "chopped": "chopped", "crushed": "chopped", "slivered": "chopped",
+    "packed": "packed", "loose": "loose",
+    "melted": "melted", "softened": "softened",
+    "granola": "granola", "flakes": "flakes", "flake": "flakes",
+    "greek": "greek", "deli": "deli", "shaved": "shaved", "roast": "roast",
+    "sourdough": "sourdough", "sandwich": "sandwich",
+    "broth": "broth", "brothy": "broth", "chunky": "chunky",
+    "cooking oil": "cooking", "olive oil": "cooking",
+    "whey": "whey", "thick": "thick",
+}
+
 #: Food name fragments → ontology category. Longest match wins, so
 #: "peanut butter" beats "butter".
 FOOD_CATEGORIES = {
@@ -171,7 +263,10 @@ FOOD_CATEGORIES = {
     "nut butter": "nut_butter", "tahini": "nut_butter",
     "potato chip": "chips", "tortilla chip": "chips", "chip": "chips",
     "popcorn": "popcorn",
-    "cereal": "cereal", "granola": "cereal", "oat": "cereal",
+    "cereal": "cereal", "granola": "cereal", "corn flake": "cereal",
+    "oat": "oats", "oatmeal": "oats", "porridge": "oats",
+    "pasta": "pasta", "spaghetti": "pasta", "penne": "pasta",
+    "noodle": "pasta",
     "spinach": "greens", "kale": "greens", "lettuce": "greens",
     "arugula": "greens", "salad green": "greens",
     "raisin": "dried_fruit", "dried apricot": "dried_fruit",
@@ -232,19 +327,82 @@ def detect_measure(text: str) -> Optional[str]:
     return None
 
 
-def distribution_for(measure: str, food_name: str = "",
-                     modifier: str = "") -> Optional[QuantityDistribution]:
-    """The distribution for this measure of this food, size-adjusted."""
-    rows = PORTION_ONTOLOGY.get((measure or "").lower())
+def detect_form(text: str) -> str:
+    """The preparation form named in this text, if any. Longest alias wins."""
+    t = (text or "").lower()
+    best, best_len = "", 0
+    for fragment, form in FORM_ALIASES.items():
+        if fragment in t and len(fragment) > best_len:
+            best, best_len = form, len(fragment)
+    return best
+
+
+def distribution_for(measure: str, food_name: str = "", modifier: str = "",
+                     form: Optional[str] = None
+                     ) -> Optional[QuantityDistribution]:
+    """The best available distribution, walking specific → broad.
+
+        1. (category, form)  — "a handful of cooked spinach"
+        2. category          — "a handful of spinach"
+        3. the measure's broad default
+
+    The fallback is never removed. It is what keeps an unwritten combination
+    answerable, and every row added above it narrows the set of turns that
+    reach it — which is the whole shape of "progressively replace".
+    """
+    measure = (measure or "").lower()
+    rows = PORTION_ONTOLOGY.get(measure)
     if not rows:
         return None
+
     category = food_category(food_name)
-    median, lower, upper, confidence = rows.get(category, rows["default"])
+    resolved_form = form if form is not None else detect_form(food_name)
+
+    entry, specificity = None, Specificity.FALLBACK
+    if resolved_form:
+        entry = FORM_DISTRIBUTIONS.get(measure, {}).get(
+            (category, resolved_form))
+        if entry is not None:
+            specificity = Specificity.FORM
+    if entry is None and category != "default":
+        # Guarded on `category != "default"` deliberately: food_category()
+        # returns the literal "default" for an unrecognised food, which would
+        # otherwise match the fallback row and be REPORTED as category-specific.
+        # That would corrupt the one metric this tier exists to produce.
+        entry = rows.get(category)
+        if entry is not None:
+            specificity = Specificity.CATEGORY
+    if entry is None:
+        entry = rows["default"]
+        specificity = Specificity.FALLBACK
+
+    median, lower, upper, confidence = entry
     factor = SIZE_MODIFIERS.get((modifier or "").lower().strip(), 1.0)
     return QuantityDistribution(
         median_g=round(median * factor, 1), lower_g=round(lower * factor, 1),
         upper_g=round(upper * factor, 1), confidence=confidence,
-        category=f"{category}_{measure}")
+        category=f"{category}_{measure}",
+        form=(resolved_form if specificity is Specificity.FORM else ""),
+        specificity=specificity)
+
+
+def ontology_coverage() -> dict:
+    """How much of the ontology is form-specific yet.
+
+    Progress on "progressively replace the fallbacks" is a number, not a
+    feeling. Pair this with the production count of
+    conversion_source=ontology:fallback:* to target the next rows at the
+    combinations users actually hit.
+    """
+    form_rows = sum(len(rows) for rows in FORM_DISTRIBUTIONS.values())
+    category_rows = sum(len([k for k in rows if k != "default"])
+                        for rows in PORTION_ONTOLOGY.values())
+    return {
+        "measures": len(PORTION_ONTOLOGY),
+        "category_rows": category_rows,
+        "form_rows": form_rows,
+        "measures_with_forms": len(FORM_DISTRIBUTIONS),
+    }
 
 
 def detect_modifier(text: str) -> str:
@@ -298,14 +456,24 @@ def convert(text: str, food_name: str = "", *,
 
     measure = detect_measure(lowered)
     if measure:
-        dist = distribution_for(measure, food_name, detect_modifier(lowered))
+        # The form may be named in the portion phrase ("a handful of cooked
+        # spinach") or only in the food name — check both.
+        form = detect_form(f"{lowered} {food_name}") or None
+        dist = distribution_for(measure, food_name, detect_modifier(lowered),
+                                form=form)
         if dist is not None:
             scaled = dist.scaled(amount) if amount != 1.0 else dist
+            # The specificity is in the source string on purpose: counting
+            # `ontology:fallback:` in production is how the next rows get
+            # chosen.
+            source = f"ontology:{scaled.specificity.value}:{scaled.category}"
+            if scaled.form:
+                source = f"{source}:{scaled.form}"
             return ConversionResult(
                 amount=amount, unit=measure, unit_kind=UnitKind.DESCRIPTIVE,
                 mass_equivalent_g=scaled.median_g,
                 conversion_confidence=scaled.confidence,
-                conversion_source=f"ontology:{scaled.category}",
+                conversion_source=source,
                 distribution=scaled, count=amount)
 
     if unit_mass_g:
