@@ -504,7 +504,42 @@ class _BubbleStreamer:
         self.held = False
 
 
-async def run_turn(
+async def run_turn(*args, **kwargs) -> TurnResult:
+    """Traced entry point for a turn (review fix, PR #29).
+
+    The food trace opens HERE rather than inside `core.food_turn.run()`, which
+    is what makes it end to end. `food_turn.run()` returns the structured action
+    and the tool calls — the nutrient resolution during execution, the database
+    writes, the failed writes, the card render and the final coaching line all
+    happen afterwards, in this function. A trace that closed with the
+    interpreter pass could not see any of them, so the seven-stage trace was
+    really a three-stage one wearing a longer name.
+
+    Opening a trace for EVERY turn, food or not, is deliberate: nothing at the
+    top of a turn knows yet whether food is involved. `finish` only emits a line
+    for traces that actually recorded a stage, so non-food turns stay silent.
+
+    `*args`/`**kwargs` rather than the real signature: callers pass a mix of
+    positional and keyword arguments, and restating twenty parameters here would
+    be a second signature to keep in step with the first.
+    """
+    from core import food_trace
+
+    fields = {}
+    try:
+        user = args[0] if args else kwargs.get("user")
+        platform = args[4] if len(args) > 4 else kwargs.get("platform", "")
+        fields = dict(turn_id=(kwargs.get("turn_id") or ""),
+                      user_id=getattr(user, "id", None),
+                      channel=str(platform or ""))
+    except Exception:
+        fields = {}
+
+    with food_trace.span(**fields):
+        return await _run_turn(*args, **kwargs)
+
+
+async def _run_turn(
     user,
     db,
     messages: list,
@@ -1212,6 +1247,41 @@ async def run_turn(
         # leaves nothing, so we report the batch honestly with no invented ids.
         _execution = _LX.get() or _exec_bare(tool_calls, tool_results)
 
+        # ── COMMIT ACCOUNTING (review fix, PR #29) ───────────────────────────
+        # The executor is the only witness to what was actually written. The
+        # clarifier's `ready` count is an approval, and reporting it as
+        # `committed` meant a turn whose every write was blocked still showed a
+        # full commit rate in the funnel — the one number the rollout gates on.
+        #
+        # Only recorded when the writes came from the food lane — the same
+        # condition the render block below uses. A legacy-lane turn has no food
+        # funnel to report and must not manufacture one. Keyed off `_sft` rather
+        # than off "the trace has stages", because the planner can fall back to
+        # the legacy policy and still execute food writes: that turn HAS a
+        # commit funnel and skipping it would leave the writes unaccounted.
+        try:
+            from core import food_trace as _ft
+            from core.food_trace import Outcome as _FtOutcome, Stage as _FtStage
+            if _sft is not None and _sft.get("action") in ("log", "update",
+                                                           "delete", "commit"):
+                _food_calls = tuple(
+                    c for c in (getattr(_execution, "calls", ()) or ())
+                    if getattr(c, "name", "") in ("log_food",
+                                                  "restore_food_entry"))
+                _committed = tuple(c for c in _food_calls if c.committed)
+                _ft.note(items_attempted=len(_food_calls),
+                         items_committed=len(_committed),
+                         items_failed=len(_food_calls) - len(_committed))
+                _ft.record(
+                    _FtStage.EXECUTE,
+                    outcome=(_FtOutcome.OK if _committed
+                             else (_FtOutcome.HELD if _food_calls
+                                   else _FtOutcome.SKIPPED)),
+                    attempted=len(_food_calls), committed=len(_committed),
+                    failed=len(_food_calls) - len(_committed))
+        except Exception:
+            pass
+
         # ── SCRIBE SHADOW (observe-only) ─────────────────────────────────
         # The write-set validator judges what the model ACTUALLY did against
         # the justification rules and logs divergences — it changes nothing.
@@ -1622,6 +1692,21 @@ async def run_turn(
                     response_text = note_held_items(
                         response_text, _sft["_held_stash"], _ok_calls)
                 _response_streamed = False
+                # RENDER (review fix, PR #29). The last stage of a food turn is
+                # the sentence the user reads, and it used to fall outside the
+                # trace entirely — so "the card was wrong" and "the card was
+                # right but the words were wrong" were indistinguishable in
+                # triage. Recorded here, after the say contract and the hold
+                # notice, because this is the point the reply is final.
+                try:
+                    from core import food_trace as _ft_r
+                    from core.food_trace import Stage as _FtStageR
+                    _ft_r.record(_FtStageR.RENDER,
+                                 cards=len(_ok_calls or ()),
+                                 held=len(_sft.get("_held_stash") or ()),
+                                 chars=len(response_text or ""))
+                except Exception:
+                    pass
             elif _pure_food:
                 # Legacy pure-food turn keeps the voice_log read; the deterministic
                 # template is the last net.

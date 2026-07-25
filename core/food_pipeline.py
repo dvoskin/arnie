@@ -225,28 +225,65 @@ def plan_turn(data: Mapping, *, turn_id: str, message: str = "",
               ) -> Optional[FoodTurnDecision]:
     """The whole pre-execution decision. Returns None on any failure, so the
     caller keeps its existing behaviour rather than losing the turn."""
+    from core import food_trace
+    from core.food_trace import Outcome, Stage
+
     try:
         from skills.nutrition.clarify_policy import decide
         from skills.nutrition.clarify_ui import build_traces
 
-        items, meal_group_id = stage_items(data, turn_id=turn_id,
-                                           message=message, mode=mode)
+        with food_trace.stage(Stage.STAGE) as staging:
+            items, meal_group_id = stage_items(data, turn_id=turn_id,
+                                               message=message, mode=mode)
+            staging.counts["items"] = len(items)
+            if not items:
+                staging.outcome = Outcome.SKIPPED
         if not items:
             return None
-        items = attach_ambiguities(items, data, mode=mode)
-        items = apply_preferences(items, preferences, now=now, mode=mode)
 
-        decision = decide(list(items), mode=mode, round_number=round_number)
-        approved = _approved_operations(data, items, decision)
+        with food_trace.stage(Stage.CLARIFY) as clarifying:
+            items = attach_ambiguities(items, data, mode=mode)
+            items = apply_preferences(items, preferences, now=now, mode=mode)
+            decision = decide(list(items), mode=mode,
+                              round_number=round_number)
+            approved = _approved_operations(data, items, decision)
+            clarifying.counts.update(
+                ready=len(decision.ready_item_ids or ()),
+                held=len(decision.held_item_ids or ()),
+                questions=len(decision.questions or ()),
+                assumptions=len(decision.assumptions or ()))
+            # Where the turn stopped, from the clarifier's own point of view.
+            # ASKED and HELD are different outcomes and the funnel needs both:
+            # a question is a turn the user can finish, a hold is one they
+            # cannot see a way to.
+            if decision.questions:
+                clarifying.outcome = Outcome.ASKED
+            elif not approved and items:
+                clarifying.outcome = Outcome.HELD
+
         traces = build_traces(items, decision=decision, mode=mode,
                               turn_id=turn_id)
         for trace in traces:
             logger.info(trace.log_line())
+
+        # `items_ready`, not `items_committed`: this is the clarifier's approval
+        # to write, recorded before the executor has written anything. A blocked
+        # or failed write used to surface here as a commit. The executor sets the
+        # committed and failed counts once it knows them (core/conversation.py).
+        food_trace.note(
+            meal_group_id=meal_group_id, mode=mode,
+            items_staged=len(items),
+            items_ready=len(decision.ready_item_ids or ()),
+            items_held=len(decision.held_item_ids or ()),
+            questions_asked=len(decision.questions or ()),
+            assumptions_made=len(decision.assumptions or ()))
+
         return FoodTurnDecision(staged_items=items, clarification=decision,
                                 approved_operations=approved,
                                 meal_group_id=meal_group_id, traces=traces)
     except Exception as e:
         logger.warning(f"food pipeline skipped, legacy policy: {e}")
+        food_trace.note(error=f"pipeline:{type(e).__name__}")
         return None
 
 
