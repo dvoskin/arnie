@@ -20,6 +20,8 @@ turn budget's name. It now opens in `core.conversation.run_turn`, and these
 consult it:
 
     the food interpreter model call      core/food_turn.py
+    the conversational model call        core/conversation.py
+      and its self-heal retry
     every remote candidate source        skills/nutrition/candidates.py
       (USDA, OpenFoodFacts, web label)
     the OpenFoodFacts HTTP retries       skills/nutrition/off.py
@@ -64,7 +66,18 @@ CURRENT_DEADLINE: ContextVar[Optional[float]] = ContextVar(
 #: answer. Reported as zero so the caller skips the call outright.
 MIN_USEFUL_S = 0.25
 
-DEFAULT_TURN_BUDGET_S = 20.0
+#: A turn budget must exceed the LARGEST SINGLE blocking call it contains, or it
+#: fails work the system would otherwise have finished. The model client is
+#: constructed with a 45-second timeout, so a 20-second turn budget — which is
+#: what this was while it only covered the tool batch — would now abort the main
+#: model call on any turn that had already spent a few seconds interpreting,
+#: turning a slow turn into a lost one. That is precisely the failure mode this
+#: module's "expiry degrades, it does not fail" rule exists to prevent.
+#:
+#: 60s is one full model call plus room for the interpreter and the tool batch
+#: around it. It bounds the pathological case — several sequential timeouts
+#: against a degraded source — without touching turns that are merely slow.
+DEFAULT_TURN_BUDGET_S = 60.0
 
 
 class DeadlineExceeded(TimeoutError):

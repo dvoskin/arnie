@@ -44,6 +44,9 @@ from handlers.tool_executor import (
     tool_heads_up, _heads_up_seed, NEEDS_HEADS_UP_TOOLS, blocked_log_reply,
     headsup_voice_enabled, sentence_case,
 )
+# Module level rather than per-call: the model calls below consult it, and
+# core.deadline imports nothing but the stdlib, so there is no cycle to dodge.
+from core import deadline
 
 logger = logging.getLogger(__name__)
 
@@ -535,7 +538,7 @@ async def run_turn(*args, **kwargs) -> TurnResult:
     positional and keyword arguments, and restating twenty parameters here would
     be a second signature to keep in step with the first.
     """
-    from core import deadline, food_trace
+    from core import food_trace
 
     fields = {}
     try:
@@ -1033,8 +1036,16 @@ async def _run_turn(
             result = {"text": _sft["text"], "raw_content": [], "tool_calls": [],
                       "stop_reason": "structured_food"}
         else:
-            result = await chat(messages, system, tools=True, max_tokens=4096,
-                                **_chat_extras)
+            # Under the turn budget. Setting the deadline contextvar bounds
+            # nothing on its own — only calls that consult it are bounded, and
+            # this is the largest blocking call a non-food turn makes. Without
+            # it, a food interpreter pass that exhausted the budget still handed
+            # this call a fresh full model timeout, so the degraded-source case
+            # the budget exists for could still cost interpreter + composer back
+            # to back.
+            result = await deadline.wait_for(
+                chat(messages, system, tools=True, max_tokens=4096,
+                     **_chat_extras))
         # Flush trailing buffer immediately so a no-||| partial doesn't carry
         # over and prepend itself to the next call's first bubble. (Still held —
         # this only moves the trailing text into the held buffer.)
@@ -1092,8 +1103,9 @@ async def _run_turn(
             # Self-heal retry: stream it too if streaming is on. The original
             # truncated/stalled output already flushed (finalize above), so the
             # retry's stream starts with a clean buffer.
-            result = await chat(retry_messages, system, tools=True, max_tokens=8192,
-                                **_chat_extras)
+            result = await deadline.wait_for(
+                chat(retry_messages, system, tools=True, max_tokens=8192,
+                     **_chat_extras))
             if _streamer:
                 await _streamer.finalize()
             _messages_for_followup = retry_messages

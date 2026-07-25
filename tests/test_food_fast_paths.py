@@ -623,3 +623,61 @@ def test_a_new_basis_field_cannot_be_forgotten():
         assert cache.key_for(_request(), [_with_basis(base)]) != \
             cache.key_for(_request(), [_with_basis(bumped)]), (
                 f"cache key ignores PerServing.{f.name}")
+
+
+# ── review findings on this PR ────────────────────────────────────────────────
+@pytest.mark.parametrize("message,food", [
+    # `egg`/`eggs` used to be units, so the optional unit group swallowed the
+    # first word of any longer egg food and wrote under a name no source can
+    # match — marked `stated`, so nothing downstream would ask about it.
+    ("2 egg whites", "egg whites"),
+    ("2 eggs scrambled", "eggs scrambled"),
+    ("2 egg white omelette", "egg white omelette"),
+    # and the plain count still has to work, unitless
+    ("3 eggs", "eggs"),
+    ("1 egg", "egg"),
+])
+def test_egg_is_never_consumed_as_a_unit(message, food):
+    parsed = parse(message)
+    assert parsed is not None, f"{message!r} was refused"
+    item = parsed["items"][0]
+    assert item["food"] == food, f"{message!r} lost part of the food name"
+    assert item["unit"] == "piece"
+
+
+def test_the_cache_key_separates_identical_numbers_with_different_confidence():
+    """`resolver.score()` reads the calories value's confidence, so two
+    candidates equal in value and different in confidence are not the same
+    input — keying on the number alone let the second reuse the first's answer,
+    and where candidates compete that changes the winner."""
+    from skills.nutrition.models import profile_from_values
+    low = profile_from_values("off", basis="per_100g", confidence=0.2,
+                              calories=100)
+    high = profile_from_values("off", basis="per_100g", confidence=0.9,
+                               calories=100)
+    assert cache._fingerprint(low) != cache._fingerprint(high)
+
+
+@pytest.mark.parametrize("field,a,b", [
+    ("confidence", dict(confidence=0.2), dict(confidence=0.9)),
+    ("source", dict(source="off"), dict(source="usda")),
+    ("estimated", dict(estimated=False), dict(estimated=True)),
+    ("basis", dict(basis="per_100g"), dict(basis="per_serving")),
+])
+def test_the_cache_key_carries_full_nutrient_provenance(field, a, b):
+    from skills.nutrition.models import profile_from_values
+    base = dict(source="off", basis="per_100g", confidence=0.5, calories=100)
+    one = profile_from_values(**{**base, **a})
+    two = profile_from_values(**{**base, **b})
+    assert cache._fingerprint(one) != cache._fingerprint(two), (
+        f"cache key ignores NutrientValue.{field}")
+
+
+def test_the_turn_budget_exceeds_the_largest_call_it_contains():
+    """A budget below the longest single blocking call aborts work the system
+    would have finished — turning a slow turn into a lost one, which is the
+    opposite of "expiry degrades, it does not fail"."""
+    from core import deadline as D
+    assert D.DEFAULT_TURN_BUDGET_S >= 45.0, (
+        "the model client's own timeout is 45s; a shorter turn budget kills "
+        "the main reply on any turn that spent time interpreting first")

@@ -179,12 +179,18 @@ def _fingerprint(value, depth: int = 0) -> str:
     if value is None or isinstance(value, (bool, int, float, str, bytes)):
         return repr(value)
 
-    # A NutrientProfile: a mapping of name → NutrientValue. The VALUE is what
-    # changes the answer, not the wrapper's provenance fields.
+    # A NutrientProfile: a mapping of name → NutrientValue.
+    #
+    # The whole NutrientValue, not just its number. `resolver.score()` reads the
+    # calories value's `confidence`, and the resolution carries source, basis and
+    # `estimated` through to the user — so two candidates identical in value and
+    # different in confidence are NOT the same input, and keying on the number
+    # alone let the second lookup reuse the first's answer, with stale provenance
+    # or, where candidates compete, a different winner entirely.
     values = getattr(value, "values", None)
     if values is not None and hasattr(values, "items"):
         return "profile(" + ",".join(
-            f"{k}={getattr(v, 'value', v)!r}"
+            f"{k}={_fingerprint(v, depth + 1)}"
             for k, v in sorted(values.items(), key=lambda kv: str(kv[0]))
         ) + ")"
 

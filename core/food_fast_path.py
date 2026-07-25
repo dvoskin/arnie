@@ -64,8 +64,16 @@ _UNITS = {
     "tbsp": "tbsp", "tablespoon": "tbsp", "tablespoons": "tbsp",
     "tsp": "tsp", "teaspoon": "tsp", "teaspoons": "tsp",
     "slice": "slice", "slices": "slice", "piece": "piece", "pieces": "piece",
-    "egg": "piece", "eggs": "piece",
 }
+
+#: `egg`/`eggs` are deliberately NOT units.
+#:
+#: Listing them let the optional unit group swallow the first word of any longer
+#: egg food: "2 egg whites" parsed as two pieces of "whites" and "2 eggs
+#: scrambled" as two pieces of "scrambled" — a silent write under a name no
+#: source will match, marked `stated` so nothing downstream would ask. Egg needs
+#: no entry: "3 eggs" already parses as a unitless counted food, because the unit
+#: group is optional and backtracks when no food word follows it.
 
 #: Measurement and container nouns this path must REFUSE rather than interpret.
 #:
