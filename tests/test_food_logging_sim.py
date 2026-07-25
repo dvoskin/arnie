@@ -76,18 +76,21 @@ class TestSingleItemClear:
         """Basically zero calories — still confirms."""
         out = deterministic_confirmation([_food("black coffee")], _log(15, 0), _prefs())
         assert "black coffee" in out.lower()
-        assert "15" in out
+        # 1800 - 15. The remaining figure comes from the same totals, so a
+        # totals bug still fails here without pinning the slash syntax that
+        # was removed (Danny 2026-07-25).
+        assert "1785" in out
 
     def test_greek_yogurt(self):
         out = deterministic_confirmation([_food("Greek yogurt")], _log(420, 55), _prefs())
         assert "greek yogurt" in out.lower()
-        assert "420" in out
-        assert "55 / 200" in out  # above 85% of 200 → at-target path
+        assert "1380" in out                       # 1800 - 420
+        assert "protein-forward" in out.lower()    # 55 is below 85% of 200
 
     def test_protein_shake(self):
         out = deterministic_confirmation([_food("protein shake")], _log(600, 85), _prefs())
         assert "protein shake" in out.lower()
-        assert "600" in out
+        assert "1200" in out                       # 1800 - 600
 
     def test_oatmeal(self):
         out = deterministic_confirmation([_food("oatmeal")], _log(350, 12), _prefs(cal_t=2000))
@@ -138,14 +141,14 @@ class TestCalorieContext:
         out = deterministic_confirmation([_food("burger")], _log(2400, 90), _prefs(cal_t=2000, pro_t=None))
         assert "keep the rest controlled" in out.lower()
 
-    def test_calorie_format_uses_slash_and_word(self):
-        """Must write 'X / Y calories', not 'X/Y cal'."""
+    def test_calorie_context_is_a_sentence_not_a_progress_bar(self):
+        """Was: "must write 'X / Y calories'". The slash form IS the progress
+        bar (Danny 2026-07-25) — a dashboard rendered as text. The remaining
+        amount is the useful part and it belongs in a sentence."""
         out = deterministic_confirmation([_food("rice")], _log(800, 20), _prefs(cal_t=2000, pro_t=None))
-        assert " / " in out
+        assert "/" not in out
         assert "calories" in out.lower()
-        # Must NOT use the old format
-        assert "/2000 cal" not in out
-        assert "800/2000" not in out
+        assert "1200" in out                       # 2000 - 800
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -158,20 +161,20 @@ class TestProteinState:
     def test_low_protein_nudge_when_well_below(self):
         # 40g of 200g target = 20% → low protein
         out = deterministic_confirmation([_food("toast")], _log(300, 40), _prefs(pro_t=200))
-        assert "40 / 200g" in out
-        assert "protein-first" in out.lower()
+        # The slash form is gone (Danny 2026-07-25) — it was a progress bar
+        # rendered as text. The branch is asserted by what it says to do.
+        assert "/" not in out
+        assert "protein-forward" in out.lower()
 
     def test_at_target_path_when_above_85_pct(self):
         # 170g of 200g = 85% → at/above path
         out = deterministic_confirmation([_food("steak")], _log(900, 170), _prefs(pro_t=200))
-        assert "170 / 200" in out
-        assert "protein-first" not in out.lower()
+        assert "protein-forward" not in out.lower()
 
     def test_at_target_path_when_over_target(self):
         # 220g of 200g = 110% → still at/above path
         out = deterministic_confirmation([_food("chicken")], _log(1100, 220), _prefs(pro_t=200))
-        assert "220 / 200" in out
-        assert "protein-first" not in out.lower()
+        assert "protein-forward" not in out.lower()
 
     def test_no_protein_target_ends_with_send_next_meal(self):
         out = deterministic_confirmation([_food("fruit salad")], _log(200, 3), _prefs(pro_t=None))
@@ -219,7 +222,7 @@ class TestMultiItemAllClear:
     def test_multi_item_still_shows_protein_nudge(self):
         tcs = [_food("pasta"), _food("bread")]
         out = deterministic_confirmation(tcs, _log(900, 30), _prefs(pro_t=200))
-        assert "protein-first" in out.lower()
+        assert "protein-forward" in out.lower()
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -317,33 +320,32 @@ class TestProteinBoundaries:
     def test_just_below_85_pct_is_low_protein(self):
         # 84% of 200 = 168 → low protein
         out = deterministic_confirmation([_food("pasta")], _log(800, 168), _prefs(pro_t=200))
-        assert "protein-first" in out.lower()
+        assert "protein-forward" in out.lower()
 
     def test_exactly_at_85_pct_is_at_target_path(self):
         # 85% of 200 = 170 → at/above path (NOT low protein)
         out = deterministic_confirmation([_food("chicken")], _log(800, 170), _prefs(pro_t=200))
-        assert "protein-first" not in out.lower()
-        assert "170 / 200" in out
+        assert "protein-forward" not in out.lower()
 
     def test_just_above_85_pct_is_at_target_path(self):
         # 86% of 200 = 172 → at/above path
         out = deterministic_confirmation([_food("steak")], _log(900, 172), _prefs(pro_t=200))
-        assert "protein-first" not in out.lower()
+        assert "protein-forward" not in out.lower()
 
     def test_zero_protein_with_target_is_low_protein(self):
         out = deterministic_confirmation([_food("white rice")], _log(300, 0), _prefs(pro_t=200))
-        assert "protein-first" in out.lower()
-        assert "0 / 200" in out
+        assert "protein-forward" in out.lower()
+        assert "200g to go" in out
 
     def test_fractional_protein_target_handles_without_crash(self):
         # pro_t=150 → 85% = 127.5; pro=127 → below
         out = deterministic_confirmation([_food("salad")], _log(500, 127), _prefs(pro_t=150))
-        assert "protein-first" in out.lower()
+        assert "protein-forward" in out.lower()
 
     def test_fractional_protein_target_at_boundary(self):
         # pro_t=150, pro=128 → 128 >= 127.5 → at/above
         out = deterministic_confirmation([_food("chicken")], _log(700, 128), _prefs(pro_t=150))
-        assert "protein-first" not in out.lower()
+        assert "protein-forward" not in out.lower()
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

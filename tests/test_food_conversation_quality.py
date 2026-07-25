@@ -408,3 +408,100 @@ def test_the_confirmed_bar_is_named_by_the_combined_turn():
     signature = ["barebells", "salty", "peanut", "protein", "bar"]
     assert any(word in combined for word in signature), (
         "no signature word survived; the carryover guard would block again")
+
+
+# ── 6. the answers the new question invites ───────────────────────────────────
+#
+# The question is "Was the peanut butter scoop closer to one tablespoon or two
+# tablespoons?" — so the two options it offers, and the natural ways people
+# answer a question shaped like that, all have to parse. Before this, both of
+# its own options were unparseable.
+class _Question:
+    """A stand-in for the clarification question, carrying its offered range."""
+    def __init__(self, *labels):
+        from skills.nutrition.clarify_policy import ClarificationOption
+        self.options = tuple(
+            ClarificationOption(label=l, field_name="consumed_fraction")
+            for l in labels)
+
+
+@pytest.mark.parametrize("answer,amount", [
+    ("one tablespoon", 1.0),
+    ("two tablespoons", 2.0),
+    ("1 tbsp", 1.0),
+    ("2 tbsp", 2.0),
+    # Qualitative, resolved against the offered ends.
+    ("a heaping spoonful", 2.0),
+    ("just a small spoon", 1.0),
+    ("the bigger one", 2.0),
+    # No middle option exists, so the midpoint is computed rather than an end
+    # being picked silently — the same rule as the rest of this PR.
+    ("somewhere in between", 1.5),
+])
+def test_the_questions_own_options_parse(answer, amount):
+    from skills.nutrition.answer_parsers import parse_quantity_answer
+
+    parsed = parse_quantity_answer(
+        answer, _Question("one tablespoon", "two tablespoons"))
+    assert parsed.values.get("stated_amount") == amount, dict(parsed.values)
+
+
+def test_asking_for_an_estimate_is_a_command_not_a_quantity():
+    from skills.nutrition.answer_parsers import (ClarificationCommand,
+                                                 parse_quantity_answer)
+
+    parsed = parse_quantity_answer(
+        "use your best estimate", _Question("one tablespoon",
+                                            "two tablespoons"))
+    assert parsed.command is ClarificationCommand.ESTIMATE
+
+
+def test_a_qualitative_answer_needs_a_question_to_resolve_against():
+    """"A small one" says nothing without knowing what was offered, and
+    guessing a number from it would be the silent conversion again."""
+    from skills.nutrition.answer_parsers import parse_quantity_answer
+
+    assert parse_quantity_answer("just a small one").unparsed
+
+
+def test_an_unrelated_answer_still_refuses():
+    from skills.nutrition.answer_parsers import parse_quantity_answer
+
+    parsed = parse_quantity_answer(
+        "purple", _Question("one tablespoon", "two tablespoons"))
+    assert parsed.unparsed
+
+
+# ── 7. coaching reads as sentences ────────────────────────────────────────────
+def test_the_deterministic_tail_is_not_a_progress_bar():
+    """"You're at 458 / 2165 calories today, good room left." — a dashboard
+    someone typed out. The remaining amount is the useful part."""
+    from handlers.tool_executor import deterministic_confirmation
+
+    class _P:
+        calorie_target, protein_target = 2000, 180
+
+    class _L:
+        total_calories, total_protein = 500, 20
+
+    out = deterministic_confirmation(
+        [{"name": "log_food", "input": {"food_name": "Rice"}}], _L(), _P())
+    assert "/" not in out
+    assert "1500" in out, out
+
+
+def test_card_verdicts_are_complete_sentences():
+    """"Small add. Real meal still needed." is a telegram. Every verdict the
+    card can show has to read as something a person said."""
+    import re
+
+    from core import receipt
+
+    source = (receipt.__file__ or "")
+    with open(source, "r") as handle:
+        verdicts = re.findall(r'verdict = \(?"([^"]{12,})"', handle.read())
+
+    assert verdicts, "no verdicts found — did the module move?"
+    for text in verdicts:
+        first = text.split(".")[0]
+        assert len(first.split()) >= 4, f"telegraphic verdict: {text!r}"

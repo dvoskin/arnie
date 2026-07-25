@@ -103,72 +103,72 @@ def build_receipt(
     day_open = total_cal < 900
 
     if vague:
-        verdict = "Logged as a range. Portion size would tighten this."
+        verdict = "I logged that as a range — a portion size would tighten it up."
     elif rem_c is not None and rem_c < 0:
         if rem_p is not None and rem_p <= 0:
-            verdict = ("Day closed. Protein made it."
+            verdict = ("That closes the day and protein made it."
                        if newly_hit or newly_over
-                       else "On pace. Nothing to correct.")
+                       else "You're on pace, so there's nothing to correct.")
         else:
-            verdict = "Over target. Keep the rest clean."
+            verdict = "You're over target for the day, so keep the rest of it clean."
             if local_hour is not None and local_hour < 20:
                 nxt = "Next: keep the rest light"
     elif rem_p is not None and rem_p <= 0:
-        verdict = ("Protein handled. Control calories."
-                   if newly_hit else "On pace. Nothing to correct.")
+        verdict = ("Protein's handled for the day — calories are the thing to watch now."
+                   if newly_hit else "You're on pace, so there's nothing to correct.")
     elif closes_gap:
-        verdict = "One more protein hit gets you there."
+        verdict = "One more protein-forward meal gets you to your target."
     elif rem_c is not None and 0 < rem_c <= 250:
         if protein_dense:
-            verdict = "Useful protein. Calories getting tight."
+            verdict = "That's useful protein, though calories are getting tight for the day."
         else:
-            verdict = "Calories tight. Keep the next move lean."
+            verdict = "Calories are getting tight, so keep your next meal lean."
         if rem_p is not None and rem_p > 15:
             nxt = f"Next: {rem_p}g protein, lean sources"
     elif carb_add and rem_p is not None and rem_p >= 25:
-        verdict = "Carbs added. Protein still needs the anchor."
+        verdict = "That was mostly carbs — protein still needs an anchor today."
     elif calories < 150 and rem_p is not None and rem_p > 40 and total_cal >= 400:
-        verdict = "Small add. Real meal still needed."
+        verdict = "That's a small addition, so you still have room for a full meal."
     elif trained_today and protein_dense:
-        verdict = "Good post-workout protein. Carbs help today."
+        verdict = "Good protein after training, and the carbs are working for you today."
     elif fat_heavy_day and protein_dense:
-        verdict = "Protein moved. Keep fats low."
+        verdict = "Protein moved nicely — keep fats low through the rest of the day."
     elif efficient:
         if rem_p is not None and rem_p > 80:
-            verdict = "Efficient protein. Today still needs a bigger anchor."
+            verdict = "Efficient protein for the calories, but the day still needs a bigger anchor."
         else:
-            verdict = "Efficient protein. Calories barely moved."
+            verdict = "Efficient protein — that barely moved your calories."
     elif protein_dense and 25 <= protein < 35 and calories <= 450:
-        verdict = "Good anchor. Protein is moving without burning the day."
+        verdict = "That's a solid anchor — protein is moving without burning through your day."
     elif protein >= 35:
         if local_hour is None:
-            verdict = "Strong protein hit. The next meal stays flexible."
+            verdict = "Strong protein hit, which leaves your next meal flexible."
         elif local_hour < 11:
-            verdict = "Strong protein hit. Lunch stays flexible."
+            verdict = "Strong protein hit, which leaves lunch flexible."
         elif local_hour < 17:
-            verdict = "Strong protein hit. Dinner stays flexible."
+            verdict = "Strong protein hit, which leaves dinner flexible."
         else:
-            verdict = "Strong protein hit. Day closes clean."
+            verdict = "Strong protein hit — the day closes clean from here."
     elif calories >= 500 and density < 0.15:
-        verdict = "Calorie-heavy for the protein return."
+        verdict = "That was calorie-heavy for the protein it returned."
         nxt = "Next: lean protein first"
     elif behind_pace and local_hour is not None and local_hour >= 14:
-        verdict = "Protein behind pace. Dinner needs the anchor."
+        verdict = "Protein's behind pace, so dinner needs to be the anchor."
         if rem_p is not None and rem_p > 0:
             when = "before dinner" if local_hour < 18 else "tonight"
             nxt = f"Next: {min(rem_p, 50)}g protein {when}"
     elif total_cal - calories <= 60 and calories >= 100:
         # First real log of the day — name the anchor, not generic praise.
         if protein < 20 and calories < 400:
-            verdict = "Light start. Dinner needs the anchor."
+            verdict = "That's a light start, so dinner needs to be the anchor."
         elif local_hour is not None and local_hour < 11:
-            verdict = "Solid anchor. Build the day on this."
+            verdict = "That's a solid anchor to build the rest of the day on."
         else:
-            verdict = "Clean base. Today still needs structure."
+            verdict = "That's a clean base, though the day still needs some structure."
     elif day_open:
-        verdict = "Clean base. Today still needs structure."
+        verdict = "That's a clean base, though the day still needs some structure."
     else:
-        verdict = "On pace. Nothing to correct."
+        verdict = "You're on pace, so there's nothing to correct."
 
     out["verdict"] = verdict
     if nxt:

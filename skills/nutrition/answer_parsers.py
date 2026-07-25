@@ -103,9 +103,51 @@ _FRACTION_WORDS = {
 }
 
 _PERCENT_RE = re.compile(r"(\d{1,3})\s*%")
-_AMOUNT_RE = re.compile(
-    r"(\d+(?:\.\d+)?)\s*(g|grams?|oz|ounces?|ml|l|liters?|litres?|cups?|"
-    r"tbsp|tsp|slices?|pieces?|servings?|bottles?|cans?|bars?)\b", re.I)
+_UNITS = (r"g|grams?|oz|ounces?|ml|l|liters?|litres?|cups?|tbsp|tablespoons?|"
+          r"tsp|teaspoons?|slices?|pieces?|servings?|bottles?|cans?|bars?|"
+          r"scoops?|handfuls?|spoons?|spoonfuls?|bowls?|plates?|glasses|glass")
+_AMOUNT_RE = re.compile(rf"(\d+(?:\.\d+)?)\s*({_UNITS})\b", re.I)
+
+#: Number words, so a portion answer does not have to be typed as a digit.
+#: "one tablespoon" is how people answer "was it closer to one tablespoon or
+#: two?" — and until this existed, the two options the question itself offered
+#: were both unparseable.
+_WORD_AMOUNTS = {"a": 1.0, "an": 1.0, "one": 1.0, "two": 2.0, "three": 3.0,
+                 "four": 4.0, "five": 5.0, "six": 6.0, "eight": 8.0,
+                 "ten": 10.0, "half": 0.5, "quarter": 0.25}
+_WORD_AMOUNT_RE = re.compile(
+    rf"\b({'|'.join(_WORD_AMOUNTS)})\s+(?:of\s+)?(?:a\s+)?({_UNITS})\b",
+    re.I)
+
+#: Answers that pick an END of the offered range rather than a number.
+#: "A heaping spoonful" and "just a small spoon" are real answers to "one
+#: tablespoon or two?", and treating them as unparseable sends the user back
+#: to type a number they did not have in the first place.
+_QUALITATIVE = (
+    ("high", re.compile(r"\b(?:heaping|heaped|big|large|generous|good|full|"
+                        r"proper|decent|more like (?:the )?(?:two|bigger)|"
+                        r"bigger|closer to (?:the )?(?:two|bigger|larger)|"
+                        r"the (?:bigger|larger|higher) one)\b", re.I)),
+    ("low", re.compile(r"\b(?:small|little|light|scant|modest|thin|just a|"
+                       r"closer to (?:the )?(?:one|smaller|less)|"
+                       r"the (?:smaller|lower) one)\b", re.I)),
+    ("mid", re.compile(r"\b(?:in between|in-between|somewhere between|"
+                       r"middle|middling|average|normal|regular|"
+                       r"somewhere in the middle)\b", re.I)),
+)
+
+
+def parse_qualitative(text: str):
+    """"high" | "low" | "mid" | None — which end of the offered range.
+
+    Checked in that order deliberately: "just a big spoonful" carries both a
+    low marker ("just a") and a high one ("big"), and the size word is the one
+    describing the portion.
+    """
+    for end, pattern in _QUALITATIVE:
+        if pattern.search(text or ""):
+            return end
+    return None
 
 
 def parse_fraction(text: str) -> Optional[float]:
@@ -139,11 +181,61 @@ def parse_quantity_answer(text: str, question=None) -> ClarificationAnswer:
             values={"stated_amount": float(m.group(1)),
                     "stated_unit": m.group(2).lower().rstrip(".")},
             confidence=0.95)
+    # A fraction of the thing beats a word amount: "half a bottle" is 0.5 of a
+    # bottle, not one bottle. Checked in that order for exactly that reason.
     fraction = parse_fraction(text)
     if fraction is not None:
         return ClarificationAnswer(values={"consumed_fraction": fraction},
                                    confidence=0.9)
+    m = _WORD_AMOUNT_RE.search(text or "")
+    if m:
+        return ClarificationAnswer(
+            values={"stated_amount": _WORD_AMOUNTS[m.group(1).lower()],
+                    "stated_unit": m.group(2).lower().rstrip(".")},
+            confidence=0.85)
+    # An end of the range, against the options the question offered. Only
+    # meaningful WITH a question — "a small one" says nothing on its own.
+    end = parse_qualitative(text)
+    if end is not None and question is not None:
+        resolved = _from_offered_range(end, getattr(question, "options", ()))
+        if resolved is not None:
+            return ClarificationAnswer(values=resolved, confidence=0.7)
     return UNPARSED
+
+
+def _from_offered_range(end: str, options):
+    """Resolve "small"/"heaping"/"in between" against the offered options.
+
+    The options are built in ascending order by the code that offers them, so
+    position is magnitude for the two ends.
+
+    "In between" is the interesting one. With two options there IS no middle
+    option, and picking either end would be the silent choice this whole
+    clarification exists to avoid — so the midpoint is computed from their
+    values instead. That is what the user said, and it is answerable.
+    """
+    parsed = []
+    for option in (options or ()):
+        label = getattr(option, "label", "")
+        if not label:
+            continue
+        answer = parse_quantity_answer(label)
+        if answer.values.get("stated_amount") is not None:
+            parsed.append(dict(answer.values))
+    if not parsed:
+        return None
+
+    if end == "low":
+        return parsed[0]
+    if end == "high":
+        return parsed[-1]
+
+    low, high = parsed[0], parsed[-1]
+    if low is high:
+        return dict(low)
+    midpoint = (low["stated_amount"] + high["stated_amount"]) / 2.0
+    return {"stated_amount": round(midpoint, 3),
+            "stated_unit": high.get("stated_unit") or low.get("stated_unit")}
 
 
 # ── product selection ─────────────────────────────────────────────────────────

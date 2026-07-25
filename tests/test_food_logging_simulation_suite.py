@@ -1375,8 +1375,10 @@ def test_deterministic_confirmation_uses_log_totals():
     out = deterministic_confirmation(
         [_log_food_call("banana")], _log(1234, 56), _prefs(cal_t=2000)
     )
-    # 1,234 is unusual enough to be obviously the passed-in value
-    assert "1,234" in out or "1234" in out
+    # The running total is no longer printed — it was a progress bar rendered
+    # as text (Danny 2026-07-25). The REMAINING figure is 2000 - 1234, still
+    # derived from the passed-in total, so an invented total fails here.
+    assert "766" in out, out
 
 
 # ════════════════════════════════════════════════════════════════════════════
