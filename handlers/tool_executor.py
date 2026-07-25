@@ -1677,6 +1677,19 @@ async def _analyze_food(db, user, food_name, inp):
         except Exception as e:
             logger.warning(f"nutrient estimation fallback failed: {e}")
 
+    # SHADOW (work order step 10): the resolution layer runs beside the live
+    # cascade and the two answers are logged side by side. It reuses the
+    # candidates fetched above, so it costs arithmetic and no network — a
+    # shadow that doubled USDA traffic would be its own incident. Inert
+    # unless NUTRITION_RESOLVER_SHADOW is set; observes, never votes.
+    try:
+        from skills.nutrition.shadow import compare as _shadow_compare
+        from core.turn_identity import current_turn_id as _shadow_turn
+        _shadow_compare(food_name, inp, result, memory=memory, usda=usda,
+                        off=off, web=web, turn_id=_shadow_turn() or "")
+    except Exception:
+        pass
+
     return result
 
 
