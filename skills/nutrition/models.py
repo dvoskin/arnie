@@ -144,6 +144,10 @@ class ResolutionAmbiguity:
     calorie_span: float = 0.0
     protein_span: float = 0.0
     detail: str = ""
+    # The span as a fraction of the item's own calories. An 80-calorie doubt
+    # is trivial on a 900-calorie platter and total on an 80-calorie bagel;
+    # an absolute threshold alone cannot tell those apart.
+    calorie_fraction: float = 0.0
 
 
 @dataclass(frozen=True)
