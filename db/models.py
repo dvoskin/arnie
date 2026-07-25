@@ -1051,3 +1051,88 @@ class GroupMessageReaction(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     emoji = Column(String, nullable=False)
     created_at = Column(DateTime, server_default=func.now())
+
+
+class UserFoodPreference(Base):
+    """What a phrase means for THIS user (directive 14).
+
+    "my Fairlife" is Core Power Elite 14 oz. "my yogurt" is Chobani Zero Sugar
+    vanilla. "turkey slices" are the thin Boar's Head ones at about 0.8 oz each.
+    Once a question has been answered the same way enough times, asking it again
+    is the system failing to learn.
+
+    Deliberately NOT a nutrition cache. It stores the identity and the portion
+    defaults; the resolver still prices them. A cached number goes stale when a
+    product is reformulated — a cached identity does not, and the existing
+    UserFoodMatch already covers nutrition caching with its own staleness rules.
+
+    Promotion is guarded: a preference is not created from a single occurrence.
+    See skills/nutrition/preferences.py for the rule and its reasoning.
+    """
+    __tablename__ = "user_food_preferences"
+    __table_args__ = (
+        # One row per (user, phrase) — a second would make "which default
+        # applies" undecidable.
+        UniqueConstraint("user_id", "trigger_term",
+                         name="uq_user_food_pref_term"),
+        Index("ix_user_food_prefs_user", "user_id"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    trigger_term = Column(String, nullable=False)   # normalized user phrase
+
+    canonical_name = Column(String)
+    brand = Column(String)
+    product_line = Column(String)
+    variant = Column(String)
+    package_amount = Column(Float)
+    package_unit = Column(String)
+
+    default_consumed_fraction = Column(Float)
+    default_unit_mass_g = Column(Float)
+
+    confirmations = Column(Integer, server_default="0", nullable=False)
+    contradictions = Column(Integer, server_default="0", nullable=False)
+    confidence = Column(Float, server_default="0", nullable=False)
+    promoted_at = Column(DateTime)          # null until the rule is satisfied
+    last_confirmed_at = Column(DateTime)
+    last_contradicted_at = Column(DateTime)
+    created_at = Column(DateTime, server_default=func.now())
+
+
+class FoodCorrection(Base):
+    """A correction, kept as evidence (directive 15).
+
+    When a user says "no, it was the Elite bottle" the entry gets fixed and the
+    information is currently thrown away — so the same mis-pick happens again
+    next week. This row keeps what was said, what we chose, what they meant, and
+    the full candidate ranking at decision time.
+
+    The ranking is the part that makes it useful: "why did it pick that?" is
+    unanswerable after the fact without it, and improving alias maps or scoring
+    from remembered complaints is guesswork.
+    """
+    __tablename__ = "food_corrections"
+    __table_args__ = (
+        Index("ix_food_corrections_user_time", "user_id", "created_at"),
+        Index("ix_food_corrections_field", "field_name"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    turn_id = Column(String)
+    staged_item_id = Column(String)
+    entry_id = Column(Integer)              # not an FK: survives the entry
+
+    original_text = Column(String)
+    ambiguity_type = Column(String)
+    field_name = Column(String)
+    chosen_value = Column(String)
+    corrected_value = Column(String)
+    chosen_candidate_id = Column(String)
+    corrected_candidate_id = Column(String)
+    candidate_ranking_json = Column(Text)
+    mode = Column(String)
+    via_alias = Column(String)
+    created_at = Column(DateTime, server_default=func.now())
