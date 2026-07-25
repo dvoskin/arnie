@@ -41,6 +41,10 @@ from dataclasses import dataclass, field, replace
 from enum import Enum
 from typing import Any, Callable, FrozenSet, Mapping, Optional, Tuple
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 RESPONSE_CONTRACT_VERSION = "food_response_v1"
 
 
@@ -320,7 +324,12 @@ _TRANSACTION_RE = re.compile(
     r"\b(?:give me a (?:moment|sec(?:ond)?)|one (?:sec(?:ond)?|moment)|"
     r"hang on|hold on|logging (?:it|that|this|all|them|everything)|"
     r"processing|working on it|saving (?:that|this|it)|"
-    r"updating your log|calculating|let me log|i'?ll log|"
+    # "let me log" is always pre-action narration. "I'll log" is only
+    # narration with an immediacy marker — "Tell me the calories and I'll log
+    # it as stated" is a conditional OFFER contingent on the user acting, and
+    # catching it left the unsupported-food failure with no usable message.
+    r"updating your log|calculating|let me log|"
+    r"i'?ll log\s+(?:it|that|this|them)?\s*(?:now|right away|for you)|"
     r"successfully logged|has been logged|been (?:added|saved) to your|"
     r"your request has been|the operation was|entry has been updated)\b",
     re.I)
@@ -728,6 +737,80 @@ def _is_recitation(sentence: str) -> bool:
 
 
 # ── composition ───────────────────────────────────────────────────────────────
+def plan_clarify_from_question(question, *, user_message: str = "",
+                               **kw) -> FoodResponsePlan:
+    """Build a CLARIFY plan from the policy's question, semantics and all.
+
+    This is what lets the sentence be a sentence: without resolved_item_names
+    the composer can only ask "Which yogurt?", and the acknowledgement that
+    makes it feel like one conversation ("I've got the toast and fruit") is
+    unavailable to it.
+    """
+    resolved = tuple(FoodItemSummary(name=n)
+                     for n in (getattr(question, "resolved_item_names", ()) or ()))
+    unresolved_name = getattr(question, "unresolved_item_name", "")
+    assumption = getattr(question, "material_assumption", "")
+    return apply_policy(FoodResponsePlan(
+        intent=FoodResponseIntent.CLARIFY,
+        resolved_items=resolved,
+        unresolved_item=(FoodItemSummary(name=unresolved_name)
+                         if unresolved_name else None),
+        clarification_question=question.prompt,
+        clarification_options=tuple(o.label for o in (question.options or ())),
+        assumptions=((assumption,) if assumption else ()),
+        requires_answer=True, user_message=user_message, **kw))
+
+
+async def compose_async(plan: FoodResponsePlan, *, model: Optional[str] = None,
+                        attempts: int = 2) -> tuple:
+    """Generate → validate → retry → fall back, against the real model.
+
+    Wraps compose() rather than duplicating it, so the validation rules cannot
+    drift between the sync path (tests, fallback-only callers) and the live one.
+    A model failure is not an error here: the deterministic fallback is always
+    correct, just plainer.
+    """
+    from core.llm import chat
+
+    async def _run(prompt: str) -> str:
+        try:
+            out = await chat([{"role": "user",
+                               "content": "Write the response."}],
+                             prompt, tools=False, max_tokens=200,
+                             model=model or _composer_model())
+            return (out or {}).get("text", "") if isinstance(out, dict) else str(out or "")
+        except Exception as e:
+            logger.warning(f"food composer model call failed: {e}")
+            return ""
+
+    prompt = build_prompt(plan)
+    last = ValidationResult(False, Reason.EMPTY_NOT_ALLOWED)
+    for _ in range(max(1, attempts)):
+        text = await _run(prompt)
+        last = validate(text, plan)
+        if last.ok:
+            return text.strip(), Reason.OK
+        prompt = f"{prompt}\n\nYOUR LAST ATTEMPT FAILED: {last.reason}. Fix it."
+    return fallback(plan), last.reason
+
+
+def _composer_model() -> str:
+    """Small and fast. The composer is phrasing an approved plan, not deciding
+    anything — a large model here buys nothing and costs latency on every food
+    turn."""
+    import os
+    return os.getenv("FOOD_COMPOSER_MODEL", "claude-haiku-4-5-20251001")
+
+
+def composer_enabled() -> bool:
+    """Off by default. The deterministic fallbacks are already correct and
+    non-robotic; the composer buys tone, and it costs a model call on every
+    food turn. Turn it on deliberately."""
+    import os
+    return (os.getenv("FOOD_COMPOSER", "") or "").strip().lower() in (
+        "1", "true", "yes")
+
+
 def compose(plan: FoodResponsePlan, generate: Optional[Callable] = None,
             *, attempts: int = 2) -> tuple:
     """Generate → validate → retry → fall back. Returns (text, reason).

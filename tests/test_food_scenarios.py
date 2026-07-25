@@ -459,3 +459,258 @@ def test_no_scenario_ever_describes_a_held_item_as_committed():
             assert item.outcome.is_committed, mode
         for item in resolution.pending:
             assert item.outcome is ItemOutcome.HELD, mode
+
+
+# ══ PR #27: the A–J conversation scenarios ═══════════════════════════════════
+# The directive's own transcripts, asserted against the response contract. What
+# these check is not that a particular sentence appears — it is that the SHAPE
+# is right: no transaction narration, no card read-back, no forced question,
+# and pending never described as logged.
+from core.food_response import (CARD_FACTS, FoodResponseIntent,
+                                FoodResponsePlan, Reason, apply_policy,
+                                fallback, plan_clarify_from_question,
+                                plan_correct, plan_from_resolution,
+                                plan_review, validate)
+from core.food_response import FoodItemSummary as _Sum
+from skills.nutrition.meal_resolution import (ItemOutcome, MealResolution,
+                                              PendingItem, ResolvedItem)
+
+
+def _committed(*names):
+    return MealResolution(
+        meal_group_id=MEAL,
+        committed=tuple(ResolvedItem(staged_item_id=f"i{i}",
+                                     outcome=ItemOutcome.COMMITTED_EXACT,
+                                     entry_id=i, name=n, quantity_text=q)
+                        for i, (n, q) in enumerate(names)))
+
+
+# ── A · gooseberry jam and toast ─────────────────────────────────────────────
+def test_scenario_a_review_reads_as_a_sentence_not_a_form():
+    """Was: "Locking this in:" over a numbered bold list ending "Good to log,
+    or anything to fix?" — three pieces of transaction vocabulary."""
+    from core.food_turn import format_confirm
+    text = format_confirm([{"food": "toast", "amount": 1, "unit": "slice"},
+                           {"food": "gooseberry jam", "amount": 1,
+                            "unit": "tbsp"}])
+    assert text == ("I've got 1 slice toast and 1 tbsp gooseberry jam. "
+                    "Does that look right?")
+    for banned in ("Locking this in", "anything to fix", "**", "1."):
+        assert banned not in text
+
+
+def test_scenario_a_after_confirming_there_is_no_narration_and_no_recital():
+    from core.food_response import strip_card_recitation
+    plan = plan_from_resolution(_committed(("toast", "1 slice"),
+                                           ("gooseberry jam", "1 tbsp")))
+    assert plan.intent is FoodResponseIntent.COMMIT
+    # The renderer's committed line is stripped to nothing — the card has it.
+    rendered = ("Toast logged, 130 cal and 3g protein. You're at 130 with "
+                "1990 left and 176g protein to go.")
+    assert strip_card_recitation(rendered, plan) == ""
+    # And a useful observation is allowed in its place, with no question.
+    assert validate("Light start. I'd make your next meal protein-heavy.",
+                    plan).ok
+
+
+def test_scenario_a_no_forced_question_after_the_card():
+    plan = plan_from_resolution(_committed(("toast", "1 slice")))
+    assert not plan.allow_question
+    assert validate("Light start. What's for lunch?",
+                    plan).reason == Reason.FORBIDDEN_QUESTION
+
+
+# ── B · simple clear meal ────────────────────────────────────────────────────
+def test_scenario_b_a_clear_meal_may_commit_with_no_text_at_all():
+    """Two eggs and a slice of toast: card renders, nothing to add."""
+    plan = plan_from_resolution(_committed(("eggs", "2"), ("toast", "1 slice")))
+    assert plan.allow_no_text
+    assert validate("", plan).ok
+    assert fallback(plan) == ""
+
+
+def test_scenario_b_one_observation_is_also_valid():
+    plan = plan_from_resolution(_committed(("eggs", "2")))
+    assert validate("Solid start. Enough protein to hold you over.", plan).ok
+
+
+# ── C · branded ambiguity, per mode ──────────────────────────────────────────
+def _fairlife_decision(mode):
+    item = _fairlife_item()
+    candidates = build_candidate_set(_fairlife_candidates(),
+                                     requested_name="Fairlife",
+                                     requested_brand="Fairlife")
+    item = item.with_ambiguities([
+        _bottle_ambiguity(item.staged_item_id, candidates, mode),
+        _fraction_ambiguity(item.staged_item_id, mode)])
+    return item, decide([item], mode=mode)
+
+
+def test_scenario_c_quick_holds_a_genuine_coin_toss():
+    """Quick assumes defensibly — it does not assume a 50/50. Whole bottle vs
+    half at even confidence is exactly the case where committing would be
+    indefensible, so even quick holds it."""
+    _, decision = _fairlife_decision("quick")
+    assert decision.transaction_policy is TransactionPolicy.COMMIT_WITH_ASSUMPTIONS
+    assert decision.held_item_ids          # the policy, not the mode, decides
+
+
+def test_scenario_c_quick_commits_with_the_assumption_stated():
+    """"I logged that as a regular Core Power bottle. Tell me if it was the
+    Elite." — the directive's example presumes a clear leader, which is what
+    makes the assumption defensible."""
+    item = _fairlife_item()
+    candidates = build_candidate_set(_fairlife_candidates(),
+                                     requested_name="Fairlife",
+                                     requested_brand="Fairlife")
+    leader = build_ambiguity(
+        staged_item_id=item.staged_item_id,
+        ambiguity_type=AmbiguityType.PRODUCT_LINE, field_name="product_line",
+        mode="quick", calorie_span=190,
+        options=(AmbiguityOption("Core Power · 14 oz", 0.72,
+                                 payload="Core Power"),
+                 AmbiguityOption("Elite · 14 oz", 0.18,
+                                 payload="Core Power Elite")))
+    item = item.with_ambiguities([leader])
+    decision = decide([item], mode="quick")
+    assert decision.transaction_policy is TransactionPolicy.COMMIT_WITH_ASSUMPTIONS
+    assert decision.ready_item_ids == (item.staged_item_id,)
+    assert decision.assumptions
+    plan = plan_from_resolution(_committed(("Core Power", "1 bottle")))
+    assert validate("I logged that as a regular Core Power bottle. Tell me if "
+                    "it was the Elite.", plan).ok
+
+
+def test_scenario_c_strict_bundles_the_two_questions_into_one_turn():
+    _, decision = _fairlife_decision("strict")
+    assert len(decision.questions) == 1
+    q = decision.questions[0]
+    assert q.response_schema is ResponseSchema.PRODUCT_AND_FRACTION
+    assert set(q.requested_fields) >= {"product_line", "consumed_fraction"}
+
+
+def test_scenario_c_the_question_acknowledges_what_is_already_known():
+    """A clarification that names nothing understood reads as an interrogation
+    rather than a continuation."""
+    toast = _stage("toast", 1)
+    item, _ = _fairlife_decision("moderate")
+    decision = decide([toast, item], mode="moderate")
+    q = decision.questions[0]
+    assert "toast" in q.resolved_item_names
+    plan = plan_clarify_from_question(q)
+    assert "toast" in fallback(plan)
+
+
+# ── D · clarification continuation ───────────────────────────────────────────
+def test_scenario_d_the_answer_binds_and_does_not_re_review():
+    from core.food_response import plan_confirm_answer
+    item, decision = _fairlife_decision("moderate")
+    question = decision.questions[0]
+    answer = parse_answer("Elite, about half", question)
+    resolved = item.resolving(**answer.values)
+    assert resolved.staged_item_id == item.staged_item_id
+
+    plan = plan_confirm_answer("half of the Elite")
+    assert not plan.allow_question          # the answer completed it
+    assert plan.allow_no_text               # card may say it alone
+    assert fallback(plan) == "Got it, half of the Elite."
+
+
+# ── E · partial meal ─────────────────────────────────────────────────────────
+def test_scenario_e_pending_is_never_described_as_logged():
+    resolution = MealResolution(
+        meal_group_id=MEAL,
+        committed=(ResolvedItem(staged_item_id="i1",
+                                outcome=ItemOutcome.COMMITTED_EXACT,
+                                entry_id=1, name="sandwich"),),
+        pending=(PendingItem(staged_item_id="p1", name="shake"),))
+    plan = plan_from_resolution(
+        resolution, clarification_question="Was the shake Core Power or Elite?")
+    assert plan.intent is FoodResponseIntent.PARTIAL_COMMIT
+    assert validate("I've got the sandwich in. Was the shake Core Power or "
+                    "Elite?", plan).ok
+    assert validate("Sandwich and shake logged. Which one was the shake?",
+                    plan).reason == Reason.PENDING_AS_COMMITTED
+
+
+# ── F · correction ───────────────────────────────────────────────────────────
+def test_scenario_f_a_correction_is_immediate_and_asks_nothing():
+    plan = plan_correct("the jam")
+    assert not plan.allow_question
+    assert fallback(plan) == "Updated the jam."
+    assert validate("Got it, raspberry instead.", plan).ok
+    assert validate("Updating your log now.",
+                    plan).reason == Reason.TRANSACTION_NARRATION
+
+
+# ── G · emotional context ────────────────────────────────────────────────────
+def test_scenario_g_the_meaning_is_answered_not_just_the_mutation():
+    plan = apply_policy(FoodResponsePlan(
+        intent=FoodResponseIntent.GENERAL_CONVERSATION,
+        user_message="I barely ate half because it was terrible",
+        user_emotional_context="they disliked the meal"))
+    assert validate("I counted half. Sounds like that one's not becoming a "
+                    "regular.", plan).ok
+    from core.food_response import build_prompt
+    assert "THEY SIGNALLED: they disliked the meal" in build_prompt(plan)
+
+
+# ── H · disputed estimate ────────────────────────────────────────────────────
+def test_scenario_h_a_purposeful_question_is_allowed_a_generic_one_is_not():
+    plan = apply_policy(FoodResponsePlan(
+        intent=FoodResponseIntent.GENERAL_CONVERSATION,
+        user_message="that seems high"))
+    assert validate("The sauce is probably driving it. Was it a light drizzle "
+                    "or pretty heavy?", plan).ok
+    assert validate("Sorry about that. Anything else I can help with?",
+                    plan).reason in (Reason.FORBIDDEN_QUESTION,
+                                     Reason.SYSTEM_TONE)
+
+
+# ── I · source outage ────────────────────────────────────────────────────────
+def test_scenario_i_an_outage_never_blames_the_product_or_the_user():
+    from skills.nutrition.families import (CandidateResolutionFailure,
+                                           failure_intent)
+    from core.food_response import plan_failure
+    intent = failure_intent(CandidateResolutionFailure.SOURCE_UNAVAILABLE)
+    assert not intent.user_fixable and not intent.requires_question
+    text = fallback(plan_failure(intent))
+    assert "couldn't identify" not in text.lower()
+    assert "estimate" in text.lower()
+
+
+def test_scenario_i_a_genuine_miss_does_ask_for_the_label():
+    from skills.nutrition.families import (CandidateResolutionFailure,
+                                           failure_intent)
+    from core.food_response import plan_failure
+    intent = failure_intent(CandidateResolutionFailure.NO_MATCH)
+    assert intent.user_fixable and intent.requires_question
+    plan = plan_failure(intent)
+    assert "?" in fallback(plan)
+    assert validate(fallback(plan), plan).ok
+
+
+# ── J · routine consecutive logs ─────────────────────────────────────────────
+def test_scenario_j_consecutive_commits_do_not_all_end_in_a_question():
+    for _ in range(3):
+        plan = plan_from_resolution(_committed(("rice", "200g")))
+        assert not plan.allow_question
+
+
+def test_scenario_j_a_repeated_opener_is_rejected():
+    """"Got it." every time reads as a template, not a coach."""
+    plan = plan_from_resolution(
+        _committed(("rice", "200g")),
+        recent_response_openers=("Got it, that's in.", "Got it."))
+    assert validate("Got it.", plan).reason == Reason.REPEATED_OPENER
+    assert validate("Light start there.", plan).ok
+
+
+def test_scenario_j_some_turns_are_card_only():
+    plan = plan_from_resolution(_committed(("rice", "200g")))
+    assert plan.allow_no_text and validate("", plan).ok
+
+
+def test_scenario_j_coaching_is_not_forced_after_every_log():
+    plan = apply_policy(FoodResponsePlan(intent=FoodResponseIntent.COACH))
+    assert fallback(plan) == ""          # silence beats "Keep it up."
