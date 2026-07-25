@@ -163,6 +163,15 @@ def _tokens(text: str) -> set:
             if w not in _STOPWORDS}
 
 
+#: Fields that describe HOW MUCH rather than WHAT. A bundled question offers
+#: options for both, and a product matcher must not consider the portion ones —
+#: "about half" scores perfectly against the "about half" option and would then
+#: be written to product_line.
+_QUANTITY_FIELDS = frozenset({"consumed_fraction", "stated_amount",
+                              "stated_unit", "estimated_mass_g",
+                              "container_count"})
+
+
 def parse_product_selection(text: str,
                             question: Optional[ClarificationQuestion] = None,
                             options=None) -> ClarificationAnswer:
@@ -175,6 +184,9 @@ def parse_product_selection(text: str,
 
     options = tuple(options if options is not None
                     else (question.options if question else ()))
+    # Consider only options that answer an IDENTITY field.
+    options = tuple(o for o in options
+                    if getattr(o, "field_name", "") not in _QUANTITY_FIELDS)
     if not options:
         return UNPARSED
     if _VAGUE_SELECTIONS.match((text or "").strip()):
@@ -203,12 +215,16 @@ def parse_product_selection(text: str,
     best = scored[0][2]
     fields = tuple(question.requested_fields) if question else ()
     values = {}
-    if best.value is not None and len(fields) == 1:
-        values[fields[0]] = best.value
-    elif isinstance(best.value, dict):
+    if isinstance(best.value, dict):
         values.update(best.value)
-    elif fields:
-        values[fields[0]] = best.label
+    else:
+        # The option's OWN field, not the question's first — a bundle has
+        # several and guessing the first is how a portion answer lands on
+        # product_line.
+        target = getattr(best, "field_name", "") or (fields[0] if fields else "")
+        if target:
+            values[target] = (best.value if best.value is not None
+                              else best.label)
     return ClarificationAnswer(values=values,
                                confidence=round(0.6 + 0.35 * scored[0][0], 3),
                                matched_candidate_id=best.candidate_id)

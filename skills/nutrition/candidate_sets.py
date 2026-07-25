@@ -162,13 +162,20 @@ def collapse_candidates(candidates) -> list:
     return out
 
 
-def materially_distinct(candidates, tolerance: float = 25.0) -> list:
+def materially_distinct(candidates, tolerance: float = 25.0,
+                        scale: float = 1.0) -> list:
     """The candidates a user could actually be asked to choose between.
 
     Two survivors whose calories are within `tolerance` are not a real choice —
     picking either produces the same log, so the question would be friction
     with no payoff. Candidates whose calories are unknown always survive: we
     cannot claim they agree with anything.
+
+    `scale` exists because the tolerance is in PORTION calories while a
+    candidate's profile may be per 100 g. Two drinks 14 cal/100g apart look
+    identical against a 25-cal floor, and are 58 cal apart over a 414 ml
+    bottle — a real choice compared in the wrong unit. Callers holding
+    per-100g candidates should pass grams/100.
     """
     kept = []
     for c in candidates or []:
@@ -176,9 +183,10 @@ def materially_distinct(candidates, tolerance: float = 25.0) -> list:
         if cal is None:
             kept.append(c)
             continue
+        cal = cal * scale
         twin = next((k for k in kept
                      if k.calories is not None
-                     and abs(k.calories - cal) <= tolerance), None)
+                     and abs(k.calories * scale - cal) <= tolerance), None)
         if twin is None:
             kept.append(c)
     return kept
