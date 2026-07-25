@@ -850,6 +850,47 @@ async def run(message: str, user, prior: Optional[dict] = None,
               day_line: str = "", board: Optional[list] = None,
               last_assistant: str = "", regulars: Optional[list] = None,
               thread_active: bool = False) -> Optional[dict]:
+    """The traced entry point (PR #29).
+
+    A thin wrapper rather than instrumentation threaded through the body: the
+    interpreter pass has a dozen return points, and making each of them
+    responsible for closing a trace would mean the one that got missed is the
+    one that mattered. One entry, one exit, `finally`.
+
+    Everything about the trace is best-effort. `begin` returns None when
+    tracing is off and `finish` tolerates that, so the wrapper costs a function
+    call and nothing else when the switch is down.
+    """
+    from core import food_trace
+
+    trace = None
+    try:
+        from core.turn_identity import current_turn_id
+        from skills.nutrition.canary import cohort_label
+        trace = food_trace.begin(
+            turn_id=(current_turn_id() or ""),
+            user_id=getattr(user, "id", None), mode=_mode(user),
+            cohort=cohort_label(getattr(user, "id", None)))
+    except Exception:
+        trace = None
+
+    try:
+        return await _run_untraced(
+            message, user, prior=prior, day_line=day_line, board=board,
+            last_assistant=last_assistant, regulars=regulars,
+            thread_active=thread_active)
+    except Exception as e:
+        food_trace.note(error=f"run:{type(e).__name__}")
+        raise
+    finally:
+        food_trace.finish(trace)
+
+
+async def _run_untraced(message: str, user, prior: Optional[dict] = None,
+                        day_line: str = "", board: Optional[list] = None,
+                        last_assistant: str = "",
+                        regulars: Optional[list] = None,
+                        thread_active: bool = False) -> Optional[dict]:
     """Run the interpreter pass. Returns
         {"action": "log"|"update"|"delete"|"commit", "tool_calls": [...],
          "kinds": [...], "say": "...", "note": "...", "follow_up": "..."}

@@ -251,6 +251,14 @@ class CorrectionRecord:
     candidate_ranking: tuple = ()
     mode: str = ""
     via_alias: Optional[str] = None
+    meal_group_id: str = ""
+    #: Whether the corrected field was something WE assumed rather than
+    #: something the user stated. The correction funnel is meaningless without
+    #: it: a correction to an assumption is a failure of the default and is
+    #: teachable, while a correction to a stated value is a failure of the
+    #: parse and teaches nothing about defaults. Counting them together
+    #: produces a number no decision can be made from.
+    was_assumed: bool = False
 
     def ranking_json(self) -> str:
         return json.dumps(list(self.candidate_ranking))
@@ -258,6 +266,9 @@ class CorrectionRecord:
     def log_line(self) -> str:
         return (f"event=food_correction user={self.user_id} "
                 f"turn={self.turn_id or '-'} field={self.field_name} "
+                f"type={self.ambiguity_type or '-'} "
+                f"meal={self.meal_group_id or '-'} "
+                f"assumed={str(bool(self.was_assumed)).lower()} "
                 f"text={self.original_text!r} "
                 f"chose={self.chosen_value!r} meant={self.corrected_value!r} "
                 f"alias={self.via_alias or '-'} mode={self.mode or '-'} "
@@ -294,9 +305,17 @@ def build_correction(*, user_id: int, field_name: str, chosen, corrected,
         entry_id=entry_id, chosen_candidate_id=chosen_id,
         corrected_candidate_id=corrected_id,
         candidate_ranking=tuple(ranking), mode=mode,
+        meal_group_id=getattr(item, "meal_group_id", "") if item else "",
+        was_assumed=_was_assumed(item, field_name),
         via_alias=next((r["via_alias"] for r in ranking
                         if r["candidate_id"] == chosen_id and r["via_alias"]),
                        None))
+
+
+def _was_assumed(item, field_name: str) -> bool:
+    """Whether this field carried an assumption of ours at correction time."""
+    return any(getattr(a, "field_name", "") == field_name
+               for a in (getattr(item, "assumptions", ()) or ()))
 
 
 def _ambiguity_type_for(item, field_name: str) -> str:

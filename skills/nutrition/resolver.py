@@ -217,6 +217,23 @@ def resolve(request: FoodResolutionRequest, candidates: list) -> NutritionResolu
     carrying the reason, because a food turn that cannot answer still has to
     answer.
     """
+    from core import food_trace
+    with food_trace.stage(food_trace.Stage.RESOLVE) as timed:
+        out = _resolve(request, candidates)
+        timed.counts.update(candidates=len(candidates or ()),
+                            rejected=len(out.rejected_candidates or ()),
+                            ambiguities=len(out.ambiguities or ()))
+        if out.source == "unresolved":
+            timed.outcome = food_trace.Outcome.HELD
+            timed.detail = "unresolved"
+    return out
+
+
+def _resolve(request: FoodResolutionRequest,
+             candidates: list) -> NutritionResolution:
+    """The resolution itself. Split from `resolve` only so the timing wrapper
+    has one exit to measure — resolve has several, and timing each of them
+    separately is how one of them ends up untimed."""
     quantity = normalize_quantity(request.raw_quantity or "",
                                   request.food_name)
     rejections, viable = [], []
