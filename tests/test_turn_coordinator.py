@@ -560,3 +560,140 @@ async def test_shallow_observation_costs_no_model_call(monkeypatch):
     pred = await OB.observe_turn(_req("had 2 eggs and toast"))
     assert pred["lane"] == "structured_food"
     assert pred["disposition"] == ""
+
+
+# ── Phase 5: native execution + assembly ──────────────────────────────────────
+class _U:
+    id = 7
+    preferences = None
+
+
+@pytest.mark.asyncio
+async def test_native_execution_runs_only_approved_operations(monkeypatch):
+    """A policy refusal must not be bypassable by a stage reaching one layer
+    back to the plan's raw operations."""
+    from core.turns.stages.execute_native import NativeExecutionStage
+    import db.queries as Q
+
+    async def _claim(db, user_id, key, **kw):
+        return True
+    monkeypatch.setattr(Q, "claim_processed_turn", _claim)
+
+    seen = {}
+    async def _executor(calls, user, log, db, **kw):
+        seen["calls"] = calls
+        seen["source_type"] = kw.get("source_type")
+        return {}
+
+    approved = ({"name": "log_food", "input": {"food_name": "Rice"}},)
+    v = ValidationResult(disposition="execute", approved_operations=approved)
+    await NativeExecutionStage(_executor).run(
+        _req("rice", db=object(), user=_U()), validation=v)
+    assert [c["name"] for c in seen["calls"]] == ["log_food"]
+    assert seen["source_type"] == "imessage"
+
+
+@pytest.mark.asyncio
+async def test_native_execution_refuses_a_replayed_turn(monkeypatch):
+    """Exactly-once: the claim is taken BEFORE the writes, so a resend never
+    reaches the executor at all."""
+    from core.turns.stages.execute_native import (NativeExecutionStage,
+                                                  ExactlyOnceRefusal)
+    import db.queries as Q
+
+    async def _taken(db, user_id, key, **kw):
+        return False
+    monkeypatch.setattr(Q, "claim_processed_turn", _taken)
+
+    async def _boom(*a, **k):
+        raise AssertionError("a replayed turn must never execute")
+
+    v = ValidationResult(disposition="execute",
+                         approved_operations=({"name": "log_food", "input": {}},))
+    with pytest.raises(ExactlyOnceRefusal):
+        await NativeExecutionStage(_boom).run(
+            _req("rice", db=object(), user=_U()), validation=v)
+
+
+@pytest.mark.asyncio
+async def test_an_unavailable_claim_does_not_block_the_write(monkeypatch):
+    """Refusing every write on an infrastructure fault is worse than a rare
+    double — the in-memory and interpreter dedup layers still apply."""
+    from core.turns.stages.execute_native import NativeExecutionStage
+    import db.queries as Q
+
+    async def _down(db, user_id, key, **kw):
+        raise RuntimeError("claims table unavailable")
+    monkeypatch.setattr(Q, "claim_processed_turn", _down)
+
+    ran = {"n": 0}
+    async def _executor(*a, **k):
+        ran["n"] += 1
+        return {}
+
+    v = ValidationResult(disposition="execute",
+                         approved_operations=({"name": "log_food", "input": {}},))
+    await NativeExecutionStage(_executor).run(
+        _req("rice", db=object(), user=_U()), validation=v)
+    assert ran["n"] == 1
+
+
+@pytest.mark.asyncio
+async def test_nothing_approved_means_nothing_executes():
+    from core.turns.stages.execute_native import NativeExecutionStage
+
+    async def _boom(*a, **k):
+        raise AssertionError("an empty plan must not reach the executor")
+    out = await NativeExecutionStage(_boom).run(
+        _req(), validation=ValidationResult(disposition="execute"))
+    assert out is None
+
+
+@pytest.mark.asyncio
+async def test_factory_delegates_unless_the_lane_is_promoted(monkeypatch):
+    from core.turns.factory import build_coordinator
+    from core.turns.stages.execute import LegacyExecutionStage
+    from core.turns.stages.execute_native import NativeExecutionStage
+    monkeypatch.delenv("TURN_COORDINATOR_MODE", raising=False)
+
+    coord = await build_coordinator(_req("undo"), system="SYS", messages=[])
+    assert isinstance(coord.execution_stage, LegacyExecutionStage)
+
+    monkeypatch.setenv("TURN_COORDINATOR_MODE", "new_execute")
+    monkeypatch.setenv("TURN_COORDINATOR_LANES", "ledger_undo")
+    monkeypatch.delenv("TURN_COORDINATOR_ALLOWLIST", raising=False)
+    coord = await build_coordinator(_req("undo"), system="SYS", messages=[])
+    assert isinstance(coord.execution_stage, NativeExecutionStage)
+    # The food lane is NOT promoted by enabling undo.
+    coord = await build_coordinator(_req("had 2 eggs"), system="SYS", messages=[])
+    assert isinstance(coord.execution_stage, LegacyExecutionStage)
+
+
+@pytest.mark.asyncio
+async def test_routing_runs_exactly_once_per_turn(monkeypatch):
+    """A second routing pass could disagree if the board or a pending question
+    moved underneath it."""
+    import core.turns.factory as F
+    from core.turns.models import RouteDecision as _RD
+    calls = {"n": 0}
+
+    class _CountingRoute:
+        async def run(self, request, context=None):
+            calls["n"] += 1
+            return _RD(TurnLane.GENERAL, "counted")
+    monkeypatch.setattr(F, "RouteStage", _CountingRoute)
+
+    coord = await F.build_coordinator(_req(), system="SYS", messages=[])
+    assert calls["n"] == 1
+    decision = await coord.route_stage.run(request=_req())
+    assert calls["n"] == 1 and decision.reason_code == "counted"
+
+
+@pytest.mark.asyncio
+async def test_context_stage_records_what_the_turn_was_given():
+    from core.turns.stages.context import LegacyContextStage
+    manifest = await LegacyContextStage(
+        system="x" * 400,
+        messages=[{"role": "user", "content": "y" * 200}]).run(_req())
+    assert manifest.token_estimate == 150      # ~4 chars per token, an estimate
+    assert manifest.included_sections == ("system", "messages")
