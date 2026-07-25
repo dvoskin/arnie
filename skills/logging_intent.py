@@ -199,7 +199,27 @@ def effective_intent_message(current: Optional[str], prior: Optional[str],
     if words <= 8 and _CONSUMED_REFERENCE_RX.match(cur):
         return f"{prior}\n{cur}"
     pa = (prior_assistant or "").strip()
-    if pa.rstrip("| ").endswith("?") and words <= 16:
+    # ASKED A QUESTION, not ENDED WITH ONE (the dropped-Barebells incident,
+    # Danny 2026-07-25).
+    #
+    # The assistant's turn was:
+    #
+    #     Barebell bar (Salty Peanut) locked in
+    #     Just need a couple things:
+    #     1. cottage cheese: rough amount - half cup or a full cup?
+    #     2. honey: about how much - a teaspoon or a tablespoon drizzle?
+    #     Nothing hits the board till then, keeps your log exact.
+    #
+    # Two questions, then a closing reassurance — so it did not END with "?",
+    # the combine silently switched off, and the answer ("Half a cup and like
+    # a drizzle baby") was judged alone. It names no food, so the carryover
+    # guard read the confirmed protein bar as a phantom dragged in from an
+    # earlier turn and blocked it. The user was told "the board changed under
+    # me" about an item they had confirmed two turns earlier.
+    #
+    # A question mark ANYWHERE in the assistant's turn means it asked
+    # something. The ≤16-word bound on the answer is what keeps this tight.
+    if "?" in pa and words <= 16:
         return f"{prior}\n{cur}"
     return cur
 

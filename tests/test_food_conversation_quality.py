@@ -345,3 +345,66 @@ def test_a_roll_call_of_something_else_is_not_stripped():
     plan = _committed_plan()
     text = "Almonds, walnuts and pecans are all good options for that."
     assert strip_card_recitation(text, plan) == text
+
+
+# ── 5. the confirmed item that never landed ───────────────────────────────────
+#
+# From the second pair of screenshots: the user confirmed a Barebells Salty
+# Peanut bar, answered two follow-up questions about cottage cheese and honey,
+# and was then told "Couldn't touch the Barebells Salty Peanut Protein Bar —
+# the board changed under me." Two of three items logged; the one they had
+# explicitly confirmed was dropped.
+_ASSISTANT_ASKED = (
+    "Barebell bar (Salty Peanut) locked in\n"
+    "Just need a couple things:\n"
+    "1. cottage cheese: rough amount - half cup or a full cup?\n"
+    "2. honey: about how much - a teaspoon or a tablespoon drizzle?\n"
+    "Nothing hits the board till then, keeps your log exact.")
+_PRIOR_USER = ("Salty peanut, also a little bit kf cottage cheese "
+               "and some honey")
+_ANSWER = "Half a cup and like a drizzle baby"
+
+
+def test_a_clarify_answer_carries_the_intent_of_the_turn_it_answers():
+    """The cause of the drop. The combine that gives an answer turn its item
+    names was gated on the assistant's message ENDING with "?" — this one asked
+    two questions and closed with a reassurance, so the combine switched off,
+    the answer named no food, and the carryover guard read a confirmed bar as a
+    phantom."""
+    from skills.logging_intent import effective_intent_message
+
+    combined = effective_intent_message(_ANSWER, _PRIOR_USER,
+                                        _ASSISTANT_ASKED)
+    assert combined != _ANSWER, "the answer turn lost its item names"
+    assert "salty peanut" in combined.lower()
+
+
+def test_the_combine_still_needs_a_question():
+    """Widening this gate re-opens the phantom re-fire it was built to stop, so
+    an assistant turn that asked nothing must not pull the prior message in."""
+    from skills.logging_intent import effective_intent_message
+
+    assert effective_intent_message(
+        "had a bagel", "earlier stuff", "Nice work today.") == "had a bagel"
+
+
+def test_the_combine_still_only_applies_to_a_short_answer():
+    """A long message stands on its own — combining widens the gate, and the
+    bound is what keeps it tight."""
+    from skills.logging_intent import effective_intent_message
+
+    long_answer = " ".join(["word"] * 20)
+    assert effective_intent_message(
+        long_answer, "prior message", "Which one?") == long_answer
+
+
+def test_the_confirmed_bar_is_named_by_the_combined_turn():
+    """End to end for the drop: with the combine restored, the guard that
+    blocked the bar can see it named."""
+    from skills.logging_intent import effective_intent_message
+
+    combined = effective_intent_message(_ANSWER, _PRIOR_USER,
+                                        _ASSISTANT_ASKED).lower()
+    signature = ["barebells", "salty", "peanut", "protein", "bar"]
+    assert any(word in combined for word in signature), (
+        "no signature word survived; the carryover guard would block again")
