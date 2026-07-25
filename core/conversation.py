@@ -1703,21 +1703,22 @@ async def _run_turn(
                         _sft.get("action"), _ok_calls, _ac - _bc0, _ap - _bp0)
                     _say = enforce_say_contract(
                         (_sft.get("say") or "").strip(), _ok_calls)
-                    try:
-                        from core.food_ledger import (build_snapshot,
-                                                      render_committed)
-                        _snap = build_snapshot(_ok_calls, _batch_c, _batch_p,
-                                               _ac, _ap, _ct, _pt)
-                        response_text = render_committed(
-                            _say, _sft.get("note") or "",
-                            _sft.get("follow_up") or "", _snap)
-                    except Exception as _e:
-                        # The renderer must never cost the user their reply —
-                        # fall back to the token-filled say (same numbers).
-                        logger.warning(f"render_committed fallback: {_e}")
-                        from core.food_turn import fill_say_tokens
-                        response_text = fill_say_tokens(
-                            _say, _batch_c, _batch_p, _ac, _ap, _ct, _pt)
+                    # ── THE RESPONSE CONTRACT AUTHORS THE CONFIRMATION ─────
+                    #
+                    # This used to be two steps with a seam between them:
+                    # `render_committed()` wrote the whole reply, then
+                    # `strip_card_recitation()` took back the parts the card
+                    # was already showing. Old copy generated first and
+                    # imperfectly stripped second, with the plan — which knows
+                    # exactly which facts the card shows — having no say in
+                    # what got written.
+                    #
+                    # One call now. The plan carries the committed snapshot,
+                    # the interpreter's say, the note, the follow-up and the
+                    # failure notice, and `core.food_response` does the
+                    # authoring with the card facts already in hand. The words
+                    # are unchanged; what changed is who wrote them.
+                    _failure_notice = ""
                     if _failed_names:
                         from core.food_ledger import build_failure_notice
                         # Log the RESULT TEXT, not just the name. The Barebells
@@ -1730,52 +1731,49 @@ async def _run_turn(
                                     f"event=food_call_blocked tool={_c.name} "
                                     f"status={_c.status} "
                                     f"result={(_c.result_text or '')[:200]!r}")
-                        response_text = (
-                            f"{response_text}|||"
-                            f"{build_failure_notice(_execution.failures())}")
-                    # THE CARD OWNS THE FACTS (Danny 2026-07-25). The renderer
-                    # above predates the meal card and says everything: items,
-                    # macros, day total, remaining. Where a card renders, most
-                    # of that is the card read back — the screenshot's "130
-                    # calories and 3g protein, 1,990 remaining" under a card
-                    # already showing it.
-                    #
-                    # Stripped, not replaced, and only when a card is actually
-                    # rendering: Telegram has no card frame, so there the same
-                    # sentences are the only confirmation the user gets. A
-                    # sentence survives if it carries no nutrition number or is
-                    # forward-looking, and each ||| bubble is judged on its own
-                    # so a vetted follow-up is never collateral.
+                        _failure_notice = build_failure_notice(
+                            _execution.failures())
                     try:
+                        from core.food_ledger import build_snapshot
                         from core.food_response import (CARD_FACTS,
+                                                        FoodItemSummary,
                                                         FoodResponseIntent,
                                                         FoodResponsePlan,
-                                                        apply_policy,
-                                                        strip_card_recitation)
-                        if on_card is not None:
-                            # The committed item NAMES have to travel with the
-                            # plan. `_is_roll_call` compares the sentence
-                            # against them, so an empty plan made it
-                            # structurally unable to fire — and "Logged: Mashed
-                            # Potato, Grilled Corn, Filet Mignon, Reese's
-                            # Pieces." shipped directly above a card listing the
-                            # same four names with their macros.
-                            from core.food_response import FoodItemSummary
-                            _names = tuple(
-                                FoodItemSummary(name=str(
-                                    (c.get("input") or {}).get("food_name")
-                                    or "").strip())
-                                for c in (_ok_calls or []))
-                            _rp = apply_policy(FoodResponsePlan(
-                                intent=FoodResponseIntent.COMMIT,
-                                card_will_render=True,
-                                facts_visible_in_card=CARD_FACTS,
-                                committed_items=tuple(
-                                    n for n in _names if n.name)))
-                            response_text = strip_card_recitation(
-                                response_text, _rp)
+                                                        apply_policy, fallback)
+                        _snap = build_snapshot(_ok_calls, _batch_c, _batch_p,
+                                               _ac, _ap, _ct, _pt)
+                        # The committed item NAMES travel with the plan.
+                        # `_is_roll_call` compares the sentence against them,
+                        # so an empty plan was structurally unable to fire —
+                        # and "Logged: Mashed Potato, Grilled Corn, Filet
+                        # Mignon, Reese's Pieces." shipped directly above a
+                        # card listing the same four with their macros.
+                        _names = tuple(
+                            FoodItemSummary(name=str(
+                                (c.get("input") or {}).get("food_name")
+                                or "").strip())
+                            for c in (_ok_calls or []))
+                        _card_renders = on_card is not None
+                        response_text = fallback(apply_policy(FoodResponsePlan(
+                            intent=FoodResponseIntent.COMMIT,
+                            committed_items=tuple(n for n in _names if n.name),
+                            committed_snapshot=_snap,
+                            model_say=_say,
+                            note=_sft.get("note") or "",
+                            follow_up=_sft.get("follow_up") or "",
+                            failure_notice=_failure_notice,
+                            card_will_render=_card_renders,
+                            facts_visible_in_card=(CARD_FACTS if _card_renders
+                                                   else frozenset()))))
                     except Exception as _e:
-                        logger.warning(f"card-recitation strip skipped: {_e}")
+                        # The renderer must never cost the user their reply —
+                        # fall back to the token-filled say (same numbers).
+                        logger.warning(f"commit render fallback: {_e}")
+                        from core.food_turn import fill_say_tokens
+                        response_text = fill_say_tokens(
+                            _say, _batch_c, _batch_p, _ac, _ap, _ct, _pt)
+                        if _failure_notice:
+                            response_text = f"{response_text}|||{_failure_notice}"
                 # Hold notice AFTER the contract/render: held names come from
                 # the system's own stash, and their digits ("Fage 0%") must
                 # never vaporize the notice (Dove bar incident class).
