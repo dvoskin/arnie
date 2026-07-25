@@ -12,6 +12,9 @@ from typing import Dict, List, Any, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.models import User, DailyLog, MemoryUpdate
+# P0.3d: execution state goes to the ambient per-call context, never onto the
+# command the executor was handed.
+from core.execution_result import stash as _stash_call
 from db.queries import (
     add_food_entry, add_exercise_entry, add_body_metric, add_water_entry,
     reload_user,
@@ -233,7 +236,7 @@ def _stash_receipt(inp, target_log, user, calories, protein,
             local_hour = _dtt.now(pytz.timezone(getattr(user, "timezone", None) or "UTC")).hour
         except Exception:
             local_hour = None
-        inp["_receipt"] = build_receipt(
+        _receipt_val = build_receipt(
             calories=float(calories or 0),
             protein=float(protein or 0),
             total_cal=float(getattr(target_log, "total_calories", 0) or 0),
@@ -249,7 +252,8 @@ def _stash_receipt(inp, target_log, user, calories, protein,
             carbs=float(carbs) if carbs is not None else None,
         )
         if updated:
-            inp["_receipt"]["updated"] = True
+            _receipt_val["updated"] = True
+        _stash_call(inp, "receipt", _receipt_val)
     except Exception:
         pass
 
@@ -264,14 +268,14 @@ def _stash_sourcing(inp, analysis, food_name):
     try:
         if not isinstance(inp, dict):
             return
-        inp["_sourcing"] = {
+        _stash_call(inp, "sourcing", {
             "name": food_name,
             "quantity": inp.get("quantity") or "",
             "source": getattr(analysis, "source", None) or "estimate",
             "confidence": getattr(analysis, "confidence", None) or "estimated",
             "calories": int(round(getattr(analysis, "calories", 0) or 0)),
             "protein": int(round(getattr(analysis, "protein", 0) or 0)),
-        }
+        })
     except Exception:
         pass
 
@@ -1865,10 +1869,17 @@ async def execute_tool_calls(
         except Exception as e:
             logger.warning(f"enrichment prewarm skipped: {e}")
 
+    from core.execution_result import CALL_CTX as _CALL_CTX
+    _ctxs: list = []      # one per call, positionally aligned with tool_calls
     for tc in tool_calls:
         name = tc["name"]
         inp = tc["input"] or {}
         food_name = (inp.get("food_name") or "").strip() if isinstance(inp, dict) else ""
+        # Fresh side channel per call: the executor records what HAPPENED here,
+        # never on the command it was handed (P0.3d).
+        _ctx: dict = {}
+        _ctxs.append(_ctx)
+        _ctx_token = _CALL_CTX.set(_ctx)
         try:
             r = await _dispatch(
                 name, inp, user, today_log, db, source_type,
@@ -1895,7 +1906,7 @@ async def execute_tool_calls(
             # "thoughts said both logged, only one did"). Readers that report
             # per-item truth (reasoning receipts) read _result off the call.
             if isinstance(inp, dict):
-                inp["_result"] = r
+                _stash_call(inp, "result", r)
             ok = not (isinstance(r, str) and (
                 r.startswith("Error:") or r.startswith("Skipped")
                 or r.startswith("Failed to")
@@ -1905,7 +1916,7 @@ async def execute_tool_calls(
             logger.error(f"Tool {name} failed: {e}", exc_info=True)
             results[name] = f"Error: {e}"
             if isinstance(inp, dict):
-                inp["_result"] = f"Error: {e}"
+                _stash_call(inp, "result", f"Error: {e}")
             per_call.append((name, food_name, False))
 
     # Emit one structured telemetry line per turn that had any log_* call.
@@ -1963,8 +1974,8 @@ async def execute_tool_calls(
     # scraper of the legacy stash keys; when branches populate CallResults
     # natively (P0.3b) this becomes a pass-through.
     try:
-        from core.execution_result import from_tool_calls as _exec_view
-        _LAST_EXEC.set(_exec_view(tool_calls, results))
+        from core.execution_result import from_call_contexts as _exec_native
+        _LAST_EXEC.set(_exec_native(tool_calls, _ctxs, results))
     except Exception as _ev_e:
         logger.warning(f"execution view publish skipped: {_ev_e}")
 
@@ -2254,7 +2265,7 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
             )
             _target = _merged or _food_merge_target
             if isinstance(inp, dict) and getattr(_target, "id", None) is not None:
-                inp["_entry_id"] = _target.id
+                _stash_call(inp, "entry_id", _target.id)
             # LEDGER EVENT: a repeat-merge is an UPDATE to the existing row —
             # it must appear in the history like any other mutation (found by
             # the 2026-07-24 cleanup audit: merges were the one write path
@@ -2348,7 +2359,7 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
                 source=inp.get("source") or f"legacy:{source_type}")
             # The event id is the card's undo token (one-tap Undo, Phase 2).
             if isinstance(inp, dict) and getattr(_ev_row, "id", None) is not None:
-                inp["_event_id"] = _ev_row.id
+                _stash_call(inp, "event_id", _ev_row.id)
         except Exception as _ev_e:
             logger.warning(f"food event (created) skipped: {_ev_e}")
         # Stash the entry id on the tool_call's input so conversation.py can
@@ -2356,7 +2367,7 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
         # to edit/delete the entry directly via the foodEdit API instead of
         # round-tripping a "please update X" message through Arnie.
         if isinstance(inp, dict) and getattr(_new_food, "id", None) is not None:
-            inp["_entry_id"] = _new_food.id
+            _stash_call(inp, "entry_id", _new_food.id)
             # Card mirrors the committed row, not the raw model guess (strip step 9).
             # The DB row above was written from the ENRICHED analysis; sync inp to those
             # numbers so the macro_card (built from inp) and the day total can't diverge
@@ -2545,9 +2556,9 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
                 )
                 _target = _updated or _row
                 if isinstance(inp, dict) and getattr(_target, "id", None) is not None:
-                    inp["_entry_id"] = _target.id
-                    inp["_card_sets"] = _target.sets   # accumulated → live workout card
-                    inp["_card_reps"] = _target.reps
+                    _stash_call(inp, "entry_id", _target.id)
+                    _stash_call(inp, "card_sets", _target.sets)   # accumulated → live workout card
+                    _stash_call(inp, "card_reps", _target.reps)
                 await db.refresh(target_log)
                 return format_append_result(_target, now_utc=now_utc)
 
@@ -2633,9 +2644,9 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
                 _target = _updated or _roll
                 # Native clients edit the SAME row they've been watching grow.
                 if isinstance(inp, dict) and getattr(_target, "id", None) is not None:
-                    inp["_entry_id"] = _target.id
-                    inp["_card_sets"] = _target.sets   # accumulated → live workout card
-                    inp["_card_reps"] = _target.reps
+                    _stash_call(inp, "entry_id", _target.id)
+                    _stash_call(inp, "card_sets", _target.sets)   # accumulated → live workout card
+                    _stash_call(inp, "card_reps", _target.reps)
                 await db.refresh(target_log)
                 return format_rollup_result(_target, now_utc=now_utc)
 
@@ -2682,9 +2693,9 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
         # edit/delete via the exerciseEdit API without round-tripping a
         # "please update X" message through Arnie.
         if isinstance(inp, dict) and getattr(_new_ex, "id", None) is not None:
-            inp["_entry_id"] = _new_ex.id
-            inp["_card_sets"] = _new_ex.sets   # accumulated → live workout card
-            inp["_card_reps"] = _new_ex.reps
+            _stash_call(inp, "entry_id", _new_ex.id)
+            _stash_call(inp, "card_sets", _new_ex.sets)   # accumulated → live workout card
+            _stash_call(inp, "card_reps", _new_ex.reps)
         await db.refresh(target_log)
         date_label = f" (for {past_date})" if past_date else ""
 
@@ -3086,14 +3097,14 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
                          "meal_type": _rp.get("meal_type")},
                 source=inp.get("source") or "restore")
             if isinstance(inp, dict) and getattr(_ev_row_r, "id", None) is not None:
-                inp["_event_id"] = _ev_row_r.id
+                _stash_call(inp, "event_id", _ev_row_r.id)
         except Exception as _ev_e:
             logger.warning(f"ledger event (food restored) skipped: {_ev_e}")
         # Mirror the committed row onto the input (id + macros) so card and
         # snapshot readers see the same numbers the DB holds.
         if isinstance(inp, dict):
             if getattr(_new_r, "id", None) is not None:
-                inp["_entry_id"] = _new_r.id
+                _stash_call(inp, "entry_id", _new_r.id)
             inp["food_name"] = _r_name
             inp["quantity"] = _rp.get("quantity")
             for _k_r in ("calories", "protein", "carbs", "fats"):
@@ -3140,7 +3151,7 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
         except Exception as _ev_e:
             logger.warning(f"ledger event (exercise restored) skipped: {_ev_e}")
         if isinstance(inp, dict) and getattr(_new_rx, "id", None) is not None:
-            inp["_entry_id"] = _new_rx.id
+            _stash_call(inp, "entry_id", _new_rx.id)
         if getattr(today_log, "id", None):
             await db.refresh(today_log)
         return f"Restored {_rx_name} to the workout log."

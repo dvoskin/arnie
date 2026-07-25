@@ -28,31 +28,47 @@ async def _seed_day(db, user, cal=180.0):
     return log, fe
 
 
-# ── the scraper fallback ──────────────────────────────────────────────────────
-def test_from_tool_calls_reads_status_and_stashes():
-    calls = [
-        {"name": "log_food",
-         "input": {"food_name": "Coke", "calories": 140, "_entry_id": 9,
-                   "_event_id": 900, "_result": "Logged Coke: 140 cal."}},
-        {"name": "update_food_entry",
-         "input": {"entry_id": 1, "calories": 360, "food_hint": "Birria taco",
-                   "_result": "STALE BOARD: entry #1 is now 500 cal."}},
-    ]
-    ex = ER.from_tool_calls(calls, {"log_food": "Logged Coke: 140 cal."})
-    assert [c.status for c in ex.calls] == ["committed", "blocked"]
-    assert ex.calls[0].entry_id == 9 and ex.calls[0].event_id == 900
-    assert ex.ok_tool_calls() == [{"name": "log_food",
-                                   "input": calls[0]["input"]}]
+# ── executor immutability (P0.3e) ─────────────────────────────────────────────
+def test_stash_never_writes_to_the_command():
+    """The closing invariant: execution state goes to the context ONLY. A
+    command describes what to do; it never carries what happened."""
+    from core.execution_result import CALL_CTX, stash
+    command = {"food_name": "Banana", "quantity": "1 banana"}
+    ctx = {}
+    tok = CALL_CTX.set(ctx)
+    try:
+        stash(command, "entry_id", 42)
+        stash(command, "event_id", 900)
+        stash(command, "result", "Logged Banana: 105 cal.")
+    finally:
+        CALL_CTX.reset(tok)
+    assert ctx == {"entry_id": 42, "event_id": 900,
+                   "result": "Logged Banana: 105 cal."}
+    assert command == {"food_name": "Banana", "quantity": "1 banana"}
+
+
+def test_no_execution_state_view_invents_nothing():
+    """A batch the real executor did not run (mocked executor, direct caller)
+    reports honestly: no ids, no receipts, nothing scraped."""
+    ex = ER.without_execution_state(
+        [{"name": "log_food", "input": {"food_name": "Banana"}}],
+        {"log_food": "Logged."})
+    cr = ex.calls[0]
+    assert cr.committed and cr.result_text == "Logged."
+    assert cr.entry_id is None and cr.event_id is None
+    assert cr.receipt is None and cr.sourcing is None
+
+
+def test_native_view_reports_blocked_from_context_result():
+    """Blocked/committed status now comes from the CONTEXT's result text —
+    the command carries no _result to read."""
+    ex = ER.from_call_contexts(
+        [{"name": "update_food_entry",
+          "input": {"entry_id": 1, "food_hint": "Birria taco"}}],
+        [{"result": "STALE BOARD: entry #1 is now 500 cal."}])
+    assert ex.calls[0].status == "blocked"
     assert ex.failed_names() == ["Birria taco"]
-
-
-def test_unstamped_calls_count_committed():
-    """Mocked executors don't stamp _result — the view fails open, matching
-    the narration filters' existing semantics."""
-    ex = ER.from_tool_calls([{"name": "log_food",
-                              "input": {"food_name": "Banana"}}])
-    assert ex.calls[0].committed
-    assert ex.failed_names() == []
+    assert ex.ok_tool_calls() == []
 
 
 # ── the real executor publishes it ────────────────────────────────────────────
@@ -159,3 +175,62 @@ def test_receipt_sourcing_rides_the_typed_call():
     assert "USDA" in str(rec)
     # And the input itself was never mutated by the receipt build.
     assert "_sourcing" not in inp
+
+
+# ── native construction: the command is never the carrier (P0.3d) ─────────────
+@pytest.mark.asyncio
+async def test_execution_state_rides_the_side_channel_not_the_command(db, make_user):
+    """The executor records what HAPPENED in a per-call context; the typed view
+    is built from THAT, never by scraping the command."""
+    import handlers.tool_executor as TE
+    user = await make_user()
+    log, fe = await _seed_day(db, user)
+    # log_food reads user.preferences for the receipt — load it eagerly so the
+    # async lazy-load never fires outside a greenlet in this harness.
+    await db.refresh(user, attribute_names=["preferences"])
+    calls = [{"name": "log_food",
+              "input": {"food_name": "Banana", "quantity": "1 banana",
+                        "calories": 105}}]
+    await TE.execute_tool_calls(calls, user, log, db, source_type="text")
+    cr = ER.LAST_EXECUTION.get().calls[0]
+    assert cr.committed
+    assert cr.entry_id is not None          # committed row id, from the context
+    assert cr.event_id is not None          # ledger event id (undo token)
+    assert isinstance(cr.receipt, dict)     # decision receipt
+
+
+def test_native_view_needs_no_stash_keys_on_the_command():
+    """Proof the command is no longer the carrier: with every underscore key
+    stripped from the input, the context alone still yields the full view."""
+    from core.execution_result import from_call_contexts
+    clean_input = {"food_name": "Banana", "quantity": "1 banana", "calories": 105}
+    ctx = {"entry_id": 42, "event_id": 900, "receipt": {"day_calories": 1200},
+           "sourcing": {"source": "usda"}, "result": "Logged Banana: 105 cal."}
+    ex = from_call_contexts([{"name": "log_food", "input": clean_input}], [ctx])
+    cr = ex.calls[0]
+    assert cr.committed and cr.entry_id == 42 and cr.event_id == 900
+    assert cr.receipt["day_calories"] == 1200 and cr.sourcing["source"] == "usda"
+    assert not any(k.startswith("_") for k in clean_input)
+
+
+@pytest.mark.asyncio
+async def test_batch_contexts_stay_per_call(db, make_user):
+    """Two calls in one batch get independent contexts — the second can never
+    inherit the first's committed ids."""
+    import handlers.tool_executor as TE
+    from core.execution_result import LAST_EXECUTION
+    user = await make_user()
+    log, fe = await _seed_day(db, user)
+    await db.refresh(user, attribute_names=["preferences"])
+    calls = [
+        {"name": "log_food", "input": {"food_name": "Coke", "quantity": "12 oz",
+                                       "calories": 140}},
+        {"name": "log_food", "input": {"food_name": "Chips", "quantity": "1 bag",
+                                       "calories": 150}},
+    ]
+    await TE.execute_tool_calls(calls, user, log, db, source_type="text")
+    ex = LAST_EXECUTION.get()
+    assert ex is not None and len(ex.calls) == 2
+    ids = [c.entry_id for c in ex.calls]
+    assert all(i is not None for i in ids), ids
+    assert ids[0] != ids[1], "each call must carry its OWN committed row id"

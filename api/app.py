@@ -2082,14 +2082,28 @@ async def api_edit_water(entry_id: int, patch: WaterPatch, token: str = Query(..
 @app.delete("/api/water/{entry_id}")
 async def api_delete_water(entry_id: int, token: str = Query(...)):
     """Delete a single hydration entry from the dashboard, resyncing the day total."""
-    from db.queries import delete_water_entry
+    from db.queries import delete_water_entry, record_surface_mutation
     async with AsyncSessionLocal() as db:
         user = await get_user_by_webhook_token(db, token)
         if not user:
             raise HTTPException(status_code=401, detail="Invalid token")
+        # Capture before the delete so the event is restorable (P0.6).
+        _before = None
+        try:
+            from sqlalchemy import select as _sel_w
+            from db.models import WaterEntry as _WE
+            _row = (await db.execute(_sel_w(_WE).where(_WE.id == entry_id))).scalar_one_or_none()
+            if _row is not None:
+                _before = {"amount_ml": _row.amount_ml,
+                           "daily_log_id": _row.daily_log_id}
+        except Exception:
+            _before = None
         ok = await delete_water_entry(db, entry_id, user.id)
         if not ok:
             raise HTTPException(status_code=404, detail="Entry not found")
+        await record_surface_mutation(
+            db, user.id, "deleted", domain="water", entry_id=entry_id,
+            daily_log_id=(_before or {}).get("daily_log_id"), payload=_before)
     return {"status": "ok"}
 
 
@@ -2104,9 +2118,26 @@ async def api_edit_exercise(entry_id: int, patch: ExercisePatch, token: str = Qu
         changes = patch.model_dump(exclude_none=True)
         if "weight" in changes:
             changes["weight"] = changes["weight"] * 0.453592
+        # Before-state so the event is invertible (P0.6).
+        _before_ex = None
+        try:
+            from sqlalchemy import select as _sel_bx
+            from db.models import ExerciseEntry as _EEb
+            _rb = (await db.execute(_sel_bx(_EEb).where(_EEb.id == entry_id))).scalar_one_or_none()
+            if _rb is not None:
+                _before_ex = {"exercise_name": _rb.exercise_name, "sets": _rb.sets,
+                              "reps": _rb.reps, "weight": _rb.weight,
+                              "duration_minutes": getattr(_rb, "duration_minutes", None),
+                              "daily_log_id": _rb.daily_log_id}
+        except Exception:
+            _before_ex = None
         entry = await update_exercise_entry(db, entry_id, user.id, **changes)
         if not entry:
             raise HTTPException(status_code=404, detail="Entry not found")
+        from db.queries import record_surface_mutation as _rsm
+        await _rsm(db, user.id, "updated", domain="exercise", entry_id=entry_id,
+                   daily_log_id=(_before_ex or {}).get("daily_log_id"),
+                   payload={"changes": changes, "before": _before_ex})
         notify = dict(send_target=await resolve_send_target(db, user),
                       text=_dashboard_msg("exercise_edit", label=entry.exercise_name or ""))
     asyncio.create_task(_send_dashboard_notification(**notify))
@@ -2125,9 +2156,17 @@ async def api_delete_exercise(entry_id: int, token: str = Query(...)):
         from db.models import ExerciseEntry
         entry = (await db.execute(_sel(ExerciseEntry).where(ExerciseEntry.id == entry_id))).scalar_one_or_none()
         exercise_name = entry.exercise_name if entry else ""
+        _before_del = ({"exercise_name": entry.exercise_name, "sets": entry.sets,
+                        "reps": entry.reps, "weight": entry.weight,
+                        "duration_minutes": getattr(entry, "duration_minutes", None),
+                        "daily_log_id": entry.daily_log_id} if entry else None)
         ok = await delete_exercise_entry(db, entry_id, user.id)
         if not ok:
             raise HTTPException(status_code=404, detail="Entry not found")
+        from db.queries import record_surface_mutation as _rsm_d
+        await _rsm_d(db, user.id, "deleted", domain="exercise", entry_id=entry_id,
+                     daily_log_id=(_before_del or {}).get("daily_log_id"),
+                     payload=_before_del)
         notify = dict(send_target=await resolve_send_target(db, user),
                       text=_dashboard_msg("exercise_delete", label=exercise_name))
     asyncio.create_task(_send_dashboard_notification(**notify))
@@ -3544,8 +3583,13 @@ async def api_log_water(body: WaterLogBody, token: str = Query(...)):
         # Derive the aggregate authoritatively by re-summing the rows, never an
         # in-place += that can drift from the canonical WaterEntry rows (mirrors
         # the chat log_water path). recompute_water_total commits.
-        from db.queries import recompute_water_total
+        from db.queries import recompute_water_total, record_surface_mutation
         await recompute_water_total(db, log.id)
+        # entry_id makes the pour undoable from any surface (P0.6).
+        await record_surface_mutation(
+            db, user.id, "created", domain="water",
+            entry_id=getattr(entry, "id", None), daily_log_id=log.id,
+            payload={"amount_ml": amount})
     return {"status": "ok", "id": entry.id}
 
 
@@ -3592,6 +3636,10 @@ async def api_log_weight(body: WeightLogBody, token: str = Query(...)):
 
         # Web/webhook weigh-in is a deliberate user-entered number → "manual".
         metric = await add_body_metric(db, user.id, weight_kg=weight_kg, source="manual")
+        from db.queries import record_surface_mutation as _rsm_w
+        await _rsm_w(db, user.id, "created", domain="weight",
+                     entry_id=getattr(metric, "id", None),
+                     payload={"weight_kg": weight_kg, "source": "manual"})
 
         current_lbs = round(weight_kg * 2.20462, 1)
         delta_lbs = round(current_lbs - prev_lbs, 1) if prev_lbs is not None else None

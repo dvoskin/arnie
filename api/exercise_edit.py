@@ -70,6 +70,13 @@ async def update_exercise(
         if updated is None:
             raise HTTPException(status_code=403, detail="not your entry")
 
+        # LEDGER EVENT (P0.6): same history + invertibility as a chat edit.
+        from db.queries import record_surface_mutation
+        await record_surface_mutation(
+            db, user.id, "updated", domain="exercise", entry_id=entry_id,
+            daily_log_id=before.get("daily_log_id"),
+            payload={"changes": changes, "before": before}, surface="ios_edit")
+
         arnie_message = _build_update_message(before, updated, changes)
         if arnie_message:
             await log_conversation(
@@ -130,6 +137,12 @@ async def delete_exercise(
         if not ok:
             raise HTTPException(status_code=403, detail="not your entry")
 
+        from db.queries import record_surface_mutation
+        await record_surface_mutation(
+            db, user.id, "deleted", domain="exercise", entry_id=entry_id,
+            daily_log_id=before.get("daily_log_id"), payload=before,
+            surface="ios_edit")
+
         name = before.get("name") or "that exercise"
         arnie_message = f"Removed {name} from today's training log."
         await log_conversation(
@@ -159,6 +172,10 @@ async def _snapshot_entry(db, entry_id: int) -> Optional[dict]:
         "duration_minutes": int(row.duration_minutes) if row.duration_minutes else None,
         "cardio_type": row.cardio_type,
         "rir":      row.rir,
+        # Restore-shaped keys (mirror the executor's deleted-event payload).
+        "exercise_name": row.exercise_name,
+        "weight":        row.weight,
+        "daily_log_id":  row.daily_log_id,
     }
 
 

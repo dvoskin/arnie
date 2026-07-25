@@ -94,17 +94,23 @@ def test_pure_chat_turn_gets_context_receipt_and_cap():
 def test_per_call_result_truth_blocked_item_never_says_logged():
     """Danny 2026-07-23 (IMG_8601): the receipts said BOTH Quest bags logged when
     one was dedup-blocked — tool_results is keyed by tool NAME so a batch shares
-    the LAST result. The executor now stashes each call's own result on the input
-    (_result); the receipt must read it and render the blocked item honestly."""
+    the LAST result. Per-call truth now rides the typed execution view (P0.3c/e:
+    the command carries no execution state at all), and the receipt must render
+    the blocked item honestly."""
+    from core.execution_result import ExecutionResult, CallResult
+    blocked_inp = {"food_name": "Quest Chips Sweet Spicy"}
+    logged_inp = {"food_name": "Quest Chips Sour Cream & Onion", "calories": 140}
+    execution = ExecutionResult(calls=(
+        CallResult(name="log_food", raw_input=blocked_inp, status="blocked",
+                   result_text="Already on the board: Quest Chips Sweet Spicy (1 bag, 140 cal)"),
+        CallResult(name="log_food", raw_input=logged_inp, status="committed",
+                   result_text="Logged: Quest Chips Sour Cream & Onion, 140 cal"),
+    ))
     r = build_reasoning(
-        [{"name": "log_food", "input": {
-            "food_name": "Quest Chips Sweet Spicy",
-            "_result": "Already on the board: Quest Chips Sweet Spicy (1 bag, 140 cal)"}},
-         {"name": "log_food", "input": {
-            "food_name": "Quest Chips Sour Cream & Onion", "calories": 140,
-            "_result": "Logged: Quest Chips Sour Cream & Onion, 140 cal"}}],
+        [{"name": "log_food", "input": blocked_inp},
+         {"name": "log_food", "input": logged_inp}],
         {"log_food": "Logged: Quest Chips Sour Cream & Onion, 140 cal"},  # collapsed!
-        None, None)
+        None, None, execution=execution)
     labels = [s["label"] for s in r["steps"]]
     assert any("Duplicate check" in l and "Sweet Spicy" in l for l in labels), labels
     assert not any(l.startswith("Logged Quest Chips Sweet Spicy") for l in labels), labels

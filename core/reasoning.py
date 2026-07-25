@@ -181,14 +181,11 @@ def build_reasoning(tool_calls: list, tool_results: dict,
         # would show as "Logged" (2026-07-23). The typed view carries per-call
         # truth; the legacy stash is the fallback.
         _cr = _by_input.get(id(inp))
-        if _cr is not None and _cr.result_text:
-            result = _cr.result_text
-        else:
-            result = str(inp.get("_result") if inp.get("_result") is not None
-                         else (tool_results or {}).get(name, ""))
-        if _cr is not None and _cr.sourcing and not inp.get("_sourcing"):
-            # Sourcing rides the typed call; keep the helpers' signature by
-            # handing them a view that carries it.
+        result = (_cr.result_text if _cr is not None and _cr.result_text
+                  else str((tool_results or {}).get(name, "")))
+        if _cr is not None and _cr.sourcing:
+            # Sourcing rides the typed call; the step helpers take it via a
+            # DERIVED view — the caller's command is never mutated.
             inp = {**inp, "_sourcing": _cr.sourcing}
         if name == "log_food":
             if _detailed_food:

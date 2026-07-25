@@ -72,17 +72,25 @@ async def test_incremental_single_set_appends_not_inserts(monkeypatch):
 
     inp = {"exercise_name": "Incline Bench Machine Press", "sets": 1,
            "reps": "10", "weight": 205, "weight_unit": "lbs"}
-    result = await TE._dispatch(
-        "log_exercise", inp, user, log, db=db, source_type="ios",
-        user_message="Fell down to 10 reps on that second set",
-    )
+    from core.execution_result import CALL_CTX
+    _ctx = {}
+    _tok = CALL_CTX.set(_ctx)
+    try:
+        result = await TE._dispatch(
+            "log_exercise", inp, user, log, db=db, source_type="ios",
+            user_message="Fell down to 10 reps on that second set",
+        )
+    finally:
+        CALL_CTX.reset(_tok)
     assert inserts["n"] == 0, "incremental set must NOT insert a new row"
     assert updates["n"] == 1 and updates["entry_id"] == 500
     assert updates["changes"]["sets"] == 2
     assert updates["changes"]["reps"] == "15,10"
     assert updates["changes"].get("weights") is None, "same load → scalar stands"
     assert result.startswith("Appended the set"), result
-    assert inp.get("_entry_id") == 500, "native edit must target the grown row"
+    # P0.3e: execution state lives on the per-call context, never on
+    # the command — the card reads it from there.
+    assert _ctx.get("entry_id") == 500, "native edit must target the grown row"
 
 
 @pytest.mark.asyncio

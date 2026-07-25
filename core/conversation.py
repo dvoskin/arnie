@@ -343,8 +343,10 @@ def _logged_entry_card(name: str, inp, call=None) -> Optional[dict]:
         # _card_reps) so an appended set shows the movement's running total
         # ("3×12,13,13"), not the lone set from this one call. Falls back to the
         # call input for a fresh single log.
-        _cs = inp.get("_card_sets", inp.get("sets"))
-        _cr = inp.get("_card_reps")
+        _cs = (call.card_sets if call is not None and call.card_sets is not None
+               else inp.get("_card_sets", inp.get("sets")))
+        _cr = (call.card_reps if call is not None and call.card_reps is not None
+               else inp.get("_card_reps"))
         _cr = str(_cr) if _cr is not None else (str(inp.get("reps") or "") or None)
         return {
             "type": "workout_card",
@@ -1212,8 +1214,10 @@ async def run_turn(
         # fallback covers mocked executors. Downstream (narration filters,
         # cards) consumes THIS — never inp["_..."] keys directly.
         from core.execution_result import (LAST_EXECUTION as _LX,
-                                           from_tool_calls as _exec_from)
-        _execution = _LX.get() or _exec_from(tool_calls, tool_results)
+                                           without_execution_state as _exec_bare)
+        # The real executor publishes the native view; a mocked/stubbed one
+        # leaves nothing, so we report the batch honestly with no invented ids.
+        _execution = _LX.get() or _exec_bare(tool_calls, tool_results)
 
         # ── SCRIBE SHADOW (observe-only) ─────────────────────────────────
         # The write-set validator judges what the model ACTUALLY did against

@@ -548,16 +548,24 @@ async def test_rollup_set_report_updates_existing_row_not_insert(monkeypatch):
 
     inp = {"exercise_name": "Lat Pulldown", "sets": 2, "reps": "12,12",
            "weight": 165, "weight_unit": "lbs"}
-    result = await TE._dispatch(
-        "log_exercise", inp, user, today_log,
-        db=SimpleNamespace(refresh=_refresh), source_type="ios",
-    )
+    from core.execution_result import CALL_CTX
+    _ctx = {}
+    _tok = CALL_CTX.set(_ctx)
+    try:
+        result = await TE._dispatch(
+            "log_exercise", inp, user, today_log,
+            db=SimpleNamespace(refresh=_refresh), source_type="ios",
+        )
+    finally:
+        CALL_CTX.reset(_tok)
     assert inserts["n"] == 0, "roll-up must NOT insert a new row"
     assert updates["n"] == 1, "roll-up must update the existing row exactly once"
     assert updates["args"][0] == 466, "must update the set-1 entry (#466)"
     assert updates["args"][2].get("reps") == "12,12"
     assert result.startswith("Updated the running set"), result
-    assert inp.get("_entry_id") == 466, "native card must point at the same row"
+    # P0.3e: execution state lives on the per-call context, never on
+    # the command — the card reads it from there.
+    assert _ctx.get("entry_id") == 466, "native card must point at the same row"
 
 
 @pytest.mark.asyncio

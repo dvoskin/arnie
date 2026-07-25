@@ -1,5 +1,5 @@
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_, desc, delete, update
+from sqlalchemy import select, and_, or_, desc, delete, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 from db.models import (
@@ -2777,3 +2777,110 @@ async def claim_processed_turn(
         except Exception:
             pass
         return False
+
+
+async def record_surface_mutation(
+    db: AsyncSession, user_id: int, event_type: str, *, domain: str,
+    entry_id: Optional[int] = None, daily_log_id: Optional[int] = None,
+    payload: Optional[dict] = None, surface: str = "dashboard",
+) -> None:
+    """Best-effort ledger event for a NON-CHAT mutation — dashboard edits, API
+    quick-logs, health imports (P0.6). Stamps a surface turn identity so the
+    write traces back to the action that caused it, and NEVER raises: history
+    must never break the edit it describes.
+
+    Same events, same payload shapes as the chat executor, so undo/restore and
+    the audit trail reach every surface rather than just the chat lane.
+    """
+    try:
+        from core.turn_identity import CURRENT_TURN_ID
+        CURRENT_TURN_ID.set(f"{surface}:{event_type}:{entry_id or '-'}")
+        await record_ledger_event(
+            db, user_id, event_type, domain=domain, entry_id=entry_id,
+            daily_log_id=daily_log_id, payload=payload, source=surface)
+    except Exception as e:
+        logger.warning(f"surface ledger event skipped ({surface}/{domain}/{event_type}): {e}")
+
+
+# ── durable background jobs (P0.7) ────────────────────────────────────────────
+async def enqueue_background_job(
+    db: AsyncSession, user_id: int, kind: str,
+    payload: Optional[dict] = None, dedup_key: Optional[str] = None,
+    dedup_window_min: int = 30,
+) -> Optional[int]:
+    """Queue durable post-turn work. Returns the row id, or None when a live
+    row with the same dedup_key already covers it (a busy conversation must
+    not queue twenty profile rebuilds). Never raises — the fast in-process
+    task still runs either way."""
+    from db.models import BackgroundJob
+    try:
+        if dedup_key:
+            cutoff = datetime.utcnow() - timedelta(minutes=dedup_window_min)
+            existing = (await db.execute(
+                select(BackgroundJob).where(and_(
+                    BackgroundJob.user_id == user_id,
+                    BackgroundJob.dedup_key == dedup_key,
+                    BackgroundJob.created_at >= cutoff,
+                    BackgroundJob.status.in_(("pending", "done")),
+                )).limit(1))).scalars().first()
+            if existing is not None:
+                return None
+        job = BackgroundJob(
+            user_id=user_id, kind=kind,
+            payload_json=json.dumps(payload) if payload is not None else None,
+            dedup_key=dedup_key, status="pending",
+            next_attempt_at=datetime.utcnow())
+        db.add(job)
+        await db.commit()
+        await db.refresh(job)
+        return job.id
+    except Exception as e:
+        logger.warning(f"enqueue_background_job skipped ({kind}): {e}")
+        try:
+            await db.rollback()
+        except Exception:
+            pass
+        return None
+
+
+async def claim_due_background_jobs(db: AsyncSession, limit: int = 20) -> list:
+    """Pending jobs whose attempt time has arrived, oldest first. The sweeper
+    marks each done/failed as it finishes, so a crashed sweep leaves the row
+    pending for the next tick — at-least-once, which is what these jobs want
+    (both are idempotent: profile synthesis is throttled, reflection dedups)."""
+    from db.models import BackgroundJob
+    now = datetime.utcnow()
+    res = await db.execute(
+        select(BackgroundJob)
+        .where(and_(BackgroundJob.status == "pending",
+                    or_(BackgroundJob.next_attempt_at.is_(None),
+                        BackgroundJob.next_attempt_at <= now)))
+        .order_by(BackgroundJob.created_at)
+        .limit(limit))
+    return res.scalars().all()
+
+
+async def finish_background_job(
+    db: AsyncSession, job_id: int, ok: bool, error: str = "",
+    max_attempts: int = 3, retry_delay_min: int = 10,
+) -> None:
+    """Mark a job done, or schedule its retry with backoff until max_attempts."""
+    from db.models import BackgroundJob
+    try:
+        job = await db.get(BackgroundJob, job_id)
+        if job is None:
+            return
+        job.attempts = (job.attempts or 0) + 1
+        if ok:
+            job.status = "done"
+            job.completed_at = datetime.utcnow()
+        elif job.attempts >= max_attempts:
+            job.status = "failed"
+            job.last_error = (error or "")[:500]
+        else:
+            job.last_error = (error or "")[:500]
+            job.next_attempt_at = datetime.utcnow() + timedelta(
+                minutes=retry_delay_min * job.attempts)
+        await db.commit()
+    except Exception as e:
+        logger.warning(f"finish_background_job failed for {job_id}: {e}")
