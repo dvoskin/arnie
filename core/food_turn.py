@@ -256,6 +256,45 @@ def consumption_evidence(message: str, prior=None, thread_active: bool = False) 
     return not (_NEGATED_RE.search(t) or _PLAN_RE.search(t))
 
 
+def decline_reason(text: str) -> str:
+    """WHY the cold-start gate declined this message, as a stable code.
+
+    `applies()` returns a bare bool, so every message it turns away looked
+    identical in the logs — and this is the single most consequential routing
+    decision in the turn. A workout-and-food message and a plan ("I'm going to
+    have salmon") both come back False and both land on the legacy path, but
+    they are not the same event and a rollout cannot be read without telling
+    them apart. Kept beside `applies` and in the same order, so the two cannot
+    disagree about what happened.
+    """
+    t = (text or "").strip()
+    if not t:
+        return "empty"
+    if len(t) > 500:
+        return "too_long"
+    if _NEGATED_RE.search(t):
+        return "negated"
+    if _ACK_RE.match(t):
+        return "acknowledgement"
+    if "?" in t:
+        return "question"
+    if _PLAN_RE.search(t):
+        return "future_plan"
+    if _DESTRUCTIVE_RE.search(t):
+        return "destructive"
+    if _NONFOOD_RE.search(t):
+        return "mixed_domain"
+    if not (_CONSUMED_RE.search(t) or _MEAL_RE.search(t)
+            or _CORRECTION_RE.search(t) or _PORTION_SHAPE_RE.search(t)):
+        # Every shape the gate recognises is written in ASCII, so a food report
+        # in another script matches nothing and falls through here. Naming it
+        # separately is the difference between "we don't serve that language
+        # yet" and "the gate has a hole".
+        return ("non_english" if any(ord(c) > 0x2FF for c in t)
+                else "no_food_shape")
+    return ""
+
+
 def applies(text: str) -> bool:
     t = (text or "").strip()
     if not t or len(t) > 500:

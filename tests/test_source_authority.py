@@ -265,3 +265,18 @@ def test_the_cache_records_the_row_the_resolution_used():
     # The old `usda or off or web` would have cached the 250-cal generic under
     # the product's name while the 60-cal label answered the turn.
     assert (usda or web) is usda
+
+
+def test_confidence_alone_cannot_seat_a_cache_at_a_branded_rung():
+    """The origin column decides, never the grade. A USDA text match is graded
+    'exact' too, which is how the first backfill promoted cached generics to
+    `branded_exact` — where `needs_branded_lookup` stops firing and the stale
+    row keeps suppressing the very enrichment the column was added to restore
+    (alembic a1f4c7d2b8e3)."""
+    from skills.nutrition.authority import candidate_map, needs_branded_lookup
+    row = {"per100g": {"calories": 300}, "confidence": "exact",
+           "origin_tier": "generic_exact"}
+    seated = candidate_map(food_class=FoodClass.MANUFACTURED, memory_match=row)
+    assert "saved_product" not in seated
+    rung = next(iter(seated))
+    assert needs_branded_lookup(FoodClass.MANUFACTURED, rung) is True
