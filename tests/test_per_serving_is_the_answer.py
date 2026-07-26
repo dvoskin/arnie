@@ -148,3 +148,46 @@ def test_a_record_without_the_panel_behaves_exactly_as_before():
     result = analyze("Royo Bagel, Plain", "1 bagel", 80, 8, 12, 1,
                      off_candidate=_no_panel(), is_packaged=True)
     assert result.calories == 80
+
+
+# ── the web lane discards the same field, for the same reason ────────────────
+#
+# `_web_lookup_packaged` parses a nutrition label out of search results — and
+# those parsed numbers ARE the label's serving. It converted them straight to a
+# per-100g density and dropped the serving values, so a "1 roll" portion went
+# back to deriving a mass from the model's calories even when the manufacturer
+# page had been read successfully.
+#
+# This is the Legendary Foods case PR #44 was built around: 190 cal / 17 g
+# protein committed against a published 210 / 20.
+_WEB_LABEL = {
+    "fdc_id": None, "_match": "likely",
+    "per100g": {"calories": 350.0, "protein": 33.3, "carbs": 40.0, "fat": 11.7,
+                "fiber": None, "sugar": None, "sodium": None},
+    "per_serving": {"calories": 210.0, "protein": 20.0, "carbs": 24.0,
+                    "fat": 7.0},
+    "serving_text": "60 g"}
+
+
+def test_a_web_read_label_answers_a_count_portion_outright():
+    result = analyze("Legendary Foods Milk Chocolate Sweet Roll", "1 roll",
+                     190, 17, 19, 7, web_candidate=_WEB_LABEL,
+                     is_packaged=True)
+    assert (result.calories, result.protein) == (210, 20.0)
+    assert (result.carbs, result.fat) == (24.0, 7.0)
+
+
+def test_it_reaches_the_manufacturer_rung():
+    """The string that had never been shown to a user."""
+    result = analyze("Legendary Foods Milk Chocolate Sweet Roll", "1 roll",
+                     190, 17, 19, 7, web_candidate=_WEB_LABEL,
+                     is_packaged=True)
+    assert result.provenance.rung == "manufacturer"
+    assert "manufacturer" in authority.display_detail(result.provenance).lower()
+
+
+def test_two_rolls_scale_from_the_label_not_the_guess():
+    result = analyze("Legendary Foods Milk Chocolate Sweet Roll", "2 rolls",
+                     380, 34, 38, 14, web_candidate=_WEB_LABEL,
+                     is_packaged=True)
+    assert (result.calories, result.protein) == (420, 40.0)
