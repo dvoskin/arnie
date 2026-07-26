@@ -116,3 +116,43 @@ def test_card_detection_is_identical_for_every_transport():
     ws_result = detect()          # WebSocket: on_card supplied
     http_result = detect()        # photo / voice / HTTP: nothing supplied
     assert ws_result is http_result is True
+
+
+# ── prior-reply-unseen: the turn that answered its own question ───────────────
+
+def test_a_message_sent_before_the_last_reply_lands_is_marked():
+    """Two messages back to back: reply 1 ended by asking about training, and
+    reply 2 opened "that's fine, rest days happen" — answering a question the
+    user had never seen."""
+    from core.context_builder import unseen_reply_directive
+    d = unseen_reply_directive(True)
+    assert "NOT a reply" in d
+    assert "still open" in d
+
+
+def test_a_normal_turn_injects_nothing():
+    """Empty on every ordinary turn, so it costs no tokens and cannot dilute
+    the prompt for the case that doesn't need it."""
+    assert unseen_reply_directive_empty() == ""
+
+
+def unseen_reply_directive_empty():
+    from core.context_builder import unseen_reply_directive
+    return unseen_reply_directive(False)
+
+
+def test_the_flag_defaults_off():
+    """A turn that never sets it must read False — the directive is opt-in per
+    turn, never a sticky property of the task running it."""
+    from core.turn_identity import PRIOR_REPLY_UNSEEN
+    assert PRIOR_REPLY_UNSEEN.get() is False
+
+
+def test_the_flag_round_trips():
+    from core.turn_identity import PRIOR_REPLY_UNSEEN
+    tok = PRIOR_REPLY_UNSEEN.set(True)
+    try:
+        assert PRIOR_REPLY_UNSEEN.get() is True
+    finally:
+        PRIOR_REPLY_UNSEEN.reset(tok)
+    assert PRIOR_REPLY_UNSEEN.get() is False

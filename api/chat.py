@@ -183,7 +183,17 @@ async def _coached_reply(identity: str, text: str, source_type: str,
     racey two-call flow ("post location, then send message") that lost the
     first ask whenever iOS posted location AFTER the chat send."""
     lock = _locks.setdefault(identity, asyncio.Lock())
+    # Held ALREADY means a turn is mid-flight, which means this message was
+    # typed before that turn's reply reached them — so it answers nothing.
+    # Read before awaiting the lock; once we're through it the evidence is gone.
+    _unseen = lock.locked()
     async with lock:
+        # Set unconditionally, never only-when-true: the task running this
+        # request may be a reused one, and a stale True from an earlier turn
+        # would tell the model to ignore a question the user really did answer.
+        # (`CURRENT_ROUTE` resets in a finally for exactly this reason.)
+        from core.turn_identity import PRIOR_REPLY_UNSEEN
+        PRIOR_REPLY_UNSEEN.set(_unseen)
         async with AsyncSessionLocal() as db:
             user = await resolve_user(db, identity)
             if isinstance(lat, (int, float)) and isinstance(lng, (int, float)):
@@ -518,7 +528,14 @@ async def chat_stream(ws: WebSocket):
 async def _stream_turn(ws: WebSocket, identity: str, message: str,
                        client_msg_id: Optional[str] = None) -> None:
     lock = _locks.setdefault(identity, asyncio.Lock())
+    # See _coached_reply: a lock already held means they were still typing
+    # while the previous turn ran, so this message is not a reply to it.
+    _unseen = lock.locked()
     async with lock:
+        # Unconditional for the same reason as the REST path — a reused task
+        # must not inherit an earlier turn's answer.
+        from core.turn_identity import PRIOR_REPLY_UNSEEN
+        PRIOR_REPLY_UNSEEN.set(_unseen)
         async with AsyncSessionLocal() as db:
             user = await resolve_user(db, identity)
 
