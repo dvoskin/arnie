@@ -1199,7 +1199,8 @@ def fallback(plan: FoodResponsePlan) -> str:
             return (f"{_pick_opener(_REVIEW_OPENERS, items)}\n\n"
                     f"{format_items(items)}\n\nDoes that all look right?")
         described = _join([i.describe() for i in items])
-        return f"I'm reading that as {described}. Does that look right?"
+        lead = _pick_opener(_REVIEW_LEADS, items).format(items=described)
+        return f"{lead} Does that look right?"
 
     if intent is FoodResponseIntent.CLARIFY:
         # The interpretation and the question in ONE turn. Asking "does that
@@ -1209,11 +1210,12 @@ def fallback(plan: FoodResponsePlan) -> str:
         question = plan.clarification_question or f"Which {_held_name(plan)} was it?"
         shown = list(plan.resolved_items) + list(plan.pending_items)
         if _wants_a_list(shown):
-            return (f"{_pick_opener(_CLARIFY_OPENERS, shown)}\n\n"
+            return (f"{_pick_opener(_CLARIFY_OPENERS, shown, question)}\n\n"
                     f"{format_items(shown)}\n\n{question}")
         if shown:
-            return (f"I'm reading that as "
-                    f"{_join([i.describe() for i in shown])}. {question}")
+            lead = _pick_opener(_CLARIFY_LEADS, shown, question).format(
+                items=_join([i.describe() for i in shown]))
+            return f"{lead} {question}"
         return question
 
     if intent is FoodResponseIntent.CONFIRM_ANSWER:
@@ -1276,6 +1278,21 @@ _CLARIFY_OPENERS = (
     "Reading that as:",
     "Here's my read:",
 )
+#: The PROSE lead-ins, which is what a one- or two-item meal actually takes.
+#: Varying only the list openers was half a fix: "coffee and toast with cheese"
+#: is two items, so it took this branch, and the user got "I'm reading that as
+#: coffee and toast with cheese." verbatim twice in consecutive turns.
+_CLARIFY_LEADS = (
+    "I'm reading that as {items}.",
+    "Reading that as {items}.",
+    "Got {items} so far.",
+    "So far that's {items}.",
+)
+_REVIEW_LEADS = (
+    "I'm reading that as {items}.",
+    "About to log {items}.",
+    "That's {items} going down.",
+)
 _REVIEW_OPENERS = (
     "Here's what I'm about to log:",
     "About to put this down:",
@@ -1284,15 +1301,21 @@ _REVIEW_OPENERS = (
 )
 
 
-def _pick_opener(choices, items) -> str:
-    """Pick one, stably, from the items themselves.
+def _pick_opener(choices, items, salt: str = "") -> str:
+    """Pick one, stably, from the items and what is being asked.
 
-    Deterministic on the meal so the same input never produces two different
-    openers — a varied line that changes on retry reads as instability, not
-    personality.
+    Deterministic so the same turn never produces two different openers — a
+    line that changes on retry reads as instability, not personality.
+
+    `salt` is the question, and it is why the meal alone is not enough. Two
+    clarification rounds on ONE meal are two different turns: "coffee and toast
+    with cheese" was asked about twice in a row and, keyed on the meal only,
+    opened with the identical sentence both times. Same meal plus same question
+    is a resend and stays stable; same meal plus a new question moves on.
     """
-    key = "|".join(sorted((i.name or "") for i in items))
-    return choices[sum(map(ord, key)) % len(choices)] if key else choices[0]
+    key = "|".join(sorted((i.name or "") for i in items)) + "|" + (salt or "")
+    return choices[sum(map(ord, key)) % len(choices)] if key.strip("|") \
+        else choices[0]
 
 #: Above this many foods, prose stops scanning and a list starts helping.
 LIST_THRESHOLD = 3
