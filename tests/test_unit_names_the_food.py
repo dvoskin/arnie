@@ -60,3 +60,27 @@ def test_a_stated_mass_is_never_reinterpreted():
     """"6 oz" is a measurement whatever the food is called."""
     assert normalize_quantity("6 oz", "6 oz steak").grams == pytest.approx(
         170.1, abs=0.5)
+
+
+# ── A hedge is not a unit ────────────────────────────────────────────────────
+
+def test_a_hedge_is_not_counted():
+    """Shipped review turn: "One some of mustard".
+
+    The interpreter emits "some" as a unit with an amount of 1, because the
+    field has to hold a number. Every rule in describe_portion then treats the
+    unit as a noun to be counted — and "two somes" is not the repair, because
+    it was never a unit."""
+    from core.food_response import describe_portion
+    assert describe_portion("1 some", "mustard") == "some mustard"
+    assert describe_portion("1 little", "olive oil") == "a little olive oil"
+    assert describe_portion("1 bit", "butter") == "a bit of butter"
+
+
+def test_real_units_are_untouched_by_the_hedge_rule():
+    from core.food_response import describe_portion
+    assert describe_portion("4 slice", "honey turkey") == \
+        "four slices of honey turkey"
+    assert describe_portion("2 cups", "rice") == "two cups of rice"
+    assert describe_portion("15 pieces", "Peanut M&Ms", branded=True) == \
+        "15 Peanut M&Ms"
