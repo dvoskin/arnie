@@ -103,6 +103,54 @@ _CONSUMED_RE = re.compile(
     r"got|bought|ordered|picked\s+up|"
     r"just\s+(?:had|ate|grabbed|finished|got|made)|"
     r"for\s+(?:breakfast|lunch|dinner|a\s+snack|dessert))\b", re.I)
+#: EATING, as distinct from OBTAINING. `_CONSUMED_RE` above bundles the two —
+#: "ate" and "bought" are both in it — because it exists to decide whether the
+#: logger should look at the message at all, and it should look at both. But
+#: having a Barebells bar is not eating one, and the bundle is why "Got a
+#: caramel cashew Barebells bar and a Legendary sweet roll" wrote two entries
+#: without asking.
+_EATEN_RE = re.compile(
+    r"\b(had|ate|eaten|eating|having|finished|snacked|downed|drank|drinking|"
+    r"ate\s+some|just\s+(?:had|ate|finished)|"
+    r"for\s+(?:breakfast|lunch|dinner|a\s+snack|dessert))\b", re.I)
+
+#: Obtaining. On its own it says a thing is in your possession, which is a fact
+#: about the fridge rather than about the day's total.
+_ACQUIRED_RE = re.compile(
+    r"\b(got|bought|buying|purchased|ordered|picked\s+up|grabb?ed|"
+    r"packed|made|cooked|brought|have\s+a)\b", re.I)
+
+#: The four states a mentioned food can be in. Only one of them is a log.
+STATE_CONSUMED = "consumed"
+STATE_ACQUIRED = "acquired"
+STATE_PLANNED = "planned"
+STATE_UNCERTAIN = "uncertain"
+
+
+def consumption_state(text: str, *, thread_active: bool = False) -> str:
+    """Did they EAT it, get it, plan it, or is it not settled?
+
+    Order matters and follows how people write. An explicit eating verb wins
+    outright, even alongside an acquisition one — "picked up a poke bowl and
+    ate half of it" is one sentence about lunch. A future frame beats a bare
+    acquisition, because "got some steaks for tomorrow" is a shopping trip. An
+    acquisition verb with no eating verb anywhere is the case this exists for.
+
+    An OPEN FOOD THREAD settles it too: "and a coffee" after a logged meal is
+    part of that meal, not a separate errand.
+    """
+    body = (text or "").strip()
+    if not body:
+        return STATE_UNCERTAIN
+    if _EATEN_RE.search(body):
+        return STATE_CONSUMED
+    if _PLAN_RE.search(body):
+        return STATE_PLANNED
+    if _ACQUIRED_RE.search(body):
+        return STATE_CONSUMED if thread_active else STATE_ACQUIRED
+    return STATE_UNCERTAIN
+
+
 _MEAL_RE = re.compile(r"\b(breakfast|lunch|dinner|snack|dessert)\b", re.I)
 _ACK_RE = re.compile(
     r"^(ok(ay)?|k+|thx|thanks|thank\s+you|ty|cool|nice|great|sweet|got\s+it|gotcha|"
@@ -962,6 +1010,27 @@ def format_confirm(items: list, *, user_message: str = "") -> str:
     """
     from core.food_response import fallback
     return fallback(review_plan(items, user_message=user_message))
+
+
+def acquisition_question(items: list) -> str:
+    """"Did you eat that, or is it for later?", naming what was named.
+
+    One sentence, and it names the food rather than saying "that" — a question
+    the user has to scroll up to understand is a worse question. Two items get
+    both; more than two get a count, because listing five things back is the
+    roll-call the card exists to avoid.
+    """
+    names = [_lc(str(it.get("food") or "").strip())
+             for it in (items or []) if (it.get("food") or "").strip()]
+    if not names:
+        return "Did you eat that, or is it for later?"
+    if len(names) == 1:
+        subject = f"the {names[0]}"
+    elif len(names) == 2:
+        subject = f"the {names[0]} and the {names[1]}"
+    else:
+        subject = f"all {len(names)} of those"
+    return f"Did you eat {subject}, or is that for later?"
 
 
 def _lc(name: str) -> str:
@@ -1832,6 +1901,34 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
     note = str(data.get("note") or "").strip()[:200]
     follow_up = str(data.get("follow_up") or "").strip()
     label = (kinds[0] if all(k == kinds[0] for k in kinds) else "commit")
+
+    # ── HAVING FOOD IS NOT EATING IT ────────────────────────────────────────
+    #
+    # "Got a caramel cashew Barebells bar and a Legendary Milk Chocolate Sweet
+    # Roll" wrote two entries and 400 calories against a day in which nothing
+    # had been eaten. The gate that let it through reads `_CONSUMED_RE`, which
+    # bundles "ate" with "bought" — right for deciding whether the logger looks
+    # at the message, wrong for deciding whether to write.
+    #
+    # This is the one question of the four the directive names that the user
+    # alone can answer, and it passes every legality test: it names one
+    # unresolved field, the field decides whether the food is on the day at all,
+    # a yes or no settles it, and the answer changes the outcome.
+    #
+    # QUICK COMMITS AND SAYS SO. Its whole contract is low friction with the
+    # assumption stated, and an unwanted entry there is one tap from removal.
+    if (label == "log" and prior is None and _mode(user) != "quick"
+            and consumption_state(message,
+                                  thread_active=thread_active) == STATE_ACQUIRED):
+        _items_a = [it for it in items_logged if (it.get("food") or "").strip()]
+        if _items_a:
+            # `kind="confirm"` reuses the deterministic yes-replay: a yes logs
+            # THESE items through the same builder, with no second parse.
+            return {"action": "ask", "kind": "confirm",
+                    "text": acquisition_question(_items_a),
+                    "items": _items_a,
+                    "tool_calls": calls, "say": say[:400],
+                    "note": note, "follow_up": follow_up}
 
     # THE WHOLE-PARSE CONFIRM IS GONE (Danny 2026-07-26: "remove the strict
     # confirm line, it's killing the interaction, Arnie should just clarify

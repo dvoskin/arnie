@@ -512,7 +512,7 @@ async def test_strict_confirm_narrowed_to_where_it_earns_friction(monkeypatch):
         "ambiguities": [{"item": "Poke bowl", "field": "consumed",
                          "impact_cal": 50}],
         "say": "Bowl logged, {batch_cal} cal."}))
-    out4 = await FT.run("picked up one poke bowl", strict)
+    out4 = await FT.run("ate one poke bowl", strict)
     # COMMITS. A 50-calorie doubt is 9% of a 550-calorie bowl — material by
     # neither the absolute nor the proportional rule, so there is nothing for a
     # question to settle. Under the old gate this fell through to the confirm,
@@ -524,6 +524,13 @@ async def test_strict_confirm_narrowed_to_where_it_earns_friction(monkeypatch):
     # the doubt, which is exactly what the policy is for — and what a confirm
     # that fires on both cannot tell apart.
     assert out4["action"] == "log"
+    # The wording was "picked up one poke bowl" until the acquisition state
+    # landed. Picking a bowl up is not eating it, and that now earns its own
+    # question — which is a different mechanism from the whole-parse confirm
+    # this test is about, so the verb moved rather than the assertion.
+    out4b = await FT.run("picked up one poke bowl", strict)
+    assert out4b["action"] == "ask"
+    assert "eat" in out4b["text"].lower(), out4b["text"]
     # A vague measure the interpreter CONVERTED now earns a question in
     # moderate (Danny 2026-07-25). "some caesar salad" arriving as 1.5 cups is
     # a 30-200g range collapsed to a number the user never gave — roughly 640
