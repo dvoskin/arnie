@@ -327,14 +327,35 @@ def test_5_a_right_answer_still_needs_a_right_provenance():
     assert "USDA" not in detail, detail
 
 
-@pytest.mark.xfail(reason="acquisition-vs-consumption state model is not built "
-                          "— 'got a bar' still writes as though it was eaten",
-                   strict=True)
 @pytest.mark.asyncio
 async def test_5_acquiring_food_is_not_eating_it(monkeypatch):
+    """Was an xfail until the acquired/consumed state model landed. "Got" two
+    bars wrote 400 calories against a day nothing had been eaten in."""
     out = await _turn(monkeypatch, "Got a caramel cashew Barebells bar and a "
                                    "Legendary Milk Chocolate Sweet Roll",
                       _ACQUIRED)
     assert out["action"] == "ask", (
         "having food is not a consumption assertion; moderate should ask "
         "rather than write")
+    assert "eat" in out["text"].lower(), out["text"]
+
+
+@pytest.mark.asyncio
+async def test_5_the_same_two_items_log_once_they_are_eaten(monkeypatch):
+    """The question has to be answerable AND the answer has to work. A yes
+    replays these exact items through the same builder."""
+    out = await _turn(monkeypatch, "Just ate a caramel cashew Barebells bar "
+                                   "and a Legendary Milk Chocolate Sweet Roll",
+                      _ACQUIRED)
+    assert out["action"] == "log", out
+    assert len(_foods(out)) == 2
+
+
+@pytest.mark.asyncio
+async def test_5_quick_commits_it_rather_than_asking(monkeypatch):
+    """Quick's contract is low friction with the assumption stated, and an
+    unwanted entry there is one tap from removal."""
+    out = await _turn(monkeypatch, "Got a caramel cashew Barebells bar and a "
+                                   "Legendary Milk Chocolate Sweet Roll",
+                      _ACQUIRED, mode="quick")
+    assert out["action"] == "log", out
