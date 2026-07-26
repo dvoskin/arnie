@@ -55,6 +55,7 @@ async def get_me(identity: str = Depends(current_identity)) -> dict:
                 "reminder_frequency": getattr(prefs, "reminder_frequency", None) if prefs else None,
                 "preferred_response_length": getattr(prefs, "preferred_response_length", None) if prefs else None,
             },
+            "food_pipeline": _food_pipeline(user.id),
             "env_gates": {
                 "LOCATION_ENABLED": location_enabled(),
                 "SEARCH_ENABLED": os.getenv("SEARCH_ENABLED", "false").lower() in ("true", "1", "yes"),
@@ -70,6 +71,70 @@ async def get_me(identity: str = Depends(current_identity)) -> dict:
                 "DEEP_RESEARCH_DAILY_CAP": os.getenv("DEEP_RESEARCH_DAILY_CAP", "8"),
             },
         }
+
+
+def _flag(name: str, effective) -> dict:
+    """One rollout flag, reported so DEFAULTED is distinguishable from SET.
+
+    `effective` is resolved by the caller through the SAME accessor the
+    runtime uses — the only value that answers "what is production actually
+    doing". The raw env reading rides alongside because the two answer
+    different questions: a var that never loaded and a var deliberately set
+    to its own default produce identical behaviour and need opposite fixes
+    (fix the deploy vs. change the value). Reporting only the effective mode
+    cannot tell those apart, which is the entire reason this block exists.
+    """
+    raw = os.getenv(name)
+    return {"effective": effective, "env_set": raw is not None, "env_raw": raw}
+
+
+def _food_pipeline(user_id: Optional[int] = None) -> dict:
+    """Which food pipeline a turn actually takes, resolved at runtime.
+
+    Every flag here has a CODE default that differs from what render.yaml
+    declares, so repo state cannot answer "what is deployed": an env var that
+    silently failed to load runs a different pipeline than the config file
+    describes, with no error anywhere. Specifically, unset means
+    coordinator=legacy_only, resolver=shadow, composer=off — while
+    render.yaml declares new_observe / live / true.
+
+    Resolved through the real accessors rather than re-read from the
+    environment here, so this block cannot drift from the behaviour it
+    reports. Each entry is independently guarded: a diagnostic that 500s on
+    one bad import is useless exactly when it is needed most.
+    """
+    out: dict = {}
+
+    try:
+        from core.turns.coordinator import coordinator_mode
+        out["TURN_COORDINATOR_MODE"] = _flag(
+            "TURN_COORDINATOR_MODE", coordinator_mode())
+    except Exception as e:                           # pragma: no cover
+        out["TURN_COORDINATOR_MODE"] = {"error": str(e)}
+
+    try:
+        from skills.nutrition.promotion import (owns_committed_values,
+                                                resolver_mode)
+        out["NUTRITION_RESOLVER_MODE"] = _flag(
+            "NUTRITION_RESOLVER_MODE", resolver_mode())
+        # The mode alone does not decide the resolver's authority: live mode
+        # still filters through the canary cohort (allowlist / percentage /
+        # halt flag). This is the value that actually decides whether the
+        # resolver owns THIS user's committed numbers — and, because the
+        # promotion telemetry sits behind the same call, whether their turns
+        # emit `event=nutrition_promotion` lines at all.
+        out["resolver_owns_committed_values"] = owns_committed_values(user_id)
+    except Exception as e:                           # pragma: no cover
+        out["NUTRITION_RESOLVER_MODE"] = {"error": str(e)}
+
+    try:
+        from core.food_response import _composer_model, composer_enabled
+        out["FOOD_COMPOSER"] = _flag("FOOD_COMPOSER", composer_enabled())
+        out["FOOD_COMPOSER_MODEL"] = _composer_model()
+    except Exception as e:                           # pragma: no cover
+        out["FOOD_COMPOSER"] = {"error": str(e)}
+
+    return out
 
 
 def _default_model() -> str:
