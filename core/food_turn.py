@@ -1305,6 +1305,37 @@ def _asks_to_split(message: str) -> bool:
     """Did the user ask for an existing entry to be broken into components?"""
     return bool(_SPLIT_RE.search(message or ""))
 
+#: Cap on a captured payload. A replay corpus is worth having and a log is not
+#: a database — past this the line is a liability rather than a fixture.
+_CAPTURE_MAX_CHARS = 2000
+
+
+def _capture_interpreter_output(message: str, data) -> None:
+    """Record the interpreter's raw plan so a real turn can be REPLAYED.
+
+    Every fixture in the meal harness is a hand-authored guess at what this
+    function receives. That is the harness's real weakness: if the model emits
+    a shape nobody predicted, the tests exercise an invention and pass. Twelve
+    invented meals also missed the interpreter's own `ask` path entirely, which
+    is how a two-questions-in-one-bubble defect survived a file written to
+    catch exactly that.
+
+    One line per turn, and the corpus grows with USE rather than with someone
+    remembering to add a case. Best-effort and bounded: a capture must never
+    cost a user their log, and a log line must never become a data store.
+    """
+    try:
+        if not isinstance(data, dict) or not data:
+            return
+        import json as _json
+        payload = _json.dumps(data, separators=(",", ":"), default=str)
+        if len(payload) > _CAPTURE_MAX_CHARS:
+            payload = payload[:_CAPTURE_MAX_CHARS] + "\u2026"
+        logger.info("event=interpreter_output msg=%r plan=%s",
+                    (message or "")[:120], payload)
+    except Exception:
+        pass
+
 
 def _log_call(it: dict, source: Optional[str] = None) -> Optional[dict]:
     if not isinstance(it, dict):
@@ -1739,6 +1770,7 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
             logger.warning(f"food_turn logger pass failed: {e}")
             return None
         data = _parse(res.get("text") or "")
+        _capture_interpreter_output(message, data)
         if _shadow_parse is not None:
             _log_fast_path_shadow(_shadow_parse, data)
     if not isinstance(data, dict):
