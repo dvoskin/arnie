@@ -406,7 +406,11 @@ async def chat_history(identity: str = Depends(current_identity), limit: int = 4
         # "don't reiterate edited foods in the chat"). The rows stay in
         # conversation_logs so the model's context knows the board changed —
         # the Log page itself is the visible record of the edit.
-        if row.source_type in ("dashboard_edit", "dashboard_delete"):
+        # ...and a one-tap undo, for the same reason: the user watched it
+        # happen on the card they tapped. The row stays so the model's context
+        # knows the board moved.
+        if row.source_type in ("dashboard_edit", "dashboard_delete",
+                               "ledger_undo"):
             continue
         # `timestamp` is the SQLAlchemy column on ConversationLog. Send it as
         # ISO-8601 so the iOS contract (Date) parses it via ISO8601DateFormatter.
