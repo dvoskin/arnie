@@ -1375,6 +1375,14 @@ async def _web_lookup_packaged(food_name: str, quantity) -> dict | None:
         if not sv_m:
             sv_m = _re.search(r"per\s+(\d{1,3}(?:\.\d+)?)\s*(g|gram|oz|ounce)s?\b",
                               text, _re.I)
+        # THE PARSED NUMBERS ARE THE LABEL'S OWN SERVING. Carried through
+        # rather than only converted to a density, for the same reason OFF's
+        # panel is (#54): "1 bar" of a product whose serving is published needs
+        # no mass at all, and deriving one from the model's calories is what
+        # let a guess anchor the answer. The density is still built below for
+        # portions that are NOT a count of the product's units.
+        _per_serving = {"calories": cal, "protein": pro,
+                        "carbs": carbs, "fat": fat}
         if sv_m:
             grams = float(sv_m.group(1))
             if sv_m.group(2).lower().startswith("o"):
@@ -1387,7 +1395,9 @@ async def _web_lookup_packaged(food_name: str, quantity) -> dict | None:
                     "fat": fat / grams * 100,
                     "fiber": None, "sugar": None, "sodium": None,
                 }
-                return {"fdc_id": None, "per100g": per100, "_match": "likely"}
+                return {"fdc_id": None, "per100g": per100, "_match": "likely",
+                        "per_serving": _per_serving,
+                        "serving_text": f"{grams:.0f} g"}
         # No serving found: keep the legacy rough shape (density assumed) so
         # fiber/sugar scaling still works; primary macros stay the parsed ones.
         per100 = {
@@ -1397,7 +1407,11 @@ async def _web_lookup_packaged(food_name: str, quantity) -> dict | None:
             "fat": (fat / cal) * 200.0 if cal else None,
             "fiber": None, "sugar": None, "sodium": None,
         }
-        return {"fdc_id": None, "per100g": per100, "_match": "likely"}
+        # The per-serving panel still stands even here: the label's numbers
+        # were read directly, and only the DENSITY is assumed. A count portion
+        # takes the panel and never touches the assumption.
+        return {"fdc_id": None, "per100g": per100, "_match": "likely",
+                "per_serving": _per_serving}
     except Exception as e:
         logger.warning(f"web packaged lookup failed: {e}")
         return None
