@@ -696,6 +696,37 @@ def _infer_source(q: NormalizedQuantity) -> str:
     return "none"
 
 
+def _unit_names_the_food(unit_word: str, food_name: str) -> bool:
+    """True when the unit word is part of the FOOD'S NAME, not a measure of it.
+
+    "Cup Noodles" is a product. "1 cup" of it is one package, and converting
+    that word to 236 ml gives 140 g of nothing — a mass basis with no relation
+    to the 64 g package, from which every calorie, macro and micronutrient is
+    then scaled. That is how a correctly identified Nissin Cup Noodles logged
+    at 220 calories against 320, with the whole nutrient panel wrong beneath it.
+
+    `_count_basis` already carries this exception for VAGUE units — "1 bowl" of
+    a Chipotle burrito bowl counts the product, not a helping. But mass and
+    volume conversion happens EARLIER in `normalize_quantity` and returns
+    before that check is ever reached, so the exception could not apply to the
+    case that needed it most.
+
+    The discriminator is "of". In "cup of coffee" the cup measures the coffee;
+    in "Cup Noodles" it names them. A measure introduces its food and a name
+    modifies it, and that difference is visible in the word order without
+    knowing anything about either product.
+    """
+    unit = _singular((unit_word or "").strip().lower())
+    name = (food_name or "").strip().lower()
+    if not unit or not name:
+        return False
+    for match in re.finditer(rf"\b{re.escape(unit)}s?\b", name):
+        tail = name[match.end():].lstrip()
+        if not tail.startswith("of "):
+            return True
+    return False
+
+
 def normalize_quantity(raw: str, food_name: str = "") -> NormalizedQuantity:
     """A portion, plus the record of how it became one (§2, §10).
 
@@ -759,6 +790,29 @@ def _normalize_quantity(raw: str, food_name: str = "") -> NormalizedQuantity:
     amount, rest = _parse_amount(raw)
     unit_text = rest.strip().lower()
     assumptions = []
+
+    # THE UNIT MAY BE THE PRODUCT'S NAME. Checked BEFORE the conversions,
+    # because they return immediately and the food-name exception downstream
+    # would never be reached — which is exactly how "1 cup" of Cup Noodles
+    # became 236 ml.
+    # ONLY for MEASURE words. A count unit that appears in the food name is
+    # already handled correctly further down — "2 cookies" of a cookie gets a
+    # piece weight there, and intercepting it here would throw that away. The
+    # bug is specific to units that CONVERT: a measure word silently becomes a
+    # mass, and the conversion returns before anything can notice the word was
+    # the product's name.
+    _head = unit_text.split()[0] if unit_text.split() else ""
+    # VOLUME words only. A mass unit is never a product name — nothing is
+    # called "Oz", and "6 oz steak" must convert as the measurement it is.
+    # Volume words are the ambiguous ones because containers get their names
+    # from them: Cup Noodles, a bowl, a pint.
+    _converts = _head in _VOL_ML
+    if _head and _converts and _unit_names_the_food(_head, food_name):
+        return NormalizedQuantity(
+            amount=amount, unit=_singular(_head), count=amount,
+            count_basis=COUNT_BASIS_UNIT,
+            unit_label=raw or f"{_fmt(amount)} {_head}",
+            assumptions=(MASS_UNKNOWN,))
 
     # Mass and volume are conversions, not estimates.
     for token, grams_per in _MASS_G.items():

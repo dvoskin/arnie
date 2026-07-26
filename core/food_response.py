@@ -108,6 +108,23 @@ _SPOKEN_UNITS = {
 
 _PORTION_RE = re.compile(r"^\s*(-?\d+(?:\.\d+)?)\s*(.*)$")
 
+#: Words that HEDGE a quantity rather than measure it, with how they read in
+#: front of a food. The interpreter emits them as units with an amount of 1 —
+#: "some" of mustard arrives as `1 some` — and every rule below treats a unit
+#: as a noun to be counted, which produced "One some of mustard" in a shipped
+#: review turn.
+#:
+#: They are not units and they are not counts. "Some mustard" is the whole
+#: phrase, and the 1 in front of it is an artefact of a field that has to hold
+#: a number.
+_HEDGE_UNITS = {
+    "some": "some {food}",
+    "little": "a little {food}",
+    "bit": "a bit of {food}",
+    "lots": "lots of {food}",
+    "plenty": "plenty of {food}",
+}
+
 #: Size words are ADJECTIVES, not units. They modify whatever follows them and
 #: are never the head of the phrase.
 #:
@@ -228,6 +245,14 @@ def describe_portion(portion: str, name: str,
     amount = float(match.group(1))
     descriptor, unit = _split_descriptor(match.group(2))
     spoken = _spoken_name(name, branded)
+
+    # A HEDGE IS NOT A UNIT. Handled before anything tries to pluralize it or
+    # put a number in front of it, because both are wrong: nobody says "one
+    # some of mustard", and "two somes" is not the repair.
+    _hedge = _HEDGE_UNITS.get((unit or "").rstrip("s")) or \
+        _HEDGE_UNITS.get(unit or "")
+    if _hedge:
+        return _hedge.format(food=spoken)
 
     # The unit IS the food — "0.5 banana" of "Banana" — or says nothing.
     #

@@ -181,3 +181,42 @@ def _trim(n) -> str:
     except (TypeError, ValueError):
         return str(n)
     return str(int(f)) if f == int(f) else f"{f:g}"
+
+
+def check_values(*, calories, protein=None, carbs=None, fat=None,
+                 grams=None) -> Tuple[SanityFinding, ...]:
+    """The same physics, against plain numbers.
+
+    `check()` wants a NutrientProfile and a SourceBasis, which only the
+    resolver has — and the resolver has never run on a real turn. So the
+    checks that refuse a 588-calorie tablespoon of peanut butter were
+    unreachable from the path that actually commits.
+
+    This is the same rules on the values `core.food_intelligence.analyze`
+    holds: floats and a gram figure. Deliberately a thin adapter rather than a
+    second implementation — the thresholds and the reasoning live once, above.
+    """
+    class _V:
+        def __init__(self, v):
+            self.value = v
+
+    class _P:
+        def __init__(self, **kw):
+            self._v = {k: v for k, v in kw.items() if v is not None}
+
+        def amount(self, key):
+            return self._v.get(key)
+
+    class _Q:
+        def __init__(self, g):
+            self.grams = g
+            self.milliliters = None
+            self.count = None
+
+    class _B:
+        basis = "per_100g"
+        serving_mass_g = None
+        as_served = False
+
+    return check(_P(calories=calories, protein=protein, carbs=carbs, fat=fat),
+                 _B(), _Q(grams))

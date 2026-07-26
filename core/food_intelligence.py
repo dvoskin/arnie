@@ -600,6 +600,38 @@ def analyze(name, quantity, llm_cal, llm_protein, llm_carbs, llm_fat,
         rung = "component_estimate" if food_class is authority.FoodClass.RESTAURANT \
             else "estimate"
 
+    # ── §9 SANITY, ON THE PATH THAT ACTUALLY COMMITS ────────────────────────
+    #
+    # These checks lived only inside the resolver, which had never run on a
+    # real turn — so the rule that refuses a 588-calorie tablespoon of peanut
+    # butter was unreachable from the code that writes the row.
+    #
+    # An IMPOSSIBLE result is not committed as a number. Falling back to the
+    # model's own read is the honest move: it is the only other estimate we
+    # have, and it was produced without the wrong density that caused this.
+    # A SUSPECT one is left alone and logged — oils and nut butters sit at the
+    # energy ceiling legitimately, and refusing there would cost more than it
+    # saves.
+    try:
+        from skills.nutrition import sanity as _sanity
+        _findings = _sanity.check_values(
+            calories=cal, protein=protein, carbs=carbs, fat=fat,
+            grams=_implied_grams)
+        _fatal = [f for f in _findings if f.is_fatal]
+        if _fatal:
+            logger.warning(
+                "sanity refusal for %r: %s — falling back to the model's read",
+                name, "; ".join(f.code for f in _fatal))
+            cal, protein, carbs, fat = _llm0
+            _implied_grams = None
+            computed_forward = False
+            source, confidence = "estimate", "estimated"
+        elif _findings:
+            logger.info("sanity note for %r: %s", name,
+                        ",".join(f.code for f in _findings))
+    except Exception as _se:
+        logger.warning(f"sanity check skipped for {name!r}: {_se}")
+
     pd, satiety, quality = _derive(cal, protein, carbs, fat, fiber, sugar)
 
     # Build the coaching note the LLM uses to actually coach (not just acknowledge)
