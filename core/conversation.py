@@ -1804,6 +1804,43 @@ async def _run_turn(
                                                         apply_policy, fallback)
                         _snap = build_snapshot(_ok_calls, _batch_c, _batch_p,
                                                _ac, _ap, _ct, _pt)
+                        # ONE DAY, ONE SOURCE — for the sentence AND the card.
+                        #
+                        # The card's remaining figures come from the RECEIPT
+                        # (`core/receipt.py`, stashed at write time); the
+                        # narration's come from this snapshot. Two reads of the
+                        # same day, taken at different moments from different
+                        # objects, and they drift: a shipped turn showed a card
+                        # reading "1,245 cal left · 102g protein to go" with
+                        # the sentence directly beneath it saying "710 for the
+                        # day, 133g protein to go" — 210 calories and 31g of
+                        # protein apart, inside one bubble.
+                        #
+                        # `_resync_batch_receipts` already fixed the sibling
+                        # case, where card 1 was computed against a day holding
+                        # only item 1. It reconciles the cards to each OTHER
+                        # and had nothing to say about the prose, because the
+                        # prose is authored from an object it never sees.
+                        #
+                        # FOOD_LEDGER_V2 lists the real repair under Remaining
+                        # in Phase 2 — "card + narration from the same
+                        # snapshot". Until the card render path takes the
+                        # snapshot itself, this is the same guarantee reached
+                        # the way the batch resync already reaches it: rewrite
+                        # the receipts the cards are built from, from the
+                        # committed snapshot, so both sides read one number.
+                        #
+                        # Deliberately only the DAY figures. The item's own
+                        # macros are its own and must keep coming from what was
+                        # committed for that row.
+                        try:
+                            for _c in (_ok_calls or []):
+                                _r = (_c.get("input") or {}).get("_receipt")
+                                if isinstance(_r, dict):
+                                    _r["remaining_cal"] = _snap.cal_left
+                                    _r["remaining_protein"] = _snap.protein_left
+                        except Exception:
+                            pass    # a card with a stale number beats no card
                         # The committed item NAMES travel with the plan.
                         # `_is_roll_call` compares the sentence against them,
                         # so an empty plan was structurally unable to fire —
