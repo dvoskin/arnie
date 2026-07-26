@@ -572,8 +572,39 @@ def analyze(name, quantity, llm_cal, llm_protein, llm_carbs, llm_fat,
                 _v = per100.get(_mk)
                 if _v is not None:
                     micros[_mk] = round(_v * ratio, 2)
-            # refine protein if enrichment disagrees notably and LLM gave none
-            if not protein and per100.get("protein"):
+            # A LABEL MAY CORRECT, NOT ONLY FILL.
+            #
+            # This read `if not protein`, so a trustworthy source could supply
+            # a macro the model OMITTED and could never fix one the model got
+            # WRONG — and a wrong number is the failure mode, not a missing
+            # one. "Ezekiel Bread, 1 slice" committed the model's 1 g of
+            # protein while the seated label said 4.2 g for that same portion,
+            # and every other nutrient on the row came from the label.
+            #
+            # The profile was a MIXTURE: calories from the model, fibre and
+            # sodium and micros from the label, protein from whichever spoke
+            # first. Nothing downstream could tell, because one row cannot say
+            # that two of its numbers disagree about what the food is.
+            #
+            # One portion, one source, for every macro that source can supply.
+            # The ratio is unchanged, so the derived profile stays arithmetically
+            # consistent with the calories on the card.
+            #
+            # The calories are still the MODEL's, and that is the deeper
+            # problem: the mass is back-derived from them, so the label is
+            # scaled to fit the guess rather than correcting it. Not this
+            # change — but the profile no longer compounds it.
+            if _trustworthy:
+                for _field in ("protein", "carbs", "fat"):
+                    if per100.get(_field) is not None:
+                        _scaled = round(per100[_field] * ratio, 1)
+                        if _field == "protein":
+                            protein = _scaled
+                        elif _field == "carbs":
+                            carbs = _scaled
+                        else:
+                            fat = _scaled
+            elif not protein and per100.get("protein"):
                 protein = round(per100["protein"] * ratio, 1)
 
     # Plausibility clamp: a single logged item should never carry >4000mg sodium.
