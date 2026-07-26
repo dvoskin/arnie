@@ -157,3 +157,53 @@ def test_a_name_that_is_strong_on_its_own_still_opens_it():
     """"Barebells Cookies and Cream" carries an explicit conjunction-shaped
     product line — strong without anyone declaring anything."""
     assert _names_a_product("Barebells Cookies and Cream", False)
+
+
+# ── 5. "I still haven't seen it say pulled from manufacturer" ─────────────────
+#
+#     User:   I also had a plain Royo bagel
+#     Arnie:  Royo Bagel, Plain logged, 80 cal, 8g protein.
+#             Portion estimated · nutrition profile supplemented with USDA data
+#
+# The manufacturer rung exists and has never been reached in production. It
+# can't be: the interpreter is asked to set `branded: true` on a named product
+# and routinely doesn't, and `is_packaged` is the gate everything downstream
+# hangs off. The user capitalised "Royo" in the middle of an ordinary sentence
+# — which is what people do with brand names and almost nothing else — and
+# nothing was reading it.
+from core.food_turn import names_a_capitalized_brand  # noqa: E402
+
+
+def test_a_mid_sentence_capital_names_a_brand():
+    assert names_a_capitalized_brand("Royo Bagel, Plain",
+                                     "I also had a plain Royo bagel")
+    assert names_a_capitalized_brand("Nissin Cup Noodles",
+                                     "had a Nissin cup noodles")
+    assert names_a_capitalized_brand("Barebells Bar", "I ate a Barebells bar")
+
+
+def test_the_same_sentence_without_the_capital_names_nothing():
+    assert not names_a_capitalized_brand("Everything Bagel",
+                                         "I had a plain bagel")
+    assert not names_a_capitalized_brand("Chicken Breast",
+                                         "grilled chicken breast for lunch")
+
+
+def test_a_cuisine_is_not_a_maker():
+    """Everyone capitalises "Greek yogurt" and nobody makes it."""
+    assert not names_a_capitalized_brand("Greek Yogurt", "I had Greek yogurt")
+    assert not names_a_capitalized_brand("French Toast", "made French toast")
+
+
+def test_shouting_carries_no_signal():
+    """A message in caps capitalises the brand and everything around it
+    equally, so no single capital means anything."""
+    assert not names_a_capitalized_brand("Chicken Breast",
+                                         "CHICKEN BREAST AND RICE")
+
+
+def test_a_sentence_initial_capital_says_nothing():
+    """"Oatmeal" alone is not a brand, and neither the rule nor the reader can
+    tell it from "Royo" alone. The package-noun net covers the branded case."""
+    assert not names_a_capitalized_brand("Oatmeal", "Oatmeal")
+    assert _looks_branded("Royo Bagel")

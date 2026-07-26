@@ -1189,7 +1189,71 @@ def _normalize_ops(data: dict) -> list:
     return [(action, o) for o in (data.get(key) or []) if isinstance(o, dict)]
 
 
-def _log_call(it: dict, source: Optional[str] = None) -> Optional[dict]:
+#: Capitalised words that are styles, cuisines and origins rather than makers.
+#: "Greek yogurt" and "French toast" are capitalised by everyone and named by
+#: no one — without this they would each look like a brand.
+_GENERIC_CAPITALIZED = {
+    "greek", "french", "italian", "english", "mexican", "chinese", "thai",
+    "japanese", "korean", "spanish", "german", "swiss", "belgian", "russian",
+    "irish", "danish", "canadian", "american", "asian", "mediterranean",
+    "caesar", "cajun", "creole", "cuban", "hawaiian", "buffalo", "denver",
+    "cheddar", "parmesan", "romano", "gouda", "brie", "havarti", "monterey",
+    "brussels", "boston", "romaine", "bolognese", "alfredo", "marinara",
+    "sriracha", "dijon", "worcestershire", "tabasco",
+    "monday", "tuesday", "wednesday", "thursday", "friday", "saturday",
+    "sunday", "i", "im", "ive", "id", "ill",
+}
+
+_WORD_RE = re.compile(r"[A-Za-z][\w'’\-]*")
+
+
+def _user_capitalized_tokens(message: str) -> set:
+    """Words the USER capitalised MID-SENTENCE.
+
+    People capitalise brand names in the middle of an ordinary sentence and
+    almost nothing else: "I also had a plain Royo bagel". That single capital
+    is the most reliable brand signal in the turn, and nothing was reading it —
+    which is how a named product reached the log as a generic bagel.
+
+    Sentence-initial words are excluded because their capital says nothing.
+    A message that is mostly capitals carries no signal either: shouting and
+    title-casing capitalise the brand and everything around it equally.
+    """
+    text = (message or "").strip()
+    if not text:
+        return set()
+    words = _WORD_RE.findall(text)
+    if not words:
+        return set()
+    caps = [w for w in words if w[0].isupper()]
+    if len(caps) > max(2, len(words) // 2):
+        return set()
+    out = set()
+    for sentence in re.split(r"[.!?\n]+", text):
+        toks = _WORD_RE.findall(sentence)
+        for word in toks[1:]:
+            lowered = word.lower()
+            if word[0].isupper() and lowered not in _GENERIC_CAPITALIZED:
+                out.add(lowered)
+    return out
+
+
+def names_a_capitalized_brand(food: str, message: str) -> bool:
+    """Did the user capitalise one of this food's own words?
+
+    The interpreter is asked to set `branded: true` on a named product and
+    routinely does not — "a plain Royo bagel" came back unflagged, so the
+    executor treated a manufacturer's product as a generic bagel and answered
+    it from USDA. This reads the evidence the user already gave.
+    """
+    caps = _user_capitalized_tokens(message)
+    if not caps:
+        return False
+    return any(w.lower() in caps for w in _WORD_RE.findall(food or ""))
+
+
+def _log_call(it: dict, source: Optional[str] = None,
+              message: str = "") -> Optional[dict]:
     if not isinstance(it, dict):
         return None
     food = str(it.get("food") or "").strip()
@@ -1214,9 +1278,16 @@ def _log_call(it: dict, source: Optional[str] = None) -> Optional[dict]:
     _basis = str(it.get("basis") or "").strip().lower()
     if _basis in ("stated", "regular", "estimate"):
         inp["basis"] = _basis
-    if it.get("branded"):
+    if it.get("branded") or names_a_capitalized_brand(food, message):
         # The logger read the message — it declares brandedness; the
         # downstream heuristic (_looks_branded) is only the backup net.
+        #
+        # It declares it UNRELIABLY, though. "I also had a plain Royo bagel"
+        # came back with `branded` unset, so a manufacturer's product was
+        # resolved as a generic bagel and the item's own provenance line read
+        # "supplemented with USDA data" — the manufacturer rung has never been
+        # reached in production. The user's own capitalisation settles it
+        # without asking the model twice.
         inp["is_packaged"] = True
     for k in ("calories", "protein", "carbs", "fats"):
         v = it.get(k)
@@ -1796,7 +1867,7 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
 
     calls, kinds, items_logged = [], [], []
     for kind, o in ops:
-        call = (_log_call(o) if kind == "log"
+        call = (_log_call(o, message=message) if kind == "log"
                 else _update_call(o, board_by_id) if kind == "update"
                 else _delete_call(o, board_by_id))
         if call is None:
