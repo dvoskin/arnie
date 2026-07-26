@@ -114,3 +114,44 @@ async def test_a_plain_correction_still_commits_as_one_update(monkeypatch):
     """The guard must not catch every update — only one asked to be a split."""
     out = await _turn(monkeypatch, _LONE_UPDATE, message="make it 2 slices")
     assert out["action"] != "ask", out
+
+
+# ── one question per bubble ────────────────────────────────────────────────────
+#
+#     Arnie: What kind of cheese and about how much - a slice or a bit
+#            sprinkled? How many slices of toast?
+#
+# Two questions in one bubble is two things to answer and one to forget. The
+# interpreter's ask path joined its facets with a space, so each kept its own
+# question mark — and this path is not covered by the twelve-meal harness, which
+# drives the staged engine's derived asks instead. That gap is why it survived.
+#
+# The comment above this code already said the items not asked about stay
+# pending and asking about them is the next turn's job. It just was not true of
+# the text.
+def test_several_facets_become_one_question():
+    from core.food_turn import _one_question
+    text = _one_question(["what kind of cheese and about how much - a slice "
+                          "or a bit sprinkled", "how many slices of toast"])
+    assert text.count("?") == 1, text
+
+
+def test_the_first_facet_is_the_one_asked():
+    """Joining them under one question mark was not an improvement — "what kind
+    of cheese, and how many slices of toast?" is still two asks. A reply the
+    user can give in one gesture beats covering the whole meal in one turn."""
+    from core.food_turn import _one_question
+    text = _one_question(["black or with milk/cream", "any sugar"])
+    assert text == "Black or with milk/cream?", text
+
+
+def test_a_single_facet_is_untouched_apart_from_casing():
+    from core.food_turn import _one_question
+    assert _one_question(["how much of the ranch dressing"]) == \
+        "How much of the ranch dressing?"
+
+
+def test_no_facets_asks_nothing():
+    from core.food_turn import _one_question
+    assert _one_question([]) == ""
+    assert _one_question(["", "  "]) == ""

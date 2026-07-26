@@ -1116,7 +1116,7 @@ def clarify_text_from_points(points: list, ready: list | None = None, *,
     # renderer now, so they have to arrive in the same shape, or the
     # unification is only structural and the user can still tell which engine
     # asked.
-    question = " ".join(q[:1].upper() + q[1:] for q in asks[0][1])
+    question = _one_question(asks[0][1])
 
     return fallback(FoodResponsePlan(
         intent=FoodResponseIntent.CLARIFY,
@@ -1124,6 +1124,35 @@ def clarify_text_from_points(points: list, ready: list | None = None, *,
         unresolved_item=(pending[0] if pending else None),
         clarification_question=question,
         requires_answer=True, user_message=user_message))
+
+
+def _one_question(facets: list) -> str:
+    """ONE question, from however many facets arrived.
+
+    Joining with a space kept each facet's own question mark, so a single ask
+    shipped as "What kind of cheese and about how much - a slice or a bit
+    sprinkled? How many slices of toast?" — two questions in one bubble, which
+    is two things to answer and one to forget. It also cannot be offered as a
+    quick reply, because there is no single thing being asked.
+
+    Interior question marks are dropped and the facets are joined with ", and ",
+    so what arrives is one sentence with one mark at the end.
+    """
+    parts = []
+    for facet in facets:
+        text = str(facet or "").strip().rstrip("?").strip().rstrip(",").strip()
+        if text:
+            parts.append(text)
+    if not parts:
+        return ""
+    # ONE FACET. Joining them with ", and " still produced "What kind of cheese
+    # and about how much, and how many slices of toast?" — one question mark
+    # over two unrelated asks, which is not an improvement and cannot be a tap.
+    # A reply the user can give in one gesture is worth more than covering the
+    # whole meal in one turn, and the rest stays pending exactly as the comment
+    # above promises.
+    text = parts[0]
+    return text[:1].upper() + text[1:] + "?"
 
 
 def _format_question(points: list, ready: list | None = None) -> str:
