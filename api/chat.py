@@ -25,6 +25,11 @@ from db.queries import resolve_user, get_recent_conversations, get_recent_conver
 from core.chat_service import run_chat_turn
 from core.platform import serialize_response, WIRE_VERSION
 from api.auth import current_identity, verify_session_token
+# Shared with the Telegram and iMessage handlers — the coalescing rules and
+# their concurrency guarantees are one implementation, not three. The module
+# imports only asyncio and logging, so this pulls in no bot dependencies.
+from bot.message_debounce import is_running as _debounce_running
+from bot.message_debounce import schedule_message as _debounce
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -42,6 +47,24 @@ def _voice_replies_enabled() -> bool:
     OPENAI_API_KEY. Defaults OFF."""
     import os
     return os.getenv("VOICE_REPLIES_ENABLED", "false").lower() in ("true", "1", "yes")
+
+def _debounce_seconds() -> float:
+    """The quiet window before a coalesced turn runs.
+
+    Shorter than the bots' 2.0s on purpose: they are push surfaces where a
+    pause is invisible, while an iOS user is watching the screen they just
+    typed into. Long enough to catch a thought sent in two or three pieces,
+    short enough that a single message does not feel held.
+
+    This never delays the indicator — that frame goes out on receipt — so the
+    window costs perceived latency only on turns it is actively merging.
+    """
+    import os
+    try:
+        return max(0.0, float(os.getenv("IOS_DEBOUNCE_SECONDS", "1.5")))
+    except (TypeError, ValueError):
+        return 1.5
+
 
 # Per-identity pipeline lock. Guarantees two turns for the same user can never
 # overlap (the duplicate-log / duplicate-onboarding-question bug class), matching
@@ -500,6 +523,11 @@ async def chat_stream(ws: WebSocket):
     The connection stays open for the whole conversation (one turn per inbound frame).
     """
     await ws.accept()
+    # Per-connection state for the coalesced turn. The client id is the LAST
+    # message's, so idempotency claims what the user actually sent last rather
+    # than a fragment they have since added to; `unseen` is sticky across the
+    # window (see below) and is consumed by the runner.
+    _pending: dict = {"client_msg_id": None, "unseen": False}
     try:
         while True:
             data = await ws.receive_json()
@@ -514,7 +542,55 @@ async def chat_stream(ws: WebSocket):
             if not message:
                 await ws.send_json({"type": "error", "detail": "empty message"})
                 continue
-            await _stream_turn(ws, identity, message, client_msg_id=client_msg_id)
+
+            # ── COALESCE RAPID-FIRE MESSAGES ─────────────────────────────────
+            # Three quick texts used to become three turns and three replies:
+            # this loop awaited each one, so a message sent while the previous
+            # was still running simply waited its turn and then got answered on
+            # its own. Telegram and iMessage have had `schedule_message` since
+            # the beginning; iOS never did, which is why it is the surface
+            # where "chicken" / "and rice" / "for lunch" reliably produced
+            # three separate logs and three separate confirmations.
+            #
+            # Deliberately NOT awaited: returning to receive_json() at once is
+            # what lets the next message arrive in time to join the buffer.
+            _key = f"ios:{identity}"
+            # Asked BEFORE buffering, because the answer expires: a message
+            # arriving mid-run is held for a trailing run that begins after the
+            # lock clears, and by then nothing can tell it was composed while a
+            # reply was already being written. Sticky across the window — if
+            # ANY message in it landed mid-run, the coalesced turn is not a
+            # reply to what the user hadn't read.
+            if _debounce_running(_key):
+                _pending["unseen"] = True
+            _pending["client_msg_id"] = client_msg_id
+
+            async def _run_coalesced(combined: str, _id=identity) -> None:
+                _unseen = bool(_pending.pop("unseen", False))
+                try:
+                    await _stream_turn(ws, _id, combined,
+                                       client_msg_id=_pending.get("client_msg_id"),
+                                       prior_reply_unseen=_unseen)
+                except WebSocketDisconnect:
+                    pass          # they left mid-window; nothing to deliver to
+                except Exception as e:
+                    logger.error(f"debounced stream turn failed (identity={_id}): {e}",
+                                 exc_info=True)
+                    try:
+                        await ws.send_json({"type": "error",
+                                            "detail": "coaching turn failed"})
+                    except Exception:
+                        pass
+
+            # The indicator goes out NOW, not when the window closes, so the
+            # coalescing pause never reads as a dead app. `_stream_turn` sends
+            # the same frame when it starts; re-asserting one UI state is free.
+            try:
+                await ws.send_json({"type": "tool", "tools": ["thinking"]})
+            except Exception:
+                pass
+            await _debounce(_key, message, _run_coalesced,
+                            delay=_debounce_seconds())
     except WebSocketDisconnect:
         return
     except Exception as e:
@@ -526,11 +602,19 @@ async def chat_stream(ws: WebSocket):
 
 
 async def _stream_turn(ws: WebSocket, identity: str, message: str,
-                       client_msg_id: Optional[str] = None) -> None:
+                       client_msg_id: Optional[str] = None,
+                       prior_reply_unseen: Optional[bool] = None) -> None:
     lock = _locks.setdefault(identity, asyncio.Lock())
     # See _coached_reply: a lock already held means they were still typing
     # while the previous turn ran, so this message is not a reply to it.
-    _unseen = lock.locked()
+    #
+    # The caller may answer this instead, and must when debouncing: a message
+    # buffered mid-run is held for a trailing run that starts AFTER the lock is
+    # released, so asking the lock here would say "seen" about a message the
+    # user demonstrably typed before the reply existed. Whoever took delivery
+    # of the message knows; this function only knows when it got around to it.
+    _unseen = (bool(prior_reply_unseen) if prior_reply_unseen is not None
+               else lock.locked())
     async with lock:
         # Unconditional for the same reason as the REST path — a reused task
         # must not inherit an earlier turn's answer.

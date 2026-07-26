@@ -25,6 +25,19 @@ _tasks: dict[str, asyncio.Task] = {}    # the in-flight debounce/flush task per 
 _running: set[str] = set()              # user_keys whose runner is currently executing
 
 
+def is_running(user_key: str) -> bool:
+    """True when a runner for this user is executing RIGHT NOW.
+
+    Asked at buffer time, this answers "was a reply already being written when
+    they sent this?" — which is what decides whether the message can be read as
+    an answer to that reply. The per-request lock cannot answer it once
+    debouncing is in play: a message that arrives mid-run is deliberately held
+    for a trailing run that starts AFTER the lock is released, so by the time
+    the turn executes the evidence has expired. Captured here, it survives.
+    """
+    return user_key in _running
+
+
 async def schedule_message(user_key: str, text: str, runner, delay: float = 2.0):
     """
     Buffer `text` for `user_key`; after `delay`s of quiet, call runner(combined).
