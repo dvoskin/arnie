@@ -1832,6 +1832,13 @@ async def _run_turn(
                         # case is exactly today's behaviour plus one Haiku call.
                         from core.food_response import (composer_enabled,
                                                         compose_async)
+                        from core.food_response import with_context as _ctx
+                        # The snapshot already carries the day; this adds the
+                        # PERSON — goal and logging mode — so the same meal
+                        # reads differently to someone cutting on strict than
+                        # to someone maintaining on quick. Same helper the ask
+                        # path uses, so both moments reason from one contract.
+                        _plan = _ctx(_plan, user=user)
                         if composer_enabled():
                             _txt, _why = await compose_async(_plan)
                             response_text = _txt

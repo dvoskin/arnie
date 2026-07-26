@@ -1812,10 +1812,12 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
         # assembled from rotating openers. Falls back to exactly the previous
         # deterministic text whenever the composer is off or unhappy.
         from core.food_response import render_plan as _render
+        from core.food_response import with_context as _ctx
         _plan = clarify_plan_from_points(data.get("points") or [],
                                          data.get("ready"),
                                          user_message=message)
-        text = await _render(_plan) if _plan is not None else ""
+        text = (await _render(_ctx(_plan, user=user, day_state=day_line))
+                if _plan is not None else "")
         return {"action": "ask", "text": text} if text else None
 
     if action == "ask" and prior:
@@ -1832,10 +1834,13 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
         _new_amb = bool(data.get("new_ambiguity"))
         if data.get("points") and (_user_invited or (_new_amb and _ask_count < 2)):
             from core.food_response import render_plan as _render
+            from core.food_response import with_context as _ctx
             _p2 = clarify_plan_from_points(data["points"], data.get("ready"),
                                            user_message=message)
             return {"action": "ask",
-                    "text": (await _render(_p2)) if _p2 is not None else "",
+                    "text": (await _render(_ctx(_p2, user=user,
+                                                day_state=day_line))
+                             if _p2 is not None else ""),
                     "points": data["points"]}
         return None
 
@@ -1946,8 +1951,10 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
             # and the question second spent two turns and invited them to
             # approve an assumption they never saw.
             from core.food_response import render_plan as _render
-            _text = await _render(clarify_plan(_decision, _q,
-                                               user_message=message))
+            from core.food_response import with_context as _ctx
+            _text = await _render(_ctx(
+                clarify_plan(_decision, _q, user_message=message),
+                user=user, day_state=day_line))
             return {"action": "ask", "text": _text,
                     "points": [_q.prompt],
                     "question_id": _q.question_id,
@@ -1980,8 +1987,11 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
             if _mat:
                 _pts = _FL.ambiguity_points(_mat)
                 from core.food_response import render_plan as _render
+                from core.food_response import with_context as _ctx
                 _p3 = clarify_plan_from_points(_pts, user_message=message)
-                _txt = (await _render(_p3)) if _p3 is not None else ""
+                _txt = (await _render(_ctx(_p3, user=user,
+                                           day_state=day_line))
+                        if _p3 is not None else "")
                 if _txt:
                     return {"action": "ask", "text": _txt, "points": _pts}
 

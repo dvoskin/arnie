@@ -217,3 +217,85 @@ def test_nothing_to_ask_yields_no_plan_and_no_text():
                                 clarify_text_from_points)
     assert clarify_plan_from_points([]) is None
     assert clarify_text_from_points([]) == ""
+
+
+# ── the renderer reasons from the day and the person ──────────────────────────
+
+def _plan_with_snapshot():
+    from core.food_ledger import TransactionSnapshot
+    from core.food_response import (FoodResponseIntent, FoodResponsePlan)
+    return FoodResponsePlan(
+        intent=FoodResponseIntent.COMMIT,
+        committed_snapshot=TransactionSnapshot(
+            batch_cal=600, batch_protein=40, day_cal=1800, day_protein=95,
+            cal_target=2165, protein_target=180))
+
+
+def test_the_composer_is_told_where_the_day_stands():
+    """`build_prompt` read neither the snapshot nor any day state, so the
+    composer was strictly LESS informed than the template it replaced —
+    `fallback` reads the snapshot for its numbers. It could sound like Arnie
+    without knowing whether the day had room left."""
+    from core.food_response import build_prompt
+    prompt = build_prompt(_plan_with_snapshot())
+    assert "WHERE THE DAY STANDS" in prompt
+    assert "1800" in prompt and "2165" in prompt
+    assert "365" in prompt          # cal_left, derived — not restated by hand
+    assert "85" in prompt           # protein_left
+
+
+def test_day_facts_are_framed_as_reasoning_not_recitation():
+    """The card already shows the totals; the model may reason from them and
+    may not restate them. `validate()` enforces the second half."""
+    from core.food_response import build_prompt
+    assert "do not restate" in build_prompt(_plan_with_snapshot())
+
+
+def test_the_pre_write_clarify_gets_the_day_as_words():
+    """A clarification happens BEFORE anything is written, so there is no
+    snapshot — the DB-derived day sentence the interpreter already receives
+    stands in, so the ask knows the day too."""
+    from core.food_response import (FoodResponseIntent, FoodResponsePlan,
+                                    build_prompt)
+    plan = FoodResponsePlan(
+        intent=FoodResponseIntent.CLARIFY,
+        clarification_question="Heaping or level?",
+        day_state="before this meal they were at 1800 of 2165 cal.",
+        requires_answer=True)
+    prompt = build_prompt(plan)
+    assert "WHERE THE DAY STANDS" in prompt and "1800 of 2165" in prompt
+
+
+def test_the_renderer_is_told_who_it_is_writing_for():
+    """Same meal, different person: a strict cutter wants the question a quick
+    maintainer finds annoying, and the voice should not be identical."""
+    from core.food_response import (FoodResponseIntent, FoodResponsePlan,
+                                    build_prompt)
+    prompt = build_prompt(FoodResponsePlan(
+        intent=FoodResponseIntent.CLARIFY, user_mode="strict",
+        user_goal="cut", clarification_question="Grilled or fried?",
+        requires_answer=True))
+    assert "LOGGING MODE: strict" in prompt
+    assert "cut" in prompt
+
+
+def test_with_context_gathers_the_person_once():
+    """One helper for every render site — the mistake that produced
+    card_will_render was restating the same derivation per caller."""
+    from core.food_response import (FoodResponseIntent, FoodResponsePlan,
+                                    with_context)
+    user = SimpleNamespace(
+        primary_goal="cut",
+        preferences=SimpleNamespace(food_logging_mode="strict"))
+    out = with_context(FoodResponsePlan(intent=FoodResponseIntent.CLARIFY),
+                       user=user, day_state="at 1800 of 2165 cal.")
+    assert out.user_goal == "cut" and out.user_mode == "strict"
+    assert out.day_state == "at 1800 of 2165 cal."
+
+
+def test_with_context_never_costs_a_reply():
+    """A user object missing everything must still render."""
+    from core.food_response import (FoodResponseIntent, FoodResponsePlan,
+                                    with_context)
+    plan = FoodResponsePlan(intent=FoodResponseIntent.CLARIFY)
+    assert with_context(plan, user=None).intent is FoodResponseIntent.CLARIFY

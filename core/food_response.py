@@ -547,6 +547,26 @@ class FoodResponsePlan:
     previous_assistant_message: Optional[str] = None
     recent_response_openers: Tuple[str, ...] = ()
 
+    # The day this reply is being written into, and who it is being written
+    # for. Both are FACTS TO REASON FROM, never things to recite.
+    #
+    # `build_prompt` read neither of these, which made the composer strictly
+    # less informed than the template it replaced: `fallback` reads
+    # `committed_snapshot` for its numbers, so turning the composer ON traded
+    # a reply that knew the day for one that only sounded like it did. It
+    # could not say "that's the last 300 you've got with dinner still open",
+    # because nobody ever told it where the day stood.
+    #
+    # `day_state` is the pre-write form — the same DB-derived sentence the
+    # interpreter already receives as `day_line` (totals and targets read off
+    # `DailyLog` + preferences, never a model's claim). After a write,
+    # `committed_snapshot` carries the same facts structurally and wins.
+    day_state: str = ""
+    #: quick | moderate | strict — how much friction this user has asked for.
+    user_mode: str = ""
+    #: cut | bulk | maintain — what the numbers are FOR.
+    user_goal: str = ""
+
     # Coaching.
     coaching_opportunity: Optional[CoachingOpportunity] = None
     coaching_is_material: bool = False
@@ -1092,6 +1112,34 @@ def build_prompt(plan: FoodResponsePlan) -> str:
         parts.append(f"COACHING ANGLE ({c.kind}): {c.detail or c.suggested_angle}")
     if plan.user_emotional_context:
         parts.append(f"THEY SIGNALLED: {plan.user_emotional_context}")
+    # WHERE THE DAY STANDS. Structural form first — a committed snapshot is
+    # post-enrichment database state, so these are the same numbers the card
+    # and the daily log show. The pre-write sentence is the fallback, for the
+    # clarify moment that happens before anything is written.
+    #
+    # Reasoning material, not recitation material: the limits below cap the
+    # reply, `facts_visible_in_card` names what the card already shows, and
+    # `validate()` refuses card duplication. So the model can say "that's most
+    # of what's left" without being able to restate a total the user is
+    # already looking at.
+    _snap = plan.committed_snapshot
+    if _snap is not None:
+        parts.append(
+            "WHERE THE DAY STANDS (reason from these; do not restate a number "
+            f"the card already shows): {_snap.day_cal} of {_snap.cal_target} "
+            f"calories, {_snap.day_protein} of {_snap.protein_target}g "
+            f"protein, so {_snap.cal_left} calories and "
+            f"{_snap.protein_left}g protein left.")
+    elif plan.day_state:
+        parts.append("WHERE THE DAY STANDS (reason from these, do not recite "
+                     f"them): {plan.day_state}")
+    if plan.user_goal:
+        parts.append(f"THEIR GOAL: {plan.user_goal} — what the targets are for.")
+    if plan.user_mode:
+        # The friction they asked for. A strict user WANTS the question; a
+        # quick user finds the same question annoying, and the voice should
+        # not read identically to both.
+        parts.append(f"LOGGING MODE: {plan.user_mode}")
     if plan.facts_visible_in_card:
         parts.append("ALREADY ON THE CARD: "
                      + ", ".join(sorted(plan.facts_visible_in_card)))
@@ -1466,6 +1514,29 @@ def plan_clarify_from_question(question, *, user_message: str = "",
         clarification_options=tuple(o.label for o in (question.options or ())),
         assumptions=((assumption,) if assumption else ()),
         requires_answer=True, user_message=user_message, **kw))
+
+
+def with_context(plan: FoodResponsePlan, *, user=None,
+                 day_state: str = "") -> FoodResponsePlan:
+    """Attach the day and the person to a plan before it is rendered.
+
+    Every render site needs the same three facts, so they are gathered in ONE
+    place rather than restated per caller — the way `card_will_render` used to
+    be restated per transport, and drifted.
+
+    Pure: returns a copy. Never raises — a plan that reaches the renderer
+    without context still renders, it just reasons from less.
+    """
+    import dataclasses as _dc
+    try:
+        prefs = getattr(user, "preferences", None)
+        return _dc.replace(
+            plan,
+            day_state=day_state or plan.day_state,
+            user_mode=(getattr(prefs, "food_logging_mode", "") or ""),
+            user_goal=(getattr(user, "primary_goal", "") or ""))
+    except Exception:                                    # pragma: no cover
+        return plan
 
 
 async def render_plan(plan: FoodResponsePlan) -> str:
