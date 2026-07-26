@@ -884,9 +884,16 @@ def deterministic_confirmation(tool_calls, log, prefs, tool_results=None,
 
     if names & {"update_food_entry", "update_exercise_entry"} and not (names & {"log_food", "log_exercise"}):
         # Pull the item name from the tool call so the confirmation names what changed.
+        # `food_hint` is where a STRUCTURED correction puts the name. The
+        # update input is an entry_id plus the fields that change, so
+        # `food_name` is absent unless the identity itself was corrected — and
+        # this list only read `food_name`. Every structured correction
+        # therefore fell through to the bare "Fixed. ✅" while the name sat one
+        # key away, carried for exactly this purpose.
         up_names = [
-            ((tc.get("input") or {}).get("food_name") or
-             (tc.get("input") or {}).get("exercise_name") or "").strip()
+            ((tc.get("input") or {}).get("food_name")
+             or (tc.get("input") or {}).get("exercise_name")
+             or (tc.get("input") or {}).get("food_hint") or "").strip()
             for tc in (tool_calls or [])
             if tc.get("name") in ("update_food_entry", "update_exercise_entry")
         ]
@@ -3491,6 +3498,44 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
                    if k not in ("entry_id", "date", "expected_calories",
                                 "food_hint", "source", "basis", "_result")
                    and v is not None}
+        # A CORRECTED IDENTITY IS A NEW RESOLUTION, NOT A NEW GUESS.
+        #
+        # This wrote `changes` straight to columns, so the interpreter's fresh
+        # numbers became the entry's numbers and the whole ladder — OFF, the
+        # manufacturer lane, the per-serving panels — was skipped. The one path
+        # that most needs a label was the only one that never asked for one.
+        #
+        # Shipped: "It was the extra cheesy one" on a Lunchables pizza moved
+        # the entry from 310 to 370 against a published 250. The user's own
+        # correction made the row LESS accurate, and the reply said "Fixed."
+        #
+        # Only when the IDENTITY changed. A quantity edit is arithmetic on a
+        # row that was already resolved, and re-resolving it would throw away
+        # a good answer to ask the same question again.
+        if changes.get("food_name"):
+            try:
+                _new_name = str(changes["food_name"]).strip()
+                _qty = str(inp.get("quantity") or "").strip()
+                if not _qty:
+                    from db.models import FoodEntry as _FE_q
+                    _row_q = await db.get(_FE_q, int(entry_id))
+                    _qty = str(getattr(_row_q, "quantity", "") or "").strip()
+                _re_inp = {"food_name": _new_name, "quantity": _qty,
+                           "is_packaged": bool(_looks_branded(_new_name))}
+                _re = await _analyze_food(db, user, _new_name, _re_inp)
+                if _re is not None and _re.calories:
+                    changes["calories"] = _re.calories
+                    changes["protein"] = _re.protein
+                    changes["carbs"] = _re.carbs
+                    changes["fats"] = _re.fat
+                    logger.info(
+                        "event=correction_reresolved food=%r rung=%s cal=%s",
+                        _new_name, _re.provenance.rung or "-", _re.calories)
+            except Exception as _e:
+                # A failed re-resolution leaves the interpreter's numbers,
+                # which is the old behaviour — never a lost correction.
+                logger.warning(f"correction re-resolve skipped: {_e}")
+
         # Map external name → DB column
         if "food_name" in changes:
             changes["parsed_food_name"] = changes.pop("food_name")
