@@ -217,3 +217,147 @@ def test_nothing_to_ask_yields_no_plan_and_no_text():
                                 clarify_text_from_points)
     assert clarify_plan_from_points([]) is None
     assert clarify_text_from_points([]) == ""
+
+
+# ── the renderer reasons from the day and the person ──────────────────────────
+
+def _plan_with_snapshot():
+    from core.food_ledger import TransactionSnapshot
+    from core.food_response import (FoodResponseIntent, FoodResponsePlan)
+    return FoodResponsePlan(
+        intent=FoodResponseIntent.COMMIT,
+        committed_snapshot=TransactionSnapshot(
+            batch_cal=600, batch_protein=40, day_cal=1800, day_protein=95,
+            cal_target=2165, protein_target=180))
+
+
+def test_the_composer_is_told_where_the_day_stands():
+    """`build_prompt` read neither the snapshot nor any day state, so the
+    composer was strictly LESS informed than the template it replaced —
+    `fallback` reads the snapshot for its numbers. It could sound like Arnie
+    without knowing whether the day had room left."""
+    from core.food_response import build_prompt
+    prompt = build_prompt(_plan_with_snapshot())
+    assert "WHERE THE DAY STANDS" in prompt
+    assert "1800" in prompt and "2165" in prompt
+    assert "365" in prompt          # cal_left, derived — not restated by hand
+    assert "85" in prompt           # protein_left
+
+
+def test_day_facts_are_framed_as_reasoning_not_recitation():
+    """The card already shows the totals; the model may reason from them and
+    may not restate them. `validate()` enforces the second half."""
+    from core.food_response import build_prompt
+    assert "do not restate" in build_prompt(_plan_with_snapshot())
+
+
+def test_the_pre_write_clarify_gets_the_day_as_words():
+    """A clarification happens BEFORE anything is written, so there is no
+    snapshot — the DB-derived day sentence the interpreter already receives
+    stands in, so the ask knows the day too."""
+    from core.food_response import (FoodResponseIntent, FoodResponsePlan,
+                                    build_prompt)
+    plan = FoodResponsePlan(
+        intent=FoodResponseIntent.CLARIFY,
+        clarification_question="Heaping or level?",
+        day_state="before this meal they were at 1800 of 2165 cal.",
+        requires_answer=True)
+    prompt = build_prompt(plan)
+    assert "WHERE THE DAY STANDS" in prompt and "1800 of 2165" in prompt
+
+
+def test_the_renderer_is_told_who_it_is_writing_for():
+    """Same meal, different person: a strict cutter wants the question a quick
+    maintainer finds annoying, and the voice should not be identical."""
+    from core.food_response import (FoodResponseIntent, FoodResponsePlan,
+                                    build_prompt)
+    prompt = build_prompt(FoodResponsePlan(
+        intent=FoodResponseIntent.CLARIFY, user_mode="strict",
+        user_goal="cut", clarification_question="Grilled or fried?",
+        requires_answer=True))
+    assert "LOGGING MODE: strict" in prompt
+    assert "cut" in prompt
+
+
+def test_with_context_gathers_the_person_once():
+    """One helper for every render site — the mistake that produced
+    card_will_render was restating the same derivation per caller."""
+    from core.food_response import (FoodResponseIntent, FoodResponsePlan,
+                                    with_context)
+    user = SimpleNamespace(
+        primary_goal="cut",
+        preferences=SimpleNamespace(food_logging_mode="strict"))
+    out = with_context(FoodResponsePlan(intent=FoodResponseIntent.CLARIFY),
+                       user=user, day_state="at 1800 of 2165 cal.")
+    assert out.user_goal == "cut" and out.user_mode == "strict"
+    assert out.day_state == "at 1800 of 2165 cal."
+
+
+def test_with_context_never_costs_a_reply():
+    """A user object missing everything must still render."""
+    from core.food_response import (FoodResponseIntent, FoodResponsePlan,
+                                    with_context)
+    plan = FoodResponsePlan(intent=FoodResponseIntent.CLARIFY)
+    assert with_context(plan, user=None).intent is FoodResponseIntent.CLARIFY
+
+
+# ── an outage is not a decision to say nothing ────────────────────────────────
+
+async def test_a_failed_model_call_falls_back_instead_of_going_silent(
+        monkeypatch):
+    """The bug that flipping the default would have shipped.
+
+    `_run` swallowed exceptions and returned "", and "" is a LEGAL composed
+    reply: the COMMIT brief invites it ("return an empty string if there is
+    nothing useful"), so `apply_policy` sets `allow_no_text` on a card-bearing
+    turn and `validate("")` answers OK. An outage therefore returned
+    ("", Reason.OK) — a card with no words beside it, on the one path the
+    deterministic fallback exists to protect.
+    """
+    import core.food_response as fr
+    import core.llm as llm
+    monkeypatch.setenv("FOOD_COMPOSER", "true")
+
+    async def _down(*a, **k):
+        raise RuntimeError("model unavailable")
+
+    monkeypatch.setattr(llm, "chat", _down)
+    # A real commit turn, which means a committed snapshot — that is what
+    # gives the deterministic floor its words. Without one the floor is
+    # legitimately empty ("where a card renders it has already said what
+    # happened"), and the outage would be indistinguishable from that.
+    from core.food_ledger import TransactionSnapshot
+    plan = fr.apply_policy(fr.FoodResponsePlan(
+        intent=fr.FoodResponseIntent.COMMIT,
+        committed_items=(fr.FoodItemSummary(name="Caesar salad"),),
+        model_say="Salad logged.",
+        committed_snapshot=TransactionSnapshot(
+            batch_cal=330, batch_protein=30, day_cal=330, day_protein=30,
+            cal_target=2165, protein_target=180),
+        card_will_render=True))
+
+    text, why = await fr.compose_async(plan)
+
+    assert why == "model_unavailable"
+    assert text == fr.fallback(plan)
+    assert text, "an outage must never render as silence"
+
+
+async def test_the_model_may_still_choose_silence(monkeypatch):
+    """The other half: when the plan allows it and the model genuinely returns
+    nothing, that IS the answer — the card already said it."""
+    import core.food_response as fr
+    import core.llm as llm
+    monkeypatch.setenv("FOOD_COMPOSER", "true")
+
+    async def _quiet(*a, **k):
+        return {"text": ""}
+
+    monkeypatch.setattr(llm, "chat", _quiet)
+    plan = fr.apply_policy(fr.FoodResponsePlan(
+        intent=fr.FoodResponseIntent.COMMIT,
+        committed_items=(fr.FoodItemSummary(name="Caesar salad"),),
+        card_will_render=True, allow_no_text=True))
+
+    text, why = await fr.compose_async(plan)
+    assert why == fr.Reason.OK and text == ""

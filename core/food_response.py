@@ -547,6 +547,26 @@ class FoodResponsePlan:
     previous_assistant_message: Optional[str] = None
     recent_response_openers: Tuple[str, ...] = ()
 
+    # The day this reply is being written into, and who it is being written
+    # for. Both are FACTS TO REASON FROM, never things to recite.
+    #
+    # `build_prompt` read neither of these, which made the composer strictly
+    # less informed than the template it replaced: `fallback` reads
+    # `committed_snapshot` for its numbers, so turning the composer ON traded
+    # a reply that knew the day for one that only sounded like it did. It
+    # could not say "that's the last 300 you've got with dinner still open",
+    # because nobody ever told it where the day stood.
+    #
+    # `day_state` is the pre-write form — the same DB-derived sentence the
+    # interpreter already receives as `day_line` (totals and targets read off
+    # `DailyLog` + preferences, never a model's claim). After a write,
+    # `committed_snapshot` carries the same facts structurally and wins.
+    day_state: str = ""
+    #: quick | moderate | strict — how much friction this user has asked for.
+    user_mode: str = ""
+    #: cut | bulk | maintain — what the numbers are FOR.
+    user_goal: str = ""
+
     # Coaching.
     coaching_opportunity: Optional[CoachingOpportunity] = None
     coaching_is_material: bool = False
@@ -1092,6 +1112,34 @@ def build_prompt(plan: FoodResponsePlan) -> str:
         parts.append(f"COACHING ANGLE ({c.kind}): {c.detail or c.suggested_angle}")
     if plan.user_emotional_context:
         parts.append(f"THEY SIGNALLED: {plan.user_emotional_context}")
+    # WHERE THE DAY STANDS. Structural form first — a committed snapshot is
+    # post-enrichment database state, so these are the same numbers the card
+    # and the daily log show. The pre-write sentence is the fallback, for the
+    # clarify moment that happens before anything is written.
+    #
+    # Reasoning material, not recitation material: the limits below cap the
+    # reply, `facts_visible_in_card` names what the card already shows, and
+    # `validate()` refuses card duplication. So the model can say "that's most
+    # of what's left" without being able to restate a total the user is
+    # already looking at.
+    _snap = plan.committed_snapshot
+    if _snap is not None:
+        parts.append(
+            "WHERE THE DAY STANDS (reason from these; do not restate a number "
+            f"the card already shows): {_snap.day_cal} of {_snap.cal_target} "
+            f"calories, {_snap.day_protein} of {_snap.protein_target}g "
+            f"protein, so {_snap.cal_left} calories and "
+            f"{_snap.protein_left}g protein left.")
+    elif plan.day_state:
+        parts.append("WHERE THE DAY STANDS (reason from these, do not recite "
+                     f"them): {plan.day_state}")
+    if plan.user_goal:
+        parts.append(f"THEIR GOAL: {plan.user_goal} — what the targets are for.")
+    if plan.user_mode:
+        # The friction they asked for. A strict user WANTS the question; a
+        # quick user finds the same question annoying, and the voice should
+        # not read identically to both.
+        parts.append(f"LOGGING MODE: {plan.user_mode}")
     if plan.facts_visible_in_card:
         parts.append("ALREADY ON THE CARD: "
                      + ", ".join(sorted(plan.facts_visible_in_card)))
@@ -1239,10 +1287,25 @@ def fallback(plan: FoodResponsePlan) -> str:
         tail = question or f"Still need a detail on the {held}."
         return f"{base} {tail}".strip()
 
+    # CORRECT and UNDO carry the day exactly as COMMIT does when there IS a
+    # day to carry. Both moments were rendered as COMMIT until now — an update
+    # turn and an undo turn both reached `_commit_text` — so falling back to
+    # the bare "Updated X." here would have made naming the intent honestly a
+    # REGRESSION: the user would lose the totals they get today, on the one
+    # path where the numbers just moved and they most want to see them.
+    #
+    # The intent is what the composer needs to phrase the moment correctly
+    # ("one natural acknowledgement of what changed", not "logged"). The
+    # deterministic floor stays byte-identical to what these turns render
+    # today, so switching them on cannot regress a single reply.
     if intent is FoodResponseIntent.CORRECT:
+        if plan.committed_snapshot is not None:
+            return _commit_text(plan)
         return f"Updated {_join([i.name for i in plan.committed_items])}."
 
     if intent is FoodResponseIntent.UNDO:
+        if plan.committed_snapshot is not None:
+            return _commit_text(plan)
         return f"Undid {_join([i.name for i in plan.committed_items])}."
 
     if intent is FoodResponseIntent.FAILURE:
@@ -1468,6 +1531,29 @@ def plan_clarify_from_question(question, *, user_message: str = "",
         requires_answer=True, user_message=user_message, **kw))
 
 
+def with_context(plan: FoodResponsePlan, *, user=None,
+                 day_state: str = "") -> FoodResponsePlan:
+    """Attach the day and the person to a plan before it is rendered.
+
+    Every render site needs the same three facts, so they are gathered in ONE
+    place rather than restated per caller — the way `card_will_render` used to
+    be restated per transport, and drifted.
+
+    Pure: returns a copy. Never raises — a plan that reaches the renderer
+    without context still renders, it just reasons from less.
+    """
+    import dataclasses as _dc
+    try:
+        prefs = getattr(user, "preferences", None)
+        return _dc.replace(
+            plan,
+            day_state=day_state or plan.day_state,
+            user_mode=(getattr(prefs, "food_logging_mode", "") or ""),
+            user_goal=(getattr(user, "primary_goal", "") or ""))
+    except Exception:                                    # pragma: no cover
+        return plan
+
+
 async def render_plan(plan: FoodResponsePlan) -> str:
     """THE renderer: one way an approved plan becomes text, for every intent.
 
@@ -1511,7 +1597,19 @@ async def compose_async(plan: FoodResponsePlan, *, model: Optional[str] = None,
     """
     from core.llm import chat
 
-    async def _run(prompt: str) -> str:
+    async def _run(prompt: str) -> Optional[str]:
+        """The model's text, or None when the CALL ITSELF failed.
+
+        The distinction is load-bearing and was missing: an exception returned
+        "" here, and "" is a legal composed reply — the COMMIT brief invites
+        it ("return an empty string if there is nothing useful"), so
+        `apply_policy` sets `allow_no_text` on any card-bearing turn and
+        `validate("")` answers OK. An outage therefore came back as
+        `("", Reason.OK)` and the user got a card with no words next to it,
+        which is precisely the failure the deterministic fallback exists to
+        prevent. Silence has to be a DECISION the model made, never a thing
+        that happened to it.
+        """
         try:
             out = await chat([{"role": "user",
                                "content": "Write the response."}],
@@ -1520,12 +1618,18 @@ async def compose_async(plan: FoodResponsePlan, *, model: Optional[str] = None,
             return (out or {}).get("text", "") if isinstance(out, dict) else str(out or "")
         except Exception as e:
             logger.warning(f"food composer model call failed: {e}")
-            return ""
+            return None
 
     prompt = build_prompt(plan)
     last = ValidationResult(False, Reason.EMPTY_NOT_ALLOWED)
     for _ in range(max(1, attempts)):
         text = await _run(prompt)
+        if text is None:
+            # Not a validation failure, so not worth a retry with "YOUR LAST
+            # ATTEMPT FAILED" appended — there was no attempt. `chat()` has
+            # already tried its own model fallback by this point; the honest
+            # move now is the deterministic text.
+            return fallback(plan), "model_unavailable"
         last = validate(text, plan)
         if last.ok:
             return text.strip(), Reason.OK
@@ -1542,11 +1646,29 @@ def _composer_model() -> str:
 
 
 def composer_enabled() -> bool:
-    """Off by default. The deterministic fallbacks are already correct and
-    non-robotic; the composer buys tone, and it costs a model call on every
-    food turn. Turn it on deliberately."""
+    """ON by default (Danny 2026-07-26).
+
+    It shipped off, on the reasoning that "the deterministic fallbacks are
+    already correct and non-robotic". The first half held; the second did not.
+    The fallbacks pick openers by ROTATION, which is variety without
+    intelligence, and they assemble a bulleted block whose own docstring warns
+    it reads "as a component spec rather than a coach talking". Food logging is
+    the most frequent thing anyone does in this app, so the moment that felt
+    most like a machine was also the moment users met most often.
+
+    The default is flipped rather than left to the environment because leaving
+    it there already failed once: `render.yaml` documented FOOD_COMPOSER=true
+    for a deployment where the variable had never been set, and nothing
+    anywhere reported it — the app quietly served templates for as long as
+    that went unnoticed. A default that matches the intended behaviour cannot
+    fail that way; FOOD_COMPOSER=false still turns it off, with no deploy.
+
+    The floor has not moved: `render_plan` validates twice and returns the
+    deterministic text on a refusal, a model failure or an outage, so the
+    worst case is exactly the old behaviour plus one Haiku call.
+    """
     import os
-    return (os.getenv("FOOD_COMPOSER", "") or "").strip().lower() in (
+    return (os.getenv("FOOD_COMPOSER", "true") or "").strip().lower() in (
         "1", "true", "yes")
 
 

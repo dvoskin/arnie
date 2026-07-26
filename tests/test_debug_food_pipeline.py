@@ -25,7 +25,7 @@ def test_unset_flags_report_the_code_default_as_effective(monkeypatch):
 
     assert block["TURN_COORDINATOR_MODE"]["effective"] == "legacy_only"
     assert block["NUTRITION_RESOLVER_MODE"]["effective"] == "shadow"
-    assert block["FOOD_COMPOSER"]["effective"] is False
+    assert block["FOOD_COMPOSER"]["effective"] is True   # default flipped 2026-07-26
 
 
 def test_unset_is_distinguishable_from_set_to_the_same_value(monkeypatch):
