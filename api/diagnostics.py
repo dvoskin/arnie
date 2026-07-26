@@ -137,6 +137,32 @@ def _food_pipeline(user_id: Optional[int] = None) -> dict:
     return out
 
 
+def public_pipeline_summary() -> dict:
+    """The same effective modes, shaped for an UNAUTHENTICATED endpoint.
+
+    `/health` is the only way to check a deployed container without holding a
+    user token, and "did the env var take" is exactly the question it already
+    exists to answer for the log voice. The modes are not secret — they are
+    the same strings render.yaml documents in the clear.
+
+    What is deliberately dropped is `env_raw`. Echoing arbitrary environment
+    content on a public endpoint is a habit worth not starting, even for
+    values that only ever hold mode names today; a typo puts whatever was
+    actually typed into the response. `env_set` keeps the distinction that
+    matters — defaulted vs. deliberately set — without echoing the content.
+    """
+    out: dict = {}
+    for key, entry in _food_pipeline().items():
+        if not isinstance(entry, dict):
+            out[key] = entry
+        elif "error" in entry:
+            out[key] = {"error": entry["error"]}
+        else:
+            out[key] = {"effective": entry.get("effective"),
+                        "env_set": entry.get("env_set")}
+    return out
+
+
 def _default_model() -> str:
     """The model the chat path actually resolves — so a deploy can confirm the
     Sonnet 5 bump took (a Render DEFAULT_MODEL env var OVERRIDES the code

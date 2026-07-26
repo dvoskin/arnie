@@ -181,11 +181,23 @@ async def healthcheck():
         _fast_voice = {"fast_log_voice": fast_log_voice_enabled(), "log_voice_model": _lv_model()}
     except Exception:
         _fast_voice = {}
+    # Same question, asked of the food pipeline: which lane is this container
+    # actually running. Every one of those flags has a code default that
+    # differs from the intended deployment, so an env var that never loaded
+    # runs a different pipeline with no error anywhere — and until now the
+    # only way to check needed a user token, which a deploy check does not
+    # have. Effective mode + whether the var was set; never the raw value.
+    try:
+        from api.diagnostics import public_pipeline_summary
+        _pipeline = {"food_pipeline": public_pipeline_summary()}
+    except Exception:
+        _pipeline = {}
     return {
         "status": "ok",
         "commit": os.getenv("RENDER_GIT_COMMIT", "unknown")[:12],
         "branch": os.getenv("RENDER_GIT_BRANCH", "unknown"),
         **_fast_voice,
+        **_pipeline,
     }
 
 

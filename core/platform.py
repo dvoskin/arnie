@@ -83,15 +83,49 @@ def _strip_tool_xml(s: str) -> str:
     return s
 
 
+# The SAME failure in a different syntax. The XML nets above recognise exactly
+# one shape of "the model wrote its intent instead of executing it"; a markdown
+# code fence is the other, and nothing anywhere handled it. A reply that opened
+# with ``` shipped verbatim, iOS rendered it as a code block (monospace, no
+# reflow), and because the fence is not `<invoke` it tripped no detector and
+# recovered no call — so "delete everything from my log but the bagel bite"
+# returned a platitude and wiped nothing.
+#
+# A fenced block has no legitimate place in a coaching text message, so the
+# fence markers come off unconditionally. Only the MARKERS: whatever the model
+# wrote inside may well be the real reply, and deleting it would turn a
+# formatting bug into a silent empty message.
+_FENCE_LINE = _re_platform.compile(r"^[ \t]*`{3,}[^\n`]*[ \t]*$", _re_platform.M)
+_FENCE_INLINE = _re_platform.compile(r"`{3,}")
+
+
+def _strip_code_fences(s: str) -> str:
+    """Remove markdown code-fence markers, keeping the text they wrapped."""
+    if not s or "```" not in s:
+        return s
+    s = _FENCE_LINE.sub("", s)      # fences on their own line → gone entirely
+    s = _FENCE_INLINE.sub("", s)    # any survivor (mid-line, unbalanced)
+    return s
+
+
+def had_code_fence(s: str) -> bool:
+    """True when a bubble arrived fenced — the turn is suspect even after the
+    markers come off, because the model was formatting a payload rather than
+    talking. Callers use this to flag the turn, never to alter the text."""
+    return bool(s) and "```" in s
+
+
 def _sanitize_bubble(s: str) -> str:
     """
     Enforce the no-em-dash brand rule deterministically. The model is told "no em
     dashes" but keeps producing them, so we strip them on the way out: an em dash is
     almost always a parenthetical or clause break, which a comma handles cleanly.
     (En dashes / hyphens are left alone so number ranges like "12-13%" survive.)
-    Also strips any leaked tool-call XML so function-call syntax never ships.
+    Also strips any leaked tool-call XML so function-call syntax never ships,
+    and any markdown code fence so a reply never renders as a code block.
     """
     s = _strip_tool_xml(s or "")
+    s = _strip_code_fences(s)
     # Strip the deterministic LOG-CONFIRM marker (core/conversation._LOG_MARKER):
     # the model appends [[LOGGED]] to assert a real write; the rescue reads it, then
     # it must NEVER reach the user. Tolerant of case/spacing.

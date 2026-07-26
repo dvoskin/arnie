@@ -10,7 +10,7 @@ is UNSET and one deliberately SET to its own default — identical behaviour,
 opposite fixes — and about the effective value being resolved through the real
 accessor rather than re-read here.
 """
-from api.diagnostics import _food_pipeline
+from api.diagnostics import _food_pipeline, public_pipeline_summary
 
 
 def test_unset_flags_report_the_code_default_as_effective(monkeypatch):
@@ -75,3 +75,31 @@ def test_resolver_authority_is_reported_not_inferred_from_mode(monkeypatch):
     no resolution telemetry is explained here rather than guessed at."""
     monkeypatch.setenv("NUTRITION_RESOLVER_MODE", "shadow")
     assert _food_pipeline(user_id=1)["resolver_owns_committed_values"] is False
+
+
+# ── the public (unauthenticated) summary on /health ───────────────────────────
+
+def test_public_summary_keeps_effective_and_env_set(monkeypatch):
+    """/health is the only check a deploy can run without a user token, so it
+    has to answer the same question the authenticated block answers."""
+    monkeypatch.setenv("TURN_COORDINATOR_MODE", "new_observe")
+    monkeypatch.delenv("FOOD_COMPOSER", raising=False)
+
+    pub = public_pipeline_summary()
+
+    assert pub["TURN_COORDINATOR_MODE"]["effective"] == "new_observe"
+    assert pub["TURN_COORDINATOR_MODE"]["env_set"] is True
+    assert pub["FOOD_COMPOSER"]["env_set"] is False
+
+
+def test_public_summary_never_echoes_raw_env(monkeypatch):
+    """A public endpoint must not reflect whatever was actually typed into an
+    env var back to an unauthenticated caller."""
+    monkeypatch.setenv("TURN_COORDINATOR_MODE", "definitely-not-a-mode")
+
+    pub = public_pipeline_summary()
+
+    assert "env_raw" not in pub["TURN_COORDINATOR_MODE"]
+    assert "definitely-not-a-mode" not in repr(pub)
+    # ...while still reporting the silent fallback the container is running.
+    assert pub["TURN_COORDINATOR_MODE"]["effective"] == "legacy_only"

@@ -71,6 +71,33 @@ def render_pending_clarification_block(
     return "\n".join(lines)
 
 
+def unseen_reply_directive(unseen: bool) -> str:
+    """Render the per-turn note for a message the user sent before reading the
+    previous reply.
+
+    Pure + tiny like `food_mode_directive`, and empty in the normal case so it
+    costs nothing on the turns that don't need it.
+
+    The model otherwise reads the transcript as a strict alternation and takes
+    every user message as a response to the assistant message above it. When
+    someone fires two messages back to back, the second one lands after the
+    first reply is authored — and gets read as its answer. That is how a reply
+    ending "training tonight, or a rest day?" was followed by one opening
+    "that's fine, rest days happen", answering a question the user never saw.
+    """
+    if not unseen:
+        return ""
+    return (
+        "[TIMING] They sent this BEFORE your previous message reached them, so "
+        "it is NOT a reply to it and never answers a question you just asked. "
+        "Treat it as a continuation of their own previous message. If your last "
+        "message asked something, that question is still open, they have not "
+        "answered it, and you must not act as though they did. Respond to "
+        "everything they have now said as one thought, and don't repeat a "
+        "point you already made in the message they hadn't read."
+    )
+
+
 def food_mode_directive(mode: Optional[str]) -> str:
     """Render the per-turn [FOOD LOGGING MODE] override for the user's food_logging_mode.
 
@@ -1241,6 +1268,14 @@ async def build_context(user: User, today_log: Optional[DailyLog], db,
     # Food logging mode — quick/strict inject an override; moderate is the static default.
     food_mode_inj = food_mode_directive(getattr(prefs, "food_logging_mode", None))
 
+    # They were still typing when the last turn ran — this message answers
+    # nothing. Empty (and free) on every normal turn.
+    try:
+        from core.turn_identity import PRIOR_REPLY_UNSEEN
+        unseen_inj = unseen_reply_directive(PRIOR_REPLY_UNSEEN.get())
+    except Exception:
+        unseen_inj = ""
+
     # Goal weight nudge — inject once if cut/bulk user has no goal weight set.
     # Arnie asks naturally at the right moment; never blocks or repeats.
     _needs_goal_wt = (
@@ -1403,5 +1438,9 @@ async def build_context(user: User, today_log: Optional[DailyLog], db,
         (pending_clarification_block if pending_clarification_block else ""),
         link_status,
         (food_mode_inj if food_mode_inj else ""),
+        # LAST, deliberately: it reframes how the whole transcript above should
+        # be read, and the closest thing to the user's message wins the
+        # recency slot it needs to actually land.
+        (unseen_inj if unseen_inj else ""),
     ]
     return "\n".join(s for s in sections if s is not None)

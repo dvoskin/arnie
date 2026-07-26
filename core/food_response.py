@@ -1468,6 +1468,38 @@ def plan_clarify_from_question(question, *, user_message: str = "",
         requires_answer=True, user_message=user_message, **kw))
 
 
+async def render_plan(plan: FoodResponsePlan) -> str:
+    """THE renderer: one way an approved plan becomes text, for every intent.
+
+    `_INTENT_BRIEF` has always carried a brief for all ten intents and
+    `build_prompt` reads it generically — the composer could voice a
+    clarification, a correction, an undo or a failure from the day it was
+    written. It was only ever CALLED from the commit branch, so nine intents
+    out of ten rendered from `fallback()`: canned openers picked by rotation,
+    a bulleted item block, and the question concatenated on the end. Rotation
+    is variety without intelligence, which is exactly why every clarification
+    read as a form, and `format_items`' own docstring names the bullet block
+    as "the shape that read as a component spec rather than a coach talking".
+
+    Safety is identical to the commit path, because it IS the commit path's
+    call: `compose_async` validates twice and returns `fallback(plan)` itself
+    on any failure, so the floor is the deterministic text this replaces. With
+    the composer off, this is `fallback()` and nothing else.
+    """
+    if not composer_enabled():
+        return fallback(plan)
+    try:
+        text, why = await compose_async(plan)
+        if why != Reason.OK:
+            logger.info("event=food_composer intent=%s outcome=fallback "
+                        "reason=%s", plan.intent.value, why)
+        return text
+    except Exception as e:
+        # A renderer may never cost the user their reply.
+        logger.warning(f"render_plan fell back ({plan.intent.value}): {e}")
+        return fallback(plan)
+
+
 async def compose_async(plan: FoodResponsePlan, *, model: Optional[str] = None,
                         attempts: int = 2) -> tuple:
     """Generate → validate → retry → fall back, against the real model.

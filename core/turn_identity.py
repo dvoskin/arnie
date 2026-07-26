@@ -33,6 +33,26 @@ from typing import Optional
 CURRENT_TURN_ID: ContextVar[Optional[str]] = ContextVar("CURRENT_TURN_ID",
                                                         default=None)
 
+# True when this message was composed BEFORE the previous reply reached the
+# user — they were still typing while the last turn was running, so whatever
+# they sent cannot be an answer to it.
+#
+# Without this the model reads the transcript as a clean alternation and
+# assumes every user message responds to the assistant message above it.
+# Observed 2026-07-26: two messages sent back to back; reply 1 ended "training
+# tonight, or is today shaping up to be a rest day?", and reply 2 opened
+# "that's fine, rest days happen" — answering its own question, because
+# "Just eating" landed after reply 1 was authored. Arnie held a conversation
+# with himself and coached off the result.
+#
+# Debounce alone cannot fix this: the coalescing window is seconds while a
+# pipeline run takes longer, and the debouncer deliberately never cancels a
+# running turn — anything arriving mid-run becomes its own trailing turn with
+# the previous reply already in history. So the surfaces that HAVE debounce
+# hit this too, just less often than iOS, which has none.
+PRIOR_REPLY_UNSEEN: ContextVar[bool] = ContextVar("PRIOR_REPLY_UNSEEN",
+                                                  default=False)
+
 
 def make_turn_id(channel: str, client_message_id: Optional[str],
                  user_id, text: str = "") -> str:
