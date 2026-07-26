@@ -257,7 +257,32 @@ def _options_from(ambiguities) -> tuple:
 
 
 def _label(item: StagedFoodItem) -> str:
-    return (item.identity.describe() or item.original_text or "that").strip()
+    """The food, as it reads MID-SENTENCE.
+
+    `identity.describe()` returns the canonical name, which is capitalised for
+    a card title — correct there, wrong inside a question, where it produced
+    "How much of the Toast with cheese?". Bulleted items already get
+    `_sentence_case` in the response layer; an interpolated one never did.
+
+    Only the leading capital is touched: "Quest chips" must not become "quest
+    chips", and "Peanut M&Ms" must keep its M&Ms.
+    """
+    text = (item.identity.describe() or item.original_text or "that").strip()
+    if not text:
+        return "that"
+    # Casing alone cannot tell "Barebells" from "Toast" — both are one
+    # capitalised word, and lowercasing by shape turns a brand into a typo.
+    # The item already knows which it is, so ask it rather than guess.
+    try:
+        if getattr(item, "food_class", None) is not None \
+                and str(item.food_class.value) == "branded":
+            return text
+    except Exception:
+        return text
+    head, _, rest = text.partition(" ")
+    if head.isupper() or any(c.isupper() for c in head[1:]):
+        return text          # M&Ms, BCAA — internal capitals are the name
+    return head[0].lower() + head[1:] + (" " + rest if rest else "")
 
 
 def _bundle_prompt(item, bundled, schema) -> str:

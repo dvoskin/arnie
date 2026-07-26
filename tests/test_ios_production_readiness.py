@@ -361,3 +361,79 @@ async def test_the_model_may_still_choose_silence(monkeypatch):
 
     text, why = await fr.compose_async(plan)
     assert why == fr.Reason.OK and text == ""
+
+
+# ── the question is content, not a script ────────────────────────────────────
+
+def _clarify(**kw):
+    from core.food_response import FoodResponseIntent, FoodResponsePlan
+    base = dict(intent=FoodResponseIntent.CLARIFY, requires_answer=True,
+                clarification_question="How much of the toast with cheese?")
+    base.update(kw)
+    return FoodResponsePlan(**base)
+
+
+def test_the_composer_is_given_the_unknown_not_just_a_sentence():
+    """It used to be handed "ASK EXACTLY THIS", which made it a tone pass over
+    a template built four modules away — "How much of the Toast with cheese?"
+    survived every renderer improvement because no renderer was allowed to
+    change it."""
+    from core.food_response import build_prompt
+    prompt = build_prompt(_clarify(
+        clarification_subject="toast with cheese",
+        clarification_kind="how much of it they actually ate",
+        clarification_needs=("consumed_fraction",)))
+    assert "ASK EXACTLY THIS" not in prompt
+    assert "toast with cheese" in prompt
+    assert "how much of it they actually ate" in prompt
+    assert "your own words" in prompt
+
+
+def test_the_plain_version_survives_as_a_floor_not_a_script():
+    """The deterministic sentence is still offered — losing it would leave the
+    composer inventing the substance as well as the words."""
+    from core.food_response import build_prompt
+    prompt = build_prompt(_clarify(clarification_subject="toast with cheese",
+                                   clarification_kind="how much"))
+    assert "A PLAIN VERSION" in prompt
+    assert "How much of the toast with cheese?" in prompt
+
+
+def test_the_composer_is_forbidden_from_assuming_what_it_asks():
+    """The screenshot bug: "I'm reading that as one slice (my estimate). How
+    much of the toast?" — an answer and its own question in one breath."""
+    from core.food_response import build_prompt
+    prompt = build_prompt(_clarify(clarification_subject="toast",
+                                   clarification_kind="how much"))
+    assert "do not assert an amount" in prompt
+
+
+def test_the_stakes_inform_the_question_without_appearing_in_it():
+    from core.food_response import build_prompt
+    prompt = build_prompt(_clarify(clarification_subject="toast",
+                                   clarification_kind="how much",
+                                   clarification_stakes=180.0))
+    assert "180" in prompt
+    assert "Never say that number" in prompt
+
+
+def test_a_plan_with_no_semantics_still_renders_the_old_way():
+    """Anything still building a bare question keeps working."""
+    from core.food_response import build_prompt
+    assert "ASK EXACTLY THIS" in build_prompt(_clarify())
+
+
+def test_a_common_noun_is_lowercased_mid_sentence_but_a_brand_is_not():
+    """"How much of the Toast with cheese?" was a card title dropped into a
+    sentence. Casing alone cannot tell "Barebells" from "Toast", so the item's
+    own food_class decides."""
+    from types import SimpleNamespace as NS
+    from skills.nutrition.clarify_policy import _label
+
+    common = NS(identity=NS(describe=lambda: "Toast with cheese"),
+                original_text="toast", food_class=NS(value="generic"))
+    brand = NS(identity=NS(describe=lambda: "Barebells Caramel Cashew"),
+               original_text="barebells", food_class=NS(value="branded"))
+
+    assert _label(common) == "toast with cheese"
+    assert _label(brand) == "Barebells Caramel Cashew"

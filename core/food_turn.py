@@ -993,12 +993,53 @@ def clarify_plan(decision, question, *, user_message: str = ""):
             branded=(item.food_class.value == "branded"))
         (pending if item.staged_item_id in held else resolved).append(summary)
 
+    # The SEMANTICS travel with the question, not just the sentence. The
+    # policy decides what must be asked; naming the subject and the unknown is
+    # what lets the renderer author the words instead of reciting them.
+    # `ClarificationQuestion` has carried these fields all along.
+    _kind = ""
+    for _aid in (getattr(question, "ambiguity_ids", ()) or ()):
+        _kind = str(_aid).split(":")[0] if ":" in str(_aid) else ""
+        if _kind:
+            break
     return FoodResponsePlan(
         intent=FoodResponseIntent.CLARIFY,
         resolved_items=tuple(resolved), pending_items=tuple(pending),
         clarification_question=question.prompt,
+        clarification_subject=(getattr(question, "unresolved_item_name", "")
+                               or (pending[0].name if pending else "")),
+        clarification_needs=tuple(
+            getattr(question, "requested_fields", ()) or ()),
+        clarification_kind=_kind or _kind_from_fields(
+            getattr(question, "requested_fields", ()) or ()),
+        clarification_stakes=float(
+            getattr(question, "resolved_materiality", 0.0) or 0.0),
+        clarification_options=tuple(getattr(question, "options", ()) or ()),
         unresolved_item=(pending[0] if pending else None),
         requires_answer=True, user_message=user_message)
+
+
+def _kind_from_fields(fields) -> str:
+    """Name the unknown from the fields an answer has to fill.
+
+    A fallback for questions that carry no ambiguity id. Plain words on
+    purpose: the composer is being told what it doesn't know, not handed an
+    enum to read out — "how much of it they ate" produces a better sentence
+    than "consumed_quantity", which is the whole reason the old prompt read
+    like a form.
+    """
+    f = {str(x) for x in (fields or ())}
+    if "consumed_fraction" in f:
+        return "how much of it they actually ate"
+    if f & {"amount", "quantity", "unit"}:
+        return "how much there was"
+    if f & {"brand", "product", "variant", "flavor"}:
+        return "which product it was"
+    if "preparation" in f:
+        return "how it was cooked"
+    if "serving_basis" in f:
+        return "whether the numbers are per serving or for the whole thing"
+    return ""
 
 
 def _spoken_portion(item, user_message: str) -> str:
