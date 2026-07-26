@@ -59,6 +59,15 @@ services:
       # what changed); 2.5x calorie moves log LOUD, never blocked.
       - key: NUTRITION_RESOLVER_MODE
         value: live
+      # Food composer ON (Danny 2026-07-26: "flip food composer on"). It
+      # phrases an APPROVED plan — it cannot choose what to say, only how — and
+      # every output clears the same `validate()` the deterministic fallback
+      # satisfies, twice, before shipping. A model failure, a validation
+      # failure or an outage all return the deterministic text, so the floor is
+      # exactly the previous behaviour. Costs one Haiku call per food turn.
+      # FOOD_COMPOSER=false reverts without a deploy.
+      - key: FOOD_COMPOSER
+        value: "true"
 
       - key: ARNIE_USERS_DIR
         value: /data/users
