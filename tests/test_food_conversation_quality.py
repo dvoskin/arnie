@@ -28,7 +28,8 @@ because that string is what the user will read.
 """
 import pytest
 
-from core.food_response import (CLARIFY_OPENER, REVIEW_OPENER,
+from core.food_response import (_CLARIFY_OPENERS, _REVIEW_OPENERS,
+                                CLARIFY_OPENER, REVIEW_OPENER,
                                 FoodItemSummary, FoodResponseIntent,
                                 FoodResponsePlan, describe_portion, fallback,
                                 plan_review, strip_card_recitation, validate)
@@ -47,6 +48,18 @@ INTERPRETED = {"items": [
     {"food": "Peanut Butter", "amount": 1, "unit": "tbsp", "calories": 95},
 ]}
 
+def _leads_with_the_meal(text, *names):
+    """The lead-in VARIES now — keyed on the meal AND the question, so two
+    clarification rounds on one meal no longer open with the identical
+    sentence. The contract is that it acknowledges what we understood before
+    asking, not that it uses one exact phrase."""
+    from core.food_response import _CLARIFY_LEADS, _REVIEW_LEADS
+    heads = {l.split("{")[0].strip() for l in _CLARIFY_LEADS + _REVIEW_LEADS}
+    assert any(text.startswith(h) for h in heads), text
+    for n in names:
+        assert n in text, (n, text)
+
+
 
 def _decision(mode="moderate"):
     return plan_turn(INTERPRETED, turn_id="t1", message=MESSAGE, mode=mode)
@@ -59,7 +72,7 @@ def test_the_review_turn_reads_as_prose_not_as_a_form():
 
     # CLARIFY, not REVIEW: the peanut butter scoop is still open, so the turn
     # says it is interpreting rather than about to log.
-    assert text.startswith(CLARIFY_OPENER)
+    assert any(text.startswith(o) for o in _CLARIFY_OPENERS), text
     for banned in ("I've got:", "Meal check", "Quick review",
                    "Before I log this"):
         assert banned not in text, banned
@@ -108,7 +121,7 @@ def test_a_short_simple_meal_stays_prose():
     list is the same mistake as forcing every response into a label."""
     text = format_confirm([{"food": "toast", "amount": 1, "unit": "slice"}],
                           user_message="a slice of toast")
-    assert text.startswith("I'm reading that as")
+    _leads_with_the_meal(text)
     assert "•" not in text
 
 
@@ -797,8 +810,11 @@ def test_no_failures_produces_no_notice():
 def test_an_open_question_says_it_is_interpreting():
     decision = _decision()
     text = clarify_text(decision, decision.question, user_message=MESSAGE)
-    assert text.startswith(CLARIFY_OPENER)
-    assert REVIEW_OPENER not in text
+    # The openers vary — the contract is that a CLARIFY turn never borrows the
+    # REVIEW voice, because "about to log" in front of an open question is what
+    # made the two turns indistinguishable to a reader.
+    assert any(text.startswith(o) for o in _CLARIFY_OPENERS), text
+    assert not any(o in text for o in _REVIEW_OPENERS), text
 
 
 def test_a_settled_meal_says_it_is_about_to_log():
@@ -806,8 +822,8 @@ def test_a_settled_meal_says_it_is_about_to_log():
         tuple(FoodItemSummary(name=n, portion=p) for n, p in
               (("egg", "2"), ("sourdough toast", "1 slice"),
                ("butter", "1 tsp")))))
-    assert text.startswith(REVIEW_OPENER)
-    assert CLARIFY_OPENER not in text
+    assert any(text.startswith(o) for o in _REVIEW_OPENERS), text
+    assert not any(o in text for o in _CLARIFY_OPENERS), text
     assert text.endswith("Does that all look right?")
 
 

@@ -44,6 +44,18 @@ TURN = "imessage:G-1"
 MEAL = make_meal_group_id(TURN)
 NOON = datetime(2026, 7, 25, 12, 0)
 
+def _leads_with_the_meal(text, *names):
+    """The lead-in VARIES now — keyed on the meal AND the question, so two
+    clarification rounds on one meal no longer open with the identical
+    sentence. The contract is that it acknowledges what we understood before
+    asking, not that it uses one exact phrase."""
+    from core.food_response import _CLARIFY_LEADS, _REVIEW_LEADS
+    heads = {l.split("{")[0].strip() for l in _CLARIFY_LEADS + _REVIEW_LEADS}
+    assert any(text.startswith(h) for h in heads), text
+    for n in names:
+        assert n in text, (n, text)
+
+
 
 def _stage(text, ordinal=0, *, food_class=FoodClass.GENERIC, identity=None,
            quantity=None, ambiguities=()):
@@ -502,8 +514,9 @@ def test_scenario_a_review_reads_as_a_sentence_not_a_form():
                           user_message="1 slice of toast and 1 tbsp of "
                                        "gooseberry jam")
     # Spoken rather than tabulated (Danny 2026-07-25).
-    assert text == ("I'm reading that as one slice of toast and one "
-                    "tablespoon of gooseberry jam. Does that look right?")
+    _leads_with_the_meal(text, "one slice of toast",
+                         "one tablespoon of gooseberry jam")
+    assert text.endswith("Does that look right?"), text
     for banned in ("Locking this in", "anything to fix", "**", "1."):
         assert banned not in text
 
