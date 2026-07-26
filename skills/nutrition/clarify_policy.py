@@ -304,7 +304,8 @@ def decide(items, *, mode: str = "moderate", round_number: int = 0,
         # silently is indistinguishable from a fact, and a correction has
         # nothing to contradict.
         assumptions.extend(item.assumptions)
-        material = tuple(a for a in item.ambiguities if a.is_material)
+        material = _answerable(item, tuple(a for a in item.ambiguities
+                                           if a.is_material))
         if not material:
             ready.append(item.staged_item_id)
             # An ESTIMATED portion is an assumption whether or not it was worth
@@ -364,6 +365,55 @@ def decide(items, *, mode: str = "moderate", round_number: int = 0,
         assumptions=tuple(assumptions), questions=tuple(questions),
         ready_item_ids=tuple(ready), held_item_ids=tuple(held),
         transaction_policy=policy, exhausted=exhausted)
+
+
+def _answerable(item: StagedFoodItem, material: tuple) -> tuple:
+    """Drop identity questions the user has no way to answer.
+
+    "Which Royo Everything Bagel was it?" is what comes out when the
+    interpreter flags identity doubt on a product the user already named as
+    precisely as they can. The prompt is built by `_label`, which reads
+    `identity.describe()` — the SAME name the question claims not to know — so
+    the sentence contains its own answer and offers nothing to pick between.
+
+    Two conditions together make it unanswerable: the ambiguity carries fewer
+    than two candidate values, so there is no choice on offer, and the label is
+    already more specific than a bare brand. A bare brand is different in kind
+    — "a Fairlife" really does not say which of four products it was, and the
+    user is the only one who knows.
+
+    When both hold the doubt is real but it is OURS. Which Royo bagel this is
+    resolves from the branded lookup, not from asking someone to repeat
+    themselves. Dropping it here lets the item go forward to that lookup;
+    provenance still reports which source the numbers came from, so nothing is
+    silently asserted.
+    """
+    keep = []
+    for amb in material:
+        if (amb.ambiguity_type.is_identity
+                and len(amb.top_options(2)) < 2
+                and _more_specific_than_brand(item)):
+            continue
+        keep.append(amb)
+    return tuple(keep)
+
+
+def _more_specific_than_brand(item: StagedFoodItem) -> bool:
+    """True when the label names a product rather than only its maker.
+
+    Two words past the brand is the line. One is a package or category noun —
+    "Barebells bar", "Chobani yogurt" — which narrows nothing, and asking there
+    is fair. Two is a product: "Everything Bagel", "Cup Noodles".
+    """
+    label = _label(item).strip().lower()
+    if not label:
+        return False
+    brand = (item.identity.brand or "").strip().lower()
+    rest = label[len(brand):] if brand and label.startswith(brand) else label
+    rest = rest.strip(" -–,·")
+    if not rest or rest == brand:
+        return False
+    return len(rest.split()) >= 2
 
 
 def _is_coin_toss(material, margin: float = 0.15) -> bool:

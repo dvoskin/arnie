@@ -95,11 +95,24 @@ class FoodIdentity:
     def describe(self) -> str:
         parts = [p for p in (self.brand, self.product_line, self.variant)
                  if p]
-        if not parts and self.canonical_name:
-            return self.canonical_name
+        name = (self.canonical_name or "").strip()
+        # THE CANONICAL NAME IS NOT A FALLBACK. It is what the food was
+        # actually called, and it is routinely MORE specific than brand /
+        # line / variant — staging fills `canonical_name` and `brand` and
+        # leaves the other two empty for every item, so the old "only if
+        # there are no parts" rule discarded it on every branded row.
+        # "Royo Everything Bagel" described itself as "Royo", which is how a
+        # question built from this label came to ask about the maker rather
+        # than the product.
+        if name and len(name.split()) > len(parts):
+            parts = ([name] if not self.brand
+                     or self.brand.lower() in name.lower()
+                     else [self.brand, name])
+        if not parts and name:
+            return name
         if self.package_size is not None:
             parts.append(self.package_size.describe())
-        return " ".join(parts) or (self.canonical_name or "")
+        return " ".join(parts) or name
 
 
 @dataclass(frozen=True)
