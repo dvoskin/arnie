@@ -957,12 +957,27 @@ def review_plan(items: list, *, user_message: str = ""):
 
 
 def clarify_text(decision, question, *, user_message: str = "") -> str:
+    """The deterministic floor for `clarify_plan` — see it for the shape.
+
+    Kept as-is so every existing caller and test kicks out the same text; the
+    live path renders the plan through `food_response.render_plan` instead, so
+    the question is voiced rather than assembled.
+    """
+    from core.food_response import fallback
+    return fallback(clarify_plan(decision, question, user_message=user_message))
+
+
+def clarify_plan(decision, question, *, user_message: str = ""):
     """The whole meal as we read it, then the one thing we need.
 
     Items the user stated are shown as they said them. The item we are asking
     about is shown in THEIR words too — "one scoop of peanut butter", never
     "one tablespoon of peanut butter", because the tablespoon is the thing in
     question and printing it as settled is what made the assumption invisible.
+
+    Returns the PLAN, not text: what to say is settled here, how to say it
+    belongs to the one renderer. Splitting them is what lets a clarification
+    be composed instead of concatenated.
     """
     from core.food_response import (FoodItemSummary, FoodResponseIntent,
                                     FoodResponsePlan, fallback)
@@ -978,12 +993,12 @@ def clarify_text(decision, question, *, user_message: str = "") -> str:
             branded=(item.food_class.value == "branded"))
         (pending if item.staged_item_id in held else resolved).append(summary)
 
-    return fallback(FoodResponsePlan(
+    return FoodResponsePlan(
         intent=FoodResponseIntent.CLARIFY,
         resolved_items=tuple(resolved), pending_items=tuple(pending),
         clarification_question=question.prompt,
         unresolved_item=(pending[0] if pending else None),
-        requires_answer=True, user_message=user_message))
+        requires_answer=True, user_message=user_message)
 
 
 def _spoken_portion(item, user_message: str) -> str:
@@ -1050,6 +1065,18 @@ def _lc(name: str) -> str:
 
 def clarify_text_from_points(points: list, ready: list | None = None, *,
                              user_message: str = "") -> str:
+    """The deterministic floor for `clarify_plan_from_points`.
+
+    Kept so every existing caller and test gets the same text; the live path
+    renders the plan through `food_response.render_plan`.
+    """
+    from core.food_response import fallback
+    plan = clarify_plan_from_points(points, ready, user_message=user_message)
+    return fallback(plan) if plan is not None else ""
+
+
+def clarify_plan_from_points(points: list, ready: list | None = None, *,
+                             user_message: str = ""):
     """A clarification the INTERPRETER raised, phrased by the response layer.
 
     Every clarification goes through one renderer now, whatever noticed the
@@ -1086,7 +1113,10 @@ def clarify_text_from_points(points: list, ready: list | None = None, *,
             asks.append((label, qs))
     asks = asks[:4]
     if not asks:
-        return ""
+        # Nothing to ask about. A PLAN builder returns no plan, not empty text
+        # — the caller decides what an absent clarification means, and the
+        # deterministic wrapper below turns it back into "".
+        return None
 
     resolved = tuple(FoodItemSummary(name=str(r).strip())
                      for r in (ready or ()) if str(r).strip())[:4]
@@ -1118,12 +1148,12 @@ def clarify_text_from_points(points: list, ready: list | None = None, *,
     # asked.
     question = _one_question(asks[0][1])
 
-    return fallback(FoodResponsePlan(
+    return FoodResponsePlan(
         intent=FoodResponseIntent.CLARIFY,
         resolved_items=resolved, pending_items=pending,
         unresolved_item=(pending[0] if pending else None),
         clarification_question=question,
-        requires_answer=True, user_message=user_message))
+        requires_answer=True, user_message=user_message)
 
 
 def _one_question(facets: list) -> str:
@@ -1778,9 +1808,14 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
     action = data.get("action")
 
     if action == "ask" and not prior:
-        text = clarify_text_from_points(data.get("points") or [],
-                                        data.get("ready"),
-                                        user_message=message)
+        # Through the ONE renderer, so the question is voiced rather than
+        # assembled from rotating openers. Falls back to exactly the previous
+        # deterministic text whenever the composer is off or unhappy.
+        from core.food_response import render_plan as _render
+        _plan = clarify_plan_from_points(data.get("points") or [],
+                                         data.get("ready"),
+                                         user_message=message)
+        text = await _render(_plan) if _plan is not None else ""
         return {"action": "ask", "text": text} if text else None
 
     if action == "ask" and prior:
@@ -1796,10 +1831,11 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
         _ask_count = int((prior or {}).get("ask_count") or 1)
         _new_amb = bool(data.get("new_ambiguity"))
         if data.get("points") and (_user_invited or (_new_amb and _ask_count < 2)):
+            from core.food_response import render_plan as _render
+            _p2 = clarify_plan_from_points(data["points"], data.get("ready"),
+                                           user_message=message)
             return {"action": "ask",
-                    "text": clarify_text_from_points(
-                        data["points"], data.get("ready"),
-                        user_message=message),
+                    "text": (await _render(_p2)) if _p2 is not None else "",
                     "points": data["points"]}
         return None
 
@@ -1909,7 +1945,9 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
             # been shown our reading of; sending "does that look right?" first
             # and the question second spent two turns and invited them to
             # approve an assumption they never saw.
-            _text = clarify_text(_decision, _q, user_message=message)
+            from core.food_response import render_plan as _render
+            _text = await _render(clarify_plan(_decision, _q,
+                                               user_message=message))
             return {"action": "ask", "text": _text,
                     "points": [_q.prompt],
                     "question_id": _q.question_id,
@@ -1941,8 +1979,9 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
             _mat = _FL.material_ambiguities(data.get("ambiguities"), mode)
             if _mat:
                 _pts = _FL.ambiguity_points(_mat)
-                _txt = clarify_text_from_points(_pts,
-                                                user_message=message)
+                from core.food_response import render_plan as _render
+                _p3 = clarify_plan_from_points(_pts, user_message=message)
+                _txt = (await _render(_p3)) if _p3 is not None else ""
                 if _txt:
                     return {"action": "ask", "text": _txt, "points": _pts}
 

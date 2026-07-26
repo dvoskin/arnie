@@ -156,3 +156,64 @@ def test_the_flag_round_trips():
     finally:
         PRIOR_REPLY_UNSEEN.reset(tok)
     assert PRIOR_REPLY_UNSEEN.get() is False
+
+
+# ── one renderer for every intent, not just COMMIT ────────────────────────────
+
+def test_the_composer_has_a_brief_for_every_intent():
+    """It always could voice a clarification — `build_prompt` reads
+    `_INTENT_BRIEF` generically. It was simply never called for one."""
+    from core.food_response import _INTENT_BRIEF, FoodResponseIntent
+    missing = [i for i in FoodResponseIntent if i not in _INTENT_BRIEF]
+    assert not missing, f"intents with no composer brief: {missing}"
+
+
+async def test_render_plan_is_the_deterministic_text_when_the_composer_is_off(
+        monkeypatch):
+    """The floor never moves: composer off must reproduce `fallback` exactly,
+    so wiring this in cannot regress a single existing reply."""
+    monkeypatch.delenv("FOOD_COMPOSER", raising=False)
+    from core.food_response import (FoodItemSummary, FoodResponseIntent,
+                                    FoodResponsePlan, fallback, render_plan)
+    plan = FoodResponsePlan(
+        intent=FoodResponseIntent.CLARIFY,
+        pending_items=(FoodItemSummary(name="peanut butter",
+                                       portion="one scoop"),),
+        clarification_question="Was that a heaping scoop or a level one?",
+        requires_answer=True)
+    assert await render_plan(plan) == fallback(plan)
+
+
+async def test_render_plan_survives_a_broken_composer(monkeypatch):
+    """A renderer may never cost the user their reply."""
+    import core.food_response as fr
+    monkeypatch.setenv("FOOD_COMPOSER", "true")
+
+    async def _boom(*a, **k):
+        raise RuntimeError("model down")
+
+    monkeypatch.setattr(fr, "compose_async", _boom)
+    plan = fr.FoodResponsePlan(
+        intent=fr.FoodResponseIntent.CLARIFY,
+        clarification_question="Grilled or fried?", requires_answer=True)
+    assert await fr.render_plan(plan) == fr.fallback(plan)
+
+
+def test_a_clarify_plan_builder_returns_a_plan_not_text():
+    """The split that makes composing possible: what to say is decided in
+    food_turn, how to say it belongs to the renderer."""
+    from core.food_response import FoodResponsePlan
+    from core.food_turn import clarify_plan_from_points
+    plan = clarify_plan_from_points(
+        [{"item": "chicken", "q": "grilled or fried?"}], ["rice"])
+    assert isinstance(plan, FoodResponsePlan)
+    assert plan.clarification_question
+
+
+def test_nothing_to_ask_yields_no_plan_and_no_text():
+    """A builder with nothing to ask returns no plan; the deterministic
+    wrapper still returns "" so every existing caller is unchanged."""
+    from core.food_turn import (clarify_plan_from_points,
+                                clarify_text_from_points)
+    assert clarify_plan_from_points([]) is None
+    assert clarify_text_from_points([]) == ""
