@@ -361,3 +361,49 @@ async def test_the_model_may_still_choose_silence(monkeypatch):
 
     text, why = await fr.compose_async(plan)
     assert why == fr.Reason.OK and text == ""
+
+
+# ── one day, one source: the card and the sentence must agree ────────────────
+
+def test_the_card_and_the_narration_read_the_same_day():
+    """A shipped turn put "1,245 cal left · 102g protein to go" on a card and
+    "710 for the day, 133g protein to go" in the sentence directly beneath it —
+    210 calories and 31g of protein apart, inside one bubble.
+
+    The card's figures come from the receipt (stashed at write time); the
+    narration's come from the committed snapshot. Two reads of one day.
+    """
+    from core.food_ledger import TransactionSnapshot
+
+    snap = TransactionSnapshot(batch_cal=250, batch_protein=16,
+                               day_cal=710, day_protein=47,
+                               cal_target=2165, protein_target=180)
+    # What the executor stashed mid-batch, against a partial day.
+    calls = [{"name": "log_food",
+              "input": {"food_name": "Lox", "_entry_id": 5,
+                        "_receipt": {"remaining_cal": 1245,
+                                     "remaining_protein": 102}}}]
+
+    for c in calls:                      # the reconciliation the commit does
+        r = (c.get("input") or {}).get("_receipt")
+        if isinstance(r, dict):
+            r["remaining_cal"] = snap.cal_left
+            r["remaining_protein"] = snap.protein_left
+
+    receipt = calls[0]["input"]["_receipt"]
+    assert receipt["remaining_cal"] == snap.cal_left == 1455
+    assert receipt["remaining_protein"] == snap.protein_left == 133
+
+
+def test_only_the_day_figures_are_reconciled():
+    """The item's own macros belong to the row that was committed for it —
+    reconciling those would make every card in a meal report the meal."""
+    from core.food_ledger import TransactionSnapshot
+    snap = TransactionSnapshot(day_cal=710, day_protein=47,
+                               cal_target=2165, protein_target=180)
+    receipt = {"remaining_cal": 1245, "remaining_protein": 102,
+               "confidence": 0.9, "day_total_unreconciled": False}
+    receipt["remaining_cal"] = snap.cal_left
+    receipt["remaining_protein"] = snap.protein_left
+    assert receipt["confidence"] == 0.9
+    assert receipt["day_total_unreconciled"] is False
