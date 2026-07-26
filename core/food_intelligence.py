@@ -301,6 +301,83 @@ def reconcile_macros(cal: float, protein: float, carbs: float, fat: float) -> tu
     return cal, protein, carbs, fat
 
 
+def _mass_from_serving_panel(quantity, src, food_name: str):
+    """Grams implied by eating N of the SOURCE'S OWN serving unit, or None.
+
+    The gap this closes is the reason a Legendary Foods sweet roll logged at
+    190 calories against a published 210. `analyze` only used a source's
+    numbers when the quantity was an explicit MASS — "200g", "6 oz" — and took
+    the estimate path for everything else, keeping the model's calories and
+    borrowing only micros. But "1 roll" and "1 bar" are not vague portions.
+    They are exactly one of the thing the label describes, and a label consumed
+    at one serving determines the answer completely.
+
+    So most branded logging — which is done in whole servings, because that is
+    how packaged food is eaten — was resolving as an estimate with a label
+    fetched, consulted for sodium, and discarded for calories.
+
+    Two conditions, both necessary:
+
+      * the portion is a COUNT on a UNIT basis. `count_basis` is the gate from
+        the count-as-serving work: a bar is the label's own unit, a bowl is a
+        helping we estimated a mass for, and only the first may be multiplied
+        by a serving.
+      * the panel's count unit answers the portion's. "15 pieces" against a
+        panel of "12 pieces" is the same object; "15 pieces" against "1 bar" is
+        not, and scaling one by the other turns a portion into a package.
+
+    Returns None whenever either is unmet — which leaves the estimate path
+    exactly as it was, rather than inventing a mass.
+    """
+    try:
+        from skills.nutrition.models import COUNT_BASIS_UNIT
+        from skills.nutrition.normalize import (count_units_compatible,
+                                                normalize_quantity,
+                                                serving_unit_mass)
+        panel = (src or {}).get("serving_text") or ""
+        if not panel:
+            return None
+        q = normalize_quantity(quantity or "", food_name)
+        if q.count is None or q.count <= 0:
+            return None
+        if q.count_basis != COUNT_BASIS_UNIT:
+            return None
+        per_unit = serving_unit_mass(panel)
+        if per_unit is not None:
+            # The panel enumerates its serving — "35 g (12 pieces)". Scaling is
+            # only valid when its count unit answers the portion's: 15 pieces
+            # against 12 pieces is the same object, 15 pieces against 1 bar is
+            # not, and multiplying one by the other turns a portion into a
+            # package.
+            grams, panel_unit = per_unit
+            if not count_units_compatible(q.unit or "", panel_unit or ""):
+                return None
+            return round(float(q.count) * float(grams), 1)
+
+        # A SINGLE-SERVING PANEL. "1 roll (57 g)", "57g" — the serving IS one
+        # unit, so there is no count to match against and none needed.
+        # `serving_unit_mass` returns None here by design: it enumerates, and
+        # there is nothing to enumerate.
+        #
+        # This is the common branded shape and the reason a Legendary Foods
+        # sweet roll stayed an estimate. `_serving_count` only recognises units
+        # it has a word for, and "roll" is not one — but the panel does not
+        # need to name the unit for "one serving weighs 57 g" to be true.
+        from skills.nutrition.normalize import _SERVING_MASS_RE, _serving_count
+        found = _SERVING_MASS_RE.search(panel)
+        if not found:
+            return None
+        enumerated = _serving_count(panel)
+        if enumerated is not None and enumerated[0] != 1:
+            return None
+        mass = float(found.group(1))
+        if mass <= 0:
+            return None
+        return round(float(q.count) * mass, 1)
+    except Exception:
+        return None
+
+
 def analyze(name, quantity, llm_cal, llm_protein, llm_carbs, llm_fat,
             usda_candidate=None, memory_match=None,
             web_candidate=None, off_candidate=None,
@@ -410,6 +487,14 @@ def analyze(name, quantity, llm_cal, llm_protein, llm_carbs, llm_fat,
         # accurate) are untouched — no blanket multiplier, no overcorrection.
         from core.portions import mass_grams
         _mg = mass_grams(quantity)
+        # No stated mass, but the source may know what one of its own servings
+        # weighs — and the user may have eaten exactly N of them. That is a
+        # KNOWN mass, not an estimate, and treating it as one is what lets a
+        # label's calories reach the card for "1 bar".
+        _from_panel = False
+        if not _mg:
+            _mg = _mass_from_serving_panel(quantity, src, name)
+            _from_panel = _mg is not None
         # USDA text-matches must be NEAR-IDENTICAL to override the model (Danny
         # 2026-07-23: "don't use USDA unless there's an almost identical name
         # match") — a "likely" 0.6-token-overlap hit is exactly the wrong-cousin
