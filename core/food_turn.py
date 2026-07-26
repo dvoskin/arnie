@@ -116,9 +116,15 @@ _EATEN_RE = re.compile(
 
 #: Obtaining. On its own it says a thing is in your possession, which is a fact
 #: about the fridge rather than about the day's total.
+#: PREPARATION IS NOT ACQUISITION. "made", "cooked" and "brought" were in this
+#: set and should not have been: "chicken salad, made it with olive oil and
+#: balsamic" came back as "Did you eat all 3 of those, or is that for later?"
+#: — a question about a meal the user had plainly just described eating.
+#: Someone who cooked a thing overwhelmingly ate it, and asking otherwise is
+#: the friction this whole state model exists to avoid.
 _ACQUIRED_RE = re.compile(
     r"\b(got|bought|buying|purchased|ordered|picked\s+up|grabb?ed|"
-    r"packed|made|cooked|brought|have\s+a)\b", re.I)
+    r"packed)\b", re.I)
 
 #: The four states a mentioned food can be in. Only one of them is a log.
 STATE_CONSUMED = "consumed"
