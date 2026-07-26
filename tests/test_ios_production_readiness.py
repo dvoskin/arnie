@@ -299,3 +299,65 @@ def test_with_context_never_costs_a_reply():
                                     with_context)
     plan = FoodResponsePlan(intent=FoodResponseIntent.CLARIFY)
     assert with_context(plan, user=None).intent is FoodResponseIntent.CLARIFY
+
+
+# ── an outage is not a decision to say nothing ────────────────────────────────
+
+async def test_a_failed_model_call_falls_back_instead_of_going_silent(
+        monkeypatch):
+    """The bug that flipping the default would have shipped.
+
+    `_run` swallowed exceptions and returned "", and "" is a LEGAL composed
+    reply: the COMMIT brief invites it ("return an empty string if there is
+    nothing useful"), so `apply_policy` sets `allow_no_text` on a card-bearing
+    turn and `validate("")` answers OK. An outage therefore returned
+    ("", Reason.OK) — a card with no words beside it, on the one path the
+    deterministic fallback exists to protect.
+    """
+    import core.food_response as fr
+    import core.llm as llm
+    monkeypatch.setenv("FOOD_COMPOSER", "true")
+
+    async def _down(*a, **k):
+        raise RuntimeError("model unavailable")
+
+    monkeypatch.setattr(llm, "chat", _down)
+    # A real commit turn, which means a committed snapshot — that is what
+    # gives the deterministic floor its words. Without one the floor is
+    # legitimately empty ("where a card renders it has already said what
+    # happened"), and the outage would be indistinguishable from that.
+    from core.food_ledger import TransactionSnapshot
+    plan = fr.apply_policy(fr.FoodResponsePlan(
+        intent=fr.FoodResponseIntent.COMMIT,
+        committed_items=(fr.FoodItemSummary(name="Caesar salad"),),
+        model_say="Salad logged.",
+        committed_snapshot=TransactionSnapshot(
+            batch_cal=330, batch_protein=30, day_cal=330, day_protein=30,
+            cal_target=2165, protein_target=180),
+        card_will_render=True))
+
+    text, why = await fr.compose_async(plan)
+
+    assert why == "model_unavailable"
+    assert text == fr.fallback(plan)
+    assert text, "an outage must never render as silence"
+
+
+async def test_the_model_may_still_choose_silence(monkeypatch):
+    """The other half: when the plan allows it and the model genuinely returns
+    nothing, that IS the answer — the card already said it."""
+    import core.food_response as fr
+    import core.llm as llm
+    monkeypatch.setenv("FOOD_COMPOSER", "true")
+
+    async def _quiet(*a, **k):
+        return {"text": ""}
+
+    monkeypatch.setattr(llm, "chat", _quiet)
+    plan = fr.apply_policy(fr.FoodResponsePlan(
+        intent=fr.FoodResponseIntent.COMMIT,
+        committed_items=(fr.FoodItemSummary(name="Caesar salad"),),
+        card_will_render=True, allow_no_text=True))
+
+    text, why = await fr.compose_async(plan)
+    assert why == fr.Reason.OK and text == ""

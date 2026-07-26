@@ -696,14 +696,16 @@ def test_every_failure_state_produces_a_usable_intent():
 
 
 # ── the constrained live composer ─────────────────────────────────────────────
-def test_the_composer_is_off_by_default(monkeypatch):
-    """The deterministic fallbacks are already correct and non-robotic. The
-    composer buys tone and costs a model call on every food turn."""
+def test_the_composer_is_on_by_default(monkeypatch):
+    """Was off, on the reasoning that the fallbacks are "correct and
+    non-robotic". Correct held; non-robotic did not — they pick openers by
+    rotation, which is variety without intelligence, on the most frequent
+    interaction in the app."""
     from core.food_response import composer_enabled
     monkeypatch.delenv("FOOD_COMPOSER", raising=False)
-    assert not composer_enabled()
-    monkeypatch.setenv("FOOD_COMPOSER", "true")
     assert composer_enabled()
+    monkeypatch.setenv("FOOD_COMPOSER", "false")
+    assert not composer_enabled()
 
 
 @pytest.mark.asyncio

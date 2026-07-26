@@ -33,11 +33,15 @@ def test_the_composer_output_is_validated_before_it_ships():
     assert "attempts" in src, "and retried once with the failure reason"
 
 
-def test_the_switch_still_defaults_off(monkeypatch):
+def test_the_switch_defaults_ON_and_still_reverts(monkeypatch):
+    """Flipped 2026-07-26. Leaving it to the environment already failed once:
+    render.yaml documented FOOD_COMPOSER=true for a deployment where the
+    variable had never been set, and the app served templates silently. A
+    default that matches the intended behaviour cannot fail that way."""
     monkeypatch.delenv("FOOD_COMPOSER", raising=False)
-    assert not FR.composer_enabled()
-    monkeypatch.setenv("FOOD_COMPOSER", "true")
     assert FR.composer_enabled()
+    monkeypatch.setenv("FOOD_COMPOSER", "false")
+    assert not FR.composer_enabled()
 
 
 # ── formatting: three surfaces that disagree ─────────────────────────────────

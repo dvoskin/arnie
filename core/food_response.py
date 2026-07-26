@@ -1287,10 +1287,25 @@ def fallback(plan: FoodResponsePlan) -> str:
         tail = question or f"Still need a detail on the {held}."
         return f"{base} {tail}".strip()
 
+    # CORRECT and UNDO carry the day exactly as COMMIT does when there IS a
+    # day to carry. Both moments were rendered as COMMIT until now — an update
+    # turn and an undo turn both reached `_commit_text` — so falling back to
+    # the bare "Updated X." here would have made naming the intent honestly a
+    # REGRESSION: the user would lose the totals they get today, on the one
+    # path where the numbers just moved and they most want to see them.
+    #
+    # The intent is what the composer needs to phrase the moment correctly
+    # ("one natural acknowledgement of what changed", not "logged"). The
+    # deterministic floor stays byte-identical to what these turns render
+    # today, so switching them on cannot regress a single reply.
     if intent is FoodResponseIntent.CORRECT:
+        if plan.committed_snapshot is not None:
+            return _commit_text(plan)
         return f"Updated {_join([i.name for i in plan.committed_items])}."
 
     if intent is FoodResponseIntent.UNDO:
+        if plan.committed_snapshot is not None:
+            return _commit_text(plan)
         return f"Undid {_join([i.name for i in plan.committed_items])}."
 
     if intent is FoodResponseIntent.FAILURE:
@@ -1582,7 +1597,19 @@ async def compose_async(plan: FoodResponsePlan, *, model: Optional[str] = None,
     """
     from core.llm import chat
 
-    async def _run(prompt: str) -> str:
+    async def _run(prompt: str) -> Optional[str]:
+        """The model's text, or None when the CALL ITSELF failed.
+
+        The distinction is load-bearing and was missing: an exception returned
+        "" here, and "" is a legal composed reply — the COMMIT brief invites
+        it ("return an empty string if there is nothing useful"), so
+        `apply_policy` sets `allow_no_text` on any card-bearing turn and
+        `validate("")` answers OK. An outage therefore came back as
+        `("", Reason.OK)` and the user got a card with no words next to it,
+        which is precisely the failure the deterministic fallback exists to
+        prevent. Silence has to be a DECISION the model made, never a thing
+        that happened to it.
+        """
         try:
             out = await chat([{"role": "user",
                                "content": "Write the response."}],
@@ -1591,12 +1618,18 @@ async def compose_async(plan: FoodResponsePlan, *, model: Optional[str] = None,
             return (out or {}).get("text", "") if isinstance(out, dict) else str(out or "")
         except Exception as e:
             logger.warning(f"food composer model call failed: {e}")
-            return ""
+            return None
 
     prompt = build_prompt(plan)
     last = ValidationResult(False, Reason.EMPTY_NOT_ALLOWED)
     for _ in range(max(1, attempts)):
         text = await _run(prompt)
+        if text is None:
+            # Not a validation failure, so not worth a retry with "YOUR LAST
+            # ATTEMPT FAILED" appended — there was no attempt. `chat()` has
+            # already tried its own model fallback by this point; the honest
+            # move now is the deterministic text.
+            return fallback(plan), "model_unavailable"
         last = validate(text, plan)
         if last.ok:
             return text.strip(), Reason.OK
@@ -1613,11 +1646,29 @@ def _composer_model() -> str:
 
 
 def composer_enabled() -> bool:
-    """Off by default. The deterministic fallbacks are already correct and
-    non-robotic; the composer buys tone, and it costs a model call on every
-    food turn. Turn it on deliberately."""
+    """ON by default (Danny 2026-07-26).
+
+    It shipped off, on the reasoning that "the deterministic fallbacks are
+    already correct and non-robotic". The first half held; the second did not.
+    The fallbacks pick openers by ROTATION, which is variety without
+    intelligence, and they assemble a bulleted block whose own docstring warns
+    it reads "as a component spec rather than a coach talking". Food logging is
+    the most frequent thing anyone does in this app, so the moment that felt
+    most like a machine was also the moment users met most often.
+
+    The default is flipped rather than left to the environment because leaving
+    it there already failed once: `render.yaml` documented FOOD_COMPOSER=true
+    for a deployment where the variable had never been set, and nothing
+    anywhere reported it — the app quietly served templates for as long as
+    that went unnoticed. A default that matches the intended behaviour cannot
+    fail that way; FOOD_COMPOSER=false still turns it off, with no deploy.
+
+    The floor has not moved: `render_plan` validates twice and returns the
+    deterministic text on a refusal, a model failure or an outage, so the
+    worst case is exactly the old behaviour plus one Haiku call.
+    """
     import os
-    return (os.getenv("FOOD_COMPOSER", "") or "").strip().lower() in (
+    return (os.getenv("FOOD_COMPOSER", "true") or "").strip().lower() in (
         "1", "true", "yes")
 
 

@@ -1722,9 +1722,39 @@ async def _run_turn(
                 if not _ok_calls:
                     # Every write refused (stale board, missing entry): honest
                     # reset beats a fabricated confirmation.
-                    response_text = ("Hold on - the board changed since I "
-                                     "looked, so I didn't apply that. Tell me "
-                                     "again and I'll set it straight.")
+                    #
+                    # Through the renderer like every other moment. This was
+                    # the one reply in the structured lane still hardcoded at
+                    # its detection site — so the turn where Arnie has to
+                    # admit something went wrong was the only turn that could
+                    # not adapt its wording to the person or the situation,
+                    # and it read like an error string because it was one.
+                    #
+                    # `approved_message` IS the sentence below, so with the
+                    # composer off this renders byte-identically to before.
+                    # `user_fixable` is the fact that matters: the board moved
+                    # under us, they can just say it again — this is not an
+                    # outage, and the brief forbids blaming them for it.
+                    try:
+                        from core.food_response import (FailureIntent,
+                                                        plan_failure)
+                        from core.food_response import render_plan as _render
+                        from core.food_response import with_context as _ctx
+                        response_text = await _render(_ctx(plan_failure(
+                            FailureIntent(
+                                code="board_changed",
+                                user_fixable=True,
+                                recovery_action=("ask them to say it again so "
+                                                 "it can be applied"),
+                                approved_message=(
+                                    "Hold on - the board changed since I "
+                                    "looked, so I didn't apply that. Tell me "
+                                    "again and I'll set it straight.")),
+                            user_message=_user_text or ""), user=user))
+                    except Exception:
+                        response_text = ("Hold on - the board changed since I "
+                                         "looked, so I didn't apply that. Tell "
+                                         "me again and I'll set it straight.")
                 else:
                     # {batch_*} per plan kind over the COMMITTED calls: pure
                     # log → post-enrichment day delta; update/delete → the
@@ -1808,8 +1838,31 @@ async def _run_turn(
                             is not None
                             for c in (_execution.successful
                                       if _execution is not None else ()))
+                        # NAME THE MOMENT. Every structured turn declared
+                        # itself a COMMIT — a correction, a deletion and an
+                        # undo all announced themselves as a fresh log, which
+                        # is why "actually only one taco" came back sounding
+                        # like a second taco had just been logged. The intent
+                        # is what tells the composer which moment this is:
+                        # `_INTENT_BRIEF` already says "one natural
+                        # acknowledgement of what changed" for CORRECT and
+                        # "state briefly what was reversed" for UNDO, and
+                        # nothing ever selected them.
+                        #
+                        # Deliberately derived from what the turn DID —
+                        # the executed action and the route — never from a
+                        # model field, so it cannot disagree with the writes.
+                        # A mixed plan stays COMMIT: its label is already
+                        # "commit" precisely because no single verb fits.
+                        _act = (_sft.get("action") or "").strip()
+                        if _turn_route == "ledger_undo" or _act == "delete":
+                            _intent = FoodResponseIntent.UNDO
+                        elif _act == "update":
+                            _intent = FoodResponseIntent.CORRECT
+                        else:
+                            _intent = FoodResponseIntent.COMMIT
                         _plan = apply_policy(FoodResponsePlan(
-                            intent=FoodResponseIntent.COMMIT,
+                            intent=_intent,
                             committed_items=tuple(n for n in _names if n.name),
                             committed_snapshot=_snap,
                             model_say=_say,
