@@ -1916,6 +1916,20 @@ async def _analyze_food(db, user, food_name, inp):
         # "Checked Open Food Facts — found a match" above "Portion estimated"
         # reads as a broken pipeline when it is a deliberate refusal.
         _off_seated = off is not None and _cands_pre.get("branded_exact") is off
+        # A SEATED CANDIDATE WITH NO SERVING SIZE IS HALF AN ANSWER. Its
+        # per-100g figures are the label's, but nothing here can say what one
+        # bagel or one roll of it weighs — and a count portion ("1 bagel") has
+        # no mass to scale by, so the model's estimate stands while the rung
+        # reads branded_exact. That is how 190/17 shipped against a published
+        # 210/20.
+        #
+        # The portion ontology is NOT the fix: it holds 105 g for a generic
+        # bagel where a Royo is 57 g, and a branded product is often
+        # deliberately unlike its generic. Applying one to the other's density
+        # would nearly double the error. The serving size is a fact to fetch,
+        # not a number to infer — and the label page is where it lives.
+        _seated_without_serving = _off_seated and not str(
+            (off or {}).get("serving_text") or "").strip()
         _needs_branded = _authority.needs_branded_lookup(_fc_pre, _rung_pre)
         # THE WEB LANE OPENS ON A FAILED LOOKUP, NOT ON A GUESS ABOUT THE NAME.
         #
@@ -1934,8 +1948,10 @@ async def _analyze_food(db, user, food_name, inp):
         # identity validation.
         _want_branded = (
             _names_a_product(food_name, declared_packaged)
-            or (_fc_pre is _authority.FoodClass.MANUFACTURED and _needs_branded)
-        ) and (_needs_branded or _needs_web_label(_db_grade))
+            or (_fc_pre is _authority.FoodClass.MANUFACTURED
+                and (_needs_branded or _seated_without_serving))
+        ) and (_needs_branded or _seated_without_serving
+               or _needs_web_label(_db_grade))
         if not _want_branded and _fc_pre is not _authority.FoodClass.GENERIC:
             # Skipped, and why. The silent skip is the other half of the blind
             # spot: a named product that never triggered a lookup looks
@@ -1956,7 +1972,20 @@ async def _analyze_food(db, user, food_name, inp):
                 food_name, "hit" if web is not None else "miss",
                 _db_grade or "-", _needs_branded,
                 bool((web or {}).get("serving_text")))
-            if web is not None and _db_hit is not None:
+            if web is not None and _seated_without_serving and str(
+                    (web or {}).get("serving_text") or "").strip():
+                # THE IDENTITY WAS ALREADY GOOD; only the serving size was
+                # missing. Replacing a validated exact branded match with a
+                # scraped one to obtain a single field would trade a fact we
+                # trust for a page we do not. Graft the serving onto the
+                # candidate that already won and leave everything else alone.
+                off = dict(off)
+                off["serving_text"] = web["serving_text"]
+                web = None
+                logger.info(
+                    "event=web_label_enrich %r — serving size grafted onto the "
+                    "branded match", food_name)
+            elif web is not None and _db_hit is not None:
                 logger.info(
                     f"event=web_label_enrich {food_name!r} — web label replaces "
                     f"{_db_grade} db match")
