@@ -199,6 +199,35 @@ _MEMORY_RUNG_BY_ORIGIN = {
 }
 
 
+def branded_by_evidence(*, usda_candidate: Optional[Mapping[str, Any]] = None,
+                        off_candidate: Optional[Mapping[str, Any]] = None
+                        ) -> bool:
+    """Do the LOOKUPS say this is a named product, whatever the name looked like?
+
+    Deciding brandedness from the shape of a string is the weakest link in this
+    whole path. "Milky Way Minis" carries no package noun, no trademark mark,
+    no ampersand and no possessive, so every heuristic missed it — and being
+    classified GENERIC meant `candidate_map` would not seat its Open Food Facts
+    match on ANY rung, because OFF is only placed for MANUFACTURED. The receipt
+    read "Checked Open Food Facts — found a match" directly above "Portion
+    estimated", and both lines were accurate.
+
+    Two independent sources settle it better than any regex over the name. A
+    branded index matching well, while USDA's CURATED index cannot answer it
+    exactly, is a named product. The generics hold their ground because USDA is
+    exactly where they live: "white rice", "grilled chicken" and "chicken
+    breast" are all exact there and stay generic, while a candy bar is in
+    neither Foundation nor SR Legacy and is exact in OFF.
+
+    Classification revised by evidence, not a wider guess about the string.
+    """
+    if off_candidate is None:
+        return False
+    if str(off_candidate.get("_match") or "") not in ("exact", "likely"):
+        return False
+    return str((usda_candidate or {}).get("_match") or "") != "exact"
+
+
 def candidate_map(
     *,
     food_class: FoodClass,
