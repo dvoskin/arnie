@@ -124,3 +124,47 @@ def test_a_real_measure_keeps_its_frame():
     text = _vague_prompt("peanut butter", "scoop",
                          ["one tablespoon", "three tablespoons"])
     assert "Was the scoop closer" in text
+
+
+# ── 4. the same sentence twice in a row ───────────────────────────────────────
+#
+#     You:   God morning just had a coffee and toast with cheese
+#     Arnie: I'm reading that as coffee and toast with cheese.
+#            Black or with milk/cream? Any sugar?
+#     You:   Hey black
+#     Arnie: I'm reading that as coffee and toast with cheese.
+#            What kind of cheese and about how much...?
+#
+# Two clarification rounds on one meal, opening with the identical sentence.
+# Varying the LIST openers was half a fix: "coffee and toast with cheese" is
+# two items, so it takes the PROSE branch, which was still hard-coded. And
+# keying the choice on the meal alone would have repeated anyway — two rounds
+# on one meal are two different turns.
+def _clarify(question, *names):
+    from core.food_response import (FoodItemSummary, FoodResponseIntent,
+                                    FoodResponsePlan, fallback)
+    items = tuple(FoodItemSummary(name=n) for n in names)
+    return fallback(FoodResponsePlan(
+        intent=FoodResponseIntent.CLARIFY, resolved_items=items,
+        clarification_question=question, requires_answer=True))
+
+
+def test_two_rounds_on_one_meal_do_not_open_the_same_way():
+    first = _clarify("Black or with milk/cream? Any sugar?",
+                     "coffee", "toast with cheese")
+    second = _clarify("What kind of cheese, and how much?",
+                      "coffee", "toast with cheese")
+    assert first.split(".")[0] != second.split(".")[0], (first, second)
+
+
+def test_the_same_round_resent_is_identical():
+    """Stability is the reason this is keyed rather than random: a retry that
+    reworded itself would read as instability, not personality."""
+    q = "Black or with milk/cream? Any sugar?"
+    assert _clarify(q, "coffee", "toast") == _clarify(q, "coffee", "toast")
+
+
+def test_the_prose_branch_still_names_the_meal_before_asking():
+    text = _clarify("How much cheese?", "coffee", "toast with cheese")
+    assert "coffee" in text and "toast with cheese" in text
+    assert text.rstrip().endswith("How much cheese?")

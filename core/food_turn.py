@@ -1116,7 +1116,7 @@ def clarify_text_from_points(points: list, ready: list | None = None, *,
     # renderer now, so they have to arrive in the same shape, or the
     # unification is only structural and the user can still tell which engine
     # asked.
-    question = " ".join(q[:1].upper() + q[1:] for q in asks[0][1])
+    question = _one_question(asks[0][1])
 
     return fallback(FoodResponsePlan(
         intent=FoodResponseIntent.CLARIFY,
@@ -1124,6 +1124,35 @@ def clarify_text_from_points(points: list, ready: list | None = None, *,
         unresolved_item=(pending[0] if pending else None),
         clarification_question=question,
         requires_answer=True, user_message=user_message))
+
+
+def _one_question(facets: list) -> str:
+    """ONE question, from however many facets arrived.
+
+    Joining with a space kept each facet's own question mark, so a single ask
+    shipped as "What kind of cheese and about how much - a slice or a bit
+    sprinkled? How many slices of toast?" — two questions in one bubble, which
+    is two things to answer and one to forget. It also cannot be offered as a
+    quick reply, because there is no single thing being asked.
+
+    Interior question marks are dropped and the facets are joined with ", and ",
+    so what arrives is one sentence with one mark at the end.
+    """
+    parts = []
+    for facet in facets:
+        text = str(facet or "").strip().rstrip("?").strip().rstrip(",").strip()
+        if text:
+            parts.append(text)
+    if not parts:
+        return ""
+    # ONE FACET. Joining them with ", and " still produced "What kind of cheese
+    # and about how much, and how many slices of toast?" — one question mark
+    # over two unrelated asks, which is not an improvement and cannot be a tap.
+    # A reply the user can give in one gesture is worth more than covering the
+    # whole meal in one turn, and the rest stays pending exactly as the comment
+    # above promises.
+    text = parts[0]
+    return text[:1].upper() + text[1:] + "?"
 
 
 def _format_question(points: list, ready: list | None = None) -> str:
@@ -1262,6 +1291,19 @@ def _normalize_ops(data: dict) -> list:
     if not key:
         return []
     return [(action, o) for o in (data.get(key) or []) if isinstance(o, dict)]
+
+
+#: Asking for one entry to become several. The only intent in the vocabulary
+#: that a single operation cannot satisfy.
+_SPLIT_RE = re.compile(
+    r"\b(separate|split|break\s+(?:out|up|down)|itemi[sz]e|"
+    r"list\s+(?:them|those)\s+separately|as\s+two\s+(?:items|entries))\b",
+    re.I)
+
+
+def _asks_to_split(message: str) -> bool:
+    """Did the user ask for an existing entry to be broken into components?"""
+    return bool(_SPLIT_RE.search(message or ""))
 
 
 def _log_call(it: dict, source: Optional[str] = None) -> Optional[dict]:
@@ -1737,8 +1779,25 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
     # cannot support — an interrogative or evidence-free cold message never
     # yields a write, whatever action the model chose. Updates and deletes
     # are board-anchored corrections; they stand on their own intent.
-    if any(k == "log" for k, _ in ops) and not consumption_evidence(
-            message, prior=prior, thread_active=thread_active):
+    #
+    # A SPLIT IS NOT A NEW CONSUMPTION CLAIM, and this is where the missing
+    # calories actually went. "Can you separate the toast and cheese for me in
+    # my log." is an interrogative, so the invariant dropped the `log` op — and
+    # the interpreter had produced the RIGHT plan: update the entry to the
+    # cheese, log the toast. Half of it was deleted here, one component was
+    # renamed, and 105 calories disappeared from a day the user then had to
+    # audit by hand.
+    #
+    # The invariant is correct in general: "does a chicken caesar have 700
+    # calories?" must never write a row. But a log op that accompanies an
+    # UPDATE on an entry already on the board is not asserting a new meal — it
+    # is the second half of a restructure of a meal already asserted. The
+    # consumption evidence for it was given when the composite was logged.
+    _restructure = ("update" in [k for k, _ in ops]
+                    and _asks_to_split(message))
+    if any(k == "log" for k, _ in ops) and not _restructure \
+            and not consumption_evidence(
+                message, prior=prior, thread_active=thread_active):
         ops = [(k, o) for k, o in ops if k != "log"]
         if not ops:
             return None
@@ -1898,6 +1957,41 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
             logger.info(
                 "event=policy_veto held=%s %s",
                 ",".join(_held_names), (data.get("say") or "")[:40])
+
+    # ── A SPLIT CONSERVES THE TOTAL ─────────────────────────────────────────
+    #
+    #   You:   Can you separate the toast and cheese for me in my log.
+    #   Arnie: Slice of cheese logged, 70 cal
+    #   You:   And put the toast back
+    #   Arnie: Toast's on the board, 80 cal
+    #
+    # The composite was 175. After the split it was 70, and after the repair it
+    # was 150. Twenty-five calories evaporated and the user had to notice the
+    # missing half themselves.
+    #
+    # The operation vocabulary can express this correctly — a mixed turn is
+    # `[{op: update}, {op: log}]` — and the interpreter emitted only the update,
+    # so one component was renamed and the other was never written. Nothing
+    # downstream could tell, because a lone update that lowers a number is
+    # exactly what an ordinary correction looks like.
+    #
+    # Prompting harder is not the fix. The structural fact is that SEPARATING an
+    # entry is the one intent that cannot be satisfied by a single operation, so
+    # a plan of one update is incomplete by construction. Refusing it keeps the
+    # log intact — the user's total stays right and they are told why — where
+    # committing it loses calories silently and asks them to audit us.
+    # Checked against the INTERPRETER's plan, not the post-veto calls. Whether
+    # the split was expressed completely is a fact about what was proposed; the
+    # clarification veto runs in between and can hold the new component, which
+    # would make a complete plan look like an incomplete one.
+    _op_kinds = [k for k, _ in ops]
+    if _asks_to_split(message) and "update" in _op_kinds \
+            and "log" not in _op_kinds:
+        logger.info("event=split_refused_incomplete %s", (message or "")[:60])
+        return {"action": "ask",
+                "text": ("I can split that, but I need both halves so the "
+                         "total stays right — what should each part be?"),
+                "points": ["both components of the split"]}
 
     if not calls:
         return None

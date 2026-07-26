@@ -22,6 +22,18 @@ from core.food_response import (ARNIE_VOICE, CARD_FACTS, CoachingOpportunity,
                                 REVIEW_OPENER, plan_failure, plan_from_resolution, plan_review,
                                 plan_undo, validate)
 
+def _leads_with_the_meal(text, *names):
+    """The lead-in VARIES now — keyed on the meal AND the question, so two
+    clarification rounds on one meal no longer open with the identical
+    sentence. The contract is that it acknowledges what we understood before
+    asking, not that it uses one exact phrase."""
+    from core.food_response import _CLARIFY_LEADS, _REVIEW_LEADS
+    heads = {l.split("{")[0].strip() for l in _CLARIFY_LEADS + _REVIEW_LEADS}
+    assert any(text.startswith(h) for h in heads), text
+    for n in names:
+        assert n in text, (n, text)
+
+
 
 def _items(*pairs):
     return tuple(FoodItemSummary(name=n, portion=p) for n, p in pairs)
@@ -229,8 +241,9 @@ def test_the_review_fallback_is_prose_for_a_simple_meal():
                                        ("gooseberry jam", "1 tbsp"))))
     # Spoken, not tabulated (Danny 2026-07-25). "1 slice toast" is a row from
     # the interpreter; "one slice of toast" is what a person says.
-    assert text == ("I'm reading that as one slice of toast and one "
-                    "tablespoon of gooseberry jam. Does that look right?")
+    _leads_with_the_meal(text, "one slice of toast",
+                         "one tablespoon of gooseberry jam")
+    assert text.endswith("Does that look right?"), text
     assert "Locking this in" not in text
     assert "anything to fix" not in text
 
@@ -264,7 +277,8 @@ def test_the_coach_fallback_is_silence_not_generic_advice():
 def test_the_clarify_fallback_acknowledges_context_before_asking():
     text = fallback(plan_clarify(question="Which Chobani yogurt was it?",
                                  resolved=_items(("toast", ""), ("fruit", ""))))
-    assert text == "I'm reading that as toast and fruit. Which Chobani yogurt was it?"
+    _leads_with_the_meal(text, "toast", "fruit")
+    assert text.endswith("Which Chobani yogurt was it?"), text
 
 
 def test_the_partial_commit_fallback_never_implies_the_held_item_landed():
@@ -623,7 +637,8 @@ def test_a_clarify_plan_carries_what_was_already_understood():
 
 def test_the_semantic_fallback_acknowledges_before_asking():
     text = fallback(plan_clarify_from_question(_question()))
-    assert text == "I'm reading that as toast and fruit. Which Chobani yogurt was it?"
+    _leads_with_the_meal(text, "toast", "fruit")
+    assert text.endswith("Which Chobani yogurt was it?"), text
 
 
 def test_a_material_assumption_reaches_the_prompt():
