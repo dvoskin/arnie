@@ -433,8 +433,32 @@ class FoodItemSummary:
         read like a form, not a sentence, which is what the whole review turn
         was accused of.
         """
-        return describe_portion(self.portion, self.name,
-                                branded=self.branded)
+        described = describe_portion(self.portion, self.name,
+                                     branded=self.branded)
+        # AN AMOUNT NOBODY STATED IS NOT SHOWN AS THOUGH THEY DID.
+        #
+        # "had a Barebells bar and some chicken and rice" listed back "One cup
+        # of white rice" — a cup nobody mentioned, printed in the same voice as
+        # the items the user actually specified. `estimated` was already on
+        # this object and only reached the card badge; the sentence the user
+        # reads had no way to tell its own guesses from their words.
+        #
+        # A parenthetical rather than a rewrite: the phrase still reads as a
+        # portion, and the marker is short enough not to turn a three-item list
+        # into a wall.
+        if self.estimated and self.portion.strip():
+            described = f"{described} (my estimate)"
+        return described
+
+    def describe_bare(self) -> str:
+        """The phrase without the estimate marker.
+
+        Layout decisions measure how long a FOOD reads, and the marker is an
+        annotation on top of that — letting it count flipped a two-item review
+        out of prose and into a bulleted list purely because we had annotated
+        our own guesses.
+        """
+        return describe_portion(self.portion, self.name, branded=self.branded)
 
 
 @dataclass(frozen=True)
@@ -1168,7 +1192,7 @@ def fallback(plan: FoodResponsePlan) -> str:
         # in front of a question the user had not been shown yet.
         items = plan.resolved_items
         if _wants_a_list(items):
-            return (f"{REVIEW_OPENER}\n\n"
+            return (f"{_pick_opener(_REVIEW_OPENERS, items)}\n\n"
                     f"{format_items(items)}\n\nDoes that all look right?")
         described = _join([i.describe() for i in items])
         return f"I'm reading that as {described}. Does that look right?"
@@ -1181,7 +1205,7 @@ def fallback(plan: FoodResponsePlan) -> str:
         question = plan.clarification_question or f"Which {_held_name(plan)} was it?"
         shown = list(plan.resolved_items) + list(plan.pending_items)
         if _wants_a_list(shown):
-            return (f"{CLARIFY_OPENER}\n\n"
+            return (f"{_pick_opener(_CLARIFY_OPENERS, shown)}\n\n"
                     f"{format_items(shown)}\n\n{question}")
         if shown:
             return (f"I'm reading that as "
@@ -1236,6 +1260,36 @@ def fallback(plan: FoodResponsePlan) -> str:
 CLARIFY_OPENER = "Here's how I'm interpreting that:"
 REVIEW_OPENER = "Here's what I'm about to log:"
 
+#: THE SAME SENTENCE EVERY TIME IS A TELL. One fixed opener read as a template
+#: the moment a user logged twice in a session, and this turn is common enough
+#: that they see it constantly. Varied deterministically — the same meal always
+#: opens the same way, so a resend or a replayed transcript is stable — and
+#: keyed on the SHAPE of what follows rather than picked at random, so the
+#: sentence still describes its own list.
+_CLARIFY_OPENERS = (
+    "Here's how I'm interpreting that:",
+    "This is what I've got so far:",
+    "Reading that as:",
+    "Here's my read:",
+)
+_REVIEW_OPENERS = (
+    "Here's what I'm about to log:",
+    "About to put this down:",
+    "This is what goes on the board:",
+    "Logging this unless you say otherwise:",
+)
+
+
+def _pick_opener(choices, items) -> str:
+    """Pick one, stably, from the items themselves.
+
+    Deterministic on the meal so the same input never produces two different
+    openers — a varied line that changes on retry reads as instability, not
+    personality.
+    """
+    key = "|".join(sorted((i.name or "") for i in items))
+    return choices[sum(map(ord, key)) % len(choices)] if key else choices[0]
+
 #: Above this many foods, prose stops scanning and a list starts helping.
 LIST_THRESHOLD = 3
 
@@ -1255,7 +1309,7 @@ def _wants_a_list(items) -> bool:
     items = [i for i in items if i]
     if len(items) >= LIST_THRESHOLD:
         return True
-    return any(len(i.describe()) > _LONG_ITEM_CHARS for i in items)
+    return any(len(i.describe_bare()) > _LONG_ITEM_CHARS for i in items)
 
 
 def format_items(items) -> str:

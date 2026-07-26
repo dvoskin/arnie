@@ -155,6 +155,16 @@ def attach_ambiguities(items, data: Mapping, *, mode: str) -> tuple:
     # The item's own size, so the fraction rule can run. A span of 90 calories
     # is most of a granola bar and a rounding error on a platter, and the
     # scorer cannot tell them apart without this.
+    # IS THIS REALLY THE ONLY THING WE ARE UNSURE ABOUT? The prompt below said
+    # so unconditionally, and it was routinely false: "had a Barebells bar and
+    # some chicken and rice" listed "One cup of white rice" — a cup nobody
+    # said — and then claimed the chicken was the only open question. A
+    # sentence asserting certainty one line under our own guess is the worst
+    # kind of wrong, because it tells the user not to look.
+    _sole_estimate = sum(
+        1 for i in (items or []) if not getattr(
+            getattr(i, "quantity", None), "is_stated", False)) <= 1
+
     raw_by_ordinal = {}
     for ordinal, raw in enumerate(data.get("items") or []):
         if isinstance(raw, Mapping):
@@ -512,6 +522,16 @@ def derive_vague_quantities(items, data: Mapping, *, message: str,
                                             build_ambiguity)
     from skills.nutrition.portions import distribution_for
 
+    # IS THIS REALLY THE ONLY THING WE ARE UNSURE ABOUT? The prompt below said
+    # so unconditionally, and it was routinely false: "had a Barebells bar and
+    # some chicken and rice" listed "One cup of white rice" — a cup nobody
+    # said — and then claimed the chicken was the only open question. A
+    # sentence asserting certainty one line under our own guess is the worst
+    # kind of wrong, because it tells the user not to look.
+    _sole_estimate = sum(
+        1 for i in (items or []) if not getattr(
+            getattr(i, "quantity", None), "is_stated", False)) <= 1
+
     raw_by_ordinal = {}
     for ordinal, raw in enumerate(data.get("items") or []):
         if isinstance(raw, Mapping):
@@ -568,12 +588,13 @@ def derive_vague_quantities(items, data: Mapping, *, message: str,
                 field_name="consumed_fraction", mode=mode,
                 calorie_span=span, item_calories=calories, options=options,
                 prompt=_vague_prompt(item.original_text, measure,
-                                     _measure_options(measure,
-                                                      distribution)))]))
+                                     _measure_options(measure, distribution),
+                                     sole_estimate=_sole_estimate))]))
     return tuple(out)
 
 
-def _vague_prompt(food: str, measure: str, options) -> str:
+def _vague_prompt(food: str, measure: str, options,
+                  sole_estimate: bool = True) -> str:
     """Name what is uncertain, then ask about it.
 
     Two sentences rather than one long one. The lead says which food the
@@ -587,10 +608,31 @@ def _vague_prompt(food: str, measure: str, options) -> str:
     """
     low, high = options[0], options[-1]
     food = (food or "").strip()
+    # A HEDGE IS NOT A MEASURE. "Was the some closer to 30g or 200g?" is the
+    # same defect as "One some of mustard" one layer over: the interpreter
+    # hands back a hedge in the unit slot and every rule downstream treats a
+    # unit as a noun to put an article in front of.
+    lead = ("How much" if measure in _HEDGE_MEASURES
+            else f"Was the {measure} closer")
+    tail = (f" — closer to {_shared_unit(low, high)}?"
+            if measure in _HEDGE_MEASURES
+            else f" to {_shared_unit(low, high)}?")
     if not food:
-        return f"Was the {measure} closer to {_shared_unit(low, high)}?"
-    return (f"The {food.lower()} is the only part I'm unsure about. "
-            f"Was the {measure} closer to {_shared_unit(low, high)}?")
+        return f"{lead}{tail}"
+    ask = (f"{lead} of the {food.lower()}{tail}"
+           if measure in _HEDGE_MEASURES else f"{lead}{tail}")
+    if sole_estimate:
+        return f"The {food.lower()} is the only part I'm unsure about. {ask}"
+    # Other amounts on this meal are ours too. Naming that is what earns the
+    # question — the user is being asked about the one that moves the most,
+    # not told the rest are settled.
+    return f"I picked the other amounts myself. {ask}"
+
+
+#: Words the interpreter puts in the unit slot that measure nothing. They can
+#: never take "the ... closer to", which is a frame for a real measure.
+_HEDGE_MEASURES = frozenset({"some", "a little", "little", "a bit", "bit",
+                             "lots", "plenty", "a few", "few"})
 
 
 def _shared_unit(low: str, high: str) -> str:
