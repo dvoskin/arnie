@@ -443,14 +443,22 @@ def test_say_contract_strips_questions_after_write():
 
 @pytest.mark.asyncio
 async def test_strict_confirm_narrowed_to_where_it_earns_friction(monkeypatch):
-    """STRICT CONFIRMS, NARROWED (Danny 2026-07-25): a plan whose every amount
-    is the user's own words commits DIRECTLY even on strict; the pre-write
-    confirm fires only for system-estimated amounts, bulk plans, or
-    consumed-vs-planned doubt.
+    """THE WHOLE-PARSE CONFIRM IS GONE (Danny 2026-07-26: "remove the strict
+    confirm line, it's killing the interaction, Arnie should just clarify based
+    on our plans instead").
 
-    AND it fires only on what the pipeline left open (correction-turn directive
-    §1). The confirm is a last look at a settled parse, never a substitute for
-    resolving something the confirm itself cannot settle."""
+    It had already been narrowed twice and reordered once, and each pass made
+    the same discovery from a different direction: every case where the confirm
+    seemed to earn its friction was a case the clarification policy could state
+    a real question about, or one where there was nothing to ask. "Does that
+    all look right?" is not a clarification — it re-shows a parse and invites
+    a yes, which is why a user who says "I had 2 chicken thighs" was asked to
+    confirm that they had 2 chicken thighs.
+
+    What is left is what was always underneath: the policy asks when a doubt is
+    material, discloses the assumption when it is not, and the committed card
+    stays one tap from repair. These cases pin that the ASKS survive the
+    removal — this is not "strict stopped checking"."""
     strict = SimpleNamespace(preferences=SimpleNamespace(food_logging_mode="strict"))
     # 1. Fully user-stated amounts → direct log, no confirm friction.
     monkeypatch.setattr(FT, "chat", _fake_chat({
@@ -490,11 +498,12 @@ async def test_strict_confirm_narrowed_to_where_it_earns_friction(monkeypatch):
                    "calories": 100, "basis": "stated"} for i in range(4)],
         "say": "All four logged, {batch_cal} cal."}))
     out3 = await FT.run("had one of each of the four things", strict)
-    # The confirm SURVIVES where it earns its place: every amount is stated,
-    # the pipeline finds nothing material, and a last look at four items is a
-    # better exchange than four separate questions. Reordering the gate did not
-    # remove the confirm — it stopped it standing in for something else.
-    assert out3["action"] == "ask" and out3.get("kind") == "confirm"
+    # FOUR STATED ITEMS COMMIT. This used to confirm on the count alone — the
+    # theory being that a last look at four items beats four questions. But
+    # there were never four questions to ask: every amount is the user's own
+    # words and the policy finds nothing material, so the confirm was asking
+    # them to re-read their own sentence. Length is not doubt.
+    assert out3["action"] == "log"
     # 4. Consumed doubt reported below threshold → confirm.
     monkeypatch.setattr(FT, "chat", _fake_chat({
         "action": "log",
@@ -504,16 +513,17 @@ async def test_strict_confirm_narrowed_to_where_it_earns_friction(monkeypatch):
                          "impact_cal": 50}],
         "say": "Bowl logged, {batch_cal} cal."}))
     out4 = await FT.run("picked up one poke bowl", strict)
-    # CONFIRM, and correctly. I reversed this with case 2 when §1 landed, on
-    # the old thresholds — where a 50-calorie doubt was material. Under the one
-    # calibrated policy it is 9% of a 550-calorie bowl and material by neither
-    # the absolute nor the proportional rule, so there is nothing for a
-    # question to settle and the whole-parse confirm is the better exchange.
+    # COMMITS. A 50-calorie doubt is 9% of a 550-calorie bowl — material by
+    # neither the absolute nor the proportional rule, so there is nothing for a
+    # question to settle. Under the old gate this fell through to the confirm,
+    # which is the clearest illustration of what the confirm was doing: asking
+    # about something the policy had just decided was not worth asking about.
     #
-    # Case 2 stays reversed: "some caesar salad" as 1.5 cups is a 30-200g range
-    # collapsed to a number, which IS material. The two cases differ in the
-    # size of the doubt, which is exactly what the policy is for.
-    assert out4["action"] == "ask" and out4.get("kind") == "confirm"
+    # Case 2 still ASKS: "some caesar salad" as 1.5 cups is a 30-200g range
+    # collapsed to a number, which IS material. The two differ in the size of
+    # the doubt, which is exactly what the policy is for — and what a confirm
+    # that fires on both cannot tell apart.
+    assert out4["action"] == "log"
     # A vague measure the interpreter CONVERTED now earns a question in
     # moderate (Danny 2026-07-25). "some caesar salad" arriving as 1.5 cups is
     # a 30-200g range collapsed to a number the user never gave — roughly 640

@@ -414,6 +414,17 @@ def _stash_sourcing(inp, analysis, food_name):
         if _prov is not None:
             _payload["provenance"] = _prov.as_dict()
             _payload["detail"] = _authority.display_detail(_prov)
+        # WHICH LANES RAN rides inside the sourcing payload, because that is
+        # the only thing the receipt reads (CallResult.sourcing → `_sourcing`).
+        # `_analyze_food` recorded them on the same ambient call context a few
+        # frames up.
+        try:
+            from core.execution_result import CALL_CTX as _CTX
+            _lanes = (_CTX.get() or {}).get("lanes")
+            if _lanes:
+                _payload["lanes"] = list(_lanes)
+        except Exception:
+            pass
         _stash_call(inp, "sourcing", _payload)
     except Exception:
         pass
@@ -683,10 +694,12 @@ def _detect_log_divergence(today_log) -> list[str]:
 
 #: The item name inside an 'Already on the board: <name> (…), logged …' line.
 _BLOCKED_NAME_RE = re.compile(r"Already on the board:\s*([^(,]+)", re.I)
-#: An explicit request to log without naming the food — "log it", "add those".
+#: An explicit request to log without naming the food — "log it", "add those",
+#: "log that again". The verb is required: a bare "again" is far more often a
+#: question about what is already down ("what were my totals again?") than a
+#: request to put something there.
 _BLOCKED_CUE_RE = re.compile(
-    r"\b(?:log|add|put)\s+(?:it|them|those|that|all|the|again)\b|\bagain\b",
-    re.I)
+    r"\b(?:log|add|put)\s+(?:it|them|those|that|all|the|again)\b", re.I)
 
 
 def user_asked_to_log(user_message: str, results) -> bool:
@@ -1876,6 +1889,8 @@ async def _analyze_food(db, user, food_name, inp):
         # enough to go looking for a packet.
         _db_hit = usda or off
         _db_grade = (_db_hit or {}).get("_match")
+        # Captured before the web-wins branch below blanks both of them.
+        _usda_hit, _off_hit = usda is not None, off is not None
         # §5: the lookup is mandatory when what we hold for a named product is
         # only a fallback rung. Asking the ladder rather than re-deriving the
         # condition here means the gate and the selection cannot drift apart —
@@ -1915,6 +1930,18 @@ async def _analyze_food(db, user, food_name, inp):
                 usda = off = None
             elif web is not None:
                 logger.info(f"event=web_label_enrich {food_name!r} — db miss, web hit")
+
+        # WHAT WE CHECKED, for the receipt. This is the only place that knows,
+        # and the winner alone cannot answer "did you even look?" — which is
+        # the question actually being asked when a named product comes back
+        # estimated. A lane that missed and a lane that never ran read
+        # identically without it.
+        _stash_call(inp, "lanes", [
+            ("usda", "hit" if _usda_hit else "miss"),
+            ("off", "hit" if _off_hit else "miss"),
+            ("web", "hit" if web is not None
+             else ("miss" if _want_branded else "skipped")),
+        ])
 
         # Cache THE RESOLVER'S WINNER — same ladder, same map, same call the
         # analysis makes (§8). This used to be a second, independent selection

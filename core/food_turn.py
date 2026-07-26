@@ -1189,71 +1189,7 @@ def _normalize_ops(data: dict) -> list:
     return [(action, o) for o in (data.get(key) or []) if isinstance(o, dict)]
 
 
-#: Capitalised words that are styles, cuisines and origins rather than makers.
-#: "Greek yogurt" and "French toast" are capitalised by everyone and named by
-#: no one — without this they would each look like a brand.
-_GENERIC_CAPITALIZED = {
-    "greek", "french", "italian", "english", "mexican", "chinese", "thai",
-    "japanese", "korean", "spanish", "german", "swiss", "belgian", "russian",
-    "irish", "danish", "canadian", "american", "asian", "mediterranean",
-    "caesar", "cajun", "creole", "cuban", "hawaiian", "buffalo", "denver",
-    "cheddar", "parmesan", "romano", "gouda", "brie", "havarti", "monterey",
-    "brussels", "boston", "romaine", "bolognese", "alfredo", "marinara",
-    "sriracha", "dijon", "worcestershire", "tabasco",
-    "monday", "tuesday", "wednesday", "thursday", "friday", "saturday",
-    "sunday", "i", "im", "ive", "id", "ill",
-}
-
-_WORD_RE = re.compile(r"[A-Za-z][\w'’\-]*")
-
-
-def _user_capitalized_tokens(message: str) -> set:
-    """Words the USER capitalised MID-SENTENCE.
-
-    People capitalise brand names in the middle of an ordinary sentence and
-    almost nothing else: "I also had a plain Royo bagel". That single capital
-    is the most reliable brand signal in the turn, and nothing was reading it —
-    which is how a named product reached the log as a generic bagel.
-
-    Sentence-initial words are excluded because their capital says nothing.
-    A message that is mostly capitals carries no signal either: shouting and
-    title-casing capitalise the brand and everything around it equally.
-    """
-    text = (message or "").strip()
-    if not text:
-        return set()
-    words = _WORD_RE.findall(text)
-    if not words:
-        return set()
-    caps = [w for w in words if w[0].isupper()]
-    if len(caps) > max(2, len(words) // 2):
-        return set()
-    out = set()
-    for sentence in re.split(r"[.!?\n]+", text):
-        toks = _WORD_RE.findall(sentence)
-        for word in toks[1:]:
-            lowered = word.lower()
-            if word[0].isupper() and lowered not in _GENERIC_CAPITALIZED:
-                out.add(lowered)
-    return out
-
-
-def names_a_capitalized_brand(food: str, message: str) -> bool:
-    """Did the user capitalise one of this food's own words?
-
-    The interpreter is asked to set `branded: true` on a named product and
-    routinely does not — "a plain Royo bagel" came back unflagged, so the
-    executor treated a manufacturer's product as a generic bagel and answered
-    it from USDA. This reads the evidence the user already gave.
-    """
-    caps = _user_capitalized_tokens(message)
-    if not caps:
-        return False
-    return any(w.lower() in caps for w in _WORD_RE.findall(food or ""))
-
-
-def _log_call(it: dict, source: Optional[str] = None,
-              message: str = "") -> Optional[dict]:
+def _log_call(it: dict, source: Optional[str] = None) -> Optional[dict]:
     if not isinstance(it, dict):
         return None
     food = str(it.get("food") or "").strip()
@@ -1278,16 +1214,11 @@ def _log_call(it: dict, source: Optional[str] = None,
     _basis = str(it.get("basis") or "").strip().lower()
     if _basis in ("stated", "regular", "estimate"):
         inp["basis"] = _basis
-    if it.get("branded") or names_a_capitalized_brand(food, message):
+    if it.get("branded"):
         # The logger read the message — it declares brandedness; the
-        # downstream heuristic (_looks_branded) is only the backup net.
-        #
-        # It declares it UNRELIABLY, though. "I also had a plain Royo bagel"
-        # came back with `branded` unset, so a manufacturer's product was
-        # resolved as a generic bagel and the item's own provenance line read
-        # "supplemented with USDA data" — the manufacturer rung has never been
-        # reached in production. The user's own capitalisation settles it
-        # without asking the model twice.
+        # downstream heuristic (_looks_branded) is only the backup net, and
+        # with the package-noun list completed that net is what actually
+        # catches the named products the interpreter forgets to flag.
         inp["is_packaged"] = True
     for k in ("calories", "protein", "carbs", "fats"):
         v = it.get(k)
@@ -1805,17 +1736,6 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
             logger.warning(f"food pipeline unavailable: {_pe}")
             _decision = None
 
-        # Strict's confirm is decided AFTER, on what the pipeline left open. It
-        # is a last look at a settled parse, which is what it was always for.
-        _strict_confirm_pending = False
-        try:
-            if mode == "strict":
-                _log_items = [o for k, o in ops if k == "log"]
-                _strict_confirm_pending = _strict_needs_confirm(
-                    _log_items, data, message)
-        except Exception:
-            _strict_confirm_pending = False
-
         if _decision is not None and _decision.asks:
             _q = _decision.question
             # The interpretation AND the question, in one turn. Sending the
@@ -1846,9 +1766,11 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
                     "items": data.get("items") or None,
                     "meal_group_id": _decision.meal_group_id}
 
-        if _decision is None and not _strict_confirm_pending:
+        if _decision is None:
             # Pipeline off or unavailable — the calorie-only policy still
-            # stands rather than the turn losing its ask entirely.
+            # stands rather than the turn losing its ask entirely. It used to
+            # be suppressed whenever strict's whole-parse confirm was pending;
+            # with the confirm gone there is nothing left to defer to.
             from core import food_ledger as _FL
             _mat = _FL.material_ambiguities(data.get("ambiguities"), mode)
             if _mat:
@@ -1867,7 +1789,7 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
 
     calls, kinds, items_logged = [], [], []
     for kind, o in ops:
-        call = (_log_call(o, message=message) if kind == "log"
+        call = (_log_call(o) if kind == "log"
                 else _update_call(o, board_by_id) if kind == "update"
                 else _delete_call(o, board_by_id))
         if call is None:
@@ -1911,23 +1833,21 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
     follow_up = str(data.get("follow_up") or "").strip()
     label = (kinds[0] if all(k == kinds[0] for k in kinds) else "commit")
 
-    if (label == "log" and prior is None and _mode(user) == "strict"
-            and _strict_needs_confirm(items_logged, data, message)):
-        # STRICT CONFIRMS, NARROWED (Danny 2026-07-25: "the narrower set when
-        # it's logical based on the scoped work"): the pre-write confirm fires
-        # only where it earns its friction — a SYSTEM-ESTIMATED amount, a BULK
-        # plan (>=4 items), or unresolved CONSUMED doubt. A plan whose every
-        # amount is the user's own words commits directly even on strict; the
-        # committed card shows the assumptions and stays one tap from repair.
-        # The yes-turn logs these exact items deterministically (no re-parse).
-        # Mixed plans commit directly: their updates/deletes are the user's
-        # own explicit corrections.
-        _items_c = [it for it in items_logged
-                    if (it.get("food") or "").strip()]
-        return {"action": "ask", "kind": "confirm",
-                "text": format_confirm(_items_c),
-                "items": _items_c,
-                "tool_calls": calls, "say": say[:400],
-                "note": note, "follow_up": follow_up}
+    # THE WHOLE-PARSE CONFIRM IS GONE (Danny 2026-07-26: "remove the strict
+    # confirm line, it's killing the interaction, Arnie should just clarify
+    # based on our plans instead").
+    #
+    # It was a second question layer sitting on top of a clarification policy
+    # that had already decided. `plan_turn` runs above and asks when an
+    # ambiguity is material — that is the whole staged-ambiguity architecture,
+    # and it reasons about calorie impact per item. The confirm reasoned about
+    # nothing: it fired on any system-estimated amount, which is most portions,
+    # so strict paid a round trip on "I had 2 chicken thighs" to be told what
+    # it had just been told. "Does that all look right?" is not a clarification,
+    # it is an interruption wearing one.
+    #
+    # What replaces it is what was already underneath it: the policy asks when
+    # a doubt is worth a turn, the assumption disclosure says what we picked
+    # when it is not, and the committed card stays one tap from repair.
     return {"action": label, "tool_calls": calls, "kinds": kinds,
             "say": say[:400], "note": note, "follow_up": follow_up}

@@ -158,52 +158,79 @@ def test_a_name_that_is_strong_on_its_own_still_opens_it():
     product line — strong without anyone declaring anything."""
     assert _names_a_product("Barebells Cookies and Cream", False)
 
-
-# ── 5. "I still haven't seen it say pulled from manufacturer" ─────────────────
+# ── 5. the signals that must NOT fire ─────────────────────────────────────────
 #
-#     User:   I also had a plain Royo bagel
-#     Arnie:  Royo Bagel, Plain logged, 80 cal, 8g protein.
-#             Portion estimated · nutrition profile supplemented with USDA data
+# A first cut of this work also inferred a brand from the user's own
+# capitalisation — "I also had a plain Royo bagel". Codex review on #47 was
+# right to reject it: "I ate an Apple after lunch" and "I ate Chicken Breast
+# for lunch" capitalise an ordinary food the same way, and the inference would
+# have sent both to a branded lookup. It also earned nothing — with the
+# package-noun list completed, every product that actually failed in the
+# reported session is caught by `_looks_branded` on its own. These pin that.
+def test_the_products_that_failed_need_no_capitalization_inference():
+    for name in ("Royo Bagel, Plain", "Royo Everything Bagel",
+                 "Nissin Cup Noodles", "Legendary Cinnamon Roll"):
+        assert _looks_branded(name), name
+
+
+def test_an_ordinary_capitalized_food_is_not_a_product():
+    for name in ("Apple", "Chicken Breast", "Banana", "Scrambled Eggs"):
+        assert not _looks_branded(name), name
+
+
+def test_a_bare_again_is_not_a_log_request():
+    """"what were my totals again?" asks about what is already down; it does
+    not ask for anything to be put there."""
+    assert not user_asked_to_log("what were my totals again?", [_MUSTARD])
+    assert not user_asked_to_log("can you show that again?", [_MUSTARD])
+    assert user_asked_to_log("log that again", [_MUSTARD])
+
+
+# ── 6. "I don't see Open Food Facts or web search in Arnie's thoughts" ────────
 #
-# The manufacturer rung exists and has never been reached in production. It
-# can't be: the interpreter is asked to set `branded: true` on a named product
-# and routinely doesn't, and `is_packaged` is the gate everything downstream
-# hangs off. The user capitalised "Royo" in the middle of an ordinary sentence
-# — which is what people do with brand names and almost nothing else — and
-# nothing was reading it.
-from core.food_turn import names_a_capitalized_brand  # noqa: E402
+# `FoodAnalysis.source` has carried "off" since Open Food Facts was added, and
+# `_SOURCE_LABELS` never had a key for it. An unknown key falls through to the
+# "estimate" row, so a product answered by its OFF label read back as "No exact
+# match — estimated from the description". The lane was working; the receipt
+# was calling it a guess.
+import core.reasoning as RSN  # noqa: E402
 
 
-def test_a_mid_sentence_capital_names_a_brand():
-    assert names_a_capitalized_brand("Royo Bagel, Plain",
-                                     "I also had a plain Royo bagel")
-    assert names_a_capitalized_brand("Nissin Cup Noodles",
-                                     "had a Nissin cup noodles")
-    assert names_a_capitalized_brand("Barebells Bar", "I ate a Barebells bar")
+def _labels(steps):
+    return [s["label"] for s in steps]
 
 
-def test_the_same_sentence_without_the_capital_names_nothing():
-    assert not names_a_capitalized_brand("Everything Bagel",
-                                         "I had a plain bagel")
-    assert not names_a_capitalized_brand("Chicken Breast",
-                                         "grilled chicken breast for lunch")
+def test_an_open_food_facts_hit_is_not_reported_as_a_guess():
+    steps = RSN._food_detailed(
+        {"food_name": "Royo Bagel, Plain",
+         "_sourcing": {"source": "off", "quantity": "1 bagel",
+                       "calories": 70, "protein": 8}},
+        "Logged: Royo Bagel, Plain, 70 cal")
+    assert any("Open Food Facts" in s for s in _labels(steps)), _labels(steps)
+    assert not any("estimated from the description" in s
+                   for s in _labels(steps)), _labels(steps)
 
 
-def test_a_cuisine_is_not_a_maker():
-    """Everyone capitalises "Greek yogurt" and nobody makes it."""
-    assert not names_a_capitalized_brand("Greek Yogurt", "I had Greek yogurt")
-    assert not names_a_capitalized_brand("French Toast", "made French toast")
+def test_the_receipt_names_every_lane_it_checked():
+    """A trace that reports only the winner cannot answer "did you even look?"
+    — an OFF miss and an OFF that never ran read identically without this."""
+    steps = RSN._food_detailed(
+        {"food_name": "Royo Bagel, Plain",
+         "_sourcing": {"source": "off", "quantity": "1 bagel", "calories": 70,
+                       "lanes": [("usda", "miss"), ("off", "hit"),
+                                 ("web", "skipped")]}},
+        "Logged: Royo Bagel, Plain, 70 cal")
+    labels = _labels(steps)
+    assert any("USDA" in s for s in labels), labels
+    assert any("Open Food Facts" in s for s in labels), labels
+    assert any("web" in s for s in labels), labels
 
 
-def test_shouting_carries_no_signal():
-    """A message in caps capitalises the brand and everything around it
-    equally, so no single capital means anything."""
-    assert not names_a_capitalized_brand("Chicken Breast",
-                                         "CHICKEN BREAST AND RICE")
-
-
-def test_a_sentence_initial_capital_says_nothing():
-    """"Oatmeal" alone is not a brand, and neither the rule nor the reader can
-    tell it from "Royo" alone. The package-noun net covers the branded case."""
-    assert not names_a_capitalized_brand("Oatmeal", "Oatmeal")
-    assert _looks_branded("Royo Bagel")
+def test_a_trace_without_lanes_still_renders():
+    """Back-compat: every path that stashes sourcing without lane data."""
+    steps = RSN._food_detailed(
+        {"food_name": "oatmeal",
+         "_sourcing": {"source": "estimate", "quantity": "1 cup",
+                       "calories": 150}},
+        "Logged: oatmeal, 150 cal")
+    assert _labels(steps)[0].startswith("Searched for")
