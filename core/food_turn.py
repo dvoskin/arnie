@@ -77,7 +77,16 @@ def _logger_model() -> str:
 # unknown detail could swing the item by more than this many calories. The
 # threshold IS the strictness gradient: a "some dressing" (~150 cal swing) asks
 # for strict, not for quick; a "half a platter" (~400) asks for everyone.
-_THRESH = {"quick": 300, "moderate": 200, "strict": 100}
+#: What the interpreter is TOLD to report against. Derived from the one policy,
+#: because a model briefed on 200 while the engine asks at 60 is being set up to
+#: report the wrong things.
+def _thresh_table() -> dict:
+    from skills.nutrition.materiality import calorie_threshold
+    return {m: int(calorie_threshold(m))
+            for m in ("quick", "moderate", "strict")}
+
+
+_THRESH = _thresh_table()
 
 
 def _mode(user) -> str:

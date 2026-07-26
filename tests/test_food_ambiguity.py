@@ -38,23 +38,23 @@ def test_a_threshold_can_be_retuned_without_a_deploy(monkeypatch):
 
 def test_a_malformed_override_is_ignored_rather_than_fatal(monkeypatch):
     monkeypatch.setenv("NUTRITION_ASK_STRICT_CALORIES", "not-a-number")
-    assert thresholds_for("strict")["calories"] == 20.0
+    assert thresholds_for("strict")["calories"] == 100.0
 
 
 # ── materiality ───────────────────────────────────────────────────────────────
 def test_the_score_is_normalized_so_one_is_the_line():
-    assert materiality(mode="moderate", calorie_span=60.0) == 1.0
-    assert materiality(mode="moderate", calorie_span=30.0) == 0.5
-    assert materiality(mode="moderate", calorie_span=120.0) == 2.0
+    assert materiality(mode="moderate", calorie_span=200.0) == 1.0
+    assert materiality(mode="moderate", calorie_span=100.0) == 0.5
+    assert materiality(mode="moderate", calorie_span=400.0) == 2.0
 
 
 def test_the_same_span_is_more_material_in_a_stricter_mode():
     """Strictness changes the threshold, not the truth. The span is identical;
     only whether it crosses the line moves."""
-    span = 60.0
-    assert materiality(mode="quick", calorie_span=span) == 0.5
+    span = 200.0
+    assert materiality(mode="quick", calorie_span=span) == round(200 / 300, 3)
     assert materiality(mode="moderate", calorie_span=span) == 1.0
-    assert materiality(mode="strict", calorie_span=span) == 3.0
+    assert materiality(mode="strict", calorie_span=span) == 2.0
 
 
 def test_the_max_axis_wins_so_a_protein_swing_cannot_hide():
@@ -90,7 +90,7 @@ def test_a_trivial_difference_is_never_material_in_any_mode():
         if mode != "strict":
             assert score < 1.0
     # Even strict only barely notices it.
-    assert materiality(mode="strict", calorie_span=10.0) == 0.5
+    assert materiality(mode="strict", calorie_span=50.0) == 0.5
 
 
 def test_the_fairlife_case_is_material_in_every_mode():

@@ -1817,9 +1817,28 @@ async def _analyze_food(db, user, food_name, inp):
             _authority.candidate_map(food_class=_fc_pre, usda_candidate=usda,
                                      off_candidate=off), _fc_pre)
         _needs_branded = _authority.needs_branded_lookup(_fc_pre, _rung_pre)
-        if _names_a_product(food_name, is_packaged) and (
-                _needs_branded or _needs_web_label(_db_grade)):
+        _want_branded = _names_a_product(food_name, is_packaged) and (
+            _needs_branded or _needs_web_label(_db_grade))
+        if not _want_branded and _fc_pre is not _authority.FoodClass.GENERIC:
+            # Skipped, and why. The silent skip is the other half of the blind
+            # spot: a named product that never triggered a lookup looks
+            # identical downstream to one whose lookup came back empty.
+            logger.info(
+                "event=branded_lookup food=%r outcome=skipped db_grade=%s "
+                "needs_branded=%s", food_name, _db_grade or "-", _needs_branded)
+        if _want_branded:
             web = await _web_lookup_packaged(food_name, inp.get("quantity"))
+            # ONE LINE PER ATTEMPT, with the outcome. A lookup that missed and
+            # a lookup that never ran were indistinguishable in the log, so a
+            # branded product committed at an estimate could not be diagnosed
+            # after the fact — the only evidence was a card saying "portion
+            # estimated", which is equally true of both.
+            logger.info(
+                "event=branded_lookup food=%r outcome=%s db_grade=%s "
+                "needs_branded=%s panel=%s",
+                food_name, "hit" if web is not None else "miss",
+                _db_grade or "-", _needs_branded,
+                bool((web or {}).get("serving_text")))
             if web is not None and _db_hit is not None:
                 logger.info(
                     f"event=web_label_enrich {food_name!r} — web label replaces "

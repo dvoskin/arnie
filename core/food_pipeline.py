@@ -152,6 +152,14 @@ def attach_ambiguities(items, data: Mapping, *, mode: str) -> tuple:
         return items
 
     by_ordinal = {i.ordinal: i for i in items}
+    # The item's own size, so the fraction rule can run. A span of 90 calories
+    # is most of a granola bar and a rounding error on a platter, and the
+    # scorer cannot tell them apart without this.
+    raw_by_ordinal = {}
+    for ordinal, raw in enumerate(data.get("items") or []):
+        if isinstance(raw, Mapping):
+            raw_by_ordinal[ordinal] = raw
+
     grouped = {}
     for amb in reported:
         field_name = str(amb.get("field") or "").strip() or "consumed_quantity"
@@ -168,6 +176,7 @@ def attach_ambiguities(items, data: Mapping, *, mode: str) -> tuple:
             field_name=_FIELD_NAMES.get(field_name, field_name), mode=mode,
             calorie_span=float(amb.get("impact_cal") or 0),
             protein_span=float(amb.get("impact_protein") or 0),
+            item_calories=_calories_for(raw_by_ordinal.get(target.ordinal) or {}),
             options=options))
 
     return tuple(
@@ -557,7 +566,7 @@ def derive_vague_quantities(items, data: Mapping, *, message: str,
                 staged_item_id=item.staged_item_id,
                 ambiguity_type=AmbiguityType.CONSUMED_QUANTITY,
                 field_name="consumed_fraction", mode=mode,
-                calorie_span=span, options=options,
+                calorie_span=span, item_calories=calories, options=options,
                 prompt=_vague_prompt(item.original_text, measure,
                                      _measure_options(measure,
                                                       distribution)))]))

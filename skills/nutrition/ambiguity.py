@@ -95,24 +95,13 @@ class FoodAmbiguity:
 #: the first implementation and are meant to be tuned from production traces.
 #: Overridable per-key by environment so a threshold can move without a code
 #: change (NUTRITION_ASK_MODERATE_CALORIES=80).
-DEFAULT_THRESHOLDS = {
-    "quick":    {"calories": 120.0, "protein": 15.0, "carbs": 20.0, "fat": 8.0},
-    "moderate": {"calories": 60.0,  "protein": 8.0,  "carbs": 12.0, "fat": 5.0},
-    "strict":   {"calories": 20.0,  "protein": 3.0,  "carbs": 5.0,  "fat": 2.0},
-}
-
-
-def thresholds_for(mode: str) -> dict:
-    mode = (mode or "moderate").strip().lower()
-    base = dict(DEFAULT_THRESHOLDS.get(mode, DEFAULT_THRESHOLDS["moderate"]))
-    for key in list(base):
-        env = os.getenv(f"NUTRITION_ASK_{mode.upper()}_{key.upper()}")
-        if env:
-            try:
-                base[key] = float(env)
-            except ValueError:
-                pass
-    return base
+#: Re-exported from `skills.nutrition.materiality`, which is now the only place
+#: these are decided. This table used to hold its own numbers — moderate at 60
+#: calories against 200 everywhere else, including the figure written into the
+#: interpreter's own prompt. The engine asking the questions and the model
+#: deciding what to report were working to different definitions.
+from skills.nutrition.materiality import (  # noqa: E402
+    DEFAULT_THRESHOLDS, FRACTION_FLOOR, fraction_for, thresholds_for)
 
 
 def materiality(*, mode: str, calorie_span: Optional[float] = None,
@@ -120,7 +109,8 @@ def materiality(*, mode: str, calorie_span: Optional[float] = None,
                 carb_span: Optional[float] = None,
                 fat_span: Optional[float] = None,
                 identity_risk: float = 0.0,
-                serving_basis_risk: float = 0.0) -> float:
+                serving_basis_risk: float = 0.0,
+                item_calories: Optional[float] = None) -> float:
     """How much this ambiguity matters, normalized so 1.0 is the mode's line.
 
     The MAX across axes, not the sum: an ambiguity that is 3× over on protein
@@ -141,6 +131,25 @@ def materiality(*, mode: str, calorie_span: Optional[float] = None,
         limit = t.get(key) or 0.0
         if limit > 0:
             scores.append(abs(float(span)) / limit)
+
+    # THE FRACTION RULE, which this scorer did not have. It compared spans
+    # against a flat threshold only, so it needed a very low one to catch
+    # proportionally-large uncertainty on small items — moderate sat at 60
+    # calories while every other layer used 200, and the interpreter was
+    # briefed on 200.
+    #
+    # A flat threshold cannot see that 90 calories of doubt on a 120-calorie
+    # item is most of the item, and a proportion can. With this here, the one
+    # calibrated threshold is safe to share: the absolute axis handles the
+    # platter, the relative axis handles the granola bar, and neither has to be
+    # distorted to cover for the other.
+    if calorie_span is not None and item_calories:
+        span = abs(float(calorie_span))
+        if span >= FRACTION_FLOOR:
+            fraction = span / max(float(item_calories), 1.0)
+            limit = fraction_for(mode)
+            if limit > 0:
+                scores.append(fraction / limit)
     return round(max(scores) if scores else 0.0, 3)
 
 
@@ -157,6 +166,7 @@ def build_ambiguity(*, staged_item_id: str, ambiguity_type: AmbiguityType,
                     calorie_span=None, protein_span=None, carb_span=None,
                     fat_span=None, identity_risk: float = 0.0,
                     serving_basis_risk: float = 0.0,
+                    item_calories=None,
                     prompt: str = "") -> FoodAmbiguity:
     """Construct an ambiguity with its materiality already scored, so nothing
     downstream has to know the thresholds."""
@@ -164,7 +174,8 @@ def build_ambiguity(*, staged_item_id: str, ambiguity_type: AmbiguityType,
     score = materiality(mode=mode, calorie_span=calorie_span,
                         protein_span=protein_span, carb_span=carb_span,
                         fat_span=fat_span, identity_risk=identity_risk,
-                        serving_basis_risk=serving_basis_risk)
+                        serving_basis_risk=serving_basis_risk,
+                        item_calories=item_calories)
     # Confidence in the LEADING option: a 0.9/0.05/0.05 split is barely
     # ambiguous, while 0.35/0.33/0.32 is a coin toss wearing three hats.
     top = max((o.confidence for o in options), default=0.0)

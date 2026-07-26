@@ -47,6 +47,7 @@ def _line_ambiguity(mode="moderate"):
     return build_ambiguity(
         staged_item_id="i1", ambiguity_type=AmbiguityType.PRODUCT_LINE,
         field_name="product_line", mode=mode, calorie_span=190,
+        item_calories=170,   # a Fairlife — the doubt exceeds the whole drink
         options=_bottle_options())
 
 
@@ -54,6 +55,7 @@ def _fraction_ambiguity(mode="moderate"):
     return build_ambiguity(
         staged_item_id="i1", ambiguity_type=AmbiguityType.CONSUMED_QUANTITY,
         field_name="consumed_fraction", mode=mode, calorie_span=115,
+        item_calories=160,   # a bowl of berries
         options=(AmbiguityOption("the whole bottle", 0.5, payload=1.0),
                  AmbiguityOption("about half", 0.5, payload=0.5)))
 

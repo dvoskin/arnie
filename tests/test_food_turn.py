@@ -504,12 +504,16 @@ async def test_strict_confirm_narrowed_to_where_it_earns_friction(monkeypatch):
                          "impact_cal": 50}],
         "say": "Bowl logged, {batch_cal} cal."}))
     out4 = await FT.run("picked up one poke bowl", strict)
-    # Same reversal as case 2, and for the same reason: "how much of the bowl
-    # did you actually eat" is not something "does that look right?" can
-    # settle. It was reaching the confirm only because the confirm suppressed
-    # the pipeline that would have asked it.
-    assert out4["action"] == "ask" and out4.get("kind") != "confirm"
-    assert "poke bowl" in out4["text"].lower()
+    # CONFIRM, and correctly. I reversed this with case 2 when §1 landed, on
+    # the old thresholds — where a 50-calorie doubt was material. Under the one
+    # calibrated policy it is 9% of a 550-calorie bowl and material by neither
+    # the absolute nor the proportional rule, so there is nothing for a
+    # question to settle and the whole-parse confirm is the better exchange.
+    #
+    # Case 2 stays reversed: "some caesar salad" as 1.5 cups is a 30-200g range
+    # collapsed to a number, which IS material. The two cases differ in the
+    # size of the doubt, which is exactly what the policy is for.
+    assert out4["action"] == "ask" and out4.get("kind") == "confirm"
     # A vague measure the interpreter CONVERTED now earns a question in
     # moderate (Danny 2026-07-25). "some caesar salad" arriving as 1.5 cups is
     # a 30-200g range collapsed to a number the user never gave — roughly 640
