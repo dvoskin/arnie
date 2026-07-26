@@ -136,6 +136,7 @@ from api.whoop_api import router as whoop_api_router
 from api.oura_api import router as oura_api_router
 from api.location_api import router as location_api_router
 from api.diagnostics import router as diagnostics_router
+from api.undo import router as undo_router
 from api.recovery_api import router as recovery_api_router
 from api.workout_api import router as workout_api_router
 from api.supplements_api import router as supplements_api_router
@@ -159,6 +160,7 @@ app.include_router(whoop_api_router)
 app.include_router(oura_api_router)
 app.include_router(location_api_router)
 app.include_router(diagnostics_router)
+app.include_router(undo_router)
 app.include_router(recovery_api_router)
 app.include_router(workout_api_router)
 

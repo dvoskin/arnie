@@ -175,6 +175,54 @@ def _restore_plan(event) -> Optional[dict]:
                     + _DAY_TAIL)}
 
 
+async def plan_for_event(db, user, event_id: int) -> Optional[dict]:
+    """The inverse of ONE named event — the tap-to-undo backend.
+
+    Every food macro_card already carries the `event_id` of the write behind
+    it (`tool_executor` stashes it, `conversation._logged_entry_card` puts it
+    on the payload), so the client can render "· Undo" against a specific
+    write. Nothing accepted that token: the affordance shipped with no server
+    side, which is why the card could offer an undo it could not perform.
+
+    Deliberately the same `_invert` and the same TTLs as the conversational
+    path. "Undo" typed and "Undo" tapped must reach the same inverse, or the
+    two ways of taking something back drift into different behaviour — which
+    is the failure this codebase keeps finding (one policy, two lanes).
+
+    Differs from `build_plan` in ONE way, and it is the point: this targets
+    the event the user pointed at, not the newest one. Tapping undo on the
+    third card down must not silently reverse the most recent write instead.
+
+    Returns None when the event is not theirs, too old, or has no safe
+    inverse. Never raises.
+    """
+    try:
+        from db.models import LedgerEvent
+        event = await db.get(LedgerEvent, int(event_id))
+        if event is None:
+            return None
+        # Ownership across the linked-account family, matching how every other
+        # read resolves a user — a phone and a desktop login are one person.
+        family = {user.id, getattr(user, "linked_to_user_id", None) or user.id}
+        if event.user_id not in family:
+            logger.warning("event=ledger_undo outcome=refused reason=not_owner "
+                           "event=%s", event_id)
+            return None
+        ttl = (_restore_ttl_hours() if event.event_type == "deleted"
+               else _undo_ttl_hours())
+        if not _fresh(event, ttl):
+            logger.info("event=ledger_undo outcome=expired event=%s", event_id)
+            return None
+        plan = _invert(event)
+        if plan is None:
+            logger.info("event=ledger_undo outcome=uninvertible domain=%s "
+                        "type=%s", event.domain, event.event_type)
+        return plan
+    except Exception as e:
+        logger.warning(f"ledger undo by event failed: {e}")
+        return None
+
+
 async def build_plan(db, user, text: str) -> Optional[dict]:
     """Detect an undo/restore shape and build its inverse plan from the event
     ledger. Returns an interpreter-shaped plan dict (action/tool_calls/say)
