@@ -53,9 +53,17 @@ _LANE_LABELS = {
     "usda": ("magnifyingglass", "USDA food database"),
     "off":  ("barcode", "Open Food Facts"),
     "web":  ("globe", "the product label on the web"),
+    # Not a lane — the reason no lane ran. A receipt whose lane section is
+    # simply absent reads as a pipeline that never fired.
+    "lookup": ("arrow.triangle.branch", "Skipped the database lookup"),
 }
 _LANE_OUTCOMES = {
     "hit": "found a match",
+    # FOUND IS NOT USED. A branded index only earns a branded rung on an
+    # exact-or-likely name match; a weaker hit is seated nowhere and cannot set
+    # the calories. Reporting that as "found a match" above a line that says
+    # "Portion estimated" is how a deliberate refusal reads as a broken lane.
+    "weak": "match too loose to trust — not used",
     "miss": "no match",
     "skipped": "not a named product — skipped",
 }
@@ -120,7 +128,9 @@ def _food_detailed(inp: dict, result: str) -> list:
         if not label:
             continue
         lane_icon, lane_name = label
-        steps.append(_step(lane_icon, f"Checked {lane_name}",
+        # The skip row carries its own reason verbatim and is not a "Checked".
+        prefix = "" if lane == "lookup" else "Checked "
+        steps.append(_step(lane_icon, f"{prefix}{lane_name}",
                            _LANE_OUTCOMES.get(outcome, outcome)))
     steps.append(_step(icon, found))
     qty = (src.get("quantity") or "").strip()

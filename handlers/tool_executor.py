@@ -1896,13 +1896,46 @@ async def _analyze_food(db, user, food_name, inp):
         # condition here means the gate and the selection cannot drift apart —
         # the class of bug where an exact-looking USDA text match blocked the
         # official manufacturer label.
+        # THE LOOKUPS GET A VOTE ON WHAT THIS IS. Until here, brandedness was
+        # decided entirely from the name — and a name-shape heuristic will
+        # always miss a product like "Milky Way Minis" that carries no package
+        # noun. Being classified GENERIC then meant its OFF match was seated on
+        # no rung at all, because `candidate_map` places OFF only for
+        # MANUFACTURED, so the macros fell through to an estimate with the
+        # match sitting right there. Promote on the evidence instead.
+        if _authority.branded_by_evidence(usda_candidate=usda,
+                                          off_candidate=off):
+            is_packaged = True
         _fc_pre = _authority.classify(food_name, is_packaged=is_packaged)
-        _rung_pre, _ = _authority.select(
-            _authority.candidate_map(food_class=_fc_pre, usda_candidate=usda,
-                                     off_candidate=off), _fc_pre)
+        _cands_pre = _authority.candidate_map(
+            food_class=_fc_pre, usda_candidate=usda, off_candidate=off)
+        _rung_pre, _ = _authority.select(_cands_pre, _fc_pre)
+        # Did the branded index's answer actually earn a branded rung? OFF is
+        # SEATED only on an exact-or-likely name match; a weaker hit is placed
+        # nowhere and cannot set the calories. The receipt has to know, because
+        # "Checked Open Food Facts — found a match" above "Portion estimated"
+        # reads as a broken pipeline when it is a deliberate refusal.
+        _off_seated = off is not None and _cands_pre.get("branded_exact") is off
         _needs_branded = _authority.needs_branded_lookup(_fc_pre, _rung_pre)
-        _want_branded = _names_a_product(food_name, declared_packaged) and (
-            _needs_branded or _needs_web_label(_db_grade))
+        # THE WEB LANE OPENS ON A FAILED LOOKUP, NOT ON A GUESS ABOUT THE NAME.
+        #
+        # Requiring a STRONG name signal meant "Milky Way Minis" — a product by
+        # any reading — was skipped with "not a named product" while its OFF
+        # match sat unseated and the macros came back estimated. Guessing
+        # brandedness from the shape of a string was always the weak link.
+        #
+        # `_needs_branded` is the LADDER's own verdict that no branded rung is
+        # filled for a manufactured item. That is a materially better-evidenced
+        # condition than the name heuristic: the cheap branded index has already
+        # been consulted and has already failed. It is also self-limiting —
+        # when OFF seats an answer (Polly-O String Cheese), this is False and
+        # the lane stays shut. The wrong-product risk the STRONG gate guards
+        # against is still covered downstream by `_best_matching_snippet` and
+        # identity validation.
+        _want_branded = (
+            _names_a_product(food_name, declared_packaged)
+            or (_fc_pre is _authority.FoodClass.MANUFACTURED and _needs_branded)
+        ) and (_needs_branded or _needs_web_label(_db_grade))
         if not _want_branded and _fc_pre is not _authority.FoodClass.GENERIC:
             # Skipped, and why. The silent skip is the other half of the blind
             # spot: a named product that never triggered a lookup looks
@@ -1938,7 +1971,7 @@ async def _analyze_food(db, user, food_name, inp):
         # identically without it.
         _stash_call(inp, "lanes", [
             ("usda", "hit" if _usda_hit else "miss"),
-            ("off", "hit" if _off_hit else "miss"),
+            ("off", ("hit" if _off_seated else "weak") if _off_hit else "miss"),
             ("web", "hit" if web is not None
              else ("miss" if _want_branded else "skipped")),
         ])
@@ -1975,6 +2008,16 @@ async def _analyze_food(db, user, food_name, inp):
                 )
             except Exception as e:
                 logger.warning(f"memory cache write failed: {e}")
+    else:
+        # NO LOOKUP RAN AT ALL, and the receipt used to show that as nothing —
+        # "Searched for Ritz Crackers" straight to "Portion estimated", with no
+        # line for any lane. A blank is the one thing a receipt must never be:
+        # it reads as a pipeline that did not fire, when in fact the block was
+        # skipped for a stated reason. Name the reason.
+        _stash_call(inp, "lanes", [("lookup", (
+            "your saved match answered it" if memory is not None
+            else "no food name to search" if not name_norm
+            else "a generic food — USDA owns the answer"))])
 
     result = analyze(food_name, inp.get("quantity"), *llm,
                      usda_candidate=usda, memory_match=memory,

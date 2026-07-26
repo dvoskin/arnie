@@ -247,3 +247,66 @@ def build_receipt(
     if nxt:
         out["next"] = nxt
     return out
+
+
+# ── the model's coach line may not contradict the committed snapshot ──────────
+#
+# A shipped card read "Strong protein hit — the day closes clean from here"
+# directly above its own "38g protein to go", while the prose in the same turn
+# said "Protein is running light". Nothing was hallucinated: the card's verdict
+# is the MODEL's `coach_read`, allowed to overwrite the deterministic verdict
+# because it is "varied and contextual", and the only guard was that it be
+# short and carry no digits. Both were true of that sentence.
+#
+# The numbers it contradicts are in the very same payload. So this is not a
+# judgement about tone — it is an assertion against the snapshot the card is
+# built from, and the check is mechanical.
+
+_PROTEIN_DONE = (
+    "protein's handled", "protein is handled", "protein handled",
+    "protein hit", "protein's hit", "protein landed", "protein's covered",
+    "protein covered", "protein is covered", "protein's done",
+    "protein is done", "protein's there", "hit your protein",
+    "closes clean", "closes the day clean", "protein's in",
+)
+_PROTEIN_SHORT = (
+    "protein to go", "protein's light", "protein is light",
+    "protein running light", "protein's running light", "needs protein",
+    "protein still needs", "short on protein", "more protein",
+    "protein-forward", "protein forward",
+)
+_CAL_OVER = ("over target", "over for the day", "went over", "you're over",
+             "past your target")
+_CAL_ROOM = ("plenty of room", "plenty of flexibility", "room to play",
+             "lots of room", "still have room")
+
+
+def coach_read_contradicts(text: str, receipt: Optional[dict]) -> bool:
+    """Does this coach line disagree with the numbers on its own card?
+
+    Only the four claims the card also states numerically are checked, and only
+    when the receipt actually carries that number. A line making none of those
+    claims is not second-guessed — the point is to stop a sentence and a figure
+    in the same card saying opposite things, not to police the writing.
+    """
+    body = (text or "").strip().lower()
+    if not body or not isinstance(receipt, dict):
+        return False
+
+    def says(phrases) -> bool:
+        return any(p in body for p in phrases)
+
+    rem_p = receipt.get("remaining_protein")
+    if isinstance(rem_p, (int, float)):
+        if rem_p > 0 and says(_PROTEIN_DONE):
+            return True
+        if rem_p <= 0 and says(_PROTEIN_SHORT):
+            return True
+
+    rem_c = receipt.get("remaining_cal")
+    if isinstance(rem_c, (int, float)):
+        if rem_c < 0 and says(_CAL_ROOM):
+            return True
+        if rem_c > 0 and says(_CAL_OVER):
+            return True
+    return False
