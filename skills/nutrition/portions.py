@@ -172,9 +172,41 @@ PORTION_ONTOLOGY = {
         # Deliberately very wide. "Some" carries almost no information, and a
         # confident narrow range here is the fake precision this module exists
         # to refuse.
+        #
+        # WIDE IS NOT THE SAME AS UNIFORM, though, and for a long time this row
+        # was the only one — so "some ranch dressing" and "some chicken" were
+        # both asked about as "closer to 30g or 200g?". 200 g of ranch is most
+        # of a bottle. A question whose own range is absurd for the food reads
+        # as a system that does not know what it is holding, and the user
+        # cannot answer it honestly either way.
+        #
+        # The category machinery below already existed and already classified
+        # these correctly; "some" simply had no rows to select. Each stays wide
+        # WITHIN its category — the point is not precision, it is that the two
+        # ends are both plausible amounts of THAT food.
+        "sauce":        (35.0, 15.0, 80.0, 0.35),
+        "dressing":     (30.0, 15.0, 60.0, 0.35),
+        "oil":          (14.0, 5.0, 30.0, 0.35),
+        "condiment":    (18.0, 6.0, 45.0, 0.35),
+        "cheese":       (30.0, 14.0, 60.0, 0.35),
+        "nut_butter":   (32.0, 16.0, 64.0, 0.35),
+        "rice":         (150.0, 80.0, 260.0, 0.32),
+        "pasta":        (150.0, 80.0, 260.0, 0.32),
+        "leafy":        (60.0, 25.0, 120.0, 0.32),
+        "berries":      (100.0, 50.0, 180.0, 0.32),
+        "nuts":         (35.0, 15.0, 70.0, 0.35),
+        "chips":        (35.0, 15.0, 70.0, 0.35),
+        "meat":         (120.0, 60.0, 220.0, 0.32),
         "default":      (80.0, 30.0, 200.0, 0.30),
     },
     "little": {
+        # Same shape one step smaller — "a little olive oil" is a teaspoon or
+        # two, not 12-60 g of it.
+        "sauce":        (18.0, 8.0, 40.0, 0.38),
+        "dressing":     (15.0, 7.0, 30.0, 0.38),
+        "oil":          (8.0, 4.0, 15.0, 0.38),
+        "condiment":    (10.0, 4.0, 22.0, 0.38),
+        "cheese":       (15.0, 7.0, 30.0, 0.38),
         "default":      (30.0, 12.0, 60.0, 0.35),
     },
     "bowl": {
