@@ -53,7 +53,21 @@ def resolver_mode() -> str:
     if raw in (MODE_OFF, MODE_SHADOW, MODE_LIVE):
         return raw
     legacy = (os.getenv("NUTRITION_RESOLVER_SHADOW", "") or "").strip().lower()
-    return MODE_SHADOW if legacy in ("1", "true", "yes") else MODE_OFF
+    if legacy in ("1", "true", "yes"):
+        return MODE_SHADOW
+    # DEFAULT IS SHADOW, NOT OFF.
+    #
+    # Off meant the whole resolver — candidate scoring, identity validation,
+    # basis-aware scaling, the serving-basis sanity checks — had never run on a
+    # real turn. Everything built for it was unreachable, and every question
+    # about "would the resolver have got this right?" was unanswerable.
+    #
+    # Shadow has NO side effects: `promote()` returns the legacy result
+    # untouched unless the mode is live. What it buys is the comparison line
+    # per turn, which is the only evidence that can justify promoting it —
+    # and, with FOOD_TRACE on, it is visible the same day rather than after a
+    # deliberate flag flip nobody remembers to make.
+    return MODE_SHADOW
 
 
 def _allowlist() -> set:

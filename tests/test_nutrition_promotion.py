@@ -46,12 +46,22 @@ def _resolution(source="off", tier=SourceTier.BRANDED_EXACT, cal=80,
 
 
 # ── the mode switch ───────────────────────────────────────────────────────────
-def test_off_by_default(monkeypatch):
+def test_shadow_by_default(monkeypatch):
+    """Was off. Off meant the resolver — scoring, identity validation,
+    basis-aware scaling, the serving-basis sanity checks — had never run on a
+    real turn, so everything built for it was unreachable and "would the
+    resolver have got this right?" was unanswerable.
+
+    Shadow has no side effects: `owns_committed_values` is still False, so
+    `promote()` returns the legacy result untouched. What it buys is the
+    comparison line, which is the only evidence that can justify promoting
+    it."""
     monkeypatch.delenv("NUTRITION_RESOLVER_MODE", raising=False)
     monkeypatch.delenv("NUTRITION_RESOLVER_SHADOW", raising=False)
-    assert P.resolver_mode() == P.MODE_OFF
+    assert P.resolver_mode() == P.MODE_SHADOW
+    assert P.shadow_enabled()
+    # THE SAFETY PROPERTY. Shadow observes; it does not commit.
     assert not P.owns_committed_values(7)
-    assert not P.shadow_enabled()
 
 
 def test_the_already_deployed_shadow_flag_keeps_working(monkeypatch):
@@ -85,10 +95,10 @@ def test_an_allowlist_narrows_live_mode_to_named_users(monkeypatch):
     assert not P.owns_committed_values(7)
 
 
-def test_an_unknown_mode_falls_back_to_off(monkeypatch):
+def test_an_unknown_mode_falls_back_to_shadow(monkeypatch):
     monkeypatch.setenv("NUTRITION_RESOLVER_MODE", "banana")
     monkeypatch.delenv("NUTRITION_RESOLVER_SHADOW", raising=False)
-    assert P.resolver_mode() == P.MODE_OFF
+    assert P.resolver_mode() == P.MODE_SHADOW
 
 
 # ── the guards ────────────────────────────────────────────────────────────────

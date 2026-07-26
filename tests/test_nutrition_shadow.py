@@ -26,10 +26,27 @@ def shadowing(monkeypatch):
     monkeypatch.setenv("NUTRITION_RESOLVER_SHADOW", "1")
 
 
-def test_it_is_inert_unless_switched_on(monkeypatch):
+def test_it_is_inert_when_switched_off(monkeypatch):
+    """Shadow is the DEFAULT now, so inertness has to be asserted against the
+    off switch rather than against the absence of one.
+
+    The default moved because off meant the resolver had never run on a real
+    turn — every question about what it would have committed was unanswerable,
+    and the comparison this function produces is the only thing that can
+    answer them. It still writes nothing: `owns_committed_values` gates
+    promotion separately, and it is False in shadow."""
     monkeypatch.delenv("NUTRITION_RESOLVER_SHADOW", raising=False)
+    monkeypatch.setenv("NUTRITION_RESOLVER_MODE", "off")
     assert SH.compare("Royo Plain Bagel", {"quantity": "100g"},
                       _Legacy(290)) is None
+
+
+def test_it_observes_by_default(monkeypatch):
+    """...and with nothing set, it produces the comparison."""
+    monkeypatch.delenv("NUTRITION_RESOLVER_SHADOW", raising=False)
+    monkeypatch.delenv("NUTRITION_RESOLVER_MODE", raising=False)
+    assert SH.compare("Royo Plain Bagel", {"quantity": "100g"},
+                      _Legacy(290)) is not None
 
 
 def test_no_source_is_ever_fetched(shadowing, monkeypatch):

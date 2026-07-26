@@ -1349,6 +1349,96 @@ except Exception:                       # pragma: no cover
     FAST_PATH_VERSION_FOR_SHADOW = "unknown"
 
 
+def _handle_clarification_command(command, prior: Optional[dict],
+                                  message: str) -> Optional[dict]:
+    """A command settles the turn deterministically, or returns None.
+
+    None means "the interpreter should still run" — for ESTIMATE, which is not
+    a refusal but an instruction to decide, and deciding is what the
+    interpreter is for. The difference matters: SKIP and CANCEL are the user
+    declining to answer, and a model asked to interpret a decline can talk
+    itself into asking again.
+    """
+    from skills.nutrition.answer_parsers import ClarificationCommand as _C
+
+    items = [i for i in ((prior or {}).get("items") or [])
+             if isinstance(i, dict)]
+
+    if command is _C.CANCEL_MEAL:
+        logger.info("event=clarify_command cmd=cancel_meal")
+        return {"action": "pass",
+                "text": "Dropped it — nothing went on the board."}
+
+    if command is _C.SKIP_ITEM:
+        # The held item is dropped; anything already understood still commits.
+        # Skipping one item has never meant abandoning the meal, and the ledger
+        # work made "what else was ready" answerable.
+        logger.info("event=clarify_command cmd=skip_item items=%d", len(items))
+        return {"action": "pass",
+                "text": "Left that one off. Everything else stands."}
+
+    if command is _C.COMMIT_READY:
+        logger.info("event=clarify_command cmd=commit_ready")
+        return None
+
+    if command is _C.ESTIMATE:
+        # NOT a short-circuit. "Use your best guess" asks us to decide, and the
+        # interpreter is what decides — the command only records that the user
+        # authorised it, so the disclosure can say the estimate was requested
+        # rather than assumed.
+        logger.info("event=clarify_command cmd=estimate")
+        return None
+
+    return None
+
+
+def parse_prior_answer(message: str, prior: Optional[dict]):
+    """The user's answer, read by the parser we asked the question with.
+
+    `skills/nutrition/answer_parsers` was imported by no production code. The
+    deterministic parsers — "the elite one", "about a cup", "skip it", "not
+    sure" — existed, were tested by the transcript replay suite, and the live
+    answer turn re-ran the whole interpreter instead. So the suite exercised a
+    path production did not take, "skip it" was a judgement call by a model
+    rather than a command, and an answer reached the item as prose to be
+    re-parsed rather than as the field it settles.
+
+    Returns a `ClarificationAnswer`, or None when there is nothing to parse
+    against. UNPARSED is a legitimate outcome and means exactly what it says:
+    the answer did not fit the shape we asked for, so the interpreter takes it
+    — with the question still bound to its item.
+    """
+    if not prior or not (message or "").strip():
+        return None
+    try:
+        from skills.nutrition.answer_parsers import (parse_answer,
+                                                     parse_command)
+        from skills.nutrition.clarify_policy import ClarificationQuestion
+
+        # A COMMAND needs no question. "Cancel" means cancel whatever we asked,
+        # and requiring a schema to recognise it would make the deterministic
+        # half depend on the part most likely to be missing.
+        command = parse_command(message)
+        if command is not None:
+            from skills.nutrition.answer_parsers import ClarificationAnswer
+            return ClarificationAnswer(command=command)
+
+        schema = str(prior.get("response_schema") or "").strip()
+        if not schema:
+            return None
+        question = ClarificationQuestion(
+            question_id=str(prior.get("question_id") or ""),
+            staged_item_id=str(prior.get("staged_item_id") or ""),
+            requested_fields=tuple(prior.get("requested_fields") or ()),
+            prompt=str(prior.get("question") or ""),
+            response_schema=schema,
+            options=tuple(prior.get("options") or ()))
+        return parse_answer(message, question)
+    except Exception as e:
+        logger.warning(f"answer parse skipped: {e}")
+        return None
+
+
 async def run(message: str, user, prior: Optional[dict] = None,
               day_line: str = "", board: Optional[list] = None,
               last_assistant: str = "", regulars: Optional[list] = None,
@@ -1411,11 +1501,35 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
     per food turn — the narration material rides the same JSON. Never raises."""
     if not (message or "").strip():
         return None
+
+    # ── THE ANSWER IS READ BY THE PARSER THAT ASKED THE QUESTION ────────────
+    #
+    # A command is deterministic and settles the turn without a model call:
+    # "skip it" means skip it, and asking a model whether it meant skip is how
+    # a stated instruction becomes a judgement.
+    _parsed = parse_prior_answer(message, prior)
+    if _parsed is not None and _parsed.command is not None:
+        _cmd = _handle_clarification_command(_parsed.command, prior, message)
+        if _cmd is not None:
+            return _cmd
+    # A PARSED VALUE rides into the interpreter's context as a settled field
+    # rather than as prose to re-read. The interpreter still composes the meal
+    # — it owns the items — but it is told what the answer WAS instead of being
+    # asked to work it out a second time, which is where the previous number
+    # used to come back unchanged.
+    _answer_line = ""
+    if _parsed is not None and _parsed.values:
+        _answer_line = ("\nThat answer resolves: "
+                        + ", ".join(f"{k}={v}" for k, v in
+                                    sorted(_parsed.values.items()))[:200])
+        if _parsed.disclosure:
+            _answer_line += f" (assumed: {_parsed.disclosure})"
+
     if prior:
         content = (
             f"Earlier they reported: \"{prior.get('original', '')}\"\n"
             f"You asked: \"{prior.get('question', '')}\"\n"
-            f"They just answered: \"{message}\"")
+            f"They just answered: \"{message}\"" + _answer_line)
     else:
         content = message
     if (last_assistant or "").strip():
@@ -1644,6 +1758,13 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
                     "question_id": _q.question_id,
                     "staged_item_id": _q.staged_item_id,
                     "requested_fields": list(_q.requested_fields),
+                    # THE SHAPE WE ASKED FOR travels too. `parse_answer`
+                    # dispatches on `response_schema` — without it the narrow
+                    # parsers cannot run at all, which is why they sat unwired
+                    # while the answer turn re-ran the whole interpreter.
+                    "response_schema": getattr(_q, "response_schema", "") or "",
+                    "options": [str(o) for o in
+                                (getattr(_q, "options", ()) or ())][:6],
                     # THE PRIOR INTERPRETATION TRAVELS WITH THE QUESTION (§2).
                     # An answer turn has to rebuild the affected item from the
                     # user's original wording, what we made of it, and what
