@@ -1853,6 +1853,10 @@ async def _analyze_food(db, user, food_name, inp):
     usda = None
     off = None
     web = None
+    # Bound up front because the resolution log below reads it, and the branch
+    # that fills it is the one that can be skipped entirely — a skipped lookup
+    # is precisely the case whose telemetry matters most.
+    _cands_pre: dict = {}
     if memory is None and name_norm and not generic:
         _branded = is_packaged or _looks_branded(food_name)
 
@@ -2052,6 +2056,37 @@ async def _analyze_food(db, user, food_name, inp):
                      usda_candidate=usda, memory_match=memory,
                      web_candidate=web, off_candidate=off,
                      is_packaged=bool(is_packaged))
+
+    # ── WHO WON, AND WHAT WAS REFUSED ────────────────────────────────────────
+    #
+    # The `branded_lookup` line says which lanes were CONSULTED. It cannot say
+    # which candidate ended up determining the calories, and those are
+    # different questions — a lane can hit and still be seated nowhere, which
+    # is the exact state that had "Checked Open Food Facts — found a match"
+    # sitting above "Portion estimated".
+    #
+    # One line per resolution, after the ladder has run, naming the class, the
+    # rung, whether the winner's numbers were actually used, and every
+    # candidate that was fetched and then refused. Replaying a transcript
+    # against production is only diagnosable if this exists.
+    try:
+        _prov = result.provenance
+        _refused = []
+        for _tag, _cand in (("usda", usda), ("off", off), ("web", web),
+                            ("memory", memory)):
+            if _cand is None:
+                continue
+            if _prov.rung and _cand is _cands_pre.get(_prov.rung):
+                continue
+            _refused.append(f"{_tag}:{(_cand or {}).get('_match') or '?'}")
+        logger.info(
+            "event=resolution food=%r class=%s rung=%s macros_from_source=%s "
+            "portion=%s micros=%s refused=%s",
+            food_name, _prov.food_class, _prov.rung or "-",
+            not _prov.macros_are_estimated, _prov.portion_source or "-",
+            _prov.micronutrient_source or "-", ",".join(_refused) or "-")
+    except Exception:
+        pass
 
     # ── CONFIDENCE-GATED WEB MEAL ENRICH ──────────────────────────────────────
     # The composite/restaurant meals the DBs miss (CAVA bowl, poke bowl, Med
