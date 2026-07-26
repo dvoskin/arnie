@@ -145,6 +145,52 @@ def _per100g(nutriments: dict) -> Optional[dict]:
     return out
 
 
+def _per_serving(nutriments: dict) -> Optional[dict]:
+    """THE LABEL'S OWN SERVING, which is the answer for most branded logging.
+
+    Only `*_100g` was ever read here, so a portion the label already answers —
+    "1 bar", "1 bagel", "1 set" — had to be resolved by DERIVING a mass, and
+    with no serving size to derive it from the mass came out of the model's
+    calorie guess. The label was then scaled to fit the guess. That is the
+    anchor problem, and this field makes most of it unnecessary: N servings of
+    a product whose per-serving panel is published needs no mass at all.
+
+    Same shape and the same four-macro requirement as `_per100g`, minus the
+    100 g plausibility window — a serving is legitimately anything from a
+    5-calorie pickle to a 900-calorie meal, so bounding it by that range would
+    reject real labels.
+    """
+    if not isinstance(nutriments, dict):
+        return None
+    cal = _num(nutriments.get("energy-kcal_serving"))
+    if cal is None:
+        kj = (_num(nutriments.get("energy_serving"))
+              or _num(nutriments.get("energy-kj_serving")))
+        cal = round(kj / 4.184, 1) if kj else None
+    protein = _num(nutriments.get("proteins_serving"))
+    carbs = _num(nutriments.get("carbohydrates_serving"))
+    fat = _num(nutriments.get("fat_serving"))
+    if None in (cal, protein, carbs, fat):
+        return None
+    if not (1 <= cal <= 2000):
+        return None
+    out = {"calories": round(cal, 1), "protein": round(protein, 1),
+           "carbs": round(carbs, 1), "fat": round(fat, 1)}
+    fiber = _num(nutriments.get("fiber_serving"))
+    sugar = _num(nutriments.get("sugars_serving"))
+    if fiber is not None:
+        out["fiber"] = round(fiber, 1)
+    if sugar is not None:
+        out["sugar"] = round(sugar, 1)
+    sodium_g = _num(nutriments.get("sodium_serving"))
+    if sodium_g is None:
+        salt_g = _num(nutriments.get("salt_serving"))
+        sodium_g = salt_g / 2.5 if salt_g is not None else None
+    if sodium_g is not None:
+        out["sodium"] = round(sodium_g * 1000)
+    return out
+
+
 async def _get_json(url: str, params: dict, *, attempts: int = 3,
                     timeout: float = 5.0) -> Optional[dict]:
     """GET url?params and return parsed JSON, retrying transient failures.
@@ -307,5 +353,9 @@ async def search(name: str, page_size: int = 8) -> Optional[dict]:
         # at all — so the resolution came back empty and a guess was committed
         # under this source's name (2026-07-25).
         "serving_text": (p.get("serving_size") or "").strip(),
+        # The label's own per-serving panel. When the portion is N of the
+        # product's own units this answers it outright — no mass to derive and
+        # so nothing for the model's calorie guess to anchor.
+        "per_serving": _per_serving(p.get("nutriments") or {}),
         "source": "off",
     }

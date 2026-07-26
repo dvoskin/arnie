@@ -378,6 +378,43 @@ def _mass_from_serving_panel(quantity, src, food_name: str):
         return None
 
 
+def _per_serving_for(quantity, src, food_name: str):
+    """The label's per-serving panel scaled by the number of servings eaten,
+    or None when this portion is not a count of the product's own units.
+
+    The gate is the same one `_mass_from_serving_panel` uses and for the same
+    reason: `count_basis` distinguishes a bar (the label's unit, multipliable
+    by a serving) from a bowl (a helping we estimated a mass for, not
+    multipliable). Without that gate "1 bowl of cereal" would silently become
+    one 30 g serving.
+    """
+    try:
+        panel = (src or {}).get("per_serving")
+        if not isinstance(panel, dict) or not panel:
+            return None
+        from skills.nutrition.models import COUNT_BASIS_UNIT
+        from skills.nutrition.normalize import normalize_quantity
+        q = normalize_quantity(quantity or "", food_name)
+        if q.count is None or q.count <= 0:
+            return None
+        if q.count_basis != COUNT_BASIS_UNIT:
+            return None
+        n = float(q.count)
+        out = {}
+        for key, value in panel.items():
+            if value is None:
+                continue
+            scaled = value * n
+            out[key] = round(scaled) if key == "sodium" else round(scaled, 1)
+        for required in ("calories", "protein", "carbs", "fat"):
+            if required not in out:
+                return None
+        out["calories"] = round(out["calories"])
+        return out
+    except Exception:
+        return None
+
+
 def analyze(name, quantity, llm_cal, llm_protein, llm_carbs, llm_fat,
             usda_candidate=None, memory_match=None,
             web_candidate=None, off_candidate=None,
@@ -505,7 +542,32 @@ def analyze(name, quantity, llm_cal, llm_protein, llm_carbs, llm_fat,
         _trustworthy = macros_from_source and (
             confidence in ("exact", "user-confirmed")
             or (confidence == "likely" and src is not usda_candidate))
-        if _mg and cal100 and cal100 > 0 and _trustworthy:
+        # ── N SERVINGS OF A PRODUCT THAT PUBLISHES ITS SERVING ──────────────
+        #
+        # Checked FIRST, because when it applies there is nothing to compute.
+        # "1 bar", "1 bagel", "1 set", "2 slices" of a labelled product is
+        # count x the label's own per-serving panel — no mass, no density, no
+        # ratio, and so nothing for the model's calorie guess to anchor.
+        #
+        # That guess anchoring the mass is the root defect under every wrong
+        # branded number in this file's history: with no serving size to scale
+        # by, `grams` came out of the model's calories and the label was then
+        # scaled to FIT the guess rather than correct it. This removes the
+        # derivation entirely for the case that covers most branded logging,
+        # because packaged food is eaten in whole servings.
+        #
+        # Same gate as the serving-panel path: a COUNT on a UNIT basis. A bowl
+        # is a helping we estimated a mass for and may not be multiplied by a
+        # serving; a bar is the label's own unit and may.
+        _ps = _per_serving_for(quantity, src, name) if _trustworthy else None
+        if _ps is not None:
+            cal, protein, carbs, fat = _ps["calories"], _ps["protein"], \
+                _ps["carbs"], _ps["fat"]
+            fiber = _ps.get("fiber", fiber)
+            sugar = _ps.get("sugar", sugar)
+            sodium = _ps.get("sodium", sodium)
+            computed_forward = True
+        elif _mg and cal100 and cal100 > 0 and _trustworthy:
             grams = _mg
             ratio = grams / 100.0
             _implied_grams = grams
@@ -647,7 +709,7 @@ def analyze(name, quantity, llm_cal, llm_protein, llm_carbs, llm_fat,
         from skills.nutrition import sanity as _sanity
         _findings = _sanity.check_values(
             calories=cal, protein=protein, carbs=carbs, fat=fat,
-            grams=_implied_grams)
+            fiber=fiber, grams=_implied_grams)
         _fatal = [f for f in _findings if f.is_fatal]
         if _fatal:
             logger.warning(

@@ -1,0 +1,150 @@
+"""N servings of a product that publishes its serving needs no mass at all.
+
+The anchor defect, stated plainly: with no serving size to scale by, `analyze`
+derived the portion mass from the MODEL's calories —
+
+    grams = cal / cal100 * 100
+
+— and then scaled the label to fit that number. The label could never correct
+the calories; it could only be rescaled around them. Every wrong branded figure
+in this file's history traces back to it.
+
+Open Food Facts publishes the label's own per-SERVING panel alongside per-100g,
+and only `*_100g` was ever read. So the field that makes the derivation
+unnecessary was being fetched and discarded — for the case that covers most
+branded logging, because packaged food is eaten in whole servings.
+
+    Royo Plain Bagel, "1 bagel"
+      before:  80 cal, 8g protein   (the model's guess, label rescaled to it)
+      after:   70 cal, 9g protein   (the published label, nothing derived)
+"""
+from core.food_intelligence import analyze
+from skills.nutrition import authority
+from skills.nutrition.off import _per_serving
+
+#: A branded record carrying both panels, as OFF returns.
+_LABEL = {
+    "per100g": {"calories": 250.0, "protein": 13.0, "carbs": 43.0, "fat": 1.5},
+    "per_serving": {"calories": 70.0, "protein": 9.0, "carbs": 13.0,
+                    "fat": 1.0, "fiber": 4.0, "sodium": 135},
+    "_match": "exact", "fdc_id": "label"}
+
+
+def _no_panel():
+    out = dict(_LABEL)
+    out.pop("per_serving")
+    return out
+
+
+# ── the parser ────────────────────────────────────────────────────────────────
+def test_the_serving_panel_is_read_from_the_nutriments():
+    panel = _per_serving({"energy-kcal_serving": 70, "proteins_serving": 9,
+                          "carbohydrates_serving": 13, "fat_serving": 1,
+                          "fiber_serving": 4, "sodium_serving": 0.135})
+    assert panel == {"calories": 70.0, "protein": 9.0, "carbs": 13.0,
+                     "fat": 1.0, "fiber": 4.0, "sodium": 135}
+
+
+def test_kilojoules_are_accepted_when_calories_are_absent():
+    panel = _per_serving({"energy-kj_serving": 293, "proteins_serving": 9,
+                          "carbohydrates_serving": 13, "fat_serving": 1})
+    assert panel and 69 <= panel["calories"] <= 71
+
+
+def test_a_panel_missing_a_macro_is_unusable():
+    assert _per_serving({"energy-kcal_serving": 70,
+                         "proteins_serving": 9}) is None
+
+
+def test_a_serving_is_not_bounded_like_100g():
+    """A serving is legitimately a 5-calorie pickle or a 900-calorie meal;
+    the per-100g plausibility window would reject real labels."""
+    assert _per_serving({"energy-kcal_serving": 5, "proteins_serving": 0,
+                         "carbohydrates_serving": 1, "fat_serving": 0})
+    assert _per_serving({"energy-kcal_serving": 950, "proteins_serving": 40,
+                         "carbohydrates_serving": 90, "fat_serving": 45})
+
+
+# ── the resolution ────────────────────────────────────────────────────────────
+def test_one_serving_is_the_label_verbatim():
+    result = analyze("Royo Bagel, Plain", "1 bagel", 80, 8, 12, 1,
+                     off_candidate=_LABEL, is_packaged=True)
+    assert (result.calories, result.protein) == (70, 9.0)
+    assert not result.provenance.macros_are_estimated
+    assert "label" in authority.display_detail(result.provenance).lower()
+
+
+def test_the_model_number_does_not_survive_a_published_serving():
+    result = analyze("Royo Bagel, Plain", "1 bagel", 80, 8, 12, 1,
+                     off_candidate=_LABEL, is_packaged=True)
+    assert result.calories != 80
+
+
+def test_a_fraction_and_a_multiple_both_scale():
+    half = analyze("Royo Bagel, Plain", "0.5 bagel", 80, 8, 12, 1,
+                   off_candidate=_LABEL, is_packaged=True)
+    two = analyze("Royo Bagel, Plain", "2 bagel", 80, 8, 12, 1,
+                  off_candidate=_LABEL, is_packaged=True)
+    assert (half.calories, half.protein) == (35, 4.5)
+    assert (two.calories, two.protein) == (140, 18.0)
+
+
+def test_the_numbers_are_the_panel_verbatim_not_a_derivation():
+    """The whole point: nothing is computed, so nothing can be computed wrong.
+    Every field equals the label's own, unscaled by any mass."""
+    result = analyze("Royo Bagel, Plain", "1 bagel", 80, 8, 12, 1,
+                     off_candidate=_LABEL, is_packaged=True)
+    panel = _LABEL["per_serving"]
+    assert result.calories == panel["calories"]
+    assert result.protein == panel["protein"]
+    assert result.carbs == panel["carbs"]
+    assert result.fat == panel["fat"]
+    assert result.fiber == panel["fiber"]
+
+
+def test_a_real_high_fibre_label_is_not_called_suspect():
+    """Royo's published bagel is 70 cal against 9P/13C/1F — an Atwater sum of
+    97 and a 39% "disagreement" with its own label, because 4 g of that carb is
+    fibre. Counting fibre at 4 cal/g would have flagged every product in the
+    category this whole path exists for."""
+    from skills.nutrition import sanity
+    assert not sanity.check_values(calories=70, protein=9, carbs=13, fat=1,
+                                   fiber=4)
+    assert sanity.check_values(calories=70, protein=9, carbs=13, fat=1)
+
+
+def test_a_genuinely_broken_row_is_still_caught():
+    from skills.nutrition import sanity
+    findings = sanity.check_values(calories=200, protein=30, carbs=50, fat=20,
+                                   fiber=2)
+    assert any(f.code == "macro_energy_disagreement" for f in findings)
+
+
+# ── what must NOT take the label's serving ────────────────────────────────────
+def test_a_helping_is_not_the_labels_unit():
+    """"1 bowl of cereal" is a helping we would have to estimate a mass for,
+    not one 30 g serving. Same `count_basis` gate the mass path uses."""
+    result = analyze("cereal", "1 bowl", 300, 8, 60, 3,
+                     off_candidate=_LABEL, is_packaged=True)
+    assert result.calories == 300, "the model's number stands for a helping"
+
+
+def test_a_stated_mass_still_wins():
+    """An explicit gram weight is better evidence than a serving count."""
+    result = analyze("Royo Bagel, Plain", "100g", 80, 8, 12, 1,
+                     off_candidate=_LABEL, is_packaged=True)
+    assert result.calories == 250, "100 g x the per-100g density"
+
+
+def test_a_weak_match_cannot_supply_a_serving():
+    weak = dict(_LABEL)
+    weak["_match"] = "estimated"
+    result = analyze("some bagel", "1 bagel", 80, 8, 12, 1,
+                     usda_candidate=weak)
+    assert result.calories == 80
+
+
+def test_a_record_without_the_panel_behaves_exactly_as_before():
+    result = analyze("Royo Bagel, Plain", "1 bagel", 80, 8, 12, 1,
+                     off_candidate=_no_panel(), is_packaged=True)
+    assert result.calories == 80

@@ -72,6 +72,30 @@ SERVING_MASS_RATIO = 3.0
 IMPOSSIBLE = "impossible"
 SUSPECT = "suspect"
 
+#: Fibre's usable energy. Counting it at the full 4 cal/g is what made this
+#: check fire on the exact product class it most needs to be right about:
+#: high-fibre branded goods — protein bagels, protein bars, sweet rolls — are
+#: low-calorie BECAUSE their carbohydrate is largely fibre. Royo's published
+#: plain bagel is 70 cal against 9P/13C/1F, an Atwater sum of 97 and a 39%
+#: "disagreement" with its own label. The label was right and the check was
+#: wrong, and it would have called every product in this category suspect.
+FIBER_KCAL_PER_G = 2.0
+
+
+def _atwater(protein: float, carbs: float, fat: float,
+             fiber: Optional[float] = None) -> float:
+    """Calories the macros account for, with fibre counted at its real yield.
+
+    `carbs` on a label is TOTAL carbohydrate and includes fibre, so fibre is
+    subtracted out and added back at its own rate rather than double-counted.
+    """
+    net_carbs = carbs
+    fiber_kcal = 0.0
+    if fiber is not None and 0 <= fiber <= carbs:
+        net_carbs = carbs - fiber
+        fiber_kcal = fiber * FIBER_KCAL_PER_G
+    return protein * 4.0 + net_carbs * 4.0 + fat * 9.0 + fiber_kcal
+
 
 @dataclass(frozen=True)
 class SanityFinding:
@@ -146,7 +170,7 @@ def check(profile, basis, quantity) -> Tuple[SanityFinding, ...]:
     fat = profile.amount("fat")
     if (calories >= MACRO_CHECK_MIN_KCAL and protein is not None
             and carbs is not None and fat is not None):
-        atwater = protein * 4.0 + carbs * 4.0 + fat * 9.0
+        atwater = _atwater(protein, carbs, fat, profile.amount("fiber"))
         if atwater > 0:
             drift = abs(atwater - calories) / calories
             if drift > MACRO_ENERGY_TOLERANCE:
@@ -184,7 +208,7 @@ def _trim(n) -> str:
 
 
 def check_values(*, calories, protein=None, carbs=None, fat=None,
-                 grams=None) -> Tuple[SanityFinding, ...]:
+                 fiber=None, grams=None) -> Tuple[SanityFinding, ...]:
     """The same physics, against plain numbers.
 
     `check()` wants a NutrientProfile and a SourceBasis, which only the
@@ -218,5 +242,6 @@ def check_values(*, calories, protein=None, carbs=None, fat=None,
         serving_mass_g = None
         as_served = False
 
-    return check(_P(calories=calories, protein=protein, carbs=carbs, fat=fat),
+    return check(_P(calories=calories, protein=protein, carbs=carbs, fat=fat,
+                    fiber=fiber),
                  _B(), _Q(grams))
