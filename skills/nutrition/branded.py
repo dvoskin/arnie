@@ -64,19 +64,49 @@ class ProductSignal:
 #: Package/format nouns. A brand-shaped token in front of one of these is worth
 #: a branded lookup. Matched case-INSENSITIVELY — the bug this module exists to
 #: fix was a lowercase alternation meeting Title Case input.
+#: SINGULAR STEMS ONLY — both inflections are generated below. The old list
+#: was written by hand in whatever form came to mind, so it carried "bagels"
+#: without "bagel", "crackers" without "cracker", "tortillas" without
+#: "tortilla" and "wrap" without "wraps". Half of every one of those pairs was
+#: a silent miss, and "Royo Everything Bagel" is what that costs: no product
+#: signal, no branded lookup, generic bagel macros on a named product.
 _PACKAGE_NOUNS = (
-    "bar", "bars", "shake", "shakes", "drink", "drinks", "protein", "yogurt",
-    "yoghurt", "cereal", "oats", "granola", "sauce", "spread", "butter",
-    "milk", "powder", "chips", "crisps", "cookies", "cookie", "crackers",
-    "bites", "puffs", "cups", "cup", "pods", "seltzer", "soda", "juice",
-    "creamer", "kombucha", "jerky", "wrap", "tortillas", "bread", "bagels",
-    "waffles", "pancakes", "ice cream", "gummies", "candy", "candies",
+    "bar", "shake", "drink", "protein", "yogurt", "yoghurt", "cereal", "oat",
+    "granola", "sauce", "spread", "butter", "milk", "powder", "chip", "crisp",
+    "cookie", "cracker", "bite", "puff", "cup", "pod", "seltzer", "soda",
+    "juice", "creamer", "kombucha", "jerky", "wrap", "tortilla", "bread",
+    "bagel", "waffle", "pancake", "ice cream", "gummy", "candy",
+    # Bakery and noodle formats the hand-written list never reached. Each of
+    # these arrived as a shipped miss on a correctly-named product:
+    # "Legendary Cinnamon Roll", "Nissin Cup Noodles".
+    "roll", "bun", "muffin", "croissant", "donut", "doughnut", "pretzel",
+    "popcorn", "noodle", "ramen", "pasta", "burrito", "pizza", "oatmeal",
+    "patty", "nugget", "sausage", "pastry", "brownie", "toaster pastry",
 )
 
+
+def _inflect(noun: str) -> tuple:
+    """Both forms of one stem, so the list can never again be half-written."""
+    if noun.endswith("y"):
+        return (noun, noun[:-1] + "ies")
+    if noun.endswith(("s", "x", "ch", "sh")):
+        return (noun, noun + "es")
+    return (noun, noun + "s")
+
+
+_PACKAGE_NOUN_FORMS = sorted(
+    {form for noun in _PACKAGE_NOUNS for form in _inflect(noun)},
+    key=len, reverse=True)
+
+#: The brand-shaped token must ACTUALLY be capitalised; only the package noun
+#: is matched case-insensitively. A module-wide `re.I` applied to `[A-Z]` too,
+#: so the capitalisation requirement had been void — "everything bagel", typed
+#: in lowercase by a user who meant a plain bagel, matched the same pattern as
+#: "Royo Everything Bagel". It went unnoticed only because the noun list was
+#: missing half its inflections; completing the list surfaced it immediately.
 _PACKAGE_NOUN_RE = re.compile(
-    r"\b(?:[A-Z][\w'’]+\s+){1,4}(?:" + "|".join(
-        sorted((re.escape(n) for n in _PACKAGE_NOUNS), key=len, reverse=True)
-    ) + r")\b", re.I)
+    r"\b(?:[A-Z][\w'’]+\s+){1,4}(?i:" + "|".join(
+        re.escape(n) for n in _PACKAGE_NOUN_FORMS) + r")\b")
 
 #: An ampersand joining two word characters. M&M, Ben&Jerry, Barnes&Noble.
 #: Essentially never occurs in a generic food name.
