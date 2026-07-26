@@ -6,6 +6,7 @@ import contextvars
 import json
 import logging
 import os
+import re
 from datetime import timedelta
 from typing import Dict, List, Any, Optional
 
@@ -413,6 +414,17 @@ def _stash_sourcing(inp, analysis, food_name):
         if _prov is not None:
             _payload["provenance"] = _prov.as_dict()
             _payload["detail"] = _authority.display_detail(_prov)
+        # WHICH LANES RAN rides inside the sourcing payload, because that is
+        # the only thing the receipt reads (CallResult.sourcing → `_sourcing`).
+        # `_analyze_food` recorded them on the same ambient call context a few
+        # frames up.
+        try:
+            from core.execution_result import CALL_CTX as _CTX
+            _lanes = (_CTX.get() or {}).get("lanes")
+            if _lanes:
+                _payload["lanes"] = list(_lanes)
+        except Exception:
+            pass
         _stash_call(inp, "sourcing", _payload)
     except Exception:
         pass
@@ -680,14 +692,70 @@ def _detect_log_divergence(today_log) -> list[str]:
     return flags
 
 
-def blocked_log_reply(tool_calls, tool_results) -> Optional[str]:
+#: The item name inside an 'Already on the board: <name> (…), logged …' line.
+_BLOCKED_NAME_RE = re.compile(r"Already on the board:\s*([^(,]+)", re.I)
+#: An explicit request to log without naming the food — "log it", "add those",
+#: "log that again". The verb is required: a bare "again" is far more often a
+#: question about what is already down ("what were my totals again?") than a
+#: request to put something there.
+_BLOCKED_CUE_RE = re.compile(
+    r"\b(?:log|add|put)\s+(?:it|them|those|that|all|the|again)\b", re.I)
+
+
+def user_asked_to_log(user_message: str, results) -> bool:
+    """Did the USER ask for the thing that got blocked?
+
+    A dedup block is a receipt, and a receipt only makes sense for something
+    that was requested. The model fires a spurious `log_food` on plenty of
+    messages that are not log requests — it has the whole conversation in
+    context, so a bare "Look it" after a meal turn re-proposes that meal — and
+    when the dedup catches it, the turn HAS no user-facing news.
+
+    Two ways to qualify. The message names the blocked item, or it carries an
+    explicit cue to log something already under discussion ("log it", "add
+    those", "again"). Neither is present in "Look it", and that is the whole
+    difference between the 00:38 turkey incident — where the user really did
+    re-log turkey and needed to be told it was already down — and a receipt
+    for a food they never mentioned.
+    """
+    text = (user_message or "").strip().lower()
+    if not text:
+        return False
+    if _BLOCKED_CUE_RE.search(text):
+        return True
+    for r in results:
+        m = _BLOCKED_NAME_RE.search(str(r or ""))
+        if not m:
+            continue
+        name = m.group(1).strip().lower()
+        if not name:
+            continue
+        # Any content word of the blocked item's name appearing in the message
+        # is enough — "the mustard" and "mustard" are the same request, and a
+        # user rarely repeats a multi-word product name exactly.
+        words = [w for w in re.split(r"[^a-z0-9]+", name) if len(w) > 2]
+        if name in text or any(w in text for w in words):
+            return True
+    return False
+
+
+def blocked_log_reply(tool_calls, tool_results,
+                      user_message: str = "") -> Optional[str]:
     """The all-blocked logging turn, made structural (the 00:38 turkey
     incident): when EVERY log_* result this turn is an 'Already on the
     board:' dedup block, no row was written and the totals did not change —
     so the model follow-up (which occasionally narrates success with
     invented totals) is SKIPPED entirely and this deterministic honest
     reply ships instead. Returns None for mixed or successful turns — those
-    keep the model's voice."""
+    keep the model's voice.
+
+    Also None when the user never asked to log anything (see
+    `user_asked_to_log`). The block is real, but it is the model's mistake
+    rather than the user's, and answering "Look it" with "That's already on
+    the board: Mustard (1 tsp, 3 cal)" is a receipt for a request that was
+    never made. The caller drops the turn's logging framing entirely in that
+    case, so the reply is whatever the coach would have said anyway.
+    """
     log_names = {tc.get("name") for tc in (tool_calls or [])} & {
         "log_food", "log_exercise", "log_water"}
     if not log_names:
@@ -696,6 +764,10 @@ def blocked_log_reply(tool_calls, tool_results) -> Optional[str]:
     if not results or not all(
         r.startswith("Already on the board:") for r in results
     ):
+        return None
+    # Back-compat: callers that pass no message keep the old behaviour, since
+    # they cannot tell the two cases apart and silence would lose the receipt.
+    if user_message and not user_asked_to_log(user_message, results):
         return None
     facts = "|||".join(results)
     return "That's already on the board from earlier — nothing new logged.|||" + facts
@@ -1633,7 +1705,17 @@ async def _analyze_food(db, user, food_name, inp):
     llm = (inp.get("calories"), inp.get("protein"), inp.get("carbs"), inp.get("fats"))
     name_norm = normalize_name(food_name)
     generic = is_generic_food_name(food_name)
-    is_packaged = bool(inp.get("is_packaged")) or _looks_branded(food_name)
+    # The model's OWN declaration, kept apart from the heuristic. `is_packaged`
+    # below is the widened value — right for the cheap lanes (OFF is a branded
+    # index and its answer still has to survive identity validation), wrong for
+    # the web-label lane, which needs STRONG. Folding them into one name meant
+    # `_names_a_product(food_name, is_packaged)` at the web gate saw the WEAK
+    # heuristic arrive as `is_packaged=True` and returned STRONG for it — the
+    # exact laundering the gate's own comment says must not happen ("a
+    # capitalised word in front of 'butter' is enough to check a database; it
+    # is not enough to go looking for a packet").
+    declared_packaged = bool(inp.get("is_packaged"))
+    is_packaged = declared_packaged or _looks_branded(food_name)
 
     # TIER 1 — the user read us the label (core/pending_clarification). We
     # asked, they answered: that IS the product, and no database outranks it.
@@ -1807,6 +1889,8 @@ async def _analyze_food(db, user, food_name, inp):
         # enough to go looking for a packet.
         _db_hit = usda or off
         _db_grade = (_db_hit or {}).get("_match")
+        # Captured before the web-wins branch below blanks both of them.
+        _usda_hit, _off_hit = usda is not None, off is not None
         # §5: the lookup is mandatory when what we hold for a named product is
         # only a fallback rung. Asking the ladder rather than re-deriving the
         # condition here means the gate and the selection cannot drift apart —
@@ -1817,7 +1901,7 @@ async def _analyze_food(db, user, food_name, inp):
             _authority.candidate_map(food_class=_fc_pre, usda_candidate=usda,
                                      off_candidate=off), _fc_pre)
         _needs_branded = _authority.needs_branded_lookup(_fc_pre, _rung_pre)
-        _want_branded = _names_a_product(food_name, is_packaged) and (
+        _want_branded = _names_a_product(food_name, declared_packaged) and (
             _needs_branded or _needs_web_label(_db_grade))
         if not _want_branded and _fc_pre is not _authority.FoodClass.GENERIC:
             # Skipped, and why. The silent skip is the other half of the blind
@@ -1846,6 +1930,18 @@ async def _analyze_food(db, user, food_name, inp):
                 usda = off = None
             elif web is not None:
                 logger.info(f"event=web_label_enrich {food_name!r} — db miss, web hit")
+
+        # WHAT WE CHECKED, for the receipt. This is the only place that knows,
+        # and the winner alone cannot answer "did you even look?" — which is
+        # the question actually being asked when a named product comes back
+        # estimated. A lane that missed and a lane that never ran read
+        # identically without it.
+        _stash_call(inp, "lanes", [
+            ("usda", "hit" if _usda_hit else "miss"),
+            ("off", "hit" if _off_hit else "miss"),
+            ("web", "hit" if web is not None
+             else ("miss" if _want_branded else "skipped")),
+        ])
 
         # Cache THE RESOLVER'S WINNER — same ladder, same map, same call the
         # analysis makes (§8). This used to be a second, independent selection

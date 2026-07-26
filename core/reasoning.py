@@ -26,6 +26,12 @@ def _step(icon: str, label: str, detail: str = "") -> dict:
 _SOURCE_LABELS = {
     "history":   ("checkmark.seal", "Found it in your own earlier log"),
     "memory":    ("checkmark.seal", "Found it in your saved foods"),
+    # OFF HAD NO ENTRY HERE. `FoodAnalysis.source` has carried "off" since Open
+    # Food Facts was added, and an unknown key falls through to the "estimate"
+    # row — so a product answered by its OFF label read back as "No exact
+    # match — estimated from the description". The lane was working and the
+    # receipt was calling it a guess, which is why it looked like OFF never ran.
+    "off":       ("barcode", "Found the product in Open Food Facts"),
     "web_label": ("globe", "Found the product label online"),
     "usda":      ("magnifyingglass", "Matched the USDA food database"),
     "estimate":  ("wand.and.stars", "No exact match — estimated from the description"),
@@ -33,9 +39,25 @@ _SOURCE_LABELS = {
 _SOURCE_DETAIL = {
     "history":   "From your own earlier log",
     "memory":    "From your saved foods",
+    "off":       "From the Open Food Facts label",
     "web_label": "From the product label",
     "usda":      "From the USDA database",
     "estimate":  "Best estimate from the description",
+}
+
+#: Which lookup lanes ran, in the order they run, for the "what I checked"
+#: section of a detailed trace. A receipt that names only the WINNER cannot
+#: answer "did you even look?" — and that is the question actually being asked
+#: when a named product comes back estimated.
+_LANE_LABELS = {
+    "usda": ("magnifyingglass", "USDA food database"),
+    "off":  ("barcode", "Open Food Facts"),
+    "web":  ("globe", "the product label on the web"),
+}
+_LANE_OUTCOMES = {
+    "hit": "found a match",
+    "miss": "no match",
+    "skipped": "not a named product — skipped",
 }
 
 
@@ -87,10 +109,20 @@ def _food_detailed(inp: dict, result: str) -> list:
         found = _detail
         if "supplemented" in _detail:
             icon = "wand.and.stars"
-    steps = [
-        _step("magnifyingglass", f"Searched for {name}"),
-        _step(icon, found),
-    ]
+    steps = [_step("magnifyingglass", f"Searched for {name}")]
+    # EVERY LANE THAT RAN, not just the one that won. "Consistently estimating
+    # against USDA, I don't see Open Food Facts or web search" (Danny
+    # 2026-07-26) is unanswerable from a trace that reports a single winner: an
+    # OFF miss and an OFF that never ran look identical, and both look like
+    # nothing happened.
+    for lane, outcome in (src.get("lanes") or []):
+        label = _LANE_LABELS.get(lane)
+        if not label:
+            continue
+        lane_icon, lane_name = label
+        steps.append(_step(lane_icon, f"Checked {lane_name}",
+                           _LANE_OUTCOMES.get(outcome, outcome)))
+    steps.append(_step(icon, found))
     qty = (src.get("quantity") or "").strip()
     if qty:
         steps.append(_step("ruler", f"Serving checked — {qty}"))

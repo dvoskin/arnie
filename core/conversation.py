@@ -1632,8 +1632,25 @@ async def _run_turn(
                 _response_streamed = False  # canned/welcome text wasn't streamed
     else:
         has_logging = any(tc["name"] in _LOGGING_TOOLS for tc in tool_calls)
-        _all_blocked = blocked_log_reply(tool_calls, tool_results) \
-            if has_logging else None
+        _all_blocked = None
+        if has_logging:
+            _all_blocked = blocked_log_reply(tool_calls, tool_results,
+                                             user_message=_user_text or "")
+            if _all_blocked is None and blocked_log_reply(
+                    tool_calls, tool_results) is not None:
+                # EVERY log deduped, and the user asked for none of it. The
+                # model has the whole thread in context, so a contentless
+                # follow-on ("Look it", right after a logged meal) re-proposes
+                # that meal; the dedup then blocks it. Nothing was written and
+                # nothing was requested, so there is no news — the receipt
+                # ("That's already on the board: Mustard, 3 cal") answers a
+                # question nobody asked, and the log-voice branch below would
+                # narrate a write that never happened.
+                #
+                # Dropping the turn's logging framing sends it down the
+                # ordinary reply path instead, which is what a message that
+                # was never a log request should have got in the first place.
+                has_logging = False
         if _all_blocked is not None and not in_onboarding:
             # Every log this turn was an already-on-the-board block: no row
             # written, totals unchanged. The model follow-up is SKIPPED — a

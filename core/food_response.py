@@ -345,9 +345,18 @@ _HEAD_STOPS = (" with ", " and ", " in ", " of ", " on ", " over ", " topped ")
 
 
 def _head_span(name: str) -> int:
-    """Index where the head noun phrase ends — before the first preposition."""
+    """Index where the head noun phrase ends — before the first preposition
+    or comma."""
     lowered = f" {name.lower()} "
     cuts = [lowered.index(stop) for stop in _HEAD_STOPS if stop in lowered]
+    # A COMMA ENDS THE HEAD TOO. The interpreter routinely names a food in the
+    # appositive form — "chicken thigh, grilled teriyaki marinated" — where
+    # everything after the comma says how the head was prepared. Without this
+    # the head ran to the end of the string and the preparation got inflected:
+    # "Two chicken thigh, grilled teriyaki marinateds".
+    comma = name.find(",")
+    if comma >= 0:
+        cuts.append(comma)
     return min(cuts) if cuts else len(name)
 
 
