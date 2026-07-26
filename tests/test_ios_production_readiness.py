@@ -361,3 +361,125 @@ async def test_the_model_may_still_choose_silence(monkeypatch):
 
     text, why = await fr.compose_async(plan)
     assert why == fr.Reason.OK and text == ""
+
+
+# ── the question is content, not a script ────────────────────────────────────
+
+def _clarify(**kw):
+    from core.food_response import FoodResponseIntent, FoodResponsePlan
+    base = dict(intent=FoodResponseIntent.CLARIFY, requires_answer=True,
+                clarification_question="How much of the toast with cheese?")
+    base.update(kw)
+    return FoodResponsePlan(**base)
+
+
+def test_the_composer_is_given_the_unknown_not_just_a_sentence():
+    """It used to be handed "ASK EXACTLY THIS", which made it a tone pass over
+    a template built four modules away — "How much of the Toast with cheese?"
+    survived every renderer improvement because no renderer was allowed to
+    change it."""
+    from core.food_response import build_prompt
+    prompt = build_prompt(_clarify(
+        clarification_subject="toast with cheese",
+        clarification_kind="how much of it they actually ate",
+        clarification_needs=("consumed_fraction",)))
+    assert "ASK EXACTLY THIS" not in prompt
+    assert "toast with cheese" in prompt
+    assert "how much of it they actually ate" in prompt
+    assert "your own words" in prompt
+
+
+def test_the_plain_version_survives_as_a_floor_not_a_script():
+    """The deterministic sentence is still offered — losing it would leave the
+    composer inventing the substance as well as the words."""
+    from core.food_response import build_prompt
+    prompt = build_prompt(_clarify(clarification_subject="toast with cheese",
+                                   clarification_kind="how much"))
+    assert "A PLAIN VERSION" in prompt
+    assert "How much of the toast with cheese?" in prompt
+
+
+def test_the_composer_is_forbidden_from_assuming_what_it_asks():
+    """The screenshot bug: "I'm reading that as one slice (my estimate). How
+    much of the toast?" — an answer and its own question in one breath."""
+    from core.food_response import build_prompt
+    prompt = build_prompt(_clarify(clarification_subject="toast",
+                                   clarification_kind="how much"))
+    assert "do not assert an amount" in prompt
+
+
+def test_the_stakes_inform_the_question_without_appearing_in_it():
+    from core.food_response import build_prompt
+    prompt = build_prompt(_clarify(clarification_subject="toast",
+                                   clarification_kind="how much",
+                                   clarification_stakes=180.0))
+    assert "180" in prompt
+    assert "Never say that number" in prompt
+
+
+def test_a_plan_with_no_semantics_still_renders_the_old_way():
+    """Anything still building a bare question keeps working."""
+    from core.food_response import build_prompt
+    assert "ASK EXACTLY THIS" in build_prompt(_clarify())
+
+
+def test_a_common_noun_is_lowercased_mid_sentence_but_a_brand_is_not():
+    """"How much of the Toast with cheese?" was a card title dropped into a
+    sentence. Casing alone cannot tell "Barebells" from "Toast", so the item's
+    own food_class decides."""
+    from types import SimpleNamespace as NS
+    from skills.nutrition.clarify_policy import _label
+
+    common = NS(identity=NS(describe=lambda: "Toast with cheese"),
+                original_text="toast", food_class=NS(value="generic"))
+    brand = NS(identity=NS(describe=lambda: "Barebells Caramel Cashew"),
+               original_text="barebells", food_class=NS(value="branded"))
+
+    assert _label(common) == "toast with cheese"
+    assert _label(brand) == "Barebells Caramel Cashew"
+
+
+# ── one day, one source: the card and the sentence must agree ────────────────
+
+def test_the_card_and_the_narration_read_the_same_day():
+    """A shipped turn put "1,245 cal left · 102g protein to go" on a card and
+    "710 for the day, 133g protein to go" in the sentence directly beneath it —
+    210 calories and 31g of protein apart, inside one bubble.
+
+    The card's figures come from the receipt (stashed at write time); the
+    narration's come from the committed snapshot. Two reads of one day.
+    """
+    from core.food_ledger import TransactionSnapshot
+
+    snap = TransactionSnapshot(batch_cal=250, batch_protein=16,
+                               day_cal=710, day_protein=47,
+                               cal_target=2165, protein_target=180)
+    # What the executor stashed mid-batch, against a partial day.
+    calls = [{"name": "log_food",
+              "input": {"food_name": "Lox", "_entry_id": 5,
+                        "_receipt": {"remaining_cal": 1245,
+                                     "remaining_protein": 102}}}]
+
+    for c in calls:                      # the reconciliation the commit does
+        r = (c.get("input") or {}).get("_receipt")
+        if isinstance(r, dict):
+            r["remaining_cal"] = snap.cal_left
+            r["remaining_protein"] = snap.protein_left
+
+    receipt = calls[0]["input"]["_receipt"]
+    assert receipt["remaining_cal"] == snap.cal_left == 1455
+    assert receipt["remaining_protein"] == snap.protein_left == 133
+
+
+def test_only_the_day_figures_are_reconciled():
+    """The item's own macros belong to the row that was committed for it —
+    reconciling those would make every card in a meal report the meal."""
+    from core.food_ledger import TransactionSnapshot
+    snap = TransactionSnapshot(day_cal=710, day_protein=47,
+                               cal_target=2165, protein_target=180)
+    receipt = {"remaining_cal": 1245, "remaining_protein": 102,
+               "confidence": 0.9, "day_total_unreconciled": False}
+    receipt["remaining_cal"] = snap.cal_left
+    receipt["remaining_protein"] = snap.protein_left
+    assert receipt["confidence"] == 0.9
+    assert receipt["day_total_unreconciled"] is False

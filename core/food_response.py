@@ -507,6 +507,23 @@ class FoodResponsePlan:
     # Clarification.
     clarification_question: Optional[str] = None
     clarification_options: Tuple[str, ...] = ()
+    #: WHAT the question is about, rather than a sentence asking it.
+    #:
+    #: `clarification_question` is built upstream as an f-string
+    #: (`clarify_policy._default_prompt`) and used to arrive here with "ASK
+    #: EXACTLY THIS" attached, which made the composer a tone pass over a
+    #: template — it could not fix "How much of the Toast with cheese?"
+    #: because it was forbidden from changing the words that were wrong.
+    #:
+    #: `ClarificationQuestion` has carried this context all along, and its own
+    #: docstring says why: "the policy owns what must be asked; the response
+    #: layer owns how to say it". It simply never reached the renderer. With
+    #: the subject and the unknown named, the deterministic sentence becomes
+    #: what it should always have been — the floor, not the script.
+    clarification_subject: str = ""          # the food in question
+    clarification_needs: Tuple[str, ...] = ()  # fields an answer must fill
+    clarification_kind: str = ""             # the ambiguity, e.g. consumed_quantity
+    clarification_stakes: float = 0.0        # calories riding on the answer
     requires_answer: bool = False
 
     # What the existing card already shows.
@@ -1096,10 +1113,44 @@ def build_prompt(plan: FoodResponsePlan) -> str:
                  for a in plan.assumptions]
         parts.append("ASSUMPTIONS you may surface: " + "; ".join(t for t in texts if t))
     if plan.clarification_question:
-        parts.append(f"ASK EXACTLY THIS (rephrasing for tone is fine): "
-                     f"{plan.clarification_question}")
+        # THE QUESTION IS CONTENT, NOT A SCRIPT.
+        #
+        # This said "ASK EXACTLY THIS (rephrasing for tone is fine)", which
+        # made the composer a tone pass over a template built four modules
+        # away. "How much of the Toast with cheese?" survived every renderer
+        # improvement because no renderer was permitted to change it.
+        #
+        # Now the SUBJECT and the UNKNOWN are named, and the deterministic
+        # sentence is offered as a floor rather than a script. The constraint
+        # that matters is preserved and stated plainly: same food, same
+        # unknown, one question. Everything else is the coach's own words.
+        if plan.clarification_subject or plan.clarification_kind:
+            _needs = ", ".join(plan.clarification_needs) or "the missing detail"
+            parts.append(
+                "YOU NEED ONE THING TO LOG THIS ACCURATELY:\n"
+                f"  about: {plan.clarification_subject or 'the item above'}\n"
+                f"  unknown: {plan.clarification_kind or 'amount'} "
+                f"(an answer has to give you: {_needs})")
+            if plan.clarification_stakes:
+                parts.append(
+                    f"WHY IT MATTERS: about {int(plan.clarification_stakes)} "
+                    "calories ride on the answer. Never say that number, and "
+                    "never explain your reasoning — it decides how much the "
+                    "question is worth, not what you say.")
+            parts.append(
+                f"A PLAIN VERSION: {plan.clarification_question}\n"
+                "Ask it in your own words, the way you would out loud. It has "
+                "to be the SAME question — same food, same unknown — and only "
+                "one. Do not name the field, do not restate their whole meal, "
+                "and do not assert an amount for the very thing you are asking "
+                "about.")
+        else:
+            parts.append(f"ASK EXACTLY THIS (rephrasing for tone is fine): "
+                         f"{plan.clarification_question}")
     if plan.clarification_options:
-        parts.append("OPTIONS: " + " / ".join(plan.clarification_options))
+        parts.append("OPTIONS the answer will likely be one of (offer them "
+                     "naturally if it helps, never as a list): "
+                     + " / ".join(plan.clarification_options))
     if plan.failure is not None:
         parts.append(f"FAILURE: {plan.failure.code} — "
                      f"{plan.failure.recovery_action}")
@@ -1256,6 +1307,12 @@ def fallback(plan: FoodResponsePlan) -> str:
         # turns on one meal and invites the user to approve an assumption they
         # were never shown.
         question = plan.clarification_question or f"Which {_held_name(plan)} was it?"
+        # The pending item stays in the recap — it is shown in the USER'S own
+        # words on purpose (`_spoken_portion`), which is what keeps a converted
+        # amount from reading as something they said. What must not happen is
+        # asserting an amount for the very field under question; that is
+        # enforced on the composer in `build_prompt`, and the deterministic
+        # floor keeps the wording its tests pin.
         shown = list(plan.resolved_items) + list(plan.pending_items)
         if _wants_a_list(shown):
             return (f"{_pick_opener(_CLARIFY_OPENERS, shown, question)}\n\n"
@@ -1264,6 +1321,8 @@ def fallback(plan: FoodResponsePlan) -> str:
             lead = _pick_opener(_CLARIFY_LEADS, shown, question).format(
                 items=_join([i.describe() for i in shown]))
             return f"{lead} {question}"
+        # Nothing settled to recap — the question is the whole message, and a
+        # bare question reads better than a preamble about one unknown item.
         return question
 
     if intent is FoodResponseIntent.CONFIRM_ANSWER:
