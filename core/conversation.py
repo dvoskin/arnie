@@ -399,6 +399,12 @@ class TurnResult:
     # Surfaced on the wire so native clients can dedup history reloads by a
     # STABLE identity instead of text/timestamp heuristics.
     log_id: Optional[int] = None
+    # The row this turn REPLACED, when it was a regenerate/edit (set alongside
+    # the supersede mark in chat_service). History already hides the old row on
+    # reload; this is what lets a live client drop the message — and its card —
+    # the moment the replacement arrives, instead of leaving a stale card
+    # stacked beside the new reply.
+    superseded_log_id: Optional[int] = None
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1779,7 +1785,29 @@ async def _run_turn(
                                 (c.get("input") or {}).get("food_name")
                                 or "").strip())
                             for c in (_ok_calls or []))
-                        _card_renders = on_card is not None
+                        # WHETHER A CARD RENDERS IS A PROPERTY OF THE TURN, NOT
+                        # OF THE TRANSPORT. This read `on_card is not None`,
+                        # which is a question about the CALLER: only the iOS
+                        # WebSocket path (`_stream_turn`) supplies that
+                        # callback. Photo, voice and HTTP-fallback text all go
+                        # through `_coached_reply`, pass no callback, and then
+                        # return the very same cards in the payload — so the
+                        # plan was authored believing no card would render,
+                        # the recitation strip stayed off, and prose recited
+                        # the calories printed on the card directly above it.
+                        # Photo logging is the heaviest card path there is.
+                        #
+                        # Ask the card builder itself instead of restating its
+                        # rule: `_logged_entry_card` is pure and side-effect
+                        # free by contract, and it is the SAME call that emits
+                        # the cards further down — so this cannot drift from
+                        # what actually renders the way a duplicated
+                        # "has an entry_id" test would.
+                        _card_renders = any(
+                            _logged_entry_card(c.name, c.raw_input, call=c)
+                            is not None
+                            for c in (_execution.successful
+                                      if _execution is not None else ()))
                         _plan = apply_policy(FoodResponsePlan(
                             intent=FoodResponseIntent.COMMIT,
                             committed_items=tuple(n for n in _names if n.name),
@@ -2112,6 +2140,32 @@ user_message=_user_text or "")
             # phantom rescue below regenerates a proper confirmation.
             from core.platform import _strip_tool_xml
             response_text = _strip_tool_xml(response_text).strip()
+    except Exception:
+        pass
+
+    # ── LEAKED CODE FENCE ────────────────────────────────────────────────────
+    # The same failure wearing different syntax. The XML net above recognises
+    # `<invoke`; a model that wraps its output in ``` trips nothing, so the
+    # fence shipped (iOS rendered it monospace) and no call was recovered.
+    # `_sanitize_bubble` now removes the markers on the way out, so this is
+    # purely the DETECTION half: a fenced reply means the model was formatting
+    # a payload instead of talking, which is worth seeing in the logs and on
+    # the turn's health flags even when the text under it was fine.
+    #
+    # Deliberately NOT a recovery: parsing a call out of a fence and executing
+    # it is the authority-inverting guess-and-log pattern that got
+    # PHANTOM_RESCUE_ENABLED stripped on 2026-07-22, and the first fenced
+    # payload we saw in the wild was a DELETE. Flag it; never act on it.
+    _leaked_fence = False
+    try:
+        from core.platform import had_code_fence
+        if had_code_fence(response_text):
+            _leaked_fence = True
+            logger.warning(
+                "event=leaked_code_fence user=%s tools=%s",
+                getattr(user, "id", None),
+                ",".join(tc.get("name") or "?" for tc in (tool_calls or []))
+                or "-")
     except Exception:
         logger.warning("leaked-xml recovery failed", exc_info=True)
 
@@ -2888,6 +2942,11 @@ user_message=_user_text or "")
             tool_names={tc["name"] for tc in tool_calls},
             prior_assistant_text=_prior_assistant if isinstance(_prior_assistant, str) else "",
         )
+        # The model wrapped its reply in a code fence — markers already
+        # stripped at the bubble chokepoint, recorded here so a formatting
+        # failure that used to ship silently shows up in /admin/flagged.
+        if _leaked_fence:
+            health_flags.append("leaked_code_fence")
         if _retried and "retried" not in health_flags:
             health_flags.append("retried")
         if _dead_ended:

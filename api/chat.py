@@ -232,6 +232,11 @@ async def _coached_reply(identity: str, text: str, source_type: str,
     # Stable identity of this turn's ConversationLog row — the client stamps it
     # on the live bubbles so history reloads dedup by id, not text/timestamp.
     payload["log_id"] = getattr(turn, "log_id", None)
+    # Regenerate/edit: the row this turn REPLACED. Null on a normal turn.
+    # Without it the client had to infer the removal from the id it sent, so a
+    # regenerated reply landed while the old message and its card stayed on
+    # screen. Optional on the wire — older clients ignore it.
+    payload["superseded_log_id"] = getattr(turn, "superseded_log_id", None)
     payload["meta"] = TurnMeta(
         in_onboarding=turn.in_onboarding,
         just_completed=turn.just_completed,
@@ -582,6 +587,7 @@ async def _stream_turn(ws: WebSocket, identity: str, message: str,
     done["type"] = "done"
     # Same stable turn identity as the REST path — see payload["log_id"] there.
     done["log_id"] = getattr(turn, "log_id", None)
+    done["superseded_log_id"] = getattr(turn, "superseded_log_id", None)
     done["meta"] = TurnMeta(
         in_onboarding=turn.in_onboarding,
         just_completed=turn.just_completed,

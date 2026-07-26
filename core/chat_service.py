@@ -433,6 +433,14 @@ async def run_chat_turn(
                 # The old card disappears with the superseded row; never carry
                 # it forward.
                 await db.commit()
+                # ...but only on RELOAD, which is where the live chat view was
+                # left behind: history filters superseded rows, and the reply
+                # payload named only the NEW row, so a client holding the old
+                # message in memory had nothing telling it which one died. The
+                # regenerated turn arrived, the stale card stayed beside it.
+                # Name the replaced row on the turn so the wire can carry it
+                # and the client removes exactly that message, not a guess.
+                turn.superseded_log_id = _old.id
     except Exception:
         logger.warning("supersede mark failed", exc_info=True)
 
