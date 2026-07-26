@@ -1780,7 +1780,7 @@ async def _run_turn(
                                 or "").strip())
                             for c in (_ok_calls or []))
                         _card_renders = on_card is not None
-                        response_text = fallback(apply_policy(FoodResponsePlan(
+                        _plan = apply_policy(FoodResponsePlan(
                             intent=FoodResponseIntent.COMMIT,
                             committed_items=tuple(n for n in _names if n.name),
                             committed_snapshot=_snap,
@@ -1790,7 +1790,29 @@ async def _run_turn(
                             failure_notice=_failure_notice,
                             card_will_render=_card_renders,
                             facts_visible_in_card=(CARD_FACTS if _card_renders
-                                                   else frozenset()))))
+                                                   else frozenset())))
+                        # THE COMPOSER, FINALLY CONNECTED. `compose_async` was
+                        # built, validated, tested and called from nowhere —
+                        # `composer_enabled()` had no reference outside its own
+                        # definition and the test that asserts the env var
+                        # parses. Setting FOOD_COMPOSER=true did nothing at all.
+                        #
+                        # It phrases an APPROVED plan: it cannot choose what to
+                        # say, only how. Every output goes through the same
+                        # `validate()` the fallback satisfies, twice, and any
+                        # failure returns the deterministic text — so the worst
+                        # case is exactly today's behaviour plus one Haiku call.
+                        from core.food_response import (composer_enabled,
+                                                        compose_async)
+                        if composer_enabled():
+                            _txt, _why = await compose_async(_plan)
+                            response_text = _txt
+                            if _why != "ok":
+                                logger.info(
+                                    "event=food_composer outcome=fallback "
+                                    "reason=%s", _why)
+                        else:
+                            response_text = fallback(_plan)
                     except Exception as _e:
                         # The renderer must never cost the user their reply —
                         # fall back to the token-filled say (same numbers).

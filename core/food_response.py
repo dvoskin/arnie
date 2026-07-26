@@ -1019,6 +1019,10 @@ Respond to emotional or situational context when it is present.
 
 Do not praise routine logging. Do not use generic coaching filler.
 
+Write plain sentences. No markdown syntax, no headers, no horizontal rules, no
+tables, and no asterisks for emphasis. Bullets are supplied by the caller when
+a list is wanted — do not invent your own.
+
 Return only the user-facing text. Return an empty string when the plan allows
 no text and nothing useful needs saying."""
 
