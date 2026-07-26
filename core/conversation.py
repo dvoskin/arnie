@@ -337,7 +337,16 @@ def _logged_entry_card(name: str, inp, call=None) -> Optional[dict]:
         # (a number here could mismatch the card's own math).
         coach = (inp.get("coach_read") or "").strip()
         if coach and len(coach) <= 90 and not any(ch.isdigit() for ch in coach):
-            payload["verdict"] = coach
+            # ...but it may not contradict the numbers on its own card. A
+            # shipped card read "Strong protein hit — the day closes clean from
+            # here" directly above its own "38g protein to go". Short: yes. No
+            # digits: yes. Both guards passed and the card still said two
+            # opposite things at once, because neither guard looked at the
+            # snapshot the rest of the payload was built from.
+            from core.receipt import coach_read_contradicts
+            if not coach_read_contradicts(coach, receipt if isinstance(
+                    receipt, dict) else None):
+                payload["verdict"] = coach
         return {"type": "macro_card", "payload": payload}
     if name == "log_exercise":
         if not _workout_card_enabled():
