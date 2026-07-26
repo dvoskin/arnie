@@ -239,7 +239,11 @@ def test_the_review_fallback_switches_to_lines_when_prose_stops_scanning():
     text = fallback(plan_review(_items(("chicken shawarma", "4 oz"),
                                        ("rice", "1 cup"), ("hummus", "2 tbsp"),
                                        ("pita", "half"))))
-    assert text.startswith(REVIEW_OPENER)
+    # The opener VARIES now — one fixed sentence read as a template the
+    # moment a user logged twice in a session. Still deterministic on the
+    # meal, so the assertion is membership rather than identity.
+    from core.food_response import _REVIEW_OPENERS
+    assert any(text.startswith(o) for o in _REVIEW_OPENERS), text
     assert "• 4oz of chicken shawarma" in text
     # "all" because a list was rendered — it asks about the set, not one item.
     assert text.endswith("Does that all look right?")

@@ -493,9 +493,14 @@ def test_scenario_a_review_reads_as_a_sentence_not_a_form():
     """Was: "Locking this in:" over a numbered bold list ending "Good to log,
     or anything to fix?" — three pieces of transaction vocabulary."""
     from core.food_turn import format_confirm
+    # The user's own words are passed, as production does — without them every
+    # amount reads as ours and gets the "(my estimate)" marker, which is a
+    # correct behaviour on a wrong input rather than a formatting bug.
     text = format_confirm([{"food": "toast", "amount": 1, "unit": "slice"},
                            {"food": "gooseberry jam", "amount": 1,
-                            "unit": "tbsp"}])
+                            "unit": "tbsp"}],
+                          user_message="1 slice of toast and 1 tbsp of "
+                                       "gooseberry jam")
     # Spoken rather than tabulated (Danny 2026-07-25).
     assert text == ("I'm reading that as one slice of toast and one "
                     "tablespoon of gooseberry jam. Does that look right?")
