@@ -99,6 +99,29 @@ FRACTION_FLOOR = 50.0
 #: trivia, since trivia fails the second while passing the first.
 DAY_FRACTIONS = {"quick": 0.02, "moderate": 0.01, "strict": 0.005}
 
+#: ...and a third gate, on the FOOD rather than on the uncertainty: can this
+#: item move the day at all?
+#:
+#: Replaying production found the two proportions above asking about honey (21
+#: cal), soy sauce (10), pickled turnips (10) and a hot-sauce drizzle (20) —
+#: a 27-41% rise in how often a user is interrupted, entirely condiments. Both
+#: gates are satisfied honestly: a ~24-calorie span really is most of a
+#: 21-calorie item, and really is ~1% of a day. Neither can tell that the ITEM
+#: is too small to matter however the uncertainty resolves.
+#:
+#: This is what the old flat 50-calorie floor was reaching for and could not
+#: express, because it tested the SPAN. Resolving a drizzle of honey perfectly
+#: changes nothing anyone would say; resolving how an egg was cooked can.
+#: Against a 2,165 target: honey is 1.0% of the day and excluded, an 80-calorie
+#: egg is 3.7% and reaches moderate and strict but not quick — which is the
+#: gradient the modes are for.
+#: Swept against production rather than chosen: at moderate 0.03 the gate cuts
+#: fries and strawberries, at 0.01 the condiments come back. 0.02 — about 43
+#: calories against a 2,165 target — holds the ask rate within a few percent of
+#: the behaviour users already have while excluding every condiment the replay
+#: flagged.
+MIN_ITEM_SHARE = {"quick": 0.035, "moderate": 0.02, "strict": 0.01}
+
 
 def _env(mode: str, key: str) -> Optional[float]:
     raw = os.getenv(f"NUTRITION_ASK_{mode.upper()}_{key.upper()}")
@@ -135,6 +158,14 @@ def fraction_for(mode: str) -> float:
     if override is not None:
         return override
     return MATERIAL_FRACTIONS.get(mode, MATERIAL_FRACTIONS["moderate"])
+
+
+def min_item_share_for(mode: str) -> float:
+    mode = (mode or "moderate").strip().lower()
+    override = _env(mode, "min_item_share")
+    if override is not None:
+        return override
+    return MIN_ITEM_SHARE.get(mode, MIN_ITEM_SHARE["moderate"])
 
 
 def day_fraction_for(mode: str) -> float:
@@ -230,10 +261,18 @@ def is_material(*, mode: str, calorie_span: Optional[float] = None,
             confidence=confidence)
         if of_day < day_fraction_for(mode):
             return False
-        # An item we cannot size cannot fail the second gate — the day
+        # An item we cannot size cannot fail the remaining gates — the day
         # proportion already cleared, and refusing on a missing denominator
         # would silently drop every uncertainty whose item has no calories yet.
-        return (not item_calories) or of_item >= fraction_for(mode)
+        if not item_calories:
+            return True
+        # CAN THIS FOOD MOVE THE DAY AT ALL? A condiment is wholly uncertain and
+        # still cannot, so resolving it buys nothing and costs an interruption.
+        day_target = float((targets or {}).get("calories") or 0)
+        if day_target > 0:
+            if float(item_calories) / day_target < min_item_share_for(mode):
+                return False
+        return of_item >= fraction_for(mode)
 
     limits = thresholds_for(mode)
     spans = (("calories", calorie_span), ("protein", protein_span),
