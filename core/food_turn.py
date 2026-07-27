@@ -420,6 +420,15 @@ _SYSTEM = (
     'changes."} Operation objects use the same fields as items/updates/deletes '
     'plus "op". Order them the way the user said them.\n'
     "RULES:\n"
+    "- THEIR REGULARS SUGGEST, THEY DO NOT STATE. If their words did not name "
+    "the flavour, the size or the amount, it is UNSTATED \u2014 even when their "
+    "regulars make one obvious. Write what they said (\"Barebells bar\"), set "
+    "basis:\"regular\", and report the gap in ambiguities. Do NOT promote a "
+    "remembered variant into the food name as though they had chosen it: "
+    "\"a barebell bar\" logged as \"Barebells Salty Peanut Protein Bar\" against "
+    "six saved flavours is us answering a question they were asked to "
+    "answer. When several of their regulars fit, that IS the ambiguity, and "
+    "their own flavours are the options.\n"
     "- BRANDED: set \"branded\":true when the food names a MANUFACTURER or a "
     "packaged product, IN ANY LANGUAGE \u2014 Philadelphia, Oreo, Danone, "
     "\u041f\u0440\u043e\u0441\u0442\u043e\u043a\u0432\u0430\u0448\u0438\u043d\u043e, \u041c\u0438\u0440\u0430\u0442\u043e\u0440\u0433, \u0427\u0443\u0434\u043e, Alpen Gold. This flag decides whether the "
@@ -814,8 +823,21 @@ def _item_is_stated(it: dict, message: str) -> bool:
     proxy (digits, spelled small counts, "half"). Unsure → False, which errs
     toward confirming — the safe direction on strict."""
     b = str(it.get("basis") or "").strip().lower()
-    if b in ("stated", "regular"):
+    if b == "stated":
         return True
+    # "regular" IS NOT "stated". It means WE supplied this from their regulars,
+    # which is the opposite of the user having said it — and this function asks
+    # exactly one question, in its own first line: is this the USER's own words?
+    #
+    # Counting it as stated made an inference indistinguishable from a fact the
+    # moment it left the interpreter, and every rule downstream that turns on
+    # something being UNSTATED went quiet with it. A shipped turn: "Gonna have
+    # a barebell bar" logged as "Barebells Salty Peanut Protein Bar" against a
+    # history holding six Barebells flavours, on STRICT — whose own rule says a
+    # branded product with an unstated flavour is always an ask. The flavour was
+    # unstated. It just did not look unstated by the time anything could ask.
+    if b == "regular":
+        return False
     if b == "estimate":
         return False
     amt = it.get("amount")
