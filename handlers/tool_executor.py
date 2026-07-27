@@ -1441,6 +1441,97 @@ async def _fetch_usda_off(food_name: str, is_packaged: bool):
     return await _aio.gather(_u(), _o())
 
 
+def _append_lane(inp, entry) -> None:
+    """Add one line to the receipt's lane list without dropping the others.
+
+    `stash` assigns, which is right for a key one call site owns and wrong for
+    a list two of them contribute to.
+    """
+    try:
+        from core.execution_result import CALL_CTX as _CTX
+        ctx = _CTX.get()
+        if ctx is None:
+            return
+        ctx["lanes"] = list(ctx.get("lanes") or ()) + [entry]
+    except Exception:
+        pass
+
+
+#: USDA rows for the component GENERICS, kept for the life of the process.
+#:
+#: Bounded by the recipe table, not by traffic — every dish in
+#: `composites` between them name about twenty generics, and "corn tortilla"
+#: is the same row for every user and every turn. Without this a burrito costs
+#: six USDA round trips each time it is logged, which is the reason a component
+#: estimate would otherwise be too expensive to leave switched on.
+_COMPONENT_ROWS: dict = {}
+
+
+async def _fetch_component_rows(queries: tuple) -> dict:
+    """`{query: usda_row_or_None}` for a recipe's parts, fetched CONCURRENTLY.
+
+    Uses the same `search_food` + `best_candidate` pair the main USDA lane
+    uses, so a component is held to exactly the match quality a whole food is —
+    including `best_candidate`'s weak-match gate, which is what keeps a bad row
+    for "salsa" out of a taco rather than letting it in because it was only a
+    garnish.
+
+    A miss is recorded as None rather than omitted: `composites.price` counts
+    unpriced mass, and it can only do that if it hears about the miss.
+    """
+    import asyncio as _aio
+    from api.usda import search_food
+    from core.food_intelligence import best_candidate
+
+    async def _one(query: str):
+        if query in _COMPONENT_ROWS:
+            return query, _COMPONENT_ROWS[query]
+        row = None
+        try:
+            cands = await search_food(query, page_size=8)
+            best, conf = best_candidate(query, cands)
+            if best:
+                row = dict(best)
+                row["_match"] = conf
+        except Exception as e:
+            logger.warning(f"component lookup failed for {query!r}: {e}")
+        _COMPONENT_ROWS[query] = row
+        return query, row
+
+    pairs = await _aio.gather(*(_one(q) for q in queries))
+    return dict(pairs)
+
+
+async def _component_estimate(food_name: str, *, is_packaged: bool,
+                              memory, usda, off, web):
+    """Price a composite dish from its parts, or None.
+
+    None whenever the dish is not one this system knows the build of, or when a
+    rung at or above `component_estimate` is already filled — the ladder is
+    asked that second question rather than this function guessing at it, so the
+    gate cannot drift away from the selection it is trying to save work for.
+    """
+    from skills.nutrition import authority as _auth
+    from skills.nutrition import composites as _comp
+
+    recipe = _comp.match_recipe(food_name)
+    if recipe is None:
+        return None
+    food_class = _auth.classify(food_name, is_packaged=is_packaged)
+    rung, _ = _auth.select(
+        _auth.candidate_map(food_class=food_class, memory_match=memory,
+                            usda_candidate=usda, off_candidate=off,
+                            web_candidate=web), food_class)
+    if not _auth.components_could_win(food_class, rung):
+        logger.info(
+            "event=component_estimate food=%r outcome=skipped held=%s",
+            food_name, rung or "-")
+        return None
+    from api.usda import MICRO_KEYS
+    rows = await _fetch_component_rows(_comp.component_queries(recipe))
+    return _comp.price(recipe, rows, micro_keys=MICRO_KEYS)
+
+
 async def _prewarm_enrichment(tool_calls: list) -> None:
     """Fan out the USDA+OFF lookups for every distinct branded/non-generic food in
     a multi-log batch, BEFORE the serial dispatch loop. The loop's _analyze_food
@@ -2043,10 +2134,49 @@ async def _analyze_food(db, user, food_name, inp):
             else "no food name to search" if not name_norm
             else "a generic food — USDA owns the answer"))])
 
+    # ── THE COMPOSITE LANE ───────────────────────────────────────────────────
+    #
+    # OUTSIDE the block above, and that placement is the point. That block is
+    # gated on `not generic`, so "a burger" and "a taco" — names every token of
+    # which is a category word — skip every lookup there is and go straight to
+    # the model's guess. Which is right for what that gate was built to do: a
+    # name that generic cannot be trusted to a USDA text match, because there
+    # is no particular row it means.
+    #
+    # But that is EXACTLY the case a component estimate answers. We do not need
+    # a row for "burger"; we need rows for a bun, a patty and a slice of
+    # cheese, and USDA has excellent rows for all three. The dishes the generic
+    # gate excludes are the dishes this lane exists for, so a lane placed
+    # inside it would have been dark for precisely the traffic it was built to
+    # serve — the same shape of defect as the food gate that shipped switched
+    # off (8997d92).
+    #
+    # A saved match still wins: `memory is not None` means the user's own
+    # history already answered, and `user_correction`/`usda_exact` outrank this
+    # rung anyway.
+    component = None
+    if memory is None and name_norm:
+        try:
+            component = await _component_estimate(
+                food_name, is_packaged=bool(is_packaged),
+                memory=memory, usda=usda, off=off, web=web)
+        except Exception as e:
+            # A composite falling back to the estimate it would have got
+            # anyway is not worth failing a log over.
+            logger.warning(f"component estimate skipped for {food_name!r}: {e}")
+        if component is not None:
+            # APPENDED, not stashed fresh. `stash` assigns — a second call
+            # under the same key silently drops what the earlier lanes
+            # recorded, and the receipt would lose the usda/off/web lines that
+            # exist to answer "did you even look?".
+            _append_lane(inp, ("components", "priced %d parts" % len(
+                component.get("component_breakdown") or ())))
+
     result = analyze(food_name, inp.get("quantity"), *llm,
                      usda_candidate=usda, memory_match=memory,
                      web_candidate=web, off_candidate=off,
-                     is_packaged=bool(is_packaged))
+                     is_packaged=bool(is_packaged),
+                     component_candidate=component)
 
     # ── WHO WON, AND WHAT WAS REFUSED ────────────────────────────────────────
     #
@@ -2167,11 +2297,12 @@ async def _analyze_food(db, user, food_name, inp):
                                                  resolve_from_live as _resolve_live)
             _turn = _res_turn() or ""
             _resolution = _resolve_live(food_name, inp, memory=memory,
-                                        usda=usda, off=off, web=web)
+                                        usda=usda, off=off, web=web,
+                                        component=component)
             if _promo.shadow_enabled():
                 _shadow_compare(food_name, inp, result, resolution=_resolution,
                                 memory=memory, usda=usda, off=off, web=web,
-                                turn_id=_turn)
+                                component=component, turn_id=_turn)
             result = _promo.promote(_resolution, food_name=food_name,
                                     quantity=inp.get("quantity") or "",
                                     legacy=result, user_id=user.id,

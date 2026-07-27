@@ -432,7 +432,8 @@ def _per_serving_for(quantity, src, food_name: str):
 def analyze(name, quantity, llm_cal, llm_protein, llm_carbs, llm_fat,
             usda_candidate=None, memory_match=None,
             web_candidate=None, off_candidate=None,
-            is_packaged=False, brand=None, restaurant=None) -> FoodAnalysis:
+            is_packaged=False, brand=None, restaurant=None,
+            component_candidate=None) -> FoodAnalysis:
     """
     Build a FoodAnalysis. Which source answers depends on WHAT THE FOOD IS —
     `skills.nutrition.authority` holds one ladder per food class and this
@@ -486,7 +487,7 @@ def analyze(name, quantity, llm_cal, llm_protein, llm_carbs, llm_fat,
     _cands = authority.candidate_map(
         food_class=food_class, memory_match=memory_match,
         usda_candidate=usda_candidate, off_candidate=off_candidate,
-        web_candidate=web_candidate)
+        web_candidate=web_candidate, component_candidate=component_candidate)
     rung, src = authority.select(_cands, food_class)
     # Nothing the ladder would seat. A candidate it refused — USDA against a
     # Starbucks sandwich, say — may still fill the nutrient panel; it just does
@@ -519,6 +520,15 @@ def analyze(name, quantity, llm_cal, llm_protein, llm_carbs, llm_fat,
             confidence = src.get("_match", "likely")
         elif src is off_candidate:
             source = "off"                      # Open Food Facts label data
+            confidence = src.get("_match", "likely")
+        elif src is component_candidate:
+            # Priced from its parts against USDA generics. Named separately
+            # because the `else` below reads as a scraped product label, and a
+            # component sum is neither scraped nor a label — the previous
+            # behaviour for anything unrecognised here was to call it
+            # `web_label`, which would have been the third source string in
+            # this file's history to describe numbers it did not produce.
+            source = "components"
             confidence = src.get("_match", "likely")
         else:
             source = "web_label"
@@ -761,8 +771,21 @@ def analyze(name, quantity, llm_cal, llm_protein, llm_carbs, llm_fat,
     # and a single `source` string had to pick one and be wrong about the other.
     if src is not None and not macros_from_source:
         source, confidence = "estimate", "estimated"
-        rung = "component_estimate" if food_class is authority.FoodClass.RESTAURANT \
-            else "estimate"
+        # AN ESTIMATE IS AN ESTIMATE, WHATEVER CLASS THE FOOD IS.
+        #
+        # This used to read `component_estimate` for any restaurant food that
+        # reached here, and that was the only way the rung was ever set. But
+        # reaching here means `select` seated NOTHING and the numbers are the
+        # model's own read — no decomposition happened, no component was
+        # priced, and the disclosure keyed off this rung says "Estimated from
+        # its components" about work nobody did. It was a name for a method,
+        # applied on the basis of the food's class rather than of anything
+        # having been done.
+        #
+        # `component_estimate` is now seated by `candidate_map` when a
+        # composite has actually been priced from its parts, so the honest
+        # label for this branch is the one that was always true of it.
+        rung = "estimate"
 
     # ── §9 SANITY, ON THE PATH THAT ACTUALLY COMMITS ────────────────────────
     #
@@ -824,12 +847,20 @@ def analyze(name, quantity, llm_cal, llm_protein, llm_carbs, llm_fat,
         except Exception:
             pass
     note = "; ".join(bits)
-    conf_note = {
-        "exact": "label exact match" if source == "web_label" else "USDA exact match",
-        "likely": "label match" if source == "web_label" else "USDA likely match",
-        "user-confirmed": "your usual (confirmed)",
-        "estimated": "estimate",
-    }.get(confidence, confidence)
+    # The note the MODEL reads, so it must not tell the model a component sum
+    # was a database match. Both existing branches assumed the answer came from
+    # a row someone published — "USDA likely match" was the default for
+    # anything that was not the web lane, which a priced decomposition is not
+    # either.
+    if source == "components":
+        conf_note = "estimated from its components"
+    else:
+        conf_note = {
+            "exact": "label exact match" if source == "web_label" else "USDA exact match",
+            "likely": "label match" if source == "web_label" else "USDA likely match",
+            "user-confirmed": "your usual (confirmed)",
+            "estimated": "estimate",
+        }.get(confidence, confidence)
 
     return FoodAnalysis(
         calories=round(cal), protein=round(protein, 1), carbs=round(carbs, 1),

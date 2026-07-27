@@ -58,12 +58,56 @@ def _from_per100g(source: str, tier: SourceTier, name: str, per100g: dict,
         serving_mass_g=serving_mass_g)
 
 
+def _from_components(food_name: str, component=None) -> Optional[Candidate]:
+    """The composite estimate, as a resolver candidate.
+
+    `SourceTier.ESTIMATED` is not a compromise here — read its own definition:
+    "deterministic components, or a model estimate of a composite/restaurant
+    item". The tier was written for this and had nothing to put in it.
+
+    The basis is `PerServing(as_served=True)` rather than `Per100g`, and that
+    matters: a composite arrives as "2 tacos", a COUNT with no mass, which
+    per-100g values cannot scale and would refuse. `as_served` is exactly the
+    flag `scaling` documents for the case where one helping genuinely is one
+    serving of the thing we priced — which is true by construction, because we
+    priced one taco.
+    """
+    if not component:
+        return None
+    serving = component.get("per_serving") or {}
+    if not serving.get("calories"):
+        return None
+    return Candidate(
+        source="components",
+        tier=SourceTier.ESTIMATED,
+        name=str(component.get("description") or food_name or ""),
+        profile=profile_from_values(
+            "components", basis="per_serving", confidence=0.6, estimated=True,
+            **{k: serving.get(k) for k in _NUTRIENTS}),
+        basis=PerServing(serving_mass_g=component.get("serving_mass_g"),
+                         as_served=True),
+        # CATEGORY, not CLOSE: the right food, built our way. Claiming CLOSE
+        # would let a sum of our own gram assumptions into DECISIVE_GRADES and
+        # win unremarked, which is the opposite of a rung whose entire contract
+        # is that it is disclosed.
+        reported_grade=MatchGrade.CATEGORY,
+        serving_text=str(component.get("serving_text") or ""),
+        serving_mass_g=component.get("serving_mass_g"))
+
+
 def candidates_from_live(food_name: str, inp: dict, *, memory=None, usda=None,
-                         off=None, web=None) -> list:
+                         off=None, web=None, component=None) -> list:
     """Re-express what the live path ALREADY fetched as resolver candidates.
 
     Nothing here reaches the network. Each live source keeps its own shape;
     this is the adapter, and the only place that knows those shapes.
+
+    `component` is included for the reason the others are: in `live` mode
+    promotion REPLACES the committed answer with the resolution's, so a
+    candidate the ladder seated but this adapter never heard of would be
+    silently discarded in production while every test of the ladder still
+    passed. The two paths have to be shown the same evidence or the one that
+    ships is the one nobody tested.
     """
     out = []
     # A remembered lookup is not a user confirmation. See memory_authority.
@@ -119,6 +163,10 @@ def candidates_from_live(food_name: str, inp: dict, *, memory=None, usda=None,
             reported_grade=(MatchGrade.CLOSE if branded
                             else MatchGrade.CATEGORY)))
 
+    comp = _from_components(food_name, component)
+    if comp is not None:
+        out.append(comp)
+
     if inp.get("calories"):
         tier = (SourceTier.USER_LABEL if inp.get("user_label")
                 else SourceTier.PROVISIONAL)
@@ -155,7 +203,8 @@ def live_request(food_name: str, inp: dict,
 
 
 def resolve_from_live(food_name: str, inp: dict, *, memory=None, usda=None,
-                      off=None, web=None, mode: str = "moderate"):
+                      off=None, web=None, component=None,
+                      mode: str = "moderate"):
     """Resolve using the candidates the live path already fetched.
 
     Split out from compare() so shadow logging and promotion share ONE
@@ -166,14 +215,15 @@ def resolve_from_live(food_name: str, inp: dict, *, memory=None, usda=None,
     try:
         return resolve(live_request(food_name, inp, mode),
                        candidates_from_live(food_name, inp, memory=memory,
-                                            usda=usda, off=off, web=web))
+                                            usda=usda, off=off, web=web,
+                                            component=component))
     except Exception as e:
         logger.warning(f"nutrition resolve skipped: {e}")
         return None
 
 
 def compare(food_name: str, inp: dict, legacy_result, *, resolution=None,
-            memory=None, usda=None, off=None, web=None,
+            memory=None, usda=None, off=None, web=None, component=None,
             mode: str = "moderate", turn_id: str = "") -> Optional[dict]:
     """Log the live answer against the resolver's. Returns the comparison (for
     tests) or None when not shadowing. NEVER raises, NEVER writes.
@@ -189,7 +239,8 @@ def compare(food_name: str, inp: dict, legacy_result, *, resolution=None,
         new = resolution
         if new is None:
             candidates = candidates_from_live(food_name, inp, memory=memory,
-                                              usda=usda, off=off, web=web)
+                                              usda=usda, off=off, web=web,
+                                              component=component)
             new = resolve(request, candidates)
 
         legacy_cal = getattr(legacy_result, "calories", None)

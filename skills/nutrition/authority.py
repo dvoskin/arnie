@@ -43,6 +43,16 @@ class FoodClass(str, Enum):
 #: The rungs are SOURCE KINDS, not the modules that produce them, so a new
 #: fetcher slots in by declaring what kind of evidence it carries rather than by
 #: being inserted at the right line of an if-chain.
+#:
+#: `component_estimate` is on BOTH the restaurant and the generic ladder, which
+#: looks redundant and is not. It was written as a restaurant rung because a
+#: chain's menu item is the obvious composite — but `classify` sends "two
+#: carnitas tacos" to GENERIC, not RESTAURANT: it names no chain and no brand,
+#: so nothing in the string makes it a restaurant food. Composites arrive on the
+#: generic ladder in practice, and a rung that only existed on the other one
+#: could not answer any of them. It sits BELOW `usda_exact` — a real published
+#: row beats a sum of our own assumptions — and ABOVE `portion_ontology`, whose
+#: category masses are a weaker guess than parts priced against USDA.
 LADDERS = {
     FoodClass.MANUFACTURED: (
         "barcode",            # exact barcode or user-entered label
@@ -58,6 +68,7 @@ LADDERS = {
         "user_correction",
         "user_label",
         "usda_exact",         # exact USDA / FoodData Central match
+        "component_estimate",  # priced from its parts, WITH a range
         "portion_ontology",   # category-specific portion ontology
         "estimate",           # disclosed
     ),
@@ -235,6 +246,7 @@ def candidate_map(
     usda_candidate: Optional[Mapping[str, Any]] = None,
     off_candidate: Optional[Mapping[str, Any]] = None,
     web_candidate: Optional[Mapping[str, Any]] = None,
+    component_candidate: Optional[Mapping[str, Any]] = None,
 ) -> dict:
     """Place each fetched candidate on the rung its evidence actually earns.
 
@@ -289,6 +301,22 @@ def candidate_map(
             out.setdefault("usda_generic", usda_candidate)
         # RESTAURANT: deliberately unplaced — see the docstring.
 
+    if component_candidate is not None and food_class in (
+            FoodClass.GENERIC, FoodClass.RESTAURANT):
+        # THE RUNG FINALLY HAS SOMETHING ON IT. `component_estimate` has been
+        # the last rung of the restaurant ladder since these were written and
+        # nothing was ever seated on it, so the only way to reach the name was
+        # `food_intelligence` relabelling an estimate the ladder had already
+        # refused. The rung named a method nobody had implemented and the
+        # disclosure under it — "Estimated from its components" — described
+        # work that had not happened.
+        #
+        # Not placed for MANUFACTURED: a named packaged product has a label,
+        # and decomposing one into generic parts would answer a question the
+        # label already answers better. That ladder's disclosed fallback is
+        # `usda_generic`, and it stays that.
+        out.setdefault("component_estimate", component_candidate)
+
     return out
 
 
@@ -307,6 +335,32 @@ def off_ladder(winner: Any, *fetched: Any) -> Optional[Any]:
         if per100.get("calories"):
             return candidate
     return None
+
+
+def components_could_win(food_class: FoodClass, rung: str) -> bool:
+    """Whether pricing this dish from its parts could still change the answer.
+
+    A COST gate, and deliberately asked of the ladder rather than re-derived at
+    the call site. Decomposing a dish is several more lookups than the one it
+    replaces, and paying for them behind a rung that already outranks
+    `component_estimate` buys nothing — the selection would discard the result.
+
+    Re-deriving the condition is how the branded lane once let an exact-looking
+    USDA text match block an official manufacturer label: two places computed
+    "do we need this lookup" and drifted. There is one ladder, so there is one
+    answer.
+    """
+    ladder = LADDERS.get(food_class, LADDERS[FoodClass.GENERIC])
+    if "component_estimate" not in ladder:
+        return False
+    if not rung:
+        return True
+    try:
+        return ladder.index(rung) > ladder.index("component_estimate")
+    except ValueError:
+        # A rung that is not on this ladder cannot have been selected from it,
+        # so it cannot be blocking anything.
+        return True
 
 
 def needs_branded_lookup(food_class: FoodClass, rung: str, *,
