@@ -389,12 +389,25 @@ _SYSTEM = (
     "Pick exactly one action:\n"
     '1. Not a report of food/drink they consumed -> {"action":"pass"}\n'
     '2. Consumed food, but a quantity or calorie-critical prep detail is genuinely '
-    'unclear -> {"action":"ask","points":[{"label":"Chicken","qs":["grilled, '
-    'baked, or fried?","skin on or off?","rough amount - oz or one breast?"]},'
-    '{"label":"Potato","qs":["baked, mashed, or fries?","any butter, cheese, '
-    'or sour cream?"]}],"ready":[{"food":"Bagel","amount":1,"unit":"bagel",'
+    'unclear -> {"action":"ask","items":[{"food":"Chicken","amount":6,'
+    '"unit":"oz","calories":280,"protein":52,"carbs":0,"fats":7}],'
+    '"ambiguities":[{"item":"Chicken","field":"prep","impact_cal":180}],'
+    '"points":[{"label":"Chicken","qs":["grilled, baked, or fried?","skin on '
+    'or off?","rough amount - oz or one breast?"]}],'
+    '"ready":[{"food":"Bagel","amount":1,"unit":"bagel",'
     '"calories":280,"protein":10,"carbs":55,"fats":2},{"food":"Greek yogurt",'
     '"amount":1,"unit":"cup","calories":130,"protein":22}]}\n'
+    "AN ASK IS A COMPLETE PARSE PLUS A PROPOSED QUESTION - never a question "
+    "instead of a parse. Note what that example does: the food it is ASKING "
+    "about still gets a full best-estimate row in `items`, and an entry in "
+    "`ambiguities` saying which field is shaky and what the answer would swing. "
+    "`ready` is the settled foods. So every food you heard carries a number "
+    "somewhere, always.\n"
+    "  This is not bookkeeping. The system weighs your reported spread against "
+    "the user's mode and targets, and it can only decide NOT to interrupt them "
+    "if you have already given it something to write. A question with no "
+    "estimate behind it removes that choice and forces the interruption - so "
+    "estimate first, then say what you would ask about and why it matters.\n"
     "READY CARRIES FULL ITEMS, exactly like `items` above — the foods you are "
     "NOT asking about are ready to be written now, and a bare name cannot be "
     "written. Give each one its amount and macros. Anything you ARE asking "
@@ -454,11 +467,27 @@ _SYSTEM = (
     "not beef' keeps the amount and re-estimates macros for the new identity, "
     "'that was yesterday' is an update carrying date. Never collapse an "
     "addition into a replace or a replace into an addition.\n"
-    "- AMBIGUITIES you chose to estimate through: when you log despite a "
-    'borderline unknown, report it as "ambiguities":[{"item":"Chicken",'
-    '"field":"quantity","impact_cal":250}] alongside the items (fields: '
-    "quantity, identity, brand, prep, consumed). The system owns the final "
-    "ask decision - report honestly, never round your doubt away.\n"
+    "- WHAT YOU DID NOT KNOW - ALWAYS, NOT ONLY WHEN YOU LOG. Every unknown "
+    "you resolved by judgement is reported as \"ambiguities\":[{\"item\":"
+    "\"<the item it concerns>\",\"field\":\"quantity\",\"impact_cal\":250}] "
+    "(fields: quantity, identity, brand, prep, consumed). This is the only "
+    "channel that exists for doubt. If you are proposing a question, then the "
+    "thing you want to ask about IS an unknown and belongs here too, with what "
+    "it is worth - an ask that reports nothing is a question the system cannot "
+    "weigh against anything.\n"
+    "  impact_cal is the SPREAD the answer would settle: the gap between the "
+    "plausible extremes, not your estimate. Judge it against the food it is "
+    "attached to, never against a fixed number - the same handful of calories "
+    "is noise on a large meal and most of a small one. Report it honestly and "
+    "never round your doubt away.\n"
+    "- YOU PROPOSE, THE SYSTEM DECIDES. \"action\" is your recommendation, not "
+    "the outcome. Whether an unknown is worth interrupting someone for depends "
+    "on their mode, their targets and the rest of their day - thresholds you "
+    "cannot see and must not guess at. So ALWAYS carry your best-estimate "
+    "\"items\" for everything you did understand, INCLUDING when you propose "
+    "asking: if the system judges the unknown too small to be worth a "
+    "question, it commits your estimate instead, and a proposal with no items "
+    "leaves it nothing to commit.\n"
     "- ANSWER-TURN follow-up: when their answer itself introduces a NEW "
     "material unknown (a new item, a new unstated portion), you may ask ONCE "
     'more - set "new_ambiguity":true on that ask. Never re-ask anything '
@@ -1139,6 +1168,62 @@ def acquisition_question(items: list) -> str:
     else:
         subject = f"all {len(names)} of those"
     return f"Did you eat {subject}, or is that for later?"
+
+
+def _proposed_ask_is_material(data, *, mode: str, user) -> bool:
+    """Whether the model's PROPOSED question survives the consequence engine.
+
+    The interpreter recommends; this decides. Until now it did neither — a
+    model `ask` returned before `plan_turn` was ever reached, so on every
+    clarification the app has ever sent, the staging, the calibrated spans, the
+    day-share and item-share dials and the user's own mode contributed exactly
+    nothing. Measured over production food traffic: 100% of ask turns carried
+    no scored consequence at all, and the ask rate was flat across modes
+    (quick 25%, moderate 21%, strict 23%) because mode only ever reached the
+    log path.
+
+    Same rule as every other question in the system — `is_material`, against
+    the user's targets, which do not move as the day fills. No food knowledge
+    lives here: what the unknown is and what it is worth are the model's
+    judgement, and whether that is worth interrupting someone for is ours.
+    """
+    from skills.nutrition.materiality import is_material
+
+    reported = [a for a in (data.get("ambiguities") or []) if isinstance(a, dict)]
+    if not reported:
+        # UNWEIGHABLE, WHICH IS NOT THE SAME AS IMMATERIAL. A proposal that
+        # reports no consequence gives us no grounds to say the question does
+        # not matter — so we keep it. Reading silence as "no doubt" commits a
+        # number nobody established: "3 pieces of chicken shish" is a spread of
+        # several hundred calories depending on whether a piece is a chunk or a
+        # whole skewer, and demoting that logs the parse instead of settling
+        # it. The demotion has to be EARNED by a reported spread that scores
+        # below the mode's bar, never granted by silence.
+        return True
+
+    targets = _daily_targets(user)
+    by_name = {}
+    for it in (data.get("items") or []) + (data.get("ready") or []):
+        if isinstance(it, dict):
+            nm = str(it.get("food") or it.get("food_name") or "").strip().lower()
+            if nm:
+                by_name[nm] = it
+
+    for a in reported:
+        try:
+            span = float(a.get("impact_cal") or 0)
+        except (TypeError, ValueError):
+            continue
+        item = by_name.get(str(a.get("item") or "").strip().lower()) or {}
+        cal = item.get("calories")
+        try:
+            cal = float(cal) if cal is not None else None
+        except (TypeError, ValueError):
+            cal = None
+        if is_material(mode=mode, calorie_span=span, item_calories=cal,
+                       targets=targets, confidence=None):
+            return True
+    return False
 
 
 def _daily_targets(user) -> Optional[dict]:
@@ -2204,6 +2289,20 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
     if not isinstance(data, dict):
         return None
     action = data.get("action")
+
+    if action == "ask" and not prior and not _proposed_ask_is_material(
+            data, mode=mode, user=user) and (data.get("items")
+                                             or data.get("ready")):
+        # PROPOSAL DECLINED. The model wanted to ask; nothing it reported is
+        # worth interrupting for at this mode. Commit its own best estimate
+        # instead — which the prompt now requires it to carry for exactly this
+        # case — and fall through to the ordinary log path below.
+        data = dict(data)
+        data["items"] = (data.get("items") or []) + [
+            i for i in (data.get("ready") or [])
+            if isinstance(i, dict) and i not in (data.get("items") or [])]
+        data["action"] = action = "log"
+        data.pop("points", None)
 
     if action == "ask" and not prior:
         # Through the ONE renderer, so the question is voiced rather than

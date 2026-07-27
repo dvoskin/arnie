@@ -57,6 +57,19 @@ DEFAULT_THRESHOLDS = {
 #: Quick is above 1.0 on purpose: it opts out, which is what quick is for.
 MATERIAL_FRACTIONS = {"quick": 1.01, "moderate": 0.3, "strict": 0.15}
 
+#: ...but proportion loses its veto once the unknown is simply BIG. The
+#: fraction rule asks "how much of this food is in doubt", which is the right
+#: question for trivia and the wrong one for substance: an unidentified plate
+#: carried at 500 calories with a 400-calorie spread is only 0.8 of its item
+#: and a full 18% of the day, so quick's deliberate opt-out (>1.0) swallowed it
+#: while still stopping to ask about a 10-calorie coffee whose spread happened
+#: to exceed it. Caught trivia, wrote substance — backwards.
+#:
+#: So: whatever the mode, an unknown worth this much of the day is worth a
+#: question. It only ever ADDS asks, and only for spans large in absolute
+#: terms, which is the one case where every mode agrees.
+DAY_SHARE_OVERRIDE = 0.125
+
 #: ...but not on trivia. A 100% span on a 12-calorie item is still 12 calories,
 #: and asking about it is how a clarification ladder loses its credibility.
 #:
@@ -268,10 +281,21 @@ def is_material(*, mode: str, calorie_span: Optional[float] = None,
             return True
         # CAN THIS FOOD MOVE THE DAY AT ALL? A condiment is wholly uncertain and
         # still cannot, so resolving it buys nothing and costs an interruption.
+        #
+        # Sized by the PLAUSIBLE CEILING, not by the estimate. The estimate is
+        # the very thing in doubt, so using it to decide whether the food can
+        # matter is circular: a coffee carried at 10 calories that might be a
+        # 160-calorie latte was ruled too small to ask about BECAUSE we had
+        # guessed it small. Whether a food can move the day is a question about
+        # how big it might be, not about how big we assumed it was.
         day_target = float((targets or {}).get("calories") or 0)
         if day_target > 0:
-            if float(item_calories) / day_target < min_item_share_for(mode):
+            ceiling = float(item_calories) + abs(float(calorie_span or 0.0))
+            if ceiling / day_target < min_item_share_for(mode):
                 return False
+        # Big in absolute terms — proportion does not get to veto it.
+        if of_day >= DAY_SHARE_OVERRIDE:
+            return True
         return of_item >= fraction_for(mode)
 
     limits = thresholds_for(mode)
