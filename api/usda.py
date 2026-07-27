@@ -101,6 +101,26 @@ def _extract_nutrients(food: dict) -> dict:
     return out
 
 
+#: Serving-size units that state a VOLUME. A set rather than a prefix test:
+#: "milligram" also starts with "m", and "mg" is not "ml".
+_ML_UNITS = frozenset({"ml", "mls", "milliliter", "millilitre",
+                       "milliliters", "millilitres"})
+
+#: What every row this client returns describes: 100 GRAMS of the food.
+#:
+#: True by construction for the curated types this client prefers — Foundation
+#: and SR Legacy ARE measured composition on a mass basis, so no row in either
+#: is anything else whatever unit its serving panel quotes — and it is what
+#: every consumer has always assumed of the Branded rows too.
+#:
+#: The value is that it is now SAID, once, by the code holding the record.
+#: Before this it was said nowhere: `candidates.usda_candidates` hardcoded
+#: `Per100g()` two layers down, so the basis could not be corrected without
+#: editing the layer whose job is ranking, and the gold set drifted to a
+#: different answer entirely because nothing connected the two.
+USDA_BASIS = "per_100g"
+
+
 async def _search(query: str, data_types: list[str], page_size: int) -> list[dict]:
     """One USDA search request restricted to the given data types."""
     try:
@@ -121,20 +141,33 @@ async def _search(query: str, data_types: list[str], page_size: int) -> list[dic
             # given a mass from the record that is answering. USDA's Branded
             # rows state both halves: servingSize/servingSizeUnit is the mass,
             # householdServingFullText is what the packet calls it.
+            #
+            # A serving stated in ml used to go on the FLOOR: the ternary below
+            # returned None for any unit that was not grams, and nothing else
+            # read the field. `PerServing` has carried a `serving_ml` the whole
+            # time and `scaling._factor` already divides ml by it, so a drink
+            # whose panel said "240 ml" was left unscalable by this line alone.
             _unit = str(f.get("servingSizeUnit") or "").strip().lower()
-            _mass = f.get("servingSize")
+            _size = f.get("servingSize")
+            _size = float(_size) if isinstance(_size, (int, float)) else None
             out.append({
                 "fdc_id": f.get("fdcId"),
                 "description": f.get("description", ""),
                 "brand": f.get("brandName") or f.get("brandOwner") or "",
                 "data_type": f.get("dataType", ""),
                 "per100g": per100,
+                # What these numbers describe, declared by the adapter holding
+                # the record rather than assumed by whoever consumes it. The
+                # gold set had drifted to `per_100ml` on six USDA cases — a
+                # basis the live adapter could not produce, on rows that are
+                # per 100 g — and the mislabel priced a tablespoon of olive oil
+                # at 131 calories against USDA's own 13.5 g/tbsp, which is 119.
+                "basis": USDA_BASIS,
                 "serving_text": str(
                     f.get("householdServingFullText") or "").strip(),
-                "serving_mass_g": (float(_mass)
-                                   if _unit in ("g", "gram", "grams")
-                                   and isinstance(_mass, (int, float))
+                "serving_mass_g": (_size if _unit in ("g", "gram", "grams")
                                    else None),
+                "serving_ml": (_size if _unit in _ML_UNITS else None),
             })
         return out
     except Exception as e:

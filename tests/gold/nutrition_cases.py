@@ -178,11 +178,18 @@ GENERIC_CASES = [
                        protein=13, carbs=67, fiber=10)],
          expect={"source": "usda", "calories": (150, 154)}),
 
+    # 884 cal/100 g through the oil density (0.92) puts a 14.8 ml tablespoon
+    # at 13.6 g and 120 calories. USDA's own portion table says 13.5 g/tbsp
+    # and the bottle says 120, so three independent readings agree.
+    #
+    # This expected (128, 134) until 2026-07-27, which is what you get by
+    # reading the row as per 100 ML — the basis this case used to declare, on
+    # a source that has never produced one. The band was the mislabel written
+    # down as the specification.
     case("olive-oil-tbsp", "generic",
          "olive oil", "1 tbsp",
-         candidates=[c("usda", GENERIC, "Oil, olive", basis="per_100ml",
-                       calories=884, fat=100)],
-         expect={"source": "usda", "calories": (128, 134)}),
+         candidates=[c("usda", GENERIC, "Oil, olive", calories=884, fat=100)],
+         expect={"source": "usda", "calories": (118, 122)}),
 ]
 
 # ── piece counts ──────────────────────────────────────────────────────────────
@@ -299,7 +306,7 @@ MICRO_CASES = [
     case("soy-sauce-is-allowed-to-be-salty", "micros",
          "soy sauce", "15ml",
          candidates=[
-             c("usda", GENERIC, "Soy sauce", basis="per_100ml", calories=53,
+             c("usda", GENERIC, "Soy sauce", calories=53,
                protein=8, sodium=5493)],
          expect={"source": "usda", "known": ["sodium"]}),
 
@@ -307,7 +314,7 @@ MICRO_CASES = [
          "chicken broth", "240ml",
          candidates=[
              c("usda", GENERIC, "Chicken bouillon, powder",
-               basis="per_100ml", calories=240, sodium=24000)],
+               calories=240, sodium=24000)],
          expect={"source": "unresolved", "rejects": ["usda"]}),
 
     case("missing-sodium-stays-missing", "micros",
@@ -638,17 +645,16 @@ MICRO_CASES_2 = [
 
     case("stock-concentrate-rejected", "micros", "beef broth", "240ml",
          candidates=[c("usda", GENERIC, "Beef stock concentrate",
-                       basis="per_100ml", calories=180, sodium=18000)],
+                       calories=180, sodium=18000)],
          expect={"source": "unresolved", "rejects": ["usda"]}),
 
     case("hot-sauce-is-a-condiment", "micros", "hot sauce", "15ml",
-         candidates=[c("usda", GENERIC, "Hot sauce", basis="per_100ml",
-                       calories=11, sodium=2643)],
+         candidates=[c("usda", GENERIC, "Hot sauce", calories=11, sodium=2643)],
          expect={"source": "usda", "known": ["sodium"]}),
 
     case("salad-dressing-is-a-condiment", "micros", "ranch dressing", "30ml",
-         candidates=[c("usda", GENERIC, "Ranch dressing", basis="per_100ml",
-                       calories=430, fat=45, sodium=1100)],
+         candidates=[c("usda", GENERIC, "Ranch dressing", calories=430,
+                       fat=45, sodium=1100)],
          expect={"source": "usda", "known": ["sodium"]}),
 
     case("impossible-protein-per-100g-rejected", "micros", "chicken breast",
@@ -1137,10 +1143,10 @@ AMBIGUITY_CASES = [
     case("quick-never-asks-about-a-clear-leader", "ambiguity",
          "milk", "240ml",
          candidates=[
-             c("usda", GENERIC, "Milk, 2%", basis="per_100ml", calories=50,
+             c("usda", GENERIC, "Milk, 2%", calories=50,
                protein=3.4),
-             c("usda", GENERIC, "Milk, whole", basis="per_100ml",
-               grade=MatchGrade.CATEGORY, calories=61, protein=3.2)],
+             c("usda", GENERIC, "Milk, whole", grade=MatchGrade.CATEGORY,
+               calories=61, protein=3.2)],
          expect={"asks": {"quick": False}}),
 
     case("a-small-protein-gap-on-a-small-scoop-stays-quiet", "ambiguity",
@@ -1200,7 +1206,7 @@ AMBIGUITY_CASES = [
     case("a-saved-regular-ends-the-ambiguity-too", "ambiguity",
          "my usual smoothie", "400ml",
          candidates=[
-             c("usda", GENERIC, "Smoothie, fruit", basis="per_100ml",
+             c("usda", GENERIC, "Smoothie, fruit",
                grade=MatchGrade.CATEGORY, calories=54, protein=1),
              c("user_regular", REGULAR, "my usual smoothie",
                basis="per_100ml", calories=70, protein=6)],
@@ -1293,11 +1299,11 @@ PORTION_CASES = [
     case("a-glass-of-juice-is-a-volume-not-a-mass", "portioning",
          "orange juice", "a glass",
          candidates=[c("usda", GENERIC, "Orange juice, raw",
-                       basis="per_100ml", calories=45, protein=0.7)],
-         # The glass gives a volume, and a per-100ml source needs exactly
-         # that. No density is claimed for juice, so no mass is asserted — and
-         # the glass's own size is disclosed as the assumption it is.
-         expect={"source": "usda", "calories": (111, 114),
+                       calories=45, protein=0.7)],
+         # The glass gives a volume; juice's 1.05 g/ml turns it into the mass
+         # a per-100g row needs, and BOTH assumptions are disclosed — the
+         # glass's size and the density. 250 ml is 262 g, so 118 calories.
+         expect={"source": "usda", "calories": (116, 120),
                  "assumption_contains": "glass estimated at 250ml"}),
 
     case("a-scoop-of-protein-powder", "portioning",
@@ -1431,11 +1437,18 @@ PORTION_CASES = [
 
     case("a-glass-of-milk-is-not-a-mass-of-milk", "portioning",
          "milk", "a glass",
-         candidates=[c("usda", GENERIC, "Milk, 2%", basis="per_100ml",
-                       calories=50, protein=3.4)],
-         # No density claimed for milk, and none needed: the source speaks in
-         # volume and so does the glass.
-         expect={"source": "usda", "calories": (123, 127),
+         candidates=[c("usda", GENERIC, "Milk, 2%", calories=50, protein=3.4)],
+         # A 250 ml glass at milk's 1.03 g/ml is 257 g, so 129 calories off a
+         # 50 cal/100 g row. USDA's own portion — 1 cup, 244 g, 122 cal —
+         # scales to the same place.
+         #
+         # This said "no density claimed for milk, and none needed: the source
+         # speaks in volume and so does the glass" and expected (123, 127).
+         # Neither half was true. The source is per 100 GRAMS, and the case
+         # only passed because it declared the row per 100 ml — which is also
+         # what hid the real state of the live path, where a glass of milk
+         # came back with the source seated and the calories NULL.
+         expect={"source": "usda", "calories": (127, 131),
                  "unknown": ["fiber", "sodium"]}),
 
     case("a-package-count-multiplies-cleanly", "portioning",
@@ -1699,10 +1712,10 @@ AMBIGUITY_CASES_2 = [
     case("coconut-milk-canned-versus-carton", "ambiguity",
          "coconut milk", "200ml",
          candidates=[
-             c("usda", GENERIC, "Coconut milk, canned", basis="per_100ml",
-               calories=197, protein=2, fat=21),
-             c("usda", GENERIC, "Coconut milk beverage", basis="per_100ml",
-               calories=31, protein=0.2, fat=3)],
+             c("usda", GENERIC, "Coconut milk, canned", calories=197,
+               protein=2, fat=21),
+             c("usda", GENERIC, "Coconut milk beverage", calories=31,
+               protein=0.2, fat=3)],
          expect={"asks": {"strict": True}}),
 
     case("two-dark-chocolate-strengths-agree-closely", "ambiguity",

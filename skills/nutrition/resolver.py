@@ -507,7 +507,8 @@ def _resolve(request: FoodResolutionRequest,
             variant=candidate.variant, source_id=candidate.source_id,
             reported_grade=candidate.reported_grade,
             serving_text=candidate.serving_text,
-            serving_mass_g=candidate.serving_mass_g))
+            serving_mass_g=candidate.serving_mass_g,
+            serving_ml=candidate.serving_ml))
 
     if not viable:
         return NutritionResolution(

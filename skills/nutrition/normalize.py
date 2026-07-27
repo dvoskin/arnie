@@ -445,11 +445,67 @@ def piece_weight(food_name: str, unit_text: str = "") -> Optional[tuple]:
 #: source's per-100g numbers unscaled — logged a teaspoon of sugar as 387
 #: calories. A stated density, disclosed as an assumption, is worse than a
 #: scale and far better than that.
+#:
+#: EVERY KEY HERE IS A SOLID OR A SEMI-SOLID, and that is not a coincidence:
+#: these are `portions.food_category` names, and that ontology exists to say
+#: what a HANDFUL or a CUP of a dry food weighs. `oats: 0.38` is the packing
+#: density of loose rolled oats in a measuring cup. It is the right number for
+#: the question that table was built to answer and the wrong one for a drink,
+#: which is why beverages are keyed separately below and consulted first.
 VOLUME_DENSITY_G_PER_ML = {
     "oil": 0.92, "syrup": 1.37, "sauce": 1.03, "yogurt": 1.03,
     "nut_butter": 0.95, "sugar": 0.85, "soup": 1.0, "rice": 0.67,
     "pasta": 0.59, "oats": 0.38, "cereal": 0.13, "berries": 0.63,
     "ice_cream": 0.55, "protein_powder": 0.45, "salad": 0.25,
+}
+
+
+#: Density in g/ml for DRINKS, keyed by name fragment rather than by portion
+#: category. Longest fragment wins, and this is consulted BEFORE the category
+#: table.
+#:
+#: Two failures made it necessary, and they are the same failure — a drink
+#: being asked what a dry solid weighs:
+#:
+#:   • A drink with no category got no density, so a volume portion stayed a
+#:     volume and a per-100g source could not be scaled at all. "240ml of
+#:     milk" against USDA's own milk row resolved with the source seated and
+#:     the CALORIES NULL. Not a refusal anyone could see — a glass of milk
+#:     that logged as a glass of nothing. Milk, juice, broth, soda, coffee and
+#:     every smoothie were in that state.
+#:   • A drink that DID match a category borrowed a solid's packing density.
+#:     `food_category("oat milk")` is `oats`, so 240 ml of oat milk weighed
+#:     91 g and logged at 41 calories against a true ~110. The word "oat" was
+#:     doing all the work and the word "milk" none.
+#:
+#: The values sit close to water because drinks are mostly water; what moves
+#: them is dissolved sugar (juice, soda) and fat (cream, canned coconut milk).
+#: They are stated to two decimals because that is the honest precision — a
+#: density is an assumption, disclosed as one, and `_volume` says so on the
+#: card.
+BEVERAGE_DENSITY_G_PER_ML = {
+    # water-like
+    "water": 1.00, "sparkling water": 1.00, "seltzer": 1.00,
+    "coffee": 1.00, "espresso": 1.02, "americano": 1.00, "tea": 1.00,
+    "broth": 1.00, "stock": 1.00, "bone broth": 1.01, "consomme": 1.00,
+    # dairy and the plant milks that stand in for it
+    "milk": 1.03, "whole milk": 1.03, "skim milk": 1.03, "buttermilk": 1.03,
+    "kefir": 1.03, "half and half": 1.02, "cream": 1.00, "heavy cream": 0.99,
+    "oat milk": 1.03, "almond milk": 1.02, "soy milk": 1.03,
+    "cashew milk": 1.02, "rice milk": 1.02, "coconut milk beverage": 1.02,
+    "coconut milk": 0.98,        # canned/full-fat: fat drops it below water
+    "coconut water": 1.01,
+    "latte": 1.02, "cappuccino": 1.01, "macchiato": 1.02, "mocha": 1.04,
+    "hot chocolate": 1.04, "chocolate milk": 1.05,
+    # sugar carries the rest
+    "juice": 1.05, "orange juice": 1.05, "apple juice": 1.05,
+    "lemonade": 1.04, "soda": 1.04, "cola": 1.04, "soft drink": 1.04,
+    "diet soda": 1.00, "sports drink": 1.03, "energy drink": 1.04,
+    "kombucha": 1.01, "smoothie": 1.04, "milkshake": 1.09,
+    "protein shake": 1.04, "shake": 1.04,
+    # alcohol is lighter than water; sugar in the mixer pulls it back
+    "beer": 1.01, "wine": 0.99, "cider": 1.01, "cocktail": 1.00,
+    "liquor": 0.94, "vodka": 0.94, "whiskey": 0.94, "spirits": 0.94,
 }
 
 
@@ -494,9 +550,40 @@ def vessel_volume(unit_text: str) -> Optional[tuple]:
     return None
 
 
+def beverage_density(food_name: str) -> Optional[tuple]:
+    """(density, drink) for a named drink, or None.
+
+    Longest fragment wins, for the same reason it does in `food_category`:
+    "coconut milk beverage" is a carton at 1.02 and "coconut milk" is a tin at
+    0.98, and a shorter match would answer for both. It is also what keeps
+    "oat milk" from being read as "milk" — though the failure that made this
+    function necessary was the other direction, `oats` at 0.38.
+    """
+    try:
+        from skills.nutrition.portions import _stem_matches
+    except Exception:
+        return None
+    name = (food_name or "").lower()
+    best, best_len = None, 0
+    for fragment, density in BEVERAGE_DENSITY_G_PER_ML.items():
+        if len(fragment) > best_len and _stem_matches(name, fragment):
+            best, best_len = (density, fragment), len(fragment)
+    return best
+
+
 def volume_to_grams(milliliters: float, food_name: str) -> Optional[tuple]:
-    """(grams, density, category) for this food, or None when we have no
-    density for it. None means the volume stays a volume."""
+    """(grams, density, what_it_matched) for this food, or None when we have no
+    density for it. None means the volume stays a volume.
+
+    Drinks are asked first. The portion ontology underneath is a table of what
+    a cup of a DRY food weighs, so letting it answer for a beverage is how a
+    glass of oat milk came to weigh what the same volume of loose rolled oats
+    does.
+    """
+    drink = beverage_density(food_name)
+    if drink is not None:
+        density, matched = drink
+        return round(milliliters * density, 1), density, matched
     try:
         from skills.nutrition.portions import food_category
     except Exception:

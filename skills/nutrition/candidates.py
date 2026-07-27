@@ -23,7 +23,8 @@ from skills.nutrition.models import (FoodResolutionRequest, NutrientProfile,
                                      profile_from_values)
 from skills.nutrition.provenance import (MatchGrade, SourceTier,
                                          memory_authority)
-from skills.nutrition.scaling import Per100g, PerServing, PerUnit, SourceBasis
+from skills.nutrition.scaling import (Per100g, PerServing, PerUnit, SourceBasis,
+                                      basis_from_spec)
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +51,11 @@ class Candidate:
     #: how much one piece of THIS product weighs.
     serving_text: str = ""
     serving_mass_g: Optional[float] = None
+    #: The same panel when it states a VOLUME instead — "240 ml", "1 bottle
+    #: (500 ml)". A drink's panel routinely says only this, and the USDA
+    #: adapter used to drop it on the floor because the field it wrote into
+    #: took grams. Beside the mass, not instead of it: a record can state both.
+    serving_ml: Optional[float] = None
 
     @property
     def calories(self) -> Optional[float]:
@@ -122,27 +128,39 @@ def regular_candidate(row, request: FoodResolutionRequest) -> Optional[Candidate
 
 def usda_candidates(rows) -> list:
     """Generic-food authority. Tier is GENERIC_EXACT; whether it deserves that
-    grade for THIS request is the resolver's call, not USDA's."""
+    grade for THIS request is the resolver's call, not USDA's.
+
+    The basis comes from the ROW. It used to be `Per100g()`, written here as a
+    constant, which meant this module was answering a question about a record
+    it had never seen — and there was nowhere else the answer was written down.
+    The gold set answered it differently: six USDA cases declared `per_100ml`,
+    a basis this function could not emit, and the mislabel priced a tablespoon
+    of olive oil at 131 calories where USDA's own portion table (13.5 g/tbsp on
+    an 884 cal/100 g row) says 119. Two answers, no seam between them. Now the
+    adapter that holds the record states it and this reads what it said.
+    """
     out = []
     for row in (rows or [])[:8]:
         per100 = (row or {}).get("per100g") or {}
         if not per100.get("calories"):
             continue
+        declared = str(row.get("basis") or "per_100g")
         out.append(Candidate(
             source="usda", tier=SourceTier.GENERIC_EXACT,
             name=str(row.get("description") or ""),
             profile=profile_from_values(
-                "usda", basis="per_100g", confidence=0.8,
+                "usda", basis=declared, confidence=0.8,
                 source_id=str(row.get("fdc_id") or "") or None,
                 **{k: per100.get(k) for k in
                    ("calories", "protein", "carbs", "fat", "fiber", "sugar",
                     "sodium")}),
-            basis=Per100g(),
+            basis=basis_from_spec(declared),
             brand=str(row.get("brand") or "") or None,
             source_id=str(row.get("fdc_id") or "") or None,
             reported_grade=MatchGrade.CATEGORY,
             serving_text=str(row.get("serving_text") or ""),
-            serving_mass_g=row.get("serving_mass_g")))
+            serving_mass_g=row.get("serving_mass_g"),
+            serving_ml=row.get("serving_ml")))
     return out
 
 
