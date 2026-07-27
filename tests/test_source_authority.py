@@ -47,12 +47,22 @@ def test_a_menu_item_does_not_go_down_the_manufactured_ladder():
 
 
 def test_the_brand_the_interpreter_supplied_is_decisive():
-    """`names_a_product` reads caps, possessives and marks — it catches
-    "Thomas'" and misses "Philadelphia". A heuristic miss must not be able to
-    demote a product the interpreter already named."""
-    assert classify("Philadelphia scallion cream cheese") is FoodClass.GENERIC
-    assert classify("Philadelphia scallion cream cheese",
-                    brand="Philadelphia") is FoodClass.MANUFACTURED
+    """A heuristic miss must not be able to demote a product the interpreter
+    already named.
+
+    The shape rules read caps, possessives, ampersands and marks, so a brand
+    that is an ordinary Title Case word is invisible to them. That used to be
+    asserted here with Philadelphia, and the cost showed up in a shipped turn:
+    classified GENERIC, its exact Open Food Facts label was fetched and then
+    had nowhere to be seated, and 2 tbsp logged at 70 calories against a label
+    that gives 50. `branded.GROCERY_BRANDS` now carries those names, so the
+    example moved to a brand no lexicon knows.
+    """
+    assert classify("Zylanto seed crackers") is FoodClass.GENERIC
+    assert classify("Zylanto seed crackers",
+                    brand="Zylanto") is FoodClass.MANUFACTURED
+    # And the case that motivated the lexicon: caught without any hint.
+    assert classify("Philadelphia scallion cream cheese") is FoodClass.MANUFACTURED
 
 
 # ── §8: selection is by ladder, not by a fixed source order ───────────────────
