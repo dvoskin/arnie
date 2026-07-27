@@ -213,12 +213,45 @@ def _exercise_step(inp: dict, result: str) -> dict:
     return _step("figure.strengthtraining.traditional", f"Logged {name}{scheme}")
 
 
+def _correction_step(inp: dict, result: str):
+    """What a correction actually changed — read from the call, not asserted.
+
+    This was the fixed string "Macros rescaled to the new serving", returned
+    whatever the user corrected. On a turn that changed the PRODUCT ("it was
+    actually a filled Twizzler") the entry was re-identified and re-looked-up,
+    and the receipt explained it as a rescale. A made-up reason on the one turn
+    where the user is checking our work is worse than no reason.
+
+    When the correction re-resolved the food, the full lookup trace is rendered
+    the way a fresh log's is — the executor now carries the sourcing across.
+    """
+    inp = inp or {}
+    renamed = str(inp.get("_reresolved") or "").strip()
+    if renamed and inp.get("_sourcing"):
+        # An update carries entry_id and the changed fields, not `food_name` —
+        # so the shared trace builder would render "Searched for food". The
+        # resolved name is what it searched for; give it that.
+        steps = _food_detailed({**inp, "food_name": renamed}, result or "")
+        head = _step("pencil", f"Re-identified as {renamed}",
+                     "Looked it up again from scratch")
+        return [head] + steps
+    if renamed:
+        return _step("pencil", f"Re-identified as {renamed}")
+    if any(k in inp for k in ("amount", "quantity", "unit")):
+        return _step("pencil", "Corrected the serving",
+                     "Macros rescaled to the new amount")
+    if any(k in inp for k in ("calories", "protein", "carbs", "fats")):
+        return _step("pencil", "Corrected the macros", "Used the numbers you gave")
+    if inp.get("date"):
+        return _step("calendar", "Moved the entry to another day")
+    return _step("pencil", "Corrected a logged food")
+
+
 _TOOL_STEPS = {
     "log_water": lambda i, r: _step("drop", "Logged water"),
     "log_body_weight": lambda i, r: _step(
         "scalemass", f"Logged weigh-in — {i.get('weight')} {i.get('unit', '')}".strip()),
-    "update_food_entry": lambda i, r: _step("pencil", "Corrected a logged food",
-                                            "Macros rescaled to the new serving"),
+    "update_food_entry": lambda i, r: _correction_step(i, r),
     "update_exercise_entry": lambda i, r: _step("pencil", "Corrected a logged set"),
     "delete_food_entry": lambda i, r: _step("minus.circle", "Removed a food entry"),
     "delete_exercise_entry": lambda i, r: _step("minus.circle", "Removed a set"),
@@ -320,7 +353,10 @@ def build_reasoning(tool_calls: list, tool_results: dict,
         elif name == "log_exercise":
             steps.append(_exercise_step(inp, result))
         elif name in _TOOL_STEPS:
-            steps.append(_TOOL_STEPS[name](inp, result))
+            # A correction that re-resolved renders a full trace, so an entry
+            # may return several steps rather than one.
+            _made = _TOOL_STEPS[name](inp, result)
+            steps.extend(_made if isinstance(_made, list) else [_made])
         # unmapped/silent tools: no step — the receipt only shows what it
         # can state truthfully and readably.
 

@@ -3523,6 +3523,15 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
                 _re_inp = {"food_name": _new_name, "quantity": _qty,
                            "is_packaged": bool(_looks_branded(_new_name))}
                 _re = await _analyze_food(db, user, _new_name, _re_inp)
+                # KEEP THE EVIDENCE. `_analyze_food` stashes the lookup trace on
+                # the dict it was handed, and that dict is a local built for the
+                # re-resolution — so a correction ran the whole ladder and threw
+                # away every record of it, leaving the receipt to say "Macros
+                # rescaled to the new serving" about a turn that re-identified
+                # the product and looked it up again.
+                if isinstance(_re_inp.get("_sourcing"), dict):
+                    inp["_sourcing"] = _re_inp["_sourcing"]
+                    inp["_reresolved"] = _new_name
                 if _re is not None and _re.calories:
                     changes["calories"] = _re.calories
                     changes["protein"] = _re.protein
