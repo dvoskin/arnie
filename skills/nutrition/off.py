@@ -359,3 +359,65 @@ async def search(name: str, page_size: int = 8) -> Optional[dict]:
         "per_serving": _per_serving(p.get("nutriments") or {}),
         "source": "off",
     }
+
+async def search_variants(name: str, limit: int = 5) -> list:
+    """The product's SIBLINGS — the other variants the same search returned.
+
+    `search()` fetches a page and returns the single best match, discarding the
+    rest. For a brand whose flavours differ, those discards are the answer to
+    "which one was it?": they are the real options, with real numbers, instead
+    of a plausible-sounding pair the model invented.
+
+    They also make the doubt MEASURABLE. Barebells across its line runs 353-395
+    cal/100g but 29-37 g protein — so the variant question is material because
+    of protein, not calories, and only a spread computed from the actual
+    candidates can know that. An estimated span cannot.
+
+    Deduped on name, best first, never raises. Returns [] when the lane is off
+    or nothing came back — the caller then asks whatever it would have asked.
+    """
+    if not off_enabled() or not (name or "").strip():
+        return []
+    try:
+        products = await _search_legacy(name, max(limit * 2, 8))
+    except Exception:
+        products = None
+    out, seen = [], set()
+    for product in (products or []):
+        label = (product.get("product_name") or "").strip()
+        key = label.lower()
+        if not label or key in seen:
+            continue
+        nutriments = product.get("nutriments") or {}
+        calories = nutriments.get("energy-kcal_100g")
+        if not calories:
+            continue
+        seen.add(key)
+        out.append({
+            "name": label,
+            "brand": (product.get("brands") or "").split(",")[0].strip(),
+            "per100g": {
+                "calories": calories,
+                "protein": nutriments.get("proteins_100g"),
+                "carbs": nutriments.get("carbohydrates_100g"),
+                "fat": nutriments.get("fat_100g"),
+            },
+        })
+        if len(out) >= limit:
+            break
+    return out
+
+
+def variant_spread(variants: list) -> dict:
+    """`{nutrient: span}` across the variants — what choosing wrong would cost.
+
+    Per nutrient, because the deciding one is not always calories, and the
+    materiality scorer reads whichever is worst against its own target.
+    """
+    spread = {}
+    for key in ("calories", "protein", "carbs", "fat"):
+        values = [float(v["per100g"][key]) for v in (variants or [])
+                  if (v.get("per100g") or {}).get(key) is not None]
+        if len(values) >= 2:
+            spread[key] = round(max(values) - min(values), 1)
+    return spread

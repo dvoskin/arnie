@@ -1176,6 +1176,51 @@ def ready_items(ready) -> list:
     return out
 
 
+def _looks_like_brand(label: str) -> bool:
+    """Cheap check for the ask path, which has the point LABEL and not the item.
+
+    The interpreter's `branded` flag is the authority and is consulted first;
+    this only decides whether a variant lookup is worth one bounded request.
+    """
+    try:
+        from skills.nutrition.branded import names_a_product
+        return bool(names_a_product(label or ""))
+    except Exception:
+        return False
+
+
+async def _variant_options(label: str, branded: bool) -> tuple:
+    """The real variants of a branded product, as answer options.
+
+    The composer offers a choice either way — it will say "the protein one or
+    the plant-based" from world knowledge alone. This makes the choice the
+    ACTUAL shelf: the flavours Open Food Facts holds, with their own numbers,
+    so the option the user taps resolves to a real product instead of a
+    plausible-sounding label nothing can look up.
+
+    Bounded and optional by construction: read-only, capped by the turn's
+    deadline, and every failure returns () — a clarification that loses its
+    option list still asks its question.
+    """
+    if not branded or not (label or "").strip():
+        return ()
+    try:
+        from core import deadline
+        from skills.nutrition.off import search_variants
+        variants = await deadline.wait_for(search_variants(label, limit=4))
+    except Exception as e:
+        logger.debug(f"variant options unavailable for {label!r}: {e}")
+        return ()
+    seen, out = set(), []
+    for v in variants or []:
+        name = (v.get("name") or "").strip()
+        key = name.lower()
+        if name and key not in seen:
+            seen.add(key)
+            out.append(name)
+    return tuple(out[:4])
+
+
 def _calls_for_ready(ready) -> list:
     """Write calls for the foods an ask is NOT asking about.
 
@@ -2113,6 +2158,19 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
         _plan = clarify_plan_from_points(data.get("points") or [],
                                          data.get("ready"),
                                          user_message=message)
+        # REAL VARIANTS AS THE OPTIONS, when the thing being asked about is a
+        # branded product. `build_prompt` already passes `clarification_options`
+        # to the composer; they were simply never populated on this path.
+        if _plan is not None and not _plan.clarification_options:
+            _pts = data.get("points") or []
+            _first = (_pts[0].get("label") if _pts and isinstance(_pts[0], dict)
+                      else "") or ""
+            _branded = any(bool(i.get("branded")) for i in (data.get("items") or [])
+                           if isinstance(i, dict)) or _looks_like_brand(_first)
+            _opts = await _variant_options(_first, _branded)
+            if _opts:
+                import dataclasses as _dc
+                _plan = _dc.replace(_plan, clarification_options=_opts)
         text = (await _render(_ctx(_plan, user=user, day_state=day_line))
                 if _plan is not None else "")
         # THE READY FOODS GO ON THE BOARD. The recap has always named them as
