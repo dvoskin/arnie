@@ -122,7 +122,9 @@ def stage_items(data: Mapping, *, turn_id: str, message: str = "",
             food_class=classify_food(food, brand,
                                      bool(raw.get("is_packaged"))),
             identity=FoodIdentity(canonical_name=food, brand=brand),
-            quantity=quantity, meal_group_id=meal_group_id))
+            quantity=quantity, meal_group_id=meal_group_id,
+            # Read from THIS message, which is the only one that has it.
+            vague_measure=(_vague_measure_in(message, food) or "")))
     return tuple(items), meal_group_id
 
 
@@ -250,7 +252,8 @@ def _match_item(amb: Mapping, items):
 # ── the decision ──────────────────────────────────────────────────────────────
 def plan_turn(data: Mapping, *, turn_id: str, message: str = "",
               mode: str = "moderate", round_number: int = 0,
-              preferences=None, now: Optional[datetime] = None
+              preferences=None, now: Optional[datetime] = None,
+              targets: Optional[Mapping] = None
               ) -> Optional[FoodTurnDecision]:
     """The whole pre-execution decision. Returns None on any failure, so the
     caller keeps its existing behaviour rather than losing the turn."""
@@ -279,7 +282,7 @@ def plan_turn(data: Mapping, *, turn_id: str, message: str = "",
             # Inside the CLARIFY stage because deriving an ambiguity IS
             # clarification work, and its cost belongs in that stage's timing.
             items = derive_vague_quantities(items, data, message=message,
-                                            mode=mode)
+                                            mode=mode, targets=targets)
             items = apply_preferences(items, preferences, now=now, mode=mode)
             decision = decide(list(items), mode=mode,
                               round_number=round_number)
@@ -503,7 +506,8 @@ def _vague_measure_in(message: str, food: str) -> Optional[str]:
 
 
 def derive_vague_quantities(items, data: Mapping, *, message: str,
-                            mode: str) -> tuple:
+                            mode: str, targets: Optional[Mapping] = None
+                            ) -> tuple:
     """Add an ambiguity where the USER was vague and the interpreter was not.
 
     The failure this exists for, from a shipped transcript: the user said "a
@@ -539,9 +543,14 @@ def derive_vague_quantities(items, data: Mapping, *, message: str,
 
     out = []
     for item in items or ():
-        measure = _vague_measure_in(message, item.original_text)
+        # THE ITEM REMEMBERS, the message does not. Recorded when the item was
+        # staged, so a meal clarified over several turns keeps the vagueness of
+        # every food — not just the ones the latest message happens to name.
+        # Falls back to re-derivation for items staged before this was carried.
+        measure = (getattr(item, "vague_measure", "")
+                   or _vague_measure_in(message, item.original_text))
         # A stated amount is the user's own number and is never second-guessed.
-        if measure is None or item.quantity.is_stated:
+        if not measure or item.quantity.is_stated:
             out.append(item)
             continue
         # An ambiguity the interpreter already reported for this field wins —
@@ -587,6 +596,8 @@ def derive_vague_quantities(items, data: Mapping, *, message: str,
                 ambiguity_type=AmbiguityType.CONSUMED_QUANTITY,
                 field_name="consumed_fraction", mode=mode,
                 calorie_span=span, item_calories=calories, options=options,
+                targets=dict(targets) if targets else None,
+                confidence=getattr(distribution, "confidence", None),
                 prompt=_vague_prompt(item.original_text, measure,
                                      _measure_options(measure, distribution),
                                      sole_estimate=_sole_estimate))]))

@@ -262,6 +262,17 @@ class StagedFoodItem:
     food_class: FoodClass = FoodClass.UNKNOWN
     identity: FoodIdentity = field(default_factory=FoodIdentity)
     quantity: QuantityIntent = field(default_factory=QuantityIntent)
+    #: The vague measure the USER used for this food — "some", "a bit", "a
+    #: handful" — recorded when the item was staged, because that is the only
+    #: turn whose message contains it.
+    #:
+    #: This is the docstring's own rule applied to vagueness. Re-deriving it
+    #: from whatever message is current means a meal clarified over two turns
+    #: loses it for every food the second message does not happen to name: the
+    #: word was in the first message, the item now carries a resolved name that
+    #: never appeared there, and the uncertainty silently becomes a confident
+    #: estimate at exactly the moment it commits.
+    vague_measure: str = ""
     preparation: PreparationIntent = field(default_factory=PreparationIntent)
     candidate_products: tuple = ()
     ambiguities: tuple = ()

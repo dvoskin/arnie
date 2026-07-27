@@ -101,7 +101,8 @@ class FoodAmbiguity:
 #: interpreter's own prompt. The engine asking the questions and the model
 #: deciding what to report were working to different definitions.
 from skills.nutrition.materiality import (  # noqa: E402
-    DEFAULT_THRESHOLDS, FRACTION_FLOOR, fraction_for, thresholds_for)
+    DEFAULT_THRESHOLDS, FRACTION_FLOOR, consequence, day_fraction_for,
+    fraction_for, thresholds_for)
 
 
 def materiality(*, mode: str, calorie_span: Optional[float] = None,
@@ -110,7 +111,9 @@ def materiality(*, mode: str, calorie_span: Optional[float] = None,
                 fat_span: Optional[float] = None,
                 identity_risk: float = 0.0,
                 serving_basis_risk: float = 0.0,
-                item_calories: Optional[float] = None) -> float:
+                item_calories: Optional[float] = None,
+                targets: Optional[dict] = None,
+                confidence: Optional[float] = None) -> float:
     """How much this ambiguity matters, normalized so 1.0 is the mode's line.
 
     The MAX across axes, not the sum: an ambiguity that is 3× over on protein
@@ -122,6 +125,22 @@ def materiality(*, mode: str, calorie_span: Optional[float] = None,
     wrong is a different kind of error from getting the portion slightly wrong,
     and it stays material even when the calorie difference is small.
     """
+    # WITH TARGETS, the two proportions decide — see materiality.DAY_FRACTIONS.
+    # Normalised the same way as everything below: each proportion over its own
+    # dial, and the MINIMUM of the two, because both have to clear. Identity and
+    # serving-basis risk still enter directly; they are not measured in grams
+    # and a proportion of a day says nothing about them.
+    if targets:
+        of_day, of_item = consequence(
+            spans={"calories": calorie_span, "protein": protein_span,
+                   "carbs": carb_span, "fat": fat_span},
+            targets=targets, item_calories=item_calories,
+            confidence=confidence)
+        gate = of_day / max(day_fraction_for(mode), 1e-9)
+        if item_calories:
+            gate = min(gate, of_item / max(fraction_for(mode), 1e-9))
+        return round(max(gate, identity_risk, serving_basis_risk), 3)
+
     t = thresholds_for(mode)
     scores = [identity_risk, serving_basis_risk]
     for span, key in ((calorie_span, "calories"), (protein_span, "protein"),
@@ -167,6 +186,7 @@ def build_ambiguity(*, staged_item_id: str, ambiguity_type: AmbiguityType,
                     fat_span=None, identity_risk: float = 0.0,
                     serving_basis_risk: float = 0.0,
                     item_calories=None,
+                    targets=None, confidence: Optional[float] = None,
                     prompt: str = "") -> FoodAmbiguity:
     """Construct an ambiguity with its materiality already scored, so nothing
     downstream has to know the thresholds."""
@@ -175,7 +195,8 @@ def build_ambiguity(*, staged_item_id: str, ambiguity_type: AmbiguityType,
                         protein_span=protein_span, carb_span=carb_span,
                         fat_span=fat_span, identity_risk=identity_risk,
                         serving_basis_risk=serving_basis_risk,
-                        item_calories=item_calories)
+                        item_calories=item_calories,
+                        targets=targets, confidence=confidence)
     # Confidence in the LEADING option: a 0.9/0.05/0.05 split is barely
     # ambiguous, while 0.35/0.33/0.32 is a coin toss wearing three hats.
     top = max((o.confidence for o in options), default=0.0)

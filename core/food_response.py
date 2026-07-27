@@ -507,6 +507,20 @@ class FoodResponsePlan:
     # Clarification.
     clarification_question: Optional[str] = None
     clarification_options: Tuple[str, ...] = ()
+    #: The meal's unknowns, GROUPED by what is actually unknown — not one
+    #: extracted point per food.
+    #:
+    #: Four foods described as "some" are one question (how big were the
+    #: portions) asked about four things, not four questions of which we ship
+    #: the first. Each entry carries the items it covers, the plain-words name
+    #: of the unknown, the phrasings available, and the calories riding on it,
+    #: so the renderer can compose what the situation needs — one thing when
+    #: one thing is unclear, two when two genuinely belong in the same breath —
+    #: instead of reciting a fragment chosen by the order the interpreter
+    #: happened to emit.
+    #:
+    #: Sorted by weight, so `[0]` is the unknown worth the most.
+    clarification_unknowns: Tuple[dict, ...] = ()
     requires_answer: bool = False
 
     # What the existing card already shows.
@@ -614,14 +628,51 @@ INTENT_POLICY = {
 }
 
 
+def pursued_unknowns(unknowns: Tuple[dict, ...],
+                     mode: str = "moderate") -> Tuple[dict, ...]:
+    """The unknowns THIS mode cares about — the granularity dial.
+
+    The mode is not a length setting. It is a statement about how precisely the
+    user wants their food understood before it is written down, and the
+    thresholds that encode it already exist: 300 / 200 / 100 calories in
+    `skills.nutrition.materiality`. They governed whether the staged engine
+    asked, and never reached the clarification the user actually reads — so
+    quick, moderate and strict pursued exactly the same unknowns and differed
+    only in how many words they took to say so.
+
+    Scaling the SENTENCE budget by mode was the same mistake wearing a nicer
+    hat: it made strict wordier rather than more thorough. Strict is not three
+    sentences, it is willing to ask about the cooking oil.
+
+    The top unknown always survives, whatever the mode: a turn that decided
+    something was worth stopping the user for, and then asked nothing, is worse
+    than either asking or committing quietly.
+    """
+    from skills.nutrition.materiality import calorie_threshold
+    threshold = calorie_threshold((mode or "moderate").strip().lower() or "moderate")
+    kept = tuple(u for u in unknowns
+                 if float(u.get("weight") or u.get("stakes") or 0) >= threshold)
+    return kept or unknowns[:1]
+
+
 def apply_policy(plan: FoodResponsePlan) -> FoodResponsePlan:
     """Stamp the intent's limits onto the plan.
 
     `requires_answer` can raise allow_question but nothing can lower it below
     what the intent permits — a plan that must be answered has to be allowed to
     ask.
+
+    A clarification's room follows from HOW MUCH IT HAS TO ASK, not from the
+    mode. One unknown is a sentence; three genuinely material ones cannot be
+    covered in a sentence, and squeezing them into one is how a coach starts
+    sounding like a form. The mode decides which unknowns qualify
+    (`pursued_unknowns`); the budget is downstream of that count.
     """
     sentences, words, allow_q, allow_none = INTENT_POLICY[plan.intent]
+    if plan.intent is FoodResponseIntent.CLARIFY and plan.clarification_unknowns:
+        count = len(pursued_unknowns(plan.clarification_unknowns, plan.user_mode))
+        sentences = max(sentences, min(3, count + 1))
+        words = max(words, min(70, 25 * count + 20))
     if plan.requires_answer:
         allow_q = True
         allow_none = False
@@ -1077,6 +1128,57 @@ _INTENT_BRIEF = {
 }
 
 
+#: What each mode is ASKING FOR, in the coach's terms. The number of questions
+#: is not capped anywhere — this is the judgement the cap was standing in for,
+#: and it belongs with the model that is writing the sentence.
+_MODE_INTENT = {
+    "quick": ("They chose QUICK logging: a rough number now beats an exact one "
+              "after an interview. Only the unknown below is worth stopping "
+              "them for — everything else you estimate and move on."),
+    "moderate": ("They chose MODERATE logging: get the food right without "
+                 "turning it into a form. The unknowns below are the ones that "
+                 "actually move the number; estimate anything finer."),
+    "strict": ("They chose STRICT logging: they want the entry to be genuinely "
+               "accurate and they expect to be asked. Understand the food "
+               "properly — how it was cooked, what was on it, how much of it — "
+               "and do not let something below go unasked to seem breezy."),
+}
+
+
+def _unknowns_brief(unknowns: Tuple[dict, ...], mode: str = "") -> str:
+    """What the coach does not know yet, as material to write from.
+
+    Deliberately not a sentence and not a list of per-food prompts. Each entry
+    names ONE unknown and every food it applies to, because four foods
+    described as "some" are one question asked about four things — and the
+    shape that shipped, one extracted point per food with the first one
+    surviving, is what this exists to stop.
+
+    Stakes are given as reasoning material and fenced off from the text: the
+    model decides how hard to push on an unknown, never reports the number.
+    """
+    lines = ["WHAT YOU DON'T KNOW YET (most consequential first):"]
+    for unknown in pursued_unknowns(unknowns, mode)[:4]:
+        items = ", ".join(str(i) for i in (unknown.get("items") or ()))
+        line = f"  • {unknown.get('phrase') or 'a missing detail'}"
+        if items:
+            line += f" — for: {items}"
+        stakes = unknown.get("stakes") or 0
+        if stakes:
+            line += f"  [worth ~{int(stakes)} cal; never say this number]"
+        lines.append(line)
+    intent = _MODE_INTENT.get((mode or "").strip().lower())
+    if intent:
+        lines.append(intent)
+    lines.append(
+        "Ask for what you need, the way you would out loud — it is a judgement "
+        "about THIS meal, not a fixed number of questions. Do not work through "
+        "them as a list, do not name the fields, and do not assert an amount "
+        "for the very thing you are asking about. Foods are theirs — write "
+        "their names the way a person would, brands included.")
+    return "\n".join(lines)
+
+
 def build_prompt(plan: FoodResponsePlan) -> str:
     """The generation prompt: voice, intent brief, approved facts, limits."""
     parts = [ARNIE_VOICE, "", f"INTENT: {plan.intent.value}",
@@ -1095,7 +1197,24 @@ def build_prompt(plan: FoodResponsePlan) -> str:
         texts = [getattr(a, "user_visible_text", "") or str(a)
                  for a in plan.assumptions]
         parts.append("ASSUMPTIONS you may surface: " + "; ".join(t for t in texts if t))
-    if plan.clarification_question:
+    if plan.clarification_unknowns:
+        # THE QUESTION IS THE COACH'S TO WRITE.
+        #
+        # This used to say "ASK EXACTLY THIS (rephrasing for tone is fine)"
+        # followed by an f-string built four modules upstream, which made the
+        # composer a tone pass over a template and is why turning it on changed
+        # nothing about how these read. Worse, the template it was handed had
+        # already thrown away everything but one fragment: for a meal whose
+        # four portions were worth 2,760 calories of doubt, what survived was
+        # "What sauce - red, cream, oil based?".
+        #
+        # So the composer is given what is UNKNOWN rather than a sentence, and
+        # writes the turn. No cap on how many unknowns it may cover — one when
+        # one thing is unclear, two when two belong in the same breath. That is
+        # a judgement about the situation, and judgement is what it is for.
+        parts.append(_unknowns_brief(plan.clarification_unknowns,
+                                     plan.user_mode))
+    elif plan.clarification_question:
         parts.append(f"ASK EXACTLY THIS (rephrasing for tone is fine): "
                      f"{plan.clarification_question}")
     if plan.clarification_options:
@@ -1149,8 +1268,19 @@ def build_prompt(plan: FoodResponsePlan) -> str:
 
     limits = [f"at most {plan.max_sentences} sentences",
               f"at most {plan.max_words} words"]
-    limits.append("you may ask one question" if plan.allow_question
-                  else "no questions")
+    # NOT "one question". `validate()` only ever checked whether a question is
+    # PERMITTED, never how many — the cap lived here, in the wording, and it is
+    # the same instinct that had the plan builder ship one facet of one food
+    # out of six raised.
+    #
+    # And when the unknowns brief is present it already carries the judgement,
+    # scaled to the mode: repeating a count here would contradict it outright,
+    # since strict is told to pursue everything material while this line was
+    # telling it "one thing usually".
+    if not plan.allow_question:
+        limits.append("no questions")
+    elif not plan.clarification_unknowns:
+        limits.append("ask for what you actually need")
     if plan.allow_no_text:
         limits.append("an empty response is allowed")
     parts.append("LIMITS: " + "; ".join(limits))

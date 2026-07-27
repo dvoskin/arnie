@@ -1054,6 +1054,35 @@ def acquisition_question(items: list) -> str:
     return f"Did you eat {subject}, or is that for later?"
 
 
+def _daily_targets(user) -> Optional[dict]:
+    """The user's daily goals, keyed the way the materiality scorer reads them.
+
+    TARGETS, not what is left of them. What is left moves through the day, and
+    scoring against it would hold the same food to a different standard
+    depending on when it was logged — an entry backfilled at night judged more
+    strictly than the same one typed at noon, and a retroactive log ("that was
+    yesterday") measured against a remainder that does not apply to it. How
+    precisely a food is understood cannot depend on the clock.
+
+    Returns None on anything missing, which drops the scorer back to its
+    absolute thresholds rather than losing the turn.
+    """
+    try:
+        from core.targets import compute_macro_targets
+        t = compute_macro_targets(user) or {}
+        out = {}
+        for key, source in (("calories", "calorie_target"),
+                            ("protein", "protein_target"),
+                            ("carbs", "carb_target"), ("fat", "fat_target")):
+            value = t.get(source)
+            if value:
+                out[key] = float(value)
+        return out or None
+    except Exception as e:
+        logger.debug(f"daily targets unavailable for materiality: {e}")
+        return None
+
+
 def _lc(name: str) -> str:
     """Sentence-case a food name for mid-sentence use: lowercase unless it
     reads branded (an uppercase beyond the first letter, or a digit)."""
@@ -1146,14 +1175,170 @@ def clarify_plan_from_points(points: list, ready: list | None = None, *,
     # renderer now, so they have to arrive in the same shape, or the
     # unification is only structural and the user can still tell which engine
     # asked.
-    question = _one_question(asks[0][1])
+    # GROUPED, not picked. `asks[0][1][0]` shipped whichever fragment the
+    # interpreter emitted first — for "some pasta some crudo some salad some
+    # tartare" that was the sauce, worth ~100, while the four portions it
+    # dropped were worth 2,760 between them. Grouping lets the shared unknown
+    # win on its own evidence, and hands the renderer every unknown rather than
+    # a pre-picked string.
+    unknowns = group_unknowns(asks, user_message)
+    question = _situational_question(unknowns) or _one_question(asks[0][1])
 
     return FoodResponsePlan(
         intent=FoodResponseIntent.CLARIFY,
         resolved_items=resolved, pending_items=pending,
         unresolved_item=(pending[0] if pending else None),
         clarification_question=question,
+        clarification_unknowns=unknowns,
         requires_answer=True, user_message=user_message)
+
+
+def _situational_question(unknowns: tuple) -> str:
+    """The deterministic FLOOR — situational, not a fixed shape.
+
+    One unknown about one food is the sentence that always shipped, and its
+    tests still pin it. An unknown shared by several foods is one question
+    about all of them, because that is what it is: asking "how much of each"
+    once resolves four portions, while asking four times is an interrogation
+    the user abandons halfway through.
+
+    Deliberately a floor. It has to be correct and cover the top unknown; the
+    composer is handed every unknown and owns how the turn actually reads.
+    """
+    if not unknowns:
+        return ""
+    top = unknowns[0]
+    items = list(top.get("items") or ())
+    asks = list(top.get("asks") or ())
+    if len(items) <= 1:
+        # Unchanged from what shipped: one food, one unknown, its own wording.
+        return _one_question(asks)
+    # THE ITEMS ARE NOT NAMED AGAIN. The recap directly above this sentence
+    # already lists them, and "Roughly how much of each — Pasta, Yellowtail
+    # crudo, Caesar salad and Beef tartare?" is the bullet list read back with
+    # a question mark on it. Two foods can be named in one breath; four is a
+    # roll call, and "each" is unambiguous when the list is right there.
+    if top.get("kind") == "portion":
+        return "Roughly how much of each?"
+    if top.get("kind") == "identity":
+        return "Which ones were they?" if len(items) > 2 \
+            else f"Which {_join_names([i.lower() for i in items])}?"
+    return _one_question(asks)
+
+
+def _join_names(names: list) -> str:
+    """`a, b, c and d` — the way it is said out loud, not `a, b, c, d`."""
+    names = [str(n).strip() for n in names if str(n or "").strip()]
+    if not names:
+        return ""
+    if len(names) == 1:
+        return names[0]
+    return ", ".join(names[:-1]) + " and " + names[-1]
+
+
+#: What KIND of thing a facet is asking about. The interpreter writes facets as
+#: form fragments ("rough amount - a cup or two?", "what sauce - red, cream?"),
+#: and the kind is what lets several of them be recognised as ONE unknown asked
+#: about four different foods. Order matters: "how much of the sauce" is a
+#: portion question, so portion is tested first.
+_FACET_KINDS = (
+    ("portion", ("how much", "how many", "rough amount", "what size", "how big",
+                 "portion", "oz", "grams", "how much of", "whole thing",
+                 "full or", "share", "shared", "bites", "pieces", "cups")),
+    ("identity", ("what kind", "which", "what sauce", "what type", "what brand",
+                  "flavor", "flavour", "variety")),
+    ("preparation", ("cooked", "grilled", "fried", "baked", "roasted", "raw",
+                     "prepared", "skin on", "breaded")),
+    ("extras", ("dressing", "added", "extra", "toppings", "with cheese",
+                "butter", "oil", "sauce on")),
+)
+
+
+def _facet_kind(text: str) -> str:
+    """Name the unknown a facet is about, in the coach's words rather than the
+    form's. Unrecognised shapes get "detail" — honest, and it still groups."""
+    t = (text or "").strip().lower()
+    for kind, needles in _FACET_KINDS:
+        if any(n in t for n in needles):
+            return kind
+    return "detail"
+
+
+#: Plain-language names for each kind, for a renderer that has to say it out
+#: loud. "consumed_quantity" produces a sentence that reads like a form.
+_KIND_PHRASING = {
+    "portion": "how much of each there was",
+    "identity": "which one it was",
+    "preparation": "how it was cooked",
+    "extras": "what else was on it",
+    "detail": "one missing detail",
+}
+
+
+def _portion_stakes(item_label: str, user_message: str) -> float:
+    """Calories riding on an unstated portion, from the calibrated ontology.
+
+    The same source `derive_vague_quantities` scores against, reached here so
+    the QUESTION can be ranked by what it is worth before anything commits.
+    Without a vague measure in the user's own words there is no span to claim,
+    so this returns 0 rather than inventing one.
+    """
+    try:
+        from core.food_pipeline import _vague_measure_in, _span_from
+        from skills.nutrition.portions import distribution_for
+        measure = _vague_measure_in(user_message or "", item_label or "")
+        if not measure:
+            return 0.0
+        dist = distribution_for(measure, item_label or "")
+        if dist is None or not dist.lower_g:
+            return 0.0
+        return float(_span_from(dist, None))
+    except Exception:      # a ranking aid, never a reason to lose the turn
+        return 0.0
+
+
+def group_unknowns(asks: list, user_message: str = "") -> tuple:
+    """The meal's unknowns, grouped by what is actually unknown.
+
+    THE POINT OF THIS FUNCTION. Four foods described as "some" are not four
+    questions, they are ONE question — how big were the portions — asked about
+    four things at once. Extracting per item and then shipping whichever
+    fragment came first is what produced "What sauce - red, cream, oil based?"
+    for a message whose four portions were worth 2,288 calories of doubt
+    between them.
+
+    Groups carry the SUM of what they resolve, so a shared unknown outranks a
+    single-item one on the evidence rather than by a rule, and the renderer is
+    handed material to compose from instead of a pre-picked string.
+    """
+    groups = {}
+    for label, facets in asks:
+        for facet in facets:
+            kind = _facet_kind(facet)
+            g = groups.setdefault(kind, {"items": [], "asks": [], "stakes": 0.0})
+            if label and label not in g["items"]:
+                g["items"].append(label)
+                if kind == "portion":
+                    g["stakes"] += _portion_stakes(label, user_message)
+            g["asks"].append(facet)
+    out = []
+    for kind, g in groups.items():
+        # An unknown nobody could price still ranks — by how many foods it
+        # covers — or a meal of unpriced items would always lose to one priced
+        # one and never get asked about at all.
+        #
+        # The per-food figure is the MODERATE threshold on purpose. "Which
+        # sauce" has no span until the candidates are priced, but a cream sauce
+        # against a tomato one is a real swing, and treating unpriced as ~0 quietly
+        # decided it was never worth asking. Sitting it at the moderate line
+        # says what we actually know: material to someone who wants accuracy,
+        # skippable for someone who asked to be left alone.
+        weight = g["stakes"] or float(len(g["items"]) * 200)
+        out.append({"kind": kind, "phrase": _KIND_PHRASING.get(kind, kind),
+                    "items": tuple(g["items"]), "asks": tuple(g["asks"]),
+                    "stakes": round(g["stakes"], 1), "weight": weight})
+    out.sort(key=lambda g: -g["weight"])
+    return tuple(out)
 
 
 def _one_question(facets: list) -> str:
@@ -1938,7 +2123,8 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
                 from core.turn_identity import current_turn_id as _pipe_turn
                 _decision = plan_turn(
                     data, turn_id=(_pipe_turn() or ""), message=message,
-                    mode=mode, preferences=_prefs_for(user))
+                    mode=mode, preferences=_prefs_for(user),
+                    targets=_daily_targets(user))
         except Exception as _pe:
             logger.warning(f"food pipeline unavailable: {_pe}")
             _decision = None

@@ -77,9 +77,18 @@ async def test_an_interpreter_ask_goes_through_the_response_contract(monkeypatch
     depending on which engine noticed it, and the numbered form survived in the
     one place nothing was checking (review item 4).
 
-    ONE question, about ONE item — the shape the staged engine has always used
-    and the shape the plan is built for. The item not asked about stays named
-    and held, so nothing commits behind an unanswered question."""
+    ONE question — but not one ITEM. This used to assert the crust's own
+    fragment ("How much did you leave?") and treat the chicken as the item that
+    waits its turn, which is the compartmentalised shape: extract a point per
+    food, ship whichever came first, drop the rest.
+
+    Both points here are asking the same thing — how much — about two foods, so
+    they are ONE unknown, and the question covers both. That is still a single
+    question the user can answer in one breath; it simply stops pretending the
+    two are unrelated. The item-by-item version cost a shipped turn four
+    portion questions worth 2,760 calories, dropped in favour of a sauce.
+
+    The retired vocabulary must stay gone either way."""
     monkeypatch.setattr(FT, "chat", _fake_chat({
         "action": "ask",
         "points": [{"label": "Crust", "q": "how much did you leave?"},
@@ -87,7 +96,9 @@ async def test_an_interpreter_ask_goes_through_the_response_contract(monkeypatch
     out = await FT.run("had pizza and some chicken", SimpleNamespace())
     assert out["action"] == "ask"
     text = out["text"]
-    assert "How much did you leave?" in text
+    # One question, covering both foods — not one food's fragment.
+    assert text.count("?") == 1, f"one question, got {text!r}"
+    assert "how much of each" in text.lower(), text
     assert "crust" in text.lower() and "chicken" in text.lower()
     for retired in ("Quick one so it's clean", "locked in ✅",
                     "1. **crust**", "Nothing hits the board till then"):
