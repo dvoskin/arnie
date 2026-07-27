@@ -2647,6 +2647,23 @@ async def upsert_user_food_match(db: AsyncSession, user_id: int, name_norm: str,
     Defaults to generic rather than user authority: this function is called
     automatically after every successful lookup, so the common case is a cache.
     """
+    # A CACHE MAY NOT STORE AN IMPOSSIBLE FOOD. Fat is 9 calories per gram, so
+    # nothing edible exceeds 900 per 100 g — anything above that is a unit
+    # error, usually kilojoules in a kcal field or a per-container figure in a
+    # per-100g slot. Found in production: a monk fruit row cached at 5030
+    # cal/100g, carrying a USDA id, which would price every later log of it.
+    # Refusing the write leaves the food to resolve fresh next time, which is
+    # strictly better than remembering a number that cannot be true.
+    try:
+        _cal100 = float((per100 or {}).get("calories") or 0)
+    except (TypeError, ValueError):
+        _cal100 = 0.0
+    if _cal100 > 900:
+        logger.warning(
+            "refusing to cache %r for user %s: %.0f cal/100g is not a food",
+            name_norm, user_id, _cal100)
+        return None
+
     micros = _extract_micros_100(per100)
     origin = (origin_tier or ("user_regular" if user_confirmed
                               else _ORIGIN_BY_CONFIDENCE.get(confidence,

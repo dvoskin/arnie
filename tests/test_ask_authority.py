@@ -350,3 +350,35 @@ def test_quick_commits_a_bowl_but_not_an_unidentified_plate():
                            targets=T)                      # a bowl of ramen
     assert is_material(mode="quick", calorie_span=400, item_calories=500,
                        targets=T)                          # unidentified plate
+
+
+# ── a cache may not remember an impossible food ─────────────────────────────
+
+def test_an_impossible_calorie_density_is_not_cached():
+    """Fat is 9 cal/g, so nothing edible exceeds 900 per 100 g. Found in
+    production: a monk fruit row cached at 5030 cal/100g carrying a USDA id,
+    which would price every later log of that food. Usually kilojoules in a
+    kcal field, or a per-container figure in a per-100g slot."""
+    import asyncio
+    import pytest as _pytest
+    from db.queries import upsert_user_food_match
+
+    class _DB:
+        def __init__(self): self.added = []
+        def add(self, row): self.added.append(row)
+        async def flush(self): pass
+        async def commit(self): pass
+        async def execute(self, *a, **k):
+            class _R:
+                def scalar_one_or_none(self): return None
+                def scalars(self): return self
+                def first(self): return None
+            return _R()
+
+    db = _DB()
+    out = asyncio.run(
+        upsert_user_food_match(db, 1, "monk fruit", "Monk fruit", "123",
+                               {"calories": 5030, "protein": 0, "carbs": 0,
+                                "fat": 0}, "likely"))
+    assert out is None
+    assert not db.added, "an impossible row must never reach the table"
