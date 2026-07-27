@@ -23,7 +23,7 @@ from pydantic import BaseModel, Field, field_validator
 from db.database import AsyncSessionLocal
 from db.queries import resolve_user, get_recent_conversations, get_recent_conversations_linked, save_user_location
 from core.chat_service import run_chat_turn
-from core.platform import serialize_response, WIRE_VERSION
+from core.platform import Response, serialize_response, WIRE_VERSION
 from api.auth import current_identity, verify_session_token
 from typing import Optional
 
@@ -169,6 +169,36 @@ async def _backfill_city(identity: str, lat: float, lng: float) -> None:
         pass
 
 
+#: How long a message will wait behind the same person's previous turn before
+#: we answer instead of queueing. The turn budget is 60 s, so without a bound a
+#: burst of three messages can leave someone staring at a spinner for minutes —
+#: which is exactly what happened (12.8 s of server work, ~3 minutes on the
+#: phone, because the receipt only times the turn and not the wait in front of
+#: it). Short enough that a normal turn (3-13 s) never reaches it.
+_LOCK_WAIT_S = float(os.getenv("CHAT_LOCK_WAIT_S", "22") or 22)
+
+#: A HEADS UP, NOT AN ERROR. Nothing failed and nothing was lost — their
+#: message simply arrived while the previous one was still being worked. The
+#: line should read like a person saying "hang on", so it varies rather than
+#: repeating one canned string at someone sending several things in a row.
+_STILL_WORKING = (
+    "Hang on, still finishing your last one.|||Send that again in a few seconds "
+    "and I'll pick it straight up.",
+    "One sec, I'm still logging what you just sent.|||Resend that in a moment.",
+    "Give me a beat, still working through the message before this.|||Fire it "
+    "again shortly and I'll catch it.",
+    "Still catching up on your last one.|||Try that again in a few seconds.",
+    "Working on the one before this — didn't want to leave you hanging."
+    "|||Resend and I'll get it.",
+)
+
+
+def _still_working_line(seed: str) -> str:
+    """Deterministic by content, so the same message never flips wording on a
+    retry, and two different messages in a burst do not read as a stuck loop."""
+    return _STILL_WORKING[sum(ord(c) for c in (seed or "x")) % len(_STILL_WORKING)]
+
+
 # ── Shared core ──────────────────────────────────────────────────────────────
 async def _coached_reply(identity: str, text: str, source_type: str,
                          lat: Optional[float] = None,
@@ -187,7 +217,19 @@ async def _coached_reply(identity: str, text: str, source_type: str,
     # typed before that turn's reply reached them — so it answers nothing.
     # Read before awaiting the lock; once we're through it the evidence is gone.
     _unseen = lock.locked()
-    async with lock:
+    # BOUNDED. `async with lock` waits forever, so a message sent behind a slow
+    # turn is held for that turn's whole budget with no way to say so.
+    try:
+        await asyncio.wait_for(lock.acquire(), timeout=_LOCK_WAIT_S)
+    except asyncio.TimeoutError:
+        logger.info(
+            "chat: lock still held after %.0fs for identity=%s — answering with "
+            "a heads-up rather than queueing further", _LOCK_WAIT_S, identity)
+        _hp = serialize_response(Response(
+            bubbles=[b for b in _still_working_line(text).split("|||") if b]))
+        _hp["tools"] = []
+        return _hp
+    try:
         # Set unconditionally, never only-when-true: the task running this
         # request may be a reused one, and a stale True from an earlier turn
         # would tell the model to ignore a question the user really did answer.
@@ -218,6 +260,8 @@ async def _coached_reply(identity: str, text: str, source_type: str,
             except Exception as e:
                 logger.error(f"chat turn failed (identity={identity}): {e}", exc_info=True)
                 raise HTTPException(status_code=500, detail="coaching turn failed")
+    finally:
+        lock.release()
 
     payload = serialize_response(turn.response)
     payload["tools"] = _turn_tools(turn)

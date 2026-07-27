@@ -1953,8 +1953,22 @@ async def _analyze_food(db, user, food_name, inp):
         # deliberately unlike its generic. Applying one to the other's density
         # would nearly double the error. The serving size is a fact to fetch,
         # not a number to infer — and the label page is where it lives.
-        _seated_without_serving = _off_seated and not str(
-            (off or {}).get("serving_text") or "").strip()
+        # "Seated but unusable" — the ONLY reason to pay for the web rung. A
+        # label answers the serving three ways, and the gate used to see just
+        # one of them, so a product whose panel was blank went to Tavily even
+        # when its own net weight was already in hand. Danny's David bar hit
+        # USDA, Open Food Facts AND the web in one turn: 16.4 s, of which the
+        # last rung was the expensive part and had nothing to add.
+        #
+        #   serving_text   "1 bar (60 g)"        — the panel
+        #   per_serving    published per-serving macros — no mass needed at all
+        #   package_text   "60 g"                — for a single-serve product
+        #                                          the package IS the serving
+        _off_answers_serving = bool(
+            str((off or {}).get("serving_text") or "").strip()
+            or (off or {}).get("per_serving")
+            or str((off or {}).get("package_text") or "").strip())
+        _seated_without_serving = _off_seated and not _off_answers_serving
         _needs_branded = _authority.needs_branded_lookup(_fc_pre, _rung_pre)
         # THE WEB LANE OPENS ON A FAILED LOOKUP, NOT ON A GUESS ABOUT THE NAME.
         #

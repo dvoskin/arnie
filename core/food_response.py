@@ -1213,6 +1213,19 @@ def _unknowns_brief(unknowns: Tuple[dict, ...], mode: str = "") -> str:
         if stakes:
             line += f"  [worth ~{int(stakes)} cal; never say this number]"
         lines.append(line)
+        # WHAT IT ACTUALLY NEEDS TO KNOW. `phrase` is a CATEGORY — "one missing
+        # detail" — and the concrete question lived in `asks` and was never
+        # rendered, so the composer had a category and had to invent the
+        # question from it. For a stated 150 g of cottage cheese whose FAT
+        # GRADE was the unknown, it invented the commonest kind and asked
+        # "about a half cup, or more than that?" — a question about the one
+        # thing the user had already told us.
+        #
+        # Phrasing still belongs to the composer; this is the substance it
+        # phrases, not a sentence to repeat.
+        asks = [str(a).strip() for a in (unknown.get("asks") or ()) if str(a).strip()]
+        for ask in asks[:3]:
+            lines.append(f"      needs: {ask}")
     intent = _MODE_INTENT.get((mode or "").strip().lower())
     if intent:
         lines.append(intent)
