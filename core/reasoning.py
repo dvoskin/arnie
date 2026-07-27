@@ -147,6 +147,43 @@ def _food_detailed(inp: dict, result: str) -> list:
     return steps
 
 
+def _meal_lookup_summary(sourcings: list) -> Optional[dict]:
+    """One line covering the lookups a MULTI-ITEM meal ran.
+
+    A composite meal is the case where "did you actually check anything?" is
+    hardest to answer and most often asked — and it was the one case that could
+    not answer it. The full per-item trace is only affordable when a single food
+    is logged, so a four-item restaurant meal rendered four bare `Logged X`
+    lines and no lanes at all, which reads exactly like a pipeline that never
+    ran. It did run: the same meal's items carry USDA supplementation in their
+    own sourcing.
+
+    So the lanes are aggregated instead of dropped. One line, naming each lane
+    that ran across the meal and how many items it answered, which is the
+    question being asked.
+    """
+    ran, hit = {}, {}
+    for src in sourcings:
+        for lane, outcome in (src.get("lanes") or []):
+            if lane not in _LANE_LABELS or lane == "lookup":
+                continue
+            ran[lane] = ran.get(lane, 0) + 1
+            if outcome == "hit":
+                hit[lane] = hit.get(lane, 0) + 1
+    if not ran:
+        return None
+    # Short names here, not `_LANE_LABELS`' prose ones. Three lanes written out
+    # in full runs past the 70-character step budget and truncates mid-lane —
+    # "…, the product …" — which loses the very lane the line exists to report.
+    parts = []
+    for lane, short in (("usda", "USDA"), ("off", "Open Food Facts"),
+                        ("web", "product label")):
+        if lane in ran:
+            parts.append(f"{short} {hit.get(lane, 0)}/{ran[lane]}")
+    return _step("magnifyingglass", "Looked up " + ", ".join(parts),
+                 "matched / checked, across the meal")
+
+
 def _exercise_step(inp: dict, result: str) -> dict:
     name = inp.get("exercise_name") or "exercise"
     r = result or ""
@@ -228,6 +265,21 @@ def build_reasoning(tool_calls: list, tool_results: dict,
             _by_input[id(_c.raw_input)] = _c
     except Exception:
         _by_input = {}
+    # The meal-level lookup line, for the multi-item case that could not
+    # otherwise show its lanes. Collected first so it sits ABOVE the item lines
+    # it summarises.
+    if not _detailed_food and _n_food > 1:
+        _srcs = []
+        for _tc in (tool_calls or []):
+            if (_tc.get("name") or "") != "log_food":
+                continue
+            _c = _by_input.get(id(_tc.get("input") or {}))
+            if _c is not None and _c.sourcing:
+                _srcs.append(_c.sourcing)
+        _summary = _meal_lookup_summary(_srcs)
+        if _summary:
+            steps.append(_summary)
+
     for tc in tool_calls or []:
         name = tc.get("name") or ""
         inp = tc.get("input") or {}
@@ -255,10 +307,16 @@ def build_reasoning(tool_calls: list, tool_results: dict,
         # can state truthfully and readably.
 
     if not steps:
-        # Pure-chat coaching turn — no tool fired, but the turn still READ the
-        # user's world before answering (context_builder loads logs, targets,
-        # program, and recent history on every coached turn). One honest step
-        # so every reply carries its receipt; never fabricated specifics.
+        # Every reply carries a receipt (Danny: thoughts on every reply), so
+        # this stays — but it is the LAST resort, not the usual one.
+        #
+        # It had become the usual one: 182 of the last 400 receipts were this
+        # pair and nothing else. Not because those turns did nothing, but
+        # because `conversation.py` passed `context_stats=None`, so the
+        # specific line above — "Read your data — 14 days of logs, 3 weigh-ins"
+        # — could never render and every coaching turn fell through to here.
+        # The fix is upstream, in what the caller supplies; this is what shows
+        # when a turn genuinely has nothing more particular to say.
         steps = [_step("doc.text", "Read your logs, targets, and recent history"),
                  _step("brain", "Weighed the reply against your goals")]
     out = {"steps": steps[:8]}
