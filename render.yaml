@@ -68,6 +68,36 @@ services:
       # FOOD_COMPOSER=false reverts without a deploy.
       - key: FOOD_COMPOSER
         value: "true"
+      # THE FOOD GATE IS THE CLASSIFIER, NOT FOUR ENGLISH REGEXES.
+      #
+      # Everything downstream of this gate — staged items, the mode-aware ask
+      # ladder, the composer above, partial commit — is unreachable for any
+      # message it turns away, and it was turning away nearly all of them.
+      # Measured on this build with the flags unset:
+      #
+      #   "Oh and a bag of quest chips"   legacy, no_food_shape
+      #   "a scoop of peanut butter"      legacy, no_food_shape
+      #   "two carnitas tacos"            legacy, no_food_shape
+      #   "cottage cheese"                legacy, no_food_shape
+      #   "chicken and rice"              legacy, no_food_shape
+      #
+      # 2 of 10 realistic food messages reached the lane. `applies()` agrees:
+      # its own docstring records 64% missed over 1008 production messages.
+      # So the clarification work shipped and then sat dark, because the
+      # switch in front of it was never thrown.
+      #
+      # This is `applies()` first and a Haiku call ONLY for what it misses, so
+      # the cost is bounded by the gate's own miss rate rather than by traffic.
+      # On any model failure or outage `food_relevance` returns `applies(t)` —
+      # the floor is exactly the behaviour above, which is why this is safe to
+      # turn on before the precision work lands rather than after.
+      #
+      # NOT set alongside FOOD_GATE_OPEN. Open makes `applies()` admit on
+      # absence of evidence, which short-circuits before the model ever runs
+      # and gives up the precision this buys. They are alternatives.
+      # FOOD_GATE_MODEL=false reverts without a deploy.
+      - key: FOOD_GATE_MODEL
+        value: "true"
 
       - key: ARNIE_USERS_DIR
         value: /data/users
