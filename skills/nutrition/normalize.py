@@ -51,6 +51,10 @@ _COUNT_UNITS = {
     "cans", "bottle", "bottles", "container", "containers", "handful",
     "handfuls", "wing", "wings", "fry", "fries", "cookie", "cookies",
     "cracker", "crackers", "chip", "chips", "nugget", "nuggets",
+    # Butter's own units. Without them "a pat of butter" was not countable, so
+    # it never reached `piece_weight`, had no mass, and left a zero-calorie
+    # read with nothing to correct it.
+    "pat", "pats", "stick", "sticks",
 }
 
 #: Count units that name a container or a rough helping rather than a discrete
@@ -167,6 +171,16 @@ PIECE_WEIGHTS_G = {
     "chip": (2.0, 0.5),
     "protein bar": (60.0, 8.0),
     "granola bar": (35.0, 8.0),
+    # Butter is served in units nothing else uses, and none of them were here.
+    # A pat is what a restaurant brings; a stick is the US wrapper's quarter
+    # pound. Without them "a pat of butter" had no mass, which is how a
+    # zero-calorie read had nothing to correct it with.
+    #
+    # Keyed unit-first because `piece_weight` matches against
+    # f"{unit_text} {food_name}" — "a pat of butter" arrives as "pat butter".
+    "pat butter": (5.0, 1.5),
+    "pat": (5.0, 1.5),
+    "stick butter": (113.0, 4.0),
     "banana": (118.0, 20.0),
     "apple": (182.0, 35.0),
     "orange": (131.0, 25.0),

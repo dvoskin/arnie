@@ -632,6 +632,63 @@ def analyze(name, quantity, llm_cal, llm_protein, llm_carbs, llm_fat,
                           for mk in _MICRO_KEYS if per100.get(mk) is not None}
                 confidence, source = "estimated", "estimate"
                 computed_forward = False
+        elif cal100 and cal100 > 0 and cal <= 0:
+            # A ZERO IS AN ABSENCE, NOT A MEASUREMENT.
+            #
+            # Every branch here needed `cal > 0`, so a model that reported no
+            # calories fell through ALL of them and the row committed at zero
+            # — with `source` still naming whoever won the ladder. Butter
+            # logged as 0 calories on a card reading "From the USDA database",
+            # while the USDA row sat right there at 717 per 100 g. The number
+            # was not enriched, not estimated and not refused; it was simply
+            # never touched.
+            #
+            # Nothing downstream could catch it either. `sanity.check_values`
+            # bounds energy density from ABOVE — the 588-calorie tablespoon of
+            # peanut butter — and zero passes every check it makes, correctly,
+            # because water and black coffee are real foods that really are
+            # zero. What makes THIS zero impossible is not the number on its
+            # own: it is a zero standing next to a source that says otherwise.
+            #
+            # So the source answers. Its per-100g and a mass fully determine
+            # the portion, and `normalize_quantity` reaches masses `mass_grams`
+            # cannot — piece weights, densities, the portion ontology — which
+            # is what makes "1 tbsp" answerable at all.
+            _zero_g = None
+            try:
+                from skills.nutrition.normalize import normalize_quantity as _nq
+                _zero_g = _nq(quantity or "", name or "").grams
+            except Exception:
+                _zero_g = None
+            if _zero_g and _trustworthy:
+                ratio = _zero_g / 100.0
+                _implied_grams = _zero_g
+                cal = round(cal100 * ratio)
+                if per100.get("protein") is not None: protein = round(per100["protein"] * ratio, 1)
+                if per100.get("carbs") is not None:   carbs = round(per100["carbs"] * ratio, 1)
+                if per100.get("fat") is not None:     fat = round(per100["fat"] * ratio, 1)
+                if per100.get("fiber") is not None:   fiber = round(per100["fiber"] * ratio, 1)
+                if per100.get("sugar") is not None:   sugar = round(per100["sugar"] * ratio, 1)
+                if per100.get("sodium") is not None:  sodium = round(per100["sodium"] * ratio, 0)
+                for _mk in _MICRO_KEYS:
+                    _v = per100.get(_mk)
+                    if _v is not None:
+                        micros[_mk] = round(_v * ratio, 2)
+                computed_forward = True
+                logger.info(
+                    "zero-calorie read for %r replaced from %s: %.0f g x "
+                    "%.0f cal/100g = %d", name, source, _zero_g, cal100, cal)
+            else:
+                # No mass to price it with, so we still do not know. What we
+                # must NOT do is keep the source's NAME on a number it did not
+                # produce — "From the USDA database" over a zero is the card
+                # telling the user to trust it. Say estimate, and let the
+                # enrichment lanes and the ask ladder treat it as open.
+                logger.warning(
+                    "zero-calorie read for %r and no mass to price it "
+                    "(quantity=%r, %s had %.0f cal/100g) — refusing to "
+                    "attribute the zero", name, quantity, source, cal100)
+                source, confidence = "estimate", "estimated"
         elif cal100 and cal100 > 0 and cal > 0:
             # ESTIMATE PATH — no reliable grams (a count/cup/vague amount), so
             # trust the LLM's calories and back the portion out of them, then

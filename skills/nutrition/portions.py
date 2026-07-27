@@ -335,6 +335,15 @@ FOOD_CATEGORIES = {
     "rice": "rice", "yogurt": "yogurt", "sugar": "sugar",
     "protein powder": "protein_powder", "whey": "protein_powder",
     "ice cream": "ice_cream", "gelato": "ice_cream",
+    # BUTTER IS A FAT, AND IT HAD NO CATEGORY AT ALL. `food_category("butter")`
+    # returned "default", so butter had no density, a tablespoon of it had no
+    # mass, and a per-100g source could not price the commonest way anyone
+    # ever logs it. That is one of the three things that had to be true at
+    # once for butter to commit at 0 calories.
+    #
+    # `nut_butter` is deliberately longer, so "peanut butter" and "almond
+    # butter" still win it on the longest-fragment rule and keep 0.95.
+    "butter": "oil", "ghee": "oil", "margarine": "oil", "lard": "oil",
     "olive oil": "oil", "oil": "oil", "syrup": "syrup", "honey": "syrup",
     "sauce": "sauce", "dressing": "sauce", "salsa": "sauce",
     "soup": "soup", "stew": "soup", "salad": "salad",
