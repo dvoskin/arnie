@@ -61,7 +61,9 @@ def test_estimate_source_is_flagged_in_trace():
                           "calories": 750, "protein": 42}}}],
         {"log_food": "Logged: poke bowl 750 cal"}, None, None)
     labels = [s["label"] for s in r["steps"]]
-    assert any("estimated from the description" in l for l in labels)
+    # "No exact match — estimated from the description" became "Estimated from
+    # what you described": same fact, said the way a person would.
+    assert any("Estimated from what you described" in l for l in labels)
 
 
 def test_multi_food_stays_condensed_with_source_detail():

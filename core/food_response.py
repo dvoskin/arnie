@@ -423,6 +423,18 @@ class FoodItemSummary:
     #: A named product rather than a generic food. Drives capitalisation, and
     #: is data the interpreter already has rather than something to infer.
     branded: bool = False
+    #: What we costed this item at — populated ONLY where no card will show it.
+    #:
+    #: The thinness above is deliberate and stays: a composer that can see
+    #: numbers a card is already displaying will recite them. But on a
+    #: clarification nothing commits, so there IS no card — and the brief still
+    #: told the composer "the card already shows your reading of the meal".
+    #: It does not. The user got a bare question with no reading at all, while
+    #: the legacy path showed the breakdown, reasoned about the shakiest line
+    #: and asked about that one. That is the better turn, and this is what it
+    #: needs.
+    calories: Optional[int] = None
+    protein: Optional[int] = None
 
     def describe(self) -> str:
         """The item as a person would say it.
@@ -622,7 +634,10 @@ class FoodResponsePlan:
 #: max_sentences, max_words, allow_question, allow_no_text
 INTENT_POLICY = {
     FoodResponseIntent.REVIEW: (2, 55, True, False),
-    FoodResponseIntent.CLARIFY: (2, 40, True, False),
+    # 40 words was written for a bare question. A clarification that has to
+    # SHOW its reading before asking cannot do it in that, and a budget that
+    # forces a worse turn is the wrong constraint (Danny 2026-07-27).
+    FoodResponseIntent.CLARIFY: (3, 70, True, False),
     FoodResponseIntent.CONFIRM_ANSWER: (1, 20, False, True),
     # COMMIT allows no text at all — the card already said it happened.
     FoodResponseIntent.COMMIT: (2, 35, False, True),
@@ -683,6 +698,14 @@ def apply_policy(plan: FoodResponsePlan) -> FoodResponsePlan:
     if plan.requires_answer:
         allow_q = True
         allow_none = False
+    if (plan.intent is FoodResponseIntent.CLARIFY and not plan.card_will_render
+            and any(getattr(i, "calories", None)
+                    for i in (tuple(plan.resolved_items)
+                              + tuple(plan.pending_items)))):
+        # An itemised reading plus a total plus the question does not fit in a
+        # two-sentence, forty-word budget written for a question alone.
+        sentences = max(sentences, 8)
+        words = max(words, 170)
     if plan.assumptions and not plan.card_will_render:
         # AN UNDISCLOSED ASSUMPTION IS THE ONE THING SILENCE CANNOT COVER.
         # COMMIT permits no text at all on the reasoning that the card already
@@ -1129,10 +1152,13 @@ _INTENT_BRIEF = {
         #
         # The reading is already on screen. What the user needs from the
         # sentence is the QUESTION, and the fastest way to answer it.
-        "Ask the question. Lead with it — the card already shows your reading "
-        "of the meal, so naming the foods back is a receipt they can see. At "
-        "most a half-sentence of context, and only when the question is "
-        "meaningless without it. Offer the likely answers as a short natural "
+        "Ask the question. Where a card renders, lead with the question — the "
+        "card is the receipt and repeating it wastes the turn. Where NO card "
+        "renders, which is every clarification that commits nothing, show your "
+        "reading FIRST: the itemised lines with their calories, the total, one "
+        "clause on which line you trust least and why, and then the question "
+        "about that line. A bare question with no reading attached asks them "
+        "to check arithmetic they cannot see. Offer the likely answers as a short natural "
         "choice ('half or the whole thing?') rather than an open question, "
         "since a choice is answered in one tap and an open one is not "
         "answered at all.",
@@ -1281,6 +1307,26 @@ def build_prompt(plan: FoodResponsePlan) -> str:
                  "second, if at all.")
     parts = [ARNIE_VOICE, "", f"INTENT: {plan.intent.value}", brief]
 
+    # THE READING GOES IN THE TEXT WHEN NO CARD WILL CARRY IT. A clarification
+    # commits nothing, so the brief's old promise — "the card already shows
+    # your reading of the meal" — was false exactly where it mattered, and the
+    # user got a question with no reading attached.
+    _priced = [i for i in (tuple(plan.resolved_items) + tuple(plan.pending_items))
+               if getattr(i, "calories", None)]
+    if _priced and not plan.card_will_render:
+        parts.append(
+            "SHOW YOUR READING, THEN ASK. Two bubbles.\n"
+            "First bubble: one line per food with its calories, then a total "
+            "line. Second bubble: name the line you trust least, say in a "
+            "clause why it is shaky, and ask about that one thing. Always end "
+            "on the question — a reading with no question asks nothing and "
+            "commits nothing.\n"
+            "These are your own estimates. Write them as estimates, and use "
+            "the foods below exactly; do not ask what they ate, you have it:\n  "
+            + "\n  ".join(
+                f"{i.name} — {i.calories} cal"
+                + (f", {i.protein}g protein" if getattr(i, "protein", None) else "")
+                for i in _priced))
     if plan.resolved_items:
         # UNDERSTOOD IS NOT LOGGED, and the bare label let the composer assume
         # it was. On a clarification nothing is written until they answer, so a

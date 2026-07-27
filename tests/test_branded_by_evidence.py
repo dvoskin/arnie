@@ -114,17 +114,27 @@ def test_a_match_too_loose_to_use_is_not_reported_as_found():
     """"found a match" directly above "Portion estimated" reads as a broken
     lane when it is a deliberate refusal. Say which it was."""
     detail = dict(_labels(_trace([("off", "weak")])))
-    assert "not used" in detail["Checked Open Food Facts"]
+    # Wording changed when the receipt stopped reading as a failure log: the
+    # misses collapse into one line and a weak match says so in its own. What
+    # must hold is that a match too loose to seat NEVER reads as "found".
+    _all = " ".join(f"{k} {v}" for k, v in detail.items())
+    assert "none exact enough to use" in _all
+    assert "Found it in Open Food Facts" not in _all
 
 
 def test_a_seated_match_still_reads_as_found():
     detail = dict(_labels(_trace([("off", "hit")], source="off")))
-    assert detail["Checked Open Food Facts"] == "found a match"
+    _all = " ".join(f"{k} {v}" for k, v in detail.items())
+    assert "Open Food Facts" in _all
+    assert "none exact enough" not in _all
 
 
 def test_a_skipped_lookup_says_why_instead_of_showing_nothing():
     """Ritz Crackers had no lane section at all. A blank is the one thing a
     receipt must never be."""
     labels = dict(_labels(_trace([("lookup", "your saved match answered it")])))
-    assert "Skipped the database lookup" in labels
-    assert labels["Skipped the database lookup"] == "your saved match answered it"
+    # Renamed to plain language — the receipt is read by a person. The point
+    # stands: a lane section that is simply ABSENT reads as a pipeline that
+    # never fired, so the skip keeps its own line and its own reason.
+    assert any("straight to an estimate" in l for l in labels)
+    assert any(v == "your saved match answered it" for v in labels.values()), labels

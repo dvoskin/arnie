@@ -13,6 +13,16 @@ def _shorten(text: str, n: int = 60) -> str:
     return text if len(text) <= n else text[: n - 1] + "…"
 
 
+def _join_lanes(names: list, conj: str = "or") -> str:
+    """"a, b or c" — the receipt is read by a person, not parsed. `conj` because
+    a list of places that had NOTHING joins with "or" and a list that AGREED
+    joins with "and"; one helper with the wrong word reads as a shrug."""
+    names = [n for n in names if n]
+    if len(names) <= 1:
+        return names[0] if names else ""
+    return ", ".join(names[:-1]) + f" {conj} " + names[-1]
+
+
 def _step(icon: str, label: str, detail: str = "") -> dict:
     out = {"icon": icon, "label": _shorten(label, 70)}
     if detail:
@@ -34,7 +44,7 @@ _SOURCE_LABELS = {
     "off":       ("barcode", "Found the product in Open Food Facts"),
     "web_label": ("globe", "Found the product label online"),
     "usda":      ("magnifyingglass", "Matched the USDA food database"),
-    "estimate":  ("wand.and.stars", "No exact match — estimated from the description"),
+    "estimate":  ("wand.and.stars", "Estimated from what you described"),
 }
 _SOURCE_DETAIL = {
     "history":   "From your own earlier log",
@@ -55,7 +65,7 @@ _LANE_LABELS = {
     "web":  ("globe", "the product label on the web"),
     # Not a lane — the reason no lane ran. A receipt whose lane section is
     # simply absent reads as a pipeline that never fired.
-    "lookup": ("arrow.triangle.branch", "Skipped the database lookup"),
+    "lookup": ("arrow.triangle.branch", "Went straight to an estimate"),
 }
 _LANE_OUTCOMES = {
     "hit": "found a match",
@@ -65,7 +75,7 @@ _LANE_OUTCOMES = {
     # "Portion estimated" is how a deliberate refusal reads as a broken lane.
     "weak": "match too loose to trust — not used",
     "miss": "no match",
-    "skipped": "not a named product — skipped",
+    "skipped": "not a packaged product, so there is no label to check",
 }
 
 
@@ -123,15 +133,47 @@ def _food_detailed(inp: dict, result: str) -> list:
     # 2026-07-26) is unanswerable from a trace that reports a single winner: an
     # OFF miss and an OFF that never ran look identical, and both look like
     # nothing happened.
+    # ONE LINE PER THING THAT HAPPENED, not one per thing that did not.
+    #
+    # Three consecutive "Checked X — no match" rows read as a failure log, and
+    # for a food no database carries — a deli salad, a home-cooked plate —
+    # that was most of the receipt. The information still has to survive: an
+    # OFF miss and an OFF that never ran must stay distinguishable, which is
+    # the whole reason lanes are reported. So the MISSES collapse into one
+    # line that names them, and anything that actually found something keeps
+    # its own line.
+    _found, _empty, _weak = [], [], []
     for lane, outcome in (src.get("lanes") or []):
         label = _LANE_LABELS.get(lane)
         if not label:
             continue
         lane_icon, lane_name = label
-        # The skip row carries its own reason verbatim and is not a "Checked".
-        prefix = "" if lane == "lookup" else "Checked "
-        steps.append(_step(lane_icon, f"{prefix}{lane_name}",
-                           _LANE_OUTCOMES.get(outcome, outcome)))
+        if lane == "lookup":
+            # Not a lane — the reason none ran. Keeps its own line and its
+            # own reason, or the receipt looks like nothing fired.
+            steps.append(_step(lane_icon, lane_name,
+                               _LANE_OUTCOMES.get(outcome, outcome)))
+        elif outcome == "hit":
+            _found.append((lane_icon, lane_name))
+        elif outcome == "weak":
+            _weak.append(lane_name)
+        else:
+            _empty.append(lane_name)
+    # The WINNER already says where the answer came from, so listing the lanes
+    # that also matched as their own lines says it three more times. They are
+    # corroboration — they belong on that line, not above it.
+    _winner_lane = {"usda": "usda", "off": "off", "web_label": "web"}.get(source)
+    _also = [n for lane_icon, n in _found
+             if _LANE_LABELS.get(_winner_lane, ("", ""))[1] != n]
+    if _also:
+        found = f"{found} — {_join_lanes(_also, 'and')} agreed"
+    if _weak:
+        steps.append(_step("arrow.triangle.branch",
+                           f"Close matches in {_join_lanes(_weak)}, "
+                           f"none exact enough to use"))
+    if _empty:
+        steps.append(_step("magnifyingglass",
+                           f"Nothing for this in {_join_lanes(_empty)}"))
     steps.append(_step(icon, found))
     qty = (src.get("quantity") or "").strip()
     if qty:

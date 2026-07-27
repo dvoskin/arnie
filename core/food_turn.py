@@ -686,6 +686,14 @@ _SYSTEM = (
     "attached to, never against a fixed number - the same handful of calories "
     "is noise on a large meal and most of a small one. Report it honestly and "
     "never round your doubt away.\n"
+    "- ONE UNKNOWN, ONE ENTRY. Every question you put in \"points\" must have "
+    "its own entry in \"ambiguities\" naming the same field, and nothing may "
+    "appear in one and not the other. `points` is only the WORDING; "
+    "`ambiguities` is what the system weighs, so a question with no entry "
+    "behind it cannot be scored and is silently dropped or committed past. "
+    "That is how a steak got asked about its size and its cooking while the "
+    "CUT \u2014 sirloin against ribeye, a swing of a hundred calories and more on "
+    "one portion \u2014 was asked in words and weighed as nothing.\n"
     "- YOU PROPOSE, THE SYSTEM DECIDES. \"action\" is your recommendation, not "
     "the outcome. Whether an unknown is worth interrupting someone for depends "
     "on their mode, their targets and the rest of their day - thresholds you "
@@ -1798,7 +1806,7 @@ def clarify_text_from_points(points: list, ready: list | None = None, *,
 
 
 def clarify_plan_from_points(points: list, ready: list | None = None, *,
-                             user_message: str = ""):
+                             user_message: str = "", items: list | None = None):
     """A clarification the INTERPRETER raised, phrased by the response layer.
 
     Every clarification goes through one renderer now, whatever noticed the
@@ -1840,9 +1848,26 @@ def clarify_plan_from_points(points: list, ready: list | None = None, *,
         # deterministic wrapper below turns it back into "".
         return None
 
-    resolved = tuple(FoodItemSummary(name=_ready_name(r))
+    def _num(v):
+        return int(v) if isinstance(v, (int, float)) else None
+
+    # THE READING, WITH ITS NUMBERS. Nothing commits behind a clarification, so
+    # no card carries the breakdown — and without it the composer can only ask,
+    # never show. `items` is the interpreter's own costing of the whole meal.
+    _priced = {}
+    for it in (items or ()):
+        if isinstance(it, dict):
+            nm = str(it.get("food") or "").strip().lower()
+            if nm:
+                _priced[nm] = (_num(it.get("calories")), _num(it.get("protein")))
+
+    def _summary(name: str):
+        cal, pro = _priced.get(str(name).strip().lower(), (None, None))
+        return FoodItemSummary(name=name, calories=cal, protein=pro)
+
+    resolved = tuple(_summary(_ready_name(r))
                      for r in (ready or ()) if _ready_name(r))[:4]
-    pending = tuple(FoodItemSummary(name=label) for label, _ in asks if label)
+    pending = tuple(_summary(label) for label, _ in asks if label)
     # Several facets of one item ("grilled or fried?", "skin on or off?") are
     # ONE question about that item. Joining them keeps the plan's promise that
     # `clarification_question` is a question and not a form.
@@ -2765,7 +2790,8 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
         from core.food_response import with_context as _ctx
         _plan = clarify_plan_from_points(data.get("points") or [],
                                          data.get("ready"),
-                                         user_message=message)
+                                         user_message=message,
+                                         items=data.get("items"))
         # REAL VARIANTS AS THE OPTIONS, when the thing being asked about is a
         # branded product. `build_prompt` already passes `clarification_options`
         # to the composer; they were simply never populated on this path.
