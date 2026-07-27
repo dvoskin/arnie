@@ -598,6 +598,28 @@ def note_held_items(say: str, stashed: list, tool_calls: list) -> str:
             + f". Holding the {held} - tell me which kind and it goes on too.")
 
 
+def _build_calls(ops, board_by_id: dict):
+    """`(calls, kinds, items_logged)` for an operation list.
+
+    Extracted so the ASK branch can construct the same calls the commit path
+    does. It has to be the same builder: units, entry-id binding and provenance
+    are decided here, and a second construction for the partial-commit case
+    would be a second definition of what a write is.
+    """
+    calls, kinds, items_logged = [], [], []
+    for kind, o in ops:
+        call = (_log_call(o) if kind == "log"
+                else _update_call(o, board_by_id) if kind == "update"
+                else _delete_call(o, board_by_id))
+        if call is None:
+            continue
+        calls.append(call)
+        kinds.append(kind)
+        if kind == "log":
+            items_logged.append(o)
+    return calls, kinds, items_logged
+
+
 def _apply_clarification_veto(decision, calls, kinds, items_logged):
     """Drop the log calls the clarification policy did not clear.
 
@@ -2165,7 +2187,37 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
             _text = await _render(_ctx(
                 clarify_plan(_decision, _q, user_message=message),
                 user=user, day_state=day_line))
+            # PARTIAL COMMIT. Moderate's contract is that the foods already
+            # confident enough go on the board, with the assumption stated,
+            # while the one still in question is asked about — not that the
+            # whole meal waits on the least certain item in it.
+            #
+            # The veto already computes exactly this: it drops the HELD items'
+            # log calls and returns the rest. It simply never ran on an ask,
+            # because this branch returns first, so an ask committed nothing in
+            # any mode and PARTIAL_COMMIT behaved as ATOMIC_HOLD.
+            #
+            # Built with the same `_build_calls` the commit path uses, so there
+            # is one definition of what a write is.
+            _ready_calls = []
+            try:
+                _board_by_id = {}
+                for _b in (board or []):
+                    try:
+                        _board_by_id[int(_b["id"])] = _b
+                    except Exception:
+                        continue
+                _c, _k, _il = _build_calls(ops, _board_by_id)
+                _ready_calls, _, _, _ = _apply_clarification_veto(
+                    _decision, _c, _k, _il)
+            except Exception as _ve:
+                # A partial commit is an improvement, never a precondition —
+                # losing it costs an extra turn, losing the QUESTION loses the
+                # meal.
+                logger.warning(f"partial-commit calls unavailable: {_ve}")
+                _ready_calls = []
             return {"action": "ask", "text": _text,
+                    "tool_calls": _ready_calls,
                     "points": [_q.prompt],
                     "question_id": _q.question_id,
                     "staged_item_id": _q.staged_item_id,
@@ -2212,17 +2264,7 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
         except Exception:
             continue
 
-    calls, kinds, items_logged = [], [], []
-    for kind, o in ops:
-        call = (_log_call(o) if kind == "log"
-                else _update_call(o, board_by_id) if kind == "update"
-                else _delete_call(o, board_by_id))
-        if call is None:
-            continue
-        calls.append(call)
-        kinds.append(kind)
-        if kind == "log":
-            items_logged.append(o)
+    calls, kinds, items_logged = _build_calls(ops, board_by_id)
 
     # ── THE POLICY'S VETO, APPLIED TO THE CALLS THAT WILL ACTUALLY RUN ──────
     #

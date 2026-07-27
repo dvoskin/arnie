@@ -57,9 +57,20 @@ from core.food_turn import _daily_targets                      # noqa: E402
 B, DIM, X = "\033[1m", "\033[2m", "\033[0m"
 RED, GRN, YEL, CYN = "\033[31m", "\033[32m", "\033[33m", "\033[36m"
 
-ASK_TURN = ("Had some pasta some yellowtail crudo some ceased salad "
-            "and some beef tartare")
-ANSWER_TURN = "Some like cheesy big rigatoni in a red sauce"
+#: (label, first message, the answer to whatever it asks)
+SCENARIOS = {
+    # Every food vague — nothing should commit on turn one.
+    "all-vague": (
+        "Had some pasta some yellowtail crudo some ceased salad "
+        "and some beef tartare",
+        "Some like cheesy big rigatoni in a red sauce"),
+    # PARTIAL COMMIT: two foods are stated outright and one is not. Moderate is
+    # supposed to put the confident ones on the board, assumptions stated, and
+    # ask about the remaining one — not hold the whole meal for it.
+    "partial": (
+        "Two eggs and a banana, and some of that leftover lasagna",
+        "About a cup and a half of the lasagna"),
+}
 
 
 async def load_user(user_id: int):
@@ -102,7 +113,8 @@ def show(tag: str, out) -> None:
         print(f"    {CYN}WRITES NOTHING{X} — held behind the question")
 
 
-async def one_mode(user, mode: str) -> None:
+async def one_mode(user, mode: str, scenario: str) -> None:
+    ASK_TURN, ANSWER_TURN = SCENARIOS[scenario]
     print(f"\n  {B}{mode.upper():9}{X} targets={_daily_targets(user)}")
     FT._mode = lambda _u, _m=mode: _m       # exercise each mode on one profile
 
@@ -130,6 +142,8 @@ async def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--user", type=int, default=26)
     ap.add_argument("--modes", default="quick,moderate,strict")
+    ap.add_argument("--scenario", default="all-vague",
+                    choices=sorted(SCENARIOS))
     args = ap.parse_args()
 
     user = await load_user(args.user)
@@ -142,7 +156,7 @@ async def main():
     try:
         for mode in [m.strip() for m in args.modes.split(",") if m.strip()]:
             try:
-                await one_mode(user, mode)
+                await one_mode(user, mode, args.scenario)
             except Exception as e:
                 print(f"\n  {mode.upper():9} {RED}failed{X}: {type(e).__name__}: {e}")
     finally:
