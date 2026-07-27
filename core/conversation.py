@@ -1918,13 +1918,23 @@ async def _run_turn(
                         # Scales with mode for free: strict asks where quick
                         # assumes, so strict arrives here with little to say and
                         # quick with the most. No separate per-mode copy.
-                        _assumed = tuple(dict.fromkeys(
-                            str(a.get("text") or "").strip()
-                            for c in (_ok_calls or [])
-                            for a in ((c.get("input") or {}).get("assumptions")
-                                      or [])
-                            if isinstance(a, dict) and str(a.get("text")
-                                                           or "").strip()))
+                        # NAMED, because an unattributed list gets misattributed.
+                        # Passing bare texts made the composer guess which food
+                        # each belonged to, and it shipped "Salty Peanut
+                        # Fairlife" — one item's flavour on another item's
+                        # shake. The pairing is not the composer's to infer.
+                        _assumed = []
+                        for _c in (_ok_calls or []):
+                            _ci = _c.get("input") or {}
+                            _cn = str(_ci.get("food_name") or "").strip()
+                            for _a in (_ci.get("assumptions") or []):
+                                if not isinstance(_a, dict):
+                                    continue
+                                _at = str(_a.get("text") or "").strip()
+                                if _at:
+                                    _assumed.append(f"{_cn}: {_at}" if _cn
+                                                    else _at)
+                        _assumed = tuple(dict.fromkeys(_assumed))
                         _plan = apply_policy(FoodResponsePlan(
                             intent=_intent,
                             committed_items=tuple(n for n in _names if n.name),

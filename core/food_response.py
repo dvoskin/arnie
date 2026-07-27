@@ -676,12 +676,14 @@ def apply_policy(plan: FoodResponsePlan) -> FoodResponsePlan:
     if plan.requires_answer:
         allow_q = True
         allow_none = False
-    if plan.assumptions:
+    if plan.assumptions and not plan.card_will_render:
         # AN UNDISCLOSED ASSUMPTION IS THE ONE THING SILENCE CANNOT COVER.
         # COMMIT permits no text at all on the reasoning that the card already
         # said it happened — true of the numbers, false of a choice the turn
-        # made on the user's behalf, which no older client renders and no card
-        # explains. Room to say it, and the requirement to.
+        # made on the user's behalf. WHERE A CARD RENDERS it now carries that
+        # choice as its own chip, so the sentence is free to do its usual job;
+        # where none does (Telegram, iMessage, an older client) the sentence is
+        # the only carrier there is, and it must speak.
         allow_none = False
         words = max(words, 45)
     return replace(plan, max_sentences=sentences, max_words=words,
@@ -1181,10 +1183,16 @@ def _unknowns_brief(unknowns: Tuple[dict, ...], mode: str = "") -> str:
     """
     lines = ["WHAT YOU DON'T KNOW YET (most consequential first):"]
     for unknown in pursued_unknowns(unknowns, mode)[:4]:
-        items = ", ".join(str(i) for i in (unknown.get("items") or ()))
+        names = [str(i) for i in (unknown.get("items") or ())]
         line = f"  • {unknown.get('phrase') or 'a missing detail'}"
-        if items:
-            line += f" — for: {items}"
+        if names:
+            # "for: A, B" read as a menu — the composer asked "which one did
+            # you have, the bar or the shake?" about a meal containing both.
+            # The list is what this unknown APPLIES TO, never a set of
+            # alternatives, and one word of framing is what keeps it that way.
+            line += (f" — applies to EACH of these (they had all of them): "
+                     f"{', '.join(names)}" if len(names) > 1
+                     else f" — for: {names[0]}")
         stakes = unknown.get("stakes") or 0
         if stakes:
             line += f"  [worth ~{int(stakes)} cal; never say this number]"
@@ -1195,16 +1203,47 @@ def _unknowns_brief(unknowns: Tuple[dict, ...], mode: str = "") -> str:
     lines.append(
         "Ask for what you need, the way you would out loud — it is a judgement "
         "about THIS meal, not a fixed number of questions. Do not work through "
-        "them as a list, do not name the fields, and do not assert an amount "
-        "for the very thing you are asking about. Foods are theirs — write "
-        "their names the way a person would, brands included.")
+        "them as a list and do not name the fields. Foods are theirs — write "
+        "their names the way a person would, brands included.\n"
+        "MAKE IT ANSWERABLE IN A WORD. Put your own best guess INTO the "
+        "question as one of two concrete choices — \"about a cup, or more than "
+        "that?\", \"the whole thing or half?\" — so agreeing costs them one "
+        "word and correcting you costs them two. An open question (\"how much "
+        "was it?\", \"which one?\") makes them do the work of inventing an "
+        "answer, and that is the question people skip.\n"
+        "  OFFERING IS NOT ASSERTING. Naming a likely amount as one side of a "
+        "choice is how a person asks; stating it as settled is not. \"Was that "
+        "about a cup, or more?\" is right. \"You had a cup — sound right?\" is "
+        "not: it invites a yes to a number nobody established.\n"
+        "  Several unknowns go in ONE breath, grouped the way they would be "
+        "spoken — a clause per thing, not a paragraph per thing. Every part "
+        "gets its own choice; a question that trails off into an open one at "
+        "the end is the part that goes unanswered.")
     return "\n".join(lines)
 
 
 def build_prompt(plan: FoodResponsePlan) -> str:
     """The generation prompt: voice, intent brief, approved facts, limits."""
-    parts = [ARNIE_VOICE, "", f"INTENT: {plan.intent.value}",
-             _INTENT_BRIEF.get(plan.intent, "")]
+    brief = _INTENT_BRIEF.get(plan.intent, "")
+    if (plan.assumptions and not plan.card_will_render
+            and plan.intent is FoodResponseIntent.COMMIT):
+        # THE BRIEF ITSELF HAD TO CHANGE. "The card already confirms what was
+        # logged, add one natural observation" frames the whole job as
+        # coaching, so a disclosure line further down the prompt loses to it —
+        # four assumptions were made and the shipped sentence was a generic
+        # read about having room left. True of the numbers, which the card
+        # does confirm; false of a choice made on their behalf, which no card
+        # explains and which no card exists to explain on Telegram or iMessage.
+        brief = ("No card renders here, so this sentence is the only place\n"
+                 "the guess can surface. You logged this WITHOUT asking, "
+                 "judged too small to interrupt them for. That judgement is "
+                 "yours to disclose: the one thing this sentence owes them is "
+                 "what you assumed. Say it plainly, briefly, in their own "
+                 "words — a wrong guess has to be obvious enough that they "
+                 "correct it in one tap. The card confirms the numbers, so do "
+                 "not recite those; a coach observation is optional and comes "
+                 "second, if at all.")
+    parts = [ARNIE_VOICE, "", f"INTENT: {plan.intent.value}", brief]
 
     if plan.resolved_items:
         # UNDERSTOOD IS NOT LOGGED, and the bare label let the composer assume
@@ -1258,7 +1297,16 @@ def build_prompt(plan: FoodResponsePlan) -> str:
         parts.append(f"ASK EXACTLY THIS (rephrasing for tone is fine): "
                      f"{plan.clarification_question}")
     if plan.clarification_options:
-        parts.append("OPTIONS: " + " / ".join(plan.clarification_options))
+        # THE ACTUAL SHELF. These come from the product database, so offering
+        # them means the answer resolves to a real item with real numbers —
+        # unlike a plausible-sounding pair the composer would invent, which
+        # nothing downstream can look up. Entries are "Product: a, b, c" when
+        # more than one product is in question; the pairing is not guesswork.
+        parts.append(
+            "REAL VARIANTS (from the product database — offer two or three of "
+            "these verbatim rather than inventing options, and keep each set "
+            "with the product it names):\n  "
+            + "\n  ".join(plan.clarification_options))
     if plan.failure is not None:
         parts.append(f"FAILURE: {plan.failure.code} — "
                      f"{plan.failure.recovery_action}")

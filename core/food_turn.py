@@ -480,6 +480,21 @@ _SYSTEM = (
     "thing you want to ask about IS an unknown and belongs here too, with what "
     "it is worth - an ask that reports nothing is a question the system cannot "
     "weigh against anything.\n"
+    "  HOW IT WAS COOKED IS A QUANTITY OF FAT, and naming a food does not name "
+    "its method. Cooking can add more calories than the food itself carries, "
+    "and the same words cover both the version with none of it and the version "
+    "swimming in it \\u2014 so an unstated method is an unstated number, not a "
+    "detail. Work out per food whether the method moves it: for some it is "
+    "most of the calories, for others it changes nothing at all, and you "
+    "already know which is which without being given a list.\n"
+    "  A UNIT THAT DOES NOT FIX A SIZE IS NOT A STATED AMOUNT. Counting "
+    "something says how many, not how much, and for anything that comes in "
+    "widely different sizes the count settles nothing on its own \u2014 the "
+    "same words cover a small one and one three times the size. Treat that "
+    "as an unstated quantity and report the spread, exactly as you would "
+    "for a word like \"some\". Reason it out per food rather than matching "
+    "on the measuring word: what matters is whether their phrasing pins the "
+    "size down, in whatever language they used.\n"
     "  impact_cal is the SPREAD the answer would settle: the gap between the "
     "plausible extremes, not your estimate. Judge it against the food it is "
     "attached to, never against a fixed number - the same handful of calories "
@@ -2397,15 +2412,29 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
         # branded product. `build_prompt` already passes `clarification_options`
         # to the composer; they were simply never populated on this path.
         if _plan is not None and not _plan.clarification_options:
-            _pts = data.get("points") or []
-            _first = (_pts[0].get("label") if _pts and isinstance(_pts[0], dict)
-                      else "") or ""
-            _branded = any(bool(i.get("branded")) for i in (data.get("items") or [])
-                           if isinstance(i, dict)) or _looks_like_brand(_first)
-            _opts = await _variant_options(_first, _branded)
-            if _opts:
+            # EVERY branded unknown, not just the first. Looking up only
+            # `points[0]` meant a meal with two branded products got the real
+            # shelf for one of them and invented options for the other — "the
+            # protein one or the allulose one" for a line whose flavours are
+            # all protein bars. Options are labelled with the product they
+            # belong to, because an unlabelled pool of flavours spanning two
+            # products is worse than none.
+            _branded_any = any(bool(i.get("branded"))
+                               for i in (data.get("items") or [])
+                               if isinstance(i, dict))
+            _labels = [str(p.get("label") or "").strip()
+                       for p in (data.get("points") or [])
+                       if isinstance(p, dict) and str(p.get("label") or "").strip()]
+            _found = []
+            for _lb in _labels[:3]:
+                if not (_branded_any or _looks_like_brand(_lb)):
+                    continue
+                _v = await _variant_options(_lb, True)
+                if _v:
+                    _found.append(f"{_lb}: " + ", ".join(_v))
+            if _found:
                 import dataclasses as _dc
-                _plan = _dc.replace(_plan, clarification_options=_opts)
+                _plan = _dc.replace(_plan, clarification_options=tuple(_found))
         text = (await _render(_ctx(_plan, user=user, day_state=day_line))
                 if _plan is not None else "")
         # THE READY FOODS GO ON THE BOARD. The recap has always named them as
