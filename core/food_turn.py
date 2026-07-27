@@ -1118,6 +1118,65 @@ def clarify_text(decision, question, *, user_message: str = "") -> str:
     return fallback(clarify_plan(decision, question, user_message=user_message))
 
 
+#: An ambiguity's type -> the kind the composer's brief already phrases. Shared
+#: with the interpreter-ask path so both clarify routes describe an unknown the
+#: same way, rather than one composing and the other reciting.
+_AMBIGUITY_KIND = {
+    "consumed_quantity": "portion",
+    "unit_interpretation": "portion",
+    "package_size": "portion",
+    "product_identity": "identity",
+    "product_line": "identity",
+    "product_variant": "identity",
+    "preparation": "preparation",
+    "component_breakdown": "extras",
+    "serving_basis": "detail",
+}
+
+
+def unknowns_from_decision(decision, user_message: str = "") -> tuple:
+    """The staged items' ambiguities in the shape the composer's brief reads.
+
+    WHY THIS EXISTS. `clarify_plan` set `clarification_question` and nothing
+    else, so `build_prompt` fell through to its "ASK EXACTLY THIS (rephrasing
+    for tone is fine)" branch — handing the composer a finished template and
+    asking for a tone pass. Two different modes then produced BYTE-IDENTICAL
+    text ("I picked the other amounts myself. Was the bowl closer to 150g or
+    400g?"), which is the tell: an LLM does not write the same sentence twice.
+
+    That is the same defect already fixed on the interpreter-ask path — the
+    composer is given what is UNKNOWN and writes the turn — and this route
+    never got it, so every question the staged pipeline raised, which is most
+    of them on a composite meal, shipped as a template.
+    """
+    groups = {}
+    for item in (getattr(decision, "staged_items", None) or ()):
+        for amb in (getattr(item, "ambiguities", None) or ()):
+            try:
+                kind = _AMBIGUITY_KIND.get(amb.ambiguity_type.value, "detail")
+            except Exception:
+                kind = "detail"
+            g = groups.setdefault(kind, {"items": [], "stakes": 0.0})
+            name = (item.original_text or "").strip()
+            if name and name not in g["items"]:
+                g["items"].append(name)
+            try:
+                g["stakes"] += abs(float(amb.calorie_span or 0))
+            except (TypeError, ValueError):
+                pass
+    out = []
+    for kind, g in groups.items():
+        # Same fallback the interpreter path uses: an unknown nobody could
+        # price still ranks by how many foods it covers, or a meal of unpriced
+        # items never gets asked about at all.
+        weight = g["stakes"] or float(len(g["items"]) * 200)
+        out.append({"kind": kind, "phrase": _KIND_PHRASING.get(kind, kind),
+                    "items": tuple(g["items"]), "asks": (),
+                    "stakes": round(g["stakes"], 1), "weight": weight})
+    out.sort(key=lambda g: -g["weight"])
+    return tuple(out)
+
+
 def clarify_plan(decision, question, *, user_message: str = ""):
     """The whole meal as we read it, then the one thing we need.
 
@@ -1160,6 +1219,9 @@ def clarify_plan(decision, question, *, user_message: str = ""):
         intent=FoodResponseIntent.CLARIFY,
         resolved_items=tuple(resolved), pending_items=tuple(pending),
         clarification_question=question.prompt,
+        # ...and WHAT IS UNKNOWN, so the composer writes the question instead
+        # of being handed one and asked to rephrase it.
+        clarification_unknowns=unknowns_from_decision(decision, user_message),
         unresolved_item=(pending[0] if pending else None),
         requires_answer=True, user_message=user_message))
 
