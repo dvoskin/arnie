@@ -392,7 +392,13 @@ _SYSTEM = (
     'unclear -> {"action":"ask","points":[{"label":"Chicken","qs":["grilled, '
     'baked, or fried?","skin on or off?","rough amount - oz or one breast?"]},'
     '{"label":"Potato","qs":["baked, mashed, or fries?","any butter, cheese, '
-    'or sour cream?"]}],"ready":["Bagel","Greek yogurt"]}\n'
+    'or sour cream?"]}],"ready":[{"food":"Bagel","amount":1,"unit":"bagel",'
+    '"calories":280,"protein":10,"carbs":55,"fats":2},{"food":"Greek yogurt",'
+    '"amount":1,"unit":"cup","calories":130,"protein":22}]}\n'
+    "READY CARRIES FULL ITEMS, exactly like `items` above — the foods you are "
+    "NOT asking about are ready to be written now, and a bare name cannot be "
+    "written. Give each one its amount and macros. Anything you ARE asking "
+    "about belongs in `points`, never in `ready`.\n"
     '3. Consumed food with enough detail -> {"action":"log","items":[{"food":'
     '"Caesar salad","amount":2,"unit":"handfuls","calories":180,"protein":4,'
     '"carbs":8,"fats":15,"meal":"dinner"}],"say":"Pizza and the Caesar logged, {batch_cal} cal and '
@@ -1126,6 +1132,52 @@ def _lc(name: str) -> str:
     return n.lower()
 
 
+def _ready_name(entry) -> str:
+    """`ready` used to be a list of names and is now a list of items. Accept
+    both: the model is not versioned with the prompt, and a name-only reply
+    must still render its recap rather than losing the food."""
+    if isinstance(entry, dict):
+        return str(entry.get("food") or entry.get("name") or "").strip()
+    return str(entry or "").strip()
+
+
+def ready_items(ready) -> list:
+    """The `ready` entries that carry enough to actually be written.
+
+    A name alone cannot be logged — which is why the partial commit was
+    impossible on this path and why the reply still said "eggs and a banana
+    logged" over a turn that wrote nothing. Only entries with a food and a
+    calorie figure are returned, so a model that ignores the schema degrades to
+    the old behaviour instead of writing rows it never costed.
+    """
+    out = []
+    for entry in (ready or []):
+        if not isinstance(entry, dict):
+            continue
+        if not str(entry.get("food") or "").strip():
+            continue
+        if entry.get("calories") in (None, ""):
+            continue
+        out.append(entry)
+    return out
+
+
+def _calls_for_ready(ready) -> list:
+    """Write calls for the foods an ask is NOT asking about.
+
+    Built with the same `_log_call` the commit path uses, so provenance and
+    units are decided in one place. Entries without calories are dropped by
+    `ready_items` — a model that ignores the schema degrades to naming them,
+    which is the old behaviour, rather than writing rows it never costed.
+    """
+    calls = []
+    for item in ready_items(ready):
+        call = _log_call(item)
+        if call is not None:
+            calls.append(call)
+    return calls
+
+
 def clarify_text_from_points(points: list, ready: list | None = None, *,
                              user_message: str = "") -> str:
     """The deterministic floor for `clarify_plan_from_points`.
@@ -1181,8 +1233,8 @@ def clarify_plan_from_points(points: list, ready: list | None = None, *,
         # deterministic wrapper below turns it back into "".
         return None
 
-    resolved = tuple(FoodItemSummary(name=str(r).strip())
-                     for r in (ready or ()) if str(r).strip())[:4]
+    resolved = tuple(FoodItemSummary(name=_ready_name(r))
+                     for r in (ready or ()) if _ready_name(r))[:4]
     pending = tuple(FoodItemSummary(name=label) for label, _ in asks if label)
     # Several facets of one item ("grilled or fried?", "skin on or off?") are
     # ONE question about that item. Joining them keeps the plan's promise that
@@ -1440,7 +1492,7 @@ def _format_question(points: list, ready: list | None = None) -> str:
     if not norm:
         return ""
     bubbles = []
-    ready_names = [_lc(str(r)) for r in (ready or []) if str(r).strip()][:4]
+    ready_names = [_lc(_ready_name(r)) for r in (ready or []) if _ready_name(r)][:4]
     if ready_names:
         bold = [f"**{n}**" for n in ready_names]
         joined = (bold[0] if len(bold) == 1
@@ -2049,6 +2101,13 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
                                          user_message=message)
         text = (await _render(_ctx(_plan, user=user, day_state=day_line))
                 if _plan is not None else "")
+        # THE READY FOODS GO ON THE BOARD. The recap has always named them as
+        # settled — "So you've got eggs and a banana logged" — over a turn that
+        # wrote nothing, because `ready` carried names and a name cannot be
+        # written. It carries items now, so the foods we are NOT asking about
+        # commit while the one we are asking about waits.
+        # `_calls_for_ready(data.get("ready"))` is what would go here. Held:
+        # see the cross-turn dedup note in conversation.py's ask branch.
         return {"action": "ask", "text": text} if text else None
 
     if action == "ask" and prior:

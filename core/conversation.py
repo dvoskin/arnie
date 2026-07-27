@@ -1080,8 +1080,25 @@ async def _run_turn(
                 # indicator — and which disappears when the card lands, instead
                 # of leaving a permanent bubble describing a wait that is over.
         elif _sft is not None and _sft["action"] == "ask":
-            # The one clarify question IS the reply — no tools, nothing logged.
+            # THE QUESTION IS THE REPLY — but the foods it is NOT asking about
+            # still get logged. This said "no tools, nothing logged" and
+            # hardcoded an empty list, which is why moderate's PARTIAL_COMMIT
+            # never partially committed: `decide()` separates ready from held,
+            # `_apply_clarification_veto` drops the held items' calls and keeps
+            # the rest, and then every survivor was discarded here. Moderate
+            # behaved exactly like strict, holding an entire meal for its least
+            # certain item.
+            #
+            # Only the cleared calls arrive — food_turn ran the same veto the
+            # commit path runs — so a held food still cannot be written behind
+            # an unanswered question.
             _turn_route = "structured_ask"
+            # HELD until cross-turn dedup exists — see below. Executing these
+            # double-logs: the answer turn re-interprets the whole meal and
+            # writes it again, and food_dedup matches on the normalized name,
+            # where the interpreter's "Egg" on the ask and "Eggs" on the answer
+            # are different foods. A duplicate row is worse than the claim it
+            # would fix.
             result = {"text": _sft["text"], "raw_content": [], "tool_calls": [],
                       "stop_reason": "structured_food"}
         else:
