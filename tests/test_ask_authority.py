@@ -30,7 +30,7 @@ from types import SimpleNamespace
 import pytest
 
 import core.food_turn as FT
-from skills.nutrition.materiality import DAY_SHARE_OVERRIDE
+from skills.nutrition.materiality import day_share_override_for
 
 TARGETS = {"calories": 2000.0, "protein": 150.0, "carbs": 200.0, "fat": 60.0}
 
@@ -122,7 +122,7 @@ def test_absolute_size_overrides_proportion():
     """An unknown worth this much of a day is worth a question whatever
     fraction of its own item it happens to be — the case quick had backwards,
     asking about a 10-calorie coffee and writing a 500-calorie plate."""
-    span = DAY_SHARE_OVERRIDE * TARGETS["calories"] + 10   # just over the line
+    span = day_share_override_for("quick") * TARGETS["calories"] + 10
     assert FT._proposed_ask_is_material(
         _proposal(span=span, calories=4000), mode="quick", user=_user("quick"))
 
@@ -327,3 +327,26 @@ def test_the_demotion_never_writes_a_food_twice():
         data["ambiguities"])
     names = [str(i.get("food", "")).lower() for i in merged]
     assert len(names) == len(set(names)), names
+
+
+def test_the_override_is_looser_for_quick_than_for_strict():
+    """One universal bar put quick back where it started: at 12.5% it landed
+    at ~273 cal, and a bowl or a plate of a real dish routinely spans 300-400,
+    so it fired on 15 of 20 vague composite meals and quick stopped being
+    quick. The ladder has to live inside the override too."""
+    from skills.nutrition.materiality import day_share_override_for
+    assert (day_share_override_for("quick")
+            > day_share_override_for("moderate"))
+    assert day_share_override_for("nonsense") == day_share_override_for("moderate")
+
+
+def test_quick_commits_a_bowl_but_not_an_unidentified_plate():
+    """The two cases the dial sits between: a named dish whose portion is
+    vague commits with its guess disclosed; a plate we cannot identify at all
+    still earns the question."""
+    from skills.nutrition.materiality import is_material
+    T = {"calories": 2183.0, "protein": 180.0, "carbs": 235.0, "fat": 58.0}
+    assert not is_material(mode="quick", calorie_span=300, item_calories=600,
+                           targets=T)                      # a bowl of ramen
+    assert is_material(mode="quick", calorie_span=400, item_calories=500,
+                       targets=T)                          # unidentified plate

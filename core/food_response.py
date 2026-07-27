@@ -503,6 +503,13 @@ class FoodResponsePlan:
     #: The Barebells bar in the 2026-07-25 transcript came through this seam.
     failed_items: Tuple[FoodItemSummary, ...] = ()
     assumptions: Tuple[Any, ...] = ()
+    #: What a correction actually changed, as "before -> after" pairs.
+    #: The plan used to carry only the AFTER state, and the CORRECT
+    #: brief asks the composer to name what changed — so it invented the
+    #: before. A turn correcting a pork portion shipped "you swapped the
+    #: chashu pork for the chicken" over a conversation containing no
+    #: chicken. A composer cannot describe a change it was never told.
+    corrections: Tuple[str, ...] = ()
 
     # Clarification.
     clarification_question: Optional[str] = None
@@ -1274,6 +1281,12 @@ def build_prompt(plan: FoodResponsePlan) -> str:
     if plan.pending_items:
         parts.append("NOT LOGGED, still open: "
                      + "; ".join(i.name for i in plan.pending_items))
+    if plan.corrections:
+        parts.append(
+            "WHAT ACTUALLY CHANGED — these and nothing else. Name them in "
+            "their words; do not describe a swap, an addition or a removal "
+            "that is not in this list, and if it is empty say only that it is "
+            "updated:\n  " + "\n  ".join(plan.corrections))
     if plan.assumptions:
         texts = [getattr(a, "user_visible_text", "") or str(a)
                  for a in plan.assumptions]

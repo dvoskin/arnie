@@ -68,7 +68,22 @@ MATERIAL_FRACTIONS = {"quick": 1.01, "moderate": 0.3, "strict": 0.15}
 #: So: whatever the mode, an unknown worth this much of the day is worth a
 #: question. It only ever ADDS asks, and only for spans large in absolute
 #: terms, which is the one case where every mode agrees.
-DAY_SHARE_OVERRIDE = 0.125
+#: PER MODE, because one bar for all three put quick back where it started.
+#: At a universal 12.5% the override lands at ~273 cal on a 2183-calorie day,
+#: and a bowl, a plate or a serving of a real composite dish routinely spans
+#: 300-400 — so it fired on most of them and quick asked on 15 of 20 vague
+#: composite meals instead of logging with its assumption disclosed.
+#:
+#: Quick sits at 17%: high enough that a bowl of ramen or a serving of lasagna
+#: (both ~13.7% of a day) commit with the guess shown on the card, low enough
+#: that the case this override exists for still fires — an unidentified plate
+#: carried at 500 calories with a 400-calorie spread is 18.3%.
+DAY_SHARE_OVERRIDE = {"quick": 0.17, "moderate": 0.125, "strict": 0.125}
+
+
+def day_share_override_for(mode: str) -> float:
+    return DAY_SHARE_OVERRIDE.get((mode or "").strip().lower(),
+                                  DAY_SHARE_OVERRIDE["moderate"])
 
 #: ...but not on trivia. A 100% span on a 12-calorie item is still 12 calories,
 #: and asking about it is how a clarification ladder loses its credibility.
@@ -294,7 +309,7 @@ def is_material(*, mode: str, calorie_span: Optional[float] = None,
             if ceiling / day_target < min_item_share_for(mode):
                 return False
         # Big in absolute terms — proportion does not get to veto it.
-        if of_day >= DAY_SHARE_OVERRIDE:
+        if of_day >= day_share_override_for(mode):
             return True
         return of_item >= fraction_for(mode)
 

@@ -1977,8 +1977,26 @@ async def _run_turn(
                                     _assumed.append(f"{_cn}: {_at}" if _cn
                                                     else _at)
                         _assumed = tuple(dict.fromkeys(_assumed))
+                        # BEFORE -> AFTER, from the calls themselves.
+                        # `food_hint` is the row's name as it stood; the input
+                        # is what it becomes. Without this the composer is told
+                        # to name the change and has only the result to look at.
+                        _changed = []
+                        for _c in (_ok_calls or []):
+                            if _c.get("name") != "update_food_entry":
+                                continue
+                            _ci = _c.get("input") or {}
+                            _was = str(_ci.get("food_hint") or "").strip()
+                            _now = str(_ci.get("food_name") or "").strip()
+                            _qty = str(_ci.get("quantity") or "").strip()
+                            if _now and _was and _now.lower() != _was.lower():
+                                _changed.append(f"{_was} is now {_now}")
+                            elif _qty:
+                                _changed.append(
+                                    f"{_was or _now} is now {_qty}")
                         _plan = apply_policy(FoodResponsePlan(
                             intent=_intent,
+                            corrections=tuple(_changed),
                             committed_items=tuple(n for n in _names if n.name),
                             committed_snapshot=_snap,
                             assumptions=_assumed,
