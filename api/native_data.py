@@ -681,19 +681,20 @@ def _height_ft(user) -> str:
     return f"{int(total_in // 12)}'{int(total_in % 12)}\""
 
 
-def _compute_streak(hist_rows: list, user) -> int:
-    logged = {h["date"] for h in hist_rows if (h.get("calories") or 0) > 0 or h.get("workout")}
-    if not logged:
-        return 0
-    try:
-        cur = _date.fromisoformat(_user_today(user.timezone or "UTC").isoformat())
-    except Exception:
-        cur = _date.fromisoformat(max(logged))
-    streak = 0
-    while cur.isoformat() in logged:
-        streak += 1
-        cur = cur - timedelta(days=1)
-    return streak
+def _compute_streak(logs: list, user) -> int:
+    """The Profile chip's streak — now the SAME number the top bar shows.
+
+    This used to be a private strict walk over 60 days: no forgiveness, so a
+    single missed Tuesday reset it. The top bar, the widget and /day all went
+    through core/streaks, which bridges one miss per rolling 7 over 90 days.
+    Same user, same day, two different numbers on two screens.
+
+    Takes DailyLog rows now (not the stringified `hist` dicts) because that's
+    what the shared engine reads.
+    """
+    from core.streaks import compute_streaks
+    chain = compute_streaks(logs, _user_today(user.timezone or "UTC")).get("logging") or {}
+    return int(chain.get("current") or 0)
 
 
 async def fitness_data(db, user) -> dict:
@@ -715,7 +716,9 @@ async def fitness_data(db, user) -> dict:
 async def profile_data(db, user) -> dict:
     """The profile dict the Profile endpoint consumes — no weights/attributes/analytics."""
     prefs = user.preferences
-    history = await get_recent_logs(db, user.id, days=60)
+    # 90 days, matching core.streaks.WINDOW_DAYS — the chip and the top-bar
+    # bolt have to walk the same window or they'll disagree on `best`.
+    history = await get_recent_logs(db, user.id, days=90)
     hist = [{"date": str(log.date), "calories": round(log.total_calories or 0),
              "workout": log.workout_completed}
             for log in sorted(history, key=lambda l: l.date)]
@@ -757,6 +760,6 @@ async def profile_data(db, user) -> dict:
             "food_logging_mode": (getattr(prefs, "food_logging_mode", None) or "moderate") if prefs else "moderate",
             "whoop_connected": await _whoop_connected(db, user),
             "apple_health_connected": any(s.source == "apple_health" for s in snaps),
-            "streak_days": _compute_streak(hist, user),
+            "streak_days": _compute_streak(history, user),
         }
     }

@@ -114,3 +114,76 @@ def test_milestone_flagged_in_context():
     line = streaks_context_line(compute_streaks(_days_back(0, 1, 2, 3, 4, 5, 6), TODAY))
     assert line and "7-day milestone" in line
     assert 7 in MILESTONES
+
+
+# ── The training chain ───────────────────────────────────────────────────────
+
+
+def test_training_chain_counts_sessions_not_meals():
+    """A training streak a sandwich can satisfy isn't a training streak."""
+    rows = [_log(TODAY, workout=True),
+            _log(TODAY - timedelta(days=1), workout=True),
+            _log(TODAY - timedelta(days=2), workout=False)]   # ate, didn't train
+    s = compute_streaks(rows, TODAY)
+    assert s["training"]["current"] == 2
+    assert s["logging"]["current"] == 3        # all three still count as logged
+
+
+def test_training_chain_is_free_on_the_same_rows():
+    """No new fetch: the flag rides on the rows every caller already passes."""
+    s = compute_streaks(_days_back(0, 1, 2), TODAY)
+    assert "training" in s
+    assert s["training"]["current"] == 0       # logged, never trained
+
+
+def test_training_gets_the_same_forgiveness():
+    rows = [_log(TODAY - timedelta(days=o), workout=True) for o in (0, 1, 3, 4)]
+    assert compute_streaks(rows, TODAY)["training"]["current"] == 4
+
+
+def test_chains_are_pluggable():
+    """Adding a chain is one predicate — the walk knows nothing about meaning."""
+    big = compute_streaks(_days_back(0, 1), TODAY,
+                          chains={"huge": lambda r: (r.total_calories or 0) > 5000})
+    assert set(big) == {"huge"}
+    assert big["huge"]["current"] == 0
+
+
+# ── The banked rest day ──────────────────────────────────────────────────────
+
+
+def test_rest_day_is_banked_on_a_clean_chain():
+    s = compute_streaks(_days_back(0, 1, 2, 3, 4, 5, 6), TODAY)
+    assert s["logging"]["rest_day_banked"] is True
+
+
+def test_rest_day_is_spent_once_a_gap_is_bridged():
+    """The chain survives the miss — but the net is gone, and the client has to
+    be able to say so before the second one lands."""
+    s = compute_streaks(_days_back(0, 1, 2, 4, 5, 6), TODAY)   # missed day 3
+    assert s["logging"]["current"] > 0            # bridged, still alive
+    assert s["logging"]["rest_day_banked"] is False
+
+
+def test_nothing_is_banked_without_a_chain():
+    """Nothing to protect at zero — don't offer a safety net for a habit that
+    doesn't exist yet."""
+    assert compute_streaks([], TODAY)["logging"]["rest_day_banked"] is False
+
+
+def test_an_empty_today_does_not_spend_the_rest_day():
+    """Today is pending, never a miss — it must not read as the gap."""
+    s = compute_streaks(_days_back(1, 2, 3, 4, 5, 6), TODAY)
+    assert s["logging"]["today_done"] is False
+    assert s["logging"]["rest_day_banked"] is True
+
+
+# ── The ladder past 100 ──────────────────────────────────────────────────────
+
+
+def test_milestones_run_to_a_year():
+    """The ladder used to stop at 100, leaving the most committed users with
+    nothing ahead of them."""
+    assert MILESTONES == tuple(sorted(MILESTONES)), "milestones must ascend"
+    assert MILESTONES[-1] == 365
+    assert {150, 200, 365} <= set(MILESTONES)

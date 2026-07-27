@@ -1419,31 +1419,27 @@ async def _build_stats_for_user(db, user, target_date=None):
     available_dates = sorted({d["date"] for d in hist_data})
     analytics = _compute_analytics(user, prefs, weight_data)
 
-    # ── Logging streak — consecutive days (walking back from today) with any
-    # entry logged. "Logged" = calories > 0 OR workout completed (food or
-    # exercise activity). Returned as profile.streak_days; dashboard only
-    # surfaces it as a chip when ≥ 3 (see streak chip in api/templates.py).
-    def _compute_streak(hist_rows):
-        if not hist_rows:
-            return 0
-        # hist_rows is oldest→newest. Build a set of "logged" date strings.
-        logged_set = {h["date"] for h in hist_rows if (h.get("calories") or 0) > 0 or h.get("workout")}
-        if not logged_set:
-            return 0
-        # Walk backward from the user's "today" date by 1-day steps, count
-        # consecutive logged days, stop on the first gap.
-        from datetime import date as _dt_date, timedelta as _td
+    # ── Logging streak — the SAME number the iOS top bar shows.
+    # This was a third private copy of a strict consecutive-day walk (the
+    # others lived in api/native_data and api/groups), so the web dashboard's
+    # chip disagreed with the app for any user whose chain had survived a
+    # missed day. All of them go through core.streaks now: one miss per rolling
+    # 7 is bridged, 90-day window, user-local today.
+    # Surfaced as profile.streak_days; the dashboard shows the chip at ≥ 3.
+    from types import SimpleNamespace as _NS
+    from datetime import date as _dt_date
+    from core.streaks import compute_streaks
+    _streak_rows = []
+    for h in hist_data:
         try:
-            cur = _dt_date.fromisoformat(_user_today(user.timezone or "UTC").isoformat())
-        except Exception:
-            cur = _dt_date.fromisoformat(max(logged_set))
-        streak = 0
-        while cur.isoformat() in logged_set:
-            streak += 1
-            cur = cur - _td(days=1)
-        return streak
-
-    streak_days = _compute_streak(hist_data)
+            _streak_rows.append(_NS(date=_dt_date.fromisoformat(h["date"]),
+                                    total_calories=h.get("calories") or 0,
+                                    workout_completed=bool(h.get("workout"))))
+        except (ValueError, TypeError, KeyError):
+            continue   # a malformed history row must never break the page
+    streak_days = int((compute_streaks(
+        _streak_rows, _user_today(user.timezone or "UTC")
+    ).get("logging") or {}).get("current") or 0)
 
     # ── Today-state flags for the coach brief ──────────────────────────────────
     # The brief is strongly conversation-aware (it treats "gonna weigh in soon"

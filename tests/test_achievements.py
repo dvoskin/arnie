@@ -12,12 +12,19 @@ from datetime import date, datetime, timedelta
 import pytest
 
 from core.achievements import (
-    BADGES, NEXT_UP_COUNT, check_achievements, badge_wall, compute_state,
-    wall_with_backfill,
+    BADGES, NEXT_UP_COUNT, ZERO_STATE, _PROVIDER_OF,
+    check_achievements, badge_wall, compute_state, wall_with_backfill,
 )
 from db.models import Achievement, DailyLog, ExerciseEntry, FoodEntry
 
 pytestmark = pytest.mark.asyncio
+
+
+def _as_async(fn):
+    """Wrap a sync spy so it can stand in for an async provider."""
+    async def _inner(*a, **kw):
+        return fn(*a, **kw)
+    return _inner
 
 
 async def _add_day(db, uid, d, calories=500, foods=0, workouts=0,
@@ -45,8 +52,23 @@ async def test_registry_integrity():
         # measured by a metric/target pair.
         assert b["metal"] in ("bronze", "silver", "gold", "platinum")
         assert b["family"] in ("nutrition", "training", "consistency", "precision")
-        assert b["metric"] in ("foods", "photos", "workouts", "protein_days", "streak")
         assert isinstance(b["target"], int) and b["target"] > 0
+        # A badge whose metric no provider computes is permanently unearnable —
+        # the exact shape of the protein_7 bug, caught structurally this time.
+        assert b["metric"] in _PROVIDER_OF, \
+            f"{b['id']}: metric {b['metric']!r} has no provider"
+
+
+async def test_every_metric_is_reachable_and_zeroed():
+    """Every provider metric must appear in ZERO_STATE, or the fail-open floor
+    would KeyError instead of degrading to no progress."""
+    for metric in _PROVIDER_OF:
+        assert metric in ZERO_STATE
+
+
+async def test_ranks_are_unique():
+    ranks = [b["rank"] for b in BADGES]
+    assert len(ranks) == len(set(ranks)), "duplicate rank — celebration order is ambiguous"
 
 
 async def test_metal_ladder_rises_with_rank():
@@ -286,6 +308,126 @@ async def test_wall_read_survives_a_broken_counter_pass(db, make_user, monkeypat
     assert by_id["first_food"]["earned_at"] is not None
     assert by_id["first_food"]["progress"]["pct"] == 1.0
     assert by_id["foods_50"]["progress"]["current"] == 0
+
+
+# ── v3: rhythm metrics off the day sequence ─────────────────────────────────
+#
+# These are pure — DailyLog.date is already the user's LOCAL logging day, which
+# is what makes weekday badges a cheap count rather than a per-entry fetch.
+
+from types import SimpleNamespace
+from core.achievements import _window_metrics
+
+# 2026-07-04 is a Saturday; 07-06 a Monday.
+_SAT = date(2026, 7, 4)
+_SUN = date(2026, 7, 5)
+_MON = date(2026, 7, 6)
+
+
+def _row(d, cal=1500, workout=False, cardio=False):
+    return SimpleNamespace(date=d, total_calories=cal,
+                           workout_completed=workout, cardio_completed=cardio)
+
+
+async def test_weekend_pair_needs_both_days():
+    """A lone Saturday isn't a weekend — half the point of the badge is that
+    Sunday is the one people skip."""
+    lone = _window_metrics([_row(_SAT)], _MON + timedelta(days=30))
+    assert lone["weekend_pairs"] == 0
+
+    both = _window_metrics([_row(_SAT), _row(_SUN)], _MON + timedelta(days=30))
+    assert both["weekend_pairs"] == 1
+
+
+async def test_weekend_pairs_do_not_double_count():
+    """Keyed off the Saturday — otherwise one weekend counts twice."""
+    m = _window_metrics([_row(_SAT), _row(_SUN)], _MON + timedelta(days=30))
+    assert m["weekend_pairs"] == 1
+
+
+async def test_perfect_week_needs_all_seven():
+    week = [_row(_MON + timedelta(days=i)) for i in range(7)]
+    assert _window_metrics(week, _MON + timedelta(days=30))["perfect_weeks"] == 1
+    assert _window_metrics(week[:6], _MON + timedelta(days=30))["perfect_weeks"] == 0
+
+
+async def test_comeback_needs_a_real_absence():
+    """Consecutive days aren't a comeback; the forgiven one-day gap isn't
+    either. Only a genuine week away counts."""
+    tight = [_row(_MON), _row(_MON + timedelta(days=1))]
+    assert _window_metrics(tight, _MON + timedelta(days=40))["comebacks"] == 0
+
+    short_gap = [_row(_MON), _row(_MON + timedelta(days=3))]
+    assert _window_metrics(short_gap, _MON + timedelta(days=40))["comebacks"] == 0
+
+    real = [_row(_MON), _row(_MON + timedelta(days=10))]
+    assert _window_metrics(real, _MON + timedelta(days=40))["comebacks"] == 1
+
+
+async def test_double_day_needs_both_kinds_of_work():
+    only_lift = _window_metrics([_row(_MON, workout=True)], _MON + timedelta(days=30))
+    assert only_lift["double_days"] == 0
+
+    both = _window_metrics([_row(_MON, workout=True, cardio=True)],
+                           _MON + timedelta(days=30))
+    assert both["double_days"] == 1
+
+
+async def test_mondays_counts_only_mondays():
+    m = _window_metrics([_row(_MON), _row(_SAT), _row(_MON + timedelta(days=7))],
+                        _MON + timedelta(days=30))
+    assert m["mondays"] == 2
+
+
+async def test_future_rows_never_count_toward_rhythm():
+    """Same guard the streak engine applies — old LLM date bugs left rows
+    ahead of today."""
+    m = _window_metrics([_row(_MON), _row(_MON + timedelta(days=5))], _MON)
+    assert m["mondays"] == 1 and m["weekend_pairs"] == 0
+
+
+# ── v3: lazy providers + hidden badges ──────────────────────────────────────
+
+
+async def test_providers_run_only_for_unearned_metrics(db, make_user, monkeypatch):
+    """The whole point of grouping metrics by source: a user who has collected
+    the rhythm badges stops paying for the 90-day window on every log turn."""
+    import core.achievements as ach
+
+    u = await make_user()
+    called = []
+    for name in ("counts", "days", "window", "corrections"):
+        def spy(_db, _user, _n=name):
+            called.append(_n)
+            return {}
+        monkeypatch.setitem(ach._PROVIDERS, name, _as_async(spy))
+
+    await ach.compute_state(db, u, metrics={"foods"})
+    assert called == ["counts"], "asked for one counter, ran more than one provider"
+
+    called.clear()
+    await ach.compute_state(db, u, metrics={"weekend_pairs"})
+    assert called == ["window"]
+
+
+async def test_hidden_badges_never_appear_as_targets(db, make_user):
+    """"Next up: come back after a week away" would be telling the user to
+    lapse in order to collect it."""
+    u = await make_user()
+    wall = await badge_wall(db, u)
+    by_id = {b["id"]: b for b in wall}
+
+    assert by_id["comeback"]["hidden"] is True
+    assert all(not b["hidden"] for b in wall if b["next_up"] is not None)
+    # …but it is still ON the wall, so earning it can be a reveal.
+    assert "comeback" in by_id
+
+
+async def test_hidden_flag_is_on_every_badge_for_the_client():
+    """The client branches on it, so it must never be absent."""
+    from core.achievements import _wire
+    for b in BADGES:
+        assert isinstance(_wire(b)["hidden"], bool)
 
 
 async def test_wall_read_computes_counters_once(db, make_user, monkeypatch):

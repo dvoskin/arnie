@@ -366,35 +366,44 @@ async def get_messages(
 
 
 async def _sender_streaks(db, user_ids: set) -> dict:
-    """Logging streak per sender — same definition as the profile chip and the
-    top-bar bolt (consecutive days walking back from the user's today with
-    calories > 0 or a completed workout). One set query for the whole page."""
+    """Logging streak per sender — the SAME number the top bar shows.
+
+    Its old docstring claimed parity with "the profile chip and the top-bar
+    bolt", which was only half true: it walked strictly over 60 days while the
+    bolt runs the forgiving 90-day engine, so a sender whose chain had survived
+    a missed day showed a smaller streak beside their message than on their own
+    Profile. Now both go through core.streaks.
+
+    Still one query for the whole page — the engine is pure, so the rows just
+    get grouped per user and walked in memory.
+    """
+    from types import SimpleNamespace
     from datetime import date as _date, timedelta as _td
     from db.models import DailyLog
     from db.queries import _user_today
+    from core.streaks import compute_streaks, WINDOW_DAYS
     if not user_ids:
         return {}
-    cutoff = _date.today() - _td(days=60)
+    cutoff = _date.today() - _td(days=WINDOW_DAYS + 1)
     rows = (await db.execute(
         select(DailyLog.user_id, DailyLog.date, DailyLog.total_calories,
                DailyLog.workout_completed, User.timezone)
         .join(User, User.id == DailyLog.user_id)
         .where(DailyLog.user_id.in_(list(user_ids)), DailyLog.date >= cutoff)
     )).all()
-    logged: dict = {}
+    # The engine reads .date / .total_calories / .workout_completed off each
+    # row; these are tuples, so shim them rather than re-selecting whole models.
+    by_user: dict = {}
     tz_by_user: dict = {}
     for uid, d, cal, workout, tz in rows:
         tz_by_user[uid] = tz
-        if (cal or 0) > 0 or workout:
-            logged.setdefault(uid, set()).add(d)
+        by_user.setdefault(uid, []).append(
+            SimpleNamespace(date=d, total_calories=cal, workout_completed=workout))
     out = {}
-    for uid, days in logged.items():
-        cur = _user_today(tz_by_user.get(uid) or "UTC")
-        streak = 0
-        while cur in days:
-            streak += 1
-            cur = cur - _td(days=1)
-        out[uid] = streak
+    for uid, user_rows in by_user.items():
+        today = _user_today(tz_by_user.get(uid) or "UTC")
+        chain = compute_streaks(user_rows, today).get("logging") or {}
+        out[uid] = int(chain.get("current") or 0)
     return out
 
 

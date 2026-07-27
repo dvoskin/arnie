@@ -971,6 +971,35 @@ async def get_recent_logs(db: AsyncSession, user_id: int,
     return result.scalars().all()
 
 
+async def get_recent_log_days(db: AsyncSession, user_id: int,
+                              days: int = 90) -> List[DailyLog]:
+    """`get_recent_logs` without the child rows — for callers that only read
+    columns off the DailyLog itself.
+
+    The streak walk is the motivating case: it reads `date`, `total_calories`
+    and `workout_completed` off the PARENT rows, but went through
+    `get_recent_logs`, whose `selectinload` pulls every food and exercise entry
+    in the window. At the 90 days the streak engine asks for, that materialised
+    a quarter of a user's entries on every badge check to read three columns.
+
+    Same window arithmetic and the same future-date exclusion, so the two
+    return identical DailyLog sets — this one just doesn't drag the children
+    along.
+    """
+    since = date.today() - timedelta(days=days + 1)
+    today = date.today()
+    result = await db.execute(
+        select(DailyLog)
+        .where(and_(
+            DailyLog.user_id == user_id,
+            DailyLog.date >= since,
+            DailyLog.date <= today,
+        ))
+        .order_by(desc(DailyLog.date))
+    )
+    return result.scalars().all()
+
+
 async def get_recent_conversations(db: AsyncSession, user_id: int,
                                    limit: int = 8,
                                    source_types: Optional[List[str]] = None
