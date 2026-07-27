@@ -31,14 +31,19 @@ class RouteStage:
         except Exception:
             pass
         try:
-            from core.food_turn import (structured_food_enabled, applies,
-                                        applies_destructive)
+            from core.food_turn import (structured_food_enabled,
+                                        food_relevance, applies_destructive)
             if structured_food_enabled():
                 if meta.get("food_pending"):
                     return RouteDecision(TurnLane.STRUCTURED_FOOD,
                                          "pending_clarification", 1.0,
                                          ROUTER_VERSION)
-                if applies(text):
+                # The SAME question conversation.py asks, so observe-mode
+                # comparisons stay meaningful — and when the model gate is on,
+                # both sides get the better answer at once rather than the
+                # coordinator inheriting a gate that drops two thirds of the
+                # food traffic.
+                if await food_relevance(text):
                     return RouteDecision(TurnLane.STRUCTURED_FOOD,
                                          "cold_food_gate", 0.9, ROUTER_VERSION)
                 if meta.get("has_board") and applies_destructive(text):

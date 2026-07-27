@@ -412,6 +412,93 @@ def applies(text: str) -> bool:
     return open_gate_enabled()
 
 
+# ── the gate, asked properly ─────────────────────────────────────────────────
+#: Judgements already made, so a repeated message costs nothing. Chat is full of
+#: exact repeats ("yes", "ok", "same as yesterday") and the answer never changes
+#: for the same words.
+_RELEVANCE_CACHE: dict = {}
+_RELEVANCE_CACHE_MAX = 512
+
+_RELEVANCE_SYSTEM = (
+    "Decide ONE thing: is the person reporting food or drink they consumed, "
+    "or correcting something they logged?\n"
+    "Answer with exactly one word: YES or NO.\n"
+    "YES covers a bare food name, a brand, a flavour answering a question, a "
+    "correction to a portion or an ingredient, and any language or script.\n"
+    "NO covers questions, greetings, and anything about another topic.\n"
+    "NO also covers food they have NOT eaten yet: what they intend to order, "
+    "plan to cook, need to buy, or are about to have. Past tense or an "
+    "explicit correction is the line \u2014 \"having chicken later\" and "
+    "\"haven't gotten it yet\" are both NO, however much food is named. The "
+    "negative rules upstream are written in English and cannot read other "
+    "scripts, so in any other language this judgement is yours alone.\n"
+    "When it is genuinely ambiguous, answer YES \u2014 a wasted look costs a "
+    "moment, a missed meal costs their day."
+)
+
+
+def model_gate_enabled() -> bool:
+    """Ask a model whether this is food instead of matching four English
+    templates. FOOD_GATE_MODEL=true."""
+    return os.getenv("FOOD_GATE_MODEL", "false").lower() in ("true", "1", "yes")
+
+
+async def food_relevance(text: str) -> bool:
+    """Whether this message belongs to the food lane.
+
+    THE GATE AND "THE CLASSIFIER" ARE THE SAME JOB (Danny's point). This is
+    `applies()` with a better implementation behind the same question, so both
+    callers — conversation.py's route and the coordinator's route stage — get
+    the improvement without either learning anything new.
+
+    Three tiers, cheapest first, so the model is asked only when the cheap
+    answers are genuinely uncertain:
+
+      1. a strong NON-food signal (question, acknowledgement, plan, another
+         domain) — free, and these travel across languages better than food
+         templates do, because "?" is "?" everywhere.
+      2. a lexical food shape — free. If a regex matches, it IS food; the
+         regexes were never wrong in that direction, only silent.
+      3. otherwise ask. This is the 64% the old gate dropped, and it is where
+         "Oh and a bag of quest chips" and every Cyrillic meal live.
+
+    Falls back to `applies()` on any failure, so the lane can never be lost to
+    a slow or unavailable model.
+    """
+    t = (text or "").strip()
+    if not t or len(t) > 500:
+        return False
+    if not model_gate_enabled():
+        return applies(t)
+    if applies(t):
+        return True
+    reason = decline_reason(t)
+    if reason in ("negated", "acknowledgement", "question", "future_plan",
+                  "destructive", "mixed_domain", "too_long", "empty"):
+        return False
+
+    key = " ".join(t.lower().split())[:200]
+    hit = _RELEVANCE_CACHE.get(key)
+    if hit is not None:
+        return hit
+    try:
+        from core import deadline
+        from core.llm import chat
+        res = await deadline.wait_for(
+            chat([{"role": "user", "content": t}], _RELEVANCE_SYSTEM,
+                 tools=False, max_tokens=4,
+                 model=os.getenv("FOOD_GATE_MODEL_ID",
+                                 "claude-haiku-4-5-20251001")))
+        verdict = "yes" in (res.get("text") or "").strip().lower()[:6]
+    except Exception as e:
+        logger.debug(f"food relevance unavailable, falling back: {e}")
+        return applies(t)
+    if len(_RELEVANCE_CACHE) >= _RELEVANCE_CACHE_MAX:
+        _RELEVANCE_CACHE.pop(next(iter(_RELEVANCE_CACHE)), None)
+    _RELEVANCE_CACHE[key] = verdict
+    return verdict
+
+
 def thread_routes(text: str) -> bool:
     """DEPRECATED shim over classify_thread_intent — kept only for the gate
     evals (scripts/eval_food_matrix) and their tests. Production routing is

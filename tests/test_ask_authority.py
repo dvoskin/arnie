@@ -423,3 +423,58 @@ def test_the_open_gate_still_refuses_what_is_clearly_not_food(monkeypatch):
     monkeypatch.setenv("FOOD_GATE_OPEN", "true")
     for msg in ("how many calories in an egg?", "I'm going to have lunch later"):
         assert not FT.applies(msg), msg
+
+
+# ── the gate and the classifier are the same question ──────────────────────
+
+@pytest.mark.asyncio
+async def test_the_gate_falls_back_to_regexes_when_the_model_lane_is_off(
+        monkeypatch):
+    """Default OFF, and identical to today when off — so enabling it is a
+    measurable change and never a silent one."""
+    import core.food_turn as FT
+    monkeypatch.delenv("FOOD_GATE_MODEL", raising=False)
+    for msg in ("Just had a sushi roll for lunch", "Oh and a bag of quest chips",
+                "how many calories in an egg?"):
+        assert await FT.food_relevance(msg) == FT.applies(msg), msg
+
+
+@pytest.mark.asyncio
+async def test_a_lexical_food_match_never_pays_for_a_model_call(monkeypatch):
+    """Tier 2 of the gate: the regexes were never WRONG about food, only
+    silent. A match is free and must short-circuit before the model."""
+    import core.food_turn as FT
+    monkeypatch.setenv("FOOD_GATE_MODEL", "true")
+
+    async def _boom(*a, **k):
+        raise AssertionError("a lexical match must not reach the model")
+    monkeypatch.setattr("core.llm.chat", _boom)
+    assert await FT.food_relevance("Just had a sushi roll for lunch")
+
+
+@pytest.mark.asyncio
+async def test_strong_non_food_evidence_never_pays_for_a_model_call(
+        monkeypatch):
+    """Tier 1: a question is a question. Cheap, and it travels across
+    languages better than food templates do."""
+    import core.food_turn as FT
+    monkeypatch.setenv("FOOD_GATE_MODEL", "true")
+
+    async def _boom(*a, **k):
+        raise AssertionError("a clear decline must not reach the model")
+    monkeypatch.setattr("core.llm.chat", _boom)
+    assert not await FT.food_relevance("how many calories in an egg?")
+
+
+@pytest.mark.asyncio
+async def test_the_lane_is_never_lost_to_a_failing_model(monkeypatch):
+    """A slow or unavailable classifier degrades to today's behaviour, never
+    to dropping the turn."""
+    import core.food_turn as FT
+    monkeypatch.setenv("FOOD_GATE_MODEL", "true")
+
+    async def _fail(*a, **k):
+        raise RuntimeError("classifier down")
+    monkeypatch.setattr("core.llm.chat", _fail)
+    assert await FT.food_relevance("Just had a sushi roll for lunch")
+    assert not await FT.food_relevance("Oh and a bag of quest chips")

@@ -764,6 +764,12 @@ async def _run_turn(
     # (Samuel 2026-07-24: 7 unstated portions, zero asks), and photo
     # turns MUST enter or photo_food_message (5f0e195) never runs.
     try:
+        # THE GATE AND THE CLASSIFIER ARE THE SAME QUESTION. `food_relevance`
+        # is `applies` with a better answer behind it — same call site, same
+        # meaning, so nothing here has to know whether a regex or a model
+        # decided. Falls back to the regexes whenever the model lane is off or
+        # unavailable.
+        from core.food_turn import food_relevance as _sft_relevant
         from core.food_turn import (structured_food_enabled, ASK_KIND,
                                     applies as _sft_applies, run as _sft_run,
                                     thread_relevance as _sft_rel,
@@ -912,7 +918,7 @@ async def _run_turn(
                 except Exception:
                     pass
             elif not (_sft_prior is not None or _photo_food is not None
-                      or _sft_applies(_user_text or "")
+                      or await _sft_relevant(_user_text or "")
                       or (_board and _sft_dest(_user_text or ""))
                       or _route_mid):
                 # The cold-start gate turned this message away. WHICH shape it
