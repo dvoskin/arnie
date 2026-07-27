@@ -1103,8 +1103,22 @@ _INTENT_BRIEF = {
         "Confirm your reading of the meal and ask one simple confirmation "
         "question. Do not coach and do not mention daily targets.",
     FoodResponseIntent.CLARIFY:
-        "Acknowledge what you already understood, then ask the one supplied "
-        "question. Do not repeat the whole meal.",
+        # "Acknowledge what you already understood, THEN do not repeat the
+        # whole meal" asked for two opposite things, and the acknowledgement
+        # won every time: "So you had pasta, yellowtail crudo, Caesar salad,
+        # and beef tartare. What kind of pasta was it, and roughly how much of
+        # each dish did you eat?" — thirty words of list before the question,
+        # above a card listing the same four foods.
+        #
+        # The reading is already on screen. What the user needs from the
+        # sentence is the QUESTION, and the fastest way to answer it.
+        "Ask the question. Lead with it — the card already shows your reading "
+        "of the meal, so naming the foods back is a receipt they can see. At "
+        "most a half-sentence of context, and only when the question is "
+        "meaningless without it. Offer the likely answers as a short natural "
+        "choice ('half or the whole thing?') rather than an open question, "
+        "since a choice is answered in one tap and an open one is not "
+        "answered at all.",
     FoodResponseIntent.CONFIRM_ANSWER:
         "Briefly acknowledge the resolved meaning. Do not re-review the meal "
         "and do not ask again.",
