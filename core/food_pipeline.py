@@ -259,10 +259,80 @@ def _match_item(amb: Mapping, items):
 
 
 # ── the decision ──────────────────────────────────────────────────────────────
+def derive_variant_ambiguity(items, spreads, data=None, *, mode: str,
+                             targets=None):
+    """Raise an ambiguity when THE SHELF disagrees more than the model does.
+
+    The model reports what it feels unsure about, and it is confident about a
+    product it can name — "Muscle Milk vanilla shake" reads as settled. The
+    database says that name spans 48 to 385 calories per 100 g, because it
+    covers both the powder and the ready-to-drink bottle. Measured across three
+    modes it committed 230, 170 and 160: three real products, silently picked
+    differently each time, with nothing anywhere reporting a doubt.
+
+    So this is not a second opinion about the model's confidence — it is the
+    one signal the model structurally cannot have, since it does not know which
+    products share the words it just wrote. Whether the spread is worth a
+    question is the same `is_material` call every other unknown goes through.
+
+    `spreads` is `{item_text_lower: {nutrient: per-100g span}}`, fetched by the
+    caller because the lookup is async and this is not.
+    """
+    from skills.nutrition.ambiguity import AmbiguityType, build_ambiguity
+
+    if not spreads:
+        return items
+    # A staged item carries no macros — it is a description of what was said,
+    # not a costed row. The calories live on the interpreter's raw item, keyed
+    # by ordinal, exactly as `derive_vague_quantities` reads them. Without this
+    # every span computed to zero and the deriver silently never fired.
+    raw_by_ordinal = {}
+    for ordinal, raw in enumerate((data or {}).get("items") or []):
+        if isinstance(raw, Mapping):
+            raw_by_ordinal[ordinal] = raw
+    out = []
+    for item in items or ():
+        spread = spreads.get((item.original_text or "").strip().lower())
+        if not spread:
+            out.append(item)
+            continue
+        # The interpreter already flagged this identity — its options and its
+        # numbers are better than anything derived here.
+        if any(a.ambiguity_type.is_identity for a in item.ambiguities):
+            out.append(item)
+            continue
+        calories = float(_calories_for(raw_by_ordinal.get(item.ordinal) or {}) or 0)
+        ceiling = float(spread.get("_max_per100") or 0)
+        span_cal = span_pro = None
+        if calories > 0 and ceiling > 0:
+            # Proportional: the shelf's per-100g spread, expressed against the
+            # portion actually logged.
+            span_cal = calories * (float(spread.get("calories") or 0) / ceiling)
+            protein_100 = float(spread.get("protein") or 0)
+            if protein_100:
+                span_pro = calories * (protein_100 / ceiling)
+        if not span_cal:
+            out.append(item)
+            continue
+        amb = build_ambiguity(
+            staged_item_id=item.staged_item_id,
+            ambiguity_type=AmbiguityType.PRODUCT_LINE,
+            field_name="variant", mode=mode,
+            calorie_span=span_cal, protein_span=span_pro,
+            item_calories=calories,
+            targets=dict(targets) if targets else None, options=())
+        if amb is None or not getattr(amb, "is_material", True):
+            out.append(item)
+            continue
+        out.append(item.with_ambiguities(list(item.ambiguities) + [amb]))
+    return tuple(out)
+
+
 def plan_turn(data: Mapping, *, turn_id: str, message: str = "",
               mode: str = "moderate", round_number: int = 0,
               preferences=None, now: Optional[datetime] = None,
-              targets: Optional[Mapping] = None
+              targets: Optional[Mapping] = None,
+              variant_spreads: Optional[Mapping] = None
               ) -> Optional[FoodTurnDecision]:
     """The whole pre-execution decision. Returns None on any failure, so the
     caller keeps its existing behaviour rather than losing the turn."""
@@ -292,6 +362,10 @@ def plan_turn(data: Mapping, *, turn_id: str, message: str = "",
             # clarification work, and its cost belongs in that stage's timing.
             items = derive_vague_quantities(items, data, message=message,
                                             mode=mode, targets=targets)
+            # ...and the doubt the model cannot have: which of the products
+            # sharing this name it actually was. Fetched by the caller.
+            items = derive_variant_ambiguity(items, variant_spreads, data,
+                                             mode=mode, targets=targets)
             items = apply_preferences(items, preferences, now=now, mode=mode)
             decision = decide(list(items), mode=mode,
                               round_number=round_number)

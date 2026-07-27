@@ -1229,6 +1229,75 @@ def board_lines(board) -> list:
     return out
 
 
+#: Shelf spreads, keyed by product name. A product line's spread is a fact
+#: about the world, not about this turn, so re-fetching it per turn buys
+#: nothing and costs a round trip on the critical path — measured at roughly
+#: +3.5 s median when every branded item was looked up fresh. Bounded so a long
+#: session cannot grow it without limit; evicting the oldest is fine because a
+#: re-fetch is correct, just slower.
+_SPREAD_CACHE: dict = {}
+_SPREAD_CACHE_MAX = 256
+
+
+async def _variant_spreads(data) -> dict:
+    """`{food_lower: {nutrient: per-100g span, _max_per100: ceiling}}` for the
+    branded items in this turn.
+
+    Fetched HERE because the lookup is network-bound and `plan_turn` is not
+    async. Fanned out, bounded by the turn's deadline, and every failure is
+    simply an absent entry — a turn never loses its decision because a product
+    database was slow.
+    """
+    names = []
+    for raw in (data.get("items") or []):
+        if not isinstance(raw, dict):
+            continue
+        if not (raw.get("branded") or raw.get("is_packaged")):
+            continue
+        food = str(raw.get("food") or "").strip()
+        if food and food.lower() not in [n.lower() for n in names]:
+            names.append(food)
+    if not names:
+        return {}
+
+    async def one(food):
+        cached = _SPREAD_CACHE.get(food.strip().lower())
+        if cached is not None:
+            return food, (cached or None)
+        try:
+            from core import deadline
+            from skills.nutrition.off import search_variants, variant_spread
+            variants = await deadline.wait_for(search_variants(food, limit=6))
+            if not variants or len(variants) < 2:
+                return food, None
+            spread = variant_spread(variants)
+            ceiling = max((float((v.get("per100g") or {}).get("calories") or 0)
+                           for v in variants), default=0.0)
+            if not spread or ceiling <= 0:
+                return food, None
+            spread = dict(spread)
+            spread["_max_per100"] = ceiling
+            return food, spread
+        except Exception as e:
+            logger.debug(f"variant spread unavailable for {food!r}: {e}")
+            return food, None
+
+    import asyncio as _aio
+    out = {}
+    for food, spread in await _aio.gather(*[one(n) for n in names]):
+        key = food.strip().lower()
+        if key not in _SPREAD_CACHE:
+            if len(_SPREAD_CACHE) >= _SPREAD_CACHE_MAX:
+                _SPREAD_CACHE.pop(next(iter(_SPREAD_CACHE)), None)
+            # A miss is cached as {} too — a product with no shelf to compare
+            # is a stable fact, and re-asking the database every turn for the
+            # same absent product is the slowest possible way to learn nothing.
+            _SPREAD_CACHE[key] = spread or {}
+        if spread:
+            out[key] = spread
+    return out
+
+
 def _carry_assumptions(items, ambiguities) -> list:
     """Attach each unresolved unknown to the row it concerns, as the CHOICE we
     made rather than the doubt we had.
@@ -2590,10 +2659,17 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
             from core.food_pipeline import pipeline_enabled, plan_turn
             if pipeline_enabled():
                 from core.turn_identity import current_turn_id as _pipe_turn
+                # WHAT THE SHELF SAYS, fetched before the decision because the
+                # decision is synchronous. The model cannot know which other
+                # products share the name it just wrote; the database can, and
+                # a name spanning two product forms is a doubt nobody was
+                # reporting.
+                _spreads = await _variant_spreads(data)
                 _decision = plan_turn(
                     data, turn_id=(_pipe_turn() or ""), message=message,
                     mode=mode, preferences=_prefs_for(user),
-                    targets=_daily_targets(user))
+                    targets=_daily_targets(user),
+                    variant_spreads=_spreads)
         except Exception as _pe:
             logger.warning(f"food pipeline unavailable: {_pe}")
             _decision = None

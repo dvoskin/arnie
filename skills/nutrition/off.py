@@ -387,10 +387,22 @@ async def search_variants(name: str, limit: int = 5) -> list:
     """
     if not off_enabled() or not (name or "").strip():
         return []
+    # THE SAME FALLBACK `search()` HAS. Its own note: the fallback "rescues the
+    # ~1/3 of calls the legacy endpoint 503s away". This path never got it, so
+    # roughly a third of variant lookups came back empty and the turn quietly
+    # degraded — options vanished, the spread went unmeasured, and the same
+    # query returned 5 variants, then 0, then 5 again. Nondeterminism that
+    # reads as the mode changing its mind about a food.
+    page = max(limit * 2, 8)
     try:
-        products = await _search_legacy(name, max(limit * 2, 8))
+        products = await _search_legacy(name, page)
     except Exception:
         products = None
+    if not products and off_fallback_enabled():
+        try:
+            products = await _search_sal(name, page)
+        except Exception:
+            products = None
     # THE SAME GATE THE PRIMARY SEARCH USES. `search()` filters on overlap and
     # a brand anchor; this took whatever the text search returned, so a query
     # for a plain 2% milk came back led by that brand's chocolate protein
@@ -416,6 +428,18 @@ async def search_variants(name: str, limit: int = 5) -> list:
         nutriments = product.get("nutriments") or {}
         calories = nutriments.get("energy-kcal_100g")
         if not calories:
+            continue
+        # PHYSICALLY IMPOSSIBLE ROWS. Open Food Facts is crowd-entered and
+        # carries unit mistakes — a Muscle Milk row reads 17000 cal/100g, which
+        # is a kilojoule field pasted into a kcal one, or a per-container value
+        # in a per-100g slot. Pure fat is 9 cal/g, so nothing edible exceeds
+        # 900 cal/100g; anything above it is a data error, and left in it
+        # dominates every spread it appears in and turns "how far apart is this
+        # shelf?" into "always ask".
+        try:
+            if not (0 < float(calories) <= 900):
+                continue
+        except (TypeError, ValueError):
             continue
         seen.add(key)
         out.append({
