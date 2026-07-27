@@ -616,6 +616,19 @@ _SYSTEM = (
     "tool or database names in 'say' or questions. Natural coach language only.\n"
     "- Split a combo into natural SEPARATE items (the salad one item, the chicken "
     "strips another, a drink another) so each is editable on its own line.\n"
+    "  SPLITTING IS WHAT MAKES A DISH KNOWABLE, not a formatting preference. A "
+    "combined row is a name no food database holds, so nothing can check it and "
+    "the number is only ever your guess \\u2014 while each part on its own line "
+    "is an ordinary food that can be looked up, corrected and reused. One row "
+    "for a whole plate is also uncorrectable by the user: they cannot tell you "
+    "the rice was double without re-describing the entire meal.\n"
+    "  So split wherever the parts are different FOODS \\u2014 a protein, a "
+    "starch, a sauce, a side are four things that happen to share a plate, and "
+    "their calorie densities are nothing alike. Keep together only what is "
+    "genuinely one food: a sauce cooked into the dish, a filling inside its "
+    "wrapper, a dish whose name IS the recipe rather than a list of what came "
+    "with it. Judge that per dish, in any language \\u2014 the test is whether "
+    "someone could sensibly eat more of one part and less of another.\n"
     '- "food": clean capitalized name. A BRAND or restaurant the user named is '
     'ALWAYS kept in it, verbatim ("Thomas\' Everything Bagel Thin", "Philadelphia '
     'Scallion Cream Cheese", "Starbucks Turkey Bacon Sandwich") — the brand is the '
