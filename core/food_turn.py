@@ -2614,9 +2614,18 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
         # wrote nothing, because `ready` carried names and a name cannot be
         # written. It carries items now, so the foods we are NOT asking about
         # commit while the one we are asking about waits.
-        # `_calls_for_ready(data.get("ready"))` is what would go here. Held:
-        # see the cross-turn dedup note in conversation.py's ask branch.
-        return {"action": "ask", "text": text} if text else None
+        # RELEASED, and it belongs HERE as much as on the pipeline branch. The
+        # partial commit only ever existed where the staged pipeline raised the
+        # question; when the interpreter proposes the ask itself — which is
+        # most asks — this returned the question alone and the settled foods
+        # waited too. Measured: 1 of 6 mixed meals committed anything.
+        #
+        # Safe for the same reason the other branch is: the answer turn now
+        # sees these rows on the board with their age, so refining them is an
+        # update rather than a second write.
+        _ready_now = _calls_for_ready(data.get("ready"))
+        return ({"action": "ask", "text": text, "tool_calls": _ready_now}
+                if text else None)
 
     if action == "ask" and prior:
         # An unprompted ask on the answer turn = the model chaining its own

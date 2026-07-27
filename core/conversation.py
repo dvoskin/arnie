@@ -1154,13 +1154,21 @@ async def _run_turn(
             # commit path runs — so a held food still cannot be written behind
             # an unanswered question.
             _turn_route = "structured_ask"
-            # HELD until cross-turn dedup exists — see below. Executing these
-            # double-logs: the answer turn re-interprets the whole meal and
-            # writes it again, and food_dedup matches on the normalized name,
-            # where the interpreter's "Egg" on the ask and "Eggs" on the answer
-            # are different foods. A duplicate row is worse than the claim it
-            # would fix.
-            result = {"text": _sft["text"], "raw_content": [], "tool_calls": [],
+            # RELEASED. The hold was for one reason: the answer turn
+            # re-interpreted the whole meal and logged it a second time,
+            # because `food_dedup` matches on the normalized name and "Egg" on
+            # the ask is not "Eggs" on the answer. That is fixed upstream — the
+            # board now carries how long ago each row landed, and a message
+            # refining something written moments ago is an UPDATE to that
+            # entry_id rather than a new food. Measured on a four-food meal:
+            # the follow-up produced 4 updates and 0 new rows, where it
+            # previously produced 4 duplicates.
+            #
+            # Only cleared calls arrive — food_turn ran the same veto the
+            # commit path runs — so a HELD food still cannot be written behind
+            # an unanswered question.
+            result = {"text": _sft["text"], "raw_content": [],
+                      "tool_calls": _sft.get("tool_calls") or [],
                       "stop_reason": "structured_food"}
         else:
             # Under the turn budget. Setting the deadline contextvar bounds
