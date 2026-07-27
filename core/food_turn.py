@@ -438,6 +438,10 @@ _RELEVANCE_SYSTEM = (
     "Answer with exactly one word: YES or NO.\n"
     "YES covers a bare food name, a brand, a flavour answering a question, a "
     "correction to a portion or an ingredient, and any language or script.\n"
+    "When you are shown what they were JUST ASKED, read their reply as an "
+    "answer to it. A bare fragment answering a food question \u2014 a flavour, a "
+    "grade, an amount, \"the leaner one\", \"yeah that\" \u2014 is YES, because it "
+    "settles a food that is waiting on it.\n"
     "NO covers questions ABOUT food rather than reports of eating it, "
     "hypotheticals (\"if I had a burger...\"), greetings, and messages about "
     "another topic entirely.\n"
@@ -462,7 +466,7 @@ def model_gate_enabled() -> bool:
     return os.getenv("FOOD_GATE_MODEL", "false").lower() in ("true", "1", "yes")
 
 
-async def food_relevance(text: str) -> bool:
+async def food_relevance(text: str, last_assistant: str = "") -> bool:
     """Whether this message belongs to the food lane.
 
     THE GATE AND "THE CLASSIFIER" ARE THE SAME JOB (Danny's point). This is
@@ -491,6 +495,15 @@ async def food_relevance(text: str) -> bool:
         return applies(t)
     if applies(t):
         return True
+
+    # WHAT WAS ASKED A MOMENT AGO. "Sweet chill" is meaningless alone and
+    # unambiguous after "Quest Chips, which flavor?" — and the gate was
+    # stateless, so an answer to a food question could not be recognised as
+    # one. That is the loop that kept traffic OUT of this lane: only the
+    # structured path records a pending question, so whenever LEGACY did the
+    # asking the answer fell to legacy too, and the conversation never came
+    # back. Context, not a better pattern.
+    prior = (last_assistant or "").strip()
     # ONLY THE DECLINES THAT CANNOT BE WRONG. This tier existed to save model
     # calls and was costing accuracy instead: "had a coffee then a bagel then
     # went to the gym" died on `mixed_domain`, "had eggs this morning, having
@@ -506,7 +519,14 @@ async def food_relevance(text: str) -> bool:
     if reason in ("acknowledgement", "too_long", "empty"):
         return False
 
-    key = " ".join(t.lower().split())[:200]
+    # Was the previous turn a question? Only then does the reply need reading
+    # as an answer — and the cache must distinguish the two, or a cold "sweet
+    # chill" and one answering "which flavor?" share a verdict.
+    asked = ("?" in prior) if prior else False
+    content = (f"They were just asked: {prior[:220]}\n\nThey replied: {t}"
+               if asked else t)
+    key = (" ".join(t.lower().split())[:200]
+           + ("|answering" if asked else ""))
     hit = _RELEVANCE_CACHE.get(key)
     if hit is not None:
         return hit
@@ -514,7 +534,7 @@ async def food_relevance(text: str) -> bool:
         from core import deadline
         from core.llm import chat
         res = await deadline.wait_for(
-            chat([{"role": "user", "content": t}], _RELEVANCE_SYSTEM,
+            chat([{"role": "user", "content": content}], _RELEVANCE_SYSTEM,
                  tools=False, max_tokens=4,
                  model=os.getenv("FOOD_GATE_MODEL_ID",
                                  "claude-haiku-4-5-20251001")))

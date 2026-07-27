@@ -497,3 +497,60 @@ def test_the_conditional_guard_does_not_eat_real_logs():
     assert consumption_evidence("if you want, I had the salad earlier")
     assert consumption_evidence("had a coffee then a bagel then hit the gym")
     assert consumption_evidence("didn't eat the fries but I had the burger")
+
+
+# ── the gate needs context, not better patterns ─────────────────────────────
+
+@pytest.mark.asyncio
+async def test_an_answer_to_a_food_question_reaches_the_lane(monkeypatch):
+    """"more like two" is meaningless alone and unambiguous after "about a
+    cup?". The gate was stateless, and only the STRUCTURED path records a
+    pending question — so whenever legacy did the asking, the answer fell to
+    legacy too and the conversation never came back. That loop is why traffic
+    kept missing this lane."""
+    import core.food_turn as FT
+    monkeypatch.setenv("FOOD_GATE_MODEL", "true")
+    seen = {}
+
+    async def _fake(messages, system, **k):
+        seen["content"] = messages[0]["content"]
+        return {"text": "YES"}
+    monkeypatch.setattr("core.llm.chat", _fake)
+    assert await FT.food_relevance("more like two",
+                                   "How much rice was that — about a cup?")
+    assert "about a cup" in seen["content"], "the question must reach the model"
+    assert "more like two" in seen["content"]
+
+
+@pytest.mark.asyncio
+async def test_a_statement_carries_no_question_context(monkeypatch):
+    """Only a QUESTION makes the reply an answer. A previous statement must not
+    be pasted in as though it were one."""
+    import core.food_turn as FT
+    monkeypatch.setenv("FOOD_GATE_MODEL", "true")
+    seen = {}
+
+    async def _fake(messages, system, **k):
+        seen["content"] = messages[0]["content"]
+        return {"text": "NO"}
+    monkeypatch.setattr("core.llm.chat", _fake)
+    await FT.food_relevance("sounds good", "Nice work hitting your protein.")
+    assert seen["content"] == "sounds good"
+
+
+@pytest.mark.asyncio
+async def test_the_cache_separates_answers_from_cold_messages(monkeypatch):
+    """A cold "sweet chill" and one answering "which flavor?" are different
+    questions and must not share a cached verdict."""
+    import core.food_turn as FT
+    monkeypatch.setenv("FOOD_GATE_MODEL", "true")
+    FT._RELEVANCE_CACHE.clear()
+    calls = []
+
+    async def _fake(messages, system, **k):
+        calls.append(messages[0]["content"])
+        return {"text": "YES"}
+    monkeypatch.setattr("core.llm.chat", _fake)
+    await FT.food_relevance("sweet chill")
+    await FT.food_relevance("sweet chill", "Quest Chips, which flavor?")
+    assert len(calls) == 2, "the two must not collapse onto one cache entry"

@@ -918,7 +918,8 @@ async def _run_turn(
                 except Exception:
                     pass
             elif not (_sft_prior is not None or _photo_food is not None
-                      or await _sft_relevant(_user_text or "")
+                      or await _sft_relevant(_user_text or "",
+                                             _last_assistant or "")
                       or (_board and _sft_dest(_user_text or ""))
                       or _route_mid):
                 # The cold-start gate turned this message away. WHICH shape it
