@@ -191,6 +191,19 @@ def _is_generic(food_name: str) -> bool:
         return False
 
 
+#: A SAFETY NET, NOT THE MECHANISM.
+#:
+#: The interpreter declares `branded` per item and does it in any language —
+#: Простоквашино and Мираторг come back true, and it calls a Philadelphia
+#: cheesesteak false by reasoning about the dish rather than matching a list.
+#: That is where brand identification belongs: the model has world knowledge
+#: and this file can only ever have the entries someone remembered to type.
+#:
+#: This list stays for the turns where the flag is missing — an older model, a
+#: degraded parse, the fast path. It is a floor under those, and it should not
+#: grow into a maintained brand database. If it starts needing regular
+#: additions, the flag is not arriving and THAT is the bug to fix.
+#:
 #: Brands whose names are ORDINARY WORDS, so no shape heuristic can see them.
 #:
 #: `authority.classify`'s own docstring names the hole: the caps / possessive /

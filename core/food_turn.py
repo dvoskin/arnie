@@ -401,7 +401,7 @@ _SYSTEM = (
     "about belongs in `points`, never in `ready`.\n"
     '3. Consumed food with enough detail -> {"action":"log","items":[{"food":'
     '"Caesar salad","amount":2,"unit":"handfuls","calories":180,"protein":4,'
-    '"carbs":8,"fats":15,"meal":"dinner"}],"say":"Pizza and the Caesar logged, {batch_cal} cal and '
+    '"carbs":8,"fats":15,"branded":false,"meal":"dinner"}],"say":"Pizza and the Caesar logged, {batch_cal} cal and '
     '{batch_protein}g protein for the pair. You are at {day_cal} with {cal_left} left."}\n'
     '4. CORRECTING something already on today\'s board ("I actually had 2 birria", '
     '"I had 2 of those", "make it 6 oz") -> {"action":"update","updates":[{'
@@ -420,6 +420,20 @@ _SYSTEM = (
     'changes."} Operation objects use the same fields as items/updates/deletes '
     'plus "op". Order them the way the user said them.\n'
     "RULES:\n"
+    "- BRANDED: set \"branded\":true when the food names a MANUFACTURER or a "
+    "packaged product, IN ANY LANGUAGE \u2014 Philadelphia, Oreo, Danone, "
+    "\u041f\u0440\u043e\u0441\u0442\u043e\u043a\u0432\u0430\u0448\u0438\u043d\u043e, \u041c\u0438\u0440\u0430\u0442\u043e\u0440\u0433, \u0427\u0443\u0434\u043e, Alpen Gold. This flag decides whether the "
+    "product's OWN LABEL is allowed to answer instead of a generic database "
+    "entry, so missing it costs the real numbers \u2014 a whipped cream cheese "
+    "logged from a generic row instead of its label was 70 calories against a "
+    "published 50. You know brands; nothing downstream does. The fallback "
+    "there reads capitals and apostrophes, so it is blind to lowercase "
+    "typing, to every non-Latin script, and to any brand whose name is an "
+    "ordinary word.\n"
+    "  It is about the SOURCE of the food, not the words in it: a "
+    "Philadelphia cheesesteak is a sandwich (false), Philadelphia cream "
+    "cheese is a product (true). A restaurant dish is NOT branded \u2014 name the "
+    "restaurant inside \"food\" and leave the flag false.\n"
     "- CORRECTION OPERATOR discipline: 'two MORE tacos' is a NEW log (an "
     "addition), 'actually only one' REPLACES the amount, 'they were chicken "
     "not beef' keeps the amount and re-estimates macros for the new identity, "
