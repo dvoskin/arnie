@@ -284,7 +284,23 @@ def compute_batch(action: str, ok_calls: list,
         if c <= 0 and p <= 0:
             c, p = _sum(logs, "calories"), _sum(logs, "protein")
     elif action in ("update", "delete"):
-        c, p = _sum(ups, "calories"), _sum(ups, "protein")
+        # ABSENT IS NOT ZERO, HERE TOO. A correction to WHAT something was
+        # omits the macros on purpose — the ladder re-resolves them for the new
+        # identity — so summing the inputs reads the gap as nought and the say
+        # line states it: "Switched that to 90/10, updated to 0 cal for the
+        # beef", over a row that holds 250. The user then has to ask what was
+        # zeroed, which is the opposite of a correction landing cleanly.
+        #
+        # Sum only what carries a number; when none does, the day delta is the
+        # post-enrichment truth for what actually changed — the same source the
+        # log branch already prefers.
+        _priced = [tc for tc in ups
+                   if isinstance((tc.get("input") or {}).get("calories"),
+                                 (int, float))]
+        if _priced:
+            c, p = _sum(_priced, "calories"), _sum(_priced, "protein")
+        else:
+            c, p = int(day_delta_cal), int(day_delta_protein)
     else:
         c, p = _sum(logs, "calories"), _sum(logs, "protein")
     return max(0, c), max(0, p)

@@ -554,3 +554,34 @@ async def test_the_cache_separates_answers_from_cold_messages(monkeypatch):
     await FT.food_relevance("sweet chill")
     await FT.food_relevance("sweet chill", "Quest Chips, which flavor?")
     assert len(calls) == 2, "the two must not collapse onto one cache entry"
+
+
+# ── a correction must not narrate a number it does not have ────────────────
+
+def test_a_deferred_rename_does_not_report_zero_calories():
+    """Shipped 2026-07-27 21:01: "Actually it was 90/10" ->
+    "Switched that to 90/10, updated to 0 cal for the beef", over a row
+    holding 250. A correction to WHAT something was omits the macros so the
+    ladder can re-resolve them for the new identity; summing the inputs read
+    that gap as nought and the say line stated it."""
+    from core.food_ledger import compute_batch
+    rename = [{"name": "update_food_entry",
+               "input": {"entry_id": 1, "food_name": "Ground beef, 90/10"}}]
+    assert compute_batch("update", rename, 250, 26) == (250, 26)
+
+
+def test_an_update_that_carries_numbers_still_uses_them():
+    """The day delta is the fallback, never the override — an amount
+    correction knows its own new value."""
+    from core.food_ledger import compute_batch
+    priced = [{"name": "update_food_entry",
+               "input": {"entry_id": 1, "calories": 200, "protein": 30}}]
+    assert compute_batch("update", priced, 9999, 999) == (200, 30)
+
+
+def test_a_mixed_update_prefers_the_priced_rows():
+    from core.food_ledger import compute_batch
+    mixed = [{"name": "update_food_entry", "input": {"entry_id": 1, "food_name": "X"}},
+             {"name": "update_food_entry",
+              "input": {"entry_id": 2, "calories": 150, "protein": 10}}]
+    assert compute_batch("update", mixed, 9999, 999) == (150, 10)
