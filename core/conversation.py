@@ -319,6 +319,16 @@ def _logged_entry_card(name: str, inp, call=None) -> Optional[dict]:
             "source":    "photo" if inp.get("from_photo") else "manual",
             "entry_id":  entry_id,
         }
+        # WHAT WE ASSUMED INSTEAD OF ASKING. When the consequence engine judges
+        # an unknown too small to interrupt for, the turn still made a choice —
+        # a portion, a preparation, a variant. Surfacing it on the row is what
+        # separates "logged fast" from "logged fast and quietly guessed": the
+        # card can show it as a correctable chip instead of the user having to
+        # notice a number looks wrong. Optional on the wire like the rest.
+        _assumed = [a for a in (inp.get("assumptions") or [])
+                    if isinstance(a, dict) and a.get("text")]
+        if _assumed:
+            payload["assumptions"] = _assumed[:3]
         # Undo token: the ledger event behind this write. Optional on the
         # wire — older clients ignore it; new clients render one-tap Undo.
         _ev = (call.event_id if call is not None and call.event_id is not None
@@ -781,10 +791,28 @@ async def _run_turn(
             try:
                 for _fe in (getattr(today_log, "food_entries", None) or []):
                     if getattr(_fe, "id", None) is not None:
+                        # HOW LONG AGO. Without it the board reads "already
+                        # logged today" for a row written eight hours ago and
+                        # for one written sixty seconds ago, so a message
+                        # elaborating on what we just wrote ("the chicken was a
+                        # small breast") is indistinguishable from a fresh meal
+                        # — and gets logged a second time. The rows carry the
+                        # timestamp already; nothing new is stored.
+                        _age = None
+                        try:
+                            from datetime import datetime as _dt_b
+                            _ts = getattr(_fe, "timestamp", None)
+                            if _ts is not None:
+                                _age = max(0, int(
+                                    (_dt_b.utcnow() - _ts).total_seconds()
+                                    // 60))
+                        except Exception:
+                            _age = None
                         _board.append({
                             "id": _fe.id,
                             "food": getattr(_fe, "parsed_food_name", "") or "",
                             "qty": getattr(_fe, "quantity", "") or "",
+                            "mins_ago": _age,
                             "cal": getattr(_fe, "calories", 0) or 0})
             except Exception:
                 _board = []
@@ -1878,10 +1906,30 @@ async def _run_turn(
                             _intent = FoodResponseIntent.CORRECT
                         else:
                             _intent = FoodResponseIntent.COMMIT
+                        # WHAT WE CHOSE INSTEAD OF ASKING. The consequence
+                        # engine can decline a question as too small to be
+                        # worth interrupting for — that judges the INTERRUPTION,
+                        # not the doubt, and the turn still picked a portion or
+                        # a preparation. It travels to the card as a correctable
+                        # chip and to the sentence here, because a surface with
+                        # no cards (Telegram, iMessage) would otherwise show a
+                        # number with no sign that anything was guessed.
+                        #
+                        # Scales with mode for free: strict asks where quick
+                        # assumes, so strict arrives here with little to say and
+                        # quick with the most. No separate per-mode copy.
+                        _assumed = tuple(dict.fromkeys(
+                            str(a.get("text") or "").strip()
+                            for c in (_ok_calls or [])
+                            for a in ((c.get("input") or {}).get("assumptions")
+                                      or [])
+                            if isinstance(a, dict) and str(a.get("text")
+                                                           or "").strip()))
                         _plan = apply_policy(FoodResponsePlan(
                             intent=_intent,
                             committed_items=tuple(n for n in _names if n.name),
                             committed_snapshot=_snap,
+                            assumptions=_assumed,
                             model_say=_say,
                             note=_sft.get("note") or "",
                             follow_up=_sft.get("follow_up") or "",

@@ -469,8 +469,13 @@ _SYSTEM = (
     "addition into a replace or a replace into an addition.\n"
     "- WHAT YOU DID NOT KNOW - ALWAYS, NOT ONLY WHEN YOU LOG. Every unknown "
     "you resolved by judgement is reported as \"ambiguities\":[{\"item\":"
-    "\"<the item it concerns>\",\"field\":\"quantity\",\"impact_cal\":250}] "
-    "(fields: quantity, identity, brand, prep, consumed). This is the only "
+    "\"<the item it concerns>\",\"field\":\"quantity\",\"impact_cal\":250,"
+    "\"assumed\":\"<what you went with, in their language>\"}] "
+    "(fields: quantity, identity, brand, prep, consumed). `assumed` is shown "
+    "to the user as what you went with so they can correct it in one tap - "
+    "write the CHOICE, short and concrete (\"a medium restaurant portion\", "
+    "\"pan-fried in oil\"), never a hedge like \"estimated\" and never a "
+    "number, which the card already carries. This is the only "
     "channel that exists for doubt. If you are proposing a question, then the "
     "thing you want to ask about IS an unknown and belongs here too, with what "
     "it is worth - an ask that reports nothing is a question the system cannot "
@@ -540,6 +545,20 @@ _SYSTEM = (
     "correction's target isn't on the board, action is pass.\n"
     "- An item already on the board reported again as the SAME serving is never "
     "re-logged: correct it (update) or pass.\n"
+    "- ELABORATING ON A FRESH ROW IS A CORRECTION, NOT A MEAL. When the board shows something logged minutes ago and their message gives a DIFFERENT detail for it - the amount, the flavour, the cut, how it was cooked - that is them refining what you just wrote, and it is an update to that entry_id. It is not a second helping and it is not a new food. Nobody eats a thing twice by describing it once.\n"
+    "  Judge it per clause: a message can refine three board rows and add a fourth food, so each part is decided against the board on its own. What makes it an ADDITION is them saying so - \"another\", \"two more\", \"again\" - not the presence of a new number.\n"
+    "  Keep what the row already established. A brand on the row survives a "
+    "correction to any other field: naming a flavour makes it that flavour OF "
+    "THAT BRAND, never a different maker whose version you happen to know "
+    "better. They corrected one field, not the identity.\n"
+    "  AN UPDATE THAT RESTATES THE ROW IS A DROPPED CORRECTION. Echoing the "
+    "board's own amount and macros back with a new entry_id changes nothing and "
+    "is worse than logging twice, because it looks handled. Every update you "
+    "emit must carry the CHANGE: they named a flavour, a variant, a cut or a "
+    "cooking method -> put the corrected full name in \"food\" and OMIT the "
+    "macros so the numbers are re-resolved for what it actually was; they "
+    "named an amount -> put it in amount/unit. If a clause tells you nothing "
+    "new about a row, emit NO update for that row rather than a hollow one.\n"
     "- DECIDE BEFORE YOU WRITE: any calorie-relevant doubt (milk type, prep, "
     "portion, flavor) means action=ask INSTEAD of log. Once you log, there is "
     "nothing left to ask - the say NEVER contains a question; later drift is "
@@ -1168,6 +1187,59 @@ def acquisition_question(items: list) -> str:
     else:
         subject = f"all {len(names)} of those"
     return f"Did you eat {subject}, or is that for later?"
+
+
+def board_lines(board) -> list:
+    """Today's rows as the interpreter sees them, WITH how long ago each landed.
+
+    The age is the whole point. Without it every row reads "already logged
+    today" whether it was written eight hours ago or sixty seconds ago, and a
+    message elaborating on what we just wrote ("the chicken was a small
+    breast") is indistinguishable from someone describing a new meal — so it
+    gets logged a second time. Recency is what makes the difference decidable,
+    and the rows carry the timestamp already.
+    """
+    out = []
+    for b in (board or [])[-8:]:
+        try:
+            age = b.get("mins_ago")
+            when = ""
+            if isinstance(age, int):
+                when = (" - JUST LOGGED, seconds ago" if age < 2 else
+                        f" - logged {age} min ago" if age < 90 else "")
+            out.append(f"#{b['id']} {b['food']}, {b.get('qty') or '?'}, "
+                       f"{int(b.get('cal') or 0)} cal{when}")
+        except Exception:
+            continue
+    return out
+
+
+def _carry_assumptions(items, ambiguities) -> list:
+    """Attach each unresolved unknown to the row it concerns, as the CHOICE we
+    made rather than the doubt we had.
+
+    The wording is the interpreter's, written in the user's own language — a
+    field-to-phrase table here would speak English at a Russian user and would
+    have to grow a row for every lane we add.
+    """
+    by_name, out = {}, []
+    for it in (items or []):
+        if isinstance(it, dict):
+            nm = str(it.get("food") or it.get("food_name") or "").strip().lower()
+            if nm:
+                by_name.setdefault(nm, []).append(it)
+    for a in (ambiguities or []):
+        if not isinstance(a, dict):
+            continue
+        said = str(a.get("assumed") or "").strip()
+        if not said or len(said) > 80:
+            continue
+        for it in by_name.get(str(a.get("item") or "").strip().lower(), ()):
+            it.setdefault("_assumed", []).append(
+                {"field": str(a.get("field") or "").strip(), "text": said})
+    for it in (items or []):
+        out.append(it)
+    return out
 
 
 def _proposed_ask_is_material(data, *, mode: str, user) -> bool:
@@ -1852,6 +1924,13 @@ def _log_call(it: dict, source: Optional[str] = None) -> Optional[dict]:
     _basis = str(it.get("basis") or "").strip().lower()
     if _basis in ("stated", "regular", "estimate"):
         inp["basis"] = _basis
+    # What we chose in place of asking. Persists in the entry's raw_input
+    # alongside `source` and `basis`, so "why 6 oz?" keeps having a recorded
+    # answer rather than a plausible excuse.
+    _assumed = [a for a in (it.get("_assumed") or [])
+                if isinstance(a, dict) and a.get("text")]
+    if _assumed:
+        inp["assumptions"] = _assumed[:3]
     if it.get("branded"):
         # The logger read the message — it declares brandedness; the
         # downstream heuristic (_looks_branded) is only the backup net, and
@@ -2222,13 +2301,7 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
                        f"re-estimate; in an ask, offer the regular by name):\n"
                        + "\n".join(lines))
     if board:
-        lines = []
-        for b in board[-8:]:
-            try:
-                lines.append(f"#{b['id']} {b['food']}, {b.get('qty') or '?'}, "
-                             f"{int(b.get('cal') or 0)} cal")
-            except Exception:
-                continue
+        lines = board_lines(board)
         if lines:
             content = f"{content}\n\nTODAY'S BOARD (already logged):\n" + "\n".join(lines)
     if day_line:
@@ -2303,6 +2376,13 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
             if isinstance(i, dict) and i not in (data.get("items") or [])]
         data["action"] = action = "log"
         data.pop("points", None)
+        # DECLINING THE QUESTION IS NOT THE SAME AS RESOLVING IT. We judged the
+        # unknown too small to interrupt for — we did not learn the answer, we
+        # picked one. So the pick rides along to the write and onto the card,
+        # where a tap corrects it. Otherwise the quieter mode is simply the one
+        # that hides its guesses, which is the opposite of what quick is for.
+        data["items"] = _carry_assumptions(data["items"],
+                                           data.get("ambiguities"))
 
     if action == "ask" and not prior:
         # Through the ONE renderer, so the question is voiced rather than

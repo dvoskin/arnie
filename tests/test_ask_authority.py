@@ -125,3 +125,94 @@ def test_absolute_size_overrides_proportion():
     span = DAY_SHARE_OVERRIDE * TARGETS["calories"] + 10   # just over the line
     assert FT._proposed_ask_is_material(
         _proposal(span=span, calories=4000), mode="quick", user=_user("quick"))
+
+
+# ── declining the question does not hide the guess ───────────────────────────
+
+def test_the_assumption_rides_from_the_unknown_to_the_row():
+    """Judging an unknown too small to interrupt for settles the INTERRUPTION,
+    not the doubt — the turn still picked something. It travels."""
+    items = FT._carry_assumptions(
+        [{"food": "Wing", "amount": 1, "unit": "wing", "calories": 100}],
+        [{"item": "Wing", "field": "prep", "impact_cal": 100,
+          "assumed": "fried, bone-in, plain"}])
+    assert items[0]["_assumed"] == [{"field": "prep",
+                                     "text": "fried, bone-in, plain"}]
+    call = FT._log_call(items[0])
+    assert call["input"]["assumptions"] == [{"field": "prep",
+                                             "text": "fried, bone-in, plain"}]
+
+
+def test_an_assumption_reaches_the_card():
+    from core.conversation import _logged_entry_card
+    card = _logged_entry_card("log_food", {
+        "food_name": "Wing", "quantity": "1 wing", "calories": 100,
+        "_entry_id": 7,
+        "assumptions": [{"field": "prep", "text": "fried, bone-in, plain"}]})
+    assert card["payload"]["assumptions"] == [
+        {"field": "prep", "text": "fried, bone-in, plain"}]
+
+
+def test_an_unmatched_assumption_is_dropped_not_smeared():
+    """Bound to the row it names. An ambiguity we cannot place must not attach
+    itself to whatever food happens to be first."""
+    items = FT._carry_assumptions(
+        [{"food": "Wing", "calories": 100}],
+        [{"item": "Something else", "field": "prep", "assumed": "grilled"}])
+    assert "_assumed" not in items[0]
+
+
+def test_a_commit_carrying_an_assumption_must_speak():
+    """COMMIT may normally say nothing — the card said it happened. That
+    reasoning covers the numbers and not a choice made on the user's behalf,
+    which no card explains and older clients do not render at all."""
+    from core.food_response import (FoodResponseIntent, FoodResponsePlan,
+                                    apply_policy)
+    silent = apply_policy(FoodResponsePlan(intent=FoodResponseIntent.COMMIT))
+    assert silent.allow_no_text
+    speaks = apply_policy(FoodResponsePlan(
+        intent=FoodResponseIntent.COMMIT,
+        assumptions=("a large restaurant-style portion",)))
+    assert not speaks.allow_no_text
+    assert speaks.max_words >= 45
+
+
+# ── a fresh row must be recognisable as fresh ────────────────────────────────
+
+def test_the_board_says_how_long_ago_each_row_landed():
+    """"Already logged today" reads the same for a row written eight hours ago
+    and one written a minute ago — so a message refining what we just wrote
+    looks exactly like a new meal, and gets logged twice."""
+    lines = FT.board_lines([
+        {"id": 1, "food": "Rice", "qty": "1 cup", "cal": 205, "mins_ago": 0},
+        {"id": 2, "food": "Chicken", "qty": "6 oz", "cal": 280, "mins_ago": 20},
+        {"id": 3, "food": "Toast", "qty": "1 slice", "cal": 90,
+         "mins_ago": 400}])
+    assert "JUST LOGGED" in lines[0]
+    assert "20 min ago" in lines[1]
+    assert "ago" not in lines[2]          # hours old: recency carries no signal
+
+
+def test_a_board_row_missing_its_age_still_renders():
+    assert FT.board_lines([{"id": 9, "food": "Rice", "qty": "", "cal": 0}]) == [
+        "#9 Rice, ?, 0 cal"]
+
+
+# ── understood is not logged ────────────────────────────────────────────────
+
+def test_understood_items_are_not_offered_as_logged_while_anything_pends():
+    """The composer was told "UNDERSTOOD: chicken", wrote that it was down,
+    and `validate()` rejected it as PENDING_AS_COMMITTED — so a mixed meal
+    shipped the deterministic bullet list instead of a question."""
+    from core.food_response import (FoodItemSummary, FoodResponseIntent,
+                                    FoodResponsePlan, build_prompt)
+    plan = FoodResponsePlan(
+        intent=FoodResponseIntent.CLARIFY,
+        resolved_items=(FoodItemSummary(name="Chicken"),),
+        pending_items=(FoodItemSummary(name="Rice"),))
+    prompt = build_prompt(plan)
+    assert "NOT YET WRITTEN" in prompt
+    settled = build_prompt(FoodResponsePlan(
+        intent=FoodResponseIntent.CLARIFY,
+        resolved_items=(FoodItemSummary(name="Chicken"),)))
+    assert "NOT YET WRITTEN" not in settled

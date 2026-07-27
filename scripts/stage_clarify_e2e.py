@@ -70,6 +70,15 @@ SCENARIOS = {
     "partial": (
         "Two eggs and a banana, and some of that leftover lasagna",
         "About a cup and a half of the lasagna"),
+    # MIXED: vague portions next to branded products next to a generic food.
+    # The four differ in WHAT is unknown — an amount, a flavour, a variant, a
+    # preparation — so a single question shape cannot cover them, and the modes
+    # should disagree about which are worth asking at all.
+    "mixed": (
+        "had some rice with a piece of grilled chicken, plus a barebells bar "
+        "and a fairlife shake",
+        "about a cup of rice, the chicken was a small breast, the bar was "
+        "cookies and cream, and the shake was core power vanilla"),
 }
 
 
@@ -109,6 +118,13 @@ def show(tag: str, out) -> None:
             print(f"             - {c.get('name')} {inp.get('food_name')!r} "
                   f"qty={inp.get('quantity')!r} cal={inp.get('calories')} "
                   f"estimated={inp.get('estimated')}")
+            # What the turn CHOSE where it declined to ask. This is the thing
+            # the user has to be able to see and correct; a row that carries a
+            # guess and does not say so is the failure mode the disclosure
+            # exists to prevent.
+            for a in (inp.get("assumptions") or []):
+                print(f"               {YEL}assumed{X} ({a.get('field')}) "
+                      f"{a.get('text')!r}")
     else:
         print(f"    {CYN}WRITES NOTHING{X} — held behind the question")
 

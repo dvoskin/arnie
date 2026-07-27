@@ -676,6 +676,14 @@ def apply_policy(plan: FoodResponsePlan) -> FoodResponsePlan:
     if plan.requires_answer:
         allow_q = True
         allow_none = False
+    if plan.assumptions:
+        # AN UNDISCLOSED ASSUMPTION IS THE ONE THING SILENCE CANNOT COVER.
+        # COMMIT permits no text at all on the reasoning that the card already
+        # said it happened — true of the numbers, false of a choice the turn
+        # made on the user's behalf, which no older client renders and no card
+        # explains. Room to say it, and the requirement to.
+        allow_none = False
+        words = max(words, 45)
     return replace(plan, max_sentences=sentences, max_words=words,
                    allow_question=allow_q, allow_no_text=allow_none)
 
@@ -1199,8 +1207,19 @@ def build_prompt(plan: FoodResponsePlan) -> str:
              _INTENT_BRIEF.get(plan.intent, "")]
 
     if plan.resolved_items:
-        parts.append("UNDERSTOOD: "
-                     + "; ".join(i.describe() for i in plan.resolved_items))
+        # UNDERSTOOD IS NOT LOGGED, and the bare label let the composer assume
+        # it was. On a clarification nothing is written until they answer, so a
+        # sentence like "got the chicken down" is a false claim about the day —
+        # `validate()` catches it as PENDING_AS_COMMITTED and the deterministic
+        # floor ships instead. That is why a mixed meal fell back to a bullet
+        # list: the plan told the composer these were settled and the validator
+        # knew they were not.
+        _understood = "; ".join(i.describe() for i in plan.resolved_items)
+        parts.append(
+            ("UNDERSTOOD but NOT YET WRITTEN — nothing lands until they "
+             "answer, so name these as read-back, never as logged/added/"
+             "tracked/counted: " + _understood)
+            if plan.pending_items else "UNDERSTOOD: " + _understood)
     if plan.committed_items:
         parts.append("LOGGED (the card shows these — do not recite them): "
                      + "; ".join(i.describe() for i in plan.committed_items))
@@ -1210,7 +1229,14 @@ def build_prompt(plan: FoodResponsePlan) -> str:
     if plan.assumptions:
         texts = [getattr(a, "user_visible_text", "") or str(a)
                  for a in plan.assumptions]
-        parts.append("ASSUMPTIONS you may surface: " + "; ".join(t for t in texts if t))
+        # SAY IT, don't offer to. These are choices the turn made in place of a
+        # question it decided not to ask — the user never supplied them and has
+        # no other way to learn of them on a surface without cards. "May
+        # surface" left the one thing they might want to correct as the one
+        # thing most likely to be dropped for brevity.
+        parts.append(
+            "WHAT YOU ASSUMED — name it plainly in your sentence, briefly, so "
+            "they can correct it: " + "; ".join(t for t in texts if t))
     if plan.clarification_unknowns:
         # THE QUESTION IS THE COACH'S TO WRITE.
         #
