@@ -478,3 +478,22 @@ async def test_the_lane_is_never_lost_to_a_failing_model(monkeypatch):
     monkeypatch.setattr("core.llm.chat", _fail)
     assert await FT.food_relevance("Just had a sushi roll for lunch")
     assert not await FT.food_relevance("Oh and a bag of quest chips")
+
+
+def test_a_hypothetical_cannot_write():
+    """"if I had a burger would that blow my day" carries no question mark and
+    does not open with an interrogative, so both existing guards passed it —
+    while naming a food in the past tense, which is all the shapes downstream
+    look for. A conditional describes a world; it does not report one."""
+    from core.food_turn import consumption_evidence
+    assert not consumption_evidence("if I had a burger would that blow my day")
+    assert not consumption_evidence("if I ate 3 eggs could I still hit macros")
+
+
+def test_the_conditional_guard_does_not_eat_real_logs():
+    """Narrow on purpose — it needs BOTH halves of the construction, so a
+    stray "if" in an ordinary report still writes."""
+    from core.food_turn import consumption_evidence
+    assert consumption_evidence("if you want, I had the salad earlier")
+    assert consumption_evidence("had a coffee then a bagel then hit the gym")
+    assert consumption_evidence("didn't eat the fries but I had the burger")

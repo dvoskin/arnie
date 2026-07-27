@@ -301,6 +301,12 @@ def applies_destructive(text: str) -> bool:
     return bool(_DESTRUCTIVE_RE.search(t))
 
 
+#: "if ... would/could" — a hypothetical, not a report. Deliberately narrow:
+#: it must have BOTH halves, so "if you want, I had the salad" still writes.
+_CONDITIONAL_RE = re.compile(r"\bif\b[^.?!]{0,60}\b(would|could|were)\b",
+                             re.IGNORECASE)
+
+
 def consumption_evidence(message: str, prior=None, thread_active: bool = False) -> bool:
     """HARD EXECUTION INVARIANT (fix #3): a log write requires a message that
     can honestly be read as a consumption assertion — whatever action the
@@ -313,6 +319,13 @@ def consumption_evidence(message: str, prior=None, thread_active: bool = False) 
     if not t:
         return False
     if "?" in t or _INTERROGATIVE_RE.match(t):
+        return False
+    # A CONDITIONAL IS NOT AN ASSERTION. "if I had a burger would that blow my
+    # day" carries no question mark and does not open with an interrogative, so
+    # both guards above pass it — and it names a food in the past tense, which
+    # is all the shapes downstream look for. This is grammar rather than food
+    # knowledge: "if X, would Y" describes a world, it does not report one.
+    if _CONDITIONAL_RE.search(t):
         return False
     if prior is not None or thread_active:
         return True
@@ -425,7 +438,13 @@ _RELEVANCE_SYSTEM = (
     "Answer with exactly one word: YES or NO.\n"
     "YES covers a bare food name, a brand, a flavour answering a question, a "
     "correction to a portion or an ingredient, and any language or script.\n"
-    "NO covers questions, greetings, and anything about another topic.\n"
+    "NO covers questions ABOUT food rather than reports of eating it, "
+    "hypotheticals (\"if I had a burger...\"), greetings, and messages about "
+    "another topic entirely.\n"
+    "A message can hold several things at once. If ANY part of it reports "
+    "food they actually ate, answer YES \u2014 \"had eggs this morning, having "
+    "steak later\" is YES for the eggs, and \"had a coffee then went to the "
+    "gym\" is YES for the coffee. The other lanes read the rest.\n"
     "NO also covers food they have NOT eaten yet: what they intend to order, "
     "plan to cook, need to buy, or are about to have. Past tense or an "
     "explicit correction is the line \u2014 \"having chicken later\" and "
@@ -472,9 +491,19 @@ async def food_relevance(text: str) -> bool:
         return applies(t)
     if applies(t):
         return True
+    # ONLY THE DECLINES THAT CANNOT BE WRONG. This tier existed to save model
+    # calls and was costing accuracy instead: "had a coffee then a bagel then
+    # went to the gym" died on `mixed_domain`, "had eggs this morning, having
+    # steak later" on `future_plan`, and "does 2 eggs sound right? that's what
+    # I had" on the question mark — all three real logs, none of which the
+    # model ever got to see. A message can hold a meal AND a plan, a workout,
+    # or a question at once; only the model can weigh that, and putting the
+    # English regexes in front of it is the very failure this replaced.
+    #
+    # What stays is what no reading can rescue: nothing to read, or a bare
+    # acknowledgement carrying no content at all.
     reason = decline_reason(t)
-    if reason in ("negated", "acknowledgement", "question", "future_plan",
-                  "destructive", "mixed_domain", "too_long", "empty"):
+    if reason in ("acknowledgement", "too_long", "empty"):
         return False
 
     key = " ".join(t.lower().split())[:200]
