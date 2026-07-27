@@ -162,26 +162,44 @@ def _meal_lookup_summary(sourcings: list) -> Optional[dict]:
     that ran across the meal and how many items it answered, which is the
     question being asked.
     """
-    ran, hit = {}, {}
+    ran, hit, weak = {}, {}, {}
     for src in sourcings:
         for lane, outcome in (src.get("lanes") or []):
             if lane not in _LANE_LABELS or lane == "lookup":
                 continue
+            if outcome == "skipped":
+                # NOT A CHECK. Counting a skip in the denominator printed
+                # "product label 0/2" for a lane that never ran, which reads as
+                # "the web has nothing" — the opposite of the truth, and it
+                # sent this investigation looking at the lookup instead of the
+                # gate that suppressed it.
+                continue
             ran[lane] = ran.get(lane, 0) + 1
             if outcome == "hit":
                 hit[lane] = hit.get(lane, 0) + 1
+            elif outcome == "weak":
+                # FOUND, BUT NOT SEATED. Counting this with the misses is the
+                # same error the per-item trace was written to avoid: "0/2"
+                # reads as "that database has nothing", when what happened is
+                # the lane answered and the ladder declined its answer. Those
+                # need different fixes and must not look alike.
+                weak[lane] = weak.get(lane, 0) + 1
     if not ran:
         return None
     # Short names here, not `_LANE_LABELS`' prose ones. Three lanes written out
     # in full runs past the 70-character step budget and truncates mid-lane —
     # "…, the product …" — which loses the very lane the line exists to report.
-    parts = []
+    parts, notes = [], []
     for lane, short in (("usda", "USDA"), ("off", "Open Food Facts"),
                         ("web", "product label")):
-        if lane in ran:
-            parts.append(f"{short} {hit.get(lane, 0)}/{ran[lane]}")
-    return _step("magnifyingglass", "Looked up " + ", ".join(parts),
-                 "matched / checked, across the meal")
+        if lane not in ran:
+            continue
+        parts.append(f"{short} {hit.get(lane, 0)}/{ran[lane]}")
+        if weak.get(lane):
+            notes.append(f"{weak[lane]} {short} match"
+                         f"{'es' if weak[lane] > 1 else ''} too loose to use")
+    detail = "; ".join(notes) if notes else "matched / checked, across the meal"
+    return _step("magnifyingglass", "Looked up " + ", ".join(parts), detail)
 
 
 def _exercise_step(inp: dict, result: str) -> dict:

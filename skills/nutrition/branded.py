@@ -191,6 +191,85 @@ def _is_generic(food_name: str) -> bool:
         return False
 
 
+#: Brands whose names are ORDINARY WORDS, so no shape heuristic can see them.
+#:
+#: `authority.classify`'s own docstring names the hole: the caps / possessive /
+#: ampersand / trademark rules catch "Thomas'" and "M&Ms" and miss "a plain
+#: Title Case brand like Philadelphia". The stated mitigation was that the
+#: interpreter supplies `brand` or `is_packaged` — and when it does not, the
+#: food is classified GENERIC, which has two consequences that look like broken
+#: lookups:
+#:
+#:   • Open Food Facts is only SEATED for FoodClass.MANUFACTURED, so an exact
+#:     OFF match is fetched, graded "exact", and then discarded.
+#:   • the web lane is gated on `names_a_product`, so it never runs at all.
+#:
+#: A shipped turn: "Philadelphia Whipped Cream Cheese" — OFF returned the label
+#: at 166.7 cal/100g, the ladder had no branded slot to put it in, and USDA's
+#: generic answered instead.
+#:
+#: Data, not code, exactly like `authority.RESTAURANT_BRANDS` next door. Meant
+#: to grow; a false positive costs one lookup that still has to survive
+#: identity validation, a false negative costs the label entirely.
+GROCERY_BRANDS = frozenset({
+    # dairy / spreads
+    "philadelphia", "breakstone", "tillamook", "sargento", "velveeta",
+    "land o lakes", "chobani", "fage", "oikos", "yoplait", "activia",
+    "silk", "oatly", "califia", "horizon", "organic valley", "daisy",
+    # pantry / condiments
+    "heinz", "hellmann", "skippy", "jif", "nutella", "smucker", "welch",
+    "prego", "ragu", "classico", "barilla", "ronzoni", "goya", "hormel",
+    "campbell", "progresso", "bushs", "rotel", "cholula", "tabasco",
+    # snacks / cereal / bars
+    "oreo", "cheerios", "pringles", "doritos", "cheetos", "ritz", "triscuit",
+    "goldfish", "quaker", "kelloggs", "nature valley", "clif", "larabar",
+    "pop tarts", "eggo", "nutrigrain", "wheat thins", "chex",
+    # frozen / prepared
+    "stouffer", "digiorno", "totino", "hot pockets", "lean cuisine",
+    "birds eye", "green giant", "banza", "amy", "annie",
+    # protein / drinks
+    "gatorade", "powerade", "celsius", "zevia", "olipop", "poppi",
+    "tropicana", "minute maid", "ocean spray", "la croix", "bubly",
+    # meat / fish
+    "tyson", "perdue", "applegate", "hillshire", "jimmy dean", "starkist",
+    "bumble bee", "spam", "oscar mayer",
+})
+
+
+#: Brand names that are also PLACES or PEOPLE, and the dishes named after them.
+#:
+#: "Philadelphia cheesesteak" is a sandwich, not a Kraft product, and seating
+#: the cream-cheese label on it would be a worse error than the generic it
+#: replaces — a confident wrong number instead of a vague right one. The brand
+#: only counts when the rest of the name is not naming a dish after the place.
+_BRAND_IS_A_PLACE = {
+    "philadelphia": ("cheesesteak", "cheese steak", "steak", "sub", "hoagie",
+                     "sandwich", "roll", "pretzel"),
+    "boston": ("cream pie", "lettuce"),
+    "denver": ("omelet", "omelette"),
+    "buffalo": ("wing", "wings", "sauce", "chicken"),
+}
+
+
+def _named_grocery_brand(name: str) -> Optional[str]:
+    """The grocery brand this name carries, if any.
+
+    Word-boundary matched, so "philadelphia cream cheese" hits. A brand that is
+    also a place is withdrawn when the name goes on to describe that place's
+    dish — see `_BRAND_IS_A_PLACE`.
+    """
+    lowered = f" {(name or '').lower()} "
+    for brand in GROCERY_BRANDS:
+        if not (f" {brand} " in lowered or f" {brand}s " in lowered
+                or lowered.startswith(f" {brand}")):
+            continue
+        dishes = _BRAND_IS_A_PLACE.get(brand)
+        if dishes and any(d in lowered for d in dishes):
+            continue        # the place, not the manufacturer
+        return brand
+    return None
+
+
 def product_signal(food_name: str, brand: Optional[str] = None,
                    is_packaged: bool = False) -> Optional[ProductSignal]:
     """The strongest reason to believe this names a product, or None.
@@ -215,6 +294,13 @@ def product_signal(food_name: str, brand: Optional[str] = None,
 
     if _MARK_RE.search(name):
         return ProductSignal("trademark_mark", STRONG, name)
+
+    # A known brand whose name is an ordinary word. Checked with the other
+    # STRONG marks because it is the same KIND of evidence — the name carries
+    # a manufacturer — and it is the only one that can see "Philadelphia".
+    known = _named_grocery_brand(name)
+    if known:
+        return ProductSignal("known_brand", STRONG, known)
 
     # A generic name can still carry no product at all — but it is checked
     # AFTER the explicit signals, because "Quest protein bar" is generic by
