@@ -403,6 +403,12 @@ _SYSTEM = (
     '"Caesar salad","amount":2,"unit":"handfuls","calories":180,"protein":4,'
     '"carbs":8,"fats":15,"branded":false,"meal":"dinner"}],"say":"Pizza and the Caesar logged, {batch_cal} cal and '
     '{batch_protein}g protein for the pair. You are at {day_cal} with {cal_left} left."}\n'
+    '4a. CORRECTING WHAT IT WAS ("it was actually a filled Twizzler", "that was '
+    'the zero sugar one", "it was chicken not beef") -> set "food" to the '
+    'corrected product and OMIT calories/protein/carbs/fats entirely. A '
+    'different product is a LOOKUP, not something you remember: the system '
+    're-resolves it against the label. Supplying your own numbers is how a '
+    '140-calorie PACK figure got written against a quantity of one piece.\n'
     '4. CORRECTING something already on today\'s board ("I actually had 2 birria", '
     '"I had 2 of those", "make it 6 oz") -> {"action":"update","updates":[{'
     '"entry_id":123,"amount":2,"unit":"taco","calories":360,"protein":30,'
@@ -636,9 +642,14 @@ def _build_calls(ops, board_by_id: dict):
     would be a second definition of what a write is.
     """
     calls, kinds, items_logged = [], [], []
+    # A LONE update is a correction; an update among others is part of a plan
+    # that redistributes what is already there. Only the first defers its
+    # macros to a fresh lookup.
+    lone_update = len(ops or ()) == 1 and (ops[0][0] == "update")
     for kind, o in ops:
         call = (_log_call(o) if kind == "log"
-                else _update_call(o, board_by_id) if kind == "update"
+                else _update_call(o, board_by_id, defer_macros=lone_update)
+                if kind == "update"
                 else _delete_call(o, board_by_id))
         if call is None:
             continue
@@ -1775,7 +1786,8 @@ def _log_call(it: dict, source: Optional[str] = None) -> Optional[dict]:
     return {"name": "log_food", "input": inp}
 
 
-def _update_call(up: dict, board_by_id: dict) -> Optional[dict]:
+def _update_call(up: dict, board_by_id: dict,
+                 defer_macros: bool = False) -> Optional[dict]:
     if not isinstance(up, dict):
         return None
     try:
@@ -1794,9 +1806,31 @@ def _update_call(up: dict, board_by_id: dict) -> Optional[dict]:
         inp["quantity"] = f"{amount} {unit}".strip()
     except (TypeError, ValueError):
         pass
+    # A CORRECTION MAY CHANGE WHAT IT WAS, not just how much. There was no path
+    # for that here: `inp` carried a quantity and four macros, so "it was
+    # actually a filled Twizzler" arrived as a macro edit and the executor's
+    # re-resolution — gated on `changes.get("food_name")` — could never fire
+    # from this lane. What shipped instead was the model's own figure: 140
+    # calories, the whole pack, written against a quantity of one piece.
+    renamed = str(up.get("food") or up.get("food_name") or "").strip()
+    if renamed:
+        inp["food_name"] = renamed
+
     for k in ("calories", "protein", "carbs", "fats"):
         v = up.get(k)
         if isinstance(v, (int, float)):
+            # THE LADDER OWNS THE NUMBERS FOR A NEW IDENTITY. Keeping the
+            # model's macros here would win: the executor only fills what the
+            # re-resolution returns, and a supplied value is what it re-resolved
+            # against. A different product is a lookup, not a recollection.
+            #
+            # ONLY WHEN THE UPDATE STANDS ALONE. In a SPLIT the rename arrives
+            # inside a multi-operation plan — "separate the toast and cheese" is
+            # [update, log] — and its macros are a PARTITION of a total already
+            # on the board, not something remembered. Dropping those loses the
+            # component's share and the split stops conserving.
+            if renamed and defer_macros:
+                continue
             inp[k] = v
     # Compare-and-swap seed (fix #9): the interpreter targeted this entry
     # holding a board snapshot; the executor refuses the write if the row has
