@@ -49,6 +49,7 @@ from core.conversation import TurnResult
 from core.history import conversations_to_messages
 from core.platform import Response
 from core.prompts.arnie import build_arnie_system
+from core.recovery import is_recovery_text
 from core.reset import parse_reset_command, reset_today, reset_all
 from handlers.onboarding import build_onboarding_system
 
@@ -73,14 +74,16 @@ _DEDUP_WINDOW_SEC = 20
 # resend double-log a multi-set block (shrugs 3×14,14,15 written twice, 2026-06-25).
 _DEDUP_TOOL_WINDOW_SEC = 10
 _DEDUP_MIN_PHRASE_LEN = 22
-# A prior reply matching one of these recovery signatures means the turn ERRORED —
+# A prior reply matching one of the recovery signatures means the turn ERRORED —
 # never collapse onto it, or a resend-after-error loops on the canned apology
 # instead of actually retrying.
-_RECOVERY_SIGS = (
-    "wires crossed", "hit a snag", "went sideways", "didn't go through",
-    "hiccupped saving", "didn't save right", "got a bit confused",
-    "didn't quite land", "lost the thread", "still here. what's the move",
-)
+#
+# The signatures are DERIVED from the bubble pool (core/recovery), not
+# transcribed. The transcribed list had already drifted: it carried
+# `"still here. what's the move"`, the render layer's private fallback, which
+# was never a recovery bubble — and nothing would have told us if a bubble had
+# been reworded out from under it, because the guard fails SILENTLY. A resend
+# after an error would simply have replayed the apology.
 
 
 def _coach_home_block(briefing: dict) -> str:
@@ -118,7 +121,7 @@ def _coach_home_block(briefing: dict) -> str:
 def _is_error_reply(response_text: str) -> bool:
     """True when a stored reply is a recovery/error bubble — never replay onto it,
     so a resend after an errored turn actually retries."""
-    return any(s in (response_text or "").lower() for s in _RECOVERY_SIGS)
+    return is_recovery_text(response_text)
 
 
 def _replay_from_row(row) -> Optional[Response]:
@@ -291,7 +294,7 @@ async def run_chat_turn(
             _same = (_p.raw_message or "") == text
             _fired_tools = bool((_p.skills_fired or "").strip())
             _prev_resp = _p.response or ""
-            _was_error = any(s in _prev_resp.lower() for s in _RECOVERY_SIGS)
+            _was_error = is_recovery_text(_prev_resp)
             _t = text.strip()
             _coalesce = False
             if _same and not _was_error and 0 <= _age <= _DEDUP_WINDOW_SEC:

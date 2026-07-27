@@ -210,7 +210,22 @@ class Response:
         bubbles = [_sanitize_bubble(b) for b in (text or "").split("|||")]
         bubbles = [b for b in bubbles if b]
         if not bubbles:
-            bubbles = ["still here. what's the move?"]
+            # Nothing to render. The pipeline has its own stall handling above
+            # this (core/conversation, core/turns), and reaching HERE with no
+            # text means every one of those nets was missed — the coordinator
+            # returning a turn with no response at all, or a sanitizer that
+            # emptied the only bubble.
+            #
+            # This used to invent its own line, `"still here. what's the
+            # move?"`: lowercase, off-voice, and a second stall reply in a
+            # product with one. It shipped from the render layer, beneath
+            # every check that reads a reply, so nothing upstream could see it
+            # and the replay guard had to name it by hand. Same floor, said in
+            # the approved words, from the same pool as every other recovery.
+            from core.recovery import recovery_message
+            bubbles = [_sanitize_bubble(b)
+                       for b in recovery_message("stall", seed=text or "")
+                       .split("|||")]
         return cls(bubbles=bubbles, **kwargs)
 
 

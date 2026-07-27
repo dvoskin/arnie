@@ -24,9 +24,17 @@ def test_hyphen_ranges_survive():
 
 
 def test_empty_text_is_not_a_dead_end():
+    # The property is "never dead-air", not any one sentence. It used to be
+    # pinned to `"still here. what's the move?"` — the render layer's own
+    # private fallback, lowercase, and a second stall reply in a product that
+    # has one. The floor now says it in the approved words (core/recovery),
+    # which is what the rest of the pipeline has always used.
+    from core.recovery import RECOVERY_BUBBLES
+
     r = Response.from_text("")
     assert r.bubbles and r.bubbles[0] != "done."
-    assert "what's the move" in r.bubbles[0].lower()
+    assert " ".join(r.bubbles) in [v.replace("|||", " ")
+                                   for v in RECOVERY_BUBBLES["stall"]]
 
 
 def test_double_spaces_collapsed_after_strip():

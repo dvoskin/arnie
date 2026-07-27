@@ -447,63 +447,19 @@ async def _resolve_log(inp: dict, user, today_log, db):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# RECOVERY MESSAGES — short user-facing fallback lines for failure / dead-end
-# paths. The user should NEVER be left staring at silence or a confusing reply
-# when the pipeline trips. Every recovery line:
-#   • acknowledges the snag honestly (no system-blaming, no pretending)
-#   • gives ONE concrete next move ("resend", "say it again simpler")
-#   • is short (1-2 bubbles, |||-split)
-#   • is in Arnie's voice (sentence case, no em dashes, no helpdesk filler)
-# This is a retention play: the user knows what happened and what to do,
-# instead of wondering whether Arnie is broken.
+# RECOVERY MESSAGES now live in core/recovery.py, because the tool layer is not
+# where a reply's words belong: core/platform (the renderer) and
+# core/chat_service (the replay guard) both need the same pool, and neither can
+# import the executor. Both used to work around that — one with its own
+# lowercase fallback, one with a hand-copied signature list — and both drifted.
 #
-# Variance is deterministic (seed-length index) so the same input always
-# yields the same line — resume-safe, testable, and avoids the same bubble
-# firing back-to-back when seeds differ.
+# Re-exported here so `from handlers.tool_executor import recovery_message`
+# keeps working for the callers and tests that already reach for it.
 # ─────────────────────────────────────────────────────────────────────────────
-
-_RECOVERY_BUBBLES = {
-    # A tool call returned Error:/Skipped/Failed to — the action did NOT land.
-    "tool_error": (
-        "That didn't go through.|||resend and it usually catches the second try.",
-        "Something hiccupped saving that.|||try once more, should land cleanly.",
-        "That one didn't save right.|||resend it and I'll get it.",
-    ),
-    # The whole LLM turn errored out (exception in chat()). Pipeline can't
-    # produce a coached reply — fall back to an honest "try again" line.
-    "llm_error": (
-        "Something went sideways on my end.|||resend that and I'll catch it.",
-        "Hit a snag on that one.|||send it again, I'll be back on track.",
-        "Wires crossed for a sec.|||resend it and I'll get it cleanly.",
-    ),
-    # Degenerate fallback: model produced no text AND no tool calls (or every
-    # repair attempt failed). We have nothing to coach on — admit confusion
-    # and ask for a simpler restate.
-    "stall": (
-        "Got a bit confused on that one.|||say it again, simpler if you can.",
-        "Didn't quite land for me.|||resend it, shorter is fine.",
-        "Lost the thread there.|||try one more time and I'll catch it.",
-    ),
-}
-
-
-def recovery_message(kind: str, seed: str = "") -> str:
-    """Short user-facing recovery line for failure / dead-end fallbacks.
-
-    Acknowledges the snag in Arnie's voice + gives one concrete recovery
-    action (resend, simplify, try again). Helps retention — the user knows
-    what went wrong and what to do, instead of staring at silence or a
-    confusing reply.
-
-    kind: 'tool_error' (a save failed), 'llm_error' (the whole turn errored),
-          'stall' (no usable response_text). Unknown kinds fall back to
-          'stall' so a typo can't return empty.
-    seed: text the deterministic index keys off — same input maps to the
-          same variant. Pass the user's message or a tool-input string.
-    """
-    pool = _RECOVERY_BUBBLES.get(kind) or _RECOVERY_BUBBLES["stall"]
-    idx = (len(seed or "") + len(kind)) % len(pool)
-    return pool[idx]
+from core.recovery import (  # noqa: E402
+    RECOVERY_BUBBLES as _RECOVERY_BUBBLES,
+    recovery_message,
+)
 
 
 # Rotating session cues for the deterministic exercise-log fallback (fires when

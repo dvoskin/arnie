@@ -13,6 +13,10 @@ Coverage:
   • unknown kind falls back to 'stall' (typo-safe)
   • run_turn LLM-exception path uses recovery_message("llm_error")
   • run_turn no-text/no-tool-calls fallback uses recovery_message("stall")
+  • the RENDER floor (Response.from_text with nothing to render) uses the pool
+    too, instead of its own legacy line
+  • the replay guard's signatures are DERIVED from the pool, so a reworded
+    bubble cannot silently stop being recognized as an error reply
 """
 import pytest
 
@@ -203,3 +207,95 @@ async def test_stall_fallback_uses_recovery_message(monkeypatch, make_user, db):
     assert "What's the move" not in body, (
         f"Stall fallback regressed to legacy 'Still here. What's the move?': {body!r}"
     )
+
+
+# ── The render floor: one stall reply in the product, not two ────────────────
+#
+# `Response.from_text` is the last thing between a turn and the user, and it had
+# its own fallback for an empty reply: `"still here. what's the move?"`. Every
+# net above it (core/conversation, core/turns) already answers a stall from the
+# approved pool, so that line only ever shipped when all of them were missed —
+# from the render layer, below every check that reads a reply, in lowercase, in
+# words no one had approved.
+
+
+def test_the_render_floor_uses_the_approved_pool():
+    """A Response with nothing to render still answers, in the approved words."""
+    from core.platform import Response
+
+    for empty in ("", None, "|||", "   |||  "):
+        bubbles = Response.from_text(empty).bubbles
+        assert bubbles, f"render floor produced no bubbles for {empty!r}"
+        assert " ".join(bubbles) in [v.replace("|||", " ")
+                                     for v in _RECOVERY_BUBBLES["stall"]], (
+            f"render floor invented its own line for {empty!r}: {bubbles!r}")
+
+
+def test_the_render_floor_is_not_the_legacy_line():
+    """The specific regression: the lowercase keep-alive is gone for good."""
+    from core.platform import Response
+
+    body = " ".join(Response.from_text("").bubbles)
+    assert "still here" not in body.lower(), (
+        f"render floor regressed to the legacy keep-alive: {body!r}")
+    # It was the last in-code lowercase leak the foundation audit listed. A
+    # recovery line is sentence case like every other thing Arnie says.
+    assert body[:1] == body[:1].upper(), f"render floor line is lowercase: {body!r}"
+
+
+def test_a_turn_with_no_response_at_all_lands_on_the_floor():
+    """The coordinator's own path to it: a native turn that produced no
+    response is rendered through `from_text("")` (core/turns/entrypoint), which
+    is exactly the case the floor exists for."""
+    from core.platform import Response
+
+    assert Response.from_text("").bubbles == Response.from_text(None).bubbles
+
+
+# ── The replay guard reads the same pool it is guarding ──────────────────────
+#
+# `core/chat_service` must never collapse an idempotent resend onto an errored
+# turn — a resend-after-error has to actually retry. It decided that by matching
+# a hand-copied fragment of each bubble, which is a copy that drifts: it carried
+# the render floor's private line, which was never a recovery bubble at all.
+
+
+@pytest.mark.parametrize("kind", _ALL_KINDS)
+def test_every_bubble_is_recognized_as_an_error_reply(kind):
+    """Every line the pool can emit must be recognized when it comes back as a
+    stored reply. This is the property the hand-copied list only happened to
+    have."""
+    from core.recovery import is_recovery_text
+
+    for variant in _RECOVERY_BUBBLES[kind]:
+        # Stored exactly as chat_service persists it: the sanitized bubbles,
+        # |||-joined. Nothing in the pool is altered by sanitizing.
+        from core.platform import Response
+        stored = "|||".join(Response.from_text(variant).bubbles)
+        assert is_recovery_text(stored), (
+            f"{kind} variant not recognized as an error reply: {stored!r}")
+
+
+def test_an_ordinary_reply_is_not_an_error_reply():
+    """The other half: a real coaching reply must stay replayable, or a
+    double-tap re-runs the turn and double-writes the log."""
+    from core.recovery import is_recovery_text
+
+    for ordinary in ("Here's the deep dive.",
+                     "Shrugs 3×14,14,15 logged.|||What weight on rows?",
+                     "Lunch logged, 620 cal.|||Nice work.",
+                     "You're at 1,240/2,165 cal.|||Protein's the gap."):
+        assert not is_recovery_text(ordinary), (
+            f"ordinary reply misread as a recovery bubble: {ordinary!r}")
+
+
+def test_the_signatures_are_derived_not_transcribed():
+    """The guarantee itself: every signature traces to a bubble in the pool,
+    and every bubble contributes one. A transcribed list can hold a string no
+    bubble produces (it did) and can miss one that a bubble does."""
+    from core.recovery import RECOVERY_SIGNATURES
+
+    heads = {v.split("|||", 1)[0].strip().lower()
+             for pool in _RECOVERY_BUBBLES.values() for v in pool}
+    assert RECOVERY_SIGNATURES == heads
+    assert "still here. what's the move" not in RECOVERY_SIGNATURES
