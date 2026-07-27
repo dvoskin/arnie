@@ -158,16 +158,18 @@ async def get_achievements(identity: str = Depends(current_identity)):
     user's history would sit unearned until their next log. Opening the wall
     runs the check silently first (effect_taken=True → never a celebration),
     so years of logging light up the sheet on first view. Fail-open — a
-    broken check must never blank the wall."""
-    from core.achievements import badge_wall, check_achievements
+    broken check must never blank the wall.
+
+    The counters behind the backfill are the same ones the v2 wall needs for
+    its progress bars, so `wall_with_backfill` computes them once and only as
+    far as what's still unearned requires — a wall read never costs more than
+    the equivalent log turn's check, and costs nothing extra once every badge
+    is already minted."""
+    from core.achievements import wall_with_backfill
 
     async with AsyncSessionLocal() as db:
         user = await resolve_user(db, identity)
-        try:
-            await check_achievements(db, user, effect_taken=True)
-        except Exception:
-            logger.warning("achievement backfill on wall read failed", exc_info=True)
-        wall = await badge_wall(db, user)
+        wall = await wall_with_backfill(db, user)
     return {"v": WIRE_VERSION, "badges": wall}
 
 

@@ -12,7 +12,8 @@ from datetime import date, datetime, timedelta
 import pytest
 
 from core.achievements import (
-    BADGES, check_achievements, badge_wall,
+    BADGES, NEXT_UP_COUNT, check_achievements, badge_wall, compute_state,
+    wall_with_backfill,
 )
 from db.models import Achievement, DailyLog, ExerciseEntry, FoodEntry
 
@@ -40,6 +41,24 @@ async def test_registry_integrity():
     for b in BADGES:
         assert b["tier"] in ("big", "small")
         assert b["line"] and b["title"] and b["icon"] and b["rank"] > 0
+        # v2: every badge is cast in a metal, filed under a family, and
+        # measured by a metric/target pair.
+        assert b["metal"] in ("bronze", "silver", "gold", "platinum")
+        assert b["family"] in ("nutrition", "training", "consistency", "precision")
+        assert b["metric"] in ("foods", "photos", "workouts", "protein_days", "streak")
+        assert isinstance(b["target"], int) and b["target"] > 0
+
+
+async def test_metal_ladder_rises_with_rank():
+    """The metal must never go DOWN as badges get harder — a 100-day streak
+    outranking a 3-day one is the whole point of the ladder."""
+    order = {"bronze": 0, "silver": 1, "gold": 2, "platinum": 3}
+    by_family: dict[str, list] = {}
+    for b in sorted(BADGES, key=lambda b: b["rank"]):
+        by_family.setdefault(b["family"], []).append(b)
+    for family, badges in by_family.items():
+        metals = [order[b["metal"]] for b in badges]
+        assert metals == sorted(metals), f"{family} metal ladder goes backwards"
 
 
 async def test_first_food_awards_once(db, make_user):
@@ -104,6 +123,192 @@ async def test_badge_wall_full_registry_in_order(db, make_user):
     wall = await badge_wall(db, u)
     assert [b["id"] for b in wall] == [b["id"] for b in BADGES]
     assert all(b["earned_at"] is None for b in wall)
+
+
+# ── v2: progress + next_up ───────────────────────────────────────────────────
+
+
+async def test_wall_progress_tracks_real_counts(db, make_user):
+    u = await make_user()
+    for i in range(7):
+        await _add_day(db, u.id, date(2026, 7, 1) + timedelta(days=i),
+                       foods=1, workouts=1)
+    wall = {b["id"]: b for b in await badge_wall(db, u)}
+
+    # 7 foods against the 50-food badge — real numerator, clamped pct.
+    p = wall["foods_50"]["progress"]
+    assert p == {"current": 7, "target": 50, "pct": 0.14}
+    # 7 workouts against 10.
+    assert wall["workouts_10"]["progress"]["current"] == 7
+    # Nothing photo-logged.
+    assert wall["first_photo"]["progress"]["current"] == 0
+
+
+async def test_earned_badges_read_full_even_when_the_streak_breaks(db, make_user):
+    """A streak badge stays earned after the chain dies; a half-drawn ring
+    under an earned mark would read as though it had been taken away."""
+    u = await make_user()
+    db.add(Achievement(user_id=u.id, badge_id="streak_30",
+                       earned_at=datetime.utcnow()))
+    await db.commit()
+    wall = {b["id"]: b for b in await badge_wall(db, u)}
+    p = wall["streak_30"]["progress"]
+    assert p["pct"] == 1.0 and p["current"] == p["target"] == 30
+
+
+async def test_progress_and_earn_condition_use_the_same_rule(db, make_user):
+    """Whatever hits pct 1.0 must be exactly what mints — the metric/target
+    pair is the single source for both."""
+    u = await make_user()
+    u.protein_target = 150
+    for i in range(7):
+        await _add_day(db, u.id, date(2026, 7, 1) + timedelta(days=i),
+                       foods=1, workouts=2, protein=160)
+    state = await compute_state(db, u)
+    await check_achievements(db, u)
+    wall = await badge_wall(db, u, state=state)
+    for b in wall:
+        full = b["progress"]["pct"] >= 1.0
+        assert full == (b["earned_at"] is not None), \
+            f"{b['id']}: progress says {full}, wall says {b['earned_at'] is not None}"
+
+
+async def test_next_up_is_ranked_by_nearness_not_registry_order(db, make_user):
+    u = await make_user()
+    # 240 foods deep: foods_250 is a hair away and must lead the queue, even
+    # though the registry lists cheaper unearned badges before it.
+    await _add_day(db, u.id, date(2026, 7, 10), foods=240)
+    await check_achievements(db, u)
+    wall = await badge_wall(db, u)
+    queue = sorted((b for b in wall if b["next_up"] is not None),
+                   key=lambda b: b["next_up"])
+
+    assert len(queue) == NEXT_UP_COUNT
+    assert queue[0]["id"] == "foods_250"
+    assert all(b["earned_at"] is None for b in queue), "earned badge in next_up"
+    # Positions are a dense 0..n-1 queue.
+    assert [b["next_up"] for b in queue] == list(range(NEXT_UP_COUNT))
+
+
+async def test_next_up_skips_a_badge_that_is_complete_but_unminted(db, make_user):
+    """Wall read WITHOUT the backfill (or with a backfill that threw): a badge
+    at 100% is mid-award, not a target. "50 of 50 — shoot for this" is broken
+    copy, so it stays out of the queue until it mints."""
+    u = await make_user()
+    await _add_day(db, u.id, date(2026, 7, 10), foods=60)
+    wall = await badge_wall(db, u)          # note: no check_achievements
+    by_id = {b["id"]: b for b in wall}
+
+    assert by_id["foods_50"]["progress"]["pct"] == 1.0
+    assert by_id["foods_50"]["earned_at"] is None
+    assert by_id["foods_50"]["next_up"] is None, "complete-but-unminted led the queue"
+    assert all(b["progress"]["pct"] < 1.0
+               for b in wall if b["next_up"] is not None)
+
+
+async def test_next_up_falls_back_to_rank_for_a_brand_new_user(db, make_user):
+    """Everything at 0% — the opening shelf should be the gentle three, not
+    a thousand-food badge."""
+    u = await make_user()
+    wall = await badge_wall(db, u)
+    queue = sorted((b for b in wall if b["next_up"] is not None),
+                   key=lambda b: b["next_up"])
+    assert [b["id"] for b in queue] == ["first_food", "first_photo", "first_workout"]
+
+
+async def test_wall_read_skips_the_streak_walk_when_no_streak_badge_is_open(
+        db, make_user, monkeypatch):
+    """`_best_streak` fetches 90 days of logs — the most expensive call in the
+    module. Once every streak badge is earned it's pure waste, and the wall
+    read must not pay for it just because progress bars exist now."""
+    import core.achievements as ach
+
+    u = await make_user()
+    for b in BADGES:
+        if b["metric"] == "streak":
+            db.add(Achievement(user_id=u.id, badge_id=b["id"],
+                               earned_at=datetime.utcnow()))
+    await db.commit()
+
+    called = False
+
+    async def spy(*a, **kw):
+        nonlocal called
+        called = True
+        return 0
+
+    monkeypatch.setattr(ach, "_best_streak", spy)
+    await ach.wall_with_backfill(db, u)
+    assert not called, "walked 90 days of logs with every streak badge earned"
+
+
+async def test_wall_read_computes_nothing_when_everything_is_earned(
+        db, make_user, monkeypatch):
+    """Nothing left to chase → no counters at all. The wall is then just the
+    Achievement rows, exactly as cheap as it was before progress existed."""
+    import core.achievements as ach
+
+    u = await make_user()
+    for b in BADGES:
+        db.add(Achievement(user_id=u.id, badge_id=b["id"],
+                           earned_at=datetime.utcnow()))
+    await db.commit()
+
+    async def boom(*a, **kw):
+        raise AssertionError("computed counters with every badge earned")
+
+    monkeypatch.setattr(ach, "compute_state", boom)
+    wall = await ach.wall_with_backfill(db, u)
+    assert len(wall) == len(BADGES)
+    assert all(b["earned_at"] is not None for b in wall)
+    assert all(b["progress"]["pct"] == 1.0 for b in wall)
+    assert all(b["next_up"] is None for b in wall)
+
+
+async def test_wall_read_survives_a_broken_counter_pass(db, make_user, monkeypatch):
+    """Fail-open: earned marks come from the rows, so a counter blow-up costs
+    the progress bars, never the wall."""
+    import core.achievements as ach
+
+    u = await make_user()
+    db.add(Achievement(user_id=u.id, badge_id="first_food",
+                       earned_at=datetime.utcnow()))
+    await db.commit()
+
+    async def boom(*a, **kw):
+        raise RuntimeError("counters exploded")
+
+    monkeypatch.setattr(ach, "compute_state", boom)
+    wall = await ach.wall_with_backfill(db, u)
+    by_id = {b["id"]: b for b in wall}
+
+    assert len(wall) == len(BADGES)
+    assert by_id["first_food"]["earned_at"] is not None
+    assert by_id["first_food"]["progress"]["pct"] == 1.0
+    assert by_id["foods_50"]["progress"]["current"] == 0
+
+
+async def test_wall_read_computes_counters_once(db, make_user, monkeypatch):
+    """The endpoint hands one state to both the backfill and the wall; passing
+    it in must stop badge_wall recomputing."""
+    import core.achievements as ach
+
+    calls = 0
+    real = ach.compute_state
+
+    async def counting(*a, **kw):
+        nonlocal calls
+        calls += 1
+        return await real(*a, **kw)
+
+    monkeypatch.setattr(ach, "compute_state", counting)
+    u = await make_user()
+    await _add_day(db, u.id, date(2026, 7, 10), foods=3)
+
+    state = await ach.compute_state(db, u)
+    await ach.check_achievements(db, u, effect_taken=True, state=state)
+    await ach.badge_wall(db, u, state=state)
+    assert calls == 1
 
 
 # ── Serving-edit micro scaling (db/queries.update_food_entry) ────────────────
