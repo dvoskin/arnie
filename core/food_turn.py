@@ -993,12 +993,24 @@ def clarify_plan(decision, question, *, user_message: str = ""):
             branded=(item.food_class.value == "branded"))
         (pending if item.staged_item_id in held else resolved).append(summary)
 
-    return FoodResponsePlan(
+    # APPLY THE POLICY. Both clarify builders live here and constructed the
+    # plan directly, so it reached the renderer with the dataclass defaults —
+    # `allow_question=False` among them. `validate()` then rejected the
+    # composer's sentence with FORBIDDEN_QUESTION on the one intent whose
+    # entire purpose is to ask, twice per turn, and `compose` returned the
+    # deterministic floor every time.
+    #
+    # The composer has therefore never voiced a clarification in production.
+    # Turning it on could not change how these read, because nothing it wrote
+    # was ever allowed to ship. Every other plan builder gets this by living in
+    # food_response, where the builders wrap their own returns.
+    from core.food_response import apply_policy
+    return apply_policy(FoodResponsePlan(
         intent=FoodResponseIntent.CLARIFY,
         resolved_items=tuple(resolved), pending_items=tuple(pending),
         clarification_question=question.prompt,
         unresolved_item=(pending[0] if pending else None),
-        requires_answer=True, user_message=user_message)
+        requires_answer=True, user_message=user_message))
 
 
 def _spoken_portion(item, user_message: str) -> str:
@@ -1184,13 +1196,25 @@ def clarify_plan_from_points(points: list, ready: list | None = None, *,
     unknowns = group_unknowns(asks, user_message)
     question = _situational_question(unknowns) or _one_question(asks[0][1])
 
-    return FoodResponsePlan(
+    # APPLY THE POLICY. Both clarify builders live here and constructed the
+    # plan directly, so it reached the renderer with the dataclass defaults —
+    # `allow_question=False` among them. `validate()` then rejected the
+    # composer's sentence with FORBIDDEN_QUESTION on the one intent whose
+    # entire purpose is to ask, twice per turn, and `compose` returned the
+    # deterministic floor every time.
+    #
+    # The composer has therefore never voiced a clarification in production.
+    # Turning it on could not change how these read, because nothing it wrote
+    # was ever allowed to ship. Every other plan builder gets this by living in
+    # food_response, where the builders wrap their own returns.
+    from core.food_response import apply_policy
+    return apply_policy(FoodResponsePlan(
         intent=FoodResponseIntent.CLARIFY,
         resolved_items=resolved, pending_items=pending,
         unresolved_item=(pending[0] if pending else None),
         clarification_question=question,
         clarification_unknowns=unknowns,
-        requires_answer=True, user_message=user_message)
+        requires_answer=True, user_message=user_message))
 
 
 def _situational_question(unknowns: tuple) -> str:
