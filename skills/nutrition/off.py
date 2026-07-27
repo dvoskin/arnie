@@ -353,6 +353,15 @@ async def search(name: str, page_size: int = 8) -> Optional[dict]:
         # at all — so the resolution came back empty and a guess was committed
         # under this source's name (2026-07-25).
         "serving_text": (p.get("serving_size") or "").strip(),
+        # THE PACKAGE NET WEIGHT. Already in _FIELDS, already fetched, and
+        # discarded here — while the resolver had no mass to scale by and fell
+        # back to trusting the model's calorie guess. Many single-serve
+        # products (bars, bottles, pouches) publish no serving panel at all
+        # because the package IS the serving, so this is the only mass their
+        # label carries. Without it an exact branded match still lost its
+        # calories to a guess, and the same product came out at three
+        # different numbers depending on the logging mode.
+        "package_text": (p.get("quantity") or "").strip(),
         # The label's own per-serving panel. When the portion is N of the
         # product's own units this answers it outright — no mass to derive and
         # so nothing for the model's calorie guess to anchor.
@@ -382,12 +391,28 @@ async def search_variants(name: str, limit: int = 5) -> list:
         products = await _search_legacy(name, max(limit * 2, 8))
     except Exception:
         products = None
+    # THE SAME GATE THE PRIMARY SEARCH USES. `search()` filters on overlap and
+    # a brand anchor; this took whatever the text search returned, so a query
+    # for a plain 2% milk came back led by that brand's chocolate protein
+    # shake, and a chocolate-chip energy bar query dragged in the kids' line.
+    # Those are not variants of the thing asked about — they are other products
+    # that share words. Offering them as "which one was it?" is wrong, and the
+    # spread computed across them says the shelf disagrees when what actually
+    # disagrees is the search.
+    anchor = _anchor(name)
     out, seen = [], set()
     for product in (products or []):
         label = (product.get("product_name") or "").strip()
         key = label.lower()
         if not label or key in seen:
             continue
+        overlap = _overlap(name, label, product.get("brands") or "")
+        if overlap < 0.6:
+            continue
+        if anchor is not None and overlap < 0.85:
+            tokens = _tokens(label) | _tokens(product.get("brands") or "")
+            if anchor not in tokens:
+                continue
         nutriments = product.get("nutriments") or {}
         calories = nutriments.get("energy-kcal_100g")
         if not calories:

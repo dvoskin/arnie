@@ -265,3 +265,65 @@ def test_the_interpreters_branded_flag_reaches_the_class():
         turn_id="t", message="x")
     assert items[0].food_class.value == "branded"
     assert items[1].food_class.value == "generic"
+
+
+# ── the label outranks the guess ────────────────────────────────────────────
+
+def _off_bar(package="60 g", serving=""):
+    return {"name": "Protein Bar", "brand": "SomeBrand", "source": "off",
+            "serving_text": serving, "package_text": package,
+            "per_serving": None, "cal_100": 400, "protein_100": 30,
+            "carbs_100": 40, "fat_100": 12, "match": "exact",
+            "_match": "exact"}
+
+
+def test_a_labelled_product_lands_on_the_same_number_whatever_was_guessed():
+    """Mode governs how much Arnie ASKS, never what a known food weighs. The
+    same bar came out 140 / 100 / 100 across quick / moderate / strict because
+    an exact label with no serving panel lost its calories to the model's
+    guess, and the guess moves with the prompt."""
+    from core.food_intelligence import analyze
+    committed = {analyze("SomeBrand Protein Bar", "1 bar", guess, 20, 20, 8,
+                         off_candidate=_off_bar(), is_packaged=True).calories
+                 for guess in (90, 140, 220)}
+    assert committed == {240.0}, committed      # 60 g x 400 cal/100g
+
+
+def test_a_multipack_is_not_one_serving():
+    """"6 x 44 g" is a box. Treating it as a single serving would commit six
+    bars for one."""
+    from core.food_intelligence import _mass_from_serving_panel
+    assert _mass_from_serving_panel(
+        "1 bar", _off_bar(package="6 x 44 g"), "Bar") is None
+
+
+def test_no_net_weight_leaves_the_old_estimate_path_alone():
+    from core.food_intelligence import _mass_from_serving_panel
+    assert _mass_from_serving_panel(
+        "1 bar", _off_bar(package=""), "Bar") is None
+
+
+def test_the_demotion_never_writes_a_food_twice():
+    """`ready` and `items` overlap. Deduping by whole-dict equality let one
+    differing key make a second copy of the same food — six rows for four
+    foods in a single turn."""
+    import asyncio
+    from types import SimpleNamespace
+    data = {"action": "ask",
+            "items": [{"food": "Egg", "amount": 1, "unit": "egg",
+                       "calories": 70, "basis": "estimate"},
+                      {"food": "Congee", "amount": 1, "unit": "cup",
+                       "calories": 200}],
+            "ready": [{"food": "Egg", "amount": 1, "unit": "egg",
+                       "calories": 70}],          # same food, different dict
+            "ambiguities": [{"item": "Congee", "field": "quantity",
+                             "impact_cal": 8, "assumed": "a small bowl"}],
+            "points": [{"label": "Congee", "qs": ["how much?"]}]}
+    merged = FT._carry_assumptions(
+        [i for i in data["items"]] +
+        [i for i in data["ready"]
+         if str(i.get("food", "")).lower() not in
+         {str(x.get("food", "")).lower() for x in data["items"]}],
+        data["ambiguities"])
+    names = [str(i.get("food", "")).lower() for i in merged]
+    assert len(names) == len(set(names)), names

@@ -335,13 +335,27 @@ def _mass_from_serving_panel(quantity, src, food_name: str):
                                                 normalize_quantity,
                                                 serving_unit_mass)
         panel = (src or {}).get("serving_text") or ""
-        if not panel:
+        package = (src or {}).get("package_text") or ""
+        if not panel and not package:
             return None
         q = normalize_quantity(quantity or "", food_name)
         if q.count is None or q.count <= 0:
             return None
         if q.count_basis != COUNT_BASIS_UNIT:
             return None
+        if not panel:
+            # NO SERVING PANEL, BUT A NET WEIGHT. For a single-serve product
+            # the package is the serving, which is why so many of them publish
+            # no panel. N of the product's own unit is therefore N package
+            # weights — the same reasoning as a "1 roll (57 g)" panel, reached
+            # from the other field. A multipack ("6 x 44 g") does not parse to
+            # a single mass and so returns None rather than guessing.
+            from core.portions import mass_grams
+            whole = mass_grams(package)
+            if whole is None or whole <= 0:
+                return None
+            return round(float(q.count) * float(whole), 1)
+
         per_unit = serving_unit_mass(panel)
         if per_unit is not None:
             # The panel enumerates its serving — "35 g (12 pieces)". Scaling is

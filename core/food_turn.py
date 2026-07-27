@@ -1409,10 +1409,14 @@ async def _variant_options(label: str, branded: bool) -> tuple:
     """
     if not branded or not (label or "").strip():
         return ()
+    # Ask for one more than we would ever show. The extra is not for display —
+    # it is how we learn whether we are looking at the WHOLE SHELF or a sample
+    # of it, which decides whether listing is honest at all.
+    _CEILING = 6
     try:
         from core import deadline
         from skills.nutrition.off import search_variants
-        variants = await deadline.wait_for(search_variants(label, limit=4))
+        variants = await deadline.wait_for(search_variants(label, limit=_CEILING))
     except Exception as e:
         logger.debug(f"variant options unavailable for {label!r}: {e}")
         return ()
@@ -1423,7 +1427,16 @@ async def _variant_options(label: str, branded: bool) -> tuple:
         if name and key not in seen:
             seen.add(key)
             out.append(name)
-    return tuple(out[:4])
+    if len(out) >= _CEILING:
+        # WE ONLY HAVE A SAMPLE. Naming three of a dozen flavours reads as the
+        # full choice, so the answer gets anchored to a subset that may not
+        # contain what they actually ate — and a wrong pick is worse than an
+        # open question, because it commits a real product's numbers. Returning
+        # nothing makes the composer ask which one, plainly, and their own
+        # words then resolve against the whole database rather than our three.
+        logger.debug(f"variant options withheld for {label!r}: shelf too wide")
+        return ()
+    return tuple(out)
 
 
 def _calls_for_ready(ready) -> list:
@@ -2386,9 +2399,24 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
         # instead — which the prompt now requires it to carry for exactly this
         # case — and fall through to the ordinary log path below.
         data = dict(data)
-        data["items"] = (data.get("items") or []) + [
-            i for i in (data.get("ready") or [])
-            if isinstance(i, dict) and i not in (data.get("items") or [])]
+        # MERGED BY IDENTITY, NOT BY DICT EQUALITY. `ready` and `items` overlap
+        # — the same food appears in both whenever the model lists everything
+        # it parsed and then repeats the settled ones — and `i not in items`
+        # compares whole dicts, so one differing key (a basis, a rounded macro)
+        # made a second copy of the same food. That wrote six rows for four
+        # foods in a single turn, with the reply narrating it: "you've logged
+        # two dark chocolates instead of one".
+        _merged, _seen = [], set()
+        for _it in list(data.get("items") or []) + list(data.get("ready") or []):
+            if not isinstance(_it, dict):
+                continue
+            _key = str(_it.get("food") or _it.get("food_name") or "").strip().lower()
+            if _key and _key in _seen:
+                continue
+            if _key:
+                _seen.add(_key)
+            _merged.append(_it)
+        data["items"] = _merged
         data["action"] = action = "log"
         data.pop("points", None)
         # DECLINING THE QUESTION IS NOT THE SAME AS RESOLVING IT. We judged the
