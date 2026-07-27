@@ -147,6 +147,37 @@ NEXT_UP_COUNT = 3
 
 _WIRE_KEYS = ("id", "title", "line", "icon", "tier", "metal", "family")
 
+#: metric → how you earn it, as an instruction. DERIVED from the badge's own
+#: target rather than written per badge, so retuning a threshold can't leave a
+#: stale sentence behind. `{n}` is the target; the second form is used when the
+#: target is 1, because "1 weeks with all seven days logged" reads like a bug.
+_HOW: dict[str, tuple[str, Optional[str]]] = {
+    "foods":           ("Log {n} foods.", "Log your first food."),
+    "photos":          ("Log {n} meals from a photo.", "Log a meal from a photo."),
+    "workouts":        ("Log {n} workouts.", "Log your first workout."),
+    "voice_logs":      ("Log {n} foods with your voice.", "Log a food with your voice."),
+    "protein_days":    ("Hit your protein target on {n} days.", None),
+    "water_days":      ("Pass 2,000ml of water on {n} days.", None),
+    "bullseye_days":   ("Land within 100 calories of your target on {n} days.", None),
+    "streak":          ("Log something {n} days in a row.", None),
+    "training_streak": ("Train {n} days in a row.", None),
+    "weekend_pairs":   ("Log both days of {n} weekends.", "Log a full weekend."),
+    "perfect_weeks":   ("Log all seven days of {n} weeks.", "Log all seven days of one week."),
+    "mondays":         ("Log {n} Mondays.", None),
+    "comebacks":       ("Come back after a week away.", "Come back after a week away."),
+    "iron_weekends":   ("Train on both days of {n} weekends.", "Train a full weekend."),
+    "double_days":     ("Lift and do cardio on the same day, {n} times.", "Lift and do cardio on the same day."),
+    "corrections":     ("Correct {n} logs that weren't right.", "Correct a log that wasn't right."),
+}
+
+
+def _how(badge: dict) -> str:
+    """The plain requirement, for the wall's expanded detail."""
+    plural, singular = _HOW.get(badge["metric"], ("{n}", None))
+    if badge["target"] == 1 and singular:
+        return singular
+    return plural.format(n=f"{badge['target']:,}")
+
 
 def _wire(badge: dict) -> dict:
     """The client-facing shape for one badge (no rank — that's server policy).
@@ -154,9 +185,14 @@ def _wire(badge: dict) -> dict:
     `hidden` rides along so the client can render an unnamed silhouette: some
     badges must not be shown as targets, because naming them would tell the
     user to do the wrong thing to collect them (see `comeback`).
+
+    `how` says what actually earns it. Until now the wall showed a title, an
+    icon and a number and nothing else — `line` has been on the wire since v1
+    and no surface but the celebration ever displayed it.
     """
     out = {k: badge[k] for k in _WIRE_KEYS}
     out["hidden"] = bool(badge.get("hidden"))
+    out["how"] = _how(badge)
     return out
 
 

@@ -498,3 +498,24 @@ async def test_zero_calorie_correction_leaves_micros_alone(db, make_user):
     assert updated is not None
     assert updated.fiber == 0.5
     assert _json.loads(updated.micronutrients_json)["potassium"] == 30
+
+
+async def test_every_badge_says_how_it_is_earned():
+    """The wall's expanded detail leads with the requirement. A badge whose
+    metric has no phrase would render "{n}" at the user."""
+    from core.achievements import _wire, _HOW
+    for b in BADGES:
+        assert b["metric"] in _HOW, f"{b['id']}: no how-phrase for {b['metric']}"
+        how = _wire(b)["how"]
+        assert how and "{" not in how, f"{b['id']}: unformatted how {how!r}"
+        assert how.endswith("."), f"{b['id']}: how should read as a sentence"
+
+
+async def test_how_uses_the_singular_when_one_is_enough():
+    """"Log all seven days of 1 weeks" reads like a bug."""
+    from core.achievements import _wire
+    by_id = {b["id"]: b for b in BADGES}
+    assert _wire(by_id["perfect_week"])["how"] == "Log all seven days of one week."
+    assert _wire(by_id["first_food"])["how"] == "Log your first food."
+    # …and the plural form carries a thousands separator.
+    assert "1,000" in _wire(by_id["foods_1000"])["how"]
