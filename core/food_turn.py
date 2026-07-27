@@ -353,9 +353,39 @@ def decline_reason(text: str) -> str:
         # in another script matches nothing and falls through here. Naming it
         # separately is the difference between "we don't serve that language
         # yet" and "the gate has a hole".
-        return ("non_english" if any(ord(c) > 0x2FF for c in t)
-                else "no_food_shape")
+        # A NON-LATIN MESSAGE IS NOT A DECLINE, it is a blind spot. Every
+        # shape below is written in ASCII, so a food report in another script
+        # matches nothing — and 98 of the 301 real food logs this gate turned
+        # away were rejected for no reason but their alphabet. The rules do not
+        # apply, which is not the same as the message not being food, so it
+        # goes to the interpreter that can actually read it.
+        if _non_latin(t):
+            return ""
+        return "no_food_shape"
     return ""
+
+
+def _non_latin(text: str) -> bool:
+    """Whether the message is written in a script the ASCII shape rules cannot
+    see. Not a language check — a check on whether our rules APPLY."""
+    return any(ord(c) > 0x2FF for c in (text or ""))
+
+
+def open_gate_enabled() -> bool:
+    """Route on the absence of non-food evidence rather than the presence of an
+    English food template.
+
+    THE GATE IS A BAD CLASSIFIER. Measured over 1008 real production messages:
+    it misses 64% of the messages that actually logged food, and 48% of the
+    passes it does allow are not food at all — so it is not buying the cost it
+    exists to save. What it turned away includes "Oh and a bag of quest chips",
+    "The egg was poached", "Breast" and every message in Cyrillic.
+
+    Open costs roughly 4x the interpreter passes, which is why this is a switch
+    and not a rewrite: turn it on, watch latency and spend, turn it off if the
+    trade is wrong. FOOD_GATE_OPEN=true.
+    """
+    return os.getenv("FOOD_GATE_OPEN", "false").lower() in ("true", "1", "yes")
 
 
 def applies(text: str) -> bool:
@@ -368,8 +398,18 @@ def applies(text: str) -> bool:
         return False
     if _PLAN_RE.search(t) or _DESTRUCTIVE_RE.search(t) or _NONFOOD_RE.search(t):
         return False
-    return bool(_CONSUMED_RE.search(t) or _MEAL_RE.search(t)
-                or _CORRECTION_RE.search(t) or _PORTION_SHAPE_RE.search(t))
+    if _CONSUMED_RE.search(t) or _MEAL_RE.search(t) \
+            or _CORRECTION_RE.search(t) or _PORTION_SHAPE_RE.search(t):
+        return True
+    # Past this point no ENGLISH food shape matched. Two reasons that can be
+    # true, and they are not the same: the message is not about food, or our
+    # rules cannot read it. The second is never a decline.
+    if _non_latin(t):
+        return True
+    # Open gate: nothing above found evidence AGAINST food, and the checks
+    # above are the ones that carry real signal (a question, an acknowledgement,
+    # a plan, another domain). Absence of an English template is not evidence.
+    return open_gate_enabled()
 
 
 def thread_routes(text: str) -> bool:

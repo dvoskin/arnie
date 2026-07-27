@@ -382,3 +382,44 @@ def test_an_impossible_calorie_density_is_not_cached():
                                 "fat": 0}, "likely"))
     assert out is None
     assert not db.added, "an impossible row must never reach the table"
+
+
+# ── the gate that decides whether ANY of this runs ──────────────────────────
+
+def test_a_food_log_in_another_script_is_not_declined():
+    """The shape rules are ASCII, so a food report in Cyrillic matched nothing
+    and was turned away — 98 of the 301 real food logs this gate rejected were
+    rejected for no reason but their alphabet. Our rules not applying is not
+    the same as the message not being food."""
+    from core.food_turn import applies, decline_reason
+    for msg in ("Я съел два яйца и кашу",
+                "Привет арни сегодня я съела три яйца",
+                "オートミールと卵を食べました"):
+        assert applies(msg), msg
+        assert decline_reason(msg) == "", msg
+
+
+def test_evidence_against_food_still_declines_in_any_script():
+    """Opening the blind spot must not open the gate to everything: a question
+    is a question whatever the alphabet."""
+    from core.food_turn import applies
+    assert not applies("Сколько калорий в яйце?")      # ends in '?'
+
+
+def test_the_open_gate_is_off_unless_asked_for(monkeypatch):
+    """It roughly quadruples interpreter passes (25% -> 82% of messages), so it
+    is a switch to measure behind, not a default."""
+    import core.food_turn as FT
+    monkeypatch.delenv("FOOD_GATE_OPEN", raising=False)
+    assert not FT.open_gate_enabled()
+    assert not FT.applies("Oh and a bag of quest chips")
+    monkeypatch.setenv("FOOD_GATE_OPEN", "true")
+    assert FT.open_gate_enabled()
+    assert FT.applies("Oh and a bag of quest chips")
+
+
+def test_the_open_gate_still_refuses_what_is_clearly_not_food(monkeypatch):
+    import core.food_turn as FT
+    monkeypatch.setenv("FOOD_GATE_OPEN", "true")
+    for msg in ("how many calories in an egg?", "I'm going to have lunch later"):
+        assert not FT.applies(msg), msg
