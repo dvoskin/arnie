@@ -250,3 +250,29 @@ def test_the_decision_table_rows_match_the_engine():
 def test_an_empty_meal_decides_nothing():
     out = decide([], mode="moderate")
     assert not out.asks and out.ready_item_ids == () and out.held_item_ids == ()
+
+
+# ── the food reads as a food, mid-sentence ───────────────────────────────────
+def test_a_common_noun_is_lowercased_mid_sentence_but_a_brand_is_not():
+    """"I'm reading that as one slice of toast with cheese (my estimate). How
+    much of the Toast with cheese?" — a card TITLE dropped into a sentence.
+    Bulleted items already get `_sentence_case`; an interpolated one never did.
+
+    Casing alone cannot tell "Barebells" from "Toast" — both are one
+    capitalised word, and lowercasing by shape turns a brand into a typo. The
+    item knows which it is, so it is asked rather than guessed at.
+    """
+    from types import SimpleNamespace as NS
+    from skills.nutrition.clarify_policy import _label
+
+    common = NS(identity=NS(describe=lambda: "Toast with cheese"),
+                original_text="toast", food_class=NS(value="generic"))
+    brand = NS(identity=NS(describe=lambda: "Barebells Caramel Cashew"),
+               original_text="barebells", food_class=NS(value="branded"))
+    internal_caps = NS(identity=NS(describe=lambda: "Peanut M&Ms"),
+                       original_text="m&ms", food_class=NS(value="generic"))
+
+    assert _label(common) == "toast with cheese"
+    assert _label(brand) == "Barebells Caramel Cashew"
+    # Only the LEADING capital is touched — the name keeps its own.
+    assert _label(internal_caps) == "peanut M&Ms"
