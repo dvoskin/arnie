@@ -1586,10 +1586,25 @@ async def _web_lookup_meal_inner(food_name, quantity, _re) -> dict | None:
 def _content_tokens(name: str) -> frozenset:
     """Word-order-insensitive content tokens of a food name — drops stopwords, pure
     numbers, and (via normalize_name) quantity units. So 'everything Royo bagel' and
-    'Royo Everything Bagel' both → {everything, royo, bagel}."""
-    from core.food_intelligence import normalize_name
+    'Royo Everything Bagel' both → {everything, royo, bagel}.
+
+    `_HIST_STOP` WAS NEVER DEFINED. This raised `NameError` on every call, and
+    the only caller — `_logged_history_match` — wraps it in a bare `except`
+    that logs and returns None. So the lane did not fail loudly; it failed as
+    "no history match", which is indistinguishable from a user who has never
+    logged this food. Every turn in the accuracy sim emitted
+    `logged-history match failed: name '_HIST_STOP' is not defined`, eleven
+    times in eight items, and the feature has evidently never run.
+
+    The filler set already exists in `food_intelligence` and is what
+    `is_generic_food_name` tokenises against. Importing it rather than writing
+    a second list here is the point: two stopword lists drift, and this
+    function's whole job is deciding that two spellings are the same food.
+    """
+    from core.food_intelligence import _FOOD_FILLER, normalize_name
     n = normalize_name(name or "")
-    return frozenset(w for w in n.split() if w and not w.isdigit() and w not in _HIST_STOP)
+    return frozenset(w for w in n.split()
+                     if w and not w.isdigit() and w not in _FOOD_FILLER)
 
 
 def _lead_count(q) -> float:
