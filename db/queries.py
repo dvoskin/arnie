@@ -12,6 +12,7 @@ from datetime import date, datetime, timedelta
 from typing import Optional, List
 import json
 import logging
+import uuid
 import os
 import pytz
 
@@ -734,21 +735,132 @@ async def add_food_entry(db: AsyncSession, daily_log_id: int, **kwargs) -> FoodE
     return entry
 
 
+#: How long a training session may go quiet before the next set belongs to a
+#: NEW workout. This is a claim about training, not about text: sets inside a
+#: session are separated by rest, and rest is minutes — a two-hour silence is a
+#: different workout even if the movement repeats. Deliberately generous, since
+#: splitting one workout in two costs more than merging a quick double session.
+WORKOUT_SESSION_GAP_MINUTES = 150
+
+
+async def current_workout_group(db: AsyncSession, user_id: int,
+                                gap_minutes: int = WORKOUT_SESSION_GAP_MINUTES
+                                ) -> Optional[str]:
+    """The session this user is CURRENTLY in, or None if they are not training.
+
+    A live surface asks this to know what a rest timer is timing and which
+    movement to show form cues for; the writer asks it so a set logged mid
+    workout joins the session already underway instead of starting its own.
+    """
+    from db.models import ExerciseEntry
+    row = (await db.execute(
+        select(ExerciseEntry.workout_group_id, ExerciseEntry.timestamp)
+        .join(DailyLog, ExerciseEntry.daily_log_id == DailyLog.id)
+        .where(DailyLog.user_id == user_id)
+        .where(ExerciseEntry.workout_group_id.isnot(None))
+        .order_by(ExerciseEntry.timestamp.desc())
+        .limit(1))).first()
+    if not row or not row[0] or not row[1]:
+        return None
+    quiet = (datetime.utcnow() - row[1]).total_seconds() / 60.0
+    return row[0] if quiet <= gap_minutes else None
+
+
+def new_workout_group_id() -> str:
+    """An opaque session id. Mirrors `make_meal_group_id` — the value carries
+    no meaning, only identity, so nothing downstream can be tempted to parse
+    a workout out of it."""
+    return f"wk_{uuid.uuid4().hex[:16]}"
+
+
+async def get_workout_session(db: AsyncSession, user_id: int,
+                              group_id: Optional[str] = None) -> dict:
+    """One training session, shaped for a live surface.
+
+    Returns `{group_id, started_at, last_set_at, seconds_since_last_set,
+    exercises: [{name, sets:[...]}], total_sets}` — or an empty dict when the
+    user is not mid-workout and no session was named.
+
+    This is what a rest timer times and what a form cue points at: the timer
+    needs the moment the last set landed, the cue needs the movement that just
+    happened, and neither can be derived from a scatter of rows that do not
+    know they belong together.
+    """
+    from db.models import ExerciseEntry
+    gid = group_id or await current_workout_group(db, user_id)
+    if not gid:
+        return {}
+    rows = (await db.execute(
+        select(ExerciseEntry)
+        .join(DailyLog, ExerciseEntry.daily_log_id == DailyLog.id)
+        .where(DailyLog.user_id == user_id)
+        .where(ExerciseEntry.workout_group_id == gid)
+        .order_by(ExerciseEntry.timestamp.asc()))).scalars().all()
+    if not rows:
+        return {}
+    by_move: dict = {}
+    for r in rows:
+        # Grouped in ENCOUNTER order, so the view lists movements the way the
+        # session actually went rather than alphabetically.
+        by_move.setdefault((r.exercise_name or "").strip(), []).append({
+            "entry_id": r.id, "reps": r.reps, "weight": r.weight,
+            "rir": r.rir, "at": r.timestamp,
+            "duration_minutes": r.duration_minutes})
+    last = rows[-1].timestamp
+    return {
+        "group_id": gid,
+        "started_at": rows[0].timestamp,
+        "last_set_at": last,
+        "seconds_since_last_set": (
+            (datetime.utcnow() - last).total_seconds() if last else None),
+        "exercises": [{"name": k, "sets": v} for k, v in by_move.items()],
+        "total_sets": len(rows),
+    }
+
+
 async def add_exercise_entry(db: AsyncSession, daily_log_id: int,
                               is_cardio: bool = False, **kwargs) -> ExerciseEntry:
     # If caller signals cardio but didn't set cardio_type, mark it so the derived
     # flags (recompute_log_totals) classify this entry correctly.
     if is_cardio and not kwargs.get("cardio_type"):
         kwargs["cardio_type"] = "cardio"
+    # THE SESSION THIS SET BELONGS TO. Supplied by a caller that already knows
+    # (a live workout view holding its own session), otherwise joined to the
+    # one underway, otherwise opened. Never guessed after the fact.
+    _log = await db.get(DailyLog, daily_log_id)
+    if not kwargs.get("workout_group_id") and _log is not None:
+        try:
+            kwargs["workout_group_id"] = (
+                await current_workout_group(db, _log.user_id)
+                or new_workout_group_id())
+        except Exception as e:
+            logger.debug(f"workout session id unavailable: {e}")
+
     entry = ExerciseEntry(daily_log_id=daily_log_id, **kwargs)
     db.add(entry)
     await db.flush()  # entry must be visible to the recompute query
     await recompute_log_totals(db, daily_log_id)
     await db.commit()
     await db.refresh(entry)
+    # HISTORY, on the same contract food already rides. Without it a set can be
+    # written but not undone, corrected in place, or traced to the turn that
+    # created it — and "did this already happen?" stays a similarity guess
+    # instead of a lookup. Never allowed to break the write it describes.
+    if _log is not None:
+        try:
+            await record_ledger_event(
+                db, _log.user_id, "created", domain="fitness",
+                entry_id=entry.id, daily_log_id=daily_log_id,
+                source=kwargs.get("source_type") or "fitness",
+                payload={"exercise": entry.exercise_name,
+                         "sets": entry.sets, "reps": entry.reps,
+                         "weight": entry.weight,
+                         "duration_minutes": entry.duration_minutes,
+                         "workout_group_id": entry.workout_group_id})
+        except Exception as e:
+            logger.debug(f"fitness ledger event not recorded: {e}")
     try:
-        log = await db.get(DailyLog, daily_log_id)
-        if log: _invalidate_briefing_for_log(log.user_id, by_user=True)
+        if _log: _invalidate_briefing_for_log(_log.user_id, by_user=True)
     except Exception:
         pass
     return entry

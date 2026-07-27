@@ -373,6 +373,17 @@ class ExerciseEntry(Base):
     # Average heart rate (bpm) for the session — populated from a wearable workout
     # (WHOOP / Apple Health); null for manual logs.
     avg_hr = Column(Integer)
+    #: The training SESSION these sets belong to — the fitness analogue of a
+    #: meal group. One row is one set; five rows of `sets=1` for the same
+    #: movement are one exercise inside one workout, and nothing used to say
+    #: so, leaving every consumer to re-infer it from names and clock times.
+    #: Live surfaces (rest timer, form cues, an in-progress view) need a
+    #: session to attach to, and the ledger needs one to describe.
+    #:
+    #: NULL on historic rows, deliberately: there is no session we can honestly
+    #: reconstruct for them, and inventing one from timestamps would bake in
+    #: exactly the guesswork this removes. Readers treat NULL as "its own".
+    workout_group_id = Column(String, index=True)
 
     daily_log = relationship("DailyLog", back_populates="exercise_entries")
 
