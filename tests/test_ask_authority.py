@@ -502,61 +502,45 @@ def test_the_conditional_guard_does_not_eat_real_logs():
 # ── the gate needs context, not better patterns ─────────────────────────────
 
 @pytest.mark.asyncio
-async def test_an_answer_to_a_food_question_reaches_the_lane(monkeypatch):
-    """"more like two" is meaningless alone and unambiguous after "about a
-    cup?". The gate was stateless, and only the STRUCTURED path records a
-    pending question — so whenever legacy did the asking, the answer fell to
-    legacy too and the conversation never came back. That loop is why traffic
-    kept missing this lane."""
+async def test_the_previous_line_is_not_fed_to_the_gate(monkeypatch):
+    """REVERTED, and pinned so it is not reintroduced by accident.
+
+    Feeding the previous assistant line in was meant to rescue answers to a
+    food question. Measured over 150 real production pairs it was a wash on
+    recall (+3 food, -2) and cost precision — non-food admitted went 60% to
+    64% — because a PLAN answering a question reads as a log: "Actually I'm
+    gonna have a snickers" after "What flavor?".
+
+    The loop it aimed at is closed from the other side: the model gate alone
+    routes "Sweet chill", "90/10" and "the leaner one" with no context.
+    """
     import core.food_turn as FT
     monkeypatch.setenv("FOOD_GATE_MODEL", "true")
-    seen = {}
-
-    async def _fake(messages, system, **k):
-        seen["content"] = messages[0]["content"]
-        return {"text": "YES"}
-    monkeypatch.setattr("core.llm.chat", _fake)
-    assert await FT.food_relevance("more like two",
-                                   "How much rice was that — about a cup?")
-    assert "about a cup" in seen["content"], "the question must reach the model"
-    assert "more like two" in seen["content"]
-
-
-@pytest.mark.asyncio
-async def test_a_statement_carries_no_question_context(monkeypatch):
-    """Only a QUESTION makes the reply an answer. A previous statement must not
-    be pasted in as though it were one."""
-    import core.food_turn as FT
-    monkeypatch.setenv("FOOD_GATE_MODEL", "true")
+    FT._RELEVANCE_CACHE.clear()
     seen = {}
 
     async def _fake(messages, system, **k):
         seen["content"] = messages[0]["content"]
         return {"text": "NO"}
     monkeypatch.setattr("core.llm.chat", _fake)
-    await FT.food_relevance("sounds good", "Nice work hitting your protein.")
-    assert seen["content"] == "sounds good"
+    await FT.food_relevance("more like two", "How much rice — about a cup?")
+    assert seen["content"] == "more like two", \
+        "the prior turn must not reach the classifier"
 
 
 @pytest.mark.asyncio
-async def test_the_cache_separates_answers_from_cold_messages(monkeypatch):
-    """A cold "sweet chill" and one answering "which flavor?" are different
-    questions and must not share a cached verdict."""
+async def test_the_gate_still_accepts_the_parameter(monkeypatch):
+    """Callers pass it and the experiment stays re-runnable — it is ignored,
+    not rejected."""
     import core.food_turn as FT
     monkeypatch.setenv("FOOD_GATE_MODEL", "true")
     FT._RELEVANCE_CACHE.clear()
-    calls = []
 
     async def _fake(messages, system, **k):
-        calls.append(messages[0]["content"])
         return {"text": "YES"}
     monkeypatch.setattr("core.llm.chat", _fake)
-    await FT.food_relevance("sweet chill")
-    await FT.food_relevance("sweet chill", "Quest Chips, which flavor?")
-    assert len(calls) == 2, "the two must not collapse onto one cache entry"
+    assert await FT.food_relevance("sweet chill", "Quest Chips, which flavor?")
 
-
-# ── a correction must not narrate a number it does not have ────────────────
 
 def test_a_deferred_rename_does_not_report_zero_calories():
     """Shipped 2026-07-27 21:01: "Actually it was 90/10" ->

@@ -438,10 +438,7 @@ _RELEVANCE_SYSTEM = (
     "Answer with exactly one word: YES or NO.\n"
     "YES covers a bare food name, a brand, a flavour answering a question, a "
     "correction to a portion or an ingredient, and any language or script.\n"
-    "When you are shown what they were JUST ASKED, read their reply as an "
-    "answer to it. A bare fragment answering a food question \u2014 a flavour, a "
-    "grade, an amount, \"the leaner one\", \"yeah that\" \u2014 is YES, because it "
-    "settles a food that is waiting on it.\n"
+
     "NO covers questions ABOUT food rather than reports of eating it, "
     "hypotheticals (\"if I had a burger...\"), greetings, and messages about "
     "another topic entirely.\n"
@@ -522,9 +519,20 @@ async def food_relevance(text: str, last_assistant: str = "") -> bool:
     # Was the previous turn a question? Only then does the reply need reading
     # as an answer — and the cache must distinguish the two, or a cold "sweet
     # chill" and one answering "which flavor?" share a verdict.
-    asked = ("?" in prior) if prior else False
-    content = (f"They were just asked: {prior[:220]}\n\nThey replied: {t}"
-               if asked else t)
+    # REVERTED (Danny 2026-07-27). Feeding the previous assistant line in was
+    # meant to rescue answers to a food question; measured over 150 real
+    # production pairs it was a wash on recall (+3 food, -2) and cost
+    # precision (60% -> 64% of non-food admitted). The mechanism is that a
+    # PLAN answering a question reads as a log — "Actually I'm gonna have a
+    # snickers" after "What flavor?" — which is the one shape the write
+    # invariant exists to keep out.
+    #
+    # The loop it aimed at is already closed from the other side: the model
+    # gate alone routes "Sweet chill", "90/10", "full fat" and "the leaner
+    # one" with no context at all. The parameter stays so callers need no
+    # change and so the experiment is re-runnable.
+    asked = False
+    content = t
     key = (" ".join(t.lower().split())[:200]
            + ("|answering" if asked else ""))
     hit = _RELEVANCE_CACHE.get(key)
