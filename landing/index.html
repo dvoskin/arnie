@@ -11,7 +11,11 @@
   <meta property="og:url"         content="https://tryarnie.com/">
   <meta property="og:title"       content="Arnie · Made For Humans Who Train.">
   <meta property="og:description" content="A performance partner that logs naturally, learns your patterns, and follows up every day. On iOS, and on Android via Telegram.">
-  <meta property="og:image"       content="https://tryarnie.com/og-image.png">
+  <!-- 1200x630 at 63KB. The old PNG was a 2400x1260 895KB file: several
+       unfurlers (WhatsApp among them) drop previews over ~300KB, and
+       Telegram is a stated distribution channel here. -->
+  <meta property="og:image"       content="https://tryarnie.com/og-image.jpg">
+  <meta property="og:image:type"   content="image/jpeg">
   <meta property="og:image:width"  content="1200">
   <meta property="og:image:height" content="630">
 
@@ -19,17 +23,58 @@
   <meta name="twitter:card"        content="summary_large_image">
   <meta name="twitter:title"       content="Arnie · Made For Humans Who Train.">
   <meta name="twitter:description" content="A performance partner that logs naturally, learns your patterns, and follows up every day. On iOS, and on Android via Telegram.">
-  <meta name="twitter:image"       content="https://tryarnie.com/og-image.png">
+  <meta name="twitter:image"       content="https://tryarnie.com/og-image.jpg">
 
-  <meta name="theme-color" content="#16181f">
+  <!-- Video structured data — the reel is a primary content block, so it is
+       eligible for video rich results. Durations and thumbnails must match
+       the encoded files; update both together if the clips are recut. -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "VideoObject",
+        "name": "Arnie — logging a meal in plain language",
+        "description": "Arnie logs a meal from an ordinary sentence: say you had your usual breakfast and it already knows what that means — no searching, no rebuilding the meal.",
+        "thumbnailUrl": "https://tryarnie.com/video/arnie-remembers.jpg",
+        "contentUrl": "https://tryarnie.com/video/arnie-remembers.mp4",
+        "uploadDate": "2026-07-27",
+        "duration": "PT13S"
+      },
+      {
+        "@type": "VideoObject",
+        "name": "Arnie — a training plan that reshuffles itself",
+        "description": "Three workouts missed and the plan has already adjusted. Arnie tracks what is actually happening and moves the rest of the week around it.",
+        "thumbnailUrl": "https://tryarnie.com/video/arnie-not-an-app.jpg",
+        "contentUrl": "https://tryarnie.com/video/arnie-not-an-app.mp4",
+        "uploadDate": "2026-07-27",
+        "duration": "PT10S"
+      }
+    ]
+  }
+  </script>
+
+  <!-- Must match the computed --bg (oklch(0.16 0.012 260)) or mobile browser
+       chrome renders visibly lighter than the page it frames. -->
+  <meta name="theme-color" content="#0a0d12">
+  <!-- Set before first paint: the scroll-reveal styles hide their elements
+       only when this class is present, so a page without JS stays readable
+       instead of rendering blank. -->
+  <script>document.documentElement.classList.add('js');</script>
   <link rel="icon" type="image/png" href="favicon.png">
   <link rel="apple-touch-icon" href="favicon.png">
+  <!-- Only the chat screen is on screen at the start of the pinned scene, so
+       it is the only one worth the critical path. The other two stay eager
+       <img> (no loading="lazy") — they still fetch immediately, just at normal
+       priority instead of competing with first paint for ~112KB. -->
   <link rel="preload" as="image" type="image/webp" href="/shots/sim-chat.webp">
-  <link rel="preload" as="image" type="image/webp" href="/shots/sim-log.webp">
-  <link rel="preload" as="image" type="image/webp" href="/shots/sim-coach.webp">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@300;400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <!-- Geist as a variable RANGE, not four fixed instances: the CSS below uses
+       450/550/650/700, and a 300;400;500;600 request caps the face at 600 —
+       so those either snap down or get a synthetic bold. Same single woff2,
+       correct weights. -->
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400..700&family=Geist+Mono:wght@400&display=swap" rel="stylesheet">
   <style>
     :root {
       /* Opal atmosphere, night edition — deep ink-navy paper, warm off-white
@@ -40,8 +85,14 @@
       --bg-2:    oklch(0.19 0.014 260);
       --ink:     oklch(0.94 0.010 90);
       --ink-2:   oklch(0.76 0.012 250);
-      --ink-3:   oklch(0.56 0.012 250);
-      --ink-4:   oklch(0.34 0.010 250);
+      /* --ink-3 is the default for every piece of small print on the page
+         (fineprint, eyebrows, section tags, the sticky sub, the reel
+         disclosure). At 0.56 it measured 4.18:1 on --bg — under AA for text
+         this size. 0.635 clears 4.5:1 with room to spare. --ink-4 was 1.65:1,
+         effectively invisible; 0.50 makes it usable for non-essential marks
+         while staying clearly recessive. */
+      --ink-3:   oklch(0.635 0.012 250);
+      --ink-4:   oklch(0.50 0.010 250);
       --line:    color-mix(in oklch, var(--ink) 10%, transparent);
       --line-s:  color-mix(in oklch, var(--ink) 17%, transparent);
       --glass:   color-mix(in oklch, var(--ink) 5%, transparent);
@@ -169,7 +220,9 @@
       gap: 12px; max-width: 780px; margin: 30px auto 0;
     }
     .channels-grid .chcard { width: auto; text-align: left; }
-    .channels-grid .chcard.soon { opacity: 0.7; }
+    /* 0.7 dropped the "Coming soon" label under 3.5:1. 0.88 still reads as
+       clearly secondary next to the two live cards. */
+    .channels-grid .chcard.soon { opacity: 0.88; }
     @media (max-width: 700px) {
       #channels { padding: 72px 20px 72px; }
       .channels-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); max-width: 420px; }
@@ -240,15 +293,6 @@
       font-family: var(--mono); font-size: 10px; letter-spacing: 0.08em;
       text-transform: uppercase; color: var(--ink-2);
       display: flex; align-items: center; gap: 7px;
-    }
-    .nav-badge {
-      display: none; /* shown on mobile via media query */
-      align-items: center; gap: 6px;
-      font-family: var(--mono); font-size: 9px; letter-spacing: 0.08em;
-      text-transform: uppercase; color: var(--ink-2);
-      padding: 4px 10px 3px; border-radius: 20px;
-      border: 1px solid var(--line-s);
-      background: color-mix(in oklch, var(--ink) 6%, transparent);
     }
     .status-dot {
       width: 6px; height: 6px; border-radius: 50%;
@@ -334,58 +378,12 @@
       0%,100% { opacity: 0.65; transform: scale(0.95); }
       50%      { opacity: 1;    transform: scale(1.05); }
     }
-    .cta-card {
-      border-radius: 22px;
-      background: linear-gradient(170deg,
-        color-mix(in oklch, var(--ink) 8%, transparent),
-        color-mix(in oklch, var(--ink) 3%, transparent) 80%);
-      border: 1px solid var(--line-s);
-      backdrop-filter: blur(28px) saturate(160%);
-      -webkit-backdrop-filter: blur(28px) saturate(160%);
-      padding: 12px;
-      box-shadow:
-        0 1px 0 oklch(1 0 0 / 0.55) inset,
-        0 0 0 1px oklch(1 0 0 / 0.25) inset,
-        0 30px 70px -22px oklch(0.30 0.03 255 / 0.22),
-        0 8px 22px -10px oklch(0.30 0.03 255 / 0.12);
-    }
-    .platform-row {
-      display: grid; grid-template-columns: repeat(3, 1fr);
-      gap: 8px; padding: 8px;
-    }
-    .platform-pill {
-      display: flex; align-items: center; justify-content: center; gap: 8px;
-      padding: 14px 12px; border-radius: 13px;
-      border: 1px solid transparent; background: transparent;
-      font-size: 13.5px; font-weight: 500; color: var(--ink-3);
-      transition: all 200ms; cursor: default; position: relative;
-      letter-spacing: -0.01em;
-    }
-    .platform-pill.active {
-      background: color-mix(in oklch, var(--ink) 9%, transparent);
-      border-color: var(--line-s); color: var(--ink);
-      box-shadow: 0 1px 0 oklch(1 0 0 / 0.06) inset;
-    }
-    .platform-pill.coming { opacity: 0.78; }
-    .pico {
-      width: 20px; height: 20px; border-radius: 6px; flex-shrink: 0;
-      display: flex; align-items: center; justify-content: center;
-    }
-    .tg-icon { background: #2AABEE; }
-    .active-lbl {
-      position: absolute; top: 4px; right: 7px;
-      font-family: var(--mono); font-size: 7px;
-      letter-spacing: 0.07em; text-transform: uppercase;
-      color: var(--accent); opacity: 0.85;
-    }
-    .coming-lbl {
-      position: absolute; top: 4px; right: 7px;
-      font-family: var(--mono); font-size: 7px;
-      letter-spacing: 0.07em; text-transform: uppercase; color: var(--ink-3);
-    }
+    /* No opacity here: 0.8 on top of --ink-3 dropped this to ~3:1, and it is
+       the line that carries "free / no card / installs via TestFlight" —
+       the objection-handling right under every CTA. */
     .cta-fineprint {
       font-size: 11px; color: var(--ink-3); margin-top: 8px;
-      text-align: center; opacity: 0.8;
+      text-align: center;
     }
 
     /* CTA button with shimmer */
@@ -408,19 +406,22 @@
       transition: transform 130ms, box-shadow 200ms;
       text-decoration: none; position: relative; overflow: hidden;
     }
-    /* Shimmer sweep */
+    /* Shimmer sweep — driven by transform, not `left`. There are seven of
+       these on the page running infinitely; animating `left` invalidates
+       layout on every frame of all seven, while translateX stays on the
+       compositor. The skew is folded into the same transform. */
     .cta-btn::after {
       content: "";
-      position: absolute; top: -50%; left: -65%; width: 38%; height: 200%;
+      position: absolute; top: -50%; left: 0; width: 38%; height: 200%;
       background: linear-gradient(90deg, transparent, oklch(1 0 0 / 0.35), transparent);
-      transform: skewX(-22deg);
+      transform: translateX(-171%) skewX(-22deg);
       animation: shimmer 3.8s ease-in-out infinite;
       animation-delay: 2s;
     }
     @keyframes shimmer {
-      0%,100% { left: -65%; opacity: 0; }
+      0%,100% { transform: translateX(-171%) skewX(-22deg); opacity: 0; }
       4%       { opacity: 1; }
-      45%      { left: 115%; opacity: 0; }
+      45%      { transform: translateX(302%)  skewX(-22deg); opacity: 0; }
     }
     .cta-btn:hover {
       transform: translateY(-2px);
@@ -430,102 +431,10 @@
         0 6px 18px -4px oklch(0 0 0 / 0.50);
     }
     .cta-btn:active { transform: scale(0.98) translateY(0); }
-
-    /* ── iOS pane: CTA + desktop scan-to-install QR ─────────────── */
-    .ios-cta-row { display: flex; align-items: center; gap: 14px; }
-    /* ── Beta signup form ───────────────────────────────────────── */
-    .beta-form {
-      display: flex; gap: 0; width: 100%; margin-top: 6px;
-      border-radius: 14px; overflow: hidden;
-      box-shadow: 0 0 0 1px var(--line-s);
-      background: color-mix(in oklch, var(--ink) 5%, transparent);
-    }
-    .beta-form input {
-      flex: 1; min-width: 0;
-      padding: 16px 18px; border: 0; outline: none;
-      background: transparent; color: var(--ink);
-      font-family: var(--sans); font-size: 15px;
-      letter-spacing: -0.01em;
-    }
-    .beta-form input::placeholder { color: var(--ink-3); }
-    .beta-form input:focus { background: color-mix(in oklch, var(--ink) 3%, transparent); }
-    .beta-form .beta-submit-btn {
-      flex-shrink: 0; width: auto; padding: 16px 22px;
-      border-radius: 0; margin-top: 0; white-space: nowrap; font-size: 14px;
-    }
-    .beta-success {
-      text-align: center; padding: 18px 0 4px;
-    }
-    .beta-success-inner {
-      display: flex; align-items: center; justify-content: center; gap: 10px;
-      font-size: 14px; color: var(--ink-2); margin-bottom: 12px;
-    }
-    .beta-check {
-      display: inline-flex; align-items: center; justify-content: center;
-      width: 22px; height: 22px; border-radius: 50%;
-      background: var(--accent); color: oklch(0.09 0.01 240);
-      font-size: 12px; font-weight: 700; flex-shrink: 0;
-    }
-    .beta-tg-link {
-      font-size: 12px; color: var(--accent); opacity: 0.75;
-      text-decoration: none; letter-spacing: -0.01em;
-      transition: opacity 150ms;
-    }
-    .beta-tg-link:hover { opacity: 1; }
-    @media (max-width: 480px) {
-      .beta-form { flex-direction: column; border-radius: 14px; }
-      .beta-form .beta-submit-btn { border-radius: 0 0 14px 14px; width: 100%; }
-    }
-
-    .cta-meta {
-      margin-top: 13px; font-family: var(--mono); font-size: 9.5px;
-      letter-spacing: 0.11em; text-transform: uppercase; color: var(--ink-2);
-      display: flex; align-items: center; justify-content: center; gap: 9px;
-    }
-    .cta-meta span::before { content: "·"; margin-right: 9px; }
-    .cta-meta span:first-child::before { display: none; }
-
-    .hero-proof {
-      margin-top: 38px; font-family: var(--mono); font-size: 10px;
-      letter-spacing: 0.11em; text-transform: uppercase; color: var(--ink-2);
-      display: flex; align-items: center; gap: 10px;
-      position: relative; z-index: 1;
-    }
-    .stars { letter-spacing: 3px; color: var(--accent); font-size: 11px; }
-
-    /* ── Floating chips ───────────────────────────────────────── */
-    .float-field { position: absolute; inset: 0; pointer-events: none; z-index: 1; }
-    .chip {
-      position: absolute;
-      display: inline-flex; align-items: center; gap: 9px;
-      padding: 10px 14px; border-radius: 14px;
-      background: linear-gradient(160deg,
-        color-mix(in oklch, var(--ink) 10%, transparent),
-        color-mix(in oklch, var(--ink) 4%, transparent));
-      border: 1px solid var(--line-s);
-      backdrop-filter: blur(22px) saturate(170%);
-      -webkit-backdrop-filter: blur(22px) saturate(170%);
-      box-shadow:
-        0 1px 0 oklch(1 0 0 / 0.07) inset,
-        0 22px 48px -18px oklch(0 0 0 / 0.70);
-      font-size: 12px; white-space: nowrap;
-    }
-    .chip-1 { left: 5.5%; top: 27%; --r: -5deg; transform: rotate(-5deg); animation: float 6.0s ease-in-out infinite; }
-    .chip-2 { right: 5.5%; top: 21%; --r:  4deg; transform: rotate( 4deg); animation: float 6.8s ease-in-out infinite; animation-delay: -2.2s; }
-    .chip-3 { left: 7%;   bottom: 23%; --r: -3deg; transform: rotate(-3deg); animation: float 7.2s ease-in-out infinite; animation-delay: -4.1s; }
-    .chip-4 { right: 6.5%; bottom: 23%; --r:  3deg; transform: rotate( 3deg); animation: float 5.6s ease-in-out infinite; animation-delay: -1.3s; }
     @keyframes float {
       0%,100% { transform: translateY(0)     rotate(var(--r,0deg)); }
       50%      { transform: translateY(-10px) rotate(var(--r,0deg)); }
     }
-    @media (max-width: 920px) { .chip-1, .chip-3 { display: none; } }
-    @media (max-width: 640px) { .chip { display: none; } }
-
-    .chip-dot  { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 10px var(--accent); }
-    .chip-label{ font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.07em; text-transform: uppercase; color: var(--ink-3); }
-    .chip-num  { font-family: var(--serif); font-size: 20px; line-height: 1; color: var(--accent); }
-    .chip-bar  { width: 54px; height: 3px; border-radius: 2px; background: color-mix(in oklch, var(--ink) 14%, transparent); overflow: hidden; }
-    .chip-bar i{ display: block; height: 100%; width: 74%; background: linear-gradient(90deg, var(--accent-s), var(--accent)); border-radius: 2px; }
 
     /* ── Section shared ───────────────────────────────────────── */
     section { padding: 118px 24px; position: relative; }
@@ -546,159 +455,17 @@
       font-size: 16px; line-height: 1.7; color: var(--ink-2);
       max-width: 46ch; text-wrap: pretty;
     }
-
-    /* ── Shared chat avatar (used in demo phone header) ─────── */
-    .chat-avatar {
-      width: 34px; height: 34px; border-radius: 50%; flex-shrink: 0;
-      background: linear-gradient(135deg, var(--accent), oklch(0.50 0.17 268));
-      display: flex; align-items: center; justify-content: center;
-      font-family: var(--serif); font-size: 14px; color: oklch(0.09 0.01 240);
-      font-weight: 400; font-style: italic;
-    }
-
-    /* ── Comparison section ──────────────────────────────────── */
-    .compare-grid {
-      display: grid; grid-template-columns: 1fr 1fr;
-      gap: 14px; margin-top: 52px;
-    }
-    @media (max-width: 620px) { .compare-grid { grid-template-columns: 1fr; } }
-
-    .compare-col { border-radius: 20px; border: 1px solid var(--line); overflow: hidden; }
-    .compare-col.them { opacity: 0.68; }
-    .compare-col.us   {
-      border-color: color-mix(in oklch, var(--accent) 28%, transparent);
-      box-shadow: 0 0 0 1px color-mix(in oklch, var(--accent) 10%, transparent),
-                  inset 0 1px 0 color-mix(in oklch, var(--accent) 12%, transparent);
-    }
-    .compare-head {
-      padding: 15px 22px; border-bottom: 1px solid var(--line);
-      font-family: var(--mono); font-size: 10px;
-      letter-spacing: 0.13em; text-transform: uppercase;
-    }
-    .compare-col.them .compare-head { color: var(--ink-3); }
-    .compare-col.us   .compare-head { color: var(--accent); background: color-mix(in oklch, var(--accent) 5%, transparent); }
-    .compare-item {
-      display: flex; align-items: flex-start; gap: 11px;
-      padding: 13px 22px; border-bottom: 1px solid var(--line);
-      font-size: 13.5px; color: var(--ink-2); line-height: 1.45;
-    }
-    .compare-item:last-child { border-bottom: none; }
-    .compare-icon { flex-shrink: 0; font-size: 11px; margin-top: 3px; opacity: 0.7; }
-    .compare-col.us .compare-item { color: var(--ink); }
-    .compare-col.us .compare-icon { opacity: 1; color: var(--accent); }
-
-    /* ── Features grid ───────────────────────────────────────── */
-    .feat-grid {
-      display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-      gap: 1px; background: var(--line);
-      border: 1px solid var(--line); border-radius: 22px;
-      overflow: hidden; margin-top: 56px;
-    }
-    .feat-cell {
-      padding: 30px 32px; background: var(--bg);
-      transition: background 280ms;
-    }
-    .feat-cell:hover { background: color-mix(in oklch, var(--bg) 68%, var(--ink) 32%); }
-
-    /* Icon container — replaces raw emoji for a premium look */
-    .feat-icon {
-      width: 40px; height: 40px; border-radius: 11px; margin-bottom: 18px;
-      display: flex; align-items: center; justify-content: center;
-      background: color-mix(in oklch, var(--accent) 12%, transparent);
-      border: 1px solid color-mix(in oklch, var(--accent) 20%, transparent);
-      flex-shrink: 0;
-    }
-    .feat-icon svg { display: block; }
-
-    .feat-cell h4 { font-size: 15px; font-weight: 600; letter-spacing: -0.015em; margin-bottom: 8px; }
-    .feat-cell p  { font-size: 13.5px; line-height: 1.58; color: var(--ink-3); }
-
-    /* ── Pricing ─────────────────────────────────────────────── */
-    .pricing-cols {
-      display: grid; grid-template-columns: 1fr 1fr;
-      gap: 14px; max-width: 660px; margin: 54px auto 0;
-    }
-    @media (max-width: 580px) { .pricing-cols { grid-template-columns: 1fr; } }
-
-    .price-card {
-      border-radius: 22px; border: 1px solid var(--line);
-      padding: 30px; background: var(--glass);
-    }
-    .price-card.featured {
-      position: relative; overflow: hidden;
-      border-color: color-mix(in oklch, var(--accent) 35%, transparent);
-      background: linear-gradient(170deg,
-        color-mix(in oklch, var(--accent) 8%, transparent),
-        var(--glass) 60%);
-      box-shadow:
-        0 0 0 1px color-mix(in oklch, var(--accent) 14%, transparent),
-        inset 0 1px 0 color-mix(in oklch, var(--accent) 18%, transparent),
-        0 24px 56px -16px oklch(0.86 0.155 168 / 0.20);
-    }
-    /* Animated top-border glow on featured card */
-    .price-card.featured::before {
-      content: "";
-      position: absolute; top: 0; left: -100%; right: 0; height: 1px;
-      background: linear-gradient(90deg, transparent, var(--accent), transparent);
-      animation: borderSweep 3.5s ease-in-out infinite;
-    }
     @keyframes borderSweep {
       0%,100% { left: -100%; opacity: 0; }
       10%      { opacity: 1; }
       60%      { left: 100%; opacity: 0; }
     }
 
-    .price-badge {
-      font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.12em;
-      text-transform: uppercase; color: var(--accent); margin-bottom: 16px;
-    }
-    .price-amount {
-      font-family: var(--serif); font-size: 42px;
-      line-height: 1; letter-spacing: -0.025em; margin-bottom: 6px;
-    }
-    .price-sub {
-      font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.07em;
-      text-transform: uppercase; color: var(--ink-3); margin-bottom: 24px;
-    }
-    .price-features {
-      list-style: none; display: flex; flex-direction: column;
-      gap: 10px; margin-bottom: 26px;
-    }
-    .price-features li {
-      display: flex; align-items: center; gap: 10px;
-      font-size: 13.5px; color: var(--ink-2);
-    }
-    .price-features li::before {
-      content: "";
-      width: 15px; height: 15px; border-radius: 50%; flex-shrink: 0;
-      background: color-mix(in oklch, var(--accent) 18%, transparent);
-      border: 1px solid color-mix(in oklch, var(--accent) 30%, transparent);
-      background-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'><path d='M2 6l3 3 5-5' stroke='%2300c9a7' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round' fill='none'/></svg>");
-      background-size: 11px; background-position: center; background-repeat: no-repeat;
-    }
-    .price-cta {
-      display: block; text-align: center; padding: 13px 20px;
-      border-radius: 13px; font-size: 14px; font-weight: 600; letter-spacing: -0.01em;
-      text-decoration: none; transition: transform 130ms, box-shadow 200ms;
-    }
-    .price-cta:active { transform: scale(0.97); }
-    .price-card          .price-cta {
-      border: 1px solid var(--line-s); color: var(--ink-2); background: var(--glass-2);
-    }
-    .price-card.featured .price-cta {
-      background: linear-gradient(175deg, oklch(0.93 0.10 165), oklch(0.76 0.158 172));
-      color: oklch(0.09 0.01 240); border: none;
-      box-shadow: 0 1px 0 oklch(1 0 0 / 0.40) inset,
-                  0 10px 28px -6px oklch(0.86 0.155 168 / 0.48);
-    }
-    .price-card.featured .price-cta:hover {
-      box-shadow: 0 1px 0 oklch(1 0 0 / 0.40) inset,
-                  0 14px 36px -6px oklch(0.86 0.155 168 / 0.60);
-      transform: translateY(-1px);
-    }
-
     /* ── FAQ ─────────────────────────────────────────────────── */
-    .faq-list { max-width: 620px; margin: 54px auto 0; }
+    /* The section wrapper is text-align:center for the heading, and every
+       card inside resets to left — the answers were the one that got
+       missed, so nine multi-line paragraphs rendered centred. */
+    .faq-list { max-width: 620px; margin: 54px auto 0; text-align: left; }
     .faq-item  { border-bottom: 1px solid var(--line); }
     .faq-q {
       width: 100%; text-align: left; background: none; border: none; color: var(--ink);
@@ -710,7 +477,9 @@
       width: 22px; height: 22px; border-radius: 50%; flex-shrink: 0;
       border: 1px solid var(--line-s);
       display: flex; align-items: center; justify-content: center;
-      color: var(--ink-3); font-size: 16px; font-weight: 300; line-height: 1;
+      /* 400, not 300: this "+" was the only glyph on the page pulling a whole
+         extra Geist instance down. */
+      color: var(--ink-3); font-size: 16px; font-weight: 400; line-height: 1;
       transition: transform 240ms, background 240ms, border-color 240ms;
     }
     .faq-item.open .faq-icon {
@@ -719,12 +488,23 @@
       border-color: color-mix(in oklch, var(--accent) 30%, transparent);
       color: var(--accent);
     }
+    /* max-height alone only clips visually — a collapsed answer stays in the
+       a11y tree and its links stay tabbable (the Android answer has one), so
+       keyboard users land on invisible targets. visibility also gates focus;
+       it flips back instantly on open and only hides after the collapse. */
     .faq-a {
       font-size: 14.5px; line-height: 1.68; color: var(--ink-2);
-      max-height: 0; overflow: hidden;
-      transition: max-height 340ms cubic-bezier(.4,0,.2,1), padding 260ms ease;
+      max-height: 0; overflow: hidden; visibility: hidden;
+      transition: max-height 340ms cubic-bezier(.4,0,.2,1), padding 260ms ease,
+                  visibility 0s linear 340ms;
     }
-    .faq-item.open .faq-a { max-height: 320px; padding-bottom: 20px; }
+    /* 320px left almost no headroom — the longest answer measures ~262px at
+       320px wide, so one more sentence would have silently clipped it. */
+    .faq-item.open .faq-a {
+      max-height: 460px; padding-bottom: 20px; visibility: visible;
+      transition: max-height 340ms cubic-bezier(.4,0,.2,1), padding 260ms ease,
+                  visibility 0s linear 0s;
+    }
 
     /* ── Final CTA ──────────────────────────────────────────── */
     .final-cta { text-align: center; padding: 100px 24px 120px; position: relative; }
@@ -740,7 +520,11 @@
       line-height: 0.94; margin-bottom: 18px; position: relative;
     }
     .final-cta h2 em { font-style: italic; color: var(--accent); }
-    .final-cta p {
+    /* Scoped to the lede: as `.final-cta p` this also captured the nested
+       .cta-fineprint (0,1,1 beats 0,1,0), rendering the final CTA's fineprint
+       at 16px/--ink-2/42px-margin while the identical class elsewhere on the
+       page rendered at 11px/--ink-3. */
+    .final-cta > p:first-of-type {
       font-size: 16px; color: var(--ink-2); margin-bottom: 42px;
       max-width: 32ch; margin-left: auto; margin-right: auto; position: relative;
     }
@@ -752,9 +536,11 @@
       flex-wrap: wrap; gap: 12px;
     }
     .foot-brand { font-family: var(--serif); font-size: 18px; }
+    /* --ink-4 is for decorative marks (status dots) only — as 9.5px text it
+       measured 3.26:1. --ink-3 is the smallest step that clears AA here. */
     .foot-note  {
       font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.07em;
-      text-transform: uppercase; color: var(--ink-4);
+      text-transform: uppercase; color: var(--ink-3);
     }
 
     /* ── Sticky mobile CTA ───────────────────────────────────── */
@@ -776,8 +562,11 @@
       font-family: var(--mono); font-size: 9px; letter-spacing: 0.08em;
       text-transform: uppercase; color: var(--ink-3); margin-top: 2px;
     }
+    /* This is the primary conversion control on mobile — it does not get to
+       sit under the 44px touch minimum. */
     .sticky-btn {
-      flex-shrink: 0; padding: 11px 18px; border-radius: 11px; border: 0;
+      flex-shrink: 0; padding: 11px 18px; min-height: 44px; border-radius: 11px; border: 0;
+      justify-content: center;
       font-size: 13.5px; font-weight: 600; color: oklch(0.09 0.01 240);
       background: linear-gradient(175deg, oklch(0.93 0.10 165), oklch(0.80 0.14 172));
       box-shadow: 0 1px 0 oklch(1 0 0 / 0.38) inset, 0 8px 20px -6px oklch(0.86 0.155 168 / 0.45);
@@ -786,216 +575,28 @@
     }
     .sticky-btn:active { transform: scale(0.96); }
     @media (max-width: 700px) { .sticky-bar { display: flex; } }
-
-    /* ── Demo consolidated layout ────────────────────────────── */
-    .demo-layout {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 72px;
-      align-items: center;
-    }
-    @media (max-width: 860px) {
-      .demo-layout { grid-template-columns: 1fr; gap: 44px; }
-    }
     .demo-copy .section-title { margin-bottom: 16px; }
     .demo-copy .section-sub   { margin-bottom: 0; }
-
-    .demo-tabs {
-      display: flex; gap: 6px; margin-top: 36px; flex-wrap: wrap;
-    }
-    .demo-tab {
-      padding: 8px 18px; border-radius: 9px;
-      font-size: 13px; font-weight: 500; letter-spacing: -0.01em;
-      background: none; border: 1px solid var(--line);
-      color: var(--ink-3); transition: all 200ms; cursor: pointer;
-    }
-    .demo-tab:hover  { border-color: var(--line-s); color: var(--ink); }
-    .demo-tab.active {
-      background: color-mix(in oklch, var(--accent) 10%, transparent);
-      border-color: color-mix(in oklch, var(--accent) 30%, transparent);
-      color: var(--accent);
-    }
-    .demo-phone-wrap { max-width: 420px; }
-    .demo-phone {
-      /* The demo phone stays a DARK device on the light page — so its interior
-         re-declares the dark-theme tokens locally. Everything inside (bubbles,
-         header, glass, hairlines) resolves against these, not the page's cream. */
-      --ink:     oklch(0.97 0.004 90);
-      --ink-2:   oklch(0.70 0.008 90);
-      --ink-3:   oklch(0.48 0.010 90);
-      --ink-4:   oklch(0.28 0.012 240);
-      --line:    color-mix(in oklch, var(--ink) 7%, transparent);
-      --line-s:  color-mix(in oklch, var(--ink) 13%, transparent);
-      --glass:   color-mix(in oklch, var(--ink) 4.5%, transparent);
-      --glass-2: color-mix(in oklch, var(--ink) 8%, transparent);
-      --accent:  oklch(0.86 0.155 168);
-      --accent-s:oklch(0.72 0.13 168);
-      color: var(--ink);
-      border-radius: 24px; overflow: hidden;
-      border: 1px solid var(--line-s);
-      background: oklch(0.068 0.008 238);
-      box-shadow:
-        0 32px 80px -20px oklch(0 0 0 / 0.35),
-        0 0 0 1px oklch(0 0 0 / 0.10),
-        inset 0 1px 0 color-mix(in oklch, var(--ink) 10%, transparent);
-    }
-    .demo-phone-hdr {
-      display: flex; align-items: center; gap: 11px;
-      padding: 13px 16px 12px; border-bottom: 1px solid var(--line);
-      background: color-mix(in oklch, var(--ink) 3%, transparent);
-    }
-    .demo-phone-name   { font-size: 14px; font-weight: 600; letter-spacing: -0.01em; }
-    .demo-phone-status { display: flex; align-items: center; gap: 5px; margin-top: 2px; }
-    .demo-phone-dot    { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
-    .demo-phone-sub    {
-      font-family: var(--mono); font-size: 9px; letter-spacing: 0.06em;
-      text-transform: uppercase; color: var(--accent);
-    }
-    .demo-messages {
-      min-height: 268px; max-height: 268px;
-      padding: 14px 14px 16px; display: flex; flex-direction: column;
-      gap: 8px; overflow: hidden;
-    }
-    .demo-msg {
-      font-size: 13px; line-height: 1.55; padding: 9px 12px 7px;
-      border-radius: 14px; max-width: 90%; position: relative;
-      opacity: 0; transform: translateY(8px);
-      transition: opacity 320ms ease, transform 320ms ease;
-    }
     .demo-msg.show { opacity: 1; transform: none; }
-    .demo-msg.user {
-      background: oklch(0.86 0.155 168 / 0.16);
-      border: 1px solid oklch(0.86 0.155 168 / 0.22);
-      align-self: flex-end; color: var(--ink); border-bottom-right-radius: 5px;
-    }
-    .demo-msg.bot {
-      background: color-mix(in oklch, var(--ink) 9%, transparent);
-      border: 1px solid var(--line);
-      align-self: flex-start; color: var(--ink-2); border-bottom-left-radius: 5px;
-    }
-    .demo-msg.bot strong { color: var(--ink); font-weight: 600; }
-    .demo-msg-time {
-      font-size: 10px; text-align: right; margin-top: 3px;
-      font-family: var(--mono); color: oklch(0.86 0.155 168 / 0.5);
-    }
-    .demo-msg.bot .demo-msg-time { color: var(--ink-4); }
-    .demo-typing {
-      display: flex; align-items: center; gap: 4px;
-      padding: 11px 14px; border-radius: 14px; border-bottom-left-radius: 5px;
-      background: color-mix(in oklch, var(--ink) 9%, transparent);
-      border: 1px solid var(--line); align-self: flex-start;
-      opacity: 0; transition: opacity 240ms ease;
-    }
     .demo-typing.show { opacity: 1; }
-    .demo-typing span {
-      width: 5px; height: 5px; border-radius: 50%; background: var(--ink-3);
-      animation: typingBounce 1.2s ease-in-out infinite;
-    }
-    .demo-typing span:nth-child(2) { animation-delay: 0.15s; }
-    .demo-typing span:nth-child(3) { animation-delay: 0.30s; }
     @keyframes typingBounce {
       0%,60%,100% { transform: translateY(0); opacity: 0.4; }
       30%          { transform: translateY(-4px); opacity: 1; }
     }
-    .demo-replay {
-      display: flex; align-items: center; justify-content: center; gap: 7px;
-      margin-top: 14px; width: 100%; font-family: var(--mono); font-size: 10px;
-      letter-spacing: 0.10em; text-transform: uppercase; color: var(--ink-3);
-      background: none; border: 1px solid var(--line); border-radius: 8px;
-      padding: 9px 16px; transition: all 180ms; cursor: pointer;
-    }
-    .demo-replay:hover { color: var(--ink); border-color: var(--line-s); }
-
-    /* ── Inside Arnie — story beats with the real app, in motion ── */
-    .showcase { margin-top: 64px; display: flex; flex-direction: column; gap: 92px; }
-    .show-row {
-      display: grid; grid-template-columns: 1fr 1fr; gap: 64px; align-items: center;
-    }
-    .show-row.flip .show-copy { order: 2; }
-    .show-row.flip .show-phone-wrap { order: 1; }
-    .show-eyebrow {
-      font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em;
-      text-transform: uppercase; color: var(--accent); margin-bottom: 14px;
-    }
-    .show-copy h3 {
-      font-family: var(--serif); font-weight: 500; font-size: clamp(28px, 3.6vw, 38px);
-      line-height: 1.10; letter-spacing: -0.012em; color: var(--ink); margin-bottom: 14px;
-      text-wrap: balance;
-    }
-    .show-copy h3 em { font-style: italic; color: var(--accent); }
-    .show-copy p { font-size: 15.5px; line-height: 1.7; color: var(--ink-2); max-width: 44ch; }
-    .show-points { margin-top: 18px; display: flex; flex-direction: column; gap: 9px; }
-    .show-point { display: flex; gap: 10px; align-items: baseline; font-size: 13.5px; color: var(--ink-2); }
-    .show-point::before {
-      content: ""; width: 5px; height: 5px; border-radius: 50%; background: var(--accent);
-      flex-shrink: 0; transform: translateY(-2px); box-shadow: 0 0 8px var(--accent);
-    }
-    .show-point b { color: var(--ink); font-weight: 600; }
-
+    /* ── Inside Arnie — story beats with the real app { margin-top: 64px; display: flex; flex-direction: column; gap: 92px; }
     /* Hyperreal device mockups — every phone carries a true 3D pose (per-phone
        --ry/--rx/--rz vars), a titanium frame with lit + shaded edges, a dynamic
        island, glass reflection, and a grounded contact shadow. One var-driven
-       float animation serves every pose, so angles and motion never fight. */
-    .show-phone-wrap { display: flex; justify-content: center; position: relative; }
-    .show-phone-wrap::before {
-      content: ""; position: absolute; inset: 4% 10%;
-      background: radial-gradient(closest-side, color-mix(in oklch, var(--accent) 22%, transparent), transparent 70%);
-      filter: blur(38px); z-index: 0;
-      animation: showGlow 7.5s ease-in-out infinite;
-    }
-    /* Grounded contact shadow — an ellipse pooled under the tilted device. */
-    .show-phone-wrap::after {
-      content: ""; position: absolute; left: 16%; right: 16%; bottom: -3%;
-      height: 8%; z-index: 0;
-      background: radial-gradient(50% 100% at 50% 50%, oklch(0.25 0.02 255 / 0.30), transparent 72%);
-      filter: blur(14px);
-    }
+       float animation serves every pose { display: flex; justify-content: center; position: relative; }
     @keyframes showGlow {
       0%, 100% { opacity: 0.65; }
       50%      { opacity: 1; }
-    }
-    .show-phone {
-      /* Pose — overridden per placement. Lit from the upper-left. */
-      --ry: -11deg; --rx: 2.5deg; --rz: -0.5deg;
-      position: relative; z-index: 1; width: min(365px, 88vw);
-      border-radius: 52px; padding: 11px;
-      background: linear-gradient(145deg,
-        oklch(0.42 0.008 250) 0%, oklch(0.16 0.006 250) 38%,
-        oklch(0.13 0.006 250) 72%, oklch(0.30 0.008 250) 100%);
-      box-shadow:
-        0 0 0 1.5px oklch(0.34 0.008 250 / 0.9),
-        inset 2px 2px 3px -1px oklch(1 0 0 / 0.35),
-        inset -2px -2px 3px -1px oklch(0 0 0 / 0.55),
-        0 60px 120px -32px oklch(0 0 0 / 0.60),
-        0 22px 44px -18px oklch(0 0 0 / 0.45);
-      transform: perspective(1400px) rotateY(var(--ry)) rotateX(var(--rx)) rotate(var(--rz));
-      animation: phoneFloat 7s ease-in-out infinite;
-    }
-    /* Dynamic island — floating over the screen's status area. */
-    .show-phone::after {
-      content: ""; position: absolute; top: 23px; left: 50%;
-      transform: translateX(-50%);
-      width: 27%; height: 17px;
-      background: oklch(0.05 0 0); border-radius: 999px; z-index: 3;
-      box-shadow: inset 0 0 2px oklch(1 0 0 / 0.10);
-    }
-    .show-row.flip .show-phone {
-      --ry: 11deg; --rz: 0.5deg;
-      animation-duration: 8.2s; animation-delay: -2.6s;
     }
     @keyframes phoneFloat {
       0%, 100% { transform: perspective(1400px) rotateY(var(--ry)) rotateX(var(--rx)) rotate(var(--rz)) translateY(0); }
       50%      { transform: perspective(1400px) rotateY(var(--ry)) rotateX(var(--rx)) rotate(var(--rz)) translateY(-9px); }
     }
-    .show-screen { position: relative; border-radius: 41px; overflow: hidden; }
-    .show-screen img { display: block; width: 100%; }
-    /* Static glass reflection — a soft top-left light plane on the glass. */
-    .show-screen::before {
-      content: ""; position: absolute; inset: 0; z-index: 2; pointer-events: none;
-      background: linear-gradient(160deg, oklch(1 0 0 / 0.13), oklch(1 0 0 / 0.04) 24%, transparent 42%);
-    }
-    /* Slow specular sheen drifting across the glass — reads as light, not UI. */
-    .show-screen::after {
+    /* Slow specular sheen drifting across the glass — reads as light {
       content: ""; position: absolute; inset: -30%;
       background: linear-gradient(115deg, transparent 42%,
                   color-mix(in oklch, var(--ink) 7%, transparent) 50%, transparent 58%);
@@ -1020,260 +621,24 @@
         to   { transform: translateY(-34px); }
       }
     }
-
-    /* Beat 3 — the receipts duo, deliberately smaller + editorial tilt. */
-    .show-duo-block { text-align: center; }
-    .show-duo-sub {
-      margin: 0 auto 26px; max-width: 52ch;
-      font-size: 14px; line-height: 1.6; color: var(--ink-2);
-    }
-    .show-duo { display: flex; justify-content: center; gap: 30px; }
-    .show-phone-sm {
-      width: min(255px, 44vw); border-radius: 40px; padding: 8px;
-    }
-    .show-phone-sm .show-screen { border-radius: 32px; }
-    .show-phone-sm::after { top: 16px; height: 13px; }
-    /* Angled toward each other — a matched pair on the shelf. */
-    .tilt-l { --ry: 12deg;  --rx: 2deg; --rz: -2deg; animation-duration: 7.8s; }
-    .tilt-r { --ry: -12deg; --rx: 2deg; --rz: 2deg;  animation-duration: 8.6s; animation-delay: -3s; }
-
-    .show-moat {
-      margin-top: 84px; text-align: center;
-      font-family: var(--serif);
-      font-size: clamp(24px, 3.4vw, 34px); line-height: 1.3; color: var(--ink);
-    }
-    .show-moat em { color: var(--accent); font-style: italic; }
-    .show-moat-sub {
-      margin: 14px auto 0; text-align: center; max-width: 58ch;
-      font-size: 14px; line-height: 1.65; color: var(--ink-3);
-    }
-
-    @media (max-width: 860px) {
-      .showcase { gap: 64px; margin-top: 44px; }
-      .show-row { grid-template-columns: 1fr; gap: 30px; }
-      .show-row.flip .show-copy { order: 1; }
-      .show-row.flip .show-phone-wrap { order: 2; }
-      .show-copy p { max-width: none; }
-      .show-moat { margin-top: 64px; }
-    }
-    @media (prefers-reduced-motion: reduce) {
-      .show-phone, .tilt-l, .tilt-r, .show-phone-wrap, .show-phone-wrap::before,
-      .show-screen::after { animation: none !important; }
-    }
-
-    /* ── Dashboard preview ───────────────────────────────────── */
-    .dash-wrap {
-      margin-top: 52px; position: relative;
-    }
-    .dash-wrap::after {
-      content: ""; position: absolute; bottom: 0; left: 0; right: 0; height: 160px;
-      background: linear-gradient(to bottom, transparent, var(--bg));
-      pointer-events: none; z-index: 2;
-    }
-    .dash-browser {
-      border-radius: 16px; overflow: hidden;
-      border: 1px solid var(--line-s);
-      box-shadow:
-        0 40px 90px -24px oklch(0 0 0 / 0.70),
-        0 0 0 1px color-mix(in oklch, var(--ink) 5%, transparent);
-      background: oklch(0.052 0.006 240);
-    }
-    .dash-browser-bar {
-      display: flex; align-items: center; gap: 12px; padding: 11px 16px;
-      border-bottom: 1px solid var(--line);
-      background: color-mix(in oklch, var(--ink) 3.5%, transparent);
-    }
-    .dash-dots { display: flex; gap: 6px; }
-    .dash-dot  { width: 10px; height: 10px; border-radius: 50%; }
-    .dash-dot-r { background: oklch(0.65 0.17 27  / 0.55); }
-    .dash-dot-y { background: oklch(0.80 0.15 85  / 0.55); }
-    .dash-dot-g { background: oklch(0.72 0.16 145 / 0.55); }
-    .dash-url {
-      font-family: var(--mono); font-size: 10px; letter-spacing: 0.04em;
-      color: var(--ink-4); background: color-mix(in oklch, var(--ink) 4%, transparent);
-      border: 1px solid var(--line); border-radius: 6px; padding: 4px 12px;
-      max-width: 240px; margin: 0 auto; text-align: center;
-    }
-    .dash-content { padding: 20px 20px 10px; }
-    .dash-header  { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 18px; }
-    .dash-date    { font-family: var(--serif); font-size: 21px; letter-spacing: -0.02em; }
-    .dash-date em { font-style: italic; color: var(--accent); }
-    .dash-target  {
-      font-family: var(--mono); font-size: 9px; letter-spacing: 0.08em;
-      text-transform: uppercase; color: var(--ink-3); margin-top: 4px;
-    }
-    .dash-macros {
-      display: grid; grid-template-columns: repeat(3,1fr); gap: 10px; margin-bottom: 14px;
-    }
-    .dash-macro {
-      border-radius: 12px; padding: 13px 14px;
-      background: color-mix(in oklch, var(--ink) 5.5%, transparent);
-      border: 1px solid var(--line);
-    }
-    .dash-macro-lbl {
-      font-family: var(--mono); font-size: 8.5px; letter-spacing: 0.10em;
-      text-transform: uppercase; color: var(--ink-3); margin-bottom: 5px;
-    }
-    .dash-macro-val { font-size: 18px; font-weight: 600; letter-spacing: -0.02em; margin-bottom: 1px; }
-    .dash-macro-sub { font-size: 10px; color: var(--ink-3); }
-    .dash-macro-bar {
-      height: 3px; border-radius: 2px; margin-top: 9px;
-      background: color-mix(in oklch, var(--ink) 10%, transparent); overflow: hidden;
-    }
-    .dash-macro-fill {
-      height: 100%; border-radius: 2px;
-      background: linear-gradient(90deg, var(--accent-s), var(--accent));
-    }
-    .dash-macro.warn .dash-macro-fill { background: oklch(0.78 0.15 55); }
-    .dash-macro.warn .dash-macro-val  { color: oklch(0.85 0.12 58); }
-    .dash-log {
-      border-radius: 12px; overflow: hidden;
-      border: 1px solid var(--line);
-      background: color-mix(in oklch, var(--ink) 3%, transparent);
-    }
-    .dash-log-hdr {
-      padding: 9px 14px; border-bottom: 1px solid var(--line);
-      font-family: var(--mono); font-size: 9px; letter-spacing: 0.10em;
-      text-transform: uppercase; color: var(--ink-3);
-    }
-    .dash-log-row {
-      display: flex; align-items: center; justify-content: space-between;
-      padding: 10px 14px; border-bottom: 1px solid var(--line); gap: 10px;
-    }
-    .dash-log-row:last-child { border-bottom: none; }
-    .dash-log-name { font-size: 12.5px; color: var(--ink-2); }
-    .dash-log-meta { font-family: var(--mono); font-size: 9.5px; color: var(--ink-3); white-space: nowrap; }
+    /* Beat 3 — the receipts duo { text-align: center; }
 
     /* ── Scroll reveal ────────────────────────────────────────── */
-    .reveal {
+    /* Gated on .js: 34 elements start at opacity 0, and that is nearly
+       every CTA below the hero. If the script never runs — JS off, a parse
+       error, a bot — the unstyled state has to be VISIBLE, not a blank
+       page. The class is set by an inline script in <head>, so there is no
+       flash of revealed content in the normal path. */
+    .js .reveal {
       opacity: 0; transform: translateY(22px);
       transition: opacity 750ms cubic-bezier(.2,.7,.2,1), transform 850ms cubic-bezier(.2,.7,.2,1);
     }
-    .reveal.in { opacity: 1; transform: none; }
+    .js .reveal.in { opacity: 1; transform: none; }
     .reveal-d1 { transition-delay:  90ms; }
     .reveal-d2 { transition-delay: 180ms; }
     .reveal-d3 { transition-delay: 270ms; }
-    .reveal-d4 { transition-delay: 360ms; }
-
-    /* ── Integrations strip ─────────────────────────────────────── */
-    .int-strip {
-      padding: 0 24px 56px;
-      position: relative; z-index: 3;
-    }
-    .int-row {
-      display: flex; align-items: center; justify-content: center;
-      flex-wrap: wrap; gap: 10px;
-      max-width: 920px; margin: 0 auto;
-    }
-    .int-eyebrow {
-      font-family: var(--mono); font-size: 10px; letter-spacing: 0.14em;
-      text-transform: uppercase; color: var(--ink-3); white-space: nowrap;
-      padding-right: 4px;
-    }
-    .int-pill {
-      display: inline-flex; align-items: center; gap: 8px;
-      padding: 9px 16px; border-radius: 11px;
-      border: 1px solid var(--line);
-      background: color-mix(in oklch, var(--ink) 5.5%, transparent);
-      font-size: 13px; font-weight: 500; color: var(--ink);
-      white-space: nowrap;
-      transition: border-color 200ms;
-    }
     .int-pill.dim { opacity: 0.32; }
-    .int-icon {
-      width: 17px; height: 17px; flex-shrink: 0;
-      display: flex; align-items: center; justify-content: center;
-      color: var(--accent);
-    }
     .int-pill.dim .int-icon { color: var(--ink-3); }
-    .int-sep {
-      width: 1px; height: 24px;
-      background: var(--line-s); flex-shrink: 0;
-      margin: 0 4px;
-    }
-    @media (max-width: 640px) {
-      .int-strip  { padding: 0 20px 40px; margin-top: -32px; }
-      .int-sep    { display: none; }
-      .int-eyebrow {
-        flex-basis: 100%; text-align: center; margin-bottom: 10px;
-        padding-right: 0;
-      }
-      /* Two-column pill grid on mobile */
-      .int-pill {
-        flex: 1 1 calc(50% - 5px);
-        justify-content: center;
-        padding: 13px 16px; font-size: 14px;
-      }
-      .int-icon { width: 15px; height: 15px; }
-    }
-
-    /* ── Devices & wearables section ─────────────────────────── */
-    .dev-hub {
-      display: flex; align-items: center; justify-content: center;
-      gap: 14px; flex-wrap: wrap; margin: 48px auto 0;
-    }
-    .dev-hub-pill {
-      display: inline-flex; align-items: center; gap: 10px;
-      padding: 12px 22px; border-radius: 13px;
-      border: 1px solid color-mix(in oklch, var(--accent) 30%, transparent);
-      background: color-mix(in oklch, var(--accent) 8%, transparent);
-      font-size: 14px; font-weight: 600; color: var(--ink);
-    }
-    .dev-hub-pill .int-icon { width: 18px; height: 18px; }
-    .dev-hub-note { font-size: 13px; color: var(--ink-3); }
-    .dev-grid {
-      display: grid; grid-template-columns: repeat(auto-fit, minmax(215px, 1fr));
-      gap: 1px; background: var(--line);
-      border: 1px solid var(--line); border-radius: 22px;
-      overflow: hidden; margin-top: 28px;
-    }
-    .dev-card { padding: 22px 24px; background: var(--bg); transition: background 280ms; }
-    .dev-card:hover { background: color-mix(in oklch, var(--bg) 70%, var(--ink) 30%); }
-    .dev-name { font-size: 15px; font-weight: 600; letter-spacing: -0.01em; margin-bottom: 4px; }
-    .dev-kind {
-      font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.12em;
-      text-transform: uppercase; color: var(--accent); margin-bottom: 11px;
-    }
-    .dev-metric { font-size: 13px; line-height: 1.5; color: var(--ink-3); }
-    .dev-foot { margin-top: 22px; font-size: 13.5px; color: var(--ink-3); }
-
-    /* ── Food logging modes ──────────────────────────────────── */
-    .mode-grid {
-      display: grid; grid-template-columns: repeat(3, 1fr);
-      gap: 14px; margin-top: 52px;
-    }
-    @media (max-width: 720px) { .mode-grid { grid-template-columns: 1fr; } }
-    .mode-card {
-      border-radius: 20px; border: 1px solid var(--line);
-      padding: 26px; background: var(--glass);
-    }
-    .mode-card.featured {
-      border-color: color-mix(in oklch, var(--accent) 28%, transparent);
-      box-shadow: 0 0 0 1px color-mix(in oklch, var(--accent) 10%, transparent),
-                  inset 0 1px 0 color-mix(in oklch, var(--accent) 12%, transparent);
-    }
-    .mode-name {
-      font-family: var(--mono); font-size: 10px; letter-spacing: 0.13em;
-      text-transform: uppercase; color: var(--ink-3); margin-bottom: 14px;
-      display: flex; align-items: center; gap: 9px;
-    }
-    .mode-card.featured .mode-name { color: var(--accent); }
-    .mode-tag {
-      font-size: 8.5px; padding: 3px 8px; border-radius: 999px;
-      background: color-mix(in oklch, var(--accent) 14%, transparent);
-      color: var(--accent); letter-spacing: 0.08em;
-    }
-    .mode-head {
-      font-family: var(--serif); font-size: 22px; font-weight: 400;
-      letter-spacing: -0.02em; margin-bottom: 10px;
-    }
-    .mode-desc { font-size: 13.5px; line-height: 1.56; color: var(--ink-2); }
-    .mode-hint { margin-top: 15px; font-size: 12px; color: var(--ink-3); }
-    .mode-hint code {
-      font-family: var(--mono); font-size: 11px; color: var(--accent);
-      background: color-mix(in oklch, var(--accent) 9%, transparent);
-      padding: 2px 7px; border-radius: 6px;
-    }
 
     /* ── Below-fold rendering skip ─────────────────────────────
        Everything after the pinned scene renders lazily: the browser skips
@@ -1281,10 +646,18 @@
        which shortens first paint AND keeps the cine scene's frame budget
        to itself while the phone is rotating. The intrinsic size keeps the
        scrollbar honest before the real content renders. */
+       A single 700px guess for all of them was badly off — the footer is
+       ~117px, so it alone invented ~580px of phantom scroll, and the progress
+       bar divides by exactly this inflated scrollHeight. Values below are
+       measured; `auto` still lets each element remember its real size once
+       rendered, so these only have to be right for first paint. */
     #channels, #partners, #different, #pricing, #faq, .final-cta, footer {
       content-visibility: auto;
-      contain-intrinsic-size: auto 700px;
     }
+    #channels, #pricing, #faq { contain-intrinsic-size: auto 820px; }
+    #different                { contain-intrinsic-size: auto 1000px; }
+    #partners, .final-cta     { contain-intrinsic-size: auto 500px; }
+    footer                    { contain-intrinsic-size: auto 120px; }
 
     /* ── Mobile performance — strip expensive GPU compositing ── */
     @media (max-width: 768px) {
@@ -1318,99 +691,13 @@
       /* Simpler scroll reveal — fade only, no translate, less layout thrash */
       .reveal { transform: none; transition: opacity 380ms ease; }
     }
-
-    /* ── Web onboarding modal ────────────────────────────────── */
-
-    /* Backdrop: transparent enough to let the landing teal glow breathe through */
-    .ob-overlay {
-      position: fixed; inset: 0; z-index: 900;
-      display: flex; align-items: center; justify-content: center;
-      padding: 16px;
-      background: oklch(0.04 0.01 240 / 0.52);
-      backdrop-filter: blur(20px) saturate(150%);
-      -webkit-backdrop-filter: blur(20px) saturate(150%);
-      opacity: 0; pointer-events: none;
-      transition: opacity 240ms cubic-bezier(.4,0,.2,1);
-    }
     .ob-overlay.open { opacity: 1; pointer-events: auto; }
-
-    /* Modal container — the styled surface (replaces .ob-card as visual host) */
-    .ob-modal {
-      width: min(540px, 100%);
-      max-height: calc(100dvh - 32px);
-      overflow-y: auto;
-      border-radius: 22px;
-      position: relative;
-      transform: translateY(28px) scale(0.97);
-      transition: transform 300ms cubic-bezier(.34,1.20,.64,1);
-      background: linear-gradient(170deg,
-        color-mix(in oklch, var(--ink) 10%, transparent),
-        color-mix(in oklch, var(--ink) 5%, transparent) 80%);
-      border: 1px solid color-mix(in oklch, var(--accent) 22%, var(--line-s));
-      -webkit-backdrop-filter: blur(36px) saturate(180%);
-      backdrop-filter: blur(36px) saturate(180%);
-      box-shadow:
-        0 0 0 1px oklch(1 0 0 / 0.07) inset,
-        0 -1px 0 color-mix(in oklch, var(--accent) 38%, transparent) inset,
-        0 40px 100px -20px oklch(0 0 0 / 0.75),
-        0 0 80px -15px color-mix(in oklch, var(--accent) 10%, transparent);
-    }
     .ob-overlay.open .ob-modal { transform: translateY(0) scale(1); }
-
-    /* Modal header — brand mark + tagline + close in one clean row */
-    .ob-modal-head {
-      display: flex; align-items: center;
-      padding: 11px 11px 10px 18px;
-      border-bottom: 1px solid var(--line);
-      flex-shrink: 0;
-      background: linear-gradient(to bottom,
-        color-mix(in oklch, var(--accent) 7%, transparent), transparent 100%);
-    }
-    .ob-modal-brand {
-      font-family: var(--serif); font-size: 17px; font-style: italic;
-      color: var(--ink); letter-spacing: -0.02em; line-height: 1;
-    }
-    .ob-modal-sep {
-      width: 1px; height: 13px; flex-shrink: 0;
-      background: var(--line-s); margin: 0 10px;
-    }
-    .ob-modal-tagline {
-      font-family: var(--mono); font-size: 9px; letter-spacing: 0.10em;
-      text-transform: uppercase; color: var(--ink-3); flex: 1;
-    }
-    .ob-modal-close {
-      flex-shrink: 0; margin-left: 8px;
-      width: 26px; height: 26px; border-radius: 50%; border: none;
-      background: color-mix(in oklch, var(--ink) 8%, transparent);
-      color: var(--ink-3); font-size: 13px; cursor: pointer;
-      display: flex; align-items: center; justify-content: center;
-      line-height: 1;
-      transition: background 150ms, color 150ms;
-    }
-    .ob-modal-close:hover {
-      background: color-mix(in oklch, var(--ink) 17%, transparent);
-      color: var(--ink);
-    }
-
-    /* .ob-card inside modal: strip its own surface — modal already provides it */
-    .ob-overlay .ob-card {
-      background: none; border: none; box-shadow: none;
-      backdrop-filter: none; -webkit-backdrop-filter: none;
-      width: 100%; margin: 0; border-radius: 0;
-    }
 
     /* Step enter animation */
     @keyframes ob-step-enter {
       from { opacity: 0; transform: translateY(8px); }
       to   { opacity: 1; transform: translateY(0); }
-    }
-    .ob-step-enter { animation: ob-step-enter 220ms cubic-bezier(.4,0,.2,1) both; }
-
-    /* Tap hint below goal grid */
-    .ob-tap-hint {
-      text-align: center; margin-top: 14px;
-      font-family: var(--mono); font-size: 9px; letter-spacing: 0.10em;
-      text-transform: uppercase; color: var(--ink-4);
     }
 
     /* Success icon — pop in + pulse ring */
@@ -1427,281 +714,22 @@
       100% { box-shadow: 0 0 0 0   transparent,
                          0 0 0 1px color-mix(in oklch, var(--accent) 30%, transparent); }
     }
-    .ob-step-success .ob-success-icon {
-      animation:
-        ob-check-pop 380ms cubic-bezier(.34,1.26,.64,1) 0.1s both,
-        ob-check-pulse 2s ease-out 0.55s infinite;
-    }
-    .ob-card {
-      width: min(520px, 100%); margin: 0 auto;
-      border-radius: 22px;
-      background: linear-gradient(170deg,
-        color-mix(in oklch, var(--ink) 8%, transparent),
-        color-mix(in oklch, var(--ink) 3%, transparent) 80%);
-      border: 1px solid var(--line-s);
-      backdrop-filter: blur(28px) saturate(160%);
-      -webkit-backdrop-filter: blur(28px) saturate(160%);
-      box-shadow:
-        0 1px 0 oklch(1 0 0 / 0.07) inset,
-        0 32px 80px -18px oklch(0 0 0 / 0.80);
-      overflow: hidden;
-    }
-    /* Progress bar */
-    .ob-progress {
-      height: 4px;
-      background: color-mix(in oklch, var(--ink) 8%, transparent);
-    }
-    .ob-progress-bar {
-      height: 100%; width: 25%;
-      background: linear-gradient(90deg, var(--accent-s), var(--accent));
-      border-radius: 0 2px 2px 0;
-      transition: width 500ms cubic-bezier(.4,0,.2,1);
-    }
-    /* Step wrapper */
-    .ob-step { padding: 28px 28px 24px; text-align: left; }
-    .ob-step-label {
-      display: inline-flex; align-items: center;
-      padding: 4px 10px 3px; border-radius: 20px;
-      background: color-mix(in oklch, var(--ink) 7%, transparent);
-      border: 1px solid var(--line-s);
-      font-family: var(--mono); font-size: 9px; letter-spacing: 0.10em;
-      text-transform: uppercase; color: var(--ink-3); margin-bottom: 16px;
-    }
-    .ob-step-title {
-      font-family: var(--serif); font-size: 24px; letter-spacing: -0.005em;
-      color: var(--ink); margin-bottom: 22px; line-height: 1.3;
-    }
-    /* Goal grid — flex so last row centers when odd count */
-    .ob-goals {
-      display: flex; flex-wrap: wrap; justify-content: center;
-      gap: 8px; margin-bottom: 4px;
-    }
-    .ob-goal-btn {
-      flex: 0 0 calc(33.333% - 6px);
-      display: flex; flex-direction: column; align-items: center; gap: 5px;
-      padding: 16px 10px 14px; border-radius: 14px;
-      border: 1px solid var(--line); background: transparent;
-      color: var(--ink-2); cursor: pointer;
-      transition: all 180ms;
-    }
-    .ob-goal-btn:hover {
-      border-color: var(--accent-s);
-      background: color-mix(in oklch, var(--accent) 8%, transparent);
-      color: var(--ink);
-    }
-    .ob-goal-btn.selected {
-      border-color: var(--accent);
-      background: color-mix(in oklch, var(--accent) 14%, transparent);
-      color: var(--ink);
-      box-shadow: 0 0 0 1px var(--accent) inset;
-    }
-    .ob-goal-icon { font-size: 20px; }
-    .ob-goal-name { font-size: 13px; font-weight: 600; letter-spacing: -0.01em; }
-    .ob-goal-sub  { font-size: 10px; color: var(--ink-3); }
-    .ob-goal-btn.selected .ob-goal-sub { color: var(--accent-s); }
-    /* Fields */
-    .ob-fields { display: flex; flex-direction: column; gap: 16px; margin-bottom: 24px; }
-    .ob-field { display: flex; flex-direction: column; gap: 6px; }
-    .ob-field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-    .ob-label {
-      font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.10em;
-      text-transform: uppercase; color: var(--ink-3); font-weight: 500;
-    }
-    .ob-input {
-      padding: 12px 14px; border-radius: 10px;
-      border: 1px solid var(--line-s);
-      background: color-mix(in oklch, var(--ink) 5%, transparent);
-      color: var(--ink); font-family: var(--sans); font-size: 15px;
-      letter-spacing: -0.01em; outline: none;
-      transition: border-color 150ms, background 150ms;
-    }
-    .ob-input::placeholder { color: var(--ink-4); }
-    .ob-input:focus {
-      border-color: var(--accent-s);
-      background: color-mix(in oklch, var(--ink) 7%, transparent);
-    }
-    .ob-input.shake { animation: ob-shake 320ms; }
     @keyframes ob-shake {
       0%,100% { transform: none; }
       20%      { transform: translateX(-5px); }
       60%      { transform: translateX(5px); }
       80%      { transform: translateX(-3px); }
     }
-    .ob-input-sm { width: 80px; flex-shrink: 0; }
-    .ob-height-row {
-      display: flex; align-items: center; gap: 8px;
-    }
-    .ob-unit {
-      font-family: var(--mono); font-size: 11px; color: var(--ink-3);
-      letter-spacing: 0.04em; flex-shrink: 0;
-    }
-    /* Step 5 — targets */
-    .ob-tgt-sub {
-      font-size: 13px; line-height: 1.5; color: var(--ink-3);
-      margin: -10px 0 22px; letter-spacing: -0.005em;
-    }
-    .ob-tgt-row { display: flex; align-items: center; gap: 8px; }
-    .ob-tgt-input { max-width: 130px; }
-    .ob-tgt-macro-grid { grid-template-columns: repeat(3, 1fr); gap: 10px; }
-    .ob-tgt-macro-grid .ob-tgt-input { max-width: 100%; }
-    .ob-tgt-explain {
-      margin-bottom: 4px;
-      border: 1px solid var(--line);
-      border-radius: 10px;
-      background: color-mix(in oklch, var(--ink) 3%, transparent);
-      font-size: 12px;
-    }
-    .ob-tgt-explain > summary {
-      padding: 11px 14px; cursor: pointer;
-      color: var(--ink-2); font-weight: 500; letter-spacing: -0.005em;
-      list-style: none; user-select: none;
-    }
-    .ob-tgt-explain > summary::-webkit-details-marker { display: none; }
-    .ob-tgt-explain > summary::after {
-      content: "+"; float: right; color: var(--ink-3);
-      font-family: var(--mono); font-size: 14px;
-    }
-    .ob-tgt-explain[open] > summary::after { content: "−"; }
-    .ob-tgt-explain-body {
-      padding: 0 14px 14px; color: var(--ink-3); line-height: 1.55;
-      font-size: 11.5px;
-    }
-    .ob-tgt-explain-body strong { color: var(--ink-2); font-weight: 600; }
-    .ob-tgt-explain-body .ob-tgt-row-info {
-      display: flex; justify-content: space-between;
-      padding: 4px 0; border-bottom: 1px dashed var(--line);
-    }
-    .ob-tgt-explain-body .ob-tgt-row-info:last-of-type { border-bottom: 0; }
-    @media (max-width: 480px) {
-      .ob-tgt-macro-grid { grid-template-columns: 1fr; }
-    }
-    /* Segmented sex control */
-    .ob-seg {
-      display: flex; border-radius: 10px; overflow: hidden;
-      border: 1px solid var(--line-s);
-      background: color-mix(in oklch, var(--ink) 4%, transparent);
-    }
-    .ob-seg-btn {
-      flex: 1; padding: 11px 8px; border: none; background: transparent;
-      color: var(--ink-3); font-family: var(--sans); font-size: 13px; font-weight: 500;
-      cursor: pointer; transition: all 150ms;
-    }
-    .ob-seg-btn + .ob-seg-btn { border-left: 1px solid var(--line-s); }
-    .ob-seg-btn.active {
-      background: color-mix(in oklch, var(--accent) 16%, transparent);
-      color: var(--ink);
-    }
-    .ob-seg.shake { animation: ob-shake 320ms; }
-    /* Experience buttons */
-    .ob-exp-group { display: flex; flex-direction: column; gap: 8px; }
-    .ob-exp-btn {
-      display: flex; justify-content: space-between; align-items: center;
-      padding: 14px 18px; border-radius: 12px;
-      border: 1px solid var(--line); background: transparent;
-      color: var(--ink-2); cursor: pointer; text-align: left;
-      transition: all 180ms;
-    }
-    .ob-exp-btn strong { font-size: 14px; font-weight: 600; letter-spacing: -0.01em; color: inherit; }
-    .ob-exp-btn span   { font-family: var(--mono); font-size: 10px; color: var(--ink-3); }
-    .ob-exp-btn:hover  {
-      border-color: var(--accent-s);
-      background: color-mix(in oklch, var(--accent) 8%, transparent);
-      color: var(--ink);
-    }
-    .ob-exp-btn.selected {
-      border-color: var(--accent);
-      background: color-mix(in oklch, var(--accent) 14%, transparent);
-      color: var(--ink);
-      box-shadow: 0 0 0 1px var(--accent) inset;
-    }
-    .ob-exp-btn.selected span { color: var(--accent-s); }
-    /* Navigation row */
-    .ob-nav {
-      display: flex; justify-content: space-between; align-items: center;
-      padding-top: 8px; margin-top: 4px;
-      border-top: 1px solid var(--line);
-    }
-    .ob-back-btn {
-      background: none; border: none; color: var(--ink-3);
-      font-family: var(--sans); font-size: 13px; cursor: pointer;
-      padding: 6px 0; letter-spacing: -0.01em;
-      transition: color 150ms;
-    }
-    .ob-back-btn:hover { color: var(--ink-2); }
-    .ob-next-btn {
-      padding: 12px 22px; border-radius: 11px; border: none; cursor: pointer;
-      font-family: var(--sans); font-size: 14px; font-weight: 600;
-      letter-spacing: -0.01em; color: oklch(0.09 0.01 240);
-      background: linear-gradient(175deg,
-        oklch(0.93 0.10 165) 0%, oklch(0.86 0.155 168) 40%, oklch(0.76 0.158 172) 100%);
-      box-shadow:
-        0 1px 0 oklch(1 0 0 / 0.45) inset,
-        0 8px 24px -6px oklch(0.86 0.155 168 / 0.45);
-      transition: transform 120ms, box-shadow 180ms, opacity 150ms;
-    }
-    .ob-next-btn:hover { transform: translateY(-1px); }
-    .ob-next-btn:active { transform: scale(0.98); }
-    .ob-next-btn:disabled { opacity: 0.55; cursor: not-allowed; transform: none; }
-    /* Success */
-    .ob-success-icon {
-      width: 52px; height: 52px; border-radius: 50%;
-      background: color-mix(in oklch, var(--accent) 20%, transparent);
-      border: 1px solid color-mix(in oklch, var(--accent) 35%, transparent);
-      display: flex; align-items: center; justify-content: center;
-      font-size: 22px; color: var(--accent); margin-bottom: 18px;
-    }
-    .ob-success-sub {
-      font-size: 14px; color: var(--ink-2); margin-bottom: 8px;
-      line-height: 1.55; text-wrap: pretty;
-    }
-    .ob-code-row {
-      display: flex; align-items: center; gap: 10px; margin-top: 18px;
-      padding: 10px 14px; border-radius: 10px;
-      background: color-mix(in oklch, var(--ink) 5%, transparent);
-      border: 1px solid var(--line);
-    }
-    .ob-code-label {
-      font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.08em;
-      text-transform: uppercase; color: var(--ink-3); white-space: nowrap;
-    }
-    .ob-code {
-      font-family: var(--mono); font-size: 13px; color: var(--accent);
-      letter-spacing: 0.06em; font-weight: 500;
-    }
-    .ob-error {
-      font-size: 12px; color: oklch(0.72 0.18 27); margin-top: 10px;
-      display: none; font-family: var(--mono); letter-spacing: 0.03em;
-    }
-
-    /* ── Mobile / iPhone ──────────────────────────────────── */
-    .m-hide { display: none; }
     @media (max-width: 600px) {
-      .d-hide { display: none !important; }
-      .m-hide { display: revert; }
       /* Strip noisy small-text elements */
       .nav-meta    { display: none; }
-      .cta-skip    { display: none; }
-      .cta-meta    { display: none; }
       /* Nav — tight padding, always-visible strip */
       .nav { padding: 13px 20px; border-bottom-color: var(--line); }
-      /* Right-side badge visible on mobile only */
-      .nav-badge { display: flex; }
       /* Fineprint — higher contrast */
       .cta-fineprint { color: var(--ink-2); opacity: 1; font-size: 11.5px; }
       /* Tighter hero on small screens */
       h1 { font-size: 50px; margin-bottom: 20px; }
       .hero-sub { font-size: 15px; line-height: 1.6; margin-bottom: 36px; }
-      .ob-overlay { padding: 12px; }
-      .ob-step { padding: 20px 18px 20px; }
-      .ob-step-title { font-size: 20px; margin-bottom: 14px; }
-      .ob-input { font-size: 16px; } /* prevents iOS auto-zoom on focus */
-      .ob-modal-close { width: 36px; height: 36px; }
-      .ob-nav { flex-direction: column-reverse; gap: 4px; align-items: stretch; }
-      .ob-next-btn { width: 100%; padding: 14px 16px; text-align: center; }
-      .ob-back-btn { text-align: center; padding: 8px 0; }
-      .ob-goal-btn { flex: 0 0 calc(50% - 4px); padding: 12px 8px 10px; }
-      .ob-goal-icon { font-size: 18px; }
-      .ob-exp-btn { padding: 14px 16px; }
       #ob-tg-link { width: 100%; box-sizing: border-box; }
     }
 
@@ -1818,7 +846,13 @@
                     calc(var(--ty) * var(--k, 0) * var(--sp, 1) * var(--mob, 1)),
                     0)
         scale(calc(0.86 + 0.14 * var(--k, 0)));
-      will-change: transform, opacity;
+      /* No will-change here. There are 17 .cine-el nodes, and the hint holds
+         a promoted layer + texture for each one for the WHOLE page lifetime,
+         including while the visitor is reading the FAQ thousands of px away.
+         They are small text chips that rasterize cheaply, and a live
+         transform gets promoted on its own while it actually animates. The
+         phone (.pp / .pp-layer) keeps its hint — that one is big, textured,
+         and moves continuously. */
       pointer-events: none;
     }
     .dcard {
@@ -1883,6 +917,117 @@
     .chcard.soon .st { color: var(--ink-3); }
     .chcard.primary { border-color: color-mix(in oklch, var(--accent) 40%, transparent); box-shadow: 0 18px 44px -14px color-mix(in oklch, var(--accent) 35%, transparent); }
 
+    /* ── Proof reel — the ad creative, in the page's own clothes ──
+       9:16 source, so the card is height-led and the copy hangs off the
+       bottom. Capped narrow on purpose: two full-height vertical videos
+       side by side would eat the fold. */
+    /* Mobile is the base case: one column, and the card is capped against
+       viewport HEIGHT as well as width — a 9:16 frame sized purely on width
+       runs taller than a phone screen, which buries the caption and the
+       CTA under it. The px cap lands first so browsers without svh still
+       get a sane width. */
+    .reel-grid {
+      display: grid; grid-template-columns: 1fr;
+      gap: 32px; margin: 34px auto 0;
+      max-width: 300px;
+      max-width: min(300px, 40svh);
+    }
+    @media (min-width: 701px) {
+      .reel-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 28px; max-width: 620px; margin-top: 44px;
+      }
+    }
+    .reel-card { text-align: left; }
+    .reel-frame {
+      position: relative; aspect-ratio: 9 / 16; border-radius: 22px;
+      overflow: hidden; background: var(--bg-2);
+      border: 1px solid var(--line-s);
+      box-shadow: 0 26px 64px -24px oklch(0.10 0.03 255 / 0.7);
+    }
+    .reel-frame video {
+      position: absolute; inset: 0; display: block;
+      width: 100%; height: 100%; object-fit: cover;
+    }
+    /* Top-to-bottom scrim so the caption strip and the sound pill stay
+       legible over whatever the frame happens to be showing. */
+    .reel-frame::after {
+      content: ""; position: absolute; inset: 0; pointer-events: none;
+      background: linear-gradient(to bottom,
+        oklch(0.10 0.02 255 / 0.34) 0%, transparent 22%,
+        transparent 52%, oklch(0.10 0.02 255 / 0.78) 100%);
+    }
+
+    /* Voiceover, rendered as text — these autoplay muted, so the caption
+       strip is the only way the script actually lands. */
+    .reel-cap {
+      position: absolute; z-index: 3; left: 0; right: 0; bottom: 0;
+      padding: 0 15px 16px; text-align: left;
+      font-size: 13.5px; line-height: 1.42; font-weight: 500;
+      letter-spacing: -0.008em; color: oklch(0.98 0.005 90);
+      text-shadow: 0 1px 12px oklch(0.10 0.02 255 / 0.9);
+      text-wrap: pretty; min-height: 2.9em;
+      display: flex; align-items: flex-end;
+    }
+    .reel-cap:empty { display: none; }
+
+    .reel-sound {
+      position: absolute; z-index: 4; top: 11px; right: 11px;
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 6px 10px; border-radius: 999px;
+      font-family: var(--mono); font-size: 8.5px; letter-spacing: 0.10em;
+      text-transform: uppercase; color: var(--ink);
+      background: oklch(0.14 0.02 255 / 0.62);
+      border: 1px solid color-mix(in oklch, var(--ink) 22%, transparent);
+      backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+      transition: border-color 180ms, background 180ms;
+    }
+    .reel-sound:hover { border-color: color-mix(in oklch, var(--accent) 55%, transparent); }
+    /* The pill wants to stay visually small, but a 25px-tall touch target
+       does not. Grow the hit area without growing the chrome. */
+    .reel-sound::after { content: ""; position: absolute; inset: -11px -9px; }
+    .reel-sound .dot {
+      width: 5px; height: 5px; border-radius: 50%;
+      background: var(--accent-s); flex-shrink: 0;
+    }
+    .reel-sound[data-on="false"] .dot { background: var(--ink-4); }
+
+    /* Poster-only fallback: no autoplay under reduced motion, and no
+       bytes fetched until someone actually asks for the video. */
+    .reel-play {
+      position: absolute; inset: 0; z-index: 4; display: none;
+      align-items: center; justify-content: center;
+      background: oklch(0.10 0.02 255 / 0.30); border: none;
+    }
+    .reel-frame.manual .reel-play { display: flex; }
+    .reel-play span {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 11px 18px; border-radius: 999px;
+      font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.14em;
+      text-transform: uppercase; color: var(--ink);
+      background: oklch(0.14 0.02 255 / 0.74);
+      border: 1px solid color-mix(in oklch, var(--accent) 45%, transparent);
+      backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+    }
+
+    .reel-meta { margin-top: 15px; }
+    .reel-tag {
+      font-family: var(--mono); font-size: 9px; letter-spacing: 0.15em;
+      text-transform: uppercase; color: var(--accent); margin-bottom: 7px;
+    }
+    .reel-line {
+      font-size: 14px; line-height: 1.5; color: var(--ink-2);
+      text-wrap: pretty; letter-spacing: -0.008em;
+    }
+    @media (min-width: 701px) { .reel-line { font-size: 14.5px; } }
+    /* A disclosure nobody can read is not a disclosure — --ink-4 on this
+       background is around 2:1. --ink-3 clears AA for this size. */
+    .reel-note {
+      margin: 26px auto 0; max-width: 52ch;
+      font-family: var(--mono); font-size: 10px; letter-spacing: 0.09em;
+      line-height: 1.6; text-transform: uppercase; color: var(--ink-3);
+    }
+
     /* ── Phase captions — one at a time, lower-left on desktop ── */
     .cine-cap {
       position: absolute; z-index: 6; left: 50%;
@@ -1891,11 +1036,11 @@
       text-align: center; opacity: var(--k, 0); pointer-events: none;
       will-change: transform, opacity;
     }
-    .cine-cap h3 {
+    .cine-cap h2 {
       font-family: var(--serif); font-weight: 450; font-size: clamp(27px, 3.6vw, 38px);
       letter-spacing: -0.015em; color: var(--ink); margin-bottom: 7px;
     }
-    .cine-cap h3 em { font-style: italic; color: var(--accent); }
+    .cine-cap h2 em { font-style: italic; color: var(--accent); }
     .cine-cap p { font-size: 14px; line-height: 1.6; color: var(--ink-2); max-width: 52ch; margin: 0 auto; }
     .cine-cap .mc {
       font-family: var(--mono); font-size: 10px; letter-spacing: 0.09em;
@@ -2019,7 +1164,7 @@
       }
       /* Each animated scene object gets its own compositor layer so the
          per-frame transforms never re-rasterize (m-cut keeps the count low). */
-      .cine-el, .cine-cap, .cine-resolve { will-change: transform, opacity; }
+      .cine-cap, .cine-resolve { will-change: transform, opacity; }
       .cine-el.m-cut, .ipill.m-cut { display: none; }
       /* One nav on mobile: the top bar is a static hero label that scrolls
          away; the bottom sticky bar owns conversion. No stacked chrome. */
@@ -2036,7 +1181,7 @@
       .faq-a        { font-size: 16px; }
       .price-one li { font-size: 15.5px; }
       .price-one .after { font-size: 14.5px; }
-      .final-cta p  { font-size: 17.5px; }
+      .final-cta > p:first-of-type { font-size: 17.5px; }
       .dcard { width: 124px; padding: 10px 11px; }
       .dcard .t { color: color-mix(in oklch, var(--accent) 70%, var(--ink-3)); }
       .dcard .v { font-size: 13.5px; }
@@ -2050,7 +1195,7 @@
       /* Captions lead from the TOP on mobile — big, readable, first in the
          eye path; the phone rides lower beneath them. */
       .cine-cap { top: 74px; bottom: auto; width: 92vw; }
-      .cine-cap h3 { font-size: 30px; margin-bottom: 7px; }
+      .cine-cap h2 { font-size: 30px; margin-bottom: 7px; }
       .cine-cap p { font-size: 15px; line-height: 1.55; max-width: 36ch; }
       .cine-cap .mc { font-size: 10.5px; margin-top: 8px; }
       .cine-svg { display: none; }
@@ -2094,6 +1239,21 @@
       .cine-hero { opacity: 1 !important; transform: none !important; }
     }
 
+    /* No JS, same problem, same answer. The pinned scene is driven entirely
+       by --k, which only the scroll controller ever sets, so without a script
+       the .cine-el / .cine-cap / .cine-resolve default of opacity:0 leaves
+       460-560vh of empty scroll hiding three caption headlines, the resolve
+       heading and a CTA — for JS-off visitors and for any crawler that does
+       not execute scripts. Reuses the reduced-motion static layout. */
+    html:not(.js) .cine { height: auto; }
+    html:not(.js) .cine-stage { position: static; height: auto; overflow: visible; padding-bottom: 60px; }
+    html:not(.js) .pp { position: relative; left: auto; top: auto; transform: none; margin: 40px auto; }
+    html:not(.js) .cine-el,
+    html:not(.js) .cine-cap,
+    html:not(.js) .cine-resolve { position: relative; left: auto; top: auto; transform: none; opacity: 1; margin: 10px auto; pointer-events: auto; }
+    html:not(.js) .cine-svg { display: none; }
+    html:not(.js) .cine-hero { opacity: 1; transform: none; }
+
   </style>
 </head>
 <body>
@@ -2114,7 +1274,7 @@
 
   <!-- ── NAV ── -->
   <nav class="nav" id="nav">
-    <a href="#" class="brand">
+    <a href="/" class="brand">
       <div class="brand-mark"></div>
       Arnie
     </a>
@@ -2143,7 +1303,7 @@
         </p>
         <div class="hero-ctas">
           <a href="https://testflight.apple.com/join/XAZQ5sSF" target="_blank" rel="noopener" class="cta-btn">Join the iOS beta&nbsp;&nbsp;→</a>
-          <a href="#cine" class="cta-ghost" onclick="cineJump(0.17);return false;">See how it works&nbsp;<span class="arr">↓</span></a>
+          <a href="#cine" class="cta-ghost" data-cine-jump="0.17">See how it works&nbsp;<span class="arr">↓</span></a>
         </div>
         <div class="hero-micro">Free while in beta · Installs via TestFlight in about 2 minutes</div>
       </div>
@@ -2161,7 +1321,7 @@
       </svg>
 
       <!-- The one product object -->
-      <div class="pp" id="pp" aria-label="The Arnie iOS app">
+      <div class="pp" id="pp" role="img" aria-label="The Arnie iOS app">
         <div class="pp-frame">
           <div class="pp-island"></div>
           <div class="pp-screen">
@@ -2211,17 +1371,17 @@
 
       <!-- Phase captions -->
       <div class="cine-cap" id="cap1">
-        <h3>Text it <em>like a coach.</em></h3>
+        <h2>Text it <em>like a coach.</em></h2>
         <p>Say it like you'd text a friend. Arnie logs it and calls the next move.</p>
         <div class="mc">input: plain language → structured log</div>
       </div>
       <div class="cine-cap" id="cap2">
-        <h3>Your logs <em>become direction.</em></h3>
+        <h2>Your logs <em>become direction.</em></h2>
         <p>Arnie connects what you eat, how you train, and how your body responds.</p>
         <div class="mc">signal.fusion: meals × training × recovery</div>
       </div>
       <div class="cine-cap" id="cap3">
-        <h3>It remembers <em>what apps forget.</em></h3>
+        <h2>It remembers <em>what apps forget.</em></h2>
         <p>Goals, injuries, habits, patterns. All of it shapes how Arnie coaches you.</p>
         <div class="mc">memory.graph: 61 attributes · retention ∞</div>
       </div>
@@ -2235,6 +1395,75 @@
         <span class="hero-micro">Free while in beta · Installs via TestFlight</span>
       </div>
 
+    </div>
+  </section>
+
+  <!-- ── PROOF REEL — promise lands, proof follows, then the CTA ──
+       The cinematic scene above is all abstraction: nodes, cards, a
+       screenshot. This is the first place a visitor sees a person holding
+       the actual app, so it sits directly between the resolve and the
+       join buttons. -->
+  <section id="reel">
+    <div class="section-inner" style="text-align:center">
+      <div class="section-tag reveal">See it work</div>
+      <h2 class="section-title reveal reveal-d1">Watch it <em>remember you.</em></h2>
+      <p class="section-sub reveal reveal-d2" style="margin:0 auto">
+        Two moments from an ordinary week — a meal logged without thinking about it,
+        and a plan that reshuffles when the week falls apart.
+      </p>
+
+      <div class="reel-grid">
+        <div class="reel-card reveal reveal-d2">
+          <div class="reel-frame">
+            <video
+              src="/video/arnie-remembers.mp4"
+              poster="/video/arnie-remembers.jpg"
+              muted loop playsinline preload="none"
+              width="720" height="1280"
+              aria-label="Arnie logging a usual breakfast from a plain-language message">
+              <track kind="captions" src="/video/arnie-remembers.vtt" srclang="en" label="English" default>
+            </video>
+            <button class="reel-play" type="button" aria-label="Play video"><span>▶&nbsp; Play</span></button>
+            <div class="reel-cap" aria-hidden="true"></div>
+            <button class="reel-sound" type="button" data-on="false" aria-pressed="false">
+              <span class="dot"></span><span class="lbl">Sound off</span>
+            </button>
+          </div>
+          <div class="reel-meta">
+            <div class="reel-tag">Logging a meal</div>
+            <p class="reel-line">Say “I had my usual breakfast” and Arnie already knows what that means — no searching, no rebuilding the meal.</p>
+          </div>
+        </div>
+
+        <div class="reel-card reveal reveal-d3">
+          <div class="reel-frame">
+            <video
+              src="/video/arnie-not-an-app.mp4"
+              poster="/video/arnie-not-an-app.jpg"
+              muted loop playsinline preload="none"
+              width="720" height="1280"
+              aria-label="Arnie rebuilding a training plan after three missed workouts">
+              <track kind="captions" src="/video/arnie-not-an-app.vtt" srclang="en" label="English" default>
+            </video>
+            <button class="reel-play" type="button" aria-label="Play video"><span>▶&nbsp; Play</span></button>
+            <div class="reel-cap" aria-hidden="true"></div>
+            <button class="reel-sound" type="button" data-on="false" aria-pressed="false">
+              <span class="dot"></span><span class="lbl">Sound off</span>
+            </button>
+          </div>
+          <div class="reel-meta">
+            <div class="reel-tag">A week that went sideways</div>
+            <p class="reel-line">Three workouts missed and the plan already fixed itself. Not an app to keep up with — someone who knows what you're actually doing.</p>
+          </div>
+        </div>
+      </div>
+
+      <p class="reel-note reveal reveal-d3">Arnie brand film · portrayal, not a customer endorsement</p>
+
+      <div class="cta-wrap reveal reveal-d3" style="max-width:420px;margin:32px auto 0">
+        <a href="https://testflight.apple.com/join/XAZQ5sSF" target="_blank" rel="noopener" class="cta-btn">Join the iOS beta&nbsp;&nbsp;→</a>
+        <p class="cta-fineprint" style="margin-top:10px;text-align:center">Free while in beta · Installs via TestFlight</p>
+      </div>
     </div>
   </section>
 
@@ -2252,7 +1481,7 @@
       </div>
       <div class="channels-grid reveal reveal-d3">
         <a class="chcard primary" id="chcardIos" href="https://testflight.apple.com/join/XAZQ5sSF" target="_blank" rel="noopener">
-          <div class="n"> iOS Beta</div><div class="st">Available now</div>
+          <div class="n">iOS Beta</div><div class="st">Available now</div>
         </a>
         <a class="chcard" id="chcardTg" href="join.html">
           <div class="n">Telegram</div><div class="st">Available now · Android too</div>
@@ -2287,10 +1516,10 @@
   <section id="different">
     <div class="section-inner" style="text-align:center">
       <div class="section-tag reveal">Why Arnie</div>
-      <h2 class="section-title reveal reveal-d1">Not a tracker.<br><em>A coach.</em></h2>
+      <h2 class="section-title reveal reveal-d1">Not a tracker. <br><em>A coach.</em></h2>
       <p class="section-sub reveal reveal-d2" style="margin:0 auto">Trackers store what happened. Arnie runs an agent on top of it, and tells you what to do next.</p>
 
-      <div class="sys-card reveal reveal-d2" aria-label="How Arnie works under the hood">
+      <div class="sys-card reveal reveal-d2" role="group" aria-label="How Arnie works under the hood">
         <div class="sys-head">
           <span class="sys-dot"></span><span class="sys-dot"></span><span class="sys-dot"></span>
           <span class="sys-title">arnie · coaching agent</span>
@@ -2316,7 +1545,7 @@
   <section id="pricing">
     <div class="section-inner" style="text-align:center">
       <div class="section-tag reveal">Beta access</div>
-      <h2 class="section-title reveal reveal-d1">Free while<br><em>in beta.</em></h2>
+      <h2 class="section-title reveal reveal-d1">Free while <br><em>in beta.</em></h2>
       <p class="section-sub reveal reveal-d2" style="margin:0 auto">Full access. No card, no commitment. Just coach with us early.</p>
       <div class="price-one reveal reveal-d2">
         <div class="amount">Free<span>&nbsp;during the beta</span></div>
@@ -2342,47 +1571,47 @@
       <div class="faq-list">
 
         <div class="faq-item">
-          <button class="faq-q">What is Arnie?<span class="faq-icon">+</span></button>
+          <button class="faq-q" type="button" aria-expanded="false">What is Arnie?<span class="faq-icon" aria-hidden="true">+</span></button>
           <div class="faq-a">Arnie is a fitness and nutrition coach with memory. You log meals, workouts, weight, and progress, and Arnie uses your history to coach you with context.</div>
         </div>
 
         <div class="faq-item">
-          <button class="faq-q">Is Arnie available now?<span class="faq-icon">+</span></button>
+          <button class="faq-q" type="button" aria-expanded="false">Is Arnie available now?<span class="faq-icon" aria-hidden="true">+</span></button>
           <div class="faq-a">Yes. Arnie is available now as an iOS beta app. On Android, Arnie lives on Telegram — sign up with the 60-second web form and you're coaching from your first message.</div>
         </div>
 
         <div class="faq-item">
-          <button class="faq-q">How is Arnie different from MyFitnessPal?<span class="faq-icon">+</span></button>
+          <button class="faq-q" type="button" aria-expanded="false">How is Arnie different from MyFitnessPal?<span class="faq-icon" aria-hidden="true">+</span></button>
           <div class="faq-a">MyFitnessPal is mainly a tracker. Arnie is a coach. It remembers your habits, notices patterns, and tells you what to do next.</div>
         </div>
 
         <div class="faq-item">
-          <button class="faq-q">How is Arnie different from ChatGPT?<span class="faq-icon">+</span></button>
+          <button class="faq-q" type="button" aria-expanded="false">How is Arnie different from ChatGPT?<span class="faq-icon" aria-hidden="true">+</span></button>
           <div class="faq-a">ChatGPT can answer questions. Arnie is built around your ongoing fitness history, logs, reminders, progress, and accountability.</div>
         </div>
 
         <div class="faq-item">
-          <button class="faq-q">Do I need Telegram?<span class="faq-icon">+</span></button>
+          <button class="faq-q" type="button" aria-expanded="false">Do I need Telegram?<span class="faq-icon" aria-hidden="true">+</span></button>
           <div class="faq-a">Not on iPhone — the iOS beta is the main app experience there. On Android, Telegram is how you use Arnie today: same coach, same memory, inside the chat app you already have.</div>
         </div>
 
         <div class="faq-item">
-          <button class="faq-q">I'm on Android — can I use Arnie?<span class="faq-icon">+</span></button>
+          <button class="faq-q" type="button" aria-expanded="false">I'm on Android — can I use Arnie?<span class="faq-icon" aria-hidden="true">+</span></button>
           <div class="faq-a">Yes. Fill in the <a href="join.html" style="color:var(--accent)">60-second web signup</a> — goals, stats, targets — and you'll get a personal Telegram link. Arnie already knows you when you say hi. A native Android app is on the roadmap.</div>
         </div>
 
         <div class="faq-item">
-          <button class="faq-q">Do I need a wearable?<span class="faq-icon">+</span></button>
+          <button class="faq-q" type="button" aria-expanded="false">Do I need a wearable?<span class="faq-icon" aria-hidden="true">+</span></button>
           <div class="faq-a">No. You can start by logging in the app. Wearables and health data make Arnie more personalized over time.</div>
         </div>
 
         <div class="faq-item">
-          <button class="faq-q">How much does the beta cost?<span class="faq-icon">+</span></button>
+          <button class="faq-q" type="button" aria-expanded="false">How much does the beta cost?<span class="faq-icon" aria-hidden="true">+</span></button>
           <div class="faq-a">Nothing. Arnie is free while in beta, full access, no card. Beta testers will hear first about anything that changes.</div>
         </div>
 
         <div class="faq-item">
-          <button class="faq-q">How do I join?<span class="faq-icon">+</span></button>
+          <button class="faq-q" type="button" aria-expanded="false">How do I join?<span class="faq-icon" aria-hidden="true">+</span></button>
           <div class="faq-a">Tap any Join button on this page. On iPhone it opens TestFlight, Apple's official beta app — the install takes about two minutes. On Android it opens the 60-second web signup, then drops you straight into Telegram.</div>
         </div>
 
@@ -2393,7 +1622,7 @@
   <!-- ── FINAL CTA ── -->
   <section class="final-cta">
     <div class="section-tag reveal">Ready</div>
-    <h2 class="reveal reveal-d1">Start with<br><em>one log.</em></h2>
+    <h2 class="reveal reveal-d1">Start with <br><em>one log.</em></h2>
     <p class="reveal reveal-d2">Text your first meal, workout, or weight check-in. Arnie will take it from there.</p>
     <div class="cta-wrap reveal reveal-d3" style="max-width:500px">
       <div class="cta-glow"></div>
@@ -2431,11 +1660,27 @@
   // Nav scroll state
   const nav = document.getElementById('nav');
   const pageProgress = document.getElementById('pageProgress');
+  // scrollHeight is a layout read, and reading it on every scroll event —
+  // immediately before writing a transform — forces a synchronous layout each
+  // time. It only changes on resize (and when a content-visibility section
+  // first renders), so cache it and do the write in rAF.
+  let scrollMax = 0, scrollQueued = false;
+  const measureScroll = () => { scrollMax = document.documentElement.scrollHeight - innerHeight; };
+  measureScroll();
   window.addEventListener('scroll', () => {
     nav.classList.toggle('scrolled', window.scrollY > 20);
-    const max = document.documentElement.scrollHeight - innerHeight;
-    if (pageProgress && max > 0) pageProgress.style.transform = 'scaleX(' + Math.min(1, window.scrollY / max) + ')';
+    if (scrollQueued) return;
+    scrollQueued = true;
+    requestAnimationFrame(() => {
+      scrollQueued = false;
+      if (pageProgress && scrollMax > 0)
+        pageProgress.style.transform = 'scaleX(' + Math.min(1, window.scrollY / scrollMax) + ')';
+    });
   }, {passive:true});
+  addEventListener('resize', measureScroll, {passive:true});
+  // Sections using content-visibility change the page height as they render,
+  // so re-measure once everything has settled rather than trusting load time.
+  addEventListener('load', () => setTimeout(measureScroll, 400));
 
   // Cursor spotlight
   const spotlight = document.getElementById('spotlight');
@@ -2444,34 +1689,39 @@
     spotlight.style.setProperty('--my', e.clientY + 'px');
   }, {passive:true});
 
-  // Orb parallax
-  const orbA = document.getElementById('orbA');
-  const orbB = document.getElementById('orbB');
-  document.addEventListener('mousemove', e => {
-    const x = (e.clientX / window.innerWidth  - 0.5) * 24;
-    const y = (e.clientY / window.innerHeight - 0.5) * 24;
-    if (orbA) orbA.style.transform = `translate(${x * 0.5}px, ${y * 0.5}px)`;
-    if (orbB) orbB.style.transform = `translate(${-x * 0.3}px, ${-y * 0.3}px)`;
-  }, {passive:true});
-
-  // Gyroscope orb parallax — skip on mobile since orbs are already simplified
-  // and constant transform updates on fixed blur elements cause jank
-  if (window.DeviceOrientationEvent && window.innerWidth > 768) {
-    window.addEventListener('deviceorientation', e => {
-      if (!e.beta || !e.gamma) return;
-      const x = Math.max(-14, Math.min(14, e.gamma));
-      const y = Math.max(-14, Math.min(14, e.beta - 30));
-      if (orbA) orbA.style.transform = `translate(${x * 0.65}px, ${y * 0.65}px)`;
-      if (orbB) orbB.style.transform = `translate(${-x * 0.38}px, ${-y * 0.38}px)`;
-    }, {passive:true});
-  }
+  // Orb mouse/gyro parallax used to live here. It never did anything: .orb-a
+  // and .orb-b run an infinite `orbDrift` keyframe animation that also
+  // declares `transform`, and animations beat inline styles in the cascade —
+  // verified by setting translate(999px,999px) and reading back the drift
+  // matrix unchanged. All it cost was a second unthrottled mousemove listener
+  // (plus a deviceorientation one) writing to a 100px-blur fixed layer on
+  // every pointer move. Removed rather than rebuilt: to bring it back, feed
+  // --px/--py into the orbDrift keyframes instead of touching transform.
 
   // Scroll reveal — fire a little BEFORE the element enters (negative bottom
   // margin) so sections are already settling as they arrive; nothing pops in.
+  // Did the observer ever call us back? That is the question the failsafe
+  // below needs answered — NOT "has anything revealed yet". Every .reveal
+  // sits below the 460-560vh pinned scene, so on a normal load nothing is
+  // in view for the first few seconds and a "nothing revealed" test would
+  // fire every single time, skipping the choreography it exists to protect.
+  // A working observer always delivers an initial batch (isIntersecting
+  // false for off-screen targets), so this flag flips on any healthy setup.
+  let ioDelivered = false;
   const io = new IntersectionObserver(entries => {
+    ioDelivered = true;
     entries.forEach(e => { if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); } });
   }, {threshold: 0.01, rootMargin: '0px 0px 12% 0px'});
   document.querySelectorAll('.reveal').forEach(el => io.observe(el));
+
+  // Failsafe: some contexts (prerenderers, headless captures, an offscreen
+  // tab that never composites) hand back an observer that simply never
+  // delivers. Content hidden behind a reveal that never arrives is content
+  // nobody can convert on, so show everything rather than a blank page.
+  setTimeout(() => {
+    if (ioDelivered) return;
+    document.querySelectorAll('.reveal').forEach(el => el.classList.add('in'));
+  }, 1600);
 
   // Sticky mobile bar
   const heroEl    = document.getElementById('hero');
@@ -2487,8 +1737,119 @@
       const wasOpen = item.classList.contains('open');
       document.querySelectorAll('.faq-item').forEach(i => i.classList.remove('open'));
       if (!wasOpen) item.classList.add('open');
+      // Keep the announced state in step with the visual one; the accordion
+      // is exclusive, so every other trigger collapses too.
+      document.querySelectorAll('.faq-q').forEach(b =>
+        b.setAttribute('aria-expanded', String(b.parentElement.classList.contains('open'))));
     });
   });
+
+  // ── Proof reel ────────────────────────────────────────────────
+  // Autoplay is only allowed muted, so the voiceover has to arrive as
+  // text: the VTT track is parked in "hidden" mode and its cues are drawn
+  // into our own strip — on-brand, selectable, and still correct once
+  // someone turns sound on. Native rendering stays as the no-JS fallback
+  // via `default`. Playback follows visibility so a 9:16 video is never
+  // decoding off-screen, and preload="none" keeps ~4.5MB of MP4 unfetched
+  // until a card is actually reached.
+  (function () {
+    const frames = [...document.querySelectorAll('#reel .reel-frame')];
+    if (!frames.length) return;
+    const reduced = matchMedia('(prefers-reduced-motion: reduce)');
+
+    const media = frames.map(frame => {
+      const video = frame.querySelector('video');
+      const cap   = frame.querySelector('.reel-cap');
+      const sound = frame.querySelector('.reel-sound');
+      const lbl   = sound.querySelector('.lbl');
+
+      let wired = false;
+      function wireCaptions() {
+        if (wired) return;
+        const track = video.textTracks && video.textTracks[0];
+        if (!track) return;
+        wired = true;
+        track.mode = 'hidden';                       // we render the cues
+        track.addEventListener('cuechange', () => {
+          const cue = track.activeCues && track.activeCues[0];
+          cap.textContent = cue ? cue.text : '';
+        });
+      }
+      wireCaptions();
+      video.addEventListener('loadedmetadata', wireCaptions);
+
+      // Once someone presses play or turns sound on, that choice outranks
+      // the reduced-motion default — otherwise scrolling away and back
+      // pauses their video and never offers a way to restart it.
+      let userStarted = false;
+
+      const m = {
+        frame, video,
+        setMuted(next) {
+          video.muted = next;
+          sound.dataset.on = String(!next);
+          sound.setAttribute('aria-pressed', String(!next));
+          lbl.textContent = next ? 'Sound off' : 'Sound on';
+        },
+        start() {
+          userStarted = true;
+          frame.classList.remove('manual');
+          video.play().catch(() => frame.classList.add('manual'));
+        },
+        // A rejected play() means the browser declined autoplay; fall back
+        // to the poster + an explicit button rather than a dead frame.
+        enter() {
+          if (reduced.matches && !userStarted) return;
+          const p = video.play();
+          if (p && p.catch) p.catch(() => frame.classList.add('manual'));
+        },
+        leave() { video.pause(); }
+      };
+
+      // Self-heal: whatever put the frame into manual mode, actual playback
+      // proves it was wrong. Covers the failsafe below racing a slow start.
+      video.addEventListener('playing', () => frame.classList.remove('manual'));
+
+      sound.addEventListener('click', () => {
+        const turningOn = video.muted;
+        // Two voiceovers at once is just noise — solo the one clicked.
+        if (turningOn) media.forEach(o => { if (o !== m) o.setMuted(true); });
+        m.setMuted(!turningOn);
+        if (turningOn) m.start();
+      });
+
+      frame.querySelector('.reel-play').addEventListener('click', m.start);
+
+      return m;
+    });
+
+    // Reduced motion never autoplays, so those cards need the button up front.
+    if (reduced.matches) frames.forEach(f => f.classList.add('manual'));
+
+    let ioDelivered = false;
+    const io = new IntersectionObserver(entries => {
+      ioDelivered = true;
+      entries.forEach(e => {
+        const m = media.find(x => x.frame === e.target);
+        if (!m) return;
+        e.isIntersecting ? m.enter() : m.leave();
+      });
+    }, {threshold: 0.5});
+    frames.forEach(f => io.observe(f));
+
+    // Same failsafe as the scroll reveal, and the same trap: these cards are
+    // ~3000px down with preload="none", so "paused and no data" is true on
+    // every healthy load too. Only a silent observer means a dead frame.
+    setTimeout(() => {
+      if (ioDelivered) return;
+      frames.forEach(f => f.classList.add('manual'));
+    }, 2600);
+
+    // Leaving the tab with a video mid-play wastes battery for nothing.
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) media.forEach(m => m.leave());
+    });
+  })();
 </script>
 
 <script>
@@ -2566,6 +1927,10 @@
       setVar(hero, '--hero-o', q3(1 - hOut));
       setVar(hero, '--hero-y', q3(hOut));
       setVar(hero, '--hero-pe', hOut > 0.5 ? 'none' : 'auto');
+      // pointer-events alone still leaves the faded-out CTAs in the tab order,
+      // so keyboard users land on invisible buttons. inert removes them from
+      // focus AND the a11y tree, and lets them back in when the copy returns.
+      hero.inert = hOut > 0.5;
       const rise = ease(seg(p, 0.0, 0.11));
       const r5 = ease(seg(p, 0.84, isM ? 0.90 : 0.92));  // final compression — phone lands BEFORE the resolve copy reads
 
@@ -2647,6 +2012,7 @@
       // Phase 5 — resolve into the CTA.
       setVar(resolve, '--k', q3(ease(seg(p, isM ? 0.90 : 0.87, isM ? 0.95 : 0.93))));
       setVar(resolve, '--res-pe', p > (isM ? 0.92 : 0.90) ? 'auto' : 'none');
+      resolve.inert = !(p > (isM ? 0.92 : 0.90));   // same reasoning as the hero
     }
 
     let lastSp = -1, lastTs = 0;
@@ -2699,6 +2065,16 @@
       scrollTo({ top, behavior: reduced.matches ? 'auto' : 'smooth' });
       wake();
     };
+    // Bound here rather than via an inline onclick: an inline handler dies
+    // under any CSP that omits 'unsafe-inline', and it would throw if clicked
+    // before this bottom-of-body script parsed. The href="#cine" stays as the
+    // no-JS fallback.
+    document.querySelectorAll('[data-cine-jump]').forEach(a => {
+      a.addEventListener('click', e => {
+        e.preventDefault();
+        window.cineJump(parseFloat(a.dataset.cineJump) || 0);
+      });
+    });
     // Test/debug hook: force a specific progress without scrolling.
     // Debug/test hook: cineSet(p) freezes the scene at a progress until
     // cineSet(null) releases it back to scroll control.
@@ -2744,7 +2120,16 @@
       'Log meals, workouts, weight, and progress with Arnie on Telegram. ' +
       'Arnie learns your patterns and coaches you with context.');
     setText('.hero-micro', 'Free while in beta · 60-second signup, then straight to Telegram');
-    setText('.cta-fineprint', 'Free while in beta · 60-second signup, then Telegram');
+    // Not setText: the final CTA's fineprint wraps an <a href="join.html">,
+    // and textContent would delete the one Android-specific link on the page
+    // for the very visitors this rewrite exists to serve. Replace only the
+    // leading text node and leave any element children alone.
+    document.querySelectorAll('.cta-fineprint').forEach(el => {
+      const lead = [...el.childNodes].find(n => n.nodeType === 3 && n.textContent.trim());
+      const copy = 'Free while in beta · 60-second signup, then Telegram';
+      if (lead && el.querySelector('a')) lead.textContent = copy + ' · ';
+      else el.textContent = copy;
+    });
 
     // Channels — lead with Telegram, keep iOS as the secondary card.
     const chTitle = document.querySelector('#channels .section-title');
