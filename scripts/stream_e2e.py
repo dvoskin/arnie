@@ -202,7 +202,15 @@ async def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--user", type=int, default=26)
     ap.add_argument("--modes", default="quick,moderate,strict")
+    ap.add_argument("--meal", default="")
+    ap.add_argument("--reply", default="")
     args = ap.parse_args()
+
+    global MEAL, REPLY
+    if args.meal:
+        MEAL = args.meal
+    if args.reply:
+        REPLY = args.reply
 
     user = await load_user(args.user)
     if user is None:

@@ -216,3 +216,52 @@ def test_understood_items_are_not_offered_as_logged_while_anything_pends():
         intent=FoodResponseIntent.CLARIFY,
         resolved_items=(FoodItemSummary(name="Chicken"),)))
     assert "NOT YET WRITTEN" not in settled
+
+
+# ── a correction has to be visible ──────────────────────────────────────────
+
+def test_a_corrected_row_still_gets_a_card():
+    """Updates emitted no card, so after "the bar was cookies and cream" the
+    only confirmation was whatever sentence the composer wrote."""
+    from core.conversation import _logged_entry_card
+    card = _logged_entry_card("update_food_entry", {
+        "entry_id": 501, "food_name": "Barebells Cookies and Cream Bar",
+        "quantity": "1 bar", "calories": 200, "protein": 20})
+    assert card["type"] == "macro_card"
+    assert card["payload"]["entry_id"] == 501
+    assert card["payload"]["corrected"] is True
+    assert card["payload"]["calories"] == 200
+
+
+def test_a_deferred_macro_is_absent_not_zero():
+    """A correction to WHAT it was omits macros so the ladder re-resolves them.
+    Rendering that as 0 claims the food has no calories."""
+    from core.conversation import _logged_entry_card
+    card = _logged_entry_card("update_food_entry", {
+        "entry_id": 501, "food_name": "Barebells Cookies and Cream Bar"})
+    payload = card["payload"]
+    for key in ("calories", "protein_g", "carbs_g", "fats_g"):
+        assert key not in payload, key
+
+
+def test_an_update_without_a_target_row_makes_no_card():
+    from core.conversation import _logged_entry_card
+    assert _logged_entry_card("update_food_entry", {"food_name": "Rice"}) is None
+
+
+# ── the branded flag has to survive into staging ────────────────────────────
+
+def test_the_interpreters_branded_flag_reaches_the_class():
+    """Staging read `is_packaged`; the interpreter emits `branded`. Two names
+    for one fact meant every branded product staged GENERIC — and Open Food
+    Facts is seated only for BRANDED, so the label ladder could not run for the
+    foods it exists to serve."""
+    from core.food_pipeline import stage_items
+    items, _ = stage_items(
+        {"items": [{"food": "Some Brand Bar", "amount": 1, "unit": "bar",
+                    "calories": 200, "branded": True},
+                   {"food": "White rice", "amount": 1, "unit": "cup",
+                    "calories": 205}]},
+        turn_id="t", message="x")
+    assert items[0].food_class.value == "branded"
+    assert items[1].food_class.value == "generic"

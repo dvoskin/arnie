@@ -119,8 +119,17 @@ def stage_items(data: Mapping, *, turn_id: str, message: str = "",
         items.append(StagedFoodItem(
             staged_item_id=make_staged_item_id(turn_id, ordinal, food),
             original_text=food, ordinal=ordinal,
+            # THE INTERPRETER SAYS `branded`; THIS READ `is_packaged`. Two
+            # names for one fact, and only the tool-call builder knew both —
+            # `_log_call` translates branded -> is_packaged on the way to the
+            # write, while staging looked for a key the interpreter never
+            # emits. So every branded product staged as GENERIC, and Open Food
+            # Facts is seated only for BRANDED/MANUFACTURED: the label ladder
+            # could not run for the exact foods it exists to serve, and the
+            # numbers fell back to USDA rows and portion estimates.
             food_class=classify_food(food, brand,
-                                     bool(raw.get("is_packaged"))),
+                                     bool(raw.get("is_packaged")
+                                          or raw.get("branded"))),
             identity=FoodIdentity(canonical_name=food, brand=brand),
             quantity=quantity, meal_group_id=meal_group_id,
             # Read from THIS message, which is the only one that has it.

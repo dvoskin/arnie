@@ -1139,7 +1139,16 @@ _INTENT_BRIEF = {
         "Say what is in, name the one item still open, and ask only the "
         "supplied question. Never describe the open item as logged.",
     FoodResponseIntent.CORRECT:
-        "One natural acknowledgement of what changed.",
+        # "One natural acknowledgement of what changed" produced
+        # "Got it — you're making smart choices with that chicken and
+        # shake", which acknowledges nothing and changes nothing. A
+        # correction has exactly one job: show them it took.
+        "Name WHAT CHANGED, in their words — the new flavour, the new "
+        "amount, the method. \"Swapped it to the cookies and cream\" is "
+        "the whole reply; a coach observation instead of the change is "
+        "how a correction looks ignored. Do not recite the new numbers, "
+        "the card carries those. If several things changed, one clause "
+        "each.",
     FoodResponseIntent.UNDO:
         "State briefly what was reversed.",
     FoodResponseIntent.FAILURE:

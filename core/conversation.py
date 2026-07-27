@@ -303,9 +303,42 @@ def _logged_entry_card(name: str, inp, call=None) -> Optional[dict]:
     Pure + side-effect free for unit testing."""
     inp = (call.raw_input if call is not None else inp) or {}
     entry_id = (call.entry_id if call is not None and call.entry_id is not None
-                else inp.get("_entry_id"))
+                else inp.get("_entry_id") or inp.get("entry_id"))
     if not entry_id:
         return None
+    # A CORRECTED ROW IS STILL A ROW. Updates emitted no card at all, so after
+    # "the bar was cookies and cream" the entire confirmation was whatever
+    # sentence the composer wrote — nothing showed the new name or the new
+    # numbers, and the correction landed invisibly. The card is the receipt
+    # that it took: same shape as a log, because it mirrors the same row.
+    if name == "update_food_entry":
+        _nm = str(inp.get("food_name") or inp.get("food_hint") or "").strip()
+        if not _nm:
+            # Nothing to show. An amount-only correction on a row we cannot
+            # name would render a blank card, which is noise, not a receipt.
+            return None
+        payload = {
+            "name":      _nm,
+            "quantity":  inp.get("quantity") or "",
+            "source":    "manual",
+            "entry_id":  entry_id,
+            "corrected": True,
+        }
+        # ABSENT IS NOT ZERO. A correction to WHAT something was omits the
+        # macros on purpose, so the ladder re-resolves them for the new
+        # identity — coercing that to 0 renders a card claiming the food has no
+        # calories, which is worse than showing no numbers at all. Emit only
+        # what we actually have and let the client fill the rest from the row.
+        for key, field in (("calories", "calories"), ("protein_g", "protein"),
+                           ("carbs_g", "carbs"), ("fats_g", "fats")):
+            value = inp.get(field)
+            if isinstance(value, (int, float)):
+                payload[key] = int(round(value))
+        _ev = (call.event_id if call is not None and call.event_id is not None
+               else inp.get("_event_id"))
+        if _ev is not None:
+            payload["event_id"] = _ev
+        return {"type": "macro_card", "payload": payload}
     if name in ("log_food", "restore_food_entry"):
         # A restore is a committed food row like any other — it earns the same
         # tappable card (P0 card/ledger unification, 2026-07-24).
@@ -1878,11 +1911,20 @@ async def _run_turn(
                         # the cards further down — so this cannot drift from
                         # what actually renders the way a duplicated
                         # "has an entry_id" test would.
+                        # SUPPRESSION IS ABOUT THE LOG CARD. This asks "may
+                        # the sentence skip what the card already says", and a
+                        # correction's card is supplementary: the sentence
+                        # naming what changed IS the confirmation that it took.
+                        # Counting update cards here made "Bumped the birria to
+                        # 2 tacos" read as recitation, so it was stripped and
+                        # the reply fell back to "Fixed." — the one word that
+                        # does not say what was fixed.
                         _card_renders = any(
                             _logged_entry_card(c.name, c.raw_input, call=c)
                             is not None
                             for c in (_execution.successful
-                                      if _execution is not None else ()))
+                                      if _execution is not None else ())
+                            if getattr(c, "name", "") != "update_food_entry")
                         # NAME THE MOMENT. Every structured turn declared
                         # itself a COMMIT — a correction, a deletion and an
                         # undo all announced themselves as a fresh log, which
