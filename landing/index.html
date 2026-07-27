@@ -900,6 +900,19 @@
       border: 1px solid var(--line);
     }
     .ipill::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: var(--accent-s); }
+    /* The live dot is the whole signal here, so unshipped sources must not
+       carry it — a grey dot plus an explicit tag, matching how the in-app
+       devices card labels these exact two. */
+    .ipill.soon { color: var(--ink-3); }
+    .ipill.soon::before { background: var(--ink-4); }
+    .ipill.soon i {
+      font-style: normal; font-family: var(--mono); font-size: 8px;
+      letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-3);
+      border: 1px solid var(--line-s); border-radius: 999px; padding: 2px 5px;
+    }
+    /* Metrics are read FROM a source, so no source dot. */
+    .ipill.metric::before { display: none; }
+    .ipill.metric { color: var(--ink-3); }
     .chcard {
       width: 168px; padding: 13px 15px; border-radius: 16px;
       transition: transform 160ms, border-color 200ms;
@@ -1473,11 +1486,22 @@
       <div class="section-tag reveal">Works where you are</div>
       <h2 class="section-title reveal reveal-d1">Start in the <em>iOS beta.</em></h2>
       <p class="section-sub reveal reveal-d2" style="margin:0 auto">Telegram is live too — that's where Android starts today — and iMessage and WhatsApp are next. The same Arnie, the same memory, wherever you text.</p>
+      <!-- Sources are the three with a real sync path (Apple Health and Whoop
+           per the in-app devices card; Oura via its OAuth router + API client).
+           Fitbit and Hume are marked exactly as the app marks them — "coming
+           soon" — instead of sitting unlabelled among the live ones. Steps /
+           sleep / weight / recovery were in this list too, but those are
+           metrics Arnie reads, not places data comes from. -->
       <div class="sig-label reveal reveal-d2">connected signal sources</div>
       <div class="channels-pills reveal reveal-d2">
         <span class="ipill">Apple Health</span><span class="ipill">Whoop</span><span class="ipill">Oura</span>
-        <span class="ipill">Fitbit</span><span class="ipill">Hume</span><span class="ipill">Steps</span>
-        <span class="ipill">Sleep</span><span class="ipill">Weight</span><span class="ipill">Recovery</span>
+        <span class="ipill soon">Fitbit<i>soon</i></span><span class="ipill soon">Hume<i>soon</i></span>
+      </div>
+      <div class="sig-label reveal reveal-d2">what it reads from them</div>
+      <div class="channels-pills reveal reveal-d2">
+        <span class="ipill metric">Steps</span><span class="ipill metric">Sleep</span>
+        <span class="ipill metric">Weight</span><span class="ipill metric">Recovery</span>
+        <span class="ipill metric">Workouts</span>
       </div>
       <div class="channels-grid reveal reveal-d3">
         <a class="chcard primary" id="chcardIos" href="https://testflight.apple.com/join/XAZQ5sSF" target="_blank" rel="noopener">
@@ -1499,14 +1523,20 @@
   <!-- ── PARTNERS — gyms and trainers ── -->
   <section id="partners">
     <div class="section-inner" style="text-align:center">
-      <div class="section-tag reveal">In good company</div>
-      <h2 class="section-title reveal reveal-d1" style="font-size:clamp(30px,4.2vw,46px)">Where you <em>already train.</em></h2>
-      <p class="section-sub reveal reveal-d2" style="margin:0 auto">Arnie is building affiliations with gyms like The Wright Fit, Equinox, 24 Hour Fitness, and Lifetime, and partnering with trainers who want Arnie working with their clients between sessions.</p>
+      <!-- This was a four-name logo wall under "In good company / Where you
+           already train", while the body copy directly beneath it said Arnie
+           was still only "building affiliations" with those gyms. A logo wall
+           reads as a signed relationship no matter what the paragraph says,
+           and they are other people's trademarks. The section's actual job is
+           recruiting trainers, so it now does that on its own merits — every
+           claim below is about Arnie, not about somebody else's brand. -->
+      <div class="section-tag reveal">For coaches &amp; gyms</div>
+      <h2 class="section-title reveal reveal-d1" style="font-size:clamp(30px,4.2vw,46px)">You get two hours. <em>Arnie gets the rest.</em></h2>
+      <p class="section-sub reveal reveal-d2" style="margin:0 auto">Your client trains with you twice a week. The other five days are where plans quietly fall apart. Arnie logs what actually happened and hands you the context at the next session.</p>
       <div class="partner-row reveal reveal-d2">
-        <span class="partner">The Wright Fit</span>
-        <span class="partner">Equinox</span>
-        <span class="partner">24 Hour Fitness</span>
-        <span class="partner">Lifetime</span>
+        <span class="partner">Logging between sessions</span>
+        <span class="partner">Adherence you can see</span>
+        <span class="partner">Context at check-in</span>
       </div>
       <p class="partner-cta reveal reveal-d3">Train clients? <a href="https://testflight.apple.com/join/XAZQ5sSF" target="_blank" rel="noopener">Get them early access →</a></p>
     </div>
