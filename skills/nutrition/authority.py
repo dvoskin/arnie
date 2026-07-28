@@ -71,6 +71,18 @@ LADDERS = {
         "restaurant_exact",   # exact restaurant AND exact menu item
         "restaurant_page",    # verified restaurant nutrition page
         "saved_restaurant",   # restaurant-specific saved food
+        # An EXACT branded-database match, below every restaurant-specific
+        # source and above the estimate. A chain's own page is the better
+        # answer and keeps its place; what this stops is discarding real label
+        # data in favour of a guess.
+        #
+        # "McDonald's Double Cheeseburger" had an exact Open Food Facts hit
+        # REFUSED — `refused=off:exact` — because OFF was seated nowhere on
+        # this ladder, so the item fell to `component_estimate` and resolved to
+        # ZERO calories. The correction changed the name and left the number,
+        # and the user had to notice ("the calories haven't updated tho") and
+        # supply it themselves.
+        "branded_exact",
         "component_estimate",  # component estimate WITH a range
     ),
 }
@@ -348,8 +360,15 @@ def rung_for_lane(lane: str, food_class: FoodClass, *,
     if lane == "off":
         # A branded index earns branded authority on a good match only; a weak
         # name hit is a guess wearing a database's name.
-        if food_class is FoodClass.MANUFACTURED and \
-                str(match_grade or "").lower() in ("exact", "likely"):
+        grade = str(match_grade or "").lower()
+        if food_class is FoodClass.MANUFACTURED and grade in ("exact", "likely"):
+            return "branded_exact"
+        # A RESTAURANT item takes EXACT only. "likely" is where the
+        # wrong-cousin errors live on menu items — the class that turned
+        # "cavatappi" into CAVA — and a restaurant ladder already has better
+        # sources above this one. Exact is still far better than the estimate
+        # below it, which is what this was falling through to.
+        if food_class is FoodClass.RESTAURANT and grade == "exact":
             return "branded_exact"
         return None
     if lane == "usda":

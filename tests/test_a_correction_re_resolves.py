@@ -96,3 +96,54 @@ def test_a_correction_reaches_the_ladder_at_all():
     assert "correction_kept_user_value" in update_block, (
         "...and a figure the USER stated must survive it — no database "
         "outranks the person reading the packet")
+
+
+# ── a restaurant item may use an exact branded match ──────────────────────────
+
+def test_an_exact_branded_match_beats_a_component_estimate():
+    """Audit: "McDonald's Double Cheeseburger" had an exact Open Food Facts hit
+    REFUSED — `refused=off:exact` — because OFF was seated nowhere on the
+    RESTAURANT ladder. The item fell to `component_estimate` and resolved to
+    ZERO calories, so the correction changed the name and left the number, and
+    the user had to notice and supply it themselves.
+    """
+    from skills.nutrition.authority import FoodClass, LADDERS, rung_for_lane
+    assert rung_for_lane("off", FoodClass.RESTAURANT,
+                         match_grade="exact") == "branded_exact"
+    ladder = LADDERS[FoodClass.RESTAURANT]
+    assert ladder.index("branded_exact") < ladder.index("component_estimate"), \
+        "real label data must outrank a guess with a badge"
+
+
+def test_a_restaurant_item_still_prefers_the_restaurants_own_page():
+    """The chain's published nutrition is the better answer and keeps its
+    place. This only stops label data losing to an estimate."""
+    from skills.nutrition.authority import FoodClass, LADDERS
+    ladder = LADDERS[FoodClass.RESTAURANT]
+    for better in ("restaurant_exact", "restaurant_page", "saved_restaurant"):
+        assert ladder.index(better) < ladder.index("branded_exact")
+
+
+def test_a_likely_match_is_not_enough_for_a_menu_item():
+    """"likely" is where the wrong-cousin errors live on menu items — the class
+    that turned "cavatappi" into CAVA. A restaurant item takes EXACT only."""
+    from skills.nutrition.authority import FoodClass, rung_for_lane
+    assert rung_for_lane("off", FoodClass.RESTAURANT,
+                         match_grade="likely") is None
+    # ...while a packaged product still accepts it.
+    assert rung_for_lane("off", FoodClass.MANUFACTURED,
+                         match_grade="likely") == "branded_exact"
+
+
+def test_an_unpriced_correction_is_disclosed_not_swallowed():
+    """`if _re.calories:` treated a zero-calorie resolution as "nothing to say"
+    and kept the previous row's figures — the name changed, the number did not,
+    and the reply announced a correction that had not happened."""
+    import inspect
+
+    import handlers.tool_executor as TE
+    src = inspect.getsource(TE)
+    block = src[src.index('elif name == "update_food_entry"'):][:9000]
+    assert "correction_unpriced" in block, (
+        "a correction that cannot be priced is a failure to disclose, not a "
+        "silent no-op")

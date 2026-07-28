@@ -3648,19 +3648,46 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
                 # states a figure and gets a different one back is the one
                 # exchange a food log cannot afford to lose.
                 _user_gave_calories = _stated is not None
-                if _re is not None and _re.calories and not _user_gave_calories:
+                _priced = _re is not None and bool(_re.calories)
+                if _priced and not _user_gave_calories:
                     changes["calories"] = _re.calories
                     changes["protein"] = _re.protein
                     changes["carbs"] = _re.carbs
                     changes["fats"] = _re.fat
+                    logger.info(
+                        "event=correction_reresolved food=%r rung=%s cal=%s",
+                        _new_name,
+                        getattr(getattr(_re, "provenance", None), "rung", "")
+                        or "-", _re.calories)
                 elif _user_gave_calories:
                     logger.info(
                         "event=correction_kept_user_value food=%r stated=%s "
                         "reresolved=%s", _new_name, _stated,
                         getattr(_re, "calories", None))
-                    logger.info(
-                        "event=correction_reresolved food=%r rung=%s cal=%s",
-                        _new_name, _re.provenance.rung or "-", _re.calories)
+                else:
+                    # THE IDENTITY CHANGED AND THE NUMBERS COULD NOT FOLLOW.
+                    #
+                    # `if _re.calories:` treated a zero-calorie resolution as
+                    # "nothing to say" and kept the previous row's figures — so
+                    # the name changed, the number did not, and the reply
+                    # announced a correction that had not happened.
+                    #
+                    # Production: "It was actually a double cheeseburger" put
+                    # the ladder on `component_estimate` and came back with 0.
+                    # The entry kept the single cheeseburger's 324 cal, and the
+                    # user had to notice ("the calories haven't updated tho")
+                    # and supply the number themselves.
+                    #
+                    # A correction that cannot be priced is a FAILURE to
+                    # disclose, not a silent no-op.
+                    logger.warning(
+                        "event=correction_unpriced food=%r rung=%s — identity "
+                        "changed but no source could price it; the previous "
+                        "row's numbers stand",
+                        _new_name,
+                        getattr(getattr(_re, "provenance", None), "rung", "")
+                        or "-")
+                    _stash_call(inp, "correction_unpriced", _new_name)
             except Exception as _e:
                 # A failed re-resolution leaves the interpreter's numbers,
                 # which is the old behaviour — never a lost correction.
