@@ -457,6 +457,35 @@ _RELEVANCE_SYSTEM = (
 )
 
 
+def partial_commit_enabled() -> bool:
+    """Whether an ASK turn may also write the foods it is NOT asking about.
+
+    OFF (2026-07-27). The feature is right in principle — holding a whole meal
+    for its least certain item is what moderate exists not to do — but shipping
+    it made `tool_calls` non-empty on an ask turn, and two older pieces of
+    logic read a non-empty batch as proof that the turn was a COMMIT:
+
+      • core/conversation.py `discard_held()` drops the streamed bubble
+        whenever a logging tool fired, on the assumption that held text is the
+        model confirming prematurely. Here it was the system's question.
+      • the structured-narration branch gates on
+        `_sft["action"] in ("log","update","delete","commit")` — "ask" is not
+        in that tuple — so an ask-with-writes falls through to `voice_log`,
+        whose signature carries neither the user message nor the question. It
+        narrates from the committed calls alone.
+
+    Net effect, measured on real traffic: the user reported three foods, one
+    committed, the question was destroyed twice over, and the reply coached
+    them about the two items it had never heard of. A partial commit whose
+    question does not ship is not a partial commit — it is silent data loss
+    with a checkmark on it.
+
+    So the write is withdrawn until the narration path can carry an ask that
+    also wrote. FOOD_PARTIAL_COMMIT=true restores it without a deploy."""
+    return os.getenv("FOOD_PARTIAL_COMMIT", "false").lower() in (
+        "true", "1", "yes")
+
+
 def model_gate_enabled() -> bool:
     """Ask a model whether this is food instead of matching four English
     templates. FOOD_GATE_MODEL=true."""
@@ -1529,6 +1558,9 @@ def board_lines(board) -> list:
 #: re-fetch is correct, just slower.
 _SPREAD_CACHE: dict = {}
 _SPREAD_CACHE_MAX = 256
+#: How many product lookups one turn may put on the wire. They fan out in a
+#: single gather, so this bounds LOAD, not latency.
+_SPREAD_LOOKUPS_MAX = 6
 
 
 async def _variant_spreads(data) -> dict:
@@ -1540,15 +1572,46 @@ async def _variant_spreads(data) -> dict:
     simply an absent entry — a turn never loses its decision because a product
     database was slow.
     """
-    names = []
+    # GENERIC FOODS DISAGREE TOO, and nothing else on the live path notices.
+    #
+    # The branded gate that used to stand here was the reason a plain bagel, a
+    # double cheeseburger and a slice of pizza could never raise a doubt: the
+    # ONLY live producers are the interpreter's own report, the vague-measure
+    # deriver (which bails on a stated count) and this one. `sources_disagree`
+    # — the general cross-source detector, already written and calibrated at
+    # 60 cal / 40 cal floor / 6 g protein — is reachable only through
+    # `skills/nutrition/resolver.py`, which `promotion.py` keeps in
+    # MODE_SHADOW, so it computes a span every turn and throws it away.
+    #
+    # The signal is the same one the docstring of `derive_variant_ambiguity`
+    # describes, and it is not about brands: it is the fact the model cannot
+    # have, namely how far apart the rows sharing this name actually are. A
+    # bagel is 98 g give or take 25 — the portion ontology knows that for 24
+    # foods and nothing else, where the product database knows it for anything
+    # anyone has ever scanned.
+    #
+    # Bounded rather than unbounded: the lookups fan out in one gather, so
+    # wall-clock is a single round trip, but the cap keeps a ten-item meal from
+    # putting ten requests on a public API for one turn. Branded items go
+    # first because their spreads are the widest (powder vs ready-to-drink).
+    # FOOD_GENERIC_SPREADS=false restores the branded-only behaviour.
+    _generic_ok = os.getenv("FOOD_GENERIC_SPREADS", "true").lower() in (
+        "true", "1", "yes")
+    _branded, _generic = [], []
     for raw in (data.get("items") or []):
         if not isinstance(raw, dict):
             continue
-        if not (raw.get("branded") or raw.get("is_packaged")):
-            continue
         food = str(raw.get("food") or "").strip()
-        if food and food.lower() not in [n.lower() for n in names]:
+        if not food:
+            continue
+        bucket = (_branded if (raw.get("branded") or raw.get("is_packaged"))
+                  else _generic)
+        bucket.append(food)
+    names = []
+    for food in _branded + (_generic if _generic_ok else []):
+        if food.lower() not in [n.lower() for n in names]:
             names.append(food)
+    names = names[:_SPREAD_LOOKUPS_MAX]
     if not names:
         return {}
 
@@ -2778,9 +2841,52 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
         return None
     action = data.get("action")
 
-    if action == "ask" and not prior and not _proposed_ask_is_material(
-            data, mode=mode, user=user) and (data.get("items")
-                                             or data.get("ready")):
+    # ── THE DECISION, MADE BEFORE THE ASK BRANCHES CAN RETURN ───────────────
+    #
+    # THE SEAM. `plan_turn` lived below, behind `any(k == "log" ...)`, and both
+    # ask branches return before reaching it — so it ran only on turns the
+    # interpreter had ALREADY decided not to ask about. On every real ask the
+    # staged pipeline contributed nothing: no staging, no per-macro risk, no
+    # learned preferences, no ranking across the meal. `_proposed_ask_is_material`
+    # was written to stand in for it (see its docstring, which measures the
+    # gap), but it is a second, thinner rule — one number, `impact_cal`, against
+    # the mode ladder — and a second rule is the thing this file keeps removing.
+    #
+    # Hoisted here so the ENGINE decides, and the interpreter goes back to
+    # recommending. Deliberately computed for the ask case only: the log path
+    # below still makes its own call, because the immaterial-ask branch that
+    # follows REWRITES `data` — merging `ready` into `items` and carrying
+    # assumptions — and a decision taken before that merge would have staged
+    # fewer items than the calls later built from it, letting `ready`-derived
+    # rows past the veto unscored. Same reason the rendering below stays put.
+    #
+    # Falls back to the previous rule whenever the pipeline is off or unhappy,
+    # so the lane can never lose its ask.
+    _ask_decision = None
+    _ask_is_material = False
+    if action == "ask" and prior is None:
+        try:
+            from core.food_pipeline import pipeline_enabled, plan_turn
+            if pipeline_enabled():
+                from core.turn_identity import current_turn_id as _ask_turn
+                _ask_decision = plan_turn(
+                    data, turn_id=(_ask_turn() or ""), message=message,
+                    mode=mode, preferences=_prefs_for(user),
+                    targets=_daily_targets(user),
+                    variant_spreads=await _variant_spreads(data))
+        except Exception as _ape:
+            logger.warning(f"food pipeline unavailable on ask: {_ape}")
+            _ask_decision = None
+        _ask_is_material = (
+            _ask_decision.asks if _ask_decision is not None
+            else _proposed_ask_is_material(data, mode=mode, user=user))
+        logger.info(
+            "event=ask_policy source=%s material=%s %s",
+            "pipeline" if _ask_decision is not None else "fallback",
+            _ask_is_material, (data.get("say") or "")[:40])
+
+    if action == "ask" and not prior and not _ask_is_material and (
+            data.get("items") or data.get("ready")):
         # PROPOSAL DECLINED. The model wanted to ask; nothing it reported is
         # worth interrupting for at this mode. Commit its own best estimate
         # instead — which the prompt now requires it to carry for exactly this
@@ -2867,7 +2973,11 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
         # Safe for the same reason the other branch is: the answer turn now
         # sees these rows on the board with their age, so refining them is an
         # update rather than a second write.
-        _ready_now = _calls_for_ready(data.get("ready"))
+        # WITHDRAWN — see `partial_commit_enabled`. An ask that also writes is
+        # narrated by `voice_log`, which cannot see the question, so the
+        # question is destroyed and the settled item is announced alone.
+        _ready_now = (_calls_for_ready(data.get("ready"))
+                      if partial_commit_enabled() else [])
         return ({"action": "ask", "text": text, "tool_calls": _ready_now}
                 if text else None)
 
@@ -3026,17 +3136,21 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
             #
             # Built with the same `_build_calls` the commit path uses, so there
             # is one definition of what a write is.
+            # WITHDRAWN — see `partial_commit_enabled`. The question is the only
+            # thing on this turn that mentions the held items; writing alongside
+            # it is what got the question discarded.
             _ready_calls = []
             try:
-                _board_by_id = {}
-                for _b in (board or []):
-                    try:
-                        _board_by_id[int(_b["id"])] = _b
-                    except Exception:
-                        continue
-                _c, _k, _il = _build_calls(ops, _board_by_id)
-                _ready_calls, _, _, _ = _apply_clarification_veto(
-                    _decision, _c, _k, _il)
+                if partial_commit_enabled():
+                    _board_by_id = {}
+                    for _b in (board or []):
+                        try:
+                            _board_by_id[int(_b["id"])] = _b
+                        except Exception:
+                            continue
+                    _c, _k, _il = _build_calls(ops, _board_by_id)
+                    _ready_calls, _, _, _ = _apply_clarification_veto(
+                        _decision, _c, _k, _il)
             except Exception as _ve:
                 # A partial commit is an improvement, never a precondition —
                 # losing it costs an extra turn, losing the QUESTION loses the

@@ -387,6 +387,11 @@ def plan_turn(data: Mapping, *, turn_id: str, message: str = "",
             # sharing this name it actually was. Fetched by the caller.
             items = derive_variant_ambiguity(items, variant_spreads, data,
                                              mode=mode, targets=targets)
+            # ...and the doubt that is not about WHICH product but about what
+            # the user's own counting word meant. Last, so an interpreter-
+            # reported or variant ambiguity on the same field wins.
+            items = derive_unit_ambiguity(items, data, mode=mode,
+                                          targets=targets)
             items = apply_preferences(items, preferences, now=now, mode=mode)
             decision = decide(list(items), mode=mode,
                               round_number=round_number)
@@ -706,6 +711,147 @@ def derive_vague_quantities(items, data: Mapping, *, message: str,
                                      _measure_options(measure, distribution),
                                      sole_estimate=_sole_estimate))]))
     return tuple(out)
+
+
+#: Units that state a MASS or VOLUME. When the user gives one of these the
+#: number is theirs and the scaling is arithmetic, not interpretation — "6 oz
+#: skirt steak" is never this deriver's business.
+_MEASURED_UNITS = frozenset((
+    "g", "gram", "grams", "kg", "oz", "ounce", "ounces", "lb", "lbs", "pound",
+    "pounds", "ml", "l", "liter", "litre", "cup", "cups", "tbsp", "tsp",
+    "tablespoon", "teaspoon", "fl", "floz",
+))
+
+#: WHAT ONE PIECE OF FOOD CAN CARRY. Set far above anything real, because this
+#: is a nonsense detector and a false ask is a worse trade than a missed one:
+#: a double quarter-pounder is ~750 cal but arrives as "1 burger", and a whole
+#: rotisserie chicken is ~1000 cal of protein. Nothing a person calls "a piece"
+#: or "a wing" approaches these, so crossing them means the COUNT was scaled by
+#: something that is not a piece.
+MAX_KCAL_PER_PIECE = 700.0
+MAX_PROTEIN_G_PER_PIECE = 60.0
+
+#: The low end of the same reading, used to SIZE the doubt rather than trigger
+#: it. If "2 wings" was really two wings, it is nearer this than what we
+#: computed — and the gap between them is what the user is being asked about.
+MIN_KCAL_PER_PIECE = 150.0
+
+
+def derive_unit_ambiguity(items, data: Mapping, *, mode: str,
+                          targets: Optional[Mapping] = None) -> tuple:
+    """Add an ambiguity where the COUNT was stated and the UNIT was guessed.
+
+    THE AXIS NOBODY WAS WATCHING. `derive_vague_quantities` bails on
+    `item.quantity.is_stated` with the comment "a stated amount is the user's
+    own number and is never second-guessed" — correct, and it is about the
+    NUMBER. Nothing anywhere checks the UNIT. `AmbiguityType.UNIT_INTERPRETATION`
+    has been defined since the ambiguity model was written and constructed in
+    exactly zero places; `serving_basis_risk` is summed into `materiality()` and
+    populated by no production caller.
+
+    That gap has a specific shape downstream. `normalize._count_basis` is a
+    DENY-list: any count unit not on the vague list becomes COUNT_BASIS_UNIT,
+    meaning "N of the label's own servings". So an unrecognised word like
+    "wings" silently authorises `_per_serving_for` to multiply a seated panel by
+    N — and that branch carries no overcount guard, no implied mass (so the
+    energy-density check cannot fire), and no Atwater re-check.
+
+    Measured, from a shipped transcript: "2 chicken lollipops with bbq sauce"
+    committed 1,596 cal and 136 g of protein — more protein than a whole
+    chicken — badged "Close match", with no question asked, because no
+    ambiguity object existed for the policy to score.
+
+    So this reports the doubt the pipeline could not see. It fires on physical
+    implausibility rather than on a spread estimate, because a spread needs a
+    portion ontology for the unit and the failing case is precisely the unit we
+    have no ontology for. High precision on purpose: the ceilings are set where
+    nothing genuine reaches them, so a firing means the scaling used something
+    that was not a piece.
+    """
+    from skills.nutrition.ambiguity import (AmbiguityOption, AmbiguityType,
+                                            build_ambiguity)
+
+    raw_by_ordinal = {}
+    for ordinal, raw in enumerate(data.get("items") or []):
+        if isinstance(raw, Mapping):
+            raw_by_ordinal[ordinal] = raw
+
+    out = []
+    for item in items or ():
+        raw = raw_by_ordinal.get(item.ordinal) or {}
+        q = getattr(item, "quantity", None)
+        amount = (getattr(q, "stated_amount", None)
+                  or getattr(q, "inferred_amount", None))
+        unit = str(getattr(q, "stated_unit", "")
+                   or getattr(q, "inferred_unit", "") or "").strip().lower()
+        try:
+            count = float(amount) if amount is not None else None
+        except (TypeError, ValueError):
+            count = None
+        # A mass or volume is the user's arithmetic, not our interpretation.
+        if count is None or count <= 0 or unit.rstrip(".") in _MEASURED_UNITS:
+            out.append(item)
+            continue
+        # Already reported by someone with better numbers than we can derive.
+        if any(a.ambiguity_type in (AmbiguityType.UNIT_INTERPRETATION,
+                                    AmbiguityType.SERVING_BASIS)
+               for a in item.ambiguities):
+            out.append(item)
+            continue
+
+        calories = _calories_for(raw)
+        try:
+            protein = float(raw.get("protein") or 0)
+        except (TypeError, ValueError):
+            protein = 0.0
+        per_piece_cal = (calories or 0) / count
+        per_piece_pro = protein / count
+        if per_piece_cal <= MAX_KCAL_PER_PIECE \
+                and per_piece_pro <= MAX_PROTEIN_G_PER_PIECE:
+            out.append(item)
+            continue
+
+        # THE SPAN IS THE DISTANCE BETWEEN THE TWO READINGS. We computed N
+        # label-servings; the user probably meant N pieces. The floor is what N
+        # pieces plausibly weigh, so the gap is what the answer is worth.
+        span = max((calories or 0) - count * MIN_KCAL_PER_PIECE, 0.0)
+        _unit_word = unit or "piece"
+        options = (
+            AmbiguityOption(f"{count:g} {_unit_word} as served",
+                            confidence=0.55),
+            AmbiguityOption(f"{count:g} × a full serving of the packaged form",
+                            confidence=0.3),
+        )
+        logger.info(
+            "event=implausible_portion food=%r count=%s unit=%r "
+            "per_piece_cal=%.0f per_piece_protein=%.0f span=%.0f",
+            (item.original_text or "")[:40], count, _unit_word,
+            per_piece_cal, per_piece_pro, span)
+        out.append(item.with_ambiguities(list(item.ambiguities) + [
+            build_ambiguity(
+                staged_item_id=item.staged_item_id,
+                ambiguity_type=AmbiguityType.UNIT_INTERPRETATION,
+                field_name="serving", mode=mode,
+                calorie_span=span, item_calories=calories,
+                options=options,
+                targets=dict(targets) if targets else None,
+                # The one axis this exists to score. Everything else about the
+                # item may be certain; what a "wing" IS carries the whole doubt.
+                serving_basis_risk=1.0,
+                prompt=_unit_prompt(item.original_text, count, _unit_word))]))
+    return tuple(out)
+
+
+def _unit_prompt(food: str, count: float, unit: str) -> str:
+    """Ask what the unit was, in the user's own word for it.
+
+    Names the food first for the same reason `_vague_prompt` does: in a
+    multi-food meal an unbound "how big were they" could be any of them.
+    """
+    food = (food or "").strip()
+    lead = f"{food} — " if food else ""
+    return (f"{lead}how big were the {count:g} {unit}? I read them as full "
+            f"servings, which may be well over what you actually had.")
 
 
 def _vague_prompt(food: str, measure: str, options,
