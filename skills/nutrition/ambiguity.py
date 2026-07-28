@@ -78,12 +78,44 @@ class FoodAmbiguity:
     clarification_prompt: str = ""
     identity_risk: float = 0.0
     serving_basis_risk: float = 0.0
+    #: The item's own reading, which the span is a spread AROUND. It was already
+    #: being passed to `build_ambiguity` — to size the fraction rule — and then
+    #: dropped on the floor, which left the span a width with no position and
+    #: made `calorie_range` underivable downstream. Kept so a question can say
+    #: what the answer is worth in the units the user reads.
+    item_calories: Optional[float] = None
 
     @property
     def is_material(self) -> bool:
         """Scores are normalized against the mode's thresholds, so 1.0 is
         exactly "at the line"."""
         return self.materiality_score >= 1.0
+
+    @property
+    def calorie_range(self) -> Optional[tuple]:
+        """(low, high) around the reading, or None when it cannot be priced.
+
+        A span is a WIDTH. On its own it can rank a question but cannot phrase
+        one — "worth ~150 cal" is not something anyone says out loud, and the
+        clarification that had it shipped the midpoint as a settled number
+        instead ("You've got the hand roll down at 230 calories") one sentence
+        before asking which hand roll it was.
+
+        The reading sits at the middle of the spread, because that is where the
+        spread was measured from: `_span_from` scales `(upper_g - lower_g)` by
+        `calories / median_g`, and the shelf and resolver spans are likewise
+        symmetric doubts about the value they are attached to. So the endpoints
+        are the reading ± half the span, floored at zero — an approximation, and
+        a far smaller one than asserting the midpoint alone.
+        """
+        try:
+            centre = float(self.item_calories or 0)
+            span = abs(float(self.calorie_span or 0))
+        except (TypeError, ValueError):
+            return None
+        if centre <= 0 or span <= 0:
+            return None
+        return (max(0, round(centre - span / 2)), round(centre + span / 2))
 
     def top_options(self, n: int = 3) -> tuple:
         return tuple(sorted(self.candidate_values,
@@ -207,7 +239,8 @@ def build_ambiguity(*, staged_item_id: str, ambiguity_type: AmbiguityType,
         calorie_span=calorie_span, protein_span=protein_span,
         carb_span=carb_span, fat_span=fat_span, confidence=top,
         materiality_score=score, clarification_prompt=prompt,
-        identity_risk=identity_risk, serving_basis_risk=serving_basis_risk)
+        identity_risk=identity_risk, serving_basis_risk=serving_basis_risk,
+        item_calories=(float(item_calories) if item_calories else None))
 
 
 def spans_across(profiles) -> dict:

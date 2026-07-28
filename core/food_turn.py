@@ -1379,6 +1379,20 @@ def unknowns_from_decision(decision, user_message: str = "") -> tuple:
     composer is given what is UNKNOWN and writes the turn — and this route
     never got it, so every question the staged pipeline raised, which is most
     of them on a composite meal, shipped as a template.
+
+    WHAT IT USED TO THROW AWAY. `FoodAmbiguity` carries `calorie_span`,
+    `protein_span`, `carb_span`, `fat_span` and `candidate_values` — labelled
+    options with confidences — and this summed the first of them into one
+    scalar named `stakes` and dropped the rest. A scalar can rank a question.
+    It cannot phrase one, which is why the clarification opened by asserting a
+    settled number for the one item whose identity was the open question:
+
+        "You've got the hand roll down at 230 calories and 10g protein,
+         that's your reading so far. The catch is which one you grabbed…"
+
+    `stakes` stays, because the ranking and the mode thresholds are computed
+    from it. What is added is what the sentence needs: the endpoints, and the
+    options the user is actually choosing between.
     """
     groups = {}
     for item in (getattr(decision, "staged_items", None) or ()):
@@ -1387,7 +1401,8 @@ def unknowns_from_decision(decision, user_message: str = "") -> tuple:
                 kind = _AMBIGUITY_KIND.get(amb.ambiguity_type.value, "detail")
             except Exception:
                 kind = "detail"
-            g = groups.setdefault(kind, {"items": [], "stakes": 0.0})
+            g = groups.setdefault(kind, {"items": [], "stakes": 0.0,
+                                         "ranges": {}, "options": []})
             name = (item.original_text or "").strip()
             if name and name not in g["items"]:
                 g["items"].append(name)
@@ -1395,6 +1410,7 @@ def unknowns_from_decision(decision, user_message: str = "") -> tuple:
                 g["stakes"] += abs(float(amb.calorie_span or 0))
             except (TypeError, ValueError):
                 pass
+            _collect_range(g, name, amb)
     out = []
     for kind, g in groups.items():
         # Same fallback the interpreter path uses: an unknown nobody could
@@ -1403,9 +1419,37 @@ def unknowns_from_decision(decision, user_message: str = "") -> tuple:
         weight = g["stakes"] or float(len(g["items"]) * 200)
         out.append({"kind": kind, "phrase": _KIND_PHRASING.get(kind, kind),
                     "items": tuple(g["items"]), "asks": (),
-                    "stakes": round(g["stakes"], 1), "weight": weight})
+                    "stakes": round(g["stakes"], 1), "weight": weight,
+                    "ranges": dict(g["ranges"]),
+                    "options": tuple(g["options"])})
     out.sort(key=lambda g: -g["weight"])
     return tuple(out)
+
+
+def _collect_range(group: dict, name: str, amb) -> None:
+    """Widen this item's range by one ambiguity, and keep its options.
+
+    Several ambiguities can be open on one food — which product AND how much of
+    it — and each is a separate reason the number could move. Taking the widest
+    is the honest reading: a range that covers one doubt and not the other
+    would be a narrower claim than we can support.
+    """
+    try:
+        span = amb.calorie_range
+    except Exception:
+        span = None
+    if name and span:
+        low, high = span
+        prior = group["ranges"].get(name)
+        group["ranges"][name] = ((min(low, prior[0]), max(high, prior[1]))
+                                 if prior else (low, high))
+    try:
+        for option in amb.top_options(3):
+            label = str(getattr(option, "label", "") or "").strip()
+            if label and label not in group["options"]:
+                group["options"].append(label)
+    except Exception:
+        pass
 
 
 def clarify_plan(decision, question, *, user_message: str = "",
@@ -1942,7 +1986,9 @@ def clarify_plan_from_points(points: list, ready: list | None = None, *,
     # dropped were worth 2,760 between them. Grouping lets the shared unknown
     # win on its own evidence, and hands the renderer every unknown rather than
     # a pre-picked string.
-    unknowns = group_unknowns(asks, user_message)
+    unknowns = group_unknowns(
+        asks, user_message,
+        priced={name: cal for name, (cal, _pro) in _priced.items() if cal})
     question = _situational_question(unknowns) or _one_question(asks[0][1])
 
     # APPLY THE POLICY. Both clarify builders live here and constructed the
@@ -2070,7 +2116,8 @@ def _portion_stakes(item_label: str, user_message: str) -> float:
         return 0.0
 
 
-def group_unknowns(asks: list, user_message: str = "") -> tuple:
+def group_unknowns(asks: list, user_message: str = "",
+                   priced: Optional[dict] = None) -> tuple:
     """The meal's unknowns, grouped by what is actually unknown.
 
     THE POINT OF THIS FUNCTION. Four foods described as "some" are not four
@@ -2083,16 +2130,30 @@ def group_unknowns(asks: list, user_message: str = "") -> tuple:
     Groups carry the SUM of what they resolve, so a shared unknown outranks a
     single-item one on the evidence rather than by a rule, and the renderer is
     handed material to compose from instead of a pre-picked string.
+
+    `priced` is the interpreter's own costing of the meal, keyed by lowered
+    food name. With it a portion unknown reports ENDPOINTS rather than a width,
+    which is what lets the reading be written as "somewhere between 230 and
+    380" instead of a settled 230 with a question under it. Without it — and
+    for an unknown nobody can price, which is most identity questions — the
+    item is still marked open, and the brief's job is then to stop the reading
+    asserting a figure it is about to ask about.
     """
     groups = {}
     for label, facets in asks:
         for facet in facets:
             kind = _facet_kind(facet)
-            g = groups.setdefault(kind, {"items": [], "asks": [], "stakes": 0.0})
+            g = groups.setdefault(kind, {"items": [], "asks": [], "stakes": 0.0,
+                                         "ranges": {}})
             if label and label not in g["items"]:
                 g["items"].append(label)
                 if kind == "portion":
-                    g["stakes"] += _portion_stakes(label, user_message)
+                    span = _portion_stakes(label, user_message)
+                    g["stakes"] += span
+                    centre = (priced or {}).get(str(label).strip().lower())
+                    if span > 0 and centre:
+                        g["ranges"][label] = (max(0, round(centre - span / 2)),
+                                              round(centre + span / 2))
             g["asks"].append(facet)
     out = []
     for kind, g in groups.items():
@@ -2109,7 +2170,8 @@ def group_unknowns(asks: list, user_message: str = "") -> tuple:
         weight = g["stakes"] or float(len(g["items"]) * 200)
         out.append({"kind": kind, "phrase": _KIND_PHRASING.get(kind, kind),
                     "items": tuple(g["items"]), "asks": tuple(g["asks"]),
-                    "stakes": round(g["stakes"], 1), "weight": weight})
+                    "stakes": round(g["stakes"], 1), "weight": weight,
+                    "ranges": dict(g["ranges"]), "options": ()})
     out.sort(key=lambda g: -g["weight"])
     return tuple(out)
 
