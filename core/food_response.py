@@ -929,6 +929,7 @@ class Reason:
     MISSING_QUESTION = "missing_question"
     PENDING_AS_COMMITTED = "pending_as_committed"
     MISSED_CONVERSATIONAL_CONTEXT = "missed_conversational_context"
+    NUMBER_NOT_COMMITTED = "number_not_committed"
     FAILED_AS_COMMITTED = "failed_as_committed"
     INVENTED_ITEM = "invented_item"
     TOO_LONG = "too_long"
@@ -1137,6 +1138,20 @@ def validate(text: str, plan: FoodResponsePlan) -> ValidationResult:
     if not plan.committed_items and _BATCH_TOTAL_RE.search(raw):
         return ValidationResult(False, Reason.PENDING_AS_COMMITTED,
                                 "a total on a turn that committed nothing")
+    # ...and the commit case (audit I-5). `enforce_say_contract` is absolute
+    # about digits — "the contract is physics" — but its output becomes
+    # `plan.model_say`, a HINT. With FOOD_COMPOSER=true the text the user reads
+    # is `compose_async()`'s own, and nothing compared it to what committed:
+    # the numeric regexes here only test card-duplication and dashboard syntax.
+    #
+    # So the commit path had a contract that was bypassed and the ask path had
+    # a guard that was unfed, which together meant NO stage checked a number in
+    # a food reply against the row it describes. This is the commit half; T-2's
+    # rule above is its no-snapshot case.
+    _unbacked = _unbacked_figures(raw, plan)
+    if _unbacked:
+        return ValidationResult(False, Reason.NUMBER_NOT_COMMITTED,
+                                ", ".join(_unbacked[:3]))
 
     has_question = "?" in raw
     if has_question and not plan.allow_question:
@@ -1213,6 +1228,56 @@ _LANDED_BEFORE_RE = (r"\b(?:logged|added|counted|committed|got)\b[^.?!]{0,40}")
 _NOT_LANDED_RE = re.compile(
     r"\b(?:could\s*n[o']?t|couldn't|did\s*n[o']?t|didn't|was\s*n[o']?t|wasn't|"
     r"is\s*n[o']?t|isn't|never|failed|unable|no|not)\b")
+
+
+def _unbacked_figures(raw: str, plan) -> list:
+    """Nutrient figures in the text that the committed snapshot cannot back.
+
+    Audit I-5. Only runs when a snapshot exists — a turn that committed
+    something has an authoritative set of numbers, and every figure in the
+    reply has to be one of them.
+
+    Deliberately narrow, because a false positive here costs the composer's
+    reply and ships the deterministic fallback instead:
+
+      * only `_NUTRIENT_NUMBER_RE` matches, so a figure must already look like
+        a nutrient fact ("340 cal", "28g") — bare numerals, times and dates are
+        not nutrition claims;
+      * every legal value is allowed at ±1 to absorb rounding, and each item's
+        own calories count as legal, since naming what an item cost is not a
+        claim about the day;
+      * small integers are ignored. "one of your two bars" is a count, and an
+        item count is not a nutrient figure however the regex reads it.
+    """
+    snapshot = getattr(plan, "committed_snapshot", None)
+    if snapshot is None:
+        return []
+    legal = set()
+    try:
+        for value in (snapshot.token_values() or {}).values():
+            legal.add(round(float(value)))
+    except Exception:
+        return []
+    for item in (tuple(plan.committed_items) + tuple(plan.resolved_items)):
+        for attr in ("calories", "protein", "carbs", "fat"):
+            value = getattr(item, attr, None)
+            if isinstance(value, (int, float)):
+                legal.add(round(float(value)))
+    if not legal:
+        return []
+
+    out = []
+    for match in _NUTRIENT_NUMBER_RE.finditer(raw or ""):
+        digits = re.sub(r"[^\d]", "", match.group(0).split()[0])
+        if not digits:
+            continue
+        stated = int(digits)
+        # A count, not a nutrient figure.
+        if stated <= 10:
+            continue
+        if not any(abs(stated - ok) <= 1 for ok in legal):
+            out.append(match.group(0).strip())
+    return out
 
 
 def _claims_it_landed(lowered: str, name: str) -> bool:

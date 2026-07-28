@@ -2937,7 +2937,23 @@ user_message=_user_text or "")
     # own the miss — never confirm calories that aren't on the board.
     _total_mismatch = False
     try:
-        if today_log is not None and not in_onboarding:
+        # A QUESTION IS NOT A CLAIM ABOUT THE DAY (audit N-1).
+        #
+        # A structured ask states its READING — "roll 300 cal, bar 200" — and
+        # `extract_stated_day_calories` reads a figure out of it and compares it
+        # to the board, which the turn has not written to. The guard then
+        # replaces the question with `deterministic_confirmation`.
+        #
+        # It could not fire before the I-1 fix because `_fired_log` was False on
+        # a bare ask. Partial commit makes an ask carry writes, and I-1 sets
+        # `_response_streamed = False` on that path, so this became reachable in
+        # exactly the case partial commit exists for.
+        #
+        # It is not firing today only because T-2 rejects a `Total:` line
+        # upstream, in another module, by regex. That is protection by
+        # coincidence. The guard should know the turn's disposition instead.
+        _structured_ask = (_sft is not None and _sft.get("action") == "ask")
+        if today_log is not None and not in_onboarding and not _structured_ask:
             _db_cal = int(round(getattr(today_log, "total_calories", 0) or 0))
             _stated = _extract_stated_day_calories(response_text)
             # DAY-BOUNDARY SAFETY (the 12:15am pops-cereal "0/2165 after a full day"):

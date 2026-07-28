@@ -163,3 +163,51 @@ async def test_a_fall_through_to_legacy_leaves_the_question_open(
     assert still_open is not None, (
         "the question was closed by a turn that never answered it — the next "
         "turn arrives cold and the user pays for it")
+
+
+# ── N-1: the day-total guard must know the turn asked ─────────────────────────
+
+async def test_a_reading_in_a_question_is_not_a_claim_about_the_day(
+        pipeline_env, monkeypatch):
+    """Audit N-1. A structured ask states its READING — "roll 300, bar 200" —
+    and `extract_stated_day_calories` reads a figure out of it, compares it to a
+    board this turn has not written to, and replaces the question with
+    `deterministic_confirmation`.
+
+    It could not fire before the I-1 fix, because `_fired_log` was False on a
+    bare ask. Partial commit gives an ask writes and I-1 sets
+    `_response_streamed = False` on that path, so it became reachable in exactly
+    the case partial commit exists for. Until now it was held off only because
+    T-2 rejects a `Total:` line upstream, in another module, by regex — which is
+    protection by coincidence rather than by design.
+    """
+    env = pipeline_env
+    await _seed_user(env["Maker"])
+
+    import core.food_turn as FT
+
+    QUESTION_WITH_READING = (
+        "Roll 300 cal, bar 200 cal — about 500 all in. "
+        "Was the roll branded or from a bakery?")
+
+    async def _ask(*a, **k):
+        return {"action": "ask", "text": QUESTION_WITH_READING,
+                "tool_calls": [READY_CALL], "points": [QUESTION_WITH_READING],
+                "response_schema": "product_selection", "question_id": "q9",
+                "staged_item_id": "sid-roll", "requested_fields": ["brand"],
+                "options": [], "meal_group_id": "mg9"}
+
+    async def _is_food(*a, **k):
+        return True
+
+    monkeypatch.setattr(FT, "run", _ask)
+    monkeypatch.setattr(FT, "food_relevance", _is_food)
+    env["set_llm"](text="", tool_calls=[], follow_up_text="MUST NOT RUN")
+
+    await env["H"].run_imessage_pipeline(
+        "+15550001111", "iMessage;-;+15550001111",
+        "had a roll and a bar", message_guid="n1")
+
+    sent = "\n".join(env["sent"])
+    assert "Was the roll branded" in sent, (
+        f"the day-total guard replaced the question: {env['sent']}")
