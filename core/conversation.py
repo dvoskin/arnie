@@ -1006,7 +1006,35 @@ async def _run_turn(
                          "kind": _sft.get("kind") or "clarify",
                          "ask_count": int((_sft_prior or {}).get("ask_count")
                                           or 0) + 1,
-                         "items": _sft.get("items") or None})
+                         "items": _sft.get("items") or None,
+                         # THE SHAPE WE ASKED IN TRAVELS WITH THE QUESTION.
+                         #
+                         # `food_turn.parse_prior_answer` dispatches on
+                         # `response_schema` and returns None the moment it is
+                         # absent — and this dict was the only thing standing
+                         # between the ask and the answer turn. So every
+                         # deterministic parser in
+                         # `skills/nutrition/answer_parsers` was unreachable in
+                         # production: the answer re-ran the entire interpreter,
+                         # and the staged item the question was bound to was
+                         # gone by the time the reply arrived.
+                         #
+                         # `parse_command` needs no schema, which is exactly why
+                         # "skip it" has always behaved and "about a cup" has
+                         # not — the half that needed this was the half that
+                         # settles a field.
+                         #
+                         # Written defensively because only the staged-pipeline
+                         # branch builds a ClarificationQuestion; the other ask
+                         # return points store empties here and behave exactly
+                         # as they do today.
+                         "response_schema": _sft.get("response_schema") or "",
+                         "question_id": _sft.get("question_id") or "",
+                         "staged_item_id": _sft.get("staged_item_id") or "",
+                         "requested_fields": list(
+                             _sft.get("requested_fields") or ()),
+                         "options": list(_sft.get("options") or ()),
+                         "meal_group_id": _sft.get("meal_group_id") or ""})
                     await db.commit()
                 except Exception as _e:
                     logger.warning(f"structured-ask stash failed, logging instead: {_e}")
