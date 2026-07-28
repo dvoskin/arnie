@@ -407,6 +407,30 @@ def reconcile_macros_traced(cal, protein, carbs, fat) -> tuple:
     return cal, protein, carbs, fat, note
 
 
+#: Above this, a package is a multipack rather than one serving. A 100 g bar or
+#: a 500 ml bottle is a real single serve; a 227 g bag of fun size bars is not,
+#: and `package_text` cannot tell them apart on its own.
+_SINGLE_SERVE_MAX_G = 200.0
+
+
+def _is_basis_not_serving(panel: str) -> bool:
+    """Whether a "serving" is really the per-100 basis wearing a serving's name.
+
+    Open Food Facts publishes `serving_size: 100g` for products with no panel.
+    Read as a serving it turns any count into hundreds of grams, which is how a
+    fun size candy bar reached 439 calories.
+
+    Exactly 100 g or 100 ml, and nothing else: a genuine 100 g serving does
+    exist, but a source that also reports per-100 g values cannot distinguish
+    one from the other — and between over-reading a real 100 g serving and
+    multiplying a small item fivefold, the safe error is to fall through to the
+    estimate.
+    """
+    text = (panel or "").strip().lower().replace(" ", "")
+    return text in ("100g", "100.0g", "100ml", "100.0ml",
+                    "100gram", "100grams", "100millilitres", "100milliliters")
+
+
 def _mass_from_serving_panel(quantity, src, food_name: str):
     """Grams implied by eating N of the SOURCE'S OWN serving unit, or None.
 
@@ -442,6 +466,18 @@ def _mass_from_serving_panel(quantity, src, food_name: str):
                                                 serving_unit_mass)
         panel = (src or {}).get("serving_text") or ""
         package = (src or {}).get("package_text") or ""
+        # A "SERVING" OF 100 g IS THE BASIS RESTATED, NOT A SERVING.
+        #
+        # Open Food Facts publishes `serving_size: 100g` when a product has no
+        # real panel — it is the per-100 g row wearing a serving's name. Taken
+        # literally, "1 bar" became one hundred grams: a fun size Milky Way
+        # committed 439 calories against a real 80, whenever the model's own
+        # guess was high enough that the overcount guard did not demote it.
+        #
+        # The guard was the only thing standing in front of this, which means
+        # the number depended on how badly the model guessed.
+        if _is_basis_not_serving(panel):
+            panel = ""
         if not panel and not package:
             return None
         q = normalize_quantity(quantity or "", food_name)
@@ -459,6 +495,18 @@ def _mass_from_serving_panel(quantity, src, food_name: str):
             from core.portions import mass_grams
             whole = mass_grams(package)
             if whole is None or whole <= 0:
+                return None
+            # ...AND A BAG IS NOT A BAR. The reasoning above holds for a
+            # SINGLE-SERVE product, where the package really is the serving.
+            # A 227 g sharing bag of fun size bars is not one bar, and nothing
+            # in `package_text` distinguishes the two — "227g" reads the same
+            # either way.
+            #
+            # Above this weight a countable confection is a multipack, not a
+            # piece. The bound is deliberately generous: a large single-serve
+            # bar or bottle stays under it, and everything above is a package
+            # the user ate one of, not the whole of.
+            if float(whole) > _SINGLE_SERVE_MAX_G:
                 return None
             return round(float(q.count) * float(whole), 1)
 

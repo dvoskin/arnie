@@ -18,6 +18,7 @@ branded logging, because packaged food is eaten in whole servings.
       before:  80 cal, 8g protein   (the model's guess, label rescaled to it)
       after:   70 cal, 9g protein   (the published label, nothing derived)
 """
+import pytest
 from core.food_intelligence import analyze
 from skills.nutrition import authority
 from skills.nutrition.off import _per_serving
@@ -191,3 +192,55 @@ def test_two_rolls_scale_from_the_label_not_the_guess():
                      380, 34, 38, 14, web_candidate=_WEB_LABEL,
                      is_packaged=True)
     assert (result.calories, result.protein) == (420, 40.0)
+
+
+# ── a "serving" that is not one ───────────────────────────────────────────────
+
+def test_a_hundred_gram_serving_is_the_basis_not_a_serving():
+    """Open Food Facts publishes `serving_size: 100g` when a product has no
+    real panel — the per-100g row wearing a serving's name. Read literally,
+    "1 bar" became one hundred grams: a fun size Milky Way committed 439
+    calories against a real 80.
+
+    It only escaped notice because the overcount guard demoted it — so the
+    committed number depended on how badly the model happened to guess. At a
+    guess of 80 it looked correct; at 120 it shipped 439.
+    """
+    from core.food_intelligence import _mass_from_serving_panel
+    junk = {"per100g": {"calories": 438.7, "protein": 3.3},
+            "serving_text": "100.0g", "_match": "exact"}
+    assert _mass_from_serving_panel("1 bar", junk, "Milky Way fun size") is None
+
+
+@pytest.mark.parametrize("text", ["100g", "100.0g", "100 g", "100ml", "100.0ml"])
+def test_every_spelling_of_the_basis_is_refused(text):
+    from core.food_intelligence import _mass_from_serving_panel
+    src = {"per100g": {"calories": 400.0}, "serving_text": text,
+           "_match": "exact"}
+    assert _mass_from_serving_panel("1 bar", src, "some bar") is None
+
+
+def test_a_sharing_bag_is_not_one_serving():
+    """A single-serve product's net weight IS its serving — that is why so many
+    publish no panel. A 227 g bag of fun size bars is not one bar, and
+    `package_text` reads "227g" either way."""
+    from core.food_intelligence import _mass_from_serving_panel
+    bag = {"per100g": {"calories": 438.7}, "serving_text": "",
+           "package_text": "227g", "_match": "exact"}
+    assert _mass_from_serving_panel("1 bar", bag, "Milky Way fun size") is None
+
+
+def test_a_real_single_serve_package_still_answers():
+    """The bound must not cost the case the package-as-serving path was built
+    for — a 60 g bar that publishes no panel."""
+    from core.food_intelligence import _mass_from_serving_panel
+    single = {"per100g": {"calories": 400.0}, "serving_text": "",
+              "package_text": "60g", "_match": "exact"}
+    assert _mass_from_serving_panel("1 bar", single, "protein bar") == 60.0
+
+
+def test_a_real_enumerated_panel_still_answers():
+    from core.food_intelligence import _mass_from_serving_panel
+    real = {"per100g": {"calories": 400.0}, "serving_text": "1 bar (60 g)",
+            "_match": "exact"}
+    assert _mass_from_serving_panel("1 bar", real, "protein bar") == 60.0
