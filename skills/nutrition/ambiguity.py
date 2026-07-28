@@ -91,32 +91,31 @@ class FoodAmbiguity:
         exactly "at the line"."""
         return self.materiality_score >= 1.0
 
-    @property
-    def calorie_range(self) -> Optional[tuple]:
-        """(low, high) around the reading, or None when it cannot be priced.
-
-        A span is a WIDTH. On its own it can rank a question but cannot phrase
-        one — "worth ~150 cal" is not something anyone says out loud, and the
-        clarification that had it shipped the midpoint as a settled number
-        instead ("You've got the hand roll down at 230 calories") one sentence
-        before asking which hand roll it was.
-
-        The reading sits at the middle of the spread, because that is where the
-        spread was measured from: `_span_from` scales `(upper_g - lower_g)` by
-        `calories / median_g`, and the shelf and resolver spans are likewise
-        symmetric doubts about the value they are attached to. So the endpoints
-        are the reading ± half the span, floored at zero — an approximation, and
-        a far smaller one than asserting the midpoint alone.
-        """
-        try:
-            centre = float(self.item_calories or 0)
-            span = abs(float(self.calorie_span or 0))
-        except (TypeError, ValueError):
-            return None
-        if centre <= 0 or span <= 0:
-            return None
-        return (max(0, round(centre - span / 2)), round(centre + span / 2))
-
+    # ── `calorie_range` REMOVED (2026-07-28) ────────────────────────────────
+    #
+    # It returned the reading ± half the span, floored at zero, and its own
+    # docstring called that "an approximation". The floor is where the
+    # approximation stops being one: whenever the span is at least twice the
+    # reading the low end is 0, so Cheez Doodles shipped as "somewhere between
+    # 0 and 500 cal" — between nothing and a lot, which is worse than saying
+    # nothing at all. Nobody eats zero calories of a thing they just said they
+    # ate.
+    #
+    # The obvious repair — endpoints from real pack sizes instead — is the same
+    # mistake pointing the other way: a 24 oz share bag is a real product and a
+    # ridiculous thing to offer as an equal option for one sitting. Both
+    # versions compute plausibility out of data that does not encode it.
+    # Whether a food is eaten whole or eaten FROM is world knowledge; it varies
+    # by product, size and occasion, and no formula here can hold it.
+    #
+    # So there is no third formula. `calorie_span` stays — it is a width, it
+    # ranks questions honestly, and `stakes` is built from it. What the
+    # question SAYS is now formed by whoever writes the sentence, from the
+    # reading, the span and the priced shelf options, with the reading marked
+    # explicitly unsettled. A clarification commits nothing, so its numbers are
+    # framing rather than a claim, and `validate()` still holds the other half:
+    # it checks a sentence against `committed_snapshot`, and a clarification
+    # has none.
     def top_options(self, n: int = 3) -> tuple:
         return tuple(sorted(self.candidate_values,
                             key=lambda o: -o.confidence)[:n])

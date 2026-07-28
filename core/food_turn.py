@@ -1402,7 +1402,7 @@ def unknowns_from_decision(decision, user_message: str = "") -> tuple:
             except Exception:
                 kind = "detail"
             g = groups.setdefault(kind, {"items": [], "stakes": 0.0,
-                                         "ranges": {}, "options": []})
+                                         "options": []})
             name = (item.original_text or "").strip()
             if name and name not in g["items"]:
                 g["items"].append(name)
@@ -1410,7 +1410,7 @@ def unknowns_from_decision(decision, user_message: str = "") -> tuple:
                 g["stakes"] += abs(float(amb.calorie_span or 0))
             except (TypeError, ValueError):
                 pass
-            _collect_range(g, name, amb)
+            _collect_options(g, name, amb)
     out = []
     for kind, g in groups.items():
         # Same fallback the interpreter path uses: an unknown nobody could
@@ -1420,29 +1420,24 @@ def unknowns_from_decision(decision, user_message: str = "") -> tuple:
         out.append({"kind": kind, "phrase": _KIND_PHRASING.get(kind, kind),
                     "items": tuple(g["items"]), "asks": (),
                     "stakes": round(g["stakes"], 1), "weight": weight,
-                    "ranges": dict(g["ranges"]),
                     "options": tuple(g["options"])})
     out.sort(key=lambda g: -g["weight"])
     return tuple(out)
 
 
-def _collect_range(group: dict, name: str, amb) -> None:
-    """Widen this item's range by one ambiguity, and keep its options.
+def _collect_options(group: dict, name: str, amb) -> None:
+    """Keep this ambiguity's real options.
 
-    Several ambiguities can be open on one food — which product AND how much of
-    it — and each is a separate reason the number could move. Taking the widest
-    is the honest reading: a range that covers one doubt and not the other
-    would be a narrower claim than we can support.
+    It used to also compute an endpoint pair from `calorie_range` and widen it
+    across ambiguities. That property is gone: the endpoints were the reading ±
+    half the span floored at zero, which put Cheez Doodles at "between 0 and
+    500 cal". Nothing replaces it here, because plausibility is not derivable
+    from a width — see the note where `calorie_range` used to live.
+
+    Options are different in kind and are kept: they are the actual shelf, and
+    since they now carry their pack size and that pack's cost, they are the
+    honest anchors a question can be built from when they exist.
     """
-    try:
-        span = amb.calorie_range
-    except Exception:
-        span = None
-    if name and span:
-        low, high = span
-        prior = group["ranges"].get(name)
-        group["ranges"][name] = ((min(low, prior[0]), max(high, prior[1]))
-                                 if prior else (low, high))
     try:
         for option in amb.top_options(3):
             label = str(getattr(option, "label", "") or "").strip()
@@ -1902,6 +1897,42 @@ def _looks_like_brand(label: str) -> bool:
         return False
 
 
+def _option_line(name: str, variant: dict) -> str:
+    """One shelf option as the reader should see it: what it is, how big it
+    comes, and what that costs.
+
+    The size is the pack as the label states it ("3 oz", "9.9 oz"), not a
+    serving we derived — a derived serving is exactly the invention this whole
+    path exists to avoid. Calories are that pack's own, from its per-100g and
+    its stated mass; when the mass will not parse the option keeps its name and
+    says nothing about size, which is the honest degradation.
+
+    Deliberately NOT a judgement about whether a given pack is a plausible
+    sitting. A 24 oz share bag is a real product and usually a silly thing to
+    log whole, and which of those two facts matters depends on the food, the
+    person and the occasion. That is reading the room, and it belongs to
+    whoever writes the sentence — this returns the shelf.
+    """
+    per100 = (variant.get("per100g") or {})
+    pack = str(variant.get("package_text") or "").strip()
+    try:
+        cal100 = float(per100.get("calories") or 0)
+    except (TypeError, ValueError):
+        cal100 = 0.0
+    grams = None
+    if pack:
+        try:
+            from core.portions import mass_grams
+            grams = mass_grams(pack)
+        except Exception:
+            grams = None
+    if pack and grams and cal100 > 0:
+        return f"{name} ({pack}, ~{int(round(cal100 * grams / 100.0))} cal)"
+    if pack:
+        return f"{name} ({pack})"
+    return name
+
+
 async def _variant_options(label: str, branded: bool) -> tuple:
     """The real variants of a branded product, as answer options.
 
@@ -1934,7 +1965,13 @@ async def _variant_options(label: str, branded: bool) -> tuple:
         key = name.lower()
         if name and key not in seen:
             seen.add(key)
-            out.append(name)
+            # NAME, SIZE AND NUMBER — this docstring promises "the flavours
+            # Open Food Facts holds, WITH THEIR OWN NUMBERS", and the loop was
+            # keeping the name alone. The calories were in hand and dropped
+            # here; the pack size was in hand one layer up and dropped there.
+            # Both are what turn "which one?" into a question with an obvious
+            # answer.
+            out.append(_option_line(name, v))
     if len(out) >= _CEILING:
         # WE ONLY HAVE A SAMPLE. Naming three of a dozen flavours reads as the
         # full choice, so the answer gets anchored to a subset that may not
@@ -2226,17 +2263,19 @@ def group_unknowns(asks: list, user_message: str = "",
     for label, facets in asks:
         for facet in facets:
             kind = _facet_kind(facet)
-            g = groups.setdefault(kind, {"items": [], "asks": [], "stakes": 0.0,
-                                         "ranges": {}})
+            g = groups.setdefault(kind, {"items": [], "asks": [],
+                                         "stakes": 0.0})
             if label and label not in g["items"]:
                 g["items"].append(label)
                 if kind == "portion":
-                    span = _portion_stakes(label, user_message)
-                    g["stakes"] += span
-                    centre = (priced or {}).get(str(label).strip().lower())
-                    if span > 0 and centre:
-                        g["ranges"][label] = (max(0, round(centre - span / 2)),
-                                              round(centre + span / 2))
+                    # The SPAN still ranks the question. The endpoint pair that
+                    # used to be derived here — centre ± span/2, floored at
+                    # zero — is gone for the reason recorded where
+                    # `calorie_range` used to live: it produced "between 0 and
+                    # 500 cal" whenever the doubt was wider than the reading,
+                    # and no arithmetic on a width can tell you what a person
+                    # would plausibly have eaten.
+                    g["stakes"] += _portion_stakes(label, user_message)
             g["asks"].append(facet)
     out = []
     for kind, g in groups.items():
@@ -2254,7 +2293,7 @@ def group_unknowns(asks: list, user_message: str = "",
         out.append({"kind": kind, "phrase": _KIND_PHRASING.get(kind, kind),
                     "items": tuple(g["items"]), "asks": tuple(g["asks"]),
                     "stakes": round(g["stakes"], 1), "weight": weight,
-                    "ranges": dict(g["ranges"]), "options": ()})
+                    "options": ()})
     out.sort(key=lambda g: -g["weight"])
     return tuple(out)
 

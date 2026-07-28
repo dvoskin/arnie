@@ -240,6 +240,13 @@ def _exercise_phantom_enabled() -> bool:
 
 _FOOD_LOG_TOOLS = frozenset({"log_food", "update_food_entry"})
 
+#: How long a food turn may run before its lookup earns a heads-up bubble.
+#: Read where the tools dispatch, so the interpreter pass is already spent and
+#: the wait is measured rather than predicted — a turn that arrives faster than
+#: this says nothing, which is what separates a heads-up from the pre-action
+#: narration removed in `NO TRANSACTION NARRATION`.
+_FOOD_HEADS_UP_AFTER_S = 2.5
+
 # Lookups a food-log turn may ALSO fire without being "impure": brand-macro and
 # history lookups done IN SERVICE of the log, not a separate answer owed to the
 # user. voice_log reads the COMMITTED food facts (already enriched by these), so
@@ -1449,6 +1456,32 @@ async def _run_turn(
             (tc for tc in tool_calls if tc["name"] in NEEDS_HEADS_UP_TOOLS),
             None,
         )
+        # ── A SLOW LOG EARNS ONE TOO ─────────────────────────────────────────
+        #
+        # "log-only turns NEVER trigger it" was written when a log WAS fast: the
+        # model picked the tool and the row landed. The structured lane put an
+        # interpreter pass, a shelf lookup and a composer in front of that, and
+        # production food turns now run 9-15 s while the slower-sounding lanes
+        # ("looking it up.") say something at one second. The rule outlived the
+        # shape it described.
+        #
+        # Gated on ELAPSED TIME, not on a guess about which foods are slow. By
+        # this line the interpreter has already returned, so the wait is a
+        # measured fact rather than a prediction — and a turn that got here
+        # quickly stays silent, which is what keeps this from becoming the stall
+        # marker that pre-action narration was removed for. If the interpreter
+        # gets faster, this stops firing on its own.
+        #
+        # `search_food_database`'s pool is the right wording already: "pulling
+        # the macros.", "checking the macros." It describes a LOOKUP. Nothing
+        # here claims a write is underway — that is the line
+        # `NO TRANSACTION NARRATION` draws, and it still holds.
+        if needs_heads_up_tc is None and _sft is not None \
+                and _sft.get("action") in ("log", "commit", "update") \
+                and any(tc.get("name") in _FOOD_LOG_TOOLS for tc in tool_calls) \
+                and (_time_mod.monotonic() - _turn_t0) >= _FOOD_HEADS_UP_AFTER_S:
+            needs_heads_up_tc = {"name": "search_food_database",
+                                 "input": {"query": _user_text or ""}}
         if needs_heads_up_tc:
             _model_wrote_text = bool(response_text and response_text.strip())
             if _streamer:

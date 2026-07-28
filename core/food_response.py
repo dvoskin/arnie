@@ -1474,21 +1474,18 @@ def _unknowns_brief(unknowns: Tuple[dict, ...], mode: str = "") -> str:
         if stakes:
             line += f"  [worth ~{int(stakes)} cal; never say this number]"
         lines.append(line)
-        # THE SWING IS SAYABLE; THE SCORE IS NOT. `stakes` is fenced off above
-        # because "worth ~150 cal" is a materiality score, not something anyone
-        # says out loud. The ENDPOINTS are the opposite: "somewhere between 230
-        # and 380" is exactly how a person describes not knowing, and it is the
-        # sentence this whole brief exists to make possible.
-        for name, span in (unknown.get("ranges") or {}).items():
-            try:
-                lines.append(f"      {name}: somewhere between {int(span[0])} "
-                             f"and {int(span[1])} cal — SAY THIS RANGE rather "
-                             f"than either end of it")
-            except (TypeError, ValueError, IndexError):
-                continue
+        # ONE OWNER FOR THE RANGE. This block used to print endpoints AND the
+        # reading block printed them again, so the shipped clarification said
+        # it twice — "somewhere between 0 and 500 cal" and then "that puts the
+        # snack somewhere in the 0 to 500 range". The second sentence carried
+        # nothing. The reading block owns how an open line is described; this
+        # one supplies the evidence it is described FROM.
         options = [str(o).strip() for o in (unknown.get("options") or ())
                    if str(o).strip()]
         if options:
+            # These now carry their pack size and that pack's cost — "Takis
+            # Fuego (3 oz, ~425 cal)" — so they are answerable in one word and
+            # they are the honest ends of any range worth giving.
             lines.append("      they are choosing between: "
                          + " / ".join(options[:4]))
         # WHAT IT ACTUALLY NEEDS TO KNOW. `phrase` is a CATEGORY — "one missing
@@ -1536,15 +1533,15 @@ def _unknowns_brief(unknowns: Tuple[dict, ...], mode: str = "") -> str:
     return "\n".join(lines)
 
 
-def _open_readings(plan: FoodResponsePlan) -> tuple:
-    """(ranges, open_names) from the plan's unknowns, both keyed lowered.
+def _open_readings(plan: FoodResponsePlan) -> set:
+    """The foods, lowered, that some unknown still covers.
 
-    `ranges` holds the foods whose doubt could be priced, as (low, high).
-    `open_names` holds every food any unknown covers, priced or not — the two
-    differ because most identity questions have no span until the candidates
-    themselves are costed, and an unpriced doubt is still a doubt.
+    This used to return `(ranges, open_names)` — a computed endpoint pair
+    alongside the open set. The endpoints are gone (see the note where
+    `FoodAmbiguity.calorie_range` used to live); what survives is the part that
+    was always sound, which is knowing WHICH lines are still open.
     """
-    ranges, open_names = {}, set()
+    open_names = set()
     for unknown in (plan.clarification_unknowns or ()):
         if not isinstance(unknown, dict):
             continue
@@ -1552,29 +1549,24 @@ def _open_readings(plan: FoodResponsePlan) -> tuple:
             key = str(name).strip().lower()
             if key:
                 open_names.add(key)
-        for name, span in (unknown.get("ranges") or {}).items():
-            try:
-                low, high = int(span[0]), int(span[1])
-            except (TypeError, ValueError, IndexError):
-                continue
-            key = str(name).strip().lower()
-            prior = ranges.get(key)
-            ranges[key] = ((min(low, prior[0]), max(high, prior[1]))
-                           if prior else (low, high))
-    return ranges, open_names
+    return open_names
 
 
-def _reading_line(item, ranges: dict, open_names: set) -> str:
-    """One food in the reading — a range where it is open and priced, the
-    figure where it is settled, and an explicit "not settled" where it is open
-    and nobody could price it."""
+def _reading_line(item, open_names: set) -> str:
+    """One food in the reading: the figure where it is settled, and an explicit
+    "open, do not state this as settled" where it is not.
+
+    There is no longer a third form. An open line used to be rendered as
+    "between X and Y" whenever the doubt could be priced, and those endpoints
+    were arithmetic on a width — the reading ± half the span, floored at zero —
+    which is how a bag of Cheez Doodles became "somewhere between 0 and 500
+    cal". Whether a range is worth offering, and what its ends should be, is a
+    judgement about the food and the occasion. It belongs to the sentence, made
+    from the reading, the swing and the priced options, not to this line.
+    """
     key = (item.name or "").strip().lower()
     protein = (f", {item.protein}g protein"
                if getattr(item, "protein", None) else "")
-    span = ranges.get(key)
-    if span:
-        return (f"{item.name} — between {span[0]} and {span[1]} cal "
-                f"(OPEN: this is what your question decides){protein}")
     if key in open_names:
         return (f"{item.name} — around {item.calories} cal, but OPEN: this is "
                 f"what your question decides, so do not state it as "
@@ -1651,7 +1643,7 @@ def build_prompt(plan: FoodResponsePlan) -> str:
         # survive, the open line is written as the range it actually is. Where
         # nothing could price the doubt, the line is still marked open, because
         # the failure to price it is not a licence to state it.
-        _ranges, _open = _open_readings(plan)
+        _open = _open_readings(plan)
         _any_open = bool(_open & {i.name.strip().lower() for i in _priced})
         parts.append(
             "SHOW YOUR READING, THEN ASK. Two bubbles.\n"
@@ -1665,15 +1657,22 @@ def build_prompt(plan: FoodResponsePlan) -> str:
             "clause why it is shaky, and ask about that one thing. Always end "
             "on the question — a reading with no question asks nothing and "
             "commits nothing.\n"
-            + ("A LINE MARKED OPEN IS THE ONE YOU ARE ASKING ABOUT. Give it "
-               "its range, or say plainly that it is not settled yet — never a "
-               "single figure. Stating a number for the thing you are about to "
-               "ask about tells them the answer does not matter, and the "
-               "roll-up inherits it: if any line is open, the meal total is a "
-               "range too.\n" if _any_open else "")
+            + ("A LINE MARKED OPEN IS THE ONE YOU ARE ASKING ABOUT — never "
+               "state a single figure for it. Stating a number for the thing "
+               "you are about to ask about tells them the answer does not "
+               "matter, and the roll-up inherits it: if any line is open, the "
+               "meal total is a range too.\n"
+               "IF YOU GIVE A RANGE, MAKE IT ONE A PERSON WOULD ACTUALLY "
+               "OFFER. Both ends have to be things they could plausibly have "
+               "eaten in this sitting. A bottom end of zero is never right — "
+               "they told you they ate it — and neither is a top end nobody "
+               "finishes in one go, like a whole share bag. Where the options "
+               "below carry sizes and costs, those are your real ends; where "
+               "they do not, say plainly that it is not settled yet rather "
+               "than inventing a spread.\n" if _any_open else "")
             + "These are your own estimates. Write them as estimates, and use "
             "the foods below exactly; do not ask what they ate, you have it:\n  "
-            + "\n  ".join(_reading_line(i, _ranges, _open) for i in _priced))
+            + "\n  ".join(_reading_line(i, _open) for i in _priced))
     if plan.resolved_items:
         # UNDERSTOOD IS NOT LOGGED, and the bare label let the composer assume
         # it was. On a clarification nothing is written until they answer, so a

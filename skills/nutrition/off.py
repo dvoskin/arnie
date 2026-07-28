@@ -445,6 +445,19 @@ async def search_variants(name: str, limit: int = 5) -> list:
         out.append({
             "name": label,
             "brand": (product.get("brands") or "").split(",")[0].strip(),
+            # HOW BIG THE PACK IS, kept because the question needs it.
+            #
+            # `_FIELDS` has always asked for `serving_size` and `quantity`, and
+            # `search()` maps both — this builder was throwing them away, so a
+            # clarification about which product could name the flavours and not
+            # the sizes. "a small bag or the share size?" is a question someone
+            # can answer in one word; "was that a single small…" is not.
+            #
+            # Carried raw. Whether a 24 oz share bag is a plausible SITTING is
+            # judgement about the food and the occasion, not something this
+            # layer can decide — it supplies the shelf and the reader weighs it.
+            "serving_text": (product.get("serving_size") or "").strip(),
+            "package_text": (product.get("quantity") or "").strip(),
             "per100g": {
                 "calories": calories,
                 "protein": nutriments.get("proteins_100g"),
