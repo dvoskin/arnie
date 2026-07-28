@@ -2658,6 +2658,86 @@ def parse_prior_answer(message: str, prior: Optional[dict]):
         return None
 
 
+async def interpret(message: str, content: str, *, mode: str,
+                    prior: Optional[dict] = None,
+                    thread_active: bool = False,
+                    board=None) -> Optional[dict]:
+    """The interpreter pass ALONE — message in, parsed plan out, no policy.
+
+    THE FIRST CUT OF THE SEVERANCE. `run()` interprets, scores materiality,
+    applies the clarification veto AND builds the executable commands, in one
+    ~700-line function. That entanglement is the reason
+    `core/turns/stages/food.py` calls the monolith at all: the coordinator's
+    food stage only wants a reading, and the only way to get one was to buy the
+    whole turn — which is why its validation stage declares a POLICY_VERSION
+    and then has nothing left to decide, reading `response_intent` straight off
+    the interpreter's own `action`.
+
+    Nothing here decides anything. It returns what the model read, or None when
+    there is nothing usable — the same two outcomes `run()` already depended on
+    at this point, so the legacy path is unchanged by construction.
+
+    `content` is the fully-built prompt body (previous message, regulars,
+    board, day line); the caller owns assembling it because what belongs in it
+    differs between a cold turn and an answer turn.
+    """
+    data = None
+    _shadow_parse = None
+    if not prior and not thread_active and not board:
+        try:
+            from core.food_fast_path import (parse as _fast_parse,
+                                             fast_path_enabled,
+                                             shadow_enabled)
+            if fast_path_enabled():
+                data = _fast_parse(message)
+                if data is not None:
+                    logger.info(f"event=food_fast_path outcome=parsed "
+                                f"items={len(data.get('items') or [])}")
+            elif shadow_enabled():
+                # SHADOW: parse, keep the result, act on none of it. The model
+                # runs as usual below and the two are compared, which is how the
+                # disagreement rate gets measured before the parser is trusted
+                # with a write.
+                _shadow_parse = _fast_parse(message)
+        except Exception as _fe:
+            logger.warning(f"fast path skipped: {_fe}")
+            data = None
+
+    if data is None:
+        from skills.nutrition.materiality import (day_fraction_for,
+                                                  fraction_for,
+                                                  min_item_share_for)
+        _of_item = fraction_for(mode)
+        sys = (_SYSTEM
+               .replace("{of_item}", ("any share" if _of_item > 1.0
+                                      else f"{_of_item:.0%}"))
+               .replace("{of_day}", f"{day_fraction_for(mode):.1%}")
+               .replace("{item_share}", f"{min_item_share_for(mode):.1%}")
+               .replace("{thresh}", str(_THRESH[mode]))
+                      .replace("{mode}", mode))
+        try:
+            # Under the turn's budget like everything else that waits. The
+            # interpreter pass is the single largest block in a food turn — a
+            # forty-five-second model timeout inside a twenty-second turn budget
+            # meant the "turn budget" could not bound the turn's biggest wait.
+            from core import deadline
+            res = await deadline.wait_for(
+                chat([{"role": "user", "content": content}], sys,
+                     tools=False, max_tokens=700, model=_logger_model()))
+        except Exception as e:
+            # Includes DeadlineExceeded: out of time is a fall-through to the
+            # legacy path, never a lost meal.
+            logger.warning(f"food_turn logger pass failed: {e}")
+            return None
+        data = _parse(res.get("text") or "")
+        _capture_interpreter_output(message, data)
+        if _shadow_parse is not None:
+            _log_fast_path_shadow(_shadow_parse, data)
+    if not isinstance(data, dict):
+        return None
+    return data
+
+
 async def run(message: str, user, prior: Optional[dict] = None,
               day_line: str = "", board: Optional[list] = None,
               last_assistant: str = "", regulars: Optional[list] = None,
@@ -2793,59 +2873,9 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
     # Only for a cold turn: a `prior` means this is an answer to a question we
     # asked, which needs the question's context, and a thread means the message
     # may reference what came before.
-    data = None
-    _shadow_parse = None
-    if not prior and not thread_active and not board:
-        try:
-            from core.food_fast_path import (parse as _fast_parse,
-                                             fast_path_enabled,
-                                             shadow_enabled)
-            if fast_path_enabled():
-                data = _fast_parse(message)
-                if data is not None:
-                    logger.info(f"event=food_fast_path outcome=parsed "
-                                f"items={len(data.get('items') or [])}")
-            elif shadow_enabled():
-                # SHADOW: parse, keep the result, act on none of it. The model
-                # runs as usual below and the two are compared, which is how the
-                # disagreement rate gets measured before the parser is trusted
-                # with a write.
-                _shadow_parse = _fast_parse(message)
-        except Exception as _fe:
-            logger.warning(f"fast path skipped: {_fe}")
-            data = None
-
+    data = await interpret(message, content, mode=mode, prior=prior,
+                           thread_active=thread_active, board=board)
     if data is None:
-        from skills.nutrition.materiality import (day_fraction_for,
-                                                  fraction_for,
-                                                  min_item_share_for)
-        _of_item = fraction_for(mode)
-        sys = (_SYSTEM
-               .replace("{of_item}", ("any share" if _of_item > 1.0
-                                      else f"{_of_item:.0%}"))
-               .replace("{of_day}", f"{day_fraction_for(mode):.1%}")
-               .replace("{item_share}", f"{min_item_share_for(mode):.1%}")
-               .replace("{thresh}", str(_THRESH[mode]))
-                      .replace("{mode}", mode))
-        try:
-            # Under the turn's budget like everything else that waits. The
-            # interpreter pass is the single largest block in a food turn — a
-            # forty-five-second model timeout inside a twenty-second turn budget
-            # meant the "turn budget" could not bound the turn's biggest wait.
-            from core import deadline
-            res = await deadline.wait_for(
-                chat([{"role": "user", "content": content}], sys,
-                     tools=False, max_tokens=700, model=_logger_model()))
-        except Exception as e:
-            # Includes DeadlineExceeded: out of time is a fall-through to the
-            # legacy path, never a lost meal.
-            logger.warning(f"food_turn logger pass failed: {e}")
-            return None
-        data = _parse(res.get("text") or "")
-        _capture_interpreter_output(message, data)
-        if _shadow_parse is not None:
-            _log_fast_path_shadow(_shadow_parse, data)
-    if not isinstance(data, dict):
         return None
     action = data.get("action")
 
