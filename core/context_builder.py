@@ -98,6 +98,15 @@ def unseen_reply_directive(unseen: bool) -> str:
     )
 
 
+#: One logging path for everyone, or the three per-mode overrides.
+#:
+#: An env flag rather than a deletion: the per-mode prose is still here, still
+#: tested, and FOOD_ONE_PATH=false restores it without a deploy. The three
+#: postures are a product decision to revisit, not a mistake to erase.
+_ONE_PATH = (os.getenv("FOOD_ONE_PATH", "true") or "").strip().lower() not in (
+    "0", "false", "no", "off")
+
+
 def food_mode_directive(mode: Optional[str]) -> str:
     """Render the per-turn [FOOD LOGGING MODE] override for the user's food_logging_mode.
 
@@ -115,6 +124,33 @@ def food_mode_directive(mode: Optional[str]) -> str:
     """
     from core.food_ledger import ASK_THRESHOLDS as _T
     m = (mode or "moderate").strip().lower()
+
+    # ── ONE PATH (2026-07-27) ────────────────────────────────────────────────
+    #
+    # Three postures meant three sets of words competing to decide the same
+    # thing, and the losing behaviour was always the same: the write got held.
+    # Measured on a clean-room set with production config, strict logged 4 of
+    # 10 plainly-stated foods and quick logged 10 of 10 — a 6-item spread
+    # produced by prose, not by any deliberate accuracy trade.
+    #
+    # The baseline moderate policy already says the right thing and says it
+    # structurally: "log when the message is reasonably interpretable... prefer
+    # non-blocking clarification AFTER logging when possible — log first, then
+    # say what could be adjusted. IF THE USER ALREADY PROVIDED THE VARIABLES,
+    # LOG. DO NOT RE-ASK."
+    #
+    # That is the whole design. Clarify as freely as the situation deserves,
+    # because clarifying costs nothing once the food is already on the board.
+    # HOLDING the write is what made this feel broken, and no mode needs it.
+    #
+    # Returning "" for every mode hands all three to the static FOOD_ACCURACY
+    # block, which IS the moderate policy. The user's stored preference is left
+    # untouched — this decides how much prose argues with that block, not what
+    # they picked — so restoring per-mode behaviour later is a revert, not a
+    # migration.
+    if _ONE_PATH:
+        return ""
+
     if m == "quick":
         return (
             "[FOOD LOGGING MODE: quick] Log food immediately on your best estimate — but "

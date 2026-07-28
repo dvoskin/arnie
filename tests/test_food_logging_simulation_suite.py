@@ -392,22 +392,19 @@ def test_is_generic_food_name_matrix(name, is_generic):
 # ════════════════════════════════════════════════════════════════════════════
 
 
-@pytest.mark.parametrize("mode,must_contain,must_not_contain", [
-    ("quick", "quick", ""),
-    ("strict", "strict", ""),
-    ("moderate", "", "FOOD LOGGING MODE"),  # default = empty
-    (None, "", "FOOD LOGGING MODE"),
-    ("unknown_string", "", "FOOD LOGGING MODE"),
-])
-def test_food_mode_directive_matrix(mode, must_contain, must_not_contain):
-    out = food_mode_directive(mode)
-    if must_contain:
-        assert must_contain in out.lower()
-    if must_not_contain and out:  # only check ban if directive non-empty
-        # No, the directive itself is what we don't want for moderate
-        pass
-    if mode in (None, "moderate", "unknown_string"):
-        assert out == ""
+@pytest.mark.parametrize("mode", ["quick", "strict", "moderate", None,
+                                  "unknown_string"])
+def test_food_mode_directive_matrix(mode):
+    """ONE PATH (2026-07-27): every mode falls through to the static
+    FOOD_ACCURACY block, so no per-turn override is injected for any of them.
+
+    The old matrix asserted 'quick' in the quick directive and 'strict' in the
+    strict one — i.e. that three postures argued with the baseline block. That
+    argument is what held the write: strict logged 4 of 10 plainly-stated
+    foods where quick logged 10 of 10. FOOD_ONE_PATH=false restores the
+    postures and is covered in tests/test_food_mode_context.py.
+    """
+    assert food_mode_directive(mode) == ""
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -711,8 +708,9 @@ def test_public_surface_smoke():
     assert cal == 500
     # context_builder
     assert render_pending_clarification_block([]) == ""
+    # ONE PATH: no mode injects a per-turn override any more.
     assert food_mode_directive("moderate") == ""
-    assert "quick" in food_mode_directive("quick").lower()
+    assert food_mode_directive("quick") == ""
     # tool_executor
     assert tool_heads_up("search_food_database", "x").endswith(".")
     out = deterministic_confirmation(
