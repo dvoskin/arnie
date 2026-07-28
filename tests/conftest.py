@@ -27,7 +27,41 @@ def _log(cal=0, pro=0):
     """Minimal DailyLog stub with total_calories + total_protein."""
     return SimpleNamespace(total_calories=cal, total_protein=pro)
 
-# Deterministic env for tests that read it.
+# ── HERMETIC BY CONSTRUCTION ──────────────────────────────────────────────────
+#
+# The suite used to inherit whatever the working directory happened to contain,
+# and it did so in total silence. Two channels, both real, both measured:
+#
+#   `.env`      main.py calls load_dotenv(override=True) AT IMPORT. conftest
+#               runs first, so every default below was set and then overwritten
+#               the moment any test imported main — pulling in live API keys and,
+#               far worse, live FEATURE FLAGS. SEARCH_ENABLED, FOOD_GATE_MODEL
+#               and TURN_COORDINATOR_MODE from a developer's file decided what
+#               the tests were testing.
+#   `arnie.db`  nothing pinned DATABASE_URL, so a sqlite file sitting in the
+#               repo root became the database under test — carrying rows from
+#               whatever ran last, and mutated by each run in turn.
+#
+# Measured 2026-07-28 on identical source: 2 failures in a clean worktree, 21 to
+# 34 in one holding a developer `.env` and an `arnie.db`. Both counts STABLE
+# across repeated runs, which is what made it expensive — it never presented as
+# flakiness. It presented as a regression, and a previous session recorded the
+# swing as inherent nondeterminism and concluded the suite was not a gate.
+#
+# It is a gate. It just had two doors propped open. A suite that can be moved
+# this far by files it never mentions cannot answer the only question it is for.
+import dotenv
+dotenv.load_dotenv = lambda *a, **k: False        # a test never reads a .env
+
+# Assignment, not setdefault: OVERRIDING an inherited value is the entire point,
+# and an inherited one is exactly the case that hurt. Every DB test builds its
+# own in-memory engine anyway (see `engine` below) — this closes the path for
+# any code that reaches for the global URL on its own.
+os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///:memory:"
+
+# Deterministic env for tests that read it. These stay `setdefault` so an
+# explicit shell override (`SCRIBE_ENABLED=true pytest ...`) still works — that
+# is a deliberate act, unlike a file the runner never knew was there.
 os.environ.setdefault("LINKING_ENABLED", "true")
 os.environ.setdefault("PROACTIVE_MESSAGING_ENABLED", "false")
 # Scribe off in tests — it launches a real Haiku extraction; run_turn tests stay
