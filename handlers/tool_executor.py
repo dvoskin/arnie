@@ -3580,6 +3580,41 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
                 )
         await db.refresh(today_log)
 
+        # THE CARD MIRRORS THE COMMITTED ROW — the same sync log_food does at
+        # the end of its branch, and restore_food_entry does at the end of its.
+        # `update_food_entry` was the one write path that never did it, and that
+        # asymmetry IS the stale card: `_logged_entry_card` builds the update
+        # payload out of `inp` (core/conversation.py:332), the re-resolution
+        # writes to `changes` and then to the DB, and `inp` still holds whatever
+        # the interpreter proposed — or, on a lone rename, holds no macros at
+        # all, because `_update_call` drops them when `defer_macros` is set
+        # (core/food_turn.py:2402). The client then fills the gap from its own
+        # cached row, so the card showed 4,404 cal · 0 g protein in the same
+        # bubble as prose reading 1,200 / 54.
+        #
+        # The prose was never wrong: it is composed after `db.refresh` from the
+        # day snapshot. Only the card read a pre-edit source. Mirroring the
+        # committed row here gives both halves of the bubble ONE origin — the
+        # row that actually exists — instead of reconciling two after the fact.
+        try:
+            for _k, _v in (("calories", entry.calories),
+                           ("protein", entry.protein),
+                           ("carbs", entry.carbs),
+                           ("fats", entry.fats)):
+                if _v is not None:
+                    inp[_k] = _v
+            # The committed NAME too, so a rename cannot leave the card on the
+            # `food_hint` fallback (core/conversation.py:315) showing the food
+            # the user just corrected away from.
+            if entry.parsed_food_name:
+                inp["food_name"] = entry.parsed_food_name
+            if entry.quantity:
+                inp["quantity"] = entry.quantity
+        except Exception as _mb:
+            # A card that omits macros degrades to the client's row; a raised
+            # exception here would lose a correction that already committed.
+            logger.warning(f"update card mirror-back skipped: {_mb}")
+
         # Recurring-memory correction backfill: when a correction notably shifts
         # macros on a named non-generic food, update the user_food_match so the
         # next log of the same item primes from the corrected profile. Reuses
