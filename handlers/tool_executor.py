@@ -1403,6 +1403,21 @@ _ENRICH_PREFETCH: "contextvars.ContextVar[dict]" = contextvars.ContextVar(
     "arnie_enrich_prefetch", default={}
 )
 
+# The same, for the WEB LABEL lane — normalized food name -> the candidate dict
+# or None. Presence in the map is the answer, including a prefetched miss: a
+# product with no readable label is a stable fact for the length of a turn, and
+# re-asking is the slowest possible way to learn nothing twice.
+#
+# WHY IT EXISTS. `_fetch_usda_off` overlapped USDA and OFF with each other and
+# across items, and the web lane was left out — so it ran AFTER both, inline,
+# once per item. On the 18:23 turn that lane was the one that answered, and
+# enrichment cost 5.1 s of a 16 s turn. The serialization is not only across
+# items; it is across lanes within a single item, which is why this is worth
+# doing even for a one-item log where the USDA/OFF prewarm is not.
+_WEB_LABEL_PREFETCH: "contextvars.ContextVar[dict]" = contextvars.ContextVar(
+    "arnie_web_label_prefetch", default={}
+)
+
 
 async def _fetch_usda_off(food_name: str, is_packaged: bool):
     """Network-only enrichment fetch: USDA + OFF, run CONCURRENTLY. Touches NO DB,
@@ -1456,7 +1471,7 @@ async def _prewarm_enrichment(tool_calls: list) -> None:
     # Distinct foods worth prewarming: log_food calls with a real name that isn't
     # a pure generic (USDA-only, cheap) — keyed by normalized name to dedupe
     # repeats and to match the key _analyze_food looks up.
-    plan: dict[str, tuple[str, bool]] = {}
+    plan: dict[str, tuple[str, bool, object]] = {}
     for tc in tool_calls:
         if not isinstance(tc, dict) or tc.get("name") != "log_food":
             continue
@@ -1469,25 +1484,45 @@ async def _prewarm_enrichment(tool_calls: list) -> None:
         nn = normalize_name(fn)
         if not nn or nn in plan or is_generic_food_name(fn):
             continue
-        plan[nn] = (fn, bool(inp.get("is_packaged")) or _looks_branded(fn))
-
-    # Only worth the fan-out for a genuine multi-item paste. A single item gains
-    # nothing (it would just move the same one lookup earlier) and a giant paste
-    # is capped so we don't open an unbounded burst of concurrent HTTP calls.
-    if len(plan) < 2:
+        plan[nn] = (fn, bool(inp.get("is_packaged")) or _looks_branded(fn),
+                    inp.get("quantity"))
+    if not plan:
         return
+
     names = list(plan.keys())[:12]
-    results = await _aio.gather(
-        *[_fetch_usda_off(plan[nn][0], plan[nn][1]) for nn in names],
-        return_exceptions=True,
+    # The USDA+OFF fan-out is only worth it for a genuine multi-item paste — a
+    # single item gains nothing, since this would just move the same one lookup
+    # earlier. The WEB LABEL fan-out is worth it at ANY count, because it is not
+    # overlapping items with each other, it is overlapping a lane that runs
+    # after USDA and OFF have both finished. A giant paste is capped either way
+    # so we never open an unbounded burst of concurrent HTTP calls.
+    _web_names = [nn for nn in names if plan[nn][1]]
+    results, web_results = await _aio.gather(
+        _aio.gather(*[_fetch_usda_off(plan[nn][0], plan[nn][1])
+                      for nn in (names if len(plan) >= 2 else [])],
+                    return_exceptions=True),
+        _aio.gather(*[_web_lookup_packaged(plan[nn][0], plan[nn][2])
+                      for nn in _web_names],
+                    return_exceptions=True),
     )
     cache: dict[str, tuple] = {}
-    for nn, res in zip(names, results):
+    for nn, res in zip((names if len(plan) >= 2 else []), results):
         if isinstance(res, tuple):     # a raised exception is dropped -> inline fetch
             cache[nn] = res
     if cache:
         _ENRICH_PREFETCH.set(cache)
         logger.info(f"enrichment prewarm: fanned out {len(cache)} foods")
+    web_cache: dict[str, object] = {}
+    for nn, res in zip(_web_names, web_results):
+        # An exception is NOT cached — that is "we do not know", and the inline
+        # call gets its own chance. A None IS cached: the lookup ran and found
+        # no readable label.
+        if isinstance(res, Exception):
+            continue
+        web_cache[nn] = res
+    if web_cache:
+        _WEB_LABEL_PREFETCH.set(web_cache)
+        logger.info(f"web label prewarm: fanned out {len(web_cache)} foods")
 
 
 # Meal words that mark a COMPOSITE dish worth a web total-lookup when the DBs
@@ -2023,7 +2058,16 @@ async def fetch_candidates(db, user, food_name, inp) -> FoodCandidates:
                 "event=branded_lookup food=%r outcome=skipped db_grade=%s "
                 "needs_branded=%s", food_name, _db_grade or "-", _needs_branded)
         if _want_branded:
-            web = await _web_lookup_packaged(food_name, inp.get("quantity"))
+            # The prewarm fans this lane out alongside USDA and OFF rather than
+            # behind them. A prewarmed answer is byte-identical to the inline
+            # one — same function, same arguments — so this is purely a question
+            # of when the network round trip was paid, never of what it said.
+            _wl_cache = _WEB_LABEL_PREFETCH.get()
+            if name_norm and name_norm in _wl_cache:
+                web = _wl_cache[name_norm]
+                logger.debug(f"web label prewarm hit for {food_name!r}")
+            else:
+                web = await _web_lookup_packaged(food_name, inp.get("quantity"))
             # ONE LINE PER ATTEMPT, with the outcome. A lookup that missed and
             # a lookup that never ran were indistinguishable in the log, so a
             # branded product committed at an estimate could not be diagnosed

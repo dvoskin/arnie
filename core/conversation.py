@@ -912,6 +912,37 @@ async def _run_turn(
                 from core.food_turn import _YES_RE as _yes_re_c
                 if _yes_re_c.match((_user_text or "").strip()):
                     _confirm_hit = _sft_prior["items"]
+            # THE FREE SIGNALS DECIDE FIRST, AND THE INDICATOR GOES WITH THEM.
+            #
+            # The gate below was an `or` chain that awaited the model third,
+            # ahead of two terms costing nothing:
+            #
+            #     prior · photo · AWAIT food_relevance · board+destructive · thread
+            #
+            # So a turn that is food BECAUSE THE THREAD IS ACTIVE, or because
+            # the board plus a destructive verb say so, paid a Haiku round trip
+            # to be told something already known — and the "Logging…" indicator,
+            # which fires on the far side of the gate, waited behind it. The
+            # user watched a generic thinking dot for a model call whose answer
+            # could not change the outcome.
+            #
+            # Ordering them first is free in both directions: `or` short-
+            # circuits, so the model is now asked only about the cold-start
+            # case it was written for, and the indicator can morph before the
+            # gate rather than after it. Nothing here fires the indicator on a
+            # turn that is not food — every term is a signal that already says
+            # food, which is why the model call can be skipped on it at all.
+            _food_now = bool(_sft_prior is not None or _photo_food is not None
+                             or _route_mid
+                             or (_board and _sft_dest(_user_text or "")))
+            if (_undo_plan is None and _confirm_hit is None and _food_now
+                    and on_tool_start and "log_food" not in _announced):
+                try:
+                    await on_tool_start(["log_food"])
+                    _announced.add("log_food")
+                except Exception:
+                    pass
+
             if _undo_plan is not None:
                 _sft = _undo_plan
                 _turn_route = "ledger_undo"
@@ -945,11 +976,9 @@ async def _run_turn(
                     await db.commit()
                 except Exception:
                     pass
-            elif not (_sft_prior is not None or _photo_food is not None
+            elif not (_food_now
                       or await _sft_relevant(_user_text or "",
-                                             _last_assistant or "")
-                      or (_board and _sft_dest(_user_text or ""))
-                      or _route_mid):
+                                             _last_assistant or "")):
                 # The cold-start gate turned this message away. WHICH shape it
                 # was is the difference between a language we don't serve yet
                 # and a hole in the gate, and both used to log as nothing.
@@ -958,8 +987,11 @@ async def _run_turn(
             else:
                 # Immediate status: morph the live thinking indicator to
                 # "Logging…" the moment the logger starts, so its pass is
-                # never silent dead air (Danny 2026-07-23).
-                if on_tool_start:
+                # never silent dead air (Danny 2026-07-23). Already fired above
+                # for every turn the free signals settled; this is the
+                # cold-start case, where nothing knew it was food until the
+                # model gate said so.
+                if on_tool_start and "log_food" not in _announced:
                     try:
                         await on_tool_start(["log_food"])
                         _announced.add("log_food")
