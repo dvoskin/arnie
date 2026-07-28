@@ -58,6 +58,34 @@ _LOGGING_TOOLS = frozenset({
     "log_body_weight", "log_water", "clear_day_log",
 })
 
+
+def _conversational_context(raw):
+    """The interpreter's `context` dict as a `ConversationalContext`, or None.
+
+    `core.food_turn` reports it as a plain dict because it sits upstream of the
+    response layer and may not import it; this is the one place that turns it
+    into the typed obligation the plan carries.
+
+    NO APPROVED WORDING IS SUPPLIED, deliberately. `contextual_preface` is
+    therefore silent on the fallback path — and `fallback()` runs only when the
+    composer has already failed validation twice, where a deterministic
+    renderer improvising a reply to distress is a worse failure than leaving
+    that half unanswered. Approved wording belongs to whoever owns the copy,
+    not to a builder.
+    """
+    if not isinstance(raw, dict):
+        return None
+    try:
+        from core.food_response import ConversationalContext
+        return ConversationalContext(
+            topic=raw.get("topic") or "",
+            user_statement=raw.get("said") or "",
+            emotional_signal=raw.get("signal") or "",
+            response_obligation=raw.get("obligation") or "briefly acknowledge",
+            priority=raw.get("priority") or "normal")
+    except Exception:
+        return None
+
 # (The [[LOGGED]]/[[DID]] manifest, its prompt instructions, and the LOG_FASTPATH
 # marker gate were ripped 2026-07-23 — sonnet-5 emitted the manifest 0/4, so it was
 # dead weight, and structured food turns (core/food_turn.py) made it unnecessary.
@@ -2143,6 +2171,14 @@ async def _run_turn(
                             follow_up=_sft.get("follow_up") or "",
                             failure_notice=_failure_notice,
                             card_will_render=_card_renders,
+                            # WHAT ELSE THEY SAID, as an obligation. The
+                            # interpreter reports it on the same pass that read
+                            # the food, so a mixed turn costs no extra call —
+                            # and without this the plan modelled only the half
+                            # it could compute, which made silence the
+                            # compliant answer to "I think I'm going to quit".
+                            conversational_context=_conversational_context(
+                                _sft.get("context")),
                             facts_visible_in_card=(CARD_FACTS if _card_renders
                                                    else frozenset())))
                         # THE COMPOSER, FINALLY CONNECTED. `compose_async` was

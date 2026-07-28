@@ -123,3 +123,60 @@ def test_the_fallback_never_invents_a_reply_to_distress():
 
 def test_a_food_only_fallback_is_untouched():
     assert contextual_preface(_plan(None)) == ""
+
+
+# ── and something now populates it ────────────────────────────────────────────
+
+def test_the_interpreter_reports_it_and_the_turn_types_it():
+    """The contract shipped with nothing filling it, which is exactly the state
+    `user_emotional_context` was already in — declared, never populated. The
+    interpreter reports it on the SAME pass that reads the food, so a mixed
+    turn costs no extra model call."""
+    from core.conversation import _conversational_context
+    from core.food_turn import _context_from
+
+    ctx = _conversational_context(_context_from({"context": {
+        "topic": "quitting their job",
+        "said": "I think I'm going to quit",
+        "signal": "distressed",
+        "obligation": "offer support before discussing food",
+        "priority": "important"}}))
+    assert ctx is not None
+    assert ctx.topic == "quitting their job"
+    assert ctx.is_material is True
+
+
+def test_a_food_only_message_carries_no_obligation():
+    """Absent is the common case and the right default. Inventing context would
+    make every meal log sound like it was consoling someone."""
+    from core.conversation import _conversational_context
+    from core.food_turn import _context_from
+    assert _context_from({"items": [{"food": "rice"}]}) is None
+    assert _conversational_context(None) is None
+
+
+@pytest.mark.parametrize("bad", ["not a dict", {}, {"topic": "", "said": ""}])
+def test_malformed_context_is_dropped_not_guessed_at(bad):
+    from core.food_turn import _context_from
+    assert _context_from({"context": bad}) is None
+
+
+def test_an_unknown_priority_falls_back_to_normal():
+    """A model inventing "CATASTROPHIC" must not become an obligation by
+    accident — `is_material` gates on the enum, so an unrecognised value has to
+    land outside it."""
+    from core.food_turn import _context_from
+    assert _context_from({"context": {"topic": "x",
+                                      "priority": "CATASTROPHIC"}})["priority"] \
+        == "normal"
+
+
+def test_the_fallback_still_refuses_to_improvise():
+    """Nothing supplies approved wording, so the deterministic path stays
+    silent on the non-food half rather than generating one."""
+    from core.conversation import _conversational_context
+    from core.food_turn import _context_from
+    ctx = _conversational_context(_context_from({"context": {
+        "topic": "quitting their job", "said": "I'm going to quit",
+        "priority": "urgent"}}))
+    assert contextual_preface(_plan(ctx)) == ""

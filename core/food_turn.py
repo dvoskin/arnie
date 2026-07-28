@@ -623,6 +623,20 @@ _SYSTEM = (
     'changes."} Operation objects use the same fields as items/updates/deletes '
     'plus "op". Order them the way the user said them.\n'
     "RULES:\n"
+    "- WHAT ELSE THEY SAID. When the message carries something that is NOT "
+    "about the food and would be rude or strange to ignore, add "
+    "\"context\":{\"topic\":\"quitting their job\",\"said\":\"I think I'm "
+    "going to quit\",\"signal\":\"distressed\",\"obligation\":\"offer support "
+    "before discussing food\",\"priority\":\"important\"}. `signal` only where "
+    "there is a feeling; leave it \"\" otherwise, because most of these are "
+    "SITUATIONAL rather than emotional \u2014 \"I ate this before my workout\", "
+    "\"we were celebrating our anniversary\", \"the restaurant messed up my "
+    "order\", \"I made this for my son too\". `priority` is \"normal\" for "
+    "something worth knowing, \"important\" when a reply that ignored it would "
+    "read as cold, \"urgent\" when the food is plainly the smaller half of "
+    "what they said. OMIT the whole object when the message is only about "
+    "food, which is most of them \u2014 inventing context is worse than "
+    "missing it.\n"
     "- THEIR REGULARS SUGGEST, THEY DO NOT STATE. If their words did not name "
     "the flavour, the size or the amount, it is UNSTATED \u2014 even when their "
     "regulars make one obvious. Write what they said (\"Barebells bar\"), set "
@@ -1394,7 +1408,8 @@ def unknowns_from_decision(decision, user_message: str = "") -> tuple:
     return tuple(out)
 
 
-def clarify_plan(decision, question, *, user_message: str = ""):
+def clarify_plan(decision, question, *, user_message: str = "",
+                 context=None):
     """The whole meal as we read it, then the one thing we need.
 
     Items the user stated are shown as they said them. The item we are asking
@@ -1440,6 +1455,11 @@ def clarify_plan(decision, question, *, user_message: str = ""):
         # of being handed one and asked to rephrase it.
         clarification_unknowns=unknowns_from_decision(decision, user_message),
         unresolved_item=(pending[0] if pending else None),
+        # WHAT ELSE THEY SAID travels with the question. CLARIFY's brief tells
+        # the composer to acknowledge it BEFORE asking — "a clarification must
+        # not make the rest of their message sound invisible" — and it can only
+        # do that if the plan carries it.
+        conversational_context=context,
         requires_answer=True, user_message=user_message))
 
 
@@ -2540,6 +2560,57 @@ def _handle_clarification_command(command, prior: Optional[dict],
     return None
 
 
+def _conversational_ctx(data):
+    """`_context_from` as the typed object the response plan wants.
+
+    Built here because the ask path renders inside this module — `clarify_plan`
+    needs the object, not the dict. The import stays function-local so the
+    module-level dependency still runs one way.
+    """
+    raw = _context_from(data)
+    if not raw:
+        return None
+    try:
+        from core.food_response import ConversationalContext
+        return ConversationalContext(
+            topic=raw["topic"], user_statement=raw["said"],
+            emotional_signal=raw["signal"],
+            response_obligation=raw["obligation"], priority=raw["priority"])
+    except Exception:
+        return None
+
+
+def _context_from(data) -> Optional[dict]:
+    """The interpreter's `context` object, sanitised, or None.
+
+    Kept as a plain dict here because `core.food_turn` must not import the
+    response layer — `core.food_response` is downstream of this module, and the
+    dependency only runs one way. `core.conversation` builds the
+    `ConversationalContext` from it.
+
+    Absent is the common case and the right default. A message that is only
+    about food carries no obligation, and inventing one would make every meal
+    log sound like it was consoling someone.
+    """
+    raw = (data or {}).get("context")
+    if not isinstance(raw, dict):
+        return None
+    topic = str(raw.get("topic") or "").strip()[:120]
+    said = str(raw.get("said") or "").strip()[:300]
+    if not (topic or said):
+        return None
+    priority = str(raw.get("priority") or "normal").strip().lower()
+    if priority not in ("normal", "important", "urgent"):
+        priority = "normal"
+    return {
+        "topic": topic, "said": said,
+        "signal": str(raw.get("signal") or "").strip()[:60],
+        "obligation": (str(raw.get("obligation") or "").strip()[:120]
+                       or "briefly acknowledge"),
+        "priority": priority,
+    }
+
+
 def parse_prior_answer(message: str, prior: Optional[dict]):
     """The user's answer, read by the parser we asked the question with.
 
@@ -3012,7 +3083,8 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
             from core.food_response import render_plan as _render
             from core.food_response import with_context as _ctx
             _text = await _render(_ctx(
-                clarify_plan(_decision, _q, user_message=message),
+                clarify_plan(_decision, _q, user_message=message,
+                             context=_conversational_ctx(data)),
                 user=user, day_state=day_line))
             # PARTIAL COMMIT. Moderate's contract is that the foods already
             # confident enough go on the board, with the assumption stated,
@@ -3207,4 +3279,9 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
     # a doubt is worth a turn, the assumption disclosure says what we picked
     # when it is not, and the committed card stays one tap from repair.
     return {"action": label, "tool_calls": calls, "kinds": kinds,
-            "say": say[:400], "note": note, "follow_up": follow_up}
+            "say": say[:400], "note": note, "follow_up": follow_up,
+            # WHAT ELSE THE MESSAGE WAS ABOUT. Reported by the same pass that
+            # read the food, so a mixed turn costs no extra model call — and
+            # the response layer gets it as an obligation rather than as
+            # unstructured background it is free to ignore.
+            "context": _context_from(data)}
