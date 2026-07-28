@@ -972,7 +972,17 @@ Six of the eight ordered items. Suite 5628 passed, 0 failures, from a 0-failure 
 
 **Streaming the composer (§15.3's third part).** `compose_async` validates its output twice and replaces it with the deterministic fallback on failure — `PENDING_AS_COMMITTED`, `NUMBER_NOT_COMMITTED`, `CARD_DUPLICATION` and the rest. Streaming the raw generation would put in front of the user exactly the text `validate()` exists to stop, and a streamed sentence cannot be taken back. It is the same principle as §15.3's own note against re-introducing early narration: not a latency question, a question of what may reach the user unchecked. Worth ~1 s, and not at that price without a client that can retract.
 
-**§16, the collapse to one mode.** Its precondition is now met for the first time — strict and moderate no longer render identically, so what deleting one would cost is finally visible. Looking at it before deleting it is the whole reason the caveat was written, so the decision is left where it belongs.
+**§16, the collapse to one mode — deferred, 2026-07-28, Danny's call.** Its precondition is now met for the first time:
+
+```
+moderate:  engine held=1   plan pending=1   resolved=['Peanut M&Ms', 'Banana']
+strict:    engine held=3   plan pending=3   resolved=[]
+strict == moderate ?  False        (it was True at a1c26d3)
+```
+
+Strict's reply now carries *"Nothing goes on the board until then."* and moderate's does not. That distinction has been invisible in production for as long as it has existed, so the decision waits until it has been seen rather than being made the same day it became visible — which is the whole reason §16's caveat was written.
+
+The agreed shape when it happens is unchanged: **behaviour first, field second.** Stop threading `mode` so every threshold resolves to moderate's values; leave `food_logging_mode` stored and returned; drop the column and the dashboard picker only once nothing reads it. Note that ~26 mode-parametrized test cases across 12 files then have to change from *"mode changes the decision"* to *"mode no longer changes the decision"* — including the two written this session that assert it does.
 
 ### Where the numbers stand
 
