@@ -55,6 +55,8 @@ async def main(messages):
     from db.models import ConversationLog, FoodEntry, User, UserPreferences
     from db.queries import (get_or_create_today_log,
                             get_or_create_webhook_token, log_conversation)
+    from sqlalchemy import select
+    from sqlalchemy.orm import selectinload
 
     engine = create_async_engine("sqlite+aiosqlite://",
                                  connect_args={"check_same_thread": False},
@@ -86,7 +88,13 @@ async def main(messages):
 
     for turn_no, message in enumerate(messages, 1):
         async with Maker() as db:
-            user = await db.get(User, uid)
+            # EAGERLY, because `tool_executor._dispatch` reads
+            # `user.preferences` and a lazy load there is outside the greenlet
+            # context — it surfaces as `MissingGreenlet` and a `tool_error`
+            # flag on a turn that otherwise worked.
+            user = (await db.execute(
+                select(User).where(User.id == uid)
+                .options(selectinload(User.preferences)))).scalar_one()
             today_log = await get_or_create_today_log(db, uid, user.timezone)
 
             history = (await db.execute(

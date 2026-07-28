@@ -1105,8 +1105,19 @@ async def _run_turn(
             _streamer.held = True
         from core.llm import pick_model
         _stage_model = pick_model(user)
+        # THE FIRST PASS ONLY. `pick_model`'s own contract says so — "Follow-up
+        # voicing always stays on the workhorse" — and `_chat_extras` is SHARED
+        # with the `chat_follow_up` call below, which has no `model` parameter.
+        #
+        # So this did not merely upgrade the wrong call: it raised TypeError on
+        # every follow-up, and the user got the recovery line ("Couldn't pull a
+        # clean read on that just now") instead of their answer. Only for users
+        # inside NEW_USER_WINDOW_DAYS, which is to say the exact cohort the
+        # staged model exists to impress, on any turn whose first pass emitted
+        # tool calls and no text — which is most logging turns.
+        _pass_extras = dict(_chat_extras)
         if _stage_model:
-            _chat_extras["model"] = _stage_model
+            _pass_extras["model"] = _stage_model
         # SCRIBE — launch deterministic item extraction IN PARALLEL with pass-1 (Haiku
         # finishes before opus → no added latency). Only for multi-item food messages;
         # consulted after pass-1 to name a dropped item precisely (egg whites, etc.).
@@ -1235,7 +1246,7 @@ async def _run_turn(
             # to back.
             result = await deadline.wait_for(
                 chat(messages, system, tools=True, max_tokens=4096,
-                     **_chat_extras))
+                     **_pass_extras))
         # Flush trailing buffer immediately so a no-||| partial doesn't carry
         # over and prepend itself to the next call's first bubble. (Still held —
         # this only moves the trailing text into the held buffer.)
@@ -1295,7 +1306,7 @@ async def _run_turn(
             # retry's stream starts with a clean buffer.
             result = await deadline.wait_for(
                 chat(retry_messages, system, tools=True, max_tokens=8192,
-                     **_chat_extras))
+                     **_pass_extras))
             if _streamer:
                 await _streamer.finalize()
             _messages_for_followup = retry_messages
