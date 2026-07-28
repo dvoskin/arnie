@@ -1,5 +1,5 @@
 """Anthropic -> OpenAI fallback so a sustained Anthropic outage doesn't take
-Arnie fully dark (AUDIT.md #8)."""
+Arnie fully dark (docs/AUDIT.md #8)."""
 import os
 import importlib
 import pytest

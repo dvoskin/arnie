@@ -1,4 +1,4 @@
-"""Dry-run brain cleanup for Danny (prod user_id=2), driven by BRAIN_TAXONOMY.md.
+"""Dry-run brain cleanup for Danny (prod user_id=2), driven by docs/BRAIN_TAXONOMY.md.
 
 Read-only by default — prints the plan. Set APPLY=1 to commit.
 

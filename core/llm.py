@@ -96,7 +96,7 @@ def _get_anthropic():
         # Built-in resilience: the SDK retries 429/500/529/connection errors with
         # exponential backoff and times out a stuck request instead of hanging the
         # whole turn. Without this, a single transient API blip became a user-facing
-        # "something went wrong" (a real glitch source). See AUDIT.md P0 #3.
+        # "something went wrong" (a real glitch source). See docs/AUDIT.md P0 #3.
         _anthropic = AsyncAnthropic(api_key=key or None, max_retries=3, timeout=45.0)
     return _anthropic
 
@@ -185,7 +185,7 @@ async def chat(
     # Default: Anthropic (already retries 429/500/529/connection internally).
     # If it STILL fails (e.g. a sustained outage) and an OpenAI key is configured,
     # fall back to OpenAI for this turn so Arnie keeps responding instead of going
-    # dark. See AUDIT.md #8.
+    # dark. See docs/AUDIT.md #8.
     _primary = model or DEFAULT_MODEL()
     try:
         return await _anthropic_chat(messages, system, tools, max_tokens,

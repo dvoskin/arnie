@@ -9,7 +9,7 @@ timing, recovery patterns.
 
 IMPORTANT: these blocks are INPUT for inferring durable PATTERNS. The synthesizer
 must store the pattern ("protein slips on rest days"), never the daily snapshot
-numbers ("117g on 06-13") — those are live data (Lane 3, see BRAIN_TAXONOMY.md).
+numbers ("117g on 06-13") — those are live data (Lane 3, see docs/BRAIN_TAXONOMY.md).
 """
 import re
 from statistics import mean

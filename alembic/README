@@ -18,7 +18,7 @@ How it's wired
   create_all — Alembic is the only thing that touches schema there.
 - Local dev + the in-memory pytest suite use SQLite, where init_db() still runs
   create_all + the legacy db.database._migrate() path. (Slated for retirement once
-  fully on Postgres — see AUDIT.md.)
+  fully on Postgres — see docs/AUDIT.md.)
 
 Everyday workflow: you changed db/models.py
 --------------------------------------------
