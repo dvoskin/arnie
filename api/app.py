@@ -3563,6 +3563,11 @@ async def api_log_food(body: FoodLogBody, token: str = Query(...)):
             fats=round(body.fats, 1),
             estimated_flag=body.estimated,
         )
+        # Audit O-1: without a `created` event, "undo that" inverts whatever
+        # was logged before this — see db.queries.record_created_from_row.
+        from db.queries import record_created_from_row
+        await record_created_from_row(db, user.id, entry, "food", log.id,
+                                      source="dashboard:food_log")
     return {"status": "ok", "id": entry.id}
 
 
@@ -3703,6 +3708,9 @@ async def api_log_exercise(body: ExerciseLogBody, token: str = Query(...)):
             weight_kg=weight_kg,
             duration_minutes=body.duration_minutes,
         )
+        from db.queries import record_created_from_row
+        await record_created_from_row(db, user.id, entry, "exercise", log.id,
+                                      source="dashboard:exercise_log")
     return {"status": "ok", "id": entry.id}
 
 

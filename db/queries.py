@@ -2907,6 +2907,53 @@ async def record_ledger_event(
     return ev
 
 
+async def record_created_from_row(
+    db: AsyncSession, user_id: int, entry, domain: str, daily_log_id: int,
+    source: str,
+):
+    """The `created` event for a row written OUTSIDE the chat lane.
+
+    Audit O-1. `add_food_entry` / `add_exercise_entry` write the row; the
+    ledger event is a separate call, and the tap-log endpoints in
+    `api/quick_log.py` and `api/app.py` never made it. `ledger_undo.build_plan`
+    takes the last event UNCONDITIONALLY, so the sequence
+
+        tap-log a banana  ->  "undo that"
+
+    inverted the previous CHAT-logged item: a row the user had not asked about
+    and was not looking at. Silent, destructive, and reachable from the primary
+    iOS surface.
+
+    Reads the COMMITTED ROW rather than the request body, on the same reasoning
+    as 2a4c839: the row is what the undo will have to invert, and anything the
+    write normalised, rounded or defaulted belongs in the record of it.
+
+    Best-effort, like every other call site — history must never break the
+    write it describes.
+    """
+    payload = {}
+    for key, attr in (("food_name", "parsed_food_name"),
+                      ("exercise_name", "exercise_name"),
+                      ("quantity", "quantity"), ("calories", "calories"),
+                      ("protein", "protein"), ("carbs", "carbs"),
+                      ("fats", "fats"), ("meal_type", "meal_type"),
+                      ("sets", "sets"), ("reps", "reps"),
+                      ("weight_kg", "weight"),
+                      ("duration_minutes", "duration_minutes"),
+                      ("is_cardio", "is_cardio")):
+        value = getattr(entry, attr, None)
+        if value is not None:
+            payload[key] = value
+    try:
+        return await record_ledger_event(
+            db, user_id, "created", domain=domain,
+            entry_id=getattr(entry, "id", None),
+            daily_log_id=daily_log_id, payload=payload, source=source)
+    except Exception as e:
+        logger.warning(f"{domain} event (created) skipped: {e}")
+        return None
+
+
 async def get_ledger_events(
     db: AsyncSession, user_id: int, domain: Optional[str] = None,
     entry_id: Optional[int] = None, limit: int = 50,

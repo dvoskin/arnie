@@ -26,6 +26,7 @@ from db.queries import (
     add_exercise_entry,
     add_food_entry,
     get_or_create_today_log,
+    record_created_from_row,
     resolve_user,
 )
 
@@ -70,6 +71,11 @@ async def log_food_entry(
             meal_type=payload.meal_type,
             source_type="ios",
         )
+        # A TAP IS A TURN (audit O-1). Without this event `ledger_undo` takes
+        # the last one unconditionally, so "undo that" after a tap-log removed
+        # the previous CHAT-logged item — a row the user never mentioned.
+        await record_created_from_row(db, user.id, entry, "food", log.id,
+                                      source="quick_log:ios")
         return {
             "ok": True,
             "entry_id": entry.id,
@@ -114,6 +120,11 @@ async def log_exercise_entry(
             is_cardio=payload.is_cardio,
             **kwargs,
         )
+        # Same gap, same domain in the same ledger — `_invert` handles an
+        # exercise `created` exactly as it handles a food one, so a tap-logged
+        # set left "undo that" pointing at whatever came before it.
+        await record_created_from_row(db, user.id, entry, "exercise", log.id,
+                                      source="quick_log:ios")
         return {
             "ok": True,
             "entry_id": entry.id,
