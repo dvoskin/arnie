@@ -420,13 +420,43 @@ def _per_serving_for(quantity, src, food_name: str):
         if not isinstance(panel, dict) or not panel:
             return None
         from skills.nutrition.models import COUNT_BASIS_UNIT
-        from skills.nutrition.normalize import normalize_quantity
+        from skills.nutrition.normalize import (_serving_count,
+                                                count_units_compatible,
+                                                normalize_quantity)
         q = normalize_quantity(quantity or "", food_name)
         if q.count is None or q.count <= 0:
             return None
         if q.count_basis != COUNT_BASIS_UNIT:
             return None
+        # AND THE PANEL'S UNIT HAS TO ANSWER THE PORTION'S. The docstring above
+        # claimed this gate was already the same one `_mass_from_serving_panel`
+        # applies; it was not. That sibling refuses "15 pieces" against a panel
+        # of "1 bar" (:380) because scaling one by the other turns a portion
+        # into a package — and this function, which `analyze` consults FIRST,
+        # multiplied the panel by the count with nothing but `count_basis` in
+        # the way.
+        #
+        # `count_basis` cannot carry this. It is a deny-list, so any unit not
+        # on the vague list becomes COUNT_BASIS_UNIT — an unrecognised word
+        # like "wings" reads as "N of the label's own servings" and authorises
+        # the multiply. Measured: "2 chicken lollipops with bbq sauce"
+        # committed 1,596 cal and 136 g of protein, more than a whole chicken,
+        # while the guarded sibling refused the identical inputs.
+        _stext = str((src or {}).get("serving_text") or "")
+        _pc = _serving_count(_stext)
         n = float(q.count)
+        if _pc is not None:
+            _panel_count, _panel_unit = float(_pc[0]), _pc[1]
+            if not count_units_compatible(q.unit or "", _panel_unit or ""):
+                return None
+            # AND N UNITS IS NOT N SERVINGS. A panel reading "35 g (12 pieces)"
+            # states its macros for TWELVE pieces, so eating twelve is ONE
+            # serving, not twelve — this multiplied the whole panel by the raw
+            # count and returned 1,680 cal for a 140 cal bag. The sibling never
+            # had the bug because it scales by grams PER UNIT (`serving_unit_mass`
+            # divides by exactly this count) and arrives at 35 g.
+            if _panel_count > 0:
+                n = n / _panel_count
         out = {}
         for key, value in panel.items():
             if value is None:
