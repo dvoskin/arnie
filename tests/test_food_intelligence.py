@@ -185,6 +185,16 @@ def test_usda_likely_match_never_overrides_the_model():
     exact = dict(likely, _match="exact")
     r2 = analyze("Popcorn", "4 oz", 250, 4, 25, 15, usda_candidate=exact)
     assert r2.calories == round(500 * 1.1339), "exact USDA still ground-truths"
-    off_likely = dict(likely, _match="likely")
+    # OFF keeps its "likely" trust where USDA loses it — but the row has to be
+    # a plausible row for the food. The original fixture put 10 g protein per
+    # 100 g on QUEST CHIPS, i.e. 2.8 g for the 1 oz portion against a model
+    # read of 19 g: a protein collapse, and therefore exactly the wrong-row
+    # signature that "Kazunori Hand Roll Set — 4404 cal · 0g protein" shipped
+    # on. That guard is now source-agnostic (a row is no likelier to be right
+    # for coming from a branded index), so the fixture carries a protein figure
+    # consistent with the food instead.
+    off_likely = dict(likely, _match="likely",
+                      per100g={"calories": 500, "protein": 67, "carbs": 14,
+                               "fat": 18})
     r3 = analyze("Quest chips", "1 oz", 140, 19, 4, 5, off_candidate=off_likely)
     assert r3.calories == round(500 * 0.2835), "OFF keeps likely trust (label-grade)"

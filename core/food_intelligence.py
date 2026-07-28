@@ -27,6 +27,19 @@ logger = logging.getLogger(__name__)
 # portion land there).
 SODIUM_IMPLAUSIBLE_MG = 4000
 
+#: How far an enriched row may EXCEED the model's own read before it is treated
+#: as a wrong match rather than a correction.
+#:
+#: Deliberately loose. The model undercounts by ~19% on average (2026-07-03),
+#: so upward correction is normally the enrichment doing its job and a tight
+#: bound would undo it. 2.5x is not a correction of a 19% bias — it is a
+#: different food. "Kazunori Hand Roll Set (6 piece)" committed at 4,404 cal
+#: against the model's own ~1,200, and nothing looked up.
+#:
+#: Same multiple `promotion.LOUD_DELTA_MULTIPLE` already uses to flag a large
+#: move, because it is the same judgement about the same kind of jump.
+_OVERCOUNT_MULTIPLE = 2.5
+
 
 # ── Food logging mode ──────────────────────────────────────────────────────────
 # How aggressively Arnie confirms amounts/prep before logging. Three tiers:
@@ -616,11 +629,44 @@ def analyze(name, quantity, llm_cal, llm_protein, llm_carbs, llm_fat,
             # score: protein >=15g in the model's read shrinking below 30%
             # triggers the same demotion as a low-calorie disagreement.
             _profile_flip = (_llm0[1] >= 15 and protein < 0.3 * _llm0[1])
-            if (src is usda_candidate and _llm0[0] > 0
-                    and (cal < 0.7 * _llm0[0] or _profile_flip)):
+            # ── THE GUARD ONLY EVER LOOKED DOWN, AND ONLY AT USDA ───────────
+            #
+            # A shipped meal put "Kazunori Hand Roll Set (6 piece)" on the
+            # board at 4,404 cal and 0 g PROTEIN — six hand rolls, against a
+            # true ~1,200 and ~54 g. The coaching was then written FROM that
+            # row: "that sashimi was mostly fat", which is what 0 g protein
+            # means. When the user pushed back the model answered 1,200 / 54
+            # immediately, so the right number was never in doubt; the write
+            # path preferred the wrong one.
+            #
+            # Neither half of this guard could catch it:
+            #
+            #   * `cal < 0.7 * model` tests ONE DIRECTION. A row that
+            #     OVERSTATES by 4x was committed in silence. The asymmetry was
+            #     deliberate once — the model undercounts ~19%, so upward
+            #     correction is usually right — but "usually right" stops
+            #     applying somewhere, and 3x is well past it. No estimate is
+            #     improved by tripling it.
+            #   * `src is usda_candidate` scoped BOTH halves to USDA. A
+            #     collapsed dominant macro is evidence of a wrong ROW, and a
+            #     row is no likelier to be right because it came from a
+            #     branded index or a scraped page — the web lane in particular
+            #     has a documented history of finding the wrong product.
+            #
+            # So: the profile flip now applies to whoever supplied the numbers,
+            # and the calorie test is two-sided. The undercount bound stays
+            # USDA-only, keeping the "model undercounts" asymmetry exactly
+            # where it was argued for.
+            _overshoot = cal > _OVERCOUNT_MULTIPLE * _llm0[0]
+            if (_llm0[0] > 0
+                    and (_profile_flip
+                         or _overshoot
+                         or (src is usda_candidate and cal < 0.7 * _llm0[0]))):
                 logger.info(
-                    f"enrichment demoted: usda {cal} cal vs model {_llm0[0]} for "
-                    f"{(name or '')!r} — disagreement, keeping estimate + web lane")
+                    f"enrichment demoted: {source} {cal} cal / {protein}g protein "
+                    f"vs model {_llm0[0]} / {_llm0[1]}g for {(name or '')!r} — "
+                    f"{'profile flip' if _profile_flip else 'overcount' if _overshoot else 'undercount'}"
+                    f", keeping estimate + web lane")
                 cal, protein, carbs, fat = _llm0
                 grams = cal / cal100 * 100
                 _implied_grams = grams
@@ -727,7 +773,36 @@ def analyze(name, quantity, llm_cal, llm_protein, llm_carbs, llm_fat,
             # problem: the mass is back-derived from them, so the label is
             # scaled to fit the guess rather than correcting it. Not this
             # change — but the profile no longer compounds it.
-            if _trustworthy:
+            # A CORRECTION MAY NOT DELETE THE DOMINANT MACRO.
+            #
+            # This is where "Kazunori Hand Roll Set (6 piece)" lost its
+            # protein. The estimate path keeps the model's CALORIES — so the
+            # 4,404 on that card came from elsewhere — but this block then
+            # overwrote its 54 g of protein with the matched row's 0 g,
+            # unconditionally, because the row was label-grade and therefore
+            # `_trustworthy`. The coaching was written from the result: "that
+            # sashimi was mostly fat" is what 0 g protein means.
+            #
+            # The mass path above already refuses a match that collapses the
+            # dominant macro (`_profile_flip`) — it is the strongest signal
+            # there is that a row describes a different food. This path had no
+            # such check, so the same wrong row was refused when it arrived
+            # with a mass and accepted when it arrived without one.
+            #
+            # Refusing is per-FIELD and deliberately narrow: fibre, sugar,
+            # sodium and the micro panel above are untouched, and a row that
+            # merely disagrees keeps its correction. Only the erasure of a
+            # macro the model reported substantially is refused.
+            _erases_protein = (per100.get("protein") is not None
+                               and _llm0[1] >= 15
+                               and round(per100["protein"] * ratio, 1)
+                               < 0.3 * _llm0[1])
+            if _erases_protein:
+                logger.warning(
+                    "%r: refusing a %s row that zeroes protein — model read "
+                    "%.0fg, row implies %.1fg for this portion",
+                    name, source, _llm0[1], per100["protein"] * ratio)
+            if _trustworthy and not _erases_protein:
                 for _field in ("protein", "carbs", "fat"):
                     if per100.get(_field) is not None:
                         _scaled = round(per100[_field] * ratio, 1)
@@ -737,7 +812,7 @@ def analyze(name, quantity, llm_cal, llm_protein, llm_carbs, llm_fat,
                             carbs = _scaled
                         else:
                             fat = _scaled
-            elif not protein and per100.get("protein"):
+            elif not _erases_protein and not protein and per100.get("protein"):
                 protein = round(per100["protein"] * ratio, 1)
 
     # Plausibility clamp: a single logged item should never carry >4000mg sodium.
