@@ -3350,7 +3350,8 @@ user_message=_user_text or "")
         if _obs_on():
             from core.turns.models import TurnRequest as _TReq
             from core.turns.observe import (observe_turn as _observe,
-                                            legacy_lane as _legacy_lane)
+                                            legacy_lane as _legacy_lane,
+                                            legacy_disposition as _legacy_disp)
             from core.turn_identity import current_turn_id as _obs_ctid
             await _observe(
                 _TReq(turn_id=_obs_ctid() or "-", user_id=user.id,
@@ -3363,9 +3364,14 @@ user_message=_user_text or "")
                                                           "food_entries", None)),
                                 "food_prior": locals().get("_sft_prior"),
                                 "food_pending": locals().get("_sft_prior") is not None}),
-                actual_route=_legacy_lane(_turn_route),
-                actual_disposition=("ask" if _turn_route == "structured_ask"
-                                    else ""))
+                # BOTH HALVES, TRUTHFULLY. `_legacy_reason` is what separates
+                # "the lane declined this turn" from "the lane never saw it" —
+                # `_turn_route` is "legacy" for both — and the disposition was
+                # previously reported only for an ask, so `agree_disp`
+                # short-circuited to True on every commit.
+                actual_route=_legacy_lane(_turn_route, _legacy_reason or ""),
+                actual_disposition=_legacy_disp(_turn_route,
+                                                _legacy_reason or ""))
     except Exception:
         pass
 

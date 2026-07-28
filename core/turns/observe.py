@@ -62,10 +62,54 @@ _LEGACY_LANES = {
 }
 
 
-def legacy_lane(turn_route: str) -> str:
+#: Fallback reasons that mean THE INTERPRETER RAN AND HANDED THE TURN BACK.
+#:
+#: A turn the food lane looked at and declined is not a turn the gate never
+#: admitted, and `_turn_route` cannot tell them apart — both end as "legacy".
+#: So every food-shaped question the lane is DESIGNED to hand back was scored
+#: as a routing disagreement, and the observed rate was inflated by exactly the
+#: class of turn that proves the design works.
+#:
+#: Gate declines — kill_switch, not_food_shaped, and whatever `decline_reason`
+#: returns — stay GENERAL, which is correct: the lane never took them.
+_INTERPRETER_RAN = frozenset({
+    "interpreter_none", "interpreter_timeout", "pipeline_exception",
+    "ask_stash_failed",
+})
+
+
+def legacy_lane(turn_route: str, legacy_reason: str = "") -> str:
     """Map what run_turn() actually did onto a lane, or "" when the route has
-    no coordinator equivalent yet."""
-    return _LEGACY_LANES.get((turn_route or "").strip(), "")
+    no coordinator equivalent yet.
+
+    `legacy_reason` distinguishes "the lane declined this" from "the lane never
+    saw it" — see `_INTERPRETER_RAN`.
+    """
+    mapped = _LEGACY_LANES.get((turn_route or "").strip(), "")
+    if mapped == TurnLane.GENERAL.value \
+            and (legacy_reason or "").strip() in _INTERPRETER_RAN:
+        return TurnLane.STRUCTURED_FOOD.value
+    return mapped
+
+
+def legacy_disposition(turn_route: str, legacy_reason: str = "") -> str:
+    """What the legacy turn actually DID, in the validator's vocabulary.
+
+    The caller used to report `"ask" if route == "structured_ask" else ""`, and
+    `observe_turn` short-circuits `agree_disp` to True on an empty string — so
+    every commit turn reported `actual_disposition=-` and disposition agreement
+    has never once been compared. With TURN_COORDINATOR_OBSERVE_DEEP on, that
+    is a second Sonnet call per food turn feeding a metric that measures
+    nothing.
+    """
+    route = (turn_route or "").strip()
+    if route == "structured_ask":
+        return "ask"
+    if route.startswith("structured_") or route == "confirm_replay":
+        return "execute"
+    if (legacy_reason or "").strip() in _INTERPRETER_RAN:
+        return "pass"
+    return ""
 
 
 async def observe_turn(request: TurnRequest,
