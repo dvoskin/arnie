@@ -119,12 +119,25 @@ async def test_moderate_and_strict_ask_rather_than_write(monkeypatch, mode):
 async def test_the_question_holds_the_items_for_a_deterministic_replay(
         monkeypatch):
     """A yes must log THESE items, not re-parse the sentence. `kind="confirm"`
-    is the existing replay contract and this rides it."""
+    is the existing replay contract and this rides it.
+
+    THE ITEMS ARE THE REPLAY VEHICLE, and `tool_calls` never was. The yes path
+    (`_confirm_hit` in core/conversation.py) rebuilds the calls from the stored
+    `items` through `_log_call`; it does not read the `tool_calls` this turn
+    carried. So carrying them bought the replay nothing and cost the thing this
+    module is named after: a non-empty `tool_calls` on an ask turn IS the
+    write, so the question "did you actually eat it?" shipped alongside the 400
+    calories it was asking permission for. It also destroyed itself —
+    `discard_held()` drops the streamed bubble whenever a logging tool fires,
+    and the structured-narration branch has no "ask" in its action tuple, so
+    the turn fell through to `voice_log` and narrated the write instead.
+    """
     out = await _run(monkeypatch, "Got a caramel cashew Barebells bar and a "
                                   "Legendary Milk Chocolate Sweet Roll")
     assert out["kind"] == "confirm"
     assert len(out["items"]) == 2
-    assert len(out["tool_calls"]) == 2
+    assert out["tool_calls"] == [], (
+        "an acquisition confirm must not write the food it is asking about")
 
 
 @pytest.mark.asyncio
