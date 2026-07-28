@@ -40,6 +40,14 @@ SODIUM_IMPLAUSIBLE_MG = 4000
 #: move, because it is the same judgement about the same kind of jump.
 _OVERCOUNT_MULTIPLE = 2.5
 
+#: The same bound where the PORTION is known — a mass the user stated, or one
+#: the source's own panel supplies — and the match is trustworthy. There the
+#: arithmetic is `mass x label density` and the thing it disagrees with is the
+#: model's guess, which is the weakest evidence in the turn and the reason the
+#: lookup ran at all. A bagel guessed at 80 and labelled 250 is a bad guess; a
+#: row seven times the estimate is a different food (audit N-2).
+_OVERCOUNT_MULTIPLE_KNOWN_MASS = 4.0
+
 
 # ── Food logging mode ──────────────────────────────────────────────────────────
 # How aggressively Arnie confirms amounts/prep before logging. Three tiers:
@@ -755,7 +763,57 @@ def analyze(name, quantity, llm_cal, llm_protein, llm_carbs, llm_fat,
             # and the calorie test is two-sided. The undercount bound stays
             # USDA-only, keeping the "model undercounts" asymmetry exactly
             # where it was argued for.
-            _overshoot = cal > _OVERCOUNT_MULTIPLE * _llm0[0]
+            # A STATED MASS IS NOT AN OVERCOUNT (audit N-2).
+            #
+            # The overcount bound catches a WRONG FOOD — a cousin match whose
+            # numbers multiply the portion. It cannot tell that from a right
+            # food whose numbers the MODEL got wrong, and when the user stated
+            # an explicit gram weight those are not close calls: 100 g against
+            # an exact label at 250 cal/100 g is 250, and the model's 80 is the
+            # weakest evidence in the room. It is the reason the lookup ran.
+            #
+            # So the label's answer was thrown away for disagreeing with the
+            # guess it was fetched to replace, and the same product committed
+            # 250 or 80 depending on how close the guess happened to be — which
+            # is what `test_a_labelled_product_lands_on_the_same_number_
+            # whatever_was_guessed` says must never happen. Both red tests were
+            # this one line.
+            #
+            # The discriminator is MATCH QUALITY, not where the mass came from.
+            # A single-serve package's net weight is a known mass too — this
+            # file argues exactly that a few hundred lines up ("That is a KNOWN
+            # mass, not an estimate") — and scoping the exemption to
+            # user-stated masses left "1 bar" against an exact label committing
+            # 90 or 240 depending on the guess.
+            #
+            # What still protects a wrong product is `_profile_flip`, which
+            # applies unconditionally and is the better-evidenced detector: a
+            # collapsed dominant macro is evidence about the ROW. A weak match
+            # gets the full guard, and so does a portion with no known mass at
+            # all — a helping we had to estimate is exactly where the model's
+            # number deserves to win.
+            # The bound RISES with a known mass; it does not disappear. Both
+            # sides of this are real:
+            #
+            #   100 g x 250 cal/100g vs a guess of 80   3.1x   a bad guess
+            #    60 g x 400 cal/100g vs a guess of 90   2.7x   a bad guess
+            #   600 g x 500 cal/100g vs a guess of 400  7.5x   a different food
+            #
+            # All three are exact matches with a known mass, so no yes/no test
+            # on evidence quality separates them — only magnitude does. Removing
+            # the guard entirely committed the 7.5x row, which is the case
+            # `test_an_enriched_row_may_not_multiply_the_estimate` exists for.
+            #
+            # Above 4x the arithmetic stops being "the model guessed badly
+            # about the right food": a 19% undercount is what the loose bound
+            # was argued for, and nothing in that argument stretches to seven
+            # times. `_profile_flip` still applies unconditionally, so a wrong
+            # row that also collapses a dominant macro is caught either way.
+            _known_mass = bool(_mg)
+            _bound = (_OVERCOUNT_MULTIPLE_KNOWN_MASS
+                      if (_known_mass and _trustworthy)
+                      else _OVERCOUNT_MULTIPLE)
+            _overshoot = cal > _bound * _llm0[0]
             if (_llm0[0] > 0
                     and (_profile_flip
                          or _overshoot
