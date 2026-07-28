@@ -120,6 +120,71 @@ _CONFIDENCE_BY_TIER = {
     "provisional": "estimated",
 }
 
+#: The authority TIER a resolution won at → the LADDER RUNG that means the same
+#: thing. Two key spaces for one idea, which is most of audit I-3; this is the
+#: bridge, in one place, rather than a third vocabulary.
+#:
+#: `generic_exact` is deliberately absent: it means "usda_exact" on a generic
+#: food and "usda_generic" — a DISCLOSED fallback — on a manufactured one, and
+#: collapsing those would silence the "a generic is standing in for a named
+#: product" disclosure. Resolved in `_provenance_from`.
+_RUNG_BY_TIER = {
+    "user_label": "user_label",
+    "user_regular": "user_correction",
+    "branded_exact": "branded_exact",
+    "estimated": "estimate",
+    "provisional": "estimate",
+}
+
+
+def _provenance_from(resolution, legacy):
+    """The provenance record the RESOLUTION earned.
+
+    Audit I-2. `to_food_analysis` routes through `analyze(...)` with every
+    candidate set to None — deliberately, so derived fields are computed by one
+    code path — then overwrites `source`, `confidence`, `enrichment_source` and
+    `fdc_id`. It never rebuilt `provenance`, which `analyze` had just computed
+    from no candidates at all. So a promoted row carried three answers about
+    itself:
+
+        .source                          off        receipt headline: OFF
+        .confidence                      exact      card badge: not estimated
+        .provenance.rung                 estimate   detail: "best estimate…"
+        .provenance.macros_are_estimated True
+
+    Three surfaces read three different fields, and this was live for every
+    food log. `_stash_sourcing` also persists `provenance.as_dict()`, so the
+    STORED record said `estimate` for exactly-matched branded rows, and
+    `is_fallback` — the disclosure that a generic is standing in for a named
+    product — could never fire on a promoted item.
+
+    Identity facts come from `legacy.provenance`, which was computed against
+    the real candidate set: promotion changes WHICH candidate's nutrients win,
+    not what the food is, how the portion was sized, or where micros came from.
+    """
+    from skills.nutrition import authority as _authority
+
+    prior = getattr(legacy, "provenance", None)
+    tier = getattr(getattr(resolution, "tier", None), "label", "") or "provisional"
+    food_class = str(getattr(prior, "food_class", "")
+                     or _authority.FoodClass.GENERIC.value)
+
+    rung = _RUNG_BY_TIER.get(tier)
+    if rung is None:                       # generic_exact, per the note above
+        rung = ("usda_exact"
+                if food_class == _authority.FoodClass.GENERIC.value
+                else "usda_generic")
+    return _authority.provenance_for(
+        rung=rung, food_class=food_class,
+        portion_source=str(getattr(prior, "portion_source", "") or ""),
+        micronutrient_source=str(getattr(prior, "micronutrient_source", "")
+                                 or ""),
+        confidence=float(getattr(resolution, "confidence", 0.0) or 0.0),
+        # The resolver's own verdict, not a re-derivation: an ESTIMATED or
+        # PROVISIONAL tier means the displayed macros really are a guess, and
+        # anything above it means a label or database supplied them.
+        macros_from_source=not bool(getattr(resolution, "is_estimate", True)))
+
 
 def promotable(resolution) -> bool:
     """Whether this resolution is fit to own the committed values."""
@@ -167,6 +232,15 @@ def to_food_analysis(resolution, *, food_name: str, quantity: str,
     out.enrichment_source = resolution.source
     if getattr(resolution, "source_id", None):
         out.fdc_id = resolution.source_id
+    # ...and the fourth field describing the same fact (audit I-2). Left as
+    # `analyze` computed it — from no candidates — it contradicted the three
+    # above on every promoted row, and it is the one that gets PERSISTED.
+    try:
+        out.provenance = _provenance_from(resolution, legacy)
+    except Exception:
+        # A provenance we cannot rebuild is better left as it was than lost:
+        # the numbers are still right, and this must never cost the commit.
+        pass
     # Carry micros the legacy pass already resolved rather than discarding
     # them: the resolver does not fetch micro panels, so dropping them would
     # make promotion a regression on a dimension it never touched.
