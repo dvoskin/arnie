@@ -16,14 +16,13 @@ class LegacyContextStage:
         self.messages = tuple(messages or ())
 
     async def run(self, request) -> ContextManifest:
+        # `token_estimate` is COMPUTED LAZILY (see `ContextManifest`). It walked
+        # the whole message list on every turn — the general lane's prompt plus
+        # the thread — for a field nothing has ever read. The manifest is the
+        # seed of per-turn token budgeting (P1) and stays; paying for it before
+        # that exists does not.
         return ContextManifest(
             system_prompt=self.system,
             messages=self.messages,
             user_timezone=(request.metadata or {}).get("user_timezone", "UTC"),
-            # Cheap and honest: ~4 characters per token, labelled an estimate
-            # rather than reported as a measurement.
-            token_estimate=(len(self.system)
-                            + sum(len(str(m.get("content", "")))
-                                  for m in self.messages
-                                  if isinstance(m, dict))) // 4,
             included_sections=("system", "messages"))

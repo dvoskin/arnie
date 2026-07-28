@@ -27,23 +27,35 @@ about, so nothing downstream can claim otherwise.
 """
 import pytest
 
-from core.food_response import (Reason, plan_from_resolution, validate)
-from skills.nutrition.meal_resolution import (FailedItem, ItemOutcome,
-                                              MealResolution, PendingItem,
-                                              ResolvedItem)
+from core.food_response import (CARD_FACTS, FoodItemSummary,
+                                FoodResponseIntent, FoodResponsePlan, Reason,
+                                apply_policy, validate)
 
 BAR = "Barebells bar"
 
 
 def _committed(name="Cottage Cheese", sid="c1", entry_id=1):
-    return ResolvedItem(staged_item_id=sid, name=name,
-                        outcome=ItemOutcome.COMMITTED_EXACT, entry_id=entry_id)
+    return FoodItemSummary(name=name, staged_item_id=sid)
+
+
+def _failed(name, sid="s1"):
+    return FoodItemSummary(name=name, staged_item_id=sid)
 
 
 def _plan(*, committed=(), pending=(), failed=()):
-    return plan_from_resolution(MealResolution(
-        meal_group_id="g1", committed=committed, pending=pending,
-        failed=failed))
+    """Built directly rather than through `plan_from_resolution`, which was
+    removed with the rest of the MealResolution chain — it had no production
+    caller. The CONTRACT under test is live and unchanged: `failed_items` is
+    its own bucket, and `validate()` refuses to let one be called committed."""
+    intent = (FoodResponseIntent.PARTIAL_COMMIT if (pending and committed)
+              else FoodResponseIntent.CLARIFY if pending
+              else FoodResponseIntent.COMMIT)
+    return apply_policy(FoodResponsePlan(
+        intent=intent, committed_items=tuple(committed),
+        pending_items=tuple(pending), failed_items=tuple(failed),
+        unresolved_item=(pending[0] if pending else None),
+        card_will_render=bool(committed),
+        facts_visible_in_card=(CARD_FACTS if committed else frozenset())))
 
 
 def _transcript_plan():
@@ -51,8 +63,7 @@ def _transcript_plan():
     return _plan(
         committed=(_committed("Cottage Cheese", "c1", 1),
                    _committed("Honey", "c2", 2)),
-        failed=(FailedItem(staged_item_id="s1", name=BAR,
-                           reason="dedup_blocked"),))
+        failed=(_failed(BAR),))
 
 
 # ── 1. the plan carries the failure at all ───────────────────────────────────
@@ -76,12 +87,17 @@ def test_a_failed_item_is_approved_for_mention():
     assert BAR.lower() in plan.approved_names
 
 
-def test_a_failure_with_no_name_is_dropped_not_carried_blank():
+def test_a_failure_with_no_name_never_reaches_the_approved_vocabulary():
     """An unnamed failure would put an empty string in the approved vocabulary,
-    which matches every text."""
+    and the empty string is a substring of every text — one nameless failure
+    would make the invented-item guard pass anything.
+
+    The guarantee used to live in `plan_from_resolution`, which filtered on the
+    way in and was the only builder that did. It sits on `approved_names` now,
+    where every caller gets it."""
     plan = _plan(committed=(_committed(),),
-                 failed=(FailedItem(staged_item_id="s1", name=""),))
-    assert plan.failed_items == ()
+                 failed=(FoodItemSummary(name="", staged_item_id="s1"),))
+    assert "" not in plan.approved_names
 
 
 # ── 2. the false claim is now rejected ───────────────────────────────────────
@@ -103,7 +119,7 @@ def test_the_verb_in_front_is_caught_too():
     """"Logged the X" is the most natural way to say it, and the original
     forward-only window never looked there — so the pending guard had the same
     hole for as long as it existed."""
-    plan = _plan(pending=(PendingItem(staged_item_id="p1", name="peanut butter"),))
+    plan = _plan(pending=(FoodItemSummary(name="peanut butter", staged_item_id="p1"),))
     assert validate("Logged the peanut butter.", plan).reason == \
         Reason.PENDING_AS_COMMITTED
 
@@ -148,8 +164,8 @@ def test_the_two_states_report_different_reasons():
     """Both are "not in the day" and neither may be claimed, but a regeneration
     needs to know which state it got wrong."""
     pending_plan = _plan(committed=(_committed(),),
-                         pending=(PendingItem(staged_item_id="p1",
-                                              name="peanut butter"),))
+                         pending=(FoodItemSummary(name="peanut butter",
+                                                  staged_item_id="p1"),))
     assert validate("Peanut butter is in.", pending_plan).reason == \
         Reason.PENDING_AS_COMMITTED
     assert validate(f"{BAR} is in.", _transcript_plan()).reason == \
@@ -163,7 +179,7 @@ def test_a_turn_that_committed_nothing_and_failed_something():
     intent here would produce two notices for one failure. What matters for this
     change is that the item is now in the plan and cannot be claimed as logged.
     """
-    plan = _plan(failed=(FailedItem(staged_item_id="s1", name=BAR),))
+    plan = _plan(failed=(FoodItemSummary(name=BAR, staged_item_id="s1"),))
     assert [i.name for i in plan.failed_items] == [BAR]
     assert plan.committed_items == ()
     assert not validate(f"{BAR} is in.", plan).ok

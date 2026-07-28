@@ -62,9 +62,21 @@ class ContextManifest:
     system_prompt: str
     messages: tuple = ()
     user_timezone: str = "UTC"
-    token_estimate: int = 0
     included_sections: tuple = ()
     omitted_sections: tuple = ()
+
+    @property
+    def token_estimate(self) -> int:
+        """~4 characters per token — an estimate, never a measurement.
+
+        A property rather than a field because it was computed eagerly on
+        EVERY turn, walking the system prompt and the whole thread, and read by
+        nothing. The budgeting this feeds is still ahead of us; when it lands
+        it can ask, and until then nobody pays.
+        """
+        return (len(self.system_prompt)
+                + sum(len(str(m.get("content", "")))
+                      for m in self.messages if isinstance(m, dict))) // 4
 
 
 @dataclass(frozen=True)

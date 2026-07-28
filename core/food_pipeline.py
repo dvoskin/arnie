@@ -502,38 +502,6 @@ def _approved_operations(data: Mapping, items, decision) -> tuple:
 
 
 # ── after execution ───────────────────────────────────────────────────────────
-def build_meal_resolution(decision: FoodTurnDecision, execution, *,
-                          turn_id: str = ""):
-    """Assemble the committed/pending/failed view from the typed execution.
-
-    MealResolution becomes the sole authority for what landed — nothing
-    downstream re-derives it from the interpreter's original words.
-    """
-    from skills.nutrition.meal_resolution import build_resolution
-
-    by_item = {}
-    calls = list(getattr(execution, "calls", ()) or ())
-    for item in decision.staged_items:
-        match = next((c for c in calls
-                      if _call_names(c).strip().lower()
-                      in (item.original_text.lower(),)), None)
-        if match is None:
-            continue
-        by_item[item.staged_item_id] = {
-            "entry_id": getattr(match, "entry_id", None),
-            "event_id": getattr(match, "event_id", None),
-            "name": _call_names(match) or item.original_text,
-            "quantity_text": item.quantity.describe(),
-            "source": getattr(match, "result_text", "")[:0] or "",
-            "reason": ("" if getattr(match, "committed", False)
-                       else getattr(match, "status", "failed")),
-        }
-    return build_resolution(meal_group_id=decision.meal_group_id,
-                            items=list(decision.staged_items),
-                            decision=decision.clarification,
-                            execution_by_item=by_item, turn_id=turn_id)
-
-
 def _call_names(call) -> str:
     return str((getattr(call, "raw_input", None) or {}).get("food_name") or "")
 

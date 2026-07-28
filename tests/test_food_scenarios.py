@@ -484,20 +484,19 @@ def test_no_scenario_ever_describes_a_held_item_as_committed():
 from core.food_response import (CARD_FACTS, FoodResponseIntent,
                                 FoodResponsePlan, Reason, apply_policy,
                                 fallback, plan_clarify_from_question,
-                                plan_correct, plan_from_resolution,
-                                plan_review, validate)
+                                plan_correct, plan_review, validate)
 from core.food_response import FoodItemSummary as _Sum
-from skills.nutrition.meal_resolution import (ItemOutcome, MealResolution,
-                                              PendingItem, ResolvedItem)
 
 
 def _committed(*names):
-    return MealResolution(
-        meal_group_id=MEAL,
-        committed=tuple(ResolvedItem(staged_item_id=f"i{i}",
-                                     outcome=ItemOutcome.COMMITTED_EXACT,
-                                     entry_id=i, name=n, quantity_text=q)
-                        for i, (n, q) in enumerate(names)))
+    """A fully committed meal as a plan. Built directly since
+    `plan_from_resolution` went with the rest of the MealResolution chain — it
+    had no production caller, and every contract these scenarios pin lives on
+    the plan itself."""
+    return apply_policy(FoodResponsePlan(
+        intent=FoodResponseIntent.COMMIT,
+        committed_items=tuple(_Sum(name=n, portion=q) for n, q in names),
+        card_will_render=True, facts_visible_in_card=CARD_FACTS))
 
 
 # ── A · gooseberry jam and toast ─────────────────────────────────────────────
@@ -523,7 +522,7 @@ def test_scenario_a_review_reads_as_a_sentence_not_a_form():
 
 def test_scenario_a_after_confirming_there_is_no_narration_and_no_recital():
     from core.food_response import strip_card_recitation
-    plan = plan_from_resolution(_committed(("toast", "1 slice"),
+    plan = (_committed(("toast", "1 slice"),
                                            ("gooseberry jam", "1 tbsp")))
     assert plan.intent is FoodResponseIntent.COMMIT
     # The renderer's committed line is stripped to nothing — the card has it.
@@ -536,7 +535,7 @@ def test_scenario_a_after_confirming_there_is_no_narration_and_no_recital():
 
 
 def test_scenario_a_no_forced_question_after_the_card():
-    plan = plan_from_resolution(_committed(("toast", "1 slice")))
+    plan = (_committed(("toast", "1 slice")))
     assert not plan.allow_question
     assert validate("Light start. What's for lunch?",
                     plan).reason == Reason.FORBIDDEN_QUESTION
@@ -547,14 +546,14 @@ def test_scenario_b_a_clear_meal_still_says_what_it_logged():
     """Two eggs and a slice of toast: the card renders and there is nothing to
     ADD — but "nothing to add" was read as "nothing to say", and the reply came
     back empty. The card is the receipt; the sentence is the acknowledgement."""
-    plan = plan_from_resolution(_committed(("eggs", "2"), ("toast", "1 slice")))
+    plan = (_committed(("eggs", "2"), ("toast", "1 slice")))
     assert not plan.allow_no_text
     assert validate("", plan).reason == Reason.EMPTY_NOT_ALLOWED
     assert fallback(plan) == "Logged eggs and toast."
 
 
 def test_scenario_b_one_observation_is_also_valid():
-    plan = plan_from_resolution(_committed(("eggs", "2")))
+    plan = (_committed(("eggs", "2")))
     assert validate("Solid start. Enough protein to hold you over.", plan).ok
 
 
@@ -600,7 +599,7 @@ def test_scenario_c_quick_commits_with_the_assumption_stated():
     assert decision.transaction_policy is TransactionPolicy.COMMIT_WITH_ASSUMPTIONS
     assert decision.ready_item_ids == (item.staged_item_id,)
     assert decision.assumptions
-    plan = plan_from_resolution(_committed(("Core Power", "1 bottle")))
+    plan = (_committed(("Core Power", "1 bottle")))
     assert validate("I logged that as a regular Core Power bottle. Tell me if "
                     "it was the Elite.", plan).ok
 
@@ -642,14 +641,14 @@ def test_scenario_d_the_answer_binds_and_does_not_re_review():
 
 # ── E · partial meal ─────────────────────────────────────────────────────────
 def test_scenario_e_pending_is_never_described_as_logged():
-    resolution = MealResolution(
-        meal_group_id=MEAL,
-        committed=(ResolvedItem(staged_item_id="i1",
-                                outcome=ItemOutcome.COMMITTED_EXACT,
-                                entry_id=1, name="sandwich"),),
-        pending=(PendingItem(staged_item_id="p1", name="shake"),))
-    plan = plan_from_resolution(
-        resolution, clarification_question="Was the shake Core Power or Elite?")
+    shake = _Sum(name="shake", staged_item_id="p1")
+    plan = apply_policy(FoodResponsePlan(
+        intent=FoodResponseIntent.PARTIAL_COMMIT,
+        committed_items=(_Sum(name="sandwich", staged_item_id="i1"),),
+        pending_items=(shake,), unresolved_item=shake,
+        clarification_question="Was the shake Core Power or Elite?",
+        requires_answer=True, card_will_render=True,
+        facts_visible_in_card=CARD_FACTS))
     assert plan.intent is FoodResponseIntent.PARTIAL_COMMIT
     assert validate("I've got the sandwich in. Was the shake Core Power or "
                     "Elite?", plan).ok
@@ -717,13 +716,14 @@ def test_scenario_i_a_genuine_miss_does_ask_for_the_label():
 # ── J · routine consecutive logs ─────────────────────────────────────────────
 def test_scenario_j_consecutive_commits_do_not_all_end_in_a_question():
     for _ in range(3):
-        plan = plan_from_resolution(_committed(("rice", "200g")))
+        plan = (_committed(("rice", "200g")))
         assert not plan.allow_question
 
 
 def test_scenario_j_a_repeated_opener_is_rejected():
     """"Got it." every time reads as a template, not a coach."""
-    plan = plan_from_resolution(
+    import dataclasses as _dc
+    plan = _dc.replace(
         _committed(("rice", "200g")),
         recent_response_openers=("Got it, that's in.", "Got it."))
     assert validate("Got it.", plan).reason == Reason.REPEATED_OPENER
@@ -733,7 +733,7 @@ def test_scenario_j_a_repeated_opener_is_rejected():
 def test_scenario_j_no_turn_that_wrote_a_row_is_card_only():
     """There is no such thing as a card-only write. A card with no sentence
     over it reads as a message that was dropped."""
-    plan = plan_from_resolution(_committed(("rice", "200g")))
+    plan = (_committed(("rice", "200g")))
     assert not plan.allow_no_text
     assert validate("", plan).reason == Reason.EMPTY_NOT_ALLOWED
 

@@ -698,7 +698,6 @@ class FoodResponsePlan:
 
     # Coaching.
     coaching_opportunity: Optional[CoachingOpportunity] = None
-    coaching_is_material: bool = False
 
     # Failure.
     failure: Optional[FailureIntent] = None
@@ -709,7 +708,6 @@ class FoodResponsePlan:
     allow_question: bool = False
     allow_no_text: bool = False
 
-    contract_version: str = RESPONSE_CONTRACT_VERSION
 
     @property
     def approved_names(self) -> set:
@@ -720,7 +718,17 @@ class FoodResponsePlan:
         for group in (self.resolved_items, self.committed_items,
                       held_items(self), self.failed_items):
             for item in group:
-                names.add(item.name.lower())
+                # AN UNNAMED ITEM APPROVES EVERYTHING. The empty string is a
+                # substring of every text, so one nameless failure would make
+                # the invented-item guard pass anything at all.
+                #
+                # `plan_from_resolution` used to drop these on the way in, and
+                # it was the only builder that did — so the guarantee lived in
+                # one constructor rather than on the plan. It is here now,
+                # where every caller gets it and none can forget.
+                name = (item.name or "").strip().lower()
+                if name:
+                    names.add(name)
         return names
 
 
@@ -892,55 +900,6 @@ def plan_clarify(*, question: str, resolved=(), unresolved=None, options=(),
         unresolved_item=unresolved, clarification_question=question,
         clarification_options=tuple(options), requires_answer=True,
         user_message=user_message, **kw))
-
-
-def plan_from_resolution(resolution, *, user_message: str = "",
-                         card_will_render: bool = True,
-                         clarification_question: Optional[str] = None,
-                         coaching: Optional[CoachingOpportunity] = None,
-                         **kw) -> FoodResponsePlan:
-    """Build a commit-side plan from a MealResolution.
-
-    MealResolution is the ONLY authority for what committed and what is
-    pending. Nothing here re-derives that from the model's earlier prose — the
-    whole reason it exists is that the interpretation and the outcome can
-    differ, and the outcome is what the user is looking at.
-    """
-    committed = tuple(FoodItemSummary(name=c.name, portion=c.quantity_text,
-                                      estimated=(c.outcome.value ==
-                                                 "committed_estimated"),
-                                      entry_id=c.entry_id,
-                                      staged_item_id=c.staged_item_id)
-                      for c in (resolution.committed or ()))
-    pending = tuple(FoodItemSummary(name=p.name, portion="",
-                                    staged_item_id=p.staged_item_id)
-                    for p in (resolution.pending or ()))
-    # MealReso1ution's own words: "Renderers read `committed` for what to
-    # narrate as logged and `pending` for what to describe as waiting." There
-    # is a third state it has always tracked and this builder never read.
-    failed = tuple(FoodItemSummary(name=f.name, portion="",
-                                   staged_item_id=f.staged_item_id)
-                   for f in (resolution.failed or ()) if f.name)
-
-    if pending and committed:
-        intent = FoodResponseIntent.PARTIAL_COMMIT
-    elif pending:
-        intent = FoodResponseIntent.CLARIFY
-    else:
-        intent = FoodResponseIntent.COMMIT
-
-    return apply_policy(FoodResponsePlan(
-        intent=intent, committed_items=committed, pending_items=pending,
-        failed_items=failed,
-        unresolved_item=(pending[0] if pending else None),
-        assumptions=tuple(resolution.assumptions or ()),
-        clarification_question=clarification_question,
-        requires_answer=bool(pending and clarification_question),
-        card_will_render=(card_will_render and bool(committed)),
-        facts_visible_in_card=(CARD_FACTS if (card_will_render and committed)
-                               else frozenset()),
-        user_message=user_message, coaching_opportunity=coaching,
-        coaching_is_material=coaching is not None, **kw))
 
 
 def plan_correct(target: str, *, user_message: str = "", **kw) -> FoodResponsePlan:

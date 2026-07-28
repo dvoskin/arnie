@@ -19,7 +19,7 @@ from core.food_response import (CARD_FACTS, CoachingOpportunity, arnie_voice,
                                 mentions_unapproved_item, plan_clarify,
                                 plan_clarify_from_question,
                                 plan_confirm_answer, plan_correct,
-                                REVIEW_OPENER, plan_failure, plan_from_resolution, plan_review,
+                                REVIEW_OPENER, plan_failure, plan_review,
                                 plan_undo, validate)
 
 def _leads_with_the_meal(text, *names):
@@ -321,54 +321,6 @@ def test_the_failure_fallback_uses_the_approved_recovery_message():
         approved_message="I can't verify that product right now. I can use a "
                          "reasonable estimate, or the label if you have it."))
     assert "can't verify" in fallback(plan)
-
-
-# ── MealResolution is the only authority for committed state ──────────────────
-class _Outcome(str):
-    value = "committed_exact"
-
-
-def _resolution(committed=(), pending=(), assumptions=()):
-    from skills.nutrition.meal_resolution import (ItemOutcome, MealResolution,
-                                                  PendingItem, ResolvedItem)
-    return MealResolution(
-        meal_group_id="meal_1",
-        committed=tuple(ResolvedItem(staged_item_id=f"i{i}",
-                                     outcome=ItemOutcome.COMMITTED_EXACT,
-                                     entry_id=i, name=n, quantity_text=q)
-                        for i, (n, q) in enumerate(committed)),
-        pending=tuple(PendingItem(staged_item_id=f"p{i}", name=n)
-                      for i, n in enumerate(pending)),
-        assumptions=tuple(assumptions))
-
-
-def test_a_fully_committed_meal_plans_as_commit():
-    plan = plan_from_resolution(_resolution(committed=[("toast", "1 slice")]))
-    assert plan.intent is FoodResponseIntent.COMMIT
-    assert plan.card_will_render
-    assert plan.facts_visible_in_card == CARD_FACTS
-    assert not plan.allow_question
-
-
-def test_a_mixed_meal_plans_as_partial_commit():
-    plan = plan_from_resolution(
-        _resolution(committed=[("sandwich", "half")], pending=["shake"]),
-        clarification_question="Was the shake Core Power or Elite?")
-    assert plan.intent is FoodResponseIntent.PARTIAL_COMMIT
-    assert plan.requires_answer and plan.allow_question
-    assert plan.unresolved_item.name == "shake"
-
-
-def test_a_fully_held_meal_plans_as_clarify():
-    plan = plan_from_resolution(_resolution(pending=["shake"]),
-                                clarification_question="Which bottle?")
-    assert plan.intent is FoodResponseIntent.CLARIFY
-    assert not plan.card_will_render
-
-
-def test_no_card_means_no_card_facts_are_suppressed():
-    plan = plan_from_resolution(_resolution(pending=["shake"]))
-    assert plan.facts_visible_in_card == frozenset()
 
 
 # ── the prompt ────────────────────────────────────────────────────────────────
