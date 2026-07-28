@@ -1721,14 +1721,33 @@ async def fetch_candidates(db, user, food_name, inp) -> FoodCandidates:
     A synchronous policy cannot fix that by itself. This is the half that can —
     async, no decisions, callable from the turn before `plan_turn` runs.
 
-    Routing (unchanged):
-      logged history (the user's own recent log of this food) → GROUND TRUTH, wins first.
-      memory (recurring user food) → highest priority for both branded & generic.
-      Branded packaged products (is_packaged=True or _looks_branded heuristic):
-          web search FIRST (label-accurate), USDA as backup.
-      Generic foods / meals:
-          USDA FIRST (unchanged), web as backup for items USDA misses.
-      LLM estimate is always the final fallback.
+    WHAT RUNS, which is not the same question as what wins:
+
+      own-log match, then saved memory  — either short-circuits everything
+      USDA + Open Food Facts            — CONCURRENTLY, not in preference order
+      web label                         — only when the rungs above left a
+                                          manufactured item without a branded
+                                          answer, or seated one with no serving
+
+    Ranking is NOT here and must not be re-derived here. `skills/nutrition/
+    authority.py` seats each candidate on the rung its evidence earns, against
+    a ladder chosen per FoodClass — and USDA leads exactly one of the three:
+
+      MANUFACTURED  barcode > user_label > user_correction > manufacturer >
+                    branded_exact (OFF) > saved_product > usda_generic >
+                    estimate. USDA is second from the bottom and sits in
+                    FALLBACK_RUNGS: a disclosed fallback, never a product answer.
+      GENERIC       user_correction > user_label > usda_exact > portion_ontology
+                    > estimate. The one ladder USDA owns.
+      RESTAURANT    USDA is absent entirely. Not a weaker answer — not an
+                    answer, and letting it compete is how half a Starbucks
+                    sandwich shipped at 180 against a published 115.
+
+    The docstring this replaced said "branded → web FIRST, USDA as backup;
+    generic → USDA FIRST". That predates the 2026-07-22 ladder and was carried
+    forward once already by a refactor that had no reason to read it. A stale
+    routing comment is worse than none: it is the thing the next person trusts
+    instead of `authority.py`.
 
     TWO SIDE EFFECTS RIDE ALONG and a second caller will have to reckon with
     them: the lane receipt is stashed on the ambient call context
