@@ -3434,7 +3434,14 @@ user_message=_user_text or "")
                 # short-circuited to True on every commit.
                 actual_route=_legacy_lane(_turn_route, _legacy_reason or ""),
                 actual_disposition=_legacy_disp(_turn_route,
-                                                _legacy_reason or ""))
+                                                _legacy_reason or ""),
+                # WHAT THIS TURN ACTUALLY DECIDED. Without it the observation
+                # re-ran FoodPlanStage — the whole Sonnet interpreter — after
+                # the reply had already shipped, for 2.6 s a food turn. Passed
+                # explicitly, even when None: a lane that ran and returned
+                # nothing is a `pass`, and asking the same model the same
+                # question twice measures its nondeterminism, not our wiring.
+                interpretation=locals().get("_sft"))
     except Exception:
         pass
 

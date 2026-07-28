@@ -112,12 +112,25 @@ def legacy_disposition(turn_route: str, legacy_reason: str = "") -> str:
     return ""
 
 
+#: "The caller did not supply an interpretation", which is NOT the same as
+#: "the lane produced nothing" — a lane that ran and returned None is a `pass`,
+#: and re-running it would be asking the same model the same question twice.
+_NOT_SUPPLIED = object()
+
+
 async def observe_turn(request: TurnRequest,
                        actual_route: str = "",
-                       actual_disposition: str = "") -> Optional[dict]:
+                       actual_disposition: str = "",
+                       interpretation=_NOT_SUPPLIED) -> Optional[dict]:
     """Run the read-only stages and log predicted-vs-actual. Returns the
     prediction (for tests) or None when not observing. NEVER raises, and
-    never touches anything with a side effect."""
+    never touches anything with a side effect.
+
+    `interpretation` is what the turn's own food lane produced. Supplying it —
+    even as None — means the observation lifts THAT plan and issues no model
+    call. Omitting it keeps the old behaviour, where `deep_observing()` decides
+    whether a second interpreter run is worth 2.6 s.
+    """
     if not observing():
         return None
     try:
@@ -131,7 +144,17 @@ async def observe_turn(request: TurnRequest,
         prediction = {"lane": route.lane.value, "reason": route.reason_code,
                       "disposition": ""}
         plan = validation = None
-        if route.lane is TurnLane.STRUCTURED_FOOD and deep_observing():
+        if route.lane is TurnLane.STRUCTURED_FOOD \
+                and interpretation is not _NOT_SUPPLIED:
+            # THE TURN ALREADY DECIDED. Lift what it decided; do not ask again.
+            # Disposition agreement is free here, so it is no longer gated on
+            # `deep_observing()` — the flag exists to authorise a second model
+            # call, and there is no second model call on this branch.
+            from core.turns.stages.food import (FoodValidationStage,
+                                                plan_from_interpretation)
+            plan = plan_from_interpretation(interpretation)
+            validation = await FoodValidationStage().run(request, plan=plan)
+        elif route.lane is TurnLane.STRUCTURED_FOOD and deep_observing():
             from core.turns.stages.food import FoodPlanStage, FoodValidationStage
             plan = await FoodPlanStage().run(request, route=route)
             validation = await FoodValidationStage().run(request, plan=plan)

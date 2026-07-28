@@ -52,30 +52,50 @@ class FoodPlanStage:
         except Exception as e:
             logger.warning(f"food plan stage failed: {e}")
             out = None
-        if not out:
-            return TurnPlan(operations=(), response_intent="pass",
-                            planner_version=FOOD_PLANNER_VERSION)
-        action = out.get("action")
-        if action == "ask":
-            return TurnPlan(
-                # AN ASK IS NOT AN EMPTY TURN (audit A1). `core.food_turn`
-                # returns an ask carrying the READY items' calls — the ones the
-                # clarification veto already cleared — and legacy executes them
-                # while asking about the rest. Dropping them here turned
-                # moderate's PARTIAL_COMMIT contract into ATOMIC_HOLD, which is
-                # the exact regression conversation.py records having fixed
-                # once already: the whole meal waits on its least certain item.
-                operations=tuple(out.get("tool_calls") or ()),
-                response_intent=("confirm" if out.get("kind") == "confirm"
-                                 else "ask"),
-                ambiguities=(out,),
-                planner_version=FOOD_PLANNER_VERSION)
+        return plan_from_interpretation(out)
+
+
+def plan_from_interpretation(out) -> TurnPlan:
+    """Lift an interpreter result into a typed plan. Pure — no model call.
+
+    Split out of `FoodPlanStage.run` so shadow observation can lift the plan
+    THE TURN ALREADY COMPUTED instead of running the interpreter a second time.
+    That second run cost 2.6 s per food turn, after the reply had already
+    shipped, and what it bought was worse than nothing: measured on one
+    production session, the same message seconds apart gave "bag of Takis" as
+    1330 cal and then 460, and "It was actually a double…" as an update to
+    entry 2545 and then to entry 123, which does not exist. `agree=NO` was
+    conflating "the native lane would decide differently" with "Sonnet is
+    nondeterministic", so the promotion gate was reading its own noise.
+
+    One lift, two callers, so the comparison stays a comparison of WIRING —
+    which is the whole premise of observe mode — rather than of two samples
+    from the same model.
+    """
+    if not out:
+        return TurnPlan(operations=(), response_intent="pass",
+                        planner_version=FOOD_PLANNER_VERSION)
+    action = out.get("action")
+    if action == "ask":
         return TurnPlan(
+            # AN ASK IS NOT AN EMPTY TURN (audit A1). `core.food_turn` returns
+            # an ask carrying the READY items' calls — the ones the
+            # clarification veto already cleared — and legacy executes them
+            # while asking about the rest. Dropping them here turned moderate's
+            # PARTIAL_COMMIT contract into ATOMIC_HOLD, which is the exact
+            # regression conversation.py records having fixed once already: the
+            # whole meal waits on its least certain item.
             operations=tuple(out.get("tool_calls") or ()),
-            response_intent=action or "",
-            ambiguities=(),
-            narration_hint=str(out.get("say") or ""),
+            response_intent=("confirm" if out.get("kind") == "confirm"
+                             else "ask"),
+            ambiguities=(out,),
             planner_version=FOOD_PLANNER_VERSION)
+    return TurnPlan(
+        operations=tuple(out.get("tool_calls") or ()),
+        response_intent=action or "",
+        ambiguities=(),
+        narration_hint=str(out.get("say") or ""),
+        planner_version=FOOD_PLANNER_VERSION)
 
 
 class FoodValidationStage:

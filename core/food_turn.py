@@ -1624,7 +1624,48 @@ _SPREAD_CACHE: dict = {}
 _SPREAD_CACHE_MAX = 256
 
 
-async def _variant_spreads(data) -> dict:
+#: A variant lookup may take this long before the turn stops waiting for it.
+#: The spread is DECORATION FOR THE ASK, never for the write — every failure is
+#: already an absent entry and the decision proceeds — so it does not get to
+#: spend the turn's whole remaining budget. Measured at 3.5 s on a two-item
+#: turn; the turn itself was 16 s against a legacy ~6 s.
+_VARIANT_SPREAD_SECONDS = 1.5
+
+
+def _spread_could_matter(raw, *, mode: str, targets) -> bool:
+    """Could a shelf spread on this item ever change the ask decision?
+
+    The BEST case is the whole item in doubt: no per-100g spread can exceed the
+    ceiling it is measured against, so `span <= item_calories` always. If the
+    real scorer calls even that immaterial, no fetch can produce an ambiguity
+    that survives `_apply_variant_spreads`' own `is_material` check — the
+    network round trip is spent to compute a number already known to be
+    discarded.
+
+    Asks the scorer rather than hard-coding a threshold, so this cannot drift
+    from the mode thresholds it is standing in for. Unknown calories mean the
+    doubt cannot be sized either way, and an unsizeable doubt is the case the
+    fetch exists to answer, so it goes ahead.
+    """
+    calories = None
+    for key in ("calories", "cal", "kcal"):
+        value = raw.get(key)
+        if isinstance(value, (int, float)) and value > 0:
+            calories = float(value)
+            break
+    if calories is None:
+        return True
+    try:
+        from skills.nutrition.ambiguity import materiality
+        return materiality(mode=mode, calorie_span=calories,
+                           item_calories=calories,
+                           targets=dict(targets) if targets else None) >= 1.0
+    except Exception:                                    # pragma: no cover
+        return True
+
+
+async def _variant_spreads(data, *, mode: str = "moderate",
+                           targets=None) -> dict:
     """`{food_lower: {nutrient: per-100g span, _max_per100: ceiling}}` for the
     branded items in this turn.
 
@@ -1632,6 +1673,12 @@ async def _variant_spreads(data) -> dict:
     async. Fanned out, bounded by the turn's deadline, and every failure is
     simply an absent entry — a turn never loses its decision because a product
     database was slow.
+
+    Bounded twice now. An item whose doubt could not be material even at its
+    widest is never fetched at all (`_spread_could_matter`) — one production
+    turn spent 3.5 s deriving a variant ambiguity on a RICE CAKE — and what is
+    fetched gets `_VARIANT_SPREAD_SECONDS` rather than the whole remaining
+    budget.
     """
     names = []
     for raw in (data.get("items") or []):
@@ -1640,8 +1687,13 @@ async def _variant_spreads(data) -> dict:
         if not (raw.get("branded") or raw.get("is_packaged")):
             continue
         food = str(raw.get("food") or "").strip()
-        if food and food.lower() not in [n.lower() for n in names]:
-            names.append(food)
+        if not food or food.lower() in [n.lower() for n in names]:
+            continue
+        if not _spread_could_matter(raw, mode=mode, targets=targets):
+            logger.debug(f"variant spread skipped for {food!r}: "
+                         f"immaterial even at its widest")
+            continue
+        names.append(food)
     if not names:
         return {}
 
@@ -1652,7 +1704,9 @@ async def _variant_spreads(data) -> dict:
         try:
             from core import deadline
             from skills.nutrition.off import search_variants, variant_spread
-            variants = await deadline.wait_for(search_variants(food, limit=6))
+            variants = await deadline.wait_for(
+                search_variants(food, limit=6),
+                seconds=_VARIANT_SPREAD_SECONDS)
             if not variants or len(variants) < 2:
                 return food, None
             spread = variant_spread(variants)
@@ -3154,11 +3208,13 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
                 # products share the name it just wrote; the database can, and
                 # a name spanning two product forms is a doubt nobody was
                 # reporting.
-                _spreads = await _variant_spreads(data)
+                _targets = _daily_targets(user)
+                _spreads = await _variant_spreads(data, mode=mode,
+                                                  targets=_targets)
                 _decision = plan_turn(
                     data, turn_id=(_pipe_turn() or ""), message=message,
                     mode=mode, preferences=_prefs_for(user),
-                    targets=_daily_targets(user),
+                    targets=_targets,
                     variant_spreads=_spreads)
         except Exception as _pe:
             logger.warning(f"food pipeline unavailable: {_pe}")
