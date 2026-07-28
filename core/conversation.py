@@ -1814,8 +1814,35 @@ async def _run_turn(
             # Switch: FAST_LOG_VOICE=false.
             _pure_food = _is_pure_food_log(tool_calls, _user_text)
             _fast_voice = None
-            if _sft is not None and _sft.get("action") in ("log", "update",
-                                                           "delete", "commit"):
+            if _sft is not None and _sft.get("action") == "ask":
+                # THE QUESTION IS THE REPLY (audit I-1).
+                #
+                # Since the partial-commit release an ask CARRIES the ready
+                # items' log_food calls, so `has_logging` is True and this whole
+                # narration chain runs on a turn whose reply was already
+                # decided. `"ask"` is absent from the structured branch below,
+                # `_is_pure_food_log` is True for a clean log_food batch, and
+                # the `elif _pure_food` arm then replaced the clarification with
+                # a deterministic log confirmation.
+                #
+                # What the user saw was "✓ Logged …" on a turn that had asked
+                # them a question — and because the pending was recorded
+                # regardless, their next message was parsed as the answer to a
+                # question they were never shown. On a mixed meal, which is
+                # precisely the case partial commit exists for.
+                #
+                # There is nothing to narrate. The writes are real and already
+                # executed, and the ask text names both what landed and what is
+                # being held. Anything this chain produces is a second opinion
+                # about a turn that already has one.
+                #
+                # Marked unstreamed for the same reason the structured commit
+                # branch below does: the text came from the interpreter's
+                # result, not from a model stream, so the catch-up send is what
+                # actually delivers it.
+                _response_streamed = False
+            elif _sft is not None and _sft.get("action") in ("log", "update",
+                                                             "delete", "commit"):
                 # STRUCTURED turn: narration comes from ONE committed snapshot
                 # (ledger fix #5), built over the calls the executor actually
                 # COMMITTED — a refused CAS update or blocked write is named,
