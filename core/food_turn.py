@@ -575,7 +575,7 @@ _SYSTEM = (
     '2. Consumed food, but a quantity or calorie-critical prep detail is genuinely '
     'unclear -> {"action":"ask","items":[{"food":"Chicken","amount":6,'
     '"unit":"oz","calories":280,"protein":52,"carbs":0,"fats":7}],'
-    '"ambiguities":[{"item":"Chicken","field":"prep","impact_cal":180}],'
+    '"ambiguities":[{"item":"Chicken","field":"prep","impact_cal":180,"impact_protein":6}],'
     '"points":[{"label":"Chicken","qs":["grilled, baked, or fried?","skin on '
     'or off?","rough amount - oz or one breast?"]}],'
     '"ready":[{"food":"Bagel","amount":1,"unit":"bagel",'
@@ -654,6 +654,7 @@ _SYSTEM = (
     "- WHAT YOU DID NOT KNOW - ALWAYS, NOT ONLY WHEN YOU LOG. Every unknown "
     "you resolved by judgement is reported as \"ambiguities\":[{\"item\":"
     "\"<the item it concerns>\",\"field\":\"quantity\",\"impact_cal\":250,"
+    "\"impact_protein\":12,"
     "\"assumed\":\"<what you went with, in their language>\"}] "
     "(fields: quantity, identity, brand, prep, consumed). `assumed` is shown "
     "to the user as what you went with so they can correct it in one tap - "
@@ -694,6 +695,14 @@ _SYSTEM = (
     "attached to, never against a fixed number - the same handful of calories "
     "is noise on a large meal and most of a small one. Report it honestly and "
     "never round your doubt away.\n"
+    "  impact_protein is the SAME SPREAD for protein, in grams, and it is not "
+    "optional. The system scores every span against that nutrient's OWN daily "
+    "target and lets the WORST one decide, so a user chasing protein has "
+    "protein uncertainty decide for them - but only if you report it. Omitting "
+    "it does not mean zero doubt, it silently means zero WEIGHT, and a "
+    "calorie-tight protein-wild item then sails through. 0 is a real answer "
+    "when the answer genuinely cannot move protein (a splash of oil); say 0 "
+    "rather than leaving it out.\n"
     "- ONE UNKNOWN, ONE ENTRY. Every question you put in \"points\" must have "
     "its own entry in \"ambiguities\" naming the same field, and nothing may "
     "appear in one and not the other. `points` is only the WORDING; "
@@ -875,12 +884,18 @@ _SYSTEM = (
     "dressing, oil, butter, sauce) with no amount.\n"
     "Accuracy mode ({mode}) sets how far down that ladder to dig: quick asks "
     "only class 1 when the range is huge, strict digs through all three. Use "
-    "~{thresh} cal of possible swing as your calibration for 'worth asking', "
+    "a swing worth ~{of_day} of their DAY'S TARGET as your calibration for "
+    "'worth asking', "
     "never as the framing of the question itself - ask like a human ('how much "
     "of the bag?'), not like a calorie auditor. Within a dish, ask about what "
     "moves the needle - the chicken, dressing, or cheese on a salad - never "
     "the trivial base (nobody clarifies lettuce).\n"
-    "Under {thresh} cal of swing: do NOT ask — estimate HIGH at venue-real "
+    "JUDGE IT IN PROPORTIONS, NEVER A CALORIE COUNT. A flat number cannot "
+    "work here: 80 calories is trivia on a slice of pizza and the whole story "
+    "on a drizzle of oil. Below ~{of_item} of the FOOD, or below ~{of_day} of "
+    "their DAY, or when the food itself is under ~{item_share} of their day and "
+    "so cannot move it however the doubt resolves: do NOT ask — estimate HIGH "
+    "at venue-real "
     "portions and log. A clear count or mass of a plain food ('2 slices', '6 oz', "
     "'a banana') never needs asking. Ask ONCE, at most 3 points, bundling every "
     "unclear item; log nothing until answered. Never ask about something clearly "
@@ -2730,7 +2745,16 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
             data = None
 
     if data is None:
-        sys = (_SYSTEM.replace("{thresh}", str(_THRESH[mode]))
+        from skills.nutrition.materiality import (day_fraction_for,
+                                                  fraction_for,
+                                                  min_item_share_for)
+        _of_item = fraction_for(mode)
+        sys = (_SYSTEM
+               .replace("{of_item}", ("any share" if _of_item > 1.0
+                                      else f"{_of_item:.0%}"))
+               .replace("{of_day}", f"{day_fraction_for(mode):.1%}")
+               .replace("{item_share}", f"{min_item_share_for(mode):.1%}")
+               .replace("{thresh}", str(_THRESH[mode]))
                       .replace("{mode}", mode))
         try:
             # Under the turn's budget like everything else that waits. The

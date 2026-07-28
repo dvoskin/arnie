@@ -146,13 +146,33 @@ def _is_number(v) -> bool:
 
 
 # ── interpreter ambiguities → typed ambiguities ───────────────────────────────
-def attach_ambiguities(items, data: Mapping, *, mode: str) -> tuple:
+def attach_ambiguities(items, data: Mapping, *, mode: str,
+                       targets: Optional[Mapping] = None) -> tuple:
     """Lift the interpreter's reported ambiguities onto the items they concern.
 
     The old policy read one number — `impact_cal` — against a calorie-only
     threshold. The engine scores calorie, protein, carb, fat, identity risk and
     serving-basis risk, so an item that is calorie-tight and protein-wild is no
     longer waved through.
+
+    TARGETS, OR THE SAME MEAL IS SCORED BY TWO DIFFERENT RULES.
+
+    This function did not take them, and its siblings do: `derive_variant_
+    ambiguity` and `derive_vague_quantities` both pass `targets` and therefore
+    take `materiality`'s PROPORTIONAL branch, while everything lifted from the
+    interpreter fell to the legacy absolute branch — 200 flat calories on
+    moderate. One meal, one mode, one call to `decide()`, and an ambiguity the
+    MODEL reported was judged by a different rule from one we derived beside
+    it.
+
+    The proportional system is the one that exists on purpose — `materiality`
+    says so at length, and `DAY_FRACTIONS` / `MIN_ITEM_SHARE` /
+    `DAY_SHARE_OVERRIDE` were swept against production. None of it had ever
+    seen the ambiguities the interpreter actually reports, which are most of
+    them.
+
+    `None` still works and still means the absolute fallback, so a caller
+    without targets is no worse off than before.
     """
     from skills.nutrition.ambiguity import (AmbiguityOption, AmbiguityType,
                                             build_ambiguity)
@@ -198,6 +218,7 @@ def attach_ambiguities(items, data: Mapping, *, mode: str) -> tuple:
             calorie_span=float(amb.get("impact_cal") or 0),
             protein_span=float(amb.get("impact_protein") or 0),
             item_calories=_calories_for(raw_by_ordinal.get(target.ordinal) or {}),
+            targets=dict(targets) if targets else None,
             options=options))
 
     return tuple(
@@ -352,7 +373,7 @@ def plan_turn(data: Mapping, *, turn_id: str, message: str = "",
         if not items:
             return None
         with food_trace.stage(Stage.CLARIFY) as clarifying:
-            items = attach_ambiguities(items, data, mode=mode)
+            items = attach_ambiguities(items, data, mode=mode, targets=targets)
             # The interpreter reports what IT noticed uncertain. It does not
             # notice having invented precision — "a scoop" arriving as "1 tbsp"
             # looks like an answer from where it stands. Derived from the user's

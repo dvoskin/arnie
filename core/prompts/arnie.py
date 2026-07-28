@@ -1571,9 +1571,24 @@ coach with memory, not a calorie counter.\
 # and food_mode_directive use (core/food_ledger.ASK_THRESHOLDS) — numbers can
 # no longer drift between the lanes.
 from core.food_ledger import ASK_THRESHOLDS as _ASK_T
+#: ...and the FRACTION language too. "50%+" was hardcoded in three places while
+#: `MATERIAL_FRACTIONS` is 0.3 on moderate and 0.15 on strict — the prompt was
+#: 1.7x stricter than the engine on moderate and 3.3x on strict, so the model
+#: was declining to ask about spans the policy would have held the write for.
+#: Sourced from the same table, and the STRICT sites take strict's value because
+#: that is the mode they are describing.
+from skills.nutrition.materiality import fraction_for as _frac
+#: `:.0f` because the raw float renders as ">200.0 cal" in a shipped prompt.
 FOOD_ACCURACY = (FOOD_ACCURACY
-                 .replace(">120 cal", f">{_ASK_T['moderate']} cal")
-                 .replace(">300 cal", f">{_ASK_T['quick']} cal"))
+                 .replace(">120 cal", f">{_ASK_T['moderate']:.0f} cal")
+                 .replace(">300 cal", f">{_ASK_T['quick']:.0f} cal")
+                 .replace("wrong\n               by 50%+",
+                          f"wrong\n               by {_frac('strict'):.0%}+")
+                 .replace("would the answer move the estimate by\n50%+",
+                          "would the answer move the estimate by\n"
+                          f"{_frac('moderate'):.0%}+")
+                 .replace("swings\ncalories 50%+",
+                          f"swings\ncalories {_frac('moderate'):.0%}+"))
 
 
 # ─────────────────────────────────────────────────────────────────────────────

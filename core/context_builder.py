@@ -136,7 +136,7 @@ def _item_gate_line(of_item: float) -> str:
     return f"  • is the doubt at least ~{of_item:.0%} of THAT FOOD?\n"
 
 
-def _clarify_first_directive(mode: str, _T) -> str:
+def _clarify_first_directive(mode: str) -> str:
     """Ask what is genuinely open, THEN log. One posture, three appetites.
 
     The POSTURE is constant: nothing commits on a guess when a question would
@@ -226,6 +226,8 @@ def food_mode_directive(mode: Optional[str]) -> str:
     confirm"), so a strict turn that fell to the legacy lane behaved inverted
     from a structured one — the 'sometimes Arnie gets weird' class.
     """
+    # Only the LEGACY per-mode branches below still speak in flat calories.
+    # The live directive is proportional and deliberately does not take this.
     from core.food_ledger import ASK_THRESHOLDS as _T
     m = (mode or "moderate").strip().lower()
 
@@ -252,7 +254,7 @@ def food_mode_directive(mode: Optional[str]) -> str:
     # what they picked, so restoring per-mode behaviour is a revert rather than
     # a migration.
     if _ONE_PATH:
-        return _clarify_first_directive(m, _T)
+        return _clarify_first_directive(m)
 
     if m == "quick":
         return (

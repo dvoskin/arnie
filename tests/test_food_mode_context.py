@@ -144,5 +144,12 @@ def test_strict_mode_does_not_overclarify_plain_generics():
     assert "plain toast" in s
     # raw whole fruit is a known low-variance food → never interrogate
     assert "raw whole fruit" in s and "banana" in s
-    # the lists are anchored to a single principle, not ad-hoc
-    assert "50%+" in s
+    # The lists are anchored to a single principle, not ad-hoc — and that
+    # principle is now DERIVED. "50%+" was hardcoded in three places while
+    # MATERIAL_FRACTIONS is 0.3 moderate / 0.15 strict, so the prompt was 1.7x
+    # stricter than the engine on moderate and 3.3x on strict: the model
+    # declined to ask about spans the policy would have held the write for.
+    from skills.nutrition.materiality import fraction_for
+    assert "50%+" not in s
+    assert f"{fraction_for('moderate'):.0%}+" in s
+    assert f"{fraction_for('strict'):.0%}+" in s

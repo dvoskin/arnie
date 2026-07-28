@@ -391,12 +391,22 @@ async def test_ask_threshold_scales_with_mode(monkeypatch):
         return await _orig(messages, system, **kw)
     monkeypatch.setattr(FT, "chat", spy)
     def U(m): return SimpleNamespace(preferences=SimpleNamespace(food_logging_mode=m))
+    # PROPORTIONS, NOT A FLAT FLOOR. The interpreter is the component that
+    # actually decides, and it used to be briefed with "Under {thresh} cal of
+    # swing: do NOT ask" — the exact rule `materiality` exists to abolish, and
+    # one a tablespoon of butter clears on any food. It is now briefed on the
+    # same three proportional gates the policy scores with.
     await FT.run("had some chips", U("quick"))
-    assert "300 cal" in seen["system"] and "quick" in seen["system"]
+    assert "2.0% of their DAY" in seen["system"] and "quick" in seen["system"]
+    assert "3.5% of their day" in seen["system"]
     await FT.run("had some chips", U("strict"))
-    assert "100 cal" in seen["system"] and "strict" in seen["system"]
+    assert "0.5% of their DAY" in seen["system"] and "strict" in seen["system"]
+    assert "15% of the FOOD" in seen["system"]
     await FT.run("had some chips", SimpleNamespace())   # no prefs → moderate
-    assert "200 cal" in seen["system"]
+    assert "1.0% of their DAY" in seen["system"]
+    assert "30% of the FOOD" in seen["system"]
+    # and the abolished framing is gone for every mode
+    assert "cal of swing: do NOT ask" not in seen["system"]
 
 
 @pytest.mark.asyncio
