@@ -273,23 +273,61 @@ def _derive(cal, protein, carbs, fat, fiber, sugar) -> tuple:
 
 
 def reconcile_macros(cal: float, protein: float, carbs: float, fat: float) -> tuple:
+    """Enforce caloric consistency. Returns corrected (cal, protein, carbs, fat).
+
+    The four-value contract, unchanged for every existing caller. Use
+    `reconcile_macros_traced` when you need to know what was moved — and
+    something always should, see its docstring.
     """
-    Enforce caloric consistency: protein*4 + carbs*4 + fat*9 must ≈ total calories.
-    The LLM often submits internally inconsistent macros (e.g. 500 cal but macros
-    that sum to 720 cal). Strategy: trust calories and protein (most diet-critical),
-    then rebalance carbs/fat proportionally to fill the remaining caloric budget.
-    Returns corrected (cal, protein, carbs, fat).
+    cal, protein, carbs, fat, _ = reconcile_macros_traced(cal, protein, carbs, fat)
+    return cal, protein, carbs, fat
+
+
+def reconcile_macros_traced(cal, protein, carbs, fat) -> tuple:
+    """As above, plus a note describing any material change. Five-tuple.
+
+    Enforce caloric consistency: protein*4 + carbs*4 + fat*9 must ≈ total
+    calories. The LLM often submits internally inconsistent macros (e.g. 500 cal
+    but macros that sum to 720 cal). Strategy: trust calories and protein (most
+    diet-critical), then rebalance carbs/fat proportionally to fill the
+    remaining caloric budget.
+
+    WHY IT REPORTS (audit T-4, item 10). This is the only thing in the lane that
+    can see a macro inconsistency, and it used to resolve one silently. The
+    downstream detector cannot cover for it: `sanity`'s Atwater check fires at
+    30% drift and this fires at 15%, so everything in the 15–30% band is
+    normalised here and no other layer ever hears about it. The transcript's
+    chocolate sweet roll sits in that band at 16.2% — measured — which is why
+    "nothing in the system can doubt it" was literally true.
+
+    Moving the Atwater check earlier does not reach this case; 16.2% is under a
+    30% rule wherever it runs. Reporting does.
+
+    ABSENT IS NOT ZERO. `None` means nobody supplied the macro; `0` means a
+    source claimed it. Only an ABSENT macro may receive the residual — placing
+    3.8 g of fat over a label that says zero invents a fact against evidence,
+    which is the same error as leaving it at zero, pointed the other way. A
+    stated zero is scaled as it always was, and the note says the gap is still
+    open.
     """
+    absent = {name for name, value in
+              (("protein", protein), ("carbs", carbs), ("fat", fat))
+              if value is None}
+    protein = float(protein or 0)
+    carbs = float(carbs or 0)
+    fat = float(fat or 0)
+    cal = float(cal or 0)
+
     if cal <= 0 or (protein == 0 and carbs == 0 and fat == 0):
-        return cal, protein, carbs, fat
+        return cal, protein, carbs, fat, ""
 
     macro_cal = protein * 4 + carbs * 4 + fat * 9
     if macro_cal <= 0:
-        return cal, protein, carbs, fat
+        return cal, protein, carbs, fat, ""
 
     # If macros are within 15% of stated calories, accept as-is (small rounding ok)
     if abs(macro_cal - cal) / cal <= 0.15:
-        return cal, protein, carbs, fat
+        return cal, protein, carbs, fat, ""
 
     # Macros are inconsistent — trust calories and protein, rescale carbs+fat.
     protein_cal = protein * 4
@@ -300,7 +338,9 @@ def reconcile_macros(cal: float, protein: float, carbs: float, fat: float) -> tu
         protein = round(protein * scale, 1)
         carbs = round(carbs * scale, 1)
         fat = round(fat * scale, 1)
-        return cal, protein, carbs, fat
+        return (cal, protein, carbs, fat,
+                f"protein exceeded the calorie total; all macros scaled by "
+                f"{scale:.2f}")
 
     carb_fat_cal = carbs * 4 + fat * 9
     # A ZERO MACRO IS AN ABSENCE, NOT A MEASUREMENT.
@@ -317,25 +357,46 @@ def reconcile_macros(cal: float, protein: float, carbs: float, fat: float) -> tu
     # same hole, and `sanity.check_values` bounds energy density from above
     # only, so a too-low macro passes every check we have.
     #
-    # Placed only when the shortfall is worth at least a whole gram, and only
-    # when exactly one of the two is missing: with both zero the `elif` below
-    # already places the residual, and with neither zero, scaling is the right
-    # answer. A genuinely fat-free food is protected by the 15% band above —
-    # this branch is only reachable once the macros are already inconsistent.
+    # Placed only when the shortfall is worth at least a whole gram, only when
+    # exactly one of the two is missing, and only when NOBODY STATED IT. A
+    # source that says "fat: 0" has made a claim; overwriting it with 3.8 g is
+    # inventing a fact against evidence — the same error as trusting the zero,
+    # aimed the other way. With both zero the `elif` below already places the
+    # residual, and with neither zero, scaling is right. A genuinely fat-free
+    # food is protected by the 15% band above; this branch is reachable only
+    # once the macros are already inconsistent.
     unexplained = remaining - carb_fat_cal
-    if carb_fat_cal > 0 and fat == 0 and carbs > 0 and unexplained >= 9:
+    note = ""
+    if carb_fat_cal > 0 and fat == 0 and carbs > 0 and unexplained >= 9 \
+            and "fat" in absent:
         fat = round(unexplained / 9, 1)
-    elif carb_fat_cal > 0 and carbs == 0 and fat > 0 and unexplained >= 4:
+        note = (f"fat was not given; estimated {fat} g to close a "
+                f"{round(unexplained)} cal gap")
+    elif carb_fat_cal > 0 and carbs == 0 and fat > 0 and unexplained >= 4 \
+            and "carbs" in absent:
         carbs = round(unexplained / 4, 1)
+        note = (f"carbs were not given; estimated {carbs} g to close a "
+                f"{round(unexplained)} cal gap")
     elif carb_fat_cal > 0:
         scale = remaining / carb_fat_cal
+        before = (carbs, fat)
         carbs = round(carbs * scale, 1)
         fat = round(fat * scale, 1)
+        # A STATED ZERO SURVIVES, AND SAYS SO. Scaling cannot move it, so the
+        # gap is still open — and this is the one place that knows.
+        if unexplained >= 9 and (fat == 0 or carbs == 0):
+            note = (f"{round(unexplained)} cal unaccounted for; "
+                    f"{'fat' if fat == 0 else 'carbs'} was stated as zero and "
+                    f"left alone")
+        elif abs(before[0] - carbs) >= 1 or abs(before[1] - fat) >= 1:
+            note = (f"carbs {before[0]}->{carbs}, fat {before[1]}->{fat} "
+                    f"to match the stated calories")
     elif remaining > 0:
         # No carb/fat data — put residual in carbs (safe fallback)
         carbs = round(remaining / 4, 1)
+        note = f"no carb or fat data; put {carbs} g of carbs against the gap"
 
-    return cal, protein, carbs, fat
+    return cal, protein, carbs, fat, note
 
 
 def _mass_from_serving_panel(quantity, src, food_name: str):
@@ -496,14 +557,27 @@ def analyze(name, quantity, llm_cal, llm_protein, llm_carbs, llm_fat,
     """
     from skills.nutrition import authority
     cal = float(llm_cal or 0)
-    protein = float(llm_protein or 0)
-    carbs = float(llm_carbs or 0)
-    fat = float(llm_fat or 0)
+    # ABSENT STAYS ABSENT UNTIL RECONCILE HAS SEEN IT (audit T-4, item 9).
+    # `float(x or 0)` collapsed "nobody said" into "someone said zero" one line
+    # before the only code that could tell them apart — so `analyze(fat=None)`
+    # and `analyze(fat=0)` returned identical rows and a zero was unfalsifiable.
+    # `_log_call` already omits a macro the interpreter never supplied; this is
+    # where that distinction was being thrown away.
+    protein = llm_protein if llm_protein is not None else None
+    carbs = llm_carbs if llm_carbs is not None else None
+    fat = llm_fat if llm_fat is not None else None
 
     # Enforce macro/calorie consistency before USDA enrichment.
     # Invalid macros (protein*4 + carbs*4 + fat*9 ≠ calories) mislead the coaching
     # note and confuse the LLM on follow-up turns.
-    cal, protein, carbs, fat = reconcile_macros(cal, protein, carbs, fat)
+    cal, protein, carbs, fat, _macro_note = reconcile_macros_traced(
+        cal, protein, carbs, fat)
+    if _macro_note:
+        # THE ONLY LAYER THAT CAN SEE THIS. `sanity`'s Atwater check fires at
+        # 30% drift and reconcile at 15%, so the whole 15–30% band is resolved
+        # here and nowhere else hears about it. The transcript's roll sits at
+        # 16.2%, which is why "nothing in the system can doubt it" was true.
+        logger.info("event=macro_reconcile food=%r note=%s", name, _macro_note)
     # The model's independent read, pre-enrichment — the disagreement demotion
     # below compares the database read against it.
     _llm0 = (cal, protein, carbs, fat)
