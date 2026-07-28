@@ -26,9 +26,14 @@ part of the answer came from.
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Mapping, Optional, Tuple
+
+#: Everything that is not a letter or a digit, so a brand and the text it is
+#: looked for in are compared on words rather than on characters.
+_NON_WORD = re.compile(r"[^a-z0-9]+")
 
 
 class FoodClass(str, Enum):
@@ -163,9 +168,35 @@ RESTAURANT_BRANDS = frozenset({
 })
 
 
+def _words(text: str) -> str:
+    """Lowercased, space-padded, punctuation flattened to single spaces.
+
+    Both the haystack and the needle go through this, which is the only way a
+    hyphenated or possessive brand survives the comparison: "chick-fil-a" and
+    "mcdonald's" become "chick fil a" and "mcdonald s" on BOTH sides, so they
+    still match, while "cava" stops matching inside "cavatappi".
+    """
+    return " " + _NON_WORD.sub(" ", (text or "").lower()).strip() + " "
+
+
 def _names_a_restaurant(text: str) -> bool:
-    lowered = (text or "").lower()
-    return any(brand in lowered for brand in RESTAURANT_BRANDS)
+    """Does this name a chain whose menu has published nutrition?
+
+    A BARE SUBSTRING TEST, WHICH MATCHED INSIDE WORDS.
+
+    "cava" is a substring of cavatappi, cavatelli and cavatini, so a bowl of
+    homemade cavatappi classified as RESTAURANT — and `candidate_map`
+    deliberately seats USDA on NO rung for a restaurant food, because a branded
+    food database has no row for a chain's menu item. The consequence is not a
+    slightly worse match: it is USDA dropped entirely from a plain pasta dish
+    that USDA answers exactly, leaving the model's estimate to commit.
+
+    Same failure shape as the one this file already fixed for grocery brands,
+    where `branded._named_grocery_brand` pads with spaces for exactly this
+    reason. This is that fix, applied to the list that did not get it.
+    """
+    haystack = _words(text)
+    return any(_words(brand) in haystack for brand in RESTAURANT_BRANDS)
 
 
 def select(candidates: Mapping[str, Any], food_class: FoodClass) -> Tuple[

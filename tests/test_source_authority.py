@@ -290,3 +290,41 @@ def test_confidence_alone_cannot_seat_a_cache_at_a_branded_rung():
     assert "saved_product" not in seated
     rung = next(iter(seated))
     assert needs_branded_lookup(FoodClass.MANUFACTURED, rung) is True
+
+
+# ── a brand is a word, not a run of characters ───────────────────────────────
+def test_a_chain_name_does_not_match_inside_a_longer_word():
+    """"cava" is a substring of cavatappi, cavatelli and cavatini.
+
+    The cost is not a slightly worse match. `candidate_map` seats USDA on NO
+    rung for a RESTAURANT food — deliberately, because a food database has no
+    row for a chain's menu item — so a bowl of homemade cavatappi lost USDA
+    entirely and committed the model's estimate.
+    """
+    from skills.nutrition.authority import _names_a_restaurant
+
+    for name in ("cavatappi pasta", "cavatelli", "cavatini",
+                 "a bowl of cavatappi"):
+        assert _names_a_restaurant(name) is False, name
+        assert classify(name) is FoodClass.GENERIC, name
+
+
+def test_every_listed_chain_is_still_recognised():
+    """The boundary fix must not cost a single real brand — a chain that stops
+    matching goes down the MANUFACTURED ladder to a branded FOOD database that
+    does not carry menus, which is the 180-vs-115 Starbucks failure."""
+    from skills.nutrition.authority import (RESTAURANT_BRANDS,
+                                            _names_a_restaurant)
+
+    for brand in RESTAURANT_BRANDS:
+        assert _names_a_restaurant(f"i had something from {brand} today"), brand
+
+
+def test_punctuated_brands_survive_the_normalisation():
+    """Hyphens and possessives are flattened on BOTH sides, which is the only
+    reason "chick-fil-a" still matches once matching is word-based."""
+    from skills.nutrition.authority import _names_a_restaurant
+
+    for name in ("a McDonald's big mac", "Chick-fil-A sandwich",
+                 "In-N-Out burger", "Papa John's pizza", "CAVA bowl"):
+        assert _names_a_restaurant(name) is True, name
