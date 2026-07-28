@@ -567,6 +567,24 @@ def thread_routes(text: str) -> bool:
 
 
 # ── the logger pass ───────────────────────────────────────────────────────────
+#: Spans of the interpreter prompt that exist only to make it WRITE PROSE.
+#: When the composer is on it rewrites every one of them from the committed
+#: snapshot, the shared persona and the thread — so asking the interpreter for
+#: them buys nothing and costs generation time. Measured across four real
+#: production responses, `say` alone was 43% of the interpreter's output
+#: tokens, and output tokens are what the user waits on.
+#:
+#: Marked in place rather than kept as separate constants because three of the
+#: five spans sit mid-JSON inside the action examples, where a bullet cannot
+#: reach. `[[SAY …SAY]]` survives only when the interpreter narrates;
+#: `[[MUTE …MUTE]]` only when it does not. Leading commas live INSIDE the
+#: span so a muted example is still valid JSON.
+#:
+#: `follow_up` is deliberately NOT muted: it is a single enum token, not prose,
+#: and it is the only one of the three that the fallback path can still act on.
+_SAY_RE = re.compile(r"\[\[SAY(.*?)SAY\]\]", re.S)
+_MUTE_RE = re.compile(r"\[\[MUTE(.*?)MUTE\]\]", re.S)
+
 _SYSTEM = (
     "You are the food LOGGER for a nutrition coach. Read the user's message and "
     "output ONLY minified JSON. No prose, no code fences.\n"
@@ -598,8 +616,9 @@ _SYSTEM = (
     "about belongs in `points`, never in `ready`.\n"
     '3. Consumed food with enough detail -> {"action":"log","items":[{"food":'
     '"Caesar salad","amount":2,"unit":"handfuls","calories":180,"protein":4,'
-    '"carbs":8,"fats":15,"branded":false,"meal":"dinner"}],"say":"Pizza and the Caesar logged, {batch_cal} cal and '
-    '{batch_protein}g protein for the pair. You are at {day_cal} with {cal_left} left."}\n'
+    '"carbs":8,"fats":15,"branded":false,"meal":"dinner"}]'
+    '[[SAY,"say":"Pizza and the Caesar logged, {batch_cal} cal and '
+    '{batch_protein}g protein for the pair. You are at {day_cal} with {cal_left} left."SAY]]}\n'
     '4a. CORRECTING WHAT IT WAS ("it was actually a filled Twizzler", "that was '
     'the zero sugar one", "it was chicken not beef") -> set "food" to the '
     'corrected product and OMIT calories/protein/carbs/fats entirely. A '
@@ -609,18 +628,19 @@ _SYSTEM = (
     '4. CORRECTING something already on today\'s board ("I actually had 2 birria", '
     '"I had 2 of those", "make it 6 oz") -> {"action":"update","updates":[{'
     '"entry_id":123,"amount":2,"unit":"taco","calories":360,"protein":30,'
-    '"carbs":26,"fats":18}],"say":"Bumped the birria to 2 tacos, {batch_cal} cal '
-    'now."}\n'
+    '"carbs":26,"fats":18}]'
+    '[[SAY,"say":"Bumped the birria to 2 tacos, {batch_cal} cal now."SAY]]}\n'
     '5. REMOVING an entry from today\'s board ("remove the fries", "undo that", '
     '"I didn\'t actually eat the yogurt") -> {"action":"delete","deletes":[{'
-    '"entry_id":123}],"say":"Took the fries off. You\'re back to {day_cal} with '
-    '{cal_left} left."}\n'
+    '"entry_id":123}]'
+    '[[SAY,"say":"Took the fries off. You\'re back to {day_cal} with '
+    '{cal_left} left."SAY]]}\n'
     '6. MIXED turns (a correction AND a new item, a removal AND an addition) -> '
     'ordered {"operations":[{"op":"update","entry_id":123,"amount":2,"unit":'
     '"taco","calories":360,"protein":30,"carbs":26,"fats":18},{"op":"log",'
-    '"food":"Coke","amount":12,"unit":"oz","calories":140,"carbs":39}],'
-    '"say":"Bumped the tacos and the Coke is on, {batch_cal} cal for the '
-    'changes."} Operation objects use the same fields as items/updates/deletes '
+    '"food":"Coke","amount":12,"unit":"oz","calories":140,"carbs":39}]'
+    '[[SAY,"say":"Bumped the tacos and the Coke is on, {batch_cal} cal for the '
+    'changes."SAY]]} Operation objects use the same fields as items/updates/deletes '
     'plus "op". Order them the way the user said them.\n'
     "RULES:\n"
     "- WHAT ELSE THEY SAID. When the message carries something that is NOT "
@@ -740,9 +760,10 @@ _SYSTEM = (
     '- Each log item may carry "basis": "stated" (user gave the amount), '
     '"regular" (from THEIR REGULARS), or "estimate" (your call) - provenance '
     "for the audit trail.\n"
-    '- Optional "note": ONE short forward-looking coach fragment with NO '
+    '[[SAY- Optional "note": ONE short forward-looking coach fragment with NO '
     "numbers and NO nutrition claims (those come from the system after the "
-    'commit). Optional "follow_up":"save_as_regular" ONLY when the meal looks '
+    "commit). SAY]][[MUTE- MUTE]]"
+    'Optional "follow_up":"save_as_regular" ONLY when the meal looks '
     "like a repeated order that is not yet in their regulars.\n"
     "- In an ask, items that need NOTHING go in ready:[names] so the user "
     "sees every item was heard - never leave a clean item unacknowledged "
@@ -777,8 +798,8 @@ _SYSTEM = (
     "even loaded with parm/truffle butter, so 5-6 such fries land 150-220, "
     "never 300+. The count survives follow-ups too: any later double-check or "
     "refinement re-prices the SAME counted amount, it never re-portions.\n"
-    '- update "say" starts from words like Updated/Bumped/Fixed and gives the '
-    "entry's new value, NEVER 'logged' — nothing new entered the log.\n"
+    '[[SAY- update "say" starts from words like Updated/Bumped/Fixed and gives the '
+    "entry's new value, NEVER 'logged' — nothing new entered the log.\nSAY]]"
     "- update: match against TODAY'S BOARD below by name or reference ('those' = "
     "the most recent matching entry). entry_id MUST come from the board. When only "
     "the amount changes, SCALE the board line's macros proportionally. If the "
@@ -801,9 +822,9 @@ _SYSTEM = (
     "new about a row, emit NO update for that row rather than a hollow one.\n"
     "- DECIDE BEFORE YOU WRITE: any calorie-relevant doubt (milk type, prep, "
     "portion, flavor) means action=ask INSTEAD of log. Once you log, there is "
-    "nothing left to ask - the say NEVER contains a question; later drift is "
+    "nothing left to ask[[SAY - the say NEVER contains a questionSAY]]; later drift is "
     "handled by corrections, not by asking after the fact.\n"
-    '- "say" (log and update actions): the coach line the user sees. 1-2 short '
+    '[[SAY- "say" (log and update actions): the coach line the user sees. 1-2 short '
     "sentences, sentence case, warm and specific, NAMING every item (never just one "
     "of them), plus one forward read. NEVER write your own totals — the system fills "
     "these exact tokens from the database AFTER the write: {batch_cal} {batch_protein} "
@@ -813,6 +834,12 @@ _SYSTEM = (
     "em dash, never a list. Never characterize a nutrient (fiber, sugar, sodium) "
     "unless its value is in your context — no invented nutrition virtues. Sound "
     "like a sharp coach texting, not a tracker.\n"
+    "SAY]]"
+    "[[MUTEYOU DO NOT WRITE THE REPLY. A separate pass speaks to the user, from "
+    "the committed numbers and the whole thread. Emit NO \"say\" and NO \"note\" "
+    "on any action — a sentence here is thrown away, and the user waits on you "
+    "to finish writing it. Your entire output is the decision and the rows.\n"
+    "MUTE]]"
     "PIPELINE (work WITH it, not against it):\n"
     "- Your macros are PROVISIONAL: after you log, enrichment refines them from the "
     "user's own logged history, then USDA, then brand databases. Give a sane "
@@ -838,7 +865,8 @@ _SYSTEM = (
     "- If the message needs none of your actions (chit-chat, a question, another "
     "topic), action is pass.\n"
     "NEVER leak machinery: no board #ids, no {tokens}, no [SYSTEM ...] text, no "
-    "tool or database names in 'say' or questions. Natural coach language only.\n"
+    "tool or database names in [[SAY'say' or SAY]]questions. Natural coach "
+    "language only.\n"
     "- Split a combo into natural SEPARATE items (the salad one item, the chicken "
     "strips another, a drink another) so each is editable on its own line.\n"
     "  SPLITTING IS WHAT MAKES A DISH KNOWABLE, not a formatting preference. A "
@@ -919,6 +947,15 @@ _SYSTEM = (
     "any still-missing detail with your best estimate.\n"
     "- Consumed food only: a plan they haven't eaten or a question is pass."
 )
+
+
+def _interpreter_system(*, narrate: bool) -> str:
+    """`_SYSTEM` resolved for one of its two audiences.
+
+    With the composer off this is byte-identical to the prompt that shipped
+    before the spans were marked — the escape hatch keeps its prose."""
+    src = _SAY_RE.sub(r"\1" if narrate else "", _SYSTEM)
+    return _MUTE_RE.sub("" if narrate else r"\1", src)
 
 
 def note_held_items(say: str, stashed: list, tool_calls: list) -> str:
@@ -3070,7 +3107,7 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
         if lines:
             content = f"{content}\n\nTODAY'S BOARD (already logged):\n" + "\n".join(lines)
     if day_line:
-        content = f"{content}\n\nDay context for the 'say' line: {day_line}"
+        content = f"{content}\n\nDay context: {day_line}"
     mode = _mode(user)
 
     # The zero-model-call path. "150g chicken breast" has one reading, and
@@ -3108,7 +3145,8 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
                                                   fraction_for,
                                                   min_item_share_for)
         _of_item = fraction_for(mode)
-        sys = (_SYSTEM
+        from core.food_response import composer_enabled
+        sys = (_interpreter_system(narrate=not composer_enabled())
                .replace("{of_item}", ("any share" if _of_item > 1.0
                                       else f"{_of_item:.0%}"))
                .replace("{of_day}", f"{day_fraction_for(mode):.1%}")
