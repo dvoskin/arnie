@@ -720,6 +720,31 @@ def apply_policy(plan: FoodResponsePlan) -> FoodResponsePlan:
                    allow_question=allow_q, allow_no_text=allow_none)
 
 
+def held_items(plan) -> tuple:
+    """Everything this turn is holding rather than writing.
+
+    Audit T-2: `validate()`'s PENDING_AS_COMMITTED guard iterates
+    `pending_items`, and every clarify builder records the food in question as
+    `unresolved_item` instead — so the guard had nothing to iterate and could
+    never fire on a clarification. `pending_items` has exactly one producer in
+    the tree, `plan_from_resolution`, part of the MealResolution chain that has
+    no caller. The one check between an un-committed item and a
+    committed-looking sentence was fed solely by the function nobody calls.
+
+    Read here rather than by populating `pending_items` in the builders. That
+    was tried and is wrong: `pending_items` is also what the deterministic
+    fallback lists as the meal (`_leads_with_the_meal`), so filling it made the
+    held food appear in the read-back as though it were settled. Two fields
+    describing one fact is the failure mode this whole audit is about — the fix
+    is for the guard to read the field that already holds the answer, not for a
+    second field to start holding it too.
+    """
+    if plan.pending_items:
+        return tuple(plan.pending_items)
+    item = getattr(plan, "unresolved_item", None)
+    return (item,) if item is not None and getattr(item, "name", "") else ()
+
+
 # ── plan builders ─────────────────────────────────────────────────────────────
 def plan_review(items, *, user_message: str = "", **kw) -> FoodResponsePlan:
     return apply_policy(FoodResponsePlan(
@@ -916,6 +941,26 @@ _SLASH_TOTAL_RE = re.compile(
     r"\b\d[\d,]*\s*/\s*\d[\d,]*\s*(?:g\b|kcal|cal(?:orie)?s?|grams?)?",
     re.I)
 
+#: A batch total, stated as a total. "Total: 300 cal, 25g protein",
+#: "totals 300 calories", "for a total of 300".
+#:
+#: Separate from `_SLASH_TOTAL_RE` (a dashboard leaking into prose) and from
+#: `_DAY_TOTAL_RE` (the day's running figure) because this is neither: it is
+#: THIS MEAL summed, and on a turn that wrote nothing it is a number describing
+#: something that does not exist.
+#:
+#: Production, 2026-07-28: "Protein roll, 300 cal, 25g protein / Total: 300
+#: cal, 25g protein" — no card, no write, and a day sitting near 800, so
+#: "Total" was not the day either. It was the batch total of an item that never
+#: landed, and every existing guard was structurally unable to see it:
+#: PENDING_AS_COMMITTED iterated an empty collection, `_recites_card_facts`
+#: reads `facts_visible_in_card` which is empty on a clarify, and
+#: `_claims_it_landed` needs a success verb near the name — a bare recital has
+#: no verb.
+_BATCH_TOTAL_RE = re.compile(
+    r"\btotals?\b\s*(?:[:\-–—]|\bis\b|\bof\b|\bcomes?\s+to\b)?\s*"
+    r"(?:about\s+|around\s+|~)?\d", re.I)
+
 #: The day's REMAINING budget, restated in prose.
 #:
 #: "That leaves about 240 calories for the day" and "about 60g to go" are the
@@ -999,6 +1044,16 @@ def validate(text: str, plan: FoodResponsePlan) -> ValidationResult:
     # 180g" is a progress bar someone typed out.
     if _SLASH_TOTAL_RE.search(raw):
         return ValidationResult(False, Reason.DASHBOARD_SYNTAX)
+    # A TOTAL OF WHAT? (audit T-2.) Nothing committed on this turn, so a batch
+    # total is a sum over an empty set presented as a fact. The user reads it
+    # as "logged"; the board disagrees, and the card that would have settled it
+    # was never rendered because nothing landed.
+    #
+    # Scoped to plans that committed nothing at all — a PARTIAL_COMMIT legitimately
+    # totals what it did write, and COMMIT obviously does.
+    if not plan.committed_items and _BATCH_TOTAL_RE.search(raw):
+        return ValidationResult(False, Reason.PENDING_AS_COMMITTED,
+                                "a total on a turn that committed nothing")
 
     has_question = "?" in raw
     if has_question and not plan.allow_question:
@@ -1018,7 +1073,7 @@ def validate(text: str, plan: FoodResponsePlan) -> ValidationResult:
     # and differ only in the reason code, because a guard written for one state
     # and not the other is how the failed bucket went unchecked for as long as
     # it did.
-    for items, reason in ((plan.pending_items, Reason.PENDING_AS_COMMITTED),
+    for items, reason in ((held_items(plan), Reason.PENDING_AS_COMMITTED),
                           (plan.failed_items, Reason.FAILED_AS_COMMITTED)):
         for item in items:
             name = item.name.lower()
