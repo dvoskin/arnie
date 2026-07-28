@@ -112,3 +112,54 @@ async def test_the_cleared_item_still_lands(pipeline_env, monkeypatch):
     assert any("barebells" in (n or "").lower() for n in names), names
     # ...and only the cleared one. The held item is what the question is FOR.
     assert not any("chicken" in (n or "").lower() for n in names), names
+
+
+# ── T-1b: a question the turn did not consume stays open ──────────────────────
+
+async def test_a_fall_through_to_legacy_leaves_the_question_open(
+        pipeline_env, monkeypatch):
+    """Audit T-1b, straight from the production transcript.
+
+    The user answers the brand question; the interpreter returns None (their
+    reply comes back as a web_search with no log_food) and the turn falls
+    through to legacy. The pending used to be closed anyway, so the NEXT turn
+    arrived cold — no prior, no ask_count, no stashed items, nothing for
+    `parse_prior_answer` to read.
+
+    That is what cost three turns to log one roll: the answer was lost and the
+    question with it.
+    """
+    env = pipeline_env
+    await _seed_user(env["Maker"])
+
+    import core.food_turn as FT
+    from db.queries import get_open_pending_question, record_pending_question
+
+    async def _is_food(*a, **k):
+        return True
+
+    async def _declines(*a, **k):
+        return None                      # structured lane hands the turn back
+
+    monkeypatch.setattr(FT, "food_relevance", _is_food)
+    monkeypatch.setattr(FT, "run", _declines)
+    env["set_llm"](text="looking it up", tool_calls=[], follow_up_text="ok")
+
+    async with env["Maker"]() as db:
+        from db.models import User
+        from sqlalchemy import select
+        uid = (await db.execute(select(User.id))).scalars().first()
+        await record_pending_question(
+            db, uid, kind=FT.ASK_KIND, question="Which brand?",
+            tier="food_clarification", hook_style="question")
+        await db.commit()
+
+    await env["H"].run_imessage_pipeline(
+        "+15550001111", "iMessage;-;+15550001111",
+        "its from a brand called Legendary Foods", message_guid="t1b")
+
+    async with env["Maker"]() as db:
+        still_open = await get_open_pending_question(db, uid, FT.ASK_KIND)
+    assert still_open is not None, (
+        "the question was closed by a turn that never answered it — the next "
+        "turn arrives cold and the user pays for it")

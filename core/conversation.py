@@ -1043,9 +1043,29 @@ async def _run_turn(
                                                  "question": ""})
                     if _sft and _sft["action"] not in ("log", "commit"):
                         _sft = _to_legacy("ask_stash_failed")
-            # The user engaged with the question — resolve the pending either
-            # way so it can never loop.
-            if _sft_prior_pq is not None:
+            # The user engaged with the question — resolve the pending so it
+            # can never loop.
+            #
+            # ONLY WHEN THIS TURN ACTUALLY CONSUMED IT (audit T-1b). This used
+            # to close the pending whenever one existed, including on a turn
+            # where the interpreter returned None and control fell through to
+            # legacy. That is not a rare path: a reply naming the brand
+            # ("Its from a brand called Legendary Foods") comes back as a
+            # web_search with no log_food, so `_sft` is None — and the question
+            # was closed anyway.
+            #
+            # The next turn then arrived COLD. No prior, no ask_count, no
+            # stashed items, nothing for `parse_prior_answer` to read, and the
+            # item had to be re-derived from `last_assistant`. Measured in
+            # production: three turns to log one protein roll, and the
+            # ask/answer contract the lane is built around never closed once.
+            #
+            # Leaving it open is bounded on both sides already: the re-ask
+            # policy caps at 2 via ask_count, and `pending_expired` retires a
+            # clarify after FOOD_ASK_TTL_MIN. Closing a question nobody answered
+            # is the more expensive of the two failures — it loses the user's
+            # reply AND the question.
+            if _sft_prior_pq is not None and _sft is not None:
                 try:
                     from datetime import datetime as _dt_s
                     _sft_prior_pq.answered_at = _dt_s.utcnow()
