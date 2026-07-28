@@ -73,6 +73,25 @@ _VAGUE_COUNT_UNITS = {
 _VAGUE_VESSELS = {"glass", "mug", "shot"}
 
 
+def is_count_unit(word: str) -> bool:
+    """Whether this word names a DISCRETE item — an egg, a slice, a bar.
+
+    Public because `core.food_response` needs it to decide whether a food is
+    already the piece ("2 large pieces of eggs" — an egg IS the piece), and it
+    was reaching into `_COUNT_UNITS` directly to find out. A private set is not
+    an interface: it can be renamed or have its membership rules change, and
+    the caller has no way to know. Asking a question beats importing a
+    container.
+
+    Singular-insensitive, which the raw set is not.
+    """
+    word = (word or "").strip().lower()
+    if not word:
+        return False
+    return word in _COUNT_UNITS or _singular(word) in {
+        _singular(u) for u in _COUNT_UNITS}
+
+
 def _singular(word: str) -> str:
     """Crude, but correct on the words this module actually compares.
 

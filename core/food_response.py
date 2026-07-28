@@ -275,9 +275,9 @@ def describe_portion(portion: str, name: str,
     # keeping a second list in sync with it.
     if unit in _EMPTY_UNITS and not names_the_food:
         try:
-            from skills.nutrition.normalize import _COUNT_UNITS
+            from skills.nutrition.normalize import is_count_unit
             head = re.findall(r"[a-z]+", spoken.lower())
-            if head and head[-1] in _COUNT_UNITS:
+            if head and is_count_unit(head[-1]):
                 names_the_food = True
         except Exception:
             pass
@@ -622,11 +622,9 @@ class FoodResponsePlan:
         # the honest thing to do, and it must not be mistaken for an invented
         # food; whether the text may claim it LANDED is a separate check.
         for group in (self.resolved_items, self.committed_items,
-                      self.pending_items, self.failed_items):
+                      held_items(self), self.failed_items):
             for item in group:
                 names.add(item.name.lower())
-        if self.unresolved_item is not None:
-            names.add(self.unresolved_item.name.lower())
         return names
 
 
@@ -701,7 +699,7 @@ def apply_policy(plan: FoodResponsePlan) -> FoodResponsePlan:
     if (plan.intent is FoodResponseIntent.CLARIFY and not plan.card_will_render
             and any(getattr(i, "calories", None)
                     for i in (tuple(plan.resolved_items)
-                              + tuple(plan.pending_items)))):
+                              + held_items(plan)))):
         # An itemised reading plus a total plus the question does not fit in a
         # two-sentence, forty-word budget written for a question alone.
         sentences = max(sentences, 8)
@@ -1382,7 +1380,12 @@ def build_prompt(plan: FoodResponsePlan) -> str:
     # commits nothing, so the brief's old promise — "the card already shows
     # your reading of the meal" — was false exactly where it mattered, and the
     # user got a question with no reading attached.
-    _priced = [i for i in (tuple(plan.resolved_items) + tuple(plan.pending_items))
+    # `held_items`, not `pending_items` — on a clarification the held food
+    # lives in `unresolved_item`, so reading the commit-side field alone left
+    # THE VERY FOOD BEING ASKED ABOUT out of the reading. "Show your reading,
+    # then ask" listed the bar and silently dropped the chicken it was about
+    # to ask about.
+    _priced = [i for i in (tuple(plan.resolved_items) + held_items(plan))
                if getattr(i, "calories", None)]
     if _priced and not plan.card_will_render:
         parts.append(
@@ -1415,13 +1418,13 @@ def build_prompt(plan: FoodResponsePlan) -> str:
             ("UNDERSTOOD but NOT YET WRITTEN — nothing lands until they "
              "answer, so name these as read-back, never as logged/added/"
              "tracked/counted: " + _understood)
-            if plan.pending_items else "UNDERSTOOD: " + _understood)
+            if held_items(plan) else "UNDERSTOOD: " + _understood)
     if plan.committed_items:
         parts.append("LOGGED (the card shows these — do not recite them): "
                      + "; ".join(i.describe() for i in plan.committed_items))
-    if plan.pending_items:
+    if held_items(plan):
         parts.append("NOT LOGGED, still open: "
-                     + "; ".join(i.name for i in plan.pending_items))
+                     + "; ".join(i.name for i in held_items(plan)))
     if plan.corrections:
         parts.append(
             "WHAT ACTUALLY CHANGED — these and nothing else. Name them in "
@@ -1694,9 +1697,22 @@ def fallback(plan: FoodResponsePlan) -> str:
                 else "I couldn't complete that one.")
 
     if intent is FoodResponseIntent.COACH:
-        # Silence beats generic advice.
+        # Silence beats generic advice — and COACH's policy allows none, so an
+        # empty string satisfies its own plan.
         return ""
 
+    # EVERY REMAINING INTENT MUST STILL SATISFY ITS OWN PLAN.
+    #
+    # This used to `return ""` unconditionally, and GENERAL_CONVERSATION's
+    # policy is `allow_no_text=False` — so its fallback failed its own
+    # `validate()` with EMPTY_NOT_ALLOWED. `compose()` returns a fallback
+    # WITHOUT re-validating it, so the empty string shipped: on the one turn
+    # where the composer had already failed twice, the user got nothing at all.
+    #
+    # It survived because the invariant test enumerated intents by hand and
+    # this one was not in the list. The test is exhaustive over the enum now.
+    if not INTENT_POLICY[intent][3]:        # allow_no_text
+        return "Let me get back to you on that one."
     return ""
 
 

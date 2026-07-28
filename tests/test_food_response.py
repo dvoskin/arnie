@@ -458,7 +458,21 @@ def _every_intent_plan():
                              "label calories and protein would be enough.")),
         FoodResponseIntent.COACH: apply_policy(FoodResponsePlan(
             intent=FoodResponseIntent.COACH)),
+        FoodResponseIntent.GENERAL_CONVERSATION: apply_policy(FoodResponsePlan(
+            intent=FoodResponseIntent.GENERAL_CONVERSATION)),
     }
+
+
+def test_the_intent_table_covers_every_intent():
+    """Enumerated by hand, this table missed GENERAL_CONVERSATION — whose
+    fallback was the empty string against a plan that forbids one, so on the
+    turn where the composer had already failed twice the user got nothing.
+
+    `compose()` returns a fallback WITHOUT re-validating it, so nothing else
+    would have caught it. Exhaustive over the enum now: a new intent cannot be
+    added without a fallback that satisfies its own plan.
+    """
+    assert set(_every_intent_plan()) == set(FoodResponseIntent)
 
 
 @pytest.mark.parametrize("intent,plan", list(_every_intent_plan().items()),
