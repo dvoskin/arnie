@@ -107,6 +107,110 @@ _ONE_PATH = (os.getenv("FOOD_ONE_PATH", "true") or "").strip().lower() not in (
     "0", "false", "no", "off")
 
 
+#: How insistent each mode is, as prose that matches its threshold. The
+#: POSTURE never varies — every mode clarifies before the write — so the only
+#: thing a mode buys is how low the bar sits for "worth asking about".
+_MODE_APPETITE = {
+    "quick": ("Only the biggest swings are worth a question here; when the "
+              "gap is smaller than that, take the generous end and log."),
+    "moderate": ("Ask about the details that genuinely move the number, and "
+                 "let the small stuff go to a sensible default."),
+    "strict": ("Be thorough. Ask about anything with real calories riding on "
+               "it, including the second-order detail another mode would let "
+               "slide — this user chose precision over speed and would rather "
+               "answer one more question than carry a guess."),
+}
+
+
+def _item_gate_line(of_item: float) -> str:
+    """The "how much of the food is in doubt" gate, as one prompt line.
+
+    `MATERIAL_FRACTIONS["quick"]` is 1.01 — deliberately >1.0, which is
+    materiality's way of switching this gate OFF for quick. Rendered naively
+    that reads "is the doubt at least ~101% of THAT FOOD?", an impossible test
+    the model would have to interpret past. Say it is off instead.
+    """
+    if of_item > 1.0:
+        return ("  • (how much of the food is in doubt does not gate you here "
+                "— size and the day are what matter)\n")
+    return f"  • is the doubt at least ~{of_item:.0%} of THAT FOOD?\n"
+
+
+def _clarify_first_directive(mode: str, _T) -> str:
+    """Ask what is genuinely open, THEN log. One posture, three appetites.
+
+    The POSTURE is constant: nothing commits on a guess when a question would
+    have settled it. What the mode changes is the BAR — quick asks only about
+    the biggest swings, strict asks about anything material. Stricter is more
+    insistent, never differently shaped.
+
+    The two halves are load-bearing on each other. Clarify-first WITHOUT the
+    "only what they left open" rule is an interrogation that logged 4 of 10
+    plainly-stated foods; that rule without clarify-first is a guess nobody
+    was asked about. Together they measured 9 of 10 and the best accuracy in
+    the run.
+    """
+    # PROPORTIONS, NOT A CALORIE FLOOR.
+    #
+    # `materiality` already replaced the flat threshold and says why: "This is
+    # what the old flat 50-calorie floor was reaching for and could not
+    # express, because it tested the SPAN." Quoting ASK_THRESHOLDS here would
+    # reinstate the thing that module exists to have removed — and a flat
+    # number is exactly the kind of rule that does not scale, because every
+    # food's calories mean something different against a day.
+    #
+    # Three gates, swept against production rather than chosen:
+    #   OF THE ITEM  — how much of THIS food is actually in doubt
+    #   OF THE DAY   — is the doubt a big enough slice of their target to be
+    #                  worth interrupting for
+    #   THE ITEM ITSELF — can this food move the day at all, however the doubt
+    #                  resolves. This is the gate that stops honey (21 cal),
+    #                  soy sauce (10) and a hot-sauce drizzle (20) from
+    #                  qualifying, all of which pass the first two honestly.
+    from skills.nutrition.materiality import (day_fraction_for, fraction_for,
+                                              min_item_share_for)
+    of_item = fraction_for(mode)
+    of_day = day_fraction_for(mode)
+    item_share = min_item_share_for(mode)
+    return (
+        "[FOOD LOGGING MODE] Clarify BEFORE the write. When a calorie-moving "
+        "detail is genuinely open, ask the 1-2 highest-impact questions FIRST "
+        "and hold the log until they answer, then log EVERYTHING together with "
+        "their answers applied. Bundle a multi-item message into ONE combined "
+        "ask covering every unclear item — never a question per item.\n"
+        "AN AMBIGUITY IS SOMETHING THEY DID NOT SAY — never something you can "
+        "imagine having been added. 'A medium roasted sweet potato' is a "
+        "COMPLETE description: they did not mention butter, so there is no "
+        "butter — log it as described. The same goes for 'a cup of cooked "
+        "lentils', 'a medium avocado', 'a cup of kefir'. Asking 'was it plain, "
+        "or did you add oil/butter/seasoning?' about a plainly stated food is "
+        "inventing a doubt they did not express, and it costs them a turn to "
+        "repeat what they already told you. That is the single most common way "
+        "this goes wrong.\n"
+        "SO ASK when their own description leaves a calorie-moving detail "
+        "unspecified — 'a shake' with no contents, 'chicken' with no size or "
+        "cook method, 'some pasta' with no amount, a burger with no idea "
+        "whose. IF THEY ALREADY GAVE YOU THE VARIABLE, LOG. Do not re-ask size "
+        "when they gave a size, or milk when they named the milk.\n"
+        "JUDGE IT IN PROPORTIONS, NEVER A CALORIE COUNT. A number means "
+        "nothing on its own — 80 calories is trivia on a slice of pizza and "
+        "the whole story on a drizzle of oil. Three questions, and it takes "
+        "ALL THREE to be worth interrupting someone:\n"
+        f"{_item_gate_line(of_item)}"
+        f"  • is it at least ~{of_day:.1%} of their DAY'S TARGET?\n"
+        f"  • is the food itself at least ~{item_share:.1%} of their day — can "
+        "it move anything at all, however the doubt resolves?\n"
+        "The third is why a drizzle of honey, a splash of soy sauce or a "
+        "hot-sauce shake never earn a question: the doubt really is most of "
+        "the item and resolving it perfectly still changes nothing anyone "
+        "would say.\n"
+        f"{_MODE_APPETITE.get(mode, _MODE_APPETITE['moderate'])}\n"
+        "Ask in your normal voice, sentence case, reacting first — never "
+        "clinically, never announcing a mode. If they said 'just log it', skip "
+        "the questions and log conservative-high immediately."
+    )
+
+
 def food_mode_directive(mode: Optional[str]) -> str:
     """Render the per-turn [FOOD LOGGING MODE] override for the user's food_logging_mode.
 
@@ -125,31 +229,30 @@ def food_mode_directive(mode: Optional[str]) -> str:
     from core.food_ledger import ASK_THRESHOLDS as _T
     m = (mode or "moderate").strip().lower()
 
-    # ── ONE PATH (2026-07-27) ────────────────────────────────────────────────
+    # ── ONE PATH: CLARIFY BEFORE THE WRITE, FOR EVERYONE (2026-07-27) ────────
     #
     # Three postures meant three sets of words competing to decide the same
-    # thing, and the losing behaviour was always the same: the write got held.
-    # Measured on a clean-room set with production config, strict logged 4 of
-    # 10 plainly-stated foods and quick logged 10 of 10 — a 6-item spread
-    # produced by prose, not by any deliberate accuracy trade.
+    # thing, and the spread was produced by prose rather than by any deliberate
+    # accuracy trade — measured on a clean-room set with production config,
+    # strict logged 4 of 10 plainly-stated foods where quick logged 10 of 10.
     #
-    # The baseline moderate policy already says the right thing and says it
-    # structurally: "log when the message is reasonably interpretable... prefer
-    # non-blocking clarification AFTER logging when possible — log first, then
-    # say what could be adjusted. IF THE USER ALREADY PROVIDED THE VARIABLES,
-    # LOG. DO NOT RE-ASK."
+    # The resolution is ONE posture, and it is the accurate one: ask first,
+    # then log with the answer applied. Nothing commits on a guess when a
+    # question would have settled it.
     #
-    # That is the whole design. Clarify as freely as the situation deserves,
-    # because clarifying costs nothing once the food is already on the board.
-    # HOLDING the write is what made this feel broken, and no mode needs it.
+    # That is only viable because of the fix directly below it. Clarify-first
+    # used to mean 4-of-10, and the reason was NOT that asking is expensive —
+    # it was that the directive manufactured doubt about details the user had
+    # already stated ("was the sweet potato plain, or did you add butter?").
+    # Once an ambiguity is defined as something THEIR WORDS left open, the same
+    # clarify-first posture logged 9 of 10 and became the most accurate mode in
+    # the run. Ask-before-write is safe exactly when the asking is honest.
     #
-    # Returning "" for every mode hands all three to the static FOOD_ACCURACY
-    # block, which IS the moderate policy. The user's stored preference is left
-    # untouched — this decides how much prose argues with that block, not what
-    # they picked — so restoring per-mode behaviour later is a revert, not a
-    # migration.
+    # The user's stored preference is untouched: this decides the posture, not
+    # what they picked, so restoring per-mode behaviour is a revert rather than
+    # a migration.
     if _ONE_PATH:
-        return ""
+        return _clarify_first_directive(m, _T)
 
     if m == "quick":
         return (

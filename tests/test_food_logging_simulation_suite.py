@@ -404,7 +404,9 @@ def test_food_mode_directive_matrix(mode):
     foods where quick logged 10 of 10. FOOD_ONE_PATH=false restores the
     postures and is covered in tests/test_food_mode_context.py.
     """
-    assert food_mode_directive(mode) == ""
+    d = food_mode_directive(mode)
+    assert d.startswith("[FOOD LOGGING MODE]")
+    assert "Clarify BEFORE the write" in d
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -708,9 +710,10 @@ def test_public_surface_smoke():
     assert cal == 500
     # context_builder
     assert render_pending_clarification_block([]) == ""
-    # ONE PATH: no mode injects a per-turn override any more.
-    assert food_mode_directive("moderate") == ""
-    assert food_mode_directive("quick") == ""
+    # ONE POSTURE, THREE APPETITES: same clarify-before-write shape for every
+    # mode, different bar for what is worth asking about.
+    assert "Clarify BEFORE the write" in food_mode_directive("quick")
+    assert food_mode_directive("moderate") != food_mode_directive("quick")
     # tool_executor
     assert tool_heads_up("search_food_database", "x").endswith(".")
     out = deterministic_confirmation(
