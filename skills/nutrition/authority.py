@@ -300,27 +300,67 @@ def candidate_map(
             rung = _MEMORY_RUNG_BY_ORIGIN.get(origin, "usda_generic")
         out[rung] = memory_match
 
-    if web_candidate is not None:
-        # The web lane reads a product's own nutrition page.
-        out.setdefault(
-            "restaurant_page" if food_class is FoodClass.RESTAURANT
-            else "manufacturer", web_candidate)
-
-    if off_candidate is not None and food_class is FoodClass.MANUFACTURED:
-        # A branded index earns branded authority on a good match only; a weak
-        # name hit in Open Food Facts is a guess wearing a database's name.
-        if str(off_candidate.get("_match") or "") in ("exact", "likely"):
-            out.setdefault("branded_exact", off_candidate)
-
-    if usda_candidate is not None:
-        if food_class is FoodClass.GENERIC:
-            out.setdefault("usda_exact", usda_candidate)
-        elif food_class is FoodClass.MANUFACTURED:
-            # Present, and disclosed for what it is.
-            out.setdefault("usda_generic", usda_candidate)
-        # RESTAURANT: deliberately unplaced — see the docstring.
+    # One placement rule, in `rung_for_lane`. It used to be restated here and
+    # derived differently by `promotion`, which is how a web answer could be
+    # seated at `manufacturer` by the ladder and reported as `branded_exact` by
+    # the promoted row's provenance.
+    for lane, candidate in (("web_label", web_candidate),
+                            ("off", off_candidate),
+                            ("usda", usda_candidate)):
+        if candidate is None:
+            continue
+        rung = rung_for_lane(lane, food_class,
+                             match_grade=str(candidate.get("_match") or ""))
+        if rung:
+            out.setdefault(rung, candidate)
 
     return out
+
+
+def rung_for_lane(lane: str, food_class: FoodClass, *,
+                  match_grade: str = "") -> Optional[str]:
+    """Which rung a candidate from this LANE earns, or None if it seats nowhere.
+
+    The placement rule, stated once. `candidate_map` above applies it to
+    fetched candidate dicts; `promotion` applies it to a resolution that
+    already picked a winner and has only the lane's name. Both were deriving it
+    separately, and they disagreed:
+
+        a web_label answer carries tier BRANDED_EXACT, so a tier-keyed mapping
+        called it `branded_exact` — "From the product label" — while the ladder
+        seats a web candidate on `manufacturer`, "From the manufacturer's
+        label". One answer, two sentences, decided by which module was asked.
+
+    That is audit T-3 in miniature, and the reason this is a function rather
+    than a second table: a lane's rung depends on the FOOD CLASS and, for Open
+    Food Facts, on the match grade. USDA is the clearest case — the same lane
+    is the answer on a generic food, a disclosed fallback on a manufactured
+    one, and seats nowhere at all on a restaurant item.
+    """
+    lane = (lane or "").strip().lower()
+    if lane in ("user_label", "barcode"):
+        return lane
+    if lane in ("history", "user_correction", "user_regular"):
+        return "user_correction"
+    if lane == "web_label":
+        return ("restaurant_page" if food_class is FoodClass.RESTAURANT
+                else "manufacturer")
+    if lane == "off":
+        # A branded index earns branded authority on a good match only; a weak
+        # name hit is a guess wearing a database's name.
+        if food_class is FoodClass.MANUFACTURED and \
+                str(match_grade or "").lower() in ("exact", "likely"):
+            return "branded_exact"
+        return None
+    if lane == "usda":
+        if food_class is FoodClass.GENERIC:
+            return "usda_exact"
+        if food_class is FoodClass.MANUFACTURED:
+            return "usda_generic"          # present, and disclosed for what it is
+        return None                        # RESTAURANT: deliberately unplaced
+    if lane in ("estimate", "provisional", "unresolved", ""):
+        return "estimate"
+    return None
 
 
 def off_ladder(winner: Any, *fetched: Any) -> Optional[Any]:

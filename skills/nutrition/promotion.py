@@ -120,23 +120,6 @@ _CONFIDENCE_BY_TIER = {
     "provisional": "estimated",
 }
 
-#: The authority TIER a resolution won at → the LADDER RUNG that means the same
-#: thing. Two key spaces for one idea, which is most of audit I-3; this is the
-#: bridge, in one place, rather than a third vocabulary.
-#:
-#: `generic_exact` is deliberately absent: it means "usda_exact" on a generic
-#: food and "usda_generic" — a DISCLOSED fallback — on a manufactured one, and
-#: collapsing those would silence the "a generic is standing in for a named
-#: product" disclosure. Resolved in `_provenance_from`.
-_RUNG_BY_TIER = {
-    "user_label": "user_label",
-    "user_regular": "user_correction",
-    "branded_exact": "branded_exact",
-    "estimated": "estimate",
-    "provisional": "estimate",
-}
-
-
 def _provenance_from(resolution, legacy):
     """The provenance record the RESOLUTION earned.
 
@@ -165,15 +148,31 @@ def _provenance_from(resolution, legacy):
     from skills.nutrition import authority as _authority
 
     prior = getattr(legacy, "provenance", None)
-    tier = getattr(getattr(resolution, "tier", None), "label", "") or "provisional"
     food_class = str(getattr(prior, "food_class", "")
                      or _authority.FoodClass.GENERIC.value)
+    try:
+        klass = _authority.FoodClass(food_class)
+    except ValueError:
+        klass = _authority.FoodClass.GENERIC
 
-    rung = _RUNG_BY_TIER.get(tier)
-    if rung is None:                       # generic_exact, per the note above
-        rung = ("usda_exact"
-                if food_class == _authority.FoodClass.GENERIC.value
-                else "usda_generic")
+    # BY LANE, through the ladder's own placement rule — not by tier.
+    #
+    # The lanes run concurrently and the ladder already prioritises them; a
+    # tier-keyed table here would be a SECOND prioritisation, and the two
+    # disagree in exactly the place it matters. A web_label answer carries tier
+    # BRANDED_EXACT, so a tier mapping calls it `branded_exact` — "From the
+    # product label" — while the ladder seats a web candidate on `manufacturer`,
+    # "From the manufacturer's label". One answer, two sentences, decided by
+    # which module was asked. That is audit T-3's defect reproduced in the fix
+    # for I-2.
+    rung = _authority.rung_for_lane(
+        getattr(resolution, "source", "") or "", klass,
+        match_grade=str(getattr(resolution, "match_grade", "") or ""))
+    if not rung:
+        # The lane seats nowhere for this class — USDA on a restaurant item,
+        # a weak Open Food Facts hit. The numbers still committed, so the
+        # honest record is that they are not a sourced answer.
+        rung = "estimate"
     return _authority.provenance_for(
         rung=rung, food_class=food_class,
         portion_source=str(getattr(prior, "portion_source", "") or ""),

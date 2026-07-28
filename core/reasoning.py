@@ -5,7 +5,10 @@ read, each tool it fired (humanized from name + input + result), and the
 checks that ran. Never model-narrated — a receipt can't hallucinate, which is
 the entire point (see the phantom-claim history). Pure functions, no DB.
 """
+import logging
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 
 def _shorten(text: str, n: int = 60) -> str:
@@ -45,6 +48,21 @@ _SOURCE_LABELS = {
     "web_label": ("globe", "Found the product label online"),
     "usda":      ("magnifyingglass", "Matched the USDA food database"),
     "estimate":  ("wand.and.stars", "Estimated from what you described"),
+    # `FoodAnalysis.source` legitimately carries values from the CANDIDATE key
+    # space too, and every one of them missed (audit I-3). `.get(source,
+    # _SOURCE_LABELS["estimate"])` is silent about a miss, so they read back as
+    # guesses.
+    #
+    # `user_label` is the worst of them: it is the tier where `_analyze_food`
+    # SKIPS enrichment entirely because "no database outranks it" — we asked,
+    # they read us the label. It reported to the user as "Estimated from what
+    # you described".
+    "user_label":   ("checkmark.seal", "From the label you gave me"),
+    "user_regular": ("checkmark.seal", "Found it in your saved foods"),
+    # Not an answer yet. Naming it honestly beats calling it an estimate,
+    # which claims more than we have.
+    "provisional":  ("wand.and.stars", "Working from your description"),
+    "unresolved":   ("wand.and.stars", "Working from your description"),
 }
 _SOURCE_DETAIL = {
     "history":   "From your own earlier log",
@@ -53,6 +71,10 @@ _SOURCE_DETAIL = {
     "web_label": "From the product label",
     "usda":      "From the USDA database",
     "estimate":  "Best estimate from the description",
+    "user_label":   "From the label you gave me",
+    "user_regular": "From your saved foods",
+    "provisional":  "Working from your description",
+    "unresolved":   "Working from your description",
 }
 
 #: Which lookup lanes ran, in the order they run, for the "what I checked"
@@ -119,14 +141,31 @@ def _food_detailed(inp: dict, result: str) -> list:
         return [_food_line(inp, result)]
     name = inp.get("food_name") or "food"
     source = src.get("source") or "estimate"
+    if source not in _SOURCE_LABELS:
+        # LOUD, not silent (audit I-3). A missing key used to default to the
+        # "estimate" row, so a lane the receipt had never heard of reported to
+        # the user as a guess and to us as nothing at all.
+        logger.warning("event=receipt_unknown_source source=%r food=%r",
+                       source, inp.get("food_name"))
     icon, found = _SOURCE_LABELS.get(source, _SOURCE_LABELS["estimate"])
-    # When a source only supplemented the panel, the "found it" line says what
+    # When a source only SUPPLEMENTED the panel, the "found it" line says what
     # was found — not that the answer came from there.
+    #
+    # Narrowed to exactly that case (audit T-3). It used to fire whenever the
+    # stashed detail differed from this lane's sentence at all — and the two
+    # maps are keyed differently, so they differ constantly: `_SOURCE_DETAIL`
+    # is keyed by LANE, `authority._MACRO_SOURCE_DETAIL` by RUNG. An Open Food
+    # Facts answer (lane `off`, rung `branded_exact`) therefore printed the
+    # WEB-LABEL sentence, "From the product label" — directly underneath a line
+    # correctly stating that the web lane found nothing.
+    #
+    # The honest string for that answer, "From the Open Food Facts label",
+    # existed the whole time and was thrown away. A rung sentence may add to
+    # the receipt; it may not overrule the lane about which lane answered.
     _detail = src.get("detail") or ""
-    if _detail and _detail != _SOURCE_DETAIL.get(source):
+    if _detail and "supplemented" in _detail:
         found = _detail
-        if "supplemented" in _detail:
-            icon = "wand.and.stars"
+        icon = "wand.and.stars"
     steps = [_step("magnifyingglass", f"Searched for {name}")]
     # EVERY LANE THAT RAN, not just the one that won. "Consistently estimating
     # against USDA, I don't see Open Food Facts or web search" (Danny
