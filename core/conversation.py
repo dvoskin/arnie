@@ -41,7 +41,8 @@ from core.turn_health import (
 )
 from handlers.tool_executor import (
     execute_tool_calls, deterministic_confirmation, recovery_message,
-    tool_heads_up, _heads_up_seed, NEEDS_HEADS_UP_TOOLS, blocked_log_reply,
+    tool_heads_up, _heads_up_seed, NEEDS_HEADS_UP_TOOLS,
+    FOOD_LOOKUP_HEADS_UP, blocked_log_reply,
     headsup_voice_enabled, sentence_case,
 )
 # Module level rather than per-call: the model calls below consult it, and
@@ -1480,7 +1481,13 @@ async def _run_turn(
                 and _sft.get("action") in ("log", "commit", "update") \
                 and any(tc.get("name") in _FOOD_LOG_TOOLS for tc in tool_calls) \
                 and (_time_mod.monotonic() - _turn_t0) >= _FOOD_HEADS_UP_AFTER_S:
-            needs_heads_up_tc = {"name": "search_food_database",
+            # Its OWN pool, not `search_food_database`'s. That one is an
+            # emergency string — flat on purpose, because on every other lane
+            # the model has already written the heads-up in its own voice and
+            # the deterministic line is the rare degenerate case. The food lane
+            # has no model first pass at all (`result["text"]` is ""), so this
+            # line is not a fallback here, it is what the user always sees.
+            needs_heads_up_tc = {"name": FOOD_LOOKUP_HEADS_UP,
                                  "input": {"query": _user_text or ""}}
         if needs_heads_up_tc:
             _model_wrote_text = bool(response_text and response_text.strip())

@@ -3,6 +3,7 @@ Executes the tool calls returned by the LLM, writes to DB, and returns
 a human-readable result string per tool (used in multi-turn follow-ups).
 """
 import contextvars
+import hashlib
 import json
 import logging
 import os
@@ -1120,6 +1121,42 @@ def _deep_research_allow(user_id: int) -> bool:
 # pinned by test_deterministic_fallback_is_intentionally_generic. The wit
 # and personality lives in the model-written heads-up (see SLOW TOOLS in
 # core/prompts/arnie.py), NOT in these emergency strings.
+#: The FOOD LANE's lookup line, and it is not an emergency string.
+#:
+#: The pool above is deliberately flat, and its test says why: those lines fire
+#: only when the model emitted a tool_use block with no text in front of it,
+#: "a rare degenerate case", and the wit is supposed to live in the
+#: model-written heads-up. That reasoning is sound for every lane it was
+#: written for. It does not survive contact with the structured food lane,
+#: which sets `result["text"] = ""` by construction — there IS no model first
+#: pass to carry the voice, so `_model_wrote_text` is False on every food turn
+#: and the deterministic line is not the fallback, it is the whole experience.
+#:
+#: The same test names the condition exactly: "If a user sees these routinely,
+#: the upstream bug is the model skipping text; the fix is the prompt rule, not
+#: these strings." Here the model is not skipping anything — there is nothing
+#: to instruct — so the escape clause points at this pool instead.
+#:
+#: The constraints that made the emergency lines good still apply: short, no
+#: forced-casual filler, and describing a LOOKUP rather than a write, because
+#: nothing may claim the row landed before it has. What changes is that these
+#: get to sound like him, and get enough variants that a run of logs does not
+#: repeat.
+_FOOD_LOOKUP_BUBBLES = (
+    "checking the label.",
+    "pulling the real numbers.",
+    "getting the actual macros.",
+    "seeing what the label says.",
+    "checking what's in that.",
+    "finding the real numbers.",
+    "checking the brand's numbers.",
+    "looking up the label.",
+    "getting this one right.",
+    "checking the macros properly.",
+    "digging up the numbers.",
+    "reading the label.",
+)
+
 _TOOL_HEADS_UP_BUBBLES = {
     "web_search": (
         "checking that.",
@@ -1206,14 +1243,29 @@ def sentence_case(s: str) -> str:
     return s
 
 
+#: The food lane asks for its line by this name. It is not a tool — the food
+#: heads-up describes the enrichment lookup a `log_food` batch is about to run,
+#: and there is no tool call named for it.
+FOOD_LOOKUP_HEADS_UP = "food_lookup"
+
+
 def tool_heads_up(tool_name: str, seed: str | None = None) -> str:
-    """One short in-voice heads-up line for a slow-tool turn. Deterministic:
-    line is chosen by stable index off the seed length, so a given input
-    always maps to the same bubble. Unknown tool name falls through to the
+    """One short in-voice heads-up line for a slow-tool turn.
+
+    Deterministic — the same input always maps to the same bubble — but keyed
+    on a HASH of the seed rather than its length. Length collides constantly:
+    every eleven-character food picked the same line, so a run of logs repeated
+    itself while the pool sat unused. Unknown tool name falls through to the
     web_search set as a safe default. Never empty. Sentence-cased for voice
-    (HEADSUP_VOICE) — the pinned literals stay lowercase, only the output lifts."""
-    bubbles = _TOOL_HEADS_UP_BUBBLES.get(tool_name) or _TOOL_HEADS_UP_BUBBLES["web_search"]
-    idx = len(seed or tool_name) % len(bubbles)
+    (HEADSUP_VOICE) — the pinned literals stay lowercase, only the output lifts.
+    """
+    if tool_name == FOOD_LOOKUP_HEADS_UP:
+        bubbles = _FOOD_LOOKUP_BUBBLES
+    else:
+        bubbles = (_TOOL_HEADS_UP_BUBBLES.get(tool_name)
+                   or _TOOL_HEADS_UP_BUBBLES["web_search"])
+    key = (seed or tool_name).strip().lower()
+    idx = int(hashlib.sha1(key.encode("utf-8")).hexdigest()[:8], 16) % len(bubbles)
     line = bubbles[idx]
     return sentence_case(line) if headsup_voice_enabled() else line
 
