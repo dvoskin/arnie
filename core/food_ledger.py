@@ -160,6 +160,22 @@ def mark_processed(key: str) -> None:
         _SEEN.popitem(last=False)
 
 
+def release_processed(key: str) -> None:
+    """Forget a turn whose writes did not land.
+
+    THE MEMORY LAYER IS CHECKED FIRST, so it can shadow a durable claim that
+    has already been released. `mark_processed` runs BEFORE the writes — it
+    has to, or a retry arriving mid-turn would double-write — which means a
+    refused batch leaves this registry asserting a turn happened that did not.
+    Without this the durable two-phase claim only shortened the lie from the
+    idempotency window to `FOOD_IDEM_TTL_SEC`; the user still met "Already got
+    that one" over an empty board, just for ninety seconds instead of an hour.
+
+    Idempotent: releasing a key that was never marked is a no-op, so callers
+    do not have to know whether they got as far as marking."""
+    _SEEN.pop(key, None)
+
+
 # ── committed snapshot ────────────────────────────────────────────────────────
 @dataclass(frozen=True)
 class TransactionSnapshot:

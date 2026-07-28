@@ -68,7 +68,17 @@ class NativeExecutionStage:
             from core.food_ledger import turn_idempotency_key
             from db.queries import claim_processed_turn
             key = turn_idempotency_key(user.id, request.text or "", ops)
-            return await claim_processed_turn(db, user.id, key)
+            # CLAIMED CONFIRMED, because this lane has no settle step. An empty
+            # `result_summary` now means PENDING and expires on the two-minute
+            # grace — correct for the conversation lane, which comes back and
+            # confirms or releases against `_ok_calls`, and wrong here, where
+            # nothing ever revisits the claim. Defaulting would silently cut
+            # this lane's exactly-once window from the full window to two
+            # minutes. Passing a summary keeps the behaviour it had before the
+            # claim became two-phase; when this lane is promoted past
+            # observe-only it needs the same confirm/release the other one got.
+            return await claim_processed_turn(
+                db, user.id, key, result_summary="native")
         except Exception as e:
             logger.warning(f"idempotency claim unavailable, proceeding: {e}")
             return True

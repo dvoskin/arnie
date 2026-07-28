@@ -1595,7 +1595,15 @@ async def _variant_spreads(data) -> dict:
     # putting ten requests on a public API for one turn. Branded items go
     # first because their spreads are the widest (powder vs ready-to-drink).
     # FOOD_GENERIC_SPREADS=false restores the branded-only behaviour.
-    _generic_ok = os.getenv("FOOD_GENERIC_SPREADS", "true").lower() in (
+    # DARK BY DEFAULT until the ask rate is measured. The signal is real — a
+    # double cheeseburger raises a 335 cal span and asks, while eggs fetch a
+    # 14 cal/100g spread and stay quiet on their own merits — but "a coke" also
+    # raises one, because Zero and regular genuinely differ by 140 calories,
+    # and that turns a stated 12 oz log into a question. Whether that trade is
+    # right is a question about how often it fires on real traffic, and firing
+    # it on everyone is the most expensive way to find out. Turn it on with
+    # FOOD_GENERIC_SPREADS=true, watch the ask rate, keep it or drop it.
+    _generic_ok = os.getenv("FOOD_GENERIC_SPREADS", "false").lower() in (
         "true", "1", "yes")
     _branded, _generic = [], []
     for raw in (data.get("items") or []):

@@ -1868,9 +1868,16 @@ async def _run_turn(
                                 db, user.id, _idem_claim_key,
                                 result_summary=_idem_claim_names)
                         else:
+                            # BOTH LAYERS, or neither is released. `_ik_seen`
+                            # is consulted before the durable claim, so dropping
+                            # only the row leaves the in-process registry
+                            # shadowing it for FOOD_IDEM_TTL_SEC — the same lie,
+                            # ninety seconds long instead of an hour.
+                            from core.food_ledger import release_processed
                             from db.queries import release_processed_turn
                             await release_processed_turn(
                                 db, user.id, _idem_claim_key)
+                            release_processed(_idem_claim_key)
                     except Exception as _ie:
                         logger.warning(f"idempotency claim not settled: {_ie}")
                 try:
