@@ -2509,6 +2509,43 @@ def _capture_interpreter_output(message: str, data) -> None:
         pass
 
 
+#: Gestures that describe a SIZE and name no countable thing. A palm is not an
+#: object you can have half of — which is exactly what the interpreter produced
+#: when it had no mass to anchor to: "0.5 palm-size cutlet", a fraction of a
+#: unit invented on the spot, beside calories that matched a whole palm.
+#:
+#: Deliberately not every vague measure. "2 slices", "a handful", "a scoop" and
+#: "half a bowl" all name something real and countable, they read naturally on
+#: a card, and a person can edit them. These three do not.
+_SIZE_GESTURES = ("palm", "fist", "thumb")
+
+
+def _standardise_gesture(qty: str, food: str) -> str:
+    """A hand gesture becomes the mass it means; everything else is untouched.
+
+    The stored quantity is what the card shows and what a tap edits, so it has
+    to be a thing the user can reason about. "0.5 palm-size cutlet" is neither
+    comparable across days nor correctable — there is no honest number to
+    raise or lower. "110 g" is both.
+
+    The user's own words are not lost: they stay in `raw_input` beside the
+    interpreter's `source` and `basis`, which is where "why did you log 110 g?"
+    is answered.
+    """
+    try:
+        from skills.nutrition.portions import detect_measure
+        measure = detect_measure(qty)
+        if measure not in _SIZE_GESTURES:
+            return qty
+        from skills.nutrition.normalize import normalize_quantity
+        grams = normalize_quantity(qty, food or "").grams
+        if not grams or grams <= 0:
+            return qty
+        return f"{int(round(grams))} g"
+    except Exception:      # a display nicety may never cost the write
+        return qty
+
+
 def _log_call(it: dict, source: Optional[str] = None) -> Optional[dict]:
     if not isinstance(it, dict):
         return None
@@ -2524,6 +2561,7 @@ def _log_call(it: dict, source: Optional[str] = None) -> Optional[dict]:
     except (TypeError, ValueError):
         amount = None
     qty = f"{amount} {unit}".strip() if amount is not None else unit
+    qty = _standardise_gesture(qty, food)
     # First-class source + provenance (ledger fixes #15/"provenance"): the
     # write names its producer and where the amount came from; both persist
     # verbatim in the entry's raw_input, so "why did you log 6 oz?" has a

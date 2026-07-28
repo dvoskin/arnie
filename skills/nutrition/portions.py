@@ -219,6 +219,49 @@ PORTION_ONTOLOGY = {
     "plate": {
         "default":      (400.0, 250.0, 650.0, 0.35),
     },
+    # ── the hand portions the prompt already asks in ─────────────────────────
+    #
+    # `core/prompts/arnie.py` teaches the clarifying question "palm-sized,
+    # plate-sized, or huge?" — and until now `plate` was the only one of the
+    # three this table could read. So Arnie asked in palms, the user answered
+    # in palms, nothing could turn a palm into mass, and the interpreter was
+    # left to improvise: a schnitzel came back as "0.5 palm-size cutlet", a
+    # fractional count of a unit invented on the spot, at calories that
+    # matched a whole palm.
+    #
+    # Asking in a vocabulary the resolver cannot read is the same defect as
+    # every other in this lane — two lists describing one thing — and it is
+    # worse here because the ask is the part the user answers.
+    #
+    # A palm is the standard protein-portion gesture: the flat of the hand,
+    # roughly a deck of cards, ~110 g of cooked meat. Breaded and fried runs
+    # heavier for the same visual size, hence the separate row.
+    # Keyed only on categories this table can actually REACH. There is no meat
+    # or protein category — `food_category` sends chicken, salmon and steak all
+    # to "default" — so the default here IS the protein number rather than an
+    # average over foods nobody measures in palms. Writing a "protein" row that
+    # `food_category` can never return would look more informed than it is,
+    # which the note above `FORM_DISTRIBUTIONS` already warns against.
+    "palm": {
+        "cheese":       (40.0, 28.0, 55.0, 0.55),
+        "deli_meat":    (55.0, 40.0, 75.0, 0.55),
+        "default":      (110.0, 80.0, 145.0, 0.50),
+    },
+    #: A closed fist is the carb/veg gesture — about a cup.
+    "fist": {
+        "greens":       (40.0, 25.0, 60.0, 0.55),
+        "rice":         (150.0, 110.0, 200.0, 0.58),
+        "pasta":        (140.0, 100.0, 190.0, 0.55),
+        "cereal":       (40.0, 28.0, 55.0, 0.55),
+        "default":      (145.0, 100.0, 200.0, 0.45),
+    },
+    #: A thumb is the fat gesture — about a tablespoon.
+    "thumb": {
+        "cheese":       (20.0, 14.0, 28.0, 0.60),
+        "nut_butter":   (16.0, 12.0, 22.0, 0.65),
+        "oil":          (13.0, 9.0, 18.0, 0.70),
+        "default":      (15.0, 10.0, 21.0, 0.55),
+    },
     "cup": {
         # A cup is an exact VOLUME and an inexact mass, and which one matters
         # depends on the food. For anything with a density we use the density;
@@ -360,6 +403,12 @@ _MEASURE_PATTERNS = (
     ("bite", r"\bbites?\b"),
     ("bowl", r"\bbowls?\b"),
     ("plate", r"\bplates?\b"),
+    # The hand gestures. "palm size", "palm-sized", "the size of my palm" and
+    # "a palm" all mean the same portion, and the prompt asks in exactly this
+    # word — see the note on the `palm` ontology row.
+    ("palm", r"\bpalms?(?:[\s-]?sized?)?\b"),
+    ("fist", r"\bfists?(?:[\s-]?sized?)?\b"),
+    ("thumb", r"\bthumbs?(?:[\s-]?sized?)?\b"),
     ("little", r"\b(?:a\s+)?little\b|\ba\s+bit\b|\bsmall\s+amount\b"),
     ("some", r"\bsome\b|\ba\s+few\b|\bcouple\s+of\b"),
 )
