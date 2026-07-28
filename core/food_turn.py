@@ -2877,12 +2877,30 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
         except Exception as _ape:
             logger.warning(f"food pipeline unavailable on ask: {_ape}")
             _ask_decision = None
+        # THE PIPELINE ONLY OVERRULES WHERE IT ACTUALLY WEIGHED SOMETHING.
+        #
+        # `.asks` is `bool(clarification.questions)`, and a decision that staged
+        # items it could not score produces no questions — so reading `.asks`
+        # alone turns "we found nothing to weigh" into "nothing here matters",
+        # and the ask is demoted to a silent write. That is the precise inversion
+        # `_proposed_ask_is_material` exists to refuse: unweighable is not
+        # immaterial, and the demotion has to be EARNED by a reported spread
+        # that scores below the mode's bar, never granted by silence. Caught by
+        # test_strict_confirm_narrowed_to_where_it_earns_friction and
+        # test_strict_asks_about_the_unit_instead_of_confirming_the_parse, both
+        # of which watched a strict ask become a log.
+        #
+        # So the engine decides only when it has a scored ambiguity to decide
+        # from; with nothing scored the older, more cautious rule stands.
+        _scored = bool(_ask_decision is not None and any(
+            getattr(_i, "ambiguities", ())
+            for _i in (_ask_decision.staged_items or ())))
         _ask_is_material = (
-            _ask_decision.asks if _ask_decision is not None
+            _ask_decision.asks if _scored
             else _proposed_ask_is_material(data, mode=mode, user=user))
         logger.info(
             "event=ask_policy source=%s material=%s %s",
-            "pipeline" if _ask_decision is not None else "fallback",
+            "pipeline" if _scored else "fallback",
             _ask_is_material, (data.get("say") or "")[:40])
 
     if action == "ask" and not prior and not _ask_is_material and (
@@ -3297,11 +3315,24 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
         _items_a = [it for it in items_logged if (it.get("food") or "").strip()]
         if _items_a:
             # `kind="confirm"` reuses the deterministic yes-replay: a yes logs
-            # THESE items through the same builder, with no second parse.
+            # THESE items through the same builder, with no second parse. They
+            # ride in `items`, which is what `conversation.py` stores with the
+            # pending question and reads back on the yes — NOT in `tool_calls`.
+            #
+            # AND THE WRITES DO NOT GO OUT WITH THE QUESTION. This branch used
+            # to return `calls` alongside the ask, which wrote the two entries
+            # and the 400 calories the block above exists to keep OFF the day —
+            # the guard performing the very act it was added to prevent. It also
+            # destroyed its own question: a non-empty `tool_calls` on an ask
+            # turn makes `discard_held()` drop the streamed bubble, and the
+            # structured-narration branch gates on an action tuple that has no
+            # "ask" in it, so the turn falls through to `voice_log` and narrates
+            # the write it should not have made. Asking whether they ate it and
+            # logging it as eaten cannot both be right.
             return {"action": "ask", "kind": "confirm",
                     "text": acquisition_question(_items_a),
                     "items": _items_a,
-                    "tool_calls": calls, "say": say[:400],
+                    "tool_calls": [], "say": say[:400],
                     "note": note, "follow_up": follow_up}
 
     # THE WHOLE-PARSE CONFIRM IS GONE (Danny 2026-07-26: "remove the strict
