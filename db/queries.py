@@ -2950,6 +2950,7 @@ async def ledger_revision(db: AsyncSession, user_id: int,
 async def claim_processed_turn(
     db: AsyncSession, user_id: int, idem_key: str,
     result_summary: str = "", window_minutes: int = 60,
+    pending_grace_minutes: int = 2,
 ) -> bool:
     """Durable exactly-once claim for a structured food commit.
 
@@ -2961,15 +2962,50 @@ async def claim_processed_turn(
     A claim older than the window is re-claimed: the identical message a day
     later ('had a banana') is a genuinely new turn. The unique constraint is
     the last word under concurrency; its violation is absorbed in a SAVEPOINT
-    so the caller's session survives."""
+    so the caller's session survives.
+
+    TWO PHASES, BECAUSE THE CLAIM COMMITS BEFORE THE WRITES IT PROTECTS. This
+    function commits the claim row and returns; the food writes run afterwards,
+    in the caller. Any failure in between — a refused write, a rolled-back
+    batch, a crash, a redeploy mid-turn — used to leave a committed claim
+    guarding writes that never happened, and there was no release path anywhere
+    in the codebase. For the next 60 minutes that exact message answered
+    "Already got that one - it's on the board from a moment ago" over an empty
+    board, and only DB surgery cleared it. A dedup guard that can strand a
+    meal is worse than the double-write it prevents.
+
+    So `result_summary` now marks the phase rather than merely describing the
+    outcome:
+
+      empty  → PENDING. Claimed, writes not yet known to have landed.
+      set    → CONFIRMED by `confirm_processed_turn` once they did.
+
+    A PENDING claim still dedupes inside `pending_grace_minutes`, because that
+    is exactly the window where a genuine concurrent redelivery arrives and
+    double-writing is the real risk. Past the grace, a still-pending claim can
+    only mean the turn never finished, so it is reclaimable — the retry gets to
+    run instead of being told a lie. Callers that never confirm degrade to the
+    old behaviour bounded by the grace, not by the window."""
     from db.models import ProcessedTurn
     now = datetime.utcnow()
     res = await db.execute(select(ProcessedTurn).where(and_(
         ProcessedTurn.user_id == user_id, ProcessedTurn.idem_key == idem_key)))
     row = res.scalars().first()
     if row is not None:
-        if (now - (row.created_at or now)) <= timedelta(minutes=window_minutes):
-            return False
+        _age = now - (row.created_at or now)
+        _confirmed = bool((row.result_summary or "").strip())
+        if _age <= timedelta(minutes=window_minutes):
+            if _confirmed:
+                # The writes landed. A genuine duplicate.
+                return False
+            if _age <= timedelta(minutes=pending_grace_minutes):
+                # In flight right now — dedupe is correct here.
+                return False
+            # Pending past the grace: the claim outlived its turn. Reclaim it
+            # rather than guard writes that were never made.
+            logger.info(
+                "event=processed_turn_reclaimed user=%s age_s=%d",
+                user_id, int(_age.total_seconds()))
         row.created_at = now
         row.result_summary = (result_summary or "")[:500]
         await db.commit()
@@ -2982,6 +3018,65 @@ async def claim_processed_turn(
         return True
     except IntegrityError:
         # A concurrent claim (other device / worker) won the insert race.
+        try:
+            await db.rollback()
+        except Exception:
+            pass
+        return False
+
+
+async def confirm_processed_turn(
+    db: AsyncSession, user_id: int, idem_key: str, result_summary: str = "",
+) -> bool:
+    """Phase 2: the writes landed, so the claim may now speak for them.
+
+    Until this runs the claim is PENDING and expires after the grace window.
+    `result_summary` is what the duplicate reply answers from, so it is also
+    the marker that the turn completed — it must be non-empty even when the
+    caller has no names to put in it."""
+    from db.models import ProcessedTurn
+    try:
+        res = await db.execute(select(ProcessedTurn).where(and_(
+            ProcessedTurn.user_id == user_id,
+            ProcessedTurn.idem_key == idem_key)))
+        row = res.scalars().first()
+        if row is None:
+            return False
+        row.result_summary = ((result_summary or "").strip() or "committed")[:500]
+        await db.commit()
+        return True
+    except Exception as e:
+        # Never fail a committed turn over its own bookkeeping. The claim stays
+        # pending and expires after the grace — the safe direction.
+        logger.warning(f"confirm_processed_turn skipped: {e}")
+        return False
+
+
+async def release_processed_turn(
+    db: AsyncSession, user_id: int, idem_key: str,
+) -> bool:
+    """Drop a claim whose writes did not land, so the retry is not poisoned.
+
+    The counterpart to the grace window: the grace bounds the damage when the
+    process dies and nobody can clean up, this removes it outright when the
+    turn is still alive and knows the batch was refused."""
+    from db.models import ProcessedTurn
+    try:
+        res = await db.execute(select(ProcessedTurn).where(and_(
+            ProcessedTurn.user_id == user_id,
+            ProcessedTurn.idem_key == idem_key)))
+        row = res.scalars().first()
+        if row is None:
+            return False
+        if (row.result_summary or "").strip():
+            # Confirmed by someone — a real prior success. Leave it alone.
+            return False
+        await db.delete(row)
+        await db.commit()
+        logger.info("event=processed_turn_released user=%s", user_id)
+        return True
+    except Exception as e:
+        logger.warning(f"release_processed_turn skipped: {e}")
         try:
             await db.rollback()
         except Exception:

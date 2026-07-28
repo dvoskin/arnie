@@ -1075,6 +1075,12 @@ async def _run_turn(
                         extract_food_items(_gate_user_message))
             except Exception:
                 _scribe_task = None
+        # THE CLAIM WE OWE AN OUTCOME TO. Initialised out here, not inside the
+        # branch that makes it, because the settle point lives further down in
+        # a branch this one does not dominate — an `ask` turn reaches it having
+        # never claimed anything, and a bare local would raise there.
+        _idem_claim_key = None
+        _idem_claim_names = ""
         if _sft is not None and _sft["action"] in ("log", "update", "delete",
                                                    "commit"):
             # Structured interpreter already decided the writes (an ordered
@@ -1110,11 +1116,20 @@ async def _run_turn(
                             (tc.get("input") or {}).get("food_name") or
                             str((tc.get("input") or {}).get("entry_id") or "")
                             for tc in _sft["tool_calls"])[:200]
+                        # CLAIMED PENDING, on purpose: the summary is what marks
+                        # the claim as spoken-for, and nothing has been written
+                        # yet. It is filled in by `confirm_processed_turn` after
+                        # the batch lands. Claiming with the names here is what
+                        # made a failed turn indistinguishable from a successful
+                        # one for the next 60 minutes.
                         if not await claim_processed_turn(
-                                db, user.id, _ikey, result_summary=_names_ik):
+                                db, user.id, _ikey, result_summary=""):
                             _idem_dup = True
                             logger.info(
                                 f"event=structured_food_duplicate layer=durable {_tag}")
+                        else:
+                            _idem_claim_key = _ikey
+                            _idem_claim_names = _names_ik
                     except Exception:
                         pass
                     if not _idem_dup:
@@ -1414,6 +1429,37 @@ async def _run_turn(
             # to "" everywhere else, so non-conversation call paths are unchanged.
             user_message=_gate_user_message,
         )
+        # ── THE UNGATED WRITES, COUNTED ────────────────────────────────────
+        #
+        # The legacy lane has no clarification policy in it — not a looser one,
+        # none. `plan_turn`, `is_material` and `material_ambiguities` are all
+        # reached only from `food_turn._run_untraced`, which runs only when the
+        # gate ADMITS. What the coach gets instead is the mode's thresholds
+        # rendered as English in the system prompt, plus an optional
+        # `note_food_clarification` it may or may not call: discretion, not
+        # enforcement.
+        #
+        # Whether that needs a gate is a question about VOLUME, and the volume
+        # was unmeasured. `event=structured_food_fallback` already records every
+        # decline, but a decline that writes nothing costs nothing — the number
+        # that decides this is declined AND wrote food anyway. That is what this
+        # emits, with the decline reason attached, so the reasons can be ranked
+        # by how much unpoliced writing each one lets through.
+        #
+        # Measurement only, deliberately. The model-side ask-hold was removed on
+        # 2026-07-23 because two ask brains collided; putting one back belongs
+        # downstream of knowing what it would be worth.
+        try:
+            if _sft is None:
+                _legacy_food = [
+                    (tc.get("name") or "") for tc in (tool_calls or [])
+                    if (tc.get("name") or "") in ("log_food", "update_food_entry")]
+                if _legacy_food:
+                    logger.info(
+                        "event=legacy_food_write_ungated reason=%s writes=%d %s",
+                        _legacy_reason or "-", len(_legacy_food), _tag)
+        except Exception:
+            pass
         # Typed execution view (P0.3a): the executor publishes it; the scraper
         # fallback covers mocked executors. Downstream (narration filters,
         # cards) consumes THIS — never inp["_..."] keys directly.
@@ -1802,6 +1848,31 @@ async def _run_turn(
                 # (P0.3a) — on structured turns the executed batch IS the plan.
                 _ok_calls = _execution.ok_tool_calls()
                 _failed_names = _execution.failed_names()
+                # SETTLE THE CLAIM AGAINST WHAT ACTUALLY HAPPENED. The claim was
+                # committed before these writes ran and, until now, nothing ever
+                # revisited it. A refused batch left a claim guarding nothing,
+                # and for the rest of the hour the same message answered
+                # "Already got that one - it's on the board from a moment ago"
+                # over an empty board.
+                #
+                # Confirming is what makes the claim speak for a real outcome;
+                # releasing is what lets the user simply say it again. Both are
+                # best-effort: the turn is already committed either way, and an
+                # unsettled claim expires on the pending grace rather than
+                # holding the full idempotency window.
+                if _idem_claim_key:
+                    try:
+                        if _ok_calls:
+                            from db.queries import confirm_processed_turn
+                            await confirm_processed_turn(
+                                db, user.id, _idem_claim_key,
+                                result_summary=_idem_claim_names)
+                        else:
+                            from db.queries import release_processed_turn
+                            await release_processed_turn(
+                                db, user.id, _idem_claim_key)
+                    except Exception as _ie:
+                        logger.warning(f"idempotency claim not settled: {_ie}")
                 try:
                     await db.refresh(today_log)
                 except Exception:
