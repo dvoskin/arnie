@@ -126,17 +126,24 @@ def food_mode_directive(mode: Optional[str]) -> str:
         )
     if m == "strict":
         return (
-            "[FOOD LOGGING MODE: strict] Accuracy BEFORE the write: when a calorie-moving "
-            "detail is genuinely unclear (cook method, size, milk, sauce amount), ask the 1-2 "
-            "highest-impact questions FIRST and hold the log until they answer. Bundle a "
-            "multi-item message into ONE combined ask covering every unclear item, then log "
-            f"EVERYTHING together with their answers applied. Ask even when the swing is "
-            f"under {_T['moderate']} cal (anything around {_T['strict']}+ matters here); "
-            "clearly-stated items log DIRECTLY without questions or confirmation — strict is "
-            "not 'always ask'. Reserve a pre-write confirm for amounts YOU estimated, bulk "
-            "multi-item plans, and did-they-actually-eat-it doubt (narrowed 2026-07-25). If "
-            "they said 'just log it', skip the questions and log conservative-high "
-            "immediately."
+            "[FOOD LOGGING MODE: strict] Accuracy BEFORE the write, but ONLY about what "
+            "THEIR WORDS actually left open.\n"
+            "AN AMBIGUITY IS SOMETHING THEY DID NOT SAY — never something you can imagine "
+            "having been added. 'A medium roasted sweet potato' is a COMPLETE description: "
+            "they did not mention butter, so there is no butter — log it as described. The "
+            "same goes for 'a cup of cooked lentils', 'a medium avocado', 'a cup of kefir'. "
+            "Asking 'was it plain, or did you add oil/butter/seasoning?' about a plainly "
+            "stated food is inventing a doubt they did not express, and it costs them a turn "
+            "to tell you what they already told you.\n"
+            "ASK when their own description leaves a calorie-moving detail genuinely "
+            f"unspecified and the swing clears ~{_T['strict']} cal — 'a shake' with no "
+            "contents, 'chicken' with no size or cook method, 'some pasta' with no amount. "
+            "Then ask the 1-2 highest-impact questions FIRST and hold the log until they "
+            "answer. Bundle a multi-item message into ONE combined ask covering every "
+            "unclear item, then log EVERYTHING together with their answers applied.\n"
+            "Reserve a pre-write confirm for amounts YOU estimated, bulk multi-item plans, "
+            "and did-they-actually-eat-it doubt (narrowed 2026-07-25). If they said 'just "
+            "log it', skip the questions and log conservative-high immediately."
         )
     return ""  # moderate / unknown = static system prompt default
 
