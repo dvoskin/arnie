@@ -32,16 +32,70 @@ from typing import Any, Optional
 logger = logging.getLogger(__name__)
 
 
+async def open_food_pending(db, user_id: int) -> tuple:
+    """The user's live food clarification, or `(None, None)`.
+
+    The ROUTER needs to know a question is open BEFORE the turn is routed, and
+    until now only `core/conversation.py` ever looked — deep inside the legacy
+    path, long after the coordinator had already decided. So `RouteStage`'s
+    `pending_clarification` branch could never fire on the live path, and every
+    answer turn was routed from `food_relevance(text)` alone.
+
+    "half of it", "the big bag", "yes" do not read as food to any gate. Legacy
+    routes them structured because it holds the pending question; the
+    coordinator predicted GENERAL. So the agreement rate that gates the whole
+    rollout was biased against precisely the turns the native lane is least
+    ready for — it looked like disagreement about food detection when it was
+    the coordinator being handed less information (audit A4 → B1).
+
+    READ-ONLY, deliberately. `conversation.py` resolves an expired pending by
+    stamping `answered_at` and committing. Doing that here too would put two
+    writers on one row, from a path whose whole contract is deciding without
+    side effects. An expired pending is simply reported absent — the same
+    answer the caller reaches — and legacy still does the resolving.
+
+    Never raises: a router that cannot read the pending should route the turn
+    as cold, not lose it.
+    """
+    if db is None or not user_id:
+        return None, None
+    try:
+        import json
+
+        from core.food_ledger import pending_expired
+        from core.food_turn import ASK_KIND
+        from db.queries import get_open_pending_question
+
+        pending = await get_open_pending_question(db, user_id, ASK_KIND)
+        if pending is None:
+            return None, None
+        prior = json.loads(pending.payload_json or "{}")
+        if pending_expired(pending, (prior or {}).get("kind")):
+            return None, None
+        return pending, prior
+    except Exception as e:
+        logger.debug(f"open food pending unavailable: {e}")
+        return None, None
+
+
 def build_request(*, turn_id: str, user, platform: str, source_type: str,
                   text: str, db=None, today_log=None,
                   in_onboarding: bool = False,
-                  client_message_id: Optional[str] = None):
+                  client_message_id: Optional[str] = None,
+                  food_prior=None, food_pending: bool = False):
     """The inbound message as the coordinator's own type.
 
     `metadata` carries the handles the route stage needs — the session, the
     user, today's board. They are metadata rather than fields because the
     request is transport-independent by design and a db handle is not part of
     what a message IS; the stages that need one reach for it explicitly.
+
+    `food_prior` / `food_pending` are the open clarification, from
+    `open_food_pending` above. They were declared by `RouteStage` and
+    `ConfirmReplayPlanStage` and set by nobody, so both branches were dead on
+    the live path — the only caller that passed them was the shadow-observation
+    hook, whose request was then discarded in favour of the ambient route
+    computed without them.
     """
     from core.turns.models import TurnRequest
     return TurnRequest(
@@ -57,6 +111,8 @@ def build_request(*, turn_id: str, user, platform: str, source_type: str,
             "today_log": today_log,
             "in_onboarding": bool(in_onboarding),
             "has_board": bool(getattr(today_log, "food_entries", None)),
+            "food_prior": food_prior,
+            "food_pending": bool(food_pending),
         },
     )
 

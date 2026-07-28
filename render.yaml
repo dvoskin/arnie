@@ -52,6 +52,21 @@ services:
       # separately, after the resolver rollout (staged per #23's plan).
       - key: TURN_COORDINATOR_MODE
         value: new_observe
+      # Deep observation ON (audit B2, 2026-07-28). Without it `deep_observing()`
+      # is false, the planning stages never run in observe mode, and `agree_disp`
+      # short-circuits to True on every food turn — so the observe line reports
+      # a LANE agreement rate under a disposition-agreement name, and the number
+      # gating promotion has never measured whether the native lane would decide
+      # the same thing.
+      #
+      # Costs a second interpreter pass on food turns, which is why it is opt-in
+      # and why this is a BOUNDED window: turn it off once the disposition
+      # agreement rate is established. Read-only either way — the observation
+      # stages never execute tools, write rows or send messages.
+      #
+      # Reference-only file: set this in the Render dashboard for it to apply.
+      - key: TURN_COORDINATOR_OBSERVE_DEEP
+        value: "true"
       # Nutrition resolver LIVE for ALL users (Danny 2026-07-25): empty
       # allowlist = everyone. Owns only which candidate's nutrients commit;
       # micros carried, unresolved/no-calorie never promotes, crash falls to

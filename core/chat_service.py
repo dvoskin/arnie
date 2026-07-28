@@ -380,11 +380,24 @@ async def run_chat_turn(
     from core.turns import entrypoint as _turns
     _turn_id = make_turn_id(platform or "ios", idempotency_key, user.id,
                             text or "")
+    # THE OPEN QUESTION IS PART OF THE REQUEST. An answer turn is not
+    # recognisable from its text — "half of it", "the big bag", "yes" — so a
+    # router without this routes it cold, which is what made the coordinator
+    # disagree with legacy on exactly the turns that matter most (audit A4/B1).
+    # One indexed read, and only when the structured lane is on at all.
+    _food_pq = _food_prior = None
+    try:
+        from core.food_turn import structured_food_enabled as _sfe
+        if _sfe():
+            _food_pq, _food_prior = await _turns.open_food_pending(db, user.id)
+    except Exception:
+        _food_pq = _food_prior = None
     turn = await _turns.run_turn(
         request=_turns.build_request(
             turn_id=_turn_id, user=user, platform=platform,
             source_type=_source, text=text or "", db=db, today_log=today_log,
-            in_onboarding=in_onboarding, client_message_id=idempotency_key),
+            in_onboarding=in_onboarding, client_message_id=idempotency_key,
+            food_prior=_food_prior, food_pending=_food_pq is not None),
         user=user, db=db, messages=messages, system=system, platform=platform,
         in_onboarding=in_onboarding, was_onboarding=was_onboarding,
         today_log=today_log, source_type=_source,
