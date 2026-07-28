@@ -1379,8 +1379,9 @@ Write plain sentences. No markdown syntax, no headers, no horizontal rules, no
 tables, and no asterisks for emphasis. Bullets are supplied by the caller when
 a list is wanted — do not invent your own.
 
-Return only the user-facing text. Return an empty string when the plan allows
-no text and nothing useful needs saying."""
+Return only the user-facing text. An empty reply is legal ONLY when the brief
+below says so — a turn that wrote a row always says something, because silence
+next to a card reads as a message that got dropped."""
 
 
 def arnie_voice() -> str:
@@ -1430,10 +1431,23 @@ _INTENT_BRIEF = {
         "Briefly acknowledge the resolved meaning. Do not re-review the meal "
         "and do not ask again.",
     FoodResponseIntent.COMMIT:
+        # "or return an empty string if there is nothing useful" was still here
+        # after `allow_no_text` was withdrawn for a turn that actually wrote a
+        # row. So the brief invited exactly what `validate()` then rejected as
+        # EMPTY_NOT_ALLOWED — costing a second generation and, when that also
+        # came back thin, the deterministic floor. An instruction the validator
+        # refuses is worse than no instruction.
+        #
+        # And the length: the shared persona teaches 2-4 bubbles for a coaching
+        # moment, which is right in general and wrong here — this one is 35
+        # words. Saying so beats letting the two briefs argue and paying for a
+        # retry when the general one wins.
         "The card already confirms the food entry. If the user also said "
         "something meaningful outside the food log, acknowledge or answer "
-        "that FIRST. Otherwise add one natural observation, or return an "
-        "empty string if there is nothing useful.",
+        "that FIRST. Otherwise name what landed and add at most one natural "
+        "observation. This is a short moment — one or two bubbles, never "
+        "three — and it always says something: a row went into their log and "
+        "silence reads as a dropped message.",
     FoodResponseIntent.PARTIAL_COMMIT:
         "Say what is in, name the one item still open, and ask only the "
         "supplied question. Never describe the open item as logged.",
