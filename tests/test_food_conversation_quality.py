@@ -320,12 +320,17 @@ def _committed_plan():
                                          "day_totals"}))
 
 
-def test_the_redundant_receipt_sentence_is_removed():
-    """"Logged: Peanut M&Ms, Banana, Peanut Butter." shipped directly above a
-    card listing the same three names with their macros."""
-    out = strip_card_recitation(
-        "Logged: Peanut M&Ms, Banana, Peanut Butter.", _committed_plan())
-    assert out == ""
+def test_the_receipt_sentence_survives_because_it_is_the_only_subject():
+    """This used to assert `== ""`, on the reasoning that a receipt printed
+    twice is noise above a card listing the same three names.
+
+    Right about the duplication, wrong about what it cost. Every OTHER sentence
+    a commit turn writes carries a nutrient number and is taken by
+    `_is_recitation` — so the name line was the last thing standing, and
+    dropping it left the empty string. Numbers belong to the card; the name
+    belongs to the sentence."""
+    text = "Logged: Peanut M&Ms, Banana, Peanut Butter."
+    assert strip_card_recitation(text, _committed_plan()) == text
 
 
 def test_progress_rendered_as_arithmetic_is_removed():

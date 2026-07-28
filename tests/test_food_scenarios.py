@@ -543,12 +543,14 @@ def test_scenario_a_no_forced_question_after_the_card():
 
 
 # ── B · simple clear meal ────────────────────────────────────────────────────
-def test_scenario_b_a_clear_meal_may_commit_with_no_text_at_all():
-    """Two eggs and a slice of toast: card renders, nothing to add."""
+def test_scenario_b_a_clear_meal_still_says_what_it_logged():
+    """Two eggs and a slice of toast: the card renders and there is nothing to
+    ADD — but "nothing to add" was read as "nothing to say", and the reply came
+    back empty. The card is the receipt; the sentence is the acknowledgement."""
     plan = plan_from_resolution(_committed(("eggs", "2"), ("toast", "1 slice")))
-    assert plan.allow_no_text
-    assert validate("", plan).ok
-    assert fallback(plan) == ""
+    assert not plan.allow_no_text
+    assert validate("", plan).reason == Reason.EMPTY_NOT_ALLOWED
+    assert fallback(plan) == "Logged eggs and toast."
 
 
 def test_scenario_b_one_observation_is_also_valid():
@@ -728,9 +730,12 @@ def test_scenario_j_a_repeated_opener_is_rejected():
     assert validate("Light start there.", plan).ok
 
 
-def test_scenario_j_some_turns_are_card_only():
+def test_scenario_j_no_turn_that_wrote_a_row_is_card_only():
+    """There is no such thing as a card-only write. A card with no sentence
+    over it reads as a message that was dropped."""
     plan = plan_from_resolution(_committed(("rice", "200g")))
-    assert plan.allow_no_text and validate("", plan).ok
+    assert not plan.allow_no_text
+    assert validate("", plan).reason == Reason.EMPTY_NOT_ALLOWED
 
 
 def test_scenario_j_coaching_is_not_forced_after_every_log():

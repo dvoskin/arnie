@@ -2048,12 +2048,12 @@ async def _run_turn(
                                     _r["remaining_protein"] = _snap.protein_left
                         except Exception:
                             pass    # a card with a stale number beats no card
-                        # The committed item NAMES travel with the plan.
-                        # `_is_roll_call` compares the sentence against them,
-                        # so an empty plan was structurally unable to fire —
-                        # and "Logged: Mashed Potato, Grilled Corn, Filet
-                        # Mignon, Reese's Pieces." shipped directly above a
-                        # card listing the same four with their macros.
+                        # The committed item NAMES travel with the plan, and
+                        # they are now what the SENTENCE is built from: the
+                        # card strip takes every figure, so without these the
+                        # deterministic floor for a logged meal is the empty
+                        # string (`food_response._subject_line`). An empty
+                        # plan here is a card with nothing said over it.
                         _names = tuple(
                             FoodItemSummary(name=str(
                                 (c.get("input") or {}).get("food_name")

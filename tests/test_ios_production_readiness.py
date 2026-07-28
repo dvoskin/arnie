@@ -343,9 +343,11 @@ async def test_a_failed_model_call_falls_back_instead_of_going_silent(
     assert text, "an outage must never render as silence"
 
 
-async def test_the_model_may_still_choose_silence(monkeypatch):
-    """The other half: when the plan allows it and the model genuinely returns
-    nothing, that IS the answer — the card already said it."""
+async def test_a_quiet_model_on_a_write_still_names_the_food(monkeypatch):
+    """The other half. This asserted that a silent model meant a silent turn,
+    on the reasoning that the card already said it. The card says the numbers;
+    it does not say the message was heard, and on iOS a card renders on every
+    turn — so this was the shape of every logged meal."""
     import core.food_response as fr
     import core.llm as llm
     monkeypatch.setenv("FOOD_COMPOSER", "true")
@@ -360,7 +362,12 @@ async def test_the_model_may_still_choose_silence(monkeypatch):
         card_will_render=True, allow_no_text=True))
 
     text, why = await fr.compose_async(plan)
-    assert why == fr.Reason.OK and text == ""
+    # A quiet composer no longer means a quiet turn. `allow_no_text=True` was
+    # passed in here by hand and `apply_policy` withdraws it, because this plan
+    # committed a Caesar salad: silence on a turn that wrote a row is how a
+    # logged meal came back as an empty bubble on iOS.
+    assert why == fr.Reason.EMPTY_NOT_ALLOWED
+    assert text == "Logged Caesar salad."
 
 
 # ── one day, one source: the card and the sentence must agree ────────────────

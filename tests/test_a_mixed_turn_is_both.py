@@ -53,7 +53,12 @@ def test_a_mixed_turn_may_not_be_answered_with_silence():
     """COMMIT's budget was written for a turn where the card says everything.
     The card cannot acknowledge a person."""
     assert _plan(_ctx()).allow_no_text is False
-    assert _plan(None).allow_no_text is True
+    # The food-only contrast is no longer "silence is fine" — a turn that wrote
+    # a row owes its subject either way. The contrast that still holds is a
+    # COMMIT plan with nothing committed, which has nothing to name.
+    assert apply_policy(FoodResponsePlan(
+        intent=FoodResponseIntent.COMMIT,
+        card_will_render=True)).allow_no_text is True
 
 
 def test_a_mixed_turn_gets_room_to_answer_in():

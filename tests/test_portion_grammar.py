@@ -117,14 +117,18 @@ def _card_plan(*names):
         committed_items=tuple(FoodItemSummary(name=n) for n in names)))
 
 
-def test_the_logged_roll_call_is_dropped_when_a_card_renders():
-    """It shipped directly above a card listing the same four names with their
-    macros. A receipt printed twice is noise between the user and the card."""
+def test_the_logged_roll_call_survives_because_the_card_took_everything_else():
+    """Reversed deliberately. Dropping the roll call left NOTHING — the card
+    strip takes every sentence carrying a figure, so the name line was the last
+    thing naming the meal, and a logged meal came back as the empty string.
+
+    What the card owns is the numbers, and it still owns them: see
+    `test_the_remaining_budget_is_not_restated_beneath_the_card` below."""
     from core.food_response import strip_card_recitation
     plan = _card_plan("Mashed Potato", "Grilled Corn", "Filet Mignon",
                       "Reese's Pieces")
     text = "Logged: Mashed Potato, Grilled Corn, Filet Mignon, Reese's Pieces."
-    assert strip_card_recitation(text, plan) == ""
+    assert strip_card_recitation(text, plan) == text
 
 
 @pytest.mark.parametrize("sentence", [

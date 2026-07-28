@@ -48,9 +48,21 @@ def _commit_plan(**kw):
 
 
 # ── intent policy is deterministic, never model-chosen ────────────────────────
-def test_commit_allows_no_text_at_all():
-    """The card already said it happened. Silence is a valid response."""
+def test_a_commit_that_wrote_a_row_may_not_be_silent():
+    """The card said the numbers. It did not say the message was heard.
+
+    COMMIT's `allow_no_text` is still on the intent table — a COMMIT plan that
+    committed nothing has nothing to name, and silence there is honest. What is
+    withdrawn is silence on a turn that actually put a row in the log."""
     plan = _commit_plan()
+    assert not plan.allow_no_text
+    assert validate("", plan).reason == Reason.EMPTY_NOT_ALLOWED
+
+
+def test_a_commit_that_wrote_nothing_keeps_its_silence():
+    plan = apply_policy(FoodResponsePlan(
+        intent=FoodResponseIntent.COMMIT, card_will_render=True,
+        facts_visible_in_card=CARD_FACTS))
     assert plan.allow_no_text
     assert validate("", plan).ok
 
@@ -263,8 +275,12 @@ def test_the_review_fallback_switches_to_lines_when_prose_stops_scanning():
     assert "1." not in text and "**" not in text     # no numbering, no bold
 
 
-def test_the_commit_fallback_can_be_silence():
-    assert fallback(_commit_plan()) == ""
+def test_the_commit_fallback_names_what_it_wrote():
+    """It used to be silence, and silence is what shipped — see
+    `test_a_commit_that_wrote_a_row_may_not_be_silent`. The figures still stay
+    on the card."""
+    text = fallback(_commit_plan())
+    assert text == "Logged toast."
 
 
 def test_the_coach_fallback_is_silence_not_generic_advice():
@@ -430,9 +446,12 @@ def test_no_composer_means_the_deterministic_text():
     assert text == "Updated the jam." and reason == "no_composer"
 
 
-def test_a_composer_returning_nothing_on_a_silent_intent_stays_silent():
+def test_a_composer_returning_nothing_on_a_write_gets_the_subject_back():
+    """COACH may be silent; a turn that wrote a row may not. An empty composer
+    now fails its own plan and the deterministic floor names the food."""
     text, reason = compose(_commit_plan(), lambda p: "")
-    assert text == "" and reason == Reason.OK
+    assert text == "Logged toast."
+    assert reason == Reason.EMPTY_NOT_ALLOWED
 
 
 # ── the invariant that catches fallback drift ─────────────────────────────────

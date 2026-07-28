@@ -732,6 +732,14 @@ def pursued_unknowns(unknowns: Tuple[dict, ...],
     return kept or unknowns[:1]
 
 
+#: Intents whose turn actually moved the log. Silence is not available to any
+#: of them once something landed — see `apply_policy` and `_subject_line`.
+_WRITE_INTENTS = frozenset({
+    FoodResponseIntent.COMMIT, FoodResponseIntent.PARTIAL_COMMIT,
+    FoodResponseIntent.CORRECT, FoodResponseIntent.UNDO,
+})
+
+
 def apply_policy(plan: FoodResponsePlan) -> FoodResponsePlan:
     """Stamp the intent's limits onto the plan.
 
@@ -770,6 +778,18 @@ def apply_policy(plan: FoodResponsePlan) -> FoodResponsePlan:
         # nothing: the card cannot acknowledge anything.
         sentences = max(sentences, 3)
         words = max(words, 65)
+        allow_none = False
+    if plan.committed_items and plan.intent in _WRITE_INTENTS:
+        # A TURN THAT WROTE A ROW MAY NOT SAY NOTHING. COMMIT's `allow_no_text`
+        # was written for the card: the card confirms the entry, so the
+        # sentence is free to be silent. What that produced in practice was a
+        # reply with no subject — the strip took every figure, the permission
+        # took what was left, and logging a meal returned the empty string.
+        #
+        # The permission stays on the table for a COMMIT plan that committed
+        # nothing (a coaching-shaped turn that reached this intent), which is
+        # the only case where silence names nothing because there is nothing to
+        # name. `_subject_line` is the floor everywhere else.
         allow_none = False
     if plan.assumptions and not plan.card_will_render:
         # AN UNDISCLOSED ASSUMPTION IS THE ONE THING SILENCE CANNOT COVER.
@@ -1502,6 +1522,27 @@ def _unknowns_brief(unknowns: Tuple[dict, ...], mode: str = "") -> str:
 def build_prompt(plan: FoodResponsePlan) -> str:
     """The generation prompt: voice, intent brief, approved facts, limits."""
     brief = _INTENT_BRIEF.get(plan.intent, "")
+    if plan.intent is FoodResponseIntent.COMMIT and plan.card_will_render:
+        # THE CARD IS A RECEIPT, NOT AN ACKNOWLEDGEMENT. The standing brief —
+        # "the card already confirms the food entry … or return an empty string
+        # if there is nothing useful" — is what produced a reply that never
+        # said what was logged. Forbidden the figures by ALREADY ON THE CARD,
+        # and told the entry was already confirmed, the composer had one thing
+        # left to write and wrote a mood: "You've got solid room to work with."
+        #
+        # The numbers stay the card's. The NAME is the sentence's, and it is
+        # not optional, because it is the only part of the reply that says the
+        # message was heard.
+        brief = ("Say what you logged, by name — in their words where they "
+                 "gave you words. That is this sentence's job and it is not "
+                 "optional: a reply that names nothing reads as a message that "
+                 "was dropped. Do NOT recite calories, macros, the day total "
+                 "or what is left; the card directly below carries all of it, "
+                 "and repeating it is how the sentence stops being worth "
+                 "reading. If the user also said something meaningful outside "
+                 "the food log, answer that FIRST, then name the food. One "
+                 "natural observation may follow the name — it is never a "
+                 "substitute for it.")
     if (plan.assumptions and not plan.card_will_render
             and plan.intent is FoodResponseIntent.COMMIT):
         # THE BRIEF ITSELF HAD TO CHANGE. "The card already confirms what was
@@ -1736,6 +1777,40 @@ def _held_name(plan: "FoodResponsePlan") -> str:
     return "one item"
 
 
+#: The verb each write intent uses when the sentence has to name what it did
+#: and nothing else. Same words the no-snapshot fallbacks already use, so a
+#: turn does not change voice depending on whether a snapshot reached it.
+_SUBJECT_VERB = {
+    FoodResponseIntent.CORRECT: "Updated",
+    FoodResponseIntent.UNDO: "Undid",
+}
+
+
+def _subject_line(plan: "FoodResponsePlan") -> str:
+    """What this turn did, by name, with no number on it.
+
+    The floor beneath every write. A turn that put a row in the log and then
+    said nothing reads as a dropped message — the card is a receipt, and a
+    receipt with no covering sentence is not how a person tells you they heard
+    you. This is what the reply falls back to when the card has already taken
+    every figure.
+
+    Returns "" when there is nothing to name, so silence survives where silence
+    is honest: a COMMIT plan that committed nothing has no subject.
+    """
+    names = [i.name for i in (plan.committed_items or ()) if i.name]
+    if not names:
+        return ""
+    return f"{_SUBJECT_VERB.get(plan.intent, 'Logged')} {_join(names)}."
+
+
+def _names_the_food(text: str, plan: "FoodResponsePlan") -> bool:
+    """Does this text already name something the turn wrote?"""
+    lowered = (text or "").lower()
+    return any(i.name and i.name.lower() in lowered
+               for i in (plan.committed_items or ()))
+
+
 def _commit_text(plan: FoodResponsePlan) -> str:
     """The confirmation for a write, authored HERE (review item 3).
 
@@ -1759,9 +1834,12 @@ def _commit_text(plan: FoodResponsePlan) -> str:
     """
     snapshot = plan.committed_snapshot
     if snapshot is None:
-        # Nothing committed to describe. The old behaviour, which is right:
-        # where a card renders it has already said what happened.
-        return "" if plan.allow_no_text else "Got it."
+        # No numbers to describe — but "no snapshot" is not "nothing landed".
+        # A plan can carry the committed names without the figures, and there
+        # the subject is still available and still owed; "Got it." names less
+        # than the plan knows. Silence remains the answer when there is
+        # genuinely nothing to name.
+        return _subject_line(plan) or ("" if plan.allow_no_text else "Got it.")
 
     from core.food_ledger import render_committed
 
@@ -1772,7 +1850,17 @@ def _commit_text(plan: FoodResponsePlan) -> str:
         # judges it — a failure notice carries no nutrition number, so it
         # survives, and asserting that is better than exempting it by hand.
         text = f"{text}|||{plan.failure_notice}" if text else plan.failure_notice
-    return strip_card_recitation(text, plan)
+    kept = strip_card_recitation(text, plan)
+    # WHAT THE CARD TOOK, THE SENTENCE STILL OWES. Where a card renders, the
+    # strip above removes every figure — which on an ordinary commit is every
+    # sentence there was, leaving "". Put the subject back, without the numbers
+    # the card is already carrying. A failure notice can survive the strip on
+    # its own; it names what did NOT land, so it is not a subject either.
+    if not _names_the_food(kept, plan):
+        subject = _subject_line(plan)
+        if subject:
+            kept = f"{subject} {kept}".strip() if kept.strip() else subject
+    return kept
 
 
 def contextual_preface(plan: FoodResponsePlan) -> str:
@@ -2050,8 +2138,7 @@ def strip_card_recitation(text: str, plan: FoodResponsePlan) -> str:
             kept_bubbles.append(bubble)
             continue
         kept = [s for s in re.split(r"(?<=[.!?])\s+", bubble)
-                if s.strip() and not _is_recitation(s)
-                and not _is_roll_call(s, plan)]
+                if s.strip() and not _is_recitation(s)]
         if kept:
             kept_bubbles.append(" ".join(kept).strip())
     return "|||".join(kept_bubbles)
@@ -2079,29 +2166,26 @@ def _is_recitation(sentence: str) -> bool:
     return not _RECOMMENDATION_RE.search(sentence)
 
 
-def _is_roll_call(sentence: str, plan: "FoodResponsePlan") -> bool:
-    """A sentence that only re-lists what the card already lists.
-
-    "Logged: Peanut M&Ms, Banana, Peanut Butter." carries no number, so the
-    recitation check never saw it — and it shipped directly above a card
-    showing the same three names with their macros. A receipt printed twice is
-    not a receipt, it is noise between the user and the thing they wanted.
-    """
-    names = [i.name for i in (plan.committed_items or ()) if i.name]
-    if len(names) < 1:
-        return False
-    text = (sentence or "").strip().rstrip(".")
-    if not text:
-        return False
-    # Strip a leading receipt verb, then see whether what is left is only the
-    # item names and separators.
-    stripped = re.sub(r"^(?:logged|added|saved|got|in)\s*[:\-—]?\s*", "",
-                      text, flags=re.I)
-    for name in names:
-        stripped = re.sub(rf"\b{re.escape(name)}\b", "", stripped,
-                          flags=re.I)
-    remainder = re.sub(r"[,\s;&·]+|\band\b", "", stripped, flags=re.I)
-    return not remainder and stripped != text
+# THE ROLL-CALL STRIP IS GONE, DELIBERATELY.
+#
+# `_is_roll_call` used to drop a sentence whose whole content was the committed
+# item names — "Logged: Peanut M&Ms, Banana, Peanut Butter." above a card
+# listing the same three with their macros. The reasoning was that a receipt
+# printed twice is noise, and on its own terms it was right.
+#
+# What it missed is that it was the LAST thing naming the food. Every other
+# sentence render_committed writes carries a nutrient number, so
+# `_is_recitation` takes it; the name line was all that survived, and removing
+# it left the empty string. Measured on the deployed path: the deterministic
+# reply for a COMMIT with a card was `''`, and the composer — told by its own
+# brief that the card confirms the entry — wrote a mood instead of a subject.
+# What the user got for logging a meal was "You've got solid room to work
+# with", which never says what was logged.
+#
+# So the rule is now SUPPRESS THE NUMBERS, KEEP THE SUBJECT. Figures live on
+# the card and only on the card (`_NUTRIENT_CARD_FACTS`, unchanged); naming the
+# food is the sentence's job and cannot be duplication, because a sentence that
+# names the food stands on its own whether or not the card renders.
 
 
 # ── composition ───────────────────────────────────────────────────────────────
