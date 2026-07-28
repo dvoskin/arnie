@@ -2231,7 +2231,7 @@ async def _run_turn(
                         # `food_hint` is the row's name as it stood; the input
                         # is what it becomes. Without this the composer is told
                         # to name the change and has only the result to look at.
-                        _changed = []
+                        _changed, _unpriced = [], []
                         for _c in (_ok_calls or []):
                             if _c.get("name") != "update_food_entry":
                                 continue
@@ -2244,9 +2244,26 @@ async def _run_turn(
                             elif _qty:
                                 _changed.append(
                                     f"{_was or _now} is now {_qty}")
+                            # THE CORRECTION THAT COULD NOT BE PRICED.
+                            #
+                            # The executor already knows: it renamed the row,
+                            # found nothing that could cost the new identity,
+                            # declined to write a zero, and stashed
+                            # `correction_unpriced` with the note that this is
+                            # "a FAILURE to disclose, not a silent no-op". It
+                            # was read by nothing, so the disclosure never
+                            # happened — the reply said "Fixed it to a double
+                            # cheeseburger" over the single cheeseburger's 324
+                            # cal, and the user had to notice ("the calories
+                            # haven't updated tho") and supply 450 themselves.
+                            _unp = str(
+                                _ci.get("correction_unpriced") or "").strip()
+                            if _unp:
+                                _unpriced.append(_unp)
                         _plan = apply_policy(FoodResponsePlan(
                             intent=_intent,
                             corrections=tuple(_changed),
+                            unpriced_corrections=tuple(_unpriced),
                             committed_items=tuple(n for n in _names if n.name),
                             committed_snapshot=_snap,
                             assumptions=_assumed,

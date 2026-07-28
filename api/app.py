@@ -1992,6 +1992,48 @@ class ExercisePatch(BaseModel):
     duration_minutes: Optional[float] = None
 
 
+async def _food_row_state(db, entry_id: int) -> dict:
+    """The row as it stands, for a ledger event's `before`/payload.
+
+    Same shape `api/food_edit` captures, kept small deliberately: an event
+    payload is what an inverse is rebuilt from, not a copy of the table.
+    """
+    from sqlalchemy import select as _sel
+    from db.models import FoodEntry
+    try:
+        row = (await db.execute(
+            _sel(FoodEntry).where(FoodEntry.id == entry_id))).scalar_one_or_none()
+    except Exception:
+        return {}
+    if row is None:
+        return {}
+    return {"daily_log_id": row.daily_log_id,
+            "name": row.parsed_food_name, "quantity": row.quantity,
+            "calories": row.calories, "protein": row.protein,
+            "carbs": row.carbs, "fats": row.fats,
+            "meal_type": getattr(row, "meal_type", None)}
+
+
+async def _record_food_event(db, user_id: int, event_type: str, entry_id: int,
+                             daily_log_id, payload: dict, turn_id: str) -> None:
+    """A dashboard mutation, on the same ledger as every other (audit N-2).
+
+    Best-effort by the same rule the executor uses: history may never break the
+    write it describes.
+    """
+    try:
+        from core.turn_identity import CURRENT_TURN_ID
+        from db.queries import record_ledger_event
+        CURRENT_TURN_ID.set(turn_id)
+        await record_ledger_event(
+            db, user_id, event_type, domain="food", entry_id=entry_id,
+            daily_log_id=daily_log_id, payload=payload,
+            source="dashboard_edit")
+    except Exception as exc:                             # pragma: no cover
+        logger.warning(f"ledger event (dashboard food {event_type}) "
+                       f"skipped: {exc}")
+
+
 @app.patch("/api/food/{entry_id}")
 async def api_edit_food(entry_id: int, patch: FoodPatch, token: str = Query(...)):
     import asyncio
@@ -2003,9 +2045,20 @@ async def api_edit_food(entry_id: int, patch: FoodPatch, token: str = Query(...)
         changes = patch.model_dump(exclude_none=True)
         if "food_name" in changes:
             changes["parsed_food_name"] = changes.pop("food_name")
+        # WHAT IT WAS, read before the write so the event can be inverted.
+        _before = await _food_row_state(db, entry_id)
         entry = await update_food_entry(db, entry_id, user.id, **changes)
         if not entry:
             raise HTTPException(status_code=404, detail="Entry not found")
+        # A DASHBOARD EDIT IS A LEDGER MUTATION (audit N-2). `api/food_edit.py`
+        # records one for the same row through the iOS path; this webhook one
+        # did not, so `ledger_undo.build_plan` — which takes the last event
+        # unconditionally — still pointed at whatever preceded the edit. "undo
+        # that" then reverted a row the user had not touched.
+        await _record_food_event(db, user.id, "updated", entry_id,
+                                 _before.get("daily_log_id"),
+                                 {"changes": changes, "before": _before},
+                                 f"dashboard_edit:update:{entry_id}")
         from sqlalchemy import select as _sel
         from db.models import DailyLog
         log = (await db.execute(_sel(DailyLog).where(DailyLog.id == entry.daily_log_id))).scalar_one()
@@ -2056,9 +2109,15 @@ async def api_delete_food(entry_id: int, token: str = Query(...)):
         entry = (await db.execute(_sel(FoodEntry).where(FoodEntry.id == entry_id))).scalar_one_or_none()
         food_name = entry.parsed_food_name if entry else "entry"
         log_id = entry.daily_log_id if entry else None
+        # The whole row BEFORE it dies — a delete event without it cannot be
+        # restored, and "bring it back" is the half of undo that needs a body.
+        _before = await _food_row_state(db, entry_id)
         ok = await delete_food_entry(db, entry_id, user.id)
         if not ok:
             raise HTTPException(status_code=404, detail="Entry not found")
+        await _record_food_event(db, user.id, "deleted", entry_id, log_id,
+                                 _before,
+                                 f"dashboard_edit:delete:{entry_id}")
         log = (await db.execute(_sel(DailyLog).where(DailyLog.id == log_id))).scalar_one()
         prefs = user.preferences
         notify = dict(

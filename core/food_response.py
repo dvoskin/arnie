@@ -591,6 +591,19 @@ class FoodResponsePlan:
     #: chashu pork for the chicken" over a conversation containing no
     #: chicken. A composer cannot describe a change it was never told.
     corrections: Tuple[str, ...] = ()
+    #: Foods whose identity was corrected and whose numbers could NOT follow,
+    #: because nothing could price the new identity and a zero is not a price.
+    #:
+    #: The row keeps the previous food's figures, which is the right write and
+    #: the wrong silence: "Fixed it to a double cheeseburger" shipped over the
+    #: single cheeseburger's 324 cal against a real 450, and the user had to
+    #: notice and supply the number. The executor recorded exactly this and
+    #: nothing read it.
+    #:
+    #: Presence forces `requires_answer` — a correction normally may not ask,
+    #: and this is the one shape that has to, because the only remaining source
+    #: for the number is the person who ate it.
+    unpriced_corrections: Tuple[str, ...] = ()
 
     # Clarification.
     clarification_question: Optional[str] = None
@@ -784,6 +797,15 @@ def apply_policy(plan: FoodResponsePlan) -> FoodResponsePlan:
         count = len(pursued_unknowns(plan.clarification_unknowns, plan.user_mode))
         sentences = max(sentences, min(3, count + 1))
         words = max(words, min(70, 25 * count + 20))
+    if plan.unpriced_corrections:
+        # A correction may not normally ask — its job is to show the change
+        # took. This is the one shape that has to: the identity moved, nothing
+        # could price the new one, and the only remaining source for the number
+        # is the person who ate it. Staying silent here is what let "Fixed it
+        # to a double cheeseburger" ship over the old food's calories.
+        allow_q = True
+        allow_none = False
+        words = max(words, 45)
     if plan.requires_answer:
         allow_q = True
         allow_none = False
@@ -1803,6 +1825,14 @@ def build_prompt(plan: FoodResponsePlan) -> str:
             "their words; do not describe a swap, an addition or a removal "
             "that is not in this list, and if it is empty say only that it is "
             "updated:\n  " + "\n  ".join(plan.corrections))
+    if plan.unpriced_corrections:
+        parts.append(
+            "THE NUMBERS COULD NOT FOLLOW. You renamed these, and nothing "
+            "could price the new food — so the entry still carries the OLD "
+            "food's calories. Say that plainly and ask them for the number; "
+            "it is the only place left to get it. Do not imply the figures "
+            "were updated, and do not guess one yourself:\n  "
+            + "\n  ".join(plan.unpriced_corrections))
     if plan.assumptions:
         texts = [getattr(a, "user_visible_text", "") or str(a)
                  for a in plan.assumptions]
@@ -2147,6 +2177,14 @@ def _fallback_food_only(plan: FoodResponsePlan) -> str:
     # deterministic floor stays byte-identical to what these turns render
     # today, so switching them on cannot regress a single reply.
     if intent is FoodResponseIntent.CORRECT:
+        # A correction nobody could price does NOT get the day line. The whole
+        # point is that the numbers did not move, and `_commit_text` reads as
+        # though they did — that is the reply the user had to argue with.
+        if plan.unpriced_corrections:
+            names = _join(list(plan.unpriced_corrections))
+            return (f"Renamed it to {names}, but I couldn't find numbers for "
+                    f"it anywhere — the entry still has the old calories. "
+                    f"What should it be?")
         if plan.committed_snapshot is not None:
             return _commit_text(plan)
         return f"Updated {_join([i.name for i in plan.committed_items])}."
