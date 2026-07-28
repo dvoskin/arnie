@@ -1558,9 +1558,6 @@ def board_lines(board) -> list:
 #: re-fetch is correct, just slower.
 _SPREAD_CACHE: dict = {}
 _SPREAD_CACHE_MAX = 256
-#: How many product lookups one turn may put on the wire. They fan out in a
-#: single gather, so this bounds LOAD, not latency.
-_SPREAD_LOOKUPS_MAX = 6
 
 
 async def _variant_spreads(data) -> dict:
@@ -1572,54 +1569,15 @@ async def _variant_spreads(data) -> dict:
     simply an absent entry — a turn never loses its decision because a product
     database was slow.
     """
-    # GENERIC FOODS DISAGREE TOO, and nothing else on the live path notices.
-    #
-    # The branded gate that used to stand here was the reason a plain bagel, a
-    # double cheeseburger and a slice of pizza could never raise a doubt: the
-    # ONLY live producers are the interpreter's own report, the vague-measure
-    # deriver (which bails on a stated count) and this one. `sources_disagree`
-    # — the general cross-source detector, already written and calibrated at
-    # 60 cal / 40 cal floor / 6 g protein — is reachable only through
-    # `skills/nutrition/resolver.py`, which `promotion.py` keeps in
-    # MODE_SHADOW, so it computes a span every turn and throws it away.
-    #
-    # The signal is the same one the docstring of `derive_variant_ambiguity`
-    # describes, and it is not about brands: it is the fact the model cannot
-    # have, namely how far apart the rows sharing this name actually are. A
-    # bagel is 98 g give or take 25 — the portion ontology knows that for 24
-    # foods and nothing else, where the product database knows it for anything
-    # anyone has ever scanned.
-    #
-    # Bounded rather than unbounded: the lookups fan out in one gather, so
-    # wall-clock is a single round trip, but the cap keeps a ten-item meal from
-    # putting ten requests on a public API for one turn. Branded items go
-    # first because their spreads are the widest (powder vs ready-to-drink).
-    # FOOD_GENERIC_SPREADS=false restores the branded-only behaviour.
-    # DARK BY DEFAULT until the ask rate is measured. The signal is real — a
-    # double cheeseburger raises a 335 cal span and asks, while eggs fetch a
-    # 14 cal/100g spread and stay quiet on their own merits — but "a coke" also
-    # raises one, because Zero and regular genuinely differ by 140 calories,
-    # and that turns a stated 12 oz log into a question. Whether that trade is
-    # right is a question about how often it fires on real traffic, and firing
-    # it on everyone is the most expensive way to find out. Turn it on with
-    # FOOD_GENERIC_SPREADS=true, watch the ask rate, keep it or drop it.
-    _generic_ok = os.getenv("FOOD_GENERIC_SPREADS", "false").lower() in (
-        "true", "1", "yes")
-    _branded, _generic = [], []
+    names = []
     for raw in (data.get("items") or []):
         if not isinstance(raw, dict):
             continue
-        food = str(raw.get("food") or "").strip()
-        if not food:
+        if not (raw.get("branded") or raw.get("is_packaged")):
             continue
-        bucket = (_branded if (raw.get("branded") or raw.get("is_packaged"))
-                  else _generic)
-        bucket.append(food)
-    names = []
-    for food in _branded + (_generic if _generic_ok else []):
-        if food.lower() not in [n.lower() for n in names]:
+        food = str(raw.get("food") or "").strip()
+        if food and food.lower() not in [n.lower() for n in names]:
             names.append(food)
-    names = names[:_SPREAD_LOOKUPS_MAX]
     if not names:
         return {}
 
