@@ -303,7 +303,31 @@ def reconcile_macros(cal: float, protein: float, carbs: float, fat: float) -> tu
         return cal, protein, carbs, fat
 
     carb_fat_cal = carbs * 4 + fat * 9
-    if carb_fat_cal > 0:
+    # A ZERO MACRO IS AN ABSENCE, NOT A MEASUREMENT.
+    #
+    # The rebalance below is multiplicative, so `fat * scale` keeps a zero at
+    # zero for every scale, and the entire shortfall is pushed into whichever
+    # macro happened to be non-zero. A chocolate sweet roll submitted at 210
+    # cal / 20 P / 24 C / 0 F came back (210, 20, 32.5, 0.0): 34 unexplained
+    # calories — about 3.8 g of fat — became carbohydrate, and the item stayed
+    # fat-free on a product that cannot be.
+    #
+    # This is the butter-at-zero-calories shape (aad3416) one level down. That
+    # fix taught the system to doubt a zero CALORIE count; a zero MACRO had the
+    # same hole, and `sanity.check_values` bounds energy density from above
+    # only, so a too-low macro passes every check we have.
+    #
+    # Placed only when the shortfall is worth at least a whole gram, and only
+    # when exactly one of the two is missing: with both zero the `elif` below
+    # already places the residual, and with neither zero, scaling is the right
+    # answer. A genuinely fat-free food is protected by the 15% band above —
+    # this branch is only reachable once the macros are already inconsistent.
+    unexplained = remaining - carb_fat_cal
+    if carb_fat_cal > 0 and fat == 0 and carbs > 0 and unexplained >= 9:
+        fat = round(unexplained / 9, 1)
+    elif carb_fat_cal > 0 and carbs == 0 and fat > 0 and unexplained >= 4:
+        carbs = round(unexplained / 4, 1)
+    elif carb_fat_cal > 0:
         scale = remaining / carb_fat_cal
         carbs = round(carbs * scale, 1)
         fat = round(fat * scale, 1)
