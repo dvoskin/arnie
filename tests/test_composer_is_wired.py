@@ -50,8 +50,8 @@ def test_the_voice_contract_forbids_markdown():
     iMessage strips them; only iOS renders them. A composer free to emit
     markdown produces a different bug on each surface, so it emits none and the
     caller supplies bullets."""
-    assert "No markdown syntax" in FR.ARNIE_VOICE
-    assert "asterisks" in FR.ARNIE_VOICE
+    assert "No markdown syntax" in FR.arnie_voice()
+    assert "asterisks" in FR.arnie_voice()
 
 
 def test_the_deterministic_list_uses_the_shared_bullet():

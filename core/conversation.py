@@ -1027,7 +1027,7 @@ async def _run_turn(
                 except Exception:
                     _regs = []
                 _sft = await _sft_run(_photo_food or _user_text or "", user,
-                                      prior=_sft_prior,
+                                      prior=_sft_prior, history=messages,
                                       day_line=_dl, board=_board,
                                       last_assistant=_last_assistant,
                                       regulars=_regs,
@@ -2022,7 +2022,8 @@ async def _run_turn(
                                     "Hold on - the board changed since I "
                                     "looked, so I didn't apply that. Tell me "
                                     "again and I'll set it straight.")),
-                            user_message=_user_text or ""), user=user))
+                            user_message=_user_text or ""),
+                            user=user, messages=messages))
                     except Exception:
                         response_text = ("Hold on - the board changed since I "
                                          "looked, so I didn't apply that. Tell "
@@ -2208,6 +2209,24 @@ async def _run_turn(
                                     _assumed.append(f"{_cn}: {_at}" if _cn
                                                     else _at)
                         _assumed = tuple(dict.fromkeys(_assumed))
+                        # WHERE EACH NUMBER CAME FROM. `_stash_sourcing` built
+                        # this for the receipt and stashed it on the call —
+                        # roughly fifty lines above here — and the plan had no
+                        # field for it, so the receipt knew the whole story and
+                        # the sentence knew only the total.
+                        _sourcing = []
+                        for _c in (_ok_calls or []):
+                            _ci = _c.get("input") or {}
+                            _src = _ci.get("_sourcing")
+                            if not isinstance(_src, dict):
+                                continue
+                            _detail = str(_src.get("detail") or "").strip()
+                            if not _detail:
+                                continue
+                            _sourcing.append({
+                                "name": str(_ci.get("food_name") or "").strip(),
+                                "detail": _detail,
+                                "confidence": str(_src.get("confidence") or "")})
                         # BEFORE -> AFTER, from the calls themselves.
                         # `food_hint` is the row's name as it stood; the input
                         # is what it becomes. Without this the composer is told
@@ -2231,6 +2250,7 @@ async def _run_turn(
                             committed_items=tuple(n for n in _names if n.name),
                             committed_snapshot=_snap,
                             assumptions=_assumed,
+                            sourcing=tuple(_sourcing),
                             model_say=_say,
                             note=_sft.get("note") or "",
                             follow_up=_sft.get("follow_up") or "",
@@ -2265,7 +2285,8 @@ async def _run_turn(
                         # reads differently to someone cutting on strict than
                         # to someone maintaining on quick. Same helper the ask
                         # path uses, so both moments reason from one contract.
-                        _plan = _ctx(_plan, user=user)
+                        _plan = _ctx(_plan, user=user,
+                                     messages=messages)
                         if composer_enabled():
                             _txt, _why = await compose_async(_plan)
                             response_text = _txt

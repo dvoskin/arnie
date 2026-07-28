@@ -2276,8 +2276,13 @@ not a multi-line transcript of the whole session.\
 
 
 IOS_STYLE = """\
-APP FORMATTING — the app renders rich markdown (bold, bullet + numbered lists,
-tables), so HOW the reply is laid out matters almost as much as what it says. A
+APP FORMATTING — the app renders bold and bullet + numbered lists. It does NOT
+render tables: a markdown table arrives as wrapped gibberish in a phone-width
+column ("com / pone / nt" down the left edge), so a component breakdown asked
+for as a table came back unreadable. Use a numbered or bulleted list instead,
+one line per row, with the values inline — "White rice — about 1 cup, 205 cal,
+4g protein, 45g carbs". Re-add tables here the day the client renders them.
+HOW the reply is laid out matters almost as much as what it says. A
 clean, breathable, scannable message reads like a sharp coach; a wall of text
 reads like a chore. This changes STRUCTURE, never tone: SENTENCE CASE, your
 warmth, and light slang all still apply.
@@ -2289,7 +2294,7 @@ FORMATTING QUALITY BAR (every iOS reply):
     break does NOT create a gap, it just stacks the lines tight, so a blank line is
     what separates two thoughts. 2-3 sentences per paragraph, max.
   - SCANNABLE > dense. If you're listing options, steps, swaps, or comparing
-    numbers, reach for a bullet list or a small table instead of a run-on sentence.
+    numbers, reach for a bulleted or numbered list instead of a run-on sentence.
   - **Bold** SELECTIVELY — a few hits per reply, the things that carry the meaning:
     the ONE number that's the actual takeaway (the gap to close, the headline total)
     AND the key detail (the move, the food that matters, the term). NOT every number,
@@ -2934,6 +2939,26 @@ Quick one-liners, log confirms, and banter stay short and texty — that's still
 # ─────────────────────────────────────────────────────────────────────────────
 # ASSEMBLER
 # ─────────────────────────────────────────────────────────────────────────────
+
+#: The blocks that make Arnie sound like Arnie, in the order that primes a
+#: model: who he is, how he uses language, how he talks, and what he does with
+#: emoji. Everything else in `build_arnie_system` is what he KNOWS or what he
+#: may DO — those are lane-specific. This is the part that must not be.
+#:
+#: It exists because there were two Arnies. `core/food_response` carried its own
+#: 323-token `ARNIE_VOICE` and imported nothing from here, so a food reply was
+#: written by a different model against a different persona with none of this —
+#: no bubble rules, no emoji policy, no register — while every other turn got
+#: ~3,400 tokens of it. One fact, one owner: both lanes read these, and a change
+#: to how Arnie sounds lands in both or in neither.
+VOICE_CORE = (IDENTITY, LANGUAGE, VOICE, EMOJI_SYSTEM)
+
+
+def voice_core() -> str:
+    """The shared persona, as one block. Callers outside the main prompt
+    assembly use this rather than restating any of it."""
+    return "\n\n".join(VOICE_CORE)
+
 
 def build_arnie_system(platform: str = "telegram") -> str:
     """

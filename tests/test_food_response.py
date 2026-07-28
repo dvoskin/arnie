@@ -12,7 +12,7 @@ The two rules under most of these tests:
 """
 import pytest
 
-from core.food_response import (ARNIE_VOICE, CARD_FACTS, CoachingOpportunity,
+from core.food_response import (CARD_FACTS, CoachingOpportunity, arnie_voice,
                                 FailureIntent, FoodItemSummary,
                                 FoodResponseIntent, FoodResponsePlan, Reason,
                                 apply_policy, build_prompt, compose, fallback,
@@ -396,11 +396,27 @@ def test_the_prompt_carries_emotional_context():
 
 
 def test_the_voice_prompt_bans_the_right_things():
+    voice = arnie_voice()
     for phrase in ("Do not narrate internal operations",
                    "Do not repeat information marked as visible",
                    "Do not force a question",
                    "Do not praise routine logging"):
-        assert phrase in ARNIE_VOICE
+        assert phrase in voice
+
+
+def test_the_food_lane_speaks_with_the_same_persona_as_every_other_turn():
+    """There were two Arnies. This module carried its own 323-token voice and
+    imported nothing from `core/prompts/arnie`, so a logged meal was written
+    against a miniature persona with no bubble rules, no emoji policy and no
+    register — while every other turn got the full one. A food reply that does
+    not sound like the rest of the product is the symptom; two definitions of
+    who Arnie is was the cause."""
+    from core.prompts.arnie import IDENTITY, LANGUAGE, VOICE, EMOJI_SYSTEM
+    voice = arnie_voice()
+    for block in (IDENTITY, LANGUAGE, VOICE, EMOJI_SYSTEM):
+        assert block in voice, "the shared persona must reach the food lane"
+    # ...and the lane still adds what only it needs.
+    assert "Do not add, alter, recompute" in voice
 
 
 # ── composition ───────────────────────────────────────────────────────────────

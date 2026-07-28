@@ -568,6 +568,22 @@ class FoodResponsePlan:
     #: The Barebells bar in the 2026-07-25 transcript came through this seam.
     failed_items: Tuple[FoodItemSummary, ...] = ()
     assumptions: Tuple[Any, ...] = ()
+    #: HOW each committed number was arrived at, as
+    #: `{"name", "detail", "confidence"}` — the same account `_stash_sourcing`
+    #: already builds for the "Arnie's thoughts" receipt.
+    #:
+    #: The receipt knew the whole story ("From the product label", "Generic
+    #: USDA data standing in for this product", which lanes ran and what each
+    #: returned) and the writer knew only the total. That is why the sentence
+    #: could not sound like it understood its own answer: an assistant that
+    #: knows a number came off a label and one that knows it was sized from a
+    #: typical portion should not hedge identically, and this one had no way to
+    #: tell.
+    #:
+    #: Reasoning material, NEVER the subject. "That's straight off the label,
+    #: so it's solid" is the use; "USDA had no match so I fell back to the
+    #: portion ontology" is the mechanics narration the persona forbids.
+    sourcing: Tuple[dict, ...] = ()
     #: What a correction actually changed, as "before -> after" pairs.
     #: The plan used to carry only the AFTER state, and the CORRECT
     #: brief asks the composer to name what changed — so it invented the
@@ -630,7 +646,17 @@ class FoodResponsePlan:
     # Conversational context.
     user_message: str = ""
     user_emotional_context: Optional[str] = None
-    previous_assistant_message: Optional[str] = None
+    #: The thread this turn belongs to, oldest first, as
+    #: `{"role": "user"|"assistant", "content": str}`.
+    #:
+    #: Replaces `previous_assistant_message`, which was declared here and read
+    #: by nothing — one remembered line was never going to be enough anyway.
+    #: The composer was called with a single hard-coded "Write the response.",
+    #: so it had never seen the conversation it was writing into: it could not
+    #: refer back, could not match register, could not tell a first log from
+    #: the fourth in a row. The persona asks it to be context-aware and this is
+    #: the context.
+    conversation_history: Tuple[dict, ...] = ()
     recent_response_openers: Tuple[str, ...] = ()
 
     #: What else the message was about. A SECOND OBLIGATION, not a second
@@ -1336,15 +1362,26 @@ def mentions_unapproved_item(text: str, plan: FoodResponsePlan,
 
 
 # ── the voice prompt ──────────────────────────────────────────────────────────
-ARNIE_VOICE = """You are Arnie, the user's persistent nutrition and training coach.
+#: What this lane adds ON TOP of the shared persona — the rules that exist
+#: because this writer is handed committed facts rather than free rein.
+#:
+#: It used to be the whole persona. `ARNIE_VOICE` was 323 tokens defined right
+#: here, and this module imported nothing from `core/prompts/arnie` — so a food
+#: reply was written against a miniature Arnie with no bubble rules, no emoji
+#: policy and no register, while every other turn in the product got ~3,400
+#: tokens of it. Two personas, and the food one had never seen a conversation.
+#: That is why a logged meal read like a different assistant answering.
+#:
+#: Everything below is genuinely lane-specific: it is about not inventing
+#: numbers and not reciting a card. Who Arnie IS now comes from one place.
+_FOOD_LANE_RULES = """\
+You are writing ONE turn of an ongoing conversation. The rules above are who
+you are; the rules below are what this particular turn allows.
 
 Write only the conversational text appropriate to the supplied response intent.
 
 You have structured facts. Do not add, alter, recompute, or infer nutrition
 facts that are not supplied.
-
-Sound natural, intelligent, confident and context-aware. Use concise, complete
-sentences rather than robotic fragments. Contractions are normal.
 
 Do not narrate internal operations. Never mention tools, databases, resolvers,
 models, processing, saving, or logging mechanics. The write already happened —
@@ -1353,10 +1390,7 @@ do not describe it.
 Do not repeat information marked as visible in the existing card.
 
 Do not force a question. Ask one only when the plan allows it and the answer
-has a clear purpose. Keep the conversation open through relevance and
-personality rather than constant prompting.
-
-Respond to emotional or situational context when it is present.
+has a clear purpose.
 
 Do not praise routine logging. Do not use generic coaching filler.
 
@@ -1366,6 +1400,22 @@ a list is wanted — do not invent your own.
 
 Return only the user-facing text. Return an empty string when the plan allows
 no text and nothing useful needs saying."""
+
+
+def arnie_voice() -> str:
+    """The shared persona plus this lane's rules.
+
+    A function rather than a constant because `core.prompts.arnie` imports the
+    skill loader at module scope, and a food turn that is only building a
+    fallback should not pay for that. Falls back to the lane rules alone if the
+    persona cannot be loaded — a thinner voice is survivable; failing the turn
+    is not.
+    """
+    try:
+        from core.prompts.arnie import voice_core
+        return f"{voice_core()}\n\n{_FOOD_LANE_RULES}"
+    except Exception:                                    # pragma: no cover
+        return _FOOD_LANE_RULES
 
 
 _INTENT_BRIEF = {
@@ -1616,7 +1666,7 @@ def build_prompt(plan: FoodResponsePlan) -> str:
                  "correct it in one tap. The card confirms the numbers, so do "
                  "not recite those; a coach observation is optional and comes "
                  "second, if at all.")
-    parts = [ARNIE_VOICE, "", f"INTENT: {plan.intent.value}", brief]
+    parts = [arnie_voice(), "", f"INTENT: {plan.intent.value}", brief]
 
     # THE READING GOES IN THE TEXT WHEN NO CARD WILL CARRY IT. A clarification
     # commits nothing, so the brief's old promise — "the card already shows
@@ -1709,6 +1759,31 @@ def build_prompt(plan: FoodResponsePlan) -> str:
     if plan.committed_items:
         parts.append("LOGGED (the card shows these — do not recite them): "
                      + "; ".join(i.describe() for i in plan.committed_items))
+    if plan.sourcing:
+        # HOW SURE TO SOUND. The receipt has always shown the user where a
+        # number came from; the writer was never told, so it hedged the same
+        # way over a label reading and a portion guess. That is most of what
+        # separates a reply that sounds like it understands its own answer from
+        # one that sounds like a form.
+        _lines = []
+        for src in plan.sourcing:
+            if not isinstance(src, dict):
+                continue
+            name = str(src.get("name") or "").strip()
+            detail = str(src.get("detail") or "").strip()
+            if name and detail:
+                _lines.append(f"  {name}: {detail}")
+        if _lines:
+            parts.append(
+                "WHERE THESE NUMBERS CAME FROM — reasoning material, never the "
+                "subject. Let it set how confident you sound and what is worth "
+                "a caveat, in THEIR terms: \"that's straight off the label, so "
+                "it's solid\", \"nobody publishes that one so I sized it from a "
+                "typical portion\". Never name a database, a lookup, a source "
+                "or a fallback — that is the mechanics narration you are "
+                "already forbidden. Say nothing at all about sourcing when the "
+                "answer is solid and the turn has something better to do with "
+                "the sentence.\n" + "\n".join(_lines))
     if held_items(plan):
         parts.append("NOT LOGGED, still open: "
                      + "; ".join(i.name for i in held_items(plan)))
@@ -2314,12 +2389,17 @@ def plan_clarify_from_question(question, *, user_message: str = "",
 
 
 def with_context(plan: FoodResponsePlan, *, user=None,
-                 day_state: str = "") -> FoodResponsePlan:
-    """Attach the day and the person to a plan before it is rendered.
+                 day_state: str = "", messages=None) -> FoodResponsePlan:
+    """Attach the day, the person and the thread to a plan before rendering.
 
-    Every render site needs the same three facts, so they are gathered in ONE
-    place rather than restated per caller — the way `card_will_render` used to
-    be restated per transport, and drifted.
+    Every render site needs the same facts, so they are gathered in ONE place
+    rather than restated per caller — the way `card_will_render` used to be
+    restated per transport, and drifted.
+
+    `messages` is the conversation in the caller's own shape (the same list the
+    general lane hands the model). It is already in scope at every render site;
+    it simply was never passed, which is why the composer had never seen a word
+    the user said.
 
     Pure: returns a copy. Never raises — a plan that reaches the renderer
     without context still renders, it just reasons from less.
@@ -2327,9 +2407,25 @@ def with_context(plan: FoodResponsePlan, *, user=None,
     import dataclasses as _dc
     try:
         prefs = getattr(user, "preferences", None)
+        history = plan.conversation_history
+        if messages:
+            turns = []
+            for m in messages:
+                if not isinstance(m, dict):
+                    continue
+                content = m.get("content")
+                # Photo and tool turns arrive as content BLOCKS. They are not
+                # conversation the composer can read, and flattening them would
+                # put tool JSON in the thread.
+                if not isinstance(content, str) or not content.strip():
+                    continue
+                turns.append({"role": m.get("role") or "user",
+                              "content": content})
+            history = tuple(turns) or history
         return _dc.replace(
             plan,
             day_state=day_state or plan.day_state,
+            conversation_history=history,
             user_mode=(getattr(prefs, "food_logging_mode", "") or ""),
             user_goal=(getattr(user, "primary_goal", "") or ""))
     except Exception:                                    # pragma: no cover
@@ -2368,6 +2464,41 @@ async def render_plan(plan: FoodResponsePlan) -> str:
         return fallback(plan)
 
 
+#: How many turns of the thread the composer sees. Enough to know what was just
+#: said and what it is answering; not the whole history, which is the general
+#: lane's job and its token budget.
+_COMPOSER_HISTORY_TURNS = 6
+
+
+def _composer_messages(plan: FoodResponsePlan) -> list:
+    """The conversation, as messages, ending in the instruction to write.
+
+    This was a single hard-coded `"Write the response."` — so the composer had
+    never seen a word the user said. It could not refer to what was asked two
+    turns ago, could not match the register of the conversation it was in, and
+    could not tell a first log from the fourth in a row. "Context-aware" was in
+    the persona and impossible to obey.
+
+    The turn's own text still arrives through the prompt (`user_message`, and
+    the plan's facts). What this adds is the THREAD around it, which is the
+    difference between answering a message and continuing a conversation.
+    """
+    messages = []
+    for turn in (plan.conversation_history or ())[-_COMPOSER_HISTORY_TURNS:]:
+        if not isinstance(turn, dict):
+            continue
+        role = "assistant" if turn.get("role") == "assistant" else "user"
+        content = str(turn.get("content") or "").strip()
+        if content:
+            messages.append({"role": role, "content": content[:1500]})
+    messages.append({"role": "user", "content": "Write the response."})
+    # A model rejects two assistant turns in a row and an opening assistant
+    # turn; trim rather than risk the call over a display nicety.
+    while len(messages) > 1 and messages[0]["role"] == "assistant":
+        messages.pop(0)
+    return messages
+
+
 async def compose_async(plan: FoodResponsePlan, *, model: Optional[str] = None,
                         attempts: int = 2) -> tuple:
     """Generate → validate → retry → fall back, against the real model.
@@ -2393,8 +2524,7 @@ async def compose_async(plan: FoodResponsePlan, *, model: Optional[str] = None,
         that happened to it.
         """
         try:
-            out = await chat([{"role": "user",
-                               "content": "Write the response."}],
+            out = await chat(_composer_messages(plan),
                              prompt, tools=False, max_tokens=200,
                              model=model or _composer_model())
             return (out or {}).get("text", "") if isinstance(out, dict) else str(out or "")
@@ -2420,11 +2550,27 @@ async def compose_async(plan: FoodResponsePlan, *, model: Optional[str] = None,
 
 
 def _composer_model() -> str:
-    """Small and fast. The composer is phrasing an approved plan, not deciding
-    anything — a large model here buys nothing and costs latency on every food
-    turn."""
+    """The model that writes every OTHER turn.
+
+    It used to be Haiku, on the reasoning that "the composer is phrasing an
+    approved plan, not deciding anything — a large model here buys nothing".
+    True about the DECISION and wrong about the writing: this is the voice the
+    user reads, and it was a different, smaller one than the voice answering
+    everything else in the product. Paired with a 323-token persona and no
+    conversation history, that is why a logged meal read like another
+    assistant had taken over the thread.
+
+    The lane already skips the 46k-token general pass on food turns, so the
+    same model here costs a fraction of what not running that pass saves.
+
+    `FOOD_COMPOSER_MODEL` still overrides — and `DEFAULT_MODEL` is what the
+    general lane resolves to, so "the same voice" stays true by construction
+    rather than by two constants agreeing.
+    """
     import os
-    return os.getenv("FOOD_COMPOSER_MODEL", "claude-haiku-4-5-20251001")
+    return (os.getenv("FOOD_COMPOSER_MODEL")
+            or os.getenv("DEFAULT_MODEL")
+            or "claude-opus-4-7")
 
 
 def composer_enabled() -> bool:

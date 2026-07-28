@@ -2845,7 +2845,8 @@ def parse_prior_answer(message: str, prior: Optional[dict]):
 async def run(message: str, user, prior: Optional[dict] = None,
               day_line: str = "", board: Optional[list] = None,
               last_assistant: str = "", regulars: Optional[list] = None,
-              thread_active: bool = False) -> Optional[dict]:
+              thread_active: bool = False,
+              history: Optional[list] = None) -> Optional[dict]:
     """The traced entry point (PR #29).
 
     A thin wrapper rather than instrumentation threaded through the body: the
@@ -2880,14 +2881,15 @@ async def run(message: str, user, prior: Optional[dict] = None,
         return await _run_untraced(
             message, user, prior=prior, day_line=day_line, board=board,
             last_assistant=last_assistant, regulars=regulars,
-            thread_active=thread_active)
+            thread_active=thread_active, history=history)
 
 
 async def _run_untraced(message: str, user, prior: Optional[dict] = None,
                         day_line: str = "", board: Optional[list] = None,
                         last_assistant: str = "",
                         regulars: Optional[list] = None,
-                        thread_active: bool = False) -> Optional[dict]:
+                        thread_active: bool = False,
+                        history: Optional[list] = None) -> Optional[dict]:
     """Run the interpreter pass. Returns
         {"action": "log"|"update"|"delete"|"commit", "tool_calls": [...],
          "kinds": [...], "say": "...", "note": "...", "follow_up": "..."}
@@ -3106,7 +3108,7 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
             if _found:
                 import dataclasses as _dc
                 _plan = _dc.replace(_plan, clarification_options=tuple(_found))
-        text = (await _render(_ctx(_plan, user=user, day_state=day_line))
+        text = (await _render(_ctx(_plan, user=user, day_state=day_line, messages=history))
                 if _plan is not None else "")
         # THE READY FOODS GO ON THE BOARD. The recap has always named them as
         # settled — "So you've got eggs and a banana logged" — over a turn that
@@ -3144,7 +3146,7 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
             _p2 = clarify_plan_from_points(data["points"], data.get("ready"),
                                            user_message=message)
             return {"action": "ask",
-                    "text": (await _render(_ctx(_p2, user=user,
+                    "text": (await _render(_ctx(_p2, user=user, messages=history,
                                                 day_state=day_line))
                              if _p2 is not None else ""),
                     "points": data["points"]}
@@ -3271,7 +3273,7 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
             _text = await _render(_ctx(
                 clarify_plan(_decision, _q, user_message=message,
                              context=_conversational_ctx(data)),
-                user=user, day_state=day_line))
+                user=user, day_state=day_line, messages=history))
             # PARTIAL COMMIT. Moderate's contract is that the foods already
             # confident enough go on the board, with the assumption stated,
             # while the one still in question is asked about — not that the
@@ -3336,7 +3338,7 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
                 from core.food_response import render_plan as _render
                 from core.food_response import with_context as _ctx
                 _p3 = clarify_plan_from_points(_pts, user_message=message)
-                _txt = (await _render(_ctx(_p3, user=user,
+                _txt = (await _render(_ctx(_p3, user=user, messages=history,
                                            day_state=day_line))
                         if _p3 is not None else "")
                 if _txt:
