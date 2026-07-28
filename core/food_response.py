@@ -957,9 +957,18 @@ _SLASH_TOTAL_RE = re.compile(
 #: reads `facts_visible_in_card` which is empty on a clarify, and
 #: `_claims_it_landed` needs a success verb near the name — a bare recital has
 #: no verb.
-_BATCH_TOTAL_RE = re.compile(
-    r"\btotals?\b\s*(?:[:\-–—]|\bis\b|\bof\b|\bcomes?\s+to\b)?\s*"
-    r"(?:about\s+|around\s+|~)?\d", re.I)
+#: The LABEL form only — a line that opens "Total:" or "Total —".
+#:
+#: Deliberately not "that totals 380" or "about 380 all in". Pricing the items
+#: and summing them out loud is what SHOW THE READING, THEN ASK asks for
+#: (2d69d41), and `build_prompt` instructs it. The defect is narrower: a
+#: line-leading `Total:` is typographically identical to the day-state row the
+#: card renders, so on a turn that committed nothing it reads as the day.
+#:
+#: A wider pattern was tried and rejected the composer's own instructed output,
+#: so every clarification silently fell back to the deterministic renderer —
+#: a guard that fights the prompt turns a feature off instead of protecting it.
+_BATCH_TOTAL_RE = re.compile(r"(?:^|[|\n])\s*totals?\b\s*[:\-–—]", re.I)
 
 #: The day's REMAINING budget, restated in prose.
 #:
@@ -1073,7 +1082,14 @@ def validate(text: str, plan: FoodResponsePlan) -> ValidationResult:
     # and differ only in the reason code, because a guard written for one state
     # and not the other is how the failed bucket went unchecked for as long as
     # it did.
-    for items, reason in ((held_items(plan), Reason.PENDING_AS_COMMITTED),
+    # The verb-based check stays on the COMMIT-side collections. Pointing it at
+    # a clarification's held item was tried and is wrong: naming that food is
+    # required by SHOW THE READING, THEN ASK, and `_claims_it_landed` fires on
+    # ordinary phrasing near the name — "chicken 180 — about 380 all in" reads
+    # as landed because of the "in". It rejected the very sentences the feature
+    # exists to produce, and the audit's own analysis says why it could not have
+    # helped anyway: a bare recital has no verb for it to find.
+    for items, reason in ((plan.pending_items, Reason.PENDING_AS_COMMITTED),
                           (plan.failed_items, Reason.FAILED_AS_COMMITTED)):
         for item in items:
             name = item.name.lower()
@@ -1371,8 +1387,12 @@ def build_prompt(plan: FoodResponsePlan) -> str:
     if _priced and not plan.card_will_render:
         parts.append(
             "SHOW YOUR READING, THEN ASK. Two bubbles.\n"
-            "First bubble: one line per food with its calories, then a total "
-            "line. Second bubble: name the line you trust least, say in a "
+            "First bubble: one line per food with its calories, then the "
+            "roll-up IN WORDS as your reading of the meal — \"about 380 for "
+            "the two of them\". NEVER a line beginning \"Total:\": that is the "
+            "day-state row the card prints, and this turn has logged nothing, "
+            "so it reads as a day they have not eaten. Second bubble: name "
+            "the line you trust least, say in a "
             "clause why it is shaky, and ask about that one thing. Always end "
             "on the question — a reading with no question asks nothing and "
             "commits nothing.\n"

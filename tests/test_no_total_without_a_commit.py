@@ -50,6 +50,20 @@ def test_the_held_item_is_visible_to_the_guard():
     assert plan.pending_items == (), "the held item must not read as the meal"
 
 
+def test_naming_the_held_food_is_not_a_claim_that_it_landed():
+    """The verb check stays on the commit-side collections.
+
+    Pointing it at a clarification's held item rejected the sentences the
+    feature exists to produce: `_claims_it_landed` fires on ordinary phrasing
+    near the name — "chicken 180 — about 380 all in" reads as landed because of
+    the "in". Naming the held food is REQUIRED here, so that guard cannot see
+    it.
+    """
+    assert validate(
+        "Roll 300, bar 200 — about 500 all in. The roll is the guess: branded?",
+        _clarify()).ok is True
+
+
 def test_a_clarify_with_no_held_item_stays_empty():
     plan = plan_clarify(question="How much?", card_will_render=False)
     assert held_items(plan) == ()
@@ -58,15 +72,32 @@ def test_a_clarify_with_no_held_item_stays_empty():
 # ── the defect itself ─────────────────────────────────────────────────────────
 
 @pytest.mark.parametrize("text", [
-    "Protein roll, 300 cal, 25g protein. Total: 300 cal, 25g protein. Branded?",
-    "That totals 300 calories. Was it a branded roll?",
-    "For a total of 300 cal. Which brand was it?",
-    "Total — about 300 cal so far. Branded or homemade?",
+    "Protein roll, 300 cal, 25g protein\nTotal: 300 cal, 25g protein. Branded?",
+    "Protein roll — 300 cal|||Total — about 300 cal. Branded or homemade?",
 ])
-def test_a_total_is_refused_when_nothing_committed(text):
+def test_a_day_state_lookalike_is_refused_when_nothing_committed(text):
+    """A line OPENING "Total:" is typographically the card's day-state row.
+    On a turn that logged nothing it reads as a day they have not eaten."""
     result = validate(text, _clarify())
     assert result.ok is False
     assert result.reason == Reason.PENDING_AS_COMMITTED
+
+
+@pytest.mark.parametrize("text", [
+    "Protein roll — 300 cal, about 300 for the one of them. Branded?",
+    "Roll 300, bar 200 — about 500 all in. Which brand was the roll?",
+    "That totals about 300. Was it a branded roll?",
+])
+def test_a_spoken_roll_up_is_exactly_what_the_prompt_asks_for(text):
+    """SHOW THE READING, THEN ASK (2d69d41) prices the items and sums them out
+    loud, and `build_prompt` instructs it.
+
+    A wider guard was tried and rejected the composer's own instructed output,
+    so every clarification silently fell back to the deterministic renderer. A
+    guard that fights the prompt turns the feature off instead of protecting
+    it — these cases are the regression test for that.
+    """
+    assert validate(text, _clarify()).ok is True
 
 
 # ── and what must keep working ────────────────────────────────────────────────
