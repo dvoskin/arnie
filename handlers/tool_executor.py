@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import re
+from dataclasses import dataclass, field
 from datetime import timedelta
 from typing import Dict, List, Any, Optional
 
@@ -1676,11 +1677,51 @@ def _user_stated_label(inp) -> bool:
     return bool(inp.get("user_label")) and inp.get("calories") is not None
 
 
-async def _analyze_food(db, user, food_name, inp):
-    """
-    Enrich a logged food with the right data source, returning a FoodAnalysis.
+@dataclass
+class FoodCandidates:
+    """What the lanes found for one food. Evidence, not an answer.
 
-    Routing:
+    Which of it sets the calories is `food_intelligence.analyze`'s call, and
+    that call is synchronous and does no network of its own — the same
+    fetch/decide split `core.food_turn._variant_spreads` already uses for the
+    shelf spread, for the same reason: the decision has to be reachable from a
+    policy that cannot await.
+    """
+    usda: Optional[dict] = None
+    off: Optional[dict] = None
+    web: Optional[dict] = None
+    memory: Optional[dict] = None
+    #: Widened by the LANES, not just the name — a product the heuristic could
+    #: not recognise is promoted when USDA or OFF answer like a label.
+    is_packaged: bool = False
+    #: The ladder as it stood before the web rung, keyed by rung name. The
+    #: resolution receipt reads it to name what was fetched and then refused.
+    candidate_map: dict = field(default_factory=dict)
+    #: A ground truth that outranks every lane, so no lane ran: the four macros
+    #: to use and how we came by them. `None` means "consult the candidates".
+    override: Optional[tuple] = None
+    override_source: str = ""
+    override_confidence: str = ""
+    override_is_user_label: bool = False
+
+
+async def fetch_candidates(db, user, food_name, inp) -> FoodCandidates:
+    """Everything the lanes know about one food, gathered before anything
+    decides anything.
+
+    Lifted out of `_analyze_food` unchanged (2026-07-28), and the point is not
+    tidiness. The clarification policy decides whether a question is worth
+    holding a write for, and it scores that against the INTERPRETER'S GUESSED
+    CALORIES — because the only code that looks the food up is this, and this
+    runs later, during execution. So the ask is settled before anything is
+    resolved, and enrichment is then free to move the number out from under the
+    decision: measured at 8x, a two-wing item committing 1,596 cal, with
+    nothing anywhere re-checking.
+
+    A synchronous policy cannot fix that by itself. This is the half that can —
+    async, no decisions, callable from the turn before `plan_turn` runs.
+
+    Routing (unchanged):
       logged history (the user's own recent log of this food) → GROUND TRUTH, wins first.
       memory (recurring user food) → highest priority for both branded & generic.
       Branded packaged products (is_packaged=True or _looks_branded heuristic):
@@ -1688,13 +1729,18 @@ async def _analyze_food(db, user, food_name, inp):
       Generic foods / meals:
           USDA FIRST (unchanged), web as backup for items USDA misses.
       LLM estimate is always the final fallback.
+
+    TWO SIDE EFFECTS RIDE ALONG and a second caller will have to reckon with
+    them: the lane receipt is stashed on the ambient call context
+    (`_stash_call`), and a confident hit re-caches into `user_food_match`. Both
+    are right once per food per turn and merely wasteful twice. While
+    `_analyze_food` is the only caller — which it is, today — nothing changes.
     """
     from core.food_intelligence import (
-        analyze, normalize_name, best_candidate, is_generic_food_name,
+        normalize_name, best_candidate, is_generic_food_name,
     )
     from db.queries import get_user_food_match, upsert_user_food_match
 
-    llm = (inp.get("calories"), inp.get("protein"), inp.get("carbs"), inp.get("fats"))
     name_norm = normalize_name(food_name)
     generic = is_generic_food_name(food_name)
     # The model's OWN declaration, kept apart from the heuristic. `is_packaged`
@@ -1714,20 +1760,13 @@ async def _analyze_food(db, user, food_name, inp):
     # Enrichment is skipped entirely rather than run-and-discarded, so a
     # cousin match can never leak in through a field the reply left unstated.
     if _user_stated_label(inp):
-        _res = analyze(food_name, inp.get("quantity"),
-                       inp.get("calories"), inp.get("protein"),
-                       inp.get("carbs"), inp.get("fats"),
-                       usda_candidate=None, memory_match=None,
-                       web_candidate=None)
-        try:
-            _res.source = "user_label"
-            _res.confidence = "user-confirmed"
-            _res.enrichment_source = "user_label"
-        except Exception:
-            pass
         logger.info(f"user label ground-truth: {food_name!r} → "
                     f"{inp.get('calories')} cal — enrichment skipped")
-        return _res
+        return FoodCandidates(
+            override=(inp.get("calories"), inp.get("protein"),
+                      inp.get("carbs"), inp.get("fats")),
+            override_source="user_label", override_confidence="user-confirmed",
+            override_is_user_label=True)
 
     # 0) GROUND TRUTH — the user's OWN recent log of this exact food (word-order-
     # insensitive) wins over USDA/cache/generic. If they logged "Royo Everything Bagel"
@@ -1744,15 +1783,10 @@ async def _analyze_food(db, user, food_name, inp):
             logger.info(
                 f"food history ground-truth: {food_name!r} → {_hist['calories']} cal "
                 f"(matched prior {_hist['name']!r}) — beats USDA/cache")
-            _res = analyze(food_name, inp.get("quantity"),
-                           _hist["calories"], _hist["protein"], _hist["carbs"], _hist["fats"],
-                           usda_candidate=None, memory_match=None, web_candidate=None)
-            try:
-                _res.source = "history"
-                _res.confidence = "user-confirmed"
-            except Exception:
-                pass
-            return _res
+            return FoodCandidates(
+                override=(_hist["calories"], _hist["protein"],
+                          _hist["carbs"], _hist["fats"]),
+                override_source="history", override_confidence="user-confirmed")
 
     # 1) Recurring memory — user's known staples (highest priority for any type)
     memory = None
@@ -2058,10 +2092,52 @@ async def _analyze_food(db, user, food_name, inp):
             else "no food name to search" if not name_norm
             else "a generic food — USDA owns the answer"))])
 
+    return FoodCandidates(usda=usda, off=off, web=web, memory=memory,
+                          is_packaged=bool(is_packaged),
+                          candidate_map=_cands_pre)
+
+
+async def _analyze_food(db, user, food_name, inp):
+    """
+    Enrich a logged food with the right data source, returning a FoodAnalysis.
+
+    Two halves since 2026-07-28: `fetch_candidates` above does the looking up,
+    and this does the deciding plus everything that follows it — the receipt,
+    the web meal enrich, the micro fallback, the resolver promotion. The seam
+    is there so the LOOKUP can be moved ahead of the clarification policy
+    without dragging the cascade along with it.
+    """
+    from core.food_intelligence import analyze
+
+    llm = (inp.get("calories"), inp.get("protein"), inp.get("carbs"), inp.get("fats"))
+    cands = await fetch_candidates(db, user, food_name, inp)
+
+    # A ground truth answered it — the user read us the label, or they logged
+    # this exact food themselves — so no lane ran. Enrichment is skipped
+    # entirely rather than run-and-discarded, so a cousin match can never leak
+    # in through a field the reply left unstated.
+    if cands.override is not None:
+        _res = analyze(food_name, inp.get("quantity"), *cands.override,
+                       usda_candidate=None, memory_match=None,
+                       web_candidate=None)
+        try:
+            _res.source = cands.override_source
+            _res.confidence = cands.override_confidence
+            if cands.override_is_user_label:
+                _res.enrichment_source = "user_label"
+        except Exception:
+            pass
+        return _res
+
+    # Rebound under their original names because everything below this line is
+    # untouched, which is what makes the lift checkable by reading the diff.
+    usda, off, web = cands.usda, cands.off, cands.web
+    memory, _cands_pre = cands.memory, cands.candidate_map
+
     result = analyze(food_name, inp.get("quantity"), *llm,
                      usda_candidate=usda, memory_match=memory,
                      web_candidate=web, off_candidate=off,
-                     is_packaged=bool(is_packaged))
+                     is_packaged=bool(cands.is_packaged))
 
     # ── WHO WON, AND WHAT WAS REFUSED ────────────────────────────────────────
     #
