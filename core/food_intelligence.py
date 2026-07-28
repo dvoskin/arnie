@@ -431,7 +431,7 @@ def _per_serving_for(quantity, src, food_name: str):
 
 def analyze(name, quantity, llm_cal, llm_protein, llm_carbs, llm_fat,
             usda_candidate=None, memory_match=None,
-            web_candidate=None, off_candidate=None,
+            web_candidate=None, off_candidate=None, component_candidate=None,
             is_packaged=False, brand=None, restaurant=None) -> FoodAnalysis:
     """
     Build a FoodAnalysis. Which source answers depends on WHAT THE FOOD IS —
@@ -486,7 +486,7 @@ def analyze(name, quantity, llm_cal, llm_protein, llm_carbs, llm_fat,
     _cands = authority.candidate_map(
         food_class=food_class, memory_match=memory_match,
         usda_candidate=usda_candidate, off_candidate=off_candidate,
-        web_candidate=web_candidate)
+        web_candidate=web_candidate, component_candidate=component_candidate)
     rung, src = authority.select(_cands, food_class)
     # Nothing the ladder would seat. A candidate it refused — USDA against a
     # Starbucks sandwich, say — may still fill the nutrient panel; it just does
@@ -520,6 +520,12 @@ def analyze(name, quantity, llm_cal, llm_protein, llm_carbs, llm_fat,
         elif src is off_candidate:
             source = "off"                      # Open Food Facts label data
             confidence = src.get("_match", "likely")
+        elif src is component_candidate:
+            # Named for what it is. Without this branch a composite fell to the
+            # `else` and reported itself as `web_label` — a source it never
+            # consulted, on a row assembled from four USDA generics.
+            source = "components"
+            confidence = "estimated"
         else:
             source = "web_label"
             # Web hits for packaged products are typically the actual label data.
@@ -553,9 +559,16 @@ def analyze(name, quantity, llm_cal, llm_protein, llm_carbs, llm_fat,
         # (memory / OFF / web) keep their "likely" trust; a demoted USDA item
         # still feeds the estimate path (fiber/sodium scaled to the model's
         # calories) and stays eligible for the web-label lane.
+        # A composite is trustworthy AS THE DETERMINER OF THE NUMBERS while
+        # being `estimated` as a confidence grade, and those are two different
+        # questions — the same split this module's provenance record exists to
+        # make. Its per-serving panel is a sum over four measured USDA rows, so
+        # there is nothing better in the room for it to defer to; what it is
+        # NOT is a match grade, because nobody measured the dish.
         _trustworthy = macros_from_source and (
             confidence in ("exact", "user-confirmed")
-            or (confidence == "likely" and src is not usda_candidate))
+            or (confidence == "likely" and src is not usda_candidate)
+            or src is component_candidate)
         # ── N SERVINGS OF A PRODUCT THAT PUBLISHES ITS SERVING ──────────────
         #
         # Checked FIRST, because when it applies there is nothing to compute.
