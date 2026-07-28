@@ -1713,6 +1713,16 @@ def build_prompt(plan: FoodResponsePlan) -> str:
     if held_items(plan):
         parts.append("NOT LOGGED, still open: "
                      + "; ".join(i.name for i in held_items(plan)))
+        if not plan.resolved_items and len(held_items(plan)) > 1:
+            # THE WHOLE MEAL IS WAITING, and that is the only place the user
+            # can see their logging mode at work. A turn holding everything and
+            # a turn holding one item read identically until the hold set
+            # stopped coming from the question — say the difference.
+            parts.append(
+                "NOTHING FROM THIS MEAL IS GOING ON THE BOARD until they "
+                "answer — not one item of it. Say so in a clause, plainly and "
+                "without apology; they chose this. Do not describe any of it "
+                "as logged, added, tracked or counted.")
     if plan.corrections:
         parts.append(
             "WHAT ACTUALLY CHANGED — these and nothing else. Name them in "
@@ -2012,14 +2022,23 @@ def _fallback_food_only(plan: FoodResponsePlan) -> str:
         # were never shown.
         question = plan.clarification_question or f"Which {_held_name(plan)} was it?"
         shown = list(plan.resolved_items) + list(plan.pending_items)
+        # WHAT IS WAITING ON THE ANSWER. The hold set used to be the question's
+        # single staged item whatever the engine decided, so this line could
+        # never be written: strict held three items and the plan reported one,
+        # which is why strict and moderate rendered byte-identical replies
+        # while doing opposite things. Now that `pending_items` is the engine's
+        # own hold set, a turn that is holding the WHOLE meal can say so — and
+        # that sentence is the only thing the user can see the mode in.
+        waiting = ("" if plan.resolved_items or len(plan.pending_items) < 2
+                   else " Nothing goes on the board until then.")
         if _wants_a_list(shown):
             return (f"{_pick_opener(_CLARIFY_OPENERS, shown, question)}\n\n"
-                    f"{format_items(shown)}\n\n{question}")
+                    f"{format_items(shown)}\n\n{question}{waiting}")
         if shown:
             lead = _pick_opener(_CLARIFY_LEADS, shown, question).format(
                 items=_join([i.describe() for i in shown]))
-            return f"{lead} {question}"
-        return question
+            return f"{lead} {question}{waiting}"
+        return f"{question}{waiting}"
 
     if intent is FoodResponseIntent.CONFIRM_ANSWER:
         return f"Got it, {_join([i.name for i in plan.resolved_items])}."

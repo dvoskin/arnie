@@ -1468,7 +1468,29 @@ def clarify_plan(decision, question, *, user_message: str = "",
     from core.food_response import (FoodItemSummary, FoodResponseIntent,
                                     FoodResponsePlan, fallback)
 
-    held = {question.staged_item_id}
+    # WHAT IS HELD IS THE DECISION'S ANSWER, NOT THE QUESTION'S.
+    #
+    # This read `{question.staged_item_id}` — one question names one staged
+    # item, so however many items the engine refused to commit, the plan
+    # reported exactly one pending and described the rest as resolved. Probed
+    # at a1c26d3:
+    #
+    #     strict: engine held=3   plan pending=1
+    #             resolved=['Peanut M&Ms', 'Banana']
+    #
+    # Two items the engine held were handed to the composer as settled. That is
+    # why strict and moderate rendered BYTE-IDENTICAL replies while doing
+    # opposite things — the difference between them is entirely in how many
+    # items they hold, and the hold count never reached the sentence. It is
+    # also the likely source of the `reason=pending_as_committed` composer
+    # fallbacks in the logs: `validate()` checks `pending_items` against the
+    # text, and `pending_items` was missing most of what was pending.
+    #
+    # The question's own item is the fallback, not the source. A decision that
+    # somehow carries no held ids still has to describe the item it is asking
+    # about as open.
+    held = set(getattr(decision.clarification, "held_item_ids", ()) or ()) \
+        or {question.staged_item_id}
     resolved, pending = [], []
     for item in (decision.staged_items or ()):
         summary = FoodItemSummary(
@@ -1498,7 +1520,14 @@ def clarify_plan(decision, question, *, user_message: str = "",
         # ...and WHAT IS UNKNOWN, so the composer writes the question instead
         # of being handed one and asked to rephrase it.
         clarification_unknowns=unknowns_from_decision(decision, user_message),
-        unresolved_item=(pending[0] if pending else None),
+        # THE ITEM THE QUESTION IS ABOUT, not merely the first one held. With
+        # one pending item these were the same thing; now that `held` reports
+        # everything the engine kept back, `pending[0]` is whichever staged
+        # item happened to come first, and the renderer names `unresolved_item`
+        # as the subject of the question.
+        unresolved_item=next(
+            (p for p in pending if p.staged_item_id == question.staged_item_id),
+            pending[0] if pending else None),
         # WHAT ELSE THEY SAID travels with the question. CLARIFY's brief tells
         # the composer to acknowledge it BEFORE asking — "a clarification must
         # not make the rest of their message sound invisible" — and it can only
