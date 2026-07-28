@@ -3673,7 +3673,40 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
                     f"NOT retry with another guessed id. Ask which one they mean, or "
                     f"use a REAL id from today's log:\n{listing}"
                 )
+        # THE CARD AND THE SENTENCE READ `inp`; THE ROW HOLDS WHAT LANDED
+        # (audit I-4). The log branch syncs these from the committed analysis
+        # and names the bug it closed — "the estimate-610-vs-logged-786 gap".
+        # The update branch never did, so a correction that RE-RESOLVED the food
+        # wrote the ladder's answer to the row while `_logged_entry_card`'s
+        # payload and `compute_batch`'s `_priced` inputs both still read the
+        # interpreter's proposal. The user saw their correction confirmed with
+        # the numbers it was correcting.
+        #
+        # Synced from the committed ENTRY rather than from `changes`, so every
+        # path that produced it is covered — re-resolution, a serving rescale,
+        # a plain edit — and the card cannot state a number the row disagrees
+        # with, whatever wrote it.
+        if isinstance(inp, dict) and entry is not None:
+            for _key, _column in (("calories", "calories"), ("protein", "protein"),
+                                  ("carbs", "carbs"), ("fats", "fats")):
+                _value = getattr(entry, _column, None)
+                if _value is not None:
+                    inp[_key] = _value
         await db.refresh(today_log)
+        # ...AND THE RECEIPT, which the update path never built. `_stash_receipt`
+        # has taken an `updated` flag since it was written and no caller ever
+        # passed it, so a correction's card carried no remaining-figures row —
+        # the one thing a person looks for after changing a number. Stashed
+        # after the refresh so the day totals are the post-correction ones.
+        if entry is not None:
+            try:
+                _stash_receipt(inp, today_log, user,
+                               getattr(entry, "calories", None),
+                               getattr(entry, "protein", None),
+                               updated=True,
+                               carbs=getattr(entry, "carbs", None))
+            except Exception as _re_err:
+                logger.debug(f"update receipt unavailable: {_re_err}")
 
         # Recurring-memory correction backfill: when a correction notably shifts
         # macros on a named non-generic food, update the user_food_match so the
