@@ -3592,7 +3592,36 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
         # Only when the IDENTITY changed. A quantity edit is arithmetic on a
         # row that was already resolved, and re-resolving it would throw away
         # a good answer to ask the same question again.
-        if changes.get("food_name"):
+        # CHANGED, not merely PRESENT. The comment above has always said
+        # identity, and the test was presence — so an interpreter that echoed
+        # the food name while correcting a NUMBER re-ran the whole ladder and
+        # overwrote the number.
+        #
+        # Production, 2026-07-28: "Check your numbers it says 80 online" came
+        # back as update{food:"Milky Way Fun Size Bar", calories:80} — same
+        # name, new calories. The branch fired on the echo, re-resolved, and
+        # wrote 160 back over the 80 the user had just supplied. It took three
+        # attempts to correct one bar, and the third only stuck because that
+        # update happened to omit the food name.
+        # What the USER supplied on this correction, captured before anything
+        # can overwrite it.
+        _stated = changes.get("calories")
+        _cur_name = ""
+        if changes.get("food_name") and entry_id:
+            try:
+                from db.models import FoodEntry as _FE_n
+                _row_n = await db.get(_FE_n, int(entry_id))
+                _cur_name = str(getattr(_row_n, "parsed_food_name", "") or "").strip()
+            except Exception:
+                _cur_name = ""
+        try:
+            from skills.nutrition.food_dedup import normalize_food_name as _nfn2
+        except Exception:                                   # pragma: no cover
+            def _nfn2(x):
+                return (x or "").strip().lower()
+        _identity_changed = bool(changes.get("food_name")) and (
+            _nfn2(str(changes["food_name"])) != _nfn2(_cur_name))
+        if _identity_changed:
             try:
                 _new_name = str(changes["food_name"]).strip()
                 _qty = str(inp.get("quantity") or "").strip()
@@ -3612,11 +3641,23 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
                 if isinstance(_re_inp.get("_sourcing"), dict):
                     inp["_sourcing"] = _re_inp["_sourcing"]
                     inp["_reresolved"] = _new_name
-                if _re is not None and _re.calories:
+                # THE USER'S OWN NUMBER OUTRANKS THE RE-RESOLUTION. Same rule
+                # `_analyze_food` applies at the top — "we asked, they
+                # answered: that IS the product, and no database outranks it" —
+                # which the update branch never applied. A correction that
+                # states a figure and gets a different one back is the one
+                # exchange a food log cannot afford to lose.
+                _user_gave_calories = _stated is not None
+                if _re is not None and _re.calories and not _user_gave_calories:
                     changes["calories"] = _re.calories
                     changes["protein"] = _re.protein
                     changes["carbs"] = _re.carbs
                     changes["fats"] = _re.fat
+                elif _user_gave_calories:
+                    logger.info(
+                        "event=correction_kept_user_value food=%r stated=%s "
+                        "reresolved=%s", _new_name, _stated,
+                        getattr(_re, "calories", None))
                     logger.info(
                         "event=correction_reresolved food=%r rung=%s cal=%s",
                         _new_name, _re.provenance.rung or "-", _re.calories)

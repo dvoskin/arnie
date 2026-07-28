@@ -84,8 +84,15 @@ def test_a_correction_reaches_the_ladder_at_all():
     import handlers.tool_executor as TE
     src = inspect.getsource(TE)
     update_block = src[src.index('elif name == "update_food_entry"'):]
-    update_block = update_block[:6000]
+    # The window only has to contain the correction branch, and it grew when
+    # that branch learned to tell a CHANGED identity from an echoed one. A
+    # character count is a proxy for "inside the update handler" — widen it
+    # when the handler grows rather than treating a comment as a regression.
+    update_block = update_block[:9000]
     assert "_analyze_food" in update_block, (
         "a corrected identity must be re-resolved, not taken from the model")
     assert "correction_reresolved" in update_block, (
         "and the re-resolution must be observable in the logs")
+    assert "correction_kept_user_value" in update_block, (
+        "...and a figure the USER stated must survive it — no database "
+        "outranks the person reading the packet")
