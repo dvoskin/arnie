@@ -2679,6 +2679,70 @@ def _delete_call(d: dict, board_by_id: dict) -> Optional[dict]:
     return {"name": "delete_food_entry", "input": inp}
 
 
+#: `"food": "Chicken schnitzel"` — the first field of the first item, and it
+#: lands in the opening fraction of the interpreter's JSON.
+_STREAMED_FOOD_RE = re.compile(r'"food"\s*:\s*"([^"]{2,60})"')
+
+
+class _SpeculativeEnrichment:
+    """Starts each food's lookup the moment its NAME appears in the stream.
+
+    The interpreter and the enrichment were strictly sequential — generate ~700
+    tokens of JSON, parse it, then go to the network — and that ordering is an
+    accident of how the code was written rather than a real dependency. What
+    enrichment actually needs is a food name, and the names are the first thing
+    the model writes. By the time the closing brace arrives, USDA and Open Food
+    Facts have usually already answered.
+
+    Costs nothing when it is wrong. A name that changes before the JSON closes
+    leaves one unused lookup; a name that never reaches a write leaves one
+    unused lookup. Both are reads against a public database, and neither
+    touches the session, the ledger or the decision — this cannot make a turn
+    incorrect, only earlier.
+
+    The handoff is `_fetch_usda_off`'s single-flight registry: this registers
+    the future, and the executor's prewarm awaits the same one instead of
+    starting a second.
+    """
+
+    def __init__(self):
+        self._buf = []
+        self._seen = set()
+
+    async def __call__(self, delta: str) -> None:
+        if not delta:
+            return
+        self._buf.append(delta)
+        # Scan only the tail: a name is short and the buffer is not.
+        window = "".join(self._buf)[-400:]
+        for name in _STREAMED_FOOD_RE.findall(window):
+            key = name.strip().lower()
+            if not key or key in self._seen:
+                continue
+            self._seen.add(key)
+            self._start(name.strip())
+
+    @staticmethod
+    def _start(food: str) -> None:
+        try:
+            import asyncio as _aio
+
+            from handlers.tool_executor import _fetch_usda_off
+            # `is_packaged=True` deliberately: it fetches Open Food Facts as
+            # well as USDA, so one speculative result serves a branded item and
+            # a generic one alike. A stray OFF candidate cannot leak into a
+            # generic answer — `candidate_map` does not seat OFF on the generic
+            # ladder at all.
+            task = _aio.ensure_future(_fetch_usda_off(food, True))
+            # Nothing awaits this here. Swallow its failure so a dead lookup
+            # cannot surface as an unretrieved-exception warning on a turn that
+            # went on to succeed without it.
+            task.add_done_callback(lambda t: t.exception() if not t.cancelled()
+                                   else None)
+        except Exception as exc:            # pragma: no cover - best effort
+            logger.debug(f"speculative enrichment skipped for {food!r}: {exc}")
+
+
 def _parse(text: str) -> Optional[dict]:
     t = (text or "").strip()
     if t.startswith("```"):
@@ -3059,7 +3123,8 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
             from core import deadline
             res = await deadline.wait_for(
                 chat([{"role": "user", "content": content}], sys,
-                     tools=False, max_tokens=700, model=_logger_model()))
+                     tools=False, max_tokens=700, model=_logger_model(),
+                     stream_handler=_SpeculativeEnrichment()))
         except Exception as e:
             # Includes DeadlineExceeded: out of time is a fall-through to the
             # legacy path, never a lost meal.

@@ -10,6 +10,7 @@ import os
 import re
 from dataclasses import dataclass, field
 from datetime import timedelta
+from collections import OrderedDict
 from typing import Dict, List, Any, Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -1471,6 +1472,28 @@ _WEB_LABEL_PREFETCH: "contextvars.ContextVar[dict]" = contextvars.ContextVar(
 )
 
 
+#: In-flight USDA+OFF lookups for THIS turn, keyed by (turn, normalized name).
+#:
+#: Single-flight, and the point is not deduplication — it is that a lookup can
+#: be STARTED before the caller who needs it exists. The interpreter streams its
+#: JSON, food names appear in the first fraction of it, and enrichment is a
+#: network round trip that used to begin only after the whole response had been
+#: generated and parsed. Registering the future here lets the speculative fetch
+#: and the real one be the same request: whoever asks second awaits what the
+#: first already started.
+#:
+#: Bounded and turn-keyed, so a slow or abandoned turn cannot hold results for
+#: a later one — a stale hit would be a wrong number, not a slow one.
+_INFLIGHT_FETCHES: "OrderedDict[tuple, Any]" = OrderedDict()
+_INFLIGHT_MAX = 64
+
+
+def _inflight_key(food_name: str) -> tuple:
+    from core.food_intelligence import normalize_name
+    from core.turn_identity import current_turn_id
+    return (current_turn_id() or "-", normalize_name(food_name or ""))
+
+
 async def _fetch_usda_off(food_name: str, is_packaged: bool):
     """Network-only enrichment fetch: USDA + OFF, run CONCURRENTLY. Touches NO DB,
     so it is safe to fan out across many foods at once (the multi-item prewarm) —
@@ -1479,7 +1502,30 @@ async def _fetch_usda_off(food_name: str, is_packaged: bool):
 
     This is the single source of truth for the USDA+OFF lookup: both the inline
     path in _analyze_food and the prewarm call it, so a prewarmed result is
-    byte-for-byte identical to what the inline fetch would have produced."""
+    byte-for-byte identical to what the inline fetch would have produced.
+
+    Single-flighted per turn: a name already being fetched — by the speculative
+    pass that started while the interpreter was still writing — is awaited
+    rather than fetched again.
+    """
+    import asyncio as _aio
+    key = _inflight_key(food_name)
+    existing = _INFLIGHT_FETCHES.get(key)
+    if existing is not None:
+        try:
+            return await _aio.shield(existing)
+        except Exception:
+            pass          # a failed speculative fetch re-runs inline below
+    task = _aio.ensure_future(_fetch_usda_off_uncached(food_name, is_packaged))
+    _INFLIGHT_FETCHES[key] = task
+    while len(_INFLIGHT_FETCHES) > _INFLIGHT_MAX:
+        _INFLIGHT_FETCHES.popitem(last=False)
+    return await task
+
+
+async def _fetch_usda_off_uncached(food_name: str, is_packaged: bool):
+    """The fetch itself. Separated so the single-flight wrapper above stays a
+    wrapper — one place decides what a lookup IS, one decides who waits."""
     import asyncio as _aio
     from api.usda import search_food
     from core.food_intelligence import best_candidate
