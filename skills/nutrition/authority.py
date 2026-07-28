@@ -63,6 +63,17 @@ LADDERS = {
         "user_correction",
         "user_label",
         "usda_exact",         # exact USDA / FoodData Central match
+        # A dish priced from USDA generics. On the GENERIC ladder because
+        # `classify` sends "two carnitas tacos" here, not to RESTAURANT — no
+        # chain is named, so nothing about the name says restaurant. Leaving
+        # the rung on the RESTAURANT ladder alone meant the composite work
+        # could only ever reach a dish somebody had attributed to a chain,
+        # which is a small minority of the dishes people log.
+        #
+        # BELOW `usda_exact` deliberately: USDA does carry some composites
+        # outright, and a measured row for the whole dish beats a sum over its
+        # parts every time.
+        "component_estimate",
         "portion_ontology",   # category-specific portion ontology
         "estimate",           # disclosed
     ),
@@ -266,6 +277,7 @@ def candidate_map(
     usda_candidate: Optional[Mapping[str, Any]] = None,
     off_candidate: Optional[Mapping[str, Any]] = None,
     web_candidate: Optional[Mapping[str, Any]] = None,
+    component_candidate: Optional[Mapping[str, Any]] = None,
 ) -> dict:
     """Place each fetched candidate on the rung its evidence actually earns.
 
@@ -312,9 +324,33 @@ def candidate_map(
         if str(off_candidate.get("_match") or "") in ("exact", "likely"):
             out.setdefault("branded_exact", off_candidate)
 
+    if component_candidate is not None and food_class in (
+            FoodClass.GENERIC, FoodClass.RESTAURANT):
+        # The rung that has existed since this file was written and has never
+        # had anything on it. A dish is not one food, so no index has a row for
+        # it — but USDA has every part, and a sum over the parts is an external
+        # authority in the only sense that matters here: the numbers came from
+        # somewhere that measured them.
+        out.setdefault("component_estimate", component_candidate)
+
     if usda_candidate is not None:
         if food_class is FoodClass.GENERIC:
-            out.setdefault("usda_exact", usda_candidate)
+            # A COMPOSITE'S "LIKELY" USDA ROW IS THE WRONG-COUSIN CASE.
+            #
+            # This seated USDA at `usda_exact` on any grade at all, which was
+            # harmless while nothing sat below it. It is not harmless now: a
+            # dish that HAS a recipe has one because it is not a single food,
+            # and `score_match` hands out "likely" at 0.6 token overlap — the
+            # documented source of a bare query matching a full meal. Holding
+            # the top rung on that evidence would keep the composite from ever
+            # answering, for exactly the dishes it was built for.
+            #
+            # An EXACT row still wins, because USDA measuring the whole dish
+            # beats us summing our guess at its parts. Unchanged for every food
+            # with no recipe: `component_candidate` is None and so is the gate.
+            if (component_candidate is None
+                    or str(usda_candidate.get("_match") or "") == "exact"):
+                out.setdefault("usda_exact", usda_candidate)
         elif food_class is FoodClass.MANUFACTURED:
             # Present, and disclosed for what it is.
             out.setdefault("usda_generic", usda_candidate)

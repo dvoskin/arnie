@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import re
+from collections import OrderedDict
 from datetime import timedelta
 from typing import Dict, List, Any, Optional
 
@@ -1441,6 +1442,107 @@ async def _fetch_usda_off(food_name: str, is_packaged: bool):
     return await _aio.gather(_u(), _o())
 
 
+#: Memo for COMPONENT lookups only — "Rice, white, cooked", "Tortillas, corn".
+#: A module global rather than a ContextVar, and that is safe here in a way it
+#: would not be for a food lookup: these queries are fixed strings from
+#: `composites._RECIPES`, carry no user input, and ask USDA about a generic
+#: ingredient whose answer is the same for everybody. Nothing user-specific can
+#: enter the key, which is the strongest form of "cannot leak between users" —
+#: not having the concept.
+#:
+#: It earns its place on volume: a burrito is seven components and a taco four,
+#: and every dish in the table shares rice, cheese, tortillas or salsa with
+#: another. Bounded by size and age, because an unbounded memo in a long-lived
+#: process is a leak with a delay.
+_COMPONENT_ROWS: "OrderedDict[str, tuple]" = OrderedDict()
+_COMPONENT_TTL_S = 6 * 3600
+_COMPONENT_MAX = 256
+
+
+async def _component_search(query: str, page_size: int = 8):
+    """USDA search for one component, memoized."""
+    import time as _time
+    from api.usda import search_food
+    now = _time.time()
+    hit = _COMPONENT_ROWS.get(query)
+    if hit is not None and now - hit[0] < _COMPONENT_TTL_S:
+        _COMPONENT_ROWS.move_to_end(query)
+        return hit[1]
+    rows = await search_food(query, page_size=page_size)
+    # A MISS IS NOT CACHED. An empty result is usually USDA being unreachable
+    # or rate-limited, and remembering that for six hours would take every
+    # composite down with it long after the API came back.
+    if rows:
+        _COMPONENT_ROWS[query] = (now, rows)
+        _COMPONENT_ROWS.move_to_end(query)
+        while len(_COMPONENT_ROWS) > _COMPONENT_MAX:
+            _COMPONENT_ROWS.popitem(last=False)
+    return rows
+
+
+def _has_recipe(food_name: str) -> bool:
+    """Is this a dish the composite table knows how to take apart?"""
+    try:
+        from skills.nutrition import composites as _comp
+        return _comp.recipe_for(food_name) is not None
+    except Exception:
+        return False
+
+
+def _append_lane(inp, name: str, outcome: str) -> None:
+    """Add one line to the receipt's lane list without clobbering the others.
+
+    The composite lane runs after both branches that write `lanes`, and `stash`
+    replaces a key rather than merging it — so writing the list again here
+    would erase whichever of "usda / off / web" or "lookup" had just been
+    recorded, and the receipt would show a dish priced from its parts with no
+    sign that anything else was consulted.
+    """
+    try:
+        from core.execution_result import CALL_CTX as _CTX
+        ctx = _CTX.get()
+        if ctx is None:
+            return
+        lanes = list(ctx.get("lanes") or [])
+        lanes.append((name, outcome))
+        ctx["lanes"] = lanes
+    except Exception:
+        pass
+
+
+async def _price_composite(food_name: str):
+    """Price a dish from its parts, or None.
+
+    Costs one dict lookup for a food with no recipe, which is what makes it
+    safe to ask of every food. For a dish that HAS one it is N concurrent USDA
+    searches — bounded by the turn budget here rather than inside the module,
+    the same place every other remote source is bounded, and a composite that
+    runs out of time is a MISS: the estimate commits with its provenance
+    intact, exactly as it does today.
+    """
+    try:
+        from skills.nutrition import composites as _comp
+        if _comp.recipe_for(food_name) is None:
+            return None
+        from core import deadline
+        # Held in a name so it can be CLOSED. `wait_for` raises before awaiting
+        # anything when the budget is already spent — the common case for a
+        # lane this late in the turn — and the coroutine built for it then dies
+        # un-awaited, which Python reports as a RuntimeWarning from whatever
+        # code happens to be running when the collector gets to it.
+        pricing = _comp.price_from_usda(food_name, search=_component_search)
+        try:
+            return await deadline.wait_for(pricing)
+        except deadline.DeadlineExceeded:
+            pricing.close()
+            logger.info("event=composite_skipped reason=turn_budget food=%r",
+                        food_name)
+            return None
+    except Exception as e:
+        logger.warning(f"composite pricing failed for {food_name!r}: {e}")
+        return None
+
+
 async def _prewarm_enrichment(tool_calls: list) -> None:
     """Fan out the USDA+OFF lookups for every distinct branded/non-generic food in
     a multi-log batch, BEFORE the serial dispatch loop. The loop's _analyze_food
@@ -2029,6 +2131,26 @@ async def _analyze_food(db, user, food_name, inp):
             # Nothing this food's ladder will seat. Caching it anyway is what
             # made a generic permanent under a branded name.
             _hit = _rung = None
+        if _hit is not None and _has_recipe(food_name):
+            # A DISH IS NOT A FOOD, AND MUST NOT BE REMEMBERED AS ONE.
+            #
+            # Two separate reasons, either sufficient. First, the row about to
+            # be written is USDA's nearest cousin to the whole dish — the very
+            # match the composite lane exists because we do not trust — and
+            # writing it under "burrito" makes that cousin the answer forever.
+            # Second, memory re-enters at `usda_exact`, ABOVE
+            # `component_estimate`, so caching here would shadow the composite
+            # from the second log onwards: the feature would work once per food
+            # per user and then quietly stop, which is the hardest kind of dark
+            # to notice.
+            #
+            # There is nothing to lose by it. A dish's calories are a property
+            # of the instance, not of the name; two burritos are not the same
+            # burrito, and a cache keyed on the name says they are.
+            logger.info(
+                "event=composite_not_cached food=%r rung=%s — a dish's numbers "
+                "belong to the instance, not the name", food_name, _rung)
+            _hit = _rung = None
         if _hit is not None:
             try:
                 # The rung IS the origin: a row cannot claim an authority the
@@ -2058,9 +2180,38 @@ async def _analyze_food(db, user, food_name, inp):
             else "no food name to search" if not name_norm
             else "a generic food — USDA owns the answer"))])
 
+    # ── COMPOSITES: the rung that had nothing behind it ──────────────────────
+    #
+    # Outside the block above on purpose, because that block is gated on `not
+    # generic` — and `is_generic_food_name("burger")` is True, so the dishes
+    # this lane is FOR are exactly the ones that block skips. The gate is right
+    # for its own purpose (no branded lookup is worth paying for on a bare
+    # "burger") and wrong as a gate on this: USDA has no burger, but it has a
+    # bun, a patty and a slice of American, and that is the whole idea.
+    #
+    # Skipped when memory answered, or when USDA already matched the whole dish
+    # EXACTLY — both outrank `component_estimate` on the ladder, so the parts
+    # could not win and fetching them would be N round-trips spent on a
+    # candidate that is guaranteed to lose.
+    component = None
+    if (memory is None and name_norm
+            and str((usda or {}).get("_match") or "") != "exact"):
+        component = await _price_composite(food_name)
+    if component is not None:
+        logger.info(
+            "event=composite_priced food=%r dish=%s parts=%d cal=%s "
+            "range=%s-%s mass=%sg", food_name, component.get("dish"),
+            len(component.get("components") or ()),
+            (component.get("per_serving") or {}).get("calories"),
+            component.get("calorie_low"), component.get("calorie_high"),
+            component.get("serving_mass_g"))
+        _append_lane(inp, "components", "priced %d parts from USDA" %
+                     len(component.get("components") or ()))
+
     result = analyze(food_name, inp.get("quantity"), *llm,
                      usda_candidate=usda, memory_match=memory,
                      web_candidate=web, off_candidate=off,
+                     component_candidate=component,
                      is_packaged=bool(is_packaged))
 
     # ── WHO WON, AND WHAT WAS REFUSED ────────────────────────────────────────
