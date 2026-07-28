@@ -136,7 +136,16 @@ class TurnCoordinator:
             transition(state, TurnPhase.VALIDATED)
             self.trace.transition(state)
 
-            if state.validation.disposition == "execute":
+            # WHAT WAS APPROVED IS WHAT RUNS. Gating solely on the string
+            # "execute" meant an ASK could never commit anything, so the
+            # partial-commit contract was unreachable natively however the
+            # policy had decided (audit A1). The disposition says what to SAY;
+            # `approved_operations` says what may be WRITTEN, and a clarifying
+            # turn legitimately does both. Still explicit rather than "any ops":
+            # a `pass` or `reject` carrying operations is a bug, not a licence.
+            _approved = tuple(state.validation.approved_operations or ())
+            if state.validation.disposition == "execute" or (
+                    state.validation.disposition == "ask" and _approved):
                 state.execution = await self.execution_stage.run(
                     request=request, route=state.route,
                     validation=state.validation)

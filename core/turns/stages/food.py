@@ -58,7 +58,14 @@ class FoodPlanStage:
         action = out.get("action")
         if action == "ask":
             return TurnPlan(
-                operations=(),
+                # AN ASK IS NOT AN EMPTY TURN (audit A1). `core.food_turn`
+                # returns an ask carrying the READY items' calls — the ones the
+                # clarification veto already cleared — and legacy executes them
+                # while asking about the rest. Dropping them here turned
+                # moderate's PARTIAL_COMMIT contract into ATOMIC_HOLD, which is
+                # the exact regression conversation.py records having fixed
+                # once already: the whole meal waits on its least certain item.
+                operations=tuple(out.get("tool_calls") or ()),
                 response_intent=("confirm" if out.get("kind") == "confirm"
                                  else "ask"),
                 ambiguities=(out,),
@@ -82,8 +89,16 @@ class FoodValidationStage:
         intent = getattr(plan, "response_intent", "") or ""
         ops = tuple(getattr(plan, "operations", ()) or ())
         if intent in ("ask", "confirm"):
+            # The question holds the UNCERTAIN items, not all of them. Anything
+            # the veto already cleared is approved and travels with the ask —
+            # partial commit is the contract in moderate mode, and an ask that
+            # approves nothing is a hold wearing a question's clothes.
+            #
+            # A confirm approves nothing on purpose: it asks whether the whole
+            # parse is right, so committing part of it pre-empts the answer.
             return ValidationResult(
                 disposition="ask",
+                approved_operations=(ops if intent == "ask" else ()),
                 clarification=(plan.ambiguities[0] if plan.ambiguities else None),
                 policy_version=self.POLICY_VERSION)
         if ops:
