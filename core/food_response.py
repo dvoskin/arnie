@@ -411,6 +411,59 @@ def _trim_amount(amount: float) -> str:
 
 
 @dataclass(frozen=True)
+class ConversationalContext:
+    """What the message was ALSO about, as a structured obligation.
+
+    A mixed message is not either food or conversation. It is both, and the
+    plan modelled only one of them: `intent` is singular, so
+    GENERAL_CONVERSATION is mutually exclusive with COMMIT and CLARIFY rather
+    than sitting alongside them. The food half arrives as approved facts and a
+    narrow brief; everything else arrived as `user_message`, unstructured, and
+    the specific task won.
+
+        "I had chicken and rice after a brutal meeting. I think I'm going to
+         quit."
+
+    The plan understood chicken, rice, and a disposition. It had no
+    representation of the meeting, the distress, or the fact that the food
+    operation was one part of the turn — so COMMIT's brief ("return an empty
+    string if there is nothing useful") made silence the compliant answer.
+
+    Not only emotional. "I ate this before my workout", "we were celebrating
+    our anniversary", "the restaurant messed up my order", "I made this for my
+    son too" carry obligations with no feeling attached, which is why
+    `user_emotional_context` — present on this plan since it was written, and
+    populated by nothing anywhere — was never going to be enough.
+
+    THE APPROVED WORDINGS ARE NOT DECORATION. `fallback()` runs when the
+    composer has already failed twice, and a deterministic renderer must not
+    improvise a reply to distress. It may only repeat wording the upstream
+    extractor approved; absent that it says nothing rather than guessing, and
+    genuinely urgent content should be routed out of the food renderer
+    entirely rather than prefaced by it.
+    """
+    #: What the non-food part was about, in a few words ("quitting their job").
+    topic: str = ""
+    #: Their own words, so the composer can answer what was actually said.
+    user_statement: str = ""
+    #: Present only when there is one — "distressed", "relieved", "celebrating".
+    emotional_signal: str = ""
+    #: What the reply owes them. "briefly acknowledge", "answer the user's
+    #: question", "offer support before discussing food", "address this
+    #: directly; do not ignore it".
+    response_obligation: str = "briefly acknowledge"
+    priority: str = "normal"                 # normal | important | urgent
+    #: Deterministic wording, supplied upstream, for the fallback path only.
+    approved_acknowledgement: str = ""
+    approved_fallback_response: str = ""
+
+    @property
+    def is_material(self) -> bool:
+        """Whether a reply that ignores this is wrong rather than merely terse."""
+        return self.priority in ("important", "urgent")
+
+
+@dataclass(frozen=True)
 class FoodItemSummary:
     """One item, as the response layer is allowed to describe it. Deliberately
     thin: a name and a portion phrase, not a nutrient row. If the composer
@@ -580,6 +633,10 @@ class FoodResponsePlan:
     previous_assistant_message: Optional[str] = None
     recent_response_openers: Tuple[str, ...] = ()
 
+    #: What else the message was about. A SECOND OBLIGATION, not a second
+    #: intent — see `ConversationalContext`.
+    conversational_context: Optional["ConversationalContext"] = None
+
     # The day this reply is being written into, and who it is being written
     # for. Both are FACTS TO REASON FROM, never things to recite.
     #
@@ -704,6 +761,16 @@ def apply_policy(plan: FoodResponsePlan) -> FoodResponsePlan:
         # two-sentence, forty-word budget written for a question alone.
         sentences = max(sentences, 8)
         words = max(words, 170)
+    if plan.conversational_context is not None:
+        # A MIXED TURN IS NOT A FOOD TURN WITH EXTRA WORDS. COMMIT's budget is
+        # two sentences and thirty-five words with silence permitted, written
+        # for a turn where the card says everything — and on a message that
+        # also mentioned quitting a job, silence is the compliant answer to the
+        # wrong question. Reserve room, and take away the permission to say
+        # nothing: the card cannot acknowledge anything.
+        sentences = max(sentences, 3)
+        words = max(words, 65)
+        allow_none = False
     if plan.assumptions and not plan.card_will_render:
         # AN UNDISCLOSED ASSUMPTION IS THE ONE THING SILENCE CANNOT COVER.
         # COMMIT permits no text at all on the reasoning that the card already
@@ -861,6 +928,7 @@ class Reason:
     FORBIDDEN_QUESTION = "forbidden_question"
     MISSING_QUESTION = "missing_question"
     PENDING_AS_COMMITTED = "pending_as_committed"
+    MISSED_CONVERSATIONAL_CONTEXT = "missed_conversational_context"
     FAILED_AS_COMMITTED = "failed_as_committed"
     INVENTED_ITEM = "invented_item"
     TOO_LONG = "too_long"
@@ -1039,6 +1107,14 @@ def validate(text: str, plan: FoodResponsePlan) -> ValidationResult:
     raw = (text or "").strip()
 
     if not raw:
+        # SILENCE IS AN ANSWER TO SOMETHING THEY SAID. A card can confirm a
+        # meal; it cannot acknowledge a person, so an empty reply to a message
+        # that also carried weight reads as having ignored them. Checked before
+        # the general empty rule so the failure names the real reason.
+        if plan.conversational_context is not None \
+                and plan.conversational_context.is_material:
+            return ValidationResult(False, Reason.MISSED_CONVERSATIONAL_CONTEXT,
+                                    plan.conversational_context.topic)
         if plan.allow_no_text and not plan.requires_answer:
             return ValidationResult(True)
         return ValidationResult(False, Reason.EMPTY_NOT_ALLOWED)
@@ -1230,13 +1306,18 @@ _INTENT_BRIEF = {
         "to check arithmetic they cannot see. Offer the likely answers as a short natural "
         "choice ('half or the whole thing?') rather than an open question, "
         "since a choice is answered in one tap and an open one is not "
-        "answered at all.",
+        "answered at all. If they also said something meaningful outside the "
+        "food log, acknowledge it briefly BEFORE the question — a "
+        "clarification must not make the rest of their message sound "
+        "invisible.",
     FoodResponseIntent.CONFIRM_ANSWER:
         "Briefly acknowledge the resolved meaning. Do not re-review the meal "
         "and do not ask again.",
     FoodResponseIntent.COMMIT:
-        "The card already confirms what was logged. Add one natural "
-        "observation, or return an empty string if there is nothing useful.",
+        "The card already confirms the food entry. If the user also said "
+        "something meaningful outside the food log, acknowledge or answer "
+        "that FIRST. Otherwise add one natural observation, or return an "
+        "empty string if there is nothing useful.",
     FoodResponseIntent.PARTIAL_COMMIT:
         "Say what is in, name the one item still open, and ask only the "
         "supplied question. Never describe the open item as logged.",
@@ -1419,6 +1500,25 @@ def build_prompt(plan: FoodResponsePlan) -> str:
              "answer, so name these as read-back, never as logged/added/"
              "tracked/counted: " + _understood)
             if held_items(plan) else "UNDERSTOOD: " + _understood)
+    ctx = plan.conversational_context
+    if ctx is not None:
+        parts.extend([
+            "",
+            "NON-FOOD CONTEXT THAT MUST NOT BE IGNORED:",
+            f"They said: {ctx.user_statement or plan.user_message}",
+            f"What it is about: {ctx.topic or 'unstated'}",
+            f"Emotional signal: {ctx.emotional_signal or 'none'}",
+            f"What your reply owes them: {ctx.response_obligation}",
+            "Answer or acknowledge this in the SAME reply, in your own words "
+            "and without repeating theirs back to them. Do not write as "
+            "though they had submitted a food record. The food question or "
+            "confirmation still happens — this comes first and stays short.",
+        ])
+        if ctx.priority == "urgent":
+            parts.append(
+                "This one is urgent. Address it directly; the food half may "
+                "wait for a later turn if giving it room would be tone-deaf.")
+
     if plan.committed_items:
         parts.append("LOGGED (the card shows these — do not recite them): "
                      + "; ".join(i.describe() for i in plan.committed_items))
@@ -1610,9 +1710,45 @@ def _commit_text(plan: FoodResponsePlan) -> str:
     return strip_card_recitation(text, plan)
 
 
+def contextual_preface(plan: FoodResponsePlan) -> str:
+    """Approved wording for the non-food half, or nothing.
+
+    Reached only from `fallback()` — which means the composer has already
+    failed validation twice. A deterministic renderer must NOT improvise a
+    reply to distress, so this repeats only what the upstream extractor
+    approved and stays silent otherwise. Saying nothing is a smaller failure
+    than saying the wrong thing warmly.
+
+    Genuinely urgent content should be routed out of the food renderer
+    entirely rather than prefaced by it; that routing is upstream's call, and
+    this returns the approved line if one was supplied so the reply is at
+    least not blank.
+    """
+    ctx = plan.conversational_context
+    if ctx is None:
+        return ""
+    if ctx.response_obligation == "briefly acknowledge":
+        return (ctx.approved_acknowledgement or "").strip()
+    return (ctx.approved_fallback_response
+            or ctx.approved_acknowledgement or "").strip()
+
+
 def fallback(plan: FoodResponsePlan) -> str:
     """Correct without sounding procedural. Reached when generation fails
-    validation twice, or when no composer is available."""
+    validation twice, or when no composer is available.
+
+    A mixed turn gets the approved acknowledgement in front of the food line,
+    so the deterministic path does not answer only the half it can compute.
+    """
+    preface = contextual_preface(plan)
+    if preface:
+        food = _fallback_food_only(plan)
+        return " ".join(part for part in (preface, food) if part)
+    return _fallback_food_only(plan)
+
+
+def _fallback_food_only(plan: FoodResponsePlan) -> str:
+    """The food half, unchanged — what `fallback` always was."""
     intent = plan.intent
 
     if intent is FoodResponseIntent.REVIEW:
