@@ -2582,6 +2582,24 @@ def _composer_messages(plan: FoodResponsePlan) -> list:
     return messages
 
 
+#: How long the voice layer may take for ONE attempt. A stage deadline, not a
+#: turn budget: the turn budget stops the composer outliving the turn, and this
+#: stops it eating a share of the turn that the write and the enrichment still
+#: need. Six seconds is generous for 200 tokens — it is a hang detector, not a
+#: latency target.
+_VOICE_DEADLINE_S = 6.0
+
+
+def _voice_deadline_s() -> float:
+    import os
+    raw = (os.getenv("FOOD_VOICE_DEADLINE_S", "") or "").strip()
+    try:
+        value = float(raw)
+    except ValueError:
+        return _VOICE_DEADLINE_S
+    return value if value > 0 else _VOICE_DEADLINE_S
+
+
 def _note_voice(plan: "FoodResponsePlan", **fields) -> None:
     """Who spoke, on which model, at what cost — onto the ambient trace.
 
@@ -2617,6 +2635,9 @@ async def compose_async(plan: FoodResponsePlan, *, model: Optional[str] = None,
     """
     from core.llm import chat
 
+    #: Why `_run` came back empty, set by whichever except arm caught it.
+    _why = {"cause": "model_unavailable"}
+
     async def _run(prompt: str) -> Optional[str]:
         """The model's text, or None when the CALL ITSELF failed.
 
@@ -2631,11 +2652,36 @@ async def compose_async(plan: FoodResponsePlan, *, model: Optional[str] = None,
         that happened to it.
         """
         try:
-            out = await chat(_composer_messages(plan),
-                             prompt, tools=False, max_tokens=200,
-                             model=model or _composer_model())
+            # UNDER THE TURN'S BUDGET, like every other wait in this lane. It
+            # was the one model call that was not, and the arithmetic is why
+            # that matters: the Anthropic client carries max_retries=3 at a
+            # 45s timeout, so ONE `await chat(...)` is up to four round trips
+            # and ~180s, and this loop makes up to two of them. Nothing
+            # bounded it — the turn budget only binds calls that pass through
+            # `wait_for`, and a composer that hung outlived the turn it was
+            # writing for.
+            #
+            # `DeadlineExceeded` is caught here with everything else, which is
+            # the right degradation: `None` means "the call did not happen",
+            # the loop stops rather than retrying into a budget that is gone,
+            # and the deterministic floor speaks. A slow sentence costs the
+            # sentence, never the write it describes.
+            from core import deadline
+            out = await deadline.wait_for(
+                chat(_composer_messages(plan),
+                     prompt, tools=False, max_tokens=200,
+                     model=model or _composer_model()),
+                _voice_deadline_s())
             return (out or {}).get("text", "") if isinstance(out, dict) else str(out or "")
         except Exception as e:
+            # SLOW AND DOWN ARE DIFFERENT PROBLEMS. Both end in the
+            # deterministic floor, so the user cannot tell — but one is fixed
+            # by a provider and the other by a budget, and a report that
+            # merges them sends you to the wrong one.
+            from core.deadline import DeadlineExceeded
+            _why["cause"] = ("voice_timeout"
+                             if isinstance(e, DeadlineExceeded)
+                             else "model_unavailable")
             logger.warning(f"food composer model call failed: {e}")
             return None
 
@@ -2661,8 +2707,8 @@ async def compose_async(plan: FoodResponsePlan, *, model: Optional[str] = None,
             # already tried its own model fallback by this point; the honest
             # move now is the deterministic text.
             _note_voice(plan, voice_model=_model, retry_count=_calls - 1,
-                        fallback_path="model_unavailable")
-            return fallback(plan), "model_unavailable"
+                        fallback_path=_why["cause"])
+            return fallback(plan), _why["cause"]
         last = validate(text, plan)
         if last.ok:
             _note_voice(plan, voice_model=_model, retry_count=_calls - 1)

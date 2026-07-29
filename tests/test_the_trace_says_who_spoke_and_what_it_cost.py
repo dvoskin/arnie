@@ -176,3 +176,70 @@ async def test_every_intent_declares_its_profile(monkeypatch, intent):
 
 def test_noting_the_voice_with_no_trace_is_silent():
     FR._note_voice(_plan(), voice_model="m")
+
+
+# ── the worst case is bounded ────────────────────────────────────────────────
+async def test_a_hanging_composer_costs_the_sentence_not_the_write(monkeypatch):
+    """This was the one model call in the lane not under the turn budget, and
+    the arithmetic is why that mattered: the Anthropic client carries
+    max_retries=3 at a 45s timeout, so one `await chat(...)` is up to four
+    round trips and ~180s — and the loop makes up to two of them. Nothing
+    bounded it, so a composer that hung outlived the turn it was writing for.
+    """
+    import asyncio
+
+    monkeypatch.setenv("FOOD_VOICE_DEADLINE_S", "0.2")
+
+    async def _hang(*a, **k):
+        await asyncio.sleep(30)
+
+    monkeypatch.setattr(core.llm, "chat", _hang)
+    loop = asyncio.get_running_loop()
+    started = loop.time()
+    text, why = await FR.compose_async(_plan())
+    assert loop.time() - started < 2.0, "the deadline did not bind"
+    assert text.strip(), "the floor must still speak"
+    assert "Rice cake" in text, "and it must still name what was written"
+    assert why == "voice_timeout"
+
+
+async def test_slow_and_down_are_not_the_same_finding(monkeypatch):
+    """Both end in the deterministic floor, so the user cannot tell — but one
+    is fixed by a provider and the other by a budget, and a report that merges
+    them sends you to the wrong one."""
+    import asyncio
+
+    monkeypatch.setenv("FOOD_VOICE_DEADLINE_S", "0.2")
+
+    async def _hang(*a, **k):
+        await asyncio.sleep(30)
+
+    monkeypatch.setattr(core.llm, "chat", _hang)
+    t = _trace()
+    await FR.compose_async(_plan())
+    slow = t.as_dict()["fallback_path"]
+
+    monkeypatch.setattr(core.llm, "chat", _model(boom=True))
+    t = _trace()
+    await FR.compose_async(_plan())
+    down = t.as_dict()["fallback_path"]
+
+    assert {slow, down} == {"voice_timeout", "model_unavailable"}
+
+
+async def test_a_timeout_stops_rather_than_retrying_into_a_dead_budget(
+        monkeypatch):
+    """`DeadlineExceeded` means the turn is over, not that this call was
+    unlucky. Retrying would spend a budget that is already gone."""
+    import asyncio
+
+    calls = []
+    monkeypatch.setenv("FOOD_VOICE_DEADLINE_S", "0.2")
+
+    async def _hang(*a, **k):
+        calls.append(1)
+        await asyncio.sleep(30)
+
+    monkeypatch.setattr(core.llm, "chat", _hang)
+    await FR.compose_async(_plan())
+    assert len(calls) == 1, f"retried a timed-out call {len(calls)} times"
