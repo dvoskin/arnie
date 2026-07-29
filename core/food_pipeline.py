@@ -502,10 +502,6 @@ def _approved_operations(data: Mapping, items, decision) -> tuple:
 
 
 # ── after execution ───────────────────────────────────────────────────────────
-def _call_names(call) -> str:
-    return str((getattr(call, "raw_input", None) or {}).get("food_name") or "")
-
-
 # ── derived ambiguity: the user was vague and we were precise ────────────────
 #: Measures a user says when they do not know the amount. Each maps to the
 #: portion ontology's measure name, so the plausible range comes from the

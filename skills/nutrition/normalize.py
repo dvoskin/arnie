@@ -380,12 +380,6 @@ def _lead_words(low: str):
     return None
 
 
-def _word_amount(text: str):
-    """Back-compat shim: the amount alone, or None."""
-    got = _lead_words((text or "").strip().lower().replace("-", " "))
-    return got[0] if got else None
-
-
 def _parse_amount(text: str) -> tuple:
     """(amount, remainder). Digits, fractions, mixed numbers and number words.
 
