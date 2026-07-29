@@ -401,6 +401,20 @@ def open_gate_enabled() -> bool:
     return os.getenv("FOOD_GATE_OPEN", "false").lower() in ("true", "1", "yes")
 
 
+def answer_apply_enabled() -> bool:
+    """Whether an answer to a clarification may commit from the stored
+    resolution instead of re-running the interpreter and the ladder.
+
+    Default OFF, and shadowing meanwhile — the same discipline as
+    `FOOD_FAST_PATH`. It is a new write path, so the number that justifies
+    throwing this switch is its agreement with what the interpreter went on to
+    do, measured on real traffic (`event=answer_apply outcome=shadow`), not on
+    a sample chosen by whoever built it.
+    """
+    return os.getenv("FOOD_ANSWER_APPLY", "false").lower() in ("true", "1",
+                                                               "yes")
+
+
 def applies(text: str) -> bool:
     t = (text or "").strip()
     if not t or len(t) > 500:
@@ -3231,11 +3245,92 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
         if _parsed.disclosure:
             _answer_line += f" (assumed: {_parsed.disclosure})"
 
+    # ── WHAT WE ALREADY RESOLVED, STATED AS FACT (cause A) ──────────────────
+    #
+    # The identity in the stored resolution is not a hint the interpreter may
+    # weigh against the user's history — it is what this thread established.
+    # Without it the answer turn re-interpreted cold, and history filled the
+    # vacuum: "It's sopresseta", stated at 00:54, came back thirteen hours
+    # later as "Dollar pizza slices, plain" because that is this user's most
+    # common pizza. A fact the user stated in-thread lost to a prior.
+    #
+    # This runs whether or not the zero-lookup commit below is enabled: it adds
+    # no write path, only information the turn already paid for.
+    _held_line = ""
+    _staged_prior = (prior or {}).get("staged_items") or []
+    if _staged_prior:
+        try:
+            from skills.nutrition.staged_codec import decode_items
+            _held = decode_items(_staged_prior)
+            _lines = []
+            for _it in _held[:4]:
+                _name = _it.identity.describe() or _it.original_text
+                _cal = next((c.calories for c in (_it.candidate_products or ())
+                             if c.calories is not None), None)
+                _bits = [f"- {_name}"]
+                if _it.quantity.describe():
+                    _bits.append(f"({_it.quantity.describe()})")
+                if _cal is not None:
+                    _bits.append(f"— we priced this at {int(_cal)} cal")
+                _lines.append(" ".join(_bits))
+            if _lines:
+                _held_line = (
+                    "\n\nWHAT THIS THREAD ALREADY ESTABLISHED about the held "
+                    "food — this is settled, not a guess to revisit. Use these "
+                    "identities and these numbers; do NOT substitute a "
+                    "similar food from their history:\n" + "\n".join(_lines))
+        except Exception as _he:
+            logger.warning(f"held resolution not readable: {_he}")
+
+    # ── THE ANSWER AS A ZERO-LOOKUP COMMIT ──────────────────────────────────
+    #
+    # The stored resolution carries the winning candidate's anchor and its
+    # per-100g basis, so settling a portion is arithmetic. This is the path
+    # that removes the 16.2s answer turn and the ask/answer disagreement — the
+    # ask said 10 g of protein and the answer, having re-priced from scratch,
+    # logged 8 g.
+    #
+    # SHADOW BY DEFAULT, like `FOOD_FAST_PATH`. It is a new WRITE path, and the
+    # rule this repo already follows for those is that the switch letting it
+    # write is not thrown until its agreement rate on real traffic says so.
+    # Off, it computes what it would have committed, logs the comparison and
+    # changes nothing. `FOOD_ANSWER_APPLY=true` lets it write.
+    if prior is not None and _parsed is not None and _parsed.values \
+            and _staged_prior:
+        try:
+            from skills.nutrition.answer_application import commit_from_answer
+            _applied = commit_from_answer(
+                _staged_prior, str(prior.get("staged_item_id") or ""),
+                _parsed.values)
+        except Exception as _ae:
+            logger.warning(f"answer application failed: {_ae}")
+            _applied = None
+        if _applied is not None:
+            _call = _log_call(_applied)
+            if _call is not None and answer_apply_enabled():
+                logger.info(
+                    f"event=answer_apply outcome=committed "
+                    f"food={_applied.get('food')!r} "
+                    f"cal={_applied.get('calories')}")
+                return {"action": "log", "tool_calls": [_call],
+                        "kinds": ["log"],
+                        # The narration is left to the reply layer's composer
+                        # and its deterministic floor — the same two that
+                        # answer when the interpreter's own `say` fails
+                        # validation. Writing one here would be a third
+                        # renderer, and an English-only one (cause E).
+                        "say": "", "note": "", "follow_up": ""}
+            logger.info(
+                f"event=answer_apply outcome=shadow "
+                f"food={_applied.get('food')!r} "
+                f"cal={_applied.get('calories')} "
+                f"buildable={_call is not None}")
+
     if prior:
         content = (
             f"Earlier they reported: \"{prior.get('original', '')}\"\n"
             f"You asked: \"{prior.get('question', '')}\"\n"
-            f"They just answered: \"{message}\"" + _answer_line)
+            f"They just answered: \"{message}\"" + _answer_line + _held_line)
     else:
         content = message
     if (last_assistant or "").strip():
@@ -3602,11 +3697,41 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
                 # meal.
                 logger.warning(f"partial-commit calls unavailable: {_ve}")
                 _ready_calls = []
+            # THE RESOLUTION TRAVELS, NOT JUST A REFERENCE TO IT (cause A).
+            #
+            # `staged_item_id` below is a pointer, and by the time the answer
+            # arrives the object it pointed at is gone — so the answer turn
+            # re-interpreted the raw message and re-ran the whole enrichment
+            # ladder. That is the 16.2s cheesecake re-priced one turn after we
+            # priced it, and the sopressata that came back as "Dollar pizza
+            # slices" thirteen hours later.
+            #
+            # Only the HELD items. The ready ones were just committed by
+            # `_ready_calls` above, and carrying them forward is precisely
+            # cause C's residue — a later turn writing foods its own message
+            # never mentioned.
+            _staged_payload = []
+            try:
+                from skills.nutrition.staged_codec import encode_items
+                _held_ids = set(getattr(_decision.clarification,
+                                        "held_item_ids", ()) or ())
+                if not _held_ids and _q.staged_item_id:
+                    _held_ids = {_q.staged_item_id}
+                _staged_payload = encode_items(
+                    [i for i in (_decision.staged_items or ())
+                     if i.staged_item_id in _held_ids])
+            except Exception as _se:
+                # Losing the resolution costs one re-interpretation on the
+                # answer turn — exactly today's behaviour. Losing the QUESTION
+                # loses the meal, so this may never fail the ask.
+                logger.warning(f"staged resolution not persisted: {_se}")
+                _staged_payload = []
             return {"action": "ask", "text": _text,
                     "tool_calls": _ready_calls,
                     "points": [_q.prompt],
                     "question_id": _q.question_id,
                     "staged_item_id": _q.staged_item_id,
+                    "staged_items": _staged_payload,
                     "requested_fields": list(_q.requested_fields),
                     # THE SHAPE WE ASKED FOR travels too. `parse_answer`
                     # dispatches on `response_schema` — without it the narrow

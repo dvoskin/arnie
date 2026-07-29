@@ -1197,6 +1197,12 @@ async def _run_turn(
                          "response_schema": _sft.get("response_schema") or "",
                          "question_id": _sft.get("question_id") or "",
                          "staged_item_id": _sft.get("staged_item_id") or "",
+                         # THE RESOLUTION ITSELF, not a reference to it.
+                         # `staged_item_id` names an object that stops existing
+                         # when this turn ends; this is the object. The
+                         # answering turn applies the answer to it instead of
+                         # re-interpreting the message and re-pricing the food.
+                         "staged_items": _sft.get("staged_items") or [],
                          "requested_fields": list(
                              _sft.get("requested_fields") or ()),
                          "options": list(_sft.get("options") or ()),
