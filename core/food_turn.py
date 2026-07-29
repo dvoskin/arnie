@@ -712,6 +712,12 @@ _SYSTEM = (
     "not beef' keeps the amount and re-estimates macros for the new identity, "
     "'that was yesterday' is an update carrying date. Never collapse an "
     "addition into a replace or a replace into an addition.\n"
+    "- A DAY THE USER NAMES BELONGS TO THE ITEM. Food they are reporting for "
+    "another day is still a log — carry \"date\" on that item (\"yesterday\", "
+    "\"2 days ago\", or YYYY-MM-DD) and it is written to that day. One message "
+    "may mix days: log each item with its own date. Never drop the item, and "
+    "never delete one to correct the day — a day is a field, not a reason to "
+    "throw the food away.\n"
     "- WHAT YOU DID NOT KNOW - ALWAYS, NOT ONLY WHEN YOU LOG. Every unknown "
     "you resolved by judgement is reported as \"ambiguities\":[{\"item\":"
     "\"<the item it concerns>\",\"field\":\"quantity\",\"impact_cal\":250,"
@@ -2714,6 +2720,26 @@ def _log_call(it: dict, source: Optional[str] = None) -> Optional[dict]:
     _basis = str(it.get("basis") or "").strip().lower()
     if _basis in ("stated", "regular", "estimate"):
         inp["basis"] = _basis
+    # A DAY THE USER NAMED IS PART OF THE ITEM.
+    #
+    # `_update_call` has carried `date` since move-to-date landed, and
+    # `log_food` resolves it the same way — `_resolve_log` gets-or-creates that
+    # day's log before the write. Only this builder dropped it, so the lane
+    # could RE-DATE a row it had already written and could not WRITE one to the
+    # day the user actually named. Reporting yesterday's dinner had exactly one
+    # available outcome: today's board.
+    #
+    # Production, 2026-07-29, u=3: "Вареная индейка была вчера и в салате
+    # курица" — the turkey was yesterday's. The turn wrote rice and a Caesar
+    # salad to TODAY, said in its own reply that the turkey was excluded
+    # "так как она была вчера" — so the day was understood — and on the next
+    # turn deleted both rows instead of moving them. 07-28 ended with no Caesar
+    # and no turkey; 07-29 ended empty. The food the user reported exists on no
+    # day, and a delete stood in for a re-parent that the vocabulary already
+    # contained.
+    _day = str(it.get("date") or "").strip()
+    if _day:
+        inp["date"] = _day
     # What we chose in place of asking. Persists in the entry's raw_input
     # alongside `source` and `basis`, so "why 6 oz?" keeps having a recorded
     # answer rather than a plausible excuse.
