@@ -401,9 +401,20 @@ def _deterministic_line(snap: TransactionSnapshot) -> str:
         parts.append(f"Updated the {_join_names(snap.updated)}.")
     if snap.deleted:
         parts.append(f"Took the {_join_names(snap.deleted)} off the board.")
-    parts.append(f"You're at {snap.day_cal} with {snap.cal_left} left and "
-                 f"{snap.protein_left}g protein to go.")
-    return " ".join(parts)
+    day = (f"You're at {snap.day_cal} with {snap.cal_left} left and "
+           f"{snap.protein_left}g protein to go.")
+    # TWO BUBBLES, because the canonical voice ends "never one bubble alone
+    # after logging food" and this floor was one. It runs when the composer
+    # has already failed, which is exactly when a reply that reads like a
+    # different product does the most damage — so it is held to the persona's
+    # rule rather than exempted from it for being deterministic.
+    #
+    # What was already here is two ideas: what happened, then where the day
+    # stands. They were joined with a space; a ||| is the same sentence pair
+    # sent the way a person sends them.
+    if not parts:
+        return day
+    return f"{' '.join(parts)}|||{day}"
 
 
 def render_committed(say: str, note: str, follow_up: str,

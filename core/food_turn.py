@@ -2485,9 +2485,12 @@ def enforce_say_contract(say: str, tool_calls: list) -> str:
                                           else names[0])
     else:
         joined = "That"
-    return (f"{joined} logged, {{batch_cal}} cal and {{batch_protein}}g protein. "
-            f"You're at {{day_cal}} with {{cal_left}} left and {{protein_left}}g "
-            f"protein to go.")
+    # Two bubbles: the canonical voice forbids a lone one after a food log,
+    # and this replaces a rejected say on a turn that DID write — the moment
+    # the rule is about.
+    return (f"{joined} logged, {{batch_cal}} cal and {{batch_protein}}g protein."
+            f"|||You're at {{day_cal}} with {{cal_left}} left and "
+            f"{{protein_left}}g protein to go.")
 
 
 def fill_say_tokens(say: str, batch_cal: int, batch_protein: int,

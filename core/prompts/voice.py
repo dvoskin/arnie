@@ -37,6 +37,7 @@ in the persona; they are what makes a brief a brief.
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass
 from typing import Dict, Optional, Tuple
 
@@ -183,6 +184,111 @@ for the same sentence you used last time this happened.""",
 
 def profiles() -> Tuple[str, ...]:
     return tuple(PROFILES)
+
+
+# ── the same rules, for text no model wrote ──────────────────────────────────
+#: Where the persona declares a list of forbidden phrasings. Both are quoted
+#: lists in the canonical text, so the ban propagates: adding a phrase to the
+#: persona adds it here, with nothing to update in between.
+_BAN_MARKERS = ("These phrases are BANNED, no exceptions:", "Banned outright:")
+
+_QUOTED = re.compile(r"[\"“]([^\"”]{3,60})[\"”]")
+
+
+def banned_phrases() -> Tuple[str, ...]:
+    """Every phrasing the canonical persona forbids outright, lifted from it.
+
+    Scoped to the declarations rather than every quote in the contract: the
+    persona is full of quoted EXAMPLES of good lines, and banning those would
+    reject the voice it is describing.
+    """
+    out = []
+    for name in ("not_an_ai", "tone"):
+        body = contract(name)
+        for marker in _BAN_MARKERS:
+            i = body.find(marker)
+            if i < 0:
+                continue
+            # A COMMA-SEPARATED RUN, and it ends where the commas do. Taking
+            # the whole paragraph swallowed the line right after the list —
+            # `("I'm your coach, that's all that matters...")`, which is the
+            # persona DEMONSTRATING the right deflection. Banning the example
+            # of good behaviour is the failure mode of extracting by proximity
+            # instead of by structure.
+            cursor = i + len(marker)
+            for m in _QUOTED.finditer(body, cursor):
+                gap = body[cursor:m.start()]
+                if gap.strip(" ,\n"):        # anything but a comma: run over
+                    break
+                out.append(" ".join(m.group(1).split()))
+                cursor = m.end()
+    return tuple(dict.fromkeys(p for p in out if p))
+
+
+#: Phrasings no persona would think to forbid because no PERSON would write
+#: them — they are what a system emits when a template is doing the talking.
+#: Legitimately authored here rather than lifted, for the same reason `_TASK`
+#: is: this is not personality, it is the shape of the failure being guarded.
+_RECEIPT = ("successfully", "has been logged", "has been added", "entry added",
+            "food entry", "your request", "operation completed", "1 x ",
+            "logged:", "added:", "error:", "unable to process")
+
+#: Internal vocabulary. The user has no model of any of it, so naming one is
+#: the moment a coach stops sounding like a coach.
+_MACHINERY = ("resolver", "schema", "usda", "endpoint", "database", "payload",
+              "tool call", "confidence score", "validation", "fallback",
+              "the system", "api", "timed out", "null", "none type")
+
+
+@dataclass(frozen=True)
+class Violation:
+    rule: str
+    detail: str
+
+
+def check(text: str, *, after_food_log: bool = False) -> Tuple[Violation, ...]:
+    """Whether a line no model wrote still sounds like Arnie.
+
+    The deterministic floors — `_deterministic_line`, `clarify_text_from_points`,
+    `enforce_say_contract`'s tokenized line, the `fallback()` family — run when
+    the composer has already failed, which is exactly when a reply that sounds
+    like a different product does the most damage. They cannot be sent through
+    a model without ceasing to be the floor, so they get the rules mechanically
+    instead, from the same source the briefs are compiled from.
+
+    Not a style opinion: every rule here is either lifted from the persona or
+    describes a shape a person would never type.
+    """
+    found = []
+    flat = " ".join((text or "").split())
+    low = flat.lower()
+
+    for phrase in banned_phrases():
+        if phrase.lower() in low:
+            found.append(Violation("banned_phrase", phrase))
+    for phrase in _RECEIPT:
+        if phrase in low:
+            found.append(Violation("receipt", phrase))
+    for word in _MACHINERY:
+        if word in low:
+            found.append(Violation("machinery", word))
+    # The lane already strips these from model output; the floor is held to
+    # the same bar rather than a lower one.
+    if "~" in flat:
+        found.append(Violation("tilde", "~"))
+    if "—" in flat:
+        found.append(Violation("em_dash", "—"))
+    # SHOUTING. Units and short acronyms are fine ("2 OZ" never appears, but
+    # "1450 CAL" would); a run of three or more capitals that is not a known
+    # unit reads as a system, not a person.
+    for word in re.findall(r"\b[A-Z]{3,}\b", flat):
+        if word not in ("USDA", "OFF"):     # named separately as machinery
+            found.append(Violation("shouting", word))
+    if after_food_log and "|||" not in flat:
+        # Straight from the canonical voice, whose last line is exactly this.
+        found.append(Violation("one_bubble_after_log",
+                               "the persona forbids a lone bubble after a log"))
+    return tuple(found)
 
 
 def compile_voice(profile: str, context: Optional[dict] = None) -> str:
