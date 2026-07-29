@@ -2340,6 +2340,16 @@ async def _run_turn(
                         # is what it becomes. Without this the composer is told
                         # to name the change and has only the result to look at.
                         _changed, _unpriced = [], []
+                        # Execution state lives on the typed call, keyed by the
+                        # identity of the command it ran — the same join
+                        # `build_reasoning` uses.
+                        _typed_by_input = {}
+                        try:
+                            for _tcall in (_execution.calls
+                                           if _execution is not None else ()):
+                                _typed_by_input[id(_tcall.raw_input)] = _tcall
+                        except Exception:
+                            _typed_by_input = {}
                         for _c in (_ok_calls or []):
                             if _c.get("name") != "update_food_entry":
                                 continue
@@ -2364,10 +2374,46 @@ async def _run_turn(
                             # cheeseburger" over the single cheeseburger's 324
                             # cal, and the user had to notice ("the calories
                             # haven't updated tho") and supply 450 themselves.
-                            _unp = str(
-                                _ci.get("correction_unpriced") or "").strip()
-                            if _unp:
-                                _unpriced.append(_unp)
+                            #
+                            # IT WAS READ FROM THE WRONG SIDE OF THE SEAM.
+                            #
+                            # `_stash_call` writes to the ambient CALL_CTX and
+                            # documents that "the command input is NEVER
+                            # written" (executor immutability, P0.3e).
+                            # `ok_tool_calls()` returns `{name, input:
+                            # raw_input}` — the command, without any of that
+                            # context. So this read `_ci.get(...)` off the raw
+                            # input, where nothing ever put it, and the list
+                            # stayed empty on every turn: the disclosure has
+                            # never once fired in production.
+                            #
+                            # Its test asserts that the executor's SOURCE TEXT
+                            # contains the string "correction_unpriced" — which
+                            # it does — so a source-level grep stood in for the
+                            # behaviour and the gap survived.
+                            #
+                            # The outcome now rides the typed call, which is
+                            # the side of the seam that carries execution state.
+                            #
+                            # PRICED WRONG COUNTS TOO. `correction_unpriced`
+                            # fires only when the ladder returned nothing. A
+                            # re-resolution returning the SAME number passes
+                            # that test and is indistinguishable to the person
+                            # reading the reply: they said it was different and
+                            # the figure did not move. Production, 2026-07-29:
+                            # "Yea they were deep fried" re-resolved "Shrimp,
+                            # deep fried, 7 small" — which searches as shrimp —
+                            # and came back at the same 35 cal. The reply said
+                            # "that's a real jump from a light sauté" over an
+                            # unchanged row, and the user had to ask "How does
+                            # it change the total then?", a question which then
+                            # performed the write.
+                            _tc = _typed_by_input.get(id(_ci))
+                            _co = getattr(_tc, "correction", None) if _tc else None
+                            if isinstance(_co, dict) and _co.get("renamed") \
+                                    and not _co.get("moved_numbers"):
+                                if _now or _was:
+                                    _unpriced.append(_now or _was)
                         _plan = apply_policy(FoodResponsePlan(
                             intent=_intent,
                             corrections=tuple(_changed),
