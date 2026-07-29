@@ -2534,6 +2534,36 @@ def _asks_to_split(message: str) -> bool:
 _CAPTURE_MAX_CHARS = 2000
 
 
+def _note_interpreter_cost(res, model: str) -> None:
+    """What the interpreter pass actually cost, onto the ambient trace.
+
+    Three numbers the latency report could not previously get at any price:
+
+      * `ttfb_ms` — only the streaming path can report it, and the interpreter
+        is on that path because the speculative fetch needs the deltas. Absent
+        rather than zero when unavailable.
+      * input vs output tokens — the interpreter's output is what the user
+        waits on, and knowing the split is what turns "make it faster" into a
+        decision about which half to cut.
+      * cached input — a warm prefix and a cold one are different latencies
+        wearing the same stage name. Averaged together they hide each other.
+
+    Never raises: this runs between the model call and the parse, and a turn
+    must not be lost to being measured.
+    """
+    try:
+        from core import food_trace as _ft
+        usage = (res or {}).get("usage") or {}
+        cached = int(usage.get("cache_read_input_tokens") or 0)
+        _ft.note(interpreter_model=model or "",
+                 interpreter_ttfb_ms=float((res or {}).get("ttfb_ms") or 0.0),
+                 interpreter_input_tokens=int(usage.get("input_tokens") or 0),
+                 interpreter_output_tokens=int(usage.get("output_tokens") or 0),
+                 interpreter_cached_tokens=cached)
+    except Exception:
+        pass
+
+
 def _capture_interpreter_output(message: str, data) -> None:
     """Record the interpreter's raw plan so a real turn can be REPLAYED.
 
@@ -3173,15 +3203,17 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
             # forty-five-second model timeout inside a twenty-second turn budget
             # meant the "turn budget" could not bound the turn's biggest wait.
             from core import deadline
+            _interp_model = _logger_model()
             res = await deadline.wait_for(
                 chat([{"role": "user", "content": content}], sys,
-                     tools=False, max_tokens=700, model=_logger_model(),
+                     tools=False, max_tokens=700, model=_interp_model,
                      stream_handler=_SpeculativeEnrichment()))
         except Exception as e:
             # Includes DeadlineExceeded: out of time is a fall-through to the
             # legacy path, never a lost meal.
             logger.warning(f"food_turn logger pass failed: {e}")
             return None
+        _note_interpreter_cost(res, _interp_model)
         data = _parse(res.get("text") or "")
         _capture_interpreter_output(message, data)
         if _shadow_parse is not None:

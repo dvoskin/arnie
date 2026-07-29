@@ -432,6 +432,21 @@ def note(**fields) -> None:
         pass
 
 
+def mark(moment: str) -> None:
+    """Stamp a moment on the ambient trace, if there is one.
+
+    Same contract as everything else here: a turn must never fail because it
+    was being measured, so no trace and any exception are both silence.
+    """
+    trace = current()
+    if trace is None:
+        return
+    try:
+        trace.mark(moment)
+    except Exception:
+        pass
+
+
 def record(stage: Stage, *, duration_ms: float = 0.0,
            outcome: Outcome = Outcome.OK, detail: str = "", **counts) -> None:
     trace = current()

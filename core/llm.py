@@ -10,6 +10,7 @@ system prompt hits (5-minute TTL on Anthropic's side).
 import os
 import json
 import logging
+import time
 from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
@@ -480,8 +481,21 @@ async def _anthropic_chat(messages, system, use_tools, max_tokens, model=None,
     # may be incomplete, but the final return value (text + tool_calls) stays
     # correct so the rest of the pipeline keeps working.
     if stream_handler is not None:
+        # TIME TO FIRST BYTE, stamped BEFORE the handler runs. The handler is
+        # the caller's work — on the food lane it starts network fetches — and
+        # charging that to the model's response time would make the interpreter
+        # look slower every time the speculative lookup got faster.
+        #
+        # Only the streaming path can report this. The buffered path below
+        # returns no `ttfb_ms` at all rather than a zero, because "the whole
+        # response arrived at once" and "it arrived instantly" are different
+        # facts and a latency report must not average them together.
+        _call_started = time.monotonic()
+        _ttfb_ms: Optional[float] = None
         async with client.messages.stream(**kwargs) as stream:
             async for delta in stream.text_stream:
+                if _ttfb_ms is None:
+                    _ttfb_ms = (time.monotonic() - _call_started) * 1000.0
                 try:
                     await stream_handler(delta)
                 except Exception as e:
@@ -494,13 +508,16 @@ async def _anthropic_chat(messages, system, use_tools, max_tokens, model=None,
                 text_parts.append(block.text)
             elif block.type == "tool_use":
                 tool_calls.append({"name": block.name, "input": block.input, "id": block.id})
-        return {
+        out = {
             "text": "\n".join(text_parts),
             "tool_calls": tool_calls,
             "raw_content": final.content,
             "stop_reason": final.stop_reason,
             "usage": _usage_dict(getattr(final, "usage", None)),
         }
+        if _ttfb_ms is not None:
+            out["ttfb_ms"] = round(_ttfb_ms, 1)
+        return out
 
     # Non-streaming path — existing buffered behavior.
     resp = await client.messages.create(**kwargs)
