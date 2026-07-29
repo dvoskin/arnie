@@ -488,9 +488,17 @@ async def food_relevance(text: str, last_assistant: str = "") -> bool:
     t = (text or "").strip()
     if not t or len(t) > 500:
         return False
+    # WHO DECIDED, claimed where it is known. From the caller's side the two
+    # tiers are one boolean, so "how often do we pay Haiku to be told
+    # something a regex already knew" was unanswerable from outside this
+    # function. Only the free tiers claim `gate_regex`; reaching the model at
+    # all is the cost being measured.
+    from core import food_trace as _ft
     if not model_gate_enabled():
+        _ft.claim_route("gate_regex")
         return applies(t)
     if applies(t):
+        _ft.claim_route("gate_regex")
         return True
 
     # WHAT WAS ASKED A MOMENT AGO. "Sweet chill" is meaningless alone and
@@ -547,8 +555,12 @@ async def food_relevance(text: str, last_assistant: str = "") -> bool:
                  model=os.getenv("FOOD_GATE_MODEL_ID",
                                  "claude-haiku-4-5-20251001")))
         verdict = "yes" in (res.get("text") or "").strip().lower()[:6]
+        _ft.claim_route("gate_model")
     except Exception as e:
         logger.debug(f"food relevance unavailable, falling back: {e}")
+        # Paid for the round trip and still fell back to the regex — a
+        # distinct and more expensive shape than never having asked.
+        _ft.claim_route("gate_model_failed")
         return applies(t)
     if len(_RELEVANCE_CACHE) >= _RELEVANCE_CACHE_MAX:
         _RELEVANCE_CACHE.pop(next(iter(_RELEVANCE_CACHE)), None)

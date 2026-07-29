@@ -67,6 +67,8 @@ class Stage(str, Enum):
     Named after what they DECIDE rather than which module runs them, so the
     trace survives the modules moving — which they have, twice.
     """
+    ROUTE = "route"              # does this lane own the turn
+    CONTEXT = "context"          # board, regulars, day state, open question
     INTERPRET = "interpret"      # words → items
     STAGE = "stage"              # items → staged rows with typed identity
     CLARIFY = "clarify"          # ambiguity → ask / assume / hold
@@ -205,6 +207,22 @@ class FoodTurnTrace:
             if hasattr(self, name) and value is not None:
                 setattr(self, name, value)
 
+    def claim_route(self, owner: str) -> None:
+        """Record WHICH signal owned the routing decision. FIRST claim wins.
+
+        Not `note(route_owner=…)`, because this field has a property the
+        others do not: it is written by more than one caller and only the
+        earliest is the answer. The free signals claim it before the gate is
+        ever consulted (`or` short-circuits, so the model does not run), and
+        the shadow coordinator calls `food_relevance` again near the end of
+        the same turn — with plain overwrite semantics that second call would
+        relabel every free-signal turn as `gate_model` and make the histogram
+        say we pay Haiku on every turn, which is the exact opposite of what it
+        exists to measure.
+        """
+        if owner and not self.route_owner:
+            self.route_owner = owner
+
     def mark(self, moment: str) -> None:
         """Stamp when something became true, in ms from the turn's start.
 
@@ -274,10 +292,8 @@ class FoodTurnTrace:
             # second thing to keep true, and the stage records are already the
             # owner of how long a stage took.
             #
-            # `route_ms` and `context_load_ms` are absent because no ROUTE or
-            # CONTEXT stage is recorded yet. An enum member nothing writes to
-            # would report every turn as routing in 0 ms, which is worse than
-            # reporting nothing — they arrive with the code that stamps them.
+            "route_ms": self.stage_ms(Stage.ROUTE),
+            "context_load_ms": self.stage_ms(Stage.CONTEXT),
             "interpreter_total_ms": self.stage_ms(Stage.INTERPRET),
             "policy_ms": self.stage_ms(Stage.CLARIFY),
             "enrichment_total_ms": self.stage_ms(Stage.RESOLVE),
@@ -428,6 +444,17 @@ def note(**fields) -> None:
         return
     try:
         trace.note(**fields)
+    except Exception:
+        pass
+
+
+def claim_route(owner: str) -> None:
+    """Claim the routing decision on the ambient trace. First claim wins."""
+    trace = current()
+    if trace is None:
+        return
+    try:
+        trace.claim_route(owner)
     except Exception:
         pass
 

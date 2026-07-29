@@ -697,10 +697,37 @@ async def _run_turn(
     # and ride out in turn_trace next to the route.
     _legacy_reason = ""
 
+    #: Routing is one decision, so it contributes ONE stage record however many
+    #: exits reach it. `stage_ms` sums, so a turn that declines twice would
+    #: otherwise report double the time it spent deciding.
+    _route_closed = False
+
+    def _end_route():
+        nonlocal _route_closed
+        if _route_closed:
+            return
+        _route_closed = True
+        try:
+            from core import food_trace as _ft_r
+            from core.food_trace import Stage as _StageR
+            _ft_r.record(_StageR.ROUTE,
+                         duration_ms=(_time_mod.monotonic() - _turn_t0) * 1000.0)
+        except Exception:
+            pass
+
     def _to_legacy(reason: str):
         """Hand this turn back to the legacy path, on the record."""
         nonlocal _legacy_reason
         _legacy_reason = reason
+        # ON THE LATENCY LINE TOO. The reason has always been logged, in a
+        # DIFFERENT line from the timings — so "which escapes are the slow
+        # ones" needed two greps and a join nobody wrote.
+        try:
+            from core import food_trace as _ft_l
+            _ft_l.note(legacy_escape_reason=reason)
+        except Exception:
+            pass
+        _end_route()
         logger.info(f"event=structured_food_fallback reason={reason} {_tag}")
         return None
     _source = source_type or platform
@@ -943,6 +970,24 @@ async def _run_turn(
             _food_now = bool(_sft_prior is not None or _photo_food is not None
                              or _route_mid
                              or (_board and _sft_dest(_user_text or "")))
+            # WHICH free signal settled it, claimed BEFORE the gate is reached.
+            # `or` short-circuits, so on any of these the model never runs —
+            # and that is precisely the number worth counting: every claim here
+            # is a Haiku round trip we did not pay for. Ordered to match the
+            # boolean above so the label names the term that actually won.
+            from core import food_trace as _ft_route
+            if _undo_plan is not None:
+                _ft_route.claim_route("undo")
+            elif _confirm_hit is not None:
+                _ft_route.claim_route("confirm")
+            elif _sft_prior is not None:
+                _ft_route.claim_route("prior")
+            elif _photo_food is not None:
+                _ft_route.claim_route("photo")
+            elif _route_mid:
+                _ft_route.claim_route("thread")
+            elif _food_now:
+                _ft_route.claim_route("board_destructive")
             if (_undo_plan is None and _confirm_hit is None and _food_now
                     and on_tool_start and "log_food" not in _announced):
                 try:
@@ -999,6 +1044,8 @@ async def _run_turn(
                 # for every turn the free signals settled; this is the
                 # cold-start case, where nothing knew it was food until the
                 # model gate said so.
+                _end_route()
+                _ctx_t0 = _time_mod.monotonic()
                 if on_tool_start and "log_food" not in _announced:
                     try:
                         await on_tool_start(["log_food"])
@@ -1027,6 +1074,19 @@ async def _run_turn(
                     _regs = await frequent_foods(db, user.id)
                 except Exception:
                     _regs = []
+                # Everything the interpreter is handed — day line, board,
+                # regulars, last assistant turn — is fetched between the route
+                # decision and here, and none of it was timed. It is all DB
+                # work on the critical path, ahead of the turn's largest model
+                # call, so a slow regulars query looked like a slow model.
+                try:
+                    from core import food_trace as _ft_c
+                    from core.food_trace import Stage as _StageC
+                    _ft_c.record(_StageC.CONTEXT,
+                                 duration_ms=(_time_mod.monotonic() - _ctx_t0) * 1000.0,
+                                 board=len(_board or ()), regulars=len(_regs or ()))
+                except Exception:
+                    pass
                 _sft = await _sft_run(_photo_food or _user_text or "", user,
                                       prior=_sft_prior, history=messages,
                                       day_line=_dl, board=_board,

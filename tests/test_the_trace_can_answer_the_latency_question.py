@@ -62,11 +62,17 @@ def test_the_reported_stage_time_is_derived_from_the_records():
 
 
 def test_no_stage_millis_are_reported_for_stages_nobody_stamps():
-    """`route_ms` and `context_load_ms` arrive with the code that records
-    them. An enum member nothing writes to reports every turn as routing in
-    0 ms, which is worse than reporting nothing at all."""
+    """A figure arrives with the code that records it.
+
+    `route_ms` and `context_load_ms` were absent here until ROUTE and CONTEXT
+    were actually stamped, and they are asserted present in
+    `test_the_trace_says_who_routed_the_turn`. `snapshot_ms` and
+    `validation_ms` are the remaining two the latency report asks for and
+    nothing writes: an enum member nothing stamps reports every turn as
+    validating in 0 ms, which is worse than reporting nothing at all.
+    """
     d = _trace().as_dict()
-    assert "route_ms" not in d and "context_load_ms" not in d
+    assert "snapshot_ms" not in d and "validation_ms" not in d
 
 
 # ── moments ──────────────────────────────────────────────────────────────────
