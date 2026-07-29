@@ -125,6 +125,31 @@ that supplied none (`core/reasoning.py:325`). **A correction that moves no numbe
 outcome** — the turn either moves the row or discloses that it could not. And the correction card must
 read the committed row (`2a4c839`'s shape) on every update, not only on re-identifications.
 
+#### B.0 · The unpriced disclosure was wired to a dead channel — **found during implementation**
+
+`fc682d5` ("a correction that cannot be priced says so") taught the executor to stash
+`correction_unpriced` and taught the reply to disclose it. The two halves never met `C`:
+
+- `stash()` writes to the ambient `CALL_CTX` and states that *"the command input is NEVER written"*
+  (executor immutability, P0.3e).
+- `ExecutionResult.ok_tool_calls()` returns `{name, input: raw_input}` — the command, with none of
+  that context.
+- `core/conversation.py` read `_ci.get("correction_unpriced")` off that raw input.
+
+So `unpriced_corrections` was `()` on every turn and **the disclosure has never fired in production**.
+It matches the trace: the 01:38 correction changed the name, moved no number, and said nothing.
+
+Its test asserts that the executor's **source text** contains the string `"correction_unpriced"` —
+which it does (`tests/test_a_correction_re_resolves.py:138`). A grep stood in for the behaviour, so the
+gap survived a release. This is the audit's "tests lying about coverage" pattern with a user-visible
+cost, and it is worth a sweep: any other disclosure reading execution state off `raw_input` has the
+same defect.
+
+Fixed by reading the outcome from the typed call, joined by `id(raw_input)` — the join
+`build_reasoning` already uses — and by widening the condition. `correction_unpriced` only fires when
+the ladder returns *nothing*; a re-resolution that returns **the same number** passes that test and is
+indistinguishable to the reader. "Deep fried" re-resolved as shrimp and came back at the same 35 cal.
+
 #### B.1 · Re-dating is built, documented, unreached — and its fallback destroys data
 
 The capability is complete `C`:
@@ -529,6 +554,8 @@ raw `psycopg` (the async engine hangs):
 | Turns where a question or an ack wrote | 2 | 0 |
 | Corrections that changed a name but no number | 3 | 0 |
 | Receipts claiming user numbers when none given | 2 | 0 |
+| Corrections that moved no number and disclosed nothing | 3 | 0 |
+| Disclosures reading execution state off `raw_input` | 1 (never fired) | 0 |
 | Answer turns that re-ran a full search | 3 | 0 |
 | Questions stored as two pending records | 2 of 5 | 0 |
 | Pendings answered past TTL | 1 (13.2 h) | 0 |
