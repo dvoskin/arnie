@@ -83,6 +83,25 @@ services:
       # FOOD_COMPOSER=false reverts without a deploy.
       - key: FOOD_COMPOSER
         value: "true"
+      # THE FAST PATH, MEASURED BUT NOT TRUSTED.
+      #
+      # `core/food_fast_path.py` is a deterministic parser that produces the
+      # same interpreter-shaped dict for messages with provably one reading
+      # ("150g chicken breast", "2 eggs and 200g rice") and None for
+      # everything else. For the turns it accepts, the interpreter — the
+      # largest block in a food turn, around four seconds — does not run at
+      # all. It has been complete and switched off, with nothing measuring it
+      # either, so the accept rate on real traffic is unknown.
+      #
+      # SHADOW ONLY. It parses, logs `event=food_fast_path_shadow agree=…`
+      # against what the model went on to decide, and acts on none of it.
+      # No behaviour changes; this exists so the decision to trust it with a
+      # write is made on this user's own traffic rather than on a sample
+      # somebody chose. FOOD_FAST_PATH stays absent — that is the switch that
+      # would let it write, and it should not be thrown until the agreement
+      # rate says so.
+      - key: FOOD_FAST_PATH_SHADOW
+        value: "on"
       # THE FOOD GATE IS THE CLASSIFIER, NOT FOUR ENGLISH REGEXES.
       #
       # Everything downstream of this gate — staged items, the mode-aware ask
