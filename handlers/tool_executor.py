@@ -3780,9 +3780,22 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
                 # away every record of it, leaving the receipt to say "Macros
                 # rescaled to the new serving" about a turn that re-identified
                 # the product and looked it up again.
+                #
+                # THE RE-IDENTIFICATION IS THE FACT; THE TRACE IS EVIDENCE FOR
+                # IT. Both were set together, so a re-resolution that ran and
+                # stashed no sourcing — every lane that answers without a
+                # lookup trace — left `_reresolved` empty, and the receipt fell
+                # through to describing a serving change.
+                #
+                # Production, 2026-07-29: "Yea they were deep fried" re-resolved
+                # "Shrimp, deep fried, 7 small", came back unpriced, and was
+                # reported as "Corrected the serving · Macros rescaled to the
+                # new amount" — a rescale, on a turn where no serving changed
+                # and no macro moved. The user had to ask "How does it change
+                # the total then?", and THAT question performed the write.
+                inp["_reresolved"] = _new_name
                 if isinstance(_re_inp.get("_sourcing"), dict):
                     inp["_sourcing"] = _re_inp["_sourcing"]
-                    inp["_reresolved"] = _new_name
                 # THE USER'S OWN NUMBER OUTRANKS THE RE-RESOLUTION. Same rule
                 # `_analyze_food` applies at the top — "we asked, they
                 # answered: that IS the product, and no database outranks it" —
@@ -3896,12 +3909,83 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
         # path that produced it is covered — re-resolution, a serving rescale,
         # a plain edit — and the card cannot state a number the row disagrees
         # with, whatever wrote it.
+        #
+        # QUANTITY AND NAME ARE PART OF THE ROW. The sync covered the four macro
+        # columns only, and `_update_call` puts `quantity` on `inp` solely when
+        # the correction changed the amount — so a correction that changed WHAT
+        # it was left the card's quantity empty.
+        #
+        # Production, 2026-07-29: "switch those back to regular small shrimp"
+        # and "they're the sopresseta" both rendered `"quantity": ""` on the
+        # card, against rows holding "7 shrimp" and "3 slices". The card is
+        # supposed to read the committed row; it was reading four of its
+        # columns.
         if isinstance(inp, dict) and entry is not None:
             for _key, _column in (("calories", "calories"), ("protein", "protein"),
-                                  ("carbs", "carbs"), ("fats", "fats")):
+                                  ("carbs", "carbs"), ("fats", "fats"),
+                                  ("quantity", "quantity"),
+                                  ("food_name", "parsed_food_name")):
                 _value = getattr(entry, _column, None)
                 if _value is not None:
                     inp[_key] = _value
+        # WHAT THE CORRECTION ACTUALLY DID, read from the row rather than
+        # inferred from which keys the interpreter happened to send.
+        #
+        # `_correction_step` decided this by key presence: `quantity` in `inp`
+        # meant "Corrected the serving · Macros rescaled to the new amount",
+        # macro keys meant "Corrected the macros · Used the numbers you gave".
+        # Neither is a fact about the turn. `_update_call` fills both from the
+        # MODEL's proposal, so a correction that changed a preparation and
+        # supplied no figures still claimed the user's own numbers were used.
+        #
+        # Production, 2026-07-29, twice: "Switch those back to regular small
+        # shrimp" and "they're the sopresseta" both printed "Used the numbers
+        # you gave" against messages containing no numbers at all. On the first,
+        # the figures it claimed as the user's were the deep-fried ones it was
+        # supposed to be reverting.
+        #
+        # Three facts, each checkable:
+        #   * `changed` — the columns that actually differ, before vs after.
+        #     A rename that moved no number is visible here and nowhere else.
+        #   * `stated` — a provenance claim is only made when the figures the
+        #     row now holds appear in the user's own message. Same rule the say
+        #     contract applies to digits: assert it or do not say it.
+        #   * `unpriced` — the identity moved and the numbers could not follow.
+        _before = _before_state or {}
+        _changed, _stated_figs = [], []
+        try:
+            for _f in ("food_name", "quantity", "calories", "protein", "carbs", "fats"):
+                _col = "parsed_food_name" if _f == "food_name" else _f
+                _old, _new = _before.get(_f), getattr(entry, _col, None)
+                if _old is None and _new is None:
+                    continue
+                if _f in ("food_name", "quantity"):
+                    if str(_old or "").strip() != str(_new or "").strip():
+                        _changed.append(_f)
+                elif _old is None or _new is None or abs(float(_old) - float(_new)) > 0.5:
+                    _changed.append(_f)
+            # Digits the row now holds that the user actually typed. `_stated`
+            # (captured before re-resolution) is the interpreter's proposal, not
+            # evidence of what was said.
+            _msg_digits = set(re.findall(r"\d+", str(user_message or "")))
+            for _f in ("calories", "protein", "carbs", "fats"):
+                _v = getattr(entry, _f, None)
+                if _v is not None and str(int(round(float(_v)))) in _msg_digits:
+                    _stated_figs.append(_f)
+            _stash_call(inp, "correction", {
+                "changed": _changed,
+                "moved_numbers": any(f in _changed for f in
+                                     ("calories", "protein", "carbs", "fats")),
+                "renamed": "food_name" in _changed,
+                "stated_by_user": _stated_figs,
+                "unpriced": bool(_identity_changed and "food_name" in _changed
+                                 and not any(f in _changed for f in
+                                             ("calories", "protein", "carbs", "fats"))),
+                "moved_day": bool(inp.get("date")),
+            })
+        except Exception as _corr_err:      # a receipt never breaks a write
+            logger.debug(f"correction outcome unavailable: {_corr_err}")
+
         await db.refresh(today_log)
         # ...AND THE RECEIPT, which the update path never built. `_stash_receipt`
         # has taken an `updated` flag since it was written and no caller ever

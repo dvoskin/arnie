@@ -71,6 +71,12 @@ class CallResult:
     sourcing: Optional[dict] = None
     card_sets: Optional[int] = None    # committed running totals for the
     card_reps: Optional[str] = None    # workout card (appended-set aware)
+    #: What a correction actually changed, read from the row before and after —
+    #: which columns moved, whether the figures now held were ones the user
+    #: typed, whether an identity moved without its numbers. The receipt used to
+    #: infer all of this from which keys the interpreter happened to send, and
+    #: those keys describe a proposal rather than an outcome.
+    correction: Optional[dict] = None
 
     @property
     def committed(self) -> bool:
@@ -149,6 +155,8 @@ def from_call_contexts(tool_calls: list, contexts: list,
             sourcing=ctx.get("sourcing") if isinstance(ctx.get("sourcing"), dict) else None,
             card_sets=ctx.get("card_sets"),
             card_reps=ctx.get("card_reps"),
+            correction=(ctx.get("correction")
+                        if isinstance(ctx.get("correction"), dict) else None),
         ))
     return ExecutionResult(calls=tuple(calls))
 

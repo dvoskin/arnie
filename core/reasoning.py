@@ -294,6 +294,66 @@ def _exercise_step(inp: dict, result: str) -> dict:
     return _step("figure.strengthtraining.traditional", f"Logged {name}{scheme}")
 
 
+def _correction_step_from_outcome(inp: dict, result: str, out: dict):
+    """The receipt for a correction whose OUTCOME the executor could read.
+
+    Every line here is checkable against the row: which columns moved, whether
+    the figures the row now holds are ones the user typed, whether an identity
+    moved without its numbers following. Nothing is claimed from the shape of
+    the command.
+
+    Two claims this stops making, both seen in production on 2026-07-29:
+
+      * "Used the numbers you gave" on "Switch those back to regular small
+        shrimp" and on "they're the sopresseta" — neither message contained a
+        number, and on the first the figures being credited to the user were
+        the deep-fried ones the correction was reverting.
+      * "Corrected the serving · Macros rescaled to the new amount" on "Yea
+        they were deep fried", where no serving changed and no macro moved.
+        The name changed and the row did not, and the receipt reported a
+        rescale that had not happened.
+
+    Returns None when it has nothing truthful to add, so the caller falls
+    through rather than printing a shape.
+    """
+    changed = list(out.get("changed") or ())
+    if out.get("moved_day"):
+        return _step("calendar", "Moved the entry to another day")
+
+    renamed = str(inp.get("_reresolved") or "").strip()
+    if out.get("unpriced"):
+        # THE IDENTITY MOVED AND THE NUMBERS COULD NOT FOLLOW. Silence here is
+        # what made a user notice for us ("the calories haven't updated tho").
+        return _step("exclamationmark.triangle",
+                     f"Re-identified as {renamed}" if renamed
+                     else "Re-identified it",
+                     "Couldn't price the new one — the previous figures stand")
+    if renamed and inp.get("_sourcing"):
+        steps = _food_detailed({**inp, "food_name": renamed}, result or "")
+        head = _step("pencil", f"Re-identified as {renamed}",
+                     "Looked it up again from scratch")
+        return [head] + steps
+
+    moved = bool(out.get("moved_numbers"))
+    stated = list(out.get("stated_by_user") or ())
+    if "quantity" in changed:
+        return _step("pencil", "Corrected the serving",
+                     "Macros rescaled to the new amount" if moved
+                     else "Same macros — the amount was all that changed")
+    if moved:
+        # A provenance claim only when the figures are in the user's own words.
+        return _step("pencil", "Corrected the macros",
+                     "Used the numbers you gave" if stated
+                     else "Re-priced from the correction")
+    if out.get("renamed"):
+        # A rename that moved no number. Real when the new name prices the
+        # same, and the receipt should not dress it as a recalculation.
+        return _step("pencil",
+                     f"Renamed to {renamed}" if renamed else "Renamed it",
+                     "Same figures — the numbers did not change")
+    return None
+
+
 def _correction_step(inp: dict, result: str):
     """What a correction actually changed — read from the call, not asserted.
 
@@ -307,6 +367,16 @@ def _correction_step(inp: dict, result: str):
     the way a fresh log's is — the executor now carries the sourcing across.
     """
     inp = inp or {}
+    # WHAT HAPPENED, WHEN THE EXECUTOR COULD SAY. `_correction` is read from the
+    # row before and after; everything below it infers from which keys the
+    # interpreter sent, which describes a proposal. Kept as the fallback for
+    # callers that did not run through the real executor (mocked batches, the
+    # direct-caller view), where there is no outcome to read.
+    _outcome = inp.get("_correction")
+    if isinstance(_outcome, dict):
+        _step_out = _correction_step_from_outcome(inp, result, _outcome)
+        if _step_out is not None:
+            return _step_out
     renamed = str(inp.get("_reresolved") or "").strip()
     if renamed and inp.get("_sourcing"):
         # An update carries entry_id and the changed fields, not `food_name` —
@@ -446,6 +516,8 @@ def build_reasoning(tool_calls: list, tool_results: dict,
             # Sourcing rides the typed call; the step helpers take it via a
             # DERIVED view — the caller's command is never mutated.
             inp = {**inp, "_sourcing": _cr.sourcing}
+        if _cr is not None and _cr.correction:
+            inp = {**inp, "_correction": _cr.correction}
         if name == "log_food":
             if _detailed_food:
                 steps.extend(_food_detailed(inp, result))
