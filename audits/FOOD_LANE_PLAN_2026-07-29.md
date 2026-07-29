@@ -262,7 +262,22 @@ which is answerable.
 and TTL; the conversation-hook layer may *reference* it for proactive follow-up but must not be a
 second copy with its own lifecycle. Every ask the lane emits — including the ones from the four return
 points that currently store empty payloads — is recorded as a `food_structured_ask`, or it is not an
-ask. And make expiry actually fire.
+ask.
+
+**Correction to an earlier reading in this document: "make expiry actually fire" was wrong.** It
+fired. `pending_expired` (`core/food_ledger.py:112`) is evaluated on the next inbound turn against
+`last_asked_at or asked_at`; at 14:03 the pending was 13.2 h old against a 240-minute TTL, so it
+expired, was stamped, and the turn was correctly treated as cold. The defect is not that the question
+outlived its TTL — it is that **expiring the question discarded what the thread had resolved**. The
+sopressata was a *fact the user stated*, not a stale question, and it was thrown away with the
+question that no longer applied. That is cause A's fix, not a TTL change.
+
+There is a second-order effect worth naming, because it is why the two halves of this fix belong
+together. The TTL clock reads `last_asked_at`, which a follow-up refreshes. Once the food ask carries
+its own follow-up policy, the 13:00 chase would have moved that timestamp to 13:00 — leaving the
+pending ~63 minutes old at 14:03, **inside** the TTL. The answer would have landed on a live question
+instead of on a cold turn. Giving the record that owns the question the right to chase it does not
+merely preserve the chase; it keeps the question answerable.
 
 ### H · The say contract governs digits, not entities — **new**
 
