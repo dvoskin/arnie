@@ -3344,10 +3344,25 @@ user_message=_user_text or "")
         # ── Reasoning receipt: the turn's REAL artifacts, humanized ──────
         try:
             from core.reasoning import build_reasoning
+            # WHO DECIDED, AND WHY — persisted, because the trace is a log line.
+            # `_turn_route` is settled by here (the lanes above are the only
+            # writers); `_legacy_reason` is what separates "the lane looked at
+            # this and handed it back" from "the gate never admitted it", and
+            # `route_owner` is first-claim-wins on the ambient trace.
+            _route_receipt = {"lane": _turn_route or "legacy"}
+            if _legacy_reason:
+                _route_receipt["legacy_reason"] = _legacy_reason
+            try:
+                from core import food_trace as _ft_r
+                _cur = _ft_r.current()
+                if _cur is not None and getattr(_cur, "route_owner", ""):
+                    _route_receipt["owner"] = _cur.route_owner
+            except Exception:
+                pass
             resp.reasoning = build_reasoning(
                 tool_calls, tool_results, None,
                 int((_time_mod.monotonic() - _turn_t0) * 1000),
-                execution=_execution)
+                execution=_execution, route=_route_receipt)
         except Exception:
             resp.reasoning = None   # a broken receipt never breaks a turn
 

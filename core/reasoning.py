@@ -363,13 +363,33 @@ _TOOL_STEPS = {
 def build_reasoning(tool_calls: list, tool_results: dict,
                     context_stats: Optional[dict] = None,
                     duration_ms: Optional[int] = None,
-                    execution=None) -> Optional[dict]:
+                    execution=None,
+                    route: Optional[dict] = None) -> Optional[dict]:
     """The receipt for one turn, or None when there's nothing worth showing
     (pure-chat turns with no context read and no tools stay clean).
 
     `execution` is the typed ExecutionResult (P0.3c): per-call result text and
     sourcing come from it, so the receipt reports what the executor actually
-    did. Falls back to the executor's legacy input stash when absent."""
+    did. Falls back to the executor's legacy input stash when absent.
+
+    `route` is DIAGNOSTIC, not rendered — it rides alongside `steps` the way
+    `duration_ms` does, and the client shows neither.
+
+    WHY IT IS PERSISTED RATHER THAN ONLY LOGGED. `_to_legacy` already notes its
+    reason onto the food trace, and the trace is a log line — which means the
+    question "which turns escaped the structured lane, and why" can only be
+    asked of whoever holds the Render logs, in a window that has not rotated.
+    Asked of the database instead, the only available answer was the ledger's
+    `source` column, and that infers the lane from an unstamped call rather
+    than reading the decision.
+
+    Production, 2026-07-28/29: 16 of 41 ledger events in an 18-hour window came
+    back `legacy*`, and nothing could say whether that was the gate declining,
+    the interpreter returning nothing, or a shape the lane never covered. The
+    split that made those four remaining escapes legible — two turns, both
+    corrections — had to be reconstructed by hand from timestamps.
+
+    Stored per turn, the same question is a query."""
     steps: list = []
 
     ctx = context_stats or {}
@@ -457,4 +477,8 @@ def build_reasoning(tool_calls: list, tool_results: dict,
     out = {"steps": steps[:8]}
     if duration_ms is not None:
         out["duration_ms"] = int(duration_ms)
+    # Absent rather than empty: a turn whose route could not be read must not
+    # be indistinguishable from one that routed to the legacy lane.
+    if route:
+        out["route"] = route
     return out
