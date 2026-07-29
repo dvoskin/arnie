@@ -1409,14 +1409,34 @@ _INTENT_PROFILE = {
 }
 
 
-def voice_profile_for(intent) -> str:
+def voice_profile_for(intent, plan: Optional["FoodResponsePlan"] = None) -> str:
     """The profile name for a moment. `coaching` when unmapped: the widest
     brief is the safe default, because an unknown moment that reads as
-    over-explained is recoverable and one that reads as curt is not."""
-    return _INTENT_PROFILE.get(intent, "coaching")
+    over-explained is recoverable and one that reads as curt is not.
+
+    THE INTENT ALONE IS NOT THE MOMENT. A mixed turn — "chicken and rice after
+    a brutal meeting, I think I'm going to quit" — commits food, so its intent
+    is COMMIT, so it drew the micro brief. That brief says "no coaching, no
+    next move, no question: they did not ask one and the turn did not raise
+    one", while `build_prompt` adds "answer or acknowledge this in the SAME
+    reply" for the non-food half. One prompt, two instructions, and the model
+    picks.
+
+    A prompt that argues with itself is the same defect that suppressed
+    `points` and turned clarifications into silent logs, so the rule is the
+    same: remove the contradiction rather than hope it resolves the right way.
+    A turn carrying something to answer is not routine, whatever it also
+    wrote.
+    """
+    profile = _INTENT_PROFILE.get(intent, "coaching")
+    if profile == "micro_acknowledgement" and plan is not None:
+        ctx = getattr(plan, "conversational_context", None)
+        if ctx is not None and (ctx.topic or ctx.user_statement):
+            return "coaching"
+    return profile
 
 
-def arnie_voice(intent=None) -> str:
+def arnie_voice(intent=None, plan: Optional["FoodResponsePlan"] = None) -> str:
     """The voice this moment needs, plus this lane's rules.
 
     Was the whole persona — `voice_core()`, ~3,400 tokens of IDENTITY,
@@ -1440,7 +1460,8 @@ def arnie_voice(intent=None) -> str:
             from core.prompts.arnie import voice_core
             return f"{voice_core()}\n\n{_FOOD_LANE_RULES}"
         from core.prompts.voice import compile_voice
-        return f"{compile_voice(voice_profile_for(intent))}\n\n{_FOOD_LANE_RULES}"
+        profile = voice_profile_for(intent, plan)
+        return f"{compile_voice(profile)}\n\n{_FOOD_LANE_RULES}"
     except Exception:                                    # pragma: no cover
         return _FOOD_LANE_RULES
 
@@ -1706,7 +1727,8 @@ def build_prompt(plan: FoodResponsePlan) -> str:
                  "correct it in one tap. The card confirms the numbers, so do "
                  "not recite those; a coach observation is optional and comes "
                  "second, if at all.")
-    parts = [arnie_voice(plan.intent), "", f"INTENT: {plan.intent.value}", brief]
+    parts = [arnie_voice(plan.intent, plan), "",
+             f"INTENT: {plan.intent.value}", brief]
 
     # THE READING GOES IN THE TEXT WHEN NO CARD WILL CARRY IT. A clarification
     # commits nothing, so the brief's old promise — "the card already shows
@@ -2578,8 +2600,8 @@ def _note_voice(plan: "FoodResponsePlan", **fields) -> None:
     try:
         from core import food_trace as _ft
         intent = getattr(plan, "intent", None)
-        _ft.note(voice_profile=voice_profile_for(intent) if intent else "",
-                 **fields)
+        _ft.note(voice_profile=voice_profile_for(intent, plan) if intent
+                 else "", **fields)
     except Exception:
         pass
 
