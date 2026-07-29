@@ -2462,6 +2462,10 @@ async def render_plan(plan: FoodResponsePlan) -> str:
     the composer off, this is `fallback()` and nothing else.
     """
     if not composer_enabled():
+        # Still a voice profile — a deterministic renderer is a renderer, and
+        # a report that only counts the model path cannot see the turns where
+        # nothing spoke but the template.
+        _note_voice(plan, fallback_path="composer_off")
         return fallback(plan)
     try:
         text, why = await compose_async(plan)
@@ -2472,6 +2476,7 @@ async def render_plan(plan: FoodResponsePlan) -> str:
     except Exception as e:
         # A renderer may never cost the user their reply.
         logger.warning(f"render_plan fell back ({plan.intent.value}): {e}")
+        _note_voice(plan, fallback_path="renderer_exception")
         return fallback(plan)
 
 
@@ -2510,6 +2515,27 @@ def _composer_messages(plan: FoodResponsePlan) -> list:
     return messages
 
 
+def _note_voice(plan: "FoodResponsePlan", **fields) -> None:
+    """Who spoke, on which model, at what cost — onto the ambient trace.
+
+    Recorded from inside the voice layer rather than at its call sites,
+    because the call sites do not know the two facts that matter. `retry_count`
+    is invisible from outside `compose_async` (a validation retry is a second
+    model call wearing the same await), and `fallback_path` is decided by
+    which return branch the function takes.
+
+    `voice_profile` is the plan's intent today; when the voice compiler lands
+    it becomes the compiled brief, and the field will not have to move — the
+    question "which voice spoke on this turn" is the same one.
+    """
+    try:
+        from core import food_trace as _ft
+        intent = getattr(getattr(plan, "intent", None), "value", "") or ""
+        _ft.note(voice_profile=intent, **fields)
+    except Exception:
+        pass
+
+
 async def compose_async(plan: FoodResponsePlan, *, model: Optional[str] = None,
                         attempts: int = 2) -> tuple:
     """Generate → validate → retry → fall back, against the real model.
@@ -2545,18 +2571,35 @@ async def compose_async(plan: FoodResponsePlan, *, model: Optional[str] = None,
 
     prompt = build_prompt(plan)
     last = ValidationResult(False, Reason.EMPTY_NOT_ALLOWED)
+    _model = model or _composer_model()
+    # Calls beyond the first on this stage. A validation retry is a second
+    # model call wearing the same `await`, so from outside this function the
+    # difference between a one-call turn and a three-call turn is invisible —
+    # which is how stacked retries turn a bounded turn into an unbounded one
+    # without anything in the log changing shape.
+    # Count the CALLS and subtract one, rather than counting retries directly:
+    # the loop can exit from three places and "how many did we pay for" is the
+    # same arithmetic at all three, where "was that last one a retry" is a
+    # different answer at each and gets one of them wrong.
+    _calls = 0
     for _ in range(max(1, attempts)):
         text = await _run(prompt)
+        _calls += 1
         if text is None:
             # Not a validation failure, so not worth a retry with "YOUR LAST
             # ATTEMPT FAILED" appended — there was no attempt. `chat()` has
             # already tried its own model fallback by this point; the honest
             # move now is the deterministic text.
+            _note_voice(plan, voice_model=_model, retry_count=_calls - 1,
+                        fallback_path="model_unavailable")
             return fallback(plan), "model_unavailable"
         last = validate(text, plan)
         if last.ok:
+            _note_voice(plan, voice_model=_model, retry_count=_calls - 1)
             return text.strip(), Reason.OK
         prompt = f"{prompt}\n\nYOUR LAST ATTEMPT FAILED: {last.reason}. Fix it."
+    _note_voice(plan, voice_model=_model, retry_count=_calls - 1,
+                fallback_path=f"validation:{last.reason}")
     return fallback(plan), last.reason
 
 

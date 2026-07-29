@@ -697,6 +697,8 @@ async def _run_turn(
     # and ride out in turn_trace next to the route.
     _legacy_reason = ""
 
+    from core import food_trace as _ft_vis
+
     #: Routing is one decision, so it contributes ONE stage record however many
     #: exits reach it. `stage_ms` sums, so a turn that declines twice would
     #: otherwise report double the time it spent deciding.
@@ -993,6 +995,7 @@ async def _run_turn(
                 try:
                     await on_tool_start(["log_food"])
                     _announced.add("log_food")
+                    _ft_vis.mark("first_visible")
                 except Exception:
                     pass
 
@@ -1050,6 +1053,7 @@ async def _run_turn(
                     try:
                         await on_tool_start(["log_food"])
                         _announced.add("log_food")
+                        _ft_vis.mark("first_visible")
                     except Exception:
                         pass
                 # Day context so the logger's own coach line ("say") can state
@@ -1565,6 +1569,7 @@ async def _run_turn(
                     )
                     try:
                         await on_text_bubble(fallback)
+                        _ft_vis.mark("first_visible")
                         # Count it so the handler doesn't re-send it after the turn.
                         if _streamer:
                             _streamer.flushed_count += 1
@@ -1589,6 +1594,7 @@ async def _run_turn(
                     _interim = sentence_case(_interim)   # 'checking…' → 'Checking…'
                 try:
                     await on_interim(_interim)
+                    _ft_vis.mark("first_visible")
                 except Exception as e:
                     logger.error(f"interim heads-up failed for {_tag}: {e}")
 
@@ -2389,6 +2395,14 @@ async def _run_turn(
                             _say, _batch_c, _batch_p, _ac, _ap, _ct, _pt)
                         if _failure_notice:
                             response_text = f"{response_text}|||{_failure_notice}"
+                # WHEN THE COMMITTED TRUTH GOT WORDS. Marked here rather than
+                # at the write, because a row in the database the user cannot
+                # see has not been delivered — and the gap between this and
+                # `first_visible` is the whole case for showing the card
+                # before the sentence. With the early card still disabled this
+                # lands within a few ms of `complete_ms`, and that equality IS
+                # the finding rather than a measurement bug.
+                _ft_vis.mark("commit_visible")
                 # Hold notice AFTER the contract/render: held names come from
                 # the system's own stash, and their digits ("Fage 0%") must
                 # never vaporize the notice (Dove bar incident class).
