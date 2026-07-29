@@ -1384,8 +1384,50 @@ below says so — a turn that wrote a row always says something, because silence
 next to a card reads as a message that got dropped."""
 
 
-def arnie_voice() -> str:
-    """The shared persona plus this lane's rules.
+#: Which compiled profile each moment gets. The mapping is the product
+#: decision; `core/prompts/voice.py` owns what each profile contains.
+#:
+#: COMMIT, CORRECT and UNDO are the routine writes — something landed and
+#: there is nothing to discuss — so they take the micro brief. COACH and
+#: GENERAL_CONVERSATION are the turns that earn interpretation. FAILURE is the
+#: only one that must never sound like either, so it has its own.
+#:
+#: PARTIAL_COMMIT is deliberately NOT micro: some of the meal went in and some
+#: did not, and a brief whose whole instruction is "confirm it and stop" is the
+#: wrong shape for a reply that has to say which was which.
+_INTENT_PROFILE = {
+    FoodResponseIntent.COMMIT: "micro_acknowledgement",
+    FoodResponseIntent.CORRECT: "micro_acknowledgement",
+    FoodResponseIntent.UNDO: "micro_acknowledgement",
+    FoodResponseIntent.CONFIRM_ANSWER: "micro_acknowledgement",
+    FoodResponseIntent.CLARIFY: "clarification",
+    FoodResponseIntent.REVIEW: "clarification",
+    FoodResponseIntent.PARTIAL_COMMIT: "coaching",
+    FoodResponseIntent.COACH: "coaching",
+    FoodResponseIntent.GENERAL_CONVERSATION: "coaching",
+    FoodResponseIntent.FAILURE: "recovery",
+}
+
+
+def voice_profile_for(intent) -> str:
+    """The profile name for a moment. `coaching` when unmapped: the widest
+    brief is the safe default, because an unknown moment that reads as
+    over-explained is recoverable and one that reads as curt is not."""
+    return _INTENT_PROFILE.get(intent, "coaching")
+
+
+def arnie_voice(intent=None) -> str:
+    """The voice this moment needs, plus this lane's rules.
+
+    Was the whole persona — `voice_core()`, ~3,400 tokens of IDENTITY,
+    LANGUAGE, VOICE and EMOJI_SYSTEM — on every food turn, including the ones
+    that write "rice cake logged, 35 cal". The compiled micro brief is around
+    a third of that and drops nothing a routine acknowledgement uses; it is
+    the same canonical text, selected rather than rewritten.
+
+    Called with no intent it still returns the full persona, because the
+    callers that pass nothing are the ones that do not know what moment they
+    are in, and the widest voice is the right answer there.
 
     A function rather than a constant because `core.prompts.arnie` imports the
     skill loader at module scope, and a food turn that is only building a
@@ -1394,8 +1436,11 @@ def arnie_voice() -> str:
     is not.
     """
     try:
-        from core.prompts.arnie import voice_core
-        return f"{voice_core()}\n\n{_FOOD_LANE_RULES}"
+        if intent is None:
+            from core.prompts.arnie import voice_core
+            return f"{voice_core()}\n\n{_FOOD_LANE_RULES}"
+        from core.prompts.voice import compile_voice
+        return f"{compile_voice(voice_profile_for(intent))}\n\n{_FOOD_LANE_RULES}"
     except Exception:                                    # pragma: no cover
         return _FOOD_LANE_RULES
 
@@ -1661,7 +1706,7 @@ def build_prompt(plan: FoodResponsePlan) -> str:
                  "correct it in one tap. The card confirms the numbers, so do "
                  "not recite those; a coach observation is optional and comes "
                  "second, if at all.")
-    parts = [arnie_voice(), "", f"INTENT: {plan.intent.value}", brief]
+    parts = [arnie_voice(plan.intent), "", f"INTENT: {plan.intent.value}", brief]
 
     # THE READING GOES IN THE TEXT WHEN NO CARD WILL CARRY IT. A clarification
     # commits nothing, so the brief's old promise — "the card already shows
@@ -2524,14 +2569,17 @@ def _note_voice(plan: "FoodResponsePlan", **fields) -> None:
     model call wearing the same await), and `fallback_path` is decided by
     which return branch the function takes.
 
-    `voice_profile` is the plan's intent today; when the voice compiler lands
-    it becomes the compiled brief, and the field will not have to move — the
-    question "which voice spoke on this turn" is the same one.
+    `voice_profile` is the COMPILED profile, not the raw intent. Ten intents
+    map onto four briefs, and the question the report has to answer is "how
+    does each brief behave" — a `commit` and a `correct` that share the micro
+    brief share its latency and its failure modes, and splitting them by
+    intent would put four samples in ten buckets.
     """
     try:
         from core import food_trace as _ft
-        intent = getattr(getattr(plan, "intent", None), "value", "") or ""
-        _ft.note(voice_profile=intent, **fields)
+        intent = getattr(plan, "intent", None)
+        _ft.note(voice_profile=voice_profile_for(intent) if intent else "",
+                 **fields)
     except Exception:
         pass
 

@@ -18,9 +18,13 @@ Three facts only the voice layer holds, so it records them itself:
     `validation:…` is the model saying something it was not allowed to say,
     `composer_off` is a flag, `renderer_exception` is a bug. One `fallback=1`
     would merge four different problems.
-  * `voice_profile` — the plan's intent today. When the voice compiler lands
-    it becomes the compiled brief and the field does not move, because "which
-    voice spoke on this turn" is the same question.
+  * `voice_profile` — the COMPILED brief, not the raw intent. Ten intents map
+    onto four profiles, and the question the report answers is "how does each
+    brief behave": a `commit` and a `correct` sharing the micro brief share
+    its latency and its failure modes, and splitting them by intent would put
+    four samples in ten buckets. The field did not have to move when the
+    compiler landed, because "which voice spoke on this turn" is the same
+    question either way.
 
 Every path out of the renderer is covered here, including the two that never
 reach `compose_async` at all. A report that only counts the model path cannot
@@ -33,7 +37,8 @@ import core.food_trace as TRACE
 import core.llm
 from core.food_ledger import TransactionSnapshot
 from core.food_response import (FoodItemSummary, FoodResponseIntent,
-                                FoodResponsePlan, render_plan)
+                                FoodResponsePlan, render_plan,
+                                voice_profile_for)
 
 
 def _trace(tid="v"):
@@ -69,7 +74,9 @@ async def test_a_clean_first_attempt_records_no_retries(monkeypatch):
     d = t.as_dict()
     assert d["retry_count"] == 0
     assert d["fallback_path"] == ""
-    assert d["voice_profile"] == "commit"
+    # The COMPILED profile, not the raw intent: ten intents map onto four
+    # briefs, and the report has to answer "how does each brief behave".
+    assert d["voice_profile"] == "micro_acknowledgement"
 
 
 async def test_the_model_that_spoke_is_named(monkeypatch):
@@ -136,7 +143,9 @@ async def test_the_composer_being_off_is_still_a_voice(monkeypatch):
     text = await render_plan(_plan())
     assert text.strip(), "the floor must still say something"
     d = t.as_dict()
-    assert d["voice_profile"] == "commit"
+    # The COMPILED profile, not the raw intent: ten intents map onto four
+    # briefs, and the report has to answer "how does each brief behave".
+    assert d["voice_profile"] == "micro_acknowledgement"
     assert d["fallback_path"] == "composer_off"
 
 
@@ -162,7 +171,7 @@ async def test_every_intent_declares_its_profile(monkeypatch, intent):
     monkeypatch.setenv("FOOD_COMPOSER", "false")
     t = _trace()
     await render_plan(_plan(intent))
-    assert t.as_dict()["voice_profile"] == intent.value
+    assert t.as_dict()["voice_profile"] == voice_profile_for(intent)
 
 
 def test_noting_the_voice_with_no_trace_is_silent():
