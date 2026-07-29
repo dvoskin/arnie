@@ -2330,8 +2330,22 @@ async def _run_conversation_hooks() -> None:
                     continue
 
                 open_qs = await get_open_pending_questions(db, user.id)
+                # A FOOD QUESTION IS A QUESTION WE ARE WAITING ON.
+                #
+                # This loop chased `conversation_hook` only. The food lane's own
+                # ask was reached solely because the hook extractor read the
+                # question back out of the reply and opened a duplicate — a
+                # record that could re-ask and could not receive the answer.
+                # With the duplicate gone the chase has to belong to the record
+                # that owns the question, or it disappears.
+                #
+                # Production, 2026-07-29: the duplicate produced "How many
+                # slices of that sopressata did you end up having?" at 13:00,
+                # which is the behaviour worth keeping — while the food ask it
+                # was shadowing stayed open 13.2 hours.
+                _followable = ("conversation_hook", "food_structured_ask")
                 hook_qs = [q for q in open_qs
-                           if getattr(q, "kind", "") == "conversation_hook"]
+                           if getattr(q, "kind", "") in _followable]
                 if not hook_qs:
                     continue
 

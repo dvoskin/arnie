@@ -164,7 +164,36 @@ async def sync_pending_questions(db, user, llm_reply_text: str = "",
         # Suppressed on logging turns too (Change 3): a closing "what's next?"
         # after a meal log is voice flavor, not an abandoned question.
         if (llm_reply_text and source_type != "proactive" and not had_logging_tool):
-            hook_result = _extract_hook(llm_reply_text)
+            # ONE OPEN QUESTION, ONE RECORD.
+            #
+            # The suppression above is `had_logging_tool`, which is exactly
+            # false on the turn the food lane ASKS — so the hook extractor read
+            # the lane's own question back out of its reply and opened a second
+            # pending for it, under a different kind, with its own lifecycle.
+            #
+            # Production, 2026-07-28/29: the same question stored twice, seconds
+            # apart — 1962/1963 (47s) and 1965/1966 (12s). And the two records
+            # then diverged. `conversation_hook` re-asked on its own policy and
+            # produced the 13:00 "How many slices of that sopressata did you end
+            # up having?" while `food_structured_ask` 1965 sat open for 13.2
+            # hours; when the answer finally came, it went to the lane that had
+            # been silent, carrying none of the thread the other had chased.
+            #
+            # The structured ask owns identity, routing and TTL. The hook layer
+            # may follow up on it — see `food_clarification` in TIER_POLICY —
+            # but it may not become a second copy of it.
+            _food_open = None
+            try:
+                from core.food_turn import ASK_KIND as _ASK_KIND
+            except Exception:                       # pragma: no cover
+                _ASK_KIND = "food_structured_ask"
+            try:
+                _food_open = await get_open_pending_question(
+                    db, user.id, _ASK_KIND)
+            except Exception:
+                _food_open = None
+            hook_result = None if _food_open is not None \
+                else _extract_hook(llm_reply_text)
             if hook_result:
                 hook_text, hook_style = hook_result
                 await record_pending_question(

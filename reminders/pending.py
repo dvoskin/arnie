@@ -35,6 +35,15 @@ TIER_POLICY: dict[str, FollowUpPolicy] = {
     "casual":           FollowUpPolicy(first_delay_h=24.0, spacing_h=24.0, max_follow_ups=2),
     "goal_critical":    FollowUpPolicy(first_delay_h=8.0,  spacing_h=12.0, max_follow_ups=3),
     "conversation_hook": FollowUpPolicy(first_delay_h=0.42, spacing_h=6.0,  max_follow_ups=1),
+    # A food question the lane asked and is waiting on. It had no policy, so it
+    # fell to `casual` — 24 hours before a first re-ask — while the DUPLICATE
+    # `conversation_hook` opened from the same reply chased it at 25 minutes.
+    # The chase was the right behaviour and belonged to the wrong record: the
+    # hook could re-ask the question and could not receive the answer, so on
+    # 2026-07-29 a food ask stayed open 13.2 hours while its twin followed up,
+    # and the turn that finally answered had none of the thread's state.
+    # Same cadence the hook used, now on the record that owns the question.
+    "food_clarification": FollowUpPolicy(first_delay_h=0.42, spacing_h=6.0, max_follow_ups=1),
     # Tier-2 silence consolidation: when a user has gone quiet on several proactive
     # check-ins in a row, the scheduler registers ONE proactive_hook to replace the
     # individual slot nudges, and the normal follow-up loop re-asks it. Patient
@@ -117,14 +126,17 @@ def select_follow_up(pqs, now: datetime | None = None, *,
 
     _TIER_RANK: dict[str, int] = {
         "goal_critical":     0,
-        "conversation_hook": 1,
-        "proactive_hook":    2,
-        "casual":            3,
+        # Ahead of a generic hook: this one is blocking a write the user asked
+        # for, and answering it puts food on the board.
+        "food_clarification": 1,
+        "conversation_hook": 2,
+        "proactive_hook":    3,
+        "casual":            4,
     }
 
     def _rank(pq):
         tier = getattr(pq, "tier", None) or "casual"
-        tier_rank = _TIER_RANK.get(tier, 3)
+        tier_rank = _TIER_RANK.get(tier, max(_TIER_RANK.values()))
         asked = _naive(getattr(pq, "asked_at", None)) or datetime.max
         return (tier_rank, asked)
 
