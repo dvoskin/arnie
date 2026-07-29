@@ -207,6 +207,29 @@ def attach_ambiguities(items, data: Mapping, *, mode: str,
         target = _match_item(amb, items)
         if target is None:
             continue
+        # ── NEVER ASK SOMEONE TO RESTATE WHAT THEY STATED ──────────────────
+        #
+        # When the user gave the amount, a HOW-MUCH question is already
+        # answered, and re-asking it spends the one interruption we get on the
+        # only field that was not in doubt. "5-6 fries" came back as "the small
+        # side or the full share plate?" — offering a menu portion against a
+        # counted one, which is the truffle-fries incident arriving from the
+        # other side.
+        #
+        # What the interpreter is reporting here is real but is not a question:
+        # a counted amount still carries spread because restaurant fries differ
+        # in size, and the prompt already rules that a stated count is HIGH
+        # confidence to be priced per piece, not re-portioned. So the span
+        # stays on the item and keeps informing the estimate; it just stops
+        # being something we interrupt for. Identity, prep and package-size
+        # unknowns on the same item are untouched — those are not answered by
+        # an amount.
+        _amb_type = _AMBIGUITY_TYPES.get(field_name,
+                                         AmbiguityType.CONSUMED_QUANTITY)
+        if (_amb_type is AmbiguityType.CONSUMED_QUANTITY
+                and getattr(getattr(target, "quantity", None),
+                            "is_stated", False)):
+            continue
         options = tuple(
             AmbiguityOption(str(o), confidence=0.5)
             for o in (amb.get("options") or [])[:4])

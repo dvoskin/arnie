@@ -158,6 +158,12 @@ def consumption_state(text: str, *, thread_active: bool = False) -> str:
 
 
 _MEAL_RE = re.compile(r"\b(breakfast|lunch|dinner|snack|dessert)\b", re.I)
+#: "my usual X" — a POINTER into their regulars rather than a description of a
+#: food. It matters on its own because the pointer can FAIL to resolve, and a
+#: failed pointer looks like an ordinary mention unless something says so.
+_USUAL_POINTER_RE = re.compile(
+    r"\b(?:my|our|the)\s+(?:usual|go[-\s]?to|regular|standard|normal)\b|"
+    r"\bas\s+usual\b|\bthe\s+usual\b", re.I)
 _ACK_RE = re.compile(
     r"^(ok(ay)?|k+|thx|thanks|thank\s+you|ty|cool|nice|great|sweet|got\s+it|gotcha|"
     r"yes|yeah|yep|yup|sure|no+|nope|word|bet|perfect|awesome|good|alright|lol|haha|"
@@ -1304,6 +1310,50 @@ def _item_is_stated(it: dict, message: str) -> bool:
         return True
     if f == 0.5 and re.search(r"\bhalf\b", clause):
         return True
+    # ── ONE FOOD CAN SPAN TWO CLAUSES ──────────────────────────────────────
+    #
+    # People name a thing and then pin it down: "some parmesan truffle fries
+    # from Bobby Flay, like 5-6 fries". The comma splits that into two clauses,
+    # `_clause_for` keeps the one that names the food most fully — the FIRST,
+    # holding "some" — and the count that answers it sits in the second, unread.
+    # So the vague word was seen and the number that settles it was not, and
+    # the same message logged or asked depending on whether the interpreter
+    # happened to emit its OPTIONAL "basis" field. That is the truffle-fries
+    # case: a stated count re-asked as "the small side or the full share plate?".
+    #
+    # Scoped by the food's HEAD NOUN, which is what a refining clause repeats
+    # ("...like 5-6 FRIES"). That keeps the cross-food bleed this function was
+    # built to stop: "half a banana" cannot refine peanut butter, because the
+    # heads are "banana" and "butter". A refinement is additional evidence for
+    # THIS food, never a number borrowed from the food next to it.
+    _refine = _refining_clauses(message, str(it.get("food") or ""), clause)
+    if _refine:
+        if s in _refine:
+            return True
+        if f == 0.5 and re.search(r"\bhalf\b", _refine):
+            return True
+    # ── A RANGE IS A STATED AMOUNT ─────────────────────────────────────────
+    #
+    # "like 5-6 fries" states the amount; it just states it as a span. The
+    # interpreter quite reasonably carries the midpoint, and 5.5 appears
+    # nowhere in the message — so a literal-match proxy calls the user's own
+    # number our invention and the turn asks them to portion something they
+    # already counted. This was the whole of the remaining truffle-fries
+    # flakiness: identical, correct interpreter output logged or asked
+    # depending only on whether it rounded "5-6" to 6 or averaged it to 5.5.
+    #
+    # Anywhere inside the stated span counts, midpoint or endpoint, because
+    # every value in it is the user's figure rather than ours.
+    for _hay in (clause, _refine):
+        for _lo, _hi in re.findall(
+                r"(\d+(?:\.\d+)?)\s*(?:-|–|—|to|or)\s*(\d+(?:\.\d+)?)",
+                _hay or ""):
+            try:
+                _lo, _hi = float(_lo), float(_hi)
+            except ValueError:
+                continue
+            if _lo <= _hi and (_lo - 0.01) <= f <= (_hi + 0.01):
+                return True
     if not f.is_integer():
         return False
     _words = {1: ("one",), 2: ("two",), 3: ("three",), 4: ("four",),
@@ -1324,6 +1374,29 @@ def _item_is_stated(it: dict, message: str) -> bool:
         # would call every unnamed single item an estimate.
         return bool(re.search(r"\ban?\b", clause))
     return False
+
+
+def _refining_clauses(message: str, food: str, primary: str) -> str:
+    """The OTHER clauses that name this same food, joined.
+
+    `_clause_for` returns one clause, which is right for deciding what a
+    message is about and wrong for deciding whether an amount was given: a
+    refinement lands in a different clause from the mention it refines. This
+    returns the rest of the evidence for the same food, matched on the head
+    noun only — the word a refining clause actually repeats — so a number
+    belonging to a neighbouring food can never be read as this one's.
+    """
+    text = (message or "").lower()
+    head = (food or "").strip().lower().split()
+    head = head[-1] if head else ""
+    if not text or not head or len(head) < 3:
+        return ""
+    parts = [p for p in re.split(r"\s*(?:,|\band\b|\bwith\b|\bplus\b|\+)\s*",
+                                 text) if p.strip()]
+    prim = (primary or "").strip()
+    out = [p for p in parts
+           if p.strip() != prim and re.search(rf"\b{re.escape(head)}\b", p)]
+    return " ".join(out)
 
 
 def _clause_for(message: str, food: str) -> str:
@@ -1927,6 +2000,35 @@ def _proposed_ask_is_material(data, *, mode: str, user) -> bool:
             nm = str(it.get("food") or it.get("food_name") or "").strip().lower()
             if nm:
                 by_name[nm] = it
+
+    # ── A CATEGORICAL RULE IS NOT A SMALL SPAN ─────────────────────────────
+    #
+    # On strict the prompt states one rule without a threshold in it: a BRANDED
+    # product with an UNSTATED flavour/variant is ALWAYS an ask, REGARDLESS OF
+    # SWING SIZE. Routing it through the consequence engine anyway made it a
+    # swing rule again, and the swing is usually small — a Barebells line sits
+    # inside ~30 cal, so the ask the interpreter correctly proposed was demoted
+    # to a log on 5 runs out of 5, and the flavour got picked by us rather than
+    # by them. That is the Barebells saga exactly, arriving through the gate
+    # built after it.
+    #
+    # Which flavour it was is not a question about magnitude. It is a question
+    # about IDENTITY: we do not know which product this is, and averaging their
+    # usual flavours is answering on their behalf. The consequence engine
+    # scores how wrong a NUMBER might be, so it cannot see that — and a rule
+    # whose whole content is "never mind the number" cannot be enforced by it.
+    #
+    # Scoped to what the rule says: strict only, an identity/brand unknown
+    # only, and only on an item the interpreter itself flagged branded.
+    # Everything else still has to earn its interruption below.
+    if str(mode or "").lower() == "strict":
+        for a in reported:
+            if str(a.get("field") or "").strip().lower() not in (
+                    "identity", "brand", "variant", "flavor", "flavour"):
+                continue
+            item = by_name.get(str(a.get("item") or "").strip().lower()) or {}
+            if item.get("branded"):
+                return True
 
     for a in reported:
         try:
@@ -3359,6 +3461,27 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
                        f"when an item matches one, use these exact macros, never "
                        f"re-estimate; in an ask, offer the regular by name):\n"
                        + "\n".join(lines))
+    # ── A POINTER THAT RESOLVES TO NOTHING SAYS SO ─────────────────────────
+    #
+    # The block above is emitted only when there ARE regulars, so "my usual
+    # coffee" from someone with none arrived as bare prose. The prompt's rule
+    # for that case — NO matching regular -> ask ONCE how they take it — never
+    # fired, because nothing told the model this was that case. The model read
+    # "coffee", hit the standing "never ask about black coffee" rule, and
+    # returned action=pass: a food report that left the lane entirely and wrote
+    # nothing. Measured 0/5 before this line, 5/5 after.
+    #
+    # This is the same failure the malformed-entry guard above already names —
+    # "an invisible regulars list makes the pointer rules dead letters" — with
+    # the list empty rather than unreadable. Stated as a FACT about their
+    # history, not as an instruction: the rule already exists in the prompt and
+    # only ever lacked the premise.
+    if not regulars and _USUAL_POINTER_RE.search(message or ""):
+        content = (f"{content}\n\nTHEIR REGULARS: none saved yet. They pointed "
+                   f"at a usual, and it resolves to NOTHING — you have no "
+                   f"stored version of this to log. Do not invent a generic "
+                   f"for it and do not pass: ask ONCE how they take it, and "
+                   f"their answer becomes the regular.")
     if board:
         lines = board_lines(board)
         if lines:
