@@ -137,6 +137,52 @@ class FoodTurnTrace:
     promoted: Optional[bool] = None
     cohort: str = ""
     error: str = ""
+
+    # ── who decided, and what it cost ─────────────────────────────────────────
+    #: Which signal owned the routing decision — `prior`, `photo`, `thread`,
+    #: `board_destructive`, `undo`, `confirm`, `gate_regex`, `gate_model`. The
+    #: last two are the only ones that cost a model call, so "how often do we
+    #: pay Haiku to be told something the free signals already knew" is a
+    #: `route_owner=` histogram rather than an argument.
+    route_owner: str = ""
+    #: Set ONLY when the turn actually left this lane. `conversation.py` has
+    #: carried `_legacy_reason` since the silent-`None` incident; it lived in a
+    #: different log line from the timings, so "which escapes are slow" needed
+    #: two greps and a join.
+    legacy_escape_reason: str = ""
+
+    #: The interpreter pass — the largest single block in a food turn.
+    #: `cached` separates a warm prefix from a cold one: they are different
+    #: latencies wearing the same stage name, and averaging them hides both.
+    interpreter_model: str = ""
+    interpreter_ttfb_ms: float = 0.0
+    interpreter_input_tokens: int = 0
+    interpreter_output_tokens: int = 0
+    interpreter_cached_tokens: int = 0
+
+    #: How much of enrichment was paid for while the interpreter was still
+    #: writing. Overlap is the whole point of the speculative fetch, and an
+    #: enrichment total alone cannot tell you whether it worked.
+    enrichment_overlap_ms: float = 0.0
+
+    #: The voice layer. `profile` is the compiled brief this turn used; until
+    #: the compiler lands it records which renderer spoke, which is the same
+    #: question asked of today's code.
+    voice_profile: str = ""
+    voice_model: str = ""
+    voice_ttfb_ms: float = 0.0
+    #: Model calls beyond the first on ONE stage. Stacked retries are the
+    #: documented way a bounded turn becomes an unbounded one.
+    retry_count: int = 0
+    #: Which floor caught the turn: `composer`, `deterministic`,
+    #: `model_unavailable`, `validation`. Empty means nothing fell back.
+    fallback_path: str = ""
+
+    #: Moments, in ms from `started_at`. Kept as a dict rather than a field
+    #: each because a moment is stamped by whoever makes it TRUE, and that
+    #: caller should not also have to know how to subtract two clocks.
+    marks: Dict[str, float] = field(default_factory=dict)
+
     started_at: float = field(default_factory=time.monotonic)
     version: str = TRACE_VERSION
     #: ContextVar reset token, set by `begin`. Not part of the record.
@@ -159,10 +205,28 @@ class FoodTurnTrace:
             if hasattr(self, name) and value is not None:
                 setattr(self, name, value)
 
+    def mark(self, moment: str) -> None:
+        """Stamp when something became true, in ms from the turn's start.
+
+        FIRST occurrence wins. `first_visible` is the question "when did the
+        user stop waiting", and a later bubble overwriting it would answer a
+        different question — the one `complete_ms` already answers.
+        """
+        self.marks.setdefault(
+            moment, round((time.monotonic() - self.started_at) * 1000.0, 1))
+
     # ── derived ───────────────────────────────────────────────────────────────
     @property
     def total_ms(self) -> float:
         return round((time.monotonic() - self.started_at) * 1000.0, 1)
+
+    def stage_ms(self, stage) -> float:
+        """Total time in one stage. SUMMED, not last-wins: `resolve` runs once
+        per item, and reporting the last one would make a four-item meal look
+        like a one-item meal that got unlucky."""
+        want = getattr(stage, "value", stage)
+        return round(sum(s.duration_ms for s in self.stages
+                         if s.stage == want), 1)
 
     @property
     def reached(self) -> Tuple[str, ...]:
@@ -205,6 +269,34 @@ class FoodTurnTrace:
             "total_ms": self.total_ms, "stopped_at": self.stopped_at,
             "stages": [s.as_dict() for s in self.stages],
             "version": self.version,
+            # Per-stage millisecond names the latency report asks for, DERIVED
+            # from `stages` rather than stored beside them. A second copy is a
+            # second thing to keep true, and the stage records are already the
+            # owner of how long a stage took.
+            #
+            # `route_ms` and `context_load_ms` are absent because no ROUTE or
+            # CONTEXT stage is recorded yet. An enum member nothing writes to
+            # would report every turn as routing in 0 ms, which is worse than
+            # reporting nothing — they arrive with the code that stamps them.
+            "interpreter_total_ms": self.stage_ms(Stage.INTERPRET),
+            "policy_ms": self.stage_ms(Stage.CLARIFY),
+            "enrichment_total_ms": self.stage_ms(Stage.RESOLVE),
+            "execution_ms": self.stage_ms(Stage.EXECUTE),
+            "voice_total_ms": self.stage_ms(Stage.RENDER),
+            "route_owner": self.route_owner,
+            "legacy_escape_reason": self.legacy_escape_reason,
+            "interpreter_model": self.interpreter_model,
+            "interpreter_ttfb_ms": self.interpreter_ttfb_ms,
+            "interpreter_input_tokens": self.interpreter_input_tokens,
+            "interpreter_output_tokens": self.interpreter_output_tokens,
+            "interpreter_cached_tokens": self.interpreter_cached_tokens,
+            "enrichment_overlap_ms": self.enrichment_overlap_ms,
+            "voice_profile": self.voice_profile,
+            "voice_model": self.voice_model,
+            "voice_ttfb_ms": self.voice_ttfb_ms,
+            "retry_count": self.retry_count,
+            "fallback_path": self.fallback_path,
+            "marks": dict(self.marks),
         }
 
     @property
@@ -256,7 +348,34 @@ class FoodTurnTrace:
             f"source={self.resolver_source or '-'} "
             f"promoted={'-' if self.promoted is None else str(self.promoted).lower()} "
             f"error={self.error or '-'} "
-            f"meal={self.meal_group_id or '-'} timings={timings or '-'}")
+            f"meal={self.meal_group_id or '-'} timings={timings or '-'} "
+            # THE LATENCY HALF. Everything above answers "what did the turn
+            # decide"; everything below answers "what did it cost, and who
+            # paid". They are one line because joining two is how the last
+            # report ended up unable to say which escapes were the slow ones.
+            f"route_owner={self.route_owner or '-'} "
+            f"legacy_escape={self.legacy_escape_reason or '-'} "
+            f"interp_model={self.interpreter_model or '-'} "
+            f"interp_ttfb_ms={self.interpreter_ttfb_ms:.0f} "
+            f"interp_in={self.interpreter_input_tokens} "
+            f"interp_out={self.interpreter_output_tokens} "
+            f"interp_cached={self.interpreter_cached_tokens} "
+            f"enrich_overlap_ms={self.enrichment_overlap_ms:.0f} "
+            f"voice_profile={self.voice_profile or '-'} "
+            f"voice_model={self.voice_model or '-'} "
+            f"voice_ttfb_ms={self.voice_ttfb_ms:.0f} "
+            f"retries={self.retry_count} "
+            f"fallback={self.fallback_path or '-'} "
+            f"first_visible_ms={self._mark_str('first_visible')} "
+            f"commit_visible_ms={self._mark_str('commit_visible')} "
+            f"complete_ms={self.total_ms:.0f}")
+
+    def _mark_str(self, moment: str) -> str:
+        """`-` rather than 0 for a moment that never happened. Zero is a real
+        and very different reading, and a report that cannot tell them apart
+        scores every turn with no visible result as instantaneous."""
+        value = self.marks.get(moment)
+        return "-" if value is None else f"{value:.0f}"
 
 
 # ── enablement ────────────────────────────────────────────────────────────────
