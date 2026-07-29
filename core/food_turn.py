@@ -1732,6 +1732,58 @@ async def _variant_spreads(data, *, mode: str = "moderate",
     return out
 
 
+def _ask_becomes_log(data: dict) -> dict:
+    """An `ask` this lane will not put to the user becomes a log of the model's
+    own best estimate — INSIDE this lane.
+
+    Two callers reach it, and the second is why it exists as a function. One is
+    the deliberate decline: nothing reported is worth interrupting for at this
+    mode. The other is the failure: the interpreter said `ask` and no question
+    could be rendered from it, because `points` came back empty.
+
+    That second case used to return None, and None here is not a no-op — it
+    hands the whole turn to the legacy lane, which has the full thread and a
+    free-form `log_food` with no resolver, no portion ontology and no
+    materiality gate behind it. A doubted cucumber went out of this lane as a
+    question that could not be phrased and came back through the other one as
+    "1/2 cup", with a reply that had the run of the conversation. Falling back
+    to the lane whose whole purpose is that those things cannot happen is not
+    a fail-safe.
+
+    So a question we cannot ask degrades to a log we can stand behind, with the
+    assumption carried onto the card where a tap corrects it — never to a turn
+    that leaves the lane."""
+    data = dict(data)
+    # MERGED BY IDENTITY, NOT BY DICT EQUALITY. `ready` and `items` overlap —
+    # the same food appears in both whenever the model lists everything it
+    # parsed and then repeats the settled ones — and `i not in items` compares
+    # whole dicts, so one differing key (a basis, a rounded macro) made a
+    # second copy of the same food. That wrote six rows for four foods in a
+    # single turn, with the reply narrating it: "you've logged two dark
+    # chocolates instead of one".
+    merged, seen = [], set()
+    for it in list(data.get("items") or []) + list(data.get("ready") or []):
+        if not isinstance(it, dict):
+            continue
+        key = str(it.get("food") or it.get("food_name") or "").strip().lower()
+        if key and key in seen:
+            continue
+        if key:
+            seen.add(key)
+        merged.append(it)
+    data["items"] = merged
+    data["action"] = "log"
+    data.pop("points", None)
+    # DECLINING THE QUESTION IS NOT THE SAME AS RESOLVING IT. We judged the
+    # unknown too small to interrupt for — or could not phrase it — but either
+    # way we did not learn the answer, we picked one. So the pick rides along
+    # to the write and onto the card, where a tap corrects it. Otherwise the
+    # quieter mode is simply the one that hides its guesses, which is the
+    # opposite of what quick is for.
+    data["items"] = _carry_assumptions(data["items"], data.get("ambiguities"))
+    return data
+
+
 def _carry_assumptions(items, ambiguities) -> list:
     """Attach each unresolved unknown to the row it concerns, as the CHOICE we
     made rather than the doubt we had.
@@ -3145,34 +3197,7 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
         # worth interrupting for at this mode. Commit its own best estimate
         # instead — which the prompt now requires it to carry for exactly this
         # case — and fall through to the ordinary log path below.
-        data = dict(data)
-        # MERGED BY IDENTITY, NOT BY DICT EQUALITY. `ready` and `items` overlap
-        # — the same food appears in both whenever the model lists everything
-        # it parsed and then repeats the settled ones — and `i not in items`
-        # compares whole dicts, so one differing key (a basis, a rounded macro)
-        # made a second copy of the same food. That wrote six rows for four
-        # foods in a single turn, with the reply narrating it: "you've logged
-        # two dark chocolates instead of one".
-        _merged, _seen = [], set()
-        for _it in list(data.get("items") or []) + list(data.get("ready") or []):
-            if not isinstance(_it, dict):
-                continue
-            _key = str(_it.get("food") or _it.get("food_name") or "").strip().lower()
-            if _key and _key in _seen:
-                continue
-            if _key:
-                _seen.add(_key)
-            _merged.append(_it)
-        data["items"] = _merged
-        data["action"] = action = "log"
-        data.pop("points", None)
-        # DECLINING THE QUESTION IS NOT THE SAME AS RESOLVING IT. We judged the
-        # unknown too small to interrupt for — we did not learn the answer, we
-        # picked one. So the pick rides along to the write and onto the card,
-        # where a tap corrects it. Otherwise the quieter mode is simply the one
-        # that hides its guesses, which is the opposite of what quick is for.
-        data["items"] = _carry_assumptions(data["items"],
-                                           data.get("ambiguities"))
+        data, action = _ask_becomes_log(data), "log"
 
     if action == "ask" and not prior:
         # Through the ONE renderer, so the question is voiced rather than
@@ -3228,8 +3253,29 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
         # sees these rows on the board with their age, so refining them is an
         # update rather than a second write.
         _ready_now = _calls_for_ready(data.get("ready"))
-        return ({"action": "ask", "text": text, "tool_calls": _ready_now}
-                if text else None)
+        if text:
+            return {"action": "ask", "text": text, "tool_calls": _ready_now}
+        # A QUESTION WE CANNOT PHRASE IS NOT A REASON TO LEAVE THE LANE.
+        # `clarify_plan_from_points` returns None when `points` is empty, and
+        # the empty text that follows used to return None from this function —
+        # which is the hand-off to legacy, not a no-op. Every guarantee this
+        # lane exists to make (the resolver owns the numbers, the ontology owns
+        # the portion, materiality owns the interruption, the executor owns the
+        # write) is switched off by that one return, and the user cannot tell
+        # it happened.
+        #
+        # Degrade in-lane instead. Logged at warning because an `ask` with no
+        # `points` means the interpreter contradicted its own schema, and the
+        # symptom — a portion nobody chose, in a unit nobody uses — surfaces
+        # far from the cause.
+        logger.warning(
+            "ask with no renderable question (points=%d, items=%d); "
+            "degrading to an in-lane log rather than falling to legacy",
+            len(data.get("points") or []), len(data.get("items") or []))
+        if data.get("items") or data.get("ready"):
+            data, action = _ask_becomes_log(data), "log"
+        else:
+            return None      # nothing parsed and nothing to ask: not our turn
 
     if action == "ask" and prior:
         # An unprompted ask on the answer turn = the model chaining its own
