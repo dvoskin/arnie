@@ -1144,6 +1144,28 @@ async def _run_turn(
                     _sft["_before"] = (
                         int(getattr(today_log, "total_calories", 0) or 0),
                         int(getattr(today_log, "total_protein", 0) or 0))
+                    # CROSS-DAY CLARIFICATION FIX. When this turn is the ANSWER
+                    # to a question asked on an EARLIER logging day, the stashed
+                    # `log_date` is that earlier day. New-item writes must land
+                    # on THAT day, not today — otherwise "which bar was it?"
+                    # asked last night and answered this morning logs the food
+                    # to today. update/delete target an entry_id that already
+                    # belongs to the right day, so only fresh log_food calls are
+                    # steered.
+                    try:
+                        _stashed_date = (_sft_prior or {}).get("log_date") or ""
+                        _today_iso = getattr(
+                            getattr(today_log, "date", None),
+                            "isoformat", lambda: "")()
+                        if _stashed_date and _stashed_date != _today_iso:
+                            for _tc in (_sft.get("tool_calls") or []):
+                                if _tc.get("name") != "log_food":
+                                    continue
+                                _inp = _tc.setdefault("input", {})
+                                if not _inp.get("date"):
+                                    _inp["date"] = _stashed_date
+                    except Exception:
+                        pass
                     if (_sft.get("action") in ("log", "commit") and _sft_prior
                             and _sft_prior.get("items")):
                         # Stash the confirmed items; the hold notice is
@@ -1206,7 +1228,18 @@ async def _run_turn(
                          "requested_fields": list(
                              _sft.get("requested_fields") or ()),
                          "options": list(_sft.get("options") or ()),
-                         "meal_group_id": _sft.get("meal_group_id") or ""})
+                         "meal_group_id": _sft.get("meal_group_id") or "",
+                         # THE LOGGING DAY THIS QUESTION WAS ASKED ON. The
+                         # answer may arrive after midnight; without this the
+                         # re-logged food lands on the answer day instead of the
+                         # meal's day. `today_log.date` is the user-local logical
+                         # day, already timezone-correct. Read back on the answer
+                         # turn to steer the write (see CROSS-DAY CLARIFICATION
+                         # FIX above) and to keep the pending alive overnight
+                         # (see food_ledger.pending_expired).
+                         "log_date": getattr(
+                             getattr(today_log, "date", None),
+                             "isoformat", lambda: "")()})
                     await db.commit()
                 except Exception as _e:
                     logger.warning(f"structured-ask stash failed, logging instead: {_e}")
