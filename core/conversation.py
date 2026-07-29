@@ -699,6 +699,11 @@ async def _run_turn(
 
     from core import food_trace as _ft_vis
 
+    #: Whether the early heads-up already spoke. The late one below
+    #: must not repeat it — two 'checking the macros' in one turn reads
+    #: as the lane stuttering, not as reassurance.
+    _early_heads_up_sent = False
+
     #: Routing is one decision, so it contributes ONE stage record however many
     #: exits reach it. `stage_ms` sums, so a turn that declines twice would
     #: otherwise report double the time it spent deciding.
@@ -1091,13 +1096,42 @@ async def _run_turn(
                                  board=len(_board or ()), regulars=len(_regs or ()))
                 except Exception:
                     pass
+                # SPEAK WHILE THE INTERPRETER IS STILL WRITING. The heads-up
+                # below fires after this call returns — four seconds and ~450
+                # lines later — so it reassured the user about a wait they had
+                # already finished. The stream handler already watches for a
+                # food NAME in order to start enrichment early; the first one
+                # is also the earliest moment anything in this turn KNOWS it
+                # is food, which is what makes it safe to speak then.
+                #
+                # Deliberately not on the answer turn: a clarification answer
+                # is short, already in a thread the user is watching, and a
+                # "checking the macros" there reads as the question being
+                # re-asked.
+                async def _early_heads_up(_food_name: str) -> None:
+                    nonlocal _early_heads_up_sent
+                    if _early_heads_up_sent or _sft_prior is not None:
+                        return
+                    line = tool_heads_up(FOOD_LOOKUP_HEADS_UP,
+                                         _user_text or _food_name)
+                    if _streamer and on_text_bubble:
+                        await on_text_bubble(line)
+                        _streamer.flushed_count += 1
+                    elif on_interim:
+                        await on_interim(line)
+                    else:
+                        return
+                    _early_heads_up_sent = True
+                    _ft_vis.mark("first_visible")
+
                 _sft = await _sft_run(_photo_food or _user_text or "", user,
                                       prior=_sft_prior, history=messages,
                                       day_line=_dl, board=_board,
                                       last_assistant=_last_assistant,
                                       regulars=_regs,
                                       thread_active=bool(
-                                          _route_mid or _photo_food))
+                                          _route_mid or _photo_food),
+                                      on_first_food=_early_heads_up)
                 if _sft is None:
                     # The interpreter times out or the model fails and control
                     # transfers to legacy behaviour. Fail-safe during rollout —
@@ -1541,7 +1575,8 @@ async def _run_turn(
         # the macros.", "checking the macros." It describes a LOOKUP. Nothing
         # here claims a write is underway — that is the line
         # `NO TRANSACTION NARRATION` draws, and it still holds.
-        if needs_heads_up_tc is None and _sft is not None \
+        if needs_heads_up_tc is None and not _early_heads_up_sent \
+                and _sft is not None \
                 and _sft.get("action") in ("log", "commit", "update") \
                 and any(tc.get("name") in _FOOD_LOG_TOOLS for tc in tool_calls) \
                 and (_time_mod.monotonic() - _turn_t0) >= _FOOD_HEADS_UP_AFTER_S:

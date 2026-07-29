@@ -2847,9 +2847,21 @@ class _SpeculativeEnrichment:
     starting a second.
     """
 
-    def __init__(self):
+    def __init__(self, on_first_food=None):
         self._buf = []
         self._seen = set()
+        # THE MOMENT WE KNOW IT IS FOOD, which is earlier than anything else
+        # in the turn knows it. The heads-up used to fire from
+        # `conversation.py` AFTER this whole model call returned — around 450
+        # lines and four seconds later — so the reassurance covered the second
+        # half of a wait the user had already spent in silence.
+        #
+        # A food NAME in the stream is proof, not a guess: it is the model
+        # having already parsed a food. That is what makes it safe to speak
+        # before the parse completes, and it lands in about a second because
+        # the interpreter's JSON opens with `{"action":"log","items":[{"food":`.
+        self._on_first_food = on_first_food
+        self._announced = False
 
     async def __call__(self, delta: str) -> None:
         if not delta:
@@ -2863,6 +2875,22 @@ class _SpeculativeEnrichment:
                 continue
             self._seen.add(key)
             self._start(name.strip())
+            await self._announce(name.strip())
+
+    async def _announce(self, food: str) -> None:
+        """Fire the heads-up once. Never twice, never fatally.
+
+        Swallows everything: this runs inside a stream handler, and a delta
+        that raises costs the caller its bubbles. The turn is worth more than
+        the reassurance about it.
+        """
+        if self._announced or self._on_first_food is None:
+            return
+        self._announced = True
+        try:
+            await self._on_first_food(food)
+        except Exception as exc:            # pragma: no cover - best effort
+            logger.debug(f"early heads-up skipped: {exc}")
 
     @staticmethod
     def _start(food: str) -> None:
@@ -3090,7 +3118,8 @@ async def run(message: str, user, prior: Optional[dict] = None,
               day_line: str = "", board: Optional[list] = None,
               last_assistant: str = "", regulars: Optional[list] = None,
               thread_active: bool = False,
-              history: Optional[list] = None) -> Optional[dict]:
+              history: Optional[list] = None,
+              on_first_food=None) -> Optional[dict]:
     """The traced entry point (PR #29).
 
     A thin wrapper rather than instrumentation threaded through the body: the
@@ -3125,7 +3154,8 @@ async def run(message: str, user, prior: Optional[dict] = None,
         return await _run_untraced(
             message, user, prior=prior, day_line=day_line, board=board,
             last_assistant=last_assistant, regulars=regulars,
-            thread_active=thread_active, history=history)
+            thread_active=thread_active, history=history,
+            on_first_food=on_first_food)
 
 
 async def _run_untraced(message: str, user, prior: Optional[dict] = None,
@@ -3133,7 +3163,8 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
                         last_assistant: str = "",
                         regulars: Optional[list] = None,
                         thread_active: bool = False,
-                        history: Optional[list] = None) -> Optional[dict]:
+                        history: Optional[list] = None,
+                        on_first_food=None) -> Optional[dict]:
     """Run the interpreter pass. Returns
         {"action": "log"|"update"|"delete"|"commit", "tool_calls": [...],
          "kinds": [...], "say": "...", "note": "...", "follow_up": "..."}
@@ -3268,7 +3299,7 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
             res = await deadline.wait_for(
                 chat([{"role": "user", "content": content}], sys,
                      tools=False, max_tokens=700, model=_interp_model,
-                     stream_handler=_SpeculativeEnrichment()))
+                     stream_handler=_SpeculativeEnrichment(on_first_food)))
         except Exception as e:
             # Includes DeadlineExceeded: out of time is a fall-through to the
             # legacy path, never a lost meal.
