@@ -93,6 +93,19 @@ CASES = [
          msg="remove the birria taco", mode="strict", expect=None),
     dict(name="workout routes to legacy",
          msg="did 3 sets of bench at 185", mode="strict", expect=None),
+    # 2026-07-29 production: this exact answer to a flavor clarification parsed
+    # to nothing, the interpreter read it as contentless, and the turn escaped
+    # to legacy (legacy_reason=interpreter_none) with the question lost. A
+    # premise confirmation is a command; it must log the stashed reading.
+    dict(name="'It's the same one' logs the stashed reading",
+         msg="It's the same one", mode="quick", expect="log",
+         prior=dict(original="Having the sun chips again",
+                    question=("The Harvest Cheddar ones like last time, "
+                              "or a different flavor?"),
+                    kind="clarify", ask_count=1,
+                    items=[dict(food="Sun Chips Harvest Cheddar", amount=1,
+                                unit="bag", calories=210)]),
+         want_cal=(200, 220)),
 
     # ── strict brand discipline (Barebells saga) ──────────────────────────
     dict(name="strict + branded + no flavor ALWAYS asks",
@@ -173,10 +186,12 @@ async def run_case(c):
         ok = (not FT.applies(c["msg"])) and (not FT.thread_routes(c["msg"]))
         return ok, "gate excluded ✓" if ok else "GATE LET IT THROUGH"
     res = await FT.run(c["msg"], U(c.get("mode", "strict")),
+                       prior=c.get("prior"),
                        day_line="Today: 320 cal, 21g protein so far.",
                        board=c.get("board", []),
                        last_assistant=c.get("last_assistant", ""),
-                       regulars=c.get("regulars", []))
+                       regulars=c.get("regulars", []),
+                       thread_active=bool(c.get("prior")))
     got = res["action"] if res else None
     if c["expect"] is None:
         return got is None, f"got={got}"

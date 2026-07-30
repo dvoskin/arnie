@@ -32,6 +32,9 @@ class ClarificationCommand(str, Enum):
     ESTIMATE = "estimate"
     COMMIT_READY = "commit_ready"
     RESTART = "restart"
+    #: "It's the same one" — the premise of the question is confirmed; log the
+    #: meal as it was read, with nothing changed.
+    KEEP_AS_READ = "keep_as_read"
 
 
 @dataclass(frozen=True)
@@ -80,6 +83,31 @@ _COMMANDS = (
      r"just\s+log\s+the\s+rest)\b"),
     (ClarificationCommand.RESTART,
      r"\b(?:start\s+over|restart|let\s+me\s+redo\s+(?:it|that))\b"),
+    # "It's the same one" — the user confirming the PREMISE of the question,
+    # not supplying a new value. Production 2026-07-29: that exact message,
+    # answering "the Harvest Cheddar ones like last time, or a different
+    # flavor?", parsed to nothing (no schema on the pending), the interpreter
+    # read it as contentless and passed, and the turn escaped to legacy with
+    # the question lost. A premise confirmation is a command — "log it as you
+    # read it" — and a command needs no schema, which is exactly why it
+    # belongs here and not in the per-schema parsers.
+    #
+    # Anchored, with an explicit lead-in group rather than a bare \b search:
+    # "same" appears mid-sentence in genuinely new reports ("same again but
+    # with rice"), and a search pattern would swallow them. The lead-ins are
+    # the shapes an affirmation actually arrives wrapped in.
+    #
+    # "Same" ONLY — not "usual". They look alike and answer differently:
+    # "same one" points at the question's own premise, which the stash
+    # embodies, so committing the stash is the answer. "The usual" points at
+    # the user's HISTORY, which the stash does not carry — it belongs to the
+    # regulars machinery, and `test_the_normal_one_stays_pending` guards
+    # exactly that boundary (a vague selection must never resolve to whatever
+    # we happened to stage).
+    (ClarificationCommand.KEEP_AS_READ,
+     r"^\s*(?:(?:it'?s|it\s+was|that'?s|yeah,?|yep,?|yes,?)\s+)*"
+     r"(?:the\s+)?same\s*(?:one|thing|kind|flavou?r)?"
+     r"(?:\s+as\s+(?:before|last\s+time|always|usual))?\s*[.!]*\s*$"),
 )
 
 
@@ -307,7 +335,11 @@ _STOPWORDS = {"the", "a", "an", "one", "it", "was", "i", "had", "it's", "its",
 #: is the case the directive names: it must stay pending, not resolve to
 #: whatever ranked first.
 _VAGUE_SELECTIONS = re.compile(
-    r"^\s*(?:the\s+)?(?:normal|regular|usual|standard|basic|original|"
+    # The lead-in group exists because answers arrive wrapped: production's
+    # "It's the same one" missed the anchored form and the turn escaped to
+    # legacy. Same shapes as KEEP_AS_READ's lead-ins, kept in step.
+    r"^\s*(?:(?:it'?s|it\s+was|that'?s|yeah,?|yep,?|yes,?)\s+)*"
+    r"(?:the\s+)?(?:normal|regular|usual|standard|basic|original|"
     r"same|default)\s*(?:one|kind|size)?\s*$", re.I)
 
 

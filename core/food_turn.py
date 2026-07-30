@@ -3155,6 +3155,33 @@ def _handle_clarification_command(command, prior: Optional[dict],
         logger.info("event=clarify_command cmd=estimate")
         return None
 
+    if command is _C.KEEP_AS_READ:
+        # "It's the same one" — the premise of the question is confirmed, so
+        # the meal commits AS IT WAS READ, from the interpretation stashed with
+        # the question. Deterministic, like the strict confirm's yes-turn: an
+        # affirmation is not material for a model to interpret, and a model
+        # asked to interpret one has read it as contentless and passed — which
+        # sent the turn to legacy with the question lost (production,
+        # 2026-07-29, legacy_reason=interpreter_none).
+        #
+        # Built with the same `_log_call` every other write uses. No stash
+        # means nothing to confirm — the interpreter runs as it does today,
+        # with the answer folded into its context.
+        if items:
+            calls = [c for c in (_log_call(it) for it in items)
+                     if c is not None]
+            if calls:
+                logger.info("event=clarify_command cmd=keep_as_read "
+                            "items=%d", len(calls))
+                return {"action": "log", "tool_calls": calls,
+                        "kinds": ["log"] * len(calls),
+                        # The composer/floor voices the commit, as on every
+                        # other log turn — a literal here would be a third
+                        # renderer, English-only (cause E).
+                        "say": "", "note": "", "follow_up": ""}
+        logger.info("event=clarify_command cmd=keep_as_read items=0")
+        return None
+
     return None
 
 
