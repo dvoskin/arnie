@@ -144,26 +144,6 @@ def _normalized_portion(item, candidate):
     return None
 
 
-def _write_name(item) -> str:
-    """What to call the food on the row.
-
-    `FoodIdentity.describe()` prefers the canonical name only when it has more
-    words than the brand/line/variant parts. That rule was written to stop
-    "Royo Everything Bagel" describing itself as "Royo", and it still drops the
-    food when BOTH are one word: canonical "Sopressata" under brand "Seppe"
-    describes as "Seppe" — a brand logged as a food.
-
-    Not fixed in `describe()`, which names cards, questions and replies
-    everywhere; fixed here, where the value becomes a written row. If the
-    description does not contain the canonical name, the name is restored.
-    """
-    described = (item.identity.describe() or "").strip()
-    canonical = (item.identity.canonical_name or "").strip()
-    if canonical and canonical.lower() not in described.lower():
-        described = f"{described} {canonical}".strip()
-    return (described or item.original_text)[:60]
-
-
 def price_from_resolution(item) -> Optional[dict]:
     """The item priced from its OWN stored numbers, as an interpreter-shaped
     item dict ready for `_log_call`. None whenever anything is missing.
@@ -213,7 +193,13 @@ def price_from_resolution(item) -> Optional[dict]:
             return None
 
         out: dict[str, Any] = {
-            "food": _write_name(item),
+            # The row is named by the SAME describe() that named the card and
+            # the question — no second name-builder that could disagree with
+            # them. It used to be one, patching a canonical name that
+            # describe() dropped; describe() keeps the name now. The
+            # interpreter's own words stand in when there is no identity at
+            # all, clipped to what a row will hold.
+            "food": (item.identity.describe() or item.original_text)[:60],
             "calories": calories,
         }
         for field, key in (("protein", "protein"), ("carbs", "carbs"),
