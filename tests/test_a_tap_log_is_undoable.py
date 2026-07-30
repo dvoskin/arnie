@@ -132,11 +132,28 @@ async def test_a_failed_event_never_breaks_the_write(db, make_user, monkeypatch)
 
 def test_both_tap_log_surfaces_record_their_writes():
     """The helper is worth nothing if a call site is missed — and being missed
-    is exactly what happened to these four."""
+    is exactly what happened to these four.
+
+    Updated for the one-writer consolidation (master audit 2026-07-30):
+    exercise creations are recorded by `add_exercise_entry` itself — the
+    tap-log endpoints pass `ledger_source` instead of writing a second event
+    (which is what they had been doing: every tap-logged set produced a
+    duplicate operation). FOOD still records at the call site, because
+    `add_food_entry` has no internal recorder.
+
+    A source count is a weak assertion (the B.0 lesson); the behaviour —
+    exactly one invertible event per creation — is owned by
+    `test_one_write_one_ledger_event.py`. This survives only as a cheap
+    call-site census so a NEW endpoint that forgets both mechanisms still
+    trips something.
+    """
     import inspect
     import api.app as APP
     import api.quick_log as QL
-    for module, count in ((QL, 2), (APP, 2)):
+    for module in (QL, APP):
         source = inspect.getsource(module)
-        assert source.count("record_created_from_row(db, user.id, entry") == count, \
-            module.__name__
+        assert source.count("record_created_from_row(db, user.id, entry") == 1, \
+            f"{module.__name__}: food tap-log must record exactly once"
+        assert source.count("ledger_source=") == 1, \
+            f"{module.__name__}: exercise tap-log must pass its provenance " \
+            f"through add_exercise_entry, not record a second event"

@@ -3481,6 +3481,11 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
             getattr(target_log, "date", None), inp.get("time"),
             getattr(user, "timezone", "UTC"),
         )
+        # ONE ledger writer. `add_exercise_entry` records the `created` event
+        # itself; this call passes the provenance label instead of writing a
+        # second event. The master audit (2026-07-30) found every exercise
+        # creation double-recorded — this site's event plus the internal one,
+        # 0s apart, under two domain names.
         _new_ex = await add_exercise_entry(
             db,
             target_log.id,
@@ -3495,23 +3500,8 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
             source_type=source_type,
             is_cardio=is_cardio,
             occurred_at=_occurred_at,
+            ledger_source=inp.get("source") or f"legacy:{source_type}",
         )
-        # LEDGER EVENT (domain=exercise): fitness rides the same event history
-        # as food (Danny 2026-07-24). Best-effort, never breaks the write.
-        try:
-            from db.queries import record_ledger_event
-            await record_ledger_event(
-                db, user.id, "created", domain="exercise",
-                entry_id=getattr(_new_ex, "id", None),
-                daily_log_id=target_log.id,
-                payload={"exercise_name": canonical_name,
-                         "sets": inp.get("sets"), "reps": inp.get("reps"),
-                         "weight_kg": weight_kg,
-                         "duration_minutes": inp.get("duration_minutes"),
-                         "is_cardio": is_cardio},
-                source=inp.get("source") or f"legacy:{source_type}")
-        except Exception as _ev_e:
-            logger.warning(f"ledger event (exercise created) skipped: {_ev_e}")
         # Same id stash as log_food: native clients use this for inline
         # edit/delete via the exerciseEdit API without round-tripping a
         # "please update X" message through Arnie.
@@ -4189,6 +4179,8 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
             _rx_log_id = getattr(today_log, "id", None)
         if not _rx_log_id:
             return "Skipped — no log to restore into"
+        # ONE ledger writer — `add_exercise_entry` records the event; this
+        # passes the restore provenance instead of writing a second one.
         _new_rx = await add_exercise_entry(
             db, _rx_log_id,
             exercise_name=_rx_name,
@@ -4197,18 +4189,8 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
             weight=_rpx.get("weight"),
             duration_minutes=_rpx.get("duration_minutes"),
             source_type=source_type,
+            ledger_source=inp.get("source") or "restore",
         )
-        try:
-            from db.queries import record_ledger_event
-            await record_ledger_event(
-                db, user.id, "created", domain="exercise",
-                entry_id=getattr(_new_rx, "id", None), daily_log_id=_rx_log_id,
-                payload={"exercise_name": _rx_name, "sets": _rpx.get("sets"),
-                         "reps": _rpx.get("reps"), "weight_kg": _rpx.get("weight"),
-                         "duration_minutes": _rpx.get("duration_minutes")},
-                source=inp.get("source") or "restore")
-        except Exception as _ev_e:
-            logger.warning(f"ledger event (exercise restored) skipped: {_ev_e}")
         if isinstance(inp, dict) and getattr(_new_rx, "id", None) is not None:
             _stash_call(inp, "entry_id", _new_rx.id)
         if getattr(today_log, "id", None):

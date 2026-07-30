@@ -3758,6 +3758,8 @@ async def api_log_exercise(body: ExerciseLogBody, token: str = Query(...)):
         else:
             log = await get_or_create_today_log(db, user.id, tz)
         weight_kg = body.weight_lbs * 0.453592 if body.weight_lbs else None
+        # ONE ledger writer — `add_exercise_entry` records the `created` event
+        # itself; the provenance label rides through (master audit 2026-07-30).
         entry = await add_exercise_entry(
             db, log.id,
             is_cardio=body.is_cardio,
@@ -3766,10 +3768,8 @@ async def api_log_exercise(body: ExerciseLogBody, token: str = Query(...)):
             reps=body.reps,
             weight_kg=weight_kg,
             duration_minutes=body.duration_minutes,
+            ledger_source="dashboard:exercise_log",
         )
-        from db.queries import record_created_from_row
-        await record_created_from_row(db, user.id, entry, "exercise", log.id,
-                                      source="dashboard:exercise_log")
     return {"status": "ok", "id": entry.id}
 
 

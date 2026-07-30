@@ -114,17 +114,17 @@ async def log_exercise_entry(
         kwargs = payload.model_dump(exclude={"is_cardio", "exercise_name"}, exclude_none=True)
         kwargs["exercise_name"] = payload.exercise_name
         kwargs["source_type"] = "ios"
+        # ONE ledger writer — `add_exercise_entry` records the `created` event
+        # itself (master audit 2026-07-30: this endpoint's second record made
+        # every tap-logged set a duplicate operation). The provenance label
+        # rides through instead.
         entry = await add_exercise_entry(
             db,
             daily_log_id=log.id,
             is_cardio=payload.is_cardio,
+            ledger_source="quick_log:ios",
             **kwargs,
         )
-        # Same gap, same domain in the same ledger — `_invert` handles an
-        # exercise `created` exactly as it handles a food one, so a tap-logged
-        # set left "undo that" pointing at whatever came before it.
-        await record_created_from_row(db, user.id, entry, "exercise", log.id,
-                                      source="quick_log:ios")
         return {
             "ok": True,
             "entry_id": entry.id,
