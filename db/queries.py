@@ -819,7 +819,9 @@ async def get_workout_session(db: AsyncSession, user_id: int,
 
 
 async def add_exercise_entry(db: AsyncSession, daily_log_id: int,
-                              is_cardio: bool = False, **kwargs) -> ExerciseEntry:
+                              is_cardio: bool = False,
+                              ledger_source: Optional[str] = None,
+                              **kwargs) -> ExerciseEntry:
     # If caller signals cardio but didn't set cardio_type, mark it so the derived
     # flags (recompute_log_totals) classify this entry correctly.
     if is_cardio and not kwargs.get("cardio_type"):
@@ -842,23 +844,31 @@ async def add_exercise_entry(db: AsyncSession, daily_log_id: int,
     await recompute_log_totals(db, daily_log_id)
     await db.commit()
     await db.refresh(entry)
-    # HISTORY, on the same contract food already rides. Without it a set can be
-    # written but not undone, corrected in place, or traced to the turn that
-    # created it — and "did this already happen?" stays a similarity guess
-    # instead of a lookup. Never allowed to break the write it describes.
+    # HISTORY, on the same contract food already rides — and THIS IS THE ONLY
+    # WRITER of the exercise `created` event. The master audit (2026-07-30)
+    # found every exercise creation recorded twice, 0s apart: once here under
+    # domain="fitness", once by the caller under domain="exercise". Two
+    # writers, two vocabularies — and `ledger_undo._invert` handles only
+    # "exercise", so this event was UNINVERTIBLE on its own; the caller's
+    # duplicate had been masking that. One writer (this one, the chokepoint
+    # every path already passes through), one domain (the one undo and the
+    # update/delete events already speak), and the caller's provenance label
+    # arrives as `ledger_source` instead of a second event.
     if _log is not None:
         try:
             await record_ledger_event(
-                db, _log.user_id, "created", domain="fitness",
+                db, _log.user_id, "created", domain="exercise",
                 entry_id=entry.id, daily_log_id=daily_log_id,
-                source=kwargs.get("source_type") or "fitness",
-                payload={"exercise": entry.exercise_name,
+                source=(ledger_source or kwargs.get("source_type")
+                        or "fitness"),
+                payload={"exercise_name": entry.exercise_name,
                          "sets": entry.sets, "reps": entry.reps,
-                         "weight": entry.weight,
+                         "weight_kg": entry.weight,
                          "duration_minutes": entry.duration_minutes,
+                         "is_cardio": bool(entry.cardio_type),
                          "workout_group_id": entry.workout_group_id})
         except Exception as e:
-            logger.debug(f"fitness ledger event not recorded: {e}")
+            logger.debug(f"exercise ledger event not recorded: {e}")
     try:
         if _log: _invalidate_briefing_for_log(_log.user_id, by_user=True)
     except Exception:
@@ -1175,6 +1185,33 @@ async def get_conversation_by_idempotency_key(
     )).scalars().first()
 
 
+#: Computed once per process: the build identity cannot change without a
+#: restart, and stamping must never cost the turn anything.
+_BUILD_STAMP_CACHE = None
+
+
+def _build_stamp() -> dict:
+    """What is running: the deployed SHA and the flags that shape a turn.
+
+    Render injects RENDER_GIT_COMMIT at deploy; locally it is absent and the
+    stamp says so honestly rather than guessing from git state — a dev
+    checkout's HEAD is not a deployment. The flag list is the small set whose
+    value changes routing/behaviour attribution in audits; each is recorded as
+    the RAW env value so "unset" and "false" stay distinguishable.
+    """
+    global _BUILD_STAMP_CACHE
+    if _BUILD_STAMP_CACHE is None:
+        _BUILD_STAMP_CACHE = {
+            "sha": (os.getenv("RENDER_GIT_COMMIT") or "local")[:12],
+            "flags": {name: os.getenv(name) for name in (
+                "STRUCTURED_FOOD", "FOOD_GATE_MODEL", "FOOD_GATE_OPEN",
+                "FOOD_COMPOSER", "FOOD_FAST_PATH", "FOOD_FAST_PATH_SHADOW",
+                "FOOD_ANSWER_APPLY", "NUTRITION_RESOLVER_MODE",
+                "TURN_COORDINATOR_MODE", "TURN_OBLIGATIONS")},
+        }
+    return _BUILD_STAMP_CACHE
+
+
 async def has_real_conversation(db: AsyncSession, user_id: int) -> bool:
     """True if the user's thread holds anything beyond the seeded '[start]'
     intro. Used to guard the intro seed: if the user already started talking
@@ -1231,7 +1268,18 @@ async def log_conversation(db: AsyncSession, user_id: int, raw_message: str,
     # The turn's reasoning receipt — same rehydration story as cards: without
     # this the "Arnie's Thoughts" disclosure vanishes on every history reload.
     if reasoning:
-        entry.reasoning_json = json.dumps(reasoning)
+        # THE TURN NAMES THE BUILD THAT PRODUCED IT. Three audits in a row
+        # spent their first hour inferring the deployed SHA from behavioural
+        # markers ("does this pending carry log_date?") because deploys are
+        # manual and nothing recorded them. /health says what is running NOW;
+        # only the turn can say what was running WHEN. With this, "which turns
+        # ran which build" — and every mixed-deployment window — is one query
+        # over reasoning_json, and a closure claim can name the SHA it was
+        # verified against. Stamped at this chokepoint because it is the single
+        # write site for reasoning_json; `dict(reasoning)` so a caller's dict
+        # is never mutated.
+        entry.reasoning_json = json.dumps({**dict(reasoning),
+                                           "build": _build_stamp()})
     db.add(entry)
     await db.commit()
 
