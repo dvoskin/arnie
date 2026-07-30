@@ -1,6 +1,6 @@
 from sqlalchemy import (
     Column, Integer, String, Float, Boolean,
-    DateTime, Text, ForeignKey, Date, UniqueConstraint, Index,
+    DateTime, Text, ForeignKey, Date, UniqueConstraint, Index, text,
 )
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -266,6 +266,16 @@ class LedgerEvent(Base):
         Index("ix_ledger_events_user_time", "user_id", "created_at"),
         Index("ix_ledger_events_domain_entry", "domain", "entry_id"),
         Index("ix_ledger_events_turn", "turn_id"),
+        # One `created` event per entry, enforced by the database (invariant
+        # I3; migration ledgerdedup001). `domain` is part of the key because
+        # entry ids come from independent per-domain sequences. Partial: only
+        # creations are one-per-entry — updates/deletes legitimately repeat.
+        Index("uq_ledger_events_created_entry", "domain", "entry_id",
+              unique=True,
+              postgresql_where=text(
+                  "event_type = 'created' AND entry_id IS NOT NULL"),
+              sqlite_where=text(
+                  "event_type = 'created' AND entry_id IS NOT NULL")),
     )
 
     id = Column(Integer, primary_key=True)
@@ -637,6 +647,20 @@ class PendingQuestion(Base):
     # scheduler tick. Paired with alembic 0a1b2c3d4e5f.
     __table_args__ = (
         Index("ix_pending_questions_user_open", "user_id", "answered_at"),
+        # "One open row per (user, kind) is the norm; the reminders layer
+        # enforces that" — now the DATABASE enforces it (invariant I2,
+        # migration pendinguniq001), per (user, kind, PURPOSE):
+        # `item_referenced` is part of the key because the clarification
+        # kinds legitimately hold one open row per item (the sandwich's
+        # cook-method question and the salad's dressing question coexist).
+        # COALESCE folds NULL/'' together so ref-less kinds stay strictly
+        # one-per-kind. record_pending_question's get-then-insert race and
+        # any writer that skips the helper hit this instead of stacking.
+        Index("uq_pending_open_per_user_kind", "user_id", "kind",
+              text("COALESCE(item_referenced, '')"),
+              unique=True,
+              postgresql_where=text("answered_at IS NULL"),
+              sqlite_where=text("answered_at IS NULL")),
     )
 
     id = Column(Integer, primary_key=True)

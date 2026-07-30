@@ -1808,7 +1808,27 @@ async def record_pending_question(
         return existing
     pq = PendingQuestion(user_id=user_id, kind=kind, question=question, tier=tier,
                          hook_style=hook_style)
-    db.add(pq)
+    try:
+        # SAVEPOINT — same reasoning as record_ledger_event: a session-level
+        # rollback expires every loaded object and poisons the turn.
+        async with db.begin_nested():
+            db.add(pq)
+            await db.flush()
+    except IntegrityError:
+        # uq_pending_open_per_user_kind (pendinguniq001): a concurrent turn
+        # opened the same kind between our get and this insert. The loser of
+        # the race adopts the winner's row — which is exactly what the
+        # update-in-place branch above would have done had the row existed a
+        # moment earlier.
+        existing = await get_open_pending_question(db, user_id, kind)
+        if existing is not None:
+            existing.question = question
+            existing.tier = tier
+            existing.hook_style = hook_style
+            await db.commit()
+            await db.refresh(existing)
+            return existing
+        raise
     await db.commit()
     await db.refresh(pq)
     return pq
@@ -2955,7 +2975,27 @@ async def record_ledger_event(
         daily_log_id=daily_log_id, event_type=event_type,
         payload_json=json.dumps(payload) if payload is not None else None,
         source=source, turn_id=current_turn_id())
-    db.add(ev)
+    try:
+        # SAVEPOINT, not a session-level rollback. When the
+        # uq_ledger_events_created_entry guard (ledgerdedup001) rejects a
+        # duplicate, only this insert must roll back: a full rollback expires
+        # every loaded object in the session, and the next attribute access
+        # mid-turn dies with a greenlet error — the session poisoning the
+        # guard's soft-fail exists to prevent, reintroduced by the soft-fail
+        # itself (caught by the tap-log undo test, not by reading the code).
+        async with db.begin_nested():
+            db.add(ev)
+            await db.flush()   # the violation surfaces here, inside the savepoint
+    except IntegrityError:
+        # The guard did its job: the duplicate is rejected, history keeps one
+        # event, and the caller gets None exactly as on any other best-effort
+        # failure. Logged loudly — this firing at all means a duplicate
+        # writer exists again.
+        logger.warning(
+            f"event=ledger_dup_blocked domain={domain} "
+            f"entry_id={entry_id} type={event_type} source={source!r} — "
+            f"a second writer attempted a duplicate created event")
+        return None
     await db.commit()
     return ev
 
