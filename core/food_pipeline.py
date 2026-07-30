@@ -399,12 +399,240 @@ def derive_variant_ambiguity(items, spreads, data=None, *, mode: str,
     return tuple(out)
 
 
+def identity_ask_enabled() -> bool:
+    """The identity ask ships OFF, like every new ASK path before it.
+
+    `FOOD_ANSWER_APPLY`, `FOOD_FAST_PATH` and `STRUCTURED_FOOD` all landed on
+    main switched off and were promoted on measured behaviour. This one is not
+    ready for that promotion: the question SHAPE is settled (a prior shortens
+    it to a confirm) but the firing rule is not — it needs the shelf to tell a
+    flavour from product-line boilerplate, and where the shelf is thin it still
+    trades a silent assumption for a question nobody needs.
+
+    Off, `derive_assumed_identity` is a no-op and the lane behaves exactly as
+    it does today, so the work lands on main without changing a single turn.
+    """
+    return (os.getenv("FOOD_IDENTITY_ASK", "false") or "").strip().lower() \
+        in ("true", "1", "yes", "on")
+
+
+def derive_assumed_identity(items, *, message: str, mode: str,
+                            targets=None, variant_rows=None,
+                            regulars=None) -> tuple:
+    """We named a product they did not name (production, 2026-07-30 20:14).
+
+    The user wrote *"I just had a happy wolf bar"*. The reply was *"Happy Wolf
+    chocolate chip bar, logged."* — a flavour nobody stated, taken from their
+    most-logged prior, asserted as fact. No question, no stated assumption, and
+    nothing recorded: the turn's `reasoning_json` held no ambiguity and no
+    assumption at all. Happy Wolf carries four flavours; Arnie itself said so
+    two minutes later when asked.
+
+    That breaks the standing rule twice over — **a prior shortens the question,
+    it never removes it**, and **an assumption is a statement, not a silence**.
+
+    The signal is the gap between what they SAID and what we WROTE. If the
+    interpreter's identity carries words the user's own message does not, we
+    chose them. That is the identity twin of `derive_vague_quantities`: there,
+    the user was vague about an amount and we were precise; here, they were
+    vague about a product and we were precise.
+
+    **Token difference, deliberately — no flavour vocabulary anywhere.** A list
+    of flavour words would be an English list, would go stale against every
+    brand, and is the per-language catalog the directive forbids. "Words they
+    did not write" needs no vocabulary and works in every script.
+
+    THE GATE IS PRIOR SHAPE × SHELF WIDTH, which is what decides ask versus
+    state:
+
+      shelf visibly wide (two or more real siblings) -> identity_risk 1.0, and
+          the clarification policy asks, offering the siblings by name.
+      shelf unseen -> a moderate risk that will not clear the ask threshold, so
+          the leading option becomes a STATED assumption via `_assume_leading`
+          and a tap corrects it. Silence is never the outcome.
+
+    Only branded items. A generic food gaining a category word ("chicken" ->
+    "chicken breast") is normalisation, not an invented product, and treating
+    it as one would interrogate people about groceries.
+    """
+    if not identity_ask_enabled():
+        return items
+    from skills.nutrition.ambiguity import (AmbiguityOption, AmbiguityType,
+                                            build_ambiguity)
+    from skills.nutrition.staging import FoodAssumption, FoodClass
+
+    said = _tokens(message)
+    if not said:
+        return items
+
+    out = []
+    for item in items or ():
+        if item.food_class is not FoodClass.BRANDED:
+            out.append(item)
+            continue
+        # The interpreter already reported an identity doubt — its options and
+        # its numbers are better than anything derived here.
+        if any(a.ambiguity_type.is_identity for a in item.ambiguities):
+            out.append(item)
+            continue
+        rows = list((variant_rows or {}).get(
+            (item.original_text or "").strip().lower()) or ())
+        # THE SHELF DECIDES WHICH WORDS ARE A CHOICE. Without it this cannot
+        # run at all: "caramel cashew Barebells bar" logged as "...Protein
+        # Bar" adds the word "protein", and asking which protein it was is an
+        # interrogation about the product line. A word every sibling carries
+        # is the line; a word only some carry is the choice — and only the
+        # shelf knows which is which. No stopword list could: "protein" is
+        # boilerplate on a bar and the whole point on a shake.
+        if len(rows) < 2:
+            out.append(item)
+            continue
+        shared = set.intersection(*[_tokens(r.get("name") or "") for r in rows])
+
+        # What we wrote, minus what they wrote, minus the brand they named,
+        # minus everything the whole shelf shares.
+        wrote = _tokens(item.original_text) | _tokens(item.identity.variant) \
+            | _tokens(item.identity.product_line)
+        invented = wrote - said - _tokens(item.identity.brand) - shared
+        if not invented:
+            out.append(item)
+            continue
+        # WHAT ACTUALLY DISTINGUISHES THEM. Offering "Happy Wolf Strawberry
+        # Bar" beside "chocolate chip" is a question written by a database.
+        # Every word the siblings SHARE is the product line, not the choice, so
+        # it comes out — leaving the flavour, in the shelf's own words.
+        # The siblings, named. An option list is what lets the policy ask a
+        # question someone can answer in one word — and what `_assume_leading`
+        # turns into a stated assumption when it decides not to ask.
+        assumed = " ".join(w for w in (item.original_text or "").split()
+                           if _tokens(w) & invented) or "that one"
+        options = [AmbiguityOption(assumed, confidence=0.6)]
+        # IS THIS THEIR USUAL? A prior does not settle the identity, but it
+        # does change the SHAPE of the question: "chocolate chip like usual?"
+        # is one word to answer, where a four-way menu is a form to fill in.
+        # The rule is that a prior SHORTENS the question, never removes it.
+        usual = _matching_regular(invented, regulars)
+
+        # ONE PRODUCT UNDER TWO LABELS IS NOT A CHOICE. Open Food Facts
+        # carries the same bar as "Caramel Cashew bar" and "Protein Bar
+        # Caramel Cashew"; offering both asks the user to pick between a thing
+        # and itself, which is friction manufactured by the pipeline rather
+        # than by the food — the rule `collapse_candidates` already keeps for
+        # scored candidates, applied here to names.
+        seen_keys = {frozenset(invented)}
+        for row in rows:
+            label = _distinctive(str((row or {}).get("name") or ""), shared)
+            key = frozenset(_tokens(label))
+            if not label or not key or key in seen_keys:
+                continue
+            seen_keys.add(key)
+            options.append(AmbiguityOption(label, confidence=0.2))
+            if len(options) >= 4:
+                break
+        # Width measured on what is genuinely DISTINCT, not on row count. A
+        # shelf that collapses to the one product we assumed does not disagree
+        # with us, so it earns a stated assumption rather than a question.
+        shelf_is_wide = len(options) >= 2
+        named = [o.label for o in options[1:]]
+        if usual:
+            # A CONFIRM, not a menu. It still names that alternatives exist —
+            # "the chocolate chip I usually have vs. one of their other
+            # flavors" is the question that was owed, and a bare "chocolate
+            # chip?" invites a yes to a fact nobody checked.
+            prompt = f"{_lead(assumed)} like usual, or a different one?"
+        elif named:
+            prompt = f"Which one was it — {_or_list([assumed] + named)}?"
+        else:
+            prompt = ""
+        amb = build_ambiguity(
+            staged_item_id=item.staged_item_id,
+            ambiguity_type=AmbiguityType.PRODUCT_VARIANT,
+            field_name="variant", mode=mode,
+            # Identity risk short-circuits materiality by design: choosing the
+            # wrong flavour of a 110-calorie bar can cost nothing in calories
+            # and still be the wrong product on their log. A prior earns the
+            # question a cheaper SHAPE, never an exemption from being asked.
+            identity_risk=(1.0 if (shelf_is_wide or usual) else 0.6),
+            item_calories=None,
+            targets=dict(targets) if targets else None,
+            options=tuple(options),
+            prompt=prompt)
+        item = item.with_ambiguities(list(item.ambiguities) + [amb])
+
+        # ── THE FLOOR: A CHOSEN IDENTITY IS ALWAYS STATED ──────────────────
+        #
+        # Attached to the ITEM, not left to the policy. `_assume_leading` only
+        # runs on ambiguities the policy judged MATERIAL, so an identity we
+        # invented but did not consider worth a question produced silence —
+        # which is the production defect exactly. `decide()` collects
+        # `item.assumptions` unconditionally, so this survives every branch.
+        #
+        # Composer input, not user-facing copy: the reply is written by the
+        # composer under the [REPLY LANGUAGE] pin, so this reaches a Russian
+        # user in Russian. (The assumption-text surface as a whole predates
+        # this and is English throughout — see `_assume_leading` — and wants
+        # the same language pass.)
+        out.append(item.with_assumption(FoodAssumption(
+            staged_item_id=item.staged_item_id, field_name="variant",
+            assumed_value=assumed, alternatives=tuple(named),
+            confidence=(0.5 if shelf_is_wide else 0.7),
+            user_visible_text=(f"Went with the {assumed} — say the word if it "
+                               f"was a different one."))))
+    return tuple(out)
+
+
+def _matching_regular(invented: set, regulars) -> Optional[str]:
+    """The regular whose name contains every word we invented, if any.
+
+    That containment is what makes it THEIR usual rather than a coincidence:
+    we wrote "chocolate chip", and a regular called "Happy Wolf chocolate chip
+    bar" accounts for both words. A regular sharing one word does not.
+    """
+    if not invented:
+        return None
+    for regular in (regulars or ()):
+        if not isinstance(regular, Mapping):
+            continue
+        name = str(regular.get("name") or regular.get("food") or "")
+        if name and invented <= _tokens(name):
+            return name
+    return None
+
+
+def _lead(text: str) -> str:
+    """Sentence-leading form, without touching the middle of a brand name."""
+    text = (text or "").strip()
+    return (text[:1].upper() + text[1:]) if text else text
+
+
+def _distinctive(label: str, shared: set) -> str:
+    """A sibling's name with the words every sibling shares removed.
+
+    "Happy Wolf Strawberry Bar" against a shelf that is all Happy Wolf bars is
+    "Strawberry". Falls back to the full label when removing the shared words
+    would leave nothing — a product whose only distinguishing feature is one we
+    cannot see is better offered whole than offered blank.
+    """
+    kept = [w for w in (label or "").split() if not (_tokens(w) <= shared)]
+    return " ".join(kept).strip() or (label or "").strip()
+
+
+def _or_list(labels) -> str:
+    """"a, b or c" from real product names. Joins data; invents no words."""
+    labels = [str(x).strip() for x in labels if str(x).strip()]
+    if len(labels) < 2:
+        return labels[0] if labels else ""
+    return ", ".join(labels[:-1]) + f" or {labels[-1]}"
+
+
 def plan_turn(data: Mapping, *, turn_id: str, message: str = "",
               mode: str = "moderate", round_number: int = 0,
               preferences=None, now: Optional[datetime] = None,
               targets: Optional[Mapping] = None,
               variant_spreads: Optional[Mapping] = None,
-              item_candidates: Optional[Mapping] = None
+              item_candidates: Optional[Mapping] = None,
+              variant_rows: Optional[Mapping] = None,
+              regulars: Optional[Any] = None
               ) -> Optional[FoodTurnDecision]:
     """The whole pre-execution decision. Returns None on any failure, so the
     caller keeps its existing behaviour rather than losing the turn."""
@@ -445,6 +673,13 @@ def plan_turn(data: Mapping, *, turn_id: str, message: str = "",
             # sharing this name it actually was. Fetched by the caller.
             items = derive_variant_ambiguity(items, variant_spreads, data,
                                              mode=mode, targets=targets)
+            # ...and the doubt we CREATED: a product specifier in our output
+            # that is nowhere in their message. Derived from the two strings
+            # alone, so it costs nothing and needs no vocabulary.
+            items = derive_assumed_identity(items, message=message, mode=mode,
+                                            targets=targets,
+                                            variant_rows=variant_rows,
+                                            regulars=regulars)
             items = apply_preferences(items, preferences, now=now, mode=mode)
             decision = decide(list(items), mode=mode,
                               round_number=round_number)
@@ -589,7 +824,21 @@ _CLAUSE_STOPWORDS = frozenset({
 
 
 def _tokens(text: str) -> set:
-    return {w for w in re.findall(r"[a-z0-9&]+", (text or "").lower())
+    r"""Words, in any script.
+
+    This was `[a-z0-9&]+` — ASCII letters only — so every Cyrillic, Greek,
+    Hebrew, Arabic or CJK message tokenised to the EMPTY SET and every rule
+    built on token overlap silently did nothing. `derive_assumed_identity`
+    compares what the user wrote against what we wrote, so an empty set meant
+    a Russian user could never be told we had chosen their product's flavour.
+    Caught by running the rule in Russian, not by reading it: the identical
+    blindspot was fixed in `reply_language_block` hours earlier, and it grew
+    back in new code the same day.
+
+    `\w` under Python 3's default unicode semantics takes every script, and
+    ASCII behaviour is unchanged.
+    """
+    return {w for w in re.findall(r"\w+", (text or "").lower())
             if w not in _CLAUSE_STOPWORDS}
 
 

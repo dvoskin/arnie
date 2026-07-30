@@ -104,3 +104,30 @@ async def make_user(db):
         return u
 
     return _make
+
+
+@pytest.fixture(autouse=True)
+def _isolate_turn_scoped_caches():
+    """No test inherits another test's product lookups.
+
+    `core.food_turn._SPREAD_CACHE` is process-global and name-keyed, which is
+    correct in production — the shelf behind a given product name is a stable
+    fact, and that is exactly why spreads are cached across turns. In a test
+    process it makes behaviour depend on test ORDER: once one test has looked
+    up a Barebells bar, every later test asking about one silently gets a shelf
+    it never fetched.
+
+    That surfaced the moment the cache began carrying product ROWS as well as
+    spreads (the §8.1 join), because `derive_assumed_identity` reads those rows
+    to decide whether a flavour is a real choice — so an unrelated test could
+    turn a silent log into a question. Same for the in-flight enrichment
+    registry, which is keyed by turn id and would otherwise hand a stale future
+    to a test that never started one.
+    """
+    import core.food_turn as _FT
+    import handlers.tool_executor as _TE
+    _FT._SPREAD_CACHE.clear()
+    _TE._INFLIGHT_FETCHES.clear()
+    yield
+    _FT._SPREAD_CACHE.clear()
+    _TE._INFLIGHT_FETCHES.clear()

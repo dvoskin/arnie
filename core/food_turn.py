@@ -1787,6 +1787,26 @@ _SPREAD_CACHE_MAX = 256
 _VARIANT_SPREAD_SECONDS = 1.5
 
 
+def _identity_was_invented(raw, message: str) -> bool:
+    """Did we write a product specifier the user did not say?
+
+    Computed BEFORE the fetch, from the two strings alone, because the fetch
+    gate has to know. `derive_assumed_identity` asks the same question after
+    staging; this is the cheap pre-check that decides whether the shelf is
+    worth looking at, and it uses the same script-agnostic tokens so it is not
+    English-keyed.
+    """
+    try:
+        from core.food_pipeline import _tokens
+        said = _tokens(message)
+        if not said:
+            return False
+        wrote = _tokens(str(raw.get("food") or ""))
+        return bool(wrote - said - _tokens(str(raw.get("brand") or "")))
+    except Exception:
+        return False
+
+
 def _spread_could_matter(raw, *, mode: str, targets) -> bool:
     """Could a shelf spread on this item ever change the ask decision?
 
@@ -1820,7 +1840,7 @@ def _spread_could_matter(raw, *, mode: str, targets) -> bool:
 
 
 async def _variant_spreads(data, *, mode: str = "moderate",
-                           targets=None) -> dict:
+                           targets=None, message: str = "") -> dict:
     """`{food_lower: {nutrient: per-100g span, _max_per100: ceiling}}` for the
     branded items in this turn.
 
@@ -1844,7 +1864,15 @@ async def _variant_spreads(data, *, mode: str = "moderate",
         food = str(raw.get("food") or "").strip()
         if not food or food.lower() in [n.lower() for n in names]:
             continue
-        if not _spread_could_matter(raw, mode=mode, targets=targets):
+        # THE SHELF IS ALSO THE ANSWER LIST. The gate below asks only whether
+        # a CALORIE spread could be material, and a flavour we invented is a
+        # doubt about which product it was — cheap in calories, wrong on the
+        # log. When we named something they did not, the siblings ARE the
+        # question's options, so they are worth the bounded lookup.
+        from core.food_pipeline import identity_ask_enabled
+        if not ((identity_ask_enabled()
+                 and _identity_was_invented(raw, message))
+                or _spread_could_matter(raw, mode=mode, targets=targets)):
             logger.debug(f"variant spread skipped for {food!r}: "
                          f"immaterial even at its widest")
             continue
@@ -3892,7 +3920,8 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
                 # reporting.
                 _targets = _daily_targets(user)
                 _spreads = await _variant_spreads(data, mode=mode,
-                                                  targets=_targets)
+                                                  targets=_targets,
+                                                  message=message)
                 # ...AND THE PRODUCTS THEMSELVES (audit §8.1). The same fetch
                 # that measured the spread holds the rows it measured, and the
                 # speculative enrichment has usually already answered by now.
@@ -3904,7 +3933,9 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
                     mode=mode, preferences=_prefs_for(user),
                     targets=_targets,
                     variant_spreads=_spreads,
-                    item_candidates=_ask_candidates(data))
+                    item_candidates=_ask_candidates(data),
+                    variant_rows=_variant_rows(data),
+                    regulars=regulars)
         except Exception as _pe:
             logger.warning(f"food pipeline unavailable: {_pe}")
             _decision = None

@@ -260,3 +260,133 @@ async def test_an_item_with_nothing_fetched_is_left_alone(turn):
                          item_candidates=turn._ask_candidates(data))
     assert decision is not None
     assert decision.staged_items[0].candidate_products == ()
+
+
+# ── a prior shortens the question; it never removes it ────────────────────────
+_HAPPY_WOLF = {"action": "log", "items": [{
+    "food": "Happy Wolf chocolate chip bar", "brand": "Happy Wolf",
+    "branded": True, "amount": 1, "unit": "bar", "calories": 110,
+    "protein": 6, "carbs": 10.9, "fat": 4.7}]}
+
+_SHELF = {"happy wolf chocolate chip bar": [
+    {"name": "Happy Wolf Chocolate Chip Bar"},
+    {"name": "Happy Wolf Strawberry Bar"},
+    {"name": "Happy Wolf Apple Cinnamon Bar"},
+    {"name": "Happy Wolf Choco-Banana Bar"}]}
+
+
+@pytest.fixture(autouse=True)
+def _identity_ask_on(monkeypatch):
+    """These cover the flagged behaviour, so they switch it on explicitly.
+    Everything else in the suite runs with it off, which is how it ships."""
+    monkeypatch.setenv("FOOD_IDENTITY_ASK", "true")
+
+
+def _plan_identity(message, rows, regulars=None):
+    from core.food_pipeline import plan_turn
+    return plan_turn(_HAPPY_WOLF, turn_id="t", message=message,
+                     mode="moderate", variant_rows=rows, regulars=regulars)
+
+
+def test_a_flavour_we_invented_is_asked_about_when_the_shelf_is_wide():
+    """Production, turn #8338: "I just had a happy wolf bar" logged as "Happy
+    Wolf chocolate chip bar" — a flavour nobody stated, from their most-logged
+    prior, asserted as fact. Happy Wolf carries four."""
+    decision = _plan_identity("I just had a happy wolf bar", _SHELF)
+    assert decision.asks, "the invented flavour was not questioned"
+    prompt = decision.question.prompt
+    # Offered in the shelf's own words, trimmed to what distinguishes them.
+    assert "Strawberry" in prompt and "Apple Cinnamon" in prompt
+
+
+def test_a_shelf_with_no_real_alternative_says_nothing():
+    """When every sibling carries the same flavour words, there was never a
+    choice — so there is nothing to ask and nothing to disclose.
+
+    This replaces an assertion that the assumption is stated here. That was
+    written before the shelf gate, and the gate makes it unreachable by
+    construction: the words are subtracted as product-line boilerplate, so
+    nothing reads as invented. Stating "went with the chocolate chip" when the
+    shelf offers only chocolate chip would be disclosing a decision nobody
+    made.
+    """
+    shelf = {"happy wolf chocolate chip bar": [
+        {"name": "Happy Wolf Chocolate Chip Bar"},
+        {"name": "Happy Wolf Bar Chocolate Chip"}]}   # one product, two labels
+    decision = _plan_identity("I just had a happy wolf bar", shelf)
+    assert not decision.asks
+    assert not [a for a in decision.staged_items[0].assumptions
+                if a.field_name == "variant"]
+
+
+def test_no_shelf_means_no_guess_about_what_was_chosen():
+    """Deliberately narrow. Without siblings there is no way to tell a flavour
+    from product-line boilerplate — "caramel cashew Barebells bar" logged as
+    "...Protein Bar" adds the word "protein", and asking which protein it was
+    is an interrogation about the product line. No stopword list can decide it
+    either: "protein" is boilerplate on a bar and the whole point on a shake.
+
+    The cost is a silent turn when Open Food Facts has nothing; the fetch gate
+    (`_identity_was_invented`) exists so that is rare, because a turn that
+    invented a specifier now earns the lookup.
+    """
+    decision = _plan_identity("I just had a happy wolf bar", None)
+    assert not decision.asks
+    assert not [a for a in decision.staged_items[0].assumptions
+                if a.field_name == "variant"]
+
+
+def test_naming_the_flavour_yourself_invents_nothing():
+    """No question, no assumption — they said it, so nothing was chosen."""
+    decision = _plan_identity("had a happy wolf chocolate chip bar", _SHELF)
+    assert not decision.asks
+    assert not (decision.clarification.assumptions or ())
+
+
+def test_a_generic_food_gaining_a_word_is_not_an_invented_product():
+    """"chicken" -> "chicken breast" is normalisation. Treating it as an
+    invented PRODUCT would interrogate people about groceries.
+
+    The turn may still ask about the AMOUNT — "some chicken" is a vague
+    measure and that question predates this and is correct. What must not
+    appear is an identity doubt or a chosen-product assumption.
+    """
+    from core.food_pipeline import plan_turn
+    data = {"action": "log", "items": [{"food": "chicken breast",
+                                        "calories": 180}]}
+    decision = plan_turn(data, turn_id="t", message="had some chicken",
+                         mode="moderate", variant_rows=None)
+    item = decision.staged_items[0]
+    assert not [a for a in item.ambiguities if a.field_name == "variant"]
+    assert not [a for a in item.assumptions if a.field_name == "variant"]
+
+
+def test_the_rule_holds_in_a_language_it_was_never_written_for():
+    """The rule is "words they did not write", so it needs no vocabulary — and
+    the proof of that is a script the code has never seen.
+
+    Asserted by RUNNING it, not by grepping the source for English words. A
+    grep for "chocolate" passes on a file whose docstring quotes the incident,
+    and this session already had to convert two source greps that broke on a
+    comment while covering nothing.
+    """
+    from core.food_pipeline import plan_turn
+
+    data = {"action": "log", "items": [{
+        "food": "Барни шоколадный", "brand": "Барни", "branded": True,
+        "amount": 1, "unit": "шт", "calories": 140}]}
+    shelf = {"барни шоколадный": [{"name": "Барни шоколадный"},
+                                  {"name": "Барни молочный"},
+                                  {"name": "Барни клубничный"}]}
+    # They named the brand only; the flavour is ours.
+    decision = plan_turn(data, turn_id="t", message="съел барни",
+                         mode="moderate", variant_rows=shelf)
+    assert decision.asks, "the invented flavour was not questioned in Russian"
+    assert [a for a in decision.staged_items[0].assumptions
+            if a.field_name == "variant"]
+
+    # ...and naming it themselves invents nothing, in the same language.
+    settled = plan_turn(data, turn_id="t2", message="съел барни шоколадный",
+                        mode="moderate", variant_rows=shelf)
+    assert not [a for a in settled.staged_items[0].assumptions
+                if a.field_name == "variant"]

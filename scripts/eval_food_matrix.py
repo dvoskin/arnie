@@ -112,6 +112,18 @@ CASES = [
          msg="just had a barebells bar", mode="strict", expect="ask"),
     dict(name="strict + branded + flavor stated logs",
          msg="had a barebells caramel cashew bar", mode="strict", expect="log"),
+    # CHANGED 2026-07-30 ON DANNY'S CALL, and deliberately not by editing an
+    # expectation quietly. This case used to expect `log`: a matching regular
+    # settled the flavour and the turn wrote it without asking. Production turn
+    # #8338 is what that looks like — "I just had a happy wolf bar" logged as
+    # "Happy Wolf chocolate chip bar", a flavour nobody stated, no question and
+    # no stated assumption, on a brand carrying four of them.
+    #
+    # The standing rule is that a prior SHORTENS the question, never removes
+    # it. So a regular now earns a CONFIRM — "Caramel cashew like usual, or a
+    # different one?" — which is one word to answer and still nameable as
+    # wrong. `log` remains correct when the user names the flavour themselves;
+    # the case above this one covers that and is unchanged.
     dict(name="branded + regular match logs THEIR numbers",
          msg="just had a barebell", mode="strict", regulars=REG_BAREBELLS,
          expect="log", want_cal=(180, 220)),
