@@ -70,16 +70,16 @@ def test_a_portion_answer_is_arithmetic_on_the_stored_basis():
 
 
 def test_a_brand_does_not_get_logged_as_the_food():
-    """`FoodIdentity.describe()` prefers the canonical name only when it has
-    MORE words than the brand — so a one-word food under a one-word brand
-    describes as the brand alone. Caught by this test failing with "Seppe":
-    the row would have said the user ate a brand.
+    """A one-word food under a one-word brand ("Sopressata" by "Seppe") once
+    described as the brand alone, and the row said the user ate a brand.
 
-    `describe()` itself is untouched (it names cards, questions and replies
-    everywhere); the write-side name is repaired where the row is built.
+    The row now takes `describe()` verbatim — see
+    `tests/test_food_identity_describe.py` for the rule it relies on. This
+    stays because it is the write it was found in: whatever describe() does,
+    the food reaches the row.
     """
     item = _sopressata()
-    assert item.identity.describe() == "Seppe"      # the underlying behaviour
+    assert item.identity.describe() == "Seppe Sopressata"
     priced = price_from_resolution(
         apply_answer(item, {"estimated_mass_g": 50.0}))
     assert priced["food"] == "Seppe Sopressata"
@@ -92,6 +92,15 @@ def test_a_name_already_containing_the_brand_is_not_doubled():
     priced = price_from_resolution(
         apply_answer(item, {"estimated_mass_g": 50.0}))
     assert priced["food"] == "Royo Everything Bagel"
+
+
+def test_a_row_name_falls_back_to_what_the_user_said():
+    """No identity at all is the one case describe() cannot name. The row says
+    what the user said rather than nothing."""
+    item = replace(_sopressata(), identity=FoodIdentity())
+    priced = price_from_resolution(
+        apply_answer(item, {"estimated_mass_g": 50.0}))
+    assert priced["food"] == "the sopressata"
 
 
 @pytest.mark.parametrize("answer", [

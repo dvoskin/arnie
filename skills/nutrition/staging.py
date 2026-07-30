@@ -93,26 +93,44 @@ class FoodIdentity:
                      if getattr(self, f) is not None)
 
     def describe(self) -> str:
-        parts = [p for p in (self.brand, self.product_line, self.variant)
-                 if p]
+        """What to CALL this food, under one invariant: **the description
+        never omits the canonical name.**
+
+        THE CANONICAL NAME IS NOT A FALLBACK. It is what the food was actually
+        called; brand, line and variant only say WHICH one. Drop the name and
+        the label stops naming a food at all — "Royo Everything Bagel" became
+        "Royo", which is how a question built from this label came to ask
+        about the maker rather than the product.
+
+        The rule that replaced it counted words ("prefer the name when it has
+        more of them"), which fails whenever the name and the brand are the
+        same length: canonical "Sopressata" under brand "Seppe" is 1 > 1, and
+        the label was the brand alone again. Word counts were never the
+        question. So: the name is always said, and a qualifier is said only
+        when it adds words the name does not already carry — which drops
+        "Royo" from "Royo Everything Bagel" without ever dropping the food.
+        """
         name = (self.canonical_name or "").strip()
-        # THE CANONICAL NAME IS NOT A FALLBACK. It is what the food was
-        # actually called, and it is routinely MORE specific than brand /
-        # line / variant — staging fills `canonical_name` and `brand` and
-        # leaves the other two empty for every item, so the old "only if
-        # there are no parts" rule discarded it on every branded row.
-        # "Royo Everything Bagel" described itself as "Royo", which is how a
-        # question built from this label came to ask about the maker rather
-        # than the product.
-        if name and len(name.split()) > len(parts):
-            parts = ([name] if not self.brand
-                     or self.brand.lower() in name.lower()
-                     else [self.brand, name])
-        if not parts and name:
-            return name
+        name_words = _words(name)
+        parts: list[str] = []
+        said: set = set()       # every word already in `parts`
+        for qualifier in (self.brand, self.product_line, self.variant):
+            qualifier = (qualifier or "").strip()
+            words = _words(qualifier)
+            # Nothing new to add: the name says it ("Royo" in "Royo Everything
+            # Bagel"), or an earlier qualifier did (line repeating brand).
+            if not words or words <= said or words <= name_words:
+                continue
+            parts.append(qualifier)
+            said |= words
+        # The name goes last, unless a qualifier already spelled it out —
+        # canonical "Bagel" under line "Everything Bagel" is named by the
+        # line, and appending it again would say "Everything Bagel Bagel".
+        if name and not name_words <= said:
+            parts.append(name)
         if self.package_size is not None:
             parts.append(self.package_size.describe())
-        return " ".join(parts) or name
+        return " ".join(parts)
 
 
 @dataclass(frozen=True)
@@ -457,6 +475,22 @@ def _quantity_known(item: StagedFoodItem) -> bool:
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
+_NON_WORD = re.compile(r"[^a-z0-9]+")
+
+
+def _words(text: Optional[str]) -> set:
+    """The comparable words in a label, for asking whether one label already
+    says what another one would.
+
+    Compared as WORDS rather than as a substring, so brand "Kind" is not
+    treated as already-said by "Kindness". Apostrophes close up first —
+    "Trader Joe's" and "Trader Joes" are the same two words, and splitting on
+    the apostrophe would make them differ.
+    """
+    lowered = (text or "").lower().replace("'", "").replace("’", "")
+    return {w for w in _NON_WORD.split(lowered) if w}
+
+
 _FRACTION_WORDS = {0.25: "a quarter", 0.5: "half", 0.75: "three quarters",
                    1.0: "all of it"}
 
