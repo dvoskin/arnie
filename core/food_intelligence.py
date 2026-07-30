@@ -236,6 +236,13 @@ class FoodAnalysis:
     quality: Optional[str] = None          # low|solid|excellent
     per100: dict = field(default_factory=dict)
     micros: dict = field(default_factory=dict)  # per-PORTION micronutrients → micronutrients_json
+    #: THE WINNING SOURCE'S OWN SERVING PANEL — "28 g (about 15 chips)".
+    #: Read during analysis and then dropped, which is the same discard as the
+    #: rest of the resolution (cause B): it is the only thing that knows what
+    #: one piece of THIS product weighs, so a later "just 9 chips" had nothing
+    #: to convert with and took the model's guess. Carried, not re-derived —
+    #: no table of food-shaped averages knows a Sun Chip from a tortilla chip.
+    serving_text: str = ""
     micros_estimated: bool = False  # micros came from the LLM fallback, not a DB match
     coach_note: str = ""                   # the analysis line surfaced to the LLM
     enrichment_source: Optional[str] = None  # "memory" | "usda" | "web_label" | None
@@ -1123,6 +1130,7 @@ def analyze(name, quantity, llm_cal, llm_protein, llm_carbs, llm_fat,
         fdc_id=fdc_id, confidence=confidence, source=source,
         protein_density=pd, satiety=satiety, quality=quality, per100=per100,
         micros=micros,
+        serving_text=str((src or {}).get("serving_text") or ""),
         coach_note=f"{note} [{conf_note}]",
         enrichment_source=(source if source != "estimate" else None),
         provenance=authority.provenance_for(

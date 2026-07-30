@@ -393,6 +393,125 @@ async def _resync_batch_receipts(ctxs, user, db) -> None:
             logger.warning(f"batch receipt resync skipped for log {log_id}: {e}")
 
 
+async def _stored_resolution(db, user_id: int, entry_id: int) -> Optional[dict]:
+    """The basis this entry was written from, off its created event.
+
+    One indexed read, and it may never cost the correction: everything here is
+    best-effort, because a correction that fails because its provenance lookup
+    failed is worse than one priced the old way.
+    """
+    try:
+        from db.queries import get_ledger_events
+        events = await get_ledger_events(db, user_id, domain="food",
+                                         entry_id=int(entry_id), limit=10)
+        for event in events or ():
+            if getattr(event, "event_type", "") != "created":
+                continue
+            payload = json.loads(getattr(event, "payload_json", "") or "{}")
+            resolution = (payload or {}).get("resolution")
+            return resolution if isinstance(resolution, dict) else None
+    except Exception as e:
+        logger.debug(f"stored resolution unavailable for #{entry_id}: {e}")
+    return None
+
+
+def _same_quantity(old: str, new: str) -> bool:
+    """Whether two quantity strings describe the same portion.
+
+    By mass where both resolve to one, so "1 bag" and "39 g" of the same bag do
+    not read as a correction; by normalized text otherwise.
+    """
+    a, b = (old or "").strip().lower(), (new or "").strip().lower()
+    if not b:
+        return True
+    if a == b:
+        return True
+    try:
+        from skills.nutrition.normalize import normalize_quantity
+        ga = normalize_quantity(a, "").grams
+        gb = normalize_quantity(b, "").grams
+        if ga and gb:
+            return abs(float(ga) - float(gb)) < 0.5
+    except Exception:
+        pass
+    return False
+
+
+async def _apply_portion_correction(db, user, entry_id: int, inp: dict,
+                                    changes: dict) -> None:
+    """Rewrite `changes`' macros as arithmetic on what the row already holds.
+
+    Mutates `changes` in place when it succeeds and leaves it untouched when it
+    does not — the caller's existing path IS the fallback, so a decline costs
+    the correction nothing. Never raises for the same reason.
+    """
+    try:
+        from db.models import FoodEntry as _FE_p
+        from skills.nutrition.correction_application import apply_portion
+
+        row = await db.get(_FE_p, int(entry_id))
+        if row is None:
+            return
+        old_quantity = str(getattr(row, "quantity", "") or "")
+        new_quantity = str(inp.get("quantity") or "")
+        if _same_quantity(old_quantity, new_quantity):
+            # An echo, not a correction. Rescaling here would compute the same
+            # numbers and, worse, overwrite macros the user themselves supplied
+            # on the same call.
+            return
+        committed = {"calories": row.calories, "protein": row.protein,
+                     "carbs": row.carbs, "fats": row.fats,
+                     "fiber": row.fiber, "sugar": row.sugar,
+                     "sodium": row.sodium}
+        name = str(getattr(row, "parsed_food_name", "") or "").strip()
+        resolution = await _stored_resolution(db, user.id, int(entry_id))
+        scaled = apply_portion(
+            food_name=name, old_quantity=old_quantity,
+            new_quantity=new_quantity, committed=committed,
+            per100=(resolution or {}).get("per100"),
+            serving_text=str((resolution or {}).get("serving_text") or ""))
+        if not scaled:
+            return
+        # THE ARITHMETIC REPLACES THE GUESS, and only for the macros it could
+        # compute. A nutrient the basis did not know stays as it was rather
+        # than being zeroed — the "unknown stays unknown" rule, applied to a
+        # rescale.
+        for column, value in scaled.items():
+            changes[column] = value
+    except Exception as e:
+        logger.warning(f"portion correction not applied: {e}")
+
+
+def _resolution_payload(analysis) -> Optional[dict]:
+    """The per-100g basis and anchor a correction can price from, or None.
+
+    Small on purpose: the numbers, the source and the id. Not the whole
+    provenance record — that is display material with a shape that changes,
+    and this has to be readable by code written months from now.
+    """
+    try:
+        per100 = getattr(analysis, "per100", None) or {}
+        if not isinstance(per100, dict):
+            return None
+        calories = per100.get("calories")
+        if not isinstance(calories, (int, float)) or calories <= 0:
+            # Without the per-100g calories there is no basis to scale, and a
+            # payload that looks like one would make the correction path
+            # confident about nothing.
+            return None
+        return {"source": getattr(analysis, "source", None) or "estimate",
+                "source_id": (str(getattr(analysis, "fdc_id", "") or "")
+                              or None),
+                "confidence": getattr(analysis, "confidence", None) or "",
+                # The panel that knows what ONE of this product weighs.
+                "serving_text": str(getattr(analysis, "serving_text", "")
+                                    or ""),
+                "per100": {k: v for k, v in per100.items()
+                           if isinstance(v, (int, float))}}
+    except Exception:
+        return None
+
+
 def _stash_sourcing(inp, analysis, food_name):
     """Attach the enrichment SOURCING trace to the tool input so the reasoning
     receipt ("Arnie's thoughts") can show HOW a food's numbers were sourced —
@@ -3209,7 +3328,17 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
                          "carbs": analysis.carbs,
                          "fats": analysis.fat,
                          "meal_type": getattr(_new_food, "meal_type", None),
-                         "basis": inp.get("basis")},
+                         "basis": inp.get("basis"),
+                         # THE RESOLUTION THE ROW WAS WRITTEN FROM (cause B).
+                         # An entry keeps its committed macros and a quantity
+                         # STRING; the per-100g row behind them was thrown
+                         # away, so a later correction had nothing to correct
+                         # against and re-searched the mutated name instead.
+                         # The created event is already the entry's provenance
+                         # record and I3 guarantees exactly one per entry, so
+                         # it is where the basis belongs. Display-neutral —
+                         # nothing reads it but the correction path.
+                         "resolution": _resolution_payload(analysis)},
                 source=inp.get("source") or f"legacy:{source_type}")
             # The event id is the card's undo token (one-tap Undo, Phase 2).
             if isinstance(inp, dict) and getattr(_ev_row, "id", None) is not None:
@@ -3784,6 +3913,38 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
                 return (x or "").strip().lower()
         _identity_changed = bool(changes.get("food_name")) and (
             _nfn2(str(changes["food_name"])) != _nfn2(_cur_name))
+        # ── A PORTION CORRECTION IS ARITHMETIC, NOT A NEW GUESS (cause B) ────
+        #
+        # The identity did not change, so the food is the one already resolved
+        # and the only thing in question is how much of it. This branch never
+        # existed: the interpreter's freshly-invented macros went straight to
+        # the columns, which is how "Update the sun chips to just 9 chips
+        # please" wrote a number no source ever produced, and how a row could
+        # end up with a corrected portion and macros that never moved.
+        #
+        # `apply_portion` is the same shape as `answer_application.apply_answer`
+        # — settle the changed field on a stored resolution, price from numbers
+        # already in hand, decline the moment anything is missing. It reaches
+        # for the per-100g basis the created event carries; on rows written
+        # before that existed it scales the committed numbers by the ratio of
+        # the two portions; and with neither it declines and the interpreter's
+        # numbers stand, which is exactly today's behaviour.
+        #
+        # WHICH FIELD CHANGED IS WHICH ARM. The plan's arms are exclusive: a
+        # call carrying a new PORTION is a portion correction and is priced by
+        # arithmetic; a call carrying only new MACROS is the user reading us a
+        # number ("Check your numbers it says 80 online") and their figure
+        # wins untouched. The macros the model sends ALONGSIDE a quantity
+        # change are its own recomputation of that portion — the very thing
+        # producing wrong rows — so they do not outrank the basis.
+        #
+        # CHANGED, not merely PRESENT, for the same reason `_identity_changed`
+        # is: the interpreter routinely echoes fields it is not correcting, and
+        # a rescale fired by an echoed quantity would overwrite the user's own
+        # stated calories with arithmetic they never asked for.
+        if not _identity_changed and inp.get("quantity") and entry_id:
+            await _apply_portion_correction(db, user, int(entry_id), inp,
+                                            changes)
         if _identity_changed:
             try:
                 _new_name = str(changes["food_name"]).strip()

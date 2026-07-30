@@ -62,6 +62,80 @@ def test_a_nameless_correction_still_confirms():
     assert text.startswith("Fixed."), text
 
 
+# ── a real row, a real correction ─────────────────────────────────────────────
+class _Priced:
+    """What the enrichment ladder returns."""
+
+    def __init__(self, calories=310.0):
+        self.calories = calories
+        self.protein = 12.0
+        self.carbs = 30.0
+        self.fat = 14.0
+        self.fiber = self.sugar = self.sodium = None
+        self.fdc_id = "1"
+        self.confidence = "likely"
+        self.source = "usda"
+        self.protein_density = self.satiety = self.quality = None
+        self.per100 = {"calories": 250.0, "protein": 10.0}
+        self.serving_text = ""
+        self.micros = {}
+        self.micros_estimated = False
+        self.coach_note = ""
+        self.enrichment_source = "usda"
+        self.provenance = None
+
+
+async def _logged(db, make_user, monkeypatch):
+    """One committed entry, and the user loaded with its preferences — the
+    executor reads them, and a lazy load inside an async session raises."""
+    from sqlalchemy import select
+    from sqlalchemy.orm import selectinload
+
+    from db.models import FoodEntry, User
+    from db.queries import get_or_create_today_log
+    from handlers.tool_executor import execute_tool_calls
+
+    async def _analyze(db_, user_, name, inp, *a, **k):
+        return _Priced()
+    monkeypatch.setattr("handlers.tool_executor._analyze_food", _analyze)
+
+    created = await make_user()
+    user = (await db.execute(
+        select(User).where(User.id == created.id)
+        .options(selectinload(User.preferences)))).scalars().one()
+    await execute_tool_calls(
+        [{"name": "log_food",
+          "input": {"food_name": "Lunchables Pizza Snack Kit",
+                    "quantity": "1 kit", "calories": 310}}],
+        user, await get_or_create_today_log(db, user.id), db)
+    row = (await db.execute(select(FoodEntry))).scalars().first()
+    assert row is not None
+    return user, row
+
+
+async def _update(db, user, entry_id, **fields):
+    """Run the correction and return the TYPED outcome the reply layer reads.
+
+    Not the log line: `correction_unpriced` was wired to a dead channel for a
+    release while its grep passed, and the fix was to carry the outcome on the
+    typed call. Asserting there is asserting on the thing the user's reply is
+    built from — and it does not depend on how logging happens to be
+    configured when the whole suite runs.
+    """
+    from core.execution_result import LAST_EXECUTION
+    from db.queries import get_or_create_today_log
+    from handlers.tool_executor import execute_tool_calls
+
+    await execute_tool_calls(
+        [{"name": "update_food_entry", "input": {"entry_id": entry_id,
+                                                 **fields}}],
+        user, await get_or_create_today_log(db, user.id), db)
+    execution = LAST_EXECUTION.get()
+    calls = list(getattr(execution, "calls", ()) or ())
+    return next((getattr(c, "correction", None) for c in calls
+                 if getattr(c, "correction", None) is not None), None)
+
+
 # ── the identity change re-resolves ───────────────────────────────────────────
 def test_the_re_resolution_is_gated_on_the_identity_changing():
     """A quantity edit is arithmetic on a row that was already resolved.
@@ -76,26 +150,53 @@ def test_the_re_resolution_is_gated_on_the_identity_changing():
     assert 'if changes.get("food_name"):' in inspect.getsource(TE) or True
 
 
-def test_a_correction_reaches_the_ladder_at_all():
+async def test_a_correction_reaches_the_ladder_at_all(db, make_user,
+                                                      monkeypatch):
     """The regression this file exists for: `analyze` must be reachable from
-    the update path. It was not — `changes` went straight to columns."""
-    import inspect
+    the update path. It was not — `changes` went straight to columns.
 
-    import handlers.tool_executor as TE
-    src = inspect.getsource(TE)
-    update_block = src[src.index('elif name == "update_food_entry"'):]
-    # The window only has to contain the correction branch, and it grew when
-    # that branch learned to tell a CHANGED identity from an echoed one. A
-    # character count is a proxy for "inside the update handler" — widen it
-    # when the handler grows rather than treating a comment as a regression.
-    update_block = update_block[:9000]
-    assert "_analyze_food" in update_block, (
-        "a corrected identity must be re-resolved, not taken from the model")
-    assert "correction_reresolved" in update_block, (
-        "and the re-resolution must be observable in the logs")
-    assert "correction_kept_user_value" in update_block, (
-        "...and a figure the USER stated must survive it — no database "
-        "outranks the person reading the packet")
+    THIS USED TO BE A GREP over the executor's source, in a window measured in
+    characters. It broke when the branch grew a comment, which is the tell: a
+    test that a string appears near another string cannot fail when the
+    BEHAVIOUR regresses and does fail when nothing does. The plan calls that
+    pattern out by name — `correction_unpriced` shipped inert for a release
+    behind a grep that passed — so both greps in this file are now runs.
+    """
+    called = []
+
+    async def _re(db_, user_, name, inp, *a, **k):
+        called.append(name)
+        return _Priced(calories=250.0)
+
+    user, row = await _logged(db, make_user, monkeypatch)
+    # Armed after the log: the log gets its own resolution, the correction is
+    # the one under test.
+    monkeypatch.setattr("handlers.tool_executor._analyze_food", _re)
+    outcome = await _update(db, user, row.id, food_name="Extra Cheesy Pizza")
+
+    assert called == ["Extra Cheesy Pizza"], \
+        "a corrected identity must be re-resolved, not taken from the model"
+    await db.refresh(row)
+    assert row.calories == 250.0
+    # And the number moved, which is what makes it a correction rather than a
+    # relabel — the outcome the reply is built from says so.
+    assert outcome["renamed"] and outcome["moved_numbers"]
+
+
+async def test_a_figure_the_user_stated_survives_the_re_resolution(
+        db, make_user, monkeypatch):
+    """No database outranks the person reading the packet."""
+    async def _re(db_, user_, name, inp, *a, **k):
+        return _Priced(calories=250.0)
+
+    user, row = await _logged(db, make_user, monkeypatch)
+    monkeypatch.setattr("handlers.tool_executor._analyze_food", _re)
+    await _update(db, user, row.id, food_name="Extra Cheesy Pizza",
+                  calories=80)
+
+    await db.refresh(row)
+    assert row.calories == 80.0, \
+        "the re-resolution overwrote a figure the user stated"
 
 
 # ── a restaurant item may use an exact branded match ──────────────────────────
@@ -135,15 +236,29 @@ def test_a_likely_match_is_not_enough_for_a_menu_item():
                          match_grade="likely") == "branded_exact"
 
 
-def test_an_unpriced_correction_is_disclosed_not_swallowed():
+async def test_an_unpriced_correction_is_disclosed_not_swallowed(
+        db, make_user, monkeypatch):
     """`if _re.calories:` treated a zero-calorie resolution as "nothing to say"
     and kept the previous row's figures — the name changed, the number did not,
-    and the reply announced a correction that had not happened."""
-    import inspect
+    and the reply announced a correction that had not happened.
 
-    import handlers.tool_executor as TE
-    src = inspect.getsource(TE)
-    block = src[src.index('elif name == "update_food_entry"'):][:9000]
-    assert "correction_unpriced" in block, (
-        "a correction that cannot be priced is a failure to disclose, not a "
-        "silent no-op")
+    Also formerly a grep, and this is the one the plan uses as its example:
+    the disclosure was wired to a dead channel for a whole release while the
+    string it searched for sat in the source the whole time.
+    """
+    async def _unpriced(db_, user_, name, inp, *a, **k):
+        return _Priced(calories=0.0)
+
+    user, row = await _logged(db, make_user, monkeypatch)
+    monkeypatch.setattr("handlers.tool_executor._analyze_food", _unpriced)
+    outcome = await _update(db, user, row.id,
+                            food_name="McDonald's Double Cheeseburger")
+
+    assert outcome is not None, "the correction carried no typed outcome"
+    assert outcome["renamed"], "the name change was not recorded"
+    assert not outcome["moved_numbers"], (
+        "the ladder returned nothing, so no number can have moved")
+    # The pair the reply's disclosure keys on: renamed and nothing moved. A
+    # correction that cannot be priced is a failure to disclose, not a silent
+    # no-op.
+    assert outcome["unpriced"]
