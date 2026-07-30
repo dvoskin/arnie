@@ -145,6 +145,33 @@ def _is_number(v) -> bool:
         return False
 
 
+# ── the ask/write join (audit §8.1) ───────────────────────────────────────────
+def attach_candidates(items, item_candidates: Optional[Mapping]) -> tuple:
+    """Seat the products the turn already looked up onto the items they belong to.
+
+    THE MISSING PRODUCER. `StagedFoodItem.candidate_products` is declared, the
+    codec encodes it, `answer_application` prices from it and every clarify
+    path claims to be about it — and until this function existed nothing in
+    production ever assigned it. So an ask crossed the turn boundary carrying
+    an identity with no product behind it: `candidates=0`, `anchor=None`, and
+    an answering turn whose only option was to re-interpret the string and
+    re-run the enrichment ladder it had just run.
+
+    Matched by the item's own text, which is the key the caller fetched under —
+    the same lowercased food name `derive_variant_ambiguity` uses for spreads,
+    so an item that got a spread gets its candidates too. An unmatched item is
+    left exactly as it was: candidates are an improvement to a decision, never
+    a precondition for one.
+    """
+    if not item_candidates:
+        return items
+    out = []
+    for item in items or ():
+        found = item_candidates.get((item.original_text or "").strip().lower())
+        out.append(item.with_candidates(found) if found else item)
+    return tuple(out)
+
+
 # ── interpreter ambiguities → typed ambiguities ───────────────────────────────
 def attach_ambiguities(items, data: Mapping, *, mode: str,
                        targets: Optional[Mapping] = None) -> tuple:
@@ -376,7 +403,8 @@ def plan_turn(data: Mapping, *, turn_id: str, message: str = "",
               mode: str = "moderate", round_number: int = 0,
               preferences=None, now: Optional[datetime] = None,
               targets: Optional[Mapping] = None,
-              variant_spreads: Optional[Mapping] = None
+              variant_spreads: Optional[Mapping] = None,
+              item_candidates: Optional[Mapping] = None
               ) -> Optional[FoodTurnDecision]:
     """The whole pre-execution decision. Returns None on any failure, so the
     caller keeps its existing behaviour rather than losing the turn."""
@@ -390,7 +418,14 @@ def plan_turn(data: Mapping, *, turn_id: str, message: str = "",
         with food_trace.stage(Stage.STAGE) as staging:
             items, meal_group_id = stage_items(data, turn_id=turn_id,
                                                message=message, mode=mode)
+            # Staging work, not clarification work: this is the item learning
+            # WHAT IT MIGHT BE, from rows the caller already paid for. It runs
+            # before every deriver so an ambiguity, a question and the stored
+            # resolution all describe the same product set.
+            items = attach_candidates(items, item_candidates)
             staging.counts["items"] = len(items)
+            staging.counts["candidates"] = sum(
+                len(i.candidate_products or ()) for i in items)
             if not items:
                 staging.outcome = Outcome.SKIPPED
         if not items:

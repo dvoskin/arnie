@@ -314,6 +314,17 @@ class StagedFoodItem:
     def with_ambiguities(self, ambiguities) -> "StagedFoodItem":
         return replace(self, ambiguities=tuple(ambiguities))
 
+    def with_candidates(self, candidates) -> "StagedFoodItem":
+        """The products this food might be, as the ask found them.
+
+        A transition rather than a field assignment for the same reason the
+        others are: the item is frozen, and every way of changing one has to be
+        a named, greppable thing. Until this existed, nothing in production
+        code assigned `candidate_products` at all — the field was written only
+        by tests and by the codec decoding what nobody had encoded.
+        """
+        return replace(self, candidate_products=tuple(candidates or ()))
+
     def with_assumption(self, assumption: FoodAssumption) -> "StagedFoodItem":
         return replace(self, assumptions=self.assumptions + (assumption,))
 

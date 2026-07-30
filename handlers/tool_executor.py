@@ -1523,6 +1523,37 @@ async def _fetch_usda_off(food_name: str, is_packaged: bool):
     return await task
 
 
+def completed_enrichment(food_name: str) -> tuple:
+    """`(usda, off)` for a lookup this turn has ALREADY finished, else
+    `(None, None)`. Synchronous on purpose: it reads a settled future and can
+    never wait, never fetch, and never raise.
+
+    This is the ask half of the turn reading the write half's work (audit
+    §8.1). The speculative pass starts each food's lookup the moment its name
+    appears in the interpreter's stream, so by the time the ask decision is
+    made the answer is usually sitting here — and it was being thrown away,
+    because the only consumer was the executor, which runs afterwards. Reading
+    it costs nothing and is what lets a staged item carry a real product.
+
+    A lookup still in flight is deliberately treated as absent rather than
+    awaited: the decision is synchronous, the candidates are an improvement to
+    it, and blocking the ask on a product database is the exact cost
+    `_variant_spreads` was already bounded to avoid.
+    """
+    task = _INFLIGHT_FETCHES.get(_inflight_key(food_name))
+    if task is None or task.cancelled() or not task.done():
+        return (None, None)
+    try:
+        result = task.result()
+    except Exception:
+        return (None, None)
+    if not isinstance(result, (tuple, list)) or len(result) != 2:
+        return (None, None)
+    usda, off = result
+    return (usda if isinstance(usda, dict) else None,
+            off if isinstance(off, dict) else None)
+
+
 async def _fetch_usda_off_uncached(food_name: str, is_packaged: bool):
     """The fetch itself. Separated so the single-flight wrapper above stays a
     wrapper — one place decides what a lookup IS, one decides who waits."""

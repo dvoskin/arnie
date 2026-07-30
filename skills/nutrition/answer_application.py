@@ -103,14 +103,18 @@ def apply_answer(item, values: Mapping):
 
 
 def _best_candidate(item):
-    """The candidate the ask was priced from — highest overall score with a
-    profile. No profile means no stored pricing to apply."""
-    scored = [c for c in (item.candidate_products or ())
-              if c.nutrient_profile is not None
-              and (c.nutrient_profile.values or {})]
-    if not scored:
-        return None
-    return max(scored, key=lambda c: c.overall_score)
+    """The candidate the ask was priced from.
+
+    Delegates so the ask and the answer cannot rank the same set differently —
+    which they did while this picked the highest `overall_score`. That score
+    measures how well the WORDS line up, so with a real mixed-tier set (the
+    label, USDA, the user's own regular) the row whose name matched best won
+    over the row whose numbers described the product. `SourceTier` is the
+    precedence the resolver already applies at write time; one definition of
+    it, in `ask_candidates`, is the point of the join.
+    """
+    from skills.nutrition.ask_candidates import best_candidate
+    return best_candidate(item)
 
 
 def _normalized_portion(item, candidate):

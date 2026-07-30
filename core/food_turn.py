@@ -1855,7 +1855,7 @@ async def _variant_spreads(data, *, mode: str = "moderate",
     async def one(food):
         cached = _SPREAD_CACHE.get(food.strip().lower())
         if cached is not None:
-            return food, (cached or None)
+            return food, (cached.get("spread") or None), cached.get("rows") or []
         try:
             from core import deadline
             from skills.nutrition.off import search_variants, variant_spread
@@ -1863,22 +1863,26 @@ async def _variant_spreads(data, *, mode: str = "moderate",
                 search_variants(food, limit=6),
                 seconds=_VARIANT_SPREAD_SECONDS)
             if not variants or len(variants) < 2:
-                return food, None
+                # THE ROWS SURVIVE A MISSING SPREAD. One variant is not a shelf
+                # disagreeing — there is nothing to ask about — but it is still
+                # a real product with real numbers, and it is exactly what the
+                # staged item should be priced from later.
+                return food, None, list(variants or [])
             spread = variant_spread(variants)
             ceiling = max((float((v.get("per100g") or {}).get("calories") or 0)
                            for v in variants), default=0.0)
             if not spread or ceiling <= 0:
-                return food, None
+                return food, None, list(variants)
             spread = dict(spread)
             spread["_max_per100"] = ceiling
-            return food, spread
+            return food, spread, list(variants)
         except Exception as e:
             logger.debug(f"variant spread unavailable for {food!r}: {e}")
-            return food, None
+            return food, None, []
 
     import asyncio as _aio
     out = {}
-    for food, spread in await _aio.gather(*[one(n) for n in names]):
+    for food, spread, rows in await _aio.gather(*[one(n) for n in names]):
         key = food.strip().lower()
         if key not in _SPREAD_CACHE:
             if len(_SPREAD_CACHE) >= _SPREAD_CACHE_MAX:
@@ -1886,9 +1890,92 @@ async def _variant_spreads(data, *, mode: str = "moderate",
             # A miss is cached as {} too — a product with no shelf to compare
             # is a stable fact, and re-asking the database every turn for the
             # same absent product is the slowest possible way to learn nothing.
-            _SPREAD_CACHE[key] = spread or {}
+            #
+            # THE PRODUCTS ARE CACHED BESIDE THE SPREAD, not instead of it.
+            # This fetch is the only place in the ask half of the turn that
+            # holds real product rows; reducing them to a per-nutrient span and
+            # dropping them is how the ask came to know that the shelf
+            # disagreed while being unable to say what it disagreed about
+            # (audit §8.1). One fetch, two readers — a second lookup for the
+            # candidates would be the duplicate call this whole layer forbids.
+            _SPREAD_CACHE[key] = {"spread": spread or {}, "rows": rows or []}
         if spread:
             out[key] = spread
+    return out
+
+
+def _variant_rows(data) -> dict:
+    """`{food_lower: [product row, ...]}` for whatever `_variant_spreads`
+    already fetched THIS process. Reads the cache; never fetches.
+
+    Separate from the spread map because the two answer different questions —
+    "is this worth asking about?" and "which products is it?" — and only the
+    first one is allowed to decide whether the second is available.
+    """
+    out = {}
+    for raw in (data.get("items") or []):
+        if not isinstance(raw, dict):
+            continue
+        key = str(raw.get("food") or "").strip().lower()
+        if not key or key in out:
+            continue
+        rows = (_SPREAD_CACHE.get(key) or {}).get("rows") or []
+        if rows:
+            out[key] = rows
+    return out
+
+
+def _ask_candidates(data) -> dict:
+    """`{food_lower: (ProductCandidate, ...)}` from what this turn ALREADY has.
+
+    Two sources, both already paid for:
+
+    * the Open Food Facts siblings fetched for the variant spread, and
+    * the speculative USDA/OFF lookup that started while the interpreter was
+      still writing its JSON — read only if it has already FINISHED.
+
+    Nothing here awaits a fetch and nothing here starts one. That is the rule
+    the audit's §8.1 fix has to keep: a turn may never lose its decision, or
+    its latency budget, because a product database was slow. An item with no
+    completed lookup simply gets no candidates and behaves exactly as it does
+    today.
+    """
+    out = {}
+    try:
+        from handlers.tool_executor import completed_enrichment
+        from skills.nutrition.ask_candidates import candidates_for
+
+        rows_by_food = _variant_rows(data)
+        for raw in (data.get("items") or []):
+            if not isinstance(raw, dict):
+                continue
+            food = str(raw.get("food") or "").strip()
+            key = food.lower()
+            if not food or key in out:
+                continue
+            usda, off = completed_enrichment(food)
+            variants = rows_by_food.get(key) or ()
+            if usda is None and off is None and not variants:
+                continue
+            found = candidates_for(
+                food, brand=(str(raw.get("brand") or "").strip() or None),
+                is_packaged=bool(raw.get("is_packaged") or raw.get("branded")),
+                usda=usda, off=off, variants=variants)
+            if found:
+                out[key] = found
+    except Exception as e:
+        # THE WHOLE COLLECTION, not just the import. This value is computed
+        # inside the caller's `try`, so anything raised here does not cost the
+        # turn its candidates — it costs the turn its entire pipeline decision
+        # and drops it to the legacy calorie-only policy. Candidates are an
+        # improvement to a decision and may never be a precondition for one.
+        logger.warning(f"ask candidates unavailable: {e}")
+        return {}
+    if out:
+        logger.info(
+            "event=ask_candidates "
+            f"foods={len(out)} candidates={sum(len(v) for v in out.values())} "
+            f"anchored={sum(1 for v in out.values() for c in v if c.source_id)}")
     return out
 
 
@@ -3806,11 +3893,18 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
                 _targets = _daily_targets(user)
                 _spreads = await _variant_spreads(data, mode=mode,
                                                   targets=_targets)
+                # ...AND THE PRODUCTS THEMSELVES (audit §8.1). The same fetch
+                # that measured the spread holds the rows it measured, and the
+                # speculative enrichment has usually already answered by now.
+                # Both are already paid for; reading them is what makes the
+                # staged item a claim about a PRODUCT rather than about a word,
+                # so the answering turn can price without looking anything up.
                 _decision = plan_turn(
                     data, turn_id=(_pipe_turn() or ""), message=message,
                     mode=mode, preferences=_prefs_for(user),
                     targets=_targets,
-                    variant_spreads=_spreads)
+                    variant_spreads=_spreads,
+                    item_candidates=_ask_candidates(data))
         except Exception as _pe:
             logger.warning(f"food pipeline unavailable: {_pe}")
             _decision = None
