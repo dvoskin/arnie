@@ -1459,9 +1459,18 @@ async def _run_turn(
             # this call a fresh full model timeout, so the degraded-source case
             # the budget exists for could still cost interpreter + composer back
             # to back.
+            #
+            # THE OBLIGATIONS RIDE WITH THE MESSAGE, not only in the system
+            # prompt. The tool-calling rule already lives there and still
+            # drops deep in session (bench_deep_session: narrated logs with no
+            # tool call) — while the user typing "make sure you call the tool"
+            # reliably works. Placement, not wording: text adjacent to the turn
+            # being answered does not decay with depth. Request-side only; the
+            # stored conversation keeps what the user actually said.
+            from core.turn_obligations import with_turn_obligations
             result = await deadline.wait_for(
-                chat(messages, system, tools=True, max_tokens=4096,
-                     **_pass_extras))
+                chat(with_turn_obligations(messages), system, tools=True,
+                     max_tokens=4096, **_pass_extras))
         # Flush trailing buffer immediately so a no-||| partial doesn't carry
         # over and prepend itself to the next call's first bubble. (Still held —
         # this only moves the trailing text into the held buffer.)
