@@ -1460,17 +1460,37 @@ async def _run_turn(
             # the budget exists for could still cost interpreter + composer back
             # to back.
             #
-            # THE OBLIGATIONS RIDE WITH THE MESSAGE, not only in the system
-            # prompt. The tool-calling rule already lives there and still
-            # drops deep in session (bench_deep_session: narrated logs with no
-            # tool call) — while the user typing "make sure you call the tool"
-            # reliably works. Placement, not wording: text adjacent to the turn
-            # being answered does not decay with depth. Request-side only; the
-            # stored conversation keeps what the user actually said.
-            from core.turn_obligations import with_turn_obligations
+            # THE OBLIGATIONS — AND THE TURN'S STATE FACTS — RIDE WITH THE
+            # MESSAGE, not only in the system prompt. The tool-calling rule
+            # already lives there and still drops deep in session
+            # (bench_deep_session: narrated logs with no tool call) — while
+            # the user typing "make sure you call the tool" reliably works.
+            # Placement, not wording: text adjacent to the turn being answered
+            # does not decay with depth. Request-side only; the stored
+            # conversation keeps what the user actually said.
+            #
+            # Every block is a pure function of state the turn already loaded
+            # — the open pending, the board's recent rows, the message's
+            # script, the user's clock and units. No classifier decides
+            # whether a turn "needs" one; a block is present exactly when its
+            # state exists.
+            from core.turn_obligations import (last_action_block,
+                                               open_question_block,
+                                               reply_language_block,
+                                               time_block, units_block,
+                                               with_turn_obligations)
+            _blocks = []
+            try:
+                _blocks = [open_question_block(_sft_prior),
+                           last_action_block(_board),
+                           reply_language_block(_user_text or ""),
+                           time_block(user), units_block(user)]
+            except Exception as _tb_e:
+                logger.warning(f"turn context blocks unavailable: {_tb_e}")
+                _blocks = []
             result = await deadline.wait_for(
-                chat(with_turn_obligations(messages), system, tools=True,
-                     max_tokens=4096, **_pass_extras))
+                chat(with_turn_obligations(messages, _blocks), system,
+                     tools=True, max_tokens=4096, **_pass_extras))
         # Flush trailing buffer immediately so a no-||| partial doesn't carry
         # over and prepend itself to the next call's first bubble. (Still held —
         # this only moves the trailing text into the held buffer.)

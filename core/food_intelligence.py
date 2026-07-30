@@ -1040,8 +1040,15 @@ def analyze(name, quantity, llm_cal, llm_protein, llm_carbs, llm_fat,
     # and a single `source` string had to pick one and be wrong about the other.
     if src is not None and not macros_from_source:
         source, confidence = "estimate", "estimated"
-        rung = "component_estimate" if food_class is authority.FoodClass.RESTAURANT \
-            else "estimate"
+        # NOT "component_estimate". That rung used to be assigned here purely
+        # because the food was RESTAURANT-classed, and it renders to the user
+        # as "Estimated from its components" — under `display_detail`'s own
+        # rule that the line must be true. No components were ever computed;
+        # nothing has ever seated on that rung (the engine exists on two
+        # unmerged branches, 40d4d9b / e4d651d). A provenance line is a
+        # citation, and a false citation is worse than a plain "estimate".
+        # The rung stays in the ladder for the engine to claim when it lands.
+        rung = "estimate"
 
     # ── §9 SANITY, ON THE PATH THAT ACTUALLY COMMITS ────────────────────────
     #
