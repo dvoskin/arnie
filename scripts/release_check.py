@@ -52,15 +52,22 @@ def _get(url: str, token: str | None) -> dict | None:
 
 
 def check_runs(sha: str, token: str | None) -> tuple[str, list]:
-    """('green'|'red'|'pending'|'unknown', [(name, conclusion), ...])"""
+    """('green'|'red'|'pending'|'none'|'unreadable', [(name, conclusion), ...])
+
+    `none` and `unreadable` are kept apart deliberately. A commit pushed
+    seconds ago has no check runs YET, which is a wait; a commit whose checks
+    cannot be fetched is a blind spot. Reporting both as "unknown" sent the
+    reader looking for a token they did not need — a tool built to stop
+    guessing should not guess about itself.
+    """
     body = _get(f"https://api.github.com/repos/{REPO}/commits/{sha}/check-runs",
                 token)
-    if not body:
-        return "unknown", []
+    if body is None:
+        return "unreadable", []
     runs = [(r.get("name", "?"), r.get("conclusion") or r.get("status"))
             for r in body.get("check_runs", [])]
     if not runs:
-        return "unknown", []
+        return "none", []
     if any(c in (None, "queued", "in_progress") for _, c in runs):
         return "pending", runs
     if all(c in ("success", "neutral", "skipped") for _, c in runs):
@@ -96,12 +103,20 @@ def main() -> int:
     if verdict == "green":
         print("\nDEPLOYABLE")
         return 0
-    if verdict == "unknown" and not token:
-        print("\nNOT DEPLOYABLE — no GITHUB_TOKEN, so the checks could not be "
-              "read.\nA check nobody can read is not a check. Export a token "
-              "or look at the\nchecks tab before deploying.", file=sys.stderr)
+    if verdict == "none":
+        print("\nNOT YET — no checks have started for this commit. If it was "
+              "just pushed,\nwait for CI; if it is old, CI never ran on it.",
+              file=sys.stderr)
         return 1
-    print(f"\nNOT DEPLOYABLE — checks are {verdict}", file=sys.stderr)
+    if verdict == "pending":
+        print("\nNOT YET — checks are still running.", file=sys.stderr)
+        return 1
+    if verdict == "unreadable":
+        print("\nNOT DEPLOYABLE — the checks could not be read"
+              + ("" if token else " (no GITHUB_TOKEN set)")
+              + ".\nA check nobody can read is not a check.", file=sys.stderr)
+        return 1
+    print("\nNOT DEPLOYABLE — checks are red", file=sys.stderr)
     return 1
 
 
