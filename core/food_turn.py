@@ -386,8 +386,18 @@ def decline_reason(text: str) -> str:
 
 def _non_latin(text: str) -> bool:
     """Whether the message is written in a script the ASCII shape rules cannot
-    see. Not a language check — a check on whether our rules APPLY."""
-    return any(ord(c) > 0x2FF for c in (text or ""))
+    see. Not a language check — a check on whether our rules APPLY.
+
+    LETTERS only. The bare codepoint test read the iOS smart apostrophe
+    (U+2019 — "couldn't", "don't"), em-dashes, ellipses and emoji as "a script
+    we cannot read", which is most messages iOS keyboards produce. So "Mark my
+    Flat DB complete coach 💪" and "7 couldn't do more" were admitted to the
+    food lane on the strength of their punctuation, paid a 5–8s interpreter
+    call each, and fell to legacy as `interpreter_none` — a third of that
+    escape bucket in the 07-30 production window. A Russian meal is letters in
+    another script; a curly quote is not.
+    """
+    return any(ord(c) > 0x2FF and c.isalpha() for c in (text or ""))
 
 
 def open_gate_enabled() -> bool:
