@@ -1270,21 +1270,36 @@ async def log_conversation(db: AsyncSession, user_id: int, raw_message: str,
     # this turn's operations, making turn⋈operation one indexed join.
     if turn_id:
         entry.turn_id = turn_id
-    # The turn's reasoning receipt — same rehydration story as cards: without
-    # this the "Arnie's Thoughts" disclosure vanishes on every history reload.
-    if reasoning:
-        # THE TURN NAMES THE BUILD THAT PRODUCED IT. Three audits in a row
-        # spent their first hour inferring the deployed SHA from behavioural
-        # markers ("does this pending carry log_date?") because deploys are
-        # manual and nothing recorded them. /health says what is running NOW;
-        # only the turn can say what was running WHEN. With this, "which turns
-        # ran which build" — and every mixed-deployment window — is one query
-        # over reasoning_json, and a closure claim can name the SHA it was
-        # verified against. Stamped at this chokepoint because it is the single
-        # write site for reasoning_json; `dict(reasoning)` so a caller's dict
-        # is never mutated.
-        entry.reasoning_json = json.dumps({**dict(reasoning),
-                                           "build": _build_stamp()})
+    # The turn's reasoning receipt, and THE TURN NAMING THE BUILD THAT MADE IT.
+    #
+    # Two things live here. The receipt is the "Arnie's Thoughts" disclosure,
+    # which without this vanishes on every history reload. The build stamp is
+    # why three audits in a row spent their first hour inferring the deployed
+    # SHA from behavioural markers ("does this pending carry log_date?") —
+    # deploys are manual and nothing recorded them. `/health` says what runs
+    # NOW; only the turn can say what ran WHEN, which is what makes a
+    # mixed-deployment window one query and lets a closure claim name the SHA
+    # it was verified against.
+    #
+    # STAMPED WHETHER OR NOT THE CALLER HAS A RECEIPT (I1). This was gated on
+    # `if reasoning:`, so a caller with nothing to add wrote NULL — the comment
+    # claimed "the single write site", which was true of the site and false of
+    # the behaviour. Measured over 7 days: 130 turns carried no reasoning_json
+    # at all, and they were not scattered — they were three whole surfaces,
+    # each 100% blank (`proactive` 79, `dashboard_edit` 35, `text` 16). No
+    # build, no flags, invisible to every audit query in this repository; the
+    # 79 proactive sends could not be checked for delivery even in principle
+    # (audits/D2_DEFECTS_2026-07-30.md).
+    #
+    # Deliberately only the BUILD is added. A turn that made no routing
+    # decision must not be given a route here — inventing one would poison the
+    # exact analytics D5 exists to repair. An empty receipt that names its
+    # build is honest; a fabricated one is not.
+    #
+    # `dict(reasoning or {})` so a caller's dict is never mutated, and a caller
+    # without one still lands a row that names its build.
+    entry.reasoning_json = json.dumps({**dict(reasoning or {}),
+                                       "build": _build_stamp()})
     db.add(entry)
     await db.commit()
 
