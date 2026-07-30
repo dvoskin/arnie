@@ -241,3 +241,47 @@ def test_the_same_portion_written_two_ways_is_not_a_correction():
     assert _same_quantity("1 bag", "1 bag")
     assert _same_quantity("200 g", "200g")
     assert not _same_quantity("200 g", "150 g")
+
+
+# ── the ground-truth population: counted, not weighed ─────────────────────────
+async def test_a_regular_is_rescaled_by_counting():
+    """Production, 2026-07-30 20:14 (ev#519): "Happy Wolf chocolate chip bar",
+    `basis: regular`. The user's own regular answered the food, so
+    `_analyze_food` took the override path and NO LANE RAN — no per-100g row,
+    no serving panel, `resolution` correctly null. Mass is unknown at both
+    ends, so every route above declines and the model's re-guess stands.
+
+    It does not need mass. One bar and half a bar are the same object counted
+    twice.
+    """
+    from skills.nutrition.correction_application import apply_count_correction
+
+    scaled = apply_count_correction(
+        food_name="Happy Wolf chocolate chip bar",
+        old_quantity="1 bar", new_quantity="half a bar",
+        committed={"calories": 110.0, "protein": 6.0, "carbs": 10.9,
+                   "fats": 4.7})
+    assert scaled is not None, "the regulars population still gets no arithmetic"
+    assert scaled["calories"] == pytest.approx(55.0, abs=0.1)
+    assert scaled["protein"] == pytest.approx(3.0, abs=0.1)
+
+
+async def test_counting_never_crosses_dimensions():
+    """The whole safety property. Without the unit check, "1 bar" against
+    "60 g" divides a count by a mass and scales a 110-calorie bar to 2,750."""
+    from skills.nutrition.correction_application import apply_count_correction
+
+    assert apply_count_correction(
+        food_name="Happy Wolf chocolate chip bar",
+        old_quantity="1 bar", new_quantity="60 g",
+        committed={"calories": 110.0}) is None
+
+
+async def test_counting_more_of_the_same_thing_scales_up():
+    from skills.nutrition.correction_application import apply_count_correction
+
+    scaled = apply_count_correction(
+        food_name="Happy Wolf chocolate chip bar",
+        old_quantity="1 bar", new_quantity="2 bars",
+        committed={"calories": 110.0})
+    assert scaled["calories"] == pytest.approx(220.0, abs=0.1)

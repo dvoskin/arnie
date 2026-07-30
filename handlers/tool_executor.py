@@ -447,7 +447,8 @@ async def _apply_portion_correction(db, user, entry_id: int, inp: dict,
     """
     try:
         from db.models import FoodEntry as _FE_p
-        from skills.nutrition.correction_application import apply_portion
+        from skills.nutrition.correction_application import (
+            apply_count_correction, apply_portion)
 
         row = await db.get(_FE_p, int(entry_id))
         if row is None:
@@ -470,6 +471,14 @@ async def _apply_portion_correction(db, user, entry_id: int, inp: dict,
             new_quantity=new_quantity, committed=committed,
             per100=(resolution or {}).get("per100"),
             serving_text=str((resolution or {}).get("serving_text") or ""))
+        if not scaled:
+            # NO MASS AT EITHER END — the ground-truth population. When the
+            # user's own regular answered the food, no lane ran, so there is no
+            # per-100g row to scale and no panel to weigh a piece with. One bar
+            # and half a bar are still the same object counted twice.
+            scaled = apply_count_correction(
+                food_name=name, old_quantity=old_quantity,
+                new_quantity=new_quantity, committed=committed)
         if not scaled:
             return
         # THE ARITHMETIC REPLACES THE GUESS, and only for the macros it could

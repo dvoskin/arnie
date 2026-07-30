@@ -196,3 +196,47 @@ def apply_portion(*, food_name: str, old_quantity: str, new_quantity: str,
     logger.info("event=correction_apply outcome=declined reason=no_basis "
                 "food=%r old=%r new=%r", food_name, old_quantity, new_quantity)
     return None
+
+
+def apply_count_correction(*, food_name: str, old_quantity: str,
+                           new_quantity: str, committed: Mapping
+                           ) -> Optional[dict]:
+    """"1 bar" -> "half a bar", priced by counting. No mass, no basis, no lookup.
+
+    THE GROUND-TRUTH POPULATION. Verified on the first post-deploy log
+    (2026-07-30 20:14, ev#519, "Happy Wolf chocolate chip bar", `basis:
+    regular`): when the user's own regular or their read of a label answers the
+    food, `_analyze_food` takes the override path and **no lane runs** — so
+    there is no per-100g row, and `resolution` is correctly stored as null.
+    That is honest, and it left the whole repeat-logging population with no
+    arithmetic at all: mass is unknown at both ends, so `apply_portion`
+    declines and the model's re-guess stands.
+
+    It does not need mass. One bar and half a bar are the same object counted
+    twice, so the ratio of the counts prices it exactly — from numbers the user
+    themselves established.
+
+    `count_units_compatible` is the whole safety property, and it is not
+    decoration: without it "1 bar" against "60 g" would divide a count by a
+    mass and scale a 110-calorie bar to 2,750. It rejects a bare unit and a
+    cross-dimension pair, so a portion can never become a package.
+    """
+    try:
+        from skills.nutrition.normalize import (count_units_compatible,
+                                                normalize_quantity)
+        old = normalize_quantity((old_quantity or "").strip(), food_name or "")
+        new = normalize_quantity((new_quantity or "").strip(), food_name or "")
+        old_n, new_n = _num(old.count), _num(new.count)
+        if not old_n or not new_n or old_n <= 0 or new_n <= 0:
+            return None
+        if not count_units_compatible(old.unit or "", new.unit or ""):
+            return None
+        scaled = scale_by_ratio(committed, new_n / old_n)
+        if scaled is not None:
+            logger.info("event=correction_apply outcome=applied route=count "
+                        "food=%r ratio=%.3f cal=%s", food_name, new_n / old_n,
+                        scaled.get("calories"))
+        return scaled
+    except Exception as e:
+        logger.warning(f"count correction unavailable: {e}")
+        return None
