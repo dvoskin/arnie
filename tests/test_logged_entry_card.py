@@ -83,3 +83,33 @@ def test_cardio_flag_inferred_from_cardio_type(monkeypatch):
         "exercise_name": "Run", "cardio_type": "treadmill", "_entry_id": 7,
     })
     assert card["payload"]["is_cardio"] is True
+
+
+def test_correction_card_carries_the_receipt():
+    """Bug (Danny 2026-07-29): a chat correction ("It was 1 cucumber") re-fires
+    update_food_entry, and `_stash_receipt` has stashed a fresh receipt onto
+    the tool input for updates since 2a4c839 (updated=True) — but this reader
+    never picked it back up, so the correction's card showed a name and macros
+    with no remaining-figures row at all, unlike a log_food card. Mirrors the
+    log_food branch's `_receipt` handling below."""
+    card = _logged_entry_card("update_food_entry", {
+        "food_name": "Cucumber", "quantity": "1 cucumber",
+        "calories": 45, "protein": 2, "_entry_id": 42,
+        "_receipt": {"remaining_cal": 232, "remaining_protein": 50,
+                    "verdict": "That's a small addition."},
+    })
+    assert card is not None
+    assert card["payload"]["remaining_cal"] == 232
+    assert card["payload"]["remaining_protein"] == 50
+    assert card["payload"]["verdict"] == "That's a small addition."
+
+
+def test_correction_card_without_a_receipt_still_renders():
+    # A receipt is garnish (core/tool_executor's own contract) — its absence
+    # must never block the card the correction still earns.
+    card = _logged_entry_card("update_food_entry", {
+        "food_name": "Cucumber", "quantity": "1 cucumber",
+        "calories": 45, "protein": 2, "_entry_id": 42,
+    })
+    assert card is not None
+    assert "remaining_cal" not in card["payload"]

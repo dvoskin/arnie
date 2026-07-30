@@ -377,6 +377,30 @@ _FOLLOW_UPS = {
                         "time it logs with exact numbers?"),
 }
 
+# This interpreter call's own _SYSTEM prompt (core/food_turn.py) never asks for
+# emoji and every example "say" it's shown carries none — the call has no
+# persona/voice prompt in its context at all, so anything here is the model's
+# unguided default style, not a choice. A wrong one shipped (a tomato for a
+# cucumber, 2026-07-29). Stripped at the same funnel that already polices the
+# digits, rather than trusted to stay out on its own.
+_EMOJI_RE = re.compile(
+    "["
+    "\U0001F300-\U0001FAFF"   # symbols & pictographs, emoticons, transport, supplemental
+    "\U00002600-\U000027BF"   # misc symbols & dingbats (includes checkmarks like ✅)
+    "\U0001F1E6-\U0001F1FF"   # regional indicator flags
+    "\U00002B00-\U00002BFF"   # misc symbols and arrows
+    "\U0000FE0F"              # variation selector-16 (emoji presentation)
+    "\U0000200D"              # zero-width joiner (compound emoji)
+    "]+")
+
+
+def strip_stray_emoji(text: str) -> str:
+    """Remove emoji this interpreter/composer text was never instructed to
+    use. Public so `core.food_response`'s composer path — which ships a
+    model's free text directly and never passes through `fill_tokens` — can
+    apply the same policing its own prompt doesn't provide."""
+    return _EMOJI_RE.sub("", text or "")
+
 
 def fill_tokens(say: str, values: dict) -> str:
     """The interpreter writes the WORDS; the system writes the NUMBERS —
@@ -384,6 +408,7 @@ def fill_tokens(say: str, values: dict) -> str:
     out = _TOKEN_RE.sub(lambda m: str(values.get(m.group(1), "")), say or "")
     # Belt: any token the model invented must never reach the user.
     out = re.sub(r"\{[a-z_]{2,24}\}", "", out)
+    out = strip_stray_emoji(out)
     return re.sub(r"[ \t]{2,}", " ", out).strip()
 
 
@@ -399,6 +424,7 @@ def sanitize_note(note: str) -> str:
     claims, no questions — or it doesn't ship."""
     n = (note or "").strip().replace("~", "")
     n = re.sub(r"\s*[—–]\s*", ", ", n)
+    n = re.sub(r"[ \t]{2,}", " ", strip_stray_emoji(n)).strip()
     if not n or len(n) > 160 or "?" in n:
         return ""
     if re.search(r"\d", n) or _CLAIM_RE.search(n):

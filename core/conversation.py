@@ -374,6 +374,16 @@ def _logged_entry_card(name: str, inp, call=None) -> Optional[dict]:
                else inp.get("_event_id"))
         if _ev is not None:
             payload["event_id"] = _ev
+        # Decision-receipt context (day impact + verdict) — same channel as the
+        # log_food branch below, see core/receipt.py. `_stash_receipt` has
+        # stashed this for corrections since 2a4c839 (updated=True), but this
+        # reader never picked it back up, so a correction's card carried a
+        # name and macros with no remaining-figures row: the one thing a
+        # person looks for after changing a number.
+        receipt = (call.receipt if call is not None and call.receipt is not None
+                   else inp.get("_receipt"))
+        if isinstance(receipt, dict):
+            payload.update(receipt)
         return {"type": "macro_card", "payload": payload}
     if name in ("log_food", "restore_food_entry"):
         # A restore is a committed food row like any other — it earns the same

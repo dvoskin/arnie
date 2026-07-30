@@ -2712,7 +2712,8 @@ async def compose_async(plan: FoodResponsePlan, *, model: Optional[str] = None,
         last = validate(text, plan)
         if last.ok:
             _note_voice(plan, voice_model=_model, retry_count=_calls - 1)
-            return text.strip(), Reason.OK
+            from core.food_ledger import strip_stray_emoji
+            return re.sub(r"[ \t]{2,}", " ", strip_stray_emoji(text.strip())).strip(), Reason.OK
         prompt = f"{prompt}\n\nYOUR LAST ATTEMPT FAILED: {last.reason}. Fix it."
     _note_voice(plan, voice_model=_model, retry_count=_calls - 1,
                 fallback_path=f"validation:{last.reason}")
@@ -2789,6 +2790,7 @@ def compose(plan: FoodResponsePlan, generate: Optional[Callable] = None,
             break
         last = validate(text, plan)
         if last.ok:
-            return text.strip(), Reason.OK
+            from core.food_ledger import strip_stray_emoji
+            return re.sub(r"[ \t]{2,}", " ", strip_stray_emoji(text.strip())).strip(), Reason.OK
         prompt = f"{prompt}\n\nYOUR LAST ATTEMPT FAILED: {last.reason}. Fix it."
     return fallback(plan), last.reason
