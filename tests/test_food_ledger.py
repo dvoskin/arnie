@@ -317,6 +317,31 @@ def test_note_sanitizer():
     assert FL.sanitize_note("Want a lighter dinner?") == ""
 
 
+# ── emoji policing ────────────────────────────────────────────────────────────
+# Bug (Danny 2026-07-29): the interpreter's own _SYSTEM prompt (core/food_turn.py)
+# never mentions emoji and every "say" example it's shown carries none — the call
+# has no persona/voice prompt in its context at all, so any emoji in its output is
+# the model's unguided default style. A wrong one shipped (a tomato for a
+# cucumber). Policed at the same funnel that already strips ~ and em-dash.
+def test_render_committed_strips_stray_emoji():
+    out = FL.render_committed(
+        "Cucumber logged \U0001F345, {batch_cal} cal and {batch_protein}g "
+        "protein.", "", "", _snap())
+    assert "\U0001F345" not in out
+    assert "340 cal" in out
+
+
+def test_strip_stray_emoji_removes_checkmarks_and_food_emoji():
+    assert FL.strip_stray_emoji("Updated to 1 cucumber ✅") == "Updated to 1 cucumber "
+    assert FL.strip_stray_emoji("Rice cake logged \U0001F345") == "Rice cake logged "
+    assert FL.strip_stray_emoji("No emoji here.") == "No emoji here."
+
+
+def test_note_sanitizer_strips_emoji():
+    assert FL.sanitize_note("Solid choice \U0001F525 before tonight's session.") \
+        == "Solid choice before tonight's session."
+
+
 # ── executor CAS ──────────────────────────────────────────────────────────────
 @pytest.mark.asyncio
 async def test_update_cas_refuses_stale_board(monkeypatch):

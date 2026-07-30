@@ -378,6 +378,17 @@ def test_a_valid_generation_is_used_as_is():
     assert text == "Light start there." and reason == Reason.OK
 
 
+def test_a_valid_generation_has_stray_emoji_stripped():
+    """The composer's own prompt (build_prompt) carries no emoji instruction
+    either way, so a generated reply is policed the same way the deterministic
+    renderer's `say` already is (core.food_ledger.strip_stray_emoji) — a wrong
+    emoji reaching the user (a tomato for a cucumber, 2026-07-29) is a gap in
+    the funnel, not a one-off model mistake to prompt around."""
+    plan = _commit_plan()
+    text, reason = compose(plan, lambda p: "Light start there \U0001F345.")
+    assert text == "Light start there ." and reason == Reason.OK
+
+
 def test_an_invalid_generation_is_retried_then_falls_back():
     plan = plan_correct("the jam")
     attempts = {"n": 0}
