@@ -111,14 +111,39 @@ def _ask_ttl_min() -> int:
 
 def pending_expired(pq, kind: Optional[str] = None, now: Optional[datetime] = None) -> bool:
     """A confirm pending goes stale fast (a bare 'yes' twenty minutes later is
-    probably about something else); a clarify pending survives a few hours
-    ('actually it was grilled' over lunch is still a real answer)."""
+    probably about something else); a clarify pending survives until the day
+    AFTER the meal it is about, so a question asked before midnight can still be
+    answered the next morning and land on the right day.
+
+    The clarify window keys on the logical meal date stashed in the pending
+    payload (`log_date`), NOT on elapsed minutes. "Which bar was it?" asked at
+    23:50 and answered at 07:30 is ~8 hours old but still a live answer about
+    yesterday's meal. The old flat 240-minute TTL retired it overnight, so the
+    answer arrived cold and was re-logged onto TODAY — the wrong-day write this
+    now prevents. Falls back to the flat minute TTL when no meal date travelled
+    with the row (older rows, non-food pendings)."""
     asked = getattr(pq, "last_asked_at", None) or getattr(pq, "asked_at", None)
+    _kind = (kind or "").strip()
+    _now = now or datetime.utcnow()
+
+    # Clarify: prefer the stashed logical meal date. Stay open through the whole
+    # meal day and the day after; retire only once we are past that.
+    if _kind != "confirm":
+        try:
+            import json as _json
+            from datetime import date as _date
+            _payload = _json.loads(getattr(pq, "payload_json", "") or "{}")
+            _ld = (_payload.get("log_date") or "").strip()
+            if _ld:
+                return _now.date() > _date.fromisoformat(_ld) + timedelta(days=1)
+        except Exception:
+            pass
+
     if asked is None:
         return False
-    ttl = _confirm_ttl_min() if (kind or "").strip() == "confirm" else _ask_ttl_min()
+    ttl = _confirm_ttl_min() if _kind == "confirm" else _ask_ttl_min()
     try:
-        return ((now or datetime.utcnow()) - asked) > timedelta(minutes=ttl)
+        return (_now - asked) > timedelta(minutes=ttl)
     except Exception:
         return False
 
