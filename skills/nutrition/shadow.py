@@ -97,6 +97,12 @@ def candidates_from_live(food_name: str, inp: dict, *, memory=None, usda=None,
                       brand=off_row.get("brand"),
                       grade=(MatchGrade.EXACT if off_row.get("_match") == "exact"
                              else MatchGrade.CLOSE),
+                      # The barcode. USDA's row has always carried its fdc_id
+                      # through here and the branded row carried nothing, so
+                      # the anchor was missing from exactly the candidates most
+                      # likely to be the answer — a packaged product is the
+                      # case where identity is a fact rather than a judgement.
+                      source_id=str(off_row.get("code") or "") or None,
                       serving_text=off_row.get("serving_text"),
                       serving_mass_g=off_row.get("serving_mass_g"))
     if o is not None:

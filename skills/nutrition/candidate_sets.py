@@ -67,10 +67,19 @@ class ProductCandidate:
     collapsed_from: tuple = ()
 
     def describe(self) -> str:
-        parts = [p for p in (self.brand, self.product_line, self.variant) if p]
-        if self.package_size is not None:
-            parts.append(self.package_size.describe())
-        return " ".join(parts) or self.canonical_name
+        """The same rule `FoodIdentity.describe` keeps: **the name is never
+        omitted.** This dropped it whenever any qualifier existed, so an Open
+        Food Facts hit named "Royo Everything Bagel" under brand "Royo"
+        described itself as "Royo" — the maker, not the product. Harmless while
+        nothing in production ever built a candidate; the moment the ask
+        started carrying real ones (audit §8.1) it became the label on a
+        clarification and on every candidate trace line.
+        """
+        from skills.nutrition.staging import FoodIdentity
+        return FoodIdentity(canonical_name=self.canonical_name,
+                            brand=self.brand, product_line=self.product_line,
+                            variant=self.variant,
+                            package_size=self.package_size).describe()
 
     @property
     def calories(self) -> Optional[float]:

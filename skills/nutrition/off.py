@@ -38,7 +38,12 @@ _SEARCH_URL = "https://world.openfoodfacts.org/cgi/search.pl"
 # as a list). Kept as FALLBACK (not primary) so the legacy ranking that already
 # resolves Core Power/David correctly is preserved.
 _SAL_URL = "https://search.openfoodfacts.org/search"
-_FIELDS = "product_name,brands,nutriments,serving_size,quantity"
+# `code` is the barcode — THE ANCHOR. Everything else in this envelope
+# describes the product in words, and words are what a later turn has to
+# re-search. The barcode is what makes a stored resolution a claim about one
+# product, so a correction, an answer or a memory row can point at it instead
+# of at a string that has since been edited.
+_FIELDS = "code,product_name,brands,nutriments,serving_size,quantity"
 # OFF asks for a descriptive UA so they can contact abusers instead of blocking.
 _UA = "Arnie/1.0 (nutrition coach; contact: support@tryarnie.com)"
 # Transient statuses worth retrying: 503 (the observed flake), 502, 429 (rate cap).
@@ -347,6 +352,8 @@ async def search(name: str, page_size: int = 8) -> Optional[dict]:
         "_match": "exact" if best_ov >= 0.85 else "likely",
         "name": (p.get("product_name") or "").strip(),
         "brand": (p.get("brands") or "").split(",")[0].strip() or None,
+        # The product's own id, carried so a resolution can be anchored to it.
+        "code": str(p.get("code") or "").strip() or None,
         # The serving panel was already in _FIELDS and was thrown away here.
         # It is the only thing that knows one Peanut M&M weighs ~2.9 g, and
         # without it a "15 pieces" portion of a per-100g row cannot be scaled
@@ -445,6 +452,10 @@ async def search_variants(name: str, limit: int = 5) -> list:
         out.append({
             "name": label,
             "brand": (product.get("brands") or "").split(",")[0].strip(),
+            # Each sibling is a product in its own right, and the one the user
+            # picks becomes the anchored resolution — so it carries its id for
+            # the same reason the primary hit does.
+            "code": str(product.get("code") or "").strip() or None,
             # HOW BIG THE PACK IS, kept because the question needs it.
             #
             # `_FIELDS` has always asked for `serving_size` and `quantity`, and

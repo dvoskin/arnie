@@ -174,15 +174,16 @@ def off_candidate(hit) -> Optional[Candidate]:
         return None
     grade = (MatchGrade.EXACT if hit.get("_match") == "exact"
              else MatchGrade.CLOSE)
+    code = str(hit.get("code") or "").strip() or None
     return Candidate(
         source="off", tier=SourceTier.BRANDED_EXACT,
         name=str(hit.get("name") or ""),
         profile=profile_from_values(
-            "off", basis="per_100g", confidence=0.85,
+            "off", basis="per_100g", confidence=0.85, source_id=code,
             **{k: per100.get(k) for k in
                ("calories", "protein", "carbs", "fat", "fiber", "sugar",
                 "sodium")}),
-        basis=Per100g(), brand=hit.get("brand"),
+        basis=Per100g(), brand=hit.get("brand"), source_id=code,
         reported_grade=grade,
         serving_text=str(hit.get("serving_text") or ""),
         serving_mass_g=hit.get("serving_mass_g"))
