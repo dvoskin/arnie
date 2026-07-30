@@ -112,6 +112,19 @@ def _food_pipeline(user_id: Optional[int] = None) -> dict:
     except Exception as e:                           # pragma: no cover
         out["TURN_COORDINATOR_MODE"] = {"error": str(e)}
 
+    # A FLAG NOBODY CAN SEE IS A DECISION NOBODY MAKES. The master audit's own
+    # finding was flags parked in shadow with no owner and no review date
+    # (`FOOD_FAST_PATH_SHADOW`, "shadow since 07-29, no decision date"). This
+    # one ships OFF with a written enable condition, and reporting it here is
+    # what turns "remember to switch it on" into something visible from
+    # outside the container, for free, on every deploy check.
+    try:
+        from core.food_pipeline import identity_ask_enabled
+        out["FOOD_IDENTITY_ASK"] = _flag(
+            "FOOD_IDENTITY_ASK", identity_ask_enabled())
+    except Exception as e:                           # pragma: no cover
+        out["FOOD_IDENTITY_ASK"] = {"error": str(e)}
+
     try:
         from skills.nutrition.promotion import (owns_committed_values,
                                                 resolver_mode)

@@ -71,6 +71,19 @@ audit's root-cause clusters.
 | `TURN_COORDINATOR_MODE` | new_observe | orchestration | promote or delete after disposition-agreement number exists |
 | `FOOD_ANSWER_APPLY` | off (cannot fire) | clarification | enable after join (8.1); delete after FoodResolution owns commits |
 | `TURN_OBLIGATIONS` | on (merged, undeployed) | turn context | delete when 8.5's typed ExecutionIntent ships |
+| `FOOD_IDENTITY_ASK` | **off** (shipped `27d6f7b`) | food identity | **Enable when:** the firing rule handles a thin shelf without trading a silent assumption for a needless question. **Review by 2026-08-06.** Reported on `/health` so the pending decision is visible without anyone remembering it. **Owner: Danny.** |
+
+### Flag hygiene
+
+Every flag in this table carries an owner and a condition. That is the audit's
+own finding applied to itself: §26 listed flags parked in shadow indefinitely
+(`FOOD_FAST_PATH_SHADOW`, "shadow since 07-29, no decision date") as stale
+code, because a flag with no review date is not a rollout, it is a fork of the
+product nobody is measuring.
+
+The mechanism is deliberately not a reminder. Anything whose state matters is
+reported by `GET /health`, which needs no token and no traffic — so "did we
+ever turn that on?" is a request, not a memory.
 
 ## 4 · Canonical contracts (target shapes)
 
