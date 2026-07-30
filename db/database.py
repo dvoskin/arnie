@@ -153,6 +153,7 @@ async def _migrate(conn):
         ("conversation_logs", "feedback", "TEXT"),
         ("conversation_logs", "reasoning_json", "TEXT"),
         ("conversation_logs", "superseded_by", "INTEGER"),
+        ("conversation_logs", "turn_id", "VARCHAR"),
         ("health_snapshots", "recovery_score", "INTEGER"),
         ("health_snapshots", "strain", "FLOAT"),
         ("health_snapshots", "skin_temp_celsius", "FLOAT"),

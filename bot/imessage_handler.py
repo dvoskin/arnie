@@ -917,15 +917,18 @@ async def run_imessage_pipeline(address: str, chat_guid: str, raw_text: str,
         # the finally and the user is not left with a stuck typing bubble. Mirrors
         # the Telegram handler's try/finally around its _typing_keepalive task.
         from core.conversation import run_turn
+        # Hoisted so the SAME id reaches the turn (→ ledger contextvar) and
+        # the conversation row below — the turn⋈operation join (turnjoin001).
+        from core.turn_identity import make_turn_id
+        _turn_id = make_turn_id("imessage", message_guid, user.id,
+                                raw_text or "")
         try:
-            from core.turn_identity import make_turn_id
             turn = await run_turn(
                 user, db, messages, system, platform="imessage",
                 in_onboarding=in_onboarding, was_onboarding=was_onboarding,
                 today_log=today_log, source_type="imessage", on_image=_on_image,
                 on_interim=_on_interim, completion_facts=completion_facts,
-                turn_id=make_turn_id("imessage", message_guid, user.id,
-                                     raw_text or ""),
+                turn_id=_turn_id,
             )
         finally:
             await bb_set_typing(chat_guid, False)
@@ -940,7 +943,8 @@ async def run_imessage_pipeline(address: str, chat_guid: str, raw_text: str,
                                platform="imessage",   # else defaults to telegram → mislabeled tags
                                parsed_intent=(",".join(turn.health_flags) or None),
                                skills_fired=turn.skills_fired,
-                               idempotency_key=_idem_key)
+                               idempotency_key=_idem_key,
+                               turn_id=_turn_id)
 
         # ── Adaptive profile refresh + reflection (background tasks) ────────
         # Background tasks open their OWN session + re-fetch the user by id — the

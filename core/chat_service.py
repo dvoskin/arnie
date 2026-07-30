@@ -157,6 +157,7 @@ async def run_chat_turn(
     on_card: Optional[Callable[[list], Awaitable[None]]] = None,
     schedule_background: bool = True,
     idempotency_key: Optional[str] = None,
+    client_msg_id: Optional[str] = None,
 ) -> TurnResult:
     """Run one coaching turn for an already-resolved user and return the TurnResult.
 
@@ -197,6 +198,26 @@ async def run_chat_turn(
         text = _m_edit.group(2).strip()
 
     # ── Deterministic idempotency (preferred over the text-window heuristic) ──
+    # THE CANONICAL TURN ID, computed once and stamped on everything this turn
+    # writes: the ledger (via the contextvar), the conversation row (the new
+    # `turn_id` column), and the coordinator request. Computed from the RAW
+    # client message id — the master audit found ledger rows carrying
+    # "ios:ios:<uuid>" because api/chat pre-prefixed the idempotency key with
+    # the channel and make_turn_id prepended it again. The stored idempotency
+    # key is deliberately NOT changed (the replay short-circuit below is an
+    # exact-string match, and in-flight retries span deploys); only what feeds
+    # make_turn_id is de-doubled. The strip is a safety net for script callers
+    # that still pass only the prefixed key.
+    from core.turn_identity import make_turn_id
+    _raw_client_id = client_msg_id
+    if _raw_client_id is None and idempotency_key:
+        _prefix = f"{(platform or 'ios').strip().lower()}:"
+        _raw_client_id = (idempotency_key[len(_prefix):]
+                          if idempotency_key.startswith(_prefix)
+                          else idempotency_key)
+    _turn_id = make_turn_id(platform or "ios", _raw_client_id, user.id,
+                            text or "")
+
     # A keyed retry replays the already-persisted reply verbatim — no re-run, no
     # double-write — UNLESS the stored reply was an error (then the resend must
     # actually retry). The caller serializes same-user turns (per-identity lock),
@@ -255,6 +276,7 @@ async def run_chat_turn(
         _reset_row = await log_conversation(
             db, user.id, text, "|||".join(bubbles),
             source_type=_source, platform=platform,
+            turn_id=_turn_id,
         )
         return TurnResult(
             response=Response(bubbles=bubbles),
@@ -376,10 +398,9 @@ async def run_chat_turn(
     # the caller no longer chooses: there is no state where the coordinator and
     # the legacy pipeline are both independently invoked for one message, and
     # promoting a lane is a configuration change with nothing here to edit.
-    from core.turn_identity import make_turn_id
     from core.turns import entrypoint as _turns
-    _turn_id = make_turn_id(platform or "ios", idempotency_key, user.id,
-                            text or "")
+    # `_turn_id` was computed once at the top of this function, from the raw
+    # client id — see the block above the idempotency replay.
     # THE OPEN QUESTION IS PART OF THE REQUEST. An answer turn is not
     # recognisable from its text — "half of it", "the big bag", "yes" — so a
     # router without this routes it cold, which is what made the coordinator
@@ -396,7 +417,7 @@ async def run_chat_turn(
         request=_turns.build_request(
             turn_id=_turn_id, user=user, platform=platform,
             source_type=_source, text=text or "", db=db, today_log=today_log,
-            in_onboarding=in_onboarding, client_message_id=idempotency_key,
+            in_onboarding=in_onboarding, client_message_id=_raw_client_id,
             food_prior=_food_prior, food_pending=_food_pq is not None),
         user=user, db=db, messages=messages, system=system, platform=platform,
         in_onboarding=in_onboarding, was_onboarding=was_onboarding,
@@ -424,6 +445,10 @@ async def run_chat_turn(
         idempotency_key=idempotency_key,
         # Persist the reasoning receipt so "Arnie's Thoughts" survives reloads.
         reasoning=(getattr(turn.response, "reasoning", None) or None),
+        # The canonical turn identity — the same value the ledger's contextvar
+        # stamps on every operation this turn performed, which is what makes
+        # turn⋈operation one indexed join instead of three prefix heuristics.
+        turn_id=_turn_id,
     )
     # The row id is this turn's stable identity — clients stamp it on the live
     # bubbles so a later history reload recognizes them by id, not by text.

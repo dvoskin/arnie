@@ -536,6 +536,15 @@ class ConversationLog(Base):
     # ConversationLog row. Superseded rows are hidden from history (the
     # regenerate REPLACES the reply, ChatGPT-style, instead of stacking).
     superseded_by = Column(Integer)
+    # THE CANONICAL TURN IDENTITY — the same value `core/turn_identity` stamps
+    # (via the contextvar) on every ledger_events row this turn wrote. This
+    # column is what makes turn⋈operation a join instead of a prefix
+    # heuristic: before it, the master audit (2026-07-30 §9) could not verify
+    # "a narrated success has a matching operation" at all, because the turn
+    # id lived only on the ledger side in three inconsistent formats.
+    # Nullable: historic rows, and surfaces not yet routed through a turn.
+    # Paired with alembic migration turnjoin001.
+    turn_id = Column(String, index=True)
 
     user = relationship("User", back_populates="conversation_logs")
 

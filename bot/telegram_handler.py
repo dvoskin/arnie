@@ -433,10 +433,15 @@ async def _run_pipeline(update: Update, context: ContextTypes.DEFAULT_TYPE,
     )
     _on_text_bubble_arg = _on_text_bubble if _streaming_eligible else None
     turn = None
+    # Hoisted ABOVE the try so the SAME id reaches both the turn (→ ledger
+    # contextvar) and the conversation row below — that equality is the
+    # turn⋈operation join (turnjoin001) — and so it exists at the log site
+    # regardless of how the turn ends.
+    from core.turn_identity import make_turn_id
+    _tg_msg_id = getattr(getattr(update, "effective_message", None),
+                         "message_id", None)
+    _turn_id = make_turn_id("telegram", _tg_msg_id, user.id, raw_text or "")
     try:
-        from core.turn_identity import make_turn_id
-        _tg_msg_id = getattr(getattr(update, "effective_message", None),
-                             "message_id", None)
         turn = await run_turn(
             user, db, messages, system, platform="telegram",
             in_onboarding=in_onboarding, was_onboarding=was_onboarding,
@@ -445,8 +450,7 @@ async def _run_pipeline(update: Update, context: ContextTypes.DEFAULT_TYPE,
             on_completion=_tg_completion,
             completion_facts=completion_facts,
             on_text_bubble=_on_text_bubble_arg,
-            turn_id=make_turn_id("telegram", _tg_msg_id, user.id,
-                                 raw_text or ""),
+            turn_id=_turn_id,
         )
     except Exception as e:
         logger.error(f"run_turn failed (chat {chat_id}): {e}", exc_info=True)
@@ -551,7 +555,8 @@ async def _run_pipeline(update: Update, context: ContextTypes.DEFAULT_TYPE,
     await log_conversation(db, user.id, raw_text, log_text, source_type=source_type,
                            parsed_intent=(",".join(turn.health_flags) or None),
                            skills_fired=turn.skills_fired,
-                           idempotency_key=_idem_key)
+                           idempotency_key=_idem_key,
+                           turn_id=_turn_id)
 
     # ── Adaptive profile refresh + reflection (both fire in background) ─────
     # CRITICAL: the request-scoped `db` session closes when this function returns

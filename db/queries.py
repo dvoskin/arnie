@@ -1235,7 +1235,8 @@ async def log_conversation(db: AsyncSession, user_id: int, raw_message: str,
                            platform: str | None = None,
                            cards: Optional[list] = None,
                            idempotency_key: str | None = None,
-                           reasoning: Optional[dict] = None):
+                           reasoning: Optional[dict] = None,
+                           turn_id: str | None = None):
     """Persist one conversation turn.
 
     `platform` tags which surface the turn happened on ("telegram" | "imessage"
@@ -1265,6 +1266,10 @@ async def log_conversation(db: AsyncSession, user_id: int, raw_message: str,
         entry.cards_json = json.dumps(cards)
     if idempotency_key:
         entry.idempotency_key = idempotency_key
+    # The canonical turn identity — same value the ledger contextvar stamps on
+    # this turn's operations, making turn⋈operation one indexed join.
+    if turn_id:
+        entry.turn_id = turn_id
     # The turn's reasoning receipt — same rehydration story as cards: without
     # this the "Arnie's Thoughts" disclosure vanishes on every history reload.
     if reasoning:

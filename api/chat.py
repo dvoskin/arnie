@@ -278,7 +278,12 @@ async def _coached_reply(identity: str, text: str, source_type: str,
             try:
                 turn = await run_chat_turn(
                     db, user, text, platform=PLATFORM, source_type=source_type,
+                    # The stored key keeps its historic prefixed shape (exact-
+                    # match replay depends on it); the RAW id rides separately
+                    # so make_turn_id doesn't double the channel prefix — the
+                    # master audit's "ios:ios:<uuid>" ledger rows.
                     idempotency_key=(f"ios:{client_msg_id}" if client_msg_id else None),
+                    client_msg_id=client_msg_id,
                 )
             except Exception as e:
                 logger.error(f"chat turn failed (identity={identity}): {e}", exc_info=True)
@@ -714,7 +719,10 @@ async def _stream_turn(ws: WebSocket, identity: str, message: str,
                     db, user, message, platform=PLATFORM, source_type=PLATFORM,
                     on_text_bubble=on_bubble, on_tool_start=on_tool_start,
                     on_card=on_card,
+                    # Same split as the POST endpoint: prefixed key for exact-
+                    # match replay, raw id for turn identity.
                     idempotency_key=(f"ios:{client_msg_id}" if client_msg_id else None),
+                    client_msg_id=client_msg_id,
                 )
             except Exception as e:
                 logger.error(f"stream turn failed (identity={identity}): {e}", exc_info=True)
