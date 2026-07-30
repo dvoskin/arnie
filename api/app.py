@@ -4420,7 +4420,16 @@ async def _process_apple_health(payload: "AppleHealthPayload", token: str) -> di
             raise HTTPException(status_code=401, detail="Invalid token")
 
         from datetime import date as _date
-        snap_date = _date.today()
+        # THE DEVICE OMITS A DATE MORE OFTEN THAN IT SENDS ONE. Health Auto Export
+        # and bare Shortcuts syncs both post without a "date" field for same-day
+        # snapshots, so the fallback carries most real traffic rather than an edge
+        # case — and `date.today()` is the SERVER's day, which on Render is UTC.
+        # A user west of Greenwich syncing in their evening (a normal Health Auto
+        # Export schedule) gets tomorrow's UTC date on a snapshot they took today;
+        # the same class of bug the LOGGING_DAY_ROLLOVER_HOUR guard exists to stop
+        # everywhere else. `_user_today` is that one guard — use it here too rather
+        # than let this endpoint keep its own idea of what day it is.
+        snap_date = _user_today(user.timezone or "UTC")
         if payload.date:
             try:
                 snap_date = _date.fromisoformat(payload.date)

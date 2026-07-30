@@ -23,7 +23,9 @@ from sqlalchemy import select
 from api.auth import current_identity
 from db.database import AsyncSessionLocal
 from db.models import BodyMetric
-from db.queries import upsert_health_snapshot, resolve_user, _weighin_day_of
+from db.queries import (
+    upsert_health_snapshot, resolve_user, _weighin_day_of, _user_today,
+)
 
 router = APIRouter(prefix="/api/v1/health", tags=["health"])
 
@@ -70,7 +72,17 @@ async def post_snapshot(
         if not user:
             raise HTTPException(status_code=404, detail="user not found")
 
-        snap_date = _date.today()
+        # SAME BUG, ONE LEVEL UP FROM THE ONE THIS FILE ALREADY FIXED. The
+        # comment below on the workout batch explains why UTC-today double-
+        # counts an evening-local sync — that reasoning was applied to
+        # WORKOUTS in the 07-24 phantom fix and never carried up to the
+        # snapshot date those workouts fall back to when a workout has no
+        # parseable `start_time`. `date.today()` is the server's day (UTC on
+        # Render); a client west of Greenwich syncing in its own evening —
+        # the normal HealthKit background-delivery window — files today's
+        # steps/sleep/calories under tomorrow. `_user_today` is the one
+        # rollover-aware day this app uses everywhere else; use it here too.
+        snap_date = _user_today(getattr(user, "timezone", None) or "UTC")
         if payload.date:
             try:
                 snap_date = _date.fromisoformat(payload.date)
