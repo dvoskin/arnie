@@ -11,6 +11,55 @@ appeared in the logs at all.
 
 ---
 
+## 0 · Deploy confirmed, and the pre-deploy baseline on these exact queries
+
+**`d43fd83` is LIVE.** Confirmed 2026-07-30 19:57 UTC, structurally rather than
+by inference:
+
+```
+GET https://arnie.onrender.com/health
+  {"status":"ok","commit":"d43fd83cc821","branch":"main", …}
+```
+
+This closes the master audit's **Unknown #1** by a second route. §0 of the
+07-30 audit cost an hour of inference about which SHA was running, and the
+07-30 closure pass had to establish it from behavioural markers. `/health`
+answers it in one request, needs no user token and no traffic, and reports the
+live container's effective flags beside it:
+
+```
+FOOD_COMPOSER                  effective=True     env_set=True
+NUTRITION_RESOLVER_MODE        effective=shadow   env_set=True
+TURN_COORDINATOR_MODE          effective=new_observe  env_set=True
+resolver_owns_committed_values False
+```
+
+**Use `/health` first in every future audit.** Marker inference is only needed
+for what it does not carry.
+
+### The "before" numbers, taken on the old build minutes before cutover
+
+Run at 19:56 UTC against `7cea41e78f52` (the last turn on the old build was
+19:42), using the exact queries in §1 and §6 below — so the after-numbers are a
+like-for-like comparison and not a differently-shaped question:
+
+| Query | Result on `7cea41e` |
+|---|---|
+| §1 asks carrying `staged_items` (8 most recent, back to 07-29 18:25) | **`with_candidates=0`, `anchored=0` on every one** |
+| §6 `created` ledger events, 12h (10 rows) | **`resolution` key absent on every one** |
+
+That is the defect, measured one final time on the build that had it. Any
+non-zero `with_candidates` after cutover is the producer working; a continued
+run of zeros is the fix not reaching traffic, and is the number that matters.
+
+**Not yet observable:** as of 19:58 UTC no turn had run on `d43fd83` — the most
+recent turn in production was 19:42, on the old build. The join appears on an
+**ask** turn, and the persisted basis on a **log** turn, so both wait on real
+traffic. This is the same traffic dependency that left checks 4/5/6 open in
+`VERIFICATION_2026-07-30.md`; it is a property of the sample, not of the fix.
+
+---
+
 ## 1 · The producer produces (the finding itself)
 
 Stored resolutions now carry products. `staged_items` lives on the pending row.
