@@ -277,6 +277,124 @@ instrument, and the instrument is currently reading the wrong engine.
 
 ---
 
+## 7b. Composite dishes — an engine built twice, a label that lies, and no way to verify it
+
+Raised by Danny, and the audit supports it: composite logging has never been figured out or checked
+for accuracy. Here is what is actually true today.
+
+### The label already claims work that does not happen
+
+`component_estimate` is not an engine. It is a **string** assigned here `C`:
+
+```python
+rung = "component_estimate" if food_class is authority.FoodClass.RESTAURANT else "estimate"
+```
+
+— and `authority.py:439` renders it to the user as **"Estimated from its components"**, under a
+docstring that says the line "must be true (§7)". Nothing decomposes anything. The only difference
+between that sentence and "Best estimate from the description" is a class check. This is cause H's
+family — asserting something that did not happen — sitting in the provenance layer, where it is
+*less* falsifiable than in prose because it looks like a citation.
+
+### Composites are a small share of rows and a large share of calories
+
+30 days of production `P`, dish-word match excluding branded rows (`Quest … Chili` is not a stew):
+
+| | entries | share | mean cal | calorie share |
+|---|---|---|---|---|
+| composite | 71 | 8.4 % | **422** | **17.0 %** |
+| simple | 771 | 91.6 % | 190 | 83.0 % |
+
+**One row in twelve, one calorie in six.** Being systematically wrong here moves the day's total more
+than being wrong anywhere else. The name match is a heuristic and the split is soft at the edges `?`.
+
+### Accuracy is not verifiable from user behaviour — this is the crux
+
+The obvious proxy is "do users correct composites more often?" On a properly matched population `P`:
+
+| | update events / entry | entries ever corrected |
+|---|---|---|
+| composite | 0.042 | 1 of 71 (1.4 %) |
+| simple | 0.042 | 22 of 771 (2.9 %) |
+
+**Identical.** *(An earlier cut of this query showed composites corrected 2× more often; that was an
+artifact of joining across an unmatched entry population, and it is wrong. The matched numbers are
+above.)*
+
+One composite corrected in thirty days is not evidence that composite pricing is good. It is
+evidence that **a wrong composite does not look wrong**. Nobody can eyeball whether a CAVA Spicy Lamb
+Bowl is 680 calories; they can absolutely tell that one banana is not 8 grams of protein. So the
+correction signal that makes simple-food errors self-reporting is **structurally absent** here.
+
+The consequence for planning: composite accuracy **cannot be measured from production, ever**. It
+needs external ground truth. That is why this has stayed unfigured — not because nobody tried, but
+because the usual feedback loop does not exist.
+
+The one accuracy number that does exist is a self-consistency failure, from `b835700`: composite
+totals **drift 18–21 % across logging modes** `C` — the same dish priced differently depending on
+mode, which is wrong regardless of what the truth is.
+
+### The engine is built. Twice. Neither is merged.
+
+| Branch | Design |
+|---|---|
+| `40d4d9b` (`claude/open-issues-composites-stall-usda`) | 642-line `composites.py`, gold USDA row fixtures, 437-line test. Recipe and masses are **ours** and disclosed as assumptions; the nutrition is **theirs** (USDA generics). Answers a **range**, not a point, because summing typical masses would claim measurement confidence a dish has not earned. **Fails closed** — a recipe whose required parts cannot all be priced seats nothing. A test starves the module of rows to prove no calorie figure is hardcoded. |
+| `e4d651d` (`dvoskin/composites-component-estimate`) | 462-line variant + `components_could_win()`; seats component candidates on the **GENERIC** ladder too, because `classify()` sends "two carnitas tacos" to GENERIC, not RESTAURANT — a rung living only on the restaurant ladder answers none of them. Also deletes the false relabel. |
+
+Both diagnose exactly the lie described above. The plan's carried backlog already says: adopt
+`40d4d9b`, graft `components_could_win()` from `e4d651d`.
+
+### The gap neither branch closes: the library does not match the traffic
+
+Recipe keys are taco- and burger-shaped — al pastor, asada, barbacoa, carnitas, birria, quesadilla,
+hamburger, poke, falafel, chipotle bowl `C`. Grepping both libraries for the dishes production
+actually logs `C`:
+
+| dish | in `40d4d9b` | in `e4d651d` |
+|---|---|---|
+| **pizza** | ❌ | ❌ |
+| stew | ❌ | ❌ |
+| sushi | ❌ | ❌ |
+| shawarma | ❌ | ❌ |
+| pasta / curry | ❌ | ❌ |
+| salad | partial | ❌ |
+
+The real composites logged in the last 30 days `P`: *Dollar pizza slices* ×2, *Cheese pizza, NY-style
+thin crust*, *Detroit-style pepperoni pizza*, *Caesar Salad*, *Beef stew with mashed potatoes*,
+*Ground beef and eggplant stew*, *Arugula, avocado, onion salad*, *Vegetable roll (sushi)*, *CAVA
+Spicy Lamb Bowl*, *shawarma platter*, *Chicken burrito bowl*, *Fish taco*.
+
+**Pizza is the most-logged composite and neither library has a pizza.** The engine would ship,
+correctly, and decline nearly everything this user base eats — fail-closed turning a correctness
+virtue into total silence. That is the same shape as the food gate that shipped switched off.
+
+### What "verified for accuracy" has to mean here
+
+A build-out plan, since none exists:
+
+1. **Seed the library from the traffic, not from intuition.** Rank the last 90 days of composite
+   names by calorie contribution and write recipes down that list. Pizza, bowls, salads and stews
+   before another taco variant.
+2. **Decide per dish whether decomposition is even the right tool.** The branches' thesis — "USDA has
+   no taco, but it has tortillas and pork" — is true for assembled-to-order food and questionable for
+   dishes that already have a curated prepared-food row. Settle it with evidence: for each top dish,
+   compare a direct row against the decomposition `?`. Decomposition should be the **fallback when no
+   good direct row exists**, not a replacement for lookup.
+3. **Build a ground-truth corpus, because production cannot supply one.** Restaurant published
+   nutrition (CAVA, Chipotle and similar publish per-item), plus curated prepared-dish rows. Perhaps
+   30–50 dishes with a known answer.
+4. **Score it on two axes, and report both.** *Coverage*: does the returned range contain the truth?
+   *Accuracy*: point-estimate error on calories **and protein** — protein separately, because the
+   whole lane exists for protein and a calorie-only score has hidden protein errors before
+   (`PR #31`). A range that always contains the truth by being enormous is not a pass.
+5. **Fix the 18–21 % mode drift first or measure it as part of the score.** One dish must price the
+   same in quick and strict; only the *question* asked about it should differ.
+6. **Only then delete the false label.** Until the engine is seated, "Estimated from its components"
+   should say "estimate" — that is a one-line honesty fix that need not wait for any of the above,
+   and `e4d651d` already contains it.
+
+---
+
 ## 8. What to do next
 
 Ranked by *evidence that it is broken in production now*, which is the only ranking that has held up
@@ -306,6 +424,17 @@ across these three audits.
    green-suite claim means what it says.
 8. **Put the deployed SHA somewhere queryable.** §0 cost an hour of inference that a log line would
    have answered.
+9. **Composites (§7b)** — a workstream, not a task, and the only one here whose accuracy cannot be
+   scored from production. Sequence it as: the one-line honesty fix (stop saying "estimated from its
+   components" when nothing was) → seed the recipe library from the traffic's own calorie ranking →
+   ground-truth corpus → adopt `40d4d9b` + `components_could_win()` behind a flag → score coverage
+   and per-macro error → then seat it. **Do not merge the engine before the library matches the
+   traffic**: it fails closed, so today it would ship correct and silent.
+
+**Where composites sit against the rest:** the honesty fix is worth doing immediately — it is one
+line and it stops a false provenance claim. The engine itself should follow item 5 (the join),
+because a composite is the case that most needs one resolution object: its parts are priced at write
+time, its ambiguities are asked at ask time, and today neither can see the other.
 
 Then the plan's remaining causes — **F** (identity, now correctly understood as needing §1 first),
 **E** (locale, still unmeasured here), **C**, **D** as a re-measure.
@@ -323,3 +452,8 @@ step 4 would only mean it starts declining loudly instead of quietly.
 - **RU/locale (cause E)** — not sampled here; the 07-29 window found 2 of 6 users affected `?`.
 - **`route_owner` shares** — collected, not yet cut into the S2 answer `?`.
 - **Whether latency moved for a reason or with the traffic mix** `?`.
+- **Composite accuracy, at all** `?` — and unlike everything else on this list, no production window
+  will answer it (§7b). It needs a ground-truth corpus that does not yet exist. The composite share
+  of calories (17 %) is a name heuristic and soft at the edges.
+- **Whether decomposition beats a direct prepared-dish row** for pizza, Caesar salad and the other
+  top dishes `?`. Assumed by both branches, tested by neither.
