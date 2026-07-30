@@ -6,6 +6,13 @@ on:
   pull_request:
     branches: [main]
 
+# A superseded run proves nothing about the tip. Cancel it rather than paying
+# for it — but never cancel on main, where each commit's status is the record
+# a deploy is checked against.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -32,8 +39,31 @@ jobs:
       - name: Byte-compile (catch syntax/indentation errors before runtime)
         run: python -m compileall -q api bot core db handlers memory scheduler wearables skills main.py
 
+      # ONE HEAD, ALWAYS. Several sessions work this repo in parallel and
+      # each can add a migration; two heads is not a merge conflict git shows
+      # you, it is a deploy that fails in Render's release phase after the
+      # build succeeded. Cheap to check, expensive to discover.
+      #
+      # The NEW migration then compiles against POSTGRES without executing.
+      # Deliberately the head alone, not the whole chain: the full replay needs
+      # a live inspector (a self-healing migration calls sa.inspect) and cannot
+      # run offline. Offline mode is also where the last migration bug lived —
+      # op.execute() returns None there, so an unguarded rowcount print crashed
+      # the Postgres compile while every local SQLite test passed.
+      - name: Alembic — one head, and it compiles offline against Postgres
+        run: |
+          set -euo pipefail
+          range="$(DATABASE_URL='sqlite:///:memory:' python scripts/migration_range.py)"
+          echo "compiling $range"
+          DATABASE_URL='postgresql://ci:ci@localhost/ci' \
+            python -m alembic upgrade "$range" --sql > /dev/null
+
       - name: Run tests
         env:
           LINKING_ENABLED: "true"
           PROACTIVE_MESSAGING_ENABLED: "false"
+        # The seed is echoed by pytest-randomly on every run. Order is shuffled
+        # deliberately — it is what surfaces the cross-test cache leaks that
+        # made behaviour depend on which test ran first — so a red run must
+        # stay reproducible: re-run with --randomly-seed=<the printed seed>.
         run: python -m pytest
