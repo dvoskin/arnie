@@ -72,18 +72,45 @@ def test_stale_or_ageless_boards_produce_no_block():
 
 
 # ── [REPLY LANGUAGE] ──────────────────────────────────────────────────────────
-def test_non_latin_letters_pin_the_reply_language():
-    assert "[REPLY LANGUAGE" in reply_language_block("съел борщ")
-    assert "[REPLY LANGUAGE" in reply_language_block("食べた")
+@pytest.mark.parametrize("message", [
+    "съел борщ",                       # Russian — the window that found cause E
+    "食べた",                            # Japanese
+    "أكلت البيض",                       # Arabic
+    # THE ONES A SCRIPT TEST CANNOT SEE. These are why the block is now
+    # unconditional: they are Latin-script, so the old non-Latin trigger left
+    # them with no pin at all, and cause E was fixed for exactly the languages
+    # whose alphabet differs from ours.
+    "me comí dos huevos",              # Spanish
+    "j'ai mangé deux oeufs",           # French
+    "eu comi dois ovos",               # Portuguese
+    "saya makan dua telur",            # Indonesian
+    "iki yumurta yedim",               # Turkish
+    # ...and English, where the rule is a no-op and still true.
+    "I've had 2 eggs",
+])
+def test_every_language_pins_the_reply(message):
+    assert "[REPLY LANGUAGE" in reply_language_block(message), message
 
 
-def test_latin_and_punctuation_do_not():
-    """The same letters-only rule as the gate: a smart apostrophe or an emoji
-    is not a language."""
-    assert reply_language_block("I've had 2 eggs") == ""
-    assert reply_language_block("7 couldn’t do more") == ""
-    assert reply_language_block("nice \U0001F4AA") == ""
+def test_the_block_names_no_language():
+    """No catalog, no list, no per-language branch — the rule is about THEIR
+    message, so it cannot go stale or miss one."""
+    block = reply_language_block("me comí dos huevos")
+    for named in ("Russian", "Spanish", "English", "русск", "非"):
+        assert named not in block
+
+
+def test_the_current_message_decides_not_the_history():
+    """The other half of the original defect: a history thick with one language
+    kept pulling replies back into it after the user had switched."""
+    block = reply_language_block("ok switching to english now")
+    assert "CURRENT" in block
+    assert "Earlier messages" in block
+
+
+def test_nothing_to_pin_produces_no_block():
     assert reply_language_block("") == ""
+    assert reply_language_block("   ") == ""
 
 
 # ── [TIME] ────────────────────────────────────────────────────────────────────

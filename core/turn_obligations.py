@@ -165,17 +165,34 @@ def last_action_block(board) -> str:
 
 
 def reply_language_block(user_text: str) -> str:
-    """Pin the reply to the message's language when its script is not Latin.
+    """Pin the reply to the language of the message. Every turn, every language.
 
-    Two of six users in the 07-29 window got English scaffolding prepended to
-    Russian replies (cause E). Detection is a fact about the message — the
-    same letters-only test the gate uses — not a classification.
+    THERE IS NOTHING TO DETECT. This fired only when the message contained
+    non-Latin letters, which reads as "the block is for Russian users" and is
+    the EN-keyed blindspot wearing different clothes: a Spanish, French,
+    Portuguese or Indonesian user writes in Latin script and got no block at
+    all, so cause E was addressed for exactly the languages whose alphabet
+    happened to differ from ours. The 07-29 window found the Russian half
+    because Russian users were the ones in it.
+
+    A script test cannot tell English from Spanish, so no script test can carry
+    this rule. But the rule needs no test: "reply in the language they wrote
+    in" is TRUE on an English turn — it is a no-op there — and stating it
+    unconditionally costs one line and removes the whole class of blindspot.
+    That is the directive's shape (typed obligation, not per-language
+    catalogs), and the reason there is no list of languages anywhere here.
+
+    The anti-momentum clause is the other half of the original defect: a
+    history thick with one language kept pulling replies back into it after
+    the user had switched. The CURRENT message decides, every turn.
     """
-    if not any(ord(c) > 0x2FF and c.isalpha() for c in (user_text or "")):
+    if not (user_text or "").strip():
         return ""
     return ("[REPLY LANGUAGE — system note, not written by the user]\n"
-            "Reply entirely in the language of the user's message. No English "
-            "words, headers, or scaffolding.")
+            "Reply entirely in the language of the user's CURRENT message — "
+            "the whole reply, including any headers, labels, units and "
+            "scaffolding. Earlier messages in this conversation do not decide "
+            "it; the current one does, every turn.")
 
 
 def time_block(user) -> str:
