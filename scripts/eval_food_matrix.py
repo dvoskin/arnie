@@ -6,7 +6,16 @@ against the real FOOD_LOGGER_MODEL. Each case states the message, the state
 (mode / board / regulars / last_assistant), and the EXPECTED action (+ shape
 checks). Output: PASS/FAIL per case + score.
 
-Run:  PYTHONPATH=<repo> python eval_food_matrix.py
+Run (from a worktree, which has no .env — the key MUST be exported or the
+script now refuses to run rather than scoring a misleading number):
+
+    export ANTHROPIC_API_KEY="$(grep '^ANTHROPIC_API_KEY=' /path/to/arnie/.env \
+        | cut -d= -f2- | tr -d '"'"'"' ')"
+    PYTHONPATH=<repo> <repo>/.venv/bin/python scripts/eval_food_matrix.py
+
+Every case runs EVAL_REPS times (default 3) and passes only if it passes all
+of them; see `main`. Exits non-zero unless every case is clean, so FLAKY is a
+failure here rather than a footnote.
 """
 import asyncio
 import os
@@ -20,8 +29,29 @@ from core import food_turn as FT
 
 
 def U(mode="strict"):
+    """The eval user, with the BODY STATS the materiality engine actually reads.
+
+    `preferences.calorie_target` alone was decorative here. Materiality scores
+    against `core.targets.compute_macro_targets(user)`, which DERIVES the day's
+    goals from weight/height/age/sex — and raises AttributeError on a user that
+    has none. `_daily_targets` swallows that and returns None, which silently
+    drops `is_material` off its proportional day-share/item-share engine and
+    onto the legacy ABSOLUTE thresholds.
+
+    So every ask-or-log decision in this battery was being made by a different
+    engine than the one production runs, and the two disagree: a Barebells bar
+    with a 30-cal flavour spread is immaterial by absolute threshold and
+    material by day-share (0.014 >= 0.005, item-share 0.150 >= 0.15). The
+    battery was scoring the fallback.
+
+    These stats compute to 2163 cal / 180 g protein — the figures the old
+    decorative fields claimed — so the numbers the cases were tuned against
+    are unchanged; they are now actually read.
+    """
     return SimpleNamespace(
         id=999, first_name="Eval",
+        current_weight_kg=81.5, height_cm=165.0, age=45, sex="male",
+        primary_goal="recomp", goal_weight_kg=79.5, activity_level="moderate",
         preferences=SimpleNamespace(food_logging_mode=mode,
                                     calorie_target=2165, protein_target=180))
 
@@ -104,9 +134,37 @@ CASES = [
          expect=None, gate_only=True),
 
     # ── say contract ──────────────────────────────────────────────────────
-    dict(name="say never carries model-invented totals",
+    # WAS: "say never carries model-invented totals", on "a bowl of white rice
+    # and two fried eggs", expecting log. Retired 2026-07-29 for two SEPARATE
+    # reasons, either of which alone kills it:
+    #
+    # 1. The assertion was VACUOUS. It compared `enforce_say_contract(say)`
+    #    against `say` — but the interpreter stopped emitting prose (451fb35,
+    #    f3aa3be), so `say` is now always "" on every log, "" cleans to "", and
+    #    the check passed on equality-of-nothing no matter what the model did.
+    #    It read as a live guard on invented totals and guarded nothing.
+    # 2. The expectation was stale anyway. "A bowl of" is a unit that does not
+    #    fix a size (5fba5f4), so the rice is an unstated quantity worth ~150
+    #    cal — 6.9% of the day — and the engine escalates the log to an ask.
+    #    That is the behaviour we want; the case was written before it existed.
+    #
+    # The say contract itself is alive and enforced in production at
+    # core/conversation.py:2153, against the COMPOSER's line — a layer FT.run
+    # does not reach — and is unit-tested (tests/test_food_turn.py::209-216,
+    # test_gate_generative.py, test_the_interpreter_stops_writing_prose.py).
+    # Chasing it from here would only re-create the vacuum.
+    #
+    # What IS checkable here is the invariant that made it vacuous, so it is
+    # now checked on purpose: on a clean log the interpreter emits NO prose.
+    # If prose ever comes back, this fails instead of silently passing.
+    dict(name="interpreter emits no prose on a clean log",
+         msg="had 3 large eggs and 200g of grilled chicken breast",
+         mode="moderate", expect="log", min_items=2, no_prose=True),
+    # The rice case kept as what it actually demonstrates now: an unfixed unit
+    # is an unstated amount, and that is worth a question.
+    dict(name="a unit that does not fix a size is asked about",
          msg="had a bowl of white rice and two fried eggs", mode="moderate",
-         expect="log", say_contract=True),
+         expect="ask"),
 ]
 
 
@@ -144,32 +202,83 @@ async def run_case(c):
                              for tc in calls)
             if c["want_unit_sub"] not in units:
                 return False, f"unit missing '{c['want_unit_sub']}' in {units!r}"
-        if c.get("say_contract"):
-            say = res.get("say", "")
-            cleaned = FT.enforce_say_contract(say, calls)
-            if cleaned != say:
-                return False, f"say violated contract: {say[:90]}"
+        if c.get("no_prose"):
+            # The interpreter carries rows, not sentences. A non-empty say/note
+            # here means prose came back into the JSON the user waits on.
+            stray = {k: res.get(k) for k in ("say", "note")
+                     if (res.get(k) or "").strip()}
+            if stray:
+                return False, f"interpreter wrote prose: {stray}"
     return True, f"got={got} ✓"
 
 
+def _preflight():
+    """A missing key must fail LOUDLY, not score.
+
+    Without ANTHROPIC_API_KEY every case dies in the model call and is counted
+    a normal FAIL, which came out as a plausible-looking 6/20 — a number that
+    reads as a broken product rather than an unset variable. The worktrees this
+    is usually run from have no .env, so this is the common case, not the edge.
+    """
+    if not (os.getenv("ANTHROPIC_API_KEY") or "").strip():
+        sys.exit("ANTHROPIC_API_KEY is not set — every case would fail on auth "
+                 "and score a misleading number. Export it and re-run:\n"
+                 "  export ANTHROPIC_API_KEY=\"$(grep '^ANTHROPIC_API_KEY=' "
+                 "/path/to/arnie/.env | cut -d= -f2- | tr -d '\\\"'\\''')\"")
+
+
 async def main():
-    passed = failed = 0
+    """REPEATED, and SERIAL. Both on purpose.
+
+    REPEATED: this battery is a live-model matrix, so a single run scores the
+    sample, not the commit. Measured on cca96be, "usual + two matches asks
+    which" passed 3 times in 8 and "multi-item split" 5 in 8 — either could be
+    read as a green commit or a regression depending on the run. A case now
+    passes only if it passes EVERY rep; anything in between is FLAKY and is
+    counted a failure, because a sometimes-pass is exactly what let a broken
+    behaviour ship green.
+
+    SERIAL: running the cases concurrently inflates latency past the turn
+    budget, the composer call fails, and cases resolve differently — in BOTH
+    directions. Under concurrency 6, "multi-item split" failed 3 of 8 purely
+    from timeouts, while "usual + two matches" PASSED 3 of 8 because a timeout
+    happens to surface as the `ask` it wanted. Do not parallelise this for
+    speed; it does not measure the same thing.
+    """
+    _preflight()
+    reps = int(os.getenv("EVAL_REPS", "3"))
     lines = []
+    clean = flaky = broken = 0
     for c in CASES:
-        try:
-            ok, detail = await run_case(c)
-        except Exception as e:  # noqa: BLE001
-            ok, detail = False, f"EXC {type(e).__name__}: {e}"
-        mark = "PASS" if ok else "FAIL"
-        passed += ok
-        failed += (not ok)
-        line = f"[{mark}] {c['name']}  ({detail})"
+        runs = []
+        for _ in range(reps):
+            try:
+                runs.append(await run_case(c))
+            except Exception as e:  # noqa: BLE001
+                runs.append((False, f"EXC {type(e).__name__}: {e}"))
+        n = sum(1 for ok, _ in runs if ok)
+        if n == reps:
+            mark, _b = "PASS", clean
+            clean += 1
+        elif n == 0:
+            mark = "FAIL"
+            broken += 1
+        else:
+            mark = "FLAKY"
+            flaky += 1
+        detail = "; ".join(sorted({d for ok, d in runs if not ok})) or runs[0][1]
+        line = f"[{mark}] {c['name']}  ({n}/{reps}) ({detail[:160]})"
         print(line, flush=True)
         lines.append(line)
-    print(f"\n{passed}/{passed + failed} passed", flush=True)
+    total = len(CASES)
+    summary = (f"\n{clean}/{total} passed all {reps} reps"
+               f"  |  flaky: {flaky}  |  failed outright: {broken}")
+    print(summary, flush=True)
     out = "/tmp/eval_matrix_results.txt"
     with open(out, "w") as f:
-        f.write("\n".join(lines) + f"\n\n{passed}/{passed + failed} passed\n")
+        f.write("\n".join(lines) + summary + "\n")
+    # A flaky case is not a pass — make the exit code say so for CI.
+    sys.exit(0 if clean == total else 1)
 
 
 if __name__ == "__main__":

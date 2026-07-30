@@ -1,5 +1,34 @@
 # Food Logging — Ironclad Evaluation (2026-07-23)
 
+> **UPDATE 2026-07-29 — the "20/20" below was measured through a broken
+> harness. Read this first.**
+>
+> The battery's fake user carried `preferences.calorie_target` and nothing
+> else. Materiality scores against `compute_macro_targets(user)`, which
+> DERIVES the day's goals from weight/height/age/sex and raises on a user with
+> none; `_daily_targets` swallowed that and returned `None`, which drops
+> `is_material` off its proportional day-share engine onto the legacy ABSOLUTE
+> thresholds. **Every ask-or-log verdict in this document was scored by an
+> engine production does not run.** Fixed by giving the eval user real body
+> stats (they compute to 2163 cal / 180 g protein — the numbers the decorative
+> fields claimed).
+>
+> A single run also never scored a commit. The battery is a live-model matrix
+> and several cases were genuinely non-deterministic: measured over 8 runs,
+> "usual + two matches" passed 3 times and "multi-item split" 5 — and one of
+> those was passing *for the wrong reason*, since running cases concurrently
+> blows the 6 s turn budget and a timeout surfaces as the `ask` the case
+> wanted. The battery now runs each case `EVAL_REPS` times (default 3),
+> **serially**, counts a case green only if every rep passes, and exits
+> non-zero on FLAKY. It also refuses to start without `ANTHROPIC_API_KEY`
+> rather than scoring the all-auth-fail run as a plausible 6/20.
+>
+> Four real product defects were hiding behind the broken harness and the
+> single-run scoring — a categorical strict rule enforced as a swing rule, a
+> pointer whose failure was invisible, a stated amount re-asked, and a stated
+> range read as our invention. All four are fixed; see the 07-29 section at the
+> end. Current state: **21/21, five reps each, zero flaky.**
+
 Full-system evaluation of the food-logging brain at `main` (post-7c55538),
 run three layers deep. Verdict up front: **the English chat-text lane is
 solid — 20/20 on the live behavioral matrix, deterministic invariants green,
@@ -99,11 +128,66 @@ to any recent change.
 ## How to re-run
 
 ```
-# behavioral matrix (needs ANTHROPIC_API_KEY)
-PYTHONPATH=. python scripts/eval_food_matrix.py
+# behavioral matrix — the key MUST be exported (a worktree has no .env, and
+# the script now refuses to run without it rather than scoring 6/20)
+export ANTHROPIC_API_KEY="$(grep '^ANTHROPIC_API_KEY=' /path/to/arnie/.env \
+    | cut -d= -f2- | tr -d '"'"'"' ')"
+PYTHONPATH=. .venv/bin/python scripts/eval_food_matrix.py   # EVAL_REPS=5 for a harder pass
 # deterministic suite
 ANTHROPIC_API_KEY="" pytest tests/ -p no:randomly -q
 ```
 
 The matrix is the regression battery for the logging brain: every future
-prompt or pipeline change should keep it at 20/20 and add its own case.
+prompt or pipeline change should keep it green — **all 21 cases passing every
+rep** — and add its own case. A FLAKY case is a failure, not a footnote: it is
+what let a re-broken behaviour read as a pass. Run it from a worktree on
+`main`, never the primary checkout.
+
+---
+
+## 2026-07-29 — re-run at `cca96be`, harness repaired, four defects fixed
+
+Re-measured because the battery was reading 15/20. Establishing what was a
+real regression versus model variance came first, and it changed the answer
+twice: serial re-runs promoted one "flaky" case to a stable pass (its failures
+were my own harness's concurrency) and demoted another from flaky to stable
+FAIL (its passes were timeouts landing on the expected `ask`).
+
+### The harness was measuring the wrong engine
+
+See the note at the top. Consequence: cases were tuned against absolute
+thresholds while production ran proportional ones. Repairing it flipped
+`usual + two matches` green on its own, and exposed `5-6 fries`, which had
+only ever passed *because* the proportional engine was switched off.
+
+### Defects found and fixed
+
+| # | Defect | Root cause | Fix |
+|---|---|---|---|
+| 1 | Strict + branded + unstated flavour logged instead of asking (0/5) | The prompt states this rule with no threshold in it — "ALWAYS an ask, REGARDLESS OF SWING SIZE" — but `_proposed_ask_is_material` routed it through the consequence engine anyway. A Barebells line sits inside ~30 cal, so the ask was demoted every time. The Barebells saga, arriving through the gate built after it. | `core/food_turn.py`: a strict-mode identity/brand unknown on an item the interpreter flagged `branded` is categorical and never demoted. Which flavour it was is a question about identity, not magnitude, so an engine that scores how wrong a *number* might be cannot see it. |
+| 2 | "my usual coffee" with no regulars returned `pass` — left the lane and wrote nothing (0/5) | The REGULARS block is emitted only when regulars exist, so a pointer that resolves to nothing arrived as bare prose. The prompt's rule for exactly this case never fired because nothing told the model it *was* that case; "coffee" then hit the standing "never ask about black coffee" rule. | `core/food_turn.py`: when the message carries a usual-pointer and the list is empty, state that fact. The rule already existed and only ever lacked its premise — the same failure the adjacent malformed-entry guard already names. |
+| 3 | A stated count re-asked as a menu portion ("5-6 fries" → "the small side or the full share plate?") | `attach_ambiguities` lifted the interpreter's residual *quantity* span onto an item whose amount the user had given, spending the one interruption we get on the only field not in doubt. | `core/food_pipeline.py`: a `CONSUMED_QUANTITY` ambiguity is not lifted when the amount is stated. The span stays on the item and keeps informing the estimate; it stops being something we interrupt for. Identity/prep/package unknowns are untouched — an amount does not answer those. |
+| 4 | The same case still flaky: identical, correct interpreter output logged or asked at random | Two blind spots in the stated-amount proxy. (a) One food can span two clauses — "some fries…, like 5-6 fries" — and clause scoping kept the half saying "some". (b) A stated *range* read as our invention: the interpreter averages "5-6" to `5.5`, which appears nowhere in the text. Outcome depended on whether the model emitted its OPTIONAL `basis` field. | `core/food_turn.py`: `_refining_clauses` lets a later clause naming the same food (matched on head noun only, so "half a banana" still cannot refine peanut butter) supply the amount; and any value inside a stated range counts as stated. |
+
+### Battery changes
+
+- Real body stats on the eval user, so materiality runs its production path.
+- `EVAL_REPS` (default 3), **serial**; a case is green only if every rep is.
+  FLAKY is a failure and the script exits non-zero. Do not parallelise for
+  speed — it does not measure the same thing.
+- Hard preflight on `ANTHROPIC_API_KEY`.
+- Retired `say never carries model-invented totals`. It was **vacuous**: it
+  compared `enforce_say_contract(say)` to `say`, and the interpreter stopped
+  emitting prose (`451fb35`, `f3aa3be`), so `say` is always `""` and the check
+  passed on equality-of-nothing regardless of model behaviour. It read as a
+  live guard and guarded nothing. The contract is alive at
+  `core/conversation.py:2153` against the composer's line — a layer `FT.run`
+  does not reach — and is unit-tested. Replaced by two honest cases: the
+  interpreter emits no prose on a clean log, and an unfixed unit ("a bowl of")
+  is asked about, which is the deliberate post-`5fba5f4` behaviour the old
+  expectation predated.
+
+### Verification
+
+- `21/21`, `EVAL_REPS=5`, serial — 105 live runs, zero flaky.
+- Full pytest suite: 6102 passed, 0 failed.
