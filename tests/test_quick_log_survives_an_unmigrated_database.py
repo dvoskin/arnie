@@ -65,3 +65,40 @@ async def test_a_keyless_tap_works_with_no_idempotency_table(
         "turn identity must not depend on the idempotency table — it is the "
         "part of the fix that takes effect before the migration runs"
     )
+
+
+@pytest.mark.asyncio
+async def test_a_keyed_tap_still_logs_the_food_with_no_idempotency_table(
+    session_without_the_idempotency_table, db, make_user,
+):
+    """The coupling risk between the two halves of this change.
+
+    Once iOS ships `Idempotency-Key`, the claim path runs on every tap. If the
+    migration has not been applied by then, the insert hits a table that does
+    not exist — and the correct outcome is NOT a 500. A missing bookkeeping
+    row must never cost the user the meal they just logged.
+
+    Degraded, loudly, is the contract: the food is written, the turn id is
+    stamped, and duplicate protection is off until `idem001` runs.
+    """
+    user = await make_user(telegram_id="ios:unmigrated-keyed")
+
+    resp = await log_food_entry(
+        FoodLogBody(food_name="Soup", calories=150, protein=6, carbs=18, fats=5),
+        identity="ios:unmigrated-keyed",
+        client_request_id="KEY-BEFORE-MIGRATION",
+    )
+
+    assert resp["ok"] is True, "a keyed tap 500'd on an unmigrated database"
+    rows = (await db.execute(
+        select(FoodEntry).where(FoodEntry.parsed_food_name == "Soup")
+    )).scalars().all()
+    assert len(rows) == 1, "the food was lost because a bookkeeping table was absent"
+
+    events = (await db.execute(
+        select(LedgerEvent).where(LedgerEvent.user_id == user.id)
+    )).scalars().all()
+    assert len(events) == 1
+    assert events[0].turn_id == "ios:KEY-BEFORE-MIGRATION", (
+        "traceability must survive the degraded path"
+    )

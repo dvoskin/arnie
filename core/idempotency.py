@@ -44,7 +44,7 @@ from datetime import datetime, timedelta
 from typing import Any, Optional
 
 from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, OperationalError, ProgrammingError
 
 logger = logging.getLogger(__name__)
 
@@ -124,6 +124,29 @@ async def claim_request(
         async with db.begin_nested():
             db.add(record)
             await db.flush()
+    except (OperationalError, ProgrammingError) as e:
+        # The table is not there. That means `idem001` has not run — and the
+        # pre-deploy migration is a Render dashboard setting this repo cannot
+        # guarantee (render.yaml is reference-only), so this is a real state,
+        # not a hypothetical.
+        #
+        # Degrade to no deduplication rather than failing the request. A
+        # missing bookkeeping table must never cost the user the meal they
+        # just logged; the write itself, and its turn id, do not depend on
+        # this row. Duplicates become possible again until the migration runs,
+        # which is strictly better than losing food.
+        logger.error(
+            f"event=idempotency_unavailable key={key} command={command} "
+            f"err={type(e).__name__} — idem001 has not been applied; writing "
+            f"WITHOUT duplicate protection")
+        # NO session-level rollback. `begin_nested()` has already released the
+        # savepoint on its way out, and a full `db.rollback()` here expires
+        # every object loaded in this session — the next attribute access on
+        # `user` then attempts IO from a sync context and dies with
+        # MissingGreenlet. That is the same trap `record_ledger_event`
+        # documents, and the soft-fail would have reintroduced it: the request
+        # would fail anyway, just further along and with a stranger error.
+        return Claim(key="", turn_id=turn_id, replay=False)
     except IntegrityError:
         # The unique index rejected us: someone else owns this key. Read what
         # they committed and answer from it.
