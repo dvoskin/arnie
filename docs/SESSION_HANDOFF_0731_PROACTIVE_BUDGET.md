@@ -5,11 +5,11 @@ left on proactive delivery, and with it blocker B3. Read this, then scorecard §
 
 ## Where the work is
 
-Branch `dvoskin/proactive-budget-delivery-attempts`, cut from `origin/main` @
-`50ba640`. **Committed locally, not pushed, not deployed.** Independent of the
-B5/B6/B7 branches and of the two running chip sessions (touches one function in
+Branch `dvoskin/proactive-budget-delivery-attempts` @ `6aed1eb`, cut from
+`origin/main` @ `50ba640`. **Pushed, not deployed.** Independent of the B5/B6/B7
+branches and of the two running chip sessions (touches one function in
 `scheduler/proactive_scheduler.py`, a different region than the `_CITY_NUDGES`
-the joke-emoji chip edits). Full shuffled suite green at the tip.
+the joke-emoji chip edits). Full shuffled suite green at the tip (6407, exit 0).
 
 ## The bug
 
