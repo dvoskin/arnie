@@ -374,6 +374,23 @@ class BackgroundJob(Base):
     next_attempt_at = Column(DateTime)
     created_at = Column(DateTime, server_default=func.now())
     completed_at = Column(DateTime)
+    # OUTBOX FIELDS (2026-07-31). This table already was an outbox in all but
+    # name — durable, retried, backed off, deduped. What it could not do was
+    # say WHICH turn queued the work, which build queued it, or which worker
+    # holds it right now.
+    #
+    # `turn_id` is the same canonical id the ledger event and request trace
+    # carry, so post-commit work joins the request that caused it instead of
+    # floating free. `build_sha` answers "which deploy queued this" for a job
+    # that fails days later.
+    #
+    # `claimed_at` plus the `processing` status is what makes more than one
+    # worker safe: claiming used to be a plain SELECT, so two sweepers would
+    # both pick up the same row and do the work twice. Harmless for the two
+    # idempotent job kinds that existed, not harmless for delivery.
+    turn_id = Column(String, index=True)
+    build_sha = Column(String)
+    claimed_at = Column(DateTime)
 
 
 class ProcessedTurn(Base):

@@ -3329,12 +3329,27 @@ async def record_surface_mutation(
 async def enqueue_background_job(
     db: AsyncSession, user_id: int, kind: str,
     payload: Optional[dict] = None, dedup_key: Optional[str] = None,
-    dedup_window_min: int = 30,
+    dedup_window_min: int = 30, commit: bool = True,
+    turn_id: Optional[str] = None,
 ) -> Optional[int]:
     """Queue durable post-turn work. Returns the row id, or None when a live
     row with the same dedup_key already covers it (a busy conversation must
     not queue twenty profile rebuilds). Never raises — the fast in-process
-    task still runs either way."""
+    task still runs either way.
+
+    `commit=False` is what makes this an OUTBOX rather than a second write.
+    Committing here while a caller held an open transaction would commit their
+    half-finished domain work as a side effect — a hidden commit inside a
+    helper, which is the transaction-ownership rule this codebase already
+    learned the hard way with ledger events. With `commit=False` the job row
+    lands in the SAME transaction as the mutation that asked for it: either
+    both are durable or neither happened, and there is no window where the
+    food is committed and the work it owes was lost.
+
+    `turn_id` ties the queued work to the request that caused it. Defaults to
+    the ambient turn when one is bound, so existing callers gain traceability
+    without changing.
+    """
     from db.models import BackgroundJob
     try:
         if dedup_key:
@@ -3348,15 +3363,28 @@ async def enqueue_background_job(
                 )).limit(1))).scalars().first()
             if existing is not None:
                 return None
+        if turn_id is None:
+            try:
+                from core.turn_identity import current_turn_id
+                turn_id = current_turn_id()
+            except Exception:
+                turn_id = None
         job = BackgroundJob(
             user_id=user_id, kind=kind,
             payload_json=json.dumps(payload) if payload is not None else None,
             dedup_key=dedup_key, status="pending",
+            turn_id=turn_id, build_sha=_build_stamp().get("sha"),
             next_attempt_at=datetime.utcnow())
         db.add(job)
-        await db.commit()
-        await db.refresh(job)
-        return job.id
+        # Flush FIRST and keep the id. Reading `job.id` after a commit reloads
+        # an expired object, which is a needless round trip and — on the shared
+        # aiosqlite connection the tests use — a place to hang. The id is
+        # assigned by the flush; nothing after it can change it.
+        await db.flush()
+        job_id = job.id
+        if commit:
+            await db.commit()
+        return job_id
     except Exception as e:
         logger.warning(f"enqueue_background_job skipped ({kind}): {e}")
         try:
@@ -3367,20 +3395,87 @@ async def enqueue_background_job(
 
 
 async def claim_due_background_jobs(db: AsyncSession, limit: int = 20) -> list:
-    """Pending jobs whose attempt time has arrived, oldest first. The sweeper
-    marks each done/failed as it finishes, so a crashed sweep leaves the row
-    pending for the next tick — at-least-once, which is what these jobs want
-    (both are idempotent: profile synthesis is throttled, reflection dedups)."""
+    """Pending jobs whose attempt time has arrived, oldest first — CLAIMED.
+
+    This used to be a plain SELECT, so two sweepers running at once both picked
+    up the same rows and did the work twice. That was survivable while the only
+    kinds were idempotent (profile synthesis throttles, reflection dedups) and
+    stops being survivable the moment anything user-visible joins the queue:
+    sending a push notification twice is not a no-op.
+
+    Rows are now marked `processing` with a `claimed_at` stamp inside the
+    selecting transaction, under `FOR UPDATE SKIP LOCKED` where the database
+    supports it — a second worker skips the locked rows and takes the next
+    ones instead of blocking or duplicating.
+
+    A worker that dies mid-job leaves the row `processing`; `requeue_stale_jobs`
+    returns it to pending. At-least-once, which is what these jobs want, but no
+    longer at-least-once PER SWEEPER.
+    """
     from db.models import BackgroundJob
     now = datetime.utcnow()
-    res = await db.execute(
-        select(BackgroundJob)
-        .where(and_(BackgroundJob.status == "pending",
-                    or_(BackgroundJob.next_attempt_at.is_(None),
-                        BackgroundJob.next_attempt_at <= now)))
-        .order_by(BackgroundJob.created_at)
-        .limit(limit))
-    return res.scalars().all()
+    stmt = (select(BackgroundJob)
+            .where(and_(BackgroundJob.status == "pending",
+                        or_(BackgroundJob.next_attempt_at.is_(None),
+                            BackgroundJob.next_attempt_at <= now)))
+            .order_by(BackgroundJob.created_at)
+            .limit(limit))
+    # SKIP LOCKED is Postgres (production). SQLite has no row locks and no
+    # concurrent writers, so the plain select is already exclusive there.
+    if db.bind is not None and db.bind.dialect.name == "postgresql":
+        stmt = stmt.with_for_update(skip_locked=True)
+    jobs = (await db.execute(stmt)).scalars().all()
+    for job in jobs:
+        job.status = "processing"
+        job.claimed_at = now
+    if jobs:
+        await db.commit()
+    return jobs
+
+
+async def requeue_stale_jobs(db: AsyncSession, older_than_min: int = 15) -> int:
+    """Return jobs abandoned by a dead worker to `pending`.
+
+    A worker that crashes between claiming and finishing leaves its rows
+    `processing` forever, and a queue that quietly stops draining is worse than
+    one that visibly backs up. Bounded by `attempts`, so a job that keeps
+    killing its worker still reaches dead_letter rather than looping.
+    """
+    from db.models import BackgroundJob
+    cutoff = datetime.utcnow() - timedelta(minutes=older_than_min)
+    rows = (await db.execute(
+        select(BackgroundJob).where(and_(
+            BackgroundJob.status == "processing",
+            BackgroundJob.claimed_at.isnot(None),
+            BackgroundJob.claimed_at <= cutoff)))).scalars().all()
+    for job in rows:
+        job.status = "pending"
+        job.claimed_at = None
+        job.last_error = "requeued after worker went away"
+    if rows:
+        await db.commit()
+        logger.warning(f"event=outbox_requeued count={len(rows)}")
+    return len(rows)
+
+
+async def outbox_health(db: AsyncSession) -> dict:
+    """Backlog size and oldest pending age — a queue nobody can see is a queue
+    nobody notices has stopped."""
+    from db.models import BackgroundJob
+    out: dict = {}
+    try:
+        for status in ("pending", "processing", "failed", "dead_letter"):
+            out[status] = int((await db.execute(
+                select(func.count()).select_from(BackgroundJob)
+                .where(BackgroundJob.status == status))).scalar() or 0)
+        oldest = (await db.execute(
+            select(func.min(BackgroundJob.created_at))
+            .where(BackgroundJob.status == "pending"))).scalar()
+        out["oldest_pending_age_s"] = (
+            int((datetime.utcnow() - oldest).total_seconds()) if oldest else 0)
+    except Exception as e:                       # pragma: no cover
+        out["error"] = type(e).__name__
+    return out
 
 
 async def finish_background_job(
@@ -3398,10 +3493,25 @@ async def finish_background_job(
             job.status = "done"
             job.completed_at = datetime.utcnow()
         elif job.attempts >= max_attempts:
-            job.status = "failed"
+            # DEAD LETTER, not "failed". `failed` read like a transient outcome
+            # and nothing distinguished "will retry" from "gave up forever" —
+            # so exhausted work was invisible. This status exists to be alerted
+            # on.
+            job.status = "dead_letter"
             job.last_error = (error or "")[:500]
+            logger.error(
+                f"event=outbox_dead_letter job={job.id} kind={job.kind} "
+                f"turn={job.turn_id or '-'} attempts={job.attempts} "
+                f"err={(error or '')[:120]}")
         else:
             job.last_error = (error or "")[:500]
+            # BACK TO PENDING. Claiming moves a row to `processing`, so a retry
+            # that only set `next_attempt_at` would leave it claimed forever
+            # and it would never be swept again — the queue would drain to a
+            # stop with every failure. Caught by the existing durability tests,
+            # which is exactly what they were written for.
+            job.status = "pending"
+            job.claimed_at = None
             job.next_attempt_at = datetime.utcnow() + timedelta(
                 minutes=retry_delay_min * job.attempts)
         await db.commit()

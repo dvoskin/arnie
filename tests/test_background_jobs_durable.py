@@ -77,7 +77,11 @@ async def test_failure_retries_then_gives_up(db, make_user):
     await finish_background_job(db, jid, ok=False, error="boom")
     await finish_background_job(db, jid, ok=False, error="boom")
     job = await db.get(BackgroundJob, jid)
-    assert job.status == "failed" and job.attempts == 3
+    # DEAD LETTER, not "failed". The old status read like a transient outcome,
+    # so nothing distinguished "will retry" from "gave up forever" and
+    # exhausted work was invisible in the queue. This state exists to be
+    # alerted on, which is why the rename is worth breaking an assertion for.
+    assert job.status == "dead_letter" and job.attempts == 3
     assert job.last_error == "boom"
 
 
