@@ -79,10 +79,11 @@ from generated messages.
 
 ## 10. Administration and security
 
-**PARTIAL PASS.** The pass ran (B7); `scripts/endpoint_inventory.py` walks the
+**PARTIAL PASS.** The pass ran (B7, branch `dvoskin/b7-admin-security` @
+`5d75ce6`, committed not deployed); `scripts/endpoint_inventory.py` walks the
 131-route live table and classifies auth, URL-borne credentials, and rate
 limits — repeatable, and gated by `tests/test_endpoint_inventory.py` so a
-regression fails CI instead of shipping.
+regression fails CI instead of shipping. Full suite green at this SHA.
 
 | check | state | evidence |
 |---|---|---|

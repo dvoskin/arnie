@@ -9,9 +9,10 @@ Everything below was verified by a test or a live probe, not remembered.
 
 ## Where the work is
 
-Branch `dvoskin/b7-admin-security`, cut from `origin/main` @ `50ba640`.
-**Not pushed, not deployed.** `/health` still reads `26e36539c86e` — this is
-stacked behind the same 13+ undeployed commits B1 is about.
+Branch `dvoskin/b7-admin-security` @ `5d75ce6`, cut from `origin/main` @
+`50ba640`. **Committed locally, not pushed, not deployed.** `/health` still
+reads `26e36539c86e` — this is stacked behind the same 13+ undeployed commits B1
+is about. Full shuffled suite green at this SHA (6407 tests, exit 0, seed 4242).
 
 ```bash
 python scripts/endpoint_inventory.py          # the new evidence — 131 routes classified
