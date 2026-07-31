@@ -11,9 +11,9 @@ that produced it — an assertion in a commit message is not a check.
 | | value | state |
 |---|---|---|
 | `origin/main` | see `git rev-parse --short origin/main` | — |
-| Deployed SHA | `26e36539c86e` at last read | **PASS** — `/health` |
-| Deployed == main | **no**, main has moved since | **FAIL** — redeploy required |
-| Schema applied / expected | `serving001` / `serving001` | **PASS** — `/health.schema.in_sync` |
+| Deployed SHA | `b4ff66debef9` (2026-07-31 deploy of the merged B3/B5/B6/B7 work) | **PASS** — `/health` |
+| Deployed == main | **yes** (code); docs-only commits may sit ahead | **PASS** — `/health.commit` == `origin/main` |
+| Schema applied / expected | `metrics001` / `metrics001` | **PASS** — `/health.schema.in_sync` |
 | Enum config valid | `TURN_COORDINATOR_MODE`, `NUTRITION_RESOLVER_MODE` both `env_valid: true` | **PASS** |
 | Resolver mode | `live`, intentional | **PASS** |
 | One alembic head | `alembic heads` → single | **PASS** |
@@ -166,28 +166,30 @@ Still open (scope, not this pass):
 
 | # | blocker | state | owner |
 |---|---|---|---|
-| B1 | Deployed != main | FAIL | Danny (manual deploy) |
+| ~~B1~~ | ~~Deployed != main~~ | **CLOSED** — `b4ff66d` deployed 2026-07-31; `/health.commit` == `origin/main`. B7 posture confirmed LIVE by probe: unsigned `/imessage`→403, `/admin` no-creds→401. ⚠ verify real inbound iMessage still works (BLUEBUBBLES_WEBHOOK_SECRET on both sides) | — |
 | B2 | 57 of 60 user-visible mutations off the contract | FAIL | backend |
 | ~~B3~~ | ~~Proactive delivery cannot distinguish sent from failed~~ | **CLOSED** — DeliveryResult + delivery_attempts (B3); cadence now counts delivered sends (`dvoskin/proactive-budget-delivery-attempts`) | — |
-| B4 | `turn_id` missing on web + proactive | FAIL | backend |
+| ~~B4~~ | ~~`turn_id` missing on web + proactive~~ | **CLOSED** — closed on main before this session (parent handoff: "10/77 → 0"); pinned by `test_every_surface_names_its_turn.py`, green in the merged suite. Row was stale | — |
 | B5 | Latency | **MEASURABLE** — main turns write turn_metrics with a stage breakdown, isolated from the turn; report scores p95 vs budgets. Numbers need a week of prod rows | backend + Danny (deploy + read) |
 | B6 | Voice | **MEASURED** — one renderer (`core/voice`), sentence case enforced at the seam, linter + corpus gate. 1 known shipped finding (proactive 😅) pending Danny's voice call | backend + Danny |
 | B7 | Admin/security | **PARTIAL PASS** — admin off query strings, gate + mints rate limited, Telegram/iMessage webhooks fail closed. Remaining: 36 capability tokens in URL (scope); 3 Danny env actions | backend + Danny |
 | ~~B8~~ | ~~Multi-connection race unproven~~ | **CLOSED** — ran green on `a4f0b18` | — |
 | B9 | Backup restore untested | UNKNOWN | ops |
 | B10 | Rollback unrehearsed | UNKNOWN | ops |
-| B11 | HealthKit workout contract mismatch (PR #7) | FAIL | backend |
+| ~~B11~~ | ~~HealthKit workout contract mismatch (PR #7)~~ | **CLOSED** — the TypeError fix landed on main before this session (parent handoff "closed today"); pinned by `test_a_native_workout_actually_lands.py` + `test_apple_workout_ingest.py`, green in the merged suite. Row was stale | — |
 
 **Controlled TestFlight beta:** defensible — mutation integrity on the three
 logging surfaces is the part that corrupts user data, and it is now PASS.
 
-**Broad launch: NO.** B2 and B11 remain user-visible correctness gaps. B3 is now
-CLOSED, and B5 / B6 / B7 are measured with harnesses and gates — all four merged
-to `main` on 2026-07-31, **none deployed yet**. B7's deploy is gated on Danny env
-actions: set `BLUEBUBBLES_WEBHOOK_SECRET` (plus `TRUST_PROXY_HEADERS`, and
-confirm `SESSION_SECRET` + `DEV_AUTH_ENABLED=false`) BEFORE deploying, or the
-iMessage fail-closed flip 403s inbound. B5's numbers still need a week of prod
-rows.
+**Broad launch: closer.** B3/B4/B5/B6/B7/B11 are all closed or measured and, as
+of 2026-07-31, **deployed** (`b4ff66d`). **B2 is now the single remaining
+user-visible correctness gap** — 57 of 60 mutations off the traceability
+contract; the three logging surfaces that actually corrupt data are already
+PASS, so this is completeness, not a data-loss bug. Remaining beyond B2: B5's
+numbers need a week of prod rows to read; B9/B10 (backup restore, rollback) are
+untested ops; and B7 left 36 capability tokens in URLs (scope) plus Danny env
+confirmations (`BLUEBUBBLES_WEBHOOK_SECRET` — **verify real iMessage still
+delivers** — `TRUST_PROXY_HEADERS`, `SESSION_SECRET`, `DEV_AUTH_ENABLED=false`).
 
 ---
 
