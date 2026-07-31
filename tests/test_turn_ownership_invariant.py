@@ -156,7 +156,9 @@ async def test_a_native_turn_still_produces_a_result_the_caller_can_deliver():
 
     result = _result_from_state(state, {})
     assert result is not None
-    assert result.response.bubbles == ["logged."]
+    # The B6 seam sentence-cases the lead; the invariant is that a deliverable
+    # result exists, and it does.
+    assert result.response.bubbles == ["Logged."]
 
 
 @pytest.mark.asyncio

@@ -48,8 +48,9 @@ def test_sanitize_handles_multiple_em_dashes_in_one_bubble():
 
 def test_sanitize_does_not_touch_hyphens():
     """Hyphen-minus '-' is used in number ranges ('12-13%'), brand names
-    ('Built-bar'), word compounds ('post-workout'). Must survive
-    untouched."""
+    ('Built-bar'), word compounds ('post-workout'). Must survive untouched.
+    (The B6 seam may capitalize the lead letter — sentence case — so compare
+    case-insensitively: nothing but the lead case is allowed to change.)"""
     inputs = [
         "12-13% body fat",
         "post-workout shake",
@@ -57,7 +58,7 @@ def test_sanitize_does_not_touch_hyphens():
         "high-protein meal",
     ]
     for s in inputs:
-        assert _sanitize_bubble(s) == s, f"hyphen disturbed in: {s!r}"
+        assert _sanitize_bubble(s).lower() == s.lower(), f"hyphen disturbed in: {s!r}"
 
 
 def test_sanitize_does_not_touch_en_dashes():
@@ -93,7 +94,7 @@ def test_sanitize_collapses_double_space_after_replacement():
     """An em dash flanked by spaces collapses to ', ' — no double space."""
     out = _sanitize_bubble("hello — world")
     assert "  " not in out
-    assert out == "hello, world"
+    assert out == "Hello, world"
 
 
 # ── Response.from_text — the canonical (non-streaming) path ─────────────────
@@ -146,7 +147,8 @@ async def test_streamer_emit_preserves_hyphens():
     await streamer.on_delta("you're at 12-13% body fat|||post-workout shake next.")
     await streamer.finalize()
 
-    assert received == ["you're at 12-13% body fat", "post-workout shake next."]
+    # Hyphen ranges survive; the B6 seam capitalizes each bubble's lead.
+    assert received == ["You're at 12-13% body fat", "Post-workout shake next."]
 
 
 @pytest.mark.asyncio

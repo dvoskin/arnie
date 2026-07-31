@@ -72,23 +72,23 @@ _SYSTEM = (
 
 
 # ── output hygiene ────────────────────────────────────────────────────────────
-_DASH_RE = re.compile(r"\s*[—–]\s*")   # em / en dash → comma
-_WS_RE = re.compile(r"[ \t]{2,}")
-
-
 def _clean(text: str) -> str:
-    """Enforce the two banned characters and the 2-bubble cap even if the model
-    slips. Cheap insurance so a stray — or ~ never reaches the user, and a blank
-    line the model used instead of ||| still becomes a real second bubble."""
+    """Enforce the banned characters and the 2-bubble cap even if the model slips.
+
+    The character rules (em/en dash, tilde, whitespace) now delegate to
+    core.voice.normalize, so this path and the platform seam can no longer
+    disagree on a number range — this used to collapse an EN dash ("12–13%"),
+    the seam kept it, and the same estimate rendered two ways. Only the
+    log-voice-specific structure stays here: a blank line the model used instead
+    of ||| becomes a real bubble break, capped at 2 bubbles."""
     if not text:
         return ""
-    text = text.replace("~", "")
-    text = _DASH_RE.sub(", ", text)
+    from core.voice import normalize
     # The model sometimes separates bubbles with a blank line instead of |||.
     text = re.sub(r"\n{2,}", "|||", text)
     bubbles = []
     for chunk in text.split("|||"):
-        chunk = _WS_RE.sub(" ", chunk.replace("\n", " ")).strip()
+        chunk = normalize(chunk.replace("\n", " "))
         if chunk:
             bubbles.append(chunk)
     return "|||".join(bubbles[:2])
