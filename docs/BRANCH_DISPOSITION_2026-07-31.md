@@ -68,6 +68,72 @@ would affect anything at all.
 
 ---
 
+## The 47 fully-contained branches — DONE
+
+`git branch -r --merged origin/main` gave 47 branches whose every commit is
+already an ancestor of main. That is arithmetic, not judgement, so they were
+archived and deleted: each tagged `archive/<name>`, the tags pushed and
+**verified present on origin**, and only then the branches removed. Recovery
+was proven rather than asserted — `fix/briefing-context` was restored from its
+tag to the identical commit `e5c1fbc`.
+
+    git branch <name> archive/<name>      # brings any of them back
+
+69 → 22 remote branches.
+
+## The 17 that hold unique commits
+
+### Extracted — the flaky CI, explained
+
+`claude/danny-ios-logs-analysis-0si1fb` @ `d268506` (2026-06-25) diagnosed the
+order-dependent test failure that made `08ce423` red: both
+`test_compound_meal_logging.py` and `test_food_logging_simulation_suite.py`
+built the system prompt as a module-level constant, so it ran during pytest
+COLLECTION and was sensitive to sibling-module ordering under
+pytest-randomly's shuffle.
+
+**Extracted and applied to BOTH files** (the branch fixed only one; the
+simulation suite has 60 usages and the same bug). The branch's remaining three
+commits are unreviewed.
+
+### Probably superseded — capability landed, call sites drifted
+
+| Branch | "missing" |
+|---|---|
+| `claude/food-branded-source` | 3/48 |
+| `claude/food-copy-polish` | 3/42 |
+| `claude/food-drop-diagnosable` | 3/36 |
+| `claude/food-memory-authority` | 2/30 |
+| `claude/food-conversation-quality` | 2/24 |
+| `claude/food-failed-item-contract` | 5/54 |
+
+All six are ~280 commits behind and share the same handful of unmatched
+markers — `derive_vague_quantities(...)`, `build_failure_notice(...)`. **Both
+functions exist on main.** So the capability landed and only the literal call
+lines differ, refactored over 280 commits.
+
+**Not deleted.** "The function exists" is not the same as "this branch's
+changes landed", and six branches is a small enough set to confirm by hand.
+Recommend a per-branch look, then archive-and-delete as a batch.
+
+> **Known false-positive mode of `scripts/branch_triage.py`:** a marker that is
+> a CALL SITE drifts when the callee is refactored, so a branch whose work is
+> fully present reads as UNIQUE. This is the same trap that made `git cherry`
+> report three of PR #67's four commits missing. The tool is a filter, not a
+> verdict — always check whether the missing symbol *exists* in main.
+
+### Genuinely open
+
+| Branch | Holds |
+|---|---|
+| `feat/decision-receipt` | 48/65 missing — the parked backend receipt work |
+| `claude/entrypoint-routing-coordinator-suijeu` | `clarification_subject/needs/kind/stakes` — **Phase 5 clarification-state fields**, directly relevant to the state machine |
+| `integration/food-combined` | one food trace + one time budget per turn |
+| `feat/arnie-brain-tab` | brain-tab graph layout, behind `BRAIN_TAB_ENABLED` |
+| `claude/ironclad-evaluation-7mhapr` | retires 14 stale contract pins |
+| composites ×2 | see above |
+| `claude/parse-user-turns-6h-0ujgel`, `ozonated-product-mockups`, `justin-apple-health` | unexamined |
+
 ## Remaining branches
 
 69 remote branches exist. The ones above are the ones the brief named. A full
