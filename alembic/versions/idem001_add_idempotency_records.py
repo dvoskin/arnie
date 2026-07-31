@@ -25,7 +25,7 @@ Create Date: 2026-07-31 00:00:00.000000
 from typing import Sequence, Union
 
 import sqlalchemy as sa
-from alembic import op
+from alembic import context, op
 
 revision: str = "idem001"
 down_revision: Union[str, None] = "pendinguniq001"
@@ -37,10 +37,16 @@ def upgrade() -> None:
     # Idempotent (inspect-then-create) per [[feedback_arnie_migrate_postgres_gap]]:
     # the SQLite test DB builds this table from db/models.py metadata before
     # migrations run, so a bare create_table would fail there.
-    conn = op.get_bind()
-    inspector = sa.inspect(conn)
-    if "idempotency_records" in inspector.get_table_names():
-        return
+    #
+    # ONLINE ONLY. In offline (--sql) mode `op.get_bind()` hands back a
+    # MockConnection, which has no inspection system — and CI compiles the head
+    # migration offline against Postgres precisely to catch mistakes like this
+    # one. A generated SQL script should carry the DDL unconditionally anyway:
+    # there is no database present to ask, and the person applying the script
+    # is the one who decides whether it has already run.
+    if not context.is_offline_mode():
+        if "idempotency_records" in sa.inspect(op.get_bind()).get_table_names():
+            return
 
     op.create_table(
         "idempotency_records",
