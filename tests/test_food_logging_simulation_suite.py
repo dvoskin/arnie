@@ -44,7 +44,25 @@ from core.prompts.arnie import build_arnie_system
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
 
-SYSTEM_PROMPT = build_arnie_system("telegram")
+def _system_prompt() -> str:
+    """Build the system prompt at TEST-EXECUTION time, not module-import time.
+
+    As a module-level constant this ran during pytest COLLECTION, which made it
+    sensitive to collection-order side effects from sibling test modules. Under
+    pytest-randomly's shuffle that intermittently produced a prompt with whole
+    sections (TOOL_RULES / FOOD_LOGGING) missing — flaky failures unrelated to
+    the prompt content itself, since the section constants are immutable
+    literals always present in a clean build.
+
+    The signature is CI runs passing and failing on byte-identical prompt code:
+    2026-06-25 saw run 499 pass while 513 and its rerun failed; 2026-07-31 saw
+    c52f1f4 green, 08ce423 red, 85ea665 green, with no test change between them.
+
+    Building it fresh inside each test — after collection has settled and
+    per-test monkeypatches are restored — makes the assertions deterministic.
+    ~0.5 ms per call, so the repetition costs nothing worth counting.
+    """
+    return build_arnie_system("telegram")
 
 
 def _row(item="chicken sandwich", q="grilled or fried?",
@@ -86,7 +104,7 @@ def _coaching_stub(food_name="oatmeal", cal=200, p=10, cal_t=2000, pro_t=180):
     "do NOT restore",
 ])
 def test_prompt_contains_phase1_rule(rule_marker):
-    assert rule_marker in SYSTEM_PROMPT, (
+    assert rule_marker in _system_prompt(), (
         f"Phase-1 rule marker {rule_marker!r} missing from system prompt"
     )
 
@@ -98,7 +116,7 @@ def test_prompt_contains_phase1_rule(rule_marker):
     "OVERRIDES",  # photo describe-first override
 ])
 def test_prompt_contains_phase3_rule(rule_marker):
-    assert rule_marker in SYSTEM_PROMPT
+    assert rule_marker in _system_prompt()
 
 
 # Phase 7 — voice + framing
@@ -109,21 +127,21 @@ def test_prompt_contains_phase3_rule(rule_marker):
     "process invisible",
 ])
 def test_prompt_contains_phase7_rule(rule_marker):
-    assert rule_marker in SYSTEM_PROMPT
+    assert rule_marker in _system_prompt()
 
 
 # Phase 7 — the exact bug examples are namedropped so a future rewrite that
 # drops them fails loud here, not in production.
 def test_prompt_namedrops_the_at_cal_limit_anti_pattern():
-    assert "basically at your cal limit" in SYSTEM_PROMPT
+    assert "basically at your cal limit" in _system_prompt()
     # And the corrected version is also exemplified
-    assert "still room" in SYSTEM_PROMPT.lower() or "to play with" in SYSTEM_PROMPT
+    assert "still room" in _system_prompt().lower() or "to play with" in _system_prompt()
 
 
 def test_prompt_namedrops_the_happy_wolf_anti_pattern_class():
     """The tool-result-narration ban must include the 'match doesn't look right'
     class of leak — that's the live bug we just hit."""
-    assert "match doesn't look right" in SYSTEM_PROMPT
+    assert "match doesn't look right" in _system_prompt()
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -671,11 +689,11 @@ def test_prompt_teaches_modality_prefixes(user_msg, modality_hint_required):
     """The system prompt must teach the model to recognize each modality
     prefix it'll see in user messages."""
     if modality_hint_required == "voice":
-        assert "[Voice note]" in SYSTEM_PROMPT
-        assert "VOICE NOTE LOGGING" in SYSTEM_PROMPT
+        assert "[Voice note]" in _system_prompt()
+        assert "VOICE NOTE LOGGING" in _system_prompt()
     elif modality_hint_required == "photo":
-        assert "[Food photo]" in SYSTEM_PROMPT
-        assert "PHOTO LOGGING" in SYSTEM_PROMPT
+        assert "[Food photo]" in _system_prompt()
+        assert "PHOTO LOGGING" in _system_prompt()
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -721,7 +739,7 @@ def test_public_surface_smoke():
     )
     assert "banana" in out.lower() or "logged" in out.lower()
     # prompt builder
-    assert len(SYSTEM_PROMPT) > 10_000  # sanity: not truncated
+    assert len(_system_prompt()) > 10_000  # sanity: not truncated
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -740,7 +758,7 @@ def test_public_surface_smoke():
 def test_prompt_explicitly_bans_tool_narration(banned_phrase):
     """Each anti-pattern must be named directly so the model has the
     counterexample in its context, not just an abstract rule."""
-    assert banned_phrase in SYSTEM_PROMPT, (
+    assert banned_phrase in _system_prompt(), (
         f"tool-narration ban example {banned_phrase!r} missing from prompt"
     )
 
@@ -748,7 +766,7 @@ def test_prompt_explicitly_bans_tool_narration(banned_phrase):
 def test_prompt_teaches_silent_fallback_on_low_confidence():
     """When ANALYSIS hands the model 'confidence: estimated', it should just
     confirm with 'going with ~X' — NOT disclaim about the lookup pipeline."""
-    s_lower = SYSTEM_PROMPT.lower()
+    s_lower = _system_prompt().lower()
     assert "process invisible" in s_lower
     assert "going with" in s_lower or "calling it" in s_lower
 
@@ -759,14 +777,14 @@ def test_prompt_teaches_silent_fallback_on_low_confidence():
 
 
 def test_prompt_has_rapid_send_dedup_rule():
-    assert "RAPID-SEND DEDUPLICATION" in SYSTEM_PROMPT
-    assert "10 minutes" in SYSTEM_PROMPT or "10-minute" in SYSTEM_PROMPT.lower()
+    assert "RAPID-SEND DEDUPLICATION" in _system_prompt()
+    assert "10 minutes" in _system_prompt() or "10-minute" in _system_prompt().lower()
 
 
 def test_prompt_has_multi_item_clarification_gate():
     """If ANY item in a multi-item list needs clarification, ALL items hold."""
-    assert "MULTI-ITEM + CLARIFICATION" in SYSTEM_PROMPT
-    assert "Never log item 1 while holding a question about item 2" in SYSTEM_PROMPT
+    assert "MULTI-ITEM + CLARIFICATION" in _system_prompt()
+    assert "Never log item 1 while holding a question about item 2" in _system_prompt()
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -778,13 +796,13 @@ def test_prompt_has_multi_item_clarification_gate():
     "basically at your cal limit",
 ])
 def test_prompt_names_calorie_framing_anti_pattern(anti_pattern):
-    assert anti_pattern in SYSTEM_PROMPT
+    assert anti_pattern in _system_prompt()
 
 
 def test_prompt_protein_gap_with_room_framing():
     """The corrected framing for 'protein-gap + room left' must be present so
     the model has a positive example to follow."""
-    s = SYSTEM_PROMPT
+    s = _system_prompt()
     # The positive example uses 'closes the gap' framing
     assert "closes the gap" in s.lower() or "still room" in s.lower()
     assert "PROTEIN-GAP-WITH-ROOM" in s
@@ -869,7 +887,7 @@ def test_batch_coaching_defensive_against_malformed(bad_input):
 def test_scenario_quick_mode_user_logs_generic_brand_with_history():
     """In quick mode, a generic ('protein bar') with a matching history
     should NOT trigger an ask — prompt rule must say so explicitly."""
-    s = SYSTEM_PROMPT
+    s = _system_prompt()
     # The Phase 3 rule names this exact case
     assert "QUICK + GENERIC BRAND EXCEPTION" in s
     # And tells the model to log with estimated confidence
@@ -879,7 +897,7 @@ def test_scenario_quick_mode_user_logs_generic_brand_with_history():
 def test_scenario_strict_user_voice_note_softens():
     """Strict-mode user sending [Voice note] should get moderate interrogation,
     not full strict (re-recording to clarify cook method defeats voice)."""
-    s = SYSTEM_PROMPT
+    s = _system_prompt()
     assert "STRICT + VOICE EXCEPTION" in s
     assert "MODERATE" in s
 
@@ -888,7 +906,7 @@ def test_scenario_photo_with_caption_log_intent_still_describes_first():
     """The PHOTO LOGGING rule must say: even with a caption containing
     'log this', still describe first. This rule has been weakened in past
     rewrites — anchor it here."""
-    s = SYSTEM_PROMPT
+    s = _system_prompt()
     assert "describe first" in s.lower() or "describe what you see FIRST" in s
     assert "log this" in s.lower() or "caption" in s.lower()
 
@@ -899,12 +917,12 @@ def test_scenario_photo_with_caption_log_intent_still_describes_first():
 
 
 def test_prompt_enforces_sentence_case():
-    s = SYSTEM_PROMPT
+    s = _system_prompt()
     assert "Sentence case" in s or "sentence case" in s
 
 
 def test_prompt_uses_triple_bar_separator():
-    s = SYSTEM_PROMPT
+    s = _system_prompt()
     assert "|||" in s
     assert "bubble" in s.lower()
 
@@ -917,7 +935,7 @@ def test_prompt_uses_triple_bar_separator():
 def test_prompt_states_context_is_ground_truth():
     """If [TODAY] doesn't show something, the model should NOT claim it did
     (or didn't) log without consulting [TODAY] first."""
-    s = SYSTEM_PROMPT
+    s = _system_prompt()
     assert "CONTEXT IS GROUND TRUTH" in s
     assert "[TODAY] is the actual DB state" in s
 
@@ -1026,10 +1044,10 @@ async def test_reported_bug_royo_bagel_does_not_close_banana_question(make_user,
 def test_reported_bug_happy_wolf_narration_is_banned():
     """Replays the Happy Wolf 'Hmm, that match doesn't look right' bug —
     the prompt must explicitly ban this narration class."""
-    assert "match doesn't look right" in SYSTEM_PROMPT
+    assert "match doesn't look right" in _system_prompt()
     # And include the alternative instruction (silently fall back).
-    assert "silently fall back" in SYSTEM_PROMPT.lower() \
-        or "silently fall back to your own estimate" in SYSTEM_PROMPT
+    assert "silently fall back" in _system_prompt().lower() \
+        or "silently fall back to your own estimate" in _system_prompt()
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -1041,9 +1059,9 @@ def test_prompt_has_tool_error_integrity_rule():
     """If a tool result starts with Error:/Skipped/Failed to, the model must
     NOT claim 'logged'. This is the silent-failure mode where the dashboard
     stays empty but the user sees a success message."""
-    assert "TOOL-ERROR INTEGRITY" in SYSTEM_PROMPT
-    assert "Error:" in SYSTEM_PROMPT
-    assert "did NOT succeed" in SYSTEM_PROMPT
+    assert "TOOL-ERROR INTEGRITY" in _system_prompt()
+    assert "Error:" in _system_prompt()
+    assert "did NOT succeed" in _system_prompt()
 
 
 @pytest.mark.parametrize("err_prefix", [
@@ -1191,7 +1209,7 @@ def test_pending_block_ordering_is_deterministic_with_ties():
 def test_prompt_specifies_strict_photo_behavior():
     """The strict-photo branch must require component-by-component breakdown
     before logging — generic 'looks ~500 cal' defeats strict users' preference."""
-    s = SYSTEM_PROMPT
+    s = _system_prompt()
     assert "PHOTO + STRICT MODE" in s
     # Component breakdown example must be present
     assert "bread" in s.lower() and "turkey" in s.lower() and "mayo" in s.lower()
@@ -1202,7 +1220,7 @@ def test_prompt_specifies_strict_photo_behavior():
 def test_prompt_specifies_quick_photo_one_bubble_describe():
     """Quick mode still describes (photo always overrides quick) but in ONE
     bubble with a range — not a component breakdown."""
-    s = SYSTEM_PROMPT
+    s = _system_prompt()
     assert "PHOTO + QUICK MODE" in s
     assert "ONE bubble" in s or "one bubble" in s
 
@@ -1215,7 +1233,7 @@ def test_prompt_specifies_quick_photo_one_bubble_describe():
 def test_prompt_teaches_multi_answer_mapping():
     """When user replies 'mayo, small, oat' to a 3-question turn, the model
     must state its mapping back so the user can catch a mismatch."""
-    s = SYSTEM_PROMPT
+    s = _system_prompt()
     assert "MULTI-ANSWER MAPPING" in s
     # The canonical example must be present so the model has a template
     assert "mayo, small, oat" in s
@@ -1269,7 +1287,7 @@ def test_prompt_has_ambiguous_update_delete_rule():
     """When [TODAY] shows multiple matching entries, the model must ask which
     one before firing update/delete. The exact rule must be present so the
     model doesn't silently pick the wrong row."""
-    s = SYSTEM_PROMPT
+    s = _system_prompt()
     assert "AMBIGUOUS UPDATE/DELETE REFERENCE" in s
     assert "two chickens" in s.lower() or "MULTIPLE entries" in s
     # And: distinguish by detail, never by [#id]
@@ -1310,7 +1328,7 @@ def test_reconciliation_flag_appears_in_source():
 def test_prompt_handles_empty_history_in_quick_mode():
     """Day-1 quick-mode users have no FOOD HISTORY — the rule must say
     estimate-and-flag instead of asking, preserving quick mode's flow."""
-    s = SYSTEM_PROMPT
+    s = _system_prompt()
     # The empty-history clause must be present in the quick-mode section
     assert "[FOOD HISTORY] is empty" in s or "day-1 user" in s
     # And the corrective behavior is: log with estimated:true, flag in one bubble
@@ -1358,7 +1376,7 @@ def test_parse_log_date_rejects_implausibly_old():
 def test_prompt_handles_unknown_timezone():
     """If the user's timezone isn't set, the model must NOT invent a local
     time — ask what city they're in instead."""
-    s = SYSTEM_PROMPT
+    s = _system_prompt()
     assert "timezone is unknown" in s
     assert "ask what city" in s.lower()
 
@@ -1405,7 +1423,7 @@ def test_llm_judge_eval_scaffold_is_opt_in():
 def test_prompt_bans_soft_framing_when_over_target():
     """When the user is OVER target, the model must name the gap directly
     ('58 over target'), not soften with 'almost no calorie room left.'"""
-    s = SYSTEM_PROMPT
+    s = _system_prompt()
     # The corrective rule must be present
     assert "NAME THE GAP DIRECTLY" in s
     # And the soft phrasings must be explicitly banned for over-target
@@ -1416,7 +1434,7 @@ def test_prompt_bans_soft_framing_when_over_target():
 
 def test_prompt_has_over_target_example_format():
     """The prompt must show the corrected over-target framing."""
-    s = SYSTEM_PROMPT
+    s = _system_prompt()
     assert "58 over target" in s or "228 over" in s
 
 
@@ -1428,7 +1446,7 @@ def test_prompt_has_over_target_example_format():
 def test_prompt_bans_redundant_label_repeat():
     """'Diet Coke: Diet Coke's a zero' duplicates the food name. The prompt
     must ban this shape with the canonical example."""
-    s = SYSTEM_PROMPT
+    s = _system_prompt()
     assert "NEVER LABEL THE FOOD AND THEN REPEAT IT" in s
     # The example may wrap across lines in the source — check parts.
     assert "Diet Coke:" in s and "Diet" in s
@@ -1446,7 +1464,7 @@ def test_prompt_bans_strict_mode_out_loud():
     ("for accuracy, …", "before I lock it in, …"). Saying the literal phrase
     "strict mode" out loud is banned — it reads as a feature label, not a
     coach. Users picked the accuracy level; they don't need it announced."""
-    s = SYSTEM_PROMPT
+    s = _system_prompt()
     # The explicit ban
     assert 'NEVER SAY "STRICT MODE" OUT LOUD' in s
     assert 'BANNED in your reply text: "strict mode"' in s
@@ -1493,7 +1511,7 @@ def test_telegram_webhook_holds_task_reference():
 def test_prompt_has_dashboard_recap_section():
     """The DASHBOARD_RECAP section must be present so recap requests pull
     from the DB, not chat history."""
-    s = SYSTEM_PROMPT
+    s = _system_prompt()
     assert "DASHBOARD IS THE SOURCE OF TRUTH" in s
     assert "FOOD RECAP REQUESTS" in s
 
@@ -1510,7 +1528,7 @@ def test_prompt_has_dashboard_recap_section():
 def test_prompt_lists_food_recap_triggers(food_recap_trigger):
     """Each canonical 'recap my food' phrasing must be in the prompt so the
     model recognizes it as a recap request, not a logging request."""
-    s = SYSTEM_PROMPT
+    s = _system_prompt()
     assert food_recap_trigger in s, (
         f"recap trigger phrase {food_recap_trigger!r} missing from prompt"
     )
@@ -1519,7 +1537,7 @@ def test_prompt_lists_food_recap_triggers(food_recap_trigger):
 def test_prompt_requires_listing_every_entry_in_food_recap():
     """The food recap rule must say 'list every entry' so the model doesn't
     paraphrase ('a few items') or skip small items."""
-    s = SYSTEM_PROMPT
+    s = _system_prompt()
     assert "List EVERY food entry" in s
     # And ban paraphrases
     assert "Never paraphrase" in s
@@ -1529,7 +1547,7 @@ def test_prompt_requires_listing_every_entry_in_food_recap():
 def test_prompt_food_recap_uses_calories_format():
     """The food recap example must use 'calories' with spaces around the
     slash — keep the format consistent with the FOOD_LOGGING rule."""
-    s = SYSTEM_PROMPT
+    s = _system_prompt()
     # The canonical example
     assert "805 / 2,000 calories" in s
 
@@ -1537,7 +1555,7 @@ def test_prompt_food_recap_uses_calories_format():
 def test_prompt_includes_past_day_food_recap_branch():
     """When the user asks about past days, the model must use FOOD HISTORY
     or query_history honestly — not invent details."""
-    s = SYSTEM_PROMPT
+    s = _system_prompt()
     assert "PAST-DAY FOOD RECAPS" in s
     assert "query_history" in s
 
@@ -1545,14 +1563,14 @@ def test_prompt_includes_past_day_food_recap_branch():
 def test_prompt_covers_exercise_and_weight_recap():
     """The recap rule must extend beyond food — exercise, weight, water,
     custom tracking all get the same dashboard-is-truth treatment."""
-    s = SYSTEM_PROMPT
+    s = _system_prompt()
     assert "EXERCISE / ACTIVITY RECAP" in s
     assert "WEIGHT / WATER" in s
 
 
 def test_prompt_bans_chat_memory_for_recaps():
     """Even if chat history mentioned a number, [TODAY] wins. Lock the rule."""
-    s = SYSTEM_PROMPT
+    s = _system_prompt()
     assert "NUMBERS COME FROM THE DB" in s
     # The phrase wraps in source — verify the key tokens are present.
     assert "more recent than" in s and "chat memory" in s
@@ -1566,7 +1584,7 @@ def test_prompt_bans_chat_memory_for_recaps():
 def test_prompt_has_item_count_self_check():
     """Before sending a reply, the model must verify N foods named ↔ N
     log_food calls. This is what makes the eventual recap accurate."""
-    s = SYSTEM_PROMPT
+    s = _system_prompt()
     assert "ITEM-COUNT SELF-CHECK" in s
     assert "THEY MUST MATCH" in s
 
@@ -1577,7 +1595,7 @@ def test_prompt_has_category_dedupe_trap_rule():
     The CATEGORY ≠ DEDUPE rule names this trap explicitly with worked
     examples so the model treats comma-separated nouns as distinct items
     even when one is a category and the next is a specific instance."""
-    s = SYSTEM_PROMPT
+    s = _system_prompt()
     assert "CATEGORY ≠ DEDUPE" in s
     # Pin the canonical example from the screenshot.
     assert "melon, watermelon and mango" in s
@@ -1592,7 +1610,7 @@ def test_prompt_has_multi_item_confirmation_integrity_rule():
     2 of 3 items (the user-visible symptom in the screenshot) is the
     canary. The model must re-count when its confirmation list is
     shorter than the user's input list."""
-    s = SYSTEM_PROMPT
+    s = _system_prompt()
     assert "CONFIRMATION INTEGRITY for multi-item" in s
     assert "name EVERY item that was logged" in s
     assert "STOP, re-count" in s
@@ -1603,7 +1621,7 @@ def test_prompt_has_logging_fidelity_section():
     knows what gets stored is what gets restated. (Assertions repinned
     2026-07-24 to the current wording — the invariants survive, the exact
     phrasing evolved with the structured-food work.)"""
-    s = SYSTEM_PROMPT
+    s = _system_prompt()
     assert "LOGGING FIDELITY" in s
     # Three sub-rules
     assert "FOOD NAME: use the user's words" in s
@@ -1627,7 +1645,7 @@ def test_prompt_names_fidelity_examples(preserved_phrase):
     """The fidelity rule must include concrete conversion examples so the
     model has a template: food names keep the user's words, quantities keep
     the user's nuance alongside a concrete estimate."""
-    s = SYSTEM_PROMPT
+    s = _system_prompt()
     assert preserved_phrase in s, (
         f"fidelity example {preserved_phrase!r} missing from prompt"
     )
@@ -1636,7 +1654,7 @@ def test_prompt_names_fidelity_examples(preserved_phrase):
 def test_prompt_bans_collapsing_distinct_items():
     """'1 plain + 1 pepperoni pizza' must be two log_food calls, not one
     '2 slices of pizza' — different macros, different items."""
-    s = SYSTEM_PROMPT
+    s = _system_prompt()
     # The example wraps across lines in source — verify the key tokens.
     assert "1 slice plain" in s and "pepperoni" in s
     assert "TWO log_food calls" in s
@@ -1646,7 +1664,7 @@ def test_prompt_bans_inventing_items():
     """User says 'had pizza' — don't also log garlic bread the user didn't
     name. The ban must stay explicit whatever the surrounding section
     wording does."""
-    s = SYSTEM_PROMPT.lower()
+    s = _system_prompt().lower()
     assert "do not invent items" in s
     assert "garlic bread" in s and "only log what was named" in s
 
@@ -1755,7 +1773,7 @@ def test_fmt_recent_day_detail_empty_returns_empty():
 def test_prompt_references_recent_day_detail_block():
     """The PAST-DAY FOOD RECAPS rule must point the model at the new
     [RECENT DAY DETAIL] block so it knows where to look."""
-    s = SYSTEM_PROMPT
+    s = _system_prompt()
     assert "[RECENT DAY DETAIL]" in s
     assert "USE IT DIRECTLY" in s
 
@@ -1763,7 +1781,7 @@ def test_prompt_references_recent_day_detail_block():
 def test_prompt_bans_empty_promises_on_data_requests():
     """The 'let me pull that up — one sec' silent-fail pattern must be
     explicitly banned for data requests."""
-    s = SYSTEM_PROMPT
+    s = _system_prompt()
     assert "NO EMPTY PROMISES ON DATA REQUESTS" in s
     # Each banned phrase from the live bug must appear in the ban list
     for banned in ("let me pull that up", "one sec", "let me check",

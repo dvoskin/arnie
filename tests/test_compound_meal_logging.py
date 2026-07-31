@@ -19,7 +19,26 @@ import pytest
 import api.app as app_mod
 from core.prompts import build_arnie_system
 
-SYSTEM_PROMPT = build_arnie_system(platform="telegram")
+
+def _system_prompt() -> str:
+    """Build the system prompt at TEST-EXECUTION time, not module-import time.
+
+    As a module-level constant this ran during pytest COLLECTION, which made it
+    sensitive to collection-order side effects from sibling test modules. Under
+    pytest-randomly's shuffle that intermittently produced a prompt with whole
+    sections (TOOL_RULES / FOOD_LOGGING) missing — flaky failures unrelated to
+    the prompt content itself, since the section constants are immutable
+    literals always present in a clean build.
+
+    The signature is CI runs passing and failing on byte-identical prompt code:
+    2026-06-25 saw run 499 pass while 513 and its rerun failed; 2026-07-31 saw
+    c52f1f4 green, 08ce423 red, 85ea665 green, with no test change between them.
+
+    Building it fresh inside each test — after collection has settled and
+    per-test monkeypatches are restored — makes the assertions deterministic.
+    ~0.5 ms per call, so the repetition costs nothing worth counting.
+    """
+    return build_arnie_system(platform="telegram")
 
 
 # ── Meal logged as its COMPONENTS (the design that actually shipped) ─────────
@@ -34,7 +53,7 @@ SYSTEM_PROMPT = build_arnie_system(platform="telegram")
 def test_prompt_has_log_meal_as_components_rule():
     """A plate of distinct foods logs as its components — one log_food per
     food — not one mega-entry."""
-    s = " ".join(SYSTEM_PROMPT.split())
+    s = " ".join(_system_prompt().split())
     assert "LOG A MEAL AS ITS COMPONENTS" in s
     assert "fire ONE log_food call PER distinct food" in s
     # The canonical decomposition example.
@@ -45,7 +64,7 @@ def test_prompt_has_log_meal_as_components_rule():
 def test_prompt_blended_items_stay_one_entry():
     """Genuinely inseparable items (smoothie, shake, soup, a sandwich eaten as
     one) are ONE entry; trivial extras fold into the nearest component."""
-    s = " ".join(SYSTEM_PROMPT.split())
+    s = " ".join(_system_prompt().split())
     assert "smoothie, protein shake, soup" in s
     assert "stays ONE entry" in s
     assert "DON'T over-split" in s
@@ -56,7 +75,7 @@ def test_prompt_blended_items_stay_one_entry():
 def test_prompt_multi_dish_plate_is_n_calls():
     """A true multi-dish plate (pizza + side salad + dessert) is N calls at
     the dish level — same component rule, one level up."""
-    s = " ".join(SYSTEM_PROMPT.split())
+    s = " ".join(_system_prompt().split())
     assert "MULTI-DISH PLATE" in s
     assert "N calls at the dish" in s
 
@@ -69,7 +88,7 @@ def test_prompt_has_update_targeting_self_check():
     dressing entry' failure mode by name. When N update_food_entry calls
     fire, N entry_ids MUST be distinct."""
     # Normalize whitespace so wrapped lines don't break substring matching.
-    s = " ".join(SYSTEM_PROMPT.split())
+    s = " ".join(_system_prompt().split())
     assert "UPDATE TARGETING SELF-CHECK" in s
     assert "entry_id values MUST be DISTINCT" in s
     assert "NEVER pass the same [#id] twice in one turn" in s
