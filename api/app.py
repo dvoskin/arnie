@@ -15,8 +15,8 @@ from datetime import date, timedelta, datetime
 from typing import Optional
 
 import stripe
-from fastapi import FastAPI, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
+from fastapi.responses import HTMLResponse, FileResponse, JSONResponse, RedirectResponse
 from api.templates import _dashboard_html, _apple_guide_html
 from api.brain_page import _brain_html
 from api.brain_insights import generate_lobe_insight
@@ -90,17 +90,94 @@ async def _log_resolved_models():
         logging.getLogger(__name__).warning(f"model-resolution boot log failed: {e}")
 
 
-def _require_admin(token: str) -> None:
+class _AdminAuth:
+    """The outcome of the admin gate: authenticated, and by which channel. The
+    channel matters only to `GET /admin`, which upgrades a `?token=` bootstrap
+    into a cookie and a clean URL. Everything else just needs the gate to pass.
     """
-    Gate an admin endpoint. FAILS CLOSED: if ADMIN_TOKEN is unset, admin is disabled
-    (503) rather than accepting an empty token. Constant-time compare avoids leaking
-    the token via timing. Raises HTTPException on any failure; returns None on success.
+    __slots__ = ("via",)
+
+    def __init__(self, via: str) -> None:
+        self.via = via  # "header" | "cookie" | "query"
+
+
+#: A human clicking through the dashboard fires a handful of requests; a
+#: brute-forcer fires as many as the network allows. 60/min per IP is
+#: comfortably above the former and — against a high-entropy ADMIN_TOKEN —
+#: turns the latter from "unbounded" into "never". Behind Render's proxy this
+#: is one shared bucket until TRUST_PROXY_HEADERS is set (see core/ratelimit),
+#: which for a single-operator admin surface is acceptable.
+_ADMIN_RL = dict(limit=60, window_seconds=60.0)
+
+
+async def require_admin(request: Request) -> _AdminAuth:
+    """Gate an admin endpoint. FAILS CLOSED: if ADMIN_TOKEN is unset, admin is
+    disabled (503) rather than accepting an empty token.
+
+    Credential precedence — header, then signed cookie, then the deprecated
+    `?token=` query bootstrap:
+
+      * `X-Admin-Token: <ADMIN_TOKEN>` — the path for scripts and curl.
+      * cookie `arnie_admin` — a short-lived value SIGNED with SESSION_SECRET,
+        set after the first successful auth, so the browser stops sending the
+        raw token on every link click.
+      * `?token=<ADMIN_TOKEN>` — still accepted so existing bookmarks/scripts
+        keep working, but logged as deprecated. `GET /admin` trades it for the
+        cookie and redirects to a clean URL, so it never lands in browser
+        history or a copied link.
+
+    Constant-time compares throughout; the query token is read off
+    `request.query_params` (not a declared param) so it stays off the OpenAPI
+    surface and off every handler signature.
     """
+    from core import ratelimit
+    ratelimit.check_request(request, "admin", **_ADMIN_RL)
+
     expected = os.getenv("ADMIN_TOKEN")
     if not expected:
         raise HTTPException(status_code=503, detail="Admin disabled (ADMIN_TOKEN unset)")
-    if not hmac.compare_digest(token or "", expected):
-        raise HTTPException(status_code=403, detail="Forbidden")
+
+    header = request.headers.get("x-admin-token")
+    if header is not None:
+        if not hmac.compare_digest(header, expected):
+            raise HTTPException(status_code=403, detail="Forbidden")
+        return _AdminAuth("header")
+
+    from api.auth import ADMIN_COOKIE_NAME, verify_admin_cookie
+    cookie = request.cookies.get(ADMIN_COOKIE_NAME, "")
+    if cookie and verify_admin_cookie(cookie):
+        return _AdminAuth("cookie")
+
+    query_token = request.query_params.get("token", "")
+    if query_token:
+        if not hmac.compare_digest(query_token, expected):
+            raise HTTPException(status_code=403, detail="Forbidden")
+        logger.warning(
+            "admin authenticated via ?token= (deprecated — use the X-Admin-Token "
+            "header or the arnie_admin cookie; the token is now in this request's "
+            "access-log line)"
+        )
+        return _AdminAuth("query")
+
+    raise HTTPException(
+        status_code=401,
+        detail="Admin auth required (X-Admin-Token header, or ?token= to bootstrap).",
+    )
+
+
+def _set_admin_cookie(response) -> None:
+    """Attach a fresh signed admin cookie to `response`. HttpOnly (no JS reach),
+    SameSite=Lax (survives the top-level GET the dashboard links do, blocks
+    cross-site POST), Secure whenever we're on HTTPS — which is always in prod
+    and never on local http, so it is derived, not hardcoded."""
+    from api.auth import ADMIN_COOKIE_NAME, ADMIN_COOKIE_TTL_SECONDS, issue_admin_cookie
+    secure = (os.getenv("RENDER_EXTERNAL_URL", "").startswith("https")
+              or bool(os.getenv("RENDER")))
+    response.set_cookie(
+        ADMIN_COOKIE_NAME, issue_admin_cookie(),
+        max_age=ADMIN_COOKIE_TTL_SECONDS, httponly=True,
+        secure=secure, samesite="lax", path="/admin",
+    )
 
 # CORS — allow the landing page (separate Render static service) to POST the
 # iMessage signup form to this API.
@@ -771,9 +848,26 @@ async def telegram_webhook(token: str, request: Request):
     Telegram doesn't hit its 15s webhook timeout and retry. Deduplicates by
     update_id in case a retry slips through anyway (network blip, the prior
     pod still warming, an old code path).
+
+    Auth: the path segment is the bot token, and — when TELEGRAM_WEBHOOK_SECRET
+    is set — Telegram echoes it back in `X-Telegram-Bot-Api-Secret-Token` on
+    every call (registered via set_webhook in main.py). Both are compared in
+    constant time; a plain `!=` on a secret leaks its length and a few bytes
+    through timing, which is exactly the class of bug this pass exists to close.
     """
-    if token != os.getenv("TELEGRAM_BOT_TOKEN", ""):
+    expected_token = os.getenv("TELEGRAM_BOT_TOKEN", "")
+    if not hmac.compare_digest(token, expected_token):
         raise HTTPException(status_code=403, detail="Forbidden")
+
+    # Second factor when configured: the secret-token header. The bot token is
+    # already in the URL (and therefore in access logs); the header is not, so a
+    # log reader who learns the token still cannot forge an update.
+    webhook_secret = os.getenv("TELEGRAM_WEBHOOK_SECRET", "")
+    if webhook_secret:
+        presented = request.headers.get("x-telegram-bot-api-secret-token", "")
+        if not hmac.compare_digest(presented, webhook_secret):
+            logger.warning("Telegram webhook: secret-token header mismatch — rejected")
+            raise HTTPException(status_code=403, detail="Forbidden")
 
     ptb_app = getattr(request.app.state, "ptb_app", None)
     if ptb_app is None:
@@ -971,19 +1065,12 @@ async def imessage_start(payload: IMessageSignup, request: Request):
     """
     Landing-page iMessage signup. User enters their phone → Arnie sends the
     first outreach once. Their reply flows straight into onboarding.
-    Rate-limited per IP to curb abuse.
+    Rate-limited per IP (5 / 10 min) via the shared limiter — which, unlike the
+    old inline dict, resolves the caller behind Render's proxy when
+    TRUST_PROXY_HEADERS is set instead of bucketing everyone under one address.
     """
-    import time as _t
-    # Simple per-IP rate limit: max 5 signups / 10 min
-    ip = request.client.host if request.client else "?"
-    rl = getattr(app.state, "_signup_rl", {})
-    now = _t.time()
-    hits = [t for t in rl.get(ip, []) if now - t < 600]
-    if len(hits) >= 5:
-        raise HTTPException(status_code=429, detail="Too many attempts. Try again shortly.")
-    hits.append(now)
-    rl[ip] = hits
-    app.state._signup_rl = rl
+    from core import ratelimit
+    ratelimit.check_request(request, "imessage_start", limit=5, window_seconds=600)
 
     from bot.imessage_handler import start_imessage_outreach
     result = await start_imessage_outreach(payload.phone)
@@ -1041,18 +1128,10 @@ async def api_preregister(payload: PreRegisterPayload, request: Request):
     Stores the profile, returns a one-time SETUP-XXXXXX code and the Telegram deep link.
     When the user hits /start SETUP-XXXXXX on Telegram, their profile is pre-loaded
     and they skip conversational onboarding entirely.
-    Rate-limited per IP: max 5 per 10 min.
+    Rate-limited per IP (5 / 10 min) via the shared limiter.
     """
-    import time as _t
-    ip = request.client.host if request.client else "?"
-    rl = getattr(app.state, "_prereg_rl", {})
-    now = _t.time()
-    hits = [t for t in rl.get(ip, []) if now - t < 600]
-    if len(hits) >= 5:
-        raise HTTPException(status_code=429, detail="Too many attempts — try again shortly.")
-    hits.append(now)
-    rl[ip] = hits
-    app.state._prereg_rl = rl
+    from core import ratelimit
+    ratelimit.check_request(request, "preregister", limit=5, window_seconds=600)
 
     # Validate enum fields
     if payload.primary_goal not in _VALID_GOALS:
@@ -2536,9 +2615,8 @@ async def _imsg_broadcast_recipients(db):
 
 
 @app.get("/admin/broadcast")
-async def admin_broadcast_preview(token: str = Query(...)):
+async def admin_broadcast_preview(_admin: _AdminAuth = Depends(require_admin)):
     """DRY RUN — list who would receive the iMessage-availability broadcast. Sends nothing."""
-    _require_admin(token)
     from fastapi.responses import JSONResponse
     async with AsyncSessionLocal() as db:
         recipients = await _imsg_broadcast_recipients(db)
@@ -2556,9 +2634,9 @@ async def admin_broadcast_preview(token: str = Query(...)):
 
 
 @app.post("/admin/broadcast")
-async def admin_broadcast_send(token: str = Query(...), confirm: str = Query("")):
+async def admin_broadcast_send(confirm: str = Query(""),
+                               _admin: _AdminAuth = Depends(require_admin)):
     """ACTUAL SEND — requires confirm=SEND. One-time; marks each recipient so re-runs don't double-send."""
-    _require_admin(token)
     from fastapi.responses import JSONResponse
     if confirm != "SEND":
         raise HTTPException(status_code=400,
@@ -2597,7 +2675,8 @@ async def admin_broadcast_send(token: str = Query(...), confirm: str = Query("")
 
 
 @app.get("/admin/audit")
-async def admin_audit(token: str = Query(...), name: str = Query(...)):
+async def admin_audit(name: str = Query(...),
+                      _admin: _AdminAuth = Depends(require_admin)):
     """
     Read-only per-user consistency audit. For each user whose name matches
     (case-insensitive) returns: profile (tz, city, link, channel pref, reminders),
@@ -2605,8 +2684,6 @@ async def admin_audit(token: str = Query(...), name: str = Query(...)):
     and a per-day check comparing entry sums to the stored DailyLog totals — plus an
     inconsistent_days list. Pinpoints where logs and dashboard diverged. No writes.
     """
-    _require_admin(token)
-
     from sqlalchemy import select
     from sqlalchemy.orm import selectinload
     from fastapi.responses import JSONResponse
@@ -2699,7 +2776,8 @@ async def admin_audit(token: str = Query(...), name: str = Query(...)):
 
 
 @app.get("/admin/flagged")
-async def admin_flagged(token: str = Query(...), hours: int = Query(48),
+async def admin_flagged(hours: int = Query(48),
+                        _admin: _AdminAuth = Depends(require_admin),
                         limit: int = Query(100)):
     """
     Read-only turn-health feed: every conversation turn that a deterministic detector
@@ -2707,8 +2785,6 @@ async def admin_flagged(token: str = Query(...), hours: int = Query(48),
     last `hours`. This is the 'watch for deviations' surface — the place the screenshots
     used to come from, now automatic. No writes.
     """
-    _require_admin(token)
-
     from sqlalchemy import select, and_
     from fastapi.responses import JSONResponse
     from datetime import datetime, timedelta
@@ -2749,11 +2825,11 @@ async def admin_flagged(token: str = Query(...), hours: int = Query(48),
 
 @app.post("/admin/debug/send-push")
 async def admin_debug_send_push(
-    token: str = Query(..., description="ADMIN_TOKEN gate"),
     device_token: str = Query(..., description="hex device token; use any fake hex to test credentials"),
     title: str = Query("Arnie test push"),
     body: str = Query("Hello from /admin/debug/send-push"),
     environment: str = Query("production", description="production | sandbox"),
+    _admin: _AdminAuth = Depends(require_admin),
 ):
     """Fire one APNs push to a specific device token. Validates the .p8 / key
     id / team id / bundle id pipeline end-to-end without depending on a real
@@ -2766,7 +2842,6 @@ async def admin_debug_send_push(
     Use this to validate Render env vars BEFORE the scheduler hookup
     (slice 2c) starts depending on them.
     """
-    _require_admin(token)
     from notifications.apns_client import diagnose_pem, is_configured, send_push
     if not is_configured():
         return JSONResponse(
@@ -2796,7 +2871,8 @@ async def admin_debug_send_push(
 
 
 @app.post("/admin/run-reminders")
-async def admin_run_reminders(token: str = Query(...), test: int = Query(0)):
+async def admin_run_reminders(test: int = Query(0),
+                              _admin: _AdminAuth = Depends(require_admin)):
     """
     Manually fire the proactive scheduler once, for testing the rollout without waiting
     for a time slot. Respects PROACTIVE_MESSAGING_ENABLED and PROACTIVE_ALLOWLIST.
@@ -2808,7 +2884,6 @@ async def admin_run_reminders(token: str = Query(...), test: int = Query(0)):
     default → run the real reminder loop once. It still honors the time windows, so it
     sends only what's genuinely due right now (often nothing).
     """
-    _require_admin(token)
     from scheduler.proactive_scheduler import (
         _run_reminders, proactive_enabled, _proactive_allowlist, _allowlist_allows, _send,
     )
@@ -2843,13 +2918,13 @@ async def admin_run_reminders(token: str = Query(...), test: int = Query(0)):
 
 
 @app.post("/admin/profile-sync")
-async def admin_profile_sync(token: str = Query(...), name: str = Query(...)):
+async def admin_profile_sync(name: str = Query(...),
+                             _admin: _AdminAuth = Depends(require_admin)):
     """
     Force-sync the Profile Matrix for a user matched by name (case-insensitive).
     Bypasses the 3h throttle. Returns what changed and the resulting markdown head.
     Safe: read/write only to that user's profile file + user_attributes table.
     """
-    _require_admin(token)
 
     from sqlalchemy import select
     from sqlalchemy.orm import selectinload
@@ -2893,9 +2968,9 @@ async def admin_profile_sync(token: str = Query(...), name: str = Query(...)):
 
 @app.post("/admin/proactive-debug")
 async def admin_proactive_debug(
-    token: str = Query(...),
     name: str = Query(None),
     telegram_id: str = Query(None),
+    _admin: _AdminAuth = Depends(require_admin),
 ):
     """
     Per-user proactive deliverability introspector — answers "why is this user
@@ -2904,7 +2979,7 @@ async def admin_proactive_debug(
     them) and reporting the first durable gate that trips.
 
     Resolve a user by ?name (case-insensitive substring) or ?telegram_id (exact).
-    Read-only: no messages are sent, no state is written. Auth via _require_admin.
+    Read-only: no messages are sent, no state is written. Auth via require_admin.
 
     Note on "would_send_now": the slot branches carry CONTENT guards (e.g.
     total_calories>0, workout not yet logged) that aren't pure-function-reusable, so
@@ -2912,8 +2987,6 @@ async def admin_proactive_debug(
     "content not evaluated". An empty blocked_by means the durable gates all pass —
     not a guaranteed send.
     """
-    _require_admin(token)
-
     if not name and not telegram_id:
         raise HTTPException(status_code=400, detail="Provide ?name or ?telegram_id")
 
@@ -3100,14 +3173,13 @@ async def admin_proactive_debug(
 
 
 @app.post("/admin/profile-consolidate")
-async def admin_profile_consolidate(token: str = Query(...), name: str = Query(...)):
+async def admin_profile_consolidate(name: str = Query(...),
+                                    _admin: _AdminAuth = Depends(require_admin)):
     """
     Force-run the nightly profile consolidator for a user matched by name.
     Discontinues redundant/superseded attributes and shortens verbose values.
     Safe: only touches non-confirmed attributes; confirmed facts are never removed.
     """
-    _require_admin(token)
-
     from sqlalchemy import select
     from sqlalchemy.orm import selectinload
     from db.models import User
@@ -3147,8 +3219,15 @@ async def admin_profile_consolidate(token: str = Query(...), name: str = Query(.
 # ── Admin dashboard ───────────────────────────────────────────────────────────
 
 @app.get("/admin", response_class=HTMLResponse)
-async def admin_dashboard(token: str = Query(...)):
-    _require_admin(token)
+async def admin_dashboard(_admin: _AdminAuth = Depends(require_admin)):
+    # Bootstrap: the operator arrived with `?token=` in the URL. Trade it for the
+    # signed cookie and bounce to a clean `/admin`, so the raw token never sticks
+    # in browser history, a copied link, or the Referer of anything this page
+    # loads. Every in-page link below is tokenless — the cookie carries auth.
+    if _admin.via == "query":
+        resp = RedirectResponse("/admin", status_code=303)
+        _set_admin_cookie(resp)
+        return resp
 
     from sqlalchemy import select, func as sqlfunc
     from sqlalchemy.orm import selectinload
@@ -3305,7 +3384,7 @@ async def admin_dashboard(token: str = Query(...)):
         created = u.created_at.strftime("%b %d") if u.created_at else "—"
         search_blob = _esc(((u.name or "") + " " + (u.telegram_id or "")).lower())
 
-        convo_link = f'<a href="/admin/user/{u.id}?token={token}" style="color:#f39c12">💬 convo</a>'
+        convo_link = f'<a href="/admin/user/{u.id}" style="color:#f39c12">💬 convo</a>'
         tbody += f"""<tr data-status="{skey}" data-s="{search_blob}">
           <td><b>{_esc(u.name or "?")}</b><br><span style="color:#888;font-size:10px">{_esc(u.telegram_id)}</span></td>
           <td>{status_badge}</td>
@@ -3334,7 +3413,7 @@ async def admin_dashboard(token: str = Query(...)):
             uname = _esc(user_name_map.get(f.id, "?"))
             ts = f.created_at.strftime("%b %d %H:%M") if f.created_at else "—"
             resolve_ctrl = (
-                f'<form method="post" action="/admin/feedback/{f.id}/resolve?token={token}" style="display:inline">'
+                f'<form method="post" action="/admin/feedback/{f.id}/resolve" style="display:inline">'
                 f'<button class="resolve-btn" type="submit">✓ resolve</button></form>'
                 if not f.resolved else '<span class="resolved-label">✓ resolved</span>'
             )
@@ -3414,7 +3493,7 @@ async def admin_dashboard(token: str = Query(...)):
 </head>
 <body>
 <h1>⚡ Arnie Admin</h1>
-<p class="sub">{len(rows)} users &nbsp;·&nbsp; <span style="color:#2ecc71">{status_counts.get('active',0)} active</span> &nbsp;·&nbsp; {status_counts.get('idle',0)} idle &nbsp;·&nbsp; {status_counts.get('dormant',0)} dormant &nbsp;·&nbsp; {status_counts.get('deactivated',0)} deactivated &nbsp;·&nbsp; {open_fb_count} open feedback &nbsp;·&nbsp; <a href="/admin?token={token}">↻ refresh</a></p>
+<p class="sub">{len(rows)} users &nbsp;·&nbsp; <span style="color:#2ecc71">{status_counts.get('active',0)} active</span> &nbsp;·&nbsp; {status_counts.get('idle',0)} idle &nbsp;·&nbsp; {status_counts.get('dormant',0)} dormant &nbsp;·&nbsp; {status_counts.get('deactivated',0)} deactivated &nbsp;·&nbsp; {open_fb_count} open feedback &nbsp;·&nbsp; <a href="/admin">↻ refresh</a></p>
 
 <div class="tabs">
   <div class="tab active" onclick="switchTab('users',this)">Users</div>
@@ -3469,14 +3548,19 @@ function applyFilters(){{
 </script>
 </body>
 </html>"""
-    return HTMLResponse(html)
+    resp = HTMLResponse(html)
+    # If the operator authenticated with a header (no cookie yet), plant the
+    # cookie so the tokenless links above work on the next click.
+    if _admin.via != "cookie":
+        _set_admin_cookie(resp)
+    return resp
 
 
 # ── Admin: resolve feedback ────────────────────────────────────────────────────
 
 @app.post("/admin/feedback/{feedback_id}/resolve", response_class=HTMLResponse)
-async def admin_resolve_feedback(feedback_id: int, token: str = Query(...)):
-    _require_admin(token)
+async def admin_resolve_feedback(feedback_id: int,
+                                 _admin: _AdminAuth = Depends(require_admin)):
     from sqlalchemy import select
     from db.models import Feedback
     async with AsyncSessionLocal() as db:
@@ -3485,16 +3569,14 @@ async def admin_resolve_feedback(feedback_id: int, token: str = Query(...)):
         if fb:
             fb.resolved = True
             await db.commit()
-    from fastapi.responses import RedirectResponse
-    return RedirectResponse(f"/admin?token={token}#feedback", status_code=303)
+    return RedirectResponse("/admin#feedback", status_code=303)
 
 
 # ── Admin: user conversation history ──────────────────────────────────────────
 
 @app.get("/admin/user/{user_id}", response_class=HTMLResponse)
-async def admin_user_detail(user_id: int, token: str = Query(...)):
-    _require_admin(token)
-
+async def admin_user_detail(user_id: int,
+                            _admin: _AdminAuth = Depends(require_admin)):
     from sqlalchemy import select
     from sqlalchemy.orm import selectinload
     from db.models import User, ConversationLog
@@ -3581,7 +3663,7 @@ async def admin_user_detail(user_id: int, token: str = Query(...)):
 </head>
 <body>
 <div class="header">
-  <a class="back" href="/admin?token={token}">← Admin</a>
+  <a class="back" href="/admin">← Admin</a>
   <div>
     <div class="name">{_esc(user.name or "Unknown")}</div>
     <div class="meta">{goal} · {exp} · {len(convos)} messages · joined {joined} &nbsp; {dash_link}</div>
@@ -3596,7 +3678,10 @@ async def admin_user_detail(user_id: int, token: str = Query(...)):
 </table>
 </body>
 </html>"""
-    return HTMLResponse(html)
+    resp = HTMLResponse(html)
+    if _admin.via != "cookie":
+        _set_admin_cookie(resp)
+    return resp
 
 
 # ── Dashboard log endpoints ────────────────────────────────────────────────────

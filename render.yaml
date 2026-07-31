@@ -164,6 +164,30 @@ services:
         sync: false
       - key: BLUEBUBBLES_WEBHOOK_SECRET
         sync: false
+      # ── Security (B7, 2026-07-31). This file is reference-only for this
+      # service — the Render DASHBOARD value is what actually applies (see the
+      # NUTRITION_RESOLVER_MODE incident). Set these in the dashboard.
+      #
+      # Signs native-app session tokens AND the admin dashboard cookie. If unset,
+      # auth.py falls back to a PUBLIC hardcoded dev secret — every token becomes
+      # forgeable. Must be a strong random value in prod.
+      - key: SESSION_SECRET
+        sync: false
+      # Secure-by-default sign-in. When true, provider="device" mints a session
+      # for ANY identity string with no credential (dev only). MUST be false in
+      # prod, where only verified Apple sign-in may mint a session.
+      - key: DEV_AUTH_ENABLED
+        value: "false"
+      # Optional second factor on the Telegram webhook: when set, Telegram echoes
+      # it in X-Telegram-Bot-Api-Secret-Token and the endpoint enforces it, so a
+      # leaked in-URL bot token alone can't forge updates. main.py registers it.
+      - key: TELEGRAM_WEBHOOK_SECRET
+        sync: false
+      # Render terminates TLS at its proxy, so the app's peer IP is the proxy and
+      # every caller shares it. With this true, the rate limiter reads the real
+      # client from X-Forwarded-For. Safe ONLY behind a trusted proxy (Render is).
+      - key: TRUST_PROXY_HEADERS
+        value: "true"
       - key: SENTRY_DSN
         sync: false
       - key: USDA_API_KEY

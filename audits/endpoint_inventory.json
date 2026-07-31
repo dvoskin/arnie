@@ -1,0 +1,2172 @@
+[
+  {
+    "path": "/admin",
+    "methods": [
+      "GET"
+    ],
+    "name": "admin_dashboard",
+    "module": "api.app",
+    "admin": true,
+    "auth": [
+      "admin_header"
+    ],
+    "credential_in_url": [],
+    "rate_limited": true,
+    "mutating": false,
+    "public_by_design": false
+  },
+  {
+    "path": "/admin/audit",
+    "methods": [
+      "GET"
+    ],
+    "name": "admin_audit",
+    "module": "api.app",
+    "admin": true,
+    "auth": [
+      "admin_header"
+    ],
+    "credential_in_url": [],
+    "rate_limited": true,
+    "mutating": false,
+    "public_by_design": false
+  },
+  {
+    "path": "/admin/broadcast",
+    "methods": [
+      "GET"
+    ],
+    "name": "admin_broadcast_preview",
+    "module": "api.app",
+    "admin": true,
+    "auth": [
+      "admin_header"
+    ],
+    "credential_in_url": [],
+    "rate_limited": true,
+    "mutating": false,
+    "public_by_design": false
+  },
+  {
+    "path": "/admin/broadcast",
+    "methods": [
+      "POST"
+    ],
+    "name": "admin_broadcast_send",
+    "module": "api.app",
+    "admin": true,
+    "auth": [
+      "admin_header"
+    ],
+    "credential_in_url": [],
+    "rate_limited": true,
+    "mutating": true,
+    "public_by_design": false
+  },
+  {
+    "path": "/admin/debug/send-push",
+    "methods": [
+      "POST"
+    ],
+    "name": "admin_debug_send_push",
+    "module": "api.app",
+    "admin": true,
+    "auth": [
+      "admin_header"
+    ],
+    "credential_in_url": [],
+    "rate_limited": true,
+    "mutating": true,
+    "public_by_design": false
+  },
+  {
+    "path": "/admin/feedback/{feedback_id}/resolve",
+    "methods": [
+      "POST"
+    ],
+    "name": "admin_resolve_feedback",
+    "module": "api.app",
+    "admin": true,
+    "auth": [
+      "admin_header"
+    ],
+    "credential_in_url": [],
+    "rate_limited": true,
+    "mutating": true,
+    "public_by_design": false
+  },
+  {
+    "path": "/admin/flagged",
+    "methods": [
+      "GET"
+    ],
+    "name": "admin_flagged",
+    "module": "api.app",
+    "admin": true,
+    "auth": [
+      "admin_header"
+    ],
+    "credential_in_url": [],
+    "rate_limited": true,
+    "mutating": false,
+    "public_by_design": false
+  },
+  {
+    "path": "/admin/proactive-debug",
+    "methods": [
+      "POST"
+    ],
+    "name": "admin_proactive_debug",
+    "module": "api.app",
+    "admin": true,
+    "auth": [
+      "admin_header"
+    ],
+    "credential_in_url": [],
+    "rate_limited": true,
+    "mutating": true,
+    "public_by_design": false
+  },
+  {
+    "path": "/admin/profile-consolidate",
+    "methods": [
+      "POST"
+    ],
+    "name": "admin_profile_consolidate",
+    "module": "api.app",
+    "admin": true,
+    "auth": [
+      "admin_header"
+    ],
+    "credential_in_url": [],
+    "rate_limited": true,
+    "mutating": true,
+    "public_by_design": false
+  },
+  {
+    "path": "/admin/profile-sync",
+    "methods": [
+      "POST"
+    ],
+    "name": "admin_profile_sync",
+    "module": "api.app",
+    "admin": true,
+    "auth": [
+      "admin_header"
+    ],
+    "credential_in_url": [],
+    "rate_limited": true,
+    "mutating": true,
+    "public_by_design": false
+  },
+  {
+    "path": "/admin/run-reminders",
+    "methods": [
+      "POST"
+    ],
+    "name": "admin_run_reminders",
+    "module": "api.app",
+    "admin": true,
+    "auth": [
+      "admin_header"
+    ],
+    "credential_in_url": [],
+    "rate_limited": true,
+    "mutating": true,
+    "public_by_design": false
+  },
+  {
+    "path": "/admin/user/{user_id}",
+    "methods": [
+      "GET"
+    ],
+    "name": "admin_user_detail",
+    "module": "api.app",
+    "admin": true,
+    "auth": [
+      "admin_header"
+    ],
+    "credential_in_url": [],
+    "rate_limited": true,
+    "mutating": false,
+    "public_by_design": false
+  },
+  {
+    "path": "/",
+    "methods": [
+      "GET"
+    ],
+    "name": "root",
+    "module": "api.app",
+    "admin": false,
+    "auth": [
+      "none"
+    ],
+    "credential_in_url": [],
+    "rate_limited": false,
+    "mutating": false,
+    "public_by_design": true
+  },
+  {
+    "path": "/api/brain/insights/{token}",
+    "methods": [
+      "POST"
+    ],
+    "name": "brain_insight",
+    "module": "api.app",
+    "admin": false,
+    "auth": [
+      "capability_token"
+    ],
+    "credential_in_url": [
+      "path:token"
+    ],
+    "rate_limited": false,
+    "mutating": true,
+    "public_by_design": false
+  },
+  {
+    "path": "/api/chat/{token}",
+    "methods": [
+      "POST"
+    ],
+    "name": "post_chat",
+    "module": "api.app",
+    "admin": false,
+    "auth": [
+      "capability_token"
+    ],
+    "credential_in_url": [
+      "path:token"
+    ],
+    "rate_limited": false,
+    "mutating": true,
+    "public_by_design": false
+  },
+  {
+    "path": "/api/conversation/{token}",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_conversation",
+    "module": "api.app",
+    "admin": false,
+    "auth": [
+      "capability_token"
+    ],
+    "credential_in_url": [
+      "path:token"
+    ],
+    "rate_limited": false,
+    "mutating": false,
+    "public_by_design": false
+  },
+  {
+    "path": "/api/exercise/log",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_log_exercise",
+    "module": "api.app",
+    "admin": false,
+    "auth": [
+      "capability_token"
+    ],
+    "credential_in_url": [
+      "query:token"
+    ],
+    "rate_limited": false,
+    "mutating": true,
+    "public_by_design": false
+  },
+  {
+    "path": "/api/exercise/{entry_id}",
+    "methods": [
+      "PATCH"
+    ],
+    "name": "api_edit_exercise",
+    "module": "api.app",
+    "admin": false,
+    "auth": [
+      "capability_token"
+    ],
+    "credential_in_url": [
+      "query:token"
+    ],
+    "rate_limited": false,
+    "mutating": true,
+    "public_by_design": false
+  },
+  {
+    "path": "/api/exercise/{entry_id}",
+    "methods": [
+      "DELETE"
+    ],
+    "name": "api_delete_exercise",
+    "module": "api.app",
+    "admin": false,
+    "auth": [
+      "capability_token"
+    ],
+    "credential_in_url": [
+      "query:token"
+    ],
+    "rate_limited": false,
+    "mutating": true,
+    "public_by_design": false
+  },
+  {
+    "path": "/api/fitness/{token}",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_fitness",
+    "module": "api.app",
+    "admin": false,
+    "auth": [
+      "capability_token"
+    ],
+    "credential_in_url": [
+      "path:token"
+    ],
+    "rate_limited": false,
+    "mutating": false,
+    "public_by_design": false
+  },
+  {
+    "path": "/api/food/log",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_log_food",
+    "module": "api.app",
+    "admin": false,
+    "auth": [
+      "capability_token"
+    ],
+    "credential_in_url": [
+      "query:token"
+    ],
+    "rate_limited": false,
+    "mutating": true,
+    "public_by_design": false
+  },
+  {
+    "path": "/api/food/search",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_food_search",
+    "module": "api.app",
+    "admin": false,
+    "auth": [
+      "capability_token"
+    ],
+    "credential_in_url": [
+      "query:token"
+    ],
+    "rate_limited": false,
+    "mutating": false,
+    "public_by_design": false
+  },
+  {
+    "path": "/api/food/{entry_id}",
+    "methods": [
+      "PATCH"
+    ],
+    "name": "api_edit_food",
+    "module": "api.app",
+    "admin": false,
+    "auth": [
+      "capability_token"
+    ],
+    "credential_in_url": [
+      "query:token"
+    ],
+    "rate_limited": false,
+    "mutating": true,
+    "public_by_design": false
+  },
+  {
+    "path": "/api/food/{entry_id}",
+    "methods": [
+      "DELETE"
+    ],
+    "name": "api_delete_food",
+    "module": "api.app",
+    "admin": false,
+    "auth": [
+      "capability_token"
+    ],
+    "credential_in_url": [
+      "query:token"
+    ],
+    "rate_limited": false,
+    "mutating": true,
+    "public_by_design": false
+  },
+  {
+    "path": "/api/insights/{token}",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_insights_endpoint",
+    "module": "api.app",
+    "admin": false,
+    "auth": [
+      "capability_token"
+    ],
+    "credential_in_url": [
+      "path:token"
+    ],
+    "rate_limited": false,
+    "mutating": false,
+    "public_by_design": false
+  },
+  {
+    "path": "/api/preregister",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_preregister",
+    "module": "api.app",
+    "admin": false,
+    "auth": [
+      "none"
+    ],
+    "credential_in_url": [],
+    "rate_limited": true,
+    "mutating": true,
+    "public_by_design": true
+  },
+  {
+    "path": "/api/profile/attribute/hide",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_hide_attribute",
+    "module": "api.app",
+    "admin": false,
+    "auth": [
+      "capability_token"
+    ],
+    "credential_in_url": [
+      "query:token"
+    ],
+    "rate_limited": false,
+    "mutating": true,
+    "public_by_design": false
+  },
+  {
+    "path": "/api/profile/{token}",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_profile",
+    "module": "api.app",
+    "admin": false,
+    "auth": [
+      "capability_token"
+    ],
+    "credential_in_url": [
+      "path:token"
+    ],
+    "rate_limited": false,
+    "mutating": false,
+    "public_by_design": false
+  },
+  {
+    "path": "/api/profile/{token}",
+    "methods": [
+      "PATCH"
+    ],
+    "name": "api_edit_profile",
+    "module": "api.app",
+    "admin": false,
+    "auth": [
+      "capability_token"
+    ],
+    "credential_in_url": [
+      "path:token"
+    ],
+    "rate_limited": true,
+    "mutating": true,
+    "public_by_design": false
+  },
+  {
+    "path": "/api/profile/{token}/auto-targets",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_auto_targets",
+    "module": "api.app",
+    "admin": false,
+    "auth": [
+      "capability_token"
+    ],
+    "credential_in_url": [
+      "path:token"
+    ],
+    "rate_limited": false,
+    "mutating": true,
+    "public_by_design": false
+  },
+  {
+    "path": "/api/stats/{token}",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_stats",
+    "module": "api.app",
+    "admin": false,
+    "auth": [
+      "capability_token"
+    ],
+    "credential_in_url": [
+      "path:token"
+    ],
+    "rate_limited": false,
+    "mutating": false,
+    "public_by_design": false
+  },
+  {
+    "path": "/api/v1/achievements",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_achievements",
+    "module": "api.dashboard_api",
+    "admin": false,
+    "auth": [
+      "session"
+    ],
+    "credential_in_url": [],
+    "rate_limited": false,
+    "mutating": false,
+    "public_by_design": false
+  },
+  {
+    "path": "/api/v1/auth/exchange-pairing-code",
+    "methods": [
+      "POST"
+    ],
+    "name": "exchange_pairing_code",
+    "module": "api.auth_routes",
+    "admin": false,
+    "auth": [
+      "provider_credential"
+    ],
+    "credential_in_url": [],
+    "rate_limited": true,
+    "mutating": true,
+    "public_by_design": true
+  },
+  {
+    "path": "/api/v1/auth/link",
+    "methods": [
+      "POST"
+    ],
+    "name": "link_account",
+    "module": "api.auth_routes",
+    "admin": false,
+    "auth": [
+      "session"
+    ],
+    "credential_in_url": [],
+    "rate_limited": false,
+    "mutating": true,
+    "public_by_design": false
+  },
+  {
+    "path": "/api/v1/auth/link-code",
+    "methods": [
+      "POST"
+    ],
+    "name": "create_link_code",
+    "module": "api.auth_routes",
+    "admin": false,
+    "auth": [
+      "session"
+    ],
+    "credential_in_url": [],
+    "rate_limited": false,
+    "mutating": true,
+    "public_by_design": false
+  },
+  {
+    "path": "/api/v1/auth/session",
+    "methods": [
+      "POST"
+    ],
+    "name": "create_session",
+    "module": "api.auth_routes",
+    "admin": false,
+    "auth": [
+      "provider_credential",
+      "session"
+    ],
+    "credential_in_url": [],
+    "rate_limited": true,
+    "mutating": true,
+    "public_by_design": true
+  },
+  {
+    "path": "/api/v1/auth/signout",
+    "methods": [
+      "POST"
+    ],
+    "name": "signout",
+    "module": "api.settings_api",
+    "admin": false,
+    "auth": [
+      "session"
+    ],
+    "credential_in_url": [],
+    "rate_limited": false,
+    "mutating": true,
+    "public_by_design": false
+  },
+  {
+    "path": "/api/v1/auto-targets",
+    "methods": [
+      "POST"
+    ],
+    "name": "auto_compute_targets",
+    "module": "api.profile_edit",
+    "admin": false,
+    "auth": [
+      "session"
+    ],
+    "credential_in_url": [],
+    "rate_limited": false,
+    "mutating": true,
+    "public_by_design": false
+  },
+  {
+    "path": "/api/v1/brain",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_brain",
+    "module": "api.dashboard_api",
+    "admin": false,
+    "auth": [
+      "session"
+    ],
+    "credential_in_url": [],
+    "rate_limited": false,
+    "mutating": false,
+    "public_by_design": false
+  },
+  {
+    "path": "/api/v1/brain/resync",
+    "methods": [
+      "POST"
+    ],
+    "name": "force_brain_resync",
+    "module": "api.dashboard_api",
+    "admin": false,
+    "auth": [
+      "session"
+    ],
+    "credential_in_url": [],
+    "rate_limited": false,
+    "mutating": true,
+    "public_by_design": false
+  },
+  {
+    "path": "/api/v1/briefing",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_briefing_for_ios",
+    "module": "api.insights_api",
+    "admin": false,
+    "auth": [
+      "session"
+    ],
+    "credential_in_url": [],
+    "rate_limited": false,
+    "mutating": false,
+    "public_by_design": false
+  },
+  {
+    "path": "/api/v1/chat",
+    "methods": [
+      "POST"
+    ],
+    "name": "chat",
+    "module": "api.chat",
+    "admin": false,
+    "auth": [
+      "session"
+    ],
+    "credential_in_url": [],
+    "rate_limited": false,
+    "mutating": true,
+    "public_by_design": false
+  },
+  {
+    "path": "/api/v1/chat/feedback",
+    "methods": [
+      "POST"
+    ],
+    "name": "chat_feedback",
+    "module": "api.chat",
+    "admin": false,
+    "auth": [
+      "session"
+    ],
+    "credential_in_url": [],
+    "rate_limited": false,
+    "mutating": true,
+    "public_by_design": false
+  },
+  {
+    "path": "/api/v1/chat/history",
+    "methods": [
+      "GET"
+    ],
+    "name": "chat_history",
+    "module": "api.chat",
+    "admin": false,
+    "auth": [
+      "session"
+    ],
+    "credential_in_url": [],
+    "rate_limited": false,
+    "mutating": false,
+    "public_by_design": false
+  },
+  {
+    "path": "/api/v1/chat/photo",
+    "methods": [
+      "POST"
+    ],
+    "name": "chat_photo",
+    "module": "api.chat",
+    "admin": false,
+    "auth": [
+      "session"
+    ],
+    "credential_in_url": [],
+    "rate_limited": false,
+    "mutating": true,
+    "public_by_design": false
+  },
+  {
+    "path": "/api/v1/chat/stream",
+    "methods": [
+      "WS"
+    ],
+    "name": "chat_stream",
+    "module": "api.chat",
+    "admin": false,
+    "auth": [
+      "session"
+    ],
+    "credential_in_url": [],
+    "rate_limited": false,
+    "mutating": false,
+    "public_by_design": false
+  },
+  {
+    "path": "/api/v1/chat/voice",
+    "methods": [
+      "POST"
+    ],
+    "name": "chat_voice",
+    "module": "api.chat",
+    "admin": false,
+    "auth": [
+      "session"
+    ],
+    "credential_in_url": [],
+    "rate_limited": false,
+    "mutating": true,
+    "public_by_design": false
+  },
+  {
+    "path": "/api/v1/day",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_day",
+    "module": "api.dashboard_api",
+    "admin": false,
+    "auth": [
+      "session"
+    ],
+    "credential_in_url": [],
+    "rate_limited": false,
+    "mutating": false,
+    "public_by_design": false
+  },
+  {
+    "path": "/api/v1/debug/me",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_me",
+    "module": "api.diagnostics",
+    "admin": false,
+    "auth": [
+      "session"
+    ],
+    "credential_in_url": [],
+    "rate_limited": false,
+    "mutating": false,
+    "public_by_design": false
+  },
+  {
+    "path": "/api/v1/devices/apns-token",
+    "methods": [
+      "POST"
+    ],
+    "name": "post_apns_token",
+    "module": "api.devices",
+    "admin": false,
+    "auth": [
+      "session"
+    ],
+    "credential_in_url": [],
+    "rate_limited": false,
+    "mutating": true,
+    "public_by_design": false
+  },
+  {
+    "path": "/api/v1/devices/apns-token/{token}",
+    "methods": [
+      "DELETE"
+    ],
+    "name": "delete_apns_token",
+    "module": "api.devices",
+    "admin": false,
+    "auth": [
+      "session"
+    ],
+    "credential_in_url": [
+      "path:token"
+    ],
+    "rate_limited": false,
+    "mutating": true,
+    "public_by_design": false
+  },
+  {
+    "path": "/api/v1/exercise",
+    "methods": [
+      "POST"
+    ],
+    "name": "log_exercise_entry",
+    "module": "api.quick_log",
+    "admin": false,
+    "auth": [
+      "session"
+    ],
+    "credential_in_url": [],
+    "rate_limited": false,
+    "mutating": true,
+    "public_by_design": false
+  },
+  {
+    "path": "/api/v1/exercise/{entry_id}",
+    "methods": [
+      "PATCH"
+    ],
+    "name": "update_exercise",
+    "module": "api.exercise_edit",
+    "admin": false,
+    "auth": [
+      "session"
+    ],
+    "credential_in_url": [],
+    "rate_limited": false,
+    "mutating": true,
+    "public_by_design": false
+  },
+  {
+    "path": "/api/v1/exercise/{entry_id}",
+    "methods": [
+      "DELETE"
+    ],
+    "name": "delete_exercise",
+    "module": "api.exercise_edit",
+    "admin": false,
+    "auth": [
+      "session"
+    ],
+    "credential_in_url": [],
+    "rate_limited": false,
+    "mutating": true,
+    "public_by_design": false
+  },
+  {
+    "path": "/api/v1/exercise_prs",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_exercise_prs_for_ios",
+    "module": "api.insights_api",
+    "admin": false,
+    "auth": [
+      "session"
+    ],
+    "credential_in_url": [],
+    "rate_limited": false,
+    "mutating": false,
+    "public_by_design": false
+  },
+  {
+    "path": "/api/v1/feedback",
+    "methods": [
+      "POST"
+    ],
+    "name": "post_feedback",
+    "module": "api.settings_api",
+    "admin": false,
+    "auth": [
+      "session"
+    ],
+    "credential_in_url": [],
+    "rate_limited": false,
+    "mutating": true,
+    "public_by_design": false
+  },
+  {
+    "path": "/api/v1/fitness",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_fitness",
+    "module": "api.dashboard_api",
+    "admin": false,
+    "auth": [
+      "session"
+    ],
+    "credential_in_url": [],
+    "rate_limited": false,
+    "mutating": false,
+    "public_by_design": false
+  },
+  {
+    "path": "/api/v1/food",
+    "methods": [
+      "POST"
+    ],
+    "name": "log_food_entry",
+    "module": "api.quick_log",
+    "admin": false,
+    "auth": [
+      "session"
+    ],
+    "credential_in_url": [],
+    "rate_limited": false,
+    "mutating": true,
+    "public_by_design": false
+  },
+  {
+    "path": "/api/v1/food/{entry_id}",
+    "methods": [
+      "PATCH"
+    ],
+    "name": "update_food",
+    "module": "api.food_edit",
+    "admin": false,
+    "auth": [
+      "session"
+    ],
+    "credential_in_url": [],
+    "rate_limited": false,
+    "mutating": true,
+    "public_by_design": false
+  },
+  {
+    "path": "/api/v1/food/{entry_id}",
+    "methods": [
+      "DELETE"
+    ],
+    "name": "delete_food",
+    "module": "api.food_edit",
+    "admin": false,
+    "auth": [
+      "session"
+    ],
+    "credential_in_url": [],
+    "rate_limited": false,
+    "mutating": true,
+    "public_by_design": false
+  },
+  {
+    "path": "/api/v1/groups",
+    "methods": [
+      "GET"
+    ],
+    "name": "list_groups",
+    "module": "api.groups",
+    "admin": false,
+    "auth": [
+      "session"
+    ],
+    "credential_in_url": [],
+    "rate_limited": false,
+    "mutating": false,
+    "public_by_design": false
+  },
+  {
+    "path": "/api/v1/groups/{group_id}/join",
+    "methods": [
+      "POST"
+    ],
+    "name": "join_group",
+    "module": "api.groups",
+    "admin": false,
+    "auth": [
+      "session"
+    ],
+    "credential_in_url": [],
+    "rate_limited": false,
+    "mutating": true,
+    "public_by_design": false
+  },
+  {
+    "path": "/api/v1/groups/{group_id}/leaderboard",
+    "methods": [
+      "GET"
+    ],
+    "name": "group_leaderboard",
+    "module": "api.groups",
+    "admin": false,
+    "auth": [
+      "session"
+    ],
+    "credential_in_url": [],
+    "rate_limited": false,
+    "mutating": false,
+    "public_by_design": false
+  },
+  {
+    "path": "/api/v1/groups/{group_id}/leave",
+    "methods": [
+      "POST"
+    ],
+    "name": "leave_group",
+    "module": "api.groups",
+    "admin": false,
+    "auth": [
+      "session"
+    ],
+    "credential_in_url": [],
+    "rate_limited": false,
+    "mutating": true,
+    "public_by_design": false
+  },
+  {
+    "path": "/api/v1/groups/{group_id}/messages",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_messages",
+    "module": "api.groups",
+    "admin": false,
+    "auth": [
+      "session"
+    ],
+    "credential_in_url": [],
+    "rate_limited": false,
+    "mutating": false,
+    "public_by_design": false
+  },
+  {
+    "path": "/api/v1/groups/{group_id}/messages",
+    "methods": [
+      "POST"
+    ],
+    "name": "post_message",
+    "module": "api.groups",
+    "admin": false,
+    "auth": [
+      "session"
+    ],
+    "credential_in_url": [],
+    "rate_limited": false,
+    "mutating": true,
+    "public_by_design": false
+  },
+  {
+    "path": "/api/v1/groups/{group_id}/messages/{message_id}",
+    "methods": [
+      "DELETE"
+    ],
+    "name": "unsend_message",
+    "module": "api.groups",
+    "admin": false,
+    "auth": [
+      "session"
+    ],
+    "credential_in_url": [],
+    "rate_limited": false,
+    "mutating": true,
+    "public_by_design": false
+  },
+  {
+    "path": "/api/v1/groups/{group_id}/messages/{message_id}/image",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_message_image",
+    "module": "api.groups",
+    "admin": false,
+    "auth": [
+      "session"
+    ],
+    "credential_in_url": [],
+    "rate_limited": false,
+    "mutating": false,
+    "public_by_design": false
+  },
+  {
+    "path": "/api/v1/groups/{group_id}/messages/{message_id}/react",
+    "methods": [
+      "POST"
+    ],
+    "name": "toggle_reaction",
+    "module": "api.groups",
+    "admin": false,
+    "auth": [
+      "session"
+    ],
+    "credential_in_url": [],
+    "rate_limited": false,
+    "mutating": true,
+    "public_by_design": false
+  },
+  {
+    "path": "/api/v1/health/snapshot",
+    "methods": [
+      "POST"
+    ],
+    "name": "post_snapshot",
+    "module": "api.health_sync",
+    "admin": false,
+    "auth": [
+      "session"
+    ],
+    "credential_in_url": [],
+    "rate_limited": false,
+    "mutating": true,
+    "public_by_design": false
+  },
+  {
+    "path": "/api/v1/health/weights",
+    "methods": [
+      "POST"
+    ],
+    "name": "backfill_weights",
+    "module": "api.health_sync",
+    "admin": false,
+    "auth": [
+      "session"
+    ],
+    "credential_in_url": [],
+    "rate_limited": false,
+    "mutating": true,
+    "public_by_design": false
+  },
+  {
+    "path": "/api/v1/insights",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_insights_for_ios",
+    "module": "api.insights_api",
+    "admin": false,
+    "auth": [
+      "session"
+    ],
+    "credential_in_url": [],
+    "rate_limited": false,
+    "mutating": false,
+    "public_by_design": false
+  },
+  {
+    "path": "/api/v1/ledger/undo",
+    "methods": [
+      "POST"
+    ],
+    "name": "undo_event",
+    "module": "api.undo",
+    "admin": false,
+    "auth": [
+      "session"
+    ],
+    "credential_in_url": [],
+    "rate_limited": false,
+    "mutating": true,
+    "public_by_design": false
+  },
+  {
+    "path": "/api/v1/linked-accounts",
+    "methods": [
+      "GET"
+    ],
+    "name": "linked_accounts",
+    "module": "api.profile_edit",
+    "admin": false,
+    "auth": [
+      "session"
+    ],
+    "credential_in_url": [],
+    "rate_limited": false,
+    "mutating": false,
+    "public_by_design": false
+  },
+  {
+    "path": "/api/v1/location",
+    "methods": [
+      "POST"
+    ],
+    "name": "post_location",
+    "module": "api.location_api",
+    "admin": false,
+    "auth": [
+      "session"
+    ],
+    "credential_in_url": [],
+    "rate_limited": false,
+    "mutating": true,
+    "public_by_design": false
+  },
+  {
+    "path": "/api/v1/location",
+    "methods": [
+      "DELETE"
+    ],
+    "name": "clear_location",
+    "module": "api.location_api",
+    "admin": false,
+    "auth": [
+      "session"
+    ],
+    "credential_in_url": [],
+    "rate_limited": false,
+    "mutating": true,
+    "public_by_design": false
+  },
+  {
+    "path": "/api/v1/memory",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_memory_for_ios",
+    "module": "api.insights_api",
+    "admin": false,
+    "auth": [
+      "session"
+    ],
+    "credential_in_url": [],
+    "rate_limited": false,
+    "mutating": false,
+    "public_by_design": false
+  },
+  {
+    "path": "/api/v1/onboarding/complete",
+    "methods": [
+      "POST"
+    ],
+    "name": "complete_onboarding",
+    "module": "api.profile_edit",
+    "admin": false,
+    "auth": [
+      "session"
+    ],
+    "credential_in_url": [],
+    "rate_limited": false,
+    "mutating": true,
+    "public_by_design": false
+  },
+  {
+    "path": "/api/v1/oura/connect-url",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_connect_url",
+    "module": "api.oura_api",
+    "admin": false,
+    "auth": [
+      "session"
+    ],
+    "credential_in_url": [],
+    "rate_limited": false,
+    "mutating": false,
+    "public_by_design": false
+  },
+  {
+    "path": "/api/v1/oura/disconnect",
+    "methods": [
+      "POST"
+    ],
+    "name": "disconnect",
+    "module": "api.oura_api",
+    "admin": false,
+    "auth": [
+      "session"
+    ],
+    "credential_in_url": [],
+    "rate_limited": false,
+    "mutating": true,
+    "public_by_design": false
+  },
+  {
+    "path": "/api/v1/oura/status",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_status",
+    "module": "api.oura_api",
+    "admin": false,
+    "auth": [
+      "session"
+    ],
+    "credential_in_url": [],
+    "rate_limited": false,
+    "mutating": false,
+    "public_by_design": false
+  },
+  {
+    "path": "/api/v1/preferences",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_preferences",
+    "module": "api.settings_api",
+    "admin": false,
+    "auth": [
+      "session"
+    ],
+    "credential_in_url": [],
+    "rate_limited": false,
+    "mutating": false,
+    "public_by_design": false
+  },
+  {
+    "path": "/api/v1/preferences",
+    "methods": [
+      "POST"
+    ],
+    "name": "patch_preferences",
+    "module": "api.settings_api",
+    "admin": false,
+    "auth": [
+      "session"
+    ],
+    "credential_in_url": [],
+    "rate_limited": false,
+    "mutating": true,
+    "public_by_design": false
+  },
+  {
+    "path": "/api/v1/profile",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_profile",
+    "module": "api.dashboard_api",
+    "admin": false,
+    "auth": [
+      "session"
+    ],
+    "credential_in_url": [],
+    "rate_limited": false,
+    "mutating": false,
+    "public_by_design": false
+  },
+  {
+    "path": "/api/v1/profile",
+    "methods": [
+      "PATCH"
+    ],
+    "name": "patch_profile",
+    "module": "api.profile_edit",
+    "admin": false,
+    "auth": [
+      "session"
+    ],
+    "credential_in_url": [],
+    "rate_limited": false,
+    "mutating": true,
+    "public_by_design": false
+  },
+  {
+    "path": "/api/v1/recovery",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_recovery",
+    "module": "api.recovery_api",
+    "admin": false,
+    "auth": [
+      "session"
+    ],
+    "credential_in_url": [],
+    "rate_limited": false,
+    "mutating": false,
+    "public_by_design": false
+  },
+  {
+    "path": "/api/v1/supplements",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_supplements",
+    "module": "api.supplements_api",
+    "admin": false,
+    "auth": [
+      "session"
+    ],
+    "credential_in_url": [],
+    "rate_limited": false,
+    "mutating": false,
+    "public_by_design": false
+  },
+  {
+    "path": "/api/v1/supplements/toggle",
+    "methods": [
+      "POST"
+    ],
+    "name": "toggle_supplement",
+    "module": "api.supplements_api",
+    "admin": false,
+    "auth": [
+      "session"
+    ],
+    "credential_in_url": [],
+    "rate_limited": false,
+    "mutating": true,
+    "public_by_design": false
+  },
+  {
+    "path": "/api/v1/targets",
+    "methods": [
+      "PATCH"
+    ],
+    "name": "patch_targets",
+    "module": "api.profile_edit",
+    "admin": false,
+    "auth": [
+      "session"
+    ],
+    "credential_in_url": [],
+    "rate_limited": false,
+    "mutating": true,
+    "public_by_design": false
+  },
+  {
+    "path": "/api/v1/water",
+    "methods": [
+      "POST"
+    ],
+    "name": "log_water",
+    "module": "api.water",
+    "admin": false,
+    "auth": [
+      "session"
+    ],
+    "credential_in_url": [],
+    "rate_limited": false,
+    "mutating": true,
+    "public_by_design": false
+  },
+  {
+    "path": "/api/v1/water/{entry_id}",
+    "methods": [
+      "PATCH"
+    ],
+    "name": "update_water",
+    "module": "api.water",
+    "admin": false,
+    "auth": [
+      "session"
+    ],
+    "credential_in_url": [],
+    "rate_limited": false,
+    "mutating": true,
+    "public_by_design": false
+  },
+  {
+    "path": "/api/v1/water/{entry_id}",
+    "methods": [
+      "DELETE"
+    ],
+    "name": "delete_water",
+    "module": "api.water",
+    "admin": false,
+    "auth": [
+      "session"
+    ],
+    "credential_in_url": [],
+    "rate_limited": false,
+    "mutating": true,
+    "public_by_design": false
+  },
+  {
+    "path": "/api/v1/week",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_week",
+    "module": "api.dashboard_api",
+    "admin": false,
+    "auth": [
+      "session"
+    ],
+    "credential_in_url": [],
+    "rate_limited": false,
+    "mutating": false,
+    "public_by_design": false
+  },
+  {
+    "path": "/api/v1/weight",
+    "methods": [
+      "POST"
+    ],
+    "name": "log_weight",
+    "module": "api.quick_log",
+    "admin": false,
+    "auth": [
+      "session"
+    ],
+    "credential_in_url": [],
+    "rate_limited": false,
+    "mutating": true,
+    "public_by_design": false
+  },
+  {
+    "path": "/api/v1/whoop/connect-url",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_connect_url",
+    "module": "api.whoop_api",
+    "admin": false,
+    "auth": [
+      "session"
+    ],
+    "credential_in_url": [],
+    "rate_limited": false,
+    "mutating": false,
+    "public_by_design": false
+  },
+  {
+    "path": "/api/v1/whoop/disconnect",
+    "methods": [
+      "POST"
+    ],
+    "name": "disconnect",
+    "module": "api.whoop_api",
+    "admin": false,
+    "auth": [
+      "session"
+    ],
+    "credential_in_url": [],
+    "rate_limited": false,
+    "mutating": true,
+    "public_by_design": false
+  },
+  {
+    "path": "/api/v1/whoop/status",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_status",
+    "module": "api.whoop_api",
+    "admin": false,
+    "auth": [
+      "session"
+    ],
+    "credential_in_url": [],
+    "rate_limited": false,
+    "mutating": false,
+    "public_by_design": false
+  },
+  {
+    "path": "/api/v1/widget",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_widget",
+    "module": "api.dashboard_api",
+    "admin": false,
+    "auth": [
+      "session"
+    ],
+    "credential_in_url": [],
+    "rate_limited": false,
+    "mutating": false,
+    "public_by_design": false
+  },
+  {
+    "path": "/api/v1/workout_program",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_workout_program",
+    "module": "api.workout_api",
+    "admin": false,
+    "auth": [
+      "session"
+    ],
+    "credential_in_url": [],
+    "rate_limited": false,
+    "mutating": false,
+    "public_by_design": false
+  },
+  {
+    "path": "/api/v1/workout_program",
+    "methods": [
+      "POST"
+    ],
+    "name": "build_workout_program",
+    "module": "api.workout_api",
+    "admin": false,
+    "auth": [
+      "session"
+    ],
+    "credential_in_url": [],
+    "rate_limited": false,
+    "mutating": true,
+    "public_by_design": false
+  },
+  {
+    "path": "/api/v1/workout_program",
+    "methods": [
+      "DELETE"
+    ],
+    "name": "deactivate_workout_program",
+    "module": "api.workout_api",
+    "admin": false,
+    "auth": [
+      "session"
+    ],
+    "credential_in_url": [],
+    "rate_limited": false,
+    "mutating": true,
+    "public_by_design": false
+  },
+  {
+    "path": "/api/v1/workout_program/history",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_workout_program_history",
+    "module": "api.workout_api",
+    "admin": false,
+    "auth": [
+      "session"
+    ],
+    "credential_in_url": [],
+    "rate_limited": false,
+    "mutating": false,
+    "public_by_design": false
+  },
+  {
+    "path": "/api/water/log",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_log_water",
+    "module": "api.app",
+    "admin": false,
+    "auth": [
+      "capability_token"
+    ],
+    "credential_in_url": [
+      "query:token"
+    ],
+    "rate_limited": false,
+    "mutating": true,
+    "public_by_design": false
+  },
+  {
+    "path": "/api/water/{entry_id}",
+    "methods": [
+      "PATCH"
+    ],
+    "name": "api_edit_water",
+    "module": "api.app",
+    "admin": false,
+    "auth": [
+      "capability_token"
+    ],
+    "credential_in_url": [
+      "query:token"
+    ],
+    "rate_limited": false,
+    "mutating": true,
+    "public_by_design": false
+  },
+  {
+    "path": "/api/water/{entry_id}",
+    "methods": [
+      "DELETE"
+    ],
+    "name": "api_delete_water",
+    "module": "api.app",
+    "admin": false,
+    "auth": [
+      "capability_token"
+    ],
+    "credential_in_url": [
+      "query:token"
+    ],
+    "rate_limited": false,
+    "mutating": true,
+    "public_by_design": false
+  },
+  {
+    "path": "/api/weight/log",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_log_weight",
+    "module": "api.app",
+    "admin": false,
+    "auth": [
+      "capability_token"
+    ],
+    "credential_in_url": [
+      "query:token"
+    ],
+    "rate_limited": false,
+    "mutating": true,
+    "public_by_design": false
+  },
+  {
+    "path": "/api/whoop/sync/{token}",
+    "methods": [
+      "POST"
+    ],
+    "name": "dashboard_whoop_sync",
+    "module": "api.app",
+    "admin": false,
+    "auth": [
+      "capability_token"
+    ],
+    "credential_in_url": [
+      "path:token"
+    ],
+    "rate_limited": false,
+    "mutating": true,
+    "public_by_design": false
+  },
+  {
+    "path": "/api/workout/{token}",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_workout_program",
+    "module": "api.app",
+    "admin": false,
+    "auth": [
+      "capability_token"
+    ],
+    "credential_in_url": [
+      "path:token"
+    ],
+    "rate_limited": false,
+    "mutating": false,
+    "public_by_design": false
+  },
+  {
+    "path": "/api/workout/{token}",
+    "methods": [
+      "DELETE"
+    ],
+    "name": "delete_workout_program",
+    "module": "api.app",
+    "admin": false,
+    "auth": [
+      "capability_token"
+    ],
+    "credential_in_url": [
+      "path:token"
+    ],
+    "rate_limited": false,
+    "mutating": true,
+    "public_by_design": false
+  },
+  {
+    "path": "/api/workout/{token}/auto-fill",
+    "methods": [
+      "POST"
+    ],
+    "name": "auto_fill_workout_program",
+    "module": "api.app",
+    "admin": false,
+    "auth": [
+      "capability_token"
+    ],
+    "credential_in_url": [
+      "path:token"
+    ],
+    "rate_limited": false,
+    "mutating": true,
+    "public_by_design": false
+  },
+  {
+    "path": "/api/workout/{token}/parse",
+    "methods": [
+      "POST"
+    ],
+    "name": "parse_and_save_workout",
+    "module": "api.app",
+    "admin": false,
+    "auth": [
+      "capability_token"
+    ],
+    "credential_in_url": [
+      "path:token"
+    ],
+    "rate_limited": false,
+    "mutating": true,
+    "public_by_design": false
+  },
+  {
+    "path": "/brain/{token}",
+    "methods": [
+      "GET"
+    ],
+    "name": "brain",
+    "module": "api.app",
+    "admin": false,
+    "auth": [
+      "capability_token"
+    ],
+    "credential_in_url": [
+      "path:token"
+    ],
+    "rate_limited": false,
+    "mutating": false,
+    "public_by_design": false
+  },
+  {
+    "path": "/dashboard/{token}",
+    "methods": [
+      "GET"
+    ],
+    "name": "dashboard",
+    "module": "api.app",
+    "admin": false,
+    "auth": [
+      "capability_token"
+    ],
+    "credential_in_url": [
+      "path:token"
+    ],
+    "rate_limited": false,
+    "mutating": false,
+    "public_by_design": false
+  },
+  {
+    "path": "/favicon.ico",
+    "methods": [
+      "GET"
+    ],
+    "name": "favicon",
+    "module": "api.app",
+    "admin": false,
+    "auth": [
+      "none"
+    ],
+    "credential_in_url": [],
+    "rate_limited": false,
+    "mutating": false,
+    "public_by_design": true
+  },
+  {
+    "path": "/favicon.png",
+    "methods": [
+      "GET"
+    ],
+    "name": "favicon",
+    "module": "api.app",
+    "admin": false,
+    "auth": [
+      "none"
+    ],
+    "credential_in_url": [],
+    "rate_limited": false,
+    "mutating": false,
+    "public_by_design": true
+  },
+  {
+    "path": "/health",
+    "methods": [
+      "GET"
+    ],
+    "name": "healthcheck",
+    "module": "api.app",
+    "admin": false,
+    "auth": [
+      "none"
+    ],
+    "credential_in_url": [],
+    "rate_limited": false,
+    "mutating": false,
+    "public_by_design": true
+  },
+  {
+    "path": "/health/apple",
+    "methods": [
+      "POST"
+    ],
+    "name": "receive_apple_health",
+    "module": "api.app",
+    "admin": false,
+    "auth": [
+      "capability_token"
+    ],
+    "credential_in_url": [
+      "query:token"
+    ],
+    "rate_limited": false,
+    "mutating": true,
+    "public_by_design": false
+  },
+  {
+    "path": "/health/apple",
+    "methods": [
+      "GET"
+    ],
+    "name": "receive_apple_health_get",
+    "module": "api.app",
+    "admin": false,
+    "auth": [
+      "capability_token"
+    ],
+    "credential_in_url": [
+      "query:token"
+    ],
+    "rate_limited": false,
+    "mutating": false,
+    "public_by_design": false
+  },
+  {
+    "path": "/health/apple/guide",
+    "methods": [
+      "GET"
+    ],
+    "name": "apple_health_guide",
+    "module": "api.app",
+    "admin": false,
+    "auth": [
+      "capability_token"
+    ],
+    "credential_in_url": [
+      "query:token"
+    ],
+    "rate_limited": false,
+    "mutating": false,
+    "public_by_design": true
+  },
+  {
+    "path": "/health/apple/shortcut",
+    "methods": [
+      "GET"
+    ],
+    "name": "download_apple_shortcut",
+    "module": "api.app",
+    "admin": false,
+    "auth": [
+      "capability_token"
+    ],
+    "credential_in_url": [
+      "query:token"
+    ],
+    "rate_limited": false,
+    "mutating": false,
+    "public_by_design": false
+  },
+  {
+    "path": "/health/apple/shortcut/test-health-actions",
+    "methods": [
+      "GET"
+    ],
+    "name": "test_health_actions_shortcut",
+    "module": "api.app",
+    "admin": false,
+    "auth": [
+      "capability_token"
+    ],
+    "credential_in_url": [
+      "query:token"
+    ],
+    "rate_limited": false,
+    "mutating": false,
+    "public_by_design": false
+  },
+  {
+    "path": "/health/apple/status",
+    "methods": [
+      "GET"
+    ],
+    "name": "apple_health_status",
+    "module": "api.app",
+    "admin": false,
+    "auth": [
+      "capability_token"
+    ],
+    "credential_in_url": [
+      "query:token"
+    ],
+    "rate_limited": false,
+    "mutating": false,
+    "public_by_design": false
+  },
+  {
+    "path": "/imessage",
+    "methods": [
+      "POST"
+    ],
+    "name": "imessage_webhook",
+    "module": "api.app",
+    "admin": false,
+    "auth": [
+      "webhook_signature"
+    ],
+    "credential_in_url": [],
+    "rate_limited": false,
+    "mutating": true,
+    "public_by_design": false
+  },
+  {
+    "path": "/imessage/start",
+    "methods": [
+      "POST"
+    ],
+    "name": "imessage_start",
+    "module": "api.app",
+    "admin": false,
+    "auth": [
+      "none"
+    ],
+    "credential_in_url": [],
+    "rate_limited": true,
+    "mutating": true,
+    "public_by_design": true
+  },
+  {
+    "path": "/join",
+    "methods": [
+      "GET"
+    ],
+    "name": "join_page",
+    "module": "api.app",
+    "admin": false,
+    "auth": [
+      "none"
+    ],
+    "credential_in_url": [],
+    "rate_limited": false,
+    "mutating": false,
+    "public_by_design": true
+  },
+  {
+    "path": "/landing",
+    "methods": [
+      "GET"
+    ],
+    "name": "landing_page",
+    "module": "api.app",
+    "admin": false,
+    "auth": [
+      "none"
+    ],
+    "credential_in_url": [],
+    "rate_limited": false,
+    "mutating": false,
+    "public_by_design": true
+  },
+  {
+    "path": "/oura/callback",
+    "methods": [
+      "GET"
+    ],
+    "name": "oura_callback",
+    "module": "api.app",
+    "admin": false,
+    "auth": [
+      "capability_token"
+    ],
+    "credential_in_url": [],
+    "rate_limited": false,
+    "mutating": false,
+    "public_by_design": true
+  },
+  {
+    "path": "/privacy",
+    "methods": [
+      "GET"
+    ],
+    "name": "privacy_policy",
+    "module": "api.app",
+    "admin": false,
+    "auth": [
+      "capability_token"
+    ],
+    "credential_in_url": [],
+    "rate_limited": false,
+    "mutating": false,
+    "public_by_design": true
+  },
+  {
+    "path": "/stripe-webhook",
+    "methods": [
+      "POST"
+    ],
+    "name": "stripe_webhook",
+    "module": "api.app",
+    "admin": false,
+    "auth": [
+      "webhook_signature"
+    ],
+    "credential_in_url": [],
+    "rate_limited": false,
+    "mutating": true,
+    "public_by_design": false
+  },
+  {
+    "path": "/webhook/{token}",
+    "methods": [
+      "POST"
+    ],
+    "name": "telegram_webhook",
+    "module": "api.app",
+    "admin": false,
+    "auth": [
+      "shared_secret"
+    ],
+    "credential_in_url": [
+      "path:token"
+    ],
+    "rate_limited": false,
+    "mutating": true,
+    "public_by_design": false
+  },
+  {
+    "path": "/whoop/callback",
+    "methods": [
+      "GET"
+    ],
+    "name": "whoop_callback",
+    "module": "api.app",
+    "admin": false,
+    "auth": [
+      "shared_secret",
+      "capability_token"
+    ],
+    "credential_in_url": [],
+    "rate_limited": false,
+    "mutating": false,
+    "public_by_design": true
+  }
+]

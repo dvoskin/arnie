@@ -51,7 +51,8 @@ from multimodal.audio import transcribe_audio_message
 
 _BB_URL      = os.getenv("BLUEBUBBLES_URL", "").rstrip("/")
 _BB_PASSWORD = os.getenv("BLUEBUBBLES_PASSWORD", "")
-_BB_SECRET   = os.getenv("BLUEBUBBLES_WEBHOOK_SECRET", "")
+# BLUEBUBBLES_WEBHOOK_SECRET is read at call time in verify_bb_signature (not
+# captured here) so operators can set it without a redeploy — see that function.
 
 _http: Optional[httpx.AsyncClient] = None
 
@@ -324,14 +325,39 @@ def _to_plain(text: str) -> str:
 
 def verify_bb_signature(raw_body: bytes, header_sig: str) -> bool:
     """
-    Verify BlueBubbles HMAC-SHA256 webhook signature.
-    Header format: sha256=<hex_digest>
-    Returns True if secret is not configured (development mode).
+    Verify a BlueBubbles HMAC-SHA256 webhook signature. Header: sha256=<hex>.
+
+    FAILS CLOSED, mirroring the Stripe webhook in api/app.py ("never process a
+    webhook without verification material"). This endpoint drives LLM turns
+    attributed to a phone number, so an unsigned request is an inbound-message
+    forgery — a way to make Arnie act as if any user texted. That is not a
+    development convenience worth a default-open door.
+
+    Before 2026-07-31 this returned True when the secret was unset, and a live
+    probe confirmed production was accepting unsigned POSTs. The secret is read
+    at call time (not import) so setting it takes effect without a code change —
+    the moment BLUEBUBBLES_WEBHOOK_SECRET is set on both Render and the
+    BlueBubbles server, this enforces.
+
+    Escape hatch for genuine local dev (no proxy, no exposure): set
+    IMESSAGE_WEBHOOK_ALLOW_UNSIGNED=true. It is intentionally NOT in render.yaml.
     """
-    if not _BB_SECRET:
-        return True  # Signature checking disabled
+    secret = os.getenv("BLUEBUBBLES_WEBHOOK_SECRET", "")
+    if not secret:
+        if os.getenv("IMESSAGE_WEBHOOK_ALLOW_UNSIGNED", "").lower() in ("1", "true", "yes"):
+            logger.warning(
+                "iMessage webhook signature check DISABLED "
+                "(IMESSAGE_WEBHOOK_ALLOW_UNSIGNED set) — dev only, never in prod."
+            )
+            return True
+        logger.error(
+            "iMessage webhook REJECTED: BLUEBUBBLES_WEBHOOK_SECRET unset. Set it on "
+            "Render AND in the BlueBubbles webhook config to enforce, or set "
+            "IMESSAGE_WEBHOOK_ALLOW_UNSIGNED=true for local dev."
+        )
+        return False
     expected = "sha256=" + hmac.new(
-        _BB_SECRET.encode(), raw_body, hashlib.sha256
+        secret.encode(), raw_body, hashlib.sha256
     ).hexdigest()
     return hmac.compare_digest(expected, header_sig or "")
 
