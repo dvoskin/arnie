@@ -293,6 +293,57 @@ class LedgerEvent(Base):
     created_at = Column(DateTime, server_default=func.now())
 
 
+class IdempotencyRecord(Base):
+    """One logical write request, claimed exactly once (invariant I18).
+
+    The direct-write surfaces — the iOS tap-log endpoints above all — had no
+    identity for a REQUEST, only for the rows it produced. So a double tap, a
+    mobile retry on a flaky network, or an OS-level replay wrote the food
+    twice: two `created` events, two entries, a day total counting a banana
+    the user ate once. Nothing in the schema could tell the second delivery
+    from a second banana, because nothing recorded that a request had already
+    been served.
+
+    The key is supplied by the CLIENT and scoped by (channel, user, command)
+    so two surfaces can never collide on the same opaque uuid. Only the client
+    knows whether a second identical request is a retry or a second helping —
+    which is why an ABSENT key never triggers deduplication. A missing key
+    means "I cannot tell you", and the safe answer to that is to write the
+    food, not to silently drop it.
+
+    `fingerprint` is a hash of the request payload. A key replayed with a
+    DIFFERENT payload is not a retry, it is a client bug losing someone's
+    food, and it fails loudly (409) instead of returning the wrong result.
+
+    Enforcement is the unique index on `key`, not this docstring: the helper
+    is insert-first precisely so that two racing workers resolve against the
+    database rather than against each other.
+    """
+    __tablename__ = "idempotency_records"
+    __table_args__ = (
+        Index("uq_idempotency_key", "key", unique=True),
+        Index("ix_idempotency_user_created", "user_id", "created_at"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    # "<channel>:<command>:<user_id>:<client key>" — see core/idempotency.
+    key = Column(String, nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    command = Column(String, nullable=False)     # log_food | log_exercise | ...
+    channel = Column(String, nullable=False)     # ios | telegram | web | ...
+    # The canonical turn this request became (core/turn_identity), so an
+    # idempotency record joins the ledger events it produced.
+    turn_id = Column(String, index=True)
+    fingerprint = Column(String, nullable=False)  # sha256 of the request payload
+    status = Column(String, nullable=False, server_default="in_progress")
+    # Where the committed result lives, so a replay returns the ORIGINAL row
+    # rather than re-deriving one.
+    result_entry_id = Column(Integer)
+    result_daily_log_id = Column(Integer)
+    created_at = Column(DateTime, server_default=func.now())
+    completed_at = Column(DateTime)
+
+
 class BackgroundJob(Base):
     """Durable post-turn work (P0.7, architecture review 2026-07-24).
 
