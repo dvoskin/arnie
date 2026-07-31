@@ -110,7 +110,13 @@ jobs:
           if [ -f /tmp/pytest.log ]; then
             grep -aE "^(FAILED|ERROR) " /tmp/pytest.log | head -40 \
               | while IFS= read -r line; do echo "::error::$line"; done
-            grep -aE "^[0-9]+ (passed|failed)|seed" /tmp/pytest.log | tail -3 \
+            # The SEED is printed at the top by pytest-randomly and is the
+            # only thing that makes a shuffled failure reproducible — a red run
+            # without it is a fact you cannot act on. Grabbed separately from
+            # the summary because they sit at opposite ends of the output.
+            grep -am1 -E "randomly-seed" /tmp/pytest.log \
+              | while IFS= read -r line; do echo "::error::$line"; done
+            grep -aE "^[0-9]+ (passed|failed)|[0-9]+ failed" /tmp/pytest.log | tail -1 \
               | while IFS= read -r line; do echo "::error::summary: $line"; done
           else
             echo "::error::pytest produced no log — the step failed before running"
