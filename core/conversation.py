@@ -1122,8 +1122,12 @@ async def _run_turn(
                     nonlocal _early_heads_up_sent
                     if _early_heads_up_sent or _sft_prior is not None:
                         return
+                    # The message seeds the hash (so two foods in a row do
+                    # not repeat a line); the FOOD decides whether a label is
+                    # a truthful thing to mention.
                     line = tool_heads_up(FOOD_LOOKUP_HEADS_UP,
-                                         _user_text or _food_name)
+                                         _user_text or _food_name,
+                                         subject=_food_name)
                     if _streamer and on_text_bubble:
                         await on_text_bubble(line)
                         _streamer.flushed_count += 1

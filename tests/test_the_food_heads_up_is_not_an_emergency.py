@@ -64,7 +64,11 @@ def test_every_line_describes_a_lookup_and_never_a_write(line):
 @pytest.mark.parametrize("line", _FOOD_LOOKUP_BUBBLES)
 def test_every_line_keeps_the_rules_that_were_right(line):
     lowered = line.lower()
-    assert len(line) <= 30, f"{line!r} is too long for a heads-up bubble"
+    # RAISED FROM 30 on request (2026-07-31): the clipped fragments read as
+    # terse rather than as a coach speaking. Still a ceiling — this is a bubble
+    # that appears for a second or two while a lookup runs, and a sentence the
+    # user has to read twice defeats the point of reassurance.
+    assert len(line) <= 44, f"{line!r} is too long for a heads-up bubble"
     assert line == lowered, "pinned literals stay lowercase; voice lifts them"
     for banned in ("lemme", "real quick", "hang tight", "hang on", "one sec"):
         assert banned not in lowered, f"{line!r} is try-hard casual"
@@ -78,3 +82,61 @@ def test_the_food_lane_asks_for_its_own_pool():
     assert "FOOD_LOOKUP_HEADS_UP" in body
     assert '"name": "search_food_database"' not in body, (
         "the food lane must not borrow the emergency pool")
+
+
+# ── the line may not promise a lookup that will not happen ────────────────────
+def test_the_neutral_pool_never_claims_a_label():
+    """Nine of the twelve original lines asserted a LABEL — "checking the
+    label", "reading the label", "checking the brand's numbers". A label exists
+    for a packaged product; it does not exist for "harissa chicken", "two eggs"
+    or "my usual coffee". For most food the line described a lookup that was
+    never going to happen.
+
+    Same defect as `component_estimate` rendering "Estimated from its
+    components" with no engine behind it: prose asserting an action nobody
+    performed.
+    """
+    from handlers.tool_executor import _FOOD_LOOKUP_BUBBLES
+
+    for line in _FOOD_LOOKUP_BUBBLES:
+        assert "label" not in line.lower(), line
+        assert "brand" not in line.lower(), line
+
+
+def test_a_packaged_product_does_get_the_label_line():
+    """...and the branded pool must not become unreachable in the process.
+
+    The first attempt keyed this on `classify_food`, which only returns BRANDED
+    when handed a brand or `is_packaged` — from a bare product name it never
+    does, so the branded pool was dead code wearing the shape of a fix.
+    """
+    from handlers.tool_executor import (FOOD_LOOKUP_HEADS_UP,
+                                        _FOOD_LOOKUP_BUBBLES_BRANDED,
+                                        tool_heads_up)
+
+    line = tool_heads_up(FOOD_LOOKUP_HEADS_UP, "quest chips",
+                         subject="Quest Tortilla Style Protein Chips")
+    assert line.lower().rstrip(".") in [
+        b.lower().rstrip(".") for b in _FOOD_LOOKUP_BUBBLES_BRANDED], line
+
+
+def test_a_dish_never_gets_the_label_line():
+    """The report that started this: rotating strings that do not fit the
+    message. A bowl of rice has no label to check."""
+    from handlers.tool_executor import FOOD_LOOKUP_HEADS_UP, tool_heads_up
+
+    for food in ("Harissa Chicken", "two eggs", "chicken and rice bowl",
+                 "my usual coffee", "leftover soup"):
+        line = tool_heads_up(FOOD_LOOKUP_HEADS_UP, f"had {food}", subject=food)
+        assert "label" not in line.lower(), f"{food} -> {line}"
+
+
+def test_the_food_decides_it_even_when_the_message_rambles():
+    """`seed` is the whole user message and only ever feeds the hash. Classify
+    the sentence instead of the food and "checking the label" lands on a bowl
+    of rice."""
+    from handlers.tool_executor import FOOD_LOOKUP_HEADS_UP, tool_heads_up
+
+    rambling = "ok so I finally tried that quest chips thing everyone posts about"
+    assert "label" not in tool_heads_up(
+        FOOD_LOOKUP_HEADS_UP, rambling, subject="Chicken and rice").lower()

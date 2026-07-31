@@ -1271,19 +1271,49 @@ def _deep_research_allow(user_id: int) -> bool:
 #: nothing may claim the row landed before it has. What changes is that these
 #: get to sound like him, and get enough variants that a run of logs does not
 #: repeat.
+# THE HEADS-UP MAY NOT PROMISE SOMETHING THAT IS NOT HAPPENING.
+#
+# This was one pool of twelve lines picked by a hash of the user's text, and
+# nine of them asserted a LABEL: "checking the label", "reading the label",
+# "checking the brand's numbers", "seeing what the label says". A label exists
+# for a packaged product. It does not exist for "harissa chicken", "two eggs"
+# or "my usual coffee" — so for most food the line described a lookup that was
+# never going to happen, and rotated through synonyms for it.
+#
+# That is the same defect as `component_estimate` rendering "Estimated from its
+# components" with no engine behind it, in a smaller place: prose asserting an
+# action nobody performed. The fix is the same — say only what is true of THIS
+# food.
+#
+# Split by what we can actually tell from the name, using the classifier that
+# already exists (`staging.classify_food`) rather than a new word list.
+
+#: A packaged product genuinely has a label to read.
+_FOOD_LOOKUP_BUBBLES_BRANDED = (
+    "checking the label on that one.",
+    "reading the label rather than guessing.",
+    "pulling the brand's own numbers.",
+    "seeing what the label actually says.",
+    "looking up the label for this one.",
+    "getting the numbers off the packet.",
+    "checking the published label.",
+)
+
+#: Everything else — a dish, a whole food, a restaurant item. True regardless
+#: of where the numbers end up coming from, which is the point: at heads-up
+#: time the lookup has not run and we do not know.
 _FOOD_LOOKUP_BUBBLES = (
-    "checking the label.",
-    "pulling the real numbers.",
-    "getting the actual macros.",
-    "seeing what the label says.",
-    "checking what's in that.",
-    "finding the real numbers.",
-    "checking the brand's numbers.",
-    "looking up the label.",
-    "getting this one right.",
-    "checking the macros properly.",
-    "digging up the numbers.",
-    "reading the label.",
+    "checking the real numbers on that.",
+    "pulling the actual macros, not a guess.",
+    "getting the proper numbers for this.",
+    "checking what's actually in that.",
+    "finding the real numbers for it.",
+    "working this one out properly.",
+    "checking the macros against a source.",
+    "digging up the numbers on that.",
+    "getting the macros right on this one.",
+    "sorting out what that comes to.",
+    "checking that one against real data.",
 )
 
 _TOOL_HEADS_UP_BUBBLES = {
@@ -1378,7 +1408,32 @@ def sentence_case(s: str) -> str:
 FOOD_LOOKUP_HEADS_UP = "food_lookup"
 
 
-def tool_heads_up(tool_name: str, seed: str | None = None) -> str:
+def _food_lookup_bubbles(subject: str | None) -> tuple:
+    """Label lines only when a label lookup is actually going to run.
+
+    THE SAME PREDICATE DECIDES BOTH. `_looks_branded` is what gates the Open
+    Food Facts and web-label lanes, so keying the wording on it makes the line
+    true exactly when the thing it describes happens — rather than true one
+    time in four by luck of a hash.
+
+    The first version of this asked `classify_food`, which only returns BRANDED
+    when it is HANDED a brand or `is_packaged`. From a bare string it never
+    does, so the branded pool was unreachable — dead code wearing the shape of
+    a fix, which is the pattern this codebase keeps having to dig back out.
+
+    Falls back to the neutral pool on any failure. Being vague is a much
+    smaller error than promising a label that does not exist.
+    """
+    try:
+        if subject and _looks_branded(subject.strip()):
+            return _FOOD_LOOKUP_BUBBLES_BRANDED
+    except Exception:
+        pass
+    return _FOOD_LOOKUP_BUBBLES
+
+
+def tool_heads_up(tool_name: str, seed: str | None = None,
+                  subject: str | None = None) -> str:
     """One short in-voice heads-up line for a slow-tool turn.
 
     Deterministic — the same input always maps to the same bubble — but keyed
@@ -1389,7 +1444,10 @@ def tool_heads_up(tool_name: str, seed: str | None = None) -> str:
     (HEADSUP_VOICE) — the pinned literals stay lowercase, only the output lifts.
     """
     if tool_name == FOOD_LOOKUP_HEADS_UP:
-        bubbles = _FOOD_LOOKUP_BUBBLES
+        # `subject` is the FOOD; `seed` is usually the whole user message and
+        # is only ever a hash input. Classifying the sentence instead of the
+        # food is how "checking the label" ends up on a bowl of rice.
+        bubbles = _food_lookup_bubbles(subject or seed)
     else:
         bubbles = (_TOOL_HEADS_UP_BUBBLES.get(tool_name)
                    or _TOOL_HEADS_UP_BUBBLES["web_search"])
