@@ -19,6 +19,7 @@ from db.models import User, DailyLog, MemoryUpdate
 # P0.3d: execution state goes to the ambient per-call context, never onto the
 # command the executor was handed.
 from core.execution_result import stash as _stash_call
+from core.request_trace import time_stage as _time_stage  # times the tool batch on the ambient turn trace (B5)
 from skills.nutrition import authority as _authority
 from db.queries import (
     add_food_entry, add_exercise_entry, add_body_metric, add_water_entry,
@@ -2806,6 +2807,7 @@ def _format_program_for_chat(payload: dict) -> str:
     return "\n".join(lines)
 
 
+@_time_stage("tools")
 async def execute_tool_calls(
     tool_calls: List[Dict[str, Any]],
     user: User,

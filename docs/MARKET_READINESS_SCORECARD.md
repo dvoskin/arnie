@@ -60,10 +60,21 @@ user-visible mutations have no idempotency policy at all.
 
 ## 7. Latency
 
-**UNKNOWN.** No stage timings exist outside quick-log, no budgets are enforced,
-and the +54% p50 regression flagged 2026-07-30 was never explained. One
-observed symptom: `food composer model call failed: exceeded 6.0s of turn
-budget` during the eval run.
+**MEASURABLE (was UNKNOWN).** B5, branch `dvoskin/b5-latency-budgets` @
+`472e8e6` (committed, not deployed). The instrumentation now exists; the numbers
+still need a week of production rows. Full suite green at the SHA.
+
+| check | state | evidence |
+|---|---|---|
+| Main turns emit a durable metric | **PASS** | `run_turn` now opens a `RequestTrace` at the turn boundary and writes one `turn_metrics` row per turn (was quick-log only, so main-turn latency was invisible in the table that outlives the logs — the exact reason the 2026-07-30 p50 regression went unexplained). `test_run_turn_writes_a_metric_row_for_the_turn` |
+| Stage breakdown, not just total | **PASS** | `core/llm.chat` + `chat_follow_up` record `llm`, `execute_tool_calls` records `tools`, ambiently via a contextvar — so the breakdown needs no argument threaded through the 3,000-line pipeline. Duplicate stages sum (three model calls → one `llm` figure) |
+| Telemetry can't corrupt the turn | **PASS** | the row is written on an ISOLATED session (`persist_isolated`), never the turn's, so it can neither commit half a turn nor roll back with it. Never raises |
+| A failed / slow turn is still recorded | **PASS** | the trace closes in a `finally`, `outcome=error:<Class>` on a raise; a turn that hits the 6s deadline is the one whose row has to survive. `test_run_turn_records_an_error_outcome_and_still_persists` |
+| Budgets scored | **PASS (provisional)** | `scripts/latency_report.py` scores p95 against `BUDGET_P95_MS` — quick-log 2.5s, `turn` 6s, `turn:log` 5s. The turn budgets are PROVISIONAL (set at the deadline; calibrate down once real rows exist). `test_latency_report.py` |
+| The numbers themselves | **UNKNOWN — needs prod** | the report reads `DATABASE_URL`; a clean checkout has no rows. The +54% p50 regression is now MEASURABLE but not yet explained — there is no production data through the new writer yet. Danny runs `python scripts/latency_report.py --hours 168` a week after deploy |
+
+The 6s hard cap (`core/deadline`) still enforces at runtime and is unchanged —
+B5 adds the durable MEASUREMENT the cap never produced, not a second cap.
 
 ## 8. Voice consistency
 
@@ -135,7 +146,7 @@ Still open (scope, not this pass):
 | B2 | 57 of 60 user-visible mutations off the contract | FAIL | backend |
 | B3 | Proactive delivery cannot distinguish sent from failed | FAIL | backend |
 | B4 | `turn_id` missing on web + proactive | FAIL | backend |
-| B5 | Latency unmeasured and unbudgeted | UNKNOWN | backend |
+| B5 | Latency | **MEASURABLE** — main turns write turn_metrics with a stage breakdown, isolated from the turn; report scores p95 vs budgets. Numbers need a week of prod rows (`dvoskin/b5-latency-budgets`) | backend + Danny (deploy + read) |
 | B6 | Voice unevaluated, no single renderer | UNKNOWN | backend |
 | B7 | Admin/security pass | **PARTIAL PASS** — admin off query strings, gate + mints rate limited, Telegram/iMessage webhooks fail closed. Remaining: 36 capability tokens in URL (scope); 3 Danny env actions | backend + Danny |
 | ~~B8~~ | ~~Multi-connection race unproven~~ | **CLOSED** — ran green on `a4f0b18` | — |
@@ -146,12 +157,13 @@ Still open (scope, not this pass):
 **Controlled TestFlight beta:** defensible — mutation integrity on the three
 logging surfaces is the part that corrupts user data, and it is now PASS.
 
-**Broad launch: NO.** B2, B3 and B11 are user-visible correctness, and B5–B6
-are unmeasured rather than passing. B7 is now a partial pass — the admin surface
-and both spoofable webhooks are closed — but it is **gated on three Danny env
-actions** (`BLUEBUBBLES_WEBHOOK_SECRET`, `TRUST_PROXY_HEADERS`, and confirming
-`SESSION_SECRET` + `DEV_AUTH_ENABLED=false`), and the iMessage fail-closed flip
-will 403 inbound if the BlueBubbles secret is not set before the deploy.
+**Broad launch: NO.** B2 and B11 remain user-visible correctness gaps. B3 is now
+CLOSED, and B5 / B6 / B7 are measured with harnesses and gates — all four merged
+to `main` on 2026-07-31, **none deployed yet**. B7's deploy is gated on Danny env
+actions: set `BLUEBUBBLES_WEBHOOK_SECRET` (plus `TRUST_PROXY_HEADERS`, and
+confirm `SESSION_SECRET` + `DEV_AUTH_ENABLED=false`) BEFORE deploying, or the
+iMessage fail-closed flip 403s inbound. B5's numbers still need a week of prod
+rows.
 
 ---
 

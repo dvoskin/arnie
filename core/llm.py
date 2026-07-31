@@ -158,6 +158,10 @@ def _usage_dict(u) -> dict:
     return {k: getattr(u, k, None) for k in keys if getattr(u, k, None) is not None}
 
 
+from core.request_trace import time_stage as _time_stage
+
+
+@_time_stage("llm")
 async def chat(
     messages: List[Dict[str, Any]],
     system: str,
@@ -225,6 +229,7 @@ async def chat(
         raise
 
 
+@_time_stage("llm")
 async def chat_follow_up(
     messages: List[Dict[str, Any]],
     raw_assistant_content: Any,
