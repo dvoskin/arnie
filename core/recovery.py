@@ -38,24 +38,24 @@ from __future__ import annotations
 RECOVERY_BUBBLES = {
     # A tool call returned Error:/Skipped/Failed to — the action did NOT land.
     "tool_error": (
-        "That didn't go through.|||resend and it usually catches the second try.",
-        "Something hiccupped saving that.|||try once more, should land cleanly.",
-        "That one didn't save right.|||resend it and I'll get it.",
+        "That didn't go through.|||Resend and it usually catches the second try.",
+        "Something hiccupped saving that.|||Try once more, should land cleanly.",
+        "That one didn't save right.|||Resend it and I'll get it.",
     ),
     # The whole LLM turn errored out (exception in chat()). Pipeline can't
     # produce a coached reply — fall back to an honest "try again" line.
     "llm_error": (
-        "Something went sideways on my end.|||resend that and I'll catch it.",
-        "Hit a snag on that one.|||send it again, I'll be back on track.",
-        "Wires crossed for a sec.|||resend it and I'll get it cleanly.",
+        "Something went sideways on my end.|||Resend that and I'll catch it.",
+        "Hit a snag on that one.|||Send it again, I'll be back on track.",
+        "Wires crossed for a sec.|||Resend it and I'll get it cleanly.",
     ),
     # Degenerate fallback: model produced no text AND no tool calls (or every
     # repair attempt failed). We have nothing to coach on — admit confusion
     # and ask for a simpler restate.
     "stall": (
-        "Got a bit confused on that one.|||say it again, simpler if you can.",
-        "Didn't quite land for me.|||resend it, shorter is fine.",
-        "Lost the thread there.|||try one more time and I'll catch it.",
+        "Got a bit confused on that one.|||Say it again, simpler if you can.",
+        "Didn't quite land for me.|||Resend it, shorter is fine.",
+        "Lost the thread there.|||Try one more time and I'll catch it.",
     ),
 }
 

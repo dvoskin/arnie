@@ -67,8 +67,22 @@ budget` during the eval run.
 
 ## 8. Voice consistency
 
-**UNKNOWN.** No voice corpus, no evaluation, no single renderer. Voice
-ownership is spread across prompts, composers and deterministic fallbacks.
+**MEASURED (was UNKNOWN).** B6, branch `dvoskin/b6-voice-renderer`. There is now
+a corpus, an evaluation, and a single renderer.
+
+| check | state | evidence |
+|---|---|---|
+| One renderer, not three that drift | **PASS** | `core/voice` owns the character rules AND sentence case; `platform._sanitize_bubble` and `log_voice._clean` both delegate to it. They had drifted — `_clean` collapsed an en dash so "12–13%" survived on one path and not the other; that is now one implementation |
+| Sentence case enforced at the root | **PASS** | the seam (`Response.from_text`, streaming and not) capitalizes every bubble's lead. The 2026-06-15 decision was enforced only in the prompt; `handlers/onboarding.py` still shipped "good to meet you" and proactive shipped "morning {name}." The audit shows the seam fixes **7/7** lowercase leads in the corpus, 0 shipped. Kill switch `VOICE_SENTENCE_CASE` |
+| Voice is measurable | **PASS** | `core.voice.check_voice` is a linter (em dash, tilde, lowercase lead, joke emoji, helpdesk filler, exclamation pile, robotic ack, leaked marker). `scripts/voice_audit.py` runs it over the corpus pre/post seam; `tests/test_voice.py` freezes the result |
+| A voice corpus exists | **PASS (deterministic)** | `tests/corpus/voice_corpus.py` — the bubbles the product ships verbatim (recovery, onboarding, proactive) mirrored from source, plus curated representative turns and 4 negative controls. NOT sampled from prod: the only tool that did that writes beta transcripts into this PUBLIC repo and is banned |
+| Structured message path | **PASS** | `CoachMessagePlan` + `render` — a composer names intent (read / receipt / nudge / ask) and the renderer voices it, in voice by construction. Available; adoption by the composers is incremental |
+| Every shipped string in voice | **FAIL → 1 known** | one shipped violation the seam cannot fix (it does not rewrite emoji): the proactive city ask ships 😅. **Danny's call** — the main prompt is self-contradictory on joke emoji (an approved example at `arnie.py:2378` uses 😂; a rule at 2533 bans it). Frozen by `test_only_known_shipped_finding_is_the_city_nudge_joke_emoji` |
+
+Not done: the LLM path still generates its own prose under the prompt anchor
+(the renderer normalizes it at the seam but does not compose it), and the 20+
+composer files have not adopted `CoachMessagePlan` — the linter measures that
+gap, it does not close it.
 
 ## 9. Proactive delivery
 
@@ -115,7 +129,7 @@ from generated messages.
 | B3 | Proactive delivery cannot distinguish sent from failed | FAIL | backend |
 | B4 | `turn_id` missing on web + proactive | FAIL | backend |
 | B5 | Latency unmeasured and unbudgeted | UNKNOWN | backend |
-| B6 | Voice unevaluated, no single renderer | UNKNOWN | backend |
+| B6 | Voice | **MEASURED** — one renderer (`core/voice`), sentence case enforced at the seam, linter + corpus gate. 1 known shipped finding (proactive 😅) pending Danny's voice call | backend + Danny |
 | B7 | Admin/security pass not started | UNKNOWN | backend |
 | ~~B8~~ | ~~Multi-connection race unproven~~ | **CLOSED** — ran green on `a4f0b18` | — |
 | B9 | Backup restore untested | UNKNOWN | ops |
@@ -125,8 +139,11 @@ from generated messages.
 **Controlled TestFlight beta:** defensible — mutation integrity on the three
 logging surfaces is the part that corrupts user data, and it is now PASS.
 
-**Broad launch: NO.** B2, B3 and B11 are user-visible correctness, and B5–B7
-are unmeasured rather than passing.
+**Broad launch: NO.** B2, B3 and B11 are user-visible correctness. B5 is still
+unmeasured. B6 is now measured (voice has a renderer, a linter, and a corpus)
+and B7 is a partial pass on its own branch — both are on unmerged branches
+(`dvoskin/b6-voice-renderer`, `dvoskin/b7-admin-security`), so neither is in
+`main` or deployed yet.
 
 ---
 
@@ -136,6 +153,7 @@ are unmeasured rather than passing.
 python scripts/release_check.py $(git rev-parse HEAD)   # CI + live SHA
 curl -s https://arnie.onrender.com/health               # deployed truth
 python scripts/mutation_inventory.py                    # contract coverage
+python scripts/voice_audit.py                           # voice: pre/post-seam violations
 python scripts/branch_triage.py                         # branch hygiene
 ```
 

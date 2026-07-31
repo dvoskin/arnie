@@ -44,7 +44,8 @@ async def test_streamer_flushes_one_bubble_per_separator():
     # Last bubble has no trailing |||; finalize flushes it.
     await s.finalize()
 
-    assert seen == ["Hey Danny, logged ✅", "you're at 1840 cal", "what's dinner?"]
+    # The seam sentence-cases each bubble's lead (B6 core/voice); ranges/emoji survive.
+    assert seen == ["Hey Danny, logged ✅", "You're at 1840 cal", "What's dinner?"]
     assert s.flushed_count == 3
 
 
@@ -62,7 +63,7 @@ async def test_streamer_handles_separator_split_across_deltas():
         await s.on_delta(delta)
     await s.finalize()
 
-    assert seen == ["first", "second"]
+    assert seen == ["First", "Second"]
 
 
 async def test_streamer_skips_empty_or_whitespace_only_bubbles():
@@ -77,7 +78,7 @@ async def test_streamer_skips_empty_or_whitespace_only_bubbles():
     await s.on_delta("first|||   |||second")
     await s.finalize()
 
-    assert seen == ["first", "second"]
+    assert seen == ["First", "Second"]
 
 
 async def test_streamer_finalize_idempotent_no_trailing_buffer():
@@ -93,7 +94,7 @@ async def test_streamer_finalize_idempotent_no_trailing_buffer():
     await s.finalize()
     await s.finalize()  # second finalize must not double-send
 
-    assert seen == ["only-bubble"]
+    assert seen == ["Only-bubble"]
     assert s.flushed_count == 1
 
 
@@ -114,7 +115,7 @@ async def test_streamer_keeps_flushing_when_on_bubble_raises():
     await s.finalize()
 
     # First and third bubble landed; second was lost but didn't kill the stream.
-    assert seen == ["a", "c"]
+    assert seen == ["A", "C"]
 
 
 # ── Integration: run_turn populates streamed_bubble_count ───────────────────
@@ -287,7 +288,7 @@ async def test_streaming_with_tool_calls_flushes_first_pass_then_follow_up(
     # not shown. Only the post-write log voice reaches the user (emitted once via
     # the post-build catch-up). So the user sees exactly the 2 voice bubbles —
     # never the unverified pass-1 confirmation, and never a follow-up double.
-    assert streamed == ["good morning hit.", "what's lunch?"]
+    assert streamed == ["Good morning hit.", "What's lunch?"]
     assert turn.streamed_bubble_count == 2
 
 
@@ -378,8 +379,8 @@ async def test_streamer_tracks_raw_flushed_bubbles():
                   "what's lunch?"]:
         await s.on_delta(delta)
     await s.finalize()
-    assert s.flushed_bubbles == ["Barebells logged ✅", "you're at 200 / 2,165",
-                                 "what's lunch?"]
+    assert s.flushed_bubbles == ["Barebells logged ✅", "You're at 200 / 2,165",
+                                 "What's lunch?"]
     # The reconstructed reply == exactly what streamed (the value the returned
     # response is rebuilt from so the done-frame can't carry a canned tail).
     assert "|||".join(s.flushed_bubbles).count("|||") == 2

@@ -1,0 +1,381 @@
+[
+  {
+    "shape": "recovery:tool_error",
+    "negative": false,
+    "text": "That didn't go through.|||Resend and it usually catches the second try.",
+    "pre": [],
+    "post": [],
+    "post_detail": []
+  },
+  {
+    "shape": "recovery:tool_error",
+    "negative": false,
+    "text": "Something hiccupped saving that.|||Try once more, should land cleanly.",
+    "pre": [],
+    "post": [],
+    "post_detail": []
+  },
+  {
+    "shape": "recovery:tool_error",
+    "negative": false,
+    "text": "That one didn't save right.|||Resend it and I'll get it.",
+    "pre": [],
+    "post": [],
+    "post_detail": []
+  },
+  {
+    "shape": "recovery:llm_error",
+    "negative": false,
+    "text": "Something went sideways on my end.|||Resend that and I'll catch it.",
+    "pre": [],
+    "post": [],
+    "post_detail": []
+  },
+  {
+    "shape": "recovery:llm_error",
+    "negative": false,
+    "text": "Hit a snag on that one.|||Send it again, I'll be back on track.",
+    "pre": [],
+    "post": [],
+    "post_detail": []
+  },
+  {
+    "shape": "recovery:llm_error",
+    "negative": false,
+    "text": "Wires crossed for a sec.|||Resend it and I'll get it cleanly.",
+    "pre": [],
+    "post": [],
+    "post_detail": []
+  },
+  {
+    "shape": "recovery:stall",
+    "negative": false,
+    "text": "Got a bit confused on that one.|||Say it again, simpler if you can.",
+    "pre": [],
+    "post": [],
+    "post_detail": []
+  },
+  {
+    "shape": "recovery:stall",
+    "negative": false,
+    "text": "Didn't quite land for me.|||Resend it, shorter is fine.",
+    "pre": [],
+    "post": [],
+    "post_detail": []
+  },
+  {
+    "shape": "recovery:stall",
+    "negative": false,
+    "text": "Lost the thread there.|||Try one more time and I'll catch it.",
+    "pre": [],
+    "post": [],
+    "post_detail": []
+  },
+  {
+    "shape": "proactive:city_ask",
+    "negative": false,
+    "text": "Quick one, what city are you in?|||Just so my check-ins land during your day and not at 3am \ud83d\ude05",
+    "pre": [
+      "joke_emoji"
+    ],
+    "post": [
+      "joke_emoji"
+    ],
+    "post_detail": [
+      "[joke_emoji] bubble 1: \ud83d\ude05"
+    ]
+  },
+  {
+    "shape": "proactive:city_ask",
+    "negative": false,
+    "text": "Hey, what city you based in these days?|||Want to make sure I'm hitting you up at sane hours, not the middle of the night.",
+    "pre": [],
+    "post": [],
+    "post_detail": []
+  },
+  {
+    "shape": "proactive:city_ask",
+    "negative": false,
+    "text": "Random q, where are you based?|||Lets me time my check-ins to your day instead of blowing up your phone at 2am.",
+    "pre": [],
+    "post": [],
+    "post_detail": []
+  },
+  {
+    "shape": "proactive:morning",
+    "negative": false,
+    "text": "Good morning Sam \u2600\ufe0f|||What's your weight this morning?",
+    "pre": [],
+    "post": [],
+    "post_detail": []
+  },
+  {
+    "shape": "proactive:morning",
+    "negative": false,
+    "text": "Morning Sam \ud83d\udcaa|||What's the scale showing today?",
+    "pre": [],
+    "post": [],
+    "post_detail": []
+  },
+  {
+    "shape": "proactive:morning",
+    "negative": false,
+    "text": "morning Sam.|||what've you had so far? let's get the day on the board.",
+    "pre": [
+      "lowercase_lead",
+      "lowercase_lead"
+    ],
+    "post": [],
+    "post_detail": []
+  },
+  {
+    "shape": "onboarding:intro",
+    "negative": false,
+    "text": "good to meet you, Sam \u263a\ufe0f|||fastest way to get me up to speed: fire off a voice note or a messy paragraph.|||weight, training, how you eat, injuries, what you're chasing, any deadline, whatever's relevant. i'll pull out what matters.",
+    "pre": [
+      "lowercase_lead",
+      "lowercase_lead",
+      "lowercase_lead"
+    ],
+    "post": [],
+    "post_detail": []
+  },
+  {
+    "shape": "onboarding:set",
+    "negative": false,
+    "text": "alright, you're set \u2705|||send me what you've eaten today, rough is totally fine. let's get the first one down.",
+    "pre": [
+      "lowercase_lead",
+      "lowercase_lead"
+    ],
+    "post": [],
+    "post_detail": []
+  },
+  {
+    "shape": "log:single",
+    "negative": false,
+    "text": "Chicken and rice, 620 cal and 52g protein on the board.|||You're at 1,240 for the day, protein's tracking well.",
+    "pre": [],
+    "post": [],
+    "post_detail": []
+  },
+  {
+    "shape": "log:single",
+    "negative": false,
+    "text": "Got the Greek yogurt down, 150 cal, 15g protein.|||Solid protein-forward snack, right where you want it.",
+    "pre": [],
+    "post": [],
+    "post_detail": []
+  },
+  {
+    "shape": "log:single",
+    "negative": false,
+    "text": "Banana logged, 105 cal.|||Nice quick one before the session.",
+    "pre": [],
+    "post": [],
+    "post_detail": []
+  },
+  {
+    "shape": "log:single",
+    "negative": false,
+    "text": "Two eggs and toast, 280 cal, 18g protein.|||Good start, keep the protein coming through lunch.",
+    "pre": [],
+    "post": [],
+    "post_detail": []
+  },
+  {
+    "shape": "log:multi",
+    "negative": false,
+    "text": "Logged the whole plate: salmon, quinoa, and roasted veg.|||That's 640 cal and 44g protein, strong dinner.",
+    "pre": [],
+    "post": [],
+    "post_detail": []
+  },
+  {
+    "shape": "log:multi",
+    "negative": false,
+    "text": "Burrito bowl with double chicken, chips, and a side of guac, all in.|||1,020 cal, but 58g protein carrying it, worth it.",
+    "pre": [],
+    "post": [],
+    "post_detail": []
+  },
+  {
+    "shape": "recap:day",
+    "negative": false,
+    "text": "\ud83d\udccb Sunday, June 14|||Oatmeal and berries, 320 cal|||Chicken wrap, 540 cal|||Salmon and rice, 610 cal|||Total: 1,470 cal, 118g protein",
+    "pre": [],
+    "post": [],
+    "post_detail": []
+  },
+  {
+    "shape": "recap:day",
+    "negative": false,
+    "text": "You landed at 1,820 cal and 140g protein today.|||That's a clean day, protein goal hit with room to spare.",
+    "pre": [],
+    "post": [],
+    "post_detail": []
+  },
+  {
+    "shape": "status:macros",
+    "negative": false,
+    "text": "You've got 460 cal left and 38g of protein to go.|||A chicken breast and some rice closes both out.",
+    "pre": [],
+    "post": [],
+    "post_detail": []
+  },
+  {
+    "shape": "status:macros",
+    "negative": false,
+    "text": "Protein's done for the day at 165g.|||Calories have a little headroom if you want a snack.",
+    "pre": [],
+    "post": [],
+    "post_detail": []
+  },
+  {
+    "shape": "nudge",
+    "negative": false,
+    "text": "You're 30g of protein short with dinner left.|||Lean into a protein-heavy plate and you're set.",
+    "pre": [],
+    "post": [],
+    "post_detail": []
+  },
+  {
+    "shape": "nudge",
+    "negative": false,
+    "text": "Two days without a workout logged.|||What does today look like, even 20 minutes counts.",
+    "pre": [],
+    "post": [],
+    "post_detail": []
+  },
+  {
+    "shape": "milestone:pr",
+    "negative": false,
+    "text": "That's a bench PR, 5 pounds over your last best.|||Strength is trending up, the volume's paying off.",
+    "pre": [],
+    "post": [],
+    "post_detail": []
+  },
+  {
+    "shape": "milestone:streak",
+    "negative": false,
+    "text": "Seven days logged in a row.|||This is the consistency that moves the scale, keep it rolling.",
+    "pre": [],
+    "post": [],
+    "post_detail": []
+  },
+  {
+    "shape": "milestone:goal",
+    "negative": false,
+    "text": "You hit your goal weight this morning.|||Real work got you here, let's talk about holding it.",
+    "pre": [],
+    "post": [],
+    "post_detail": []
+  },
+  {
+    "shape": "log:weight",
+    "negative": false,
+    "text": "Got it, 182 this morning.|||Down 1.2 from last week, steady and sustainable.",
+    "pre": [],
+    "post": [],
+    "post_detail": []
+  },
+  {
+    "shape": "log:workout",
+    "negative": false,
+    "text": "Logged the push session: bench, overhead press, and dips.|||Good volume, that's the pattern that builds.",
+    "pre": [],
+    "post": [],
+    "post_detail": []
+  },
+  {
+    "shape": "ask",
+    "negative": false,
+    "text": "What did lunch look like today?|||Even a rough estimate keeps the day honest.",
+    "pre": [],
+    "post": [],
+    "post_detail": []
+  },
+  {
+    "shape": "ask",
+    "negative": false,
+    "text": "How'd the squats feel at that weight?|||Trying to figure out if we push it next week.",
+    "pre": [],
+    "post": [],
+    "post_detail": []
+  },
+  {
+    "shape": "ack:edit",
+    "negative": false,
+    "text": "Fixed it, that's 3 eggs not 2 now.|||Puts you at 1,310 for the day.",
+    "pre": [],
+    "post": [],
+    "post_detail": []
+  },
+  {
+    "shape": "ack:edit",
+    "negative": false,
+    "text": "Swapped it to whole milk, updated the macros.|||Small change, you're still on track.",
+    "pre": [],
+    "post": [],
+    "post_detail": []
+  },
+  {
+    "shape": "bad:joke_emoji",
+    "negative": true,
+    "text": "Bold choice on the donut \ud83d\ude05|||We'll balance it at dinner.",
+    "pre": [
+      "joke_emoji"
+    ],
+    "post": [
+      "joke_emoji"
+    ],
+    "post_detail": [
+      "[joke_emoji] bubble 0: \ud83d\ude05"
+    ]
+  },
+  {
+    "shape": "bad:helpdesk",
+    "negative": true,
+    "text": "Your macros are updated.|||Let me know if you need anything else.",
+    "pre": [
+      "helpdesk_filler"
+    ],
+    "post": [
+      "helpdesk_filler"
+    ],
+    "post_detail": [
+      "[helpdesk_filler] bubble 1: let me know if"
+    ]
+  },
+  {
+    "shape": "bad:robotic",
+    "negative": true,
+    "text": "Logged.",
+    "pre": [
+      "robotic_ack"
+    ],
+    "post": [
+      "robotic_ack"
+    ],
+    "post_detail": [
+      "[robotic_ack] bubble 0: 'Logged.'"
+    ]
+  },
+  {
+    "shape": "bad:exclamation",
+    "negative": true,
+    "text": "Huge day!!|||Protein smashed!!",
+    "pre": [
+      "exclamation_pile",
+      "exclamation_pile"
+    ],
+    "post": [
+      "exclamation_pile",
+      "exclamation_pile"
+    ],
+    "post_detail": [
+      "[exclamation_pile] bubble 0: 2 exclamation marks",
+      "[exclamation_pile] bubble 1: 2 exclamation marks"
+    ]
+  }
+]

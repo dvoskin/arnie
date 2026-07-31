@@ -143,21 +143,17 @@ def _sanitize_bubble(s: str) -> str:
     # leak). Drop the marker AND the rest of its directive, bounded by the bubble
     # separator (|) / newline so a legit adjacent bubble is never touched.
     s = _re_platform.sub(r"\[SYSTEM\b[^\]]*\][^\n|]*", "", s, flags=_re_platform.I)
-    s = s.replace(" — ", ", ").replace("—", ", ")
-    # No tildes either (same deterministic brand rule as the em dash): the model
-    # is told not to use "~" but keeps writing "~230 cal". Convert an approximating
-    # tilde to the word "about" (honest, keeps the estimate signal); drop a stray ~.
-    s = _re_platform.sub(r"~\s*(?=\d)", "about ", s)
-    s = s.replace("~", "")
     # Strip leaked INTERNAL entry IDs — "#2032" from a dedup/tool result the model
     # echoed ("logged 13:12 (33s ago) #2032"). Users must NEVER see internal
     # identifiers (Chaya 2026-07-21). 2+ digits so a legit "#1"/"day #2" survives; DB
-    # entry ids are multi-digit in practice. Also tidy a now-dangling space before a
-    # closing bracket/period.
+    # entry ids are multi-digit in practice.
     s = _re_platform.sub(r"\s*#\d{2,}\b", "", s)
-    s = _re_platform.sub(r"\s+([)\].,])", r"\1", s)
-    while "  " in s:
-        s = s.replace("  ", " ")
+    # Voice: the em-dash / tilde / whitespace rules and — NEW — sentence case now
+    # live in one place (core/voice), so this seam and log_voice._clean can no
+    # longer disagree on a number range, and the lowercase leak is closed at the
+    # root for EVERY bubble that flows through here, not just the prompt examples.
+    from core.voice import render_bubble
+    s = render_bubble(s)
     return s.strip()
 
 
