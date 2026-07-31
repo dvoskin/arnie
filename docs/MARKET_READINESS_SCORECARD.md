@@ -35,7 +35,7 @@ that produced it — an assertion in a commit message is not a check.
 | Corrupt state fails loudly | **PASS** | `IdempotencyCorrupt` |
 | Weight has ledger-backed history | **PASS** | `domain="weight"`, `previous_weight_kg` preserved |
 | All three carry a request trace | **PASS** | `mutation_inventory.py` → 3 complete |
-| Multi-connection race proven | **UNKNOWN** | test written, unlocks in CI via `TEST_POSTGRES_URL`; **has not yet run** |
+| Multi-connection race proven | **PASS** | ran in CI on `a4f0b18`: `postgres:16` service initialized (step 2) and tests green (step 9). CI now **errors** rather than skips if `TEST_POSTGRES_URL` is absent, so this cannot silently stop being checked |
 | Food decision quality | **PASS** | `eval_food_matrix` 22/22 × 3 reps, 0 flaky |
 | Counted-portion accuracy | **FAIL → mitigated** | label serving now persisted (`serving001`); **fixes second-and-later logs only**, unverified in production |
 
@@ -117,7 +117,7 @@ from generated messages.
 | B5 | Latency unmeasured and unbudgeted | UNKNOWN | backend |
 | B6 | Voice unevaluated, no single renderer | UNKNOWN | backend |
 | B7 | Admin/security pass not started | UNKNOWN | backend |
-| B8 | Multi-connection race unproven | UNKNOWN | CI (unlocks on next run) |
+| ~~B8~~ | ~~Multi-connection race unproven~~ | **CLOSED** — ran green on `a4f0b18` | — |
 | B9 | Backup restore untested | UNKNOWN | ops |
 | B10 | Rollback unrehearsed | UNKNOWN | ops |
 | B11 | HealthKit workout contract mismatch (PR #7) | FAIL | backend |

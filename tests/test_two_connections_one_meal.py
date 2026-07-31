@@ -28,6 +28,21 @@ from core.idempotency import build_key, claim_request, fingerprint_of
 from db.models import Base, IdempotencyRecord, User
 
 PG = os.getenv("TEST_POSTGRES_URL")
+
+# IN CI, A MISSING POSTGRES IS A FAILURE, NOT A SKIP.
+#
+# Skipping is right on a laptop and wrong on the build that gates a release:
+# if the service block is renamed, the port changes, or the env var is dropped,
+# these tests would quietly stop running and CI would stay green — a green tick
+# standing in for a check nobody performed, which is the precise failure this
+# file exists to rule out. So the one environment that is supposed to have a
+# Postgres must prove it has one.
+if os.getenv("CI") and not PG:
+    raise RuntimeError(
+        "TEST_POSTGRES_URL is unset in CI. The multi-connection idempotency "
+        "race is the only test of the cross-process guarantee the whole "
+        "duplicate-write design rests on; it must not be skipped here.")
+
 pytestmark = pytest.mark.skipif(
     not PG, reason="needs a real Postgres (TEST_POSTGRES_URL); sqlite shares "
                    "one connection and cannot express this race")
