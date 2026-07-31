@@ -237,43 +237,56 @@ async def log_exercise_entry(
         client_key = _client_key(client_request_id)
         turn_id = make_turn_id(CHANNEL, client_key, user.id,
                                payload.exercise_name)
-        try:
-            claim = await claim_request(
-                db, channel=CHANNEL, command="log_exercise", user_id=user.id,
-                client_key=client_key, payload=payload, turn_id=turn_id)
-        except (IdempotencyConflict, IdempotencyInProgress) as e:
-            raise _claim_failed(e, "log_exercise")
+        with RequestTrace(turn_id=turn_id, channel=CHANNEL,
+                          command="log_exercise", user_id=user.id) as trace:
+            trace.note(keyed=bool(client_key))
+            try:
+                with trace.stage("claim"):
+                    claim = await claim_request(
+                        db, channel=CHANNEL, command="log_exercise",
+                        user_id=user.id, client_key=client_key,
+                        payload=payload, turn_id=turn_id)
+            except (IdempotencyConflict, IdempotencyInProgress) as e:
+                trace.note(idempotency=type(e).__name__)
+                trace.done(outcome="conflict")
+                raise _claim_failed(e, "log_exercise")
 
-        if claim.replay:
-            return {"ok": True, "idempotent_replay": True,
-                    "turn_id": claim.turn_id, **claim.stored_result}
+            if claim.replay:
+                trace.note(idempotency="replay",
+                           entry=claim.stored_result.get("entry_id"))
+                return {"ok": True, "idempotent_replay": True,
+                        "turn_id": claim.turn_id, **claim.stored_result}
+            trace.note(idempotency="claimed" if claim.key else "unkeyed")
 
-        kwargs = payload.model_dump(exclude={"is_cardio", "exercise_name"},
-                                    exclude_none=True)
-        kwargs["exercise_name"] = payload.exercise_name
-        kwargs["source_type"] = "ios"
-        with _turn_scope(turn_id):
-            log = await get_or_create_today_log(db, user.id,
-                                                user.timezone or "UTC")
-            # ONE ledger writer — `add_exercise_entry` records the `created`
-            # event itself (master audit 2026-07-30: this endpoint's second
-            # record made every tap-logged set a duplicate operation). The
-            # provenance label rides through instead.
-            entry = await add_exercise_entry(
-                db,
-                daily_log_id=log.id,
-                is_cardio=payload.is_cardio,
-                ledger_source="quick_log:ios",
-                claim_id=claim.record_id,
-                **kwargs,
-            )
+            kwargs = payload.model_dump(exclude={"is_cardio", "exercise_name"},
+                                        exclude_none=True)
+            kwargs["exercise_name"] = payload.exercise_name
+            kwargs["source_type"] = "ios"
+            with trace.stage("write"), _turn_scope(turn_id):
+                log = await get_or_create_today_log(db, user.id,
+                                                    user.timezone or "UTC")
+                # ONE ledger writer — `add_exercise_entry` records the
+                # `created` event itself (master audit 2026-07-30: this
+                # endpoint's second record made every tap-logged set a
+                # duplicate operation). The provenance label rides through
+                # instead, and `claim_id` puts the row, its event and the
+                # claim in one transaction.
+                entry = await add_exercise_entry(
+                    db,
+                    daily_log_id=log.id,
+                    is_cardio=payload.is_cardio,
+                    ledger_source="quick_log:ios",
+                    claim_id=claim.record_id,
+                    **kwargs,
+                )
 
-        return {
-            "ok": True,
-            "entry_id": entry.id,
-            "daily_log_id": log.id,
-            "turn_id": turn_id,
-        }
+            trace.note(entry=entry.id, claim="completed_in_txn")
+            return {
+                "ok": True,
+                "entry_id": entry.id,
+                "daily_log_id": log.id,
+                "turn_id": turn_id,
+            }
 
 
 # ── Weight ──────────────────────────────────────────────────────────────────
@@ -310,36 +323,47 @@ async def log_weight(
         client_key = _client_key(client_request_id)
         turn_id = make_turn_id(CHANNEL, client_key, user.id,
                                f"weight:{payload.weight_kg}")
-        try:
-            claim = await claim_request(
-                db, channel=CHANNEL, command="log_weight", user_id=user.id,
-                client_key=client_key, payload=payload, turn_id=turn_id)
-        except (IdempotencyConflict, IdempotencyInProgress) as e:
-            raise _claim_failed(e, "log_weight")
+        with RequestTrace(turn_id=turn_id, channel=CHANNEL,
+                          command="log_weight", user_id=user.id) as trace:
+            trace.note(keyed=bool(client_key))
+            try:
+                with trace.stage("claim"):
+                    claim = await claim_request(
+                        db, channel=CHANNEL, command="log_weight",
+                        user_id=user.id, client_key=client_key,
+                        payload=payload, turn_id=turn_id)
+            except (IdempotencyConflict, IdempotencyInProgress) as e:
+                trace.note(idempotency=type(e).__name__)
+                trace.done(outcome="conflict")
+                raise _claim_failed(e, "log_weight")
 
-        if claim.replay:
-            return {"ok": True, "idempotent_replay": True,
-                    "turn_id": claim.turn_id,
-                    "metric_id": claim.stored_result.get("entry_id"),
-                    "current_weight_kg": payload.weight_kg}
+            if claim.replay:
+                trace.note(idempotency="replay",
+                           entry=claim.stored_result.get("entry_id"))
+                return {"ok": True, "idempotent_replay": True,
+                        "turn_id": claim.turn_id,
+                        "metric_id": claim.stored_result.get("entry_id"),
+                        "current_weight_kg": payload.weight_kg}
+            trace.note(idempotency="claimed" if claim.key else "unkeyed")
 
-        with _turn_scope(turn_id):
-            metric = await add_body_metric(
-                db,
-                user_id=user.id,
-                weight_kg=payload.weight_kg,
-                context=payload.context,
-                source=(payload.source or "manual"),
-                # Weight now carries the same audit contract as food and
-                # exercise: a ledger event in the write's own transaction,
-                # holding the PRIOR reading so a correction stays undoable.
-                ledger_source="quick_log:ios",
-                claim_id=claim.record_id,
-            )
+            with trace.stage("write"), _turn_scope(turn_id):
+                metric = await add_body_metric(
+                    db,
+                    user_id=user.id,
+                    weight_kg=payload.weight_kg,
+                    context=payload.context,
+                    source=(payload.source or "manual"),
+                    # Weight now carries the same audit contract as food and
+                    # exercise: a ledger event in the write's own transaction,
+                    # holding the PRIOR reading so a correction stays undoable.
+                    ledger_source="quick_log:ios",
+                    claim_id=claim.record_id,
+                )
 
-        return {
-            "ok": True,
-            "metric_id": metric.id,
-            "current_weight_kg": payload.weight_kg,
-            "turn_id": turn_id,
-        }
+            trace.note(entry=metric.id, claim="completed_in_txn")
+            return {
+                "ok": True,
+                "metric_id": metric.id,
+                "current_weight_kg": payload.weight_kg,
+                "turn_id": turn_id,
+            }
