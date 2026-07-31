@@ -344,6 +344,53 @@ class IdempotencyRecord(Base):
     completed_at = Column(DateTime)
 
 
+class DeliveryAttempt(Base):
+    """What actually happened when we tried to reach a user.
+
+    Until this existed, a proactive `conversation_logs` row meant "we reached
+    the send function" — it covered a delivered push, a provider rejection, a
+    user with no registered device, a swallowed exception, and a message the
+    kill switch stopped. Three things were built on that row and all three
+    inherited the ambiguity: the 24h cadence budget, the silence streak, and
+    engagement analysis. A user whose pushes all fail was rate-limited as
+    though they were being reached.
+
+    One row per attempt, so a fan-out to three devices that half-fails is
+    legible instead of averaged into a boolean. `accepted` means a provider
+    took responsibility; `delivered` is deliberately separate and unset, so a
+    receipt callback can land later without redefining what accepted meant.
+    """
+    __tablename__ = "delivery_attempts"
+    __table_args__ = (
+        Index("ix_delivery_attempts_user_time", "user_id", "attempted_at"),
+        Index("ix_delivery_attempts_status", "status"),
+        Index("ix_delivery_attempts_turn", "turn_id"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    #: The canonical turn that generated the message, so a delivery joins the
+    #: request that produced it — the same id the ledger and traces carry.
+    turn_id = Column(String)
+    slot_key = Column(String)                  # which nudge this was
+    channel = Column(String, nullable=False)   # ios | telegram | imessage
+    provider = Column(String)                  # apns | telegram | imessage
+    #: NEVER the token or address itself. A short reference (device row id,
+    #: last four) is enough to correlate without putting a credential in a
+    #: table that analytics will read.
+    destination_reference = Column(String)
+    attempt_number = Column(Integer, server_default="1")
+    status = Column(String, nullable=False)    # see core/delivery
+    provider_message_id = Column(String)
+    failure_code = Column(String)
+    failure_detail = Column(Text)              # redacted
+    token_invalidated = Column(Boolean, server_default="0")
+    attempted_at = Column(DateTime, server_default=func.now())
+    accepted_at = Column(DateTime)
+    delivered_at = Column(DateTime)
+    build_sha = Column(String)
+
+
 class BackgroundJob(Base):
     """Durable post-turn work (P0.7, architecture review 2026-07-24).
 

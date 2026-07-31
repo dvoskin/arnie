@@ -18,6 +18,7 @@ Whoop sync runs every 2 hours.
 """
 import collections
 import logging
+from core.delivery import DeliveryResult
 import os
 from datetime import datetime, date, timezone, timedelta
 
@@ -334,7 +335,7 @@ def _push_banner(text: str, slot_key: str = None) -> tuple[str, str]:
     return _push_title(slot_key), body or "Tap to open Arnie"
 
 
-async def _send_ios(telegram_id: str, text: str, slot_key: str = None) -> None:
+async def _send_ios(telegram_id: str, text: str, slot_key: str = None):
     """Fan a proactive nudge out to every active APNs device for the user.
 
     `telegram_id` is the namespaced platform identity ("ios:<uuid>" or
@@ -360,7 +361,7 @@ async def _send_ios(telegram_id: str, text: str, slot_key: str = None) -> None:
 
     if not is_configured():
         logger.info(f"APNs not configured — proactive iOS send to {telegram_id} skipped")
-        return
+        return DeliveryResult.suppressed("apns_not_configured", channel="ios")
 
     # Structured banner: the coach's short opener as the title (falling back to
     # a contextual slot label) + a concise body, markdown stripped.
@@ -371,7 +372,13 @@ async def _send_ios(telegram_id: str, text: str, slot_key: str = None) -> None:
         tokens = await active_device_tokens_for_user(db, user.id)
         if not tokens:
             logger.info(f"No active APNs tokens for user {user.id} — proactive send skipped")
-            return
+            # NOT a failure and NOT a success: there is nowhere to send. Retrying
+            # cannot help, and counting it as contact is what let a user with no
+            # device be rate-limited into silence.
+            return DeliveryResult.no_destination("ios", "no_active_device_tokens")
+        accepted = 0
+        invalidated = []
+        last_code = ""
         for row in tokens:
             env = row.environment or "production"
             result = await send_push(row.token, title, body, environment=env,
@@ -399,12 +406,15 @@ async def _send_ios(telegram_id: str, text: str, slot_key: str = None) -> None:
                         result = alt
 
             if result.get("ok"):
+                accepted += 1
                 continue
             reason = result.get("reason")
             status = result.get("status")
+            last_code = str(reason or status or "")
             # Dead on BOTH hosts → revoke so the next sweep doesn't waste round-trips.
             if reason in ("BadDeviceToken", "Unregistered") or status in (400, 410):
                 await revoke_device_token(db, user.id, row.token)
+                invalidated.append(row.id)
                 logger.info(
                     f"APNs revoked dead token for user {user.id}: status={status} reason={reason} (both envs failed)"
                 )
@@ -412,6 +422,18 @@ async def _send_ios(telegram_id: str, text: str, slot_key: str = None) -> None:
                 logger.warning(
                     f"APNs send failed for user {user.id}: status={status} reason={reason}"
                 )
+
+        # ONE acceptance is enough to say the user was reached; zero is not,
+        # however many devices were tried.
+        if accepted:
+            out = DeliveryResult.accepted("ios", provider="apns", count=accepted)
+        else:
+            out = DeliveryResult.failed("ios", code=last_code,
+                                        detail="all devices refused",
+                                        attempted=len(tokens))
+        out.attempted_count = len(tokens)
+        out.invalidated = invalidated
+        return out
 
 
 def _channel_for(telegram_id: str | None) -> str:
@@ -440,19 +462,19 @@ async def _send(telegram_id: str, text: str, effect: str = None, slot_key: str =
       else (numeric)    → Telegram
     effect — optional FX.* applied on iMessage (ignored on others).
     """
+    channel = _channel_for(telegram_id)
     # Master kill switch — no proactive message goes out while disabled, on any channel.
     if not proactive_enabled():
-        return
+        return DeliveryResult.suppressed("proactive_disabled", channel)
     # Safe-rollout gate — when an allowlist is set, only its members get proactive sends.
     if not _allowlist_allows(telegram_id):
         logger.info(f"Proactive send to {telegram_id} skipped — not on PROACTIVE_ALLOWLIST")
-        return
+        return DeliveryResult.suppressed("not_on_allowlist", channel)
 
     # iOS / Apple Sign-in identities → APNs. Happens BEFORE the Telegram int
     # parse, otherwise `int("ios:abc")` would raise.
     if telegram_id.startswith(("ios:", "apple:")):
-        await _send_ios(telegram_id, text, slot_key)
-        return
+        return await _send_ios(telegram_id, text, slot_key)
 
     from core.platform import Response, IMessageAdapter, TelegramAdapter
     resp = Response.from_text(text)
@@ -465,17 +487,22 @@ async def _send(telegram_id: str, text: str, effect: str = None, slot_key: str =
         chat_guid = f"iMessage;-;{address}"
         try:
             await IMessageAdapter(chat_guid).send(resp)
+            return DeliveryResult.accepted("imessage", provider="imessage")
         except Exception as e:
             logger.error(f"Proactive iMessage send failed → {telegram_id}: {e}")
-        return
+            return DeliveryResult.failed("imessage", code=type(e).__name__,
+                                         detail=str(e))
 
     from telegram import Bot
     try:
         bot = Bot(token=TELEGRAM_TOKEN)
         await TelegramAdapter(bot, int(telegram_id)).send(resp)
         await bot.close()
+        return DeliveryResult.accepted("telegram", provider="telegram")
     except Exception as e:
         logger.error(f"Proactive send failed → {telegram_id}: {e}")
+        return DeliveryResult.failed("telegram", code=type(e).__name__,
+                                     detail=str(e))
 async def _log_proactive(db, user_id, text: str, slot_key: str,
                          platform: str = "telegram") -> None:
     """
@@ -566,6 +593,31 @@ async def _within_proactive_budget(db, user_id, slot_key: str) -> bool:
         return True
 
 
+async def _record_delivery(db, user_id, result, slot_key: str) -> None:
+    """Persist what actually happened. Best-effort — a bookkeeping failure must
+    not break a send that already succeeded."""
+    try:
+        from datetime import datetime as _dt
+
+        from db.models import DeliveryAttempt
+        from db.queries import _build_stamp
+        from core.turn_identity import current_turn_id
+        row = DeliveryAttempt(
+            user_id=user_id, turn_id=current_turn_id(), slot_key=slot_key,
+            channel=result.channel or "unknown", provider=result.provider,
+            attempt_number=1, status=result.status,
+            provider_message_id=result.provider_message_id,
+            failure_code=(result.failure_code or None),
+            failure_detail=(result.detail or None),
+            token_invalidated=bool(result.invalidated),
+            accepted_at=(_dt.utcnow() if result.reached_user else None),
+            build_sha=_build_stamp().get("sha"))
+        db.add(row)
+        await db.commit()
+    except Exception as e:
+        logger.warning(f"delivery attempt not recorded: {e}")
+
+
 async def _send_logged(db, user_id, telegram_id: str, text: str, slot_key: str) -> None:
     """
     Send a user-facing proactive message, then log it. Wraps the IO-only `_send`
@@ -579,8 +631,21 @@ async def _send_logged(db, user_id, telegram_id: str, text: str, slot_key: str) 
     text = _clean_proactive_text(text)
     if not text:
         return
-    await _send(telegram_id, text, slot_key=slot_key)
-    await _log_proactive(db, user_id, text, slot_key, platform=_channel_for(telegram_id))
+    result = await _send(telegram_id, text, slot_key=slot_key)
+    await _record_delivery(db, user_id, result, slot_key)
+    # HISTORY ONLY ON ACCEPTANCE. This row is what the cadence budget, the
+    # silence streak and engagement analysis all read. Writing it for a
+    # suppressed or refused send made "we tried" indistinguishable from "we
+    # reached them" — and rate-limited a user whose pushes were all failing as
+    # though they were being reached, so the failure suppressed its own retry.
+    if result is not None and result.reached_user:
+        await _log_proactive(db, user_id, text, slot_key,
+                             platform=_channel_for(telegram_id))
+    else:
+        logger.info(
+            f"event=proactive_not_delivered user={user_id} slot={slot_key} "
+            f"status={getattr(result, 'status', 'unknown')} "
+            f"reason={getattr(result, 'detail', '')[:80]}")
 
 
 async def _send_logged_with_voice(db, user_id, telegram_id: str, text: str,
@@ -593,8 +658,16 @@ async def _send_logged_with_voice(db, user_id, telegram_id: str, text: str,
     text = _clean_proactive_text(text)
     if not text:
         return
-    await _send_with_voice(telegram_id, text, name=name, language=language, slot_key=slot_key)
-    await _log_proactive(db, user_id, text, slot_key, platform=_channel_for(telegram_id))
+    result = await _send_with_voice(telegram_id, text, name=name,
+                                    language=language, slot_key=slot_key)
+    await _record_delivery(db, user_id, result, slot_key)
+    if result is not None and result.reached_user:
+        await _log_proactive(db, user_id, text, slot_key,
+                             platform=_channel_for(telegram_id))
+    else:
+        logger.info(
+            f"event=proactive_not_delivered user={user_id} slot={slot_key} "
+            f"status={getattr(result, 'status', 'unknown')}")
 
 
 def _clean_proactive_text(text: str) -> str:
@@ -652,19 +725,23 @@ _TTS_CACHE_TTL = 1800.0
 
 
 async def _send_with_voice(telegram_id: str, text: str, name: str = "", language: str = "English",
-                           slot_key: str = None) -> None:
-    await _send(telegram_id, text, slot_key=slot_key)
+                           slot_key: str = None):
+    # The TEXT send is what determines whether the user was reached; the voice
+    # bubble that may follow is an enhancement on one channel. Returning the
+    # text result keeps "did this arrive" answerable for the voice paths too,
+    # which otherwise wrote history unconditionally like the plain path did.
+    result = await _send(telegram_id, text, slot_key=slot_key)
     # Voice notes are a Telegram-only channel. iMessage has no audio-send path, and
     # iOS/Apple identities route to APNs (a text push) inside _send above — calling
     # bot.send_voice(chat_id=int("ios:<uuid>")) would raise ValueError and, worse,
     # only AFTER paying for voice_variant + TTS. Bail for every non-Telegram id so
     # those channels don't burn an LLM + TTS call on audio that can never deliver.
     if telegram_id.startswith(("im:", "ios:", "apple:")):
-        return
+        return result
     if not proactive_enabled() or not _allowlist_allows(telegram_id):
-        return
+        return result
     if not voice_proactive_enabled():
-        return
+        return result
     try:
         import hashlib
         import time as _time
@@ -682,7 +759,7 @@ async def _send_with_voice(telegram_id: str, text: str, name: str = "", language
                 _TTS_CACHE[cache_key] = (audio_bytes, now + _TTS_CACHE_TTL)
 
         if not audio_bytes:
-            return
+            return result
         import io
         from telegram import Bot
         bot = Bot(token=TELEGRAM_TOKEN)
@@ -692,6 +769,9 @@ async def _send_with_voice(telegram_id: str, text: str, name: str = "", language
         await bot.close()
     except Exception as e:
         logger.error(f"Voice send failed → {telegram_id}: {e}")
+    # The voice bubble is an enhancement; the TEXT result is the delivery.
+    return result
+
 
 def _recent_checkins_block(recent_proactive) -> str:
     """
@@ -710,7 +790,6 @@ def _recent_checkins_block(recent_proactive) -> str:
         return ""
     return ("Recent check-ins you already sent (do NOT repeat one of these — vary the "
             "angle or move on):\n" + "\n".join(lines))
-
 
 async def _llm_nudge(user, log, prefs, health_snap, slot: str, name: str,
                      recent_proactive=None, needs_weight: bool = False) -> str:
