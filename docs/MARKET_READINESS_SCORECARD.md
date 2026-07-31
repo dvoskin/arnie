@@ -67,8 +67,9 @@ budget` during the eval run.
 
 ## 8. Voice consistency
 
-**MEASURED (was UNKNOWN).** B6, branch `dvoskin/b6-voice-renderer`. There is now
-a corpus, an evaluation, and a single renderer.
+**MEASURED (was UNKNOWN).** B6, branch `dvoskin/b6-voice-renderer` @ `e97945d`
+(committed, not deployed). There is now a corpus, an evaluation, and a single
+renderer. Full suite green at the SHA.
 
 | check | state | evidence |
 |---|---|---|

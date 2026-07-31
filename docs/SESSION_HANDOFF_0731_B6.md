@@ -7,10 +7,11 @@ Everything below was proven by a test or the audit, not remembered.
 
 ## Where the work is
 
-Branch `dvoskin/b6-voice-renderer`, cut from `origin/main` @ `50ba640`.
-**Committed locally, not pushed, not deployed.** Independent of the B7 branch;
-they touch different code and different scorecard sections, so they merge
-cleanly. Full shuffled suite green at the tip.
+Branch `dvoskin/b6-voice-renderer` @ `e97945d`, cut from `origin/main` @
+`50ba640`. **Committed locally, not pushed, not deployed.** Independent of the
+B7 branch; they touch different code and different scorecard sections, so they
+merge cleanly. Full shuffled suite green at the tip (6407 tests, exit 0, two
+seeds).
 
 ```bash
 python scripts/voice_audit.py                 # the evaluation — pre/post-seam violations
