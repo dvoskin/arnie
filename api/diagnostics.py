@@ -11,6 +11,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends
 
 from api.auth import current_identity
+from core import config_guard
 from db.database import AsyncSessionLocal
 from db.queries import resolve_user, location_enabled, get_or_create_user
 
@@ -171,8 +172,17 @@ def public_pipeline_summary() -> dict:
         elif "error" in entry:
             out[key] = {"error": entry["error"]}
         else:
-            out[key] = {"effective": entry.get("effective"),
-                        "env_set": entry.get("env_set")}
+            summary = {"effective": entry.get("effective"),
+                       "env_set": entry.get("env_set")}
+            # `env_set: true` was true and useless during the six-day resolver
+            # gap: the var WAS set — to `true`, a word the parser does not
+            # accept, so it silently ran the fallback. `env_valid: false` is
+            # the field that would have said so. Absent when the flag is not an
+            # enumeration or is unset, because "does not apply" is not "passed".
+            valid = config_guard.is_valid(key)
+            if valid is not None:
+                summary["env_valid"] = valid
+            out[key] = summary
     return out
 
 

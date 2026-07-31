@@ -29,6 +29,17 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Say so, at boot, if a flag is set to something the code will ignore. On
+# 2026-07-31 NUTRITION_RESOLVER_MODE was `true` — not a value the parser
+# accepts — so production ran in shadow for six days while the repo recorded it
+# as live for all users. Nothing failed; nothing logged. This is the line that
+# would have said so, on the first deploy after the typo.
+try:
+    from core.config_guard import report as _report_config
+    _report_config()
+except Exception:            # never let a diagnostic stop the boot
+    pass
+
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 
 
