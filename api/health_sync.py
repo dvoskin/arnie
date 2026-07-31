@@ -33,12 +33,30 @@ class AppleWorkoutBody(BaseModel):
     Mirrors the legacy webhook's `AppleWorkout` field-for-field so both ingest
     paths persist through the same `_process_apple_workouts` (per-day
     replace-on-sync) with one `apple_health` ExerciseEntry contract."""
+    # LEGACY (Shortcuts webhook) names.
     name: Optional[str] = None              # user-visible label, e.g. "Running"
     workout_type: Optional[str] = None      # raw HKWorkoutActivityType label; name fallback
     duration_minutes: Optional[float] = None
     active_calories: Optional[float] = None
     distance_km: Optional[float] = None     # display metadata; not used by persist
     start_time: Optional[str] = None        # ISO-8601 start instant; display metadata
+
+    # NATIVE iOS names. `_norm_apple_workout` was always written to accept
+    # either sender's vocabulary — `d.get("name") or d.get("workout_type") or
+    # d.get("type")`, `start_time or start`, `active_calories or energy_kcal`.
+    # It never saw them: this model did not declare the fields, so pydantic
+    # dropped them at parse time and `model_dump()` could not emit what the
+    # schema had already discarded. A native workout arrived carrying only its
+    # duration — no label, no start time, no calories, no uuid.
+    #
+    # `uuid` is the load-bearing one. It becomes `apple_health:<uuid>`, the
+    # import ref that tombstones match on, and it is what lets a workout the
+    # user DELETED stay deleted instead of returning on the next sync.
+    type: Optional[str] = None              # readable label, e.g. "Walk"
+    start: Optional[str] = None             # ISO-8601 start instant
+    end: Optional[str] = None
+    energy_kcal: Optional[float] = None
+    uuid: Optional[str] = None              # HKWorkout UUID — the idempotency ref
 
 
 class HealthSnapshotBody(BaseModel):
@@ -95,11 +113,19 @@ async def post_snapshot(
             # day AND re-insert it next sync — double-counted on two calendar
             # days (the review's confirmed bug). Keying on the workout's local
             # start day keeps replace-on-sync idempotent across the UTC boundary.
+            # ONE call, the USER ROW, and no day bucketing here. This site
+            # passed `(db, user.id, day, workouts)` — four arguments to a
+            # three-argument function, and an int where a User is required
+            # (the helper reads `user.timezone`). Every native snapshot
+            # carrying a workout raised TypeError, so steps and sleep synced
+            # while workouts silently never did.
+            #
+            # The bucketing loop is gone because `_process_apple_workouts` now
+            # owns it: "each workout lands on the LOGGING DAY of its OWN start
+            # time (user tz, 4am rollover)". Two implementations of the same
+            # rule is how they drift apart.
             from api.app import _process_apple_workouts
-            tz = getattr(user, "timezone", None) or "UTC"
-            for _wday, _ws in _bucket_workouts_by_local_day(
-                    payload.workouts, tz, snap_date).items():
-                await _process_apple_workouts(db, user.id, _wday, _ws)
+            await _process_apple_workouts(db, user, payload.workouts)
 
         return {"status": "ok", "date": str(snap_date)}
 
