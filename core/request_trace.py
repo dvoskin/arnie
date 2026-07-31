@@ -98,6 +98,7 @@ class RequestTrace:
         if self._done:
             return
         self._done = True
+        self.fields.setdefault("outcome", outcome)
         try:
             breakdown = ",".join(f"{n}:{ms}" for n, ms in self.stages)
             extra = " ".join(f"{k}={v}" for k, v in self.fields.items())
@@ -108,6 +109,33 @@ class RequestTrace:
                 f"build={_sha()}" + (f" {extra}" if extra else ""))
         except Exception:
             pass
+
+    async def persist(self, db) -> None:
+        """Write the summary row, so this request is still measurable in a week.
+
+        EXPLICIT, not automatic. `done()` runs in `__exit__`, which is
+        synchronous, and reaching for a database from there would mean either
+        blocking IO in a context-manager exit or a fire-and-forget task whose
+        failure nobody sees. The caller already holds a session; asking for it
+        is cheaper than hiding it.
+
+        Never raises. Telemetry describing a write must not be able to break
+        the write it describes — the same rule `record_ledger_event` follows.
+        """
+        try:
+            import json
+
+            from db.models import TurnMetric
+            db.add(TurnMetric(
+                turn_id=self.turn_id, user_id=self.user_id,
+                channel=self.channel, command=self.command,
+                outcome=self.fields.get("outcome") or "ok",
+                total_ms=self.total_ms(),
+                stages_json=json.dumps(dict(self.stages)),
+                build_sha=_sha()))
+            await db.commit()
+        except Exception as e:
+            logger.warning(f"turn metric not persisted turn={self.turn_id}: {e}")
 
     def __enter__(self) -> "RequestTrace":
         return self

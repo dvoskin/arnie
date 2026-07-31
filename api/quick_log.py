@@ -198,6 +198,8 @@ async def _write_food(db, user, payload, turn_id, claim, trace) -> dict:
         )
 
     trace.note(entry=entry.id, claim="completed_in_txn")
+    trace.done()
+    await trace.persist(db)
     return {
         "ok": True,
         "entry_id": entry.id,
@@ -281,6 +283,8 @@ async def log_exercise_entry(
                 )
 
             trace.note(entry=entry.id, claim="completed_in_txn")
+            trace.done()
+            await trace.persist(db)
             return {
                 "ok": True,
                 "entry_id": entry.id,
@@ -361,6 +365,8 @@ async def log_weight(
                 )
 
             trace.note(entry=metric.id, claim="completed_in_txn")
+            trace.done()
+            await trace.persist(db)
             return {
                 "ok": True,
                 "metric_id": metric.id,

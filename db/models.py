@@ -344,6 +344,44 @@ class IdempotencyRecord(Base):
     completed_at = Column(DateTime)
 
 
+class TurnMetric(Base):
+    """One completed request, summarised so latency outlives the logs.
+
+    `RequestTrace` emits a good line — total, per-stage breakdown, outcome,
+    build — and a line is not a dataset. Render retains logs for days, the
+    question "did p95 regress after that deploy" is asked in weeks, and the
+    +54% p50 regression flagged 2026-07-30 was never explained because by the
+    time anyone looked the evidence had rotated away.
+
+    Deliberately a SUMMARY, not a span store. One row per request with the
+    stage breakdown as JSON: enough to compute percentiles by route, channel
+    and stage, cheap enough to write on every turn, and small enough that
+    retention is a delete rather than a project. If per-span querying is ever
+    needed, this table is what will justify it.
+
+    Carries `build_sha` because a latency comparison across a deploy is the
+    whole point, and `turn_id` because a slow p99 is worth joining back to the
+    request that produced it.
+    """
+    __tablename__ = "turn_metrics"
+    __table_args__ = (
+        Index("ix_turn_metrics_time", "created_at"),
+        Index("ix_turn_metrics_route_time", "command", "created_at"),
+        Index("ix_turn_metrics_turn", "turn_id"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    turn_id = Column(String)
+    user_id = Column(Integer)
+    channel = Column(String)
+    command = Column(String)              # the route, in RequestTrace terms
+    outcome = Column(String)              # ok | conflict | error:<Class>
+    total_ms = Column(Integer)
+    stages_json = Column(Text)            # {"claim": 2, "write": 80, ...}
+    build_sha = Column(String)
+    created_at = Column(DateTime, server_default=func.now())
+
+
 class DeliveryAttempt(Base):
     """What actually happened when we tried to reach a user.
 
