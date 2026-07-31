@@ -9,11 +9,20 @@ The endpoint reuses scheduler.proactive_scheduler gate fns (never reimplements).
 """
 import pytest
 from fastapi import HTTPException
+from starlette.testclient import TestClient
 
 import api.app as app_mod
+from core import ratelimit
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 from db.models import User, UserPreferences
+
+
+@pytest.fixture(autouse=True)
+def _reset_limiter():
+    ratelimit._reset_for_tests()
+    yield
+    ratelimit._reset_for_tests()
 
 
 async def _seed(db, *, telegram_id, name, timezone, pref_on=True):
@@ -34,19 +43,22 @@ async def _loaded(db, name):
     )).scalars().all()
 
 
-@pytest.mark.asyncio
-async def test_rejects_bad_token(monkeypatch):
+def test_rejects_bad_token(monkeypatch):
+    # Auth now lives in the require_admin dependency, so a bad token is rejected
+    # before the handler — exercise it through the real route, not a direct call.
     monkeypatch.setenv("ADMIN_TOKEN", "t")
-    with pytest.raises(HTTPException) as e:
-        await app_mod.admin_proactive_debug(token="wrong", name="x", telegram_id=None)
-    assert e.value.status_code == 403
+    client = TestClient(app_mod.app)
+    r = client.post("/admin/proactive-debug?name=x", headers={"X-Admin-Token": "wrong"})
+    assert r.status_code == 403
 
 
 @pytest.mark.asyncio
 async def test_requires_an_identifier(monkeypatch):
+    # The gate passes (dependency default is unused by the body); the handler's
+    # own 400 for "no identifier" is what we assert.
     monkeypatch.setenv("ADMIN_TOKEN", "t")
     with pytest.raises(HTTPException) as e:
-        await app_mod.admin_proactive_debug(token="t", name=None, telegram_id=None)
+        await app_mod.admin_proactive_debug(name=None, telegram_id=None)
     assert e.value.status_code == 400
 
 
@@ -65,7 +77,7 @@ async def test_utc_user_blocked_by_no_timezone(monkeypatch, db):
         yield db
     monkeypatch.setattr(app_mod, "AsyncSessionLocal", _fake_session)
 
-    resp = await app_mod.admin_proactive_debug(token="t", name="Michelle", telegram_id=None)
+    resp = await app_mod.admin_proactive_debug(name="Michelle", telegram_id=None)
     import json
     body = json.loads(resp.body)
     assert body["ok"] is True
@@ -92,7 +104,7 @@ async def test_real_tz_user_excluded_by_allowlist(monkeypatch, db):
         yield db
     monkeypatch.setattr(app_mod, "AsyncSessionLocal", _fake_session)
 
-    resp = await app_mod.admin_proactive_debug(token="t", name="Jenny", telegram_id=None)
+    resp = await app_mod.admin_proactive_debug(name="Jenny", telegram_id=None)
     import json
     body = json.loads(resp.body)
     r = body["results"][0]
@@ -120,7 +132,7 @@ async def test_deliverable_user_would_send_now(monkeypatch, db):
         yield db
     monkeypatch.setattr(app_mod, "AsyncSessionLocal", _fake_session)
 
-    resp = await app_mod.admin_proactive_debug(token="t", name=None, telegram_id="77")
+    resp = await app_mod.admin_proactive_debug(name=None, telegram_id="77")
     import json
     body = json.loads(resp.body)
     r = body["results"][0]

@@ -63,6 +63,45 @@ def _sign(body: str) -> str:
     return _b64(hmac.new(_secret(), body.encode(), hashlib.sha256).digest())
 
 
+# ── Admin session cookie ─────────────────────────────────────────────────────
+# The admin dashboard is browser-viewed HTML, so it cannot present a header on a
+# link click — it needs a cookie. But the cookie must NOT be the raw ADMIN_TOKEN:
+# that would move the long-lived secret into the browser jar (and every embedded
+# link, the exact leak we are closing). Instead we mint a short-lived value
+# signed with SESSION_SECRET, so the cookie proves "someone presented ADMIN_TOKEN
+# recently" without carrying the token itself, and expires on its own.
+
+ADMIN_COOKIE_NAME = "arnie_admin"
+ADMIN_COOKIE_TTL_SECONDS = 12 * 3600  # a working session; re-bootstrap after
+
+
+def issue_admin_cookie(ttl: int = ADMIN_COOKIE_TTL_SECONDS) -> str:
+    """Mint a signed `admin.<exp>.<sig>` cookie value. Bound to nothing but time
+    — its only claim is that the holder passed the admin gate before `exp`."""
+    exp = int(time.time()) + ttl
+    body = f"admin.{exp}"
+    return f"{body}.{_sign(body)}"
+
+
+def verify_admin_cookie(value: str) -> bool:
+    """True iff `value` is a signature-valid, unexpired admin cookie. Never
+    raises — a malformed or forged cookie is simply not authenticated, and the
+    caller falls back to the header/query bootstrap."""
+    try:
+        prefix, exp_s, sig = value.split(".")
+    except (ValueError, AttributeError):
+        return False
+    if prefix != "admin":
+        return False
+    body = f"{prefix}.{exp_s}"
+    if not hmac.compare_digest(sig, _sign(body)):
+        return False
+    try:
+        return int(exp_s) >= int(time.time())
+    except ValueError:
+        return False
+
+
 # ── Session tokens ───────────────────────────────────────────────────────────
 
 def issue_session_token(identity: str, ttl: int = SESSION_TTL_SECONDS) -> str:

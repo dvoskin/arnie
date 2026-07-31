@@ -20,7 +20,7 @@ import logging
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel, field_validator
 from sqlalchemy import func, select
 
@@ -92,6 +92,7 @@ def _current_identity_from_header(authorization: Optional[str]) -> Optional[str]
 @router.post("/session", response_model=SessionResponse)
 async def create_session(
     req: SessionRequest,
+    request: Request = None,   # bare Request → injected on the HTTP path; None only in direct unit calls
     authorization: Optional[str] = Header(default=None),
 ) -> SessionResponse:
     """Verify the credential, then issue a signed session token for that identity.
@@ -107,6 +108,14 @@ async def create_session(
     so older TestFlight builds that don't pass the new Authorization header
     keep working — they just take branch (3) instead of (2).
     """
+    # Sign-in is unauthenticated by definition and, for Apple, reaches out to
+    # Apple's JWKS — so an unbounded caller is both a credential-stuffing surface
+    # and a way to hammer a third party through us. 30/min per IP is far above a
+    # real device's sign-in rate. (request is None only in direct unit calls.)
+    if request is not None:
+        from core import ratelimit
+        ratelimit.check_request(request, "auth_session", limit=30, window_seconds=60)
+
     verified_identity = verify_provider_credential(req.provider, req.credential)
 
     if req.provider != "apple":
@@ -225,7 +234,8 @@ async def _resolve_setup_user(db, provider: str, verified_identity: str):
 
 
 @router.post("/exchange-pairing-code", response_model=PairingCodeResponse)
-async def exchange_pairing_code(req: PairingCodeRequest) -> PairingCodeResponse:
+async def exchange_pairing_code(req: PairingCodeRequest,
+                                request: Request = None) -> PairingCodeResponse:
     """iOS-side mirror of bot/telegram_handler.py SETUP-XXX consumption.
 
     Resolves the user (apple_sub-aware — see `_resolve_setup_user`), consumes the
@@ -248,6 +258,13 @@ async def exchange_pairing_code(req: PairingCodeRequest) -> PairingCodeResponse:
             consume_pre_registration)
       401 — provider credential is invalid (propagated from verify_provider_credential)
     """
+    # A SETUP-XXXXXX code is short; an unbounded caller could enumerate the space
+    # and hijack a pending pre-registration. Bound the guess rate per IP.
+    # (request is None only in direct unit calls.)
+    if request is not None:
+        from core import ratelimit
+        ratelimit.check_request(request, "pairing_code", limit=20, window_seconds=60)
+
     verified_identity = verify_provider_credential(req.provider, req.credential)
     code = req.code.upper()
 

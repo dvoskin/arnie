@@ -79,16 +79,37 @@ from generated messages.
 
 ## 10. Administration and security
 
-**UNKNOWN**, with one **FAIL** already found and fixed locally:
+**PARTIAL PASS.** The pass ran (B7, branch `dvoskin/b7-admin-security` @
+`5d75ce6`, committed not deployed); `scripts/endpoint_inventory.py` walks the
+131-route live table and classifies auth, URL-borne credentials, and rate
+limits — repeatable, and gated by `tests/test_endpoint_inventory.py` so a
+regression fails CI instead of shipping. Full suite green at this SHA.
 
-- `.env.bak.20260727` (bot token, two API keys, prod `DATABASE_URL`) and
-  `scripts/_danny_live_day_http.py` (prod `SESSION_SECRET`) were untracked but
-  **not ignored**, in a **public** repository. Now ignored on
-  `feat/coach-card-microviz` @ `73a261b`. Never committed — verified.
+| check | state | evidence |
+|---|---|---|
+| Admin endpoints off the query string | **PASS** | all 12 `/admin*` were `?token=`; now `X-Admin-Token` header or a SESSION_SECRET-signed HttpOnly cookie. `?token=` survives only as a one-shot bootstrap that 303-redirects to a clean URL. `test_admin_auth.py` (11), inventory gate |
+| Admin gate rate limited | **PASS** | `require_admin` fronts the token check with `core.ratelimit` (60/min/IP); a brute-force flood trips 429. `test_brute_force_is_throttled` |
+| Session mint + pairing-code rate limited | **PASS** | were unbounded; now 30/min and 20/min per IP |
+| Client IP correct behind the proxy | **PASS (needs env)** | limiter keyed on the proxy peer before — one shared bucket. `client_ip` reads `X-Forwarded-For` **iff** `TRUST_PROXY_HEADERS=true`. Danny must set it in the Render dashboard |
+| Stripe webhook verified | **PASS** | `construct_event`; fails closed without the secret (pre-existing) |
+| Telegram webhook | **PASS** | was a non-constant-time `!=` on the bot token; now `hmac.compare_digest` + an enforced `X-Telegram-Bot-Api-Secret-Token` when `TELEGRAM_WEBHOOK_SECRET` is set (registered in `main.py`). `test_webhook_signatures.py` |
+| iMessage/BlueBubbles webhook | **FAIL → fixed, gated on deploy** | `verify_bb_signature` **failed open** when the secret was unset — a live probe on 2026-07-31 confirmed prod was accepting unsigned POSTs. Now **fails closed** (mirrors Stripe), dev escape hatch `IMESSAGE_WEBHOOK_ALLOW_UNSIGNED`. **Danny must set `BLUEBUBBLES_WEBHOOK_SECRET` on Render AND in BlueBubbles before deploying, or iMessage inbound 403s.** |
+| Secure-by-default sign-in | **UNKNOWN — Danny** | `DEV_AUTH_ENABLED` defaults **true**; when true, `provider=device` mints a session for any identity with no credential. Pinned `false` in `render.yaml`, but the dashboard value is authoritative — verify it |
+| `SESSION_SECRET` set in prod | **UNKNOWN — Danny** | unset → auth.py falls back to a **public** hardcoded dev secret and every session token + admin cookie is forgeable. Now declared in `render.yaml`; confirm the dashboard value |
+
+Still open (scope, not this pass):
+
+- **36 capability tokens still ride in the URL** — the iOS logging API
+  (`/api/food/log?token=…`) and the dashboard/health capability URLs
+  (`/dashboard/{token}`). Path/query tokens land in proxy access logs and
+  `Referer`. Moving them to a header is a coordinated iOS+server change; the
+  `/api/v1/*` surface already shows the target shape (Bearer session). Counted
+  and frozen by `test_endpoint_inventory.py`.
 - ⚠ `scripts/extract_replay_corpus.py` writes real beta-user transcripts into
   `tests/corpus/` on the stated assumption the repo is private. **It is not.**
   Do not run it.
-- Admin/debug endpoint inventory, rate limits, webhook signatures: not started.
+- The secret-leak items (`.env.bak.*`, `_danny_live_day_http.py`) from the prior
+  pass remain ignored on `feat/coach-card-microviz` @ `73a261b`; never committed.
 
 ## 11. Database and migrations
 
@@ -116,7 +137,7 @@ from generated messages.
 | B4 | `turn_id` missing on web + proactive | FAIL | backend |
 | B5 | Latency unmeasured and unbudgeted | UNKNOWN | backend |
 | B6 | Voice unevaluated, no single renderer | UNKNOWN | backend |
-| B7 | Admin/security pass not started | UNKNOWN | backend |
+| B7 | Admin/security pass | **PARTIAL PASS** — admin off query strings, gate + mints rate limited, Telegram/iMessage webhooks fail closed. Remaining: 36 capability tokens in URL (scope); 3 Danny env actions | backend + Danny |
 | ~~B8~~ | ~~Multi-connection race unproven~~ | **CLOSED** — ran green on `a4f0b18` | — |
 | B9 | Backup restore untested | UNKNOWN | ops |
 | B10 | Rollback unrehearsed | UNKNOWN | ops |
@@ -125,8 +146,12 @@ from generated messages.
 **Controlled TestFlight beta:** defensible — mutation integrity on the three
 logging surfaces is the part that corrupts user data, and it is now PASS.
 
-**Broad launch: NO.** B2, B3 and B11 are user-visible correctness, and B5–B7
-are unmeasured rather than passing.
+**Broad launch: NO.** B2, B3 and B11 are user-visible correctness, and B5–B6
+are unmeasured rather than passing. B7 is now a partial pass — the admin surface
+and both spoofable webhooks are closed — but it is **gated on three Danny env
+actions** (`BLUEBUBBLES_WEBHOOK_SECRET`, `TRUST_PROXY_HEADERS`, and confirming
+`SESSION_SECRET` + `DEV_AUTH_ENABLED=false`), and the iMessage fail-closed flip
+will 403 inbound if the BlueBubbles secret is not set before the deploy.
 
 ---
 
@@ -136,6 +161,7 @@ are unmeasured rather than passing.
 python scripts/release_check.py $(git rev-parse HEAD)   # CI + live SHA
 curl -s https://arnie.onrender.com/health               # deployed truth
 python scripts/mutation_inventory.py                    # contract coverage
+python scripts/endpoint_inventory.py                    # auth / URL-creds / rate limits
 python scripts/branch_triage.py                         # branch hygiene
 ```
 

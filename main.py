@@ -87,13 +87,24 @@ async def run():
 
         if use_webhook:
             webhook_url = f"{base_url}/webhook/{TELEGRAM_TOKEN}"
+            # When set, Telegram echoes this secret back in the
+            # X-Telegram-Bot-Api-Secret-Token header on every call, so the
+            # webhook can authenticate updates without relying only on the
+            # in-URL token (which lands in access logs). The endpoint enforces
+            # it when the same env var is present; leaving it unset preserves
+            # the prior token-only behaviour.
+            webhook_secret = os.getenv("TELEGRAM_WEBHOOK_SECRET", "") or None
             await ptb_app.bot.set_webhook(
                 url=webhook_url,
                 drop_pending_updates=True,
                 allowed_updates=["message", "callback_query"],
+                secret_token=webhook_secret,
             )
             # Never log the full URL — it contains the bot token. Redact it.
-            logger.info(f"Webhook mode: {base_url}/webhook/<bot-token-redacted>")
+            logger.info(
+                "Webhook mode: %s/webhook/<bot-token-redacted>  secret_token=%s",
+                base_url, "set" if webhook_secret else "unset",
+            )
         else:
             await ptb_app.updater.start_polling(drop_pending_updates=True)
             logger.info("Polling mode (local dev)")
