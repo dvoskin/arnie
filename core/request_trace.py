@@ -30,12 +30,78 @@ break the write it describes.
 """
 from __future__ import annotations
 
+import contextvars
 import logging
 import time
 from contextlib import contextmanager
 from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
+
+# The active trace for THIS request, ambiently. The turn pipeline
+# (core/conversation.run_turn) is a 3,000-line branch — threading a trace
+# through every leaf that does real work (the LLM call, the tool batch, the log
+# voicing) would be twenty signatures to keep in step. Instead run_turn sets the
+# trace here once, and those leaves record into it via `timed()` if one is
+# active and do nothing if not. A contextvar (not a global) so concurrent turns
+# on the same event loop never write into each other's trace.
+_CURRENT: contextvars.ContextVar[Optional["RequestTrace"]] = contextvars.ContextVar(
+    "current_request_trace", default=None)
+
+
+def current_trace() -> Optional["RequestTrace"]:
+    return _CURRENT.get()
+
+
+@contextmanager
+def active(trace: "RequestTrace"):
+    """Make `trace` the ambient trace for the duration of the block. Restores
+    the prior trace on exit (so a nested turn can't strand the outer one)."""
+    token = _CURRENT.set(trace)
+    try:
+        yield trace
+    finally:
+        try:
+            _CURRENT.reset(token)
+        except Exception:
+            pass
+
+
+@contextmanager
+def timed(stage: str):
+    """Time a block and record it on the ambient trace as a stage, if one is
+    active. A NO-OP when none is — so the LLM call and the tool executor can be
+    instrumented once and stay correct whether they run inside a traced turn, a
+    quick-log, or a bare unit test. Never raises; the timing must not be able to
+    break the work it measures."""
+    t = _CURRENT.get()
+    if t is None:
+        yield
+        return
+    start = time.monotonic()
+    try:
+        yield
+    finally:
+        try:
+            t.record(stage, int((time.monotonic() - start) * 1000))
+        except Exception:
+            pass
+
+
+def time_stage(stage: str):
+    """Decorator form of `timed`, for an async leaf: each call records its wall
+    time as `stage` on the ambient trace. If the call raises, the elapsed time
+    is still recorded and the exception propagates — the wrapper never retries
+    and never depends on the telemetry."""
+    import functools
+
+    def deco(fn):
+        @functools.wraps(fn)
+        async def _wrapped(*a, **k):
+            with timed(stage):
+                return await fn(*a, **k)
+        return _wrapped
+    return deco
 
 
 def _sha() -> str:
@@ -81,6 +147,23 @@ class RequestTrace:
             except Exception:
                 pass
 
+    def record(self, name: str, ms: int) -> None:
+        """Add a timed stage directly (used by `timed()` from a leaf). Same list
+        as `stage()` appends to; duplicates are SUMMED at breakdown time, so a
+        turn that calls the model three times reports one `llm` figure that is
+        the total time in the model, not the last call."""
+        try:
+            self.stages.append((name, int(ms)))
+        except Exception:
+            pass
+
+    def stage_totals(self) -> dict:
+        """Per-stage milliseconds, duplicates summed, insertion order kept."""
+        out: dict[str, int] = {}
+        for name, ms in self.stages:
+            out[name] = out.get(name, 0) + ms
+        return out
+
     def note(self, **fields: Any) -> None:
         """Attach facts the summary should carry — idempotency outcome, entry
         id, fallback use. Silently ignored on failure."""
@@ -100,7 +183,7 @@ class RequestTrace:
         self._done = True
         self.fields.setdefault("outcome", outcome)
         try:
-            breakdown = ",".join(f"{n}:{ms}" for n, ms in self.stages)
+            breakdown = ",".join(f"{n}:{ms}" for n, ms in self.stage_totals().items())
             extra = " ".join(f"{k}={v}" for k, v in self.fields.items())
             logger.info(
                 f"event=request_done turn={self.turn_id} channel={self.channel} "
@@ -131,11 +214,29 @@ class RequestTrace:
                 channel=self.channel, command=self.command,
                 outcome=self.fields.get("outcome") or "ok",
                 total_ms=self.total_ms(),
-                stages_json=json.dumps(dict(self.stages)),
+                stages_json=json.dumps(self.stage_totals()),
                 build_sha=_sha()))
             await db.commit()
         except Exception as e:
             logger.warning(f"turn metric not persisted turn={self.turn_id}: {e}")
+
+    async def persist_isolated(self) -> None:
+        """Persist on a FRESH session, never the caller's.
+
+        The turn pipeline's session may be mid-transaction, or in a failed state
+        after an errored turn — and a metric write that reached for it could
+        commit half a turn, or be rolled back with it. A telemetry row must not
+        be able to do either, so it gets its own connection and its own commit,
+        entirely outside the turn's transaction. `quick_log` uses `persist(db)`
+        because there it already owns a clean, finished session; `run_turn` uses
+        this because at its boundary the session's state is not something the
+        trace should assume. Never raises."""
+        try:
+            from db.database import AsyncSessionLocal
+            async with AsyncSessionLocal() as mdb:
+                await self.persist(mdb)
+        except Exception as e:
+            logger.warning(f"turn metric (isolated) not persisted turn={self.turn_id}: {e}")
 
     def __enter__(self) -> "RequestTrace":
         return self

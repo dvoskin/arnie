@@ -643,6 +643,7 @@ async def run_turn(*args, **kwargs) -> TurnResult:
     be a second signature to keep in step with the first.
     """
     from core import food_trace
+    from core.request_trace import RequestTrace, active as _trace_active
 
     fields = {}
     try:
@@ -654,10 +655,35 @@ async def run_turn(*args, **kwargs) -> TurnResult:
     except Exception:
         fields = {}
 
-    # Trace outside the budget: a turn that runs out of time is exactly the turn
-    # whose trace has to survive to say so.
-    with food_trace.span(**fields), deadline.budget():
-        return await _run_turn(*args, **kwargs)
+    # Durable per-turn latency row (B5). The main pipeline never wrote to
+    # turn_metrics — only quick_log did — so "did main-turn p50 regress after
+    # that deploy", the question asked and unanswered on 2026-07-30, had no
+    # data behind it. ONE RequestTrace at this boundary (every return path runs
+    # the finally), made ambient so the LLM / tool / voice leaves time
+    # themselves via `timed()`, and persisted on an ISOLATED session so a
+    # telemetry row can never commit or roll back with the turn's own write.
+    _rt = RequestTrace(turn_id=fields.get("turn_id") or "",
+                       channel=fields.get("channel") or "",
+                       command="turn", user_id=fields.get("user_id"))
+    _outcome, _result = "ok", None
+    try:
+        # Trace outside the budget: a turn that runs out of time is exactly the
+        # turn whose trace has to survive to say so.
+        with food_trace.span(**fields), deadline.budget(), _trace_active(_rt):
+            _result = await _run_turn(*args, **kwargs)
+        return _result
+    except Exception as e:
+        _outcome = f"error:{type(e).__name__}"
+        raise
+    finally:
+        try:
+            _sf = getattr(_result, "skills_fired", "") or ""
+            if any(t in _sf for t in ("log_food", "log_exercise", "log_weight")):
+                _rt.command = "turn:log"      # a logging turn, distinct from chat
+            _rt.done(outcome=_outcome)
+            await _rt.persist_isolated()
+        except Exception:
+            pass
 
 
 async def _run_turn(
