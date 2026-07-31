@@ -123,11 +123,24 @@ def _isolate_turn_scoped_caches():
     turn a silent log into a question. Same for the in-flight enrichment
     registry, which is keyed by turn id and would otherwise hand a stale future
     to a test that never started one.
+
+    `_RELEVANCE_CACHE` is the third, and it was missed. It memoizes the GATE'S
+    VERDICT per message, and `food_relevance` reads it before the try/except —
+    so a test that cached "yes" for a message makes a later test's outage
+    fallback unreachable: the assertion never runs the code it names. Observed
+    as `test_the_lane_is_never_lost_to_a_failing_model` failing on shuffles
+    that put `test_reaching_the_model_is_recorded_as_the_cost_it_is` (which
+    mocks a "yes" and does not clean up) ahead of it — the pair reproduces it
+    on demand with `-p no:randomly`. Six tests already clear this cache by
+    hand, which is the tell: every one of them is working around the gap this
+    fixture exists to close.
     """
     import core.food_turn as _FT
     import handlers.tool_executor as _TE
     _FT._SPREAD_CACHE.clear()
+    _FT._RELEVANCE_CACHE.clear()
     _TE._INFLIGHT_FETCHES.clear()
     yield
     _FT._SPREAD_CACHE.clear()
+    _FT._RELEVANCE_CACHE.clear()
     _TE._INFLIGHT_FETCHES.clear()
