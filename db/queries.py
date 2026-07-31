@@ -721,6 +721,7 @@ def _invalidate_briefing_for_log(daily_log_id_or_user: int, by_user: bool = Fals
 async def add_food_entry(db: AsyncSession, daily_log_id: int,
                          ledger_source: Optional[str] = None,
                          user_id: Optional[int] = None,
+                         claim_id: Optional[int] = None,
                          **kwargs) -> FoodEntry:
     """Write one food row, and — when the caller names a `ledger_source` — its
     `created` event, in ONE transaction.
@@ -741,6 +742,15 @@ async def add_food_entry(db: AsyncSession, daily_log_id: int,
     Callers that do NOT pass `ledger_source` keep the old shape exactly: the
     row commits and history is the caller's business. That is what makes this
     safe to adopt one call site at a time.
+
+    `claim_id` closes the crash-replay window in the idempotency contract. The
+    claim used to be completed by a SEPARATE commit after this one returned, so
+    a process that died in between left the claim `in_progress` while the food
+    was already committed — and a retry took the stale claim over and wrote the
+    meal a second time. That is the exact failure the claim exists to prevent,
+    reached by the timing that matters most. Completing it HERE puts the claim,
+    the row and the event in one transaction: after a crash the claim is either
+    completed with its result, or the row was never written at all.
     """
     entry = FoodEntry(daily_log_id=daily_log_id, **kwargs)
     db.add(entry)
@@ -760,6 +770,16 @@ async def add_food_entry(db: AsyncSession, daily_log_id: int,
                 entry_id=entry.id, daily_log_id=daily_log_id,
                 payload=_entry_event_payload(entry), source=ledger_source,
                 commit=False)
+    if claim_id is not None:
+        # Same transaction as the row and the event. A crash now cannot leave a
+        # committed meal behind an unfinished claim.
+        from db.models import IdempotencyRecord
+        rec = await db.get(IdempotencyRecord, claim_id)
+        if rec is not None:
+            rec.status = "completed"
+            rec.result_entry_id = entry.id
+            rec.result_daily_log_id = daily_log_id
+            rec.completed_at = datetime.utcnow()
     await db.commit()
     await db.refresh(entry)
     # Drop cached briefing so the next Coach open regenerates against the new

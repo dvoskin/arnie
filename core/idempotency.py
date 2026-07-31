@@ -94,6 +94,61 @@ def _result_of(record) -> dict:
     }
 
 
+#: Which ledger domain a command's write lands in. Only commands whose write
+#: commits its `created` event ATOMICALLY with the row belong here — the event
+#: is then proof the row exists, which is what makes reconciliation sound.
+#: Weight is deliberately absent: it emits no ledger event, so there is nothing
+#: to reconcile against and it must not be guessed at.
+_COMMAND_DOMAIN = {"log_food": "food", "log_exercise": "exercise"}
+
+
+class IdempotencyCorrupt(Exception):
+    """A ledger event exists for this turn but its domain row does not."""
+
+
+async def committed_result(db, record) -> Optional[dict]:
+    """Did the original delivery's write actually land? Ask the ledger.
+
+    A TIMER CANNOT ANSWER THIS. `STALE_CLAIM_SECONDS` answers "is the original
+    process probably dead", which is a different fact from "did its operation
+    commit" — and taking a claim over on the first while assuming the second is
+    exactly how a retry writes the meal twice.
+
+    Food and exercise commit their `created` event in the same transaction as
+    the row, so an event stamped with this claim's `turn_id` IS proof the write
+    happened. Returns the committed result, or None when nothing landed.
+
+    Raises `IdempotencyCorrupt` when an event exists but its row does not. That
+    is not a replay and not a fresh request; reporting either would be a lie
+    about the user's data, so it fails loudly instead.
+    """
+    domain = _COMMAND_DOMAIN.get(record.command or "")
+    if not domain or not record.turn_id:
+        return None
+    from db.models import FoodEntry, LedgerEvent
+
+    ev = (await db.execute(
+        select(LedgerEvent)
+        .where(LedgerEvent.turn_id == record.turn_id,
+               LedgerEvent.domain == domain,
+               LedgerEvent.event_type == "created")
+        .order_by(LedgerEvent.id)
+    )).scalars().first()
+    if ev is None or ev.entry_id is None:
+        return None
+
+    if domain == "food":
+        row = await db.get(FoodEntry, ev.entry_id)
+        if row is None:
+            logger.error(
+                f"event=idempotency_corrupt turn={record.turn_id} "
+                f"domain={domain} entry_id={ev.entry_id} — a created event "
+                f"exists but its row does not")
+            raise IdempotencyCorrupt(record.key)
+
+    return {"entry_id": ev.entry_id, "daily_log_id": ev.daily_log_id}
+
+
 async def claim_request(
     db, *, channel: str, command: str, user_id: int,
     client_key: Optional[str], payload: Any, turn_id: str,
@@ -171,8 +226,30 @@ async def claim_request(
                          replay=True, record_id=existing.id,
                          stored_result=_result_of(existing))
 
-        # Unfinished. Take it over only if the original is old enough to be
-        # dead; otherwise this delivery must not write alongside it.
+        # RECONCILE BEFORE ANYTHING ELSE. An unfinished claim does not mean the
+        # work did not happen — a process can die after the write commits and
+        # before the claim is marked, and older claims were completed by a
+        # separate commit that had exactly that window. Ask the ledger whether
+        # the operation landed; a claim whose work is committed is a REPLAY, no
+        # matter how it looks or how old it is.
+        landed = await committed_result(db, existing)
+        if landed is not None:
+            logger.warning(
+                f"event=idempotency_reconciled key={key} command={command} "
+                f"entry={landed.get('entry_id')} — the original delivery "
+                f"committed but never completed its claim; healing it rather "
+                f"than re-executing")
+            existing.status = "completed"
+            existing.result_entry_id = landed.get("entry_id")
+            existing.result_daily_log_id = landed.get("daily_log_id")
+            existing.completed_at = datetime.utcnow()
+            await db.commit()
+            return Claim(key=key, turn_id=existing.turn_id or turn_id,
+                         replay=True, record_id=existing.id,
+                         stored_result=_result_of(existing))
+
+        # Nothing committed. Only now does the question "is the original still
+        # running" matter, and only now can a takeover be safe.
         started = existing.created_at or datetime.utcnow()
         if datetime.utcnow() - started < timedelta(seconds=STALE_CLAIM_SECONDS):
             raise IdempotencyInProgress(key)

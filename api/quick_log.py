@@ -181,6 +181,11 @@ async def _write_food(db, user, payload, turn_id, claim, trace) -> dict:
             daily_log_id=log.id,
             user_id=user.id,
             ledger_source="quick_log:ios",
+            # The claim completes INSIDE this transaction. Completing it
+            # afterwards left a window where the meal was committed and the
+            # claim was not, and a retry took the stale claim over and wrote
+            # the meal again — the one failure the claim exists to prevent.
+            claim_id=claim.record_id,
             raw_input=payload.food_name,
             parsed_food_name=payload.food_name,
             quantity=payload.quantity,
@@ -192,9 +197,7 @@ async def _write_food(db, user, payload, turn_id, claim, trace) -> dict:
             source_type="ios",
         )
 
-    with trace.stage("complete"):
-        await complete_claim(db, claim, entry_id=entry.id, daily_log_id=log.id)
-    trace.note(entry=entry.id)
+    trace.note(entry=entry.id, claim="completed_in_txn")
     return {
         "ok": True,
         "entry_id": entry.id,
