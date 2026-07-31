@@ -2233,10 +2233,16 @@ async def fetch_candidates(db, user, food_name, inp) -> FoodCandidates:
                 # resolver cannot tell a cache of its own generic answer from a
                 # food the user corrected, and credits both as the latter.
                 "origin_tier": getattr(m, "origin_tier", None),
+                # The label's own serving, so a COUNTED portion is answerable:
+                # `normalize.serving_unit_mass` turns "3 pieces (30 g)" into
+                # grams-per-unit for this record. Without it "5 twizzlers" has
+                # no mass and the model's calorie guess becomes the anchor.
+                "serving_text": getattr(m, "serving_text", None),
                 "per100g": per100g,
             }
             await upsert_user_food_match(db, user.id, name_norm, food_name,
-                                         m.fdc_id, memory["per100g"], m.confidence)
+                                         m.fdc_id, memory["per100g"], m.confidence,
+                                         serving_text=getattr(m, "serving_text", "") or "")
     except Exception as e:
         logger.warning(f"food memory lookup failed: {e}")
 
@@ -2456,6 +2462,11 @@ async def fetch_candidates(db, user, food_name, inp) -> FoodCandidates:
                     db, user.id, name_norm, food_name,
                     _hit.get("fdc_id"), _hit.get("per100g", {}),
                     _grade, origin_tier=_origin,
+                    # THE FIELD THAT WAS BEING DROPPED. `off.search` already
+                    # returns it and `serving_unit_mass` already parses it;
+                    # the cache simply had nowhere to put it, so every repeat
+                    # log of a branded food arrived holding per-100g alone.
+                    serving_text=(_hit.get("serving_text") or ""),
                 )
             except Exception as e:
                 logger.warning(f"memory cache write failed: {e}")

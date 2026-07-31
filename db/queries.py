@@ -2920,7 +2920,7 @@ _ORIGIN_BY_CONFIDENCE = {
 async def upsert_user_food_match(db: AsyncSession, user_id: int, name_norm: str,
                                  display_name: str, fdc_id: str, per100: dict,
                                  confidence: str, user_confirmed: bool = False,
-                                 origin_tier: str = ""):
+                                 origin_tier: str = "", serving_text: str = ""):
     """Store/refresh a user's recurring food match. Bumps usage on repeat.
 
     `origin_tier` is the authority that produced these numbers. It exists so a
@@ -2959,6 +2959,13 @@ async def upsert_user_food_match(db: AsyncSession, user_id: int, name_norm: str,
         # through (e.g. a USDA re-lookup), so the food keeps its micros thereafter.
         if micros and not existing.micros_100_json:
             existing.micros_100_json = json.dumps(micros)
+        # Self-heal the serving panel the same way. Rows cached before
+        # serving001 hold per-100g alone, which is what makes a counted portion
+        # unanswerable; the first lookup that carries a label fills it in and
+        # every later log of that food can divide the serving instead of
+        # guessing. Never CLEARS a stored panel with an empty one.
+        if serving_text and not existing.serving_text:
+            existing.serving_text = serving_text
         # Upgrade to user-confirmed if the user corrected it; never downgrade.
         if user_confirmed:
             existing.user_confirmed = True
@@ -2978,6 +2985,7 @@ async def upsert_user_food_match(db: AsyncSession, user_id: int, name_norm: str,
         fiber_100=per100.get("fiber"), sugar_100=per100.get("sugar"),
         sodium_100=per100.get("sodium"),
         micros_100_json=(json.dumps(micros) if micros else None),
+        serving_text=(serving_text or None),
         confidence="user-confirmed" if user_confirmed else confidence,
         user_confirmed=user_confirmed,
         origin_tier=origin,

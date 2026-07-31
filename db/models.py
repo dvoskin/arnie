@@ -821,6 +821,23 @@ class UserFoodMatch(Base):
     sugar_100 = Column(Float)
     sodium_100 = Column(Float)
     micros_100_json = Column(Text)  # per-100g micronutrient panel (vitamins/minerals/fats)
+    # THE LABEL'S OWN SERVING, verbatim — "3 pieces (30 g)", "about 30 chips
+    # (28 g)". Open Food Facts publishes it, `off.search` already returns it,
+    # and `normalize.serving_unit_mass` already turns it into grams-per-unit —
+    # for THIS product, off THIS record. It was simply never stored, so every
+    # repeat log of a branded food arrived holding per-100g and nothing else.
+    #
+    # That is what makes a counted portion unanswerable. "5 twizzlers" has no
+    # mass, and with no serving panel to divide, the model's calorie guess
+    # becomes the anchor with nothing able to check it: 2026-07-31 logged five
+    # Twizzlers at 323 cal, which is the per-100g density, against 162 from the
+    # label. Three users hit the same shape in 30 days, in both directions —
+    # two 16 oz lattes logged as 200 cal understated by half.
+    #
+    # Absence stays meaningful. A panel with a mass but no count ("50 g") or
+    # neither ("") parses to None, and the portion stays unscalable — which the
+    # ask ladder can act on and a guess cannot.
+    serving_text = Column(String)
     confidence = Column(String, default="estimated")  # exact|likely|estimated|user-confirmed
     user_confirmed = Column(Boolean, default=False)
     # Which authority tier produced these numbers the FIRST time. This row is
