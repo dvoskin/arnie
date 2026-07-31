@@ -88,4 +88,30 @@ jobs:
         # deliberately — it is what surfaces the cross-test cache leaks that
         # made behaviour depend on which test ran first — so a red run must
         # stay reproducible: re-run with --randomly-seed=<the printed seed>.
-        run: python -m pytest
+        # `tee` + PIPESTATUS so the step still fails on a red suite while the
+        # output survives for the annotation step below.
+        run: |
+          set -o pipefail
+          python -m pytest -q --tb=line -rf 2>&1 | tee /tmp/pytest.log
+
+      # FAILURES AS ANNOTATIONS, not just log lines.
+      #
+      # Job logs require a token even on a public repository, so a red CI was
+      # diagnosable only by someone who could open the Actions UI. Annotations
+      # ARE readable through the public check-runs API, so emitting the failing
+      # test names here turns "CI is red and I cannot see why" into a question
+      # anyone — or any tool — can answer.
+      #
+      # Cheap, and it pays for itself the first time a failure does not
+      # reproduce locally, which is exactly the case that stalls a release.
+      - name: Surface test failures as annotations
+        if: failure()
+        run: |
+          if [ -f /tmp/pytest.log ]; then
+            grep -aE "^(FAILED|ERROR) " /tmp/pytest.log | head -40 \
+              | while IFS= read -r line; do echo "::error::$line"; done
+            grep -aE "^[0-9]+ (passed|failed)|seed" /tmp/pytest.log | tail -3 \
+              | while IFS= read -r line; do echo "::error::summary: $line"; done
+          else
+            echo "::error::pytest produced no log — the step failed before running"
+          fi
