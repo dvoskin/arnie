@@ -234,6 +234,56 @@ used `+` concatenation). Confirmed green only after reading the log:
 Reversed, the header arrives before the table exists; the server degrades
 safely (entry 6) but the protection simply is not there.
 
+## 2026-07-31 — entry 8: a red CI I could not reproduce
+
+`08ce423` — a commit that adds ONE file under `scripts/` and nothing else —
+came back red. `c52f1f4`, its parent and the commit carrying every functional
+change in this pass, is green and DEPLOYABLE.
+
+**Which step failed, established without the log** (the repo is public, so
+check-runs and per-step results are readable unauthenticated; job *logs* are
+not — 403):
+
+| step | result |
+|---|---|
+| 6. Byte-compile | pass |
+| 7. Alembic — one head + offline Postgres compile | **pass** |
+| 8. Run tests | **FAIL** |
+
+Step 7 passing is worth stating on its own: the offline-compile fix from
+entry 5 is confirmed in CI, not just locally.
+
+**Six local runs, none of which reproduced it:**
+
+| run | order | env | result |
+|---|---|---|---|
+| 1 | deterministic (`-p no:randomly`) | plain | 0 failures |
+| 2-3 | shuffled | plain | 0 failures |
+| 4-6 | shuffled | `LINKING_ENABLED=true`, `PROACTIVE_MESSAGING_ENABLED=false` (CI's) | 0 failures |
+
+Ruled out along the way, each by direct test rather than reasoning:
+
+* the four tests that reference `scripts/` — pass
+* `test_turn_ownership_invariant.py`, the only test that walks the repo tree,
+  and the one thing that had not been run since the file was added — passes
+* **dependency drift** — all 26 requirements are exact pins, so CI installs
+  what this venv has
+* **the shuffle not actually running** — `pytest-randomly 4.1.0` is installed
+  and loaded, matching the pin, so runs 2-6 were genuinely shuffled
+
+What remains different from CI: Ubuntu x86_64 vs macOS arm64, and network
+behaviour.
+
+**Not called flaky.** Six clean runs is evidence against reproducibility, not
+evidence of correctness, and "probably unrelated" is the exact species of
+claim this pass exists to distrust. It is recorded as OPEN.
+
+**What would close it:** the failing test name from the Actions page, or `gh`
+installed and authenticated — then the log gives both the test and the
+`--randomly-seed`, and the ordering reproduces exactly. A missing `gh` cost a
+detour three times today (PR #67's disposition, this, and reading check status
+at all).
+
 ## Remaining risks
 
 1. **`NUTRITION_RESOLVER_MODE=shadow` in production, `live` in the docs.**
