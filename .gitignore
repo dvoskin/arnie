@@ -55,5 +55,6 @@ users/
 
 # Ad-hoc probe output from one-off debugging (scripts/_danny_*, _anya_*).
 # These hold real conversation transcripts and user rows.
-scripts/_*.json
-scripts/_*.txt
+# All of them, not just their output: _danny_live_day_http.py carries the
+# production SESSION_SECRET in its docstring.
+scripts/_*
