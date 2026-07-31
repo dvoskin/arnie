@@ -34,7 +34,8 @@ Baseline: deployed `433cdf39f2d0` (= `origin/main` tip).
 | Fix | `core/idempotency.py` claim contract + `idempotency_records` unique index (`idem001`) |
 | Owner | `core/idempotency.py`, `api/quick_log.py` |
 | Test | `test_the_same_tap_delivered_twice_commits_one_food_row`, `test_the_database_rejects_a_duplicate_claim` |
-| **Caveat** | **not fully closed until iOS sends `Idempotency-Key`.** Server-side is ready and backward compatible; the client change is required and is not in this pass |
+| Client half | **done** — `arnie-ios` `feat/badges-v2` @ `86a9f6e`: `Endpoint.headers` + a key minted once per Endpoint value, so the 401 re-sign-in retry re-sends the SAME key. 4 tests green |
+| **Caveat** | closed in code, **not yet in production**. Both halves must ship, server first, with `idem001` applied — confirm `/health` → `schema.in_sync: true` before the iOS build goes out |
 
 ### G3 — the applied migration was unknowable from outside — **SEV: MEDIUM**
 

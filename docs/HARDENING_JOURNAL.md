@@ -154,6 +154,86 @@ missing) onto a fresh branch, plus the shadow wiring from the sibling branch.
 
 ---
 
+## 2026-07-31 — entry 5: landed on main, and what CI said about it
+
+Danny: *"I want your updates on main — it's going to get lost in these
+branches."* Fair, with 69 remote branches. The work was fast-forwarded onto
+`main` rather than left on a feature branch.
+
+**CI was red on the first push, and the reason is worth recording.** The
+`test` job compiles the HEAD migration *offline* against Postgres
+(`alembic upgrade <range> --sql`). `idem001` called
+`sa.inspect(op.get_bind())` unconditionally; offline that bind is a
+`MockConnection`, which has no inspection system:
+
+```
+sqlalchemy.exc.NoInspectionAvailable: No inspection system is available
+for object of type MockConnection
+```
+
+The inspect-then-create guard is a repo convention (the SQLite test DB builds
+tables from `db/models.py` metadata before migrations run), so it stays — but
+online only. A generated SQL script should carry the DDL unconditionally
+anyway: there is no database present to ask.
+
+Verified **both** ways this time rather than one: the offline compile emits the
+`CREATE TABLE` and all three indexes against Postgres, and the online
+upgrade/downgrade round-trip still works on SQLite.
+
+## 2026-07-31 — entry 6: the degraded path
+
+Once iOS sends `Idempotency-Key` the claim runs on every tap, against a table
+that exists only if `idem001` has been applied — which this pass established is
+**not** guaranteed, because `preDeployCommand` is a Render dashboard setting and
+`render.yaml` is never read by Render.
+
+A missing table now degrades to **no deduplication, logged loudly**, instead of
+raising. The write and its turn id do not depend on that row. Duplicates become
+possible again until the migration runs, which is strictly better than a 500
+that loses the meal the user just logged.
+
+**Bug caught by the test, not by reading the code.** The first version of that
+soft-fail called `await db.rollback()`, which expires every object loaded in
+the session; the next attribute access on `user` then attempted IO from a sync
+context and died with `MissingGreenlet`. That is precisely the trap
+`record_ledger_event` documents in its own comment — the soft-fail reintroduced
+the poisoning it existed to prevent. `begin_nested()` already releases the
+savepoint; no session-level rollback belongs there.
+
+## 2026-07-31 — entry 7: the iOS half (arnie-ios)
+
+`feat/badges-v2` @ `86a9f6e`, pushed. The branch was **local-only** until now —
+no remote counterpart — so it was backed up as part of landing this.
+
+- `Endpoint` grows a `headers` dictionary; `APIClient` applies it after the
+  built-ins.
+- The three quick-log routes mint an `Idempotency-Key` once per Endpoint value.
+
+**Why once-per-Endpoint is the correct scope:** `APIClient.request` re-`perform`s
+the *same* endpoint value after a 401 re-sign-in. A key minted per *send* would
+mean the app's own recovery path logged the user twice. Pinned by
+`theFourOhOneRetrySendsTheSameKey`, with its mirror
+`twoSeparateLogsGetDifferentKeys` — a key stable across genuine actions would be
+worse than none, silently swallowing the second helping.
+
+`URLProtocolStub` now records requests, so tests assert on what actually went
+over the wire rather than only on what came back.
+
+**Read the build output, do not trust the exit code.** The first
+`xcodebuild test` run returned exit 0 while reporting `** TEST FAILED **` —
+three compile errors (Swift Testing's `Comment` takes a string *literal*; I had
+used `+` concatenation). Confirmed green only after reading the log:
+`✔ Test run with 4 tests in 1 suite passed`.
+
+## Deploy order (both halves are coupled)
+
+1. Deploy `arnie` main, **with `alembic upgrade heads` actually run** — confirm
+   via `/health` → `schema.in_sync: true`.
+2. Then ship the iOS build.
+
+Reversed, the header arrives before the table exists; the server degrades
+safely (entry 6) but the protection simply is not there.
+
 ## Remaining risks
 
 1. **`NUTRITION_RESOLVER_MODE=shadow` in production, `live` in the docs.**
