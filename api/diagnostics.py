@@ -176,6 +176,80 @@ def public_pipeline_summary() -> dict:
     return out
 
 
+_EXPECTED_HEAD: Optional[str] = None
+
+
+def _expected_head() -> Optional[str]:
+    """The migration head this BUILD expects, read once from the script dir.
+
+    Static for the life of the process — the versions directory ships inside
+    the image — so it is computed on first ask and cached. Returns None if
+    alembic cannot be read rather than raising: a health check must not fail
+    because it could not describe itself.
+    """
+    global _EXPECTED_HEAD
+    if _EXPECTED_HEAD is None:
+        try:
+            from alembic.config import Config
+            from alembic.script import ScriptDirectory
+            # Resolved from THIS file, not the working directory. `python
+            # main.py` happens to start at the repo root today, but a health
+            # check that silently reports "expected: unknown" because someone
+            # changed the start command is the kind of quiet degradation this
+            # endpoint exists to prevent.
+            root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            cfg = Config(os.path.join(root, "alembic.ini"))
+            cfg.set_main_option("script_location", os.path.join(root, "alembic"))
+            heads = ScriptDirectory.from_config(cfg).get_heads()
+            # Multiple heads is itself a deployable defect (CI has a one-head
+            # check); report them all rather than picking one.
+            _EXPECTED_HEAD = ",".join(sorted(heads)) if heads else ""
+        except Exception:
+            _EXPECTED_HEAD = ""
+    return _EXPECTED_HEAD or None
+
+
+async def schema_summary() -> dict:
+    """Which migration the live database is ACTUALLY on.
+
+    Until this existed, "did the migration run" was unanswerable from outside
+    the container. `render.yaml` documents `alembic upgrade heads` as the
+    pre-deploy command, but the service is configured by hand in the Render
+    dashboard and Render never reads that file — so the file documents an
+    intention, not a fact, and nothing reported the difference. A deploy whose
+    pre-deploy step is missing looks completely healthy right up until the
+    first write to a column that was never added.
+
+    `in_sync` is the whole point: it compares what the database is on against
+    what this build expects, and a false there is a deploy to stop.
+
+    Never raises — a health endpoint that 500s because it could not read the
+    schema has turned an observability gap into an outage.
+    """
+    applied = None
+    error = None
+    try:
+        from sqlalchemy import text as _text
+
+        from db.database import AsyncSessionLocal
+        async with AsyncSessionLocal() as db:
+            rows = (await db.execute(
+                _text("SELECT version_num FROM alembic_version"))).scalars().all()
+        applied = ",".join(sorted(rows)) if rows else None
+    except Exception as e:
+        # An unmigrated database has no alembic_version table at all, which is
+        # a legitimate answer and not the same as "could not ask".
+        error = type(e).__name__
+
+    expected = _expected_head()
+    out: dict = {"applied": applied, "expected": expected}
+    if error:
+        out["error"] = error
+    if applied and expected:
+        out["in_sync"] = applied == expected
+    return out
+
+
 def _default_model() -> str:
     """The model the chat path actually resolves — so a deploy can confirm the
     Sonnet 5 bump took (a Render DEFAULT_MODEL env var OVERRIDES the code

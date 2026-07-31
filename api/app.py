@@ -194,12 +194,23 @@ async def healthcheck():
         _pipeline = {"food_pipeline": public_pipeline_summary()}
     except Exception:
         _pipeline = {}
+    # And the third thing a deploy check needs: which migration the live
+    # DATABASE is on. The commit stamp above says what CODE is running, the
+    # flags say how it is configured, and neither notices that the pre-deploy
+    # `alembic upgrade heads` did not run — the failure that looks perfectly
+    # healthy until the first write to a column that was never added.
+    try:
+        from api.diagnostics import schema_summary
+        _schema = {"schema": await schema_summary()}
+    except Exception:
+        _schema = {}
     return {
         "status": "ok",
         "commit": os.getenv("RENDER_GIT_COMMIT", "unknown")[:12],
         "branch": os.getenv("RENDER_GIT_BRANCH", "unknown"),
         **_fast_voice,
         **_pipeline,
+        **_schema,
     }
 
 
