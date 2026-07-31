@@ -43,6 +43,7 @@ from core.idempotency import (
     claim_request,
     complete_claim,
 )
+from core.request_trace import RequestTrace
 from core.turn_identity import CURRENT_TURN_ID, make_turn_id
 from db.database import AsyncSessionLocal
 from db.queries import (
@@ -132,54 +133,74 @@ async def log_food_entry(
         client_key = _client_key(client_request_id)
         turn_id = make_turn_id(CHANNEL, client_key, user.id,
                                f"{payload.food_name}|{payload.quantity or ''}")
-        try:
-            claim = await claim_request(
-                db, channel=CHANNEL, command="log_food", user_id=user.id,
-                client_key=client_key, payload=payload, turn_id=turn_id)
-        except (IdempotencyConflict, IdempotencyInProgress) as e:
-            raise _claim_failed(e, "log_food")
+        # One line per request, keyed on the SAME turn id the ledger event
+        # carries — so the trace and the row it describes join without a
+        # correlation step. This surface emitted nothing at all before.
+        with RequestTrace(turn_id=turn_id, channel=CHANNEL,
+                          command="log_food", user_id=user.id) as trace:
+            trace.note(keyed=bool(client_key))
+            try:
+                with trace.stage("claim"):
+                    claim = await claim_request(
+                        db, channel=CHANNEL, command="log_food",
+                        user_id=user.id, client_key=client_key,
+                        payload=payload, turn_id=turn_id)
+            except (IdempotencyConflict, IdempotencyInProgress) as e:
+                trace.note(idempotency=type(e).__name__)
+                trace.done(outcome="conflict")
+                raise _claim_failed(e, "log_food")
 
-        if claim.replay:
-            return {"ok": True, "idempotent_replay": True,
-                    "turn_id": claim.turn_id, **claim.stored_result}
+            if claim.replay:
+                trace.note(idempotency="replay",
+                           entry=claim.stored_result.get("entry_id"))
+                return {"ok": True, "idempotent_replay": True,
+                        "turn_id": claim.turn_id, **claim.stored_result}
+            trace.note(idempotency="claimed" if claim.key else "unkeyed")
 
-        with _turn_scope(turn_id):
-            log = await get_or_create_today_log(db, user.id,
-                                                user.timezone or "UTC")
-            # A TAP IS A TURN (audit O-1). Without the `created` event
-            # `ledger_undo` takes the last one unconditionally, so "undo that"
-            # after a tap-log removed the previous CHAT-logged item — a row the
-            # user never mentioned.
-            #
-            # `ledger_source` makes `add_food_entry` write that event inside
-            # the row's OWN transaction, rather than this endpoint committing
-            # it separately afterwards: two commits meant a crash between them
-            # left a food row with no history at all. Written inside the turn
-            # scope either way, so the event carries the turn id.
-            entry = await add_food_entry(
-                db,
-                daily_log_id=log.id,
-                user_id=user.id,
-                ledger_source="quick_log:ios",
-                raw_input=payload.food_name,
-                parsed_food_name=payload.food_name,
-                quantity=payload.quantity,
-                calories=payload.calories,
-                protein=payload.protein,
-                carbs=payload.carbs,
-                fats=payload.fats,
-                meal_type=payload.meal_type,
-                source_type="ios",
-            )
+            return await _write_food(db, user, payload, turn_id, claim, trace)
 
-        await complete_claim(db, claim, entry_id=entry.id,
-                             daily_log_id=log.id)
-        return {
-            "ok": True,
-            "entry_id": entry.id,
-            "daily_log_id": log.id,
-            "turn_id": turn_id,
-        }
+
+async def _write_food(db, user, payload, turn_id, claim, trace) -> dict:
+    """The committed half — split out so the handler above reads as one shape:
+    identity, claim, write. Takes the trace rather than opening its own, so a
+    request stays ONE line however many functions it passes through."""
+    with trace.stage("write"), _turn_scope(turn_id):
+        log = await get_or_create_today_log(db, user.id, user.timezone or "UTC")
+        # A TAP IS A TURN (audit O-1). Without the `created` event
+        # `ledger_undo` takes the last one unconditionally, so "undo that"
+        # after a tap-log removed the previous CHAT-logged item — a row the
+        # user never mentioned.
+        #
+        # `ledger_source` makes `add_food_entry` write that event inside the
+        # row's OWN transaction, rather than this endpoint committing it
+        # separately afterwards: two commits meant a crash between them left a
+        # food row with no history at all. Written inside the turn scope
+        # either way, so the event carries the turn id.
+        entry = await add_food_entry(
+            db,
+            daily_log_id=log.id,
+            user_id=user.id,
+            ledger_source="quick_log:ios",
+            raw_input=payload.food_name,
+            parsed_food_name=payload.food_name,
+            quantity=payload.quantity,
+            calories=payload.calories,
+            protein=payload.protein,
+            carbs=payload.carbs,
+            fats=payload.fats,
+            meal_type=payload.meal_type,
+            source_type="ios",
+        )
+
+    with trace.stage("complete"):
+        await complete_claim(db, claim, entry_id=entry.id, daily_log_id=log.id)
+    trace.note(entry=entry.id)
+    return {
+        "ok": True,
+        "entry_id": entry.id,
+        "daily_log_id": log.id,
+        "turn_id": turn_id,
+    }
 
 
 # ── Exercise ────────────────────────────────────────────────────────────────
