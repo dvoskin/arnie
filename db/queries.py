@@ -1072,11 +1072,27 @@ async def get_recent_weights(db: AsyncSession, user_id: int,
 
 async def get_recent_logs(db: AsyncSession, user_id: int,
                           days: int = 7) -> List[DailyLog]:
-    # Add 1-day buffer to avoid UTC edge cases near midnight.
-    # Upper bound (today) excludes any future-dated logs created by LLM date bugs
-    # — those must never appear in history or available_dates on the dashboard.
+    # THE UPPER BOUND IS THE USER'S DAY, NOT THE SERVER'S.
+    #
+    # This was `date.today()` — the SERVER's calendar date — while every
+    # DailyLog is dated by `_user_today(tz)`, the user's own logging day. Those
+    # are not the same date, and whenever the user's day is ahead the query
+    # excluded THE LOG THEY ARE CURRENTLY WRITING INTO.
+    #
+    # Timezones run UTC-12..UTC+14, so a user's local date is at most one
+    # calendar day ahead of a UTC server's: everyone from Europe eastward
+    # crosses midnight before the server does, and for those hours their live
+    # log vanished from every consumer of this function. The streak read 0 with
+    # a meal already logged (`test_widget_endpoint`, reproduced 2026-07-31
+    # 00:26 UTC), and the same hole reaches history, trends and the dashboard's
+    # available_dates.
+    #
+    # The guard itself stays — its job is the LLM date bug that wrote logs days
+    # and months into the future, and one day of slack does not reopen that.
+    # `since` already carried a 1-day buffer for the mirror-image case; this is
+    # the other half of the same edge, which only ever got half a fix.
     since = date.today() - timedelta(days=days + 1)
-    today = date.today()
+    today = date.today() + timedelta(days=1)
     result = await db.execute(
         select(DailyLog)
         .where(and_(
