@@ -289,7 +289,11 @@ _FITNESS_TOOLS = [
             "'benched 225', 'squatted 315', 'hit 185 on bench' → use log_exercise instead. "
             "NEVER call based on food photo macro estimates — "
             "protein grams, fat grams, or calorie counts in a meal analysis are NOT body weight. "
-            "Do NOT call for food weights, portion sizes, or nutrition label values. "
+            "Do NOT call for food weights, portion sizes, or nutrition label values "
+            "('sub 200 cal', '4-5oz chicken' are FOOD, not body weight). "
+            "The body-weight number MUST appear in the CURRENT user message. NEVER re-log a "
+            "weight pulled from context, memory, or an earlier turn; if this message has no "
+            "fresh body-weight number, do not call this tool. "
             "If the user mentions WHEN they weighed in (morning, after meal, etc.) include "
             "the context for trend interpretation."
         ),

@@ -742,7 +742,7 @@ class TestTurnFlagCombos:
     def test_image_food_with_no_log_food_call_misroute(self):
         """Photo of a meal where LLM only called log_body_weight → image_body_weight_misroute."""
         flags = detect_turn_flags(
-            user_text="[Food photo]",
+            user_text="[Photo received]",
             response_text="Got your weight down.",
             has_tool_calls=True,
             stop_reason="end_turn",

@@ -21,7 +21,7 @@ from api.templates import _dashboard_html, _apple_guide_html
 from api.brain_page import _brain_html
 from api.brain_insights import generate_lobe_insight
 from core.urls import dashboard_url
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 from db.database import AsyncSessionLocal
 from db.queries import (
@@ -92,6 +92,8 @@ from api.quick_log import router as quick_log_router
 from api.whoop_api import router as whoop_api_router
 from api.location_api import router as location_api_router
 from api.diagnostics import router as diagnostics_router
+from api.social import router as social_router
+from api.recovery_api import router as recovery_api_router
 app.include_router(auth_router)
 app.include_router(chat_router)
 app.include_router(dashboard_api_router)
@@ -109,6 +111,8 @@ app.include_router(quick_log_router)
 app.include_router(whoop_api_router)
 app.include_router(location_api_router)
 app.include_router(diagnostics_router)
+app.include_router(social_router)
+app.include_router(recovery_api_router)
 
 
 # ── Health ─────────────────────────────────────────────────────────────────────
@@ -1696,6 +1700,9 @@ class ExercisePatch(BaseModel):
 @app.patch("/api/food/{entry_id}")
 async def api_edit_food(entry_id: int, patch: FoodPatch, token: str = Query(...)):
     import asyncio
+    from skills.nutrition.food_write import (
+        snapshot_food_entry, build_food_update_message, record_food_change,
+    )
     notify: dict = {}
     async with AsyncSessionLocal() as db:
         user = await get_user_by_webhook_token(db, token)
@@ -1704,9 +1711,22 @@ async def api_edit_food(entry_id: int, patch: FoodPatch, token: str = Query(...)
         changes = patch.model_dump(exclude_none=True)
         if "food_name" in changes:
             changes["parsed_food_name"] = changes.pop("food_name")
+        # Ownership-scoped BEFORE snapshot (also gives us the delta for the
+        # transcript). None → not found OR not owned, same 404 either way.
+        before = await snapshot_food_entry(db, entry_id, user.id)
+        if before is None:
+            raise HTTPException(status_code=404, detail="Entry not found")
         entry = await update_food_entry(db, entry_id, user.id, **changes)
         if not entry:
             raise HTTPException(status_code=404, detail="Entry not found")
+        # Transcript confirmation — SAME shared writer the iOS editor uses, so a
+        # web edit and an iOS edit leave identically-shaped chat history. The
+        # phone push below is the web-only extra (the desktop user's phone should
+        # still hear about it; an in-app iOS edit needs no self-push).
+        await record_food_change(
+            db, user, build_food_update_message(before, entry, changes),
+            kind="edit", platform="web",
+        )
         from sqlalchemy import select as _sel
         from db.models import DailyLog
         log = (await db.execute(_sel(DailyLog).where(DailyLog.id == entry.daily_log_id))).scalar_one()
@@ -1747,6 +1767,7 @@ async def api_hide_attribute(body: AttrHide, token: str = Query(...)):
 @app.delete("/api/food/{entry_id}")
 async def api_delete_food(entry_id: int, token: str = Query(...)):
     import asyncio
+    from skills.nutrition.food_write import record_food_change
     notify: dict = {}
     async with AsyncSessionLocal() as db:
         user = await get_user_by_webhook_token(db, token)
@@ -1754,12 +1775,28 @@ async def api_delete_food(entry_id: int, token: str = Query(...)):
             raise HTTPException(status_code=401, detail="Invalid token")
         from sqlalchemy import select as _sel
         from db.models import FoodEntry, DailyLog
-        entry = (await db.execute(_sel(FoodEntry).where(FoodEntry.id == entry_id))).scalar_one_or_none()
-        food_name = entry.parsed_food_name if entry else "entry"
-        log_id = entry.daily_log_id if entry else None
+        # Ownership-scoped read (join to DailyLog.user_id). The old unscoped read
+        # loaded another user's row (name + log id) before the delete's own
+        # ownership check rejected it — a cross-user read smell. Now a non-owned
+        # id is a plain 404 with nothing loaded.
+        entry = (await db.execute(
+            _sel(FoodEntry)
+            .join(DailyLog, FoodEntry.daily_log_id == DailyLog.id)
+            .where(FoodEntry.id == entry_id, DailyLog.user_id == user.id)
+        )).scalar_one_or_none()
+        if entry is None:
+            raise HTTPException(status_code=404, detail="Entry not found")
+        food_name = entry.parsed_food_name or "entry"
+        log_id = entry.daily_log_id
         ok = await delete_food_entry(db, entry_id, user.id)
         if not ok:
             raise HTTPException(status_code=404, detail="Entry not found")
+        # Transcript confirmation — shared writer with the iOS editor (same
+        # wording), so delete history is identical across surfaces.
+        await record_food_change(
+            db, user, f"Removed {food_name} from today's log.",
+            kind="delete", platform="web",
+        )
         log = (await db.execute(_sel(DailyLog).where(DailyLog.id == log_id))).scalar_one()
         prefs = user.preferences
         notify = dict(
@@ -3194,18 +3231,26 @@ async def api_food_search(q: str = Query(..., min_length=2), token: str = Query(
 
 
 class FoodLogBody(BaseModel):
-    name: str
+    # Bounds mirror api/quick_log.py's FoodLogBody so both create surfaces reject
+    # the same garbage (negatives / absurd values previously flowed into totals).
+    name: str = Field(min_length=1, max_length=200)
     quantity: Optional[str] = None
-    calories: float = 0
-    protein: float = 0
-    carbs: float = 0
-    fats: float = 0
+    calories: float = Field(0, ge=0, le=10_000)
+    protein: float = Field(0, ge=0, le=500)
+    carbs: float = Field(0, ge=0, le=1_500)
+    fats: float = Field(0, ge=0, le=500)
     estimated: bool = True
     log_date: Optional[str] = None  # YYYY-MM-DD, defaults to viewing date
 
 
 @app.post("/api/food/log")
 async def api_log_food(body: FoodLogBody, token: str = Query(...)):
+    # Routes through the shared enrichment path (same as chat + iOS quick-log) so
+    # a dashboard-typed entry gets USDA/label micronutrients, reconciled macros,
+    # and a consistent estimated flag — not a bare raw-numbers row.
+    from skills.nutrition.food_write import (
+        build_enriched_food_kwargs, find_recent_duplicate,
+    )
     async with AsyncSessionLocal() as db:
         user = await get_user_by_webhook_token(db, token)
         if not user:
@@ -3215,16 +3260,24 @@ async def api_log_food(body: FoodLogBody, token: str = Query(...)):
             log = await get_or_create_log_for_date(db, user.id, date.fromisoformat(body.log_date))
         else:
             log = await get_or_create_today_log(db, user.id, tz)
-        entry = await add_food_entry(
-            db, log.id,
-            parsed_food_name=body.name,
-            quantity=body.quantity,
-            calories=round(body.calories),
-            protein=round(body.protein, 1),
-            carbs=round(body.carbs, 1),
-            fats=round(body.fats, 1),
-            estimated_flag=body.estimated,
+
+        dup = await find_recent_duplicate(
+            db, log.id, body.name, body.quantity, body.calories,
         )
+        if dup is not None:
+            return {"status": "ok", "id": dup.id, "deduped": True}
+
+        kwargs = await build_enriched_food_kwargs(
+            db, user,
+            food_name=body.name,
+            quantity=body.quantity,
+            calories=body.calories,
+            protein=body.protein,
+            carbs=body.carbs,
+            fats=body.fats,
+            source_type="dashboard",
+        )
+        entry = await add_food_entry(db, log.id, **kwargs)
     return {"status": "ok", "id": entry.id}
 
 

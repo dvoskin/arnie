@@ -90,8 +90,13 @@ async def _search(query: str, data_types: list[str], page_size: int) -> list[dic
         return []
 
 
-def _looks_branded(query: str) -> bool:
-    """Query names a specific product/brand (capitalized token or long phrase)."""
+def _query_favors_branded_search(query: str) -> bool:
+    """Should USDA's Branded (crowdsourced) data types be searched BEFORE the
+    curated ones for this query? True when the query names a specific
+    product/brand (capitalized token or long phrase). This is a broad
+    search-ORDERING heuristic — distinct from handlers.tool_executor._looks_branded,
+    which is the conservative regex that decides web-first ENRICHMENT routing.
+    Kept as separate names so the two intents don't get conflated."""
     toks = query.split()
     return len(toks) >= 4 or any(t[:1].isupper() for t in toks)
 
@@ -109,7 +114,7 @@ async def search_food(query: str, page_size: int = 5) -> list[dict]:
     curated = ["Foundation", "SR Legacy"]
     branded = ["Branded"]
 
-    if _looks_branded(query):
+    if _query_favors_branded_search(query):
         order = [branded, curated]
     else:
         order = [curated, branded]

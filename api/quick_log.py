@@ -53,15 +53,31 @@ async def log_food_entry(
     payload: FoodLogBody,
     identity: str = Depends(current_identity),
 ) -> dict:
-    """Add one food entry to today's log + recompute the day totals."""
+    """Add one food entry to today's log + recompute the day totals.
+
+    Routes through the shared enrichment path so a manual iOS tap and a chat
+    "had a banana" produce identically-shaped rows (USDA/label micronutrients,
+    reconciled macros, consistent estimated flag). The user's typed macros
+    still anchor the entry — enrichment only fills the side-fields.
+    """
+    from skills.nutrition.food_write import (
+        build_enriched_food_kwargs, find_recent_duplicate,
+    )
     async with AsyncSessionLocal() as db:
         user = await resolve_user(db, identity)
         log = await get_or_create_today_log(db, user.id, user.timezone or "UTC")
-        entry = await add_food_entry(
-            db,
-            daily_log_id=log.id,
-            raw_input=payload.food_name,
-            parsed_food_name=payload.food_name,
+
+        # Idempotency: swallow an accidental double-tap resend of the same item.
+        dup = await find_recent_duplicate(
+            db, log.id, payload.food_name, payload.quantity, payload.calories,
+        )
+        if dup is not None:
+            return {"ok": True, "entry_id": dup.id, "daily_log_id": log.id,
+                    "deduped": True}
+
+        kwargs = await build_enriched_food_kwargs(
+            db, user,
+            food_name=payload.food_name,
             quantity=payload.quantity,
             calories=payload.calories,
             protein=payload.protein,
@@ -70,6 +86,7 @@ async def log_food_entry(
             meal_type=payload.meal_type,
             source_type="ios",
         )
+        entry = await add_food_entry(db, daily_log_id=log.id, **kwargs)
         return {
             "ok": True,
             "entry_id": entry.id,

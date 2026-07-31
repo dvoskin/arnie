@@ -18,13 +18,12 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import select
 
 from api.auth import current_identity
 from db.database import AsyncSessionLocal
-from db.models import FoodEntry
-from db.queries import (
-    resolve_user, update_food_entry, delete_food_entry, log_conversation,
+from db.queries import resolve_user, update_food_entry, delete_food_entry
+from skills.nutrition.food_write import (
+    snapshot_food_entry, build_food_update_message, record_food_change,
 )
 
 router = APIRouter(prefix="/api/v1/food", tags=["food"])
@@ -37,6 +36,10 @@ class FoodUpdateBody(BaseModel):
     protein: Optional[float] = None
     carbs: Optional[float] = None
     fats: Optional[float] = None
+    fiber: Optional[float] = None
+    sugar: Optional[float] = None
+    sodium: Optional[float] = None
+    meal_type: Optional[str] = None
 
 
 @router.patch("/{entry_id}")
@@ -50,28 +53,22 @@ async def update_food(
         if not user:
             raise HTTPException(status_code=404, detail="user not found")
 
-        before = await _snapshot_entry(db, entry_id)
+        before = await snapshot_food_entry(db, entry_id, user.id)
         if before is None:
             raise HTTPException(status_code=404, detail="food entry not found")
 
         changes = body.model_dump(exclude_none=True)
         updated = await update_food_entry(db, entry_id, user.id, **changes)
         if updated is None:
-            raise HTTPException(status_code=403, detail="not your entry")
+            # Ownership already enforced by the snapshot above; a None here means
+            # the row vanished between reads. 404 (not 403) so this endpoint never
+            # discloses "exists but not yours" vs "doesn't exist".
+            raise HTTPException(status_code=404, detail="food entry not found")
 
-        # Arnie-voice confirmation. Keep it short and factual — this is a
-        # passive notification, not coaching. The "before" snapshot lets us
-        # spell out what actually moved when nutrition fields changed.
-        arnie_message = _build_update_message(before, updated, changes)
-        if arnie_message:
-            await log_conversation(
-                db, user.id,
-                raw_message="[edit_food_entry]",
-                response=arnie_message,
-                parsed_intent="dashboard_edit",
-                source_type="dashboard_edit",
-                platform="ios",   # iOS inline editor — without this it defaults to telegram
-            )
+        # Arnie-voice confirmation → transcript. Shared writer with the web
+        # dashboard so both surfaces record an identically-shaped edit.
+        arnie_message = build_food_update_message(before, updated, changes)
+        await record_food_change(db, user, arnie_message, kind="edit", platform="ios")
 
         return {
             "status": "ok",
@@ -98,67 +95,21 @@ async def delete_food(
         if not user:
             raise HTTPException(status_code=404, detail="user not found")
 
-        before = await _snapshot_entry(db, entry_id)
+        before = await snapshot_food_entry(db, entry_id, user.id)
         if before is None:
             raise HTTPException(status_code=404, detail="food entry not found")
 
         ok = await delete_food_entry(db, entry_id, user.id)
         if not ok:
-            raise HTTPException(status_code=403, detail="not your entry")
+            raise HTTPException(status_code=404, detail="food entry not found")
 
         name = before.get("name") or "that entry"
         arnie_message = f"Removed {name} from today's log."
-        await log_conversation(
-            db, user.id,
-            raw_message="[delete_food_entry]",
-            response=arnie_message,
-            parsed_intent="dashboard_delete",
-            source_type="dashboard_edit",
-            platform="ios",   # iOS inline editor — without this it defaults to telegram
-        )
+        await record_food_change(db, user, arnie_message, kind="delete", platform="ios")
 
         return {"status": "ok", "arnie_message": arnie_message}
 
 
-# ── helpers ─────────────────────────────────────────────────────────────────
-
-async def _snapshot_entry(db, entry_id: int) -> Optional[dict]:
-    """Snapshot the BEFORE state so the Arnie confirmation can spell out the
-    delta ('protein 31 → 28'). Returns None if no entry exists."""
-    row = (await db.execute(
-        select(FoodEntry).where(FoodEntry.id == entry_id)
-    )).scalar_one_or_none()
-    if row is None:
-        return None
-    return {
-        "name":     row.parsed_food_name,
-        "quantity": row.quantity,
-        "calories": round(row.calories or 0),
-        "protein":  round(row.protein  or 0),
-        "carbs":    round(row.carbs    or 0),
-        "fats":     round(row.fats     or 0),
-    }
-
-
-def _build_update_message(before: dict, updated, changes: dict) -> str:
-    """Pick the smallest line that actually communicates the change."""
-    name = updated.parsed_food_name or before.get("name") or "that entry"
-    deltas: list[str] = []
-    after_macros = {
-        "calories": round(updated.calories or 0),
-        "protein":  round(updated.protein  or 0),
-        "carbs":    round(updated.carbs    or 0),
-        "fats":     round(updated.fats     or 0),
-    }
-    units = {"calories": "cal", "protein": "g protein", "carbs": "g carbs", "fats": "g fat"}
-    for field, unit in units.items():
-        if field in changes:
-            old = before.get(field)
-            new = after_macros[field]
-            if old != new:
-                deltas.append(f"{unit} {old} → {new}")
-    if "quantity" in changes and changes["quantity"] != before.get("quantity"):
-        deltas.append(f"quantity → {changes['quantity']}")
-    if not deltas:
-        return f"Updated {name}."
-    return f"Updated {name}: " + ", ".join(deltas) + "."
+# Snapshot / message-builder / transcript-writer live in
+# skills.nutrition.food_write so the iOS editor and the web dashboard share one
+# implementation and can't drift apart again.

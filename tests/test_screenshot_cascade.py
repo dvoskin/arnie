@@ -140,7 +140,7 @@ async def test_packaged_flag_routes_through_web_lookup(monkeypatch, cascade_env)
     )
     await env["H"].run_imessage_pipeline(
         "+15550009999", "iMessage;-;+15550009999",
-        "[Food photo] just got one of these", message_guid="cas1",
+        "[Photo received] just got one of these", message_guid="cas1",
     )
     assert web_called["n"] == 1, (
         f"web lookup must fire for is_packaged=True (got {web_called['n']} calls)"

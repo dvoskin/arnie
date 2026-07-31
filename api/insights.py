@@ -15,6 +15,11 @@ logger = logging.getLogger(__name__)
 # In-memory cache: {user_id: (timestamp, insights_list)}
 _CACHE: dict = {}
 _TTL = 10800  # 3 hours — analysis stays stable until it auto-refreshes (or a manual refresh forces it)
+# The hero briefing refreshes more often than the deeper insights: iOS revalidates
+# it on foreground (stale-while-revalidate, no wait), and a LOG force-refreshes it
+# immediately. 90 min keeps the headline "relatively fresh" between logs without a
+# regen on every app open.
+_BRIEFING_TTL = 5400  # 90 minutes
 
 # Per-key guard so a burst of requests on a stale briefing kicks off only ONE
 # background regeneration, not one per request.
@@ -684,7 +689,7 @@ Return ONLY a valid JSON object with EXACTLY this shape:
 {{
   "hero": {{
     "headline": "<the single most striking status, e.g. '209.2 lbs' — or null if nothing striking>",
-    "milestone": "<positive reinforcement IF genuinely earned by the data, e.g. 'Lowest weight in 6 weeks' — else null. No emoji.>",
+    "milestone": "<a SHORT badge-style win IF genuinely earned, else null. MAX ~5 words, terse with symbols/abbreviations, NOT a sentence: '6/7 days 180g+', 'Lowest in 6 wks', '12-day streak', 'PR: 225 bench'. Prefer fractions (6/7 not 'six of last seven'), symbols (+, >, ×), and unit shorthand (g, wks, lb) over words (of, at, over, in a row). No emoji.>",
     "body": "<1-2 short sentences: where they are + today's direction. e.g. 'Protein was 193g yesterday. Let's close the final 7 lbs.'>"
   }},
   "focus": {{
@@ -782,7 +787,7 @@ async def get_briefing(user_id: int, stats: dict, force: bool = False) -> dict:
     cached = _CACHE.get(cache_key)
 
     if not force and cached:
-        if (now - cached[0]) < _TTL:
+        if (now - cached[0]) < _BRIEFING_TTL:
             return cached[1]                       # fresh — serve as-is
         _schedule_briefing_refresh(user_id, stats, cache_key)  # stale — refresh behind
         return cached[1]

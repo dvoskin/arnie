@@ -2,6 +2,7 @@
 Executes the tool calls returned by the LLM, writes to DB, and returns
 a human-readable result string per tool (used in multi-turn follow-ups).
 """
+import json as _json
 import logging
 from typing import Dict, List, Any
 
@@ -750,63 +751,33 @@ async def _web_lookup_packaged(food_name: str, quantity) -> dict | None:
         # Look for "X calories ... Yg protein ... Zg carbs ... Wg fat" near each other
         cal_m = _re.search(r"(\d{2,4})\s*(?:cal(?:ories)?|kcal)\b", text, _re.I)
         pro_m = _re.search(r"(\d{1,3})\s*g\s*(?:of\s*)?protein\b", text, _re.I)
-        if not (cal_m and pro_m):
-            return None
-        cal = float(cal_m.group(1))
-        pro = float(pro_m.group(1))
         carb_m = _re.search(r"(\d{1,3})\s*g\s*(?:of\s*)?(?:carb|carbohydrate)", text, _re.I)
         fat_m = _re.search(r"(\d{1,3})\s*g\s*(?:of\s*)?(?:fat|total fat)\b", text, _re.I)
-        carbs = float(carb_m.group(1)) if carb_m else 0.0
-        fat = float(fat_m.group(1)) if fat_m else 0.0
-        # Estimate serving grams from calorie density. Most packaged foods sit
-        # at 100-500 cal/100g; assume ~200 for the back-out (rough — used only
-        # for fiber/sugar scaling, not the primary macros).
-        per100 = {
-            "calories": 200.0,
-            "protein": (pro / cal) * 200.0 if cal else None,
-            "carbs": (carbs / cal) * 200.0 if cal else None,
-            "fat": (fat / cal) * 200.0 if cal else None,
-            "fiber": None, "sugar": None, "sodium": None,
-        }
+        # Require a COMPLETE label parse (all four macros found near each other).
+        # A partial scrape ("340 cal … 12g protein" with carbs/fat pulled from an
+        # unrelated snippet) is exactly the garbage that used to get relabeled
+        # "likely" and cached forever. If the label isn't fully legible in the
+        # results, fall through to the USDA → LLM cascade instead.
+        if not (cal_m and pro_m and carb_m and fat_m):
+            return None
+        # NOTE: we deliberately do NOT fabricate a per-100g calorie density here.
+        # A single search hit gives per-serving numbers, not a per-100g basis;
+        # inventing one (the old 200 cal/100g assumption) produced a wrong density
+        # that got cached as an authoritative staple. Leave `calories` None so the
+        # enrichment back-out is skipped — the web hit's only job is to confirm the
+        # item is a real branded product and relabel confidence, not to scale micros.
+        per100 = {"calories": None, "protein": None, "carbs": None,
+                  "fat": None, "fiber": None, "sugar": None, "sodium": None}
         return {"fdc_id": None, "per100g": per100, "_match": "likely"}
     except Exception as e:
         logger.warning(f"web packaged lookup failed: {e}")
         return None
 
 
-async def _check_recent_duplicate(db, target_log_id, food_name: str, quantity, window_min: int = 5):
-    """Idempotency check: same (food_name, quantity) logged on the same daily_log
-    within the last `window_min` minutes is almost always a retry, not a second
-    portion. Returns the existing entry (with id/calories/etc.) on a hit, or None.
-
-    Catches the shake re-confirmation cascade from the screenshots — when the
-    model keeps promising to "log the shake", the second attempt collapses to
-    a no-op instead of producing a duplicate row.
-    """
-    try:
-        from datetime import datetime as _dt, timedelta as _td
-        from sqlalchemy import select as _select, desc as _desc
-        from db.models import FoodEntry
-        cutoff = _dt.utcnow() - _td(minutes=window_min)
-        qn = (food_name or "").strip().lower()
-        if not qn or target_log_id is None:
-            return None
-        stmt = (_select(FoodEntry)
-                .where(FoodEntry.daily_log_id == target_log_id)
-                .order_by(_desc(FoodEntry.timestamp))
-                .limit(10))
-        rows = (await db.execute(stmt)).scalars().all()
-        for r in rows:
-            ts = getattr(r, "timestamp", None)
-            if (ts is not None and ts >= cutoff
-                    and (r.parsed_food_name or "").strip().lower() == qn
-                    and (str(r.quantity or "").strip().lower()
-                         == str(quantity or "").strip().lower())):
-                return r
-        return None
-    except Exception as e:
-        logger.warning(f"duplicate check failed: {e}")
-        return None
+# NOTE: the legacy `_check_recent_duplicate` 5-min idempotency helper was removed
+# — the chat path now uses skills.nutrition.food_dedup.is_duplicate_food (90-min,
+# snapshot-aware) and the REST surfaces use skills.nutrition.food_write.
+# find_recent_duplicate (tight window). No remaining callers.
 
 
 async def _analyze_food(db, user, food_name, inp):
@@ -851,6 +822,15 @@ async def _analyze_food(db, user, food_name, inp):
         logger.warning(f"food memory lookup failed: {e}")
 
     # 2) Branched enrichment — branded goes web-first; generics go USDA-first.
+    #
+    # Caching policy (why web hits are NOT written to food memory):
+    #   USDA records carry a real per-100g density, so a confident match is a
+    #   safe, STABLE staple to reuse — we cache those. A web/Tavily hit only
+    #   confirms the item is a real branded product and relabels confidence; it
+    #   has no trustworthy per-100g basis (see _web_lookup_packaged). Caching it
+    #   would persist a fabricated density as authoritative and reuse it forever
+    #   — the "bad first log cached forever" poisoning vector. So web hits enrich
+    #   the CURRENT log only and are never upserted into user_food_match.
     usda = None
     web = None
     if memory is None and name_norm and not generic:
@@ -862,47 +842,36 @@ async def _analyze_food(db, user, food_name, inp):
                     from api.usda import search_food
                     candidates = await search_food(food_name, page_size=8)
                     best, conf = best_candidate(food_name, candidates)
-                    if best:
+                    # Only apply (and cache) a candidate we actually trust. A weak
+                    # "estimated" match still injected fiber/sugar/sodium before —
+                    # now it's ignored so the LLM estimate stands unpolluted.
+                    if best and conf in ("exact", "likely"):
                         best["_match"] = conf
                         usda = best
+                        await upsert_user_food_match(
+                            db, user.id, name_norm, food_name,
+                            best.get("fdc_id"), best.get("per100g", {}), conf,
+                        )
                 except Exception as e:
                     logger.warning(f"USDA backup enrichment failed: {e}")
-            # Cache a confident web hit so the same product is instant next time.
-            if web is not None:
-                try:
-                    await upsert_user_food_match(
-                        db, user.id, name_norm, food_name,
-                        web.get("fdc_id"), web.get("per100g", {}), web.get("_match") or "likely",
-                    )
-                except Exception as e:
-                    logger.warning(f"memory cache write failed: {e}")
         else:
             try:
                 from api.usda import search_food
                 candidates = await search_food(food_name, page_size=8)
                 best, conf = best_candidate(food_name, candidates)
-                if best:
+                if best and conf in ("exact", "likely"):
                     best["_match"] = conf
                     usda = best
-                    if conf in ("exact", "likely"):
-                        await upsert_user_food_match(
-                            db, user.id, name_norm, food_name,
-                            best.get("fdc_id"), best.get("per100g", {}), conf,
-                        )
+                    await upsert_user_food_match(
+                        db, user.id, name_norm, food_name,
+                        best.get("fdc_id"), best.get("per100g", {}), conf,
+                    )
             except Exception as e:
                 logger.warning(f"USDA enrichment failed: {e}")
-            # USDA missed AND it's a packaged-looking text mention → try web.
+            # USDA missed AND it's a packaged-looking text mention → try web
+            # (current-log enrichment only; not cached, per policy above).
             if usda is None and _looks_branded(food_name):
                 web = await _web_lookup_packaged(food_name, inp.get("quantity"))
-                if web is not None:
-                    try:
-                        await upsert_user_food_match(
-                            db, user.id, name_norm, food_name,
-                            web.get("fdc_id"), web.get("per100g", {}),
-                            web.get("_match") or "likely",
-                        )
-                    except Exception:
-                        pass
 
     return analyze(food_name, inp.get("quantity"), *llm,
                    usda_candidate=usda, memory_match=memory,
@@ -915,6 +884,7 @@ async def execute_tool_calls(
     today_log: DailyLog,
     db: AsyncSession,
     source_type: str = "text",
+    user_message: str = "",
 ) -> Dict[str, Any]:
     """
     Execute each tool call and return {tool_name: result}.
@@ -977,6 +947,7 @@ async def execute_tool_calls(
                 pre_existing_exercise_ids=pre_existing_exercise_ids,
                 pre_existing_food_ids=pre_existing_food_ids,
                 pre_existing_water_ids=pre_existing_water_ids,
+                user_message=user_message,
             )
             # Increment telemetry counters for log_* tools. "Already on the
             # board:" prefix indicates the dedup guard fired and a write
@@ -1123,7 +1094,8 @@ def _apply_multi_item_batch_coaching(
 async def _dispatch(name, inp, user, today_log, db, source_type,
                     pre_existing_exercise_ids=None,
                     pre_existing_food_ids=None,
-                    pre_existing_water_ids=None):  # noqa: C901
+                    pre_existing_water_ids=None,
+                    user_message=""):  # noqa: C901
     # Guard: log_food/log_exercise/log_water require a real daily log
     if name in ("log_food", "log_exercise", "log_water"):
         if not getattr(today_log, "id", None):
@@ -1149,6 +1121,20 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
         # multiple log_food calls in one batch is never self-blocked.
         # When pre_existing_food_ids is None (tests calling _dispatch
         # directly), the filter is bypassed.
+        # TURN-INTENT GATE (shared by food/water/exercise — see
+        # skills/logging_intent.py). The dedup guard defends against the model
+        # re-firing log_food on a topic pivot, where the user said nothing about
+        # food. But payload+window alone can't tell that phantom from a genuine
+        # repeat ("one more same coffee" 33 min later — Anya 2026-06-26, silently
+        # dropped). The discriminator is the user's CURRENT turn: an explicit
+        # add/repeat cue ("another", "one more", "ещё") means the log is
+        # intentional → honor it. Bare item mention is deliberately NOT a cue —
+        # a retry names the item too ("log the coffee again"). Only when the turn
+        # does NOT support the log does the payload+window block apply (the
+        # phantom-on-pivot and retry cases the guard was built for). The signal
+        # defaults closed (empty user_message → unchanged behavior).
+        from skills.logging_intent import turn_supports_log
+        _supports_food = turn_supports_log(user_message, food_name)
         if not past_date:
             from datetime import datetime as _dt_now
             from skills.nutrition.food_dedup import (
@@ -1185,7 +1171,16 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
                 now_utc=now_utc,
             )
             if _dup_food is not None:
-                return _format_food_dedup(_dup_food, now_utc=now_utc)
+                if _supports_food:
+                    # The user's turn names this food or signals a repeat —
+                    # honor the log instead of blocking. Telemetry so we can
+                    # watch the gate-open rate (event=dedup_gate_override).
+                    logger.info(
+                        f"event=dedup_gate_override kind=food user={getattr(user,'id',None)} "
+                        f"item={food_name!r} matched=#{getattr(_dup_food,'id',None)}"
+                    )
+                else:
+                    return _format_food_dedup(_dup_food, now_utc=now_utc)
 
         # Capture raw LLM-submitted macros before _analyze_food runs
         # reconcile_macros, so we can flag corrections in the tool result.
@@ -1196,17 +1191,18 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
         analysis = await _analyze_food(db, user, food_name, inp)
 
         # T2.3 — capture meal timing / alcohol / photo provenance.
-        # Photos are inherently noisier than text: force estimated=True and cap
-        # confidence at 0.75 — UNLESS the enrichment source is a label-accurate
-        # web hit, in which case we have the actual numbers from the packaging
-        # and the cap would unfairly downgrade trend math.
+        # Photos are inherently noisier than text (portion, sauce, oil, hidden
+        # ingredients), so per the log_food contract they ALWAYS force
+        # estimated=True and cap confidence at 0.75. This holds even for a
+        # label-accurate web hit: the label gives the macros, but the PHOTO can't
+        # confirm how much was actually eaten — so "estimated + 0.75" is the
+        # honest pairing. (Previously this bumped web-label photos to 0.90, which
+        # stored an entry flagged estimated=True yet confidence=0.90 — a
+        # self-contradiction that misled trend math.)
         from_photo = bool(inp.get("from_photo"))
         _conf = inp.get("confidence", 0.8)
         if from_photo:
-            if getattr(analysis, "enrichment_source", None) == "web_label":
-                _conf = max(_conf, 0.90)
-            else:
-                _conf = min(_conf, 0.75)
+            _conf = min(_conf, 0.75)
         # meal_time captures WHEN it was eaten. If the user stated a time ("had it
         # at 8:30"), place it on that day at that local clock time (stored UTC);
         # otherwise default to now.
@@ -1229,6 +1225,10 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
             fiber=analysis.fiber if analysis.fiber is not None else inp.get("fiber"),
             sugar=analysis.sugar,
             sodium=analysis.sodium,
+            micronutrients_json=(
+                _json.dumps(analysis.micronutrients)
+                if getattr(analysis, "micronutrients", None) else None
+            ),
             estimated_flag=(analysis.confidence == "estimated") or from_photo,
             confidence_score=_conf,
             source_type=source_type,
@@ -1403,7 +1403,20 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
                 superseded_window_sec=_superseded_window,
             )
             if dup is not None:
-                return format_dedup_result(dup, now_utc=now_utc)
+                # TURN-INTENT GATE — if the user's turn names this movement or
+                # signals another set ("another set", "one more", "ещё"), honor
+                # the log; the equality-block is for the model re-firing a set on
+                # a topic pivot. Roll-up upsert (below) still applies either way —
+                # it grows one row, it doesn't drop data. Gate defaults closed.
+                from skills.logging_intent import turn_supports_log
+                _supports_ex = turn_supports_log(user_message, canonical_name)
+                if _supports_ex:
+                    logger.info(
+                        f"event=dedup_gate_override kind=exercise user={getattr(user,'id',None)} "
+                        f"item={canonical_name!r} matched=#{getattr(dup,'id',None)}"
+                    )
+                else:
+                    return format_dedup_result(dup, now_utc=now_utc)
 
             # Cumulative roll-up → UPSERT, don't insert. The model re-states the
             # full running set list on each report ('12' → '12,12' → '12,12,10'),
@@ -1742,6 +1755,11 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
         # 60-min window — water is sipped more often than food is eaten,
         # so the legit-second-drink false-positive risk is higher than for
         # food. Bulk-paste safety via the same snapshot pattern.
+        # TURN-INTENT GATE — same rule as log_food: "another glass", "one more",
+        # "ещё", or naming water means a deliberate additional drink, not a
+        # re-send. Gate defaults closed (empty user_message → unchanged).
+        from skills.logging_intent import turn_supports_log
+        _supports_water = turn_supports_log(user_message, "water")
         if not past_date and ml:
             from datetime import datetime as _dt_now
             from skills.nutrition.water_dedup import (
@@ -1768,22 +1786,33 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
                 now_utc=now_utc,
             )
             if _dup_water is not None:
-                return _format_water_dedup(_dup_water, now_utc=now_utc)
+                if _supports_water:
+                    logger.info(
+                        f"event=dedup_gate_override kind=water user={getattr(user,'id',None)} "
+                        f"matched=#{getattr(_dup_water,'id',None)}"
+                    )
+                else:
+                    return _format_water_dedup(_dup_water, now_utc=now_utc)
 
         if ml:
-            target_log.total_water_ml = (target_log.total_water_ml or 0) + ml
-            await db.commit()
-            # Canonical timestamped row alongside the aggregate. Failure here
-            # is logged but doesn't bubble up — the aggregate is still updated
-            # so the user sees their hydration progress.
+            # Write the canonical WaterEntry row FIRST; only bump the cached
+            # aggregate AFTER the insert succeeds. The old path bumped
+            # total_water_ml BEFORE the row write and swallowed a failed insert —
+            # leaving the aggregate permanently AHEAD of the actual rows. Ordering
+            # the bump after a successful commit means a failed insert leaves the
+            # aggregate untouched, so the cached total can't drift past the rows.
+            # (The dashboard edit/delete path re-derives via recompute_water_total;
+            # both writers now keep the aggregate honest against the rows.)
             try:
                 await add_water_entry(
                     db, user.id, target_log.id,
                     amount_ml=ml, context=inp.get("context"),
                     source_type=source_type,
                 )
+                target_log.total_water_ml = (target_log.total_water_ml or 0) + ml
+                await db.commit()
             except Exception as e:
-                logger.warning(f"WaterEntry write failed (aggregate already updated): {e}")
+                logger.warning(f"water log failed (aggregate untouched): {e}")
         total_ml = target_log.total_water_ml or 0
         oz_this = round((ml or 0) / 29.5735)
         total_oz = round(total_ml / 29.5735)

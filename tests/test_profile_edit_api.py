@@ -227,11 +227,12 @@ async def test_patch_targets_empty_body_is_quiet_noop(
 async def test_complete_onboarding_flips_bit_when_required_fields_present(
     patched_session_local, db, make_user,
 ):
-    """Happy path: all five iOS-banner required fields are set, the bit
-    flips, scheduler will pick the user up on the next tick."""
+    """Happy path: all required iOS-banner fields are set (name via the
+    make_user default), the bit flips, scheduler picks the user up next tick."""
     user = await make_user(
         telegram_id="ios:complete-ok",
         onboarded=False,
+        name="Danny",
         age=31, sex="male", height_cm=187.0,
         current_weight_kg=85.5, primary_goal="cut",
     )
@@ -265,6 +266,31 @@ async def test_complete_onboarding_quiet_noop_when_fields_missing(
     assert set(resp["missing_fields"]) == {
         "height_cm", "current_weight_kg", "primary_goal",
     }
+    await db.refresh(user)
+    assert user.onboarding_completed is False
+
+
+@pytest.mark.asyncio
+async def test_complete_onboarding_requires_name(
+    patched_session_local, db, make_user,
+):
+    """A nameless profile can't complete — the backstop for the blind
+    tap-through that shipped "Hey 👊" (no name) greetings to prod. All the
+    numeric stats are present; only name is missing, and that's enough to
+    keep the bit down and stop the [start] greeting from seeding."""
+    user = await make_user(
+        telegram_id="ios:complete-noname",
+        onboarded=False,
+        name=None,
+        age=31, sex="male", height_cm=187.0,
+        current_weight_kg=85.5, primary_goal="cut",
+    )
+
+    resp = await complete_onboarding(identity="ios:complete-noname")
+
+    assert resp["ok"] is False
+    assert resp["onboarding_completed"] is False
+    assert resp["missing_fields"] == ["name"]
     await db.refresh(user)
     assert user.onboarding_completed is False
 

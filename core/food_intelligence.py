@@ -18,6 +18,19 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
+# ── Plausibility ceilings for a SINGLE logged item ──────────────────────────────
+# When the gram back-out matches a mis-scaled or salt-/seasoning-like enrichment
+# record, a nutrient can explode to absurd values. These are loose ceilings —
+# real foods clear them easily; only bad matches trip them. Shared here (not a
+# scattered magic number) so every consumer, including scripts, uses ONE value.
+SODIUM_IMPLAUSIBLE_MG = 5000     # ~2x a full day's limit
+FIBER_IMPLAUSIBLE_G = 100        # no single item carries 100g+ fiber
+SUGAR_IMPLAUSIBLE_G = 400        # a whole cake tops out well below this
+# Below this per-100g calorie density the gram back-out is unreliable (water,
+# broth, diet soda records at 1-5 cal/100g scale a 300-cal log into the
+# hundreds of grams). Skip nutrient scaling rather than emit garbage.
+MIN_CAL100_FOR_BACKOUT = 20.0
+
 
 # ── Food logging mode ──────────────────────────────────────────────────────────
 # How aggressively Arnie confirms amounts/prep before logging. Three tiers:
@@ -197,6 +210,7 @@ class FoodAnalysis:
     per100: dict = field(default_factory=dict)
     coach_note: str = ""                   # the analysis line surfaced to the LLM
     enrichment_source: Optional[str] = None  # "memory" | "usda" | "web_label" | None
+    micronutrients: dict = field(default_factory=dict)  # {"iron": 2.1, "calcium": 180, ...}
 
 
 def _derive(cal, protein, carbs, fat, fiber, sugar) -> tuple:
@@ -288,6 +302,7 @@ def analyze(name, quantity, llm_cal, llm_protein, llm_carbs, llm_fat,
     confidence = "estimated"
     source = "estimate"
     per100 = {}
+    micros: dict = {}
 
     src = memory_match or web_candidate or usda_candidate
     if src:
@@ -298,13 +313,21 @@ def analyze(name, quantity, llm_cal, llm_protein, llm_carbs, llm_fat,
             "sodium": src.get("sodium_100"),
         }
         cal100 = per100.get("calories")
-        if cal100 and cal100 > 0 and cal > 0:
+        # Only back out grams when the density is trustworthy. A near-zero
+        # cal100 (broth/water/diet-soda record wrongly matched) would scale the
+        # nutrients into the stratosphere — skip scaling entirely in that case.
+        if cal100 and cal100 >= MIN_CAL100_FOR_BACKOUT and cal > 0:
             # back out grams from the LLM's calories + density
             grams = cal / cal100 * 100
             ratio = grams / 100.0
             if per100.get("fiber") is not None:  fiber = round(per100["fiber"] * ratio, 1)
             if per100.get("sugar") is not None:  sugar = round(per100["sugar"] * ratio, 1)
             if per100.get("sodium") is not None: sodium = round(per100["sodium"] * ratio, 0)
+            # Key micros (mg) — scaled the same way, persisted as a JSON blob so
+            # the native micro panel has real values instead of an empty {}.
+            for _mk in ("calcium", "iron", "potassium"):
+                if per100.get(_mk) is not None:
+                    micros[_mk] = round(per100[_mk] * ratio, 1)
             # refine protein if enrichment disagrees notably and LLM gave none
             if not protein and per100.get("protein"):
                 protein = round(per100["protein"] * ratio, 1)
@@ -321,19 +344,28 @@ def analyze(name, quantity, llm_cal, llm_protein, llm_carbs, llm_fat,
             source = "usda"
             confidence = src.get("_match", "likely")
 
-    # Plausibility clamp: a single logged item should never carry >5000mg sodium.
-    # When it does (corn at 20,378mg — Danny 2026-06-23), the USDA lookup matched a
-    # salt-like/seasoning record or mis-scaled the per-100g basis. Drop the bogus
-    # value rather than store it AND surface a false "high sodium" flag in the
-    # coaching note. 5000mg is ~2x the daily limit, so real foods (even salty
-    # restaurant meals at 2-4g) clear it; only bad matches don't.
-    _SODIUM_IMPLAUSIBLE_MG = 5000
-    if sodium is not None and sodium > _SODIUM_IMPLAUSIBLE_MG:
-        logger.warning(
-            f"implausible sodium {sodium:.0f}mg for {(name or '')!r} "
-            f"(cal={cal}, source={source}, fdc_id={fdc_id}) — dropping enrichment"
-        )
-        sodium = None
+    # Plausibility clamps: a single logged item should never carry these values.
+    # When it does (corn at 20,378mg sodium — Danny 2026-06-23), the lookup matched
+    # a salt-like/seasoning record or mis-scaled the per-100g basis. Drop the bogus
+    # value rather than store it AND surface a false flag in the coaching note.
+    # Ceilings live at module scope (SODIUM/FIBER/SUGAR_IMPLAUSIBLE_*) so scripts
+    # and every path share ONE definition — real foods clear them, bad matches don't.
+    for _label, _val, _ceil in (
+        ("sodium", sodium, SODIUM_IMPLAUSIBLE_MG),
+        ("fiber", fiber, FIBER_IMPLAUSIBLE_G),
+        ("sugar", sugar, SUGAR_IMPLAUSIBLE_G),
+    ):
+        if _val is not None and _val > _ceil:
+            logger.warning(
+                f"implausible {_label} {_val:.0f} for {(name or '')!r} "
+                f"(cal={cal}, source={source}, fdc_id={fdc_id}) — dropping enrichment"
+            )
+            if _label == "sodium":
+                sodium = None
+            elif _label == "fiber":
+                fiber = None
+            else:
+                sugar = None
 
     pd, satiety, quality = _derive(cal, protein, carbs, fat, fiber, sugar)
 
@@ -363,4 +395,5 @@ def analyze(name, quantity, llm_cal, llm_protein, llm_carbs, llm_fat,
         protein_density=pd, satiety=satiety, quality=quality, per100=per100,
         coach_note=f"{note} [{conf_note}]",
         enrichment_source=(source if source != "estimate" else None),
+        micronutrients=micros,
     )

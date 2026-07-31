@@ -95,7 +95,7 @@ def test_partial_narration_does_not_fire_on_empty():
 def test_image_body_weight_misroute_flag_fires():
     # Food photo turn where only log_body_weight was called (no log_food).
     flags = detect_turn_flags(
-        user_text="[Food photo]",
+        user_text="[Photo received]",
         response_text="Got your weight down.",
         has_tool_calls=True,
         stop_reason="end_turn",
@@ -110,7 +110,7 @@ def test_image_body_weight_misroute_flag_fires():
 def test_image_body_weight_misroute_flag_does_not_fire_with_food():
     # Food photo where log_food was also called — not a misroute.
     flags = detect_turn_flags(
-        user_text="[Food photo]",
+        user_text="[Photo received]",
         response_text="Logged the panini.",
         has_tool_calls=True,
         stop_reason="end_turn",

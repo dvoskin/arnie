@@ -36,3 +36,24 @@ nohup.out
 
 # Local per-user memory/profile data (persists on /data in prod, never commit)
 users/
+
+# Secrets: .env is ignored, but a BACKUP of it was not — and this repo is
+# public. A stray `.env.bak.20260727` held TELEGRAM_BOT_TOKEN,
+# ANTHROPIC_API_KEY, OPENAI_API_KEY and the production DATABASE_URL, one
+# `git add -A` away from being published (found 2026-07-31).
+.env.*
+*.env.bak*
+.env.bak*
+
+# One-off data dumps from cleanup/backfill scripts. These carry real user
+# rows — names, logs, identifiers — and belong in nobody's git history.
+*_backup.json
+*_backup.sql
+
+# Agent session state, not project source.
+.claude/
+
+# Ad-hoc probe output from one-off debugging (scripts/_danny_*, _anya_*).
+# These hold real conversation transcripts and user rows.
+scripts/_*.json
+scripts/_*.txt

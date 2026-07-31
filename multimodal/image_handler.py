@@ -569,8 +569,18 @@ async def classify_image(image_data: bytes) -> str:
         return label
 
     # Substring match — model occasionally adds context ("PREPARED_MEAL_TYPE").
-    for valid in VALID_LABELS:
-        if valid in label or label in valid:
+    # Iterate in SORTED order (VALID_LABELS is a set → hash-randomized iteration
+    # per process, which made the same ambiguous output resolve differently
+    # across restarts). Prefer the stronger direction first — the model's output
+    # CONTAINS a valid label ("PREPARED_MEAL_TYPE" ⊃ "PREPARED_MEAL") — before the
+    # looser "label is a fragment of a valid label" case, so a bare "FOOD"
+    # doesn't greedily grab "FOOD_DIARY".
+    ordered = sorted(VALID_LABELS)
+    for valid in ordered:
+        if valid in label:
+            return valid
+    for valid in ordered:
+        if label in valid:
             return valid
 
     logger.warning(f"classify_image: unrecognized label '{label}', falling back to UNKNOWN")

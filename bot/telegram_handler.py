@@ -36,7 +36,6 @@ from handlers.onboarding import (
 )
 from memory.reflection import maybe_update_memory
 from multimodal.voice_handler import process_voice
-from multimodal.image_handler import process_general_image
 from scheduler.proactive_scheduler import start_scheduler, stop_scheduler
 
 logger = logging.getLogger(__name__)
@@ -585,7 +584,7 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         # Prepend [Voice note]: so the LLM applies voice-specific rules (multi-item
-        # parsing, filler-word tolerance). Mirrors [Food photo]: for photos.
+        # parsing, filler-word tolerance). Mirrors [Photo received]: for photos.
         # Arnie still coaches naturally — the prefix is invisible plumbing, never echoed.
         await _run_pipeline(update, context, f"[Voice note]: {transcript}", "voice", db)
 
@@ -1614,6 +1613,87 @@ async def cmd_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"<code>{code}</code>", parse_mode="HTML")
 
 
+async def cmd_invite(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Show the user's stable friend code for the social circle leaderboard.
+
+    `/addfriend <code>` is the other half. Generating the code here is the
+    opt-in — until a user runs this, they own no code and can't be added."""
+    from db.queries import get_or_create_friend_code
+    async with AsyncSessionLocal() as db:
+        user = await resolve_user(db, str(update.effective_user.id))
+        if not user.onboarding_completed and not user.name:
+            await update.message.reply_text(
+                "Finish setup first, then you can build out your circle."
+            )
+            return
+        code = await get_or_create_friend_code(db, user)
+
+    await update.message.reply_text(
+        "🏆 <b>Your Circle</b>\n\n"
+        "Compete with friends on workouts, streaks, and daily calories. "
+        "Share your friend code below — anyone who enters it with "
+        "<code>/addfriend</code> joins your circle (you'll both see each "
+        "other's stats).\n\n"
+        "Add someone else's code with:\n"
+        "<code>/addfriend THEIRCODE</code>\n\n"
+        "See the board anytime with /circle.",
+        parse_mode="HTML",
+    )
+    # code as its own bubble — easy to long-press and copy/paste
+    await update.message.reply_text(f"<code>{code}</code>", parse_mode="HTML")
+
+
+async def cmd_addfriend(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Add a friend by their circle code: /addfriend ABC123."""
+    from db.queries import add_friend_by_code
+    code = (context.args[0] if context.args else "").strip()
+    if not code:
+        await update.message.reply_text(
+            "Send it like this: <code>/addfriend ABC123</code>\n"
+            "Don't have a friend's code? Ask them to run /invite.",
+            parse_mode="HTML",
+        )
+        return
+    async with AsyncSessionLocal() as db:
+        user = await resolve_user(db, str(update.effective_user.id))
+        if not user.onboarding_completed and not user.name:
+            await update.message.reply_text(
+                "Finish setup first, then you can add friends."
+            )
+            return
+        friend, status = await add_friend_by_code(db, user, code)
+
+    if status == "not_found":
+        await update.message.reply_text(
+            "No one owns that code — double-check it and try again."
+        )
+    elif status == "self":
+        await update.message.reply_text(
+            "That's your own code 😄 Share it with a friend instead."
+        )
+    elif status == "already":
+        name = (friend.name or "they").split()[0]
+        await update.message.reply_text(f"You're already in a circle with {name}.")
+    else:  # ok
+        name = (friend.name or "your friend").split()[0]
+        await update.message.reply_text(
+            f"💪 Added {name} to your circle. Run /circle to see the board."
+        )
+
+
+async def cmd_circle(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Show the social circle leaderboard (you + friends)."""
+    from core.social import build_circle, render_circle_text
+    async with AsyncSessionLocal() as db:
+        user = await resolve_user(db, str(update.effective_user.id))
+        circle = await build_circle(db, user)
+    await update.message.reply_text(
+        render_circle_text(circle),
+        parse_mode="HTML",
+        disable_web_page_preview=True,
+    )
+
+
 async def cmd_remind(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Toggle proactive reminders on or off."""
     async with AsyncSessionLocal() as db:
@@ -1724,6 +1804,8 @@ async def _post_init(app: Application):
     from telegram import BotCommand
     await app.bot.set_my_commands([
         BotCommand("today",   "Today's calories, macros & workout"),
+        BotCommand("circle",  "Friend leaderboard — calories, workouts, streaks"),
+        BotCommand("invite",  "Get your friend code to build a circle"),
         BotCommand("dash",    "Open your personal dashboard"),
         BotCommand("me",      "Profile, targets & settings"),
         BotCommand("connect", "Link Whoop or Apple Health"),
@@ -1767,6 +1849,11 @@ def build_app() -> Application:
     app.add_handler(CommandHandler("billing", cmd_billing))
     app.add_handler(CommandHandler("connect", cmd_connect))
     app.add_handler(CommandHandler("reset",   cmd_reset))
+    # Social circle (friend leaderboard)
+    app.add_handler(CommandHandler("invite",    cmd_invite))
+    app.add_handler(CommandHandler("addfriend", cmd_addfriend))
+    app.add_handler(CommandHandler("circle",    cmd_circle))
+    app.add_handler(CommandHandler("rank",      cmd_circle))  # alias
     # Hidden but still functional
     app.add_handler(CommandHandler("targets", cmd_targets))
     app.add_handler(CommandHandler("profile", cmd_profile))

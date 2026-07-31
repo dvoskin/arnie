@@ -4,7 +4,7 @@ doesn't require an LLM round-trip. Covers:
 
   DIMENSION                       VARIANTS
   ──────────────────────────────  ────────────────────────────────────────
-  modality                        text, [Voice note], [Food photo]
+  modality                        text, [Voice note], [Photo received]
   food_logging_mode               quick, moderate, strict, unknown
   number of items per turn        1, 2, 3, 5, 7, 10, 25
   food types                      banana, brand (built bar), brand variant
@@ -666,16 +666,19 @@ def test_batch_coaching_never_drops_item_count(n_items):
 @pytest.mark.parametrize("user_msg,modality_hint_required", [
     ("had a banana", None),
     ("[Voice note] just ate some pasta", "voice"),
-    ("[Food photo]\nPhoto analysis: turkey sandwich", "photo"),
+    ("[Photo received]\nPhoto analysis: turkey sandwich", "photo"),
 ])
 def test_prompt_teaches_modality_prefixes(user_msg, modality_hint_required):
     """The system prompt must teach the model to recognize each modality
-    prefix it'll see in user messages."""
+    prefix it'll see in user messages. The photo preprocessor emits
+    [Photo received] (api/chat.py, bot/telegram_handler.py) — the prompt's
+    PHOTO LOGGING trigger MUST match that exact prefix or describe-first never
+    fires."""
     if modality_hint_required == "voice":
         assert "[Voice note]" in SYSTEM_PROMPT
         assert "VOICE NOTE LOGGING" in SYSTEM_PROMPT
     elif modality_hint_required == "photo":
-        assert "[Food photo]" in SYSTEM_PROMPT
+        assert "[Photo received]" in SYSTEM_PROMPT
         assert "PHOTO LOGGING" in SYSTEM_PROMPT
 
 
@@ -759,7 +762,13 @@ def test_prompt_teaches_silent_fallback_on_low_confidence():
 
 def test_prompt_has_rapid_send_dedup_rule():
     assert "RAPID-SEND DEDUPLICATION" in SYSTEM_PROMPT
-    assert "10 minutes" in SYSTEM_PROMPT or "10-minute" in SYSTEM_PROMPT.lower()
+    # The prompt no longer carries its OWN numeric dedup window (it used to say
+    # "10 minutes", which contradicted the server-side food_dedup 90-min guard —
+    # the model would think a re-log was fine while the server blocked it). It now
+    # defers to the server as the single dedup authority and keys off the
+    # "Already on the board" tool result instead of a self-managed clock.
+    assert "SERVER IS THE DEDUP AUTHORITY" in SYSTEM_PROMPT
+    assert "Already on the board" in SYSTEM_PROMPT
 
 
 def test_prompt_has_multi_item_clarification_gate():
